@@ -23,6 +23,7 @@ import sleepStudiesRouter from "./sleep-studies";
 import insuranceCoveragesRouter from "./insurance-coverages";
 import priorAuthorizationsRouter from "./prior-authorizations";
 import insuranceClaimsRouter from "./insurance-claims";
+import insuranceClaimsSubmitRouter from "./insurance-claims-submit";
 import equipmentRouter from "./equipment";
 import timelineRouter from "./timeline";
 import updateRouter from "./update";
@@ -71,6 +72,14 @@ router.use(priorAuthorizationsRouter);
 // the same band as prior-authorizations because they share the
 // patient-scoped + HCPCS-keyed shape.
 router.use(insuranceClaimsRouter);
+// /patients/:id/insurance-claims/:claimId/submit-office-ally — builds
+// the 837P EDI for a draft claim, uploads via the Office Ally
+// adapter (SFTP in prod, file-drop in stub mode), persists the
+// office_ally_submissions row, and advances the claim to 'submitted'.
+// Mounted directly after the read/write claim router so the literal
+// /submit-office-ally segment never gets shadowed by a future
+// :something param route on the claim path.
+router.use(insuranceClaimsSubmitRouter);
 // /patients/:id/equipment — clinical equipment asset registry
 // (patient ↔ device serial-number link). Required for manufacturer
 // recall workflows. Distinct from Pacware warehouse inventory.

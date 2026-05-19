@@ -964,6 +964,13 @@ export interface Database {
           paid_at: string | null;
           denial_reason: string | null;
           notes: string | null;
+          // Soft FK to resupply.payer_profiles (migration 0128). Null on
+          // legacy rows captured before the catalog landed; the claim
+          // builder requires it before electronic submission.
+          payer_profile_id: string | null;
+          // Soft FK to resupply.office_ally_submissions (migration 0128).
+          // Set when the claim is included in a 837P batch upload.
+          office_ally_submission_id: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -1024,6 +1031,75 @@ export interface Database {
         >;
         Update: Partial<
           Database["resupply"]["Tables"]["insurance_claim_events"]["Row"]
+        >;
+        Relationships: [];
+      };
+      payer_profiles: {
+        Row: {
+          id: string;
+          slug: string;
+          display_name: string;
+          payer_legal_name: string;
+          parent_org: string | null;
+          line_of_business:
+            | "commercial"
+            | "medicare_advantage"
+            | "medicare_part_b"
+            | "medicaid_ffs"
+            | "medicaid_mco"
+            | "federal"
+            | "workers_comp"
+            | "other";
+          region: "pa" | "multi_state" | "national";
+          office_ally_payer_id: string | null;
+          edi_5010_payer_id: string | null;
+          claim_format: "837p" | "837i" | "paper_1500";
+          paper_only: boolean;
+          requires_prior_auth_dme: boolean;
+          prior_auth_phone_e164: string | null;
+          claim_status_phone_e164: string | null;
+          provider_portal_url: string | null;
+          fee_schedule_source: string | null;
+          notes: string | null;
+          is_active: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["payer_profiles"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["payer_profiles"]["Row"]>;
+        Relationships: [];
+      };
+      office_ally_submissions: {
+        Row: {
+          id: string;
+          file_name: string;
+          isa_control_number: string;
+          gs_control_number: string;
+          status:
+            | "queued"
+            | "uploaded"
+            | "accepted_999"
+            | "rejected_999"
+            | "accepted_277ca"
+            | "rejected_277ca"
+            | "transport_failed";
+          file_size_bytes: number;
+          claim_count: number;
+          office_ally_session_id: string | null;
+          ack_999_file_name: string | null;
+          ack_999_received_at: string | null;
+          ack_277ca_file_name: string | null;
+          ack_277ca_received_at: string | null;
+          rejection_reason: string | null;
+          submitted_by_email: string;
+          submitted_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["office_ally_submissions"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["office_ally_submissions"]["Row"]
         >;
         Relationships: [];
       };

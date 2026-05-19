@@ -78,6 +78,8 @@ import physicianFaxOutreachRouter from "./admin/physician-fax-outreach.js";
 import shopBackInStockAdminRouter from "./admin/shop-back-in-stock.js";
 import shopSubsMetricsRouter from "./admin/shop-subscriptions-metrics.js";
 import insuranceLeadsAdminRouter from "./admin/insurance-leads.js";
+import payerProfilesRouter from "./admin/payer-profiles.js";
+import officeAllySubmissionsRouter from "./admin/office-ally-submissions.js";
 import auditRouter from "./audit/index.js";
 import conversationsRouter from "./conversations/index.js";
 import dashboardRouter from "./dashboard/index.js";
@@ -192,6 +194,15 @@ router.use(shopBackInStockAdminRouter);
 // for submissions to the public POST /shop/insurance-leads form.
 // requireAdmin gate is on the router itself.
 router.use(insuranceLeadsAdminRouter);
+// /admin/payer-profiles/* — Pennsylvania payer catalog (migration
+// 0128). Read by every admin; write restricted to requireAdminOnly.
+// Drives 837P NM1*PR loop population on Office Ally submissions.
+router.use(payerProfilesRouter);
+// /admin/office-ally-submissions/* — read + ack-ingest surface for
+// 837P claim files uploaded to Office Ally. The actual submit POST
+// lives on the patients router so it's co-located with the per-claim
+// state machine.
+router.use(officeAllySubmissionsRouter);
 // /admin/shop/products/* — operator tooling for the cash-pay catalog
 // itself. Today: PATCH stock_count metadata on a Stripe Product.
 // requireAdmin gate is on the router itself.
