@@ -92,6 +92,7 @@ import { AccountMessagesSection } from "@/components/account-messages-section";
 import { CustomerChatSection } from "@/components/customer-chat-section";
 import { useUnsavedChangesWarning } from "@/hooks/use-unsaved-changes-warning";
 import { CommPrefsSection } from "@/components/comm-prefs-section";
+import { CaregiverSection } from "@/components/caregiver-section";
 import {
   EquipmentRegistrySection,
   EsignFormsSection,
@@ -354,6 +355,7 @@ function AccountInner() {
           <RequestAppointmentSection />
           <EsignFormsSection />
           <ReferralProgramSection />
+          <CaregiverSection />
           <CommPrefsSection />
           <DataExportSection />
         </div>

@@ -49,6 +49,7 @@ import meFormAcknowledgementsRouter from "./me-form-acknowledgements";
 import meReferralsRouter from "./me-referrals";
 import meDocumentsRouter from "./me-documents";
 import meBillingPortalRouter from "./me-billing-portal";
+import meCaregiverRouter from "./me-caregiver";
 
 const router: IRouter = Router();
 router.use(productsRouter);
@@ -130,6 +131,11 @@ router.use(meDocumentsRouter);
 // invoices without going through a checkout flow. Replaces the
 // previous "read-only saved card" stub on /account.
 router.use(meBillingPortalRouter);
+// /shop/me/caregiver — designated authorized contact (single named
+// person who receives a copy of shipment + delivery notifications
+// on behalf of the patient). Critical for the elderly CPAP cohort
+// where adult-child / spouse caregivers manage logistics.
+router.use(meCaregiverRouter);
 router.use(meExportRouter);
 router.use(meReorderSuggestionsRouter);
 router.use(myOrdersRouter);

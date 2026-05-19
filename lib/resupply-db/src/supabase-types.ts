@@ -1777,6 +1777,10 @@ export interface Database {
           auth_user_id: string | null;
           winback_sent_at: string | null;
           deductible_reset_year: number | null;
+          caregiver_email: string | null;
+          caregiver_name: string | null;
+          caregiver_consent_at: string | null;
+          caregiver_revoked_at: string | null;
           created_at: string;
           updated_at: string;
         };

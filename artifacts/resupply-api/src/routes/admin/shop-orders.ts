@@ -318,18 +318,37 @@ async function sendShippingNotificationIfNew(args: {
 
     // Recipient resolution: linked customer → persisted customer_email
     // (captured from Stripe at paid-time) → skip. We never log the
-    // recipient string.
+    // recipient string. Also pull caregiver columns so we can fan
+    // out a separate caregiver-addressed copy after the primary
+    // send succeeds.
     let toEmail: string | null = null;
+    let patientFirstName: string | null = null;
+    let activeCaregiver: { name: string; email: string } | null = null;
     if (claimedRow.customer_id) {
       const { data: cust, error: custErr } = await supabase
         .schema("resupply")
         .from("shop_customers")
-        .select("email_lower")
+        .select(
+          "email_lower, display_name, caregiver_name, caregiver_email, caregiver_consent_at, caregiver_revoked_at",
+        )
         .eq("customer_id", claimedRow.customer_id)
         .limit(1)
         .maybeSingle();
       if (custErr) throw custErr;
       if (cust?.email_lower) toEmail = cust.email_lower;
+      patientFirstName =
+        (cust?.display_name ?? "").split(" ")[0]?.trim() || null;
+      if (
+        cust?.caregiver_email &&
+        cust?.caregiver_name &&
+        cust?.caregiver_consent_at &&
+        !cust?.caregiver_revoked_at
+      ) {
+        activeCaregiver = {
+          name: cust.caregiver_name,
+          email: cust.caregiver_email,
+        };
+      }
     }
     if (!toEmail && claimedRow.customer_email) {
       toEmail = claimedRow.customer_email;
@@ -402,6 +421,34 @@ async function sendShippingNotificationIfNew(args: {
             err: err instanceof Error ? err.message : String(err),
           },
           "shipping notification push send threw (non-fatal)",
+        );
+      }
+    }
+
+    // Caregiver-addressed copy. Separate email (not BCC) with copy
+    // that correctly addresses the caregiver as the caregiver. Runs
+    // after the primary send + push so a caregiver-side failure
+    // cannot retro-actively roll back the patient's email outcome.
+    if (activeCaregiver) {
+      try {
+        const { sendCaregiverNotificationEmail } = await import(
+          "../../lib/order-emails/send-caregiver-notification-email"
+        );
+        await sendCaregiverNotificationEmail({
+          toEmail: activeCaregiver.email,
+          caregiverName: activeCaregiver.name,
+          patientFirstName,
+          kind: "shipped",
+          carrier: claimedRow.tracking_carrier,
+          trackingNumber: claimedRow.tracking_number,
+        });
+      } catch (err) {
+        log?.warn?.(
+          {
+            orderId: claimedRow.id,
+            err: err instanceof Error ? err.message : String(err),
+          },
+          "shipping notification caregiver send threw (non-fatal)",
         );
       }
     }

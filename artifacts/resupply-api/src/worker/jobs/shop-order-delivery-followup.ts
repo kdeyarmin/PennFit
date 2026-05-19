@@ -50,6 +50,7 @@ import type PgBoss from "pg-boss";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { sendDeliveryFollowupEmail } from "../../lib/order-emails/send-delivery-followup-email";
+import { sendCaregiverNotificationEmail } from "../../lib/order-emails/send-caregiver-notification-email";
 import { sendPushToCustomer } from "../../lib/web-push";
 import { logger } from "../../lib/logger";
 
@@ -81,25 +82,49 @@ function isoDaysAgo(days: number): string {
   return d.toISOString();
 }
 
+interface ResolvedRecipient {
+  email: string;
+  firstName: string | null;
+  /** Active caregiver, when one is on file and not revoked. */
+  caregiver: { name: string; email: string } | null;
+}
+
 async function resolveRecipient(
   supabase: ReturnType<typeof getSupabaseServiceRoleClient>,
   order: ClaimableOrder,
-): Promise<{ email: string; firstName: string | null } | null> {
+): Promise<ResolvedRecipient | null> {
   if (order.customer_id) {
     const { data: cust } = await supabase
       .schema("resupply")
       .from("shop_customers")
-      .select("email_lower, display_name")
+      .select(
+        "email_lower, display_name, caregiver_name, caregiver_email, caregiver_consent_at, caregiver_revoked_at",
+      )
       .eq("customer_id", order.customer_id)
       .limit(1)
       .maybeSingle();
     if (cust?.email_lower) {
       const firstName = (cust.display_name ?? "").split(" ")[0]?.trim() || null;
-      return { email: cust.email_lower, firstName };
+      const caregiverActive =
+        cust.caregiver_email &&
+        cust.caregiver_name &&
+        cust.caregiver_consent_at &&
+        !cust.caregiver_revoked_at;
+      return {
+        email: cust.email_lower,
+        firstName,
+        caregiver: caregiverActive
+          ? { name: cust.caregiver_name!, email: cust.caregiver_email! }
+          : null,
+      };
     }
   }
   if (order.customer_email) {
-    return { email: order.customer_email, firstName: null };
+    return {
+      email: order.customer_email,
+      firstName: null,
+      caregiver: null,
+    };
   }
   return null;
 }
@@ -177,7 +202,7 @@ export async function runDeliveryFollowupSweep(): Promise<FollowupSweepStats> {
         .eq("id", claimed.id);
     };
 
-    let recipient: { email: string; firstName: string | null } | null;
+    let recipient: ResolvedRecipient | null;
     try {
       recipient = await resolveRecipient(supabase, claimed);
     } catch (err) {
@@ -252,6 +277,29 @@ export async function runDeliveryFollowupSweep(): Promise<FollowupSweepStats> {
             err: pushErr instanceof Error ? pushErr.message : String(pushErr),
           },
           "shop-order.delivery-followup: push fanout failed (non-fatal)",
+        );
+      }
+    }
+
+    // 4. Caregiver-addressed copy (separate email; not a BCC). Fires
+    //    only when the patient has an active designated contact on
+    //    file. Failures here do NOT roll back the patient's delivery
+    //    stamp — the primary delivery is the canonical record.
+    if (recipient.caregiver) {
+      try {
+        await sendCaregiverNotificationEmail({
+          toEmail: recipient.caregiver.email,
+          caregiverName: recipient.caregiver.name,
+          patientFirstName: recipient.firstName,
+          kind: "delivered",
+        });
+      } catch (cgErr) {
+        logger.warn(
+          {
+            orderId: claimed.id,
+            err: cgErr instanceof Error ? cgErr.message : String(cgErr),
+          },
+          "shop-order.delivery-followup: caregiver send failed (non-fatal)",
         );
       }
     }
