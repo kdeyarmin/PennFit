@@ -152,8 +152,6 @@ export function createRtFilterDefault(): RtFilter {
   };
 }
 
-export const RT_FILTER_DEFAULT: RtFilter = createRtFilterDefault();
-
 export function filterRtRows(
   rows: RtOverviewRow[],
   filter: RtFilter,

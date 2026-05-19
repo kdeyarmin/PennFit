@@ -1,9 +1,9 @@
 import { describe, it, expect } from "vitest";
 
 import {
+  createRtFilterDefault,
   distinctSources,
   filterRtRows,
-  RT_FILTER_DEFAULT,
   sortRtRows,
   type RtOverviewRow,
   type RtSortKey,
@@ -24,6 +24,10 @@ function row(overrides: Partial<RtOverviewRow>): RtOverviewRow {
     activeAlerts: overrides.activeAlerts ?? [],
     therapyLinks: overrides.therapyLinks ?? [],
   };
+}
+
+function defaultFilter() {
+  return createRtFilterDefault();
 }
 
 describe("sortRtRows", () => {
@@ -184,23 +188,23 @@ describe("filterRtRows", () => {
   ];
 
   it("returns every row with the default (no-op) filter", () => {
-    const out = filterRtRows(fleet, RT_FILTER_DEFAULT);
+    const out = filterRtRows(fleet, defaultFilter());
     expect(out).toHaveLength(3);
   });
 
   it("alertingOnly keeps only patients with ≥1 active alert", () => {
-    const out = filterRtRows(fleet, { ...RT_FILTER_DEFAULT, alertingOnly: true });
+    const out = filterRtRows(fleet, { ...defaultFilter(), alertingOnly: true });
     expect(out.map((r) => r.patientId)).toEqual(["p1"]);
   });
 
   it("staleOnly keeps only patients with zero nights in the window", () => {
-    const out = filterRtRows(fleet, { ...RT_FILTER_DEFAULT, staleOnly: true });
+    const out = filterRtRows(fleet, { ...defaultFilter(), staleOnly: true });
     expect(out.map((r) => r.patientId)).toEqual(["p2"]);
   });
 
   it("source filter keeps rows that match ANY of the listed sources", () => {
     const out = filterRtRows(fleet, {
-      ...RT_FILTER_DEFAULT,
+      ...defaultFilter(),
       sources: new Set(["airview"]),
     });
     expect(out.map((r) => r.patientId)).toEqual(["p1", "p3"]);
@@ -208,7 +212,7 @@ describe("filterRtRows", () => {
 
   it("empty source set means 'no source filter', NOT 'show nothing'", () => {
     const out = filterRtRows(fleet, {
-      ...RT_FILTER_DEFAULT,
+      ...defaultFilter(),
       sources: new Set(),
     });
     expect(out).toHaveLength(3);
@@ -216,17 +220,17 @@ describe("filterRtRows", () => {
 
   it("search matches case-insensitively across last + first + pacware id", () => {
     expect(
-      filterRtRows(fleet, { ...RT_FILTER_DEFAULT, search: "adams" }).map(
+      filterRtRows(fleet, { ...defaultFilter(), search: "adams" }).map(
         (r) => r.patientId,
       ),
     ).toEqual(["p1"]);
     expect(
-      filterRtRows(fleet, { ...RT_FILTER_DEFAULT, search: "BOB" }).map(
+      filterRtRows(fleet, { ...defaultFilter(), search: "BOB" }).map(
         (r) => r.patientId,
       ),
     ).toEqual(["p2"]);
     expect(
-      filterRtRows(fleet, { ...RT_FILTER_DEFAULT, search: "pw-003" }).map(
+      filterRtRows(fleet, { ...defaultFilter(), search: "pw-003" }).map(
         (r) => r.patientId,
       ),
     ).toEqual(["p3"]);
@@ -234,7 +238,7 @@ describe("filterRtRows", () => {
 
   it("trims whitespace around the search term", () => {
     const out = filterRtRows(fleet, {
-      ...RT_FILTER_DEFAULT,
+      ...defaultFilter(),
       search: "   alice   ",
     });
     expect(out.map((r) => r.patientId)).toEqual(["p1"]);
@@ -242,7 +246,7 @@ describe("filterRtRows", () => {
 
   it("combines filters with AND semantics", () => {
     const out = filterRtRows(fleet, {
-      ...RT_FILTER_DEFAULT,
+      ...defaultFilter(),
       alertingOnly: true,
       sources: new Set(["airview"]),
     });
@@ -251,7 +255,7 @@ describe("filterRtRows", () => {
     // alerting AND care_orchestrator-only — no rows match.
     expect(
       filterRtRows(fleet, {
-        ...RT_FILTER_DEFAULT,
+        ...defaultFilter(),
         alertingOnly: true,
         sources: new Set(["care_orchestrator"]),
       }),
@@ -260,7 +264,7 @@ describe("filterRtRows", () => {
 
   it("does not mutate the input array", () => {
     const before = fleet.map((r) => r.patientId);
-    filterRtRows(fleet, { ...RT_FILTER_DEFAULT, alertingOnly: true });
+    filterRtRows(fleet, { ...defaultFilter(), alertingOnly: true });
     expect(fleet.map((r) => r.patientId)).toEqual(before);
   });
 });
@@ -329,21 +333,31 @@ describe("distinctSources", () => {
   });
 });
 
-describe("RT_FILTER_DEFAULT", () => {
+describe("createRtFilterDefault", () => {
   it("has alertingOnly set to false", () => {
-    expect(RT_FILTER_DEFAULT.alertingOnly).toBe(false);
+    expect(defaultFilter().alertingOnly).toBe(false);
   });
 
   it("has staleOnly set to false", () => {
-    expect(RT_FILTER_DEFAULT.staleOnly).toBe(false);
+    expect(defaultFilter().staleOnly).toBe(false);
   });
 
   it("has an empty sources set", () => {
-    expect(RT_FILTER_DEFAULT.sources.size).toBe(0);
+    expect(defaultFilter().sources.size).toBe(0);
   });
 
   it("has an empty search string", () => {
-    expect(RT_FILTER_DEFAULT.search).toBe("");
+    expect(defaultFilter().search).toBe("");
+  });
+
+  it("returns a fresh sources set for each call", () => {
+    const first = defaultFilter();
+    const second = defaultFilter();
+
+    first.sources.add("airview");
+
+    expect(first.sources.has("airview")).toBe(true);
+    expect(second.sources.has("airview")).toBe(false);
   });
 });
 
@@ -362,7 +376,7 @@ describe("filterRtRows — additional edge cases", () => {
   });
 
   it("returns empty array when given an empty fleet", () => {
-    expect(filterRtRows([], RT_FILTER_DEFAULT)).toEqual([]);
+    expect(filterRtRows([], defaultFilter())).toEqual([]);
   });
 
   it("returns empty array when no rows satisfy an active filter", () => {
@@ -370,7 +384,7 @@ describe("filterRtRows — additional edge cases", () => {
       row({ patientId: "p1", activeAlerts: [], therapyLinks: [] }),
     ];
     expect(
-      filterRtRows(rows, { ...RT_FILTER_DEFAULT, alertingOnly: true }),
+      filterRtRows(rows, { ...defaultFilter(), alertingOnly: true }),
     ).toEqual([]);
   });
 
@@ -381,7 +395,7 @@ describe("filterRtRows — additional edge cases", () => {
       row({ patientId: "p3", therapyLinks: [link("react_health")] }),
     ];
     const out = filterRtRows(rows, {
-      ...RT_FILTER_DEFAULT,
+      ...defaultFilter(),
       sources: new Set(["airview", "care_orchestrator"]),
     });
     expect(out.map((r) => r.patientId)).toEqual(["p1", "p2"]);
@@ -395,7 +409,7 @@ describe("filterRtRows — additional edge cases", () => {
       }),
     ];
     const out = filterRtRows(rows, {
-      ...RT_FILTER_DEFAULT,
+      ...defaultFilter(),
       sources: new Set(["airview"]),
     });
     expect(out).toHaveLength(1);
@@ -404,7 +418,7 @@ describe("filterRtRows — additional edge cases", () => {
   it("source filter: row with no therapy links is excluded when source filter is active", () => {
     const rows = [row({ patientId: "p1", therapyLinks: [] })];
     const out = filterRtRows(rows, {
-      ...RT_FILTER_DEFAULT,
+      ...defaultFilter(),
       sources: new Set(["airview"]),
     });
     expect(out).toHaveLength(0);
@@ -416,7 +430,7 @@ describe("filterRtRows — additional edge cases", () => {
       row({ patientId: "p2", nightsInWindow: 7 }),
       row({ patientId: "p3", nightsInWindow: 0 }),
     ];
-    const out = filterRtRows(rows, { ...RT_FILTER_DEFAULT, staleOnly: true });
+    const out = filterRtRows(rows, { ...defaultFilter(), staleOnly: true });
     expect(out.map((r) => r.patientId)).toEqual(["p3"]);
   });
 
@@ -438,7 +452,7 @@ describe("filterRtRows — additional edge cases", () => {
       }),
     ];
     const out = filterRtRows(rows, {
-      ...RT_FILTER_DEFAULT,
+      ...defaultFilter(),
       alertingOnly: true,
       staleOnly: true,
     });
@@ -450,7 +464,7 @@ describe("filterRtRows — additional edge cases", () => {
       row({ patientId: "p1", pacwareId: "PW-001", lastName: "Zulu", firstName: "Zara" }),
       row({ patientId: "p2", pacwareId: "PW-999", lastName: "Zulu", firstName: "Zara" }),
     ];
-    const out = filterRtRows(rows, { ...RT_FILTER_DEFAULT, search: "999" });
+    const out = filterRtRows(rows, { ...defaultFilter(), search: "999" });
     expect(out.map((r) => r.patientId)).toEqual(["p2"]);
   });
 
@@ -459,7 +473,7 @@ describe("filterRtRows — additional edge cases", () => {
       row({ patientId: "p1", firstName: "Bartholomew", lastName: "Smith" }),
       row({ patientId: "p2", firstName: "Beth", lastName: "Smith" }),
     ];
-    const out = filterRtRows(rows, { ...RT_FILTER_DEFAULT, search: "bartho" });
+    const out = filterRtRows(rows, { ...defaultFilter(), search: "bartho" });
     expect(out.map((r) => r.patientId)).toEqual(["p1"]);
   });
 
@@ -468,20 +482,20 @@ describe("filterRtRows — additional edge cases", () => {
       row({ patientId: "p1" }),
       row({ patientId: "p2" }),
     ];
-    const out = filterRtRows(rows, { ...RT_FILTER_DEFAULT, search: "   " });
+    const out = filterRtRows(rows, { ...defaultFilter(), search: "   " });
     expect(out).toHaveLength(2);
   });
 
   it("search returning no match gives empty array (not an error)", () => {
     const rows = [row({ patientId: "p1", lastName: "Adams", firstName: "Alice", pacwareId: "PW-001" })];
-    const out = filterRtRows(rows, { ...RT_FILTER_DEFAULT, search: "zzz_no_match" });
+    const out = filterRtRows(rows, { ...defaultFilter(), search: "zzz_no_match" });
     expect(out).toEqual([]);
   });
 
   it("preserves row object identity — the returned rows are the same references as the input", () => {
     const r1 = row({ patientId: "p1" });
     const r2 = row({ patientId: "p2" });
-    const out = filterRtRows([r1, r2], RT_FILTER_DEFAULT);
+    const out = filterRtRows([r1, r2], defaultFilter());
     expect(out[0]).toBe(r1);
     expect(out[1]).toBe(r2);
   });

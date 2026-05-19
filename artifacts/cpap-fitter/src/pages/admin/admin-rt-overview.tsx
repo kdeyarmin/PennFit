@@ -32,11 +32,11 @@ import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { Button } from "@/components/admin/Button";
 import { Input } from "@/components/admin/Input";
 import {
+  createRtFilterDefault,
   distinctSources,
   dismissSmartTrigger,
   fetchRtOverview,
   filterRtRows,
-  RT_FILTER_DEFAULT,
   rtOverviewCsvUrl,
   sortRtRows,
   type RtFilter,
@@ -58,7 +58,7 @@ export function AdminRtOverviewPage() {
   const [days, setDays] = useState(7);
   const [sortKey, setSortKey] = useState<RtSortKey>("default");
   const [sortDir, setSortDir] = useState<RtSortDir>("desc");
-  const [filter, setFilter] = useState<RtFilter>(RT_FILTER_DEFAULT);
+  const [filter, setFilter] = useState<RtFilter>(() => createRtFilterDefault());
   const queryClient = useQueryClient();
 
   const query = useQuery<RtOverviewResponse>({
@@ -259,7 +259,7 @@ export function AdminRtOverviewPage() {
               No patients match the current filters.{" "}
               <button
                 type="button"
-                onClick={() => setFilter(RT_FILTER_DEFAULT)}
+                onClick={() => setFilter(createRtFilterDefault())}
                 className="underline"
                 style={{ color: "hsl(var(--penn-navy))" }}
               >
@@ -378,7 +378,7 @@ function FilterBar({
         {filterIsActive && (
           <button
             type="button"
-            onClick={() => onFilterChange(RT_FILTER_DEFAULT)}
+            onClick={() => onFilterChange(createRtFilterDefault())}
             className="text-xs underline ml-1"
             style={{ color: "hsl(var(--ink-3))" }}
           >
