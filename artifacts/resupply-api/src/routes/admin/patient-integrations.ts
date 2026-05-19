@@ -470,7 +470,8 @@ router.post(
         );
         if (
           equipmentOutcome.kind === "inserted" ||
-          equipmentOutcome.kind === "matched"
+          equipmentOutcome.kind === "matched" ||
+          equipmentOutcome.kind === "transferred"
         ) {
           const scan = await scanRecallsForAsset(
             supabase,
