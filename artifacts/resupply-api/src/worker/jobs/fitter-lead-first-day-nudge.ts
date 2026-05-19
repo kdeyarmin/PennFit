@@ -208,7 +208,14 @@ export async function runFirstDayNudgeSweep(): Promise<FirstDayNudgeStats> {
   // Bulk check converted leads — same shape as the 3-30d worker. ILIKE
   // chunked so the URI stays under the 8KB PostgREST default limit
   // even with up to BATCH_SIZE distinct emails.
-  const emails = Array.from(new Set(candidates.map((c) => c.email)));
+  const emails = Array.from(
+    new Set(
+      candidates
+        .map((c) => c.email)
+        .filter((e): e is string => typeof e === "string" && e.length > 0)
+        .map((e) => e.toLowerCase()),
+    ),
+  );
   const CHUNK = 50;
   const convertedSet = new Set<string>();
   for (let i = 0; i < emails.length; i += CHUNK) {
@@ -241,8 +248,22 @@ export async function runFirstDayNudgeSweep(): Promise<FirstDayNudgeStats> {
 
   for (const lead of candidates) {
     stats.scanned += 1;
-    if (convertedSet.has(lead.email)) {
+    const leadEmailLower =
+      typeof lead.email === "string" ? lead.email.toLowerCase() : null;
+    if (leadEmailLower && convertedSet.has(leadEmailLower)) {
       stats.skippedConverted += 1;
+      continue;
+    }
+
+    // Check deliverability before claiming — no point stamping
+    // first_day_nudged_at if we can't reach the lead via any channel.
+    const canEmail = sendgrid && lead.email;
+    const canSms = twilioSms && lead.phone_e164 && lead.sms_opt_in;
+    if (!canEmail && !canSms) {
+      if (!sendgrid) stats.skippedNoEmailConfig += 1;
+      if (!twilioSms && lead.phone_e164 && lead.sms_opt_in) {
+        stats.skippedNoSmsConfig += 1;
+      }
       continue;
     }
 
