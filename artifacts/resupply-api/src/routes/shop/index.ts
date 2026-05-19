@@ -13,6 +13,7 @@ import insuranceLeadRouter from "./insurance-lead";
 import fitterLeadRouter from "./fitter-lead";
 import quizLeadRouter from "./quiz-lead";
 import insuranceEstimateRouter from "./insurance-estimate";
+import npsResponseRouter from "./nps-response";
 import backInStockRouter from "./back-in-stock";
 import meRouter from "./me";
 import meClinicalInfoRouter from "./me-clinical-info";
@@ -181,6 +182,11 @@ router.use(quizLeadRouter);
 // only, returns a static range, persists a fitter_leads row with
 // source='insurance_quote' and emails a written estimate.
 router.use(insuranceEstimateRouter);
+// /shop/orders/nps — public NPS capture endpoint for the post-
+// delivery follow-up email links. Token-bound (HMAC-signed,
+// 30-day TTL); rate-limited per IP; persists to
+// shop_order_nps_responses.
+router.use(npsResponseRouter);
 router.use(backInStockRouter);
 
 export default router;

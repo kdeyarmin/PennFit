@@ -48,6 +48,13 @@ export interface SendDeliveryFollowupEmailInput {
    * gift-recipient name that doesn't match the email account.
    */
   firstName?: string | null;
+  /**
+   * shop_orders row id, used to mint signed NPS-rating links.
+   * Optional: when omitted (test/legacy callers), the NPS rating
+   * row is suppressed and the email renders with just the
+   * yes/no/return CTAs as before.
+   */
+  orderId?: string | null;
   baseUrlOverride?: string;
 }
 
@@ -79,7 +86,7 @@ function publicBaseUrl(override?: string): string {
 export async function sendDeliveryFollowupEmail(
   input: SendDeliveryFollowupEmailInput,
 ): Promise<SendDeliveryFollowupEmailResult> {
-  const { toEmail, stripeSessionId, firstName } = input;
+  const { toEmail, stripeSessionId, firstName, orderId } = input;
 
   let client;
   try {
@@ -95,6 +102,41 @@ export async function sendDeliveryFollowupEmail(
   const orderUrl = `${base}/shop/orders`;
   const returnsUrl = `${base}/account#returns`;
   const reviewUrl = `${base}/shop/orders?leave_review=${encodeURIComponent(stripeSessionId)}`;
+
+  // NPS-rating links — 0..10 buttons rendered inline. Each carries an
+  // HMAC-signed token that binds the score to this specific order +
+  // a 30-day TTL. Importing lazily so the test harness for this
+  // module can construct messages without needing the HMAC key wired
+  // (the legacy worker tests do exactly this).
+  let npsRow: { html: string; text: string[] } | null = null;
+  if (orderId) {
+    try {
+      const { signNpsToken } = await import("../nps-token");
+      const cells = Array.from({ length: 11 }, (_, score) => {
+        const token = signNpsToken(orderId, score);
+        const href = `${base}/nps?orderId=${encodeURIComponent(orderId)}&score=${score}&t=${encodeURIComponent(token)}`;
+        return { score, href };
+      });
+      const htmlRow = cells
+        .map(
+          (c) =>
+            `<a href="${escapeHtml(c.href)}" style="display:inline-block;min-width:28px;padding:8px 0;margin:2px;text-align:center;border:1px solid #d4dae5;border-radius:6px;color:#0f1d3a;text-decoration:none;font-size:13px;font-weight:600;">${c.score}</a>`,
+        )
+        .join("");
+      npsRow = {
+        html: `<table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="margin:8px 0 4px;"><tr><td>${htmlRow}</td></tr></table>
+          <p style="margin:4px 0 0;font-size:11px;color:#8b95a9;display:flex;justify-content:space-between;"><span>Not at all likely</span><span>Extremely likely</span></p>`,
+        text: ["", "Rate it 0-10 (tap a link):"].concat(
+          cells.map((c) => `  ${c.score} → ${c.href}`),
+        ),
+      };
+    } catch (err) {
+      // Missing HMAC key → silently skip the NPS section. The
+      // email still ships with the yes/no/return CTAs.
+      // (getLinkHmacKey throws synchronously on env-missing.)
+      void err;
+    }
+  }
   const greeting = firstName ? `Hi ${escapeHtml(firstName)},` : "Hi there,";
 
   const subject = "How is your CPAP setup going?";
@@ -119,6 +161,7 @@ export async function sendDeliveryFollowupEmail(
     "The PennPaps team",
     "",
     `View your order: ${orderUrl}`,
+    ...(npsRow ? npsRow.text : []),
   ].join("\n");
 
   const html = `<!doctype html>
@@ -150,6 +193,14 @@ export async function sendDeliveryFollowupEmail(
             60-day Comfort Guarantee — start a return any time. Or just reply to
             this email; we&apos;re real humans on the other side.
           </p>
+          ${
+            npsRow
+              ? `<div style="margin-top:22px;padding-top:18px;border-top:1px solid #eef0f5;">
+            <p style="margin:0 0 6px;font-size:13px;font-weight:600;color:#1a1f36;">How likely are you to recommend us?</p>
+            ${npsRow.html}
+          </div>`
+              : ""
+          }
         </td></tr>
         <tr><td style="padding:16px 28px 24px;border-top:1px solid #eef0f5;font-size:12px;color:#8b95a9;">
           <a href="${escapeHtml(orderUrl)}" style="color:#0f1d3a;text-decoration:none;">View your order</a> &nbsp;·&nbsp;

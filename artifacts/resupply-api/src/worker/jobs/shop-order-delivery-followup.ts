@@ -241,6 +241,7 @@ export async function runDeliveryFollowupSweep(): Promise<FollowupSweepStats> {
         toEmail: recipient.email,
         stripeSessionId: claimed.stripe_session_id,
         firstName: recipient.firstName,
+        orderId: claimed.id,
       });
       if (!result.configured) {
         await releaseClaim();

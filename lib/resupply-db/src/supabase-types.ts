@@ -1894,6 +1894,24 @@ export interface Database {
         Update: Partial<Database["resupply"]["Tables"]["shop_order_notes"]["Row"]>;
         Relationships: [];
       };
+      shop_order_nps_responses: {
+        Row: {
+          id: string;
+          order_id: string;
+          score: number;
+          comment: string | null;
+          submitter_ip: string | null;
+          user_agent: string | null;
+          created_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["shop_order_nps_responses"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["shop_order_nps_responses"]["Row"]
+        >;
+        Relationships: [];
+      };
       shop_customer_notes: {
         Row: {
           id: string;
