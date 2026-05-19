@@ -1464,6 +1464,54 @@ export interface Database {
         >;
         Relationships: [];
       };
+      dispense_readiness_reviews: {
+        Row: {
+          id: string;
+          patient_id: string;
+          hcpcs_code: string;
+          fulfillment_id: string | null;
+          payer_profile_id: string | null;
+          insurance_coverage_id: string | null;
+          ready_to_dispense: boolean;
+          overall_verdict:
+            | "ready"
+            | "gaps_with_fixable"
+            | "gaps_with_blocking"
+            | "errored";
+          estimated_days_to_ready: number | null;
+          deterministic_findings_json: Json;
+          checks_total: number;
+          checks_passed: number;
+          checks_warning: number;
+          checks_failed: number;
+          ai_summary: string | null;
+          ai_action_plan_json: Json | null;
+          ai_model: string | null;
+          ai_prompt_version: string | null;
+          ai_confidence: number | null;
+          ai_latency_ms: number | null;
+          ai_prompt_tokens: number | null;
+          ai_completion_tokens: number | null;
+          ai_error_message: string | null;
+          review_status:
+            | "pending"
+            | "acknowledged"
+            | "remediated"
+            | "overridden"
+            | "cancelled";
+          reviewed_by_email: string | null;
+          reviewed_at: string | null;
+          created_by_email: string;
+          created_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["dispense_readiness_reviews"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["dispense_readiness_reviews"]["Row"]
+        >;
+        Relationships: [];
+      };
       hipaa_breach_incidents: {
         Row: {
           id: string;

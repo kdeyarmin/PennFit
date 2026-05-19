@@ -148,6 +148,19 @@ export const WEBHOOK_EVENT_CATALOG: readonly WebhookEventDefinition[] = [
     },
     carriesPatientId: true,
   },
+  {
+    type: "dispense_readiness.reviewed",
+    description:
+      "AI-augmented dispense-readiness review completed. Subscribers can fan out to the CSR queue or ops dashboards.",
+    publisher: "routes/admin/dispense-readiness.ts",
+    payloadFields: {
+      review_id: "uuid",
+      patient_id: "uuid",
+      verdict: "string",
+      checks_failed: "number",
+    },
+    carriesPatientId: true,
+  },
 ];
 
 /** Build the set of valid event-type slugs for the admin

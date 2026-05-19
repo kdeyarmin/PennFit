@@ -118,6 +118,7 @@ import integrationsInboundRouter from "./integrations-inbound.js";
 import hipaaBreachIncidentsRouter from "./admin/hipaa-breach-incidents.js";
 import documentationPacketsRouter from "./admin/documentation-packets.js";
 import webhookDeliveryRetryRouter from "./admin/webhook-delivery-retry.js";
+import dispenseReadinessRouter from "./admin/dispense-readiness.js";
 import auditRouter from "./audit/index.js";
 import conversationsRouter from "./conversations/index.js";
 import dashboardRouter from "./dashboard/index.js";
@@ -365,6 +366,13 @@ router.use(documentationPacketsRouter);
 // /admin/webhook-deliveries/:id/retry-now — manual re-queue of an
 // exhausted/failed delivery.
 router.use(webhookDeliveryRetryRouter);
+// /admin/patients/:id/dispense-readiness-reviews/* + /admin/dispense-readiness/queue
+// — AI-augmented pre-dispense readiness reviewer. ~30 deterministic
+// checks across patient identity / insurance / clinical / provider /
+// PA / forms / equipment / DME-org compliance + an LLM synthesizer
+// that produces a plain-English action plan with specific "how to
+// obtain" guidance for every gap.
+router.use(dispenseReadinessRouter);
 // /admin/shop/products/* — operator tooling for the cash-pay catalog
 // itself. Today: PATCH stock_count metadata on a Stripe Product.
 // requireAdmin gate is on the router itself.
