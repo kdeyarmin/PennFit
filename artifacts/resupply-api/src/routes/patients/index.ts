@@ -23,6 +23,13 @@ import sleepStudiesRouter from "./sleep-studies";
 import insuranceCoveragesRouter from "./insurance-coverages";
 import priorAuthorizationsRouter from "./prior-authorizations";
 import insuranceClaimsRouter from "./insurance-claims";
+import insuranceClaimsSubmitRouter from "./insurance-claims-submit";
+import insuranceClaimsHcfaRouter from "./insurance-claims-hcfa";
+import insuranceClaimsPreflightRouter from "./insurance-claims-preflight";
+import insuranceClaimsAiRouter from "./insurance-claims-ai";
+import insuranceClaimsPredictDenialRouter from "./insurance-claims-predict-denial";
+import insuranceClaimsExplainDenialRouter from "./insurance-claims-explain-denial";
+import sleepStudiesSuggestIcd10Router from "./sleep-studies-suggest-icd10";
 import equipmentRouter from "./equipment";
 import timelineRouter from "./timeline";
 import updateRouter from "./update";
@@ -71,6 +78,42 @@ router.use(priorAuthorizationsRouter);
 // the same band as prior-authorizations because they share the
 // patient-scoped + HCPCS-keyed shape.
 router.use(insuranceClaimsRouter);
+// /patients/:id/insurance-claims/:claimId/submit-office-ally — builds
+// the 837P EDI for a draft claim, uploads via the Office Ally
+// adapter (SFTP in prod, file-drop in stub mode), persists the
+// office_ally_submissions row, and advances the claim to 'submitted'.
+// Mounted directly after the read/write claim router so the literal
+// /submit-office-ally segment never gets shadowed by a future
+// :something param route on the claim path.
+router.use(insuranceClaimsSubmitRouter);
+// /patients/:id/insurance-claims/:claimId/hcfa-1500.pdf — CMS-1500
+// paper claim form generator for paper-only payers in the catalog
+// (and one-off override cases).
+router.use(insuranceClaimsHcfaRouter);
+// /patients/:id/insurance-claims/:claimId/preflight — structured
+// readiness checklist for a draft claim. Drives the "ready to
+// submit" / "needs work" CSR UX in front of the submit endpoint.
+router.use(insuranceClaimsPreflightRouter);
+// /patients/:id/insurance-claims/:claimId/ai-{scrub,denial-analysis,...}
+// — OpenAI-driven pre-submission scrub + post-denial root-cause +
+// one-click auto-fix-and-resubmit. PHI-safe context assembly +
+// whitelisted patch applier; the route never lets a hallucinated
+// patch mutate non-whitelisted fields.
+router.use(insuranceClaimsAiRouter);
+// /patients/:id/insurance-claims/:claimId/predict-denial — heuristic
+// pre-submission denial-probability scorer. Cheap pre-filter that
+// runs in front of the AI scrub so we only spend OpenAI tokens on
+// claims worth the deep look. Surfaces probability + structured
+// contributing factors.
+router.use(insuranceClaimsPredictDenialRouter);
+// /patients/:id/insurance-claims/:claimId/explain-denial — AI patient-
+// facing denial explainer (different audience from the CSR-facing
+// analyzer; returns email-ready subject + body).
+router.use(insuranceClaimsExplainDenialRouter);
+// /patients/:id/sleep-studies/:studyId/suggest-icd10 +
+// /accept-icd10 — AI ICD-10 suggester (LCD L33718 allowlist) with
+// optional auto-apply at high confidence.
+router.use(sleepStudiesSuggestIcd10Router);
 // /patients/:id/equipment — clinical equipment asset registry
 // (patient ↔ device serial-number link). Required for manufacturer
 // recall workflows. Distinct from Pacware warehouse inventory.

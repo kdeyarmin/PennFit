@@ -33,7 +33,7 @@ export {
   type ResupplySupabaseClient,
   type SupabaseClientOptions,
 } from "./supabase-client";
-export type { Database, Json } from "./supabase-types";
+export type { Database, Json, TemplateLine } from "./supabase-types";
 export {
   PREVIEW_MAX_CHARS,
   buildPreview,

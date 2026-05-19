@@ -37,6 +37,7 @@ import {
 } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
+import { publishEvent } from "../../lib/webhooks/publisher";
 import { requireAdmin } from "../../middlewares/requireAdmin";
 import { sendEobExplainerEmail } from "../../lib/order-emails/send-eob-explainer-email";
 
@@ -536,6 +537,21 @@ router.patch(
     }).catch((err) => {
       logger.warn({ err }, "insurance_claim.update audit write failed");
     });
+
+    // Publish a webhook event for the status transition so external
+    // subscribers (CRM, accounting, reporting BI) can react without
+    // polling. Fire-and-forget — the publisher never throws.
+    if (b.status && b.status !== current.status) {
+      void publishEvent({
+        eventType: `claim.${b.status}`,
+        payload: {
+          claim_id: idParsed.data.claimId,
+          patient_id: idParsed.data.id,
+          from_status: current.status,
+          to_status: b.status,
+        },
+      });
+    }
 
     res.status(200).json({ ok: true });
   },

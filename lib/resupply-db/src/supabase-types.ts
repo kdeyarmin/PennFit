@@ -25,6 +25,15 @@ export type Json =
   | { [key: string]: Json | undefined }
   | Json[];
 
+/** Shape of a single line entry in claim_templates.lines_json. */
+export interface TemplateLine {
+  hcpcs: string;
+  modifiers: string;
+  units: number;
+  billed_cents: number;
+  description?: string;
+}
+
 export interface Database {
   // PostgREST default schema. Storefront-funnel tables (orders,
   // usage_events, admin_audit_log, reminder_subscriptions from
@@ -604,7 +613,9 @@ export interface Database {
             | "send_failure"
             | "manual"
             | "prior_auth_expiring"
-            | "prior_auth_expired";
+            | "prior_auth_expired"
+            | "pa_mco_sla_at_risk"
+            | "pa_mco_sla_missed";
           severity: "info" | "warning" | "critical";
           summary: string;
           metric_snapshot: Record<string, unknown> | null;
@@ -850,6 +861,18 @@ export interface Database {
           lowest_spo2_pct: number | null;
           sleep_efficiency_pct: number | null;
           diagnosis_icd10: string | null;
+          // Provenance of the diagnosis (migration 0139). Distinguishes
+          // lab-supplied codes from AI-suggested + CSR-accepted ones.
+          diagnosis_source:
+            | "lab_report"
+            | "csr_entry"
+            | "ai_suggested"
+            | "ai_accepted"
+            | "imported"
+            | null;
+          diagnosis_ai_confidence: number | null;
+          diagnosis_ai_model: string | null;
+          diagnosis_ai_suggested_at: string | null;
           interpreting_provider_id: string | null;
           facility_name: string | null;
           source: "external_lab" | "home_test_vendor" | "csr_entry";
@@ -927,6 +950,14 @@ export interface Database {
           denial_reason: string | null;
           document_id: string | null;
           notes: string | null;
+          // PA Medicaid 7-day SLA tracking (migration 0133).
+          mco_sla_target_date: string | null;
+          mco_sla_status:
+            | "on_track"
+            | "at_risk"
+            | "missed"
+            | "decided"
+            | null;
           created_at: string;
           updated_at: string;
         };
@@ -964,6 +995,43 @@ export interface Database {
           paid_at: string | null;
           denial_reason: string | null;
           notes: string | null;
+          // Soft FK to resupply.payer_profiles (migration 0128). Null on
+          // legacy rows captured before the catalog landed; the claim
+          // builder requires it before electronic submission.
+          payer_profile_id: string | null;
+          // Soft FK to resupply.office_ally_submissions (migration 0128).
+          // Set when the claim is included in a 837P batch upload.
+          office_ally_submission_id: string | null;
+          // Heuristic predicted-denial scoring (migration 0133).
+          predicted_denial_probability: number | null;
+          predicted_denial_factors: Json;
+          predicted_denial_scored_at: string | null;
+          // Soft FK to resupply.providers (migration 0129). Rendering
+          // provider — the entity that actually rendered the service.
+          // For DME this is usually our org, but Medicare expects the
+          // NPI to be present in 837P loop 2310B.
+          rendering_provider_id: string | null;
+          // Soft FK to resupply.providers (migration 0129). Referring /
+          // ordering / prescribing physician — required by Medicare DME
+          // (loop 2310D) and most commercial DME payers.
+          referring_provider_id: string | null;
+          // Soft FK to resupply.insurance_coverages (migration 0129).
+          // Drives the 837P loop 2320/2330 coordination-of-benefits
+          // submission when set.
+          secondary_coverage_id: string | null;
+          // Denormalised AI scrub status (migration 0131). Updated
+          // every time an AI scrub completes so the CSR queue can
+          // filter on it without joining claim_scrub_results.
+          latest_scrub_verdict:
+            | "ready"
+            | "fixable"
+            | "blocking"
+            | "errored"
+            | null;
+          latest_scrub_at: string | null;
+          latest_scrub_result_id: string | null;
+          // Pointer to the most recent denial analysis (migration 0131).
+          latest_denial_analysis_id: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -1024,6 +1092,1038 @@ export interface Database {
         >;
         Update: Partial<
           Database["resupply"]["Tables"]["insurance_claim_events"]["Row"]
+        >;
+        Relationships: [];
+      };
+      payer_profiles: {
+        Row: {
+          id: string;
+          slug: string;
+          display_name: string;
+          payer_legal_name: string;
+          parent_org: string | null;
+          line_of_business:
+            | "commercial"
+            | "medicare_advantage"
+            | "medicare_part_b"
+            | "medicaid_ffs"
+            | "medicaid_mco"
+            | "federal"
+            | "workers_comp"
+            | "other";
+          region: "pa" | "multi_state" | "national";
+          office_ally_payer_id: string | null;
+          edi_5010_payer_id: string | null;
+          claim_format: "837p" | "837i" | "paper_1500";
+          paper_only: boolean;
+          requires_prior_auth_dme: boolean;
+          prior_auth_phone_e164: string | null;
+          claim_status_phone_e164: string | null;
+          provider_portal_url: string | null;
+          fee_schedule_source: string | null;
+          notes: string | null;
+          is_active: boolean;
+          // Da Vinci PAS endpoint URL (CMS-0057-F). Null when the
+          // payer hasn't stood up a FHIR PAS server yet. (Migration 0136)
+          davinci_pas_endpoint_url: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["payer_profiles"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["payer_profiles"]["Row"]>;
+        Relationships: [];
+      };
+      denial_codes: {
+        Row: {
+          id: string;
+          code_system: "carc" | "rarc" | "custom";
+          code: string;
+          description: string;
+          category:
+            | "eligibility"
+            | "authorization"
+            | "documentation"
+            | "medical_necessity"
+            | "duplicate"
+            | "coverage_limit"
+            | "coding"
+            | "cob"
+            | "patient_liability"
+            | "timely_filing"
+            | "other";
+          recommended_action: string | null;
+          is_terminal: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["denial_codes"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["denial_codes"]["Row"]>;
+        Relationships: [];
+      };
+      payer_fee_schedules: {
+        Row: {
+          id: string;
+          payer_profile_id: string;
+          hcpcs_code: string;
+          modifier: string | null;
+          allowed_cents: number;
+          effective_from: string;
+          effective_through: string | null;
+          source: "manual" | "cms_published" | "payer_published" | "observed";
+          notes: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["payer_fee_schedules"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["payer_fee_schedules"]["Row"]
+        >;
+        Relationships: [];
+      };
+      eligibility_checks: {
+        Row: {
+          id: string;
+          insurance_coverage_id: string;
+          patient_id: string;
+          payer_profile_id: string | null;
+          service_hcpcs: string | null;
+          isa_control_number: string | null;
+          gs_control_number: string | null;
+          outbound_file_name: string | null;
+          status:
+            | "queued"
+            | "submitted"
+            | "parsed"
+            | "rejected"
+            | "transport_failed";
+          is_active: boolean | null;
+          in_network: boolean | null;
+          deductible_cents: number | null;
+          deductible_met_cents: number | null;
+          oop_max_cents: number | null;
+          oop_met_cents: number | null;
+          copay_cents: number | null;
+          coinsurance_pct: number | null;
+          requires_prior_auth: boolean | null;
+          parsed_response_json: Json | null;
+          error_message: string | null;
+          requested_at: string;
+          responded_at: string | null;
+          requested_by_email: string;
+          applied_to_inbound_file_id: string | null;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["eligibility_checks"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["eligibility_checks"]["Row"]
+        >;
+        Relationships: [];
+      };
+      medicare_same_or_similar_checks: {
+        Row: {
+          id: string;
+          patient_id: string;
+          hcpcs_code: string;
+          last_dispense_on: string | null;
+          status: "clear" | "inactive" | "active" | "unknown";
+          raw_response_json: Json | null;
+          checked_at: string;
+          requested_by_email: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["medicare_same_or_similar_checks"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["medicare_same_or_similar_checks"]["Row"]
+        >;
+        Relationships: [];
+      };
+      capped_rental_cycles: {
+        Row: {
+          id: string;
+          patient_id: string;
+          hcpcs_code: string;
+          payer_profile_id: string | null;
+          insurance_coverage_id: string | null;
+          start_date: string;
+          current_month: number;
+          max_months: number;
+          ownership_transferred_on: string | null;
+          status: "active" | "paused" | "transferred" | "cancelled";
+          latest_claim_id: string | null;
+          notes: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["capped_rental_cycles"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["capped_rental_cycles"]["Row"]
+        >;
+        Relationships: [];
+      };
+      dwo_documents: {
+        Row: {
+          id: string;
+          patient_id: string;
+          hcpcs_family:
+            | "pap"
+            | "rad"
+            | "oxygen"
+            | "hospital_bed"
+            | "wheelchair"
+            | "other";
+          form_type: "dwo" | "cmn_484" | "cmn_843" | "swo";
+          signing_provider_id: string | null;
+          signed_on: string;
+          expires_on: string;
+          document_object_key: string | null;
+          notes: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["dwo_documents"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["dwo_documents"]["Row"]
+        >;
+        Relationships: [];
+      };
+      adherence_predictions: {
+        Row: {
+          id: string;
+          patient_id: string;
+          model_version: string;
+          days_of_therapy: number;
+          probability_compliant: number;
+          factors_json: Json;
+          actual_compliant: boolean | null;
+          outcome_observed_at: string | null;
+          scored_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["adherence_predictions"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["adherence_predictions"]["Row"]
+        >;
+        Relationships: [];
+      };
+      voice_reorder_sessions: {
+        Row: {
+          id: string;
+          twilio_call_sid: string;
+          from_e164: string;
+          patient_id: string | null;
+          shop_customer_id: string | null;
+          status:
+            | "in_progress"
+            | "completed_order"
+            | "completed_no_order"
+            | "patient_not_identified"
+            | "transferred_to_human"
+            | "failed";
+          outcome_json: Json;
+          started_at: string;
+          ended_at: string | null;
+          shop_order_id: string | null;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["voice_reorder_sessions"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["voice_reorder_sessions"]["Row"]
+        >;
+        Relationships: [];
+      };
+      davinci_pas_submissions: {
+        Row: {
+          id: string;
+          prior_authorization_id: string;
+          payer_pas_endpoint: string;
+          bundle_id: string;
+          claim_identifier: string;
+          transport_status:
+            | "queued"
+            | "submitted"
+            | "responded"
+            | "rejected"
+            | "transport_failed";
+          decision: "approved" | "denied" | "pended" | "cancelled" | null;
+          auth_number: string | null;
+          decision_at: string | null;
+          denial_reason: string | null;
+          latency_ms: number | null;
+          error_message: string | null;
+          requested_at: string;
+          responded_at: string | null;
+          submitted_by_email: string;
+          request_bundle_json: Json | null;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["davinci_pas_submissions"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["davinci_pas_submissions"]["Row"]
+        >;
+        Relationships: [];
+      };
+      webhook_subscriptions: {
+        Row: {
+          id: string;
+          name: string;
+          target_url: string;
+          signing_secret: string;
+          event_types: string[];
+          is_active: boolean;
+          max_retries: number;
+          last_delivery_at: string | null;
+          last_delivery_status: "delivered" | "failed" | "exhausted" | null;
+          notes: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["webhook_subscriptions"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["webhook_subscriptions"]["Row"]
+        >;
+        Relationships: [];
+      };
+      webhook_deliveries: {
+        Row: {
+          id: string;
+          subscription_id: string;
+          event_type: string;
+          event_payload: Json;
+          status: "queued" | "delivered" | "failed" | "exhausted";
+          attempt_count: number;
+          last_http_status: number | null;
+          last_error: string | null;
+          next_attempt_at: string;
+          delivered_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["webhook_deliveries"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["webhook_deliveries"]["Row"]
+        >;
+        Relationships: [];
+      };
+      patient_billing_statements: {
+        Row: {
+          id: string;
+          patient_id: string;
+          line_items_json: Json;
+          total_patient_responsibility_cents: number;
+          statement_pdf_object_key: string | null;
+          delivery_method: "email" | "sms" | "mail" | "in_person" | null;
+          delivered_at: string | null;
+          generated_by_email: string;
+          created_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["patient_billing_statements"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["patient_billing_statements"]["Row"]
+        >;
+        Relationships: [];
+      };
+      claim_appeal_letters: {
+        Row: {
+          id: string;
+          claim_id: string;
+          denial_analysis_id: string | null;
+          letter_body: string;
+          appeal_pdf_object_key: string | null;
+          delivery_method:
+            | "fax"
+            | "mail"
+            | "portal_upload"
+            | "email"
+            | null;
+          delivered_at: string | null;
+          generated_by_email: string;
+          created_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["claim_appeal_letters"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["claim_appeal_letters"]["Row"]
+        >;
+        Relationships: [];
+      };
+      dispense_readiness_reviews: {
+        Row: {
+          id: string;
+          patient_id: string;
+          hcpcs_code: string;
+          fulfillment_id: string | null;
+          payer_profile_id: string | null;
+          insurance_coverage_id: string | null;
+          ready_to_dispense: boolean;
+          overall_verdict:
+            | "ready"
+            | "gaps_with_fixable"
+            | "gaps_with_blocking"
+            | "errored";
+          estimated_days_to_ready: number | null;
+          deterministic_findings_json: Json;
+          checks_total: number;
+          checks_passed: number;
+          checks_warning: number;
+          checks_failed: number;
+          ai_summary: string | null;
+          ai_action_plan_json: Json | null;
+          ai_model: string | null;
+          ai_prompt_version: string | null;
+          ai_confidence: number | null;
+          ai_latency_ms: number | null;
+          ai_prompt_tokens: number | null;
+          ai_completion_tokens: number | null;
+          ai_error_message: string | null;
+          review_status:
+            | "pending"
+            | "acknowledged"
+            | "remediated"
+            | "overridden"
+            | "cancelled";
+          reviewed_by_email: string | null;
+          reviewed_at: string | null;
+          created_by_email: string;
+          created_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["dispense_readiness_reviews"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["dispense_readiness_reviews"]["Row"]
+        >;
+        Relationships: [];
+      };
+      hipaa_breach_incidents: {
+        Row: {
+          id: string;
+          slug: string;
+          title: string;
+          description: string;
+          status:
+            | "under_investigation"
+            | "not_a_breach"
+            | "confirmed_breach"
+            | "resolved";
+          kind:
+            | "lost_device"
+            | "misdirected_fax"
+            | "misdirected_email"
+            | "unauthorized_access"
+            | "phishing"
+            | "malware"
+            | "business_associate"
+            | "mailing_error"
+            | "paper_disposal"
+            | "other";
+          severity: "low" | "moderate" | "high" | "critical";
+          individuals_affected: number | null;
+          media_notification_required: boolean;
+          risk_assessment: string | null;
+          mitigation: string | null;
+          discovered_at: string;
+          individuals_notified_at: string | null;
+          hhs_notified_at: string | null;
+          media_notified_at: string | null;
+          resolved_at: string | null;
+          affected_systems: string[];
+          owner_email: string | null;
+          notes: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["hipaa_breach_incidents"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["hipaa_breach_incidents"]["Row"]
+        >;
+        Relationships: [];
+      };
+      patient_payments: {
+        Row: {
+          id: string;
+          patient_id: string;
+          stripe_payment_intent_id: string | null;
+          amount_cents: number;
+          currency: string;
+          status:
+            | "pending"
+            | "requires_action"
+            | "succeeded"
+            | "failed"
+            | "cancelled"
+            | "refunded";
+          applied_claims_json: Json;
+          source: "portal" | "csr" | "mail_in_check" | "external";
+          note: string | null;
+          failure_reason: string | null;
+          succeeded_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["patient_payments"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["patient_payments"]["Row"]
+        >;
+        Relationships: [];
+      };
+      inbound_webhooks: {
+        Row: {
+          id: string;
+          source: string;
+          source_event_type: string | null;
+          payload_json: Json;
+          verification_headers_json: Json | null;
+          signature_verified: boolean;
+          dedupe_key: string;
+          status:
+            | "received"
+            | "processed"
+            | "duplicate"
+            | "processing_failed"
+            | "rejected";
+          processing_error: string | null;
+          processing_attempts: number;
+          received_at: string;
+          processed_at: string | null;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["inbound_webhooks"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["inbound_webhooks"]["Row"]
+        >;
+        Relationships: [];
+      };
+      documentation_packets: {
+        Row: {
+          id: string;
+          patient_id: string;
+          kind:
+            | "prior_auth_support"
+            | "appeal_support"
+            | "accreditation_audit"
+            | "medical_records_request";
+          included_docs_json: Json;
+          pdf_object_key: string | null;
+          page_count: number | null;
+          notes: string | null;
+          generated_by_email: string;
+          created_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["documentation_packets"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["documentation_packets"]["Row"]
+        >;
+        Relationships: [];
+      };
+      providers_pecos_status: {
+        Row: {
+          npi: string;
+          enrollment_status:
+            | "approved"
+            | "pending"
+            | "denied"
+            | "revoked"
+            | "opted_out"
+            | "unknown";
+          enrollment_type: string | null;
+          first_approved_date: string | null;
+          specialty_description: string | null;
+          last_synced_at: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["providers_pecos_status"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["providers_pecos_status"]["Row"]
+        >;
+        Relationships: [];
+      };
+      good_faith_estimates: {
+        Row: {
+          id: string;
+          customer_id: string | null;
+          recipient_name: string;
+          recipient_email: string;
+          items_json: Json;
+          total_cents: number;
+          expected_service_date: string | null;
+          pdf_object_key: string | null;
+          disclaimer_text: string;
+          generated_by_email: string;
+          delivered_at: string | null;
+          delivery_method: "email" | "sms" | "in_person" | "mail" | null;
+          created_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["good_faith_estimates"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["good_faith_estimates"]["Row"]
+        >;
+        Relationships: [];
+      };
+      accreditation_surveys: {
+        Row: {
+          id: string;
+          organization_id: string;
+          accreditation_body: "achc" | "boc" | "tjc" | "cap" | "other";
+          survey_type:
+            | "initial"
+            | "renewal"
+            | "annual_unannounced"
+            | "change_of_ownership"
+            | "complaint_driven"
+            | "projected";
+          scheduled_for: string | null;
+          completed_on: string | null;
+          outcome:
+            | "passed"
+            | "passed_with_findings"
+            | "failed"
+            | "pending"
+            | null;
+          findings_count: number;
+          corrective_action_due_on: string | null;
+          corrective_action_completed_on: string | null;
+          surveyor_name: string | null;
+          report_document_object_key: string | null;
+          notes: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["accreditation_surveys"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["accreditation_surveys"]["Row"]
+        >;
+        Relationships: [];
+      };
+      accreditation_readiness_runs: {
+        Row: {
+          id: string;
+          organization_id: string;
+          started_at: string;
+          completed_at: string | null;
+          overall_status: "ready" | "gaps" | "blocking" | "errored" | null;
+          checks_total: number;
+          checks_passed: number;
+          checks_warning: number;
+          checks_failed: number;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["accreditation_readiness_runs"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["accreditation_readiness_runs"]["Row"]
+        >;
+        Relationships: [];
+      };
+      accreditation_readiness_findings: {
+        Row: {
+          id: string;
+          run_id: string;
+          check_key: string;
+          category:
+            | "training"
+            | "policy_attestation"
+            | "patient_documents"
+            | "grievances"
+            | "equipment_maintenance"
+            | "audit_log"
+            | "mfa"
+            | "identity"
+            | "license_expiry";
+          severity: "ok" | "warning" | "error";
+          label: string;
+          detail: string;
+          target_table: string | null;
+          target_id: string | null;
+          created_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["accreditation_readiness_findings"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["accreditation_readiness_findings"]["Row"]
+        >;
+        Relationships: [];
+      };
+      dme_organization: {
+        Row: {
+          id: string;
+          singleton: boolean;
+          legal_name: string;
+          dba_name: string | null;
+          tax_id: string;
+          organizational_npi: string;
+          taxonomy_code: string;
+          medicare_ptan: string | null;
+          physical_address_line1: string;
+          physical_address_line2: string | null;
+          physical_city: string;
+          physical_state: string;
+          physical_zip: string;
+          mailing_address_line1: string | null;
+          mailing_address_line2: string | null;
+          mailing_city: string | null;
+          mailing_state: string | null;
+          mailing_zip: string | null;
+          pay_to_address_line1: string | null;
+          pay_to_address_line2: string | null;
+          pay_to_city: string | null;
+          pay_to_state: string | null;
+          pay_to_zip: string | null;
+          phone_e164: string;
+          fax_e164: string | null;
+          billing_email: string;
+          general_email: string | null;
+          website_url: string | null;
+          accreditation_body: "achc" | "boc" | "tjc" | "cap" | "other" | null;
+          accreditation_number: string | null;
+          accreditation_expires_on: string | null;
+          state_license_number: string | null;
+          state_license_state: string | null;
+          state_license_expires_on: string | null;
+          liability_carrier: string | null;
+          liability_policy_number: string | null;
+          liability_expires_on: string | null;
+          surety_bond_carrier: string | null;
+          surety_bond_amount_cents: number | null;
+          surety_bond_expires_on: string | null;
+          authorized_signer_name: string | null;
+          authorized_signer_title: string | null;
+          authorized_signer_signature_object_key: string | null;
+          notes: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["dme_organization"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["dme_organization"]["Row"]
+        >;
+        Relationships: [];
+      };
+      dme_organization_contacts: {
+        Row: {
+          id: string;
+          organization_id: string;
+          role:
+            | "billing_manager"
+            | "compliance_officer"
+            | "authorized_signer"
+            | "medical_director"
+            | "office_manager"
+            | "edi_contact"
+            | "credentialing"
+            | "patient_advocate"
+            | "other";
+          name: string;
+          title: string | null;
+          email: string | null;
+          phone_e164: string | null;
+          is_primary: boolean;
+          is_active: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["dme_organization_contacts"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["dme_organization_contacts"]["Row"]
+        >;
+        Relationships: [];
+      };
+      clearinghouse_credentials: {
+        Row: {
+          id: string;
+          slug: string;
+          display_name: string;
+          usage_indicator: "P" | "T";
+          sftp_host: string;
+          sftp_port: number;
+          sftp_username: string;
+          private_key_path: string;
+          known_hosts_path: string;
+          remote_inbox_dir: string;
+          remote_outbound_dir: string;
+          remote_archive_dir: string | null;
+          etin: string;
+          submitter_organization_name: string | null;
+          contact_name: string | null;
+          contact_phone_e164: string | null;
+          is_active: boolean;
+          last_polled_at: string | null;
+          notes: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["clearinghouse_credentials"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["clearinghouse_credentials"]["Row"]
+        >;
+        Relationships: [];
+      };
+      clearinghouse_inbound_files: {
+        Row: {
+          id: string;
+          clearinghouse_id: string;
+          remote_path: string;
+          file_name: string;
+          file_sha256: string;
+          file_size_bytes: number;
+          file_kind: "999" | "277ca" | "835" | "271" | "unknown";
+          parse_summary_json: Json;
+          dispatch_status:
+            | "pending"
+            | "parsed"
+            | "dispatched"
+            | "dispatch_failed"
+            | "skipped";
+          applied_to_era_file_id: string | null;
+          applied_to_submission_id: string | null;
+          error_message: string | null;
+          downloaded_at: string;
+          dispatched_at: string | null;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["clearinghouse_inbound_files"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["clearinghouse_inbound_files"]["Row"]
+        >;
+        Relationships: [];
+      };
+      era_files: {
+        Row: {
+          id: string;
+          file_name: string;
+          file_sha256: string;
+          file_size_bytes: number;
+          payer_check_number: string | null;
+          payer_paid_date: string | null;
+          total_paid_cents: number;
+          claims_paid_count: number;
+          claims_denied_count: number;
+          lines_processed_count: number;
+          matched_submission_id: string | null;
+          status: "processed" | "parse_failed" | "partial" | "rejected";
+          rejection_reason: string | null;
+          ingested_by_email: string;
+          ingested_at: string;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["era_files"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["era_files"]["Row"]>;
+        Relationships: [];
+      };
+      product_hcpcs_map: {
+        Row: {
+          id: string;
+          lookup_kind: "stripe_product_id" | "item_sku";
+          lookup_value: string;
+          hcpcs_code: string;
+          default_modifiers: string | null;
+          units_per_dispense: number;
+          default_billed_cents: number | null;
+          description: string | null;
+          is_active: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["product_hcpcs_map"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["product_hcpcs_map"]["Row"]
+        >;
+        Relationships: [];
+      };
+      payer_modifier_rules: {
+        Row: {
+          id: string;
+          payer_profile_id: string;
+          hcpcs_code: string;
+          condition:
+            | "always"
+            | "if_rental_month_le_3"
+            | "if_rental_month_ge_4"
+            | "if_purchased"
+            | "if_compliant_90day"
+            | "if_initial_dispense"
+            | "if_abn_on_file"
+            | "if_pa_approved";
+          modifiers_csv: string;
+          priority: number;
+          rationale: string | null;
+          is_active: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["payer_modifier_rules"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["payer_modifier_rules"]["Row"]
+        >;
+        Relationships: [];
+      };
+      claim_scrub_results: {
+        Row: {
+          id: string;
+          claim_id: string;
+          verdict: "ready" | "fixable" | "blocking" | "errored";
+          model: string;
+          prompt_version: string;
+          confidence: number | null;
+          findings_json: Json;
+          suggested_patches_json: Json;
+          review_status: "pending" | "accepted" | "rejected" | "auto_applied";
+          reviewed_by_email: string | null;
+          reviewed_at: string | null;
+          applied_patches_log: Json | null;
+          applied_at: string | null;
+          latency_ms: number | null;
+          prompt_tokens: number | null;
+          completion_tokens: number | null;
+          error_message: string | null;
+          created_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["claim_scrub_results"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["claim_scrub_results"]["Row"]
+        >;
+        Relationships: [];
+      };
+      claim_denial_analyses: {
+        Row: {
+          id: string;
+          claim_id: string;
+          era_file_id: string | null;
+          model: string;
+          prompt_version: string;
+          confidence: number | null;
+          root_cause_summary: string;
+          recommendation:
+            | "auto_resubmit"
+            | "manual_resubmit"
+            | "appeal"
+            | "bill_patient"
+            | "write_off"
+            | "manual_review";
+          analysis_json: Json;
+          suggested_patches_json: Json;
+          can_auto_resubmit: boolean;
+          review_status:
+            | "pending"
+            | "accepted_resubmitted"
+            | "accepted_appealed"
+            | "accepted_written_off"
+            | "rejected"
+            | "errored";
+          reviewed_by_email: string | null;
+          reviewed_at: string | null;
+          applied_at: string | null;
+          resubmit_office_ally_submission_id: string | null;
+          latency_ms: number | null;
+          prompt_tokens: number | null;
+          completion_tokens: number | null;
+          error_message: string | null;
+          created_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["claim_denial_analyses"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["claim_denial_analyses"]["Row"]
+        >;
+        Relationships: [];
+      };
+      claim_templates: {
+        Row: {
+          id: string;
+          slug: string;
+          display_name: string;
+          description: string | null;
+          lines_json: { lines: TemplateLine[] };
+          default_diagnosis_codes: string[];
+          scoped_payer_profile_id: string | null;
+          is_active: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["claim_templates"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["claim_templates"]["Row"]
+        >;
+        Relationships: [];
+      };
+      office_ally_submissions: {
+        Row: {
+          id: string;
+          file_name: string;
+          isa_control_number: string;
+          gs_control_number: string;
+          status:
+            | "queued"
+            | "uploaded"
+            | "accepted_999"
+            | "rejected_999"
+            | "accepted_277ca"
+            | "rejected_277ca"
+            | "transport_failed";
+          file_size_bytes: number;
+          claim_count: number;
+          office_ally_session_id: string | null;
+          ack_999_file_name: string | null;
+          ack_999_received_at: string | null;
+          ack_277ca_file_name: string | null;
+          ack_277ca_received_at: string | null;
+          rejection_reason: string | null;
+          submitted_by_email: string;
+          submitted_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["office_ally_submissions"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["office_ally_submissions"]["Row"]
         >;
         Relationships: [];
       };
@@ -1771,6 +2871,15 @@ export interface Database {
           shipping_address_json: Json | null;
           default_payment_method_id: string | null;
           default_payment_method_brand: string | null;
+          // Cash-pay membership tier (migration 0134).
+          membership_tier:
+            | "payg"
+            | "monthly_unlimited"
+            | "quarterly_unlimited"
+            | null;
+          membership_started_at: string | null;
+          membership_renews_at: string | null;
+          membership_stripe_subscription_id: string | null;
           default_payment_method_last4: string | null;
           default_payment_method_exp_month: number | null;
           default_payment_method_exp_year: number | null;
@@ -1969,6 +3078,342 @@ export interface Database {
         };
         Insert: Partial<Database["resupply"]["Tables"]["shop_return_notes"]["Row"]>;
         Update: Partial<Database["resupply"]["Tables"]["shop_return_notes"]["Row"]>;
+        Relationships: [];
+      };
+      business_associate_agreements: {
+        Row: {
+          id: string;
+          vendor_slug: string;
+          vendor_legal_name: string;
+          vendor_kind:
+            | "clearinghouse"
+            | "cloud_infrastructure"
+            | "email_provider"
+            | "sms_telecom_provider"
+            | "ai_llm_provider"
+            | "payment_processor"
+            | "storage_provider"
+            | "eprescribe"
+            | "analytics"
+            | "other";
+          scope_json: Json;
+          agreement_signed_on: string | null;
+          agreement_expires_on: string | null;
+          agreement_document_object_key: string | null;
+          last_safeguard_attestation_on: string | null;
+          compliance_certifications: string[];
+          vendor_contact_email: string | null;
+          vendor_contact_phone_e164: string | null;
+          internal_owner_email: string | null;
+          status: "active" | "expired" | "terminated" | "pending";
+          notes: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["business_associate_agreements"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["business_associate_agreements"]["Row"]
+        >;
+        Relationships: [];
+      };
+      oig_leie_exclusions: {
+        Row: {
+          id: string;
+          npi: string | null;
+          lastname: string;
+          firstname: string | null;
+          middlename: string | null;
+          subject_type: string;
+          exclusion_type: string;
+          exclusion_date: string;
+          waiver_date: string | null;
+          reinstate_date: string | null;
+          address_state: string | null;
+          address_city: string | null;
+          loaded_at: string;
+          source_file_version: string | null;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["oig_leie_exclusions"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["oig_leie_exclusions"]["Row"]
+        >;
+        Relationships: [];
+      };
+      oig_leie_screenings: {
+        Row: {
+          id: string;
+          subject_kind:
+            | "admin_user"
+            | "provider"
+            | "business_associate"
+            | "contractor"
+            | "owner";
+          subject_admin_user_id: string | null;
+          subject_provider_id: string | null;
+          subject_baa_id: string | null;
+          subject_label: string;
+          subject_npi: string | null;
+          result: "clear" | "hit" | "inconclusive" | "errored";
+          matched_exclusion_id: string | null;
+          disposition_note: string | null;
+          screened_by_email: string;
+          screened_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["oig_leie_screenings"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["oig_leie_screenings"]["Row"]
+        >;
+        Relationships: [];
+      };
+      patient_rights_requests: {
+        Row: {
+          id: string;
+          patient_id: string;
+          request_kind:
+            | "access"
+            | "amendment"
+            | "accounting_of_disclosures"
+            | "restriction"
+            | "confidential_communications";
+          submitted_via:
+            | "patient_portal"
+            | "phone"
+            | "email"
+            | "mail"
+            | "in_person"
+            | "representative";
+          request_body: string;
+          request_details_json: Json;
+          status:
+            | "received"
+            | "in_review"
+            | "extended"
+            | "granted"
+            | "partially_granted"
+            | "denied"
+            | "withdrawn"
+            | "expired";
+          received_at: string;
+          extension_granted_at: string | null;
+          decision: "granted" | "partially_granted" | "denied" | null;
+          decision_rationale: string | null;
+          decided_at: string | null;
+          decided_by_email: string | null;
+          response_document_object_key: string | null;
+          delivered_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["patient_rights_requests"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["patient_rights_requests"]["Row"]
+        >;
+        Relationships: [];
+      };
+      patient_disclosure_log: {
+        Row: {
+          id: string;
+          patient_id: string;
+          recipient_name: string;
+          recipient_address: string | null;
+          disclosure_purpose:
+            | "public_health"
+            | "health_oversight"
+            | "judicial_administrative"
+            | "law_enforcement"
+            | "decedents"
+            | "cadaveric_organ_eye_tissue"
+            | "research"
+            | "serious_threat"
+            | "specialized_government"
+            | "workers_compensation"
+            | "reporting_abuse_or_neglect"
+            | "fda_product_safety"
+            | "other";
+          description: string;
+          legal_authority: string | null;
+          patient_authorized: boolean;
+          disclosed_at: string;
+          disclosed_by_email: string;
+          created_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["patient_disclosure_log"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["patient_disclosure_log"]["Row"]
+        >;
+        Relationships: [];
+      };
+      hipaa_risk_assessments: {
+        Row: {
+          id: string;
+          assessment_year: number;
+          methodology: "internal" | "third_party";
+          vendor_name: string | null;
+          scope_summary: string;
+          findings_json: Json;
+          remediation_plan: string | null;
+          executive_summary: string | null;
+          completed_on: string;
+          report_document_object_key: string | null;
+          owner_email: string;
+          approved_by_email: string | null;
+          approved_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["hipaa_risk_assessments"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["hipaa_risk_assessments"]["Row"]
+        >;
+        Relationships: [];
+      };
+      contingency_plan_attestations: {
+        Row: {
+          id: string;
+          plan_version: string;
+          plan_document_object_key: string | null;
+          attested_by_email: string;
+          attested_at: string;
+          documented_rto_hours: number;
+          documented_rpo_hours: number;
+          notes: string | null;
+          created_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["contingency_plan_attestations"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["contingency_plan_attestations"]["Row"]
+        >;
+        Relationships: [];
+      };
+      disaster_preparedness_drills: {
+        Row: {
+          id: string;
+          drill_kind:
+            | "tabletop"
+            | "partial_failover"
+            | "full_failover"
+            | "data_restore"
+            | "pandemic_response"
+            | "cyber_incident_response"
+            | "physical_outage"
+            | "other";
+          scenario: string;
+          executed_on: string;
+          rto_target_hours: number | null;
+          rto_actual_hours: number | null;
+          participants_count: number | null;
+          outcome_json: Json;
+          lead_email: string;
+          created_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["disaster_preparedness_drills"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["disaster_preparedness_drills"]["Row"]
+        >;
+        Relationships: [];
+      };
+      quality_improvement_initiatives: {
+        Row: {
+          id: string;
+          slug: string;
+          title: string;
+          description: string;
+          category:
+            | "patient_safety"
+            | "patient_satisfaction"
+            | "clinical_outcomes"
+            | "billing_accuracy"
+            | "service_delivery"
+            | "workforce_competency"
+            | "infection_control"
+            | "equipment_management"
+            | "other";
+          target_metric: string;
+          baseline_metric: string | null;
+          owner_email: string;
+          started_on: string;
+          concluded_on: string | null;
+          status: "active" | "on_hold" | "concluded" | "cancelled";
+          annual_evaluation_summary: string | null;
+          annual_evaluation_completed_on: string | null;
+          notes: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["quality_improvement_initiatives"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["quality_improvement_initiatives"]["Row"]
+        >;
+        Relationships: [];
+      };
+      quality_improvement_measurements: {
+        Row: {
+          id: string;
+          initiative_id: string;
+          period_start: string;
+          period_end: string;
+          metric_value: string;
+          study_findings: string | null;
+          act_corrective_actions: string | null;
+          recorded_by_email: string;
+          recorded_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["quality_improvement_measurements"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["quality_improvement_measurements"]["Row"]
+        >;
+        Relationships: [];
+      };
+      dme_ownership_disclosures: {
+        Row: {
+          id: string;
+          organization_id: string;
+          person_legal_name: string;
+          person_role:
+            | "owner"
+            | "partner"
+            | "officer"
+            | "director"
+            | "managing_employee"
+            | "agent"
+            | "authorized_official";
+          ownership_pct: number | null;
+          related_provider_disclosed: boolean;
+          related_provider_description: string | null;
+          ssn_last4: string | null;
+          tax_id: string | null;
+          disclosed_on: string;
+          removed_on: string | null;
+          notes: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["dme_ownership_disclosures"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["dme_ownership_disclosures"]["Row"]
+        >;
         Relationships: [];
       };
     };

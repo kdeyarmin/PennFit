@@ -50,6 +50,16 @@ import { registerLapsedCustomerWinbackJob } from "./jobs/lapsed-customer-winback
 import { registerDeductibleResetPushJob } from "./jobs/deductible-reset-push.js";
 import { registerQuarterlyTherapySummaryJob } from "./jobs/quarterly-therapy-summary.js";
 import { registerLifecycleTouchpointsJob } from "./jobs/lifecycle-touchpoints.js";
+import { registerOfficeAllyInboundPollJob } from "./jobs/office-ally-inbound-poll.js";
+import { registerPaMcoSlaSweepJob } from "./jobs/pa-mco-sla-sweep.js";
+import { registerAccreditationReadinessSweepJob } from "./jobs/accreditation-readiness-sweep.js";
+import { registerPecosSyncJob } from "./jobs/pecos-sync.js";
+import { registerOigLeieSyncJob } from "./jobs/oig-leie-sync.js";
+import { registerCappedRentalAdvanceJob } from "./jobs/capped-rental-advance.js";
+import { registerDwoExpirySweepJob } from "./jobs/dwo-expiry-sweep.js";
+import { registerWebhookDispatcherJob } from "./jobs/webhook-dispatcher.js";
+import { registerAutoWorkflowJob } from "./jobs/auto-workflow.js";
+import { registerComplianceAutoWorkflowJob } from "./jobs/compliance-auto-workflow.js";
 
 let bossInstance: PgBoss | null = null;
 let workerReady = false;
@@ -301,6 +311,57 @@ export async function startWorker(): Promise<void> {
   // rates in DME coaching literature. Runs at 13:33 UTC, idempotent
   // via year stamps on patients.
   await registerLifecycleTouchpointsJob(boss);
+
+  // Every 15 minutes — poll Office Ally's outbound SFTP directory
+  // for 999 / 277CA / 835 files we haven't already processed.
+  // No-op when no clearinghouse_credentials row exists and no
+  // OFFICE_ALLY_* env is configured (dev / preview).
+  await registerOfficeAllyInboundPollJob(boss);
+
+  // Every 6 hours — refresh PA Medicaid MCO 7-day SLA status
+  // (mig 0133). Stamps mco_sla_target_date + status and queues
+  // CSR alerts on at-risk + missed transitions.
+  await registerPaMcoSlaSweepJob(boss);
+
+  // Weekly accreditation-survey readiness audit. Runs the rule
+  // engine in lib/accreditation/readiness-engine.ts and persists
+  // structured findings for the CMS annual unannounced surveys
+  // (effective Jan 1, 2026).
+  await registerAccreditationReadinessSweepJob(boss);
+
+  // Daily CMS PECOS Order/Referring sync. Powers the preflight
+  // "ordering provider not PECOS-enrolled" denial blocker.
+  await registerPecosSyncJob(boss);
+
+  // Monthly OIG LEIE refresh. Re-loads the public exclusion list
+  // (4th of each month at 04:07 UTC) so the screening tool answers
+  // against a current dataset. Per-subject screening attempts are
+  // recorded separately in oig_leie_screenings.
+  await registerOigLeieSyncJob(boss);
+
+  // Daily capped-rental month advance (mig 0134). For each active
+  // cycle past the next anniversary, generates a draft monthly
+  // claim with the correct KH/KI/KX modifier rotation.
+  await registerCappedRentalAdvanceJob(boss);
+
+  // Weekly DWO / CMN renewal sweep (mig 0134). T-60/T-30/T-7 CSR
+  // alerts before expires_on.
+  await registerDwoExpirySweepJob(boss);
+
+  // Every minute — drain webhook_deliveries with exponential
+  // backoff retries. HMAC-SHA256-signed POSTs to subscriber URLs.
+  await registerWebhookDispatcherJob(boss);
+
+  // Every 5 minutes — auto-workflow pass: heuristic-score + AI-scrub
+  // risky drafts, AI-analyze fresh denials, publish
+  // billing_statement.due for patients with cooldown-clear balances.
+  await registerAutoWorkflowJob(boss);
+
+  // Every 15 minutes — compliance auto-workflow pass: publish
+  // compliance.baa_expiring_soon / .baa_expired /
+  // .oig_screening_overdue / .patient_rights_overdue webhook events
+  // with 24-hour cooldown gates.
+  await registerComplianceAutoWorkflowJob(boss);
 
   workerReady = true;
   logger.info(

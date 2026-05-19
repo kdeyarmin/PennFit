@@ -1,0 +1,23 @@
+{
+  "name": "@workspace/resupply-integrations-davinci-pas",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run --passWithNoTests --config vitest.config.ts",
+    "test:coverage": "vitest run --passWithNoTests --config vitest.config.ts --coverage",
+    "test:watch": "vitest",
+    "lint": "eslint src --max-warnings=0",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "vitest": "^4.1.6"
+  }
+}

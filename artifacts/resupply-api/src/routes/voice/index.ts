@@ -12,6 +12,7 @@
 import { Router, type IRouter } from "express";
 
 import checkinTwimlRouter from "./checkin-twiml";
+import inboundReorderRouter from "./inbound-reorder";
 import placeCallRouter from "./place-call";
 import statusCallbackRouter from "./status-callback";
 import twimlConnectRouter from "./twiml-connect";
@@ -24,5 +25,10 @@ router.use(statusCallbackRouter);
 // calls (day 3 / 7 / 30 / 60 / 90). Twilio fetches this when the
 // patient answers; we render <Say> + <Hangup> based on ?day=<label>.
 router.use(checkinTwimlRouter);
+// /voice/inbound-reorder — AI-powered inbound reorder IVR.
+// Identifies the caller by phone, persists a session, hands off to
+// the OpenAI Realtime bridge for a conversation; unidentified
+// callers transfer to a human.
+router.use(inboundReorderRouter);
 
 export default router;

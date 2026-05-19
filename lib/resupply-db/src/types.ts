@@ -359,3 +359,157 @@ export const TRAINING_TYPE_VALUES = [
 ] as const;
 
 export type StaffTrainingType = (typeof TRAINING_TYPE_VALUES)[number];
+
+// ────────────────────────────────────────────────────────────────
+// Phase 9 compliance machinery (migration 0141)
+// ────────────────────────────────────────────────────────────────
+
+export const BAA_VENDOR_KIND_VALUES = [
+  "clearinghouse",
+  "cloud_infrastructure",
+  "email_provider",
+  "sms_telecom_provider",
+  "ai_llm_provider",
+  "payment_processor",
+  "storage_provider",
+  "eprescribe",
+  "analytics",
+  "other",
+] as const;
+export type BaaVendorKind = (typeof BAA_VENDOR_KIND_VALUES)[number];
+
+export const BAA_STATUS_VALUES = [
+  "active",
+  "expired",
+  "terminated",
+  "pending",
+] as const;
+export type BaaStatus = (typeof BAA_STATUS_VALUES)[number];
+
+export const OIG_LEIE_SUBJECT_KIND_VALUES = [
+  "admin_user",
+  "provider",
+  "business_associate",
+  "contractor",
+  "owner",
+] as const;
+export type OigLeieSubjectKind =
+  (typeof OIG_LEIE_SUBJECT_KIND_VALUES)[number];
+
+export const OIG_LEIE_RESULT_VALUES = [
+  "clear",
+  "hit",
+  "inconclusive",
+  "errored",
+] as const;
+export type OigLeieResult = (typeof OIG_LEIE_RESULT_VALUES)[number];
+
+export const PATIENT_RIGHTS_KIND_VALUES = [
+  "access",
+  "amendment",
+  "accounting_of_disclosures",
+  "restriction",
+  "confidential_communications",
+] as const;
+export type PatientRightsKind = (typeof PATIENT_RIGHTS_KIND_VALUES)[number];
+
+export const PATIENT_RIGHTS_SUBMITTED_VIA_VALUES = [
+  "patient_portal",
+  "phone",
+  "email",
+  "mail",
+  "in_person",
+  "representative",
+] as const;
+export type PatientRightsSubmittedVia =
+  (typeof PATIENT_RIGHTS_SUBMITTED_VIA_VALUES)[number];
+
+export const PATIENT_RIGHTS_STATUS_VALUES = [
+  "received",
+  "in_review",
+  "extended",
+  "granted",
+  "partially_granted",
+  "denied",
+  "withdrawn",
+  "expired",
+] as const;
+export type PatientRightsStatus =
+  (typeof PATIENT_RIGHTS_STATUS_VALUES)[number];
+
+export const PATIENT_RIGHTS_DECISION_VALUES = [
+  "granted",
+  "partially_granted",
+  "denied",
+] as const;
+export type PatientRightsDecision =
+  (typeof PATIENT_RIGHTS_DECISION_VALUES)[number];
+
+export const DISCLOSURE_PURPOSE_VALUES = [
+  "public_health",
+  "health_oversight",
+  "judicial_administrative",
+  "law_enforcement",
+  "decedents",
+  "cadaveric_organ_eye_tissue",
+  "research",
+  "serious_threat",
+  "specialized_government",
+  "workers_compensation",
+  "reporting_abuse_or_neglect",
+  "fda_product_safety",
+  "other",
+] as const;
+export type DisclosurePurpose = (typeof DISCLOSURE_PURPOSE_VALUES)[number];
+
+export const HIPAA_RISK_METHODOLOGY_VALUES = [
+  "internal",
+  "third_party",
+] as const;
+export type HipaaRiskMethodology =
+  (typeof HIPAA_RISK_METHODOLOGY_VALUES)[number];
+
+export const DRILL_KIND_VALUES = [
+  "tabletop",
+  "partial_failover",
+  "full_failover",
+  "data_restore",
+  "pandemic_response",
+  "cyber_incident_response",
+  "physical_outage",
+  "other",
+] as const;
+export type DrillKind = (typeof DRILL_KIND_VALUES)[number];
+
+export const QI_CATEGORY_VALUES = [
+  "patient_safety",
+  "patient_satisfaction",
+  "clinical_outcomes",
+  "billing_accuracy",
+  "service_delivery",
+  "workforce_competency",
+  "infection_control",
+  "equipment_management",
+  "other",
+] as const;
+export type QiCategory = (typeof QI_CATEGORY_VALUES)[number];
+
+export const QI_STATUS_VALUES = [
+  "active",
+  "on_hold",
+  "concluded",
+  "cancelled",
+] as const;
+export type QiStatus = (typeof QI_STATUS_VALUES)[number];
+
+export const OWNERSHIP_PERSON_ROLE_VALUES = [
+  "owner",
+  "partner",
+  "officer",
+  "director",
+  "managing_employee",
+  "agent",
+  "authorized_official",
+] as const;
+export type OwnershipPersonRole =
+  (typeof OWNERSHIP_PERSON_ROLE_VALUES)[number];
