@@ -59,6 +59,7 @@ import { registerCappedRentalAdvanceJob } from "./jobs/capped-rental-advance.js"
 import { registerDwoExpirySweepJob } from "./jobs/dwo-expiry-sweep.js";
 import { registerWebhookDispatcherJob } from "./jobs/webhook-dispatcher.js";
 import { registerAutoWorkflowJob } from "./jobs/auto-workflow.js";
+import { registerComplianceAutoWorkflowJob } from "./jobs/compliance-auto-workflow.js";
 
 let bossInstance: PgBoss | null = null;
 let workerReady = false;
@@ -355,6 +356,12 @@ export async function startWorker(): Promise<void> {
   // risky drafts, AI-analyze fresh denials, publish
   // billing_statement.due for patients with cooldown-clear balances.
   await registerAutoWorkflowJob(boss);
+
+  // Every 15 minutes — compliance auto-workflow pass: publish
+  // compliance.baa_expiring_soon / .baa_expired /
+  // .oig_screening_overdue / .patient_rights_overdue webhook events
+  // with 24-hour cooldown gates.
+  await registerComplianceAutoWorkflowJob(boss);
 
   workerReady = true;
   logger.info(

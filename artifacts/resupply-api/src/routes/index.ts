@@ -123,6 +123,7 @@ import baaRouter from "./admin/business-associate-agreements.js";
 import oigLeieScreeningsRouter from "./admin/oig-leie-screenings.js";
 import patientRightsRequestsRouter from "./admin/patient-rights-requests.js";
 import complianceRecordsRouter from "./admin/compliance-records.js";
+import complianceOfficerSummaryRouter from "./admin/compliance-officer-summary.js";
 import auditRouter from "./audit/index.js";
 import conversationsRouter from "./conversations/index.js";
 import dashboardRouter from "./dashboard/index.js";
@@ -395,6 +396,12 @@ router.use(patientRightsRequestsRouter);
 // ownership-disclosures + disclosure-log — registers that close
 // out §164.308(a)(1)/(a)(7), ACHC QAPI, and §424.57(c)(17).
 router.use(complianceRecordsRouter);
+// /admin/compliance/officer-summary — single round-trip rollup the
+// compliance officer loads every morning. Aggregate counts across
+// BAA inventory, OIG screening, patient rights, disclosures, risk
+// assessments, contingency / drills, QAPI, ownership, training,
+// grievances, and the most recent accreditation readiness run.
+router.use(complianceOfficerSummaryRouter);
 // /admin/shop/products/* — operator tooling for the cash-pay catalog
 // itself. Today: PATCH stock_count metadata on a Stripe Product.
 // requireAdmin gate is on the router itself.
