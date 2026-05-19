@@ -16,6 +16,7 @@
     { "path": "./lib/resupply-messaging" },
     { "path": "./lib/resupply-reminders" },
     { "path": "./lib/resupply-templates" },
-    { "path": "./lib/resupply-integrations-office-ally" }
+    { "path": "./lib/resupply-integrations-office-ally" },
+    { "path": "./lib/resupply-integrations-davinci-pas" }
   ]
 }

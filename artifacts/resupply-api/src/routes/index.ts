@@ -103,6 +103,8 @@ import dwoDocumentsRouter from "./admin/dwo-documents.js";
 import adherencePredictionsRouter from "./admin/adherence-predictions.js";
 import shopMembershipRouter from "./admin/shop-membership.js";
 import fhirRouter from "./fhir/index.js";
+import davinciPasSubmitRouter from "./admin/davinci-pas-submit.js";
+import billingBenchmarksRouter from "./admin/billing-benchmarks.js";
 import auditRouter from "./audit/index.js";
 import conversationsRouter from "./conversations/index.js";
 import dashboardRouter from "./dashboard/index.js";
@@ -309,6 +311,11 @@ router.use(shopMembershipRouter);
 // Patient/$everything (Coverage + Condition + MedicationRequest +
 // Device) exposed today.
 router.use(fhirRouter);
+// /admin/patients/:id/prior-authorizations/:paId/submit-davinci-pas
+// — FHIR-based PA submission per Da Vinci PAS IG v2.2 (CMS-0057-F).
+router.use(davinciPasSubmitRouter);
+// /admin/billing/benchmarks — internal cohort percentiles (Phase 1).
+router.use(billingBenchmarksRouter);
 // /admin/shop/products/* — operator tooling for the cash-pay catalog
 // itself. Today: PATCH stock_count metadata on a Stripe Product.
 // requireAdmin gate is on the router itself.

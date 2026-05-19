@@ -1111,6 +1111,9 @@ export interface Database {
           fee_schedule_source: string | null;
           notes: string | null;
           is_active: boolean;
+          // Da Vinci PAS endpoint URL (CMS-0057-F). Null when the
+          // payer hasn't stood up a FHIR PAS server yet. (Migration 0136)
+          davinci_pas_endpoint_url: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -1348,6 +1351,7 @@ export interface Database {
           requested_at: string;
           responded_at: string | null;
           submitted_by_email: string;
+          request_bundle_json: Json | null;
         };
         Insert: Partial<
           Database["resupply"]["Tables"]["davinci_pas_submissions"]["Row"]
