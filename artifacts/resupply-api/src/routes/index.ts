@@ -80,6 +80,10 @@ import shopSubsMetricsRouter from "./admin/shop-subscriptions-metrics.js";
 import insuranceLeadsAdminRouter from "./admin/insurance-leads.js";
 import payerProfilesRouter from "./admin/payer-profiles.js";
 import officeAllySubmissionsRouter from "./admin/office-ally-submissions.js";
+import denialCodesRouter from "./admin/denial-codes.js";
+import payerFeeSchedulesRouter from "./admin/payer-fee-schedules.js";
+import eraIngestRouter from "./admin/era-ingest.js";
+import billingReportsRouter from "./admin/billing-reports.js";
 import auditRouter from "./audit/index.js";
 import conversationsRouter from "./conversations/index.js";
 import dashboardRouter from "./dashboard/index.js";
@@ -203,6 +207,21 @@ router.use(payerProfilesRouter);
 // lives on the patients router so it's co-located with the per-claim
 // state machine.
 router.use(officeAllySubmissionsRouter);
+// /admin/denial-codes/* — CARC / RARC catalog (Phase 4 of the
+// billing build). Seeded in migration 0129 with the ~50 codes DME
+// suppliers hit most often; admin UI surfaces them on claim denials.
+router.use(denialCodesRouter);
+// /admin/payer-fee-schedules/* — payer + HCPCS expected-allowed
+// catalog. Drives the partial-pay variance triage on ERA ingest.
+router.use(payerFeeSchedulesRouter);
+// /admin/billing/era-ingest + /admin/billing/era-files — upload a
+// 5010 835 remittance, parse it, auto-reconcile claim totals + line
+// items + insert paid/denied events.
+router.use(eraIngestRouter);
+// /admin/billing/aging-report + /admin/billing/dso-by-payer +
+// /admin/billing/denial-rate — read-only AR + reporting dashboards
+// for the billing team.
+router.use(billingReportsRouter);
 // /admin/shop/products/* — operator tooling for the cash-pay catalog
 // itself. Today: PATCH stock_count metadata on a Stripe Product.
 // requireAdmin gate is on the router itself.

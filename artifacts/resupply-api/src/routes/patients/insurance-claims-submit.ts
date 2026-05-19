@@ -88,7 +88,7 @@ router.post(
       .schema("resupply")
       .from("insurance_claims")
       .select(
-        "id, patient_id, payer_name, claim_number, date_of_service, status, total_billed_cents, insurance_coverage_id, payer_profile_id, office_ally_submission_id, notes",
+        "id, patient_id, payer_name, claim_number, date_of_service, status, total_billed_cents, insurance_coverage_id, payer_profile_id, office_ally_submission_id, notes, rendering_provider_id, referring_provider_id, secondary_coverage_id",
       )
       .eq("id", idParsed.data.claimId)
       .eq("patient_id", idParsed.data.id)
@@ -243,6 +243,41 @@ router.post(
       if (sleep?.diagnosis_icd10) primaryDx = sleep.diagnosis_icd10;
     }
 
+    // ── Load rendering / referring providers + secondary coverage ──
+    const [
+      { data: renderingProvider },
+      { data: referringProvider },
+      { data: secondaryCoverage },
+    ] = await Promise.all([
+      claim.rendering_provider_id
+        ? supabase
+            .schema("resupply")
+            .from("providers")
+            .select("legal_name, npi")
+            .eq("id", claim.rendering_provider_id)
+            .limit(1)
+            .maybeSingle()
+        : Promise.resolve({ data: null }),
+      claim.referring_provider_id
+        ? supabase
+            .schema("resupply")
+            .from("providers")
+            .select("legal_name, npi")
+            .eq("id", claim.referring_provider_id)
+            .limit(1)
+            .maybeSingle()
+        : Promise.resolve({ data: null }),
+      claim.secondary_coverage_id
+        ? supabase
+            .schema("resupply")
+            .from("insurance_coverages")
+            .select("*")
+            .eq("id", claim.secondary_coverage_id)
+            .limit(1)
+            .maybeSingle()
+        : Promise.resolve({ data: null }),
+    ]);
+
     // ── Allocate control numbers monotonically vs prior submissions ─
     const { data: priorHigh } = await supabase
       .schema("resupply")
@@ -301,6 +336,39 @@ router.post(
             serviceDate: claim.date_of_service,
             diagnosisPointers: [1],
           })),
+          renderingProvider: renderingProvider
+            ? toProviderRef(renderingProvider)
+            : null,
+          referringProvider: referringProvider
+            ? toProviderRef(referringProvider)
+            : null,
+          otherSubscriber:
+            secondaryCoverage && secondaryAddress(patient.address)
+              ? {
+                  payerResponsibility: "S",
+                  priorPayerPaidCents: null,
+                  subscriber: {
+                    firstName: patient.legal_first_name,
+                    lastName: patient.legal_last_name,
+                    dateOfBirth: patient.date_of_birth,
+                    gender: "U",
+                    memberId: secondaryCoverage.member_id,
+                    address: secondaryAddress(patient.address)!,
+                    relationshipCode:
+                      secondaryCoverage.policyholder_relationship === "self"
+                        ? "18"
+                        : secondaryCoverage.policyholder_relationship === "spouse"
+                          ? "01"
+                          : secondaryCoverage.policyholder_relationship === "child"
+                            ? "19"
+                            : "G8",
+                  },
+                  payer: {
+                    organizationName: secondaryCoverage.payer_name,
+                    payerId: secondaryCoverage.payer_name.slice(0, 20),
+                  },
+                }
+              : null,
         },
       ],
     });
@@ -429,6 +497,52 @@ function buildFileName(control: { interchangeControlNumber: string }): string {
   // Office Ally requires a unique name per upload window; ISA13 is
   // monotonic by construction so collision is structural-only.
   return `${FILE_NAME_PREFIX}-${control.interchangeControlNumber}.txt`;
+}
+
+function toProviderRef(p: {
+  legal_name: string;
+  npi: string;
+}): {
+  npi: string;
+  firstName: string;
+  lastName: string;
+  middleName: string | null;
+} {
+  // `providers.legal_name` is stored as a single string. Split into
+  // last/first for the NM1 segment so the 837P passes name-component
+  // validators on the payer side. The split is best-effort — if a
+  // name doesn't conform to "First Last" / "Last, First" we send the
+  // whole string in NM103 and leave NM104 empty.
+  const raw = p.legal_name.trim();
+  if (raw.includes(",")) {
+    const [last = "", rest = ""] = raw.split(",", 2);
+    const firstParts = rest.trim().split(/\s+/);
+    return {
+      npi: p.npi,
+      lastName: last.trim(),
+      firstName: firstParts[0] ?? "",
+      middleName: firstParts.length > 1 ? firstParts.slice(1).join(" ") : null,
+    };
+  }
+  const parts = raw.split(/\s+/);
+  if (parts.length >= 2) {
+    return {
+      npi: p.npi,
+      firstName: parts[0]!,
+      lastName: parts[parts.length - 1]!,
+      middleName: parts.length > 2 ? parts.slice(1, -1).join(" ") : null,
+    };
+  }
+  return { npi: p.npi, firstName: "", lastName: raw, middleName: null };
+}
+
+function secondaryAddress(
+  raw: unknown,
+): { line1: string; city: string; state: string; zip: string } | null {
+  // Secondary subscriber address mirrors the primary patient address —
+  // we don't model a separate address per coverage. Return the patient
+  // address when populated; null when the patient row lacks one.
+  return pickSubscriberAddress(raw);
 }
 
 type PatientAddress = {

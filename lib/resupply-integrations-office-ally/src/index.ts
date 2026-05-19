@@ -36,8 +36,10 @@ export {
   type ClaimDetail,
   type Claim837PInput,
   type ControlNumbers,
+  type OtherSubscriberDetail,
   type PayerDetail,
   type PostalAddress,
+  type ProviderRef,
   type ReceiverIdentity,
   type ServiceLine,
   type SubmitterIdentity,
@@ -48,6 +50,35 @@ export {
   allocateControlNumbers,
   type AllocateControlNumbersInput,
 } from "./edi/control-numbers";
+
+export {
+  parse999,
+  type Parsed999,
+  type Parsed999Error,
+} from "./edi/parse-999";
+
+export {
+  parse277CA,
+  type Parsed277CA,
+  type Parsed277CAClaim,
+} from "./edi/parse-277ca";
+
+export {
+  parse835,
+  type Adjustment,
+  type Parsed835,
+  type Parsed835Claim,
+  type Parsed835ServiceLine,
+  type ProviderAdjustment,
+} from "./edi/parse-835";
+
+export {
+  parseX12,
+  parseMoneyToCents,
+  splitComposite,
+  type ParsedX12,
+  type Segment,
+} from "./edi/parse-segments";
 
 export {
   isOfficeAllyStubMode,

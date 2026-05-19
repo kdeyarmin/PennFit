@@ -311,4 +311,100 @@ describe("build837P", () => {
     const isa = payload.slice(0, payload.indexOf("~"));
     expect(isa.endsWith("*P*:")).toBe(true);
   });
+
+  it("omits loop 2310B / 2310D / 2320 when those refs are not supplied", () => {
+    const { payload } = build837P(fixtureInput());
+    expect(payload).not.toContain("NM1*82");
+    expect(payload).not.toContain("NM1*DN");
+    expect(payload).not.toMatch(/~SBR\*[ST]\*/);
+  });
+
+  it("emits loop 2310B (rendering provider) with NM1*82 + REF*0B", () => {
+    const input = fixtureInput();
+    input.claims[0]!.renderingProvider = {
+      npi: "1023456788",
+      firstName: "ROBIN",
+      lastName: "ASHTON",
+      stateLicenseNumber: "PA-MD-12345",
+    };
+    const { payload } = build837P(input);
+    expect(payload).toMatch(/~NM1\*82\*1\*ASHTON\*ROBIN\*[^~]*XX\*1023456788~/);
+    expect(payload).toContain("~REF*0B*PA-MD-12345~");
+  });
+
+  it("emits loop 2310D (referring provider) with NM1*DN", () => {
+    const input = fixtureInput();
+    input.claims[0]!.referringProvider = {
+      npi: "1700987654",
+      firstName: "ALEX",
+      lastName: "RIVERA",
+    };
+    const { payload } = build837P(input);
+    expect(payload).toMatch(/~NM1\*DN\*1\*RIVERA\*ALEX\*[^~]*XX\*1700987654~/);
+  });
+
+  it("emits loop 2320/2330 COB with prior-payer paid amount", () => {
+    const input = fixtureInput();
+    input.claims[0]!.otherSubscriber = {
+      payerResponsibility: "S",
+      priorPayerPaidCents: 12345,
+      subscriber: {
+        firstName: "JANE",
+        lastName: "DOE",
+        dateOfBirth: "1965-04-12",
+        gender: "F",
+        memberId: "MED-XYZ-7",
+        address: {
+          line1: "200 ELM ST",
+          city: "ALTOONA",
+          state: "PA",
+          zip: "16601",
+        },
+        relationshipCode: "18",
+      },
+      payer: {
+        organizationName: "MEDICARE PART B",
+        payerId: "12502",
+      },
+    };
+    const { payload } = build837P(input);
+    expect(payload).toMatch(/~SBR\*S\*18\*\*\*\*\*\*\*CI~/);
+    expect(payload).toContain("~AMT*D*123.45~");
+    expect(payload).toMatch(/~NM1\*IL\*1\*DOE\*JANE[^~]*MI\*MED-XYZ-7~/);
+    expect(payload).toMatch(/~NM1\*PR\*2\*MEDICARE PART B[^~]*PI\*12502~/);
+  });
+
+  it("omits AMT*D when prior payer hasn't paid yet (null priorPayerPaidCents)", () => {
+    const input = fixtureInput();
+    input.claims[0]!.otherSubscriber = {
+      payerResponsibility: "P",
+      priorPayerPaidCents: null,
+      subscriber: input.claims[0]!.subscriber,
+      payer: { organizationName: "PA MEDICAID", payerId: "23284" },
+    };
+    const { payload } = build837P(input);
+    expect(payload).toMatch(/~SBR\*P\*/);
+    expect(payload).not.toContain("AMT*D*");
+  });
+
+  it("multi-claim batch keeps the SE segment count correct", () => {
+    const input = fixtureInput();
+    input.claims.push({
+      ...input.claims[0]!,
+      internalClaimId: "CLM-0002",
+      subscriber: {
+        ...input.claims[0]!.subscriber,
+        firstName: "BOB",
+        lastName: "SMITH",
+        memberId: "X999",
+      },
+    });
+    const { payload } = build837P(input);
+    const stIdx = payload.indexOf("ST*");
+    const seMatch = payload.slice(stIdx).match(/~SE\*(\d+)\*/);
+    const declared = Number(seMatch![1]);
+    const inner = payload.slice(stIdx, payload.indexOf("~GE*"));
+    const actual = inner.split("~").filter((s) => s.length > 0).length;
+    expect(declared).toBe(actual);
+  });
 });

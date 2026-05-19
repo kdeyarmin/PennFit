@@ -24,6 +24,7 @@ import insuranceCoveragesRouter from "./insurance-coverages";
 import priorAuthorizationsRouter from "./prior-authorizations";
 import insuranceClaimsRouter from "./insurance-claims";
 import insuranceClaimsSubmitRouter from "./insurance-claims-submit";
+import insuranceClaimsHcfaRouter from "./insurance-claims-hcfa";
 import equipmentRouter from "./equipment";
 import timelineRouter from "./timeline";
 import updateRouter from "./update";
@@ -80,6 +81,10 @@ router.use(insuranceClaimsRouter);
 // /submit-office-ally segment never gets shadowed by a future
 // :something param route on the claim path.
 router.use(insuranceClaimsSubmitRouter);
+// /patients/:id/insurance-claims/:claimId/hcfa-1500.pdf — CMS-1500
+// paper claim form generator for paper-only payers in the catalog
+// (and one-off override cases).
+router.use(insuranceClaimsHcfaRouter);
 // /patients/:id/equipment — clinical equipment asset registry
 // (patient ↔ device serial-number link). Required for manufacturer
 // recall workflows. Distinct from Pacware warehouse inventory.

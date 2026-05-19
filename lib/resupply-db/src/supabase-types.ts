@@ -971,6 +971,19 @@ export interface Database {
           // Soft FK to resupply.office_ally_submissions (migration 0128).
           // Set when the claim is included in a 837P batch upload.
           office_ally_submission_id: string | null;
+          // Soft FK to resupply.providers (migration 0129). Rendering
+          // provider — the entity that actually rendered the service.
+          // For DME this is usually our org, but Medicare expects the
+          // NPI to be present in 837P loop 2310B.
+          rendering_provider_id: string | null;
+          // Soft FK to resupply.providers (migration 0129). Referring /
+          // ordering / prescribing physician — required by Medicare DME
+          // (loop 2310D) and most commercial DME payers.
+          referring_provider_id: string | null;
+          // Soft FK to resupply.insurance_coverages (migration 0129).
+          // Drives the 837P loop 2320/2330 coordination-of-benefits
+          // submission when set.
+          secondary_coverage_id: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -1067,6 +1080,77 @@ export interface Database {
         };
         Insert: Partial<Database["resupply"]["Tables"]["payer_profiles"]["Row"]>;
         Update: Partial<Database["resupply"]["Tables"]["payer_profiles"]["Row"]>;
+        Relationships: [];
+      };
+      denial_codes: {
+        Row: {
+          id: string;
+          code_system: "carc" | "rarc" | "custom";
+          code: string;
+          description: string;
+          category:
+            | "eligibility"
+            | "authorization"
+            | "documentation"
+            | "medical_necessity"
+            | "duplicate"
+            | "coverage_limit"
+            | "coding"
+            | "cob"
+            | "patient_liability"
+            | "timely_filing"
+            | "other";
+          recommended_action: string | null;
+          is_terminal: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["denial_codes"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["denial_codes"]["Row"]>;
+        Relationships: [];
+      };
+      payer_fee_schedules: {
+        Row: {
+          id: string;
+          payer_profile_id: string;
+          hcpcs_code: string;
+          modifier: string | null;
+          allowed_cents: number;
+          effective_from: string;
+          effective_through: string | null;
+          source: "manual" | "cms_published" | "payer_published" | "observed";
+          notes: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["payer_fee_schedules"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["payer_fee_schedules"]["Row"]
+        >;
+        Relationships: [];
+      };
+      era_files: {
+        Row: {
+          id: string;
+          file_name: string;
+          file_sha256: string;
+          file_size_bytes: number;
+          payer_check_number: string | null;
+          payer_paid_date: string | null;
+          total_paid_cents: number;
+          claims_paid_count: number;
+          claims_denied_count: number;
+          lines_processed_count: number;
+          matched_submission_id: string | null;
+          status: "processed" | "parse_failed" | "partial" | "rejected";
+          rejection_reason: string | null;
+          ingested_by_email: string;
+          ingested_at: string;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["era_files"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["era_files"]["Row"]>;
         Relationships: [];
       };
       office_ally_submissions: {

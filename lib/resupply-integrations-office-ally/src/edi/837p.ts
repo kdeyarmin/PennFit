@@ -113,6 +113,43 @@ export interface ClaimDetail {
   payer: PayerDetail;
   /** One row per HCPCS service line. Must be non-empty. */
   serviceLines: ServiceLine[];
+  /** Loop 2310B — provider who actually rendered the service.
+   *  DME defaults to the billing provider; pass null to omit. */
+  renderingProvider?: ProviderRef | null;
+  /** Loop 2310D — referring / ordering physician.
+   *  Required by Medicare DME and most commercial DME payers. */
+  referringProvider?: ProviderRef | null;
+  /** Loop 2320/2330 — secondary-payer coordination of benefits.
+   *  Pass to indicate this is being billed to the primary while a
+   *  secondary payer exists; or to the secondary with the primary's
+   *  prior-payment info attached. */
+  otherSubscriber?: OtherSubscriberDetail | null;
+}
+
+export interface ProviderRef {
+  /** Type-1 NPI (individual). 10 digits. */
+  npi: string;
+  /** Full legal first name. */
+  firstName: string;
+  /** Full legal last name. */
+  lastName: string;
+  /** Optional middle name initial. */
+  middleName?: string | null;
+  /** Optional state license number — surfaces as REF*0B when present. */
+  stateLicenseNumber?: string | null;
+}
+
+export interface OtherSubscriberDetail {
+  /** SBR01 payer-responsibility code. `S` = secondary, `T` = tertiary, `P` = primary
+   *  (used when WE are billing the secondary and need to disclose primary). */
+  payerResponsibility: "P" | "S" | "T";
+  /** Subscriber on the other policy. */
+  subscriber: SubscriberDetail;
+  /** The other payer. */
+  payer: PayerDetail;
+  /** Dollars the prior payer paid (AMT*D, claim-level). Pass `null` when this is
+   *  the prior-payer disclosure and they haven't adjudicated yet. */
+  priorPayerPaidCents?: number | null;
 }
 
 export interface SubscriberDetail {
@@ -519,6 +556,143 @@ export function build837P(
     if (claim.priorAuthNumber) {
       segments.push(
         joinSegment(["REF", "G1", sanitizeElement(claim.priorAuthNumber).slice(0, 50)]),
+      );
+    }
+
+    // 2310B — rendering provider. NM1*82, REF*0B when license present.
+    if (claim.renderingProvider) {
+      const rp = claim.renderingProvider;
+      segments.push(
+        joinSegment([
+          "NM1",
+          "82",
+          "1",
+          padOrTrunc(sanitizeElement(rp.lastName), 60),
+          padOrTrunc(sanitizeElement(rp.firstName), 35),
+          padOrTrunc(sanitizeElement(rp.middleName ?? ""), 25),
+          "",
+          "",
+          "XX",
+          sanitizeElement(rp.npi),
+        ]),
+      );
+      if (rp.stateLicenseNumber) {
+        segments.push(
+          joinSegment([
+            "REF",
+            "0B",
+            sanitizeElement(rp.stateLicenseNumber).slice(0, 50),
+          ]),
+        );
+      }
+    }
+
+    // 2310D — referring / ordering / prescribing physician. NM1*DN.
+    // For DME, Medicare specifically requires this loop with the
+    // prescribing NPI; commercial DME payers generally honor the
+    // same convention.
+    if (claim.referringProvider) {
+      const rp = claim.referringProvider;
+      segments.push(
+        joinSegment([
+          "NM1",
+          "DN",
+          "1",
+          padOrTrunc(sanitizeElement(rp.lastName), 60),
+          padOrTrunc(sanitizeElement(rp.firstName), 35),
+          padOrTrunc(sanitizeElement(rp.middleName ?? ""), 25),
+          "",
+          "",
+          "XX",
+          sanitizeElement(rp.npi),
+        ]),
+      );
+      if (rp.stateLicenseNumber) {
+        segments.push(
+          joinSegment([
+            "REF",
+            "0B",
+            sanitizeElement(rp.stateLicenseNumber).slice(0, 50),
+          ]),
+        );
+      }
+    }
+
+    // 2320 / 2330 — coordination of benefits. We emit a single OI
+    // payer disclosure: SBR (other subscriber info), NM1*IL + N3 + N4
+    // + DMG (other subscriber demographics), NM1*PR (other payer),
+    // AMT*D (prior payer paid amount, when known).
+    if (claim.otherSubscriber) {
+      const oth = claim.otherSubscriber;
+      segments.push(
+        joinSegment([
+          "SBR",
+          oth.payerResponsibility,
+          oth.subscriber.relationshipCode,
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "CI",
+        ]),
+      );
+      if (oth.priorPayerPaidCents !== null && oth.priorPayerPaidCents !== undefined) {
+        segments.push(
+          joinSegment(["AMT", "D", centsToMoney(oth.priorPayerPaidCents)]),
+        );
+      }
+      // OI — informational subscriber, benefits assignment, release of info
+      segments.push(joinSegment(["OI", "", "", "Y", "", "", "Y"]));
+      // 2330A — other subscriber name
+      segments.push(
+        joinSegment([
+          "NM1",
+          "IL",
+          "1",
+          padOrTrunc(sanitizeElement(oth.subscriber.lastName), 60),
+          padOrTrunc(sanitizeElement(oth.subscriber.firstName), 35),
+          "",
+          "",
+          "",
+          "MI",
+          sanitizeElement(oth.subscriber.memberId),
+        ]),
+      );
+      segments.push(
+        joinSegment(["N3", padOrTrunc(sanitizeElement(oth.subscriber.address.line1), 55)]),
+      );
+      segments.push(
+        joinSegment([
+          "N4",
+          padOrTrunc(sanitizeElement(oth.subscriber.address.city), 30),
+          sanitizeElement(oth.subscriber.address.state).slice(0, 2),
+          digitsOnly(oth.subscriber.address.zip),
+        ]),
+      );
+      segments.push(
+        joinSegment([
+          "DMG",
+          "D8",
+          toCcyymmdd(oth.subscriber.dateOfBirth),
+          oth.subscriber.gender,
+        ]),
+      );
+      // 2330B — other payer
+      segments.push(
+        joinSegment([
+          "NM1",
+          "PR",
+          "2",
+          padOrTrunc(sanitizeElement(oth.payer.organizationName), 60),
+          "",
+          "",
+          "",
+          "",
+          "PI",
+          sanitizeElement(oth.payer.payerId),
+        ]),
       );
     }
 
