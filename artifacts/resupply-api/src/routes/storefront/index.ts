@@ -8,6 +8,7 @@ import usageEventsRouter from "./usage-events.js";
 import remindersRouter from "./reminders.js";
 import chatRouter from "./chat.js";
 import sleepCoachRouter from "./sleep-coach.js";
+import meClaimsRouter from "./me-claims.js";
 
 const router: IRouter = Router();
 
@@ -20,5 +21,8 @@ router.use(usageEventsRouter);
 router.use(remindersRouter);
 router.use(chatRouter);
 router.use(sleepCoachRouter);
+// Patient-portal claim explorer: read-only /api/me/claims +
+// /api/me/billing-balance for the logged-in patient.
+router.use(meClaimsRouter);
 
 export default router;

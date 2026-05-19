@@ -57,6 +57,7 @@ import { registerPecosSyncJob } from "./jobs/pecos-sync.js";
 import { registerCappedRentalAdvanceJob } from "./jobs/capped-rental-advance.js";
 import { registerDwoExpirySweepJob } from "./jobs/dwo-expiry-sweep.js";
 import { registerWebhookDispatcherJob } from "./jobs/webhook-dispatcher.js";
+import { registerAutoWorkflowJob } from "./jobs/auto-workflow.js";
 
 let bossInstance: PgBoss | null = null;
 let workerReady = false;
@@ -342,6 +343,11 @@ export async function startWorker(): Promise<void> {
   // Every minute — drain webhook_deliveries with exponential
   // backoff retries. HMAC-SHA256-signed POSTs to subscriber URLs.
   await registerWebhookDispatcherJob(boss);
+
+  // Every 5 minutes — auto-workflow pass: heuristic-score + AI-scrub
+  // risky drafts, AI-analyze fresh denials, publish
+  // billing_statement.due for patients with cooldown-clear balances.
+  await registerAutoWorkflowJob(boss);
 
   workerReady = true;
   logger.info(

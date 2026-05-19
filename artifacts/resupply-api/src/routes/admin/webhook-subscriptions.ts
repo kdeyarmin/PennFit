@@ -18,6 +18,7 @@ import {
 } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
+import { VALID_EVENT_TYPE_SET } from "../../lib/webhooks/event-catalog";
 import {
   requireAdmin,
   requireAdminOnly,
@@ -78,6 +79,20 @@ router.post(
       return;
     }
     const b = parsed.data;
+    // Validate every event_type against the static catalog except
+    // for the '*' wildcard. Unknown slugs would silently never
+    // match a publisher, so we 400 with the list of bad slugs.
+    const unknown = b.eventTypes.filter(
+      (t) => t !== "*" && !VALID_EVENT_TYPE_SET.has(t),
+    );
+    if (unknown.length > 0) {
+      res.status(400).json({
+        error: "unknown_event_types",
+        unknown,
+        hint: "GET /admin/webhook-event-catalog for the valid list",
+      });
+      return;
+    }
     const signingSecret = randomBytes(32).toString("base64");
     const supabase = getSupabaseServiceRoleClient();
     const { data, error } = await supabase

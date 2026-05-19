@@ -109,6 +109,8 @@ import billingBatchSubmitRouter from "./admin/billing-batch-submit.js";
 import billingStatementsRouter from "./admin/billing-statements.js";
 import claimAppealsRouter from "./admin/claim-appeals.js";
 import webhookSubscriptionsRouter from "./admin/webhook-subscriptions.js";
+import webhookEventCatalogRouter from "./admin/webhook-event-catalog.js";
+import billingDirectorRouter from "./admin/billing-director.js";
 import auditRouter from "./audit/index.js";
 import conversationsRouter from "./conversations/index.js";
 import dashboardRouter from "./dashboard/index.js";
@@ -329,6 +331,14 @@ router.use(claimAppealsRouter);
 // /admin/webhook-subscriptions + /admin/webhook-deliveries — outbound
 // event subscription CRUD + recent-delivery audit.
 router.use(webhookSubscriptionsRouter);
+// /admin/webhook-event-catalog — static schema of every event type
+// the API publishes (single source of truth for the subscription
+// validator + the docs page).
+router.use(webhookEventCatalogRouter);
+// /admin/billing/director-summary — single round-trip the billing
+// director loads every morning. Consolidates counts + dollar
+// rollups + denial-rate trend + top payers + webhook health.
+router.use(billingDirectorRouter);
 // /admin/shop/products/* — operator tooling for the cash-pay catalog
 // itself. Today: PATCH stock_count metadata on a Stripe Product.
 // requireAdmin gate is on the router itself.
