@@ -180,8 +180,14 @@ export function base32Encode(buf: Buffer): string {
 }
 
 export function base32Decode(s: string): Buffer {
-  // Strip whitespace + pad characters; upper-case for the lookup.
-  const cleaned = s.replace(/\s+/g, "").replace(/=+$/, "").toUpperCase();
+  // Strip whitespace + trailing pad characters; upper-case for the
+  // lookup. Trailing `=` are stripped via a manual scan rather than
+  // `.replace(/=+$/, "")` to avoid quadratic backtracking on
+  // adversarial input (CodeQL `js/polynomial-redos`).
+  const noSpace = s.replace(/\s+/g, "");
+  let end = noSpace.length;
+  while (end > 0 && noSpace.charCodeAt(end - 1) === 0x3d /* "=" */) end--;
+  const cleaned = noSpace.slice(0, end).toUpperCase();
   if (cleaned.length === 0) return Buffer.alloc(0);
 
   let bits = 0;
