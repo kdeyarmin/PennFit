@@ -32,22 +32,22 @@
   background:
     radial-gradient(
       ellipse 75% 55% at 12% 8%,
-      hsl(var(--penn-navy) / 0.14),
+      hsl(var(--penn-navy) / 0.10),
       transparent 62%
     ),
     radial-gradient(
       ellipse 70% 55% at 88% 92%,
-      hsl(var(--penn-navy) / 0.11),
+      hsl(var(--penn-navy) / 0.08),
       transparent 65%
     ),
     radial-gradient(
       ellipse 90% 50% at 50% -8%,
-      hsl(var(--penn-gold) / 0.10),
+      hsl(var(--penn-gold) / 0.08),
       transparent 70%
     ),
     radial-gradient(
       ellipse 90% 55% at 50% 112%,
-      hsl(var(--penn-mist) / 0.55),
+      hsl(var(--penn-mist) / 0.5),
       transparent 70%
     );
 }
@@ -67,10 +67,10 @@
   left: -18vmax;
   background: radial-gradient(
     circle,
-    hsl(var(--penn-navy) / 0.55),
+    hsl(var(--penn-navy) / 0.45),
     transparent 70%
   );
-  opacity: 0.32;
+  opacity: 0.22;
   animation: ambient-bloom-tl 52s ease-in-out infinite alternate;
 }
 
@@ -81,24 +81,24 @@
   height: 65vmax;
   background: radial-gradient(
     circle,
-    hsl(var(--penn-navy-soft) / 0.5),
+    hsl(var(--penn-navy-soft) / 0.42),
     transparent 70%
   );
-  opacity: 0.28;
+  opacity: 0.2;
   animation: ambient-bloom-br 64s ease-in-out infinite alternate;
 }
 
 .ambient-bg__bloom--gold-tr {
-  top: -8vmax;
-  right: -16vmax;
-  width: 50vmax;
-  height: 50vmax;
+  top: -10vmax;
+  right: -18vmax;
+  width: 46vmax;
+  height: 46vmax;
   background: radial-gradient(
     circle,
-    hsl(var(--penn-gold) / 0.55),
+    hsl(var(--penn-gold) / 0.5),
     transparent 70%
   );
-  opacity: 0.26;
+  opacity: 0.18;
   animation: ambient-bloom-gold 58s ease-in-out infinite alternate;
 }
 
