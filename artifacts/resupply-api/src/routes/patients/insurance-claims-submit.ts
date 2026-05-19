@@ -34,6 +34,7 @@ import {
   createOfficeAllyAdapter,
 } from "@workspace/resupply-integrations-office-ally";
 
+import { resolveBillingIdentity } from "../../lib/billing/identity-resolver";
 import { logger } from "../../lib/logger";
 import { requirePermission } from "../../middlewares/requireAdmin";
 
@@ -292,8 +293,18 @@ router.post(
       previousHighest: priorHigh?.isa_control_number ?? undefined,
     });
 
+    // ── Resolve our identity from the DB-backed singleton (with
+    //    env-var + stub fallback for dev/preview). The submitter
+    //    info populates the 1000A loop; the billing-provider info
+    //    populates the 2010AA loop.
+    const identity = await resolveBillingIdentity({ supabase });
+
     // ── Build + upload via the adapter ─────────────────────────────
-    const adapter = createOfficeAllyAdapter();
+    const adapter = createOfficeAllyAdapter({
+      submitterOverride: identity.submitter,
+      billingProviderOverride: identity.billingProvider,
+      usageIndicatorOverride: identity.usageIndicator,
+    });
     const submission = await adapter.submitClaims({
       control,
       fileName: buildFileName(control),

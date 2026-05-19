@@ -1153,6 +1153,156 @@ export interface Database {
         >;
         Relationships: [];
       };
+      dme_organization: {
+        Row: {
+          id: string;
+          singleton: boolean;
+          legal_name: string;
+          dba_name: string | null;
+          tax_id: string;
+          organizational_npi: string;
+          taxonomy_code: string;
+          medicare_ptan: string | null;
+          physical_address_line1: string;
+          physical_address_line2: string | null;
+          physical_city: string;
+          physical_state: string;
+          physical_zip: string;
+          mailing_address_line1: string | null;
+          mailing_address_line2: string | null;
+          mailing_city: string | null;
+          mailing_state: string | null;
+          mailing_zip: string | null;
+          pay_to_address_line1: string | null;
+          pay_to_address_line2: string | null;
+          pay_to_city: string | null;
+          pay_to_state: string | null;
+          pay_to_zip: string | null;
+          phone_e164: string;
+          fax_e164: string | null;
+          billing_email: string;
+          general_email: string | null;
+          website_url: string | null;
+          accreditation_body: "achc" | "boc" | "tjc" | "cap" | "other" | null;
+          accreditation_number: string | null;
+          accreditation_expires_on: string | null;
+          state_license_number: string | null;
+          state_license_state: string | null;
+          state_license_expires_on: string | null;
+          liability_carrier: string | null;
+          liability_policy_number: string | null;
+          liability_expires_on: string | null;
+          surety_bond_carrier: string | null;
+          surety_bond_amount_cents: number | null;
+          surety_bond_expires_on: string | null;
+          authorized_signer_name: string | null;
+          authorized_signer_title: string | null;
+          authorized_signer_signature_object_key: string | null;
+          notes: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["dme_organization"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["dme_organization"]["Row"]
+        >;
+        Relationships: [];
+      };
+      dme_organization_contacts: {
+        Row: {
+          id: string;
+          organization_id: string;
+          role:
+            | "billing_manager"
+            | "compliance_officer"
+            | "authorized_signer"
+            | "medical_director"
+            | "office_manager"
+            | "edi_contact"
+            | "credentialing"
+            | "patient_advocate"
+            | "other";
+          name: string;
+          title: string | null;
+          email: string | null;
+          phone_e164: string | null;
+          is_primary: boolean;
+          is_active: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["dme_organization_contacts"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["dme_organization_contacts"]["Row"]
+        >;
+        Relationships: [];
+      };
+      clearinghouse_credentials: {
+        Row: {
+          id: string;
+          slug: string;
+          display_name: string;
+          usage_indicator: "P" | "T";
+          sftp_host: string;
+          sftp_port: number;
+          sftp_username: string;
+          private_key_path: string;
+          known_hosts_path: string;
+          remote_inbox_dir: string;
+          remote_outbound_dir: string;
+          remote_archive_dir: string | null;
+          etin: string;
+          submitter_organization_name: string | null;
+          contact_name: string | null;
+          contact_phone_e164: string | null;
+          is_active: boolean;
+          last_polled_at: string | null;
+          notes: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["clearinghouse_credentials"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["clearinghouse_credentials"]["Row"]
+        >;
+        Relationships: [];
+      };
+      clearinghouse_inbound_files: {
+        Row: {
+          id: string;
+          clearinghouse_id: string;
+          remote_path: string;
+          file_name: string;
+          file_sha256: string;
+          file_size_bytes: number;
+          file_kind: "999" | "277ca" | "835" | "unknown";
+          parse_summary_json: Json;
+          dispatch_status:
+            | "pending"
+            | "parsed"
+            | "dispatched"
+            | "dispatch_failed"
+            | "skipped";
+          applied_to_era_file_id: string | null;
+          applied_to_submission_id: string | null;
+          error_message: string | null;
+          downloaded_at: string;
+          dispatched_at: string | null;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["clearinghouse_inbound_files"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["clearinghouse_inbound_files"]["Row"]
+        >;
+        Relationships: [];
+      };
       era_files: {
         Row: {
           id: string;

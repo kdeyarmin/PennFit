@@ -50,6 +50,7 @@ import { registerLapsedCustomerWinbackJob } from "./jobs/lapsed-customer-winback
 import { registerDeductibleResetPushJob } from "./jobs/deductible-reset-push.js";
 import { registerQuarterlyTherapySummaryJob } from "./jobs/quarterly-therapy-summary.js";
 import { registerLifecycleTouchpointsJob } from "./jobs/lifecycle-touchpoints.js";
+import { registerOfficeAllyInboundPollJob } from "./jobs/office-ally-inbound-poll.js";
 
 let bossInstance: PgBoss | null = null;
 let workerReady = false;
@@ -301,6 +302,12 @@ export async function startWorker(): Promise<void> {
   // rates in DME coaching literature. Runs at 13:33 UTC, idempotent
   // via year stamps on patients.
   await registerLifecycleTouchpointsJob(boss);
+
+  // Every 15 minutes — poll Office Ally's outbound SFTP directory
+  // for 999 / 277CA / 835 files we haven't already processed.
+  // No-op when no clearinghouse_credentials row exists and no
+  // OFFICE_ALLY_* env is configured (dev / preview).
+  await registerOfficeAllyInboundPollJob(boss);
 
   workerReady = true;
   logger.info(

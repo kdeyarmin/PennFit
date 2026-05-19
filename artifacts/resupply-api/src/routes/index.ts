@@ -90,6 +90,8 @@ import payerModifierRulesRouter from "./admin/payer-modifier-rules.js";
 import claimTemplatesRouter from "./admin/claim-templates.js";
 import fulfillmentToClaimRouter from "./admin/fulfillment-to-claim.js";
 import aiBillingQueueRouter from "./admin/ai-billing-queue.js";
+import dmeOrganizationRouter from "./admin/dme-organization.js";
+import clearinghouseCredentialsRouter from "./admin/clearinghouse-credentials.js";
 import auditRouter from "./audit/index.js";
 import conversationsRouter from "./conversations/index.js";
 import dashboardRouter from "./dashboard/index.js";
@@ -250,6 +252,16 @@ router.use(fulfillmentToClaimRouter);
 // surfacing claims blocked / fixable / awaiting analysis / ready
 // for one-click auto-resubmit.
 router.use(aiBillingQueueRouter);
+// /admin/dme-organization + /admin/dme-organization/contacts — the
+// singleton DME identity row + named contact roster. Authoritative
+// source for the 837P billing-provider loop, HCFA PDF, accreditation
+// binder, and ABN / SWO authorized signer text.
+router.use(dmeOrganizationRouter);
+// /admin/clearinghouse-credentials/* — editable per-clearinghouse
+// SFTP + ETIN config. Includes /test endpoint for the "verify
+// connection" button and /admin/office-ally/poll-now manual trigger,
+// plus /admin/clearinghouse-inbound-files for the polled-file audit.
+router.use(clearinghouseCredentialsRouter);
 // /admin/shop/products/* — operator tooling for the cash-pay catalog
 // itself. Today: PATCH stock_count metadata on a Stripe Product.
 // requireAdmin gate is on the router itself.

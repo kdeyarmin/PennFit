@@ -65,6 +65,15 @@ export interface CreateAdapterOptions {
   env?: NodeJS.ProcessEnv;
   /** Inject a custom transport (e.g. a tests-only in-memory transport). */
   transportFactory?: (config: OfficeAllyConfig | null) => SubmissionTransport;
+  /** Override the billing-provider identity that lands in the 2010AA
+   *  loop. When provided, this beats both the env vars and the stub
+   *  defaults; the API resolves it from the DB-backed
+   *  dme_organization singleton. */
+  billingProviderOverride?: Claim837PInput["billingProvider"];
+  /** Override the submitter identity that lands in the 1000A loop. */
+  submitterOverride?: Claim837PInput["submitter"];
+  /** Override the usage indicator (production vs test). */
+  usageIndicatorOverride?: "P" | "T";
 }
 
 export function createOfficeAllyAdapter(
@@ -90,13 +99,17 @@ export function createOfficeAllyAdapter(
     },
     async submitClaims(input: SubmitClaimsInput): Promise<SubmitClaimsResult> {
       const built = build837P({
-        submitter: stubSubmitter(config),
+        submitter: opts.submitterOverride ?? stubSubmitter(config),
         receiver: { interchangeId: "OFFCLY", organizationName: "OFFICE ALLY" },
-        billingProvider: stubBillingProvider(config),
+        billingProvider:
+          opts.billingProviderOverride ?? stubBillingProvider(config),
         claims: input.claims,
         control: input.control,
         usageIndicator:
-          input.usageIndicatorOverride ?? config?.usageIndicator ?? "T",
+          input.usageIndicatorOverride ??
+          opts.usageIndicatorOverride ??
+          config?.usageIndicator ??
+          "T",
       });
 
       const upload = await transport.upload({

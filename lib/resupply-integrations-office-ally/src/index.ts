@@ -89,6 +89,18 @@ export {
 
 export { createFileTransport, type FileTransportConfig } from "./transport/file";
 export { createSftpTransport, type SftpTransportConfig } from "./transport/sftp";
+export {
+  classifyEdiPayload,
+  downloadFile,
+  listOutboundFiles,
+  type DownloadFailure,
+  type DownloadOutcome,
+  type DownloadResult,
+  type ListFailure,
+  type ListOutcome,
+  type ListResult,
+  type RemoteFile,
+} from "./transport/sftp-inbound";
 export type {
   SubmissionTransport,
   SubmissionTransportKind,
