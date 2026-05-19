@@ -39,7 +39,11 @@ import {
 } from "@workspace/resupply-db";
 
 import { requireSignedIn } from "../../middlewares/requireSignedIn";
-import { encodeCompositeCursor, parseCompositeCursor } from "../../lib/cursor";
+import {
+  encodeCompositeCursor,
+  isUuidCursorId,
+  parseCompositeCursor,
+} from "../../lib/cursor";
 
 type ShopReviewInsert = Database["resupply"]["Tables"]["shop_reviews"]["Insert"];
 
@@ -235,6 +239,12 @@ router.get("/shop/products/:productId/reviews", async (req, res) => {
   // boundaries when multiple reviews share a `createdAt`.
   const parsedCursor = parseCompositeCursor(cursor);
   if (!parsedCursor.ok) {
+    res.status(400).json({ error: "invalid_cursor" });
+    return;
+  }
+  // shop_reviews.id is a UUID. Anything else would smuggle PostgREST
+  // structural characters into the `.or()` expression below.
+  if (parsedCursor.id !== null && !isUuidCursorId(parsedCursor.id)) {
     res.status(400).json({ error: "invalid_cursor" });
     return;
   }

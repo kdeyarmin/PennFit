@@ -46,6 +46,7 @@ import {
 } from "../../middlewares/requireAdmin";
 import { rateLimit } from "../../middlewares/rate-limit";
 import { withMetrics } from "../../lib/observability";
+import { parseCompositeCursor, isUuidCursorId } from "../../lib/cursor";
 import {
   getStripeClient,
   readStripeConfigOrNull,
@@ -111,20 +112,26 @@ router.get("/admin/shop/returns", requireAdmin, async (req, res) => {
 
   // Cursor format: "<ISO timestamp>__<id>" (composite — same pattern as
   // shop-reviews so paginating across rows that share createdAt is
-  // stable).
-  let cursorTs: Date | null = null;
-  let cursorId: string | null = null;
-  if (cursor) {
-    const idx = cursor.indexOf("__");
-    if (idx > 0) {
-      cursorTs = new Date(cursor.slice(0, idx));
-      cursorId = cursor.slice(idx + 2);
-      if (Number.isNaN(cursorTs.getTime())) {
-        cursorTs = null;
-        cursorId = null;
-      }
-    }
+  // stable). shop_returns.id is a UUID; reject anything else so a
+  // hostile cursor can't smuggle PostgREST structural characters
+  // (`,`, `(`, `)`) into the `.or()` expression below.
+  //
+  // Any non-null cursor that fails to match the expected shape (missing
+  // delimiter, unparseable timestamp, non-UUID id) returns 400 rather
+  // than silently falling back to the first page — that matches the
+  // behavior of the other composite-cursor list endpoints and makes
+  // tampered cursors fail loudly.
+  const parsed = parseCompositeCursor(cursor ?? undefined);
+  if (!parsed.ok) {
+    res.status(400).json({ error: "invalid_cursor" });
+    return;
   }
+  if (parsed.id !== null && !isUuidCursorId(parsed.id)) {
+    res.status(400).json({ error: "invalid_cursor" });
+    return;
+  }
+  const cursorTs = parsed.date;
+  const cursorId = parsed.id;
 
   let listQuery = supabase
     .schema("resupply")

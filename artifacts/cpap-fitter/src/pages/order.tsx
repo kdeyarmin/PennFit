@@ -40,7 +40,7 @@ import {
 import { useEffect } from "react";
 import { track } from "@/lib/track";
 import { FacialMeasurementsCard } from "@/components/facial-measurements-card";
-import { DOB_MIN, isPlausibleDob } from "@/lib/dob-validation";
+import { DOB_MIN, isPlausibleDob, todayLocalDateString } from "@/lib/dob-validation";
 
 const US_STATES = [
   "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA",
@@ -425,7 +425,7 @@ export function Order() {
                 data-testid="input-dob"
                 type="date"
                 min={DOB_MIN}
-                max={new Date().toISOString().slice(0, 10)}
+                max={todayLocalDateString()}
                 {...register("patient.dateOfBirth")}
                 autoComplete="bday"
               />

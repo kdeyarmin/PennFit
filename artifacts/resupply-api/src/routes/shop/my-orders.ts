@@ -54,7 +54,11 @@ import {
 import type { SavedShippingAddress } from "@workspace/resupply-db";
 
 import { requireSignedIn } from "../../middlewares/requireSignedIn";
-import { encodeCompositeCursor, parseCompositeCursor } from "../../lib/cursor";
+import {
+  encodeCompositeCursor,
+  isUuidCursorId,
+  parseCompositeCursor,
+} from "../../lib/cursor";
 import {
   getStripeClient,
   readStripeConfigOrNull,
@@ -149,6 +153,14 @@ router.get("/shop/me/orders", requireSignedIn, async (req, res) => {
   const { limit, cursor: rawCursor } = parsed.data;
   const cursor = parseCompositeCursor(rawCursor);
   if (!cursor.ok) {
+    res.status(400).json({ error: "invalid_cursor" });
+    return;
+  }
+  // shop_orders.id is a UUID; rejecting non-UUID cursor halves here
+  // keeps a hostile cursor from smuggling PostgREST structural
+  // characters (`,`, `(`, `)`) into the `.or()` filter expression
+  // below.
+  if (cursor.id !== null && !isUuidCursorId(cursor.id)) {
     res.status(400).json({ error: "invalid_cursor" });
     return;
   }
