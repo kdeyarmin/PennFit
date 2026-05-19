@@ -25,6 +25,15 @@ export type Json =
   | { [key: string]: Json | undefined }
   | Json[];
 
+/** Shape of a single line entry in claim_templates.lines_json. */
+export interface TemplateLine {
+  hcpcs: string;
+  modifiers: string;
+  units: number;
+  billed_cents: number;
+  description?: string;
+}
+
 export interface Database {
   // PostgREST default schema. Storefront-funnel tables (orders,
   // usage_events, admin_audit_log, reminder_subscriptions from
@@ -1151,6 +1160,78 @@ export interface Database {
         };
         Insert: Partial<Database["resupply"]["Tables"]["era_files"]["Row"]>;
         Update: Partial<Database["resupply"]["Tables"]["era_files"]["Row"]>;
+        Relationships: [];
+      };
+      product_hcpcs_map: {
+        Row: {
+          id: string;
+          lookup_kind: "stripe_product_id" | "item_sku";
+          lookup_value: string;
+          hcpcs_code: string;
+          default_modifiers: string | null;
+          units_per_dispense: number;
+          default_billed_cents: number | null;
+          description: string | null;
+          is_active: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["product_hcpcs_map"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["product_hcpcs_map"]["Row"]
+        >;
+        Relationships: [];
+      };
+      payer_modifier_rules: {
+        Row: {
+          id: string;
+          payer_profile_id: string;
+          hcpcs_code: string;
+          condition:
+            | "always"
+            | "if_rental_month_le_3"
+            | "if_rental_month_ge_4"
+            | "if_purchased"
+            | "if_compliant_90day"
+            | "if_initial_dispense"
+            | "if_abn_on_file"
+            | "if_pa_approved";
+          modifiers_csv: string;
+          priority: number;
+          rationale: string | null;
+          is_active: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["payer_modifier_rules"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["payer_modifier_rules"]["Row"]
+        >;
+        Relationships: [];
+      };
+      claim_templates: {
+        Row: {
+          id: string;
+          slug: string;
+          display_name: string;
+          description: string | null;
+          lines_json: { lines: TemplateLine[] };
+          default_diagnosis_codes: string[];
+          scoped_payer_profile_id: string | null;
+          is_active: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["claim_templates"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["claim_templates"]["Row"]
+        >;
         Relationships: [];
       };
       office_ally_submissions: {

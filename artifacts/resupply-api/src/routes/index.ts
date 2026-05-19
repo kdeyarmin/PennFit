@@ -84,6 +84,11 @@ import denialCodesRouter from "./admin/denial-codes.js";
 import payerFeeSchedulesRouter from "./admin/payer-fee-schedules.js";
 import eraIngestRouter from "./admin/era-ingest.js";
 import billingReportsRouter from "./admin/billing-reports.js";
+import billingDashboardRouter from "./admin/billing-dashboard.js";
+import productHcpcsMapRouter from "./admin/product-hcpcs-map.js";
+import payerModifierRulesRouter from "./admin/payer-modifier-rules.js";
+import claimTemplatesRouter from "./admin/claim-templates.js";
+import fulfillmentToClaimRouter from "./admin/fulfillment-to-claim.js";
 import auditRouter from "./audit/index.js";
 import conversationsRouter from "./conversations/index.js";
 import dashboardRouter from "./dashboard/index.js";
@@ -222,6 +227,24 @@ router.use(eraIngestRouter);
 // /admin/billing/denial-rate — read-only AR + reporting dashboards
 // for the billing team.
 router.use(billingReportsRouter);
+// /admin/billing/dashboard — single round-trip "what needs my
+// attention today" view for the billing CSR. Aggregate counts +
+// dollar amounts only; the UI deep-links by id.
+router.use(billingDashboardRouter);
+// /admin/product-hcpcs-map/* — shop SKU → HCPCS catalog. Drives the
+// "build from fulfillment" auto-population.
+router.use(productHcpcsMapRouter);
+// /admin/payer-modifier-rules/* — payer + HCPCS auto-attach modifier
+// rules (KX, KH, KI, RR, NU…) evaluated by the claim builder.
+router.use(payerModifierRulesRouter);
+// /admin/claim-templates + /admin/patients/:id/insurance-claims/:claimId/apply-template
+// — pre-built line-item shapes the CSR can one-click stamp onto a draft.
+router.use(claimTemplatesRouter);
+// /admin/fulfillments/:fulfillmentId/create-claim — one-click claim
+// creation from a shipped fulfillment row. Runs the claim builder
+// (HCPCS map + modifier rules + fee schedule + diagnosis + prescriber)
+// and inserts the populated draft.
+router.use(fulfillmentToClaimRouter);
 // /admin/shop/products/* — operator tooling for the cash-pay catalog
 // itself. Today: PATCH stock_count metadata on a Stripe Product.
 // requireAdmin gate is on the router itself.

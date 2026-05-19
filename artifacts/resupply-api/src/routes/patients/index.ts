@@ -25,6 +25,7 @@ import priorAuthorizationsRouter from "./prior-authorizations";
 import insuranceClaimsRouter from "./insurance-claims";
 import insuranceClaimsSubmitRouter from "./insurance-claims-submit";
 import insuranceClaimsHcfaRouter from "./insurance-claims-hcfa";
+import insuranceClaimsPreflightRouter from "./insurance-claims-preflight";
 import equipmentRouter from "./equipment";
 import timelineRouter from "./timeline";
 import updateRouter from "./update";
@@ -85,6 +86,10 @@ router.use(insuranceClaimsSubmitRouter);
 // paper claim form generator for paper-only payers in the catalog
 // (and one-off override cases).
 router.use(insuranceClaimsHcfaRouter);
+// /patients/:id/insurance-claims/:claimId/preflight — structured
+// readiness checklist for a draft claim. Drives the "ready to
+// submit" / "needs work" CSR UX in front of the submit endpoint.
+router.use(insuranceClaimsPreflightRouter);
 // /patients/:id/equipment — clinical equipment asset registry
 // (patient ↔ device serial-number link). Required for manufacturer
 // recall workflows. Distinct from Pacware warehouse inventory.
