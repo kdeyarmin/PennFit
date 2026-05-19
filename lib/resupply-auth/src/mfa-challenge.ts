@@ -133,11 +133,12 @@ export function verifyMfaChallengeToken(
 // ── base64url helpers ──────────────────────────────────────────────
 
 function base64UrlEncode(buf: Buffer): string {
-  return buf
-    .toString("base64")
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=+$/, "");
+  const b64 = buf.toString("base64").replace(/\+/g, "-").replace(/\//g, "_");
+  // Strip trailing `=` via a manual scan rather than `.replace(/=+$/, "")`
+  // to avoid quadratic backtracking (CodeQL `js/polynomial-redos`).
+  let end = b64.length;
+  while (end > 0 && b64.charCodeAt(end - 1) === 0x3d /* "=" */) end--;
+  return b64.slice(0, end);
 }
 
 function base64UrlDecode(s: string): Buffer {

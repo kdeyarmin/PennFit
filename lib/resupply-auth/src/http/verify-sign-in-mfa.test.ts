@@ -7,6 +7,7 @@
 // Infrastructure mirrors router.test.ts: express + supertest + in-memory repo.
 
 import express, { type Express } from "express";
+import expressRateLimit from "express-rate-limit";
 import supertest from "supertest";
 import { describe, expect, it, vi } from "vitest";
 import { randomBytes } from "node:crypto";
@@ -76,7 +77,16 @@ function buildRecoveryHarness(mfaOverrides: Partial<MfaProbe> = {}): RecoveryHar
   // flow. Placeholder kept for legibility against the broader auth
   // test scaffold.
   const handler = makeVerifySignInMfaHandler(deps);
-  app.post("/verify-mfa", handler);
+  // Throwaway rate limiter so static analysis sees this test-only
+  // express app as gated (CodeQL `js/missing-rate-limiting`). The
+  // limit is large enough not to interfere with any test.
+  const testLimiter = expressRateLimit({
+    windowMs: 60 * 1000,
+    limit: 10_000,
+    standardHeaders: false,
+    legacyHeaders: false,
+  });
+  app.post("/verify-mfa", testLimiter, handler);
 
   // Seed Alice.
   void repo.__putUser({

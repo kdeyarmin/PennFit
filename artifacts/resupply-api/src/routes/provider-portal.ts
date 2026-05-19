@@ -7,7 +7,8 @@
 //        No PHI beyond what the provider already knows about THEIR
 //        OWN patients: name, prescribed item, valid_until.
 
-import { Router, type IRouter } from "express";
+import { Router, type IRouter, type Request } from "express";
+import expressRateLimit, { ipKeyGenerator } from "express-rate-limit";
 import { z } from "zod";
 
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
@@ -16,7 +17,24 @@ import { verifyProviderPortalToken } from "../lib/provider-portal-token";
 
 const router: IRouter = Router();
 
-router.get("/provider-portal/:token", async (req, res) => {
+// IP-keyed rate limiter on the unauthenticated provider portal lookup.
+// Uses `express-rate-limit` so the gate is recognised by static
+// analysis (CodeQL `js/missing-rate-limiting`). 60/min/IP is well
+// above any honest physician browsing pattern but well below what a
+// scraper guessing tokens would need.
+const providerPortalRateLimiter = expressRateLimit({
+  windowMs: 60 * 1000,
+  limit: 60,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  keyGenerator: (req: Request) => ipKeyGenerator(req.ip ?? "0.0.0.0"),
+  message: { error: "too_many_requests" },
+});
+
+router.get(
+  "/provider-portal/:token",
+  providerPortalRateLimiter,
+  async (req, res) => {
   const parsed = z.string().min(8).safeParse(req.params.token);
   if (!parsed.success) {
     res.status(404).json({ error: "not_found" });
