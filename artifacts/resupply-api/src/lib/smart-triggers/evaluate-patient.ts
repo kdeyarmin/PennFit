@@ -25,6 +25,14 @@ export interface PatientEvalResult {
   skippedExisting: number;
 }
 
+/**
+ * Evaluate recent therapy nights for a patient, create smart-trigger proposals, insert detected trigger events, and record audit entries for successful inserts.
+ *
+ * @param patientId - The ID of the patient to evaluate
+ * @param actor - Audit actor information (may include `adminEmail`, `adminUserId`, `ip`, and `userAgent`)
+ * @returns An object with counters: `proposed` (proposals processed), `inserted` (new rows inserted), and `skippedExisting` (proposals skipped due to existing records)
+ * @throws The underlying database error when fetching nights or when an insert fails for reasons other than a unique-violation (Postgres code `23505`)
+ */
 export async function evaluatePatientSmartTriggers(
   patientId: string,
   actor: PatientEvalActor,

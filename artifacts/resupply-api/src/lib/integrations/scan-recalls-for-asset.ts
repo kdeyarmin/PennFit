@@ -21,6 +21,13 @@ export interface RecallScanOutcome {
   notificationsQueued: number;
 }
 
+/**
+ * Scan an equipment asset for active recalls and queue a notification row for each match.
+ *
+ * @param assetId - The ID of the equipment asset to scan
+ * @returns An object containing `matchedRecallIds`: array of recall IDs that matched the asset, and `notificationsQueued`: number of newly inserted notification rows
+ * @throws If a Supabase read or write operation fails
+ */
 export async function scanRecallsForAsset(
   supabase: Supabase,
   assetId: string,

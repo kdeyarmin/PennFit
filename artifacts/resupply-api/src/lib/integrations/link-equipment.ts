@@ -60,6 +60,12 @@ const MODE_TO_CLASS: Record<string, EquipmentDeviceClass> = {
   avaps: "avaps",
 };
 
+/**
+ * Infer the equipment device class from a therapy mode string.
+ *
+ * @param therapyMode - Therapy mode label to normalize and map; may be null/undefined/blank.
+ * @returns One of the equipment device class strings (e.g., `cpap`, `bipap`, `oximeter`); returns `cpap` when `therapyMode` is falsy or not recognized.
+ */
 export function inferDeviceClass(
   therapyMode: string | null | undefined,
 ): EquipmentDeviceClass {
@@ -68,6 +74,19 @@ export function inferDeviceClass(
   return MODE_TO_CLASS[key] ?? "cpap";
 }
 
+/**
+ * Auto-link equipment described by an integration snapshot to a resupply.equipment_assets row.
+ *
+ * @param supabase - Service-role Supabase client used to query and modify `resupply.equipment_assets`.
+ * @param patientId - ID of the patient to associate with a newly created asset.
+ * @param settings - Snapshot device settings; when `null` or missing required fields the function will not create or link an asset.
+ * @returns A `SnapshotEquipmentLinkOutcome` indicating the result:
+ * - `{ kind: "no_settings" }` when `settings` is `null` or manufacturer cannot be inferred.
+ * - `{ kind: "no_serial" }` when the snapshot contains no serial number.
+ * - `{ kind: "matched"; assetId }` when an existing asset with the same `(manufacturer, serial_number)` is already linked to `patientId`.
+ * - `{ kind: "transferred"; assetId; previousPatientId }` when an existing asset with the same `(manufacturer, serial_number)` is linked to a different patient.
+ * - `{ kind: "inserted"; assetId }` when a new `equipment_assets` row was created and linked to `patientId`.
+ */
 export async function linkEquipmentFromSnapshot(
   supabase: Supabase,
   patientId: string,
@@ -137,6 +156,14 @@ export async function linkEquipmentFromSnapshot(
   return { kind: "inserted", assetId: row.id };
 }
 
+/**
+ * Formats a device's pressure range from its settings into a human-readable string.
+ *
+ * @param settings - Object containing `pressureMinCmh2o` and `pressureMaxCmh2o` values
+ * @returns `null` if both min and max are missing; otherwise a string with units:
+ * - `"X cmH2O"` when only one value is present or when min equals max
+ * - `"min–max cmH2O"` when both values are present and different
+ */
 function formatPressure(settings: DeviceSettings): string | null {
   const min = settings.pressureMinCmh2o;
   const max = settings.pressureMaxCmh2o;
@@ -149,7 +176,14 @@ function formatPressure(settings: DeviceSettings): string | null {
 
 // Best-effort manufacturer inference. Returns null when we can't
 // classify the device string — caller treats that the same as
-// "no settings", i.e. skips the auto-link rather than guessing.
+/**
+ * Infers a device manufacturer name from a device model string.
+ *
+ * Performs a best-effort, case-insensitive substring match against known model tokens.
+ *
+ * @param deviceModel - Raw device model text to inspect
+ * @returns The manufacturer name (`"ResMed"`, `"Philips"`, or `"3B Medical"`) when a match is found, `null` otherwise
+ */
 function inferManufacturer(deviceModel: string): string | null {
   const m = deviceModel.trim().toLowerCase();
   if (!m) return null;
