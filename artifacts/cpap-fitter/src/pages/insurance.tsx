@@ -240,6 +240,15 @@ export function Insurance() {
           handle benefits, prescriptions, and the claim — you just get the
           supplies.
         </p>
+        <div className="flex justify-center pt-1">
+          <Link
+            href="/insurance/estimate"
+            className="text-sm font-medium text-primary inline-flex items-center gap-1.5 hover:underline underline-offset-4"
+            data-testid="insurance-estimate-link"
+          >
+            Not ready to share your member ID? Get a quick estimate (no PHI) →
+          </Link>
+        </div>
       </header>
 
       {/* Lead-capture form — primary conversion path on this page */}

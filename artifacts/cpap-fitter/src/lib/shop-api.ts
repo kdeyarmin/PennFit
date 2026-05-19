@@ -752,6 +752,58 @@ export async function submitFitterLead(
 // transactional results email (no marketing opt-in required — the
 // patient explicitly asked for it) and persists a fitter_leads row
 // with source='sleep_apnea_quiz' for downstream attribution.
+// ─────────────────────────────────────────── insurance quick estimate
+//
+// Posts to /shop/insurance-estimates. Lightweight cousin of the full
+// /shop/insurance-leads form: payer slug + email, returns a
+// conservative range. Server persists a fitter_leads row with
+// source='insurance_quote' and sends a written confirmation email.
+
+export interface InsuranceEstimateInput {
+  email: string;
+  payerSlug: string;
+  zip?: string;
+  marketingOptIn?: boolean;
+  /** Honeypot — must be passed through but should always be empty. */
+  website?: string;
+}
+
+export interface InsuranceEstimateResponse {
+  ok: true;
+  estimate: {
+    slug: string;
+    label: string;
+    lowDollars: number;
+    highDollars: number;
+    note: string;
+  };
+}
+
+export async function submitInsuranceEstimate(
+  input: InsuranceEstimateInput,
+): Promise<InsuranceEstimateResponse> {
+  const res = await fetch("/resupply-api/shop/insurance-estimates", {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      ...csrfHeader(),
+    },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) {
+    let code = `http_${res.status}`;
+    try {
+      const body = (await res.json()) as { error?: string };
+      if (body && typeof body.error === "string") code = body.error;
+    } catch {
+      /* keep http_<status> */
+    }
+    throw new Error(code);
+  }
+  return (await res.json()) as InsuranceEstimateResponse;
+}
+
 export interface QuizLeadInput {
   email: string;
   score: number;

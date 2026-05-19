@@ -12,6 +12,7 @@ import checkoutRouter from "./checkout";
 import insuranceLeadRouter from "./insurance-lead";
 import fitterLeadRouter from "./fitter-lead";
 import quizLeadRouter from "./quiz-lead";
+import insuranceEstimateRouter from "./insurance-estimate";
 import backInStockRouter from "./back-in-stock";
 import meRouter from "./me";
 import meClinicalInfoRouter from "./me-clinical-info";
@@ -169,6 +170,11 @@ router.use(fitterLeadRouter);
 // transactional results email so the patient has the score in
 // writing to share with their physician.
 router.use(quizLeadRouter);
+// Public lightweight insurance estimator on /insurance/estimate.
+// Lower-friction sibling of /shop/insurance-leads: payer + email
+// only, returns a static range, persists a fitter_leads row with
+// source='insurance_quote' and emails a written estimate.
+router.use(insuranceEstimateRouter);
 router.use(backInStockRouter);
 
 export default router;
