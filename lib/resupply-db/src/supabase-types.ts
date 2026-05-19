@@ -993,6 +993,19 @@ export interface Database {
           // Drives the 837P loop 2320/2330 coordination-of-benefits
           // submission when set.
           secondary_coverage_id: string | null;
+          // Denormalised AI scrub status (migration 0131). Updated
+          // every time an AI scrub completes so the CSR queue can
+          // filter on it without joining claim_scrub_results.
+          latest_scrub_verdict:
+            | "ready"
+            | "fixable"
+            | "blocking"
+            | "errored"
+            | null;
+          latest_scrub_at: string | null;
+          latest_scrub_result_id: string | null;
+          // Pointer to the most recent denial analysis (migration 0131).
+          latest_denial_analysis_id: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -1210,6 +1223,79 @@ export interface Database {
         >;
         Update: Partial<
           Database["resupply"]["Tables"]["payer_modifier_rules"]["Row"]
+        >;
+        Relationships: [];
+      };
+      claim_scrub_results: {
+        Row: {
+          id: string;
+          claim_id: string;
+          verdict: "ready" | "fixable" | "blocking" | "errored";
+          model: string;
+          prompt_version: string;
+          confidence: number | null;
+          findings_json: Json;
+          suggested_patches_json: Json;
+          review_status: "pending" | "accepted" | "rejected" | "auto_applied";
+          reviewed_by_email: string | null;
+          reviewed_at: string | null;
+          applied_patches_log: Json | null;
+          applied_at: string | null;
+          latency_ms: number | null;
+          prompt_tokens: number | null;
+          completion_tokens: number | null;
+          error_message: string | null;
+          created_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["claim_scrub_results"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["claim_scrub_results"]["Row"]
+        >;
+        Relationships: [];
+      };
+      claim_denial_analyses: {
+        Row: {
+          id: string;
+          claim_id: string;
+          era_file_id: string | null;
+          model: string;
+          prompt_version: string;
+          confidence: number | null;
+          root_cause_summary: string;
+          recommendation:
+            | "auto_resubmit"
+            | "manual_resubmit"
+            | "appeal"
+            | "bill_patient"
+            | "write_off"
+            | "manual_review";
+          analysis_json: Json;
+          suggested_patches_json: Json;
+          can_auto_resubmit: boolean;
+          review_status:
+            | "pending"
+            | "accepted_resubmitted"
+            | "accepted_appealed"
+            | "accepted_written_off"
+            | "rejected"
+            | "errored";
+          reviewed_by_email: string | null;
+          reviewed_at: string | null;
+          applied_at: string | null;
+          resubmit_office_ally_submission_id: string | null;
+          latency_ms: number | null;
+          prompt_tokens: number | null;
+          completion_tokens: number | null;
+          error_message: string | null;
+          created_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["claim_denial_analyses"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["claim_denial_analyses"]["Row"]
         >;
         Relationships: [];
       };

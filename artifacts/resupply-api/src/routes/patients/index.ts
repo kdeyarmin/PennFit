@@ -26,6 +26,7 @@ import insuranceClaimsRouter from "./insurance-claims";
 import insuranceClaimsSubmitRouter from "./insurance-claims-submit";
 import insuranceClaimsHcfaRouter from "./insurance-claims-hcfa";
 import insuranceClaimsPreflightRouter from "./insurance-claims-preflight";
+import insuranceClaimsAiRouter from "./insurance-claims-ai";
 import equipmentRouter from "./equipment";
 import timelineRouter from "./timeline";
 import updateRouter from "./update";
@@ -90,6 +91,12 @@ router.use(insuranceClaimsHcfaRouter);
 // readiness checklist for a draft claim. Drives the "ready to
 // submit" / "needs work" CSR UX in front of the submit endpoint.
 router.use(insuranceClaimsPreflightRouter);
+// /patients/:id/insurance-claims/:claimId/ai-{scrub,denial-analysis,...}
+// — OpenAI-driven pre-submission scrub + post-denial root-cause +
+// one-click auto-fix-and-resubmit. PHI-safe context assembly +
+// whitelisted patch applier; the route never lets a hallucinated
+// patch mutate non-whitelisted fields.
+router.use(insuranceClaimsAiRouter);
 // /patients/:id/equipment — clinical equipment asset registry
 // (patient ↔ device serial-number link). Required for manufacturer
 // recall workflows. Distinct from Pacware warehouse inventory.

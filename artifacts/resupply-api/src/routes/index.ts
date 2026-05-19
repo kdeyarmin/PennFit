@@ -89,6 +89,7 @@ import productHcpcsMapRouter from "./admin/product-hcpcs-map.js";
 import payerModifierRulesRouter from "./admin/payer-modifier-rules.js";
 import claimTemplatesRouter from "./admin/claim-templates.js";
 import fulfillmentToClaimRouter from "./admin/fulfillment-to-claim.js";
+import aiBillingQueueRouter from "./admin/ai-billing-queue.js";
 import auditRouter from "./audit/index.js";
 import conversationsRouter from "./conversations/index.js";
 import dashboardRouter from "./dashboard/index.js";
@@ -245,6 +246,10 @@ router.use(claimTemplatesRouter);
 // (HCPCS map + modifier rules + fee schedule + diagnosis + prescriber)
 // and inserts the populated draft.
 router.use(fulfillmentToClaimRouter);
+// /admin/billing/ai-queue — AI scrub + denial-analysis worklist
+// surfacing claims blocked / fixable / awaiting analysis / ready
+// for one-click auto-resubmit.
+router.use(aiBillingQueueRouter);
 // /admin/shop/products/* — operator tooling for the cash-pay catalog
 // itself. Today: PATCH stock_count metadata on a Stripe Product.
 // requireAdmin gate is on the router itself.
