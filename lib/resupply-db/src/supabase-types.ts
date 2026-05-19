@@ -351,6 +351,7 @@ export interface Database {
           portal_auth_user_id: string | null;
           portal_invited_at: string | null;
           portal_invited_by: string | null;
+          quarterly_summary_last_sent_at: string | null;
           created_at: string;
           updated_at: string;
         };

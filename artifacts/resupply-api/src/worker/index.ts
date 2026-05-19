@@ -48,6 +48,7 @@ import { registerShopOrderDeliveryFollowupJob } from "./jobs/shop-order-delivery
 import { registerTherapyMilestonesJob } from "./jobs/therapy-milestones.js";
 import { registerLapsedCustomerWinbackJob } from "./jobs/lapsed-customer-winback.js";
 import { registerDeductibleResetPushJob } from "./jobs/deductible-reset-push.js";
+import { registerQuarterlyTherapySummaryJob } from "./jobs/quarterly-therapy-summary.js";
 
 let bossInstance: PgBoss | null = null;
 let workerReady = false;
@@ -282,6 +283,15 @@ export async function startWorker(): Promise<void> {
   // hasn't been stamped for the current year. Daily-and-short-circuit
   // makes the cron self-healing across deploys that miss Nov 1.
   await registerDeductibleResetPushJob(boss);
+
+  // Daily quarterly therapy-summary email — every 90 days per
+  // patient, pushes the same 90-day rollup that /shop/me/quarterly-
+  // summary already builds into the patient's inbox. The endpoint
+  // was pull-only; this worker makes it pull-AND-push so payers
+  // and primary-care physicians get the summary at the cadence
+  // they ask for. Runs at 06:17 UTC, gated by emailMarketing on
+  // the patient's shop_customers comm-prefs.
+  await registerQuarterlyTherapySummaryJob(boss);
 
   workerReady = true;
   logger.info(
