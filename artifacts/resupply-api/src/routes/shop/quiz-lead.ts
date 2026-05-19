@@ -67,12 +67,21 @@ function rateLimited(key: string): boolean {
 
 const BAND_VALUES = ["low", "intermediate", "high"] as const;
 
+/**
+ * Compute the risk band from a STOP-BANG score.
+ * Score 0-2: low, 3-4: intermediate, 5-8: high.
+ */
+function computeBand(score: number): typeof BAND_VALUES[number] {
+  if (score <= 2) return "low";
+  if (score <= 4) return "intermediate";
+  return "high";
+}
+
 const body = z
   .object({
     email: z.string().trim().toLowerCase().email().max(200),
     /** STOP-BANG 0..8. */
     score: z.number().int().min(0).max(8),
-    band: z.enum(BAND_VALUES),
     /**
      * Plain-text labels of the symptoms the patient answered "yes" to.
      * The frontend provides these so the email can list them back to
@@ -122,6 +131,9 @@ router.post("/shop/quiz-leads", async (req, res) => {
     return;
   }
 
+  // Compute the authoritative band server-side from the score.
+  const computedBand = computeBand(data.score);
+
   // Persist the row first so the lead is durable even if SendGrid
   // is unconfigured / down.
   const persisted = await recordFitterLead({
@@ -141,7 +153,7 @@ router.post("/shop/quiz-leads", async (req, res) => {
       persisted: persisted.id !== null,
       persistErr: persisted.error,
       score: data.score,
-      band: data.band,
+      band: computedBand,
       marketingOptIn: data.marketingOptIn,
     },
     "shop/quiz-leads: submission processed",
@@ -156,7 +168,7 @@ router.post("/shop/quiz-leads", async (req, res) => {
       const result = await sendQuizResultsEmail({
         toEmail: data.email,
         score: data.score,
-        band: data.band as QuizRiskBand,
+        band: computedBand as QuizRiskBand,
         symptoms: data.symptoms,
       });
       if (!result.configured) {

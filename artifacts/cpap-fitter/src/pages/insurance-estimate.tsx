@@ -330,12 +330,13 @@ function ResultPanel({
   result: ServerEstimate;
   zipShown: string | null;
 }) {
-  const range =
-    result.lowDollars === 0 && result.highDollars === 0
-      ? "$0 (free)"
-      : result.lowDollars === 0
-        ? `$0–$${result.highDollars}`
-        : `$${result.lowDollars}–$${result.highDollars}`;
+  const range = formatEstimateRange({
+    slug: result.slug,
+    label: result.label,
+    postDeductibleLowDollars: result.lowDollars,
+    postDeductibleHighDollars: result.highDollars,
+    note: result.note,
+  });
 
   return (
     <div className="space-y-5" data-testid="insurance-estimate-result">

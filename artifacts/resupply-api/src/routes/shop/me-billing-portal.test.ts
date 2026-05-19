@@ -59,6 +59,16 @@ vi.mock("@workspace/resupply-audit", () => ({
   logAudit: (...a: unknown[]) => logAuditMock(...a),
 }));
 
+// ── Logger mock ───────────────────────────────────────────────────────
+const loggerMock = {
+  error: vi.fn(),
+  warn: vi.fn(),
+  info: vi.fn(),
+};
+vi.mock("../../lib/logger", () => ({
+  logger: loggerMock,
+}));
+
 import meBillingPortalRouter from "./me-billing-portal";
 
 // ── Constants ─────────────────────────────────────────────────────────
@@ -106,6 +116,9 @@ describe("POST /shop/me/billing-portal", () => {
     getOrCreateStripeCustomerMock.mockReset();
     getStripeClientMock.mockReset();
     logAuditMock.mockReset().mockResolvedValue(undefined);
+    loggerMock.error.mockReset();
+    loggerMock.warn.mockReset();
+    loggerMock.info.mockReset();
   });
 
   afterEach(() => {
@@ -250,6 +263,14 @@ describe("POST /shop/me/billing-portal", () => {
       .post("/resupply-api/shop/me/billing-portal")
       .send({ returnPath: "/account" });
     expect(JSON.stringify(res.body)).not.toMatch(/sensitive_key_content/);
+
+    // Also verify the logger doesn't contain the sensitive substring
+    expect(loggerMock.error).toHaveBeenCalled();
+    const errorCalls = loggerMock.error.mock.calls;
+    for (const call of errorCalls) {
+      const serialized = JSON.stringify(call);
+      expect(serialized).not.toMatch(/sensitive_key_content/);
+    }
   });
 
   it("calls getOrCreateStripeCustomer with the signed-in customerId", async () => {

@@ -124,10 +124,13 @@ export const PAYER_SLUGS = PAYER_ESTIMATES.map((p) => p.slug) as readonly string
  * for unknown values so a stale frontend can't 404 the email send.
  */
 export function findPayerEstimate(slug: string): PayerEstimate {
-  return (
-    PAYER_ESTIMATES.find((p) => p.slug === slug) ??
-    PAYER_ESTIMATES[PAYER_ESTIMATES.length - 1]!
-  );
+  const match = PAYER_ESTIMATES.find((p) => p.slug === slug);
+  if (match) return match;
+  const fallback = PAYER_ESTIMATES.find((p) => p.slug === 'other');
+  if (!fallback) {
+    throw new Error('Payer estimates configuration missing "other" fallback entry');
+  }
+  return fallback;
 }
 
 export function formatEstimateRange(p: PayerEstimate): string {

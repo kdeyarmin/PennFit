@@ -810,7 +810,36 @@ describe("PATCH /patients/:id/insurance-claims/:claimId/lines/:lineId", () => {
       (updatePayloads[0] as Record<string, unknown>).total_paid_cents,
     ).toBe(40000);
   });
+
+  it("returns 404 when patching a line whose claim/patient id doesn't match", async () => {
+    stubVerifiedAdmin();
+    const wrongPatientId = "99999999-9999-4999-8999-999999999999";
+    stageSupabaseResponse("insurance_claim_line_items", "select", {
+      data: null,
+    });
+    const res = await request(makeApp())
+      .patch(
+        `/resupply-api/patients/${wrongPatientId}/insurance-claims/${CLAIM_ID}/lines/${LINE_ID}`,
+      )
+      .send({ paidCents: 40000 });
+    expect(res.status).toBe(404);
+    expect(res.body.error).toBe("not_found");
+  });
+
+  it("returns 500 when detail/select lookup returns a Supabase error", async () => {
+    stubVerifiedAdmin();
+    stageSupabaseResponse("insurance_claim_line_items", "select", {
+      error: { message: "DB connection lost" },
+    });
+    const res = await request(makeApp())
+      .patch(
+        `/resupply-api/patients/${PATIENT_ID}/insurance-claims/${CLAIM_ID}/lines/${LINE_ID}`,
+      )
+      .send({ paidCents: 40000 });
+    expect(res.status).toBe(500);
+  });
 });
+
 
 // ── POST events ───────────────────────────────────────────────────────
 describe("POST /patients/:id/insurance-claims/:claimId/events", () => {

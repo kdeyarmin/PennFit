@@ -91,6 +91,27 @@ function readPrefs(raw: Json | null): CommunicationPreferences {
 }
 
 /**
+ * Rollback helper: clear the winback_sent_at stamp for a customer.
+ * Throws on Supabase failure so the error propagates to the caller.
+ */
+async function rollbackWinbackStamp(
+  customerId: string,
+  winbackSentAt: string | null
+): Promise<void> {
+  const supabase = getSupabaseServiceRoleClient();
+  const { error } = await supabase
+    .schema("resupply")
+    .from("shop_customers")
+    .update({ winback_sent_at: winbackSentAt })
+    .eq("customer_id", customerId);
+  if (error) {
+    throw new Error(
+      `Failed to rollback winback_sent_at for customer ${customerId}: ${error.message}`
+    );
+  }
+}
+
+/**
  * Exported for testability. Pure DB + send work.
  */
 export async function runLapsedCustomerWinback(): Promise<WinbackStats> {
@@ -215,20 +236,12 @@ export async function runLapsedCustomerWinback(): Promise<WinbackStats> {
         monthsSinceLastOrder: monthsSince,
       });
       if (!result.configured) {
-        await supabase
-          .schema("resupply")
-          .from("shop_customers")
-          .update({ winback_sent_at: row.winback_sent_at })
-          .eq("customer_id", row.customer_id);
+        await rollbackWinbackStamp(row.customer_id, row.winback_sent_at);
         stats.skipped += 1;
         continue;
       }
       if (!result.delivered) {
-        await supabase
-          .schema("resupply")
-          .from("shop_customers")
-          .update({ winback_sent_at: row.winback_sent_at })
-          .eq("customer_id", row.customer_id);
+        await rollbackWinbackStamp(row.customer_id, row.winback_sent_at);
         stats.failed += 1;
         logger.warn(
           { customerId: row.customer_id, err: result.error },
@@ -238,11 +251,7 @@ export async function runLapsedCustomerWinback(): Promise<WinbackStats> {
       }
       stats.sent += 1;
     } catch (err) {
-      await supabase
-        .schema("resupply")
-        .from("shop_customers")
-        .update({ winback_sent_at: row.winback_sent_at })
-        .eq("customer_id", row.customer_id);
+      await rollbackWinbackStamp(row.customer_id, row.winback_sent_at);
       stats.failed += 1;
       logger.error(
         {

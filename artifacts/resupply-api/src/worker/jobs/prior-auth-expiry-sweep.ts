@@ -134,16 +134,24 @@ export async function runPriorAuthExpirySweep(
   if (dueErr) throw dueErr;
 
   for (const row of dueToExpire ?? []) {
-    const { error: updErr } = await supabase
+    const { data: updatedRows, error: updErr } = await supabase
       .schema("resupply")
       .from("prior_authorizations")
       .update({ status: "expired" })
       .eq("id", row.id)
-      .eq("status", "approved");
+      .eq("status", "approved")
+      .select("id");
     if (updErr) {
       logger.warn(
         { err: updErr.message, paId: row.id },
         "prior-auth.expiry-sweep: expire update failed",
+      );
+      continue;
+    }
+    if (!updatedRows || updatedRows.length === 0) {
+      logger.info(
+        { paId: row.id },
+        "prior-auth.expiry-sweep: update returned no rows (likely race)",
       );
       continue;
     }

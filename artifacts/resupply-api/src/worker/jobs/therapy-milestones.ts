@@ -191,13 +191,19 @@ export async function runTherapyMilestones(): Promise<MilestoneStats> {
   // who didn't sync in 60 days couldn't have produced a new
   // milestone, so we save the scan cost. (Existing milestone rows
   // for old patients are still picked up in the SEND step below.)
+  //
+  // We use a raw SQL query via RPC or a separate aggregation to get
+  // distinct patient_id values server-side rather than fetching rows
+  // and deduplicating client-side. Since PostgREST doesn't have a
+  // direct .distinct() on select, we work around by grouping in a
+  // subquery. For now, we keep the client-side dedup but note that
+  // a better approach would be to use a PostgreSQL function or view.
   const activitySince = isoDaysAgo(ACTIVITY_LOOKBACK_DAYS);
   const { data: activePatients, error: actErr } = await supabase
     .schema("resupply")
     .from("patient_therapy_nights")
     .select("patient_id")
-    .gte("updated_at", `${activitySince}T00:00:00.000Z`)
-    .limit(10_000);
+    .gte("updated_at", `${activitySince}T00:00:00.000Z`);
   if (actErr) throw actErr;
 
   const uniquePatientIds = Array.from(
@@ -316,13 +322,26 @@ export async function runTherapyMilestones(): Promise<MilestoneStats> {
     };
 
     // Resolve recipient email + first name.
-    const { data: patient } = await supabase
+    const { data: patient, error: patientError } = await supabase
       .schema("resupply")
       .from("patients")
       .select("email, legal_first_name")
       .eq("id", claimed.patient_id)
       .limit(1)
       .maybeSingle();
+    if (patientError) {
+      await releaseClaim();
+      stats.sendFailed += 1;
+      logger.error(
+        {
+          err: patientError.message,
+          milestoneId: claimed.id,
+          patientId: claimed.patient_id,
+        },
+        "therapy-milestones: patient lookup failed",
+      );
+      continue;
+    }
     if (!patient || !patient.email) {
       // No deliverable — leave the stamp so we don't retry every day.
       stats.sendSkipped += 1;
