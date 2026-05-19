@@ -54,6 +54,8 @@ import { registerOfficeAllyInboundPollJob } from "./jobs/office-ally-inbound-pol
 import { registerPaMcoSlaSweepJob } from "./jobs/pa-mco-sla-sweep.js";
 import { registerAccreditationReadinessSweepJob } from "./jobs/accreditation-readiness-sweep.js";
 import { registerPecosSyncJob } from "./jobs/pecos-sync.js";
+import { registerCappedRentalAdvanceJob } from "./jobs/capped-rental-advance.js";
+import { registerDwoExpirySweepJob } from "./jobs/dwo-expiry-sweep.js";
 
 let bossInstance: PgBoss | null = null;
 let workerReady = false;
@@ -326,6 +328,15 @@ export async function startWorker(): Promise<void> {
   // Daily CMS PECOS Order/Referring sync. Powers the preflight
   // "ordering provider not PECOS-enrolled" denial blocker.
   await registerPecosSyncJob(boss);
+
+  // Daily capped-rental month advance (mig 0134). For each active
+  // cycle past the next anniversary, generates a draft monthly
+  // claim with the correct KH/KI/KX modifier rotation.
+  await registerCappedRentalAdvanceJob(boss);
+
+  // Weekly DWO / CMN renewal sweep (mig 0134). T-60/T-30/T-7 CSR
+  // alerts before expires_on.
+  await registerDwoExpirySweepJob(boss);
 
   workerReady = true;
   logger.info(

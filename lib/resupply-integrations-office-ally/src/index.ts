@@ -72,6 +72,10 @@ export {
   type ProviderAdjustment,
 } from "./edi/parse-835";
 
+export { build270, type Build270Input, type Built270 } from "./edi/270";
+
+export { parse271, type Parsed271 } from "./edi/parse-271";
+
 export {
   parseX12,
   parseMoneyToCents,

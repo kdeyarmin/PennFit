@@ -7,6 +7,7 @@ import adminRouter from "./admin.js";
 import usageEventsRouter from "./usage-events.js";
 import remindersRouter from "./reminders.js";
 import chatRouter from "./chat.js";
+import sleepCoachRouter from "./sleep-coach.js";
 
 const router: IRouter = Router();
 
@@ -18,5 +19,6 @@ router.use(adminRouter);
 router.use(usageEventsRouter);
 router.use(remindersRouter);
 router.use(chatRouter);
+router.use(sleepCoachRouter);
 
 export default router;

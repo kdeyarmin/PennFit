@@ -96,6 +96,12 @@ import accreditationReadinessRouter from "./admin/accreditation-readiness.js";
 import accreditationSurveysRouter from "./admin/accreditation-surveys.js";
 import goodFaithEstimatesRouter from "./admin/good-faith-estimates.js";
 import pecosStatusRouter from "./admin/pecos-status.js";
+import eligibilityChecksRouter from "./admin/eligibility-checks.js";
+import sameOrSimilarRouter from "./admin/same-or-similar.js";
+import cappedRentalCyclesRouter from "./admin/capped-rental-cycles.js";
+import dwoDocumentsRouter from "./admin/dwo-documents.js";
+import adherencePredictionsRouter from "./admin/adherence-predictions.js";
+import shopMembershipRouter from "./admin/shop-membership.js";
 import auditRouter from "./audit/index.js";
 import conversationsRouter from "./conversations/index.js";
 import dashboardRouter from "./dashboard/index.js";
@@ -278,6 +284,25 @@ router.use(goodFaithEstimatesRouter);
 // /admin/providers-pecos — CMS PECOS ordering-provider sync. Daily
 // auto-sync via the worker plus a manual sync-now trigger.
 router.use(pecosStatusRouter);
+// /admin/patients/:id/insurance-coverages/:coverageId/verify-eligibility
+// + /admin/patients/:id/eligibility-checks — X12 270/271 round-trip.
+router.use(eligibilityChecksRouter);
+// /admin/patients/:id/same-or-similar — Medicare HETS Same-or-Similar
+// cache. Manual recording today; HETS adapter lands later.
+router.use(sameOrSimilarRouter);
+// /admin/capped-rental-cycles/* — 13/36-month rental lifecycle CRUD
+// + manual advance trigger. Daily worker advances cycles
+// automatically.
+router.use(cappedRentalCyclesRouter);
+// /admin/dwo-documents/* — DWO / CMN / SWO renewal tracking with
+// T-60/T-30/T-7 alert sweep.
+router.use(dwoDocumentsRouter);
+// /admin/patients/:id/adherence/score + /history — heuristic
+// adherence predictor + history; at-risk list at /admin/adherence/at-risk.
+router.use(adherencePredictionsRouter);
+// /admin/shop/customers/:id/membership — cash-pay membership tier
+// management (Stripe Subscriptions handles billing).
+router.use(shopMembershipRouter);
 // /admin/shop/products/* — operator tooling for the cash-pay catalog
 // itself. Today: PATCH stock_count metadata on a Stripe Product.
 // requireAdmin gate is on the router itself.

@@ -1167,6 +1167,195 @@ export interface Database {
         >;
         Relationships: [];
       };
+      eligibility_checks: {
+        Row: {
+          id: string;
+          insurance_coverage_id: string;
+          patient_id: string;
+          payer_profile_id: string | null;
+          service_hcpcs: string | null;
+          isa_control_number: string | null;
+          gs_control_number: string | null;
+          outbound_file_name: string | null;
+          status:
+            | "queued"
+            | "submitted"
+            | "parsed"
+            | "rejected"
+            | "transport_failed";
+          is_active: boolean | null;
+          in_network: boolean | null;
+          deductible_cents: number | null;
+          deductible_met_cents: number | null;
+          oop_max_cents: number | null;
+          oop_met_cents: number | null;
+          copay_cents: number | null;
+          coinsurance_pct: number | null;
+          requires_prior_auth: boolean | null;
+          parsed_response_json: Json | null;
+          error_message: string | null;
+          requested_at: string;
+          responded_at: string | null;
+          requested_by_email: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["eligibility_checks"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["eligibility_checks"]["Row"]
+        >;
+        Relationships: [];
+      };
+      medicare_same_or_similar_checks: {
+        Row: {
+          id: string;
+          patient_id: string;
+          hcpcs_code: string;
+          last_dispense_on: string | null;
+          status: "clear" | "inactive" | "active" | "unknown";
+          raw_response_json: Json | null;
+          checked_at: string;
+          requested_by_email: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["medicare_same_or_similar_checks"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["medicare_same_or_similar_checks"]["Row"]
+        >;
+        Relationships: [];
+      };
+      capped_rental_cycles: {
+        Row: {
+          id: string;
+          patient_id: string;
+          hcpcs_code: string;
+          payer_profile_id: string | null;
+          insurance_coverage_id: string | null;
+          start_date: string;
+          current_month: number;
+          max_months: number;
+          ownership_transferred_on: string | null;
+          status: "active" | "paused" | "transferred" | "cancelled";
+          latest_claim_id: string | null;
+          notes: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["capped_rental_cycles"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["capped_rental_cycles"]["Row"]
+        >;
+        Relationships: [];
+      };
+      dwo_documents: {
+        Row: {
+          id: string;
+          patient_id: string;
+          hcpcs_family:
+            | "pap"
+            | "rad"
+            | "oxygen"
+            | "hospital_bed"
+            | "wheelchair"
+            | "other";
+          form_type: "dwo" | "cmn_484" | "cmn_843" | "swo";
+          signing_provider_id: string | null;
+          signed_on: string;
+          expires_on: string;
+          document_object_key: string | null;
+          notes: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["dwo_documents"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["dwo_documents"]["Row"]
+        >;
+        Relationships: [];
+      };
+      adherence_predictions: {
+        Row: {
+          id: string;
+          patient_id: string;
+          model_version: string;
+          days_of_therapy: number;
+          probability_compliant: number;
+          factors_json: Json;
+          actual_compliant: boolean | null;
+          outcome_observed_at: string | null;
+          scored_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["adherence_predictions"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["adherence_predictions"]["Row"]
+        >;
+        Relationships: [];
+      };
+      voice_reorder_sessions: {
+        Row: {
+          id: string;
+          twilio_call_sid: string;
+          from_e164: string;
+          patient_id: string | null;
+          shop_customer_id: string | null;
+          status:
+            | "in_progress"
+            | "completed_order"
+            | "completed_no_order"
+            | "patient_not_identified"
+            | "transferred_to_human"
+            | "failed";
+          outcome_json: Json;
+          started_at: string;
+          ended_at: string | null;
+          shop_order_id: string | null;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["voice_reorder_sessions"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["voice_reorder_sessions"]["Row"]
+        >;
+        Relationships: [];
+      };
+      davinci_pas_submissions: {
+        Row: {
+          id: string;
+          prior_authorization_id: string;
+          payer_pas_endpoint: string;
+          bundle_id: string;
+          claim_identifier: string;
+          transport_status:
+            | "queued"
+            | "submitted"
+            | "responded"
+            | "rejected"
+            | "transport_failed";
+          decision: "approved" | "denied" | "pended" | "cancelled" | null;
+          auth_number: string | null;
+          decision_at: string | null;
+          denial_reason: string | null;
+          latency_ms: number | null;
+          error_message: string | null;
+          requested_at: string;
+          responded_at: string | null;
+          submitted_by_email: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["davinci_pas_submissions"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["davinci_pas_submissions"]["Row"]
+        >;
+        Relationships: [];
+      };
       providers_pecos_status: {
         Row: {
           npi: string;
@@ -2398,6 +2587,15 @@ export interface Database {
           shipping_address_json: Json | null;
           default_payment_method_id: string | null;
           default_payment_method_brand: string | null;
+          // Cash-pay membership tier (migration 0134).
+          membership_tier:
+            | "payg"
+            | "monthly_unlimited"
+            | "quarterly_unlimited"
+            | null;
+          membership_started_at: string | null;
+          membership_renews_at: string | null;
+          membership_stripe_subscription_id: string | null;
           default_payment_method_last4: string | null;
           default_payment_method_exp_month: number | null;
           default_payment_method_exp_year: number | null;
