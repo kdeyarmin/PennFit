@@ -20,13 +20,13 @@ import type { DeviceSettings } from "@workspace/resupply-integrations";
 import { linkEquipmentFromSnapshot } from "../../lib/integrations/link-equipment";
 import { scanRecallsForAsset } from "../../lib/integrations/scan-recalls-for-asset";
 import { logger } from "../../lib/logger";
-import { requireAdmin } from "../../middlewares/requireAdmin";
+import { requirePermission } from "../../middlewares/requirePermission";
 
 const router: IRouter = Router();
 
 router.post(
   "/admin/patients/:id/integrations/sync-equipment",
-  requireAdmin,
+  requirePermission("patients.update"),
   async (req, res) => {
     const idParse = z.string().uuid().safeParse(req.params.id);
     if (!idParse.success) {
