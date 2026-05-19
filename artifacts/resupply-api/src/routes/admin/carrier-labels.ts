@@ -12,13 +12,17 @@ import { z } from "zod";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { selectAdapter } from "../../lib/carrier-labels";
-import { requireAdmin } from "../../middlewares/requireAdmin";
+import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
 
 router.post(
   "/admin/shop/returns/:returnId/label",
-  requireAdmin,
+  // Mints a return label for an approved RMA. `returns.manage`
+  // scope — operational tier (admin / supervisor / csr / fulfillment
+  // / agent), excludes fitter and compliance_officer (no workflow
+  // here).
+  requirePermission("returns.manage"),
   async (req, res) => {
     const idParse = z.string().uuid().safeParse(req.params.returnId);
     if (!idParse.success) {

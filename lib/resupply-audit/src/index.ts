@@ -31,6 +31,11 @@ import {
 } from "@workspace/resupply-db";
 
 import { sanitizeMetadata } from "./sanitize";
+import {
+  type AuditChainContent,
+  requireAuditHmacKey,
+  signAuditRow,
+} from "./sign";
 
 export {
   AUDIT_METADATA_MAX_BYTES,
@@ -41,6 +46,51 @@ export {
   AuditMetadataSizeError,
   sanitizeMetadata,
 } from "./sanitize";
+export {
+  AUDIT_HMAC_KEY_ENV,
+  AuditHmacKeyError,
+  canonicalJson,
+  registerAuditHmacKeyForTesting,
+  requireAuditHmacKey,
+  signAuditRow,
+  type AuditChainContent,
+} from "./sign";
+
+/**
+ * Max number of retries when two writers race on the same
+ * `chain_seq`. Each retry costs one fast indexed SELECT plus the
+ * losing INSERT plus a brief sleep, so the ceiling is conservative
+ * relative to peak contention. The reviewer's preferred fix
+ * (advisory-lock RPC computing the HMAC server-side) is blocked by
+ * the repo's no-extensions invariant — PL/pgSQL has no built-in
+ * HMAC, and `pgcrypto` was explicitly stripped by migration 0025.
+ * Until that constraint changes, optimistic retries with jittered
+ * exponential backoff are the right shape: cheap, correct, and
+ * able to absorb a burst that 8-no-backoff retries could not.
+ */
+const CHAIN_INSERT_MAX_ATTEMPTS = 32;
+
+/**
+ * Jittered exponential backoff between chain_seq contention
+ * retries: 1ms doubling to a 64ms ceiling, multiplied by a random
+ * factor in [0, 1) so colliding writers don't re-collide on the
+ * same wake-up. The total worst-case wait at MAX_ATTEMPTS is
+ * bounded at ~32 * 64ms = ~2s.
+ */
+const CHAIN_BACKOFF_BASE_MS = 1;
+const CHAIN_BACKOFF_CAP_MS = 64;
+
+function chainBackoffMs(attempt: number): number {
+  const exp = Math.min(
+    CHAIN_BACKOFF_CAP_MS,
+    CHAIN_BACKOFF_BASE_MS * 2 ** attempt,
+  );
+  return Math.floor(Math.random() * exp);
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 export interface AuditEvent {
   /**
@@ -120,6 +170,23 @@ export function registerAuditRequestIdResolver(
   resolveRequestId = fn;
 }
 
+/**
+ * Appends a single signed audit row to the `resupply.audit_log` table after validating metadata.
+ *
+ * The function augments the provided metadata with a resolved request id (if available), runs
+ * metadata sanitization, constructs an HMAC-signed chain entry, and inserts the new row with the
+ * next `chain_seq` and signature. On concurrent writers it retries the insert when the database
+ * reports a `chain_seq` uniqueness violation, up to `CHAIN_INSERT_MAX_ATTEMPTS`.
+ *
+ * @param event - Audit event fields (action, optional operator/target info, metadata, ip, userAgent)
+ * @throws AuditMetadataPhiError | AuditMetadataSizeError | AuditMetadataDepthError | AuditMetadataShapeError
+ *         When metadata fails sanitization.
+ * @throws AuditHmacKeyError
+ *         When the required audit HMAC key cannot be loaded.
+ * @throws Error
+ *         On database/insert failures other than retriable chain-sequence contention, or when the
+ *         retry budget for chain-sequence contention is exhausted.
+ */
 export async function logAudit(event: AuditEvent): Promise<void> {
   const requestId = resolveRequestId?.() ?? null;
   // Don't mutate the caller's metadata object. `_request_id` uses an
@@ -132,48 +199,102 @@ export async function logAudit(event: AuditEvent): Promise<void> {
       ? { ...event.metadata, _request_id: requestId }
       : event.metadata;
   const metadata = sanitizeMetadata(metadataInput);
+  const key = requireAuditHmacKey();
+  const supabase = getSupabaseServiceRoleClient();
 
-  const { error } = await getSupabaseServiceRoleClient()
-    .schema("resupply")
-    .from("audit_log")
-    .insert({
+  // HMAC chain: read the current tip, sign, insert with the next
+  // chain_seq. Two concurrent writers can both read tip N and try
+  // to insert N+1 — the unique partial index throws 23505 on the
+  // loser, who reads the now-updated tip and retries.
+  let lastError: unknown = null;
+  for (let attempt = 0; attempt < CHAIN_INSERT_MAX_ATTEMPTS; attempt++) {
+    const { data: latest, error: latestErr } = await supabase
+      .schema("resupply")
+      .from("audit_log")
+      .select("chain_seq, signature")
+      .not("chain_seq", "is", null)
+      .order("chain_seq", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (latestErr) throw latestErr;
+
+    const prevSeq = latest?.chain_seq ?? 0;
+    const prevSignature = latest?.signature ?? null;
+    // chain_seq is bigint in Postgres but `number` in the generated
+    // Supabase types. JS numbers stay precise up to 2^53; the
+    // canonical JSON encoding of chain_seq also goes through
+    // JSON.stringify, so once the chain crosses that threshold the
+    // signature input is lossy and verification breaks. Fail loudly
+    // if we ever approach the boundary so the chain can be
+    // rotated/segmented operationally before silent corruption.
+    if (!Number.isSafeInteger(prevSeq) || prevSeq < 0) {
+      throw new Error(
+        `audit_log chain_seq ${prevSeq} is outside the safe-integer range; rotate the audit chain before continuing`,
+      );
+    }
+    const chainSeq = prevSeq + 1;
+
+    const content: AuditChainContent = {
+      chain_seq: chainSeq,
       operator_email: event.adminEmail ?? null,
       operator_user_id: event.adminUserId ?? null,
       action: event.action,
       target_table: event.targetTable ?? null,
       target_id: event.targetId ?? null,
-      metadata: metadata as unknown as Json,
+      metadata,
       ip: event.ip ?? null,
       user_agent: event.userAgent ?? null,
-    });
-  if (error) throw error;
+    };
+    const signature = signAuditRow(key, prevSignature, content);
+
+    const { error } = await supabase
+      .schema("resupply")
+      .from("audit_log")
+      .insert({
+        operator_email: event.adminEmail ?? null,
+        operator_user_id: event.adminUserId ?? null,
+        action: event.action,
+        target_table: event.targetTable ?? null,
+        target_id: event.targetId ?? null,
+        metadata: metadata as unknown as Json,
+        ip: event.ip ?? null,
+        user_agent: event.userAgent ?? null,
+        chain_seq: chainSeq,
+        prev_signature: prevSignature,
+        signature,
+      });
+    if (!error) return;
+    // Retry only on chain_seq unique-violation; any other error
+    // surfaces immediately so a permission / shape / network issue
+    // doesn't masquerade as contention.
+    if ((error as { code?: string }).code === "23505") {
+      lastError = error;
+      // Jittered backoff so colliding writers don't immediately
+      // re-collide on the same wake-up. The first retry is "almost
+      // immediate" — the jitter factor in chainBackoffMs can return
+      // 0 — which keeps the happy path fast under one-off races
+      // while spreading sustained bursts across a wider window.
+      await sleep(chainBackoffMs(attempt));
+      continue;
+    }
+    throw error;
+  }
+  throw new Error(
+    `audit_log chain insert: chain_seq contention exceeded ${CHAIN_INSERT_MAX_ATTEMPTS} attempts` +
+      (lastError ? ` (last: ${String(lastError)})` : ""),
+  );
 }
 
 /**
- * Best-effort variant of `logAudit` for call sites where audit-write
- * failure must NOT block the user-visible flow (post-success
- * background tasks, webhook handlers, worker jobs).
+ * Attempts to write an audit row but does not allow transient write failures to block the caller.
  *
- * Behavior:
- *   * Sanitizer errors (PHI, shape, size, depth) STILL THROW. The
- *     metadata-validation gate is a programmer correctness check —
- *     a silent-eat there would defeat its purpose, so we re-throw
- *     so the call site sees the bug.
- *   * DB-level errors (pool exhaustion, deadlock, transient
- *     connection issue) are swallowed and logged via the caller-
- *     provided `onWriteFailure` callback (or no-op if none given).
- *   * The callback receives the original error AND a stable event
- *     name (`audit_write_failed`) so a logging adapter can grep
- *     for systemic outages: a single failure is normal noise; a
- *     run of them under a few minutes is a signal that the audit
- *     DB or pool is unhealthy.
+ * Re-throws metadata/sanitizer and HMAC-key errors; calls `onWriteFailure` and returns `false` for DB/transient failures; returns `true` on successful write.
  *
- * Returns `true` on successful write, `false` on swallowed DB
- * failure, and re-throws on sanitizer / programmer errors.
- *
- * Call sites adopt this helper instead of try/catch so the
- * categorization of "what's a programmer bug vs what's transient"
- * stays in one place.
+ * @param event - The audit event to write.
+ * @param options - Callsite options controlling failure handling.
+ * @param options.contextLabel - Stable label identifying the callsite context (e.g. "post_login_audit").
+ * @param options.onWriteFailure - Optional callback invoked with a failure envelope when a non-programmer/transient write error occurs.
+ * @returns `true` if the audit write succeeded, `false` if a DB/transient failure was swallowed.
  */
 export async function logAuditBestEffort(
   event: AuditEvent,
@@ -208,7 +329,8 @@ export async function logAuditBestEffort(
       name === "AuditMetadataPhiError" ||
       name === "AuditMetadataSizeError" ||
       name === "AuditMetadataDepthError" ||
-      name === "AuditMetadataShapeError"
+      name === "AuditMetadataShapeError" ||
+      name === "AuditHmacKeyError"
     ) {
       throw err;
     }

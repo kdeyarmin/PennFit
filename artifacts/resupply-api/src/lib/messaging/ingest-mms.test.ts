@@ -62,10 +62,10 @@ function pngBytes(size = 32): Uint8Array {
 
 function mockFetch(impl: (url: string, init?: RequestInit) => Response) {
   // Cast through unknown — vitest's typing of global.fetch is strict.
-  return vi
-    .spyOn(globalThis, "fetch" as never)
-    .mockImplementation((async (url: unknown, init?: unknown) =>
-      impl(String(url), init as RequestInit | undefined)) as never);
+  return (
+    vi.spyOn(globalThis, "fetch" as never) as unknown as MockInstance
+  ).mockImplementation((async (url: unknown, init?: unknown) =>
+    impl(String(url), init as RequestInit | undefined)) as never);
 }
 
 // Exact Twilio-media URL check used by the fetch mocks below. A naive
@@ -535,7 +535,9 @@ describe("ingestInboundMmsMedia", () => {
      *  AbortSignal handed to it is intentionally ignored — that's
      *  the failure mode the overall-budget guard exists for. */
     function neverSettlingFetch(): MockInstance {
-      return vi.spyOn(globalThis, "fetch" as never).mockImplementation(
+      return (
+        vi.spyOn(globalThis, "fetch" as never) as unknown as MockInstance
+      ).mockImplementation(
         (async () =>
           new Promise(() => {
             /* never resolves */

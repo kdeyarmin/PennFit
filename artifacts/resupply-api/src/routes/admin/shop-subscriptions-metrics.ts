@@ -32,7 +32,7 @@ import { Router, type IRouter } from "express";
 
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
-import { requireAdmin } from "../../middlewares/requireAdmin";
+import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
 
@@ -43,7 +43,9 @@ const LIVE_STATUSES = new Set(["active", "trialing", "paused", "past_due"]);
 
 router.get(
   "/admin/shop/subscriptions/metrics",
-  requireAdmin,
+  // Subscription KPI rollup. `reports.read` like the rest of the
+  // analytics surface.
+  requirePermission("reports.read"),
   async (_req, res) => {
     const supabase = getSupabaseServiceRoleClient();
 

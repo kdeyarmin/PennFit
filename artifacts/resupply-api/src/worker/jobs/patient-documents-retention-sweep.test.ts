@@ -92,9 +92,9 @@ describe("runRetentionSweep — flag", () => {
     expect(flagUpdate).toBeDefined();
     expect(flagUpdate.retention_marked_at).toBeTypeOf("string");
 
-    // HIPAA compliance — one audit_log insert per flagged document
+    // HIPAA compliance — one audit row written per flagged document
     // so surveyors can pull the destruction trail via a single SELECT
-    // on audit_log instead of scanning patient_documents history.
+    // on the audit table instead of scanning patient_documents history.
     expect(getSupabaseCallCount("audit_log", "insert")).toBe(2);
     const auditWrites = getSupabaseWritePayloads("audit_log", "insert");
     expect(auditWrites[0]).toMatchObject({

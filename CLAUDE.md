@@ -22,9 +22,10 @@ git reset --hard subrepl-3ppc2e03/main
 (remote-tracking name in Replit: `subrepl-3ppc2e03/main`).
 
 **Where new work lands:** push a feature branch and open a PR on GitHub.
-Never commit directly to local `main`. The pre-commit hook prints a
-non-blocking warning when `main` is more than 10 commits behind canonical;
-bypass with `SKIP_HOOKS=1` only for genuine emergencies.
+Never commit directly to local `main`. The pre-commit hook (installed
+via `scripts/install-hooks.sh`, source in `scripts/git-hooks/pre-commit`)
+prints a non-blocking warning when `main` is more than 10 commits behind
+canonical; bypass with `SKIP_HOOKS=1` only for genuine emergencies.
 
 Post-mortem of the drift event: [`docs/git-state-2026-05-01.md`](./docs/git-state-2026-05-01.md).
 
@@ -39,7 +40,7 @@ This is a `pnpm` workspaces monorepo (Node v24, TypeScript 5.9, pnpm 10.33).
 | `artifacts/shared`       | Cross-artifact static assets (favicons served at root).                                                                                                                                                                          |
 | `lib/resupply-*`         | Shared workspace packages: `db`, `auth` (+ `auth-react`), `messaging`, `email`, `ai`, `telecom`, `audit`, `domain`, `secrets`, `reminders`.                                                                                      |
 | `lib/api-client-react`   | Generated API client + React hooks.                                                                                                                                                                                              |
-| `scripts/`               | Codegen + drift checks (`check-codegen`, `check-drizzle-drift`, `check-resupply-architecture`, `check-resupply-migration-pair`).                                                                                                 |
+| `scripts/`               | Architecture + migration drift checks (`check-resupply-architecture`, `check-resupply-migration-prefix`). The historical `check-codegen.sh` was retired when Task #37 removed the OpenAPI spec packages.                         |
 | `docs/`                  | Architecture notes, post-mortems, production readiness.                                                                                                                                                                          |
 
 There is **one** customer-facing site (`pennfit.replit.app/`). The former
@@ -98,11 +99,12 @@ third-party credential.
 
 Required at boot for `resupply-api`:
 
-| Variable                 | Notes                                                                                                                                                    |
-| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `PORT`                   | HTTP listen port.                                                                                                                                        |
-| `DATABASE_URL`           | Postgres v14+ (no extensions; only `gen_random_uuid()` is used).                                                                                         |
-| `RESUPPLY_LINK_HMAC_KEY` | 32+ random bytes. Signs short-lived patient links in SMS/email reminders. Generate with `openssl rand -base64 48`. Rotation invalidates in-flight links. |
+| Variable                  | Notes                                                                                                                                                                                              |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PORT`                    | HTTP listen port.                                                                                                                                                                                  |
+| `DATABASE_URL`            | Postgres v14+ (no extensions; only `gen_random_uuid()` is used).                                                                                                                                   |
+| `RESUPPLY_LINK_HMAC_KEY`  | 32+ random bytes. Signs short-lived patient links in SMS/email reminders. Generate with `openssl rand -base64 48`. Rotation invalidates in-flight links.                                           |
+| `RESUPPLY_AUDIT_HMAC_KEY` | 32+ bytes (base64). HMAC-chains every row written to `resupply.audit_log` (migration 0116) for HIPAA §164.312(b) tamper-evidence. Generate with `openssl rand -base64 48`. Rotation does NOT invalidate prior rows. |
 
 The full env table — including every optional variable and where it's
 read — lives in [`README.md`](./README.md#environment-variables) and
@@ -114,16 +116,26 @@ read — lives in [`README.md`](./README.md#environment-variables) and
 - **DB:** the runtime data path is the **Supabase service-role client**
   exported from `@workspace/resupply-db` as
   `getSupabaseServiceRoleClient()`; every route, worker, and helper
-  reads/writes through PostgREST via that client. Drizzle is retained
-  ONLY for the migration source-of-truth: the table definitions under
-  `lib/resupply-db/src/schema/**` drive `drizzle-kit generate` and
-  `lib/resupply-db/scripts/migrate.mjs` applies the SQL via raw `pg`.
-  No production runtime path imports `drizzle-orm` or constructs a
-  `pg.Pool`. Migration drift is enforced by
-  `scripts/check-drizzle-drift.sh`; migration pairs by
-  `scripts/check-resupply-migration-pair.sh`. The
-  "no direct `pg` outside `lib/resupply-db`" invariant is enforced by
-  Rule 7 in `scripts/check-resupply-architecture.sh`.
+  reads/writes through PostgREST via that client. **Supabase is the
+  only data path** — `drizzle-orm`, `drizzle-kit`, `drizzle-zod`,
+  `drizzle.config.ts`, the `src/schema/**` TS schema directory, and
+  the structural `check-drizzle-drift.sh` CI check have all been
+  retired. The SQL files in `lib/resupply-db/drizzle/*.sql` are the
+  source of truth for migration history; `lib/resupply-db/scripts/migrate.mjs`
+  applies them via raw `pg`. New migrations are hand-written SQL
+  (or generated via Supabase's own tooling). The directory name and
+  the on-DB `drizzle.resupply_migrations` history schema are kept
+  unchanged so production's applied-migration rows continue to gate
+  new deploys cleanly; a rename is tracked as a separate operational
+  change. `getDbPool` is still called by `scripts/migrate.mjs` and a
+  small number of legacy worker paths (e.g.
+  `artifacts/resupply-api/src/worker/jobs/bulk-campaign-tick.ts`).
+  The "no direct `pg` outside `lib/resupply-db`" invariant is enforced
+  by Rule 7 in `scripts/check-resupply-architecture.sh`; the same
+  script also forbids `drizzle-orm` imports in `lib/resupply-domain`
+  (Rule 2). The remaining schema-drift pre-commit guard is
+  `scripts/check-resupply-migration-prefix.sh` (the historical
+  co-change pair-check was retired with the TS schema directory).
 - **Auth:** in-house, `argon2id` + DB-backed `pf_session` cookies.
   Admin auth flows live under `/admin/sign-in`, `/admin/forgot-password`,
   `/admin/reset-password`, `/admin/verify-email`.
@@ -131,10 +143,12 @@ read — lives in [`README.md`](./README.md#environment-variables) and
   (5s/media timeout, 5MB cap, image/\* + application/pdf allowlist, max 10
   attachments/message), uploads to App Storage, persists as
   `message_attachments`. Audit emits counts only — no media URLs, no PHI.
-- **Codegen:** OpenAPI clients regenerated by `scripts/codegen`; drift
-  checked by `scripts/check-codegen.sh`. Override output paths with
-  `CODEGEN_OUT_PENNPAPS_CLIENT`, `CODEGEN_OUT_PENNPAPS_ZOD`,
-  `CODEGEN_OUT_RESUPPLY_CLIENT`.
+- **API clients:** `lib/api-client-react/src/{admin,storefront}/generated/`
+  and `lib/resupply-api-client/src/generated/` are the source of truth
+  for client-side HTTP types — they used to be generated from OpenAPI
+  specs, but Task #37 deleted both `@workspace/resupply-api-spec` and
+  `@workspace/api-spec` along with the orval pipeline. The directories
+  are now hand-edited; any drift check would be a no-op.
 
 ## When in doubt
 

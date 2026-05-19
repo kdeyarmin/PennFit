@@ -32,7 +32,7 @@ import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { lookupNpi, NppesLookupError } from "../../lib/nppes";
-import { requireAdmin } from "../../middlewares/requireAdmin";
+import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
 
@@ -88,7 +88,10 @@ const lookupBody = z
   })
   .strict();
 
-router.get("/admin/providers", requireAdmin, async (req, res) => {
+// Central physician/NP registry. Reads gate on `patients.read`
+// (clinical reference data — every role with patient-tier read
+// access needs the registry). Writes gate on `patients.update`.
+router.get("/admin/providers", requirePermission("patients.read"), async (req, res) => {
   const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
   const supabase = getSupabaseServiceRoleClient();
 
@@ -133,7 +136,7 @@ router.get("/admin/providers", requireAdmin, async (req, res) => {
   });
 });
 
-router.get("/admin/providers/:id", requireAdmin, async (req, res) => {
+router.get("/admin/providers/:id", requirePermission("patients.read"), async (req, res) => {
   const idParse = z.string().uuid().safeParse(req.params.id);
   if (!idParse.success) {
     res.status(404).json({ error: "not_found" });
@@ -170,7 +173,7 @@ router.get("/admin/providers/:id", requireAdmin, async (req, res) => {
   });
 });
 
-router.post("/admin/providers", requireAdmin, async (req, res) => {
+router.post("/admin/providers", requirePermission("patients.update"), async (req, res) => {
   const parsed = createBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({
@@ -254,7 +257,9 @@ router.post("/admin/providers", requireAdmin, async (req, res) => {
 // bar on /admin/patients with the provider's NPI.
 router.get(
   "/admin/providers/:id/patients",
-  requireAdmin,
+  // Patient roster keyed by provider — read-only patient-tier
+  // data.
+  requirePermission("patients.read"),
   async (req, res) => {
     const idParse = z.string().uuid().safeParse(req.params.id);
     if (!idParse.success) {
@@ -321,7 +326,9 @@ router.get(
 // token per call (so revocation is "stop sharing this URL").
 router.post(
   "/admin/providers/:id/portal-link",
-  requireAdmin,
+  // Mints a signed provider-portal token. Write/share workflow,
+  // gated like the other patient-update endpoints.
+  requirePermission("patients.update"),
   async (req, res) => {
     const idParse = z.string().uuid().safeParse(req.params.id);
     if (!idParse.success) {
@@ -342,7 +349,9 @@ router.post(
 
 router.post(
   "/admin/providers/nppes-lookup",
-  requireAdmin,
+  // External NPI registry lookup — read-side action, used during
+  // provider record creation, so same scope as the read endpoints.
+  requirePermission("patients.read"),
   async (req, res) => {
     const parsed = lookupBody.safeParse(req.body);
     if (!parsed.success) {

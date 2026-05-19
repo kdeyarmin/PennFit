@@ -7,7 +7,7 @@ import { z } from "zod";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { attributePendingReferrals } from "../../lib/referrals/attribution";
-import { requireAdmin } from "../../middlewares/requireAdmin";
+import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
 
@@ -19,7 +19,9 @@ const body = z
 
 router.post(
   "/admin/referrals/scan-attribution",
-  requireAdmin,
+  // Manual sweep trigger — admin-tools tier (matches the rest of
+  // the dispatcher manual triggers).
+  requirePermission("admin.tools.manage"),
   async (req, res) => {
     const parsed = body.safeParse(req.body ?? {});
     if (!parsed.success) {

@@ -27,7 +27,8 @@
 // status.
 
 import { createHmac, timingSafeEqual } from "node:crypto";
-import express, { Router, type IRouter } from "express";
+import express, { Router, type IRouter, type Request } from "express";
+import expressRateLimit, { ipKeyGenerator } from "express-rate-limit";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
@@ -39,6 +40,21 @@ const router: IRouter = Router();
 
 // Capture the raw body so we can HMAC it. JSON parse happens after.
 const rawJson = express.raw({ type: "application/json", limit: "1mb" });
+
+// IP-keyed rate limiter on the unauthenticated webhook endpoints. The
+// HMAC signature check is the primary authorisation gate, but we still
+// want a recognised throttle in front (CodeQL `js/missing-rate-limiting`)
+// so a flood of forged requests can't burn CPU on signature math or
+// audit-log writes for invalid signatures. 300/min/IP is well above
+// vendor push volume.
+const webhookRateLimiter = expressRateLimit({
+  windowMs: 60 * 1000,
+  limit: 300,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  keyGenerator: (req: Request) => ipKeyGenerator(req.ip ?? "0.0.0.0"),
+  message: { error: "too_many_requests" },
+});
 
 interface VendorConfig {
   envVar: string;
@@ -94,6 +110,7 @@ const eventSchema = z
 
 router.post(
   "/integrations/webhooks/:vendor",
+  webhookRateLimiter,
   rawJson,
   async (req, res) => {
     const vendorParam = z

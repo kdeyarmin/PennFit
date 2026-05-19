@@ -51,7 +51,7 @@ import {
 type ShopOrderUpdate = Database["resupply"]["Tables"]["shop_orders"]["Update"];
 
 import { logAudit } from "@workspace/resupply-audit";
-import { requireAdmin } from "../../middlewares/requireAdmin";
+import { requirePermission } from "../../middlewares/requireAdmin";
 import { rateLimit } from "../../middlewares/rate-limit";
 import { withMetrics } from "../../lib/observability";
 import {
@@ -60,6 +60,11 @@ import {
 } from "../../lib/stripe/config";
 import { sendShippingNotificationEmail } from "../../lib/order-emails/send-shipping-notification-email";
 import { sendPushToCustomer } from "../../lib/web-push";
+import { resolveSmsRecipientForShopOrder } from "../../lib/shop-orders-sms-resolver";
+import {
+  createTwilioSmsClient,
+  TwilioConfigError,
+} from "@workspace/resupply-telecom";
 
 const router: IRouter = Router();
 
@@ -318,18 +323,37 @@ async function sendShippingNotificationIfNew(args: {
 
     // Recipient resolution: linked customer → persisted customer_email
     // (captured from Stripe at paid-time) → skip. We never log the
-    // recipient string.
+    // recipient string. Also pull caregiver columns so we can fan
+    // out a separate caregiver-addressed copy after the primary
+    // send succeeds.
     let toEmail: string | null = null;
+    let patientFirstName: string | null = null;
+    let activeCaregiver: { name: string; email: string } | null = null;
     if (claimedRow.customer_id) {
       const { data: cust, error: custErr } = await supabase
         .schema("resupply")
         .from("shop_customers")
-        .select("email_lower")
+        .select(
+          "email_lower, display_name, caregiver_name, caregiver_email, caregiver_consent_at, caregiver_revoked_at",
+        )
         .eq("customer_id", claimedRow.customer_id)
         .limit(1)
         .maybeSingle();
       if (custErr) throw custErr;
       if (cust?.email_lower) toEmail = cust.email_lower;
+      patientFirstName =
+        (cust?.display_name ?? "").split(" ")[0]?.trim() || null;
+      if (
+        cust?.caregiver_email &&
+        cust?.caregiver_name &&
+        cust?.caregiver_consent_at &&
+        !cust?.caregiver_revoked_at
+      ) {
+        activeCaregiver = {
+          name: cust.caregiver_name,
+          email: cust.caregiver_email,
+        };
+      }
     }
     if (!toEmail && claimedRow.customer_email) {
       toEmail = claimedRow.customer_email;
@@ -406,6 +430,70 @@ async function sendShippingNotificationIfNew(args: {
       }
     }
 
+    // SMS leg — fires when the customer's email matches a DME-
+    // registered patients row whose phone_e164 is on file AND the
+    // shop_customer comm-prefs opted IN to transactional SMS. Runs
+    // after the email + push so an SMS misconfig can never roll
+    // back the canonical email delivery.
+    try {
+      const smsRecipient = await resolveSmsRecipientForShopOrder({
+        customerId: claimedRow.customer_id,
+        customerEmailFromOrder: claimedRow.customer_email ?? null,
+      });
+      if (smsRecipient) {
+        const smsClient = createTwilioSmsClient();
+        const greeting = smsRecipient.patientFirstName
+          ? `Hi ${smsRecipient.patientFirstName}`
+          : "PennPaps";
+        await smsClient.sendSms({
+          to: smsRecipient.phoneE164,
+          body: `${greeting}: your CPAP supplies just shipped (${claimedRow.tracking_carrier} ${claimedRow.tracking_number}). Reply STOP to opt out.`,
+        });
+        log?.info?.(
+          { orderId: claimedRow.id, channel: "sms" },
+          "shipping notification sms send complete",
+        );
+      }
+    } catch (smsErr) {
+      if (!(smsErr instanceof TwilioConfigError)) {
+        log?.warn?.(
+          {
+            orderId: claimedRow.id,
+            err: smsErr instanceof Error ? smsErr.message : String(smsErr),
+          },
+          "shipping notification sms send threw (non-fatal)",
+        );
+      }
+    }
+
+    // Caregiver-addressed copy. Separate email (not BCC) with copy
+    // that correctly addresses the caregiver as the caregiver. Runs
+    // after the primary send + push so a caregiver-side failure
+    // cannot retro-actively roll back the patient's email outcome.
+    if (activeCaregiver) {
+      try {
+        const { sendCaregiverNotificationEmail } = await import(
+          "../../lib/order-emails/send-caregiver-notification-email"
+        );
+        await sendCaregiverNotificationEmail({
+          toEmail: activeCaregiver.email,
+          caregiverName: activeCaregiver.name,
+          patientFirstName,
+          kind: "shipped",
+          carrier: claimedRow.tracking_carrier,
+          trackingNumber: claimedRow.tracking_number,
+        });
+      } catch (err) {
+        log?.warn?.(
+          {
+            orderId: claimedRow.id,
+            err: err instanceof Error ? err.message : String(err),
+          },
+          "shipping notification caregiver send threw (non-fatal)",
+        );
+      }
+    }
+
     return { skipped: false, delivered: true };
   } catch (err) {
     // Catch-all: ANY uncaught error after the claim acquisition
@@ -456,7 +544,9 @@ function projectOrder(row: OrderRow) {
 // CURRENT parcel ship").
 router.post(
   "/admin/shop/orders/:orderId/tracking",
-  requireAdmin,
+  // Set carrier + tracking number on a shipped order. Operational —
+  // `returns.manage` (admin / supervisor / csr / fulfillment / agent).
+  requirePermission("returns.manage"),
   async (req, res) => {
     const orderId = validateOrderId(req.params.orderId);
     if (!orderId) {
@@ -576,7 +666,8 @@ router.post(
 // double-clicks).
 router.post(
   "/admin/shop/orders/:orderId/delivered",
-  requireAdmin,
+  // Mark delivered — same operational tier as tracking entry.
+  requirePermission("returns.manage"),
   async (req, res) => {
     const orderId = validateOrderId(req.params.orderId);
     if (!orderId) {
@@ -648,7 +739,9 @@ router.post(
 // records who did it via req.adminEmail in the structured log).
 router.patch(
   "/admin/shop/orders/:orderId/shipping-address",
-  requireAdmin,
+  // Address override before ship — operational; reuses returns.manage
+  // matrix so the same CSRs who handle returns can fix bad addresses.
+  requirePermission("returns.manage"),
   async (req, res) => {
     const orderId = validateOrderId(req.params.orderId);
     if (!orderId) {
@@ -724,7 +817,13 @@ router.patch(
 // follows on the next webhook redelivery (typically <2s).
 router.post(
   "/admin/shop/orders/:orderId/refund",
-  requireAdmin,
+  // Money-out path — tighter gate. `returns.approve` is held by
+  // admin / supervisor only, removing csr / fulfillment / agent from
+  // direct refund issuance (they can request via the returns RMA
+  // lifecycle which goes through the same approve scope). This
+  // matches the documented refund-issuance posture in the route
+  // file's header comment ("Refund issuance is a supervisor action").
+  requirePermission("returns.approve"),
   adminOrderRefundLimiter,
   async (req, res) => {
     const orderId = validateOrderId(req.params.orderId);

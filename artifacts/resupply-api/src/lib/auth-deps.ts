@@ -47,11 +47,13 @@ import { logger } from "./logger";
 let cachedDeps: AuthDeps | undefined;
 
 /**
- * Build (and memoize) the AuthDeps. Always returns a value after
- * Stage 5a — the kill switch is gone. Exceptions during
- * construction (missing required env, missing DB pool, etc.)
- * propagate so a misconfigured deploy fails LOUD at first
- * call rather than at the first sign-in attempt.
+ * Constructs and memoizes the AuthDeps object used by the authentication handlers.
+ *
+ * The constructed object is cached and returned on subsequent calls. Any exception
+ * raised during the initial construction (for example, due to missing environment
+ * configuration or repository initialization failures) will propagate to the caller.
+ *
+ * @returns The assembled `AuthDeps` instance; the same cached instance is returned on subsequent calls.
  */
 export function getAuthDeps(): AuthDeps {
   if (cachedDeps !== undefined) return cachedDeps;
@@ -88,6 +90,33 @@ export function getAuthDeps(): AuthDeps {
     "http://localhost:5173"
   ).replace(/\/$/, "");
 
+  // Surface fail-open rate-limit events via the structured logger so
+  // ops can alert when a DB hiccup silently disables the gate.
+  //
+  // PII posture: `context.emailLower` carries a per-endpoint sentinel
+  // for the non-sign-in flows ("__forgot:<ip>", "__reset:<ip>",
+  // "__verify:<ip>") that's safe to log verbatim, but on the
+  // /auth/sign-in path it carries the REAL normalized user email.
+  // We surface the bucket only when it's a sentinel; otherwise we
+  // emit a redaction marker so the operator can still tell the
+  // sign-in flow tripped without the actual address ending up in
+  // searchable log storage.
+  const SENTINEL_PREFIX = "__";
+  const rateLimitOnError: AuthDeps["rateLimitOnError"] = (err, context) => {
+    const emailBucket = context.emailLower.startsWith(SENTINEL_PREFIX)
+      ? context.emailLower
+      : "<sign-in-email-redacted>";
+    logger.warn(
+      {
+        event: "auth_rate_limit_check_failed",
+        emailBucket,
+        ip: context.ip,
+        err: err instanceof Error ? err.message : "unknown",
+      },
+      "auth rate-limit check failed (fail-open)",
+    );
+  };
+
   cachedDeps = {
     env,
     repo,
@@ -99,6 +128,7 @@ export function getAuthDeps(): AuthDeps {
     customerIdResolver: makeCustomerIdResolver(),
     mfa: makeMfaProbe(),
     mfaChallengeHmacKey: deriveMfaChallengeKey(),
+    rateLimitOnError,
   };
   return cachedDeps;
 }

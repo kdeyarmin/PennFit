@@ -365,6 +365,45 @@ export const stripeWebhookHandler: RequestHandler = async (
         }
         break;
       }
+      case "payment_intent.succeeded":
+      case "payment_intent.payment_failed":
+      case "payment_intent.canceled": {
+        // Patient self-pay flow (resupply.patient_payments). We
+        // identify our row via metadata.patient_payment_id — set by
+        // createPaymentIntent() in lib/billing/patient-payment.ts.
+        // Stripe payments related to shop_orders flow through the
+        // checkout.session.* events above; this branch is dedicated
+        // to portal balance payments.
+        const intent = event.data.object as Stripe.PaymentIntent;
+        const patientPaymentId =
+          typeof intent.metadata?.patient_payment_id === "string"
+            ? intent.metadata.patient_payment_id
+            : null;
+        if (!patientPaymentId) {
+          // Not one of ours — ack and move on.
+          break;
+        }
+        const status =
+          event.type === "payment_intent.succeeded"
+            ? "succeeded"
+            : event.type === "payment_intent.canceled"
+              ? "cancelled"
+              : "failed";
+        const failureReason =
+          event.type === "payment_intent.payment_failed"
+            ? (intent.last_payment_error?.message ?? "payment failed")
+            : null;
+        const { markPaymentStatus } = await import(
+          "../billing/patient-payment.js"
+        );
+        await markPaymentStatus({
+          paymentId: patientPaymentId,
+          status,
+          failureReason,
+        });
+        log?.info?.({ patientPaymentId, status }, "patient_payment: status updated by webhook");
+        break;
+      }
       default: {
         // Ack everything else — Stripe may deliver many event types we
         // don't subscribe to in the dashboard, and we don't want it

@@ -43,7 +43,7 @@ import {
   textBody,
 } from "../../lib/smart-triggers/renderers";
 import { logger } from "../../lib/logger";
-import { requireAdmin } from "../../middlewares/requireAdmin";
+import { requirePermission } from "../../middlewares/requireAdmin";
 import { rateLimit } from "../../middlewares/rate-limit";
 
 const router: IRouter = Router();
@@ -80,7 +80,9 @@ const dismissBody = z
 
 router.post(
   "/admin/smart-triggers/evaluate",
-  requireAdmin,
+  // Manual run of the rule evaluator — admin-tools tier (it's a
+  // dispatcher trigger that fans out across the whole population).
+  requirePermission("admin.tools.manage"),
   adminSmartTriggerRunLimiter,
   async (req, res) => {
     const result = await runSmartTriggerEvaluator({
@@ -97,7 +99,8 @@ const sendDueChannelQuery = z.enum(["email", "sms"]).default("email");
 
 router.post(
   "/admin/smart-triggers/send-due",
-  requireAdmin,
+  // Manual dispatcher trigger — same admin-tools tier as evaluate.
+  requirePermission("admin.tools.manage"),
   adminSmartTriggerRunLimiter,
   async (req, res) => {
     const channelParse = sendDueChannelQuery.safeParse(
@@ -151,7 +154,10 @@ router.post(
 
 router.post(
   "/admin/smart-triggers/:id/dismiss",
-  requireAdmin,
+  // CSR action — dismissing an individual trigger is the same
+  // tier as triaging a compliance alert. `conversations.manage`
+  // matches the rest of the per-patient CSR inbox.
+  requirePermission("conversations.manage"),
   adminSmartTriggerDismissLimiter,
   async (req, res) => {
     const idParsed = triggerIdParam.safeParse(req.params.id);
@@ -253,7 +259,9 @@ const patientIdParam = z.string().uuid();
 
 router.get(
   "/admin/patients/:id/smart-triggers",
-  requireAdmin,
+  // Per-patient feed — same patient-tier read scope as the rest
+  // of the per-patient surface.
+  requirePermission("patients.read"),
   async (req, res) => {
     const idParsed = patientIdParam.safeParse(req.params.id);
     if (!idParsed.success) {

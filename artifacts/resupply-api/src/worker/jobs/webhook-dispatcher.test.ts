@@ -1,0 +1,153 @@
+import { createHmac } from "node:crypto";
+
+import { describe, expect, it, beforeEach, vi } from "vitest";
+
+import {
+  getSupabaseWritePayloads,
+  installSupabaseMock,
+  stageSupabaseResponse,
+} from "../../test-helpers/supabase-mock";
+
+const supabaseMock = installSupabaseMock();
+
+import { runWebhookDispatcher } from "./webhook-dispatcher";
+
+function stageDispatchableDelivery(opts: {
+  attemptCount?: number;
+  maxRetries?: number;
+  subActive?: boolean;
+  targetUrl?: string;
+  signingSecret?: string;
+} = {}): void {
+  stageSupabaseResponse("webhook_deliveries", "select", {
+    data: [
+      {
+        id: "d-1",
+        subscription_id: "s-1",
+        event_type: "claim.paid",
+        event_payload: { type: "claim.paid", data: { claim_id: "c-1" } },
+        attempt_count: opts.attemptCount ?? 0,
+      },
+    ],
+  });
+  stageSupabaseResponse("webhook_subscriptions", "select", {
+    data: [
+      {
+        id: "s-1",
+        target_url: opts.targetUrl ?? "https://example.com/wh",
+        signing_secret: opts.signingSecret ?? "test-secret",
+        max_retries: opts.maxRetries ?? 5,
+        is_active: opts.subActive ?? true,
+      },
+    ],
+  });
+}
+
+describe("runWebhookDispatcher", () => {
+  beforeEach(() => supabaseMock.reset());
+
+  it("returns zero counts when nothing is due", async () => {
+    stageSupabaseResponse("webhook_deliveries", "select", { data: [] });
+    const stats = await runWebhookDispatcher({ fetchImpl: vi.fn() as unknown as typeof fetch });
+    expect(stats).toEqual({
+      scanned: 0,
+      delivered: 0,
+      retried: 0,
+      exhausted: 0,
+    });
+  });
+
+  it("POSTs with HMAC-SHA256 signature in X-PennFit-Signature header", async () => {
+    stageDispatchableDelivery();
+    const calls: Array<{ url: string; init: RequestInit }> = [];
+    const fetchImpl = vi
+      .fn()
+      .mockImplementation(async (url: string, init: RequestInit) => {
+        calls.push({ url, init });
+        return new Response("ok", { status: 200 });
+      });
+    await runWebhookDispatcher({ fetchImpl: fetchImpl as unknown as typeof fetch });
+    expect(calls).toHaveLength(1);
+    const call = calls[0]!;
+    expect(call.url).toBe("https://example.com/wh");
+    const headers = call.init.headers as Record<string, string>;
+    const expected = createHmac("sha256", "test-secret")
+      .update(call.init.body as string)
+      .digest("base64");
+    expect(headers["X-PennFit-Signature"]).toBe(expected);
+    expect(headers["X-PennFit-Event-Type"]).toBe("claim.paid");
+  });
+
+  it("marks delivery delivered on a 2xx response", async () => {
+    stageDispatchableDelivery();
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValue(new Response("ok", { status: 200 }));
+    const stats = await runWebhookDispatcher({ fetchImpl: fetchImpl as unknown as typeof fetch });
+    expect(stats.delivered).toBe(1);
+    const deliveryUpdates = getSupabaseWritePayloads(
+      "webhook_deliveries",
+      "update",
+    );
+    const subscriptionUpdates = getSupabaseWritePayloads(
+      "webhook_subscriptions",
+      "update",
+    );
+    expect(deliveryUpdates).toHaveLength(1);
+    expect((deliveryUpdates[0] as Record<string, unknown>).status).toBe(
+      "delivered",
+    );
+    expect(subscriptionUpdates).toHaveLength(1);
+    expect(
+      (subscriptionUpdates[0] as Record<string, unknown>).last_delivery_status,
+    ).toBe("delivered");
+  });
+
+  it("schedules an exponential backoff retry on 5xx", async () => {
+    stageDispatchableDelivery({ attemptCount: 1, maxRetries: 5 });
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValue(new Response("err", { status: 503 }));
+    const stats = await runWebhookDispatcher({ fetchImpl: fetchImpl as unknown as typeof fetch });
+    expect(stats.retried).toBe(1);
+    expect(stats.delivered).toBe(0);
+    const updates = getSupabaseWritePayloads("webhook_deliveries", "update");
+    const update = updates[0] as Record<string, unknown>;
+    expect(update.attempt_count).toBe(2);
+    expect(update.last_http_status).toBe(503);
+    // 2^2 = 4 minute backoff. We accept anything > 60s as proof
+    // the schedule advanced.
+    const nextAt = new Date(update.next_attempt_at as string).getTime();
+    expect(nextAt - Date.now()).toBeGreaterThan(60_000);
+  });
+
+  it("marks delivery exhausted at max_retries", async () => {
+    stageDispatchableDelivery({ attemptCount: 4, maxRetries: 5 });
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValue(new Response("err", { status: 500 }));
+    const stats = await runWebhookDispatcher({ fetchImpl: fetchImpl as unknown as typeof fetch });
+    expect(stats.exhausted).toBe(1);
+    const updates = getSupabaseWritePayloads("webhook_deliveries", "update");
+    expect((updates[0] as Record<string, unknown>).status).toBe("exhausted");
+  });
+
+  it("rejects non-https target URLs", async () => {
+    stageDispatchableDelivery({ targetUrl: "http://example.com/wh" });
+    const fetchImpl = vi.fn();
+    const stats = await runWebhookDispatcher({ fetchImpl: fetchImpl as unknown as typeof fetch });
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(stats.exhausted).toBe(1);
+  });
+
+  it("classifies fetch-thrown errors as transport failures with a retry", async () => {
+    stageDispatchableDelivery({ attemptCount: 0 });
+    const fetchImpl = vi.fn().mockRejectedValue(new Error("ECONNREFUSED"));
+    const stats = await runWebhookDispatcher({ fetchImpl: fetchImpl as unknown as typeof fetch });
+    expect(stats.retried).toBe(1);
+    const updates = getSupabaseWritePayloads("webhook_deliveries", "update");
+    const update = updates[0] as Record<string, unknown>;
+    expect(update.last_http_status).toBeNull();
+    expect((update.last_error as string).includes("ECONNREFUSED")).toBe(true);
+  });
+});

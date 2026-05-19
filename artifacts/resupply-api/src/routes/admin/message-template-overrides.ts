@@ -42,7 +42,7 @@ import {
 
 import { logger } from "../../lib/logger";
 import { isAsciiOnly } from "../../lib/message-templates/sms";
-import { requireAdmin } from "../../middlewares/requireAdmin";
+import { requirePermission } from "../../middlewares/requireAdmin";
 import { rateLimit } from "../../middlewares/rate-limit";
 
 type OverrideRow =
@@ -163,7 +163,10 @@ function disallowedTokens(
 
 router.get(
   "/admin/shop/customers/:userId/message-template-overrides",
-  requireAdmin,
+  // Per-customer message-template overrides. Same scope as the
+  // parent message-templates surface — `admin.tools.manage`
+  // (supervisor-tier CSR tooling).
+  requirePermission("admin.tools.manage"),
   async (req, res) => {
     const idCheck = userIdParam.safeParse(req.params.userId);
     if (!idCheck.success) {
@@ -186,7 +189,7 @@ router.get(
 
 router.post(
   "/admin/shop/customers/:userId/message-template-overrides",
-  requireAdmin,
+  requirePermission("admin.tools.manage"),
   adminOverrideMutationLimiter,
   async (req, res) => {
     const idCheck = userIdParam.safeParse(req.params.userId);
@@ -309,7 +312,7 @@ router.post(
 
 router.patch(
   "/admin/shop/customers/:userId/message-template-overrides/:id",
-  requireAdmin,
+  requirePermission("admin.tools.manage"),
   adminOverrideMutationLimiter,
   async (req, res) => {
     const userIdCheck = userIdParam.safeParse(req.params.userId);
@@ -463,7 +466,7 @@ router.patch(
 // audit anchor; reactivate by PATCH { isActive: true }.
 router.delete(
   "/admin/shop/customers/:userId/message-template-overrides/:id",
-  requireAdmin,
+  requirePermission("admin.tools.manage"),
   adminOverrideMutationLimiter,
   async (req, res) => {
     const userIdCheck = userIdParam.safeParse(req.params.userId);

@@ -25,7 +25,7 @@ import {
 import { findActiveClosure } from "../../lib/office-closure/active";
 import { buildClosuresIcal } from "../../lib/office-closure/build-ical";
 import { logger } from "../../lib/logger";
-import { requireAdmin } from "../../middlewares/requireAdmin";
+import { requirePermission } from "../../middlewares/requireAdmin";
 
 type ClosureUpdate =
   Database["resupply"]["Tables"]["office_closures"]["Update"];
@@ -57,7 +57,7 @@ const patchBody = z
 
 router.get(
   "/admin/office-closures/active",
-  requireAdmin,
+  requirePermission("admin.tools.manage"),
   async (_req, res) => {
     const supabase = getSupabaseServiceRoleClient();
     const active = await findActiveClosure(supabase);
@@ -67,7 +67,7 @@ router.get(
 
 router.get(
   "/admin/office-closures",
-  requireAdmin,
+  requirePermission("admin.tools.manage"),
   async (_req, res) => {
     const supabase = getSupabaseServiceRoleClient();
     // 30 days of past closures + everything future. CSRs want to
@@ -102,7 +102,7 @@ router.get(
 
 router.post(
   "/admin/office-closures",
-  requireAdmin,
+  requirePermission("admin.tools.manage"),
   async (req, res) => {
     const parsed = createBody.safeParse(req.body);
     if (!parsed.success) {
@@ -151,7 +151,7 @@ router.post(
 
 router.patch(
   "/admin/office-closures/:id",
-  requireAdmin,
+  requirePermission("admin.tools.manage"),
   async (req, res) => {
     const params = idParam.safeParse(req.params);
     if (!params.success) {
@@ -184,7 +184,7 @@ router.patch(
 
 router.post(
   "/admin/office-closures/:id/end-now",
-  requireAdmin,
+  requirePermission("admin.tools.manage"),
   async (req, res) => {
     const params = idParam.safeParse(req.params);
     if (!params.success) {
@@ -221,7 +221,7 @@ router.post(
 // past (recent past closures stay visible briefly).
 router.get(
   "/admin/office-closures.ics",
-  requireAdmin,
+  requirePermission("admin.tools.manage"),
   async (_req, res) => {
     const supabase = getSupabaseServiceRoleClient();
     const horizon = new Date();
@@ -273,7 +273,7 @@ const recurringCreateBody = z
 
 router.get(
   "/admin/office-closures/recurring",
-  requireAdmin,
+  requirePermission("admin.tools.manage"),
   async (_req, res) => {
     const supabase = getSupabaseServiceRoleClient();
     const { data, error } = await supabase
@@ -303,7 +303,7 @@ router.get(
 
 router.post(
   "/admin/office-closures/recurring",
-  requireAdmin,
+  requirePermission("admin.tools.manage"),
   async (req, res) => {
     const parsed = recurringCreateBody.safeParse(req.body);
     if (!parsed.success) {
@@ -356,7 +356,7 @@ router.post(
 
 router.patch(
   "/admin/office-closures/recurring/:id",
-  requireAdmin,
+  requirePermission("admin.tools.manage"),
   async (req, res) => {
     const params = idParam.safeParse(req.params);
     if (!params.success) {

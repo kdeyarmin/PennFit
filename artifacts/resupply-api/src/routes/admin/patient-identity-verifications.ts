@@ -16,13 +16,15 @@ import { logAudit } from "@workspace/resupply-audit";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
-import { requireAdmin } from "../../middlewares/requireAdmin";
+import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
 
 router.get(
   "/admin/patients/:id/identity-verifications",
-  requireAdmin,
+  // Read-only — durable check log (no PII stored, just outcome +
+  // method). `patients.read` is held by every current role.
+  requirePermission("patients.read"),
   async (req, res) => {
     const idParse = z.string().uuid().safeParse(req.params.id);
     if (!idParse.success) {
@@ -68,7 +70,8 @@ const body = z
 
 router.post(
   "/admin/patients/:id/identity-verifications",
-  requireAdmin,
+  // Records a new verification outcome. `patients.update` scope.
+  requirePermission("patients.update"),
   async (req, res) => {
     const idParse = z.string().uuid().safeParse(req.params.id);
     if (!idParse.success) {

@@ -4,6 +4,7 @@ import { ShieldCheck, Menu, X, Package, Heart } from "lucide-react";
 import pennLogo from "@assets/IMG_2053_1777233708393.jpeg";
 import { SignedIn } from "@/lib/identity";
 import { UserMenu } from "@/components/user-menu";
+import { LanguageToggle } from "@/components/language-toggle";
 import { FitFlowStepper } from "@/components/fit-flow-stepper";
 import { MobileCtaBar } from "@/components/mobile-cta-bar";
 import { MiniCart } from "@/components/shop/mini-cart";
@@ -87,6 +88,14 @@ function YourOrdersNavLink() {
   );
 }
 
+/**
+ * Application shell that renders the global header, navigation, fit-flow stepper, main content area, and footer while managing mobile navigation state and accessibility helpers.
+ *
+ * The component auto-closes the mobile navigation when the route changes, mounts ScrollToTop, provides a skip-to-content link, and renders children inside the main landmark.
+ *
+ * @param children - Page content to render inside the layout's main region
+ * @returns The layout element containing header, navigation, main content, and footer
+ */
 export function Layout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -179,11 +188,13 @@ export function Layout({ children }: { children: React.ReactNode }) {
               <YourOrdersNavLink />
               <WishlistNavLink />
               <MiniCart />
+              <LanguageToggle />
               <UserMenu />
             </nav>
 
             {/* Mobile actions: cart icon + hamburger */}
             <div className="md:hidden flex items-center gap-2">
+              <LanguageToggle variant="compact" />
               <UserMenu />
               <WishlistNavLink />
               <MiniCart />
@@ -275,7 +286,24 @@ export function Layout({ children }: { children: React.ReactNode }) {
         {children}
       </main>
 
-      <footer className="relative mt-12">
+      <footer
+        // On mobile two fixed-position elements occlude the footer:
+        //   * MobileCtaBar — `fixed bottom-0`, ~60px tall.
+        //   * FloatingContactLauncher button — `fixed bottom-20` (80px)
+        //     with `h-14` (56px), top edge at 136px from viewport
+        //     bottom. The button is `right-4` so it only covers the
+        //     right strip, but the footer's "Staff sign-in" link sits
+        //     on the right of a `flex-row justify-between` row
+        //     (col-stacked on mobile but still right-aligned in its
+        //     parent), so it sits in the FCL zone.
+        // Padding therefore must clear the FCL top edge (136px) PLUS
+        // the iOS home-indicator safe-area inset (up to ~34px on
+        // home-indicator devices). 9rem (144px) + env(safe-area-...)
+        // gives a 144–178px range — clears the FCL with ~8px margin
+        // on every device. Desktop unaffected (both fixed elements
+        // hide at `md:`).
+        className="relative mt-12 pb-[calc(9rem+env(safe-area-inset-bottom))] md:pb-0"
+      >
         <div className="aurora-divider-live" aria-hidden="true" />
         <div className="glass-panel border-x-0 border-b-0">
           <div className="container mx-auto px-4 md:px-6 py-6">

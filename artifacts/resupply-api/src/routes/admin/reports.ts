@@ -16,7 +16,7 @@ import { Router, type IRouter } from "express";
 
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
-import { requireAdmin } from "../../middlewares/requireAdmin";
+import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
 
@@ -59,7 +59,11 @@ function setCsvHeaders(res: import("express").Response, filename: string) {
   res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
 }
 
-router.get("/admin/reports/orders.csv", requireAdmin, async (req, res) => {
+// Financial CSV exports — scoped to `reports.read`. Held by admin /
+// supervisor / csr / compliance_officer / agent. Tightens access for
+// `fitter` and `fulfillment` (neither has a workflow that requires
+// pulling cash-pay finance exports).
+router.get("/admin/reports/orders.csv", requirePermission("reports.read"), async (req, res) => {
   const { from, to } = parseRange(req);
   const supabase = getSupabaseServiceRoleClient();
   const { data: orders, error } = await supabase
@@ -123,7 +127,7 @@ router.get("/admin/reports/orders.csv", requireAdmin, async (req, res) => {
   res.end();
 });
 
-router.get("/admin/reports/returns.csv", requireAdmin, async (req, res) => {
+router.get("/admin/reports/returns.csv", requirePermission("reports.read"), async (req, res) => {
   const { from, to } = parseRange(req);
   const supabase = getSupabaseServiceRoleClient();
   const { data: rows, error } = await supabase

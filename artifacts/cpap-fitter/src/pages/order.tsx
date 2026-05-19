@@ -139,7 +139,8 @@ export function Order() {
   const [, setLocation] = useLocation();
   // The route-level <ProtectedRoute> in App.tsx already guarantees that
   // `chosenMask` is non-null by the time Order mounts.
-  const { chosenMask, setChosenMask, measurements } = useFitterStore();
+  const { chosenMask, setChosenMask, measurements, email: fitterEmail } =
+    useFitterStore();
   const { mutate, isPending, error } = useSubmitOrder();
 
   const {
@@ -151,6 +152,11 @@ export function Order() {
   } = useForm<FormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
+      // Email captured at the /consent gate is the same email the
+      // patient will use for the order; pre-fill so they don't retype.
+      // Still editable here — if they want a different address on the
+      // order, they can change it.
+      patient: fitterEmail ? { email: fitterEmail } : undefined,
       prescription: { hasExistingPrescription: false },
       shippingAddress: { state: "" },
       consentToContact: false,

@@ -15,7 +15,7 @@ import { z } from "zod";
 
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
-import { requireAdmin } from "../../middlewares/requireAdmin";
+import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
 
@@ -39,7 +39,9 @@ const querySchema = z
 
 router.get(
   "/admin/analytics/resupply-funnel",
-  requireAdmin,
+  // Episode-stage rollup analytics. `reports.read` matches the
+  // rest of the analytics surface.
+  requirePermission("reports.read"),
   async (req, res) => {
     const parsed = querySchema.safeParse(req.query);
     if (!parsed.success) {

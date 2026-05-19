@@ -204,3 +204,182 @@ export const createPriorAuthorization = (
       body: JSON.stringify(body),
     },
   );
+
+// ── Insurance claims ───────────────────────────────────────────────
+
+export type InsuranceClaimStatus =
+  | "draft"
+  | "submitted"
+  | "accepted"
+  | "denied"
+  | "paid"
+  | "appealed"
+  | "closed";
+
+export type InsuranceClaimLineStatus =
+  | "pending"
+  | "accepted"
+  | "denied"
+  | "paid";
+
+export type InsuranceClaimEventType =
+  | "submitted"
+  | "accepted"
+  | "denied"
+  | "partial_pay"
+  | "paid"
+  | "appealed"
+  | "closed"
+  | "note";
+
+export interface InsuranceClaim {
+  id: string;
+  insuranceCoverageId: string | null;
+  payerName: string;
+  claimNumber: string | null;
+  dateOfService: string;
+  fulfillmentId: string | null;
+  status: InsuranceClaimStatus;
+  totalBilledCents: number;
+  totalAllowedCents: number;
+  totalPaidCents: number;
+  patientResponsibilityCents: number;
+  submittedAt: string | null;
+  decisionAt: string | null;
+  paidAt: string | null;
+  denialReason: string | null;
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface InsuranceClaimLineItem {
+  id: string;
+  hcpcsCode: string;
+  modifier: string | null;
+  description: string | null;
+  quantity: number;
+  billedCents: number;
+  allowedCents: number;
+  paidCents: number;
+  status: InsuranceClaimLineStatus;
+  denialReason: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface InsuranceClaimEvent {
+  id: string;
+  eventType: InsuranceClaimEventType;
+  amountCents: number | null;
+  payerRef: string | null;
+  documentId: string | null;
+  note: string | null;
+  actorEmail: string;
+  occurredAt: string;
+}
+
+export interface CreateInsuranceClaimRequest {
+  insuranceCoverageId?: string | null;
+  payerName: string;
+  dateOfService: string;
+  fulfillmentId?: string | null;
+  claimNumber?: string | null;
+  notes?: string | null;
+}
+
+export interface PatchInsuranceClaimRequest {
+  status?: InsuranceClaimStatus;
+  claimNumber?: string | null;
+  denialReason?: string | null;
+  notes?: string | null;
+  submittedAt?: string | null;
+  decisionAt?: string | null;
+  paidAt?: string | null;
+  patientResponsibilityCents?: number;
+}
+
+export interface CreateInsuranceClaimLineRequest {
+  hcpcsCode: string;
+  modifier?: string | null;
+  description?: string | null;
+  quantity?: number;
+  billedCents: number;
+}
+
+export interface CreateInsuranceClaimEventRequest {
+  eventType: InsuranceClaimEventType;
+  amountCents?: number | null;
+  payerRef?: string | null;
+  documentId?: string | null;
+  note?: string | null;
+}
+
+export const listInsuranceClaims = (patientId: string) =>
+  jsonFetch<{ insuranceClaims: InsuranceClaim[] }>(
+    `/patients/${encodeURIComponent(patientId)}/insurance-claims`,
+  );
+
+export const getInsuranceClaim = (patientId: string, claimId: string) =>
+  jsonFetch<{
+    claim: InsuranceClaim;
+    lineItems: InsuranceClaimLineItem[];
+    events: InsuranceClaimEvent[];
+  }>(
+    `/patients/${encodeURIComponent(patientId)}/insurance-claims/${encodeURIComponent(claimId)}`,
+  );
+
+export const createInsuranceClaim = (
+  patientId: string,
+  body: CreateInsuranceClaimRequest,
+) =>
+  jsonFetch<{ id: string }>(
+    `/patients/${encodeURIComponent(patientId)}/insurance-claims`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+  );
+
+export const patchInsuranceClaim = (
+  patientId: string,
+  claimId: string,
+  body: PatchInsuranceClaimRequest,
+) =>
+  jsonFetch<{ ok: true }>(
+    `/patients/${encodeURIComponent(patientId)}/insurance-claims/${encodeURIComponent(claimId)}`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+  );
+
+export const createInsuranceClaimLine = (
+  patientId: string,
+  claimId: string,
+  body: CreateInsuranceClaimLineRequest,
+) =>
+  jsonFetch<{ id: string }>(
+    `/patients/${encodeURIComponent(patientId)}/insurance-claims/${encodeURIComponent(claimId)}/lines`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+  );
+
+export const createInsuranceClaimEvent = (
+  patientId: string,
+  claimId: string,
+  body: CreateInsuranceClaimEventRequest,
+) =>
+  jsonFetch<{ id: string }>(
+    `/patients/${encodeURIComponent(patientId)}/insurance-claims/${encodeURIComponent(claimId)}/events`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+  );

@@ -1,20 +1,33 @@
 # ADR 003 — Drizzle (not Prisma) for the resupply database
 
-> **2026-05 amendment — partial supersession.** The runtime data path
-> has since moved from Drizzle + `node-postgres` to the Supabase
-> service-role client (`getSupabaseServiceRoleClient()` in
-> `@workspace/resupply-db`, talking to PostgREST). Drizzle is retained
-> as the **schema source-of-truth**: `lib/resupply-db/src/schema/**`
-> drives `drizzle-kit generate`, and `lib/resupply-db/scripts/migrate.mjs`
-> applies the generated SQL via raw `pg`. No production runtime path
-> imports `drizzle-orm` or constructs a `pg.Pool`. The decision below
-> still holds for migration tooling and ORM ergonomics; the runtime
-> data-path discussion is superseded by the Supabase migration.
+> **2026-05 amendment — fully superseded.** Drizzle has been fully
+> retired from the resupply codebase:
 >
-> See `CLAUDE.md` → "Conventions worth knowing" → DB for the current
-> contract, and the
-> `feat(supabase): finish Drizzle/pg → Supabase runtime migration` PR
-> for the completion log.
+> - The runtime data path uses the Supabase service-role client
+>   (`getSupabaseServiceRoleClient()` in `@workspace/resupply-db`,
+>   talking to PostgREST). No production code path imports
+>   `drizzle-orm` or constructs a `pg.Pool` (a small `pg` pool is
+>   still retained inside `lib/resupply-db` for `scripts/migrate.mjs`
+>   and a handful of legacy worker callers; new code uses the
+>   Supabase client).
+> - The `drizzle-orm`, `drizzle-kit`, and `drizzle-zod` packages have
+>   been removed from every `package.json` and from the lockfile.
+> - The TS schema directory `lib/resupply-db/src/schema/**` has been
+>   deleted. There is no `drizzle-kit generate` step. New migrations
+>   are hand-written SQL committed directly under
+>   `lib/resupply-db/drizzle/` (the directory keeps its historical
+>   name so production's `drizzle.resupply_migrations` history table
+>   continues to gate new deploys cleanly; a rename is tracked as a
+>   separate operational change).
+> - `lib/resupply-db/scripts/migrate.mjs` applies the SQL via raw
+>   `pg`. Its algorithm was inlined to be byte-compatible with the
+>   former `drizzle-orm/migrator` so already-applied rows in
+>   production stay valid.
+>
+> The decision recorded below is preserved for the historical "why
+> we picked Drizzle over Prisma in 2025" context. The active
+> contract lives in `CLAUDE.md` → "Conventions worth knowing" → DB
+> and in `lib/resupply-db/README.md`.
 
 ## Context
 

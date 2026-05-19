@@ -29,8 +29,8 @@ type SubstituteUpdate =
 
 import { logger } from "../../lib/logger";
 import {
-  requireAdmin,
   requireAdminOnly,
+  requirePermission,
 } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
@@ -77,7 +77,12 @@ const idParam = z.object({ id: z.string().uuid() });
 // ────────────────────────────────────────────────────────────────
 router.get(
   "/admin/shop/backorders",
-  requireAdmin,
+  // Operational inventory read — every CSR who handles fulfillment
+  // needs to see which SKUs are flagged out-of-stock. `inventory.
+  // read` is held by every current role except compliance_officer
+  // (which has no backorder workflow). The legacy file note flagged
+  // backorder MARKS as "CSR day-to-day"; this matches that.
+  requirePermission("inventory.read"),
   async (_req, res) => {
     const supabase = getSupabaseServiceRoleClient();
     const { data, error } = await supabase
@@ -106,7 +111,12 @@ router.get(
 
 router.post(
   "/admin/shop/backorders",
-  requireAdmin,
+  // Mark a SKU out-of-stock. Per the file header: "requireAdmin for
+  // backorder marks (CSR day-to-day)". Use `returns.manage` — the
+  // catalog's operational tier (admin/supervisor/csr/fulfillment/
+  // agent) — which matches the prior any-staff posture but
+  // excludes the policy-only roles.
+  requirePermission("returns.manage"),
   async (req, res) => {
     const parsed = markBody.safeParse(req.body);
     if (!parsed.success) {
@@ -158,7 +168,9 @@ router.post(
 
 router.post(
   "/admin/shop/backorders/:id/clear",
-  requireAdmin,
+  // Clear a backorder mark — same operational tier as the POST
+  // mark.
+  requirePermission("returns.manage"),
   async (req, res) => {
     const params = idParam.safeParse(req.params);
     if (!params.success) {
@@ -223,7 +235,9 @@ router.post(
 // ────────────────────────────────────────────────────────────────
 router.get(
   "/admin/shop/sku-substitutes",
-  requireAdmin,
+  // Read-only listing of the substitute rules. Same scope as the
+  // backorders list — operational reference data.
+  requirePermission("inventory.read"),
   async (req, res) => {
     const primary = req.query.primary_sku;
     const supabase = getSupabaseServiceRoleClient();

@@ -26,7 +26,7 @@ import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { dispatchDueCheckins } from "../../lib/checkin-dispatcher";
 import { logger } from "../../lib/logger";
-import { requireAdmin } from "../../middlewares/requireAdmin";
+import { requirePermission } from "../../middlewares/requireAdmin";
 import { rateLimit } from "../../middlewares/rate-limit";
 
 // Per-admin write rate limits (B-07). All three limiters key by
@@ -63,7 +63,7 @@ const statusBody = z
   })
   .strict();
 
-router.get("/admin/patients/:id/onboarding", requireAdmin, async (req, res) => {
+router.get("/admin/patients/:id/onboarding", requirePermission("patients.read"), async (req, res) => {
   const idCheck = patientIdParam.safeParse(req.params.id);
   if (!idCheck.success) {
     res.status(404).json({ error: "patient_not_found" });
@@ -107,7 +107,7 @@ router.get("/admin/patients/:id/onboarding", requireAdmin, async (req, res) => {
 
 router.post(
   "/admin/patients/:id/onboarding/enroll",
-  requireAdmin,
+  requirePermission("patients.update"),
   adminEnrollLimiter,
   async (req, res) => {
     const idCheck = patientIdParam.safeParse(req.params.id);
@@ -221,7 +221,7 @@ router.post(
 
 router.patch(
   "/admin/patients/:id/onboarding/status",
-  requireAdmin,
+  requirePermission("patients.update"),
   async (req, res) => {
     const idCheck = patientIdParam.safeParse(req.params.id);
     if (!idCheck.success) {
@@ -292,7 +292,10 @@ router.patch(
 
 router.post(
   "/admin/onboarding/send-due",
-  requireAdmin,
+  // Cron-eligible dispatcher — fans out the day-1/7/30/90 nudges to
+  // every patient with a due check-in. `patients.update` scope; the
+  // mutation is per-patient row update of the onboarding state.
+  requirePermission("patients.update"),
   adminSendDueLimiter,
   async (req, res) => {
     const summary = await dispatchDueCheckins({
@@ -314,7 +317,8 @@ router.post(
 // ────────────────────────────────────────────────────────────────
 router.get(
   "/admin/patients/:id/onboarding/attempts",
-  requireAdmin,
+  // Read-only history of past check-in attempts. `patients.read`.
+  requirePermission("patients.read"),
   async (req, res) => {
     const idCheck = patientIdParam.safeParse(req.params.id);
     if (!idCheck.success) {

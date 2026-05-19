@@ -10,24 +10,23 @@ catalog:
   "@replit/vite-plugin-cartographer": ^0.5.5
   "@replit/vite-plugin-dev-banner": ^0.1.1
   "@replit/vite-plugin-runtime-error-modal": ^0.0.6
-  "@tailwindcss/vite": ^4.2.4
-  "@tanstack/react-query": ^5.90.21
-  "@types/node": ^25.3.3
+  "@tailwindcss/vite": ^4.3.0
+  "@tanstack/react-query": ^5.100.10
+  "@types/node": ^25.8.0
   "@types/react": ^19.2.0
   "@types/react-dom": ^19.2.0
-  "@vitejs/plugin-react": ^5.0.4
+  "@vitejs/plugin-react": ^6.0.2
   class-variance-authority: ^0.7.1
   clsx: ^2.1.1
-  drizzle-orm: ^0.45.2
   framer-motion: ^12.23.24
-  lucide-react: ^0.545.0
-  react: 19.1.6
-  react-dom: 19.1.6
-  tailwind-merge: ^3.3.1
-  tailwindcss: ^4.2.4
-  tsx: ^4.21.0
-  vite: ^6.4.2
-  zod: 3.25.76
+  lucide-react: ^1.16.0
+  react: 19.2.6
+  react-dom: 19.2.6
+  tailwind-merge: ^3.6.0
+  tailwindcss: ^4.3.0
+  tsx: ^4.22.0
+  vite: ^8.0.13
+  zod: 4.4.3
 
 minimumReleaseAge: 1440
 
@@ -146,6 +145,6 @@ overrides:
   # client never accepts from user input — we only call it for our own
   # bucket. Tracking upstream; accepted risk until @google-cloud/storage
   # bumps teeny-request.
-  vitest>vite: ^6.4.2
-  vite-node>vite: ^6.4.2
-  "@vitest/mocker>vite": ^6.4.2
+  vitest>vite: ^8.0.13
+  vite-node>vite: ^8.0.13
+  "@vitest/mocker>vite": ^8.0.13

@@ -361,6 +361,9 @@ function makeSdkStub(opts: {
   return {
     setVapidDetails: vi.fn(),
     sendNotification: vi.fn(opts.behavior),
+  } as unknown as WebPushSdk & {
+    setVapidDetails: ReturnType<typeof vi.fn>;
+    sendNotification: ReturnType<typeof vi.fn>;
   };
 }
 
