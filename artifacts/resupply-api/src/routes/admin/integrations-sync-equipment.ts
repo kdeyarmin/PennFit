@@ -20,7 +20,7 @@ import type { DeviceSettings } from "@workspace/resupply-integrations";
 import { linkEquipmentFromSnapshot } from "../../lib/integrations/link-equipment";
 import { scanRecallsForAsset } from "../../lib/integrations/scan-recalls-for-asset";
 import { logger } from "../../lib/logger";
-import { requirePermission } from "../../middlewares/requirePermission";
+import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
 
