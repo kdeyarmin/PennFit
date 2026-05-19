@@ -1087,4 +1087,128 @@
     letter-spacing: -0.005em;
     color: hsl(var(--penn-navy));
   }
+
+  /* Landing hero — bounded Penn-navy gradient card with a soft
+     warm-light catch in the top-right corner (echoes the logo's
+     gold swoosh without painting it across the page). Pairs white
+     display type with the gold accent CTA and brand swoosh
+     underline. Sits inside the page's max-w-6xl container so it
+     reads as a deliberate hero card, not a full-bleed band. */
+  .hero-card {
+    position: relative;
+    overflow: hidden;
+    border-radius: 1.75rem;
+    background: linear-gradient(
+      150deg,
+      hsl(var(--penn-navy-deep)) 0%,
+      hsl(var(--penn-navy)) 55%,
+      hsl(var(--penn-navy-soft)) 100%
+    );
+    box-shadow:
+      0 1px 0 hsl(0 0% 100% / 0.08) inset,
+      0 0 0 1px hsl(var(--penn-onyx) / 0.4),
+      0 24px 48px hsl(var(--penn-navy-deep) / 0.22),
+      0 56px 112px hsl(var(--penn-navy-deep) / 0.12);
+  }
+  /* Single warm catch in the corner — a clean radial, not a
+     floating animated blob. */
+  .hero-card::before {
+    content: "";
+    position: absolute;
+    top: -30%;
+    right: -10%;
+    width: 70%;
+    height: 110%;
+    background: radial-gradient(
+      ellipse at center,
+      hsl(var(--penn-gold) / 0.18) 0%,
+      transparent 65%
+    );
+    pointer-events: none;
+  }
+  /* Thin gold rule along the bottom edge — echoes the logo's
+     swoosh under the wordmark. */
+  .hero-card::after {
+    content: "";
+    position: absolute;
+    left: 8%;
+    right: 8%;
+    bottom: 0;
+    height: 2px;
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      hsl(var(--penn-gold) / 0.55) 35%,
+      hsl(var(--penn-gold) / 0.8) 50%,
+      hsl(var(--penn-gold) / 0.55) 65%,
+      transparent 100%
+    );
+    pointer-events: none;
+  }
+
+  /* Hand-drawn gold swoosh beneath an accented headline line —
+     echoes the logo's signature swoosh under "PennPaps", which
+     dips DOWN through the middle (Q60 56 120 48 in the logo SVG).
+     Use as `<span class="hero-headline-swoosh">Fit. Shop. Resupply.</span>`. */
+  .hero-headline-swoosh {
+    position: relative;
+    display: inline-block;
+  }
+  .hero-headline-swoosh::after {
+    content: "";
+    position: absolute;
+    left: -2%;
+    right: -2%;
+    bottom: -0.32em;
+    height: 0.48em;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 320 28' preserveAspectRatio='none' fill='none'><path d='M6 6 Q160 30 314 9' stroke='hsl(42 92%25 56%25)' stroke-width='5' stroke-linecap='round'/></svg>");
+    background-repeat: no-repeat;
+    background-position: center;
+    background-size: 100% 100%;
+    pointer-events: none;
+  }
+
+  /* Status pill — on-dark variant for use inside .hero-card. Same
+     pulsing dot, but a translucent white chip with gold dot reads
+     as a credential on navy without competing with the CTA. */
+  .status-pill-on-dark {
+    background: hsl(0 0% 100% / 0.10);
+    border-color: hsl(0 0% 100% / 0.22);
+    color: hsl(0 0% 100% / 0.92);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+  }
+
+  /* Outline CTA tuned for use on a dark hero surface. Translucent
+     white fill, white text, white hairline border — matches the
+     btn-primary-glow weight without competing for attention. */
+  .btn-on-dark-outline {
+    background: hsl(0 0% 100% / 0.10);
+    border: 1px solid hsl(0 0% 100% / 0.32);
+    color: hsl(0 0% 100%);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    transition:
+      background 220ms ease,
+      border-color 220ms ease,
+      transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+  .btn-on-dark-outline:hover {
+    background: hsl(0 0% 100% / 0.18);
+    border-color: hsl(0 0% 100% / 0.55);
+    transform: translateY(-1px);
+  }
+
+  /* Section-level tinted band — a subtle off-white-blue bed for the
+     trust strip, just enough to chapter the page into hero / strip /
+     features without painting a wash. */
+  .section-tint-mist {
+    background: linear-gradient(
+      180deg,
+      hsl(var(--penn-pearl)) 0%,
+      hsl(var(--penn-mist) / 0.7) 100%
+    );
+    border-top: 1px solid hsl(var(--penn-platinum) / 0.7);
+    border-bottom: 1px solid hsl(var(--penn-platinum) / 0.7);
+  }
 }
