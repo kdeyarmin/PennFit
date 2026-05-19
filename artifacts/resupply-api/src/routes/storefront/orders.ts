@@ -34,6 +34,7 @@ import {
   sendOrderToPenn,
   generateOrderReference,
 } from "../../lib/storefront/orderEmail.js";
+import { sendFitterOrderConfirmationEmail } from "../../lib/order-emails/send-fitter-order-confirmation-email.js";
 import { logger } from "../../lib/logger.js";
 import { requireCsrfWhenSession } from "../../middlewares/csrf.js";
 import { attachSignedIn } from "../../middlewares/requireSignedIn.js";
@@ -245,6 +246,48 @@ router.post(
     });
     return;
   }
+
+  // Patient-facing confirmation email. Fires AFTER the fulfillment-
+  // side delivery succeeds so we never confirm an order we didn't
+  // actually deliver. Fire-and-forget against the response: a
+  // SendGrid hiccup on the patient copy must NOT 5xx the order POST
+  // (the order itself is already with the fulfillment team).
+  void (async () => {
+    try {
+      const patientEmail = order.patient.email;
+      if (!patientEmail) return;
+      const confirmResult = await sendFitterOrderConfirmationEmail({
+        toEmail: patientEmail,
+        firstName: order.patient.firstName ?? null,
+        orderReference: result.orderReference,
+        maskName: order.chosenMask.name,
+        maskManufacturer: order.chosenMask.manufacturer ?? null,
+      });
+      if (!confirmResult.configured) {
+        logger.info(
+          { event: "fitter-order.confirmation-email.skipped" },
+          "fitter order: confirmation-email skipped (sendgrid not configured)",
+        );
+      } else if (!confirmResult.delivered) {
+        logger.warn(
+          {
+            event: "fitter-order.confirmation-email.failed",
+            err: confirmResult.error,
+            orderReference: result.orderReference,
+          },
+          "fitter order: confirmation-email send failed (non-fatal)",
+        );
+      }
+    } catch (err) {
+      logger.warn(
+        {
+          err: err instanceof Error ? err.message : String(err),
+          orderReference: result.orderReference,
+        },
+        "fitter order: confirmation-email threw (non-fatal)",
+      );
+    }
+  })();
 
   res.json({
     success: true,
