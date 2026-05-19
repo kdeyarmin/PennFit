@@ -292,4 +292,229 @@ describe("distinctSources", () => {
   it("returns an empty array for an empty fleet", () => {
     expect(distinctSources([])).toEqual([]);
   });
+
+  it("deduplicates sources that appear across multiple patients", () => {
+    const rows: RtOverviewRow[] = [
+      row({ patientId: "p1", therapyLinks: [link("airview")] }),
+      row({ patientId: "p2", therapyLinks: [link("airview")] }),
+      row({ patientId: "p3", therapyLinks: [link("airview")] }),
+    ];
+    expect(distinctSources(rows)).toEqual(["airview"]);
+  });
+
+  it("deduplicates sources that appear multiple times within the same patient", () => {
+    const rows: RtOverviewRow[] = [
+      row({
+        patientId: "p1",
+        therapyLinks: [link("airview"), link("airview")],
+      }),
+    ];
+    expect(distinctSources(rows)).toEqual(["airview"]);
+  });
+
+  it("returns an empty array when all patients have no therapy links", () => {
+    const rows: RtOverviewRow[] = [
+      row({ patientId: "p1", therapyLinks: [] }),
+      row({ patientId: "p2", therapyLinks: [] }),
+    ];
+    expect(distinctSources(rows)).toEqual([]);
+  });
+
+  it("sorts alphabetically — z-source before a-source in insertion order is still returned a-first", () => {
+    const rows: RtOverviewRow[] = [
+      row({ patientId: "p1", therapyLinks: [link("react_health")] }),
+      row({ patientId: "p2", therapyLinks: [link("airview")] }),
+    ];
+    expect(distinctSources(rows)).toEqual(["airview", "react_health"]);
+  });
+});
+
+describe("RT_FILTER_DEFAULT", () => {
+  it("has alertingOnly set to false", () => {
+    expect(RT_FILTER_DEFAULT.alertingOnly).toBe(false);
+  });
+
+  it("has staleOnly set to false", () => {
+    expect(RT_FILTER_DEFAULT.staleOnly).toBe(false);
+  });
+
+  it("has an empty sources set", () => {
+    expect(RT_FILTER_DEFAULT.sources.size).toBe(0);
+  });
+
+  it("has an empty search string", () => {
+    expect(RT_FILTER_DEFAULT.search).toBe("");
+  });
+});
+
+describe("filterRtRows — additional edge cases", () => {
+  const link = (source: string) => ({
+    source,
+    status: "active",
+    lastSyncedAt: null,
+    lastSyncStatus: null,
+  });
+  const alert = (kind: string) => ({
+    id: `a_${kind}`,
+    kind,
+    label: kind,
+    detectedAt: "",
+  });
+
+  it("returns empty array when given an empty fleet", () => {
+    expect(filterRtRows([], RT_FILTER_DEFAULT)).toEqual([]);
+  });
+
+  it("returns empty array when no rows satisfy an active filter", () => {
+    const rows = [
+      row({ patientId: "p1", activeAlerts: [], therapyLinks: [] }),
+    ];
+    expect(
+      filterRtRows(rows, { ...RT_FILTER_DEFAULT, alertingOnly: true }),
+    ).toEqual([]);
+  });
+
+  it("source filter uses OR semantics — a row with EITHER listed source passes", () => {
+    const rows = [
+      row({ patientId: "p1", therapyLinks: [link("airview")] }),
+      row({ patientId: "p2", therapyLinks: [link("care_orchestrator")] }),
+      row({ patientId: "p3", therapyLinks: [link("react_health")] }),
+    ];
+    const out = filterRtRows(rows, {
+      ...RT_FILTER_DEFAULT,
+      sources: new Set(["airview", "care_orchestrator"]),
+    });
+    expect(out.map((r) => r.patientId)).toEqual(["p1", "p2"]);
+  });
+
+  it("source filter: row with multiple links passes if ANY link matches", () => {
+    const rows = [
+      row({
+        patientId: "p1",
+        therapyLinks: [link("react_health"), link("airview")],
+      }),
+    ];
+    const out = filterRtRows(rows, {
+      ...RT_FILTER_DEFAULT,
+      sources: new Set(["airview"]),
+    });
+    expect(out).toHaveLength(1);
+  });
+
+  it("source filter: row with no therapy links is excluded when source filter is active", () => {
+    const rows = [row({ patientId: "p1", therapyLinks: [] })];
+    const out = filterRtRows(rows, {
+      ...RT_FILTER_DEFAULT,
+      sources: new Set(["airview"]),
+    });
+    expect(out).toHaveLength(0);
+  });
+
+  it("staleOnly: rows with nightsInWindow > 0 are excluded", () => {
+    const rows = [
+      row({ patientId: "p1", nightsInWindow: 1 }),
+      row({ patientId: "p2", nightsInWindow: 7 }),
+      row({ patientId: "p3", nightsInWindow: 0 }),
+    ];
+    const out = filterRtRows(rows, { ...RT_FILTER_DEFAULT, staleOnly: true });
+    expect(out.map((r) => r.patientId)).toEqual(["p3"]);
+  });
+
+  it("alertingOnly + staleOnly combined — AND semantics; both conditions required", () => {
+    const rows = [
+      // alerting but NOT stale
+      row({
+        patientId: "p1",
+        nightsInWindow: 5,
+        activeAlerts: [alert("leak_rising")],
+      }),
+      // stale but NOT alerting
+      row({ patientId: "p2", nightsInWindow: 0, activeAlerts: [] }),
+      // stale AND alerting
+      row({
+        patientId: "p3",
+        nightsInWindow: 0,
+        activeAlerts: [alert("usage_dropping")],
+      }),
+    ];
+    const out = filterRtRows(rows, {
+      ...RT_FILTER_DEFAULT,
+      alertingOnly: true,
+      staleOnly: true,
+    });
+    expect(out.map((r) => r.patientId)).toEqual(["p3"]);
+  });
+
+  it("search matches partial pacware id fragment (e.g. only the numeric part)", () => {
+    const rows = [
+      row({ patientId: "p1", pacwareId: "PW-001", lastName: "Zulu", firstName: "Zara" }),
+      row({ patientId: "p2", pacwareId: "PW-999", lastName: "Zulu", firstName: "Zara" }),
+    ];
+    const out = filterRtRows(rows, { ...RT_FILTER_DEFAULT, search: "999" });
+    expect(out.map((r) => r.patientId)).toEqual(["p2"]);
+  });
+
+  it("search matches partial first name", () => {
+    const rows = [
+      row({ patientId: "p1", firstName: "Bartholomew", lastName: "Smith" }),
+      row({ patientId: "p2", firstName: "Beth", lastName: "Smith" }),
+    ];
+    const out = filterRtRows(rows, { ...RT_FILTER_DEFAULT, search: "bartho" });
+    expect(out.map((r) => r.patientId)).toEqual(["p1"]);
+  });
+
+  it("search with whitespace-only string is treated as no search filter", () => {
+    const rows = [
+      row({ patientId: "p1" }),
+      row({ patientId: "p2" }),
+    ];
+    const out = filterRtRows(rows, { ...RT_FILTER_DEFAULT, search: "   " });
+    expect(out).toHaveLength(2);
+  });
+
+  it("search returning no match gives empty array (not an error)", () => {
+    const rows = [row({ patientId: "p1", lastName: "Adams", firstName: "Alice", pacwareId: "PW-001" })];
+    const out = filterRtRows(rows, { ...RT_FILTER_DEFAULT, search: "zzz_no_match" });
+    expect(out).toEqual([]);
+  });
+
+  it("preserves row object identity — the returned rows are the same references as the input", () => {
+    const r1 = row({ patientId: "p1" });
+    const r2 = row({ patientId: "p2" });
+    const out = filterRtRows([r1, r2], RT_FILTER_DEFAULT);
+    expect(out[0]).toBe(r1);
+    expect(out[1]).toBe(r2);
+  });
+
+  it("all four filters active — only a row satisfying every predicate passes", () => {
+    const rows = [
+      // Passes all: alerting, stale (0 nights), airview source, name matches 'alice'
+      row({
+        patientId: "p1",
+        firstName: "Alice",
+        lastName: "Adams",
+        pacwareId: "PW-001",
+        nightsInWindow: 0,
+        activeAlerts: [alert("leak_rising")],
+        therapyLinks: [link("airview")],
+      }),
+      // Alerting + airview + name match but NOT stale
+      row({
+        patientId: "p2",
+        firstName: "Alice",
+        lastName: "Adams",
+        pacwareId: "PW-002",
+        nightsInWindow: 3,
+        activeAlerts: [alert("leak_rising")],
+        therapyLinks: [link("airview")],
+      }),
+    ];
+    const out = filterRtRows(rows, {
+      alertingOnly: true,
+      staleOnly: true,
+      sources: new Set(["airview"]),
+      search: "alice",
+    });
+    expect(out.map((r) => r.patientId)).toEqual(["p1"]);
+  });
 });
