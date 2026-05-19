@@ -30,7 +30,7 @@ router.post(
   async (req, res) => {
     const idParse = z.string().uuid().safeParse(req.params.id);
     if (!idParse.success) {
-      res.status(404).json({ error: "not_found" });
+      res.status(404).json({ error: "patient_not_found" });
       return;
     }
     const patientId = idParse.data;
