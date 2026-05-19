@@ -143,12 +143,16 @@ export interface RtFilter {
   search: string;
 }
 
-export const RT_FILTER_DEFAULT: RtFilter = {
-  alertingOnly: false,
-  staleOnly: false,
-  sources: new Set(),
-  search: "",
-};
+export function createRtFilterDefault(): RtFilter {
+  return {
+    alertingOnly: false,
+    staleOnly: false,
+    sources: new Set(),
+    search: "",
+  };
+}
+
+export const RT_FILTER_DEFAULT: RtFilter = createRtFilterDefault();
 
 export function filterRtRows(
   rows: RtOverviewRow[],
