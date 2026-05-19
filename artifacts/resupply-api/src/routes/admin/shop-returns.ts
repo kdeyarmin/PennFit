@@ -46,7 +46,7 @@ import {
 } from "../../middlewares/requireAdmin";
 import { rateLimit } from "../../middlewares/rate-limit";
 import { withMetrics } from "../../lib/observability";
-import { isUuidCursorId } from "../../lib/cursor";
+import { parseCompositeCursor, isUuidCursorId } from "../../lib/cursor";
 import {
   getStripeClient,
   readStripeConfigOrNull,
@@ -121,24 +121,17 @@ router.get("/admin/shop/returns", requireAdmin, async (req, res) => {
   // than silently falling back to the first page — that matches the
   // behavior of the other composite-cursor list endpoints and makes
   // tampered cursors fail loudly.
-  let cursorTs: Date | null = null;
-  let cursorId: string | null = null;
-  if (cursor) {
-    const idx = cursor.indexOf("__");
-    if (idx <= 0 || idx >= cursor.length - 2) {
-      res.status(400).json({ error: "invalid_cursor" });
-      return;
-    }
-    cursorTs = new Date(cursor.slice(0, idx));
-    cursorId = cursor.slice(idx + 2);
-    if (
-      Number.isNaN(cursorTs.getTime()) ||
-      !isUuidCursorId(cursorId)
-    ) {
-      res.status(400).json({ error: "invalid_cursor" });
-      return;
-    }
+  const parsed = parseCompositeCursor(cursor ?? undefined);
+  if (!parsed.ok) {
+    res.status(400).json({ error: "invalid_cursor" });
+    return;
   }
+  if (parsed.id !== null && !isUuidCursorId(parsed.id)) {
+    res.status(400).json({ error: "invalid_cursor" });
+    return;
+  }
+  const cursorTs = parsed.date;
+  const cursorId = parsed.id;
 
   let listQuery = supabase
     .schema("resupply")
