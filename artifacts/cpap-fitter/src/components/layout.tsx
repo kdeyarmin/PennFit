@@ -349,6 +349,14 @@ export function Layout({ children }: { children: React.ReactNode }) {
                   </li>
                   <li>
                     <Link
+                      href="/track-order"
+                      className="text-muted-foreground hover:text-primary transition-colors"
+                    >
+                      Track an order
+                    </Link>
+                  </li>
+                  <li>
+                    <Link
                       href="/returns"
                       className="text-muted-foreground hover:text-primary transition-colors"
                     >
