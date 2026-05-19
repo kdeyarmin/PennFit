@@ -28,7 +28,7 @@ import { logAudit } from "@workspace/resupply-audit";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
-import { requireAdmin } from "../../middlewares/requireAdmin";
+import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
 
@@ -52,7 +52,10 @@ const bodySchema = z
 
 router.get(
   "/admin/shop/orders/:orderId/notes",
-  requireAdmin,
+  // Mirrors the return-notes pattern: read on `returns.read`
+  // (operational tier + compliance_officer), write on the broader
+  // operational `returns.manage`.
+  requirePermission("returns.read"),
   async (req, res) => {
     const parsed = orderIdParam.safeParse(req.params.orderId);
     if (!parsed.success) {
@@ -113,7 +116,7 @@ router.get(
 
 router.post(
   "/admin/shop/orders/:orderId/notes",
-  requireAdmin,
+  requirePermission("returns.manage"),
   async (req, res) => {
     const idCheck = orderIdParam.safeParse(req.params.orderId);
     if (!idCheck.success) {

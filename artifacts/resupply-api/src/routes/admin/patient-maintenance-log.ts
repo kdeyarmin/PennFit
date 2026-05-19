@@ -8,13 +8,16 @@ import { z } from "zod";
 
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
-import { requireAdmin } from "../../middlewares/requireAdmin";
+import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
 
 router.get(
   "/admin/patients/:id/maintenance-log",
-  requireAdmin,
+  // Read-only view of the patient's hygiene-task history. Scoped
+  // to `patients.read` — held by every current admin role, so this
+  // documents the contract without changing today's access matrix.
+  requirePermission("patients.read"),
   async (req, res) => {
     const idParse = z.string().uuid().safeParse(req.params.id);
     if (!idParse.success) {

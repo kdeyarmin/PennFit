@@ -68,7 +68,7 @@ import {
   getStripeClient,
   readStripeConfigOrNull,
 } from "../../lib/stripe/config";
-import { requireAdmin } from "../../middlewares/requireAdmin";
+import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
 
@@ -123,7 +123,10 @@ const listQuery = z.object({
     .transform((v) => v !== undefined),
 });
 
-router.get("/admin/shop/customers", requireAdmin, async (req, res) => {
+// Customer 360 list — `conversations.manage` scope (admin /
+// supervisor / csr / agent). Removes fitter / fulfillment /
+// compliance_officer who don't drive this surface today.
+router.get("/admin/shop/customers", requirePermission("conversations.manage"), async (req, res) => {
   const parsed = listQuery.safeParse(req.query);
   if (!parsed.success) {
     res.status(400).json({
@@ -354,7 +357,7 @@ const userIdParam = z
   // reject anything that looks shaped like a SQL injection probe.
   .regex(/^[A-Za-z0-9_-]+$/);
 
-router.get("/admin/shop/customers/:userId", requireAdmin, async (req, res) => {
+router.get("/admin/shop/customers/:userId", requirePermission("conversations.manage"), async (req, res) => {
   const parsed = userIdParam.safeParse(req.params.userId);
   if (!parsed.success) {
     res.status(400).json({ error: "invalid_user_id" });
@@ -733,7 +736,10 @@ const reorderBody = z.object({
 
 router.post(
   "/admin/shop/customers/:userId/reorder",
-  requireAdmin,
+  // CSR-driven reorder on behalf of a customer — creates a new
+  // Stripe Checkout Session. `conversations.manage` keeps this in
+  // the same operational tier as the rest of customer-360 surface.
+  requirePermission("conversations.manage"),
   async (req, res) => {
     const idCheck = userIdParam.safeParse(req.params.userId);
     if (!idCheck.success) {

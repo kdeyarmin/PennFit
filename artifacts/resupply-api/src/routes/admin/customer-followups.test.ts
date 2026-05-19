@@ -50,6 +50,12 @@ const ADMIN: MockAdminCtx = {
   role: "admin",
 };
 
+// Double-submit CSRF pair used by POST/PATCH tests. Mirrors the
+// pattern in admin-users.test.ts so every mutating request below
+// satisfies `requireCsrf` (the route's CSRF gate).
+const CSRF_TOKEN = "test-csrf-token-followups";
+const CSRF_COOKIE = `pf_csrf=${CSRF_TOKEN}`;
+
 function makeApp(): Express {
   const app = express();
   app.use(express.json());
@@ -167,14 +173,28 @@ describe("POST /admin/shop/customers/:userId/followups", () => {
   it("401s without admin", async () => {
     const res = await request(makeApp())
       .post(`/admin/shop/customers/${USER_ID}/followups`)
+      .set("Cookie", CSRF_COOKIE)
+      .set("x-pf-csrf", CSRF_TOKEN)
       .send({ body: "x", dueAt: "2026-05-10T16:00:00Z" });
     expect(res.status).toBe(401);
+  });
+
+  it("403s without a matching CSRF pair", async () => {
+    mockAdmin.current = ADMIN;
+    const res = await request(makeApp())
+      .post(`/admin/shop/customers/${USER_ID}/followups`)
+      .send({ body: "Ping", dueAt: "2026-05-10T16:00:00Z" });
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({ error: "csrf_failed" });
+    expect(getSupabaseCallCount("shop_customer_followups", "insert")).toBe(0);
   });
 
   it("400s with empty body", async () => {
     mockAdmin.current = ADMIN;
     const res = await request(makeApp())
       .post(`/admin/shop/customers/${USER_ID}/followups`)
+      .set("Cookie", CSRF_COOKIE)
+      .set("x-pf-csrf", CSRF_TOKEN)
       .send({ body: "  ", dueAt: "2026-05-10T16:00:00Z" });
     expect(res.status).toBe(400);
     expect(getSupabaseCallCount("shop_customer_followups", "insert")).toBe(0);
@@ -184,6 +204,8 @@ describe("POST /admin/shop/customers/:userId/followups", () => {
     mockAdmin.current = ADMIN;
     const res = await request(makeApp())
       .post(`/admin/shop/customers/${USER_ID}/followups`)
+      .set("Cookie", CSRF_COOKIE)
+      .set("x-pf-csrf", CSRF_TOKEN)
       .send({ body: "Ping", dueAt: "not-a-date" });
     expect(res.status).toBe(400);
   });
@@ -193,6 +215,8 @@ describe("POST /admin/shop/customers/:userId/followups", () => {
     stageSupabaseResponse("shop_customers", "select", { data: null });
     const res = await request(makeApp())
       .post(`/admin/shop/customers/${USER_ID}/followups`)
+      .set("Cookie", CSRF_COOKIE)
+      .set("x-pf-csrf", CSRF_TOKEN)
       .send({ body: "Ping", dueAt: "2026-05-10T16:00:00Z" });
     expect(res.status).toBe(404);
     expect(getSupabaseCallCount("shop_customer_followups", "insert")).toBe(0);
@@ -215,6 +239,8 @@ describe("POST /admin/shop/customers/:userId/followups", () => {
       "Call Anna about her UPS claim — confirm replacement shipped.";
     const res = await request(makeApp())
       .post(`/admin/shop/customers/${USER_ID}/followups`)
+      .set("Cookie", CSRF_COOKIE)
+      .set("x-pf-csrf", CSRF_TOKEN)
       .send({ body, dueAt: "2026-05-10T16:00:00Z" });
 
     expect(res.status).toBe(201);
@@ -239,17 +265,32 @@ describe("POST /admin/shop/customers/:userId/followups", () => {
 
 describe("PATCH /admin/shop/customers/:userId/followups/:id/complete", () => {
   it("401s without admin", async () => {
+    const res = await request(makeApp())
+      .patch(
+        `/admin/shop/customers/${USER_ID}/followups/${FOLLOWUP_ID}/complete`,
+      )
+      .set("Cookie", CSRF_COOKIE)
+      .set("x-pf-csrf", CSRF_TOKEN);
+    expect(res.status).toBe(401);
+  });
+
+  it("403s without a matching CSRF pair", async () => {
+    mockAdmin.current = ADMIN;
     const res = await request(makeApp()).patch(
       `/admin/shop/customers/${USER_ID}/followups/${FOLLOWUP_ID}/complete`,
     );
-    expect(res.status).toBe(401);
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({ error: "csrf_failed" });
   });
 
   it("400s with malformed followup id", async () => {
     mockAdmin.current = ADMIN;
-    const res = await request(makeApp()).patch(
-      `/admin/shop/customers/${USER_ID}/followups/not-a-uuid/complete`,
-    );
+    const res = await request(makeApp())
+      .patch(
+        `/admin/shop/customers/${USER_ID}/followups/not-a-uuid/complete`,
+      )
+      .set("Cookie", CSRF_COOKIE)
+      .set("x-pf-csrf", CSRF_TOKEN);
     expect(res.status).toBe(400);
     expect(res.body.error).toBe("invalid_followup_id");
   });
@@ -257,9 +298,12 @@ describe("PATCH /admin/shop/customers/:userId/followups/:id/complete", () => {
   it("404s when the followup doesn't exist", async () => {
     mockAdmin.current = ADMIN;
     stageSupabaseResponse("shop_customer_followups", "select", { data: null });
-    const res = await request(makeApp()).patch(
-      `/admin/shop/customers/${USER_ID}/followups/${FOLLOWUP_ID}/complete`,
-    );
+    const res = await request(makeApp())
+      .patch(
+        `/admin/shop/customers/${USER_ID}/followups/${FOLLOWUP_ID}/complete`,
+      )
+      .set("Cookie", CSRF_COOKIE)
+      .set("x-pf-csrf", CSRF_TOKEN);
     expect(res.status).toBe(404);
     expect(res.body.error).toBe("followup_not_found");
   });
@@ -274,9 +318,12 @@ describe("PATCH /admin/shop/customers/:userId/followups/:id/complete", () => {
         body: "anything",
       },
     });
-    const res = await request(makeApp()).patch(
-      `/admin/shop/customers/${USER_ID}/followups/${FOLLOWUP_ID}/complete`,
-    );
+    const res = await request(makeApp())
+      .patch(
+        `/admin/shop/customers/${USER_ID}/followups/${FOLLOWUP_ID}/complete`,
+      )
+      .set("Cookie", CSRF_COOKIE)
+      .set("x-pf-csrf", CSRF_TOKEN);
     expect(res.status).toBe(404);
   });
 
@@ -290,9 +337,12 @@ describe("PATCH /admin/shop/customers/:userId/followups/:id/complete", () => {
         body: "anything",
       },
     });
-    const res = await request(makeApp()).patch(
-      `/admin/shop/customers/${USER_ID}/followups/${FOLLOWUP_ID}/complete`,
-    );
+    const res = await request(makeApp())
+      .patch(
+        `/admin/shop/customers/${USER_ID}/followups/${FOLLOWUP_ID}/complete`,
+      )
+      .set("Cookie", CSRF_COOKIE)
+      .set("x-pf-csrf", CSRF_TOKEN);
     expect(res.status).toBe(409);
     expect(res.body.error).toBe("already_completed");
   });
@@ -315,9 +365,12 @@ describe("PATCH /admin/shop/customers/:userId/followups/:id/complete", () => {
       },
     });
 
-    const res = await request(makeApp()).patch(
-      `/admin/shop/customers/${USER_ID}/followups/${FOLLOWUP_ID}/complete`,
-    );
+    const res = await request(makeApp())
+      .patch(
+        `/admin/shop/customers/${USER_ID}/followups/${FOLLOWUP_ID}/complete`,
+      )
+      .set("Cookie", CSRF_COOKIE)
+      .set("x-pf-csrf", CSRF_TOKEN);
 
     expect(res.status).toBe(200);
     expect(res.body.id).toBe(FOLLOWUP_ID);

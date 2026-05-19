@@ -32,7 +32,7 @@ import {
   type CampaignStatus,
 } from "../../lib/bulk-campaigns/dispatch-helpers";
 import { logger } from "../../lib/logger";
-import { requireAdmin } from "../../middlewares/requireAdmin";
+import { requirePermission } from "../../middlewares/requireAdmin";
 import { getBoss } from "../../worker/index.js";
 import { enqueueImmediateTick } from "../../worker/jobs/bulk-campaign-tick.js";
 
@@ -99,7 +99,11 @@ const draftBody = z
 
 router.post(
   "/admin/bulk-campaigns/draft",
-  requireAdmin,
+  // Draft creation is the entry point to the send pipeline.
+  // `bulk_campaigns.send` exact 1:1 catalog match — held by admin /
+  // supervisor / compliance_officer (none of the other roles drive
+  // outbound bulk messaging).
+  requirePermission("bulk_campaigns.send"),
   async (req, res) => {
     const parsed = draftBody.safeParse(req.body);
     if (!parsed.success) {
@@ -239,7 +243,10 @@ router.post(
   },
 );
 
-router.get("/admin/bulk-campaigns", requireAdmin, async (_req, res) => {
+// List + detail + recipients-CSV all gate on the same perm as the
+// send actions. Anyone who can send is the audience for these reads;
+// non-senders have no use case for the campaign console.
+router.get("/admin/bulk-campaigns", requirePermission("bulk_campaigns.send"), async (_req, res) => {
   const supabase = getSupabaseServiceRoleClient();
   const { data, error } = await supabase
     .schema("resupply")
@@ -276,7 +283,7 @@ router.get("/admin/bulk-campaigns", requireAdmin, async (_req, res) => {
 
 router.get(
   "/admin/bulk-campaigns/:id",
-  requireAdmin,
+  requirePermission("bulk_campaigns.send"),
   async (req, res) => {
     const params = idParam.safeParse(req.params);
     if (!params.success) {
@@ -521,22 +528,22 @@ function makeTransitionHandler(
 
 router.post(
   "/admin/bulk-campaigns/:id/start",
-  requireAdmin,
+  requirePermission("bulk_campaigns.send"),
   makeTransitionHandler("start"),
 );
 router.post(
   "/admin/bulk-campaigns/:id/pause",
-  requireAdmin,
+  requirePermission("bulk_campaigns.send"),
   makeTransitionHandler("pause"),
 );
 router.post(
   "/admin/bulk-campaigns/:id/resume",
-  requireAdmin,
+  requirePermission("bulk_campaigns.send"),
   makeTransitionHandler("resume"),
 );
 router.post(
   "/admin/bulk-campaigns/:id/cancel",
-  requireAdmin,
+  requirePermission("bulk_campaigns.send"),
   makeTransitionHandler("cancel"),
 );
 
@@ -562,7 +569,7 @@ router.post(
 // ────────────────────────────────────────────────────────────────
 router.post(
   "/admin/bulk-campaigns/:id/regenerate-audience",
-  requireAdmin,
+  requirePermission("bulk_campaigns.send"),
   async (req, res) => {
     const idCheck = z.string().uuid().safeParse(req.params.id);
     if (!idCheck.success) {
@@ -692,7 +699,9 @@ router.post(
 // busy campaign can hit tens of thousands of recipients.
 router.get(
   "/admin/bulk-campaigns/:id/recipients.csv",
-  requireAdmin,
+  // Per-campaign recipients export. Same audience as the rest of
+  // the campaign console.
+  requirePermission("bulk_campaigns.send"),
   async (req, res) => {
     const idCheck = z.string().uuid().safeParse(req.params.id);
     if (!idCheck.success) {

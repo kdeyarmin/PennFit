@@ -38,9 +38,28 @@ import { registerBulkCampaignTickJob } from "./jobs/bulk-campaign-tick.js";
 import { registerPatientDocumentsRetentionSweepJob } from "./jobs/patient-documents-retention-sweep.js";
 import { registerRecallNotificationSendJob } from "./jobs/recall-notifications-send.js";
 import { registerMaintenanceNudgeJob } from "./jobs/maintenance-nudges.js";
+import { registerFitterLeadReengageJob } from "./jobs/fitter-lead-reengage.js";
+import { registerFitterLeadFirstDayNudgeJob } from "./jobs/fitter-lead-first-day-nudge.js";
 import { registerAuditLogArchiveSweepJob } from "./jobs/audit-log-archive-sweep.js";
 import { registerTherapyNightlySyncJob } from "./jobs/therapy-integrations-nightly-sync.js";
 import { registerCoachingProgressJob } from "./jobs/coaching-plan-progress.js";
+import { registerPriorAuthExpirySweepJob } from "./jobs/prior-auth-expiry-sweep.js";
+import { registerShopOrderDeliveryFollowupJob } from "./jobs/shop-order-delivery-followup.js";
+import { registerTherapyMilestonesJob } from "./jobs/therapy-milestones.js";
+import { registerLapsedCustomerWinbackJob } from "./jobs/lapsed-customer-winback.js";
+import { registerDeductibleResetPushJob } from "./jobs/deductible-reset-push.js";
+import { registerQuarterlyTherapySummaryJob } from "./jobs/quarterly-therapy-summary.js";
+import { registerLifecycleTouchpointsJob } from "./jobs/lifecycle-touchpoints.js";
+import { registerOfficeAllyInboundPollJob } from "./jobs/office-ally-inbound-poll.js";
+import { registerPaMcoSlaSweepJob } from "./jobs/pa-mco-sla-sweep.js";
+import { registerAccreditationReadinessSweepJob } from "./jobs/accreditation-readiness-sweep.js";
+import { registerPecosSyncJob } from "./jobs/pecos-sync.js";
+import { registerOigLeieSyncJob } from "./jobs/oig-leie-sync.js";
+import { registerCappedRentalAdvanceJob } from "./jobs/capped-rental-advance.js";
+import { registerDwoExpirySweepJob } from "./jobs/dwo-expiry-sweep.js";
+import { registerWebhookDispatcherJob } from "./jobs/webhook-dispatcher.js";
+import { registerAutoWorkflowJob } from "./jobs/auto-workflow.js";
+import { registerComplianceAutoWorkflowJob } from "./jobs/compliance-auto-workflow.js";
 
 let bossInstance: PgBoss | null = null;
 let workerReady = false;
@@ -53,6 +72,14 @@ export function getBoss(): PgBoss | null {
   return bossInstance;
 }
 
+/**
+ * Start and configure the resupply in-process pg-boss worker and register scheduled jobs.
+ *
+ * Throws if `DATABASE_URL` is not set. On success this sets the module's pg-boss instance,
+ * attaches error and monitor-state handlers that emit structured logs, registers resupply-related
+ * recurring and dispatch jobs (reminders, retention/cleanup tasks, campaign ticks, nightly syncs,
+ * prior-auth expiry sweep, etc.), and marks the worker ready.
+ */
 export async function startWorker(): Promise<void> {
   const databaseUrl = process.env["DATABASE_URL"];
   if (!databaseUrl) {
@@ -194,6 +221,18 @@ export async function startWorker(): Promise<void> {
   // Patient hygiene weekly nudge — emails patients with overdue
   // mask-wipe / hose-wash / etc. tasks. Sunday 11:13 UTC.
   await registerMaintenanceNudgeJob(boss);
+  // Abandoned-fitter re-engagement — daily 09:37 UTC. Scans
+  // resupply.fitter_leads for opted-in rows aged 3–30 days that
+  // never produced a public.orders row, emails a "finish your
+  // fitting" nudge, and stamps nudged_at so it never re-sends.
+  await registerFitterLeadReengageJob(boss);
+  // First-day fitter-lead nudge — hourly at :19. Catches the
+  // in-funnel patient who started 18-30 hours ago and never
+  // finished. Sends email + SMS (when opted in via the phone field
+  // added in 0121) with same-day-warm copy. Uses a separate
+  // first_day_nudged_at column so the 3-30d worker above can still
+  // fire later if the patient stays cold.
+  await registerFitterLeadFirstDayNudgeJob(boss);
   // HIPAA audit-log retention sweep — nightly flag of rows past
   // the 6-year floor. Destruction stays human-triggered.
   await registerAuditLogArchiveSweepJob(boss);
@@ -217,6 +256,112 @@ export async function startWorker(): Promise<void> {
   // 04:30 UTC; persists snapshot recentNights into the canonical
   // patient_therapy_nights table for downstream consumers.
   await registerTherapyNightlySyncJob(boss);
+
+  // Daily prior-authorization expiry sweep — flips approved → expired
+  // on the day after approved_through, and emits CSR heads-up alerts
+  // at T-30 / T-14 / T-7 days so billing can chase a renewal before
+  // claims start denying. The /patients/:id/prior-authorizations
+  // route header has long claimed this sweep existed; this is its
+  // implementation. Runs at 03:47 UTC daily.
+  await registerPriorAuthExpirySweepJob(boss);
+
+  // Daily post-delivery follow-up dispatcher. Scans paid shop orders
+  // that delivered 3-14 days ago without a follow-up stamp and sends
+  // a "how did it go?" email + push. Highest-ROI satisfaction surface
+  // a DME supplier has; also creates a clean intake for early returns
+  // before the patient gives up. Runs at 14:23 UTC daily.
+  await registerShopOrderDeliveryFollowupJob(boss);
+
+  // Daily therapy-milestone evaluator + sender. Scans
+  // patient_therapy_nights for engagement signals (100th night, first
+  // anniversary, first 30-night adherence window) and sends a
+  // celebration email per detected milestone. Idempotent via the
+  // patient_therapy_milestones UNIQUE constraint. Runs at 04:53 UTC,
+  // paired with the therapy nightly sync (04:30) so we work against
+  // fresh data.
+  await registerTherapyMilestonesJob(boss);
+
+  // Weekly lapsed-customer win-back. Mondays at 13:17 UTC. Sends one
+  // "we miss you" email to any shop_customers row whose last paid
+  // order is 180–730 days old (lapsed but not stale-registration)
+  // and who hasn't been win-back'd within the past 12 months. Honors
+  // communication_preferences.emailMarketing.
+  await registerLapsedCustomerWinbackJob(boss);
+
+  // Daily deductible-reset push — short-circuits unless current month
+  // is November. Sends a "use your benefits before Jan 1" email to
+  // every active customer (paid order within the past 730 days) who
+  // hasn't been stamped for the current year. Daily-and-short-circuit
+  // makes the cron self-healing across deploys that miss Nov 1.
+  await registerDeductibleResetPushJob(boss);
+
+  // Daily quarterly therapy-summary email — every 90 days per
+  // patient, pushes the same 90-day rollup that /shop/me/quarterly-
+  // summary already builds into the patient's inbox. The endpoint
+  // was pull-only; this worker makes it pull-AND-push so payers
+  // and primary-care physicians get the summary at the cadence
+  // they ask for. Runs at 06:17 UTC, gated by emailMarketing on
+  // the patient's shop_customers comm-prefs.
+  await registerQuarterlyTherapySummaryJob(boss);
+
+  // Daily lifecycle touchpoints — birthday + sleep-therapy
+  // anniversary celebration emails. Calendar signals complement the
+  // therapy-count milestones in 0120 (100/365 nights, first
+  // adherence month) and consistently show the highest open + click
+  // rates in DME coaching literature. Runs at 13:33 UTC, idempotent
+  // via year stamps on patients.
+  await registerLifecycleTouchpointsJob(boss);
+
+  // Every 15 minutes — poll Office Ally's outbound SFTP directory
+  // for 999 / 277CA / 835 files we haven't already processed.
+  // No-op when no clearinghouse_credentials row exists and no
+  // OFFICE_ALLY_* env is configured (dev / preview).
+  await registerOfficeAllyInboundPollJob(boss);
+
+  // Every 6 hours — refresh PA Medicaid MCO 7-day SLA status
+  // (mig 0133). Stamps mco_sla_target_date + status and queues
+  // CSR alerts on at-risk + missed transitions.
+  await registerPaMcoSlaSweepJob(boss);
+
+  // Weekly accreditation-survey readiness audit. Runs the rule
+  // engine in lib/accreditation/readiness-engine.ts and persists
+  // structured findings for the CMS annual unannounced surveys
+  // (effective Jan 1, 2026).
+  await registerAccreditationReadinessSweepJob(boss);
+
+  // Daily CMS PECOS Order/Referring sync. Powers the preflight
+  // "ordering provider not PECOS-enrolled" denial blocker.
+  await registerPecosSyncJob(boss);
+
+  // Monthly OIG LEIE refresh. Re-loads the public exclusion list
+  // (4th of each month at 04:07 UTC) so the screening tool answers
+  // against a current dataset. Per-subject screening attempts are
+  // recorded separately in oig_leie_screenings.
+  await registerOigLeieSyncJob(boss);
+
+  // Daily capped-rental month advance (mig 0134). For each active
+  // cycle past the next anniversary, generates a draft monthly
+  // claim with the correct KH/KI/KX modifier rotation.
+  await registerCappedRentalAdvanceJob(boss);
+
+  // Weekly DWO / CMN renewal sweep (mig 0134). T-60/T-30/T-7 CSR
+  // alerts before expires_on.
+  await registerDwoExpirySweepJob(boss);
+
+  // Every minute — drain webhook_deliveries with exponential
+  // backoff retries. HMAC-SHA256-signed POSTs to subscriber URLs.
+  await registerWebhookDispatcherJob(boss);
+
+  // Every 5 minutes — auto-workflow pass: heuristic-score + AI-scrub
+  // risky drafts, AI-analyze fresh denials, publish
+  // billing_statement.due for patients with cooldown-clear balances.
+  await registerAutoWorkflowJob(boss);
+
+  // Every 15 minutes — compliance auto-workflow pass: publish
+  // compliance.baa_expiring_soon / .baa_expired /
+  // .oig_screening_overdue / .patient_rights_overdue webhook events
+  // with 24-hour cooldown gates.
+  await registerComplianceAutoWorkflowJob(boss);
 
   workerReady = true;
   logger.info(

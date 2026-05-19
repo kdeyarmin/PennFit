@@ -17,8 +17,9 @@
 //                                                                admins
 //
 // Both PATCHes are requireAdminOnly (skill catalogs are a policy
-// choice, not CSR day-to-day). The suggestions GET is requireAdmin
-// (any staffer can see who would handle a given conversation).
+// choice, not CSR day-to-day). The suggestions GET + auto-assign
+// POST gate on `conversations.manage` — every role that touches the
+// inbox needs the routing affordances.
 
 import { Router, type IRouter } from "express";
 import { z } from "zod";
@@ -30,8 +31,8 @@ import { maybeAutoAssignConversation } from "../../lib/routing/auto-assign";
 import { scoreCandidates } from "../../lib/routing/skill-score";
 import { logger } from "../../lib/logger";
 import {
-  requireAdmin,
   requireAdminOnly,
+  requirePermission,
 } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
@@ -151,7 +152,11 @@ router.patch(
 
 router.get(
   "/admin/conversations/:id/assignee-suggestions",
-  requireAdmin,
+  // Read-only suggestion ranking used by the in-conversation
+  // "Assign to…" picker. CSR-tier (`conversations.manage`) since
+  // any role that handles the inbox needs the suggestion list to
+  // route effectively.
+  requirePermission("conversations.manage"),
   async (req, res) => {
     const idCheck = z.string().uuid().safeParse(req.params.id);
     if (!idCheck.success) {
@@ -244,7 +249,9 @@ router.get(
 // ────────────────────────────────────────────────────────────────
 router.post(
   "/admin/conversations/:id/auto-assign",
-  requireAdmin,
+  // Auto-assign action — same scope as the suggestions GET above
+  // (it's the action the suggestions feed).
+  requirePermission("conversations.manage"),
   async (req, res) => {
     const idCheck = z.string().uuid().safeParse(req.params.id);
     if (!idCheck.success) {

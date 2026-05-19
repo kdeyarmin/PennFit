@@ -230,6 +230,18 @@ export function OrderSuccess() {
         </div>
       </Link>
 
+      <p className="text-center text-sm text-muted-foreground">
+        Want to check on this order later?{" "}
+        <Link
+          href="/track-order"
+          className="text-primary hover:underline underline-offset-4"
+          data-testid="order-success-track-link"
+        >
+          Bookmark the tracking page
+        </Link>{" "}
+        — your order reference + email is all you need.
+      </p>
+
       <div className="flex flex-col sm:flex-row gap-3 justify-center flex-wrap">
         <Link href="/">
           <Button

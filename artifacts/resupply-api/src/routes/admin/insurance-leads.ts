@@ -31,7 +31,7 @@ import {
   getSupabaseServiceRoleClient,
 } from "@workspace/resupply-db";
 
-import { requireAdmin } from "../../middlewares/requireAdmin";
+import { requirePermission } from "../../middlewares/requireAdmin";
 
 type InsuranceLeadsUpdate = Database["resupply"]["Tables"]["insurance_leads"]["Update"];
 
@@ -81,7 +81,9 @@ const patchBody = z
     message: "must include status or csrNote",
   });
 
-router.get("/admin/shop/insurance-leads", requireAdmin, async (req, res) => {
+// Insurance-lead admin queue. CSR contact workflow — matches the
+// rest of the inbox tier (`conversations.manage`).
+router.get("/admin/shop/insurance-leads", requirePermission("conversations.manage"), async (req, res) => {
   const parsed = listQuery.safeParse(req.query);
   if (!parsed.success) {
     res.status(400).json({ error: "invalid_query" });
@@ -171,7 +173,9 @@ router.get("/admin/shop/insurance-leads", requireAdmin, async (req, res) => {
 
 router.patch(
   "/admin/shop/insurance-leads/:id",
-  requireAdmin,
+  // Status mutations (move lead through new → contacted → verified
+  // → closed). Same scope as the list above.
+  requirePermission("conversations.manage"),
   async (req, res) => {
     // req.params is typed as Record<string, string | string[]> in
     // strict express; this route's path uses a single :id segment so

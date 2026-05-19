@@ -21,7 +21,12 @@ git reset --hard subrepl-3ppc2e03/main
 
 **Where new work lands:** push a feature branch and open a PR on `github.com/kdeyarmin/PennFit`. Do NOT commit directly to local `main` and let it drift again. The Replit Git pane has a "Push" action that creates the branch on the remote; finish the PR on github.com.
 
-**The pre-commit hook warns** when local `main` is more than 10 commits behind `subrepl-3ppc2e03/main` (non-blocking — surfaces drift without breaking emergency commits). Bypass with `SKIP_HOOKS=1 git commit ...` or `--no-verify`.
+**Drift is enforced by two git hooks** (installed by `scripts/install-hooks.sh`, sourced from `scripts/git-hooks/`):
+
+- **`pre-commit`** — BLOCKS any commit to local `main` while local `main` is behind `subrepl-3ppc2e03/main` by even one commit. The error message tells you the exact branch-off-and-recommit recipe. This is what prevents drift from accumulating in the first place.
+- **`pre-push`** — BLOCKS pushes of local `main` to `subrepl-3ppc2e03/main` that would be non-fast-forward (remote has commits local doesn't). Fetches first so the check uses the real current remote tip, not a stale cache. Catches drift before GitHub rejects the push and you end up half-merged.
+
+Both hooks honor `SKIP_HOOKS=1` and `--no-verify` for true emergencies only — do not use them for normal work, that's how drift built up to 150+ commits last time. The installer is idempotent and is re-run automatically by `scripts/post-merge.sh`, so contributors pick the hooks up with no manual setup.
 
 ## Overview
 
@@ -45,7 +50,7 @@ Facial image processing is performed entirely on-device using MediaPipe Face Mes
 
 ### Technical Stack
 
-The project is built as a monorepo using `pnpm workspaces`, `Node.js v24`, and `TypeScript v5.9`. The API uses `Express 5` with `Zod` for validation. The frontend is developed with `React`, `Vite`, `Tailwind CSS`, and `Wouter`. `Drizzle ORM` with `node-postgres` handles database interactions. Authentication is an in-house solution using `argon2id` and DB-backed `pf_session` cookies.
+The project is built as a monorepo using `pnpm workspaces`, `Node.js v24`, and `TypeScript v5.9`. The API uses `Express 5` with `Zod` for validation. The frontend is developed with `React`, `Vite`, `Tailwind CSS`, and `Wouter`. Database access goes through the `Supabase` service-role client exported from `@workspace/resupply-db` — every route, worker, and helper reads/writes via PostgREST. A small `node-postgres` pool is retained inside `@workspace/resupply-db` for the migration tooling and a handful of legacy worker paths that have not yet been ported. Authentication is an in-house solution using `argon2id` and DB-backed `pf_session` cookies.
 
 ### Application Flow and Design
 

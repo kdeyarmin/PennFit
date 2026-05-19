@@ -26,7 +26,8 @@ import { logAudit } from "@workspace/resupply-audit";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
-import { requireAdmin } from "../../middlewares/requireAdmin";
+import { requirePermission } from "../../middlewares/requireAdmin";
+import { requireCsrf } from "../../middlewares/csrf";
 import { rateLimit } from "../../middlewares/rate-limit";
 
 const router: IRouter = Router();
@@ -68,7 +69,9 @@ const createSchema = z
 
 router.get(
   "/admin/shop/customers/:userId/followups",
-  requireAdmin,
+  // CSR commitment queue per customer. `conversations.manage`
+  // matches the access matrix for /notes above and customers 360.
+  requirePermission("conversations.manage"),
   async (req, res) => {
     const parsed = userIdParam.safeParse(req.params.userId);
     if (!parsed.success) {
@@ -143,7 +146,8 @@ router.get(
 
 router.post(
   "/admin/shop/customers/:userId/followups",
-  requireAdmin,
+  requirePermission("conversations.manage"),
+  requireCsrf,
   adminFollowupMutationLimiter,
   async (req, res) => {
     const idCheck = userIdParam.safeParse(req.params.userId);
@@ -226,7 +230,8 @@ router.post(
 
 router.patch(
   "/admin/shop/customers/:userId/followups/:id/complete",
-  requireAdmin,
+  requirePermission("conversations.manage"),
+  requireCsrf,
   adminFollowupMutationLimiter,
   async (req, res) => {
     const idCheck = userIdParam.safeParse(req.params.userId);

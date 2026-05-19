@@ -40,6 +40,7 @@ import {
 import { useEffect } from "react";
 import { track } from "@/lib/track";
 import { FacialMeasurementsCard } from "@/components/facial-measurements-card";
+import { DOB_MIN, isPlausibleDob } from "@/lib/dob-validation";
 
 const US_STATES = [
   "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA",
@@ -54,7 +55,10 @@ const formSchema = z.object({
   patient: z.object({
     firstName: z.string().min(1, "Required").max(100),
     lastName: z.string().min(1, "Required").max(100),
-    dateOfBirth: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD"),
+    dateOfBirth: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD")
+      .refine(isPlausibleDob, "Enter a valid date of birth"),
     email: z.string().email("Enter a valid email").max(200),
     phone: z.string().min(7, "Enter a valid phone number").max(30),
   }),
@@ -139,7 +143,8 @@ export function Order() {
   const [, setLocation] = useLocation();
   // The route-level <ProtectedRoute> in App.tsx already guarantees that
   // `chosenMask` is non-null by the time Order mounts.
-  const { chosenMask, setChosenMask, measurements } = useFitterStore();
+  const { chosenMask, setChosenMask, measurements, email: fitterEmail } =
+    useFitterStore();
   const { mutate, isPending, error } = useSubmitOrder();
 
   const {
@@ -151,6 +156,11 @@ export function Order() {
   } = useForm<FormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
+      // Email captured at the /consent gate is the same email the
+      // patient will use for the order; pre-fill so they don't retype.
+      // Still editable here — if they want a different address on the
+      // order, they can change it.
+      patient: fitterEmail ? { email: fitterEmail } : undefined,
       prescription: { hasExistingPrescription: false },
       shippingAddress: { state: "" },
       consentToContact: false,
@@ -414,6 +424,8 @@ export function Order() {
               <Input
                 data-testid="input-dob"
                 type="date"
+                min={DOB_MIN}
+                max={new Date().toISOString().slice(0, 10)}
                 {...register("patient.dateOfBirth")}
                 autoComplete="bday"
               />

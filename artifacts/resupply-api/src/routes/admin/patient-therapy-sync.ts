@@ -28,7 +28,7 @@ import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { adapterFor } from "../../lib/therapy-cloud";
 import { logger } from "../../lib/logger";
-import { requireAdmin } from "../../middlewares/requireAdmin";
+import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
 
@@ -55,7 +55,9 @@ const PER_SYNC_CAP = 90; // days
 
 router.get(
   "/admin/patients/:id/therapy-nights",
-  requireAdmin,
+  // Read-only therapy-cloud snapshot. `patients.read` is held by
+  // every current role.
+  requirePermission("patients.read"),
   async (req, res) => {
     const idCheck = patientIdParam.safeParse(req.params.id);
     if (!idCheck.success) {
@@ -96,7 +98,10 @@ router.get(
 
 router.post(
   "/admin/patients/:id/therapy-nights/sync",
-  requireAdmin,
+  // Triggers vendor adapter import. `patients.update` scope —
+  // tightens fulfillment + compliance_officer out of clinical
+  // data sync.
+  requirePermission("patients.update"),
   async (req, res) => {
     const idCheck = patientIdParam.safeParse(req.params.id);
     if (!idCheck.success) {

@@ -20,7 +20,7 @@ import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { encodeCompositeCursor, parseCompositeCursor } from "../../lib/cursor";
 import { logger } from "../../lib/logger";
-import { requireAdmin } from "../../middlewares/requireAdmin";
+import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
 
@@ -64,7 +64,11 @@ const rejectBody = z
 
 const patchBody = z.union([answerBody, rejectBody]);
 
-router.get("/admin/shop/product-questions", requireAdmin, async (req, res) => {
+// Customer-question moderation queue + answer flow. Treated as
+// CSR-tier inbox work — every role that handles inbound questions
+// uses this surface. `conversations.manage` matches the access
+// matrix on the rest of the customer-facing inbox.
+router.get("/admin/shop/product-questions", requirePermission("conversations.manage"), async (req, res) => {
   const parse = listQuery.safeParse(req.query);
   if (!parse.success) {
     res.status(400).json({ error: "invalid_query" });
@@ -134,7 +138,8 @@ router.get("/admin/shop/product-questions", requireAdmin, async (req, res) => {
 
 router.patch(
   "/admin/shop/product-questions/:id",
-  requireAdmin,
+  // Answer / approve / reject — same scope as the read above.
+  requirePermission("conversations.manage"),
   async (req, res) => {
     const idCheck = idParam.safeParse(req.params.id);
     if (!idCheck.success) {

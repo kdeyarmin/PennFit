@@ -18,7 +18,7 @@ const ENV_KEYS = [
 function fakeSdk(create: ReturnType<typeof vi.fn>): RawTwilioMessagingSdk {
   return {
     messages: { create },
-  };
+  } as unknown as RawTwilioMessagingSdk;
 }
 
 describe("createTwilioSmsClient", () => {

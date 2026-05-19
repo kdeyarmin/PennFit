@@ -14,7 +14,7 @@ import { logAudit } from "@workspace/resupply-audit";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
-import { requireAdmin } from "../../middlewares/requireAdmin";
+import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
 
@@ -30,7 +30,11 @@ const body = z
 
 router.post(
   "/admin/patients/:id/therapy-nights",
-  requireAdmin,
+  // Manual entry of a therapy night — recorded as source='manual'.
+  // Scoped to `patients.update`; tightens out `fulfillment` and
+  // `compliance_officer` (neither has a workflow that authors
+  // clinical data; compliance officer audits but does not enter).
+  requirePermission("patients.update"),
   async (req, res) => {
     const idParse = z.string().uuid().safeParse(req.params.id);
     if (!idParse.success) {

@@ -29,13 +29,18 @@ import {
 
 import { getIntegrationAdapters } from "../../lib/integrations/registry";
 import { logger } from "../../lib/logger";
-import { requireAdmin } from "../../middlewares/requireAdmin";
+import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
 
 router.post(
   "/admin/patients/:id/integrations/refresh-supplies",
-  requireAdmin,
+  // Post-shipment hook that re-fetches the vendor supply roster
+  // for one patient — `patients.update` matches the other
+  // patient-integration write surfaces (refresh, therapy-links
+  // CRUD, etc.) so the same roles can drive the workflow end-to-
+  // end.
+  requirePermission("patients.update"),
   async (req, res) => {
     const idParse = z.string().uuid().safeParse(req.params.id);
     if (!idParse.success) {

@@ -16,6 +16,14 @@ interface FitterState {
   answers: Partial<QuestionnaireAnswers>;
   capturedImage: string | null; // Data URL for display purposes only. Never uploaded.
   chosenMask: ChosenMask | null;
+  /**
+   * Email + marketing-consent captured at the start of the fitter flow
+   * (on the /consent page). Downstream routes (/capture, /measure,
+   * /questionnaire, /results, /order) refuse to render until both are
+   * set, so the email backs every recommendation the patient sees.
+   */
+  email: string | null;
+  emailConsent: boolean;
 }
 
 // Demo mode (?demo=1) pre-populates realistic but fake state so we can:
@@ -77,6 +85,7 @@ interface FitterContextType extends FitterState {
   updateAnswers: (answers: Partial<QuestionnaireAnswers>) => void;
   setCapturedImage: (image: string | null) => void;
   setChosenMask: (mask: ChosenMask | null) => void;
+  setEmailConsent: (email: string, consent: boolean) => void;
   reset: () => void;
 }
 
@@ -104,6 +113,23 @@ export function FitterProvider({ children }: { children: ReactNode }) {
   });
 
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
+
+  // Email + marketing-consent gate. Persisted in sessionStorage so a
+  // refresh mid-flow doesn't kick the patient back to /consent.
+  const [email, setEmail] = useState<string | null>(() => {
+    try {
+      return sessionStorage.getItem("fitter_email");
+    } catch {
+      return null;
+    }
+  });
+  const [emailConsent, setEmailConsentState] = useState<boolean>(() => {
+    try {
+      return sessionStorage.getItem("fitter_email_consent") === "1";
+    } catch {
+      return false;
+    }
+  });
 
   // Chosen mask survives a refresh on the order page so the patient doesn't
   // have to redo the questionnaire. Stored in sessionStorage (cleared on tab
@@ -142,13 +168,28 @@ export function FitterProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const setEmailConsent = (nextEmail: string, consent: boolean) => {
+    setEmail(nextEmail);
+    setEmailConsentState(consent);
+    try {
+      sessionStorage.setItem("fitter_email", nextEmail);
+      sessionStorage.setItem("fitter_email_consent", consent ? "1" : "0");
+    } catch (e) {
+      console.error("Failed to persist fitter email consent", e);
+    }
+  };
+
   const reset = () => {
     setMeasurements(null);
     setAnswers({});
     setCapturedImage(null);
     setChosenMaskState(null);
+    setEmail(null);
+    setEmailConsentState(false);
     sessionStorage.removeItem("fitter_answers");
     sessionStorage.removeItem("fitter_chosen_mask");
+    sessionStorage.removeItem("fitter_email");
+    sessionStorage.removeItem("fitter_email_consent");
   };
 
   return (
@@ -158,10 +199,13 @@ export function FitterProvider({ children }: { children: ReactNode }) {
         answers,
         capturedImage,
         chosenMask,
+        email,
+        emailConsent,
         setMeasurements,
         updateAnswers,
         setCapturedImage,
         setChosenMask,
+        setEmailConsent,
         reset,
       }}
     >

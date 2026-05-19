@@ -19,15 +19,19 @@ import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import {
-  requireAdmin,
   requireAdminOnly,
+  requirePermission,
 } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
 
 router.get(
   "/admin/audit-log/archive",
-  requireAdmin,
+  // Read-only view of archived rows past the HIPAA retention floor.
+  // `audit.read` is held by admin / supervisor / compliance_officer
+  // / agent — correct surveyors-and-ops envelope. Removes csr /
+  // fitter / fulfillment (no compliance workflow on this surface).
+  requirePermission("audit.read"),
   async (_req, res) => {
     const supabase = getSupabaseServiceRoleClient();
     // First 500 archived rows for review; full export still goes

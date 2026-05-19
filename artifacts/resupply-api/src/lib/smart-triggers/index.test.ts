@@ -5,9 +5,11 @@
 import { describe, it, expect } from "vitest";
 
 import {
+  evaluateAhiElevated,
   evaluateAll,
   evaluateCushionWear,
   evaluateLeakRising,
+  evaluateNonAdherent30d,
   evaluateUsageDropping,
   type NightDatum,
 } from "./index";
@@ -123,5 +125,92 @@ describe("evaluateAll", () => {
       pressureP95Cmh2o: 10,
     }));
     expect(evaluateAll(nights)).toEqual([]);
+  });
+});
+
+describe("evaluateAhiElevated", () => {
+  it("returns null on fewer than 5 nights of data", () => {
+    const nights = makeNights("2026-05-11", 4, () => ({ ahi: 7 }));
+    expect(evaluateAhiElevated(nights)).toBeNull();
+  });
+
+  it("returns null when no night breaches the AHI threshold", () => {
+    const nights = makeNights("2026-05-11", 7, () => ({ ahi: 3 }));
+    expect(evaluateAhiElevated(nights)).toBeNull();
+  });
+
+  it("returns null with only 2 breaches in the window", () => {
+    const nights = makeNights("2026-05-11", 7, (i) => ({
+      ahi: i < 2 ? 8 : 3,
+    }));
+    expect(evaluateAhiElevated(nights)).toBeNull();
+  });
+
+  it("fires with exactly 3 breaches in the 7-night window", () => {
+    const nights = makeNights("2026-05-11", 7, (i) => ({
+      ahi: i < 3 ? 8 : 3,
+    }));
+    const proposal = evaluateAhiElevated(nights);
+    expect(proposal?.kind).toBe("ahi_elevated");
+    expect(proposal?.windowStartDate).toBe("2026-05-11");
+    expect(proposal?.windowEndDate).toBe("2026-05-17");
+  });
+
+  it("ignores nights with null AHI when counting breaches", () => {
+    const nights = makeNights("2026-05-11", 7, (i) => ({
+      ahi: i < 2 ? 8 : null,
+    }));
+    expect(evaluateAhiElevated(nights)).toBeNull();
+  });
+
+  it("considers only the most recent 7 nights even when more data is supplied", () => {
+    // First 7 nights all high; last 7 all controlled. Should NOT fire.
+    const nights = makeNights("2026-04-01", 14, (i) => ({
+      ahi: i < 7 ? 8 : 2,
+    }));
+    expect(evaluateAhiElevated(nights)).toBeNull();
+  });
+});
+
+describe("evaluateNonAdherent30d", () => {
+  it("returns null with fewer than 21 nights of usage data", () => {
+    const nights = makeNights("2026-04-28", 20, () => ({ usageMinutes: 0 }));
+    expect(evaluateNonAdherent30d(nights)).toBeNull();
+  });
+
+  it("returns null when adherence is 100%", () => {
+    const nights = makeNights("2026-04-18", 30, () => ({
+      usageMinutes: 480,
+    }));
+    expect(evaluateNonAdherent30d(nights)).toBeNull();
+  });
+
+  it("returns null when adherence is exactly 70%", () => {
+    // 21 of 30 adherent → exactly 0.70; not < 0.70, so doesn't fire.
+    const nights = makeNights("2026-04-18", 30, (i) => ({
+      usageMinutes: i < 21 ? 300 : 60,
+    }));
+    expect(evaluateNonAdherent30d(nights)).toBeNull();
+  });
+
+  it("fires when adherence drops below 70%", () => {
+    // 20 of 30 adherent → 0.667; below threshold.
+    const nights = makeNights("2026-04-18", 30, (i) => ({
+      usageMinutes: i < 20 ? 300 : 60,
+    }));
+    const proposal = evaluateNonAdherent30d(nights);
+    expect(proposal?.kind).toBe("non_adherent_30d");
+    expect(proposal?.windowStartDate).toBe("2026-04-18");
+    expect(proposal?.windowEndDate).toBe("2026-05-17");
+  });
+
+  it("requires ≥21 NON-null usage readings, not just 21 input nights", () => {
+    // 30 nights, but 12 have null usage → only 18 counted. Below the
+    // 21 floor, so we shouldn't fire even though the 18 we have are
+    // all sub-threshold.
+    const nights = makeNights("2026-04-18", 30, (i) => ({
+      usageMinutes: i < 18 ? 60 : null,
+    }));
+    expect(evaluateNonAdherent30d(nights)).toBeNull();
   });
 });

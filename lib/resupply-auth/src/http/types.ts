@@ -2,7 +2,7 @@
 
 import type { AuthEnv } from "../env";
 import type { AuthRepository, AuthUser } from "../repository";
-import type { RateLimitConfig } from "../rate-limit";
+import type { RateLimitConfig, RateLimitErrorHandler } from "../rate-limit";
 
 /**
  * Pluggable audit-log sink. The resupply-api wires this to
@@ -99,6 +99,14 @@ export interface AuthDeps {
   now?: () => Date;
   /** Override the rate-limit config (tests). Defaults to library defaults. */
   rateLimit?: RateLimitConfig;
+  /**
+   * Observability hook invoked when `checkLoginRateLimit` falls open
+   * because the DB threw — i.e. rate-limiting is silently disabled
+   * for this request. Wire to a structured logger AND a metric so a
+   * sustained DB issue (which turns the brute-force gate off) is
+   * visible to ops. Optional; default = `console.error`.
+   */
+  rateLimitOnError?: RateLimitErrorHandler;
   /**
    * Whether the response should set Secure cookies. Pass
    * `process.env.NODE_ENV === "production"` from the caller.
@@ -216,6 +224,10 @@ export interface MfaProbe {
    * Optional so artifacts that haven't shipped recovery codes yet
    * can leave this unimplemented; the verify handler treats a
    * missing method as "recovery branch disabled."
+   *
+   * Prefer `consumeRecoveryCode` (atomic find-and-spend) when both
+   * are implemented — this method is the legacy two-step contract
+   * and races under concurrent submissions of the same valid code.
    */
   findRecoveryCodeMatch?(
     userId: string,
@@ -231,9 +243,27 @@ export interface MfaProbe {
    * the next attempt would also succeed, which is the rare correct
    * recovery-from-DB-blip behaviour).
    *
-   * Optional alongside `findRecoveryCodeMatch`.
+   * Optional alongside `findRecoveryCodeMatch`. Superseded by
+   * `consumeRecoveryCode` when that is implemented.
    */
   markRecoveryCodeUsed?(rowId: string, ip: string | null): Promise<void>;
+  /**
+   * Atomic find-and-spend: locate a SPENDABLE recovery code AND
+   * mark it used in a single round-trip. Implementations MUST do
+   * this in one DB statement (e.g. `UPDATE … WHERE used_at IS NULL
+   * RETURNING id`) so two concurrent submissions of the same valid
+   * code can't both succeed. Returns the row id on first consume,
+   * null if the code doesn't exist or has already been spent.
+   *
+   * Optional — when present, the verify handler prefers this over
+   * the legacy `findRecoveryCodeMatch` + `markRecoveryCodeUsed`
+   * pair (which races under concurrent submissions).
+   */
+  consumeRecoveryCode?(
+    userId: string,
+    codeHash: string,
+    ip: string | null,
+  ): Promise<{ id: string } | null>;
 }
 
 export interface MfaProbeSecret {

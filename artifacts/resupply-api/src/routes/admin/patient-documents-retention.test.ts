@@ -49,7 +49,7 @@ const CSR: MockAdminCtx = {
   granularRole: "csr",
 };
 
-const DOC_ID = "11111111-1111-1111-1111-111111111111";
+const DOC_ID = "11111111-1111-4111-8111-111111111111";
 
 function makeApp(): Express {
   const app = express();

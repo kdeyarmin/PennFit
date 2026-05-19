@@ -27,7 +27,7 @@ import { logAudit } from "@workspace/resupply-audit";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
-import { requireAdmin } from "../../middlewares/requireAdmin";
+import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
 
@@ -54,7 +54,11 @@ const bodySchema = z
 
 router.get(
   "/admin/shop/customers/:userId/notes",
-  requireAdmin,
+  // CSR-authored notes — read tier under `conversations.manage`
+  // (admin / supervisor / csr / agent). The catalog has no narrower
+  // `notes.read` scope; using the broader operational perm keeps the
+  // access matrix coherent with /admin/shop/customers/:userId itself.
+  requirePermission("conversations.manage"),
   async (req, res) => {
     const parsed = userIdParam.safeParse(req.params.userId);
     if (!parsed.success) {
@@ -115,7 +119,10 @@ router.get(
 
 router.post(
   "/admin/shop/customers/:userId/notes",
-  requireAdmin,
+  // Append-only CSR note. Same scope as the read above —
+  // `conversations.manage` is the operational tier that authors
+  // these notes.
+  requirePermission("conversations.manage"),
   async (req, res) => {
     const idCheck = userIdParam.safeParse(req.params.userId);
     if (!idCheck.success) {

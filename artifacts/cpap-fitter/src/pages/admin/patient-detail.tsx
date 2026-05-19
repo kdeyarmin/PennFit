@@ -127,6 +127,14 @@ type Tab =
   | "equipment"
   | "forms";
 
+/**
+ * Admin detail page for a patient, presenting header info, action controls, settings, and a tabbed view of related data.
+ *
+ * Renders an error panel when the patient cannot be loaded and a loading state while fetching. On success it shows the patient header (name, identifiers, status, contact badges, last contact), the action bar and settings panel, then a tab strip that switches between timeline, activity, address history, episodes, conversations, fulfillments, prescriptions, notes, follow-ups, onboarding, fax outreach, documents, portal, device data, sleep studies, insurance, prior authorizations, equipment, and forms. The tab bar also includes a Claims button that navigates to the patient's insurance-claims route.
+ *
+ * @param id - The patient identifier to load and display
+ * @returns The patient detail admin page UI
+ */
 export function PatientDetailPage({ id }: { id: string }) {
   const [, setLocation] = useLocation();
   const [tab, setTab] = useState<Tab>("timeline");
@@ -374,6 +382,14 @@ export function PatientDetailPage({ id }: { id: string }) {
           onClick={() => setTab("prior-auths")}
         >
           Prior auths
+        </TabButton>
+        <TabButton
+          active={false}
+          onClick={() =>
+            setLocation(`/admin/patients/${id}/insurance-claims`)
+          }
+        >
+          Claims
         </TabButton>
         <TabButton
           active={tab === "equipment"}

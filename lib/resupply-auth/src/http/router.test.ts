@@ -7,7 +7,7 @@
 
 import express, { type Express } from "express";
 import supertest from "supertest";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { CSRF_COOKIE, CSRF_HEADER, SESSION_COOKIE } from "../cookies";
 import { readAuthEnv } from "../env";
@@ -426,5 +426,70 @@ describe("GET /auth/me", () => {
       displayName: null,
       emailVerified: true,
     });
+  });
+});
+
+// ── rateLimitOnError propagation ───────────────────────────────────────────────
+//
+// PR change: every handler that calls checkLoginRateLimit now plumbs
+// `deps.rateLimitOnError` through. When the rate-limit DB check throws,
+// the gate fails open (the request is allowed) AND the hook is invoked
+// so ops can alert on a sustained DB failure that silently disables the
+// brute-force gate.
+
+describe("rateLimitOnError — sign-in handler", () => {
+  it("invokes rateLimitOnError and still allows the request when countRecentFailures throws", async () => {
+    const errorCalls: Array<{ err: unknown; ctx: unknown }> = [];
+    const rateLimitOnError = vi.fn((err: unknown, ctx: unknown) => {
+      errorCalls.push({ err, ctx });
+    });
+
+    const repo = makeMemoryRepo();
+    // Override countRecentFailures to simulate a DB failure mid-request.
+    const brokenRepo = {
+      ...repo,
+      countRecentFailures: async () => {
+        throw new Error("rate-limit table unavailable");
+      },
+    };
+
+    // Seed a valid user so the sign-in can succeed after fail-open.
+    await seedUserWithPassword(repo, {
+      id: "u_carol",
+      emailLower: "carol@example.com",
+      role: "agent",
+      emailVerified: true,
+      password: "securePassw0rd!",
+    });
+    // Manually copy the seeded user + credential into brokenRepo's underlying
+    // storage — brokenRepo wraps repo for most methods, including findUserByEmail.
+    // (brokenRepo inherits repo's Maps through the spread.)
+
+    const h = buildHarness({ repo: brokenRepo, rateLimitOnError });
+    const csrf = await seedCsrf(h.app);
+
+    const res = await supertest(h.app)
+      .post("/auth/sign-in")
+      .set("Cookie", `${CSRF_COOKIE}=${csrf}`)
+      .set(CSRF_HEADER, csrf)
+      .send({ email: "carol@example.com", password: "securePassw0rd!" });
+
+    // Sign-in must succeed (fail-open): the gate allowed it.
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(true);
+
+    // The rateLimitOnError hook must have been called at least once.
+    expect(rateLimitOnError).toHaveBeenCalled();
+    expect(errorCalls[0]?.err).toBeInstanceOf(Error);
+    expect((errorCalls[0]?.err as Error).message).toContain("rate-limit table unavailable");
+  });
+
+  it("sets rateLimitOnError on AuthDeps correctly (type-level smoke)", () => {
+    // Verify that the buildHarness / AuthDeps accept rateLimitOnError without
+    // TypeScript errors. If the type was not added to AuthDeps in types.ts, this
+    // test would fail to compile.
+    const hook = vi.fn();
+    const h = buildHarness({ rateLimitOnError: hook });
+    expect(h.app).toBeDefined();
   });
 });

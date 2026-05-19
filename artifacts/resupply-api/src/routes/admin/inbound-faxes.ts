@@ -38,7 +38,7 @@ import {
   ObjectNotFoundError,
   ObjectStorageService,
 } from "../../lib/object-storage/objectStorage";
-import { requireAdmin } from "../../middlewares/requireAdmin";
+import { requirePermission } from "../../middlewares/requireAdmin";
 
 type InboundFaxUpdate =
   Database["resupply"]["Tables"]["inbound_faxes"]["Update"];
@@ -98,7 +98,10 @@ const patchBody = z
   })
   .strict();
 
-router.get("/admin/inbound-faxes", requireAdmin, async (req, res) => {
+// Inbound-fax triage queue — CSR work. `conversations.manage`
+// matches the rest of the inbox-tier surface (product-questions,
+// reviews, customer-followups).
+router.get("/admin/inbound-faxes", requirePermission("conversations.manage"), async (req, res) => {
   const q = listQuery.safeParse(req.query);
   if (!q.success) {
     res.status(400).json({ error: "invalid_query" });
@@ -144,7 +147,7 @@ router.get("/admin/inbound-faxes", requireAdmin, async (req, res) => {
   });
 });
 
-router.get("/admin/inbound-faxes/:id", requireAdmin, async (req, res) => {
+router.get("/admin/inbound-faxes/:id", requirePermission("conversations.manage"), async (req, res) => {
   const params = idParam.safeParse(req.params);
   if (!params.success) {
     res.status(404).json({ error: "not_found" });
@@ -188,7 +191,9 @@ router.get("/admin/inbound-faxes/:id", requireAdmin, async (req, res) => {
 
 router.get(
   "/admin/inbound-faxes/:id/media",
-  requireAdmin,
+  // Per-attachment media URLs (one-shot signed Twilio links).
+  // Same scope as the list/detail above.
+  requirePermission("conversations.manage"),
   async (req, res) => {
     const params = idParam.safeParse(req.params);
     if (!params.success) {
@@ -264,7 +269,7 @@ router.get(
   },
 );
 
-router.patch("/admin/inbound-faxes/:id", requireAdmin, async (req, res) => {
+router.patch("/admin/inbound-faxes/:id", requirePermission("conversations.manage"), async (req, res) => {
   const params = idParam.safeParse(req.params);
   if (!params.success) {
     res.status(404).json({ error: "not_found" });
@@ -384,7 +389,9 @@ router.patch("/admin/inbound-faxes/:id", requireAdmin, async (req, res) => {
 // when the country code is rewritten).
 router.get(
   "/admin/inbound-faxes/:id/suggested-patients",
-  requireAdmin,
+  // Sender-phone-based patient suggestions for the CSR triage
+  // workflow. Same scope as the rest of the inbound-fax surface.
+  requirePermission("conversations.manage"),
   async (req, res) => {
     const params = z
       .object({ id: z.string().uuid() })

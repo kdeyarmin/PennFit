@@ -1,0 +1,452 @@
+// Claim preflight — structured "is this claim ready to submit?"
+// checklist that powers a single CSR-friendly status panel.
+//
+// Each check returns a typed PreflightItem with:
+//   * severity:  "ok" | "warning" | "error"
+//   * key:       a stable id ("rendering_provider", "diagnosis", ...)
+//                so the UI can render a consistent icon set and the
+//                event log can dedupe.
+//   * label:     short title shown in the CSR row.
+//   * detail:    long-form one-line explanation, optionally with the
+//                exact field that's missing.
+//   * fixAction: a structured hint the UI can deep-link to (e.g.
+//                "open patient demographics", "attach sleep study").
+//
+// "error" severity blocks the submit-office-ally route — the UI will
+// disable the button. "warning" is non-blocking but surfaces above
+// the submit button so the CSR notices.
+
+import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+
+type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
+
+export type PreflightSeverity = "ok" | "warning" | "error";
+
+export interface PreflightItem {
+  key: string;
+  severity: PreflightSeverity;
+  label: string;
+  detail: string;
+  /** Optional hint pair the UI can deep-link to in order to fix this row.
+   *  e.g. { kind: "open_patient", patientId: "..." } */
+  fixAction?: PreflightFixAction | null;
+}
+
+export type PreflightFixAction =
+  | { kind: "open_patient"; patientId: string }
+  | { kind: "add_sleep_study"; patientId: string }
+  | { kind: "add_prescription"; patientId: string }
+  | { kind: "attach_prior_auth"; patientId: string; hcpcs: string }
+  | { kind: "pick_payer_profile"; claimId: string }
+  | { kind: "set_rendering_provider"; claimId: string }
+  | { kind: "set_referring_provider"; claimId: string }
+  | { kind: "add_line_item"; claimId: string }
+  | { kind: "edit_line_item"; claimId: string; lineId: string }
+  | { kind: "edit_address"; patientId: string };
+
+export interface PreflightSummary {
+  /** True iff no `error`-severity items. */
+  readyToSubmit: boolean;
+  errorCount: number;
+  warningCount: number;
+  items: PreflightItem[];
+}
+
+/**
+ * Run every preflight check against the given claim. Always returns
+ * a complete checklist (one item per check), even when the underlying
+ * data is missing — that's what gives the CSR a deterministic UI.
+ */
+export async function preflightClaim(claimId: string): Promise<PreflightSummary> {
+  const supabase = getSupabaseServiceRoleClient();
+  const items: PreflightItem[] = [];
+
+  const { data: claim, error: cErr } = await supabase
+    .schema("resupply")
+    .from("insurance_claims")
+    .select(
+      "id, patient_id, payer_name, payer_profile_id, date_of_service, status, total_billed_cents, insurance_coverage_id, rendering_provider_id, referring_provider_id, secondary_coverage_id, fulfillment_id",
+    )
+    .eq("id", claimId)
+    .limit(1)
+    .maybeSingle();
+  if (cErr) throw cErr;
+  if (!claim) {
+    return {
+      readyToSubmit: false,
+      errorCount: 1,
+      warningCount: 0,
+      items: [
+        {
+          key: "claim_exists",
+          severity: "error",
+          label: "Claim not found",
+          detail: `No insurance_claims row found for id ${claimId}.`,
+        },
+      ],
+    };
+  }
+
+  items.push(
+    claim.status === "draft"
+      ? {
+          key: "claim_status",
+          severity: "ok",
+          label: "Claim is in draft status",
+          detail: "Ready for the readiness checks below.",
+        }
+      : {
+          key: "claim_status",
+          severity: "error",
+          label: "Claim is not in draft",
+          detail: `Status is "${claim.status}"; only draft claims can be submitted.`,
+        },
+  );
+
+  // ── Payer profile ───────────────────────────────────────────────
+  if (claim.payer_profile_id) {
+    const { data: payer } = await supabase
+      .schema("resupply")
+      .from("payer_profiles")
+      .select(
+        "id, display_name, is_active, paper_only, office_ally_payer_id, claim_format, requires_prior_auth_dme",
+      )
+      .eq("id", claim.payer_profile_id)
+      .limit(1)
+      .maybeSingle();
+    if (!payer) {
+      items.push(missingPayer(claim.id, "Payer profile row missing."));
+    } else if (!payer.is_active) {
+      items.push({
+        key: "payer_profile",
+        severity: "error",
+        label: "Payer profile is inactive",
+        detail: `${payer.display_name} is marked inactive in the catalog.`,
+        fixAction: { kind: "pick_payer_profile", claimId: claim.id },
+      });
+    } else if (payer.paper_only) {
+      items.push({
+        key: "payer_profile",
+        severity: "warning",
+        label: "Payer is paper-only",
+        detail: `${payer.display_name} doesn't accept 837P. Render a HCFA-1500 instead.`,
+      });
+    } else if (!payer.office_ally_payer_id) {
+      items.push({
+        key: "payer_profile",
+        severity: "error",
+        label: "Payer has no Office Ally id",
+        detail: `${payer.display_name} is missing office_ally_payer_id in the catalog.`,
+      });
+    } else {
+      items.push({
+        key: "payer_profile",
+        severity: "ok",
+        label: "Payer profile linked",
+        detail: `${payer.display_name} • OA payer id ${payer.office_ally_payer_id}`,
+      });
+    }
+  } else {
+    items.push(missingPayer(claim.id, "No payer_profile_id on the claim."));
+  }
+
+  // ── Insurance coverage ──────────────────────────────────────────
+  if (claim.insurance_coverage_id) {
+    items.push({
+      key: "coverage",
+      severity: "ok",
+      label: "Insurance coverage linked",
+      detail: "Primary coverage selected.",
+    });
+  } else {
+    items.push({
+      key: "coverage",
+      severity: "error",
+      label: "Insurance coverage missing",
+      detail: "Pick a primary insurance coverage from the patient's record.",
+      fixAction: { kind: "open_patient", patientId: claim.patient_id },
+    });
+  }
+
+  // ── Patient demographics + address ──────────────────────────────
+  const { data: patient } = await supabase
+    .schema("resupply")
+    .from("patients")
+    .select("legal_first_name, legal_last_name, date_of_birth, address")
+    .eq("id", claim.patient_id)
+    .limit(1)
+    .maybeSingle();
+  if (!patient) {
+    items.push({
+      key: "patient",
+      severity: "error",
+      label: "Patient row missing",
+      detail: `No patient ${claim.patient_id}.`,
+    });
+  } else {
+    const okAddress = hasStructuredAddress(patient.address);
+    items.push(
+      okAddress
+        ? {
+            key: "patient_address",
+            severity: "ok",
+            label: "Patient address present",
+            detail: "Subscriber address will populate 5010 loop 2010BA.",
+          }
+        : {
+            key: "patient_address",
+            severity: "error",
+            label: "Patient address incomplete",
+            detail: "5010 requires line1/city/state/zip on the subscriber.",
+            fixAction: { kind: "edit_address", patientId: claim.patient_id },
+          },
+    );
+  }
+
+  // ── Diagnosis (from latest sleep study) ─────────────────────────
+  const { data: sleep } = await supabase
+    .schema("resupply")
+    .from("sleep_studies")
+    .select("diagnosis_icd10, study_date")
+    .eq("patient_id", claim.patient_id)
+    .not("diagnosis_icd10", "is", null)
+    .order("study_date", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  items.push(
+    sleep?.diagnosis_icd10
+      ? {
+          key: "diagnosis",
+          severity: "ok",
+          label: "Diagnosis on file",
+          detail: `ICD-10 ${sleep.diagnosis_icd10} from sleep study ${sleep.study_date}.`,
+        }
+      : {
+          key: "diagnosis",
+          severity: "error",
+          label: "No diagnosis available",
+          detail: "Add a sleep study with an ICD-10 diagnosis before billing.",
+          fixAction: { kind: "add_sleep_study", patientId: claim.patient_id },
+        },
+  );
+
+  // ── Line items ──────────────────────────────────────────────────
+  const { data: lines } = await supabase
+    .schema("resupply")
+    .from("insurance_claim_line_items")
+    .select("id, hcpcs_code, modifier, billed_cents, quantity")
+    .eq("claim_id", claim.id);
+  if (!lines || lines.length === 0) {
+    items.push({
+      key: "line_items",
+      severity: "error",
+      label: "No line items",
+      detail: "Add at least one HCPCS line before submitting.",
+      fixAction: { kind: "add_line_item", claimId: claim.id },
+    });
+  } else {
+    items.push({
+      key: "line_items",
+      severity: "ok",
+      label: `${lines.length} line item${lines.length === 1 ? "" : "s"} present`,
+      detail: lines
+        .slice(0, 3)
+        .map((l) => `${l.hcpcs_code} × ${l.quantity}`)
+        .join(", "),
+    });
+
+    // Each line should have a billed amount > 0.
+    const zeroBilled = lines.filter((l) => (l.billed_cents ?? 0) === 0);
+    if (zeroBilled.length > 0) {
+      items.push({
+        key: "line_billed_amount",
+        severity: "warning",
+        label: `${zeroBilled.length} line${zeroBilled.length === 1 ? "" : "s"} have $0 billed`,
+        detail: "Set a billed amount or attach a payer fee schedule.",
+        fixAction: { kind: "edit_line_item", claimId: claim.id, lineId: zeroBilled[0]!.id },
+      });
+    }
+  }
+
+  // ── Total billed matches sum of lines ───────────────────────────
+  if (lines && lines.length > 0) {
+    const sum = lines.reduce((s, l) => s + (l.billed_cents ?? 0), 0);
+    if (sum !== claim.total_billed_cents) {
+      items.push({
+        key: "totals",
+        severity: "warning",
+        label: "Claim total doesn't match line sum",
+        detail: `Header says ${formatCents(claim.total_billed_cents)}, lines sum to ${formatCents(sum)}.`,
+      });
+    } else {
+      items.push({
+        key: "totals",
+        severity: "ok",
+        label: "Totals balance",
+        detail: `Header + lines both at ${formatCents(sum)}.`,
+      });
+    }
+  }
+
+  // ── Rendering + referring providers ─────────────────────────────
+  items.push(
+    claim.rendering_provider_id
+      ? {
+          key: "rendering_provider",
+          severity: "ok",
+          label: "Rendering provider attached",
+          detail: "Will populate 837P loop 2310B.",
+        }
+      : {
+          key: "rendering_provider",
+          severity: "warning",
+          label: "No rendering provider",
+          detail:
+            "Optional for most commercial payers; Medicare DME often requires it.",
+          fixAction: { kind: "set_rendering_provider", claimId: claim.id },
+        },
+  );
+  items.push(
+    claim.referring_provider_id
+      ? {
+          key: "referring_provider",
+          severity: "ok",
+          label: "Referring provider attached",
+          detail: "Will populate 837P loop 2310D (the prescriber).",
+        }
+      : {
+          key: "referring_provider",
+          severity: "error",
+          label: "Referring (prescribing) provider missing",
+          detail:
+            "Medicare DME and most commercial DME payers reject claims without the prescribing provider NPI.",
+          fixAction: { kind: "set_referring_provider", claimId: claim.id },
+        },
+  );
+
+  // ── Prior authorization (when payer requires) ───────────────────
+  if (claim.payer_profile_id && lines && lines.length > 0) {
+    const { data: payer } = await supabase
+      .schema("resupply")
+      .from("payer_profiles")
+      .select("requires_prior_auth_dme, display_name")
+      .eq("id", claim.payer_profile_id)
+      .limit(1)
+      .maybeSingle();
+    if (payer?.requires_prior_auth_dme) {
+      // Look up the PA per HCPCS — a CPAP machine usually requires
+      // PA but supplies don't. We treat ANY approved PA covering one
+      // of the line HCPCS codes as sufficient.
+      const hcpcsList = lines.map((l) => l.hcpcs_code);
+      const { data: pas } = await supabase
+        .schema("resupply")
+        .from("prior_authorizations")
+        .select("auth_number, status, approved_through, hcpcs_code")
+        .eq("patient_id", claim.patient_id)
+        .eq("status", "approved")
+        .in("hcpcs_code", hcpcsList);
+      if (!pas || pas.length === 0) {
+        items.push({
+          key: "prior_auth",
+          severity: "warning",
+          label: `${payer.display_name} typically requires prior auth`,
+          detail: `No approved PA on file for any of: ${hcpcsList.join(", ")}.`,
+          fixAction: {
+            kind: "attach_prior_auth",
+            patientId: claim.patient_id,
+            hcpcs: hcpcsList[0]!,
+          },
+        });
+      } else {
+        items.push({
+          key: "prior_auth",
+          severity: "ok",
+          label: "Prior auth on file",
+          detail: `${pas.length} approved PA${pas.length === 1 ? "" : "s"} cover claim HCPCS.`,
+        });
+      }
+    }
+  }
+
+  // ── KX modifier implies documented compliance ───────────────────
+  if (lines && lines.some((l) => (l.modifier ?? "").toUpperCase().includes("KX"))) {
+    const compliant = await isPatientCompliant(supabase, claim.patient_id);
+    items.push(
+      compliant
+        ? {
+            key: "compliance_for_kx",
+            severity: "ok",
+            label: "Patient meets 90-day compliance",
+            detail: "Supports KX modifier on capped-rental + resupply lines.",
+          }
+        : {
+            key: "compliance_for_kx",
+            severity: "warning",
+            label: "KX modifier used but compliance not documented",
+            detail:
+              "Per LCD L33718 the KX modifier asserts compliance: 21+ nights of 4+ hours in any 30-day window.",
+          },
+    );
+  }
+
+  // ── Submit-readiness summary ────────────────────────────────────
+  const errorCount = items.filter((i) => i.severity === "error").length;
+  const warningCount = items.filter((i) => i.severity === "warning").length;
+  return {
+    readyToSubmit: errorCount === 0,
+    errorCount,
+    warningCount,
+    items,
+  };
+}
+
+function missingPayer(claimId: string, detail: string): PreflightItem {
+  return {
+    key: "payer_profile",
+    severity: "error",
+    label: "Payer profile not selected",
+    detail,
+    fixAction: { kind: "pick_payer_profile", claimId },
+  };
+}
+
+function hasStructuredAddress(raw: unknown): boolean {
+  if (!raw || typeof raw !== "object") return false;
+  const a = raw as { line1?: unknown; city?: unknown; state?: unknown; zip?: unknown };
+  return (
+    typeof a.line1 === "string" &&
+    typeof a.city === "string" &&
+    typeof a.state === "string" &&
+    typeof a.zip === "string" &&
+    a.line1.length > 0 &&
+    a.city.length > 0 &&
+    a.state.length >= 2 &&
+    a.zip.length >= 5
+  );
+}
+
+function formatCents(cents: number): string {
+  const d = Math.floor(cents / 100);
+  const c = cents % 100;
+  return `$${d}.${c.toString().padStart(2, "0")}`;
+}
+
+async function isPatientCompliant(
+  supabase: SupabaseClient,
+  patientId: string,
+): Promise<boolean> {
+  const since = new Date(Date.now() - 30 * 24 * 3600 * 1000)
+    .toISOString()
+    .slice(0, 10);
+  const { data: nights } = await supabase
+    .schema("resupply")
+    .from("patient_therapy_nights")
+    .select("usage_minutes")
+    .eq("patient_id", patientId)
+    .gte("night_date", since)
+    .limit(60);
+  const compliant = (nights ?? []).filter(
+    (n) => (n.usage_minutes ?? 0) >= 240,
+  ).length;
+  return compliant >= 21;
+}

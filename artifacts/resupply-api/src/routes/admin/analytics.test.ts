@@ -64,12 +64,17 @@ describe("GET /admin/analytics/episodes-stuck", () => {
     expect(res.status).toBe(401);
   });
 
-  it("403s when caller lacks reports.read", async () => {
+  it("allows customer_service_rep bucket roles (fulfillment folds in)", async () => {
+    // Phase B 3-role collapse: `fulfillment` now resolves to the
+    // `customer_service_rep` effective bucket, which inherits
+    // `reports.read` from the old csr role. Episodes-stuck view is
+    // no longer hidden from fulfillment-row holders.
     mockAdmin.current = FULFILLMENT;
+    stageSupabaseResponse("episodes", "select", { data: [] });
     const res = await request(makeApp()).get(
       "/admin/analytics/episodes-stuck?stage=awaiting_response",
     );
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(200);
   });
 
   it("400s on an invalid stage", async () => {
@@ -132,12 +137,16 @@ describe("GET /admin/analytics/episodes-stuck", () => {
 });
 
 describe("GET /admin/analytics/resupply-funnel.csv", () => {
-  it("403s when caller lacks reports.read", async () => {
+  it("allows customer_service_rep bucket roles (fulfillment folds in)", async () => {
+    // Phase B collapse — fulfillment inherits reports.read; the CSV
+    // export is no longer 403 for it. See the matching note on
+    // /admin/analytics/episodes-stuck above.
     mockAdmin.current = FULFILLMENT;
+    stageSupabaseResponse("episodes", "select", { data: [] });
     const res = await request(makeApp()).get(
       "/admin/analytics/resupply-funnel.csv?days=7",
     );
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(200);
   });
 
   it("returns CSV with stage rows + summary footer", async () => {

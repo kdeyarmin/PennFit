@@ -196,10 +196,13 @@ export function makeVerifySignInMfaHandler(deps: AuthDeps) {
     let mfaPathLabel: "totp" | "recovery";
     if (parsed.data.recoveryCode != null) {
       mfaPathLabel = "recovery";
-      if (
-        !deps.mfa.findRecoveryCodeMatch ||
-        !deps.mfa.markRecoveryCodeUsed
-      ) {
+      // Prefer the atomic find-and-spend (consumeRecoveryCode) when
+      // the artifact provides it — it can't race under concurrent
+      // submissions. Fall back to the legacy two-step path otherwise.
+      const hasAtomic = !!deps.mfa.consumeRecoveryCode;
+      const hasLegacy =
+        !!deps.mfa.findRecoveryCodeMatch && !!deps.mfa.markRecoveryCodeUsed;
+      if (!hasAtomic && !hasLegacy) {
         // The artifact hasn't wired the recovery branch. Treat as
         // a wrong code rather than 500 — the SPA can re-prompt for
         // a TOTP code. Audit reflects the misconfig.
@@ -222,7 +225,15 @@ export function makeVerifySignInMfaHandler(deps: AuthDeps) {
       const codeHash = hashRecoveryCode(normalized);
       let match: { id: string } | null;
       try {
-        match = await deps.mfa.findRecoveryCodeMatch(user.id, codeHash);
+        if (hasAtomic) {
+          match = await deps.mfa.consumeRecoveryCode!(
+            user.id,
+            codeHash,
+            req.ip ?? null,
+          );
+        } else {
+          match = await deps.mfa.findRecoveryCodeMatch!(user.id, codeHash);
+        }
       } catch (err) {
         void deps.audit({
           action: "auth.mfa_probe_failed",
@@ -258,11 +269,16 @@ export function makeVerifySignInMfaHandler(deps: AuthDeps) {
         );
         return;
       }
-      // Burn the code. Best-effort per the MfaProbe contract.
-      try {
-        await deps.mfa.markRecoveryCodeUsed(match.id, req.ip ?? null);
-      } catch {
-        // Swallowed — see contract.
+      if (!hasAtomic) {
+        // Legacy two-step path: burn the code. Best-effort per the
+        // MfaProbe contract — write failures don't block sign-in
+        // because findRecoveryCodeMatch already gated on used_at IS
+        // NULL (serially correct; non-atomic under concurrent calls).
+        try {
+          await deps.mfa.markRecoveryCodeUsed!(match.id, req.ip ?? null);
+        } catch {
+          // Swallowed — see contract.
+        }
       }
     } else {
       mfaPathLabel = "totp";
