@@ -1361,6 +1361,97 @@ export interface Database {
         >;
         Relationships: [];
       };
+      webhook_subscriptions: {
+        Row: {
+          id: string;
+          name: string;
+          target_url: string;
+          signing_secret: string;
+          event_types: string[];
+          is_active: boolean;
+          max_retries: number;
+          last_delivery_at: string | null;
+          last_delivery_status: "delivered" | "failed" | "exhausted" | null;
+          notes: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["webhook_subscriptions"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["webhook_subscriptions"]["Row"]
+        >;
+        Relationships: [];
+      };
+      webhook_deliveries: {
+        Row: {
+          id: string;
+          subscription_id: string;
+          event_type: string;
+          event_payload: Json;
+          status: "queued" | "delivered" | "failed" | "exhausted";
+          attempt_count: number;
+          last_http_status: number | null;
+          last_error: string | null;
+          next_attempt_at: string;
+          delivered_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["webhook_deliveries"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["webhook_deliveries"]["Row"]
+        >;
+        Relationships: [];
+      };
+      patient_billing_statements: {
+        Row: {
+          id: string;
+          patient_id: string;
+          line_items_json: Json;
+          total_patient_responsibility_cents: number;
+          statement_pdf_object_key: string | null;
+          delivery_method: "email" | "sms" | "mail" | "in_person" | null;
+          delivered_at: string | null;
+          generated_by_email: string;
+          created_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["patient_billing_statements"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["patient_billing_statements"]["Row"]
+        >;
+        Relationships: [];
+      };
+      claim_appeal_letters: {
+        Row: {
+          id: string;
+          claim_id: string;
+          denial_analysis_id: string | null;
+          letter_body: string;
+          appeal_pdf_object_key: string | null;
+          delivery_method:
+            | "fax"
+            | "mail"
+            | "portal_upload"
+            | "email"
+            | null;
+          delivered_at: string | null;
+          generated_by_email: string;
+          created_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["claim_appeal_letters"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["claim_appeal_letters"]["Row"]
+        >;
+        Relationships: [];
+      };
       providers_pecos_status: {
         Row: {
           npi: string;

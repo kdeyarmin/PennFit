@@ -56,6 +56,7 @@ import { registerAccreditationReadinessSweepJob } from "./jobs/accreditation-rea
 import { registerPecosSyncJob } from "./jobs/pecos-sync.js";
 import { registerCappedRentalAdvanceJob } from "./jobs/capped-rental-advance.js";
 import { registerDwoExpirySweepJob } from "./jobs/dwo-expiry-sweep.js";
+import { registerWebhookDispatcherJob } from "./jobs/webhook-dispatcher.js";
 
 let bossInstance: PgBoss | null = null;
 let workerReady = false;
@@ -337,6 +338,10 @@ export async function startWorker(): Promise<void> {
   // Weekly DWO / CMN renewal sweep (mig 0134). T-60/T-30/T-7 CSR
   // alerts before expires_on.
   await registerDwoExpirySweepJob(boss);
+
+  // Every minute — drain webhook_deliveries with exponential
+  // backoff retries. HMAC-SHA256-signed POSTs to subscriber URLs.
+  await registerWebhookDispatcherJob(boss);
 
   workerReady = true;
   logger.info(

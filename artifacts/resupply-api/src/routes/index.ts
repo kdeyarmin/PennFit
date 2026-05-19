@@ -105,6 +105,10 @@ import shopMembershipRouter from "./admin/shop-membership.js";
 import fhirRouter from "./fhir/index.js";
 import davinciPasSubmitRouter from "./admin/davinci-pas-submit.js";
 import billingBenchmarksRouter from "./admin/billing-benchmarks.js";
+import billingBatchSubmitRouter from "./admin/billing-batch-submit.js";
+import billingStatementsRouter from "./admin/billing-statements.js";
+import claimAppealsRouter from "./admin/claim-appeals.js";
+import webhookSubscriptionsRouter from "./admin/webhook-subscriptions.js";
 import auditRouter from "./audit/index.js";
 import conversationsRouter from "./conversations/index.js";
 import dashboardRouter from "./dashboard/index.js";
@@ -316,6 +320,15 @@ router.use(fhirRouter);
 router.use(davinciPasSubmitRouter);
 // /admin/billing/benchmarks — internal cohort percentiles (Phase 1).
 router.use(billingBenchmarksRouter);
+// /admin/billing/batch-submit-office-ally — multi-claim 837P batch.
+router.use(billingBatchSubmitRouter);
+// /admin/patients/:id/billing-statements — patient statement PDF.
+router.use(billingStatementsRouter);
+// /admin/patients/:id/insurance-claims/:claimId/appeal-letter — PDF.
+router.use(claimAppealsRouter);
+// /admin/webhook-subscriptions + /admin/webhook-deliveries — outbound
+// event subscription CRUD + recent-delivery audit.
+router.use(webhookSubscriptionsRouter);
 // /admin/shop/products/* — operator tooling for the cash-pay catalog
 // itself. Today: PATCH stock_count metadata on a Stripe Product.
 // requireAdmin gate is on the router itself.

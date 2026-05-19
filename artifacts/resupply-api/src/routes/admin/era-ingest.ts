@@ -19,6 +19,7 @@ import { parse835 } from "@workspace/resupply-integrations-office-ally";
 
 import { reconcileEra } from "../../lib/billing/era-reconciler";
 import { logger } from "../../lib/logger";
+import { publishEvent } from "../../lib/webhooks/publisher";
 import { requireAdminOnly } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
@@ -152,6 +153,17 @@ router.post("/admin/billing/era-ingest", requireAdminOnly, async (req, res) => {
     userAgent: req.get("user-agent") ?? null,
   }).catch((err) => {
     logger.warn({ err }, "era_file.ingest audit write failed");
+  });
+  void publishEvent({
+    eventType: "era.ingested",
+    payload: {
+      era_file_id: row.id,
+      file_name: fileName,
+      total_paid_cents: parsedEra.totalPaidCents,
+      claims_paid: summary.paidClaims,
+      claims_denied: summary.deniedClaims,
+      lines_updated: summary.linesUpdated,
+    },
   });
 
   res.status(201).json({
