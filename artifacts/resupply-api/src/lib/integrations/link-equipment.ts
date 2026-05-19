@@ -152,7 +152,29 @@ export async function linkEquipmentFromSnapshot(
     })
     .select("id")
     .single();
-  if (error) throw error;
+  if (error) {
+    if ((error as { code?: string }).code === "23505") {
+      const { data: raced, error: racedLookupErr } = await supabase
+        .schema("resupply")
+        .from("equipment_assets")
+        .select("id, patient_id")
+        .eq("manufacturer", inferredManufacturer)
+        .eq("serial_number", serial)
+        .limit(1)
+        .maybeSingle();
+      if (racedLookupErr) throw racedLookupErr;
+      if (!raced) throw error;
+      if (raced.patient_id === patientId) {
+        return { kind: "matched", assetId: raced.id };
+      }
+      return {
+        kind: "transferred",
+        assetId: raced.id,
+        previousPatientId: raced.patient_id,
+      };
+    }
+    throw error;
+  }
   return { kind: "inserted", assetId: row.id };
 }
 
