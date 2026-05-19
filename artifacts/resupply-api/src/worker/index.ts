@@ -39,6 +39,7 @@ import { registerPatientDocumentsRetentionSweepJob } from "./jobs/patient-docume
 import { registerRecallNotificationSendJob } from "./jobs/recall-notifications-send.js";
 import { registerMaintenanceNudgeJob } from "./jobs/maintenance-nudges.js";
 import { registerFitterLeadReengageJob } from "./jobs/fitter-lead-reengage.js";
+import { registerFitterLeadFirstDayNudgeJob } from "./jobs/fitter-lead-first-day-nudge.js";
 import { registerAuditLogArchiveSweepJob } from "./jobs/audit-log-archive-sweep.js";
 import { registerTherapyNightlySyncJob } from "./jobs/therapy-integrations-nightly-sync.js";
 import { registerCoachingProgressJob } from "./jobs/coaching-plan-progress.js";
@@ -213,6 +214,13 @@ export async function startWorker(): Promise<void> {
   // never produced a public.orders row, emails a "finish your
   // fitting" nudge, and stamps nudged_at so it never re-sends.
   await registerFitterLeadReengageJob(boss);
+  // First-day fitter-lead nudge — hourly at :19. Catches the
+  // in-funnel patient who started 18-30 hours ago and never
+  // finished. Sends email + SMS (when opted in via the phone field
+  // added in 0121) with same-day-warm copy. Uses a separate
+  // first_day_nudged_at column so the 3-30d worker above can still
+  // fire later if the patient stays cold.
+  await registerFitterLeadFirstDayNudgeJob(boss);
   // HIPAA audit-log retention sweep — nightly flag of rows past
   // the 6-year floor. Destruction stays human-triggered.
   await registerAuditLogArchiveSweepJob(boss);
