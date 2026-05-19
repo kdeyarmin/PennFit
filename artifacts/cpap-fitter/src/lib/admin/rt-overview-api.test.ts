@@ -354,9 +354,12 @@ describe("createRtFilterDefault", () => {
     const first = defaultFilter();
     const second = defaultFilter();
 
-    first.sources.add("airview");
+    const modified = {
+      ...first,
+      sources: new Set([...first.sources, "airview"]),
+    };
 
-    expect(first.sources.has("airview")).toBe(true);
+    expect(modified.sources.has("airview")).toBe(true);
     expect(second.sources.has("airview")).toBe(false);
   });
 });
