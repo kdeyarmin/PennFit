@@ -6,6 +6,7 @@
 //        — most recent checks for a patient.
 
 import { Router, type IRouter } from "express";
+import rateLimit from "express-rate-limit";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
@@ -16,6 +17,13 @@ import { logger } from "../../lib/logger";
 import { requireAdmin } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
+
+const verifyEligibilityRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 
 const verifyParams = z.object({
   id: z.string().uuid(),
@@ -29,6 +37,7 @@ const verifyBody = z
 router.post(
   "/admin/patients/:id/insurance-coverages/:coverageId/verify-eligibility",
   requireAdmin,
+  verifyEligibilityRateLimiter,
   async (req, res) => {
     const parsed = verifyParams.safeParse(req.params);
     if (!parsed.success) {
