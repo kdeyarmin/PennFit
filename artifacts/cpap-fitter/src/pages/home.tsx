@@ -1,5 +1,5 @@
 import React from "react";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { useDocumentTitle } from "@/hooks/use-document-title";
 import {
@@ -23,6 +23,7 @@ export function Home() {
   // for the landing page); the hook is still called so the canonical
   // gets stamped at https://pennpaps.com/.
   useDocumentTitle("");
+  const [, navigate] = useLocation();
   return (
     <>
       <div className="relative z-10 flex flex-col items-center max-w-6xl mx-auto w-full px-4 py-8 md:py-14">
@@ -58,27 +59,25 @@ export function Home() {
           </p>
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
-            <Link href="/consent">
-              <Button
-                size="lg"
-                className="h-14 px-8 text-base font-semibold rounded-full btn-gold-glow group"
-                data-testid="home-cta-fit"
-              >
-                Get fitted for a mask
-                <ArrowRight className="w-5 h-5 ml-1 transition-transform group-hover:translate-x-0.5" />
-              </Button>
-            </Link>
-            <Link href="/shop">
-              <Button
-                size="lg"
-                variant="outline"
-                className="h-14 px-6 text-base rounded-full btn-on-dark-outline gap-2"
-                data-testid="home-cta-shop"
-              >
-                <ShoppingBag className="w-5 h-5" />
-                Shop CPAP supplies
-              </Button>
-            </Link>
+            <Button
+              size="lg"
+              className="h-14 px-8 text-base font-semibold rounded-full btn-gold-glow group"
+              data-testid="home-cta-fit"
+              onClick={() => navigate("/consent")}
+            >
+              Get fitted for a mask
+              <ArrowRight className="w-5 h-5 ml-1 transition-transform group-hover:translate-x-0.5" />
+            </Button>
+            <Button
+              size="lg"
+              variant="outline"
+              className="h-14 px-6 text-base rounded-full btn-on-dark-outline gap-2"
+              data-testid="home-cta-shop"
+              onClick={() => navigate("/shop")}
+            >
+              <ShoppingBag className="w-5 h-5" />
+              Shop CPAP supplies
+            </Button>
           </div>
           <button
             type="button"
