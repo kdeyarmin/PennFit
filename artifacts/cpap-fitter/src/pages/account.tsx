@@ -93,6 +93,7 @@ import { CustomerChatSection } from "@/components/customer-chat-section";
 import { useUnsavedChangesWarning } from "@/hooks/use-unsaved-changes-warning";
 import { CommPrefsSection } from "@/components/comm-prefs-section";
 import { CaregiverSection } from "@/components/caregiver-section";
+import { PushPromptBanner } from "@/components/push-prompt-banner";
 import {
   EquipmentRegistrySection,
   EsignFormsSection,
@@ -310,6 +311,15 @@ function AccountInner() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
+          {/*
+            One-time, dismissible nudge to enable web push so shipment
+            + delivery notifications reach the lock screen. The
+            CommPrefsSection toggle further down covers the same
+            ground, but it's buried two scrolls deep and barely
+            discovered. This banner self-hides on dismiss (per-device,
+            localStorage) and on subscription success.
+          */}
+          <PushPromptBanner />
           <ProfileSection
             profile={data.profile!}
             onSaved={() => void reload()}
