@@ -550,7 +550,7 @@ function InviteCard() {
               displayName: displayName || null,
               notes: notes || null,
               initialPassword:
-                setPasswordMode && initialPassword.length >= 8
+                setPasswordMode && initialPassword.length >= 12
                   ? initialPassword
                   : null,
             });
