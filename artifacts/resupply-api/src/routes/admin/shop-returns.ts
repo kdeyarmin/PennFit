@@ -115,20 +115,28 @@ router.get("/admin/shop/returns", requireAdmin, async (req, res) => {
   // stable). shop_returns.id is a UUID; reject anything else so a
   // hostile cursor can't smuggle PostgREST structural characters
   // (`,`, `(`, `)`) into the `.or()` expression below.
+  //
+  // Any non-null cursor that fails to match the expected shape (missing
+  // delimiter, unparseable timestamp, non-UUID id) returns 400 rather
+  // than silently falling back to the first page — that matches the
+  // behavior of the other composite-cursor list endpoints and makes
+  // tampered cursors fail loudly.
   let cursorTs: Date | null = null;
   let cursorId: string | null = null;
   if (cursor) {
     const idx = cursor.indexOf("__");
-    if (idx > 0) {
-      cursorTs = new Date(cursor.slice(0, idx));
-      cursorId = cursor.slice(idx + 2);
-      if (
-        Number.isNaN(cursorTs.getTime()) ||
-        !isUuidCursorId(cursorId)
-      ) {
-        res.status(400).json({ error: "invalid_cursor" });
-        return;
-      }
+    if (idx <= 0 || idx >= cursor.length - 2) {
+      res.status(400).json({ error: "invalid_cursor" });
+      return;
+    }
+    cursorTs = new Date(cursor.slice(0, idx));
+    cursorId = cursor.slice(idx + 2);
+    if (
+      Number.isNaN(cursorTs.getTime()) ||
+      !isUuidCursorId(cursorId)
+    ) {
+      res.status(400).json({ error: "invalid_cursor" });
+      return;
     }
   }
 

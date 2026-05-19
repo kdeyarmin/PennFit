@@ -36,17 +36,22 @@ export function encodeCompositeCursor(date: Date, id: string): string {
   return `${date.toISOString()}${COMPOSITE_CURSOR_DELIM}${id}`;
 }
 
-// UUID v4 (or any v1-5) hex shape — every cursor.id in production today
-// is a `gen_random_uuid()::text` row id. Callers that paste a cursor
-// half into a PostgREST `.or()` filter expression MUST run the id
-// through this guard first, because PostgREST treats `,`, `(`, `)`,
-// `"`, and a handful of other characters as structural delimiters
-// inside the filter grammar — a hostile cursor like
-// `abc),customer_id.neq.<id>` could otherwise mutate the surrounding
-// expression. The other `.eq()` predicates (customer_id, status)
-// are separate AND filters and would still apply, but a query that
-// surfaces operationally-incorrect results or errors is a worse user
-// experience than rejecting the cursor outright.
+// UUID-*shaped* guard: any 8-4-4-4-12 hex string passes, without
+// enforcing the RFC 4122 version or variant bits. Every cursor.id
+// in production today is a `gen_random_uuid()::text` row id, so the
+// shape check is sufficient to keep the body out of the PostgREST
+// metachar set (`,`, `(`, `)`, `"`, `.`, etc.) — which is the only
+// thing the callers need. The looser regex also avoids a future
+// migration to a different UUID version (e.g. UUIDv7) accidentally
+// invalidating every paginated cursor at deploy time.
+//
+// Callers that paste a cursor half into a PostgREST `.or()` filter
+// expression MUST run the id through this guard first. A hostile
+// cursor like `abc),customer_id.neq.<id>` could otherwise mutate the
+// surrounding expression — the other `.eq()` predicates (customer_id,
+// status) are separate AND filters and would still apply, but a
+// query that surfaces operationally-incorrect results or errors is
+// a worse user experience than rejecting the cursor outright.
 const CURSOR_UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
