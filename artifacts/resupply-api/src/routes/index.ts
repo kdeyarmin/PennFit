@@ -111,6 +111,10 @@ import claimAppealsRouter from "./admin/claim-appeals.js";
 import webhookSubscriptionsRouter from "./admin/webhook-subscriptions.js";
 import webhookEventCatalogRouter from "./admin/webhook-event-catalog.js";
 import billingDirectorRouter from "./admin/billing-director.js";
+import webhookTestSendRouter from "./admin/webhook-test-send.js";
+import payerFeeSchedulesImportRouter from "./admin/payer-fee-schedules-import.js";
+import systemIntegrationsStatusRouter from "./admin/system-integrations-status.js";
+import integrationsInboundRouter from "./integrations-inbound.js";
 import auditRouter from "./audit/index.js";
 import conversationsRouter from "./conversations/index.js";
 import dashboardRouter from "./dashboard/index.js";
@@ -339,6 +343,17 @@ router.use(webhookEventCatalogRouter);
 // director loads every morning. Consolidates counts + dollar
 // rollups + denial-rate trend + top payers + webhook health.
 router.use(billingDirectorRouter);
+// /admin/webhook-subscriptions/:id/test-send — fire a synthetic
+// webhook delivery to validate the subscriber endpoint end-to-end.
+router.use(webhookTestSendRouter);
+// /admin/payer-fee-schedules/import-csv — bulk CSV import.
+router.use(payerFeeSchedulesImportRouter);
+// /admin/system/integrations-status — admin-facing rollup of every
+// integration's configured/configured-partial/unconfigured posture.
+router.use(systemIntegrationsStatusRouter);
+// /integrations/inbound/:source — public-mount inbound webhook
+// intake for third-party deliveries (Parachute, HSAT vendors, etc).
+router.use(integrationsInboundRouter);
 // /admin/shop/products/* — operator tooling for the cash-pay catalog
 // itself. Today: PATCH stock_count metadata on a Stripe Product.
 // requireAdmin gate is on the router itself.

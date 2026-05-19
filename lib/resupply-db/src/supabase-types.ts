@@ -1452,6 +1452,87 @@ export interface Database {
         >;
         Relationships: [];
       };
+      patient_payments: {
+        Row: {
+          id: string;
+          patient_id: string;
+          stripe_payment_intent_id: string | null;
+          amount_cents: number;
+          currency: string;
+          status:
+            | "pending"
+            | "requires_action"
+            | "succeeded"
+            | "failed"
+            | "cancelled"
+            | "refunded";
+          applied_claims_json: Json;
+          source: "portal" | "csr" | "mail_in_check" | "external";
+          note: string | null;
+          failure_reason: string | null;
+          succeeded_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["patient_payments"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["patient_payments"]["Row"]
+        >;
+        Relationships: [];
+      };
+      inbound_webhooks: {
+        Row: {
+          id: string;
+          source: string;
+          source_event_type: string | null;
+          payload_json: Json;
+          verification_headers_json: Json | null;
+          signature_verified: boolean;
+          dedupe_key: string;
+          status:
+            | "received"
+            | "processed"
+            | "duplicate"
+            | "processing_failed"
+            | "rejected";
+          processing_error: string | null;
+          received_at: string;
+          processed_at: string | null;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["inbound_webhooks"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["inbound_webhooks"]["Row"]
+        >;
+        Relationships: [];
+      };
+      documentation_packets: {
+        Row: {
+          id: string;
+          patient_id: string;
+          kind:
+            | "prior_auth_support"
+            | "appeal_support"
+            | "accreditation_audit"
+            | "medical_records_request";
+          included_docs_json: Json;
+          pdf_object_key: string | null;
+          page_count: number | null;
+          notes: string | null;
+          generated_by_email: string;
+          created_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["documentation_packets"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["documentation_packets"]["Row"]
+        >;
+        Relationships: [];
+      };
       providers_pecos_status: {
         Row: {
           npi: string;

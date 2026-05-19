@@ -28,6 +28,7 @@ import insuranceClaimsHcfaRouter from "./insurance-claims-hcfa";
 import insuranceClaimsPreflightRouter from "./insurance-claims-preflight";
 import insuranceClaimsAiRouter from "./insurance-claims-ai";
 import insuranceClaimsPredictDenialRouter from "./insurance-claims-predict-denial";
+import insuranceClaimsExplainDenialRouter from "./insurance-claims-explain-denial";
 import equipmentRouter from "./equipment";
 import timelineRouter from "./timeline";
 import updateRouter from "./update";
@@ -104,6 +105,10 @@ router.use(insuranceClaimsAiRouter);
 // claims worth the deep look. Surfaces probability + structured
 // contributing factors.
 router.use(insuranceClaimsPredictDenialRouter);
+// /patients/:id/insurance-claims/:claimId/explain-denial — AI patient-
+// facing denial explainer (different audience from the CSR-facing
+// analyzer; returns email-ready subject + body).
+router.use(insuranceClaimsExplainDenialRouter);
 // /patients/:id/equipment — clinical equipment asset registry
 // (patient ↔ device serial-number link). Required for manufacturer
 // recall workflows. Distinct from Pacware warehouse inventory.
