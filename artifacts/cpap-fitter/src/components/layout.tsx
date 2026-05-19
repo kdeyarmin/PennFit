@@ -4,6 +4,7 @@ import { ShieldCheck, Menu, X, Package, Heart } from "lucide-react";
 import pennLogo from "@assets/IMG_2053_1777233708393.jpeg";
 import { SignedIn } from "@/lib/identity";
 import { UserMenu } from "@/components/user-menu";
+import { LanguageToggle } from "@/components/language-toggle";
 import { FitFlowStepper } from "@/components/fit-flow-stepper";
 import { MobileCtaBar } from "@/components/mobile-cta-bar";
 import { MiniCart } from "@/components/shop/mini-cart";
@@ -181,11 +182,13 @@ export function Layout({ children }: { children: React.ReactNode }) {
               <YourOrdersNavLink />
               <WishlistNavLink />
               <MiniCart />
+              <LanguageToggle />
               <UserMenu />
             </nav>
 
             {/* Mobile actions: cart icon + hamburger */}
             <div className="md:hidden flex items-center gap-2">
+              <LanguageToggle variant="compact" />
               <UserMenu />
               <WishlistNavLink />
               <MiniCart />
