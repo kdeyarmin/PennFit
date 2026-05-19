@@ -360,13 +360,17 @@ router.post(
     const b = parsed.data;
     const supabase = getSupabaseServiceRoleClient();
 
-    const { data: patient } = await supabase
+    const { data: patient, error: patientErr } = await supabase
       .schema("resupply")
       .from("patients")
       .select("id")
       .eq("id", idParsed.data.id)
       .limit(1)
       .maybeSingle();
+    if (patientErr) {
+      logger.error({ err: patientErr.message, patientId: idParsed.data.id }, "insurance_claims.create: patient lookup failed");
+      throw patientErr;
+    }
     if (!patient) {
       res.status(404).json({ error: "not_found" });
       return;
@@ -434,7 +438,7 @@ router.patch(
     const b = parsed.data;
     const supabase = getSupabaseServiceRoleClient();
 
-    const { data: current } = await supabase
+    const { data: current, error: currentErr } = await supabase
       .schema("resupply")
       .from("insurance_claims")
       .select("id, status")
@@ -442,6 +446,10 @@ router.patch(
       .eq("patient_id", idParsed.data.id)
       .limit(1)
       .maybeSingle();
+    if (currentErr) {
+      logger.error({ err: currentErr.message, claimId: idParsed.data.claimId }, "insurance_claims.patch: claim lookup failed");
+      throw currentErr;
+    }
     if (!current) {
       res.status(404).json({ error: "not_found" });
       return;
@@ -557,7 +565,7 @@ router.post(
     const b = parsed.data;
     const supabase = getSupabaseServiceRoleClient();
 
-    const { data: claim } = await supabase
+    const { data: claim, error: claimErr } = await supabase
       .schema("resupply")
       .from("insurance_claims")
       .select("id, status")
@@ -565,6 +573,10 @@ router.post(
       .eq("patient_id", idParsed.data.id)
       .limit(1)
       .maybeSingle();
+    if (claimErr) {
+      logger.error({ err: claimErr.message, claimId: idParsed.data.claimId }, "insurance_claims.lines.create: claim lookup failed");
+      throw claimErr;
+    }
     if (!claim) {
       res.status(404).json({ error: "not_found" });
       return;
@@ -634,7 +646,7 @@ router.patch(
     const b = parsed.data;
     const supabase = getSupabaseServiceRoleClient();
 
-    const { data: existing } = await supabase
+    const { data: existing, error: existingErr } = await supabase
       .schema("resupply")
       .from("insurance_claim_line_items")
       .select("id, claim_id")
@@ -642,6 +654,10 @@ router.patch(
       .eq("claim_id", idParsed.data.claimId)
       .limit(1)
       .maybeSingle();
+    if (existingErr) {
+      logger.error({ err: existingErr.message, lineId: idParsed.data.lineId }, "insurance_claims.lines.patch: line lookup failed");
+      throw existingErr;
+    }
     if (!existing) {
       res.status(404).json({ error: "not_found" });
       return;
@@ -714,7 +730,7 @@ router.post(
     const b = parsed.data;
     const supabase = getSupabaseServiceRoleClient();
 
-    const { data: claim } = await supabase
+    const { data: claim, error: claimErr } = await supabase
       .schema("resupply")
       .from("insurance_claims")
       .select("id")
@@ -722,6 +738,10 @@ router.post(
       .eq("patient_id", idParsed.data.id)
       .limit(1)
       .maybeSingle();
+    if (claimErr) {
+      logger.error({ err: claimErr.message, claimId: idParsed.data.claimId }, "insurance_claims.events.create: claim lookup failed");
+      throw claimErr;
+    }
     if (!claim) {
       res.status(404).json({ error: "not_found" });
       return;

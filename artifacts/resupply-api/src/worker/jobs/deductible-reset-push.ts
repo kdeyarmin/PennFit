@@ -73,8 +73,8 @@ interface CustomerCandidate {
   deductible_reset_year: number | null;
 }
 
-function isoDaysAgo(days: number): string {
-  const d = new Date();
+function isoDaysAgo(now: Date, days: number): string {
+  const d = new Date(now);
   d.setUTCDate(d.getUTCDate() - days);
   return d.toISOString();
 }
@@ -107,7 +107,7 @@ export async function runDeductibleResetPush(
 
   const currentYear = now.getUTCFullYear();
   const supabase = getSupabaseServiceRoleClient();
-  const activitySince = isoDaysAgo(ACTIVE_LOOKBACK_DAYS);
+  const activitySince = isoDaysAgo(now, ACTIVE_LOOKBACK_DAYS);
 
   const { data: candidates, error } = await supabase
     .schema("resupply")
@@ -177,11 +177,16 @@ export async function runDeductibleResetPush(
 
     const firstName = (row.display_name ?? "").split(" ")[0]?.trim() || null;
     const releaseClaim = async (): Promise<void> => {
-      await supabase
+      const { error: releaseErr } = await supabase
         .schema("resupply")
         .from("shop_customers")
         .update({ deductible_reset_year: row.deductible_reset_year })
         .eq("customer_id", row.customer_id);
+      if (releaseErr) {
+        throw new Error(
+          `Failed to release deductible_reset_year claim for customer ${row.customer_id}: ${releaseErr.message}`
+        );
+      }
     };
 
     try {

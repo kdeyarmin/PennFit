@@ -783,29 +783,35 @@ function EmailMyResultsBlock({
           physician. No marketing — just the result.
         </p>
       </div>
-      <div className="flex flex-col sm:flex-row gap-2">
-        <Input
-          type="email"
-          inputMode="email"
-          autoComplete="email"
-          placeholder="you@example.com"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          aria-invalid={email.length > 0 && !valid}
-          data-testid="quiz-email-input"
-          className="sm:flex-1"
-        />
-        <Button
-          type="button"
-          onClick={handleSend}
-          disabled={!canSend}
-          size="lg"
-          className="rounded-full sm:w-auto"
-          data-testid="quiz-email-submit"
-        >
-          {sending ? "Sending…" : "Send"}
-        </Button>
-      </div>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          handleSend();
+        }}
+      >
+        <div className="flex flex-col sm:flex-row gap-2">
+          <Input
+            type="email"
+            inputMode="email"
+            autoComplete="email"
+            placeholder="you@example.com"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            aria-invalid={email.length > 0 && !valid}
+            data-testid="quiz-email-input"
+            className="sm:flex-1"
+          />
+          <Button
+            type="submit"
+            disabled={!canSend}
+            size="lg"
+            className="rounded-full sm:w-auto"
+            data-testid="quiz-email-submit"
+          >
+            {sending ? "Sending…" : "Send"}
+          </Button>
+        </div>
+      </form>
       {status === "error" && errMsg && (
         <p
           className="text-xs text-destructive"

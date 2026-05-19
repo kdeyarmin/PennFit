@@ -225,11 +225,12 @@ describe("runPriorAuthExpirySweep — heads-up windows", () => {
 
   it("queues an alert for a PA expiring in 30 days", async () => {
     const today = todayUtc("2026-05-18");
+    const expectedTarget = "2026-06-17"; // 30 days from 2026-05-18
     // No expired PAs
     stageSupabaseResponse("prior_authorizations", "select", { data: [] });
     // 30-day window: one upcoming PA
     stageSupabaseResponse("prior_authorizations", "select", {
-      data: [makeExpiredPaRow({ approved_through: "2026-06-17" })],
+      data: [makeExpiredPaRow({ approved_through: expectedTarget })],
     });
     // Idempotency check → no existing alert
     stageSupabaseResponse("csr_compliance_alerts", "select", { data: [] });
@@ -249,11 +250,12 @@ describe("runPriorAuthExpirySweep — heads-up windows", () => {
 
   it("queues an alert for a PA expiring in 14 days", async () => {
     const today = todayUtc("2026-05-18");
+    const expectedTarget = "2026-06-01"; // 14 days from 2026-05-18
     stageSupabaseResponse("prior_authorizations", "select", { data: [] }); // expired
     stageSupabaseResponse("prior_authorizations", "select", { data: [] }); // 30-day
     // 14-day window
     stageSupabaseResponse("prior_authorizations", "select", {
-      data: [makeExpiredPaRow({ approved_through: "2026-06-01" })],
+      data: [makeExpiredPaRow({ approved_through: expectedTarget })],
     });
     stageSupabaseResponse("csr_compliance_alerts", "select", { data: [] });
     stageSupabaseResponse("csr_compliance_alerts", "insert", { error: null });
@@ -266,12 +268,13 @@ describe("runPriorAuthExpirySweep — heads-up windows", () => {
 
   it("queues an alert for a PA expiring in 7 days", async () => {
     const today = todayUtc("2026-05-18");
+    const expectedTarget = "2026-05-25"; // 7 days from 2026-05-18
     stageSupabaseResponse("prior_authorizations", "select", { data: [] }); // expired
     stageSupabaseResponse("prior_authorizations", "select", { data: [] }); // 30-day
     stageSupabaseResponse("prior_authorizations", "select", { data: [] }); // 14-day
     // 7-day window
     stageSupabaseResponse("prior_authorizations", "select", {
-      data: [makeExpiredPaRow({ approved_through: "2026-05-25" })],
+      data: [makeExpiredPaRow({ approved_through: expectedTarget })],
     });
     stageSupabaseResponse("csr_compliance_alerts", "select", { data: [] });
     stageSupabaseResponse("csr_compliance_alerts", "insert", { error: null });

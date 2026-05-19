@@ -94,7 +94,7 @@ async function resolveRecipient(
   order: ClaimableOrder,
 ): Promise<ResolvedRecipient | null> {
   if (order.customer_id) {
-    const { data: cust } = await supabase
+    const { data: cust, error } = await supabase
       .schema("resupply")
       .from("shop_customers")
       .select(
@@ -103,6 +103,9 @@ async function resolveRecipient(
       .eq("customer_id", order.customer_id)
       .limit(1)
       .maybeSingle();
+    if (error) {
+      throw error;
+    }
     if (cust?.email_lower) {
       const firstName = (cust.display_name ?? "").split(" ")[0]?.trim() || null;
       const caregiverActive =
@@ -155,6 +158,8 @@ export async function runDeliveryFollowupSweep(): Promise<FollowupSweepStats> {
     .is("delivery_followup_sent_at", null)
     .gte("delivered_at", lower)
     .lte("delivered_at", upper)
+    .order("delivered_at", { ascending: true })
+    .order("id", { ascending: true })
     .limit(500);
   if (error) throw error;
 
