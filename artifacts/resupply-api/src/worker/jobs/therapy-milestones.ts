@@ -383,6 +383,35 @@ export async function runTherapyMilestones(): Promise<MilestoneStats> {
         continue;
       }
       stats.sent += 1;
+
+      // Best-effort push fan-out — same news, separate channel.
+      // Runs AFTER the email so a push misconfig (or a customer
+      // with no shop_customers row, hence no push subscriptions)
+      // never rolls back the email delivery state. Logged at INFO
+      // for ops visibility on push activation; counts only.
+      try {
+        const { sendPushToCustomerByEmail } = await import("../../lib/web-push");
+        const title =
+          claimed.milestone_kind === "100_nights"
+            ? "100 nights on therapy — congrats!"
+            : claimed.milestone_kind === "365_nights"
+              ? "One year of CPAP therapy"
+              : "Adherence target reached";
+        await sendPushToCustomerByEmail(patient.email, {
+          title,
+          body: "Tap to see your therapy summary.",
+          url: "/account#therapy",
+          tag: `therapy_milestone:${claimed.id}`,
+        });
+      } catch (pushErr) {
+        logger.info(
+          {
+            milestoneId: claimed.id,
+            err: pushErr instanceof Error ? pushErr.message : String(pushErr),
+          },
+          "therapy-milestones: push fanout skipped (non-fatal)",
+        );
+      }
     } catch (err) {
       await releaseClaim();
       stats.sendFailed += 1;
