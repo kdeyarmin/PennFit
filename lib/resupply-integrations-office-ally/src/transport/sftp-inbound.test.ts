@@ -19,8 +19,12 @@ describe("classifyEdiPayload", () => {
     expect(classifyEdiPayload("hello world")).toBe("unknown");
     expect(classifyEdiPayload("")).toBe("unknown");
   });
+  it("classifies a 271 by the ST*271 sentinel", () => {
+    const x = `ISA*00*...*:~GS*HB*HIGHMARK01*PENNPAPS01*20260519*1437*1*X*005010X279A1~ST*271*0001~SE*1*0001~GE*1*1~IEA*1*1~`;
+    expect(classifyEdiPayload(x)).toBe("271");
+  });
   it("returns 'unknown' for unrecognised ST", () => {
-    const x = `ISA*00*...*:~GS*ZZ*X*Y*20260519*1437*1*X*005010X*~ST*271*0001~`;
+    const x = `ISA*00*...*:~GS*ZZ*X*Y*20260519*1437*1*X*005010X*~ST*820*0001~`;
     expect(classifyEdiPayload(x)).toBe("unknown");
   });
 });

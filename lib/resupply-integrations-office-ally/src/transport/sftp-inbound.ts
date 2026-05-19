@@ -193,7 +193,7 @@ export async function downloadFile(
  */
 export function classifyEdiPayload(
   content: string,
-): "999" | "277ca" | "835" | "unknown" {
+): "999" | "277ca" | "835" | "271" | "unknown" {
   // Sniff in the first 4KB. The ISA segment is 106 chars; the ST
   // segment usually lands within the first 500 bytes for our sizes.
   const head = content.slice(0, 4096);
@@ -201,6 +201,7 @@ export function classifyEdiPayload(
   if (/~ST\*999\*/.test(head)) return "999";
   if (/~ST\*277\*/.test(head)) return "277ca";
   if (/~ST\*835\*/.test(head)) return "835";
+  if (/~ST\*271\*/.test(head)) return "271";
   return "unknown";
 }
 

@@ -1197,6 +1197,7 @@ export interface Database {
           requested_at: string;
           responded_at: string | null;
           requested_by_email: string;
+          applied_to_inbound_file_id: string | null;
         };
         Insert: Partial<
           Database["resupply"]["Tables"]["eligibility_checks"]["Row"]
@@ -1620,7 +1621,7 @@ export interface Database {
           file_name: string;
           file_sha256: string;
           file_size_bytes: number;
-          file_kind: "999" | "277ca" | "835" | "unknown";
+          file_kind: "999" | "277ca" | "835" | "271" | "unknown";
           parse_summary_json: Json;
           dispatch_status:
             | "pending"

@@ -59,6 +59,7 @@ import {
   classifyEdiPayload,
   downloadFile,
   listOutboundFiles,
+  parse271,
   parse277CA,
   parse835,
   parse999,
@@ -86,6 +87,7 @@ export interface PollStats {
   dispatch999: number;
   dispatch277ca: number;
   dispatch835: number;
+  dispatch271: number;
   dispatchUnknown: number;
   dispatchErrors: number;
   aiAnalysesQueued: number;
@@ -107,6 +109,7 @@ export async function runOfficeAllyInboundPoll(): Promise<PollStats> {
     dispatch999: 0,
     dispatch277ca: 0,
     dispatch835: 0,
+    dispatch271: 0,
     dispatchUnknown: 0,
     dispatchErrors: 0,
     aiAnalysesQueued: 0,
@@ -292,6 +295,10 @@ async function processRemoteFile(
         stats.aiAnalysesQueued += queued;
         break;
       }
+      case "271":
+        await dispatch271(supabase, row.id, download.content);
+        stats.dispatch271 += 1;
+        break;
       default:
         stats.dispatchUnknown += 1;
         await supabase
@@ -600,6 +607,60 @@ async function runDenialAnalysisQuietly(
       "office-ally.inbound-poll: AI denial analysis failed (non-fatal)",
     );
   }
+}
+
+async function dispatch271(
+  supabase: SupabaseClient,
+  inboundFileId: string,
+  content: string,
+): Promise<void> {
+  const parsed = parse271(content);
+  if (!parsed.traceReference) return;
+  // The trace reference echoes our TRN02 from the original 270;
+  // we built it as `<etin>-<isaCtl>` so the ISA-control suffix is
+  // the join key into eligibility_checks.
+  const isaCtl = parsed.traceReference.split("-").pop() ?? "";
+  if (!isaCtl) return;
+  const { data: check } = await supabase
+    .schema("resupply")
+    .from("eligibility_checks")
+    .select("id")
+    .eq("isa_control_number", isaCtl)
+    .order("requested_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (!check) return;
+  await supabase
+    .schema("resupply")
+    .from("eligibility_checks")
+    .update({
+      status: "parsed",
+      is_active: parsed.isActive,
+      in_network: parsed.inNetwork,
+      deductible_cents: parsed.deductibleCents,
+      deductible_met_cents: parsed.deductibleMetCents,
+      oop_max_cents: parsed.oopMaxCents,
+      oop_met_cents: parsed.oopMetCents,
+      copay_cents: parsed.copayCents,
+      coinsurance_pct: parsed.coinsurancePct,
+      requires_prior_auth: parsed.requiresPriorAuth,
+      parsed_response_json: parsed as unknown as Json,
+      responded_at: new Date().toISOString(),
+      applied_to_inbound_file_id: inboundFileId,
+    })
+    .eq("id", check.id);
+  await supabase
+    .schema("resupply")
+    .from("clearinghouse_inbound_files")
+    .update({
+      parse_summary_json: {
+        isActive: parsed.isActive,
+        inNetwork: parsed.inNetwork,
+        deductibleCents: parsed.deductibleCents,
+        copayCents: parsed.copayCents,
+      } as unknown as Json,
+    })
+    .eq("id", inboundFileId);
 }
 
 function summarise999(p: Parsed999): Record<string, unknown> {

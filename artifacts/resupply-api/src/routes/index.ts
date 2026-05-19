@@ -102,6 +102,7 @@ import cappedRentalCyclesRouter from "./admin/capped-rental-cycles.js";
 import dwoDocumentsRouter from "./admin/dwo-documents.js";
 import adherencePredictionsRouter from "./admin/adherence-predictions.js";
 import shopMembershipRouter from "./admin/shop-membership.js";
+import fhirRouter from "./fhir/index.js";
 import auditRouter from "./audit/index.js";
 import conversationsRouter from "./conversations/index.js";
 import dashboardRouter from "./dashboard/index.js";
@@ -303,6 +304,11 @@ router.use(adherencePredictionsRouter);
 // /admin/shop/customers/:id/membership — cash-pay membership tier
 // management (Stripe Subscriptions handles billing).
 router.use(shopMembershipRouter);
+// /fhir/r4/* — read-only FHIR R4 patient surface (Cures Act +
+// USCDI v4 future-proofing). CapabilityStatement, Patient, and
+// Patient/$everything (Coverage + Condition + MedicationRequest +
+// Device) exposed today.
+router.use(fhirRouter);
 // /admin/shop/products/* — operator tooling for the cash-pay catalog
 // itself. Today: PATCH stock_count metadata on a Stripe Product.
 // requireAdmin gate is on the router itself.
