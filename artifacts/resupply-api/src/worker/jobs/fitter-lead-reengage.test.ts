@@ -88,6 +88,7 @@ describe("runFitterLeadReengageSweep", () => {
       emailed: 0,
       skippedConverted: 0,
       skippedNoConfig: 1,
+      skippedAlreadyClaimed: 0,
       errors: 0,
     });
     expect(sendEmailMock).not.toHaveBeenCalled();
@@ -106,8 +107,13 @@ describe("runFitterLeadReengageSweep", () => {
     });
     // Conversion check — alice has not ordered.
     stageSupabaseResponse("orders", "select", { data: [] });
-    // Stamp update.
-    stageSupabaseResponse("fitter_leads", "update", { data: null });
+    // Atomic claim: returning a non-empty array means the conditional
+    // UPDATE matched and "won" the claim. An empty array (or null)
+    // would mean another worker already stamped nudged_at — exactly
+    // the skippedAlreadyClaimed branch we DON'T want here.
+    stageSupabaseResponse("fitter_leads", "update", {
+      data: [{ id: "fl_1" }],
+    });
 
     const stats = await runFitterLeadReengageSweep(FULL_CFG);
 
@@ -149,7 +155,12 @@ describe("runFitterLeadReengageSweep", () => {
     stageSupabaseResponse("orders", "select", {
       data: [{ patient_email: "bob@example.com" }],
     });
-    stageSupabaseResponse("fitter_leads", "update", { data: null });
+    // Only carol reaches the claim step; the response represents
+    // the row returned by `UPDATE ... .select()` after a successful
+    // conditional update.
+    stageSupabaseResponse("fitter_leads", "update", {
+      data: [{ id: "fl_3" }],
+    });
 
     const stats = await runFitterLeadReengageSweep(FULL_CFG);
 
@@ -164,6 +175,37 @@ describe("runFitterLeadReengageSweep", () => {
     ];
     const sentTo = firstCall[0].to;
     expect(sentTo).toBe("carol@example.com");
+  });
+
+  it("skips leads that a concurrent worker already claimed", async () => {
+    // Two workers can run the sweep in overlapping windows. The
+    // `update(...).is("nudged_at", null).select()` claim is the
+    // serialization point: only the first worker's conditional
+    // UPDATE matches, the second sees zero rows returned. This
+    // branch increments `skippedAlreadyClaimed` and MUST NOT send.
+    stageSupabaseResponse("fitter_leads", "select", {
+      data: [
+        {
+          id: "fl_race",
+          email: "race@example.com",
+          created_at: "2026-05-01T00:00:00Z",
+        },
+      ],
+    });
+    stageSupabaseResponse("orders", "select", { data: [] });
+    // Empty array = the conditional UPDATE matched zero rows, i.e.
+    // another worker already stamped `nudged_at`.
+    stageSupabaseResponse("fitter_leads", "update", { data: [] });
+
+    const stats = await runFitterLeadReengageSweep(FULL_CFG);
+
+    expect(stats).toMatchObject({
+      scanned: 1,
+      emailed: 0,
+      skippedAlreadyClaimed: 1,
+      errors: 0,
+    });
+    expect(sendEmailMock).not.toHaveBeenCalled();
   });
 
   it("returns early with scanned=0 when no leads match", async () => {
@@ -184,7 +226,9 @@ describe("runFitterLeadReengageSweep", () => {
       ],
     });
     stageSupabaseResponse("orders", "select", { data: [] });
-    stageSupabaseResponse("fitter_leads", "update", { data: null });
+    stageSupabaseResponse("fitter_leads", "update", {
+      data: [{ id: "fl_4" }],
+    });
     sendEmailMock.mockRejectedValueOnce(new Error("sendgrid 5xx"));
 
     const stats = await runFitterLeadReengageSweep(FULL_CFG);
@@ -223,8 +267,14 @@ describe("runFitterLeadReengageSweep", () => {
     stageSupabaseResponse("orders", "select", { data: [] });
     // First send fails; second succeeds.
     sendEmailMock.mockRejectedValueOnce(new Error("sendgrid transient"));
-    stageSupabaseResponse("fitter_leads", "update", { data: null });
-    stageSupabaseResponse("fitter_leads", "update", { data: null });
+    // Both leads win their atomic claim — staged in the order the
+    // sweep processes them.
+    stageSupabaseResponse("fitter_leads", "update", {
+      data: [{ id: "fl_5" }],
+    });
+    stageSupabaseResponse("fitter_leads", "update", {
+      data: [{ id: "fl_6" }],
+    });
 
     const stats = await runFitterLeadReengageSweep(FULL_CFG);
 

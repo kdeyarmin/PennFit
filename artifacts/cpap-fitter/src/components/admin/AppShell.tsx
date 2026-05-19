@@ -342,6 +342,13 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         hint: "Resupply funnel, compliance cohorts, CSR productivity",
       },
       {
+        href: "/admin/nps",
+        label: "Customer NPS",
+        icon: Star,
+        matchPrefix: "/admin/nps",
+        hint: "Post-delivery NPS responses with comment tail",
+      },
+      {
         href: "/admin/pennpaps/analytics",
         label: "Storefront Analytics",
         icon: BarChart3,

@@ -59,6 +59,7 @@ import integrationsRefreshSuppliesRouter from "./admin/integrations-refresh-supp
 import bulkCampaignsRouter from "./admin/bulk-campaigns.js";
 import mfaRouter from "./admin/mfa.js";
 import reportsRouter from "./admin/reports.js";
+import npsSummaryRouter from "./admin/nps-summary.js";
 import deliveryFailuresRouter from "./admin/delivery-failures.js";
 import lookupRouter from "./admin/lookup.js";
 import systemInfoRouter from "./admin/system-info.js";
@@ -402,6 +403,10 @@ router.use(bulkCampaignsRouter);
 router.use(mfaRouter);
 // /admin/reports/*.csv — date-bounded CSV exports for ops + finance.
 router.use(reportsRouter);
+// /admin/nps/recent — last-N-days NPS rollup for the post-delivery
+// follow-up. Surfaces band counts + canonical NPS score + a comment
+// tail. Powered by shop_order_nps_responses (migration 0127).
+router.use(npsSummaryRouter);
 // /admin/delivery-failures — webhook delivery error triage queue
 // (per-message + audit-log failure events). Read-only.
 router.use(deliveryFailuresRouter);

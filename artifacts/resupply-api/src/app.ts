@@ -286,6 +286,64 @@ const storefrontChatLimiter = expressRateLimit({
 });
 app.use("/api/chat", storefrontChatLimiter);
 
+// Reminder subscription + manage routes have different abuse shapes,
+// so they get separate limiters with different keys + budgets:
+//
+//  - /api/reminders (signup): per-IP, tight. Every accepted request
+//    inserts a row AND sends an email. Even legitimate signups should
+//    be one or two per IP per window; abuse spam is the failure mode.
+//
+//  - /api/reminders/manage*: per-token, generous. The manage token
+//    is a 64-char random capability secret, scoped to one
+//    subscription. Keying on the token (not the IP) means a patient
+//    behind shared NAT — mobile carrier CG-NAT, corporate proxies,
+//    a support agent proxying multiple customers — can edit their
+//    own reminder schedule without colliding with strangers' quota.
+//    Falls back to IP keying when the token is absent/malformed so
+//    a bypass attempt can't disable the limiter entirely.
+const TOKEN_RE = /^[0-9a-f]{64}$/;
+const reminderManageLimiter = expressRateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 60,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  keyGenerator: (req: Request) => {
+    const token = req.query?.token;
+    if (typeof token === "string" && TOKEN_RE.test(token)) {
+      return `reminder-token:${token}`;
+    }
+    return ipKeyGenerator(req.ip ?? "0.0.0.0");
+  },
+  message: {
+    error:
+      "Too many requests for this reminder subscription. Please wait a few minutes and try again.",
+  },
+});
+const reminderSignupLimiter = expressRateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 5,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  keyGenerator: (req: Request) => ipKeyGenerator(req.ip ?? "0.0.0.0"),
+  message: {
+    error:
+      "Too many reminder signup attempts from this network. Please wait a few minutes and try again.",
+  },
+});
+// Dispatch on the sub-path so manage routes don't double-debit
+// against the tight signup budget. `req.path` here is relative to
+// the mount point (`/api/reminders`), so `/manage` and
+// `/manage/unsubscribe` both match the prefix.
+app.use(
+  "/api/reminders",
+  (req: Request, res, next) => {
+    if (req.path.startsWith("/manage")) {
+      return reminderManageLimiter(req, res, next);
+    }
+    return reminderSignupLimiter(req, res, next);
+  },
+);
+
 // Defense-in-depth: a single CSRF gate covering every admin-tree
 // mutation on both mount prefixes. Pass-through for safe methods and
 // non-admin paths; enforces double-submit (`pf_csrf` cookie ⇄

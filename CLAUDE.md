@@ -22,9 +22,10 @@ git reset --hard subrepl-3ppc2e03/main
 (remote-tracking name in Replit: `subrepl-3ppc2e03/main`).
 
 **Where new work lands:** push a feature branch and open a PR on GitHub.
-Never commit directly to local `main`. The pre-commit hook prints a
-non-blocking warning when `main` is more than 10 commits behind canonical;
-bypass with `SKIP_HOOKS=1` only for genuine emergencies.
+Never commit directly to local `main`. The pre-commit hook (installed
+via `scripts/install-hooks.sh`, source in `scripts/git-hooks/pre-commit`)
+prints a non-blocking warning when `main` is more than 10 commits behind
+canonical; bypass with `SKIP_HOOKS=1` only for genuine emergencies.
 
 Post-mortem of the drift event: [`docs/git-state-2026-05-01.md`](./docs/git-state-2026-05-01.md).
 
@@ -39,7 +40,7 @@ This is a `pnpm` workspaces monorepo (Node v24, TypeScript 5.9, pnpm 10.33).
 | `artifacts/shared`       | Cross-artifact static assets (favicons served at root).                                                                                                                                                                          |
 | `lib/resupply-*`         | Shared workspace packages: `db`, `auth` (+ `auth-react`), `messaging`, `email`, `ai`, `telecom`, `audit`, `domain`, `secrets`, `reminders`.                                                                                      |
 | `lib/api-client-react`   | Generated API client + React hooks.                                                                                                                                                                                              |
-| `scripts/`               | Codegen + drift checks (`check-codegen`, `check-resupply-architecture`, `check-resupply-migration-pair`).                                                                                                                        |
+| `scripts/`               | Architecture + migration drift checks (`check-resupply-architecture`, `check-resupply-migration-prefix`). The historical `check-codegen.sh` was retired when Task #37 removed the OpenAPI spec packages.                         |
 | `docs/`                  | Architecture notes, post-mortems, production readiness.                                                                                                                                                                          |
 
 There is **one** customer-facing site (`pennfit.replit.app/`). The former
@@ -98,11 +99,12 @@ third-party credential.
 
 Required at boot for `resupply-api`:
 
-| Variable                 | Notes                                                                                                                                                    |
-| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `PORT`                   | HTTP listen port.                                                                                                                                        |
-| `DATABASE_URL`           | Postgres v14+ (no extensions; only `gen_random_uuid()` is used).                                                                                         |
-| `RESUPPLY_LINK_HMAC_KEY` | 32+ random bytes. Signs short-lived patient links in SMS/email reminders. Generate with `openssl rand -base64 48`. Rotation invalidates in-flight links. |
+| Variable                  | Notes                                                                                                                                                                                              |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PORT`                    | HTTP listen port.                                                                                                                                                                                  |
+| `DATABASE_URL`            | Postgres v14+ (no extensions; only `gen_random_uuid()` is used).                                                                                                                                   |
+| `RESUPPLY_LINK_HMAC_KEY`  | 32+ random bytes. Signs short-lived patient links in SMS/email reminders. Generate with `openssl rand -base64 48`. Rotation invalidates in-flight links.                                           |
+| `RESUPPLY_AUDIT_HMAC_KEY` | 32+ bytes (base64). HMAC-chains every row written to `resupply.audit_log` (migration 0116) for HIPAA §164.312(b) tamper-evidence. Generate with `openssl rand -base64 48`. Rotation does NOT invalidate prior rows. |
 
 The full env table — including every optional variable and where it's
 read — lives in [`README.md`](./README.md#environment-variables) and
@@ -141,10 +143,12 @@ read — lives in [`README.md`](./README.md#environment-variables) and
   (5s/media timeout, 5MB cap, image/\* + application/pdf allowlist, max 10
   attachments/message), uploads to App Storage, persists as
   `message_attachments`. Audit emits counts only — no media URLs, no PHI.
-- **Codegen:** OpenAPI clients regenerated by `scripts/codegen`; drift
-  checked by `scripts/check-codegen.sh`. Override output paths with
-  `CODEGEN_OUT_PENNPAPS_CLIENT`, `CODEGEN_OUT_PENNPAPS_ZOD`,
-  `CODEGEN_OUT_RESUPPLY_CLIENT`.
+- **API clients:** `lib/api-client-react/src/{admin,storefront}/generated/`
+  and `lib/resupply-api-client/src/generated/` are the source of truth
+  for client-side HTTP types — they used to be generated from OpenAPI
+  specs, but Task #37 deleted both `@workspace/resupply-api-spec` and
+  `@workspace/api-spec` along with the orval pipeline. The directories
+  are now hand-edited; any drift check would be a no-op.
 
 ## When in doubt
 

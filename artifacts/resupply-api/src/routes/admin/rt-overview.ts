@@ -114,9 +114,6 @@ export async function buildRtOverview(days: number): Promise<{
   const supabase = getSupabaseServiceRoleClient();
   const asOf = new Date().toISOString();
   const asOfDate = asOf.slice(0, 10);
-  const lowerBoundDate = new Date();
-  lowerBoundDate.setUTCDate(lowerBoundDate.getUTCDate() - (days - 1));
-  const lowerBoundIso = lowerBoundDate.toISOString().slice(0, 10);
 
   // 1. Active therapy links — these define "patients being tracked
   //    by an integration." Status `active` only; revoked / errored
@@ -159,7 +156,6 @@ export async function buildRtOverview(days: number): Promise<{
     .from("patient_therapy_nights")
     .select("patient_id, night_date, usage_minutes, ahi, leak_rate_l_min")
     .in("patient_id", linkedPatientIds)
-    .gte("night_date", lowerBoundIso)
     .order("night_date", { ascending: false });
   if (nightsErr) throw nightsErr;
   const nights = (nightsRaw ?? []) as RawNight[];
@@ -341,6 +337,11 @@ router.get("/admin/rt-overview.csv", requireAdmin, async (req, res) => {
 });
 
 function csvCell(s: string): string {
+  // Neutralize formula injection: prefix cells that start with
+  // formula trigger characters with a single quote.
+  if (s.length > 0 && /^[=+\-@]/.test(s)) {
+    s = `'${s}`;
+  }
   // Wrap in quotes only when the cell contains a character that
   // would otherwise change the CSV's field structure. Double-up
   // embedded quotes per RFC 4180.

@@ -6,5 +6,6 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   test: {
     include: ["src/**/*.{test,spec}.ts"],
+    setupFiles: ["src/test/setup-audit-hmac-key.ts"],
   },
 });

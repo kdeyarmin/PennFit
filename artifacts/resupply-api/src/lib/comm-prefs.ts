@@ -11,12 +11,44 @@
 
 import type { CommunicationPreferences } from "@workspace/resupply-db";
 
+import { inferTimezoneFromZip } from "./zip-timezone";
+
+/**
+ * Resolve the effective timezone for DND evaluation. Order of
+ * precedence:
+ *
+ *   1. prefs.timezone — the customer's explicit preference if set.
+ *   2. shippingZip   — inferred from the shipping address ZIP.
+ *   3. null          — caller defaults to UTC.
+ *
+ * Pure function; safe to call repeatedly.
+ */
+export function resolveTimezone(
+  prefs: CommunicationPreferences,
+  shippingZip?: string | null,
+): string | null {
+  if (prefs.timezone) return prefs.timezone;
+  if (shippingZip) return inferTimezoneFromZip(shippingZip);
+  return null;
+}
+
+export interface DndOptions {
+  /**
+   * Optional 5-digit US shipping ZIP. When set and prefs.timezone is
+   * null, we infer the timezone from the ZIP — fixes the
+   * "patient never set a tz" case where DND used to silently
+   * evaluate against UTC and text every patient at 4am local.
+   */
+  shippingZip?: string | null;
+}
+
 export function isInDndWindow(
   prefs: CommunicationPreferences,
   now: Date = new Date(),
+  opts: DndOptions = {},
 ): boolean {
   if (prefs.dndStartHour === null || prefs.dndEndHour === null) return false;
-  const tz = prefs.timezone;
+  const tz = resolveTimezone(prefs, opts.shippingZip);
   let localHour: number;
   try {
     if (tz) {
@@ -29,9 +61,9 @@ export function isInDndWindow(
       const hourPart = parts.find((p) => p.type === "hour")?.value;
       localHour = hourPart ? Number(hourPart) % 24 : now.getUTCHours();
     } else {
-      // No timezone configured — fall back to UTC. Better than refusing
-      // to send (which would silently drop cart-abandonment nudges for
-      // every account that hasn't set a tz).
+      // No timezone configured AND no shipping ZIP to infer from —
+      // fall back to UTC. Better than refusing to send (which would
+      // silently drop nudges for every account without a tz).
       localHour = now.getUTCHours();
     }
   } catch {
@@ -49,8 +81,9 @@ export function shouldSendEmail(
   prefs: CommunicationPreferences,
   kind: "marketing" | "abandonedCart" | "resupplyReminder" | "reviewRequest",
   now: Date = new Date(),
+  opts: DndOptions = {},
 ): boolean {
-  if (isInDndWindow(prefs, now)) return false;
+  if (isInDndWindow(prefs, now, opts)) return false;
   switch (kind) {
     case "marketing":
       return prefs.emailMarketing;
@@ -67,8 +100,9 @@ export function shouldSendSms(
   prefs: CommunicationPreferences,
   kind: "marketing" | "transactional",
   now: Date = new Date(),
+  opts: DndOptions = {},
 ): boolean {
-  if (isInDndWindow(prefs, now)) return false;
+  if (isInDndWindow(prefs, now, opts)) return false;
   switch (kind) {
     case "marketing":
       return prefs.smsMarketing;
