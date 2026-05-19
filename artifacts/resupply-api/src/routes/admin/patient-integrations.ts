@@ -40,6 +40,9 @@ import {
 import { getIntegrationAdapters } from "../../lib/integrations/registry";
 import { persistTherapyNights } from "../../lib/integrations/persist-nights";
 import { diffSettings } from "../../lib/integrations/diff-settings";
+import { linkEquipmentFromSnapshot } from "../../lib/integrations/link-equipment";
+import { scanRecallsForAsset } from "../../lib/integrations/scan-recalls-for-asset";
+import { evaluatePatientSmartTriggers } from "../../lib/smart-triggers/evaluate-patient";
 import { logger } from "../../lib/logger";
 import { requirePermission } from "../../middlewares/requireAdmin";
 
@@ -451,10 +454,90 @@ router.post(
       });
     }
 
+    // Auto-link the vendor's device data into equipment_assets so
+    // the recall-match query has the serial without a CSR re-keying
+    // it. Best-effort; a failure here doesn't fail the refresh.
+    let equipmentOutcome: Awaited<
+      ReturnType<typeof linkEquipmentFromSnapshot>
+    > = { kind: "no_settings" };
+    let recallNotificationsQueued = 0;
+    if (fetchStatus === "ok") {
+      try {
+        equipmentOutcome = await linkEquipmentFromSnapshot(
+          supabase,
+          patientId,
+          payload.settings,
+        );
+        if (
+          equipmentOutcome.kind === "inserted" ||
+          equipmentOutcome.kind === "matched"
+        ) {
+          const scan = await scanRecallsForAsset(
+            supabase,
+            equipmentOutcome.assetId,
+          );
+          recallNotificationsQueued = scan.notificationsQueued;
+          if (scan.notificationsQueued > 0) {
+            await logAudit({
+              action: "patient.equipment.recall.auto_queued",
+              adminEmail: req.adminEmail ?? null,
+              adminUserId: req.adminUserId ?? null,
+              targetTable: "recall_notifications",
+              targetId: equipmentOutcome.assetId,
+              metadata: {
+                patient_id: patientId,
+                source,
+                matched_recall_ids: scan.matchedRecallIds,
+                queued: scan.notificationsQueued,
+              },
+              ip: req.ip ?? null,
+              userAgent: req.get("user-agent") ?? null,
+            }).catch((err) => {
+              logger.warn(
+                { err },
+                "equipment.recall.auto_queued audit write failed",
+              );
+            });
+          }
+        }
+      } catch (err) {
+        logger.warn(
+          { err, patient_id: patientId, source },
+          "linkEquipmentFromSnapshot / scanRecallsForAsset failed",
+        );
+      }
+    }
+
+    // Re-evaluate smart triggers for this patient now that fresh
+    // nights are in. Lets a late-arriving missed-night signal fire
+    // a reorder nudge inside the request instead of waiting for the
+    // daily evaluator cron.
+    let smartTriggerResult: Awaited<
+      ReturnType<typeof evaluatePatientSmartTriggers>
+    > | null = null;
+    if (fetchStatus === "ok" && nightsPersisted > 0) {
+      try {
+        smartTriggerResult = await evaluatePatientSmartTriggers(patientId, {
+          adminEmail: req.adminEmail ?? null,
+          adminUserId: req.adminUserId ?? null,
+          ip: req.ip ?? null,
+          userAgent: req.get("user-agent") ?? null,
+        });
+      } catch (err) {
+        logger.warn(
+          { err, patient_id: patientId },
+          "evaluatePatientSmartTriggers failed (non-fatal)",
+        );
+      }
+    }
+
     res.json({
       snapshot: snapshotRowToView(row),
       nightsPersisted,
       settingsChanges,
+      equipment: equipmentOutcome,
+      recallNotificationsQueued,
+      smartTriggers: smartTriggerResult,
     });
   },
 );
