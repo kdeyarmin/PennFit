@@ -24,10 +24,25 @@ const URLSAFE_ALPHABET =
   "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
 
 function generateCode(length = 10): string {
-  const bytes = randomBytes(length);
+  // Rejection sampling so each character is uniformly distributed over
+  // the 62-char alphabet. A naive `bytes[i] % 62` biases the first 8
+  // alphabet positions slightly (CodeQL `js/biased-cryptographic-random`).
+  // The largest multiple of 62 that fits in a byte is 248, so we
+  // resample any byte ≥ 248. Expected rejection rate ≈ 3.1%.
+  const alphabetLen = URLSAFE_ALPHABET.length;
+  const limit = 256 - (256 % alphabetLen); // 248
   let out = "";
-  for (let i = 0; i < length; i += 1) {
-    out += URLSAFE_ALPHABET[bytes[i]! % URLSAFE_ALPHABET.length];
+  // Pull bytes in modest batches; on rejection-heavy runs we just loop.
+  while (out.length < length) {
+    const need = length - out.length;
+    // Pull a buffer 2x the bytes still needed so the inner loop rarely
+    // exhausts before `out` is filled, but never request a huge buffer.
+    const bytes = randomBytes(Math.max(need * 2, 16));
+    for (let i = 0; i < bytes.length && out.length < length; i += 1) {
+      const b = bytes[i]!;
+      if (b >= limit) continue; // reject biased range
+      out += URLSAFE_ALPHABET[b % alphabetLen];
+    }
   }
   return out;
 }

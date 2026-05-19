@@ -27,7 +27,8 @@
 // (order_id, MAX(created_at)) when "most recent rating per order"
 // is what's needed.
 
-import { Router, type IRouter } from "express";
+import { Router, type IRouter, type Request } from "express";
+import expressRateLimit, { ipKeyGenerator } from "express-rate-limit";
 import { z } from "zod";
 
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
@@ -37,36 +38,18 @@ import { verifyNpsToken } from "../../lib/nps-token";
 
 const router: IRouter = Router();
 
-const RATE_WINDOW_MS = 15 * 60 * 1000;
-const RATE_MAX = 20;
-const rateBucket = new Map<string, number[]>();
-const RATE_SWEEP_EVERY = 200;
-let rateBucketSweepCounter = 0;
-
-function sweepRateBucket(now: number): void {
-  for (const [key, timestamps] of rateBucket) {
-    if (timestamps.every((t) => now - t >= RATE_WINDOW_MS)) {
-      rateBucket.delete(key);
-    }
-  }
-}
-
-function rateLimited(key: string): boolean {
-  const now = Date.now();
-  if (++rateBucketSweepCounter % RATE_SWEEP_EVERY === 0) {
-    sweepRateBucket(now);
-  }
-  const arr = (rateBucket.get(key) ?? []).filter(
-    (t) => now - t < RATE_WINDOW_MS,
-  );
-  if (arr.length >= RATE_MAX) {
-    rateBucket.set(key, arr);
-    return true;
-  }
-  arr.push(now);
-  rateBucket.set(key, arr);
-  return false;
-}
+// IP-keyed rate limiter on the unauthenticated NPS capture endpoint.
+// Uses `express-rate-limit` so the gate is recognised by static
+// analysis (CodeQL `js/missing-rate-limiting`). The internal bucket
+// implementation also auto-evicts expired keys.
+const npsRateLimiter = expressRateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 20,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  keyGenerator: (req: Request) => ipKeyGenerator(req.ip ?? "0.0.0.0"),
+  message: { error: "rate_limited" },
+});
 
 const body = z
   .object({
@@ -75,16 +58,12 @@ const body = z
   })
   .strict();
 
-router.post("/shop/orders/nps", async (req, res) => {
+router.post("/shop/orders/nps", npsRateLimiter, async (req, res) => {
   const ip =
     req.ip ||
     req.socket?.remoteAddress ||
     req.headers["x-forwarded-for"]?.toString().split(",")[0]?.trim() ||
     "unknown";
-  if (rateLimited(ip + ":nps")) {
-    res.status(429).json({ error: "rate_limited" });
-    return;
-  }
 
   const parsed = body.safeParse(req.body);
   if (!parsed.success) {
@@ -161,8 +140,9 @@ router.post("/shop/orders/nps", async (req, res) => {
 
 export default router;
 
-// Test-only seam — clears the in-memory rate bucket between vitest runs.
+// Test-only seam — kept as a no-op now that the IP bucket lives in
+// `express-rate-limit`'s internal store. Existing test imports stay
+// valid; new tests should not depend on this function.
 export function _resetNpsRateBucketForTests(): void {
-  rateBucket.clear();
-  rateBucketSweepCounter = 0;
+  // intentionally empty
 }
