@@ -29,6 +29,7 @@ import insuranceClaimsPreflightRouter from "./insurance-claims-preflight";
 import insuranceClaimsAiRouter from "./insurance-claims-ai";
 import insuranceClaimsPredictDenialRouter from "./insurance-claims-predict-denial";
 import insuranceClaimsExplainDenialRouter from "./insurance-claims-explain-denial";
+import sleepStudiesSuggestIcd10Router from "./sleep-studies-suggest-icd10";
 import equipmentRouter from "./equipment";
 import timelineRouter from "./timeline";
 import updateRouter from "./update";
@@ -109,6 +110,10 @@ router.use(insuranceClaimsPredictDenialRouter);
 // facing denial explainer (different audience from the CSR-facing
 // analyzer; returns email-ready subject + body).
 router.use(insuranceClaimsExplainDenialRouter);
+// /patients/:id/sleep-studies/:studyId/suggest-icd10 +
+// /accept-icd10 — AI ICD-10 suggester (LCD L33718 allowlist) with
+// optional auto-apply at high confidence.
+router.use(sleepStudiesSuggestIcd10Router);
 // /patients/:id/equipment — clinical equipment asset registry
 // (patient ↔ device serial-number link). Required for manufacturer
 // recall workflows. Distinct from Pacware warehouse inventory.

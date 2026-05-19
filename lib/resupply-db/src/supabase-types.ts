@@ -861,6 +861,18 @@ export interface Database {
           lowest_spo2_pct: number | null;
           sleep_efficiency_pct: number | null;
           diagnosis_icd10: string | null;
+          // Provenance of the diagnosis (migration 0139). Distinguishes
+          // lab-supplied codes from AI-suggested + CSR-accepted ones.
+          diagnosis_source:
+            | "lab_report"
+            | "csr_entry"
+            | "ai_suggested"
+            | "ai_accepted"
+            | "imported"
+            | null;
+          diagnosis_ai_confidence: number | null;
+          diagnosis_ai_model: string | null;
+          diagnosis_ai_suggested_at: string | null;
           interpreting_provider_id: string | null;
           facility_name: string | null;
           source: "external_lab" | "home_test_vendor" | "csr_entry";
@@ -1452,6 +1464,52 @@ export interface Database {
         >;
         Relationships: [];
       };
+      hipaa_breach_incidents: {
+        Row: {
+          id: string;
+          slug: string;
+          title: string;
+          description: string;
+          status:
+            | "under_investigation"
+            | "not_a_breach"
+            | "confirmed_breach"
+            | "resolved";
+          kind:
+            | "lost_device"
+            | "misdirected_fax"
+            | "misdirected_email"
+            | "unauthorized_access"
+            | "phishing"
+            | "malware"
+            | "business_associate"
+            | "mailing_error"
+            | "paper_disposal"
+            | "other";
+          severity: "low" | "moderate" | "high" | "critical";
+          individuals_affected: number | null;
+          media_notification_required: boolean;
+          risk_assessment: string | null;
+          mitigation: string | null;
+          discovered_at: string;
+          individuals_notified_at: string | null;
+          hhs_notified_at: string | null;
+          media_notified_at: string | null;
+          resolved_at: string | null;
+          affected_systems: string[];
+          owner_email: string | null;
+          notes: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["hipaa_breach_incidents"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["hipaa_breach_incidents"]["Row"]
+        >;
+        Relationships: [];
+      };
       patient_payments: {
         Row: {
           id: string;
@@ -1498,6 +1556,7 @@ export interface Database {
             | "processing_failed"
             | "rejected";
           processing_error: string | null;
+          processing_attempts: number;
           received_at: string;
           processed_at: string | null;
         };

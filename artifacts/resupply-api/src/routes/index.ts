@@ -115,6 +115,9 @@ import webhookTestSendRouter from "./admin/webhook-test-send.js";
 import payerFeeSchedulesImportRouter from "./admin/payer-fee-schedules-import.js";
 import systemIntegrationsStatusRouter from "./admin/system-integrations-status.js";
 import integrationsInboundRouter from "./integrations-inbound.js";
+import hipaaBreachIncidentsRouter from "./admin/hipaa-breach-incidents.js";
+import documentationPacketsRouter from "./admin/documentation-packets.js";
+import webhookDeliveryRetryRouter from "./admin/webhook-delivery-retry.js";
 import auditRouter from "./audit/index.js";
 import conversationsRouter from "./conversations/index.js";
 import dashboardRouter from "./dashboard/index.js";
@@ -354,6 +357,14 @@ router.use(systemIntegrationsStatusRouter);
 // /integrations/inbound/:source — public-mount inbound webhook
 // intake for third-party deliveries (Parachute, HSAT vendors, etc).
 router.use(integrationsInboundRouter);
+// /admin/hipaa-breach-incidents — HIPAA §164.404-414 lifecycle.
+router.use(hipaaBreachIncidentsRouter);
+// /admin/patients/:id/documentation-packets — combined PDF
+// support packets (cover letter + sleep study + Rx + DWO summaries).
+router.use(documentationPacketsRouter);
+// /admin/webhook-deliveries/:id/retry-now — manual re-queue of an
+// exhausted/failed delivery.
+router.use(webhookDeliveryRetryRouter);
 // /admin/shop/products/* — operator tooling for the cash-pay catalog
 // itself. Today: PATCH stock_count metadata on a Stripe Product.
 // requireAdmin gate is on the router itself.
