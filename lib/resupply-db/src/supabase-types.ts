@@ -352,6 +352,8 @@ export interface Database {
           portal_invited_at: string | null;
           portal_invited_by: string | null;
           quarterly_summary_last_sent_at: string | null;
+          birthday_email_year_sent: number | null;
+          sleep_anniversary_year_sent: number | null;
           created_at: string;
           updated_at: string;
         };

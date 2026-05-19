@@ -49,6 +49,7 @@ import { registerTherapyMilestonesJob } from "./jobs/therapy-milestones.js";
 import { registerLapsedCustomerWinbackJob } from "./jobs/lapsed-customer-winback.js";
 import { registerDeductibleResetPushJob } from "./jobs/deductible-reset-push.js";
 import { registerQuarterlyTherapySummaryJob } from "./jobs/quarterly-therapy-summary.js";
+import { registerLifecycleTouchpointsJob } from "./jobs/lifecycle-touchpoints.js";
 
 let bossInstance: PgBoss | null = null;
 let workerReady = false;
@@ -292,6 +293,14 @@ export async function startWorker(): Promise<void> {
   // they ask for. Runs at 06:17 UTC, gated by emailMarketing on
   // the patient's shop_customers comm-prefs.
   await registerQuarterlyTherapySummaryJob(boss);
+
+  // Daily lifecycle touchpoints — birthday + sleep-therapy
+  // anniversary celebration emails. Calendar signals complement the
+  // therapy-count milestones in 0120 (100/365 nights, first
+  // adherence month) and consistently show the highest open + click
+  // rates in DME coaching literature. Runs at 13:33 UTC, idempotent
+  // via year stamps on patients.
+  await registerLifecycleTouchpointsJob(boss);
 
   workerReady = true;
   logger.info(
