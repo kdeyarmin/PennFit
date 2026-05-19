@@ -119,6 +119,10 @@ import hipaaBreachIncidentsRouter from "./admin/hipaa-breach-incidents.js";
 import documentationPacketsRouter from "./admin/documentation-packets.js";
 import webhookDeliveryRetryRouter from "./admin/webhook-delivery-retry.js";
 import dispenseReadinessRouter from "./admin/dispense-readiness.js";
+import baaRouter from "./admin/business-associate-agreements.js";
+import oigLeieScreeningsRouter from "./admin/oig-leie-screenings.js";
+import patientRightsRequestsRouter from "./admin/patient-rights-requests.js";
+import complianceRecordsRouter from "./admin/compliance-records.js";
 import auditRouter from "./audit/index.js";
 import conversationsRouter from "./conversations/index.js";
 import dashboardRouter from "./dashboard/index.js";
@@ -373,6 +377,24 @@ router.use(webhookDeliveryRetryRouter);
 // that produces a plain-English action plan with specific "how to
 // obtain" guidance for every gap.
 router.use(dispenseReadinessRouter);
+// ── Phase 10 (compliance machinery, migration 0141) ──────────────
+// /admin/compliance/business-associate-agreements — HIPAA
+// §164.504(e) BAA inventory + expiry buckets.
+router.use(baaRouter);
+// /admin/compliance/oig-leie-screenings — record + list OIG LEIE
+// monthly exclusion-list screens against staff / providers /
+// BAs / contractors. Coverage rollup flags overdue subjects.
+router.use(oigLeieScreeningsRouter);
+// /admin/compliance/patient-rights-requests — HIPAA
+// §164.522/524/526/528 access / amendment / accounting /
+// restriction / confidential-communications workflow with the
+// 30-day response clock (single 30-day extension allowed).
+router.use(patientRightsRequestsRouter);
+// /admin/compliance/risk-assessments + contingency-attestations +
+// disaster-drills + qi-initiatives + qi-measurements +
+// ownership-disclosures + disclosure-log — registers that close
+// out §164.308(a)(1)/(a)(7), ACHC QAPI, and §424.57(c)(17).
+router.use(complianceRecordsRouter);
 // /admin/shop/products/* — operator tooling for the cash-pay catalog
 // itself. Today: PATCH stock_count metadata on a Stripe Product.
 // requireAdmin gate is on the router itself.

@@ -3080,6 +3080,342 @@ export interface Database {
         Update: Partial<Database["resupply"]["Tables"]["shop_return_notes"]["Row"]>;
         Relationships: [];
       };
+      business_associate_agreements: {
+        Row: {
+          id: string;
+          vendor_slug: string;
+          vendor_legal_name: string;
+          vendor_kind:
+            | "clearinghouse"
+            | "cloud_infrastructure"
+            | "email_provider"
+            | "sms_telecom_provider"
+            | "ai_llm_provider"
+            | "payment_processor"
+            | "storage_provider"
+            | "eprescribe"
+            | "analytics"
+            | "other";
+          scope_json: Json;
+          agreement_signed_on: string | null;
+          agreement_expires_on: string | null;
+          agreement_document_object_key: string | null;
+          last_safeguard_attestation_on: string | null;
+          compliance_certifications: string[];
+          vendor_contact_email: string | null;
+          vendor_contact_phone_e164: string | null;
+          internal_owner_email: string | null;
+          status: "active" | "expired" | "terminated" | "pending";
+          notes: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["business_associate_agreements"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["business_associate_agreements"]["Row"]
+        >;
+        Relationships: [];
+      };
+      oig_leie_exclusions: {
+        Row: {
+          id: string;
+          npi: string | null;
+          lastname: string;
+          firstname: string | null;
+          middlename: string | null;
+          subject_type: string;
+          exclusion_type: string;
+          exclusion_date: string;
+          waiver_date: string | null;
+          reinstate_date: string | null;
+          address_state: string | null;
+          address_city: string | null;
+          loaded_at: string;
+          source_file_version: string | null;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["oig_leie_exclusions"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["oig_leie_exclusions"]["Row"]
+        >;
+        Relationships: [];
+      };
+      oig_leie_screenings: {
+        Row: {
+          id: string;
+          subject_kind:
+            | "admin_user"
+            | "provider"
+            | "business_associate"
+            | "contractor"
+            | "owner";
+          subject_admin_user_id: string | null;
+          subject_provider_id: string | null;
+          subject_baa_id: string | null;
+          subject_label: string;
+          subject_npi: string | null;
+          result: "clear" | "hit" | "inconclusive" | "errored";
+          matched_exclusion_id: string | null;
+          disposition_note: string | null;
+          screened_by_email: string;
+          screened_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["oig_leie_screenings"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["oig_leie_screenings"]["Row"]
+        >;
+        Relationships: [];
+      };
+      patient_rights_requests: {
+        Row: {
+          id: string;
+          patient_id: string;
+          request_kind:
+            | "access"
+            | "amendment"
+            | "accounting_of_disclosures"
+            | "restriction"
+            | "confidential_communications";
+          submitted_via:
+            | "patient_portal"
+            | "phone"
+            | "email"
+            | "mail"
+            | "in_person"
+            | "representative";
+          request_body: string;
+          request_details_json: Json;
+          status:
+            | "received"
+            | "in_review"
+            | "extended"
+            | "granted"
+            | "partially_granted"
+            | "denied"
+            | "withdrawn"
+            | "expired";
+          received_at: string;
+          extension_granted_at: string | null;
+          decision: "granted" | "partially_granted" | "denied" | null;
+          decision_rationale: string | null;
+          decided_at: string | null;
+          decided_by_email: string | null;
+          response_document_object_key: string | null;
+          delivered_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["patient_rights_requests"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["patient_rights_requests"]["Row"]
+        >;
+        Relationships: [];
+      };
+      patient_disclosure_log: {
+        Row: {
+          id: string;
+          patient_id: string;
+          recipient_name: string;
+          recipient_address: string | null;
+          disclosure_purpose:
+            | "public_health"
+            | "health_oversight"
+            | "judicial_administrative"
+            | "law_enforcement"
+            | "decedents"
+            | "cadaveric_organ_eye_tissue"
+            | "research"
+            | "serious_threat"
+            | "specialized_government"
+            | "workers_compensation"
+            | "reporting_abuse_or_neglect"
+            | "fda_product_safety"
+            | "other";
+          description: string;
+          legal_authority: string | null;
+          patient_authorized: boolean;
+          disclosed_at: string;
+          disclosed_by_email: string;
+          created_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["patient_disclosure_log"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["patient_disclosure_log"]["Row"]
+        >;
+        Relationships: [];
+      };
+      hipaa_risk_assessments: {
+        Row: {
+          id: string;
+          assessment_year: number;
+          methodology: "internal" | "third_party";
+          vendor_name: string | null;
+          scope_summary: string;
+          findings_json: Json;
+          remediation_plan: string | null;
+          executive_summary: string | null;
+          completed_on: string;
+          report_document_object_key: string | null;
+          owner_email: string;
+          approved_by_email: string | null;
+          approved_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["hipaa_risk_assessments"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["hipaa_risk_assessments"]["Row"]
+        >;
+        Relationships: [];
+      };
+      contingency_plan_attestations: {
+        Row: {
+          id: string;
+          plan_version: string;
+          plan_document_object_key: string | null;
+          attested_by_email: string;
+          attested_at: string;
+          documented_rto_hours: number;
+          documented_rpo_hours: number;
+          notes: string | null;
+          created_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["contingency_plan_attestations"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["contingency_plan_attestations"]["Row"]
+        >;
+        Relationships: [];
+      };
+      disaster_preparedness_drills: {
+        Row: {
+          id: string;
+          drill_kind:
+            | "tabletop"
+            | "partial_failover"
+            | "full_failover"
+            | "data_restore"
+            | "pandemic_response"
+            | "cyber_incident_response"
+            | "physical_outage"
+            | "other";
+          scenario: string;
+          executed_on: string;
+          rto_target_hours: number | null;
+          rto_actual_hours: number | null;
+          participants_count: number | null;
+          outcome_json: Json;
+          lead_email: string;
+          created_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["disaster_preparedness_drills"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["disaster_preparedness_drills"]["Row"]
+        >;
+        Relationships: [];
+      };
+      quality_improvement_initiatives: {
+        Row: {
+          id: string;
+          slug: string;
+          title: string;
+          description: string;
+          category:
+            | "patient_safety"
+            | "patient_satisfaction"
+            | "clinical_outcomes"
+            | "billing_accuracy"
+            | "service_delivery"
+            | "workforce_competency"
+            | "infection_control"
+            | "equipment_management"
+            | "other";
+          target_metric: string;
+          baseline_metric: string | null;
+          owner_email: string;
+          started_on: string;
+          concluded_on: string | null;
+          status: "active" | "on_hold" | "concluded" | "cancelled";
+          annual_evaluation_summary: string | null;
+          annual_evaluation_completed_on: string | null;
+          notes: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["quality_improvement_initiatives"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["quality_improvement_initiatives"]["Row"]
+        >;
+        Relationships: [];
+      };
+      quality_improvement_measurements: {
+        Row: {
+          id: string;
+          initiative_id: string;
+          period_start: string;
+          period_end: string;
+          metric_value: string;
+          study_findings: string | null;
+          act_corrective_actions: string | null;
+          recorded_by_email: string;
+          recorded_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["quality_improvement_measurements"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["quality_improvement_measurements"]["Row"]
+        >;
+        Relationships: [];
+      };
+      dme_ownership_disclosures: {
+        Row: {
+          id: string;
+          organization_id: string;
+          person_legal_name: string;
+          person_role:
+            | "owner"
+            | "partner"
+            | "officer"
+            | "director"
+            | "managing_employee"
+            | "agent"
+            | "authorized_official";
+          ownership_pct: number | null;
+          related_provider_disclosed: boolean;
+          related_provider_description: string | null;
+          ssn_last4: string | null;
+          tax_id: string | null;
+          disclosed_on: string;
+          removed_on: string | null;
+          notes: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["dme_ownership_disclosures"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["dme_ownership_disclosures"]["Row"]
+        >;
+        Relationships: [];
+      };
     };
     Views: { [_ in never]: never };
     Functions: { [_ in never]: never };

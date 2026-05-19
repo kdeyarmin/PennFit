@@ -54,6 +54,7 @@ import { registerOfficeAllyInboundPollJob } from "./jobs/office-ally-inbound-pol
 import { registerPaMcoSlaSweepJob } from "./jobs/pa-mco-sla-sweep.js";
 import { registerAccreditationReadinessSweepJob } from "./jobs/accreditation-readiness-sweep.js";
 import { registerPecosSyncJob } from "./jobs/pecos-sync.js";
+import { registerOigLeieSyncJob } from "./jobs/oig-leie-sync.js";
 import { registerCappedRentalAdvanceJob } from "./jobs/capped-rental-advance.js";
 import { registerDwoExpirySweepJob } from "./jobs/dwo-expiry-sweep.js";
 import { registerWebhookDispatcherJob } from "./jobs/webhook-dispatcher.js";
@@ -330,6 +331,12 @@ export async function startWorker(): Promise<void> {
   // Daily CMS PECOS Order/Referring sync. Powers the preflight
   // "ordering provider not PECOS-enrolled" denial blocker.
   await registerPecosSyncJob(boss);
+
+  // Monthly OIG LEIE refresh. Re-loads the public exclusion list
+  // (4th of each month at 04:07 UTC) so the screening tool answers
+  // against a current dataset. Per-subject screening attempts are
+  // recorded separately in oig_leie_screenings.
+  await registerOigLeieSyncJob(boss);
 
   // Daily capped-rental month advance (mig 0134). For each active
   // cycle past the next anniversary, generates a draft monthly

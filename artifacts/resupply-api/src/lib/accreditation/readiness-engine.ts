@@ -47,7 +47,13 @@ interface Finding {
     | "audit_log"
     | "mfa"
     | "identity"
-    | "license_expiry";
+    | "license_expiry"
+    // Phase 10 / migration 0141 compliance categories.
+    | "baa_expiry"
+    | "oig_screening"
+    | "risk_assessment"
+    | "contingency_plan"
+    | "qi_program";
   severity: Severity;
   label: string;
   detail: string;
@@ -98,6 +104,12 @@ export async function runAccreditationReadiness(): Promise<RunResult | null> {
   await checkAuditLogHealth(supabase, findings);
   await checkMfaCoverage(supabase, findings);
   checkOrgExpiries(org, findings);
+  // Phase 10 (migration 0141) compliance machinery checks.
+  await checkBaaExpiry(supabase, findings);
+  await checkOigScreeningCurrency(supabase, findings);
+  await checkRiskAssessmentCurrency(supabase, findings);
+  await checkContingencyPlanAttestation(supabase, findings);
+  await checkQiProgramHealth(supabase, findings);
 
   // Persist findings.
   if (findings.length > 0) {
@@ -478,4 +490,252 @@ function checkOrgExpiries(
       });
     }
   }
+}
+
+// ── Phase 10 compliance machinery checks (migration 0141) ───────────
+
+const BAA_EXPIRY_WARN_DAYS = 60;
+const OIG_SCREENING_OVERDUE_DAYS = 35;
+const RISK_ASSESSMENT_MAX_AGE_DAYS = 400;
+const CONTINGENCY_ATTESTATION_MAX_AGE_DAYS = 400;
+const QI_MEASUREMENT_MAX_AGE_DAYS = 100;
+const QI_MIN_ACTIVE_INITIATIVES = 4;
+
+async function checkBaaExpiry(
+  supabase: SupabaseClient,
+  out: Finding[],
+): Promise<void> {
+  const today = new Date().toISOString().slice(0, 10);
+  const warnCutoff = new Date(
+    Date.now() + BAA_EXPIRY_WARN_DAYS * 24 * 3600 * 1000,
+  )
+    .toISOString()
+    .slice(0, 10);
+  const { data } = await supabase
+    .schema("resupply")
+    .from("business_associate_agreements")
+    .select("id, vendor_slug, status, agreement_expires_on")
+    .neq("status", "terminated");
+  if (!data || data.length === 0) {
+    out.push({
+      checkKey: "baa_inventory_empty",
+      category: "baa_expiry",
+      severity: "error",
+      label: "No business-associate agreements on file",
+      detail:
+        "HIPAA §164.504(e) requires a signed BAA with every BA that touches PHI. The inventory is empty.",
+    });
+    return;
+  }
+  const expired = data.filter(
+    (r) => r.agreement_expires_on && r.agreement_expires_on < today,
+  );
+  const expiringSoon = data.filter(
+    (r) =>
+      r.agreement_expires_on &&
+      r.agreement_expires_on >= today &&
+      r.agreement_expires_on <= warnCutoff,
+  );
+  if (expired.length > 0) {
+    out.push({
+      checkKey: "baa_expired",
+      category: "baa_expiry",
+      severity: "error",
+      label: `${expired.length} BAA(s) expired and not renewed`,
+      detail:
+        "Disclosure of PHI to a BA without a current BAA is a §164.504(e) violation. Renew or terminate the relationship.",
+    });
+  } else if (expiringSoon.length > 0) {
+    out.push({
+      checkKey: "baa_expiring_soon",
+      category: "baa_expiry",
+      severity: "warning",
+      label: `${expiringSoon.length} BAA(s) expiring within ${BAA_EXPIRY_WARN_DAYS} days`,
+      detail: "Renew before expiry to avoid a §164.504(e) gap.",
+    });
+  } else {
+    out.push({
+      checkKey: "baa_inventory_current",
+      category: "baa_expiry",
+      severity: "ok",
+      label: `${data.length} active BAA(s) — all current`,
+      detail: "No expired BAAs and none expiring in the warning window.",
+    });
+  }
+}
+
+async function checkOigScreeningCurrency(
+  supabase: SupabaseClient,
+  out: Finding[],
+): Promise<void> {
+  const cutoff = new Date(
+    Date.now() - OIG_SCREENING_OVERDUE_DAYS * 24 * 3600 * 1000,
+  ).toISOString();
+  const { data: any_recent } = await supabase
+    .schema("resupply")
+    .from("oig_leie_screenings")
+    .select("id, screened_at")
+    .gte("screened_at", cutoff)
+    .limit(1);
+  if (!any_recent || any_recent.length === 0) {
+    out.push({
+      checkKey: "oig_screening_overdue",
+      category: "oig_screening",
+      severity: "error",
+      label: "No OIG LEIE screening in the last 35 days",
+      detail:
+        "OIG SAB 2013 requires monthly screening of every workforce member, contractor, vendor, and ordering provider.",
+    });
+    return;
+  }
+  const { data: hits } = await supabase
+    .schema("resupply")
+    .from("oig_leie_screenings")
+    .select("id, subject_label, screened_at")
+    .eq("result", "hit")
+    .order("screened_at", { ascending: false })
+    .limit(5);
+  if (hits && hits.length > 0) {
+    out.push({
+      checkKey: "oig_screening_hit",
+      category: "oig_screening",
+      severity: "error",
+      label: `${hits.length} unresolved OIG LEIE hit(s)`,
+      detail:
+        "Each hit must be resolved (verified as a false match or the subject terminated) before survey.",
+    });
+    return;
+  }
+  out.push({
+    checkKey: "oig_screening_current",
+    category: "oig_screening",
+    severity: "ok",
+    label: "OIG LEIE screening current",
+    detail: "Most recent screening within the 35-day window; no unresolved hits.",
+  });
+}
+
+async function checkRiskAssessmentCurrency(
+  supabase: SupabaseClient,
+  out: Finding[],
+): Promise<void> {
+  const cutoff = new Date(
+    Date.now() - RISK_ASSESSMENT_MAX_AGE_DAYS * 24 * 3600 * 1000,
+  )
+    .toISOString()
+    .slice(0, 10);
+  const { data } = await supabase
+    .schema("resupply")
+    .from("hipaa_risk_assessments")
+    .select("id, assessment_year, completed_on")
+    .gte("completed_on", cutoff)
+    .order("completed_on", { ascending: false })
+    .limit(1);
+  if (!data || data.length === 0) {
+    out.push({
+      checkKey: "risk_assessment_stale",
+      category: "risk_assessment",
+      severity: "error",
+      label: "No HIPAA risk analysis completed in the last ~13 months",
+      detail:
+        "§164.308(a)(1)(ii)(A) requires periodic risk analysis; annual is the de facto standard.",
+    });
+    return;
+  }
+  out.push({
+    checkKey: "risk_assessment_current",
+    category: "risk_assessment",
+    severity: "ok",
+    label: `Risk assessment ${data[0].assessment_year} completed on ${data[0].completed_on}`,
+    detail: "Within the annual cadence.",
+  });
+}
+
+async function checkContingencyPlanAttestation(
+  supabase: SupabaseClient,
+  out: Finding[],
+): Promise<void> {
+  const cutoff = new Date(
+    Date.now() - CONTINGENCY_ATTESTATION_MAX_AGE_DAYS * 24 * 3600 * 1000,
+  ).toISOString();
+  const { data } = await supabase
+    .schema("resupply")
+    .from("contingency_plan_attestations")
+    .select("id, plan_version, attested_at")
+    .gte("attested_at", cutoff)
+    .order("attested_at", { ascending: false })
+    .limit(1);
+  if (!data || data.length === 0) {
+    out.push({
+      checkKey: "contingency_plan_stale",
+      category: "contingency_plan",
+      severity: "error",
+      label: "No contingency plan attestation in the last ~13 months",
+      detail:
+        "§164.308(a)(7) requires a documented contingency plan with periodic attestation that it is current.",
+    });
+    return;
+  }
+  out.push({
+    checkKey: "contingency_plan_current",
+    category: "contingency_plan",
+    severity: "ok",
+    label: `Contingency plan ${data[0].plan_version} attested on ${data[0].attested_at.slice(0, 10)}`,
+    detail: "Within the annual attestation window.",
+  });
+}
+
+async function checkQiProgramHealth(
+  supabase: SupabaseClient,
+  out: Finding[],
+): Promise<void> {
+  const { data: active } = await supabase
+    .schema("resupply")
+    .from("quality_improvement_initiatives")
+    .select("id, slug")
+    .eq("status", "active");
+  const activeCount = active?.length ?? 0;
+  if (activeCount < QI_MIN_ACTIVE_INITIATIVES) {
+    out.push({
+      checkKey: "qi_initiatives_too_few",
+      category: "qi_program",
+      severity: "error",
+      label: `${activeCount} active QI initiative(s) — ACHC expects at least ${QI_MIN_ACTIVE_INITIATIVES}`,
+      detail:
+        "ACHC QAPI standard QM-1 requires ≥4 indicators tracked quarterly. Add or reactivate initiatives.",
+    });
+    return;
+  }
+  const cutoff = new Date(
+    Date.now() - QI_MEASUREMENT_MAX_AGE_DAYS * 24 * 3600 * 1000,
+  ).toISOString();
+  const initiativeIds = (active ?? []).map((i) => i.id);
+  const { data: recentMeasurements } = await supabase
+    .schema("resupply")
+    .from("quality_improvement_measurements")
+    .select("initiative_id, recorded_at")
+    .in("initiative_id", initiativeIds)
+    .gte("recorded_at", cutoff);
+  const measured = new Set(
+    (recentMeasurements ?? []).map((m) => m.initiative_id),
+  );
+  const stale = initiativeIds.filter((id) => !measured.has(id));
+  if (stale.length > 0) {
+    out.push({
+      checkKey: "qi_measurements_stale",
+      category: "qi_program",
+      severity: "warning",
+      label: `${stale.length} active initiative(s) missing a recent measurement`,
+      detail:
+        "QAPI indicators must be measured quarterly. Record this quarter's measurement before the survey.",
+    });
+    return;
+  }
+  out.push({
+    checkKey: "qi_program_healthy",
+    category: "qi_program",
+    severity: "ok",
+    label: `${activeCount} active QI initiative(s) with quarterly measurements`,
+    detail: "QAPI program meets ACHC QM-1 cadence + coverage expectations.",
+  });
 }
