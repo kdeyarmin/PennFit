@@ -51,6 +51,9 @@ import { registerDeductibleResetPushJob } from "./jobs/deductible-reset-push.js"
 import { registerQuarterlyTherapySummaryJob } from "./jobs/quarterly-therapy-summary.js";
 import { registerLifecycleTouchpointsJob } from "./jobs/lifecycle-touchpoints.js";
 import { registerOfficeAllyInboundPollJob } from "./jobs/office-ally-inbound-poll.js";
+import { registerPaMcoSlaSweepJob } from "./jobs/pa-mco-sla-sweep.js";
+import { registerAccreditationReadinessSweepJob } from "./jobs/accreditation-readiness-sweep.js";
+import { registerPecosSyncJob } from "./jobs/pecos-sync.js";
 
 let bossInstance: PgBoss | null = null;
 let workerReady = false;
@@ -308,6 +311,21 @@ export async function startWorker(): Promise<void> {
   // No-op when no clearinghouse_credentials row exists and no
   // OFFICE_ALLY_* env is configured (dev / preview).
   await registerOfficeAllyInboundPollJob(boss);
+
+  // Every 6 hours — refresh PA Medicaid MCO 7-day SLA status
+  // (mig 0133). Stamps mco_sla_target_date + status and queues
+  // CSR alerts on at-risk + missed transitions.
+  await registerPaMcoSlaSweepJob(boss);
+
+  // Weekly accreditation-survey readiness audit. Runs the rule
+  // engine in lib/accreditation/readiness-engine.ts and persists
+  // structured findings for the CMS annual unannounced surveys
+  // (effective Jan 1, 2026).
+  await registerAccreditationReadinessSweepJob(boss);
+
+  // Daily CMS PECOS Order/Referring sync. Powers the preflight
+  // "ordering provider not PECOS-enrolled" denial blocker.
+  await registerPecosSyncJob(boss);
 
   workerReady = true;
   logger.info(

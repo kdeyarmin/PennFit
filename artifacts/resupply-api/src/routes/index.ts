@@ -92,6 +92,10 @@ import fulfillmentToClaimRouter from "./admin/fulfillment-to-claim.js";
 import aiBillingQueueRouter from "./admin/ai-billing-queue.js";
 import dmeOrganizationRouter from "./admin/dme-organization.js";
 import clearinghouseCredentialsRouter from "./admin/clearinghouse-credentials.js";
+import accreditationReadinessRouter from "./admin/accreditation-readiness.js";
+import accreditationSurveysRouter from "./admin/accreditation-surveys.js";
+import goodFaithEstimatesRouter from "./admin/good-faith-estimates.js";
+import pecosStatusRouter from "./admin/pecos-status.js";
 import auditRouter from "./audit/index.js";
 import conversationsRouter from "./conversations/index.js";
 import dashboardRouter from "./dashboard/index.js";
@@ -262,6 +266,18 @@ router.use(dmeOrganizationRouter);
 // connection" button and /admin/office-ally/poll-now manual trigger,
 // plus /admin/clearinghouse-inbound-files for the polled-file audit.
 router.use(clearinghouseCredentialsRouter);
+// /admin/accreditation/readiness — survey-readiness audit results +
+// /admin/accreditation/surveys CRUD for scheduled + completed visits.
+// CMS-required annual unannounced surveys land Jan 1, 2026.
+router.use(accreditationReadinessRouter);
+router.use(accreditationSurveysRouter);
+// /admin/good-faith-estimates — No Surprises Act cash-pay GFE
+// generator. PDF stream + persistent audit row (3-year HHS
+// retention requirement).
+router.use(goodFaithEstimatesRouter);
+// /admin/providers-pecos — CMS PECOS ordering-provider sync. Daily
+// auto-sync via the worker plus a manual sync-now trigger.
+router.use(pecosStatusRouter);
 // /admin/shop/products/* — operator tooling for the cash-pay catalog
 // itself. Today: PATCH stock_count metadata on a Stripe Product.
 // requireAdmin gate is on the router itself.

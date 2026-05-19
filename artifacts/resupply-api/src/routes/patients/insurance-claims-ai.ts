@@ -46,6 +46,7 @@ import {
   DENIAL_PROMPT_VERSION,
 } from "../../lib/billing/ai-denial-analyzer";
 import { applyAiPatches, type AiPatch } from "../../lib/billing/ai-patch";
+import { scoreAndPersist } from "../../lib/billing/heuristic-denial-scorer";
 import { logger } from "../../lib/logger";
 import {
   requireAdmin,
@@ -98,6 +99,13 @@ router.post(
       res.status(404).json({ error: "not_found" });
       return;
     }
+
+    // Run the cheap heuristic scorer first. The persisted probability
+    // shows up alongside the AI scrub on the preflight + the billing
+    // dashboard; the LLM gets a wider context budget for borderline
+    // claims (probability >= 0.25 covers ~the top quartile in the
+    // first prod batch we saw).
+    void scoreAndPersist(claim.id);
 
     const output = await scrubClaim({ claimId: claim.id });
 

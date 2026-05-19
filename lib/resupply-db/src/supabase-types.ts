@@ -613,7 +613,9 @@ export interface Database {
             | "send_failure"
             | "manual"
             | "prior_auth_expiring"
-            | "prior_auth_expired";
+            | "prior_auth_expired"
+            | "pa_mco_sla_at_risk"
+            | "pa_mco_sla_missed";
           severity: "info" | "warning" | "critical";
           summary: string;
           metric_snapshot: Record<string, unknown> | null;
@@ -936,6 +938,14 @@ export interface Database {
           denial_reason: string | null;
           document_id: string | null;
           notes: string | null;
+          // PA Medicaid 7-day SLA tracking (migration 0133).
+          mco_sla_target_date: string | null;
+          mco_sla_status:
+            | "on_track"
+            | "at_risk"
+            | "missed"
+            | "decided"
+            | null;
           created_at: string;
           updated_at: string;
         };
@@ -980,6 +990,10 @@ export interface Database {
           // Soft FK to resupply.office_ally_submissions (migration 0128).
           // Set when the claim is included in a 837P batch upload.
           office_ally_submission_id: string | null;
+          // Heuristic predicted-denial scoring (migration 0133).
+          predicted_denial_probability: number | null;
+          predicted_denial_factors: Json;
+          predicted_denial_scored_at: string | null;
           // Soft FK to resupply.providers (migration 0129). Rendering
           // provider — the entity that actually rendered the service.
           // For DME this is usually our org, but Medicare expects the
@@ -1150,6 +1164,142 @@ export interface Database {
         >;
         Update: Partial<
           Database["resupply"]["Tables"]["payer_fee_schedules"]["Row"]
+        >;
+        Relationships: [];
+      };
+      providers_pecos_status: {
+        Row: {
+          npi: string;
+          enrollment_status:
+            | "approved"
+            | "pending"
+            | "denied"
+            | "revoked"
+            | "opted_out"
+            | "unknown";
+          enrollment_type: string | null;
+          first_approved_date: string | null;
+          specialty_description: string | null;
+          last_synced_at: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["providers_pecos_status"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["providers_pecos_status"]["Row"]
+        >;
+        Relationships: [];
+      };
+      good_faith_estimates: {
+        Row: {
+          id: string;
+          customer_id: string | null;
+          recipient_name: string;
+          recipient_email: string;
+          items_json: Json;
+          total_cents: number;
+          expected_service_date: string | null;
+          pdf_object_key: string | null;
+          disclaimer_text: string;
+          generated_by_email: string;
+          delivered_at: string | null;
+          delivery_method: "email" | "sms" | "in_person" | "mail" | null;
+          created_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["good_faith_estimates"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["good_faith_estimates"]["Row"]
+        >;
+        Relationships: [];
+      };
+      accreditation_surveys: {
+        Row: {
+          id: string;
+          organization_id: string;
+          accreditation_body: "achc" | "boc" | "tjc" | "cap" | "other";
+          survey_type:
+            | "initial"
+            | "renewal"
+            | "annual_unannounced"
+            | "change_of_ownership"
+            | "complaint_driven"
+            | "projected";
+          scheduled_for: string | null;
+          completed_on: string | null;
+          outcome:
+            | "passed"
+            | "passed_with_findings"
+            | "failed"
+            | "pending"
+            | null;
+          findings_count: number;
+          corrective_action_due_on: string | null;
+          corrective_action_completed_on: string | null;
+          surveyor_name: string | null;
+          report_document_object_key: string | null;
+          notes: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["accreditation_surveys"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["accreditation_surveys"]["Row"]
+        >;
+        Relationships: [];
+      };
+      accreditation_readiness_runs: {
+        Row: {
+          id: string;
+          organization_id: string;
+          started_at: string;
+          completed_at: string | null;
+          overall_status: "ready" | "gaps" | "blocking" | "errored" | null;
+          checks_total: number;
+          checks_passed: number;
+          checks_warning: number;
+          checks_failed: number;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["accreditation_readiness_runs"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["accreditation_readiness_runs"]["Row"]
+        >;
+        Relationships: [];
+      };
+      accreditation_readiness_findings: {
+        Row: {
+          id: string;
+          run_id: string;
+          check_key: string;
+          category:
+            | "training"
+            | "policy_attestation"
+            | "patient_documents"
+            | "grievances"
+            | "equipment_maintenance"
+            | "audit_log"
+            | "mfa"
+            | "identity"
+            | "license_expiry";
+          severity: "ok" | "warning" | "error";
+          label: string;
+          detail: string;
+          target_table: string | null;
+          target_id: string | null;
+          created_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["accreditation_readiness_findings"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["accreditation_readiness_findings"]["Row"]
         >;
         Relationships: [];
       };

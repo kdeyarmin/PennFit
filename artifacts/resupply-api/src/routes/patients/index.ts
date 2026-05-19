@@ -27,6 +27,7 @@ import insuranceClaimsSubmitRouter from "./insurance-claims-submit";
 import insuranceClaimsHcfaRouter from "./insurance-claims-hcfa";
 import insuranceClaimsPreflightRouter from "./insurance-claims-preflight";
 import insuranceClaimsAiRouter from "./insurance-claims-ai";
+import insuranceClaimsPredictDenialRouter from "./insurance-claims-predict-denial";
 import equipmentRouter from "./equipment";
 import timelineRouter from "./timeline";
 import updateRouter from "./update";
@@ -97,6 +98,12 @@ router.use(insuranceClaimsPreflightRouter);
 // whitelisted patch applier; the route never lets a hallucinated
 // patch mutate non-whitelisted fields.
 router.use(insuranceClaimsAiRouter);
+// /patients/:id/insurance-claims/:claimId/predict-denial — heuristic
+// pre-submission denial-probability scorer. Cheap pre-filter that
+// runs in front of the AI scrub so we only spend OpenAI tokens on
+// claims worth the deep look. Surfaces probability + structured
+// contributing factors.
+router.use(insuranceClaimsPredictDenialRouter);
 // /patients/:id/equipment — clinical equipment asset registry
 // (patient ↔ device serial-number link). Required for manufacturer
 // recall workflows. Distinct from Pacware warehouse inventory.
