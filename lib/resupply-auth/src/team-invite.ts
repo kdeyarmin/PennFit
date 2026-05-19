@@ -19,6 +19,8 @@
 // intended semantics.
 
 import { issueToken } from "./token";
+import { hashPassword } from "./password";
+import { validatePassword } from "./password-policy";
 import type { AuthDeps } from "./http/types";
 import { renderPasswordResetEmail } from "./http/email-templates";
 import { stripTrailingSlashes } from "./string-utils";
@@ -35,8 +37,13 @@ export interface InviteResult {
   authUserId: string;
   /** True iff the email was actually delivered to SendGrid. */
   emailSent: boolean;
-  /** The raw reset link, useful for logs / out-of-band delivery. */
+  /** The raw reset link, useful for logs / out-of-band delivery.
+   *  Empty string when `initialPassword` is used (no token issued). */
   inviteLink: string;
+  /** True iff the caller supplied an `initialPassword` and the
+   *  account is immediately sign-in-ready. The email/token branch
+   *  is skipped in that case. */
+  signInReady: boolean;
 }
 
 export interface InviteArgs {
@@ -57,6 +64,19 @@ export interface InviteArgs {
    * trailing slash.
    */
   uiPathPrefix?: string;
+  /**
+   * Optional. When provided, the account is created/updated as
+   * status='active' with email_verified_at stamped to now and a
+   * password credential set to this value. No email is sent and
+   * no email_token is minted — the admin is expected to convey
+   * the password out-of-band (in person, secure chat, etc.) so
+   * the user can sign in immediately. Must be at least 8 chars.
+   *
+   * This is the "skip the broken invite email" escape hatch for
+   * cases where SendGrid delivery is unreliable or the admin
+   * already has a secure channel to the user.
+   */
+  initialPassword?: string;
 }
 
 /**
@@ -78,49 +98,141 @@ export async function inviteTeamMember(
   const now = new Date();
   const baseUrl = (args.publicBaseUrl ?? deps.publicBaseUrl).replace(/\/$/, "");
 
+  const useInitialPassword =
+    typeof args.initialPassword === "string" && args.initialPassword.length > 0;
+  if (useInitialPassword) {
+    // Use the same policy as sign-up / reset / change-password so
+    // operator-set passwords are no weaker than user-set ones.
+    const check = validatePassword(args.initialPassword);
+    if (!check.ok) {
+      throw new Error(`initialPassword: ${check.error.message}`);
+    }
+  }
+
+  // When initialPassword is supplied, the account is provisioned
+  // sign-in-ready: status=active and email_verified_at=now. The
+  // email-token branch is skipped entirely (see step 2 below).
+  const targetStatus = useInitialPassword ? "active" : "invited";
+  const nowIso = now.toISOString();
+
   // 1. Read existing row (if any) to compute the merged update.
   const { data: existing, error: readErr } = await supabase
     .schema("resupply_auth")
     .from("users")
-    .select("id, status, display_name")
+    .select("id, status, display_name, email_verified_at")
     .eq("email_lower", args.emailLower)
     .limit(1)
-    .maybeSingle<{ id: string; status: string; display_name: string | null }>();
+    .maybeSingle<{
+      id: string;
+      status: string;
+      display_name: string | null;
+      email_verified_at: string | null;
+    }>();
   if (readErr) throw readErr;
 
   let authUserId: string;
   if (existing) {
     // Upgrade-style update: role moves to the requested value;
     // display_name keeps the existing value when caller passes null
-    // (COALESCE semantics from the original SQL); status flips back
-    // to 'invited' if previously 'revoked', otherwise unchanged.
-    const status = existing.status === "revoked" ? "invited" : existing.status;
+    // (COALESCE semantics from the original SQL).
+    //
+    // Status:
+    //   * initialPassword path → force to 'active' so sign-in works.
+    //   * email-invite path    → flip 'revoked' back to 'invited',
+    //                            otherwise leave the existing status
+    //                            alone (an already-active user just
+    //                            getting role-bumped stays active).
+    let status: string;
+    if (useInitialPassword) {
+      status = "active";
+    } else if (existing.status === "revoked") {
+      status = "invited";
+    } else {
+      status = existing.status;
+    }
+
+    const update: {
+      role: string;
+      display_name: string | null;
+      status: string;
+      updated_at: string;
+      email_verified_at?: string;
+    } = {
+      role: args.role,
+      display_name: args.displayName ?? existing.display_name,
+      status,
+      updated_at: nowIso,
+    };
+    // Stamp email_verified_at on the initialPassword path so the
+    // sign-in handler's `!user.emailVerifiedAt` gate lets the user
+    // through. Don't overwrite an existing timestamp.
+    if (useInitialPassword && existing.email_verified_at == null) {
+      update.email_verified_at = nowIso;
+    }
+
     const { error: updErr } = await supabase
       .schema("resupply_auth")
       .from("users")
-      .update({
-        role: args.role,
-        display_name: args.displayName ?? existing.display_name,
-        status,
-        updated_at: now.toISOString(),
-      })
+      .update(update)
       .eq("id", existing.id);
     if (updErr) throw updErr;
     authUserId = existing.id;
   } else {
+    const insert: {
+      email_lower: string;
+      display_name: string | null;
+      role: string;
+      status: string;
+      email_verified_at?: string;
+    } = {
+      email_lower: args.emailLower,
+      display_name: args.displayName,
+      role: args.role,
+      status: targetStatus,
+    };
+    if (useInitialPassword) insert.email_verified_at = nowIso;
     const { data: inserted, error: insErr } = await supabase
       .schema("resupply_auth")
       .from("users")
-      .insert({
-        email_lower: args.emailLower,
-        display_name: args.displayName,
-        role: args.role,
-        status: "invited",
-      })
+      .insert(insert)
       .select("id")
       .single<{ id: string }>();
     if (insErr) throw insErr;
     authUserId = inserted.id;
+  }
+
+  // initialPassword path: set the credential and return. No token
+  // is minted and no email is sent — the admin conveys the
+  // password to the user out-of-band.
+  if (useInitialPassword) {
+    const passwordHash = await hashPassword(args.initialPassword!);
+    const { error: credErr } = await supabase
+      .schema("resupply_auth")
+      .from("password_credentials")
+      .upsert(
+        {
+          user_id: authUserId,
+          password_hash: passwordHash,
+          must_change: true,
+          updated_at: nowIso,
+        },
+        { onConflict: "user_id" },
+      );
+    if (credErr) throw credErr;
+
+    void deps.audit({
+      action: "auth.invite_password_set",
+      adminEmail: args.emailLower,
+      adminUserId: authUserId,
+      metadata: { role: args.role, mode: "initial_password" },
+    });
+
+    return {
+      authUserId,
+      emailSent: false,
+      inviteLink: "",
+      signInReady: true,
+    };
   }
 
   // 2. Issue a fresh password_reset token. We don't revoke prior
@@ -173,7 +285,7 @@ export async function inviteTeamMember(
     metadata: { role: args.role, expiresAt: expiresAt.toISOString() },
   });
 
-  return { authUserId, emailSent, inviteLink };
+  return { authUserId, emailSent, inviteLink, signInReady: false };
 }
 
 /**

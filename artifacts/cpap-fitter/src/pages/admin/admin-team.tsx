@@ -366,26 +366,46 @@ function InviteCard() {
   const [role, setRole] = useState<TeamRole>("csr");
   const [displayName, setDisplayName] = useState("");
   const [notes, setNotes] = useState("");
+  const [initialPassword, setInitialPassword] = useState("");
+  const [setPasswordMode, setSetPasswordMode] = useState(false);
   const [warning, setWarning] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
 
   const invite = useMutation({
     mutationFn: (body: Parameters<typeof inviteMember>[0]) =>
       inviteMember(body),
     onSuccess: (result) => {
       qc.invalidateQueries({ queryKey: ["admin-team"] });
+      const invitedEmail = email;
       setEmail("");
       setDisplayName("");
       setNotes("");
       setRole("csr");
-      if (!result.emailSent) {
+      setInitialPassword("");
+      setSetPasswordMode(false);
+      if (result.signInReady) {
+        setSuccess(
+          `${invitedEmail} is ready to sign in now. Share the password you just set with them — we did not email it.`,
+        );
+        setWarning(null);
+      } else if (!result.emailSent) {
+        setSuccess(null);
         setWarning(
           "We couldn't send the invitation email automatically — share the sign-up link with this person directly.",
         );
       } else {
+        setSuccess(`Invitation email sent to ${invitedEmail}.`);
         setWarning(null);
       }
     },
   });
+
+  const initialPasswordTooShort =
+    setPasswordMode && initialPassword.length > 0 && initialPassword.length < 12;
+  const submitDisabled =
+    invite.isPending ||
+    !email ||
+    (setPasswordMode && initialPassword.length < 12);
 
   return (
     <div className="rounded-lg border border-slate-300 bg-white p-4 space-y-3">
@@ -394,7 +414,8 @@ function InviteCard() {
           Invite a team member
         </h2>
         <span className="text-xs text-slate-500">
-          They&apos;ll get a sign-up link by email.
+          They&apos;ll get a sign-up link by email — or set a password yourself
+          so they can sign in right away.
         </span>
       </div>
       <div className="grid sm:grid-cols-2 gap-3">
@@ -453,6 +474,52 @@ function InviteCard() {
           />
         </div>
       </div>
+      <div className="rounded border border-slate-200 bg-slate-50 px-3 py-2 space-y-2">
+        <label className="flex items-start gap-2 text-xs text-slate-700 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={setPasswordMode}
+            onChange={(e) => {
+              setSetPasswordMode(e.target.checked);
+              if (!e.target.checked) setInitialPassword("");
+            }}
+            className="mt-0.5"
+            data-testid="team-invite-set-password-toggle"
+          />
+          <span>
+            <span className="font-semibold">Set their password for them</span>
+            <span className="block text-slate-500">
+              Skip the email link. The account will be ready to sign in
+              immediately — you tell them the password directly.
+            </span>
+          </span>
+        </label>
+        {setPasswordMode && (
+          <div>
+            <label className="text-xs font-semibold text-slate-600 block mb-1">
+              Initial password
+            </label>
+            <input
+              type="password"
+              value={initialPassword}
+              onChange={(e) => setInitialPassword(e.target.value)}
+              className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm font-mono"
+              placeholder="At least 12 characters"
+              autoComplete="new-password"
+              spellCheck={false}
+              data-testid="team-invite-initial-password"
+            />
+            {initialPasswordTooShort && (
+              <div className="text-[11px] text-rose-700 mt-1">
+                Password must be at least 12 characters.
+              </div>
+            )}
+            <div className="text-[11px] text-slate-500 mt-1">
+              They&apos;ll be able to change it after signing in.
+            </div>
+          </div>
+        )}
+      </div>
       {invite.error instanceof Error && (
         <div className="text-xs text-rose-700" role="alert">
           {invite.error.message}
@@ -463,23 +530,40 @@ function InviteCard() {
           {warning}
         </div>
       )}
+      {success && (
+        <div
+          className="text-xs text-emerald-900 bg-emerald-50 border border-emerald-200 rounded px-3 py-2"
+          data-testid="team-invite-success"
+        >
+          {success}
+        </div>
+      )}
       <div className="flex justify-end">
         <button
           type="button"
           onClick={() => {
             setWarning(null);
+            setSuccess(null);
             invite.mutate({
               email,
               role,
               displayName: displayName || null,
               notes: notes || null,
+              initialPassword:
+                setPasswordMode && initialPassword.length >= 8
+                  ? initialPassword
+                  : null,
             });
           }}
-          disabled={invite.isPending || !email}
+          disabled={submitDisabled}
           className="rounded bg-blue-600 px-4 py-1.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60"
           data-testid="team-invite-submit"
         >
-          {invite.isPending ? "Sending…" : "Send invitation"}
+          {invite.isPending
+            ? "Sending…"
+            : setPasswordMode
+              ? "Create account"
+              : "Send invitation"}
         </button>
       </div>
     </div>
