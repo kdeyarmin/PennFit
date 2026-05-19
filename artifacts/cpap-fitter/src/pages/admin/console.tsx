@@ -265,9 +265,16 @@ function AdminConsole() {
 
 // Probes /resupply-api/auth/me; redirects to /admin/sign-in when no
 // session is present.
+//
+// Also enforces the "must change password" gate: when /auth/me returns
+// mustChangePassword:true (set by the admin team-invite "set their
+// password for them" flow), the user is bounced to
+// /admin/change-password before any of the admin pages can mount. The
+// flag clears as soon as they pick a new password.
 export function ConsoleRoute() {
   const { data, isPending } = authHooks.useSession();
   if (isPending) return null;
   if (!data) return <Redirect to="/admin/sign-in" />;
+  if (data.mustChangePassword) return <Redirect to="/admin/change-password" />;
   return <AdminConsole />;
 }

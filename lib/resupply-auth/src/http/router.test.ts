@@ -425,7 +425,110 @@ describe("GET /auth/me", () => {
       role: "admin",
       displayName: null,
       emailVerified: true,
+      mustChangePassword: false,
     });
+  });
+
+  // Regression: /auth/me drives the forced-rotation gate, so a
+  // credential-lookup failure MUST fail closed (5xx) rather than
+  // silently returning mustChangePassword=false — otherwise a
+  // transient DB error during the first sign-in after an admin-set
+  // password would let the user slip past the change-password gate
+  // and into the console with the operator-typed password still live.
+  it("fails closed (500) when the credential lookup throws", async () => {
+    const baseRepo = makeMemoryRepo();
+    let breakLookup = false;
+    const repo = {
+      ...baseRepo,
+      findCredentialByUserId: async (userId: string) => {
+        if (breakLookup) {
+          throw new Error("credentials table unavailable");
+        }
+        return baseRepo.findCredentialByUserId(userId);
+      },
+    };
+    const h = buildHarness({ repo });
+    await seedUserWithPassword(baseRepo, {
+      id: "u_dee",
+      emailLower: "dee@example.com",
+      role: "admin",
+      emailVerified: true,
+      password: "some password!!",
+    });
+    const seed = await seedCsrf(h.app);
+    const signIn = await supertest(h.app)
+      .post("/auth/sign-in")
+      .set("Cookie", `${CSRF_COOKIE}=${seed}`)
+      .set(CSRF_HEADER, seed)
+      .send({ email: "dee@example.com", password: "some password!!" });
+    expect(signIn.status).toBe(200);
+    const cookies = signIn.headers["set-cookie"] as unknown as string[];
+    breakLookup = true;
+    const me = await supertest(h.app)
+      .get("/auth/me")
+      .set("Cookie", cookies.map((c) => c.split(";")[0]).join("; "));
+    expect(me.status).toBe(500);
+    expect(me.body.error).toBe("internal");
+    expect(h.audit.events.map((e) => e.action)).toContain(
+      "auth.me_credential_lookup_failed",
+    );
+  });
+
+  // Regression: when the admin "set their password for them" invite
+  // flow flips password_credentials.must_change=true, /auth/me must
+  // surface mustChangePassword:true so the SPA can force a redirect
+  // to the change-password screen. A successful POST /auth/change-password
+  // then clears the flag and a follow-up /me reports false.
+  it("surfaces mustChangePassword=true after an admin-set password, and clears on change", async () => {
+    const h = buildHarness();
+    await seedUserWithPassword(h.repo, {
+      id: "u_bob",
+      emailLower: "bob@example.com",
+      role: "admin",
+      emailVerified: true,
+      password: "admin-typed temp pw",
+    });
+    // Mirror the team-invite "initial password" path: stamp must_change
+    // on the freshly-seeded credential.
+    await h.repo.upsertCredential({
+      userId: "u_bob",
+      passwordHash: (await h.repo.findCredentialByUserId("u_bob"))!
+        .passwordHash,
+      mustChange: true,
+    });
+
+    const seed = await seedCsrf(h.app);
+    const signIn = await supertest(h.app)
+      .post("/auth/sign-in")
+      .set("Cookie", `${CSRF_COOKIE}=${seed}`)
+      .set(CSRF_HEADER, seed)
+      .send({ email: "bob@example.com", password: "admin-typed temp pw" });
+    expect(signIn.status).toBe(200);
+    const cookies = signIn.headers["set-cookie"] as unknown as string[];
+    const cookieHeader = cookies.map((c) => c.split(";")[0]).join("; ");
+    const csrf = getCookieValue(cookies, CSRF_COOKIE)!;
+
+    const me = await supertest(h.app)
+      .get("/auth/me")
+      .set("Cookie", cookieHeader);
+    expect(me.status).toBe(200);
+    expect(me.body.mustChangePassword).toBe(true);
+
+    const change = await supertest(h.app)
+      .post("/auth/change-password")
+      .set("Cookie", cookieHeader)
+      .set(CSRF_HEADER, csrf)
+      .send({
+        currentPassword: "admin-typed temp pw",
+        newPassword: "user-picked durable password",
+      });
+    expect(change.status).toBe(200);
+
+    const me2 = await supertest(h.app)
+      .get("/auth/me")
+      .set("Cookie", cookieHeader);
+    expect(me2.status).toBe(200);
+    expect(me2.body.mustChangePassword).toBe(false);
   });
 });
 
