@@ -35,3 +35,21 @@ export function parseCompositeCursor(
 export function encodeCompositeCursor(date: Date, id: string): string {
   return `${date.toISOString()}${COMPOSITE_CURSOR_DELIM}${id}`;
 }
+
+// UUID v4 (or any v1-5) hex shape — every cursor.id in production today
+// is a `gen_random_uuid()::text` row id. Callers that paste a cursor
+// half into a PostgREST `.or()` filter expression MUST run the id
+// through this guard first, because PostgREST treats `,`, `(`, `)`,
+// `"`, and a handful of other characters as structural delimiters
+// inside the filter grammar — a hostile cursor like
+// `abc),customer_id.neq.<id>` could otherwise mutate the surrounding
+// expression. The other `.eq()` predicates (customer_id, status)
+// are separate AND filters and would still apply, but a query that
+// surfaces operationally-incorrect results or errors is a worse user
+// experience than rejecting the cursor outright.
+const CURSOR_UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function isUuidCursorId(id: string): boolean {
+  return CURSOR_UUID_RE.test(id);
+}

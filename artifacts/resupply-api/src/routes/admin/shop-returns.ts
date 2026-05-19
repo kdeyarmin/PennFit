@@ -46,6 +46,7 @@ import {
 } from "../../middlewares/requireAdmin";
 import { rateLimit } from "../../middlewares/rate-limit";
 import { withMetrics } from "../../lib/observability";
+import { isUuidCursorId } from "../../lib/cursor";
 import {
   getStripeClient,
   readStripeConfigOrNull,
@@ -111,7 +112,9 @@ router.get("/admin/shop/returns", requireAdmin, async (req, res) => {
 
   // Cursor format: "<ISO timestamp>__<id>" (composite — same pattern as
   // shop-reviews so paginating across rows that share createdAt is
-  // stable).
+  // stable). shop_returns.id is a UUID; reject anything else so a
+  // hostile cursor can't smuggle PostgREST structural characters
+  // (`,`, `(`, `)`) into the `.or()` expression below.
   let cursorTs: Date | null = null;
   let cursorId: string | null = null;
   if (cursor) {
@@ -119,9 +122,12 @@ router.get("/admin/shop/returns", requireAdmin, async (req, res) => {
     if (idx > 0) {
       cursorTs = new Date(cursor.slice(0, idx));
       cursorId = cursor.slice(idx + 2);
-      if (Number.isNaN(cursorTs.getTime())) {
-        cursorTs = null;
-        cursorId = null;
+      if (
+        Number.isNaN(cursorTs.getTime()) ||
+        !isUuidCursorId(cursorId)
+      ) {
+        res.status(400).json({ error: "invalid_cursor" });
+        return;
       }
     }
   }

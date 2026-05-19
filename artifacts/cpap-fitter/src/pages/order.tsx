@@ -50,11 +50,48 @@ const US_STATES = [
   "DC",
 ];
 
+// DOB plausibility window: anyone born between 1900-01-01 and today is
+// in scope. The HTML5 date picker enforces the same bounds via min/max
+// on the <input>, but the Zod refinement is the authoritative gate so
+// a paste-in-future-date or browser without HTML5 validation can't
+// slip through.
+const DOB_MIN = "1900-01-01";
+
+function isPlausibleDob(value: string): boolean {
+  const [y, m, d] = value.split("-").map(Number);
+  if (!y || !m || !d) return false;
+  const parsed = new Date(Date.UTC(y, m - 1, d));
+  if (
+    parsed.getUTCFullYear() !== y ||
+    parsed.getUTCMonth() !== m - 1 ||
+    parsed.getUTCDate() !== d
+  ) {
+    return false;
+  }
+  if (parsed < new Date(DOB_MIN)) return false;
+  // Use UTC end-of-today so a same-day signup in any timezone is OK.
+  const now = new Date();
+  const todayEnd = new Date(
+    Date.UTC(
+      now.getUTCFullYear(),
+      now.getUTCMonth(),
+      now.getUTCDate(),
+      23,
+      59,
+      59,
+    ),
+  );
+  return parsed <= todayEnd;
+}
+
 const formSchema = z.object({
   patient: z.object({
     firstName: z.string().min(1, "Required").max(100),
     lastName: z.string().min(1, "Required").max(100),
-    dateOfBirth: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD"),
+    dateOfBirth: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD")
+      .refine(isPlausibleDob, "Enter a valid date of birth"),
     email: z.string().email("Enter a valid email").max(200),
     phone: z.string().min(7, "Enter a valid phone number").max(30),
   }),
@@ -420,6 +457,8 @@ export function Order() {
               <Input
                 data-testid="input-dob"
                 type="date"
+                min={DOB_MIN}
+                max={new Date().toISOString().slice(0, 10)}
                 {...register("patient.dateOfBirth")}
                 autoComplete="bday"
               />

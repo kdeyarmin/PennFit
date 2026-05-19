@@ -3,6 +3,7 @@ import { describe, it, expect } from "vitest";
 import {
   COMPOSITE_CURSOR_DELIM,
   encodeCompositeCursor,
+  isUuidCursorId,
   parseCompositeCursor,
 } from "./cursor";
 
@@ -69,5 +70,38 @@ describe("composite pagination cursor", () => {
     expect(
       encodeCompositeCursor(ts, longestRealisticId).length,
     ).toBeLessThanOrEqual(120);
+  });
+});
+
+describe("isUuidCursorId", () => {
+  it("accepts lowercase canonical UUIDs (gen_random_uuid()::text shape)", () => {
+    expect(isUuidCursorId("8c4c4c8e-0e8e-4c8e-8c4c-4c8e0e8e4c8e")).toBe(true);
+  });
+
+  it("accepts uppercase UUIDs (case-insensitive hex)", () => {
+    expect(isUuidCursorId("8C4C4C8E-0E8E-4C8E-8C4C-4C8E0E8E4C8E")).toBe(true);
+  });
+
+  it("rejects non-UUID ids that the cursor parser would otherwise accept", () => {
+    // The cursor parser is intentionally permissive about the id half
+    // (anything non-empty up to 80 chars). isUuidCursorId is the
+    // narrower gate for callers that interpolate the id into a
+    // PostgREST `.or()` filter expression.
+    expect(isUuidCursorId("shrev_01HZX6Y3K9")).toBe(false);
+    expect(isUuidCursorId("not-a-uuid")).toBe(false);
+    expect(isUuidCursorId("")).toBe(false);
+  });
+
+  it("rejects PostgREST metachar smuggling attempts", () => {
+    // The whole reason this guard exists — a hostile cursor id like
+    // `8c4c4c8e-0e8e-4c8e-8c4c-4c8e0e8e4c8e),customer_id.neq.foo` must
+    // be rejected before it reaches the `.or()` builder.
+    expect(
+      isUuidCursorId(
+        "8c4c4c8e-0e8e-4c8e-8c4c-4c8e0e8e4c8e),customer_id.neq.foo",
+      ),
+    ).toBe(false);
+    expect(isUuidCursorId('"abc"')).toBe(false);
+    expect(isUuidCursorId("abc,def")).toBe(false);
   });
 });
