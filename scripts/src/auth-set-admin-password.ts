@@ -9,7 +9,8 @@
 // recovering an account whose reset email never arrived).
 //
 // Usage:
-//   DATABASE_URL=postgres://... \
+//   SUPABASE_URL=https://<ref>.supabase.co \
+//   SUPABASE_SERVICE_ROLE_KEY=... \
 //   ADMIN_PASSWORD='…' \
 //   pnpm --filter @workspace/scripts auth:set-admin-password \
 //     --email=alice@example.com --role=admin
@@ -19,24 +20,20 @@
 // process listings. The script never prints the password or its
 // hash to stdout/stderr.
 //
-// Why raw SQL via the pg pool instead of the Supabase PostgREST
-// repository: the `resupply_auth` schema is not always in the
-// PostgREST exposed-schemas allowlist (PGRST125 "Invalid path
-// specified in request URL"), so the auth-bootstrap-admin path can
-// fail in environments where SQL access still works. Going through
-// the shared pg pool sidesteps that and matches how the migration
-// tooling reaches these tables.
-//
 // Behaviour:
 //   * Creates the user if absent. If present, sets status to
 //     'active' so sign-in is immediately allowed.
 //   * Updates role when --force is passed and the role differs.
 //   * Always upserts the password credential — running the script
 //     twice rotates the password to the new value.
-//   * Exit codes: 0 ok, 1 usage/db error, 2 DATABASE_URL not set.
+//   * Exit codes: 0 ok, 1 usage/db error, 2 supabase env not set.
 
-import { getDbPool } from "@workspace/resupply-db";
-import { hashPassword, normalizeEmail } from "@workspace/resupply-auth";
+import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import {
+  hashPassword,
+  normalizeEmail,
+  supabaseAuthRepository,
+} from "@workspace/resupply-auth";
 
 interface ParsedArgs {
   email: string;
@@ -77,8 +74,8 @@ function parseArgs(argv: string[]): ParsedArgs {
 async function main(): Promise<void> {
   const parsed = parseArgs(process.argv);
 
-  if (!process.env.DATABASE_URL) {
-    fail("DATABASE_URL is required.", 2);
+  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    fail("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required.", 2);
   }
   const password = process.env.ADMIN_PASSWORD;
   if (!password || password.length < 8) {
@@ -94,86 +91,62 @@ async function main(): Promise<void> {
     fail(`Not a valid email address: ${parsed.email}`);
   }
 
-  const pool = getDbPool();
-  const client = await pool.connect();
+  const supabase = getSupabaseServiceRoleClient();
+  const repo = supabaseAuthRepository(supabase);
+
+  const existing = await repo.findUserByEmail(emailLower);
   let userId: string;
   let finalRole = parsed.role;
-  let finalStatus = "active";
 
-  try {
-    await client.query("BEGIN");
+  if (existing) {
+    userId = existing.id;
+    finalRole = existing.role as "admin" | "agent";
 
-    const existing = await client.query<{
-      id: string;
-      role: string;
-      status: string;
-    }>(
-      `SELECT id, role, status FROM resupply_auth.users
-        WHERE email_lower = $1
-        LIMIT 1`,
-      [emailLower],
-    );
-
-    if (existing.rows.length > 0) {
-      const row = existing.rows[0]!;
-      userId = row.id;
-      finalRole = row.role as "admin" | "agent";
-
-      if (row.role !== parsed.role && !parsed.force) {
-        await client.query("ROLLBACK");
-        fail(
-          `User ${emailLower} already exists with role=${row.role}. ` +
-            `Re-run with --force to change the role to '${parsed.role}'.`,
-        );
-      }
-
-      const newRole = parsed.force ? parsed.role : row.role;
-      await client.query(
-        `UPDATE resupply_auth.users
-            SET role = $2,
-                status = 'active',
-                updated_at = now()
-          WHERE id = $1`,
-        [userId, newRole],
+    if (existing.role !== parsed.role && !parsed.force) {
+      fail(
+        `User ${emailLower} already exists with role=${existing.role}. ` +
+          `Re-run with --force to change the role to '${parsed.role}'.`,
       );
-      finalRole = newRole as "admin" | "agent";
-    } else {
-      const inserted = await client.query<{ id: string }>(
-        `INSERT INTO resupply_auth.users (email_lower, role, status)
-         VALUES ($1, $2, 'active')
-         RETURNING id`,
-        [emailLower, parsed.role],
-      );
-      userId = inserted.rows[0]!.id;
     }
 
-    const passwordHash = await hashPassword(password);
-    await client.query(
-      `INSERT INTO resupply_auth.password_credentials
-         (user_id, password_hash, algo, must_change, updated_at)
-       VALUES ($1, $2, 'argon2id-v1', false, now())
-       ON CONFLICT (user_id) DO UPDATE
-         SET password_hash = EXCLUDED.password_hash,
-             algo = EXCLUDED.algo,
-             must_change = false,
-             updated_at = now()`,
-      [userId, passwordHash],
-    );
-
-    await client.query("COMMIT");
-  } catch (err) {
-    await client.query("ROLLBACK").catch(() => {});
-    throw err;
-  } finally {
-    client.release();
+    const newRole = parsed.force ? parsed.role : existing.role;
+    const { error: updateErr } = await supabase
+      .schema("resupply_auth")
+      .from("users")
+      .update({
+        role: newRole,
+        status: "active",
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", userId);
+    if (updateErr) throw updateErr;
+    finalRole = newRole as "admin" | "agent";
+  } else {
+    const { data: insertedRow, error: insertErr } = await supabase
+      .schema("resupply_auth")
+      .from("users")
+      .insert({
+        email_lower: emailLower,
+        role: parsed.role,
+        status: "active",
+      })
+      .select("id")
+      .single<{ id: string }>();
+    if (insertErr) throw insertErr;
+    userId = insertedRow.id;
   }
+
+  const passwordHash = await hashPassword(password);
+  await repo.upsertCredential({
+    userId,
+    passwordHash,
+    mustChange: false,
+  });
 
   process.stdout.write(
     `[auth:set-admin-password] Done. user=${userId} email=${emailLower} ` +
-      `role=${finalRole} status=${finalStatus}\n`,
+      `role=${finalRole} status=active\n`,
   );
-
-  await pool.end();
 }
 
 main().catch((err: unknown) => {
