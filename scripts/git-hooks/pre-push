@@ -1,0 +1,107 @@
+#!/usr/bin/env bash
+# managed by scripts/install-hooks.sh
+#
+# Pre-push hook: refuses to push local 'main' to subrepl-3ppc2e03/main
+# when the push would be non-fast-forward, i.e. when local main does
+# not already contain every commit on the remote. This is the
+# server-side rejection that GitHub already gives you, surfaced
+# locally BEFORE the push so you don't end up in a half-merged state.
+#
+# Behavior:
+#   - Only fires for pushes to the 'subrepl-3ppc2e03' remote
+#     targeting refs/heads/main. Other remotes / branches are
+#     ignored.
+#   - Performs a `git fetch subrepl-3ppc2e03 main` first so the
+#     check uses the actual current remote tip, not a stale cache.
+#   - Blocks the push with actionable guidance when remote has
+#     commits local doesn't.
+#   - Bypass with `git push --no-verify` or `SKIP_HOOKS=1 git push ...`
+#     (do NOT use for normal work — that's how drift accumulates).
+#
+# Why this exists:
+#   Without it, drift between local main and GitHub main only
+#   surfaces at push time as a rejection, AFTER you've already made
+#   commits on top of a stale base. The cleanup is then a
+#   merge-conflict marathon. Catching it before push lets you
+#   rebase/merge cleanly with one fetch.
+
+set -euo pipefail
+
+if [[ "${SKIP_HOOKS:-0}" == "1" ]]; then
+  exit 0
+fi
+
+remote_name="${1:-}"
+# Only police the canonical remote.
+if [[ "$remote_name" != "subrepl-3ppc2e03" ]]; then
+  exit 0
+fi
+
+# stdin format: <local ref> <local sha> <remote ref> <remote sha>\n...
+# We only care about pushes to refs/heads/main.
+zero="0000000000000000000000000000000000000000"
+blocked=0
+while read -r local_ref local_sha remote_ref remote_sha; do
+  [[ -z "${remote_ref:-}" ]] && continue
+  # Only police pushes of local 'main' -> remote 'main'. A push of a
+  # feature branch to remote main (e.g. `git push subrepl-3ppc2e03
+  # feature:main`) is an explicit admin operation and falls outside
+  # the "don't let local main drift" objective of this hook.
+  if [[ "$local_ref" != "refs/heads/main" || "$remote_ref" != "refs/heads/main" ]]; then
+    continue
+  fi
+  # Deletion push — let it through (admin action, not normal flow).
+  if [[ "$local_sha" == "$zero" ]]; then
+    continue
+  fi
+
+  # Refresh the remote-tracking ref so we compare against truth, not
+  # a stale cache. Quiet — failures here shouldn't break the push
+  # (network may be down, hook should fail-open in that case).
+  if ! git fetch --quiet subrepl-3ppc2e03 main 2>/dev/null; then
+    printf '[pre-push] WARNING: could not fetch subrepl-3ppc2e03/main (network?). Skipping drift check.\n' >&2
+    continue
+  fi
+
+  remote_tip="$(git rev-parse --verify --quiet refs/remotes/subrepl-3ppc2e03/main || echo '')"
+  if [[ -z "$remote_tip" ]]; then
+    # Fresh remote with no main yet — let the push create it.
+    continue
+  fi
+
+  # If local already contains remote_tip, this push is fast-forward
+  # (or a no-op): allow it.
+  if git merge-base --is-ancestor "$remote_tip" "$local_sha"; then
+    continue
+  fi
+
+  # Non-fast-forward: remote has commits we don't have. Block.
+  behind="$(git rev-list --count "${local_sha}..${remote_tip}" 2>/dev/null || echo '?')"
+  cat >&2 <<EOF
+[pre-push] BLOCKED: refusing to push local 'main' to subrepl-3ppc2e03/main.
+           Remote has $behind commit(s) that your local main does not
+           contain, so this push would either be rejected by GitHub
+           as non-fast-forward, OR force-overwrite real work on the
+           canonical branch.
+
+           Align your local main first:
+
+               git fetch subrepl-3ppc2e03
+               git merge --no-edit subrepl-3ppc2e03/main
+               # resolve any conflicts, then:
+               git push subrepl-3ppc2e03 main
+
+           Better long-term: do new work on a feature branch off
+           subrepl-3ppc2e03/main and open a PR, instead of committing
+           directly to local main (see replit.md "Git source of truth").
+
+           Emergency bypass (do NOT use for normal work):
+
+               SKIP_HOOKS=1 git push ...
+                   (or)
+               git push --no-verify ...
+EOF
+  blocked=1
+done
+
+exit $blocked

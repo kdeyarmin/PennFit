@@ -56,22 +56,39 @@ REPO_ROOT="$(git rev-parse --show-toplevel)"
 #   - the current branch is not `main` (feature-branch commits
 #     shouldn't get nagged on every save)
 DRIFT_REMOTE="subrepl-3ppc2e03/main"
-DRIFT_THRESHOLD=10
 if git rev-parse --verify --quiet "$DRIFT_REMOTE" >/dev/null; then
   current_branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo '')"
   if [[ "$current_branch" == "main" ]]; then
     behind="$(git rev-list --count "main..${DRIFT_REMOTE}" 2>/dev/null || echo 0)"
-    if [[ "$behind" -gt "$DRIFT_THRESHOLD" ]]; then
+    if [[ "$behind" -gt 0 ]]; then
       cat >&2 <<EOF
-[pre-commit] WARNING: local main is $behind commits behind ${DRIFT_REMOTE}.
-            ${DRIFT_REMOTE} is the canonical source of truth (see
-            replit.md "Git source of truth"). Consider aligning before
-            committing:
+[pre-commit] BLOCKED: you are committing to local 'main' while it is
+            $behind commits behind ${DRIFT_REMOTE} (the canonical
+            source of truth — see replit.md "Git source of truth").
+            Committing here creates drift that turns every push into
+            a merge-conflict cleanup.
+
+            Do this instead — put the work on a feature branch:
+
+                git stash                     # if you have uncommitted edits
                 git fetch subrepl-3ppc2e03
-                git status         # must be clean for the next step
-                git reset --hard ${DRIFT_REMOTE}
-            (Continuing — this warning does not block the commit.)
+                git checkout -b <branch-name> ${DRIFT_REMOTE}
+                git stash pop                 # if you stashed
+                # now commit normally; push the branch and open a PR
+
+            If you truly need to commit on local main (emergency
+            hotfix only), align first:
+
+                git fetch subrepl-3ppc2e03
+                git merge --ff-only ${DRIFT_REMOTE}
+
+            Last resort bypass (do NOT use for normal work):
+
+                SKIP_HOOKS=1 git commit ...
+                    (or)
+                git commit --no-verify ...
 EOF
+      exit 1
     fi
   fi
 fi
