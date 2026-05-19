@@ -52,6 +52,11 @@ import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 import { sendDeliveryFollowupEmail } from "../../lib/order-emails/send-delivery-followup-email";
 import { sendCaregiverNotificationEmail } from "../../lib/order-emails/send-caregiver-notification-email";
 import { sendPushToCustomer } from "../../lib/web-push";
+import { resolveSmsRecipientForShopOrder } from "../../lib/shop-orders-sms-resolver";
+import {
+  createTwilioSmsClient,
+  TwilioConfigError,
+} from "@workspace/resupply-telecom";
 import { logger } from "../../lib/logger";
 
 const FOLLOWUP_JOB = "shop-order.delivery-followup";
@@ -286,7 +291,37 @@ export async function runDeliveryFollowupSweep(): Promise<FollowupSweepStats> {
       }
     }
 
-    // 4. Caregiver-addressed copy (separate email; not a BCC). Fires
+    // 4. SMS leg — same gates as the shipped event. Fires when the
+    //    customer's email matches a DME-registered patient with
+    //    phone_e164 + transactional SMS opt-in.
+    try {
+      const smsRecipient = await resolveSmsRecipientForShopOrder({
+        customerId: claimed.customer_id,
+        customerEmailFromOrder: claimed.customer_email ?? null,
+      });
+      if (smsRecipient) {
+        const smsClient = createTwilioSmsClient();
+        const greeting = smsRecipient.patientFirstName
+          ? `Hi ${smsRecipient.patientFirstName}`
+          : "PennPaps";
+        await smsClient.sendSms({
+          to: smsRecipient.phoneE164,
+          body: `${greeting}: how is your new CPAP setup going? Reply YES if it works, or NO and we'll start a return. Reply STOP to opt out.`,
+        });
+      }
+    } catch (smsErr) {
+      if (!(smsErr instanceof TwilioConfigError)) {
+        logger.warn(
+          {
+            orderId: claimed.id,
+            err: smsErr instanceof Error ? smsErr.message : String(smsErr),
+          },
+          "shop-order.delivery-followup: sms send failed (non-fatal)",
+        );
+      }
+    }
+
+    // 5. Caregiver-addressed copy (separate email; not a BCC). Fires
     //    only when the patient has an active designated contact on
     //    file. Failures here do NOT roll back the patient's delivery
     //    stamp — the primary delivery is the canonical record.

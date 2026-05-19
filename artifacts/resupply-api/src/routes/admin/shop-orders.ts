@@ -60,6 +60,11 @@ import {
 } from "../../lib/stripe/config";
 import { sendShippingNotificationEmail } from "../../lib/order-emails/send-shipping-notification-email";
 import { sendPushToCustomer } from "../../lib/web-push";
+import { resolveSmsRecipientForShopOrder } from "../../lib/shop-orders-sms-resolver";
+import {
+  createTwilioSmsClient,
+  TwilioConfigError,
+} from "@workspace/resupply-telecom";
 
 const router: IRouter = Router();
 
@@ -421,6 +426,42 @@ async function sendShippingNotificationIfNew(args: {
             err: err instanceof Error ? err.message : String(err),
           },
           "shipping notification push send threw (non-fatal)",
+        );
+      }
+    }
+
+    // SMS leg — fires when the customer's email matches a DME-
+    // registered patients row whose phone_e164 is on file AND the
+    // shop_customer comm-prefs opted IN to transactional SMS. Runs
+    // after the email + push so an SMS misconfig can never roll
+    // back the canonical email delivery.
+    try {
+      const smsRecipient = await resolveSmsRecipientForShopOrder({
+        customerId: claimedRow.customer_id,
+        customerEmailFromOrder: claimedRow.customer_email ?? null,
+      });
+      if (smsRecipient) {
+        const smsClient = createTwilioSmsClient();
+        const greeting = smsRecipient.patientFirstName
+          ? `Hi ${smsRecipient.patientFirstName}`
+          : "PennPaps";
+        await smsClient.sendSms({
+          to: smsRecipient.phoneE164,
+          body: `${greeting}: your CPAP supplies just shipped (${claimedRow.tracking_carrier} ${claimedRow.tracking_number}). Reply STOP to opt out.`,
+        });
+        log?.info?.(
+          { orderId: claimedRow.id, channel: "sms" },
+          "shipping notification sms send complete",
+        );
+      }
+    } catch (smsErr) {
+      if (!(smsErr instanceof TwilioConfigError)) {
+        log?.warn?.(
+          {
+            orderId: claimedRow.id,
+            err: smsErr instanceof Error ? smsErr.message : String(smsErr),
+          },
+          "shipping notification sms send threw (non-fatal)",
         );
       }
     }
