@@ -21,13 +21,15 @@ import {
 import { getIntegrationAdapters } from "../../lib/integrations/registry";
 import { persistTherapyNights } from "../../lib/integrations/persist-nights";
 import { logger } from "../../lib/logger";
-import { requireAdmin } from "../../middlewares/requireAdmin";
+import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
 
 router.get(
   "/admin/integrations/errors",
-  requireAdmin,
+  // Sync-failure triage queue. Same admin-tools tier as the
+  // integrations status dashboard.
+  requirePermission("admin.tools.manage"),
   async (_req, res) => {
     const cutoff = new Date(Date.now() - 30 * 86400_000).toISOString();
     const supabase = getSupabaseServiceRoleClient();
@@ -63,7 +65,8 @@ const retryBody = z
 
 router.post(
   "/admin/integrations/errors/retry",
-  requireAdmin,
+  // Manual retry trigger — admin-tools tier.
+  requirePermission("admin.tools.manage"),
   async (req, res) => {
     const parsed = retryBody.safeParse(req.body);
     if (!parsed.success) {

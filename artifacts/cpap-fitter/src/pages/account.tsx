@@ -92,6 +92,9 @@ import { AccountMessagesSection } from "@/components/account-messages-section";
 import { CustomerChatSection } from "@/components/customer-chat-section";
 import { useUnsavedChangesWarning } from "@/hooks/use-unsaved-changes-warning";
 import { CommPrefsSection } from "@/components/comm-prefs-section";
+import { CaregiverSection } from "@/components/caregiver-section";
+import { PushPromptBanner } from "@/components/push-prompt-banner";
+import { WalletPassSection } from "@/components/wallet-pass-section";
 import {
   EquipmentRegistrySection,
   EsignFormsSection,
@@ -309,6 +312,15 @@ function AccountInner() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
+          {/*
+            One-time, dismissible nudge to enable web push so shipment
+            + delivery notifications reach the lock screen. The
+            CommPrefsSection toggle further down covers the same
+            ground, but it's buried two scrolls deep and barely
+            discovered. This banner self-hides on dismiss (per-device,
+            localStorage) and on subscription success.
+          */}
+          <PushPromptBanner />
           <ProfileSection
             profile={data.profile!}
             onSaved={() => void reload()}
@@ -354,6 +366,8 @@ function AccountInner() {
           <RequestAppointmentSection />
           <EsignFormsSection />
           <ReferralProgramSection />
+          <CaregiverSection />
+          <WalletPassSection />
           <CommPrefsSection />
           <DataExportSection />
         </div>
@@ -951,6 +965,13 @@ function ProfileSection({
   );
 }
 
+/**
+ * Renders a labeled form field wrapper.
+ *
+ * @param label - Visible label text shown above the field content
+ * @param children - Field input or other inline content to render beneath the label
+ * @returns A JSX element containing the label and its associated children
+ */
 function Field({
   label,
   children,
@@ -968,7 +989,39 @@ function Field({
   );
 }
 
+/**
+ * Render the "Saved card" section on the Account page and provide a control to open Stripe's billing portal.
+ *
+ * Displays card brand, masked number, and expiry when `card` is present; otherwise shows a prompt to browse the shop.
+ *
+ * @param card - The saved payment card information, or `null` when no card is on file
+ * @returns A React element representing the saved card section with update and fallback UI
+ */
 function SavedCardSection({ card }: { card: SavedCard | null }) {
+  const [opening, setOpening] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function openPortal() {
+    setOpening(true);
+    setError(null);
+    try {
+      const { openBillingPortal } = await import("@/lib/account-api");
+      const { url } = await openBillingPortal("/account");
+      // Hard navigate so we leave the SPA. Stripe will bounce us back
+      // to /account when the customer closes the portal.
+      window.location.href = url;
+    } catch (err) {
+      if (err instanceof AccountApiError && err.status === 503) {
+        setError("Billing isn't available in this environment yet.");
+      } else {
+        setError(
+          "We couldn't open the billing portal. Please try again in a moment.",
+        );
+      }
+      setOpening(false);
+    }
+  }
+
   return (
     <section
       className="glass-card rounded-2xl p-6"
@@ -997,10 +1050,36 @@ function SavedCardSection({ card }: { card: SavedCard | null }) {
               </p>
             )}
           </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={openPortal}
+            disabled={opening}
+            data-testid="account-card-update"
+            className="w-full mb-2"
+          >
+            {opening ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Opening…
+              </>
+            ) : (
+              <>Update card or billing details</>
+            )}
+          </Button>
           <p className="text-xs text-muted-foreground">
-            We never see your card number. Stripe holds the actual data — we
-            only see the last 4 digits for display.
+            We never see your card number. The update opens Stripe&apos;s secure
+            billing portal in this tab and brings you back here when you&apos;re
+            done.
           </p>
+          {error && (
+            <p
+              className="text-xs text-destructive mt-2"
+              data-testid="account-card-error"
+            >
+              {error}
+            </p>
+          )}
         </div>
       ) : (
         <div>

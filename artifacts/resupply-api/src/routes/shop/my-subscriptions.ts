@@ -107,13 +107,13 @@ async function findOwnedSubscription(
     stripeSubscriptionId: data.stripe_subscription_id,
     status: data.status,
     cancelAtPeriodEnd: data.cancel_at_period_end,
-    items: ((data.items ?? []) as unknown as SubscriptionItemSnapshot[]) ?? [],
+    items: (data.items ?? []) as unknown as SubscriptionItemSnapshot[],
   };
 }
 
 // Read-only list. No rate limit required — same shape and cost as
 // /shop/me/orders, which is also unrate-limited at the route level.
-router.get("/me/subscriptions", requireSignedIn, async (req, res) => {
+router.get("/shop/me/subscriptions", requireSignedIn, async (req, res) => {
   const customerId = req.userCustomerId;
   if (!customerId) {
     // requireSignedIn should have already 401'd, but a belt-and-
@@ -154,7 +154,7 @@ router.get("/me/subscriptions", requireSignedIn, async (req, res) => {
 // Stripe API (5/min/IP is plenty — patients cancel at most once per
 // subscription).
 router.post(
-  "/me/subscriptions/:id/cancel",
+  "/shop/me/subscriptions/:id/cancel",
   requireSignedIn,
   rateLimit({ windowMs: 60_000, max: 5, name: "shop:cancel-sub", keyFn: (req) => req.userCustomerId ?? "unknown" }),
   async (req, res) => {
@@ -245,7 +245,7 @@ router.post(
 // becomes an issue we can back this with the existing products
 // projection.
 router.get(
-  "/me/subscriptions/:id/cadence-options",
+  "/shop/me/subscriptions/:id/cadence-options",
   requireSignedIn,
   async (req, res) => {
     const customerId = req.userCustomerId;
@@ -423,7 +423,7 @@ async function handlePauseOrResume(
 }
 
 router.post(
-  "/me/subscriptions/:id/pause",
+  "/shop/me/subscriptions/:id/pause",
   requireSignedIn,
   rateLimit({ windowMs: 60_000, max: 5, name: "shop:pause-sub", keyFn: (req) => req.userCustomerId ?? "unknown" }),
   (req, res) => {
@@ -432,7 +432,7 @@ router.post(
 );
 
 router.post(
-  "/me/subscriptions/:id/resume",
+  "/shop/me/subscriptions/:id/resume",
   requireSignedIn,
   rateLimit({ windowMs: 60_000, max: 5, name: "shop:resume-sub", keyFn: (req) => req.userCustomerId ?? "unknown" }),
   (req, res) => {
@@ -451,7 +451,7 @@ const cadenceBody = z.object({
 });
 
 router.post(
-  "/me/subscriptions/:id/cadence",
+  "/shop/me/subscriptions/:id/cadence",
   requireSignedIn,
   rateLimit({ windowMs: 60_000, max: 5, name: "shop:cadence-sub", keyFn: (req) => req.userCustomerId ?? "unknown" }),
   async (req, res) => {

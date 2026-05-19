@@ -20,7 +20,7 @@ import { Router, type IRouter } from "express";
 
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
-import { requireAdmin } from "../../middlewares/requireAdmin";
+import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
 
@@ -29,7 +29,10 @@ const router: IRouter = Router();
 const PER_SIDE_CAP = 200;
 const TOTAL_CAP = 200;
 
-router.get("/admin/followups", requireAdmin, async (req, res) => {
+// Cross-flow followup queue — `conversations.manage` matches the
+// customer-followups + customer-notes access matrix that feeds this
+// list.
+router.get("/admin/followups", requirePermission("conversations.manage"), async (req, res) => {
   const supabase = getSupabaseServiceRoleClient();
 
   // The original Drizzle implementation joined each followup table

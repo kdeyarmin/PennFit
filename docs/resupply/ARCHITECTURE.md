@@ -30,11 +30,13 @@ artifacts/
 lib/
   resupply-contracts/   Zod schemas + DTOs (shared over the wire)
   resupply-domain/      Pure business logic — no I/O
-  resupply-db/          Drizzle schema + connection. Owns BOTH the
-                        resupply schema (resupply.*) and the storefront
-                        schema (public.orders, public.usage_events,
-                        public.admin_audit_log, public.reminder_subscriptions)
-                        under src/schema/storefront/.
+  resupply-db/          Supabase service-role client + SQL migration
+                        history. Owns BOTH the resupply schema
+                        (resupply.*) and the storefront schema
+                        (public.orders, public.usage_events,
+                        public.admin_audit_log, public.reminder_subscriptions).
+                        Row shapes come from the generated PostgREST
+                        Database types in src/supabase-types.ts.
   resupply-audit/       Append-only audit logger + helpers
   resupply-telecom/     Twilio (SMS, Voice) + SendGrid (Email) adapters
   resupply-ai/          Anthropic Claude adapter for the conversation agent
@@ -49,18 +51,19 @@ docs/resupply/
 ```
 
 The PennPaps storefront/fitter and the resupply automation system now
-share one Express process (resupply-api) and one Drizzle lib
-(resupply-db) on top of the same physical Postgres. The two table
-sets still live in distinct schemas — fitter/storefront in `public.*`,
-resupply in `resupply.*` — and the architecture-check script enforces
-that resupply-\* libs do not pull in the storefront UI client.
+share one Express process (resupply-api) and one DB lib
+(resupply-db, Supabase service-role client) on top of the same
+physical Postgres. The two table sets still live in distinct schemas
+— fitter/storefront in `public.*`, resupply in `resupply.*` — and
+the architecture-check script enforces that resupply-\* libs do not
+pull in the storefront UI client.
 
 ## Data flow (Phase 0 baseline)
 
 Phase 0 is scaffolding only. The data flow below is what the system is
 **designed for**; only the dotted edges (HTTP between dashboard, api, and
-worker; pg-boss enqueue/dequeue; DB reads/writes through Drizzle) actually
-move bytes today.
+worker; pg-boss enqueue/dequeue; DB reads/writes through the Supabase
+service-role client) actually move bytes today.
 
 ```
                      ┌────────────────────────────┐
@@ -73,7 +76,7 @@ move bytes today.
                      │  resupply-api (Express)    │
                      │  /resupply-api/*           │
                      └──┬─────────────────┬───────┘
-                        │ Drizzle         │ pg-boss enqueue
+                        │ Supabase        │ pg-boss enqueue
                         ▼                 ▼
                  ┌──────────────┐  ┌─────────────────┐
                  │ Postgres     │  │ resupply-worker │
@@ -102,7 +105,7 @@ which runs as part of the `resupply-check` validation step.
 | ------------------------------ | ------------------------------------------------------------------------------- |
 | `resupply-contracts`           | `zod` only                                                                      |
 | `resupply-domain`              | `resupply-contracts`, `zod`                                                     |
-| `resupply-db`                  | `resupply-contracts`, `resupply-domain`, `@supabase/supabase-js`, `drizzle-orm`, `pg`, `zod` (drizzle-orm + pg are retained ONLY for the schema source-of-truth + `migrate.mjs`; runtime callers use `getSupabaseServiceRoleClient()`) |
+| `resupply-db`                  | `resupply-contracts`, `resupply-domain`, `@supabase/supabase-js`, `pg`, `zod` (`pg` is retained only for `scripts/migrate.mjs` and a small number of legacy worker callers; new runtime code uses `getSupabaseServiceRoleClient()`. `drizzle-orm` is forbidden — its package was removed when the Drizzle tooling was retired.) |
 | `resupply-audit`               | `resupply-contracts`, `resupply-db`, `zod`                                      |
 | `resupply-telecom`             | `resupply-contracts`, `resupply-domain`, `zod` (vendor SDKs added in Phase 3)   |
 | `resupply-ai`                  | `resupply-contracts`, `resupply-domain`, `zod` (Anthropic SDK added in Phase 6) |

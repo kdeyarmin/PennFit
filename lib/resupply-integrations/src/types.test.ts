@@ -6,13 +6,33 @@ import {
 } from "./index";
 
 describe("INTEGRATION_SOURCES", () => {
-  it("includes the four target vendors", () => {
+  it("includes the expected target vendors", () => {
+    // Exact list — keep this in sync as new vendor adapters land.
+    // Order matches the unified-package declaration so the assertion
+    // catches accidental reorderings.
     expect(INTEGRATION_SOURCES).toEqual([
       "resmed_airview",
       "philips_care",
       "health_connect",
       "react_health",
     ]);
+  });
+
+  it("has exactly four entries", () => {
+    // Regression guard: adding a vendor without updating this count is a red flag.
+    expect(INTEGRATION_SOURCES).toHaveLength(4);
+  });
+
+  it("includes react_health", () => {
+    // Targeted membership check for the vendor added in this PR.
+    expect(INTEGRATION_SOURCES).toContain("react_health");
+  });
+
+  it("lists react_health as the last entry", () => {
+    // Order regression: the unified-package relies on stable ordering.
+    expect(INTEGRATION_SOURCES[INTEGRATION_SOURCES.length - 1]).toBe(
+      "react_health"
+    );
   });
 });
 
@@ -59,5 +79,22 @@ describe("integrationSnapshotSchema", () => {
       supplies: [],
     });
     expect(result.success).toBe(false);
+  });
+
+  it("accepts react_health as a valid source", () => {
+    // Validates the new vendor added in this PR is accepted end-to-end
+    // through the Zod enum derived from INTEGRATION_SOURCES.
+    const result = integrationSnapshotSchema.safeParse({
+      source: "react_health",
+      partnerPatientId: "rh-patient-001",
+      settings: null,
+      compliance: null,
+      recentNights: [],
+      supplies: [],
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.source).toBe("react_health");
+    }
   });
 });

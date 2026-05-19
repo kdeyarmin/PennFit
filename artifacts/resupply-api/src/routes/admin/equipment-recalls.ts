@@ -33,7 +33,7 @@ import {
   recallMatchesAsset,
   type RecallSerialMatch,
 } from "../../lib/equipment/recall-match";
-import { requireAdmin } from "../../middlewares/requireAdmin";
+import { requireAdmin, requirePermission } from "../../middlewares/requireAdmin";
 
 type EquipmentRecallUpdate =
   Database["resupply"]["Tables"]["equipment_recalls"]["Update"];
@@ -135,7 +135,7 @@ router.get("/admin/equipment-recalls", requireAdmin, async (_req, res) => {
   });
 });
 
-router.post("/admin/equipment-recalls", requireAdmin, async (req, res) => {
+router.post("/admin/equipment-recalls", requirePermission("returns.manage"), async (req, res) => {
   const parsed = createBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({
@@ -202,7 +202,7 @@ router.post("/admin/equipment-recalls", requireAdmin, async (req, res) => {
 
 router.patch(
   "/admin/equipment-recalls/:id",
-  requireAdmin,
+  requirePermission("returns.manage"),
   async (req, res) => {
     const params = idParam.safeParse(req.params);
     if (!params.success) {
@@ -383,7 +383,7 @@ router.get(
 // ────────────────────────────────────────────────────────────────
 router.post(
   "/admin/equipment-recalls/:id/match-assets",
-  requireAdmin,
+  requirePermission("returns.manage"),
   async (req, res) => {
     const idCheck = z.string().uuid().safeParse(req.params.id);
     if (!idCheck.success) {
@@ -504,7 +504,7 @@ const remediationBody = z
 
 router.post(
   "/admin/equipment-recalls/:id/remediation",
-  requireAdmin,
+  requirePermission("returns.manage"),
   async (req, res) => {
     const idCheck = z.string().uuid().safeParse(req.params.id);
     if (!idCheck.success) {

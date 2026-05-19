@@ -27,7 +27,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { runRxRenewalSendDue } from "../../lib/rx-renewal/dispatcher";
-import { requireAdmin } from "../../middlewares/requireAdmin";
+import { requirePermission } from "../../middlewares/requireAdmin";
 import { rateLimit } from "../../middlewares/rate-limit";
 
 const router: IRouter = Router();
@@ -46,7 +46,12 @@ const renewalSendLimiter = rateLimit({
 
 router.post(
   "/admin/prescriptions/send-renewal-due",
-  requireAdmin,
+  // Rx renewal dispatcher — fans out reminder emails to patients
+  // whose prescriptions expire within 30 days. Per-patient state
+  // is mutated as a side-effect, so `patients.update` matches the
+  // rest of the patient-tier dispatcher tier (onboarding/send-due,
+  // therapy-sync).
+  requirePermission("patients.update"),
   renewalSendLimiter,
   async (req, res) => {
     const channelParse = channelQuery.safeParse(req.query.channel);

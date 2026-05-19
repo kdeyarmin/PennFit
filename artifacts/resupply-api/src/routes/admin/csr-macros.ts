@@ -19,7 +19,7 @@ import {
 
 type CsrMacroUpdate = Database["resupply"]["Tables"]["csr_macros"]["Update"];
 
-import { requireAdmin } from "../../middlewares/requireAdmin";
+import { requireAdmin, requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
 
@@ -90,7 +90,7 @@ router.get("/admin/csr-macros", requireAdmin, async (req, res) => {
   res.json({ macros: (data ?? []).map(serialize) });
 });
 
-router.post("/admin/csr-macros", requireAdmin, async (req, res) => {
+router.post("/admin/csr-macros", requirePermission("admin.tools.manage"), async (req, res) => {
   const parsed = createBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({
@@ -130,7 +130,7 @@ router.post("/admin/csr-macros", requireAdmin, async (req, res) => {
   res.status(201).json({ macro: serialize(inserted) });
 });
 
-router.patch("/admin/csr-macros/:id", requireAdmin, async (req, res) => {
+router.patch("/admin/csr-macros/:id", requirePermission("admin.tools.manage"), async (req, res) => {
   const id = req.params.id;
   if (!id || typeof id !== "string") {
     res.status(400).json({ error: "missing_id" });
@@ -176,7 +176,7 @@ router.patch("/admin/csr-macros/:id", requireAdmin, async (req, res) => {
   res.json({ macro: serialize(updated[0]!) });
 });
 
-router.delete("/admin/csr-macros/:id", requireAdmin, async (req, res) => {
+router.delete("/admin/csr-macros/:id", requirePermission("admin.tools.manage"), async (req, res) => {
   const id = req.params.id;
   if (!id || typeof id !== "string") {
     res.status(400).json({ error: "missing_id" });

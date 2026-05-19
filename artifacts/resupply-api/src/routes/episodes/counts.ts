@@ -2,17 +2,14 @@
 // strip on the Episodes page (A3).
 //
 // Implementation strategy:
-//   One query that GROUP BYs the real status column + a separate
-//   pass that computes the synthetic `overdue` bucket. Doing both
-//   in a single CTE would be more elegant but needs raw SQL — the
-//   two-query path stays inside drizzle's typed builder, runs
-//   server-side in <5ms on the expected dataset, and reads
-//   trivially when a future maintainer needs to add a new status.
+//   PostgREST has no GROUP BY, so the per-status counts fan out
+//   into N parallel `head:true` counts (one per status) plus a
+//   separate query for the synthetic `overdue` bucket. The
+//   `episodes_status_idx` index makes each call cheap.
 //
-// The `q` filter mirrors /episodes exactly (same `episodesSearchClause`
-// helper). When set we join patients so the decrypted-name ILIKE
-// can resolve; otherwise the join is omitted to keep the query
-// single-table.
+// The `q` filter mirrors /episodes exactly (same `resolveEpisodesSearch`
+// helper). When set we resolve the candidate episode-id set up front
+// and constrain every count with `.in("id", qEpisodeIds)`.
 
 import { Router, type IRouter } from "express";
 import { z } from "zod";

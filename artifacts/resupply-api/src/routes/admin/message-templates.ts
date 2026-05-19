@@ -47,7 +47,7 @@ import {
 
 import { logger } from "../../lib/logger";
 import { isAsciiOnly } from "../../lib/message-templates/sms";
-import { requireAdmin } from "../../middlewares/requireAdmin";
+import { requirePermission } from "../../middlewares/requireAdmin";
 import { rateLimit } from "../../middlewares/rate-limit";
 
 type MessageTemplateRow =
@@ -147,7 +147,12 @@ function disallowedTokens(
   return [...found];
 }
 
-router.get("/admin/message-templates", requireAdmin, async (req, res) => {
+// CSR-message template library — list / detail / edit.
+// `admin.tools.manage` matches the catalog's "supervisor-tier
+// CSR-tool management" perm (admin / supervisor / compliance_officer
+// per the role catalog). CSRs USE the templates via the message
+// renderer; editing them is a tier above.
+router.get("/admin/message-templates", requirePermission("admin.tools.manage"), async (req, res) => {
   const parsed = listQuery.safeParse(req.query);
   if (!parsed.success) {
     res.status(400).json({
@@ -187,7 +192,7 @@ router.get("/admin/message-templates", requireAdmin, async (req, res) => {
 
 router.get(
   "/admin/message-templates/:id",
-  requireAdmin,
+  requirePermission("admin.tools.manage"),
   async (req, res) => {
     const idCheck = idParam.safeParse(req.params.id);
     if (!idCheck.success) {
@@ -215,7 +220,7 @@ router.get(
 
 router.patch(
   "/admin/message-templates/:id",
-  requireAdmin,
+  requirePermission("admin.tools.manage"),
   adminMessageTemplateMutationLimiter,
   async (req, res) => {
     const idCheck = idParam.safeParse(req.params.id);

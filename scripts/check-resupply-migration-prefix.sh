@@ -23,7 +23,7 @@
 #   Modifying an existing migration is already prohibited by ADR 003
 #   and caught in review, so we only check additions (--diff-filter=A).
 #
-# Behavior mirrors check-resupply-migration-pair.sh:
+# Behavior:
 #   - Reads BASE_REF / DIFF_TARGET from the environment.
 #       Pre-commit caller leaves both unset → defaults to staged
 #       index vs HEAD (BASE_REF=HEAD, DIFF_TARGET=--cached).

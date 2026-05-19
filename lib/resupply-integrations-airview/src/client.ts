@@ -35,6 +35,88 @@ function configKey(config: AirviewConfig): string {
   return `${config.oauthTokenUrl}|${config.clientId}|${config.dmeId}`;
 }
 
+class ClientError extends Error {
+  constructor(public readonly kind: AdapterError) {
+    super(kind);
+  }
+}
+
+// Per-call timeouts so a hanging upstream (ResMed AirView) can't stall
+// the in-process worker indefinitely. Defaults match the original
+// hardcoded values; env overrides exist so ops can extend them under
+// a partner-side incident without a deploy.
+const DEFAULT_OAUTH_TIMEOUT_MS = 30_000;
+const DEFAULT_API_TIMEOUT_MS = 60_000;
+
+/**
+ * Reads an environment variable and returns a validated timeout value in milliseconds.
+ *
+ * Accepts only a positive integer string; if the variable is missing or invalid the provided `fallback` is returned.
+ *
+ * @param name - The environment variable name to read
+ * @param fallback - The fallback timeout in milliseconds to use when the env var is missing or invalid
+ * @returns The parsed timeout in milliseconds, capped at 5 minutes (300000 ms), or `fallback` when parsing fails
+ */
+function parseTimeoutEnv(
+  name: string,
+  fallback: number,
+): number {
+  const raw = process.env[name];
+  if (!raw) return fallback;
+  // Strict digits-only check. `Number.parseInt("1e3", 10)` returns 1
+  // and `Number.parseInt("30000ms", 10)` returns 30000 — both would
+  // silently misconfigure the timeout. Reject anything that isn't a
+  // pure positive integer.
+  const normalized = raw.trim();
+  if (!/^\d+$/.test(normalized)) return fallback;
+  const n = Number(normalized);
+  if (!Number.isSafeInteger(n) || n <= 0) return fallback;
+  // Cap at 5 minutes so a misconfigured value can't park a worker
+  // task forever; ops can lift the cap with a code change if a real
+  // partner outage justifies it.
+  return Math.min(n, 5 * 60_000);
+}
+
+const OAUTH_TIMEOUT_MS = parseTimeoutEnv(
+  "RESUPPLY_AIRVIEW_OAUTH_TIMEOUT_MS",
+  DEFAULT_OAUTH_TIMEOUT_MS,
+);
+const API_TIMEOUT_MS = parseTimeoutEnv(
+  "RESUPPLY_AIRVIEW_API_TIMEOUT_MS",
+  DEFAULT_API_TIMEOUT_MS,
+);
+
+/**
+ * Performs an HTTP fetch with a hard deadline and maps common timeout/network failures to a `ClientError` with kind `"unavailable"`.
+ *
+ * @param url - The request URL
+ * @param init - Fetch init options (headers, method, body, etc.)
+ * @param timeoutMs - Milliseconds to wait before aborting the request
+ * @returns The successful fetch `Response`
+ * @throws ClientError with kind `"unavailable"` when the request times out or a common network/abort error occurs
+ * @throws Re-throws any other errors thrown by `fetch`
+ */
+async function fetchWithTimeout(
+  url: string,
+  init: RequestInit,
+  timeoutMs: number,
+): Promise<Response> {
+  try {
+    return await fetch(url, {
+      ...init,
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+  } catch (err) {
+    if (err instanceof Error) {
+      const name = err.name;
+      if (name === "TimeoutError" || name === "AbortError" || name === "TypeError") {
+        throw new ClientError("unavailable");
+      }
+    }
+    throw err;
+  }
+}
+
 async function getAccessToken(config: AirviewConfig): Promise<string> {
   const key = configKey(config);
   const now = Date.now();
@@ -51,11 +133,15 @@ async function getAccessToken(config: AirviewConfig): Promise<string> {
     client_secret: config.clientSecret,
     scope: `dme:${config.dmeId}`,
   });
-  const res = await fetch(config.oauthTokenUrl, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body,
-  });
+  const res = await fetchWithTimeout(
+    config.oauthTokenUrl,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body,
+    },
+    OAUTH_TIMEOUT_MS,
+  );
   if (!res.ok) {
     throw new ClientError("auth_failed");
   }
@@ -74,24 +160,22 @@ async function getAccessToken(config: AirviewConfig): Promise<string> {
   return json.access_token;
 }
 
-class ClientError extends Error {
-  constructor(public readonly kind: AdapterError) {
-    super(kind);
-  }
-}
-
 async function request<T>(
   config: AirviewConfig,
   path: string,
 ): Promise<T> {
   const token = await getAccessToken(config);
-  const res = await fetch(`${config.apiBaseUrl}${path}`, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      Accept: "application/json",
-      "X-DME-Id": config.dmeId,
+  const res = await fetchWithTimeout(
+    `${config.apiBaseUrl}${path}`,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/json",
+        "X-DME-Id": config.dmeId,
+      },
     },
-  });
+    API_TIMEOUT_MS,
+  );
   if (res.status === 404) throw new ClientError("not_found");
   if (res.status === 401 || res.status === 403) {
     throw new ClientError("auth_failed");

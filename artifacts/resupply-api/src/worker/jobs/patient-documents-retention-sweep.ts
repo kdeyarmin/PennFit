@@ -35,6 +35,7 @@
 
 import type PgBoss from "pg-boss";
 
+import { logAuditBestEffort } from "@workspace/resupply-audit";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
@@ -107,9 +108,49 @@ export async function runRetentionSweep(): Promise<SweepStats> {
     .is("retention_marked_at", null)
     .is("destroyed_at", null)
     .eq("legal_hold", false)
-    .select("id");
+    .select("id, patient_id, document_type, size_bytes, retention_until_at");
   if (flagErr) throw flagErr;
-  const flagged = (flaggedRows ?? []).length;
+  const flaggedList = flaggedRows ?? [];
+  const flagged = flaggedList.length;
+
+  // ── 3. Per-document audit row ───────────────────────────────────
+  // Surveyors and counsel want a queryable per-document destruction
+  // trail. The `retention_marked_at` column above is the persistent
+  // record on the document row itself, but it's not searchable by
+  // action; a dedicated `audit_log` entry per flag lets compliance
+  // reporting run as a single SELECT.
+  //
+  // `logAuditBestEffort` swallows DB errors (the sweep already
+  // succeeded by this point — the marker is the durable record). A
+  // run of audit-write failures will show up via the onWriteFailure
+  // callback so an operator can investigate; a single transient
+  // failure is acceptable noise.
+  for (const row of flaggedList) {
+    await logAuditBestEffort(
+      {
+        action: "patient_documents.retention.flagged",
+        adminEmail: "system:cron:patient-documents-retention-sweep",
+        adminUserId: null,
+        targetTable: "patient_documents",
+        targetId: row.id,
+        metadata: {
+          patient_id: row.patient_id,
+          document_type: row.document_type,
+          size_bytes: row.size_bytes,
+          retention_until_at: row.retention_until_at,
+        },
+      },
+      {
+        contextLabel: "patient_documents_retention_sweep",
+        onWriteFailure: (failure) => {
+          logger.warn(
+            failure,
+            "patient-documents.retention-sweep: audit write failed",
+          );
+        },
+      },
+    );
+  }
 
   return { backfilled, flagged };
 }

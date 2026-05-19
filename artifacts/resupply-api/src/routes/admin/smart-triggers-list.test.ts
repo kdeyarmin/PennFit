@@ -32,7 +32,7 @@ vi.mock("../../middlewares/requireAdmin", () =>
 import smartTriggersRouter from "./smart-triggers";
 
 const ADMIN_EMAIL = "ops@penn.example.com";
-const PATIENT_ID = "11111111-2222-3333-4444-555555555555";
+const PATIENT_ID = "11111111-2222-4333-8444-555555555555";
 
 function makeApp(): Express {
   const app = express();

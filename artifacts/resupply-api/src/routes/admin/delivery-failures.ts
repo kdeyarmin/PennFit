@@ -22,7 +22,7 @@ import { Router, type IRouter } from "express";
 
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
-import { requireAdmin } from "../../middlewares/requireAdmin";
+import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
 
@@ -38,7 +38,11 @@ const FAILURE_STATUSES = [
 const DEFAULT_DAYS_BACK = 14;
 const MAX_ROWS = 200;
 
-router.get("/admin/delivery-failures", requireAdmin, async (req, res) => {
+// Webhook-delivery error triage queue. `reports.read` matches the
+// CSV exports + analytics — admin / supervisor / csr /
+// compliance_officer / agent. Fitter + fulfillment have no
+// delivery-failure workflow.
+router.get("/admin/delivery-failures", requirePermission("reports.read"), async (req, res) => {
   const sinceDays = Math.min(
     Math.max(1, Number(req.query.sinceDays ?? DEFAULT_DAYS_BACK)),
     90,

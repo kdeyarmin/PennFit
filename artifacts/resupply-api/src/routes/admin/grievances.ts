@@ -29,7 +29,7 @@ import {
 } from "../../lib/compliance/training-expiry";
 import { logger } from "../../lib/logger";
 import { buildMedWatchSummary } from "../../lib/medwatch/build-summary";
-import { requireAdmin } from "../../middlewares/requireAdmin";
+import { requirePermission } from "../../middlewares/requireAdmin";
 
 type GrievanceUpdate =
   Database["resupply"]["Tables"]["patient_grievances"]["Update"];
@@ -91,7 +91,11 @@ const patchBody = z
 
 router.get(
   "/admin/compliance/grievances",
-  requireAdmin,
+  // List view of the grievance queue. Exact 1:1 catalog match —
+  // `grievances.read` is held by admin / supervisor / csr /
+  // compliance_officer / agent. Removes fitter and fulfillment which
+  // have no compliance workflow here.
+  requirePermission("grievances.read"),
   async (req, res) => {
     const qSchema = z
       .object({
@@ -156,7 +160,12 @@ router.get(
 
 router.post(
   "/admin/compliance/grievances",
-  requireAdmin,
+  // Records a new grievance — write-tier. `grievances.resolve` is
+  // held by admin / supervisor / compliance_officer. Removes csr /
+  // agent (who can READ to escalate but should not author new
+  // grievance rows directly — surveyors expect a compliance-officer
+  // chain-of-custody on the write path).
+  requirePermission("grievances.resolve"),
   async (req, res) => {
     const parsed = createBody.safeParse(req.body);
     if (!parsed.success) {
@@ -234,7 +243,9 @@ router.post(
 
 router.patch(
   "/admin/compliance/grievances/:id",
-  requireAdmin,
+  // Move state (resolved / closed / escalated). `grievances.resolve`
+  // is the catalog's resolution permission — same scope as POST.
+  requirePermission("grievances.resolve"),
   async (req, res) => {
     const params = idParam.safeParse(req.params);
     if (!params.success) {
@@ -361,7 +372,8 @@ router.patch(
 // ────────────────────────────────────────────────────────────────
 router.get(
   "/admin/compliance/grievances/:id/medwatch-summary",
-  requireAdmin,
+  // FDA MedWatch summary view — read-tier. Same scope as the list.
+  requirePermission("grievances.read"),
   async (req, res) => {
     const params = z.object({ id: z.string().uuid() }).safeParse(req.params);
     if (!params.success) {

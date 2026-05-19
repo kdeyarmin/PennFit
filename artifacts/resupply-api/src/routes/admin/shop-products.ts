@@ -27,7 +27,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 import type Stripe from "stripe";
 
-import { requireAdmin } from "../../middlewares/requireAdmin";
+import { requirePermission } from "../../middlewares/requireAdmin";
 import { rateLimit } from "../../middlewares/rate-limit";
 import {
   getStripeClient,
@@ -81,7 +81,11 @@ const patchThresholdBodySchema = z.object({
 
 router.patch(
   "/admin/shop/products/:productId/stock",
-  requireAdmin,
+  // Cash-pay catalog management. `admin.tools.manage` matches the
+  // catalog's "supervisor-tier admin tooling" tier — admin /
+  // supervisor / compliance_officer post-Phase-B collapse. CSRs +
+  // fulfillment don't author stock-count overrides.
+  requirePermission("admin.tools.manage"),
   adminProductMutationLimiter,
   async (req, res) => {
     const productId = String(req.params.productId ?? "");
@@ -274,7 +278,7 @@ router.patch(
 //   - the existing /stock endpoint contract + tests stay untouched.
 router.patch(
   "/admin/shop/products/:productId/threshold",
-  requireAdmin,
+  requirePermission("admin.tools.manage"),
   adminProductMutationLimiter,
   async (req, res) => {
     const productId = String(req.params.productId ?? "");
@@ -460,7 +464,7 @@ const createBodySchema = z.object({
   recurringIntervalCount: z.number().int().min(1).max(12).nullish(),
 });
 
-router.post("/admin/shop/products", requireAdmin, adminProductMutationLimiter, async (req, res) => {
+router.post("/admin/shop/products", requirePermission("admin.tools.manage"), adminProductMutationLimiter, async (req, res) => {
   const parsed = createBodySchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({

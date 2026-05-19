@@ -12,9 +12,9 @@
 // Why DB lookup is INJECTED, not imported
 // ---------------------------------------
 // The helper accepts a `lookup` callback. The host artifact
-// (resupply-api) supplies a function that does the actual Drizzle
-// queries; this package stays free of Drizzle, of getDbPool(), and
-// of the schema TS — meaning it can be exercised in tests with a
+// (resupply-api) supplies a function that does the actual Supabase
+// (PostgREST) queries; this package stays free of @workspace/resupply-db
+// and getDbPool(), meaning it can be exercised in tests with a
 // trivial in-memory stub. Same registration pattern as
 // `lib/resupply-audit`'s registerAuditRequestIdResolver (P3.7).
 //

@@ -23,6 +23,7 @@ import complianceAttestationRouter from "./admin/compliance-attestation.js";
 import inboundFaxesRouter from "./admin/inbound-faxes.js";
 import equipmentRecallsRouter from "./admin/equipment-recalls.js";
 import analyticsRouter from "./admin/analytics.js";
+import rtOverviewRouter from "./admin/rt-overview.js";
 import trainingRecordsRouter from "./admin/training-records.js";
 import grievancesRouter from "./admin/grievances.js";
 import accreditationPoliciesRouter from "./admin/accreditation-policies.js";
@@ -58,6 +59,7 @@ import integrationsRefreshSuppliesRouter from "./admin/integrations-refresh-supp
 import bulkCampaignsRouter from "./admin/bulk-campaigns.js";
 import mfaRouter from "./admin/mfa.js";
 import reportsRouter from "./admin/reports.js";
+import npsSummaryRouter from "./admin/nps-summary.js";
 import deliveryFailuresRouter from "./admin/delivery-failures.js";
 import lookupRouter from "./admin/lookup.js";
 import systemInfoRouter from "./admin/system-info.js";
@@ -287,6 +289,10 @@ router.use(equipmentRecallsRouter);
 // analytics at /admin/storefront/analytics which covers orders +
 // email health + mask popularity.
 router.use(analyticsRouter);
+// /admin/rt-overview — respiratory-therapist at-a-glance board.
+// Reads patient_therapy_links + patient_therapy_nights +
+// patient_smart_trigger_events for the daily clinical review.
+router.use(rtOverviewRouter);
 // /admin/compliance/* — accreditation-binder surfaces: per-staff
 // training records (HIPAA, OSHA, fit-test, infection-control,
 // orientation) and patient grievances (complaints + grievances +
@@ -397,6 +403,10 @@ router.use(bulkCampaignsRouter);
 router.use(mfaRouter);
 // /admin/reports/*.csv — date-bounded CSV exports for ops + finance.
 router.use(reportsRouter);
+// /admin/nps/recent — last-N-days NPS rollup for the post-delivery
+// follow-up. Surfaces band counts + canonical NPS score + a comment
+// tail. Powered by shop_order_nps_responses (migration 0127).
+router.use(npsSummaryRouter);
 // /admin/delivery-failures — webhook delivery error triage queue
 // (per-message + audit-log failure events). Read-only.
 router.use(deliveryFailuresRouter);

@@ -73,8 +73,8 @@ function makeApp(): Express {
 }
 
 const ADMIN_EMAIL = "ops@penn.example.com";
-const PATIENT_ID = "11111111-2222-3333-4444-555555555555";
-const PRESCRIPTION_ID = "66666666-7777-8888-9999-aaaaaaaaaaaa";
+const PATIENT_ID = "11111111-2222-4333-8444-555555555555";
+const PRESCRIPTION_ID = "66666666-7777-4888-9999-aaaaaaaaaaaa";
 const VALID_BODY = {
   patientId: PATIENT_ID,
   physicianName: "Dr. Anna Stein",

@@ -17,11 +17,12 @@
 // concurrent integration tests we shouldn't blow away.
 
 import { __resetDbPoolForTests, getDbPool } from "@workspace/resupply-db";
-import { afterAll, afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
 import {
   AuditMetadataPhiError,
   logAudit,
+  registerAuditHmacKeyForTesting,
   registerAuditRequestIdResolver,
 } from "./index";
 
@@ -38,6 +39,13 @@ describeIfDb("logAudit (live db)", () => {
   // against the same db) don't step on each other.
   const runTag = `audit-helper-test-${Math.random().toString(36).slice(2)}`;
 
+  beforeAll(() => {
+    // Deterministic 32-byte test key so the chain insert path can
+    // run without depending on RESUPPLY_AUDIT_HMAC_KEY being set
+    // in the integration env.
+    registerAuditHmacKeyForTesting(Buffer.alloc(32, 0xab));
+  });
+
   afterEach(async () => {
     registerAuditRequestIdResolver(null);
     // Use a json-path filter so we delete exactly the rows we
@@ -49,6 +57,7 @@ describeIfDb("logAudit (live db)", () => {
   });
 
   afterAll(async () => {
+    registerAuditHmacKeyForTesting(null);
     // Important: explicitly tear down the shared pool so vitest
     // doesn't hang on the open connection. The pool is a singleton
     // for the process lifetime, so resetting is safe — no other

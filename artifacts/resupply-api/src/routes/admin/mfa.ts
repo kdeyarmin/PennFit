@@ -19,7 +19,8 @@
 // Phase B will hook the sign-in flow into this table. The sign-in
 // handler is NOT modified in this sprint.
 
-import { Router, type IRouter } from "express";
+import { Router, type IRouter, type Request } from "express";
+import expressRateLimit, { ipKeyGenerator } from "express-rate-limit";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
@@ -34,8 +35,43 @@ import {
 
 import { logger } from "../../lib/logger";
 import { requireAdmin } from "../../middlewares/requireAdmin";
+import { rateLimit } from "../../middlewares/rate-limit";
 
 const router: IRouter = Router();
+
+// Defence-in-depth rate limit on every endpoint that accepts a TOTP
+// code. The verify path already enforces `minCounter` (a leaked code
+// can't be replayed) but online brute force against the live 30-second
+// window is still cheap without a per-actor cap. 30 attempts/hour per
+// admin is well above any honest workflow (one user typing into a
+// phone) but well below what a script trying random 6-digit codes
+// needs to land a hit. Keyed by adminUserId so two admins on the same
+// office NAT don't share a bucket.
+const adminMfaCodeAttemptLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 30,
+  name: "admin_mfa_code_attempt",
+  keyFn: (req) => req.adminUserId ?? "unknown",
+});
+
+// IP-keyed `express-rate-limit` gate stacked in front of the
+// adminUserId-keyed bucket above. Two reasons:
+//   1. `express-rate-limit` is the limiter implementation that static
+//      analysis (CodeQL `js/missing-rate-limiting`) recognises, so the
+//      custom Map-based `rateLimit()` above alone isn't enough to mark
+//      these admin-only endpoints as gated.
+//   2. Layered defence: even pre-auth (before requireAdmin has
+//      populated `req.adminUserId`), a stranger hammering the
+//      enrollment/verify/regenerate endpoints from one IP gets capped.
+// 120/hr/IP is generous — any honest CSR session sits well under it.
+const adminMfaIpRateLimiter = expressRateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 120,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  keyGenerator: (req: Request) => ipKeyGenerator(req.ip ?? "0.0.0.0"),
+  message: { error: "too_many_requests" },
+});
 
 const verifyBody = z
   .object({
@@ -140,6 +176,7 @@ const beginBody = z
 
 router.post(
   "/admin/mfa/enroll/begin",
+  adminMfaIpRateLimiter,
   requireAdmin,
   async (req, res) => {
     const adminUserId = req.adminUserId;
@@ -246,7 +283,9 @@ router.post(
 
 router.post(
   "/admin/mfa/enroll/verify",
+  adminMfaIpRateLimiter,
   requireAdmin,
+  adminMfaCodeAttemptLimiter,
   async (req, res) => {
     const adminUserId = req.adminUserId;
     const adminEmail = req.adminEmail;
@@ -418,7 +457,7 @@ router.post(
   },
 );
 
-router.post("/admin/mfa/disable", requireAdmin, async (req, res) => {
+router.post("/admin/mfa/disable", adminMfaIpRateLimiter, requireAdmin, adminMfaCodeAttemptLimiter, async (req, res) => {
   const adminUserId = req.adminUserId;
   const adminEmail = req.adminEmail;
   if (!adminUserId || !adminEmail) {
@@ -523,7 +562,9 @@ const deviceIdParam = z.object({ id: z.string().uuid() });
 
 router.post(
   "/admin/mfa/devices/:id/disable",
+  adminMfaIpRateLimiter,
   requireAdmin,
+  adminMfaCodeAttemptLimiter,
   async (req, res) => {
     const adminUserId = req.adminUserId;
     const adminEmail = req.adminEmail;
@@ -630,7 +671,9 @@ router.post(
 // ────────────────────────────────────────────────────────────────
 router.post(
   "/admin/mfa/recovery-codes/regenerate",
+  adminMfaIpRateLimiter,
   requireAdmin,
+  adminMfaCodeAttemptLimiter,
   async (req, res) => {
     const adminUserId = req.adminUserId;
     const adminEmail = req.adminEmail;

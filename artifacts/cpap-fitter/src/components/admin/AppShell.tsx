@@ -328,11 +328,25 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         hint: "Per-agent close / approve / resolve counts",
       },
       {
+        href: "/admin/rt-overview",
+        label: "RT Overview",
+        icon: HeartPulse,
+        matchPrefix: "/admin/rt-overview",
+        hint: "At-a-glance therapy board: alerts, AHI, leak, usage",
+      },
+      {
         href: "/admin/analytics",
         label: "Clinical Analytics",
         icon: Activity,
         matchPrefix: "/admin/analytics",
         hint: "Resupply funnel, compliance cohorts, CSR productivity",
+      },
+      {
+        href: "/admin/nps",
+        label: "Customer NPS",
+        icon: Star,
+        matchPrefix: "/admin/nps",
+        hint: "Post-delivery NPS responses with comment tail",
       },
       {
         href: "/admin/pennpaps/analytics",

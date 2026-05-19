@@ -16,19 +16,16 @@
   },
   "dependencies": {
     "@workspace/resupply-db": "workspace:*",
-    "argon2": "^0.43.0",
-    "drizzle-orm": "catalog:",
+    "argon2": "^0.44.0",
     "express": "^5",
-    "express-rate-limit": "^8.4.1",
-    "pg": "^8.20.0",
+    "express-rate-limit": "^8.5.2",
     "zod": "catalog:"
   },
   "devDependencies": {
     "@types/express": "^5.0.6",
     "@types/node": "catalog:",
-    "@types/pg": "^8.18.0",
-    "@types/supertest": "^6.0.3",
+    "@types/supertest": "^7.2.0",
     "supertest": "^7.1.4",
-    "vitest": "^3.2.4"
+    "vitest": "^4.1.6"
   }
 }

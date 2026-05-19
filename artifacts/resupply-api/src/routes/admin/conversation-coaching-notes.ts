@@ -25,10 +25,7 @@ import { logAudit } from "@workspace/resupply-audit";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
-import {
-  requireAdmin,
-  requirePermission,
-} from "../../middlewares/requireAdmin";
+import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
 
@@ -45,7 +42,11 @@ const createBody = z
 
 router.get(
   "/admin/conversations/:id/coaching-notes",
-  requireAdmin,
+  // Coaching notes are CSR-scoped reads: any role in the
+  // conversation-handling tier (`conversations.manage`) needs to
+  // see them. Writes stay on the narrower `admin_team.manage`
+  // (supervisor and up) — see POST below.
+  requirePermission("conversations.manage"),
   async (req, res) => {
     const params = idParam.safeParse(req.params);
     if (!params.success) {
@@ -164,7 +165,9 @@ router.post(
 
 router.get(
   "/admin/team/:userId/coaching-notes",
-  requireAdmin,
+  // Per-CSR coaching-note history. Same scope as the per-
+  // conversation list.
+  requirePermission("conversations.manage"),
   async (req, res) => {
     const params = userIdParam.safeParse(req.params);
     if (!params.success) {

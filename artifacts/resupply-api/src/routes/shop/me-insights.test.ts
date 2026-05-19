@@ -164,8 +164,8 @@ describe("GET /shop/me/insights", () => {
   });
 });
 
-const DISMISS_ID = "11111111-2222-3333-4444-555555555555";
-const PATIENT_ID = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
+const DISMISS_ID = "11111111-2222-4333-8444-555555555555";
+const PATIENT_ID = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
 
 describe("POST /shop/me/insights/:id/dismiss (Phase G.5)", () => {
   it("401s without sign-in", async () => {

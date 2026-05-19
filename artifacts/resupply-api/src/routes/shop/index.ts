@@ -10,6 +10,10 @@ import { Router, type IRouter } from "express";
 import cartSnapshotRouter from "./cart-snapshot";
 import checkoutRouter from "./checkout";
 import insuranceLeadRouter from "./insurance-lead";
+import fitterLeadRouter from "./fitter-lead";
+import quizLeadRouter from "./quiz-lead";
+import insuranceEstimateRouter from "./insurance-estimate";
+import npsResponseRouter from "./nps-response";
 import backInStockRouter from "./back-in-stock";
 import meRouter from "./me";
 import meClinicalInfoRouter from "./me-clinical-info";
@@ -45,6 +49,9 @@ import meSleepStudyRouter from "./me-sleep-study";
 import meFormAcknowledgementsRouter from "./me-form-acknowledgements";
 import meReferralsRouter from "./me-referrals";
 import meDocumentsRouter from "./me-documents";
+import meBillingPortalRouter from "./me-billing-portal";
+import meCaregiverRouter from "./me-caregiver";
+import meWalletPassRouter from "./me-wallet-pass";
 
 const router: IRouter = Router();
 router.use(productsRouter);
@@ -121,6 +128,21 @@ router.use(meReferralsRouter);
 // /shop/me/documents/* — patient self-service document upload.
 // Patients upload insurance cards, prescriptions, etc. for CSR review.
 router.use(meDocumentsRouter);
+// /shop/me/billing-portal — Stripe Customer Portal session minter.
+// Customer can change saved card, billing address, and review
+// invoices without going through a checkout flow. Replaces the
+// previous "read-only saved card" stub on /account.
+router.use(meBillingPortalRouter);
+// /shop/me/caregiver — designated authorized contact (single named
+// person who receives a copy of shipment + delivery notifications
+// on behalf of the patient). Critical for the elderly CPAP cohort
+// where adult-child / spouse caregivers manage logistics.
+router.use(meCaregiverRouter);
+// /shop/me/wallet-pass.pkpass — Apple Wallet member card. Returns
+// 503 unless Apple Wallet env vars are configured (PASS_TYPE_ID,
+// TEAM_ID, signer key + cert PEMs, WWDR cert PEM) — same posture
+// as messaging / push.
+router.use(meWalletPassRouter);
 router.use(meExportRouter);
 router.use(meReorderSuggestionsRouter);
 router.use(myOrdersRouter);
@@ -151,6 +173,26 @@ router.use(productCompatibilityRouter);
 // emails (team notification + patient confirmation); does not
 // write to the DB — the verifications team works the inbox.
 router.use(insuranceLeadRouter);
+// Public email + marketing-opt-in capture from the /consent page in
+// cpap-fitter. Persists to resupply.fitter_leads so the abandoned-
+// flow re-engagement dispatcher can scan for opt-ins without an
+// order row.
+router.use(fitterLeadRouter);
+// Public email-capture for the sleep-apnea quiz on /learn. Posts a
+// fitter_leads row with source='sleep_apnea_quiz' and fires a
+// transactional results email so the patient has the score in
+// writing to share with their physician.
+router.use(quizLeadRouter);
+// Public lightweight insurance estimator on /insurance/estimate.
+// Lower-friction sibling of /shop/insurance-leads: payer + email
+// only, returns a static range, persists a fitter_leads row with
+// source='insurance_quote' and emails a written estimate.
+router.use(insuranceEstimateRouter);
+// /shop/orders/nps — public NPS capture endpoint for the post-
+// delivery follow-up email links. Token-bound (HMAC-signed,
+// 30-day TTL); rate-limited per IP; persists to
+// shop_order_nps_responses.
+router.use(npsResponseRouter);
 router.use(backInStockRouter);
 
 export default router;
