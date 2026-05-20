@@ -72,6 +72,7 @@ import patientPortalInviteRouter from "./admin/patient-portal-invite.js";
 import prescriptionRenewalsRouter from "./admin/prescription-renewals.js";
 import shopProductCompatibilityAdminRouter from "./admin/product-compatibility.js";
 import patientTherapySyncRouter from "./admin/patient-therapy-sync.js";
+import patientResupplySummaryRouter from "./admin/patient-resupply-summary.js";
 import patientTherapyLinksRouter from "./admin/patient-therapy-links.js";
 import patientIntegrationsRouter from "./admin/patient-integrations.js";
 import smartTriggersRouter from "./admin/smart-triggers.js";
@@ -213,6 +214,11 @@ router.use(shopProductCompatibilityAdminRouter);
 // + API access is in place. Sync endpoint 503s until the chosen
 // adapter's env var is set.
 router.use(patientTherapySyncRouter);
+// /admin/patients/:id/resupply-summary — single round-trip
+// aggregate of the last 60 therapy nights + open smart-trigger
+// events + open compliance alerts + 30-day Medicare adherence
+// math. Source for the Resupply tab on patient detail.
+router.use(patientResupplySummaryRouter);
 // /admin/patients/:id/therapy-links/* — durable per-patient mapping
 // to a therapy-cloud account so the nightly sync worker doesn't
 // need a human re-typing the partner id. See patient-therapy-sync

@@ -28,6 +28,7 @@ import {
 } from "@/components/admin/ClinicalTabs";
 import { EquipmentTab } from "@/components/admin/EquipmentTab";
 import { PatientBillingTab } from "@/components/admin/PatientBillingTab";
+import { PatientResupplyTab } from "@/components/admin/PatientResupplyTab";
 import {
   openPdfInNewTab,
   summarizePdfError,
@@ -126,6 +127,7 @@ type Tab =
   | "insurance"
   | "prior-auths"
   | "billing"
+  | "resupply"
   | "equipment"
   | "forms";
 
@@ -392,6 +394,12 @@ export function PatientDetailPage({ id }: { id: string }) {
           Billing
         </TabButton>
         <TabButton
+          active={tab === "resupply"}
+          onClick={() => setTab("resupply")}
+        >
+          Resupply
+        </TabButton>
+        <TabButton
           active={false}
           onClick={() =>
             setLocation(`/admin/patients/${id}/insurance-claims`)
@@ -456,6 +464,7 @@ export function PatientDetailPage({ id }: { id: string }) {
         {tab === "insurance" && <InsuranceCoveragesTab patientId={id} />}
         {tab === "prior-auths" && <PriorAuthorizationsTab patientId={id} />}
         {tab === "billing" && <PatientBillingTab patientId={id} />}
+        {tab === "resupply" && <PatientResupplyTab patientId={id} />}
         {tab === "equipment" && <EquipmentTab patientId={id} />}
         {tab === "forms" && <FormAcksTab patientId={id} />}
       </Card>
