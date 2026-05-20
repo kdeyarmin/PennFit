@@ -16,11 +16,10 @@ import {
   type Database,
   getSupabaseServiceRoleClient,
 } from "@workspace/resupply-db";
-
-type CsrMacroUpdate = Database["resupply"]["Tables"]["csr_macros"]["Update"];
-
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requireAdmin, requirePermission } from "../../middlewares/requireAdmin";
+
+type CsrMacroUpdate = Database["resupply"]["Tables"]["csr_macros"]["Update"];
 
 const router: IRouter = Router();
 
