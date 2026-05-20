@@ -175,8 +175,29 @@ jobs:
       # Run the test suite. Show vitest output verbosely so a single
       # failing test name is searchable in the CI logs without having
       # to re-trigger with extra flags.
+      - name: Diagnostics — env snapshot
+        if: always()
+        run: |
+          set -x
+          date
+          node --version
+          pnpm --version
+          free -m
+          df -h /home || true
+          docker ps -a --format 'table {{.Names}}\t{{.Status}}' 2>&1 | head -10 || true
+          ss -tlnp 2>&1 | grep ":5432" || echo "5432 not listening"
+          pg_isready -h 127.0.0.1 -p 5432 || echo "pg_isready failed"
       - name: Run tests
         run: pnpm -r --if-present run test
+      - name: Diagnostics — failure tail
+        if: failure()
+        run: |
+          set -x
+          date
+          free -m
+          docker ps -a --format 'table {{.Names}}\t{{.Status}}' 2>&1 | head -10 || true
+          # Look for crashed worker logs vitest leaves behind.
+          find . -maxdepth 4 -name '*.log' -newer /tmp/runtime-marker 2>/dev/null | head -20 || true
 
   a11y:
     name: A11y (Playwright + axe)
