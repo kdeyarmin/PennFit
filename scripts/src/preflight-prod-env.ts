@@ -11,7 +11,9 @@
 //
 // What it covers (and what it does NOT):
 //   * Presence + shape of every var the resupply-api refuses to boot
-//     without (mirrors artifacts/resupply-api/src/lib/env-check.ts).
+//     without — mirrors artifacts/resupply-api/src/lib/env-check.ts
+//     AND the CORS-allowlist fail-closed in app.ts:63 (in production,
+//     at least one of RESUPPLY_ALLOWED_ORIGINS / REPLIT_DOMAINS).
 //   * Strict base64 (regex + round-trip) for the two HMAC keys —
 //     mirrors lib/resupply-audit so preflight can't pass values
 //     that boot-time validation would reject.
@@ -370,6 +372,30 @@ function runChecks(): void {
         "RESUPPLY_LINK_HMAC_KEY vs RESUPPLY_AUDIT_HMAC_KEY",
         "fail",
         "the two HMAC keys are identical — generate two independent values via `openssl rand -base64 48`",
+      );
+    }
+  }
+
+  // CORS allowlist — `artifacts/resupply-api/src/app.ts:63` throws
+  // at boot if NODE_ENV=production AND both RESUPPLY_ALLOWED_ORIGINS
+  // and REPLIT_DOMAINS are empty. Mirror that requirement so the
+  // operator catches it pre-deploy instead of on the first request.
+  if (prodModeEarly) {
+    const allowedOrigins = getTrimmed("RESUPPLY_ALLOWED_ORIGINS");
+    const replitDomains = getTrimmed("REPLIT_DOMAINS");
+    if (allowedOrigins === undefined && replitDomains === undefined) {
+      record(
+        "RESUPPLY_ALLOWED_ORIGINS / REPLIT_DOMAINS",
+        "fail",
+        "neither is set in NODE_ENV=production — the API will refuse to start (artifacts/resupply-api/src/app.ts:85). Set one of them to the production hostname(s).",
+      );
+    } else {
+      record(
+        "RESUPPLY_ALLOWED_ORIGINS / REPLIT_DOMAINS",
+        "pass",
+        allowedOrigins !== undefined
+          ? "RESUPPLY_ALLOWED_ORIGINS set"
+          : "REPLIT_DOMAINS set (Replit deployment)",
       );
     }
   }

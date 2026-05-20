@@ -57,6 +57,7 @@ const VALID_PROD_ENV: Record<string, string> = {
   TWILIO_ACCOUNT_SID: "AC" + "abcdef1234567890abcdef1234567890",
   TWILIO_MESSAGING_SERVICE_SID: "MGxxx123",
   // Public URLs:
+  RESUPPLY_ALLOWED_ORIGINS: "https://pennpaps.com",
   SHOP_PUBLIC_BASE_URL: "https://pennpaps.com",
   REMINDER_PUBLIC_BASE_URL: "https://pennpaps.com",
   RESUPPLY_VOICE_PUBLIC_BASE_URL: "https://pennpaps.com",
@@ -1061,6 +1062,52 @@ describe("SENDGRID_FROM_EMAIL in non-production mode", () => {
 // ---------------------------------------------------------------------------
 // Legacy / commonly-confused env names — STRIPE_WEBHOOK_SECRET
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// CORS allowlist — RESUPPLY_ALLOWED_ORIGINS / REPLIT_DOMAINS
+// ---------------------------------------------------------------------------
+
+describe("RESUPPLY_ALLOWED_ORIGINS / REPLIT_DOMAINS in production", () => {
+  it("fails when neither is set in production", () => {
+    // app.ts:85 throws at boot when both are empty in prod.
+    const env = withEnv({
+      RESUPPLY_ALLOWED_ORIGINS: undefined,
+      REPLIT_DOMAINS: undefined,
+    });
+    const { exitCode, stdout } = run(env);
+    expect(exitCode).toBe(1);
+    expect(stdout).toContain("RESUPPLY_ALLOWED_ORIGINS");
+    expect(stdout).toContain("REPLIT_DOMAINS");
+  });
+
+  it("passes when only REPLIT_DOMAINS is set (Replit-managed deployment)", () => {
+    const env = withEnv({
+      RESUPPLY_ALLOWED_ORIGINS: undefined,
+      REPLIT_DOMAINS: "pennpaps.com,www.pennpaps.com",
+    });
+    const { exitCode } = run(env);
+    expect(exitCode).toBe(0);
+  });
+
+  it("passes when only RESUPPLY_ALLOWED_ORIGINS is set", () => {
+    const env = withEnv({
+      RESUPPLY_ALLOWED_ORIGINS: "https://pennpaps.com",
+      REPLIT_DOMAINS: undefined,
+    });
+    const { exitCode } = run(env);
+    expect(exitCode).toBe(0);
+  });
+
+  it("skips the check in non-production mode", () => {
+    const env = withEnv({
+      NODE_ENV: "staging",
+      RESUPPLY_ALLOWED_ORIGINS: undefined,
+      REPLIT_DOMAINS: undefined,
+    });
+    const { exitCode } = run(env);
+    expect(exitCode).toBe(0);
+  });
+});
 
 describe("STRIPE_WEBHOOK_SECRET vs STRIPE_WEBHOOK_SIGNING_SECRET name confusion", () => {
   it("fails when STRIPE_WEBHOOK_SECRET (legacy name) is set but the canonical name is unset", () => {
