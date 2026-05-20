@@ -15,10 +15,26 @@ import { PasswordInput } from "@/components/password-input";
 
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
 
+// Read the post-redirect success flag from the URL. Two flows land here:
+//   ?reset=success    — user just set a new password (sessions revoked)
+//   ?verified=success — user just clicked the email verification link
+// Returning null when neither is present keeps the banner suppressed in
+// the steady-state sign-in view.
+function readSuccessFlag(): "reset" | "verified" | null {
+  if (typeof window === "undefined") return null;
+  const params = new URLSearchParams(window.location.search);
+  if (params.get("reset") === "success") return "reset";
+  if (params.get("verified") === "success") return "verified";
+  return null;
+}
+
 export function SignInPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [submitError, setSubmitError] = useState<string | null>(null);
+  // Only read the URL on mount — once the user starts interacting we
+  // don't want the banner to flicker back as the form re-renders.
+  const [successFlag] = useState(readSuccessFlag);
   const signIn = authHooks.useSignIn();
   const [, setLocation] = useLocation();
 
@@ -50,6 +66,25 @@ export function SignInPage() {
             Sign in to view your orders and saved shipping info.
           </p>
         </div>
+
+        {successFlag === "reset" && (
+          <p
+            role="status"
+            data-testid="signin-reset-success"
+            className="text-sm rounded-md px-3 py-2 bg-emerald-50 text-emerald-900"
+          >
+            Your password has been updated. Sign in with your new password.
+          </p>
+        )}
+        {successFlag === "verified" && (
+          <p
+            role="status"
+            data-testid="signin-verified-success"
+            className="text-sm rounded-md px-3 py-2 bg-emerald-50 text-emerald-900"
+          >
+            Your email is verified. Sign in to continue.
+          </p>
+        )}
 
         <div>
           <label htmlFor="signin-email" className="block text-sm font-medium">
@@ -98,7 +133,7 @@ export function SignInPage() {
         <button
           type="submit"
           disabled={signIn.isPending}
-          className="w-full rounded-md bg-[hsl(var(--penn-navy-deep))] text-white font-semibold py-2 text-sm"
+          className="w-full rounded-md bg-[hsl(var(--penn-navy-deep))] text-white font-semibold py-2 text-sm disabled:opacity-60"
         >
           {signIn.isPending ? "Signing in…" : "Sign in"}
         </button>
