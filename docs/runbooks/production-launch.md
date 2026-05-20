@@ -65,7 +65,10 @@ the vendor keys called out by name in the launch brief.
 | `SUPABASE_SERVICE_ROLE_KEY`  | Service-role JWT from the same page. Bypasses RLS — never expose client-side.    |
 | `RESUPPLY_LINK_HMAC_KEY`     | First `openssl` output from §1.                                                   |
 | `RESUPPLY_AUDIT_HMAC_KEY`    | Second `openssl` output from §1.                                                  |
-| `RESUPPLY_ADMIN_EMAILS`      | Comma-separated allowlist of admin emails. At least one entry is required.        |
+
+These six are what `assertRequiredEnv()` checks at boot
+(`artifacts/resupply-api/src/lib/env-check.ts`); the API fails to
+start if any is missing.
 
 ### Vendor secrets — production credentials, not test
 
@@ -225,8 +228,9 @@ reset link to stdout for the operator to relay manually.
 
 ```bash
 # Fill in: production Supabase URL + service-role JWT (Supabase →
-# Project Settings → API), and the address of the first admin (must
-# also be present in RESUPPLY_ADMIN_EMAILS from §2).
+# Project Settings → API), and the address of the first admin
+# (any address — requireAdmin reads the role from auth.users, so no
+# env-var allowlist needs to be updated alongside).
 export SUPABASE_URL=
 export SUPABASE_SERVICE_ROLE_KEY=
 FIRST_ADMIN_EMAIL=
