@@ -22,6 +22,7 @@ import {
   requireAdmin,
   requireAdminOnly,
 } from "../../middlewares/requireAdmin";
+import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 
 const router: IRouter = Router();
 
@@ -123,7 +124,11 @@ router.get("/admin/claim-templates", requireAdmin, async (req, res) => {
   res.json({ templates: (data ?? []).map(rowToApi) });
 });
 
-router.post("/admin/claim-templates", requireAdminOnly, async (req, res) => {
+router.post(
+  "/admin/claim-templates",
+  requireAdminOnly,
+  adminRateLimit({ name: "claim_templates.create", preset: "sensitive" }),
+  async (req, res) => {
   const parsed = upsertBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({
@@ -176,6 +181,7 @@ router.post("/admin/claim-templates", requireAdminOnly, async (req, res) => {
 router.patch(
   "/admin/claim-templates/:id",
   requireAdminOnly,
+  adminRateLimit({ name: "claim_templates.update", preset: "sensitive" }),
   async (req, res) => {
     const idParsed = idParam.safeParse(req.params);
     if (!idParsed.success) {
@@ -233,6 +239,7 @@ router.patch(
 router.post(
   "/patients/:id/insurance-claims/:claimId/apply-template",
   requireAdmin,
+  adminRateLimit({ name: "claim_templates.apply", preset: "mutation" }),
   async (req, res) => {
     const idParsed = applyParams.safeParse(req.params);
     if (!idParsed.success) {
