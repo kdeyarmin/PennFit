@@ -61,7 +61,7 @@ the vendor keys called out by name in the launch brief.
 | ---------------------------- | --------------------------------------------------------------------------------- |
 | `PORT`                       | The port the deployment listens on (Replit sets this automatically).              |
 | `DATABASE_URL`               | `postgres://…` pointing at the production Supabase database, NOT a test branch.  |
-| `SUPABASE_URL`               | `https://<prod-project-id>.supabase.co`. Find in Supabase → Project Settings → API. |
+| `SUPABASE_URL`               | The production project's API URL from Supabase → Project Settings → API.          |
 | `SUPABASE_SERVICE_ROLE_KEY`  | Service-role JWT from the same page. Bypasses RLS — never expose client-side.    |
 | `RESUPPLY_LINK_HMAC_KEY`     | First `openssl` output from §1.                                                   |
 | `RESUPPLY_AUDIT_HMAC_KEY`    | Second `openssl` output from §1.                                                  |
@@ -157,21 +157,25 @@ applies every pending SQL file in `lib/resupply-db/drizzle/`, takes a
 Postgres advisory lock for the duration so two deploys can't race, and
 records every applied file in `drizzle.resupply_migrations`.
 
-```bash
-# Set DATABASE_URL to point at the production Postgres (NOT a Supabase
-# branch). The migrator only reads DATABASE_URL — SUPABASE_* vars are
-# not needed for this step.
-export DATABASE_URL="postgres://<prod-conn-string>"
+Copy the production Postgres connection string from Supabase →
+Project Settings → Database (the "Connection string" / "Direct
+connection" entry, NOT a Supabase branch URL) and export it as
+`DATABASE_URL` in the same shell before running the migrator. The
+migrator only reads `DATABASE_URL`; `SUPABASE_*` is not consulted on
+this step.
 
-# Dry-run not supported; the migrator is idempotent — re-running with
-# no pending files is a no-op.
+```bash
+# Paste the production connection string after the equals sign, then
+# run the migrator. The migrator is idempotent — re-running with no
+# pending files is a no-op.
+export DATABASE_URL=
 pnpm --filter @workspace/resupply-db run migrate
 ```
 
 What you should see:
 
-- One line per migration applied: `applied 0XXX_<name>.sql`.
-- A final `migrations up to date` (or equivalent) line.
+- One line per migration applied, with the SQL filename and ms taken.
+- A final "migrations up to date" line (or equivalent for the apply phase).
 - Exit code 0.
 
 If it fails:
@@ -198,34 +202,42 @@ can sign into `/admin/sign-in` — the admin SPA gates on
 inserts the first row, issues a 1-hour password-reset token, and (when
 SendGrid is configured) emails a set-password link to the new admin.
 
+Fill in the four shell variables below with the production values
+(Supabase URL, service-role JWT, and the email of the human who will
+own the first admin row). `SHOP_PUBLIC_BASE_URL` and
+`SENDGRID_FROM_EMAIL` are already concrete; copy them as-is.
+`SENDGRID_API_KEY` is optional — without it the script prints the
+reset link to stdout for the operator to relay manually.
+
 ```bash
-# SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY must point at PRODUCTION.
-# The bootstrap path is the same script used for every subsequent
-# admin invite — the only thing special about the first one is that
-# there is no signed-in admin to send the invite from the UI yet.
-export SUPABASE_URL="https://<prod-project-id>.supabase.co"
-export SUPABASE_SERVICE_ROLE_KEY="<prod-service-role-jwt>"
+# Fill in: production Supabase URL + service-role JWT (Supabase →
+# Project Settings → API), and the address of the first admin (must
+# also be present in RESUPPLY_ADMIN_EMAILS from §2).
+export SUPABASE_URL=
+export SUPABASE_SERVICE_ROLE_KEY=
+FIRST_ADMIN_EMAIL=
+
+# Already concrete production values — copy as-is.
 export SHOP_PUBLIC_BASE_URL="https://pennpaps.com"
-# Optional: needed to deliver the password-reset email. If unset, the
-# script prints the link to stdout and you copy it to the new admin
-# manually.
-export SENDGRID_API_KEY="SG…"
 export SENDGRID_FROM_EMAIL="info@pennpaps.com"
 
+# Optional: paste the production SendGrid key to deliver the
+# password-reset email automatically. Leave blank to print the link.
+export SENDGRID_API_KEY=
+
 pnpm --filter @workspace/scripts auth:bootstrap-admin \
-  --email=alice@pennpaps.com \
+  --email="$FIRST_ADMIN_EMAIL" \
   --role=admin
 ```
 
-What you should see:
+What you should see (one line each):
 
-```
-[auth:bootstrap-admin] Bootstrap link (valid 1 hour):
-  https://pennpaps.com/admin/reset-password?token=…
-
-[auth:bootstrap-admin] Email sent to alice@pennpaps.com.
-[auth:bootstrap-admin] Done. user=<uuid> role=admin status=invited
-```
+- A "Bootstrap link (valid 1 hour)" line containing
+  `https://pennpaps.com/admin/reset-password?token=…`.
+- Either "Email sent to …" (when SendGrid is configured) or a
+  SendGrid-not-configured notice telling the operator to use the
+  printed link.
+- A final "Done. user=… role=admin status=invited" confirmation.
 
 Then:
 
@@ -236,14 +248,14 @@ Then:
 
 Caveats:
 
-- The script REQUIRES that `alice@pennpaps.com` is in
+- The script REQUIRES the email passed in `--email` to also be in
   `RESUPPLY_ADMIN_EMAILS` (set in §2). If it isn't, the row is
   inserted with `role=admin` but `requireAdmin` rejects the session
   because the env-allowlist gate fires before the DB role check.
   Adding the email to the env var and restarting the API is the fix.
 - For the rare case where the first admin needs to be an agent (role
-  `agent`), pass `--role=agent`. Re-running with `--force` upgrades
-  an existing row.
+  `agent`), pass `--role=agent` instead. Re-running with `--force`
+  upgrades an existing row.
 
 ---
 

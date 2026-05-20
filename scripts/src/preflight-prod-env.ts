@@ -395,6 +395,33 @@ function runChecks(): void {
     "RESUPPLY_PHONE_HMAC_KEY",
     "Migration 0025 dropped phone_lookup — value is ignored. Delete from secret store.",
   );
+
+  // 6. Lingering .env.example placeholders for the optional / lower-
+  //    severity vars that aren't covered by the required-at-boot
+  //    checks above. Optional vars that are unset don't fail —
+  //    those are intentional graceful-degrade paths — but a value
+  //    that matches the example placeholder verbatim is a copy-
+  //    paste oversight worth flagging.
+  refusePlaceholder("OPENAI_API_KEY", "sk-replace_me");
+  refusePlaceholder("TWILIO_PHONE_NUMBER", "+15555550123");
+  refusePlaceholder("PENN_FULFILLMENT_EMAIL", "fulfillment@example.com");
+  refusePlaceholder("VITE_RESUPPLY_CONTACT_EMAIL", "support@example.com");
+
+  // Belt-and-braces: any email-shaped env var landing on @example.com
+  // in production is a placeholder leak even if it isn't one of the
+  // four named above. Scan every var whose name ends in _EMAIL.
+  // Skip names that already have a result so we don't double-flag
+  // the cases the explicit `refusePlaceholder` above already caught.
+  const alreadyReported = new Set(results.map((r) => r.name));
+  for (const name of Object.keys(process.env)) {
+    if (!name.endsWith("_EMAIL")) continue;
+    if (alreadyReported.has(name)) continue;
+    const value = getTrimmed(name);
+    if (value === undefined) continue;
+    if (/@example\.(com|org|net)$/i.test(value)) {
+      record(name, "fail", `points at @example.* (placeholder domain): "${value}"`);
+    }
+  }
 }
 
 // Report ---------------------------------------------------------------
