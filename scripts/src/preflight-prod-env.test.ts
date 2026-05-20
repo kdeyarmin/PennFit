@@ -13,9 +13,13 @@ import { describe, it, expect } from "vitest";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const SCRIPT = resolve(__dirname, "preflight-prod-env.ts");
 
-// 48-byte all-zero buffer base64-encoded — decodes to exactly 48 bytes,
+// 48-byte buffer base64-encoded — decodes to exactly 48 bytes,
 // comfortably above the 32-byte minimum the script enforces for HMAC keys.
-const VALID_HMAC_KEY = Buffer.alloc(48).toString("base64");
+// Two distinct values because the preflight rejects RESUPPLY_LINK_HMAC_KEY
+// === RESUPPLY_AUDIT_HMAC_KEY (operator who ran `openssl rand` once and
+// pasted the same output into both slots).
+const VALID_HMAC_KEY = Buffer.alloc(48, 0).toString("base64");
+const VALID_HMAC_KEY_ALT = Buffer.alloc(48, 1).toString("base64");
 
 // A minimal environment that passes every check in production mode.
 const VALID_PROD_ENV: Record<string, string> = {
@@ -30,7 +34,7 @@ const VALID_PROD_ENV: Record<string, string> = {
   SUPABASE_URL: "https://abcxyz123.supabase.co",
   SUPABASE_SERVICE_ROLE_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.service_role",
   RESUPPLY_LINK_HMAC_KEY: VALID_HMAC_KEY,
-  RESUPPLY_AUDIT_HMAC_KEY: VALID_HMAC_KEY,
+  RESUPPLY_AUDIT_HMAC_KEY: VALID_HMAC_KEY_ALT,
   RESUPPLY_ADMIN_EMAILS: "admin@pennpaps.com",
   // NODE_ENV = production unlocks stricter checks:
   NODE_ENV: "production",
@@ -187,6 +191,39 @@ describe("boot-required variables — exit 1 on failure", () => {
     expect(stdout).toContain("DATABASE_URL");
   });
 
+  it("fails when DATABASE_URL points at localhost in NODE_ENV=production", () => {
+    // A non-placeholder URL — passes the prefix and placeholder
+    // checks — but with a localhost host. The migrator and the API
+    // both consult DATABASE_URL directly; a localhost value in prod
+    // silently writes prod traffic to a dev/CI database.
+    const env = withEnv({
+      DATABASE_URL: "postgres://realuser:realpass@localhost:5432/pennpaps_prod",
+    });
+    const { exitCode, stdout } = run(env);
+    expect(exitCode).toBe(1);
+    expect(stdout).toContain("DATABASE_URL");
+    expect(stdout).toContain("localhost");
+  });
+
+  it("fails when DATABASE_URL points at 127.0.0.1 in NODE_ENV=production", () => {
+    const env = withEnv({
+      DATABASE_URL: "postgres://realuser:realpass@127.0.0.1:5432/pennpaps_prod",
+    });
+    const { exitCode } = run(env);
+    expect(exitCode).toBe(1);
+  });
+
+  it("passes when DATABASE_URL points at localhost outside production mode", () => {
+    // Staging / dev / preview is allowed to point at a local DB —
+    // the rejection above is prod-only.
+    const env = withEnv({
+      NODE_ENV: "staging",
+      DATABASE_URL: "postgres://localuser:localpass@localhost:5432/pennpaps_local",
+    });
+    const { exitCode } = run(env);
+    expect(exitCode).toBe(0);
+  });
+
   it("fails when SUPABASE_URL is the placeholder", () => {
     const { exitCode, stdout } = run(
       withEnv({ SUPABASE_URL: "https://YOUR-PROJECT.supabase.co" }),
@@ -255,14 +292,29 @@ describe("boot-required variables — exit 1 on failure", () => {
     expect(stdout).toContain("RESUPPLY_AUDIT_HMAC_KEY");
   });
 
-  it("passes when HMAC key decodes to exactly 32 bytes (boundary value)", () => {
-    const exactly32 = Buffer.alloc(32).toString("base64");
+  it("passes when each HMAC key decodes to exactly 32 bytes (boundary value)", () => {
+    const exactly32a = Buffer.alloc(32, 0).toString("base64");
+    const exactly32b = Buffer.alloc(32, 1).toString("base64");
     const env = withEnv({
-      RESUPPLY_LINK_HMAC_KEY: exactly32,
-      RESUPPLY_AUDIT_HMAC_KEY: exactly32,
+      RESUPPLY_LINK_HMAC_KEY: exactly32a,
+      RESUPPLY_AUDIT_HMAC_KEY: exactly32b,
     });
     const { exitCode } = run(env);
     expect(exitCode).toBe(0);
+  });
+
+  it("fails when RESUPPLY_LINK_HMAC_KEY and RESUPPLY_AUDIT_HMAC_KEY are identical", () => {
+    // Operator who ran `openssl rand -base64 48` once and pasted
+    // the same output into both slots — leak of either secret
+    // would forge artifacts in both domains.
+    const sameKey = Buffer.alloc(48, 7).toString("base64");
+    const env = withEnv({
+      RESUPPLY_LINK_HMAC_KEY: sameKey,
+      RESUPPLY_AUDIT_HMAC_KEY: sameKey,
+    });
+    const { exitCode, stdout } = run(env);
+    expect(exitCode).toBe(1);
+    expect(stdout).toContain("identical");
   });
 
   it("fails when RESUPPLY_AUDIT_HMAC_KEY uses URL-safe base64 (-/_) — Node decodes it but boot rejects it", () => {

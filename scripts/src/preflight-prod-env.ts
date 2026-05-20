@@ -15,10 +15,12 @@
 //   * Strict base64 (regex + round-trip) for the two HMAC keys —
 //     mirrors lib/resupply-audit so preflight can't pass values
 //     that boot-time validation would reject.
+//   * Independence of the two HMAC keys — operator who pastes the
+//     same `openssl rand` output into both slots gets a FAIL.
 //   * Production-only sanity for the vendor keys called out in
 //     docs/runbooks/production-launch.md — sk_live_ vs sk_test_,
 //     https vs http://localhost on every public URL, @example.* on
-//     every *_EMAIL variable.
+//     every *_EMAIL variable, DATABASE_URL host not localhost.
 //   * Feature-flag posture (RESUPPLY_FITTER_REENGAGE_ENABLED=1).
 //   * Stale secrets that the codebase no longer reads (Task #38's
 //     AUTH_PASSWORD_PEPPER, migration 0025's RESUPPLY_MASTER_KEY
@@ -311,17 +313,33 @@ function refusePlaceholder(name: string, ...placeholders: string[]): boolean {
  */
 
 function runChecks(): void {
+  // Determine production mode up front so the boot-required checks
+  // below can apply stricter shape rules (e.g. no-localhost in prod).
+  // Re-recorded as a check later in section 3 so the report shows
+  // NODE_ENV explicitly.
+  const nodeEnvEarly = getTrimmed("NODE_ENV") ?? "development";
+  const prodModeEarly = nodeEnvEarly === "production";
+
   // 1. Boot-required vars — mirrors env-check.ts in resupply-api.
   requirePresent("PORT");
 
   if (!refusePlaceholder("DATABASE_URL", "postgres://user:password@localhost:5432/pennpaps")) {
     const url = getTrimmed("DATABASE_URL");
-    if (url && !url.startsWith("postgres://") && !url.startsWith("postgresql://")) {
-      record("DATABASE_URL", "fail", `must start with postgres:// or postgresql://`);
-    } else if (url) {
-      record("DATABASE_URL", "pass", "set");
-    } else {
+    if (url === undefined) {
       record("DATABASE_URL", "fail", "unset or empty");
+    } else if (!url.startsWith("postgres://") && !url.startsWith("postgresql://")) {
+      record("DATABASE_URL", "fail", `must start with postgres:// or postgresql://`);
+    } else if (prodModeEarly && /@(localhost|127\.0\.0\.1)[:/]/.test(url)) {
+      // Production must not point at a local Postgres. The migrator
+      // and the app both consult DATABASE_URL directly; a stray
+      // local URL silently writes prod traffic to a dev/CI database.
+      record(
+        "DATABASE_URL",
+        "fail",
+        "host is localhost/127.0.0.1 in NODE_ENV=production — production must point at the prod Postgres",
+      );
+    } else {
+      record("DATABASE_URL", "pass", "set");
     }
   }
 
@@ -337,6 +355,23 @@ function runChecks(): void {
   }
   if (!refusePlaceholder("RESUPPLY_AUDIT_HMAC_KEY", "replace_me_with_32_byte_secret")) {
     requireBase64Bytes("RESUPPLY_AUDIT_HMAC_KEY", 32);
+  }
+  // The two HMAC keys sign different artifacts (reminder-link tokens
+  // vs. audit-log row chain) and must be distinct. Reusing one across
+  // both flows would let a leak of either secret forge artifacts in
+  // the other domain. Operator who runs `openssl rand -base64 48`
+  // once and pastes the same output into both is the realistic
+  // failure mode; flag it.
+  {
+    const link = getTrimmed("RESUPPLY_LINK_HMAC_KEY");
+    const audit = getTrimmed("RESUPPLY_AUDIT_HMAC_KEY");
+    if (link !== undefined && audit !== undefined && link === audit) {
+      record(
+        "RESUPPLY_LINK_HMAC_KEY vs RESUPPLY_AUDIT_HMAC_KEY",
+        "fail",
+        "the two HMAC keys are identical — generate two independent values via `openssl rand -base64 48`",
+      );
+    }
   }
 
   // 2. Admin allowlist — WARN, not FAIL.
@@ -357,19 +392,19 @@ function runChecks(): void {
       "count tile. Bootstrap admins via auth:bootstrap-admin instead.",
   });
 
-  // 3. Production posture — only matters when NODE_ENV=production.
-  //    All other checks above apply equally to staging.
-  const nodeEnv = getTrimmed("NODE_ENV") ?? "development";
-  if (nodeEnv !== "production") {
+  // 3. Production posture — re-record NODE_ENV explicitly so the
+  //    report surfaces it. The boot-required block above already
+  //    used the value via `prodModeEarly`.
+  if (!prodModeEarly) {
     record(
       "NODE_ENV",
       "warn",
-      `is "${nodeEnv}" — production-only checks below are advisory in this run`,
+      `is "${nodeEnvEarly}" — production-only checks below are advisory in this run`,
     );
   } else {
     record("NODE_ENV", "pass", `= "production"`);
   }
-  const prodMode = nodeEnv === "production";
+  const prodMode = prodModeEarly;
   const prodSeverity: Severity = prodMode ? "fail" : "warn";
 
   // Stripe — sk_live_ in prod, never the test or placeholder key.
