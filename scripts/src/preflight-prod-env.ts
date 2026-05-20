@@ -54,10 +54,23 @@ interface CheckResult {
 
 const results: CheckResult[] = [];
 
+/**
+ * Appends a check result entry to the module-level results list.
+ *
+ * @param name - Short identifier for the check
+ * @param severity - Outcome severity: `"pass"`, `"warn"`, or `"fail"`
+ * @param detail - Human-readable message or context to display in the report
+ */
 function record(name: string, severity: Severity, detail: string): void {
   results.push({ name, severity, detail });
 }
 
+/**
+ * Reads an environment variable by name and returns its trimmed value or nothing.
+ *
+ * @param name - The environment variable name to read from `process.env`
+ * @returns The trimmed variable value, or `undefined` if the variable is unset or becomes empty after trimming
+ */
 function getTrimmed(name: string): string | undefined {
   const raw = process.env[name];
   if (raw === undefined) return undefined;
@@ -65,7 +78,14 @@ function getTrimmed(name: string): string | undefined {
   return trimmed === "" ? undefined : trimmed;
 }
 
-// Helpers ---------------------------------------------------------------
+/**
+ * Checks that the environment variable named `name` is present and records a pass or fail result.
+ *
+ * Treats an empty string as unset; records a `"fail"` (detail: `"unset or empty"`) when missing or empty,
+ * and records a `"pass"` (detail: `"set"`) when a non-empty value exists.
+ *
+ * @param name - The name of the environment variable to check
+ */
 
 function requirePresent(name: string): void {
   const value = getTrimmed(name);
@@ -76,6 +96,14 @@ function requirePresent(name: string): void {
   }
 }
 
+/**
+ * Validate that the environment variable named by `name` begins with `prefix` and record the check result.
+ *
+ * Records a `"fail"` if the variable is unset/empty or if its value does not start with `prefix`; records a `"pass"` with a short detail when it does.
+ *
+ * @param name - The environment variable name to validate
+ * @param prefix - The required starting substring for the variable's value
+ */
 function requirePrefix(name: string, prefix: string): void {
   const value = getTrimmed(name);
   if (value === undefined) {
@@ -89,6 +117,13 @@ function requirePrefix(name: string, prefix: string): void {
   record(name, "pass", `starts with "${prefix}"`);
 }
 
+/**
+ * Validates that the environment variable named `name` contains a valid HTTPS URL (and optionally disallows localhost) and records a pass or fail result.
+ *
+ * @param name - The environment variable name to validate
+ * @param forbidLocalhost - If `true`, values with hostnames `localhost` or `127.0.0.1` are treated as failures
+ * 
+ * On success, records a `"pass"` with the URL origin; on failure, records a `"fail"` with a concise reason.
 function requireHttpsUrl(name: string, forbidLocalhost: boolean): void {
   const value = getTrimmed(name);
   if (value === undefined) {
@@ -116,7 +151,14 @@ function requireHttpsUrl(name: string, forbidLocalhost: boolean): void {
 // Base64-decoded byte length. Used for the two HMAC keys, both of which
 // pass through `openssl rand -base64 48` → ~36 characters of base64 →
 // 32 raw bytes. The audit module rejects anything shorter than 32 at
-// boot; mirror that here.
+/**
+ * Validates that an environment variable contains valid base64 that decodes to at least a given number of bytes.
+ *
+ * Records a `"fail"` check if the variable is unset/empty, is not valid base64, or decodes to fewer than `minBytes` bytes; records a `"pass"` with the decoded byte count when the requirement is met.
+ *
+ * @param name - The environment variable name to check
+ * @param minBytes - Minimum required decoded byte length
+ */
 function requireBase64Bytes(name: string, minBytes: number): void {
   const value = getTrimmed(name);
   if (value === undefined) {
@@ -137,6 +179,16 @@ function requireBase64Bytes(name: string, minBytes: number): void {
   record(name, "pass", `${decodedLen} bytes (base64)`);
 }
 
+/**
+ * Verify that an environment variable equals a specific expected value and record the check result.
+ *
+ * Records a pass when the variable is present and exactly equals `expected`; otherwise records the provided
+ * `severity` with a message indicating the variable is missing/empty or showing the expected vs. actual value.
+ *
+ * @param name - Environment variable name to validate
+ * @param expected - Exact string value required for the variable
+ * @param severity - Severity to record when the variable is missing or does not match; defaults to `"fail"`
+ */
 function expectExactly(name: string, expected: string, severity: Severity = "fail"): void {
   const value = getTrimmed(name);
   if (value === undefined) {
@@ -150,6 +202,15 @@ function expectExactly(name: string, expected: string, severity: Severity = "fai
   record(name, "pass", `= "${expected}"`);
 }
 
+/**
+ * Records a warning if the named environment variable is set.
+ *
+ * When the environment variable contains a non-empty value, a `warn` check result
+ * is recorded using the provided reason.
+ *
+ * @param name - The environment variable name to check
+ * @param reason - Explanation to attach to the warning when the variable is set
+ */
 function warnIfSet(name: string, reason: string): void {
   const value = getTrimmed(name);
   if (value !== undefined) {
@@ -157,6 +218,11 @@ function warnIfSet(name: string, reason: string): void {
   }
 }
 
+/**
+ * Validates an environment variable contains a comma-separated list with at least one non-empty entry and records the check result.
+ *
+ * @param name - The environment variable name expected to hold a comma-separated list; records a `"fail"` if unset/empty or if all entries are empty, otherwise records a `"pass"` with the number of entries.
+ */
 function requireNonEmptyList(name: string): void {
   const value = getTrimmed(name);
   if (value === undefined) {
@@ -173,7 +239,16 @@ function requireNonEmptyList(name: string): void {
 
 // Forbids known placeholder values that ship in .env.example. Matching
 // these in production means the operator copied the example file but
-// never filled in the real value.
+/**
+ * Detects whether an environment variable contains a known placeholder value and records a failure if so.
+ *
+ * If the environment variable's trimmed value exactly equals any provided placeholder or contains
+ * the substring `"replace_me"`, a `"fail"` check is recorded for `name`.
+ *
+ * @param name - The environment variable name to inspect
+ * @param placeholders - Known placeholder values to compare against
+ * @returns `true` if the value matched a placeholder and a `"fail"` check was recorded, `false` otherwise
+ */
 function refusePlaceholder(name: string, ...placeholders: string[]): boolean {
   const value = getTrimmed(name);
   if (value === undefined) return false;
@@ -186,7 +261,17 @@ function refusePlaceholder(name: string, ...placeholders: string[]): boolean {
   return false;
 }
 
-// Checks ---------------------------------------------------------------
+/**
+ * Performs a suite of environment-variable validations to assess production readiness.
+ *
+ * Runs a fixed sequence of checks (boot-required vars, admin allowlist, production-specific
+ * posture for third-party credentials and public URLs, feature-flag posture, stale-secret
+ * warnings, and placeholder-leak detection) and records each outcome as a `CheckResult`
+ * appended to the module-level `results` array with severity `pass | warn | fail`.
+ *
+ * This function does not return a value; callers should inspect `results` (or call
+ * `report()`) to determine overall status and exit codes.
+ */
 
 function runChecks(): void {
   // 1. Boot-required vars — mirrors env-check.ts in resupply-api.
@@ -424,7 +509,12 @@ function runChecks(): void {
   }
 }
 
-// Report ---------------------------------------------------------------
+/**
+ * Map a severity value to its corresponding colored uppercase label.
+ *
+ * @param severity - The severity to convert into a label
+ * @returns The uppercase label `PASS`, `WARN`, or `FAIL`, wrapped in ANSI color codes when color output is enabled
+ */
 
 function symbolFor(severity: Severity): string {
   switch (severity) {
@@ -437,6 +527,14 @@ function symbolFor(severity: Severity): string {
   }
 }
 
+/**
+ * Prints a formatted preflight report of recorded checks to stdout and indicates launch readiness.
+ *
+ * Writes each check entry and a summary count of pass/warn/fail to stdout, and emits a final
+ * readiness message describing whether launch is safe, allowed with warnings, or blocked.
+ *
+ * @returns `1` if any recorded check has severity `fail`, `0` otherwise.
+ */
 function report(): number {
   const failed = results.filter((r) => r.severity === "fail");
   const warned = results.filter((r) => r.severity === "warn");
