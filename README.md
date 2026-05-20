@@ -93,6 +93,23 @@ are intentionally NOT required at boot — the services run in a
 partially-configured mode so dev / preview environments don't need
 every third-party credential.
 
+### Deploying to production
+
+Run [`pnpm --filter @workspace/scripts preflight:prod`](./scripts/src/preflight-prod-env.ts)
+against the loaded env to catch shape-level mistakes (test keys in
+prod, localhost URLs, identical HMAC keys, `STRIPE_WEBHOOK_SECRET`
+name confusion, `.env.example` placeholders still in place, etc.)
+**before** the API tries to boot. The script exits non-zero on any
+FAIL so it can gate the deploy.
+
+The full five-step first-launch procedure (generate HMAC keys → set
+production secrets → run preflight → migrate the prod DB → bootstrap
+the first admin → smoke-test) lives in
+[`docs/runbooks/production-launch.md`](./docs/runbooks/production-launch.md).
+The broader operator checklist (TLS, CORS, logging, dependency
+hygiene, backups) is in
+[`docs/PRODUCTION_READINESS.md`](./docs/PRODUCTION_READINESS.md).
+
 ## Environment variables
 
 The full template lives in [`.env.example`](./.env.example), organised
@@ -117,11 +134,15 @@ hashed with plain argon2id; if you still have an `AUTH_PASSWORD_PEPPER`
 secret in your environment from an earlier deploy, it is silently
 ignored — feel free to delete it.
 
-| Variable                 | `resupply-api` | Notes                                                                                                                                                                                           |
-| ------------------------ | :------------: | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `PORT`                   |       ✅       | HTTP listen port.                                                                                                                                                                               |
-| `DATABASE_URL`           |       ✅       | Postgres connection string (v14+). No extensions required. The same connection string is also used by the in-process pg-boss worker (it owns its own pool, distinct from the application pool). |
-| `RESUPPLY_LINK_HMAC_KEY` |       ✅       | 32+ random bytes used to sign the short-lived patient links delivered in SMS / email reminders. Generate with `openssl rand -base64 48`. Rotating it invalidates in-flight links.               |
+| Variable                                            | `resupply-api` | Notes                                                                                                                                                                                                                                                                          |
+| --------------------------------------------------- | :------------: | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `PORT`                                              |       ✅       | HTTP listen port.                                                                                                                                                                                                                                                              |
+| `DATABASE_URL`                                      |       ✅       | Postgres connection string (v14+). No extensions required. The same connection string is also used by the in-process pg-boss worker (it owns its own pool, distinct from the application pool).                                                                               |
+| `SUPABASE_URL`                                      |       ✅       | Production Supabase project URL (from Studio → Project Settings → API). The resupply-api routes its reads/writes through the Supabase JS service-role client — this is the only runtime data path. URL is safe to expose; the key is not.                                     |
+| `SUPABASE_SERVICE_ROLE_KEY`                         |       ✅       | Service-role JWT for the project above. Bypasses RLS; MUST stay server-side. Both this and `SUPABASE_URL` are validated by `validateSupabaseEnv()` in `lib/resupply-db/src/supabase-client.ts`.                                                                                |
+| `RESUPPLY_LINK_HMAC_KEY`                            |       ✅       | 32+ random bytes used to sign the short-lived patient links delivered in SMS / email reminders. Generate with `openssl rand -base64 48`. Rotating it invalidates in-flight links.                                                                                              |
+| `RESUPPLY_AUDIT_HMAC_KEY`                           |       ✅       | 32+ byte base64-encoded secret used to HMAC-chain every row written to `resupply.audit_log` (migration 0116). HIPAA §164.312(b) tamper-evidence. Generate with `openssl rand -base64 48`. MUST be a different value from `RESUPPLY_LINK_HMAC_KEY`.                             |
+| `RESUPPLY_ALLOWED_ORIGINS` **or** `REPLIT_DOMAINS`  |       ✅       | CORS allowlist hostnames (one of either). In production `artifacts/resupply-api/src/app.ts:63` throws at boot if both are empty. On Replit, `REPLIT_DOMAINS` is auto-populated; on any other host, set `RESUPPLY_ALLOWED_ORIGINS` to the production origins.                   |
 
 > Migration 0025 stripped pgcrypto column-level PHI encryption and
 > dropped the `phone_lookup` table, so the legacy
@@ -135,11 +156,11 @@ ignored — feel free to delete it.
 | ---------------------------------------------------------------------------------------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `NODE_ENV`, `LOG_LEVEL`                                                                              | All services      | Defaults to `development` / `info`.                                                                                                                                                                                                                                                                                                                                                        |
 | `BASE_PATH`                                                                                          | Vite apps         | Required by every Vite app at config time (the config throws if missing or empty). Set to `/` for root mounts.                                                                                                                                                                                                                                                                             |
-| `RESUPPLY_ALLOWED_ORIGINS`                                                                           | `resupply-api`    | CORS allowlist for the resupply admin/voice routes (the `/resupply-api/*` mount). Falls back to Replit dev domain + localhost.                                                                                                                                                                                                                                                             |
+| `RESUPPLY_ALLOWED_ORIGINS`                                                                           | `resupply-api`    | CORS allowlist for the `/resupply-api/*` mount. In `NODE_ENV=production` the API throws at boot if BOTH this and `REPLIT_DOMAINS` are empty (`artifacts/resupply-api/src/app.ts:63`); on Replit, `REPLIT_DOMAINS` is auto-populated so this is genuinely optional there. Outside production, falls back to Replit dev domain + localhost.                                                  |
 | `SHOP_PUBLIC_BASE_URL`, `REMINDER_PUBLIC_BASE_URL`, `RESUPPLY_VOICE_PUBLIC_BASE_URL`                 | `resupply-api`    | Public base URLs used in outbound deep links. Cart-recovery + reminder emails fall through `SHOP → RESUPPLY_VOICE → https://pennpaps.com` in order.                                                                                                                                                                                                                                        |
 | `SENDGRID_API_KEY`, `SENDGRID_FROM_EMAIL`, `SENDGRID_FROM_NAME`, `SENDGRID_EVENT_WEBHOOK_PUBLIC_KEY` | `resupply-api`    | Outbound email + delivery webhooks (used by both the request-handling routes and the in-process worker's reminder jobs). Every sender across the monorepo funnels through the shared `createSendgridClient()` in `lib/resupply-email`, so `SENDGRID_FROM_EMAIL` (set to `info@pennpaps.com`) is the single From address for the entire platform. Email features log-and-skip when missing. |
 | `PENN_FULFILLMENT_EMAIL`                                                                             | `resupply-api`    | Where Penn Fit fulfillment receives new mask orders (this is the recipient, not the sender).                                                                                                                                                                                                                                                                                               |
-| `RESUPPLY_ADMIN_EMAILS`, `RESUPPLY_AGENT_EMAILS`, `RESUPPLY_OPERATOR_EMAILS`                         | `resupply-api`    | Comma-separated allowlists for role-gated admin endpoints.                                                                                                                                                                                                                                                                                                                                 |
+| `RESUPPLY_ADMIN_EMAILS`, `RESUPPLY_AGENT_EMAILS`, `RESUPPLY_OPERATOR_EMAILS`                         | `resupply-api`    | Display-only allowlist counts shown on `/admin/operations`. Role-gating itself is DB-driven now (`requireAdmin` reads `auth.users.role`); these env vars are not consulted by the auth middleware. Safe to leave empty; bootstrap the first admin via `pnpm --filter @workspace/scripts auth:bootstrap-admin`.                                                                              |
 | `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_PHONE_NUMBER`, `TWILIO_MESSAGING_SERVICE_SID`     | `resupply-api`    | SMS + voice. Outbound SMS / voice routes return 503 when missing.                                                                                                                                                                                                                                                                                                                          |
 | `OPENAI_API_KEY`                                                                                     | `resupply-api`    | Conversation AI. AI features disable when missing.                                                                                                                                                                                                                                                                                                                                         |
 | `STRIPE_SECRET_KEY`                                                                                  | `resupply-api`    | Cash-pay shop checkout + webhooks. Shop endpoints return preview-mode responses when missing.                                                                                                                                                                                                                                                                                              |
@@ -150,12 +171,14 @@ ignored — feel free to delete it.
 
 ## Useful scripts
 
-| Command                    | What it does                                                           |
-| -------------------------- | ---------------------------------------------------------------------- |
-| `pnpm typecheck`           | `tsc --build` across libs + per-app `typecheck`.                       |
-| `pnpm build`               | Type-check, then `build` in every package that defines one.            |
-| `pnpm lint:resupply`       | ESLint (zero warnings) over the resupply surface.                      |
-| `pnpm --filter <pkg> test` | Vitest for a specific package (resupply-api, the resupply-\* libs, …). |
+| Command                                                  | What it does                                                                                                                                                            |
+| -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm typecheck`                                         | `tsc --build` across libs + per-app `typecheck`.                                                                                                                        |
+| `pnpm build`                                             | Type-check, then `build` in every package that defines one.                                                                                                             |
+| `pnpm lint:resupply`                                     | ESLint (zero warnings) over the resupply surface.                                                                                                                       |
+| `pnpm --filter <pkg> test`                               | Vitest for a specific package (resupply-api, the resupply-\* libs, …).                                                                                                  |
+| `pnpm --filter @workspace/scripts preflight:prod`        | Read-only validator that audits `process.env` against production constraints (sk\_live vs sk\_test, HTTPS-only public URLs, HMAC-key shape, etc.). Exits non-zero on any FAIL. See [`docs/runbooks/production-launch.md`](./docs/runbooks/production-launch.md). |
+| `pnpm --filter @workspace/scripts auth:bootstrap-admin`  | Insert the first admin row into `resupply_auth.users` and issue a 1-hour password-reset link (emailed when SendGrid is configured, printed to stdout otherwise). Used once per environment to break the chicken-and-egg on a fresh DB.                          |
 
 ## Privacy contract
 
