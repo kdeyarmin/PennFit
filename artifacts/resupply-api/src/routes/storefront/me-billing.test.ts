@@ -83,6 +83,19 @@ describe("/api/me/billing-statements", () => {
     expect(res.body).toEqual({ statements: [] });
   });
 
+  it("returns lookup_failed when customer lookup throws", async () => {
+    stageSupabaseResponse("shop_customers", "select", {
+      error: new Error("boom"),
+    });
+
+    const res = await request(
+      makeApp({ shopCustomerId: CUSTOMER_ID }),
+    ).get("/api/me/billing-statements");
+
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: "lookup_failed" });
+  });
+
   it("shapes statement rows into camelCase and counts line items", async () => {
     stageSupabaseResponse("shop_customers", "select", {
       data: { customer_id: CUSTOMER_ID, email_lower: "jo@example.com" },
@@ -157,5 +170,18 @@ describe("/api/me/billing-statements/:id/pdf", () => {
       makeApp({ shopCustomerId: CUSTOMER_ID }),
     ).get("/api/me/billing-statements/not-a-uuid/pdf");
     expect(res.status).toBe(404);
+  });
+
+  it("returns lookup_failed when customer lookup throws", async () => {
+    stageSupabaseResponse("shop_customers", "select", {
+      error: new Error("boom"),
+    });
+
+    const res = await request(
+      makeApp({ shopCustomerId: CUSTOMER_ID }),
+    ).get(`/api/me/billing-statements/${STATEMENT}/pdf`);
+
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: "lookup_failed" });
   });
 });

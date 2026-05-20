@@ -60,7 +60,13 @@ router.get("/me/billing-statements", async (req, res) => {
     res.status(401).json({ error: "sign_in_required" });
     return;
   }
-  const link = await resolvePatientForCustomer(customerId);
+  let link: { patientId: string } | null;
+  try {
+    link = await resolvePatientForCustomer(customerId);
+  } catch {
+    res.status(500).json({ error: "lookup_failed" });
+    return;
+  }
   if (!link) {
     res.json({ statements: [] });
     return;
@@ -120,7 +126,13 @@ router.get("/me/billing-statements/:id/pdf", async (req, res) => {
     res.status(404).json({ error: "not_found" });
     return;
   }
-  const link = await resolvePatientForCustomer(customerId);
+  let link: { patientId: string } | null;
+  try {
+    link = await resolvePatientForCustomer(customerId);
+  } catch {
+    res.status(500).json({ error: "lookup_failed" });
+    return;
+  }
   if (!link) {
     res.status(404).json({ error: "not_found" });
     return;
