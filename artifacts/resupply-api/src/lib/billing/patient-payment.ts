@@ -256,6 +256,21 @@ export async function createPaymentCheckoutSession(
   // Same per-allocation ownership + balance gates as the intent
   // flow — duplicated here rather than refactored because the
   // failure modes intentionally surface as different HTTP statuses.
+  //
+  // Known concurrency caveat: this validation is not atomic with
+  // the patient_payments insert below. Two checkout-session
+  // creations racing on the same claim can both pass the
+  // claim_balance_mismatch gate before either reserves. The
+  // applySucceededPayment() webhook decrements
+  // patient_responsibility_cents row-by-row on succeeded events,
+  // and a subsequent payment attempt on the now-zero balance
+  // returns claim_balance_mismatch — so the worst-case observable
+  // outcome is one duplicate authorisation (rare in practice: the
+  // gap between SELECT and the Stripe API call is sub-second; the
+  // patient has to click "Pay" twice in two tabs that fast). A
+  // real fix would put a SELECT ... FOR UPDATE on the claim row
+  // inside a transaction or take an advisory lock keyed on
+  // claim_id; tracked separately as a heavier lift.
   const claimIds = input.allocations.map((a) => a.claimId);
   const { data: claimsData, error } = await supabase
     .schema("resupply")

@@ -187,6 +187,9 @@ jobs:
           docker ps -a --format 'table {{.Names}}\t{{.Status}}' 2>&1 | head -10 || true
           ss -tlnp 2>&1 | grep ":5432" || echo "5432 not listening"
           pg_isready -h 127.0.0.1 -p 5432 || echo "pg_isready failed"
+          # Mark "now" so the failure-tail step's `find -newer` only
+          # surfaces logs/artifacts written during the test step.
+          touch /tmp/runtime-marker
       - name: Run tests
         run: pnpm -r --if-present run test
       - name: Diagnostics — failure tail
