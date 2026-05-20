@@ -73,6 +73,15 @@ These six (plus the CORS-allowlist gate) are what
 `artifacts/resupply-api/src/app.ts:63`) enforce at boot; the API
 fails to start if any is missing.
 
+#### Supabase Studio one-time config
+
+Setting `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` isn't
+sufficient on its own — the resupply schemas have to be exposed
+to PostgREST or every Supabase-JS query at boot fails with
+`schema must be one of: public`. In **Supabase Studio → Project
+Settings → API → "Exposed schemas"**, confirm both `resupply` and
+`resupply_auth` are listed. This is a one-time setup per project.
+
 ### Vendor secrets — production credentials, not test
 
 | Variable                          | Production value                                                          |

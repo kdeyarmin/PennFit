@@ -43,6 +43,14 @@ need to be **correct**, not just present.
       extensions are required: the active resupply schema only
       uses `gen_random_uuid()`, which has been built into Postgres
       core since v13.
+- [ ] `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` set — these
+      are the runtime data path (`@workspace/resupply-db`'s
+      service-role client). `DATABASE_URL` is still used by the
+      migrator and a small number of legacy worker code paths.
+- [ ] In **Supabase Studio → Project Settings → API → "Exposed
+      schemas"**, confirm both `resupply` and `resupply_auth` are
+      listed. Without this, every PostgREST query fails at boot
+      with `schema must be one of: public`.
 - [ ] All migrations applied in order:
       `pnpm --filter @workspace/resupply-db run migrate`
 - [ ] Migrations 0016–0021 applied if rolling forward from before
