@@ -68,7 +68,7 @@ crypto. The only remaining application-layer secret in this family is:
 
 shows green/red dots per vendor)
 
-- [ ] `STRIPE_SECRET_KEY` + `STRIPE_WEBHOOK_SECRET` — cash-pay shop
+- [ ] `STRIPE_SECRET_KEY` + `STRIPE_WEBHOOK_SIGNING_SECRET` — cash-pay shop
       checkout, refunds, subscription mirror.
 - [ ] `SENDGRID_API_KEY` + `SENDGRID_FROM_EMAIL` + `SENDGRID_FROM_NAME` —
       order receipts, reminder emails, cart-abandonment, review
