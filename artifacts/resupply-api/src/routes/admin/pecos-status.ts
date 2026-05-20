@@ -12,6 +12,7 @@ import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { runPecosSync } from "../../worker/jobs/pecos-sync";
 import { logger } from "../../lib/logger";
+import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import {
   requireAdmin,
   requireAdminOnly,
@@ -69,6 +70,7 @@ router.get(
 router.post(
   "/admin/providers-pecos/sync-now",
   requireAdminOnly,
+  adminRateLimit({ name: "providers_pecos.manual_sync", preset: "bulk" }),
   async (req, res) => {
     const stats = await runPecosSync();
     await logAudit({

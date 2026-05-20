@@ -12,6 +12,7 @@ import { z } from "zod";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { selectAdapter } from "../../lib/carrier-labels";
+import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
@@ -23,6 +24,7 @@ router.post(
   // / agent), excludes fitter and compliance_officer (no workflow
   // here).
   requirePermission("returns.manage"),
+  adminRateLimit({ name: "carrier_labels.mint", preset: "mutation" }),
   async (req, res) => {
     const idParse = z.string().uuid().safeParse(req.params.returnId);
     if (!idParse.success) {

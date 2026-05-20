@@ -20,6 +20,7 @@ import type { DeviceSettings } from "@workspace/resupply-integrations";
 import { linkEquipmentFromSnapshot } from "../../lib/integrations/link-equipment";
 import { scanRecallsForAsset } from "../../lib/integrations/scan-recalls-for-asset";
 import { logger } from "../../lib/logger";
+import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
@@ -27,6 +28,7 @@ const router: IRouter = Router();
 router.post(
   "/admin/patients/:id/integrations/sync-equipment",
   requirePermission("patients.update"),
+  adminRateLimit({ name: "integrations.sync_equipment", preset: "mutation" }),
   async (req, res) => {
     const idParse = z.string().uuid().safeParse(req.params.id);
     if (!idParse.success) {
