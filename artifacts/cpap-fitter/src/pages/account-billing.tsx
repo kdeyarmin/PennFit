@@ -238,7 +238,7 @@ function AccountBillingInner() {
               Open balance
             </p>
             <p className="mt-1 text-4xl font-bold tabular-nums text-slate-900">
-              {balance.isPending ? "—" : balance.isError ? "Error" : formatMoneyCents(totalOpen)}
+              {balance.isPending || balance.isError ? "—" : formatMoneyCents(totalOpen)}
             </p>
             <p className="mt-1 text-sm text-slate-600">
               {balance.isPending
@@ -249,6 +249,18 @@ function AccountBillingInner() {
                   ? "No outstanding balance."
                   : `${claimCount} claim${claimCount === 1 ? "" : "s"} with patient responsibility after insurance.`}
             </p>
+            {balance.isError && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="mt-2"
+                onClick={() => void balance.refetch()}
+                disabled={balance.isFetching}
+                data-testid="billing-balance-retry"
+              >
+                {balance.isFetching ? "Retrying…" : "Retry"}
+              </Button>
+            )}
           </div>
           {showPayBanner && (
             <div className="shrink-0 flex flex-col items-end gap-1">
@@ -325,9 +337,20 @@ function AccountBillingInner() {
         {statements.isPending ? (
           <p className="mt-4 text-sm text-slate-500">Loading…</p>
         ) : statements.isError ? (
-          <p className="mt-4 text-sm text-red-600">
-            {statements.error instanceof Error ? statements.error.message : "Failed to load statements."}
-          </p>
+          <div className="mt-4 flex items-center gap-3 flex-wrap">
+            <p className="text-sm text-red-600">
+              {statements.error instanceof Error ? statements.error.message : "Failed to load statements."}
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void statements.refetch()}
+              disabled={statements.isFetching}
+              data-testid="billing-statements-retry"
+            >
+              {statements.isFetching ? "Retrying…" : "Retry"}
+            </Button>
+          </div>
         ) : (statements.data?.statements.length ?? 0) === 0 ? (
           <p className="mt-4 text-sm text-slate-500">
             No statements yet. We email one whenever there's a new
@@ -382,9 +405,20 @@ function AccountBillingInner() {
         {payments.isPending ? (
           <p className="mt-4 text-sm text-slate-500">Loading…</p>
         ) : payments.isError ? (
-          <p className="mt-4 text-sm text-red-600">
-            {payments.error instanceof Error ? payments.error.message : "Failed to load payments."}
-          </p>
+          <div className="mt-4 flex items-center gap-3 flex-wrap">
+            <p className="text-sm text-red-600">
+              {payments.error instanceof Error ? payments.error.message : "Failed to load payments."}
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void payments.refetch()}
+              disabled={payments.isFetching}
+              data-testid="billing-payments-retry"
+            >
+              {payments.isFetching ? "Retrying…" : "Retry"}
+            </Button>
+          </div>
         ) : (payments.data?.payments.length ?? 0) === 0 ? (
           <p className="mt-4 text-sm text-slate-500">
             No payments on file yet.
