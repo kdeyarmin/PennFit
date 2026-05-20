@@ -381,51 +381,52 @@ router.patch(
   requirePermission("conversations.manage"),
   adminRateLimit({ name: "shop_reviews.note", preset: "mutation" }),
   async (req, res) => {
-  const id = String(req.params.id ?? "");
-  if (!id) {
-    res.status(400).json({ error: "missing_id" });
-    return;
-  }
-  const parse = noteBody.safeParse(req.body ?? {});
-  if (!parse.success) {
-    res.status(400).json({ error: "invalid_body" });
-    return;
-  }
-  const note =
-    typeof parse.data.note === "string" && parse.data.note.trim() !== ""
-      ? parse.data.note.trim()
-      : null;
-  const supabase = getSupabaseServiceRoleClient();
-  // Same guard as unreject: only `rejected` rows can have their
-  // note edited. Approved + pending rows have no public note slot.
-  const { data: row, error } = await supabase
-    .schema("resupply")
-    .from("shop_reviews")
-    .update({
-      moderation_note: note,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", id)
-    .eq("status", "rejected")
-    .select("id, status, moderation_note, moderated_at")
-    .limit(1)
-    .maybeSingle();
-  if (error) throw error;
-  if (!row) {
-    res.status(404).json({ error: "not_found_or_not_rejected" });
-    return;
-  }
-  req.log?.info?.(
-    { reviewId: row.id },
-    "shop/admin/reviews: rejection note edited",
-  );
-  res.json({
-    id: row.id,
-    status: row.status,
-    moderationNote: row.moderation_note,
-    moderatedAt: row.moderated_at,
-  });
-});
+    const id = String(req.params.id ?? "");
+    if (!id) {
+      res.status(400).json({ error: "missing_id" });
+      return;
+    }
+    const parse = noteBody.safeParse(req.body ?? {});
+    if (!parse.success) {
+      res.status(400).json({ error: "invalid_body" });
+      return;
+    }
+    const note =
+      typeof parse.data.note === "string" && parse.data.note.trim() !== ""
+        ? parse.data.note.trim()
+        : null;
+    const supabase = getSupabaseServiceRoleClient();
+    // Same guard as unreject: only `rejected` rows can have their
+    // note edited. Approved + pending rows have no public note slot.
+    const { data: row, error } = await supabase
+      .schema("resupply")
+      .from("shop_reviews")
+      .update({
+        moderation_note: note,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", id)
+      .eq("status", "rejected")
+      .select("id, status, moderation_note, moderated_at")
+      .limit(1)
+      .maybeSingle();
+    if (error) throw error;
+    if (!row) {
+      res.status(404).json({ error: "not_found_or_not_rejected" });
+      return;
+    }
+    req.log?.info?.(
+      { reviewId: row.id },
+      "shop/admin/reviews: rejection note edited",
+    );
+    res.json({
+      id: row.id,
+      status: row.status,
+      moderationNote: row.moderation_note,
+      moderatedAt: row.moderated_at,
+    });
+  },
+);
 
 /**
  * Look up a product's display name from Stripe. Wrapped in

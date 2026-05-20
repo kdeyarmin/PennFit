@@ -179,79 +179,80 @@ router.post(
   requirePermission("patients.update"),
   adminRateLimit({ name: "providers.create", preset: "mutation" }),
   async (req, res) => {
-  const parsed = createBody.safeParse(req.body);
-  if (!parsed.success) {
-    res.status(400).json({
-      error: "invalid_body",
-      issues: parsed.error.issues.map((i) => ({
-        path: i.path.join("."),
-        message: i.message,
-      })),
+    const parsed = createBody.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: "invalid_body",
+        issues: parsed.error.issues.map((i) => ({
+          path: i.path.join("."),
+          message: i.message,
+        })),
+      });
+      return;
+    }
+    const body = parsed.data;
+
+    const supabase = getSupabaseServiceRoleClient();
+
+    // Dedupe by NPI: if a row already exists with this NPI, return its
+    // id with a 200 instead of creating a duplicate. The UNIQUE index
+    // would refuse the insert anyway; surfacing the existing row keeps
+    // the CSR flow happy (they get to the same provider regardless).
+    const { data: existing, error: lookupErr } = await supabase
+      .schema("resupply")
+      .from("providers")
+      .select("id")
+      .eq("npi", body.npi)
+      .limit(1)
+      .maybeSingle();
+    if (lookupErr) throw lookupErr;
+    if (existing) {
+      res.status(200).json({ id: existing.id, created: false });
+      return;
+    }
+
+    const verifiedAt = body.source === "nppes" ? new Date().toISOString() : null;
+
+    const { data: row, error } = await supabase
+      .schema("resupply")
+      .from("providers")
+      .insert({
+        npi: body.npi,
+        legal_name: body.legalName,
+        taxonomy_code: body.taxonomyCode ?? null,
+        phone_e164: body.phoneE164 ?? null,
+        fax_e164: body.faxE164 ?? null,
+        email: body.email ?? null,
+        practice_name: body.practiceName ?? null,
+        practice_address: body.practiceAddress ?? null,
+        notes: body.notes ?? null,
+        source: body.source,
+        verified_at: verifiedAt,
+      })
+      .select("id")
+      .single();
+    if (error) throw error;
+
+    await logAudit({
+      action: "provider.create",
+      adminEmail: req.adminEmail ?? null,
+      adminUserId: req.adminUserId ?? null,
+      targetTable: "providers",
+      targetId: row.id,
+      metadata: {
+        // npi is NOT PHI; safe to include in the audit metadata.
+        npi: body.npi,
+        source: body.source,
+      },
+      ip: req.ip ?? null,
+      userAgent: req.get("user-agent") ?? null,
+    }).catch((err) => {
+      logger.warn({ err }, "provider.create audit write failed");
     });
-    return;
-  }
-  const body = parsed.data;
 
-  const supabase = getSupabaseServiceRoleClient();
-
-  // Dedupe by NPI: if a row already exists with this NPI, return its
-  // id with a 200 instead of creating a duplicate. The UNIQUE index
-  // would refuse the insert anyway; surfacing the existing row keeps
-  // the CSR flow happy (they get to the same provider regardless).
-  const { data: existing, error: lookupErr } = await supabase
-    .schema("resupply")
-    .from("providers")
-    .select("id")
-    .eq("npi", body.npi)
-    .limit(1)
-    .maybeSingle();
-  if (lookupErr) throw lookupErr;
-  if (existing) {
-    res.status(200).json({ id: existing.id, created: false });
-    return;
-  }
-
-  const verifiedAt = body.source === "nppes" ? new Date().toISOString() : null;
-
-  const { data: row, error } = await supabase
-    .schema("resupply")
-    .from("providers")
-    .insert({
-      npi: body.npi,
-      legal_name: body.legalName,
-      taxonomy_code: body.taxonomyCode ?? null,
-      phone_e164: body.phoneE164 ?? null,
-      fax_e164: body.faxE164 ?? null,
-      email: body.email ?? null,
-      practice_name: body.practiceName ?? null,
-      practice_address: body.practiceAddress ?? null,
-      notes: body.notes ?? null,
-      source: body.source,
-      verified_at: verifiedAt,
-    })
-    .select("id")
-    .single();
-  if (error) throw error;
-
-  await logAudit({
-    action: "provider.create",
-    adminEmail: req.adminEmail ?? null,
-    adminUserId: req.adminUserId ?? null,
-    targetTable: "providers",
-    targetId: row.id,
-    metadata: {
-      // npi is NOT PHI; safe to include in the audit metadata.
-      npi: body.npi,
-      source: body.source,
-    },
-    ip: req.ip ?? null,
-    userAgent: req.get("user-agent") ?? null,
-  }).catch((err) => {
-    logger.warn({ err }, "provider.create audit write failed");
-  });
-
-  res.status(201).json({ id: row.id, created: true });
-});
+    res.status(201).json({ id: row.id, created: true });
+  },
+);
 
 // GET /admin/providers/:id/patients — referral-attribution view:
 // every patient who currently has an active prescription written by

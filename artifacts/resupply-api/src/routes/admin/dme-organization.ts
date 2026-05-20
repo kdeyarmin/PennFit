@@ -230,107 +230,108 @@ router.put(
   requireAdminOnly,
   adminRateLimit({ name: "dme_organization.upsert", preset: "sensitive" }),
   async (req, res) => {
-  const parsed = orgBody.safeParse(req.body);
-  if (!parsed.success) {
-    res.status(400).json({
-      error: "invalid_body",
-      issues: parsed.error.issues.map((i) => ({
-        path: i.path.join("."),
-        message: i.message,
-      })),
-    });
-    return;
-  }
-  const b = parsed.data;
-  const supabase = getSupabaseServiceRoleClient();
-  const payload: Database["resupply"]["Tables"]["dme_organization"]["Insert"] = {
-    singleton: true,
-    legal_name: b.legalName,
-    dba_name: b.dbaName ?? null,
-    tax_id: b.taxId,
-    organizational_npi: b.organizationalNpi,
-    taxonomy_code: b.taxonomyCode,
-    medicare_ptan: b.medicarePtan ?? null,
-    physical_address_line1: b.physicalAddressLine1,
-    physical_address_line2: b.physicalAddressLine2 ?? null,
-    physical_city: b.physicalCity,
-    physical_state: b.physicalState,
-    physical_zip: b.physicalZip,
-    mailing_address_line1: b.mailingAddressLine1 ?? null,
-    mailing_address_line2: b.mailingAddressLine2 ?? null,
-    mailing_city: b.mailingCity ?? null,
-    mailing_state: b.mailingState ?? null,
-    mailing_zip: b.mailingZip ?? null,
-    pay_to_address_line1: b.payToAddressLine1 ?? null,
-    pay_to_address_line2: b.payToAddressLine2 ?? null,
-    pay_to_city: b.payToCity ?? null,
-    pay_to_state: b.payToState ?? null,
-    pay_to_zip: b.payToZip ?? null,
-    phone_e164: b.phoneE164,
-    fax_e164: b.faxE164 ?? null,
-    billing_email: b.billingEmail,
-    general_email: b.generalEmail ?? null,
-    website_url: b.websiteUrl ?? null,
-    accreditation_body: b.accreditationBody ?? null,
-    accreditation_number: b.accreditationNumber ?? null,
-    accreditation_expires_on: b.accreditationExpiresOn ?? null,
-    state_license_number: b.stateLicenseNumber ?? null,
-    state_license_state: b.stateLicenseState ?? null,
-    state_license_expires_on: b.stateLicenseExpiresOn ?? null,
-    liability_carrier: b.liabilityCarrier ?? null,
-    liability_policy_number: b.liabilityPolicyNumber ?? null,
-    liability_expires_on: b.liabilityExpiresOn ?? null,
-    surety_bond_carrier: b.suretyBondCarrier ?? null,
-    surety_bond_amount_cents: b.suretyBondAmountCents ?? null,
-    surety_bond_expires_on: b.suretyBondExpiresOn ?? null,
-    authorized_signer_name: b.authorizedSignerName ?? null,
-    authorized_signer_title: b.authorizedSignerTitle ?? null,
-    notes: b.notes ?? null,
-    updated_at: new Date().toISOString(),
-  };
+    const parsed = orgBody.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: "invalid_body",
+        issues: parsed.error.issues.map((i) => ({
+          path: i.path.join("."),
+          message: i.message,
+        })),
+      });
+      return;
+    }
+    const b = parsed.data;
+    const supabase = getSupabaseServiceRoleClient();
+    const payload: Database["resupply"]["Tables"]["dme_organization"]["Insert"] = {
+      singleton: true,
+      legal_name: b.legalName,
+      dba_name: b.dbaName ?? null,
+      tax_id: b.taxId,
+      organizational_npi: b.organizationalNpi,
+      taxonomy_code: b.taxonomyCode,
+      medicare_ptan: b.medicarePtan ?? null,
+      physical_address_line1: b.physicalAddressLine1,
+      physical_address_line2: b.physicalAddressLine2 ?? null,
+      physical_city: b.physicalCity,
+      physical_state: b.physicalState,
+      physical_zip: b.physicalZip,
+      mailing_address_line1: b.mailingAddressLine1 ?? null,
+      mailing_address_line2: b.mailingAddressLine2 ?? null,
+      mailing_city: b.mailingCity ?? null,
+      mailing_state: b.mailingState ?? null,
+      mailing_zip: b.mailingZip ?? null,
+      pay_to_address_line1: b.payToAddressLine1 ?? null,
+      pay_to_address_line2: b.payToAddressLine2 ?? null,
+      pay_to_city: b.payToCity ?? null,
+      pay_to_state: b.payToState ?? null,
+      pay_to_zip: b.payToZip ?? null,
+      phone_e164: b.phoneE164,
+      fax_e164: b.faxE164 ?? null,
+      billing_email: b.billingEmail,
+      general_email: b.generalEmail ?? null,
+      website_url: b.websiteUrl ?? null,
+      accreditation_body: b.accreditationBody ?? null,
+      accreditation_number: b.accreditationNumber ?? null,
+      accreditation_expires_on: b.accreditationExpiresOn ?? null,
+      state_license_number: b.stateLicenseNumber ?? null,
+      state_license_state: b.stateLicenseState ?? null,
+      state_license_expires_on: b.stateLicenseExpiresOn ?? null,
+      liability_carrier: b.liabilityCarrier ?? null,
+      liability_policy_number: b.liabilityPolicyNumber ?? null,
+      liability_expires_on: b.liabilityExpiresOn ?? null,
+      surety_bond_carrier: b.suretyBondCarrier ?? null,
+      surety_bond_amount_cents: b.suretyBondAmountCents ?? null,
+      surety_bond_expires_on: b.suretyBondExpiresOn ?? null,
+      authorized_signer_name: b.authorizedSignerName ?? null,
+      authorized_signer_title: b.authorizedSignerTitle ?? null,
+      notes: b.notes ?? null,
+      updated_at: new Date().toISOString(),
+    };
 
-  const { data: existing } = await supabase
-    .schema("resupply")
-    .from("dme_organization")
-    .select("id")
-    .eq("singleton", true)
-    .limit(1)
-    .maybeSingle();
-  let rowId: string;
-  if (existing) {
-    const { error } = await supabase
+    const { data: existing } = await supabase
       .schema("resupply")
       .from("dme_organization")
-      .update(payload)
-      .eq("id", existing.id);
-    if (error) throw error;
-    rowId = existing.id;
-  } else {
-    const { data: newRow, error } = await supabase
-      .schema("resupply")
-      .from("dme_organization")
-      .insert(payload)
       .select("id")
-      .single();
-    if (error) throw error;
-    rowId = newRow.id;
-  }
+      .eq("singleton", true)
+      .limit(1)
+      .maybeSingle();
+    let rowId: string;
+    if (existing) {
+      const { error } = await supabase
+        .schema("resupply")
+        .from("dme_organization")
+        .update(payload)
+        .eq("id", existing.id);
+      if (error) throw error;
+      rowId = existing.id;
+    } else {
+      const { data: newRow, error } = await supabase
+        .schema("resupply")
+        .from("dme_organization")
+        .insert(payload)
+        .select("id")
+        .single();
+      if (error) throw error;
+      rowId = newRow.id;
+    }
 
-  await logAudit({
-    action: "dme_organization.upsert",
-    adminEmail: req.adminEmail ?? null,
-    adminUserId: req.adminUserId ?? null,
-    targetTable: "dme_organization",
-    targetId: rowId,
-    metadata: { legal_name: b.legalName, npi: b.organizationalNpi },
-    ip: req.ip ?? null,
-    userAgent: req.get("user-agent") ?? null,
-  }).catch((err) => {
-    logger.warn({ err }, "dme_organization.upsert audit write failed");
-  });
+    await logAudit({
+      action: "dme_organization.upsert",
+      adminEmail: req.adminEmail ?? null,
+      adminUserId: req.adminUserId ?? null,
+      targetTable: "dme_organization",
+      targetId: rowId,
+      metadata: { legal_name: b.legalName, npi: b.organizationalNpi },
+      ip: req.ip ?? null,
+      userAgent: req.get("user-agent") ?? null,
+    }).catch((err) => {
+      logger.warn({ err }, "dme_organization.upsert audit write failed");
+    });
 
-  res.json({ id: rowId, created: !existing });
-});
+    res.json({ id: rowId, created: !existing });
+  },
+);
 
 router.post(
   "/admin/dme-organization/contacts",
