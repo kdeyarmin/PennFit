@@ -18,6 +18,7 @@ import { logAudit } from "@workspace/resupply-audit";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
+import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import {
   requireAdminOnly,
   requirePermission,
@@ -73,6 +74,7 @@ router.get(
 router.post(
   "/admin/audit-log/archive/destroy",
   requireAdminOnly,
+  adminRateLimit({ name: "audit_log.archive_destroy", preset: "destroy" }),
   async (req, res) => {
     const parsed = z
       .object({
