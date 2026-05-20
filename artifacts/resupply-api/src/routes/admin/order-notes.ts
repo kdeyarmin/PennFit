@@ -28,6 +28,7 @@ import { logAudit } from "@workspace/resupply-audit";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
+import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
@@ -117,6 +118,7 @@ router.get(
 router.post(
   "/admin/shop/orders/:orderId/notes",
   requirePermission("returns.manage"),
+  adminRateLimit({ name: "shop_order_notes.create", preset: "mutation" }),
   async (req, res) => {
     const idCheck = orderIdParam.safeParse(req.params.orderId);
     if (!idCheck.success) {

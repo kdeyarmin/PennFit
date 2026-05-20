@@ -10,6 +10,7 @@ import { logAudit } from "@workspace/resupply-audit";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
+import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
@@ -79,6 +80,10 @@ router.post(
   // role, grant `patients.update` to the role in rbac.ts rather
   // than loosening this route.
   requirePermission("patients.update"),
+  adminRateLimit({
+    name: "patient_address_history.append",
+    preset: "mutation",
+  }),
   async (req, res) => {
     const params = patientIdParam.safeParse(req.params);
     if (!params.success) {

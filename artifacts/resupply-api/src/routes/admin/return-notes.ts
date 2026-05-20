@@ -22,6 +22,7 @@ import { logAudit } from "@workspace/resupply-audit";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
+import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
@@ -105,6 +106,7 @@ router.post(
   "/admin/shop/returns/:returnId/notes",
   // Append-only — CSR notes attached to the return. `returns.manage`.
   requirePermission("returns.manage"),
+  adminRateLimit({ name: "shop_return_notes.create", preset: "mutation" }),
   async (req, res) => {
     const idCheck = returnIdParam.safeParse(req.params.returnId);
     if (!idCheck.success) {
