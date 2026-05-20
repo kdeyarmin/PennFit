@@ -14,6 +14,7 @@ import {
 
 import { runCappedRentalAdvance } from "../../lib/billing/capped-rental-advancer";
 import { logger } from "../../lib/logger";
+import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import {
   requireAdmin,
   requireAdminOnly,
@@ -70,6 +71,7 @@ router.get("/admin/capped-rental-cycles", requireAdmin, async (req, res) => {
 router.post(
   "/admin/capped-rental-cycles",
   requireAdmin,
+  adminRateLimit({ name: "capped_rental_cycles.create", preset: "mutation" }),
   async (req, res) => {
     const parsed = createBody.safeParse(req.body);
     if (!parsed.success) {
@@ -119,6 +121,7 @@ router.post(
 router.patch(
   "/admin/capped-rental-cycles/:id",
   requireAdmin,
+  adminRateLimit({ name: "capped_rental_cycles.update", preset: "mutation" }),
   async (req, res) => {
     const idParsed = idParam.safeParse(req.params);
     if (!idParsed.success) {
@@ -152,6 +155,10 @@ router.patch(
 router.post(
   "/admin/capped-rental-cycles/advance-now",
   requireAdminOnly,
+  adminRateLimit({
+    name: "capped_rental_cycles.advance_now",
+    preset: "bulk",
+  }),
   async (_req, res) => {
     const stats = await runCappedRentalAdvance();
     res.json({ ok: true, stats });

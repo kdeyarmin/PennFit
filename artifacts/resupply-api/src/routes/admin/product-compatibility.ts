@@ -20,6 +20,7 @@ import { logAudit } from "@workspace/resupply-audit";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
+import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
@@ -54,6 +55,7 @@ router.post(
   // the cash-pay catalog admin surface (stock counts, thresholds,
   // back-in-stock dispatch).
   requirePermission("admin.tools.manage"),
+  adminRateLimit({ name: "product_compatibility.add", preset: "mutation" }),
   async (req, res) => {
     const idParsed = productIdParam.safeParse(req.params.productId);
     if (!idParsed.success) {
@@ -127,6 +129,7 @@ router.post(
 router.delete(
   "/admin/shop/products/:productId/compatibility/:entryId",
   requirePermission("admin.tools.manage"),
+  adminRateLimit({ name: "product_compatibility.delete", preset: "destroy" }),
   async (req, res) => {
     const idParsed = productIdParam.safeParse(req.params.productId);
     if (!idParsed.success) {
