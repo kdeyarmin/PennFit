@@ -92,18 +92,18 @@ waits, the bigger the reconciliation surface.
 - Resolve the 6 duplicate prefixes (0016, 0017, 0049, 0050, 0052,
   0065) by renaming the **unapplied** member of each pair to the next
   free prefix; record the rename in the journal as a no-op tag rewrite.
-- Flip `ci.yml` drift check from `continue-on-error: true` → `false`
-  in the **same PR** that reconciles. (Don't flip earlier; flip is
-  the gating event.) **Note (5/20):** `ci.yml` no longer references
-  `check-drizzle-drift.sh` — the carve-out may already be retired.
-  Verify before opening the PR; if the step is gone, this work
-  reduces to the journal backfill + duplicate-prefix rename.
 - Add `pnpm migrate:dry-run` script that diffs disk vs journal and
-  exits non-zero on mismatch — same logic the CI step runs.
+  exits non-zero on mismatch.
+- Add a migration-journal drift step to `ci.yml`'s drift job in the
+  **same PR** that reconciles the journal, and make that step required
+  immediately. **Note (5/20):** the current workflow only runs the
+  architecture drift check; there is no existing
+  `check-drizzle-drift.sh` / `continue-on-error` carve-out left to
+  flip.
 
-**Exit criteria:** `scripts/check-drizzle-drift.sh` (or its
-replacement) exits 0; the CI check is mandatory (not
-`continue-on-error`).
+**Exit criteria:** `pnpm migrate:dry-run` (or its replacement) exits 0
+locally and in CI, and the CI drift job contains a required
+migration-journal check.
 
 ---
 
@@ -332,14 +332,15 @@ dashboard within a week of deploy.
 
 **Goal:** Make the next polish wave cheaper than this one.
 
-### PR 6.1 — `cpap-fitter` ESLint enforcement (S, P3.1)
+### PR 6.1 — `cpap-fitter` ESLint cleanup + coverage audit (S, P3.1)
 
 - Keep `pnpm lint:resupply` as the enforced warning-failing lint gate
   for `artifacts/cpap-fitter/src/**/*.{ts,tsx}`, and verify whether
   any storefront files or adjacent lint targets still sit outside that
   coverage.
-- Fix or `eslint-disable-next-line` with justification each existing
-  warning. Cap PR size — split into 2 if it exceeds ~600 LOC of
+- Fix any warnings found during the audit, or add
+  `eslint-disable-next-line` with justification where the warning is
+  intentional. Cap PR size — split into 2 if it exceeds ~600 LOC of
   diff.
 
 **Exit criteria:** `pnpm lint:resupply` exits 0 on the storefront
