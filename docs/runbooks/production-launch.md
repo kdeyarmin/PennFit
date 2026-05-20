@@ -138,11 +138,21 @@ node --env-file=.env.production-candidate --import=tsx \
   scripts/src/preflight-prod-env.ts
 ```
 
-Expected output: `Ready for launch.` with 0 fails and 0 warns. If any
-FAIL lines remain, fix them before continuing. If WARN lines remain,
-read each carefully — most signal stale state in the secret store and
-do not block launch, but `RESUPPLY_FITTER_REENGAGE_ENABLED!=1` is the
-one warning that does.
+Expected output: `Ready for launch.` with no FAILs. The exit code is
+0 as long as no FAILs remain — WARNs are advisory, not gating, but
+every WARN should be read and consciously dismissed:
+
+- `RESUPPLY_FITTER_REENGAGE_ENABLED != 1` — the abandoned-fitter
+  re-engagement cron will not run. Acceptable for a soft-launch
+  ("ship without the nudge"); not acceptable if the brief says the
+  nudge is part of launch. Flip the flag and re-run.
+- `RESUPPLY_ADMIN_EMAILS` empty — only affects the
+  `/admin/operations` allowlist-count display tile. The auth gate
+  reads `auth.users.role` from the DB; the bootstrap step in §5 is
+  what actually creates the first admin row.
+- Stale-secret warnings (`AUTH_PASSWORD_PEPPER`, the
+  `RESUPPLY_MASTER_KEY` family) — silently ignored at runtime; the
+  WARN is a prompt to prune the secret store, not a launch gate.
 
 What the script does NOT cover: it does not hit Postgres, Supabase,
 Stripe, SendGrid, or Twilio. A credential that's correctly shaped but
@@ -185,10 +195,14 @@ If it fails:
   The migrator already retries transient errors (`ECONNREFUSED`,
   `ETIMEDOUT`, `57P03`) with exponential backoff; a non-transient
   failure surfaces immediately.
-- **Partial apply** — the advisory lock + per-statement transaction
-  means a crashed migration leaves the prior rows applied and the
-  current row not in `drizzle.resupply_migrations`. Re-running picks
-  up exactly where it left off.
+- **Statement error inside a migration** — every pending migration in
+  the batch runs inside a single `BEGIN`/`COMMIT` transaction
+  (see `lib/resupply-db/scripts/migrate.mjs:189`), so any statement
+  failure rolls the entire batch back. The DB is left exactly as it
+  was before the migrator ran; nothing partial lands. Fix the
+  offending SQL in `lib/resupply-db/drizzle/<tag>.sql`, push, and
+  re-run — the prior migrations are still considered "to apply" and
+  will replay cleanly.
 
 Migration-history details: [ADR 003 / migration-state-investigation](../migration-state-investigation-2026-05-08.md).
 
@@ -248,11 +262,12 @@ Then:
 
 Caveats:
 
-- The script REQUIRES the email passed in `--email` to also be in
-  `RESUPPLY_ADMIN_EMAILS` (set in §2). If it isn't, the row is
-  inserted with `role=admin` but `requireAdmin` rejects the session
-  because the env-allowlist gate fires before the DB role check.
-  Adding the email to the env var and restarting the API is the fix.
+- The admin gate is DB-driven now: `requireAdmin` reads
+  `auth.users.role` directly (see
+  `artifacts/resupply-api/src/middlewares/requireAdmin.ts:21`,
+  "there is no env-var allowlist anymore"). Once the bootstrap
+  inserts the row, the new admin can sign in immediately; no
+  `RESUPPLY_ADMIN_EMAILS` update or API restart is needed.
 - For the rare case where the first admin needs to be an agent (role
   `agent`), pass `--role=agent` instead. Re-running with `--force`
   upgrades an existing row.

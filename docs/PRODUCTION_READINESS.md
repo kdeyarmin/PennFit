@@ -74,8 +74,13 @@ crypto. The only remaining application-layer secret in this family is:
 
 shows green/red dots per vendor)
 
-- [ ] `STRIPE_SECRET_KEY` + `STRIPE_WEBHOOK_SECRET` — cash-pay shop
-      checkout, refunds, subscription mirror.
+- [ ] `STRIPE_SECRET_KEY` + `STRIPE_WEBHOOK_SIGNING_SECRET` — cash-pay
+      shop checkout, refunds, subscription mirror. The webhook secret
+      env is `STRIPE_WEBHOOK_SIGNING_SECRET` (see
+      `artifacts/resupply-api/src/lib/stripe/config.ts:66`); the
+      `STRIPE_WEBHOOK_SECRET` name used by an older
+      `admin/system-integrations-status` field is a stale alias and
+      will be removed in a follow-up.
 - [ ] `SENDGRID_API_KEY` + `SENDGRID_FROM_EMAIL` + `SENDGRID_FROM_NAME` —
       order receipts, reminder emails, cart-abandonment, review
       requests.

@@ -14,7 +14,8 @@
 //     without (mirrors artifacts/resupply-api/src/lib/env-check.ts).
 //   * Production-only sanity for the vendor keys called out in
 //     docs/runbooks/production-launch.md — sk_live_ vs sk_test_,
-//     https vs http://localhost, real domains vs example.com.
+//     https vs http://localhost on every public URL, @example.* on
+//     every *_EMAIL variable.
 //   * Feature-flag posture (RESUPPLY_FITTER_REENGAGE_ENABLED=1).
 //   * Stale secrets that the codebase no longer reads (Task #38's
 //     AUTH_PASSWORD_PEPPER, migration 0025's RESUPPLY_MASTER_KEY
@@ -111,7 +112,10 @@ function requirePrefix(name: string, prefix: string): void {
     return;
   }
   if (!value.startsWith(prefix)) {
-    record(name, "fail", `does not start with "${prefix}" (got "${value.slice(0, prefix.length)}…")`);
+    // Detail intentionally omits any portion of the actual value:
+    // this tool runs in deploy environments where stdout may be
+    // captured to logs and the var may carry a partial secret.
+    record(name, "fail", `does not start with "${prefix}"`);
     return;
   }
   record(name, "pass", `starts with "${prefix}"`);
@@ -167,18 +171,34 @@ function requireBase64Bytes(name: string, minBytes: number): void {
     record(name, "fail", "unset or empty");
     return;
   }
-  let decodedLen: number;
-  try {
-    decodedLen = Buffer.from(value, "base64").length;
-  } catch {
-    record(name, "fail", "not valid base64");
+  // Mirror lib/resupply-audit/src/sign.ts's two-step validation:
+  // (1) strict regex — Buffer.from(value, "base64") silently drops
+  //     any char outside the base64 alphabet, so a URL-safe (-/_)
+  //     string or a 64-char hex string would decode to >= 32 bytes
+  //     without warning. The boot-time audit key check rejects
+  //     those, so preflight has to reject them too — otherwise a
+  //     preflight-passes-but-boot-fails false-ready gate.
+  // (2) round-trip equality — catches values whose length AND alphabet
+  //     pass but which contain padding that doesn't decode to a clean
+  //     byte boundary.
+  if (!/^[A-Za-z0-9+/]+=*$/.test(value)) {
+    record(
+      name,
+      "fail",
+      "not strict base64 (only A-Z, a-z, 0-9, +, /, = padding allowed)",
+    );
     return;
   }
-  if (decodedLen < minBytes) {
-    record(name, "fail", `decodes to ${decodedLen} bytes (need >= ${minBytes})`);
+  const decoded = Buffer.from(value, "base64");
+  if (decoded.toString("base64") !== value) {
+    record(name, "fail", "did not round-trip through base64 decode/encode");
     return;
   }
-  record(name, "pass", `${decodedLen} bytes (base64)`);
+  if (decoded.length < minBytes) {
+    record(name, "fail", `decodes to ${decoded.length} bytes (need >= ${minBytes})`);
+    return;
+  }
+  record(name, "pass", `${decoded.length} bytes (base64)`);
 }
 
 /**
@@ -225,15 +245,20 @@ function warnIfSet(name: string, reason: string): void {
  *
  * @param name - The environment variable name expected to hold a comma-separated list; records a `"fail"` if unset/empty or if all entries are empty, otherwise records a `"pass"` with the number of entries.
  */
-function requireNonEmptyList(name: string): void {
+function requireNonEmptyList(
+  name: string,
+  options: { absentSeverity?: Severity; absentDetail?: string } = {},
+): void {
   const value = getTrimmed(name);
+  const absentSeverity = options.absentSeverity ?? "fail";
+  const absentDetail = options.absentDetail ?? "must contain at least one entry";
   if (value === undefined) {
-    record(name, "fail", "must contain at least one entry");
+    record(name, absentSeverity, absentDetail);
     return;
   }
   const entries = value.split(",").map((e) => e.trim()).filter(Boolean);
   if (entries.length === 0) {
-    record(name, "fail", "must contain at least one entry");
+    record(name, absentSeverity, absentDetail);
     return;
   }
   record(name, "pass", `${entries.length} entr${entries.length === 1 ? "y" : "ies"}`);
@@ -256,7 +281,11 @@ function refusePlaceholder(name: string, ...placeholders: string[]): boolean {
   if (value === undefined) return false;
   for (const placeholder of placeholders) {
     if (value === placeholder || value.includes("replace_me")) {
-      record(name, "fail", `looks like a .env.example placeholder ("${value.slice(0, 40)}")`);
+      // Detail intentionally omits the value: some vars in this
+      // family are secrets (service-role JWTs, signing keys) and
+      // even the first 40 chars can be enough to identify or
+      // partially leak them when this stdout is captured to logs.
+      record(name, "fail", "looks like a .env.example placeholder");
       return true;
     }
   }
@@ -304,8 +333,23 @@ function runChecks(): void {
     requireBase64Bytes("RESUPPLY_AUDIT_HMAC_KEY", 32);
   }
 
-  // 2. Admin allowlist — requireAdmin 503s on empty in production.
-  requireNonEmptyList("RESUPPLY_ADMIN_EMAILS");
+  // 2. Admin allowlist — WARN, not FAIL.
+  //    The runtime admin gate (middlewares/requireAdmin.ts:21)
+  //    consults `auth.users.role` only — there is no env-var
+  //    allowlist anymore. The variable is still read by
+  //    routes/admin/system-info.ts to populate the
+  //    `adminAllowlistCount` display tile on /admin/operations,
+  //    so leaving it empty in production is operator-noticeable
+  //    but not auth-breaking. Bootstrap via
+  //    `pnpm --filter @workspace/scripts auth:bootstrap-admin`
+  //    is what actually creates the first admin row.
+  requireNonEmptyList("RESUPPLY_ADMIN_EMAILS", {
+    absentSeverity: "warn",
+    absentDetail:
+      "empty — admin auth comes from DB roles (requireAdmin) now; " +
+      "this var is only read by /admin/operations for the allowlist " +
+      "count tile. Bootstrap admins via auth:bootstrap-admin instead.",
+  });
 
   // 3. Production posture — only matters when NODE_ENV=production.
   //    All other checks above apply equally to staging.
@@ -328,15 +372,18 @@ function runChecks(): void {
     if (sk === undefined) {
       record("STRIPE_SECRET_KEY", prodSeverity, "unset (Stripe checkout will be disabled)");
     } else if (prodMode && !sk.startsWith("sk_live_")) {
-      record(
-        "STRIPE_SECRET_KEY",
-        "fail",
-        `must be a live key (sk_live_…), got prefix "${sk.slice(0, 8)}"`,
-      );
-    } else if (sk.startsWith("sk_live_") || sk.startsWith("sk_test_")) {
-      record("STRIPE_SECRET_KEY", "pass", `prefix "${sk.slice(0, 8)}"`);
+      // Distinguish the common-mistake case ("sk_test_ in production")
+      // from the unexpected-shape case without leaking the actual key.
+      const reason = sk.startsWith("sk_test_")
+        ? "must be a live key (sk_live_…), got a test key (sk_test_…)"
+        : "must be a live key (sk_live_…)";
+      record("STRIPE_SECRET_KEY", "fail", reason);
+    } else if (sk.startsWith("sk_live_")) {
+      record("STRIPE_SECRET_KEY", "pass", "starts with sk_live_");
+    } else if (sk.startsWith("sk_test_")) {
+      record("STRIPE_SECRET_KEY", "pass", "starts with sk_test_");
     } else {
-      record("STRIPE_SECRET_KEY", prodSeverity, `unexpected key shape ("${sk.slice(0, 8)}…")`);
+      record("STRIPE_SECRET_KEY", prodSeverity, "unexpected key shape");
     }
   }
 
@@ -363,7 +410,7 @@ function runChecks(): void {
         "unset (no outbound email will be sent)",
       );
     } else if (!sg.startsWith("SG.")) {
-      record("SENDGRID_API_KEY", "fail", `does not start with "SG." (got "${sg.slice(0, 4)}…")`);
+      record("SENDGRID_API_KEY", "fail", `does not start with "SG."`);
     } else {
       record("SENDGRID_API_KEY", "pass", "starts with SG.");
     }
@@ -398,7 +445,7 @@ function runChecks(): void {
   }
   const tsid = getTrimmed("TWILIO_ACCOUNT_SID");
   if (tsid !== undefined && !tsid.startsWith("AC")) {
-    record("TWILIO_ACCOUNT_SID", "fail", `must start with "AC" (got "${tsid.slice(0, 4)}…")`);
+    record("TWILIO_ACCOUNT_SID", "fail", `must start with "AC"`);
   } else if (tsid === "ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx") {
     record("TWILIO_ACCOUNT_SID", "fail", "is the .env.example placeholder");
   } else if (tsid === undefined && prodMode) {

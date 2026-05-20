@@ -257,16 +257,44 @@ describe("boot-required variables — exit 1 on failure", () => {
     expect(exitCode).toBe(0);
   });
 
-  it("fails when RESUPPLY_ADMIN_EMAILS is missing", () => {
-    const { exitCode, stdout } = run(withEnv({ RESUPPLY_ADMIN_EMAILS: undefined }));
+  it("fails when RESUPPLY_AUDIT_HMAC_KEY uses URL-safe base64 (-/_) — Node decodes it but boot rejects it", () => {
+    // Standard base64 of 48 zero bytes ends with `==`; mutate one
+    // alphabet char to a URL-safe variant so the alphabet check
+    // fires. Buffer.from(value, "base64") would silently accept this.
+    const urlSafe = Buffer.alloc(48).toString("base64").replace("A", "_");
+    const { exitCode, stdout } = run(withEnv({ RESUPPLY_AUDIT_HMAC_KEY: urlSafe }));
     expect(exitCode).toBe(1);
-    expect(stdout).toContain("RESUPPLY_ADMIN_EMAILS");
+    expect(stdout).toContain("RESUPPLY_AUDIT_HMAC_KEY");
+    expect(stdout).toContain("strict base64");
   });
 
-  it("fails when RESUPPLY_ADMIN_EMAILS is all commas (no real entries)", () => {
-    const { exitCode, stdout } = run(withEnv({ RESUPPLY_ADMIN_EMAILS: ",,," }));
+  it("fails when RESUPPLY_LINK_HMAC_KEY does not round-trip through decode/encode", () => {
+    // 65-char value, alphabet OK, but length % 4 == 1 → Node accepts
+    // it and silently truncates the trailing char during decode, so
+    // re-encoding produces a 64-char string that's different from
+    // the input. boot-time validation in lib/resupply-audit catches
+    // this; the original lax Buffer.from check did not.
+    const lengthOff = "A".repeat(65);
+    const { exitCode, stdout } = run(withEnv({ RESUPPLY_LINK_HMAC_KEY: lengthOff }));
     expect(exitCode).toBe(1);
+    expect(stdout).toContain("RESUPPLY_LINK_HMAC_KEY");
+    expect(stdout).toContain("round-trip");
+  });
+
+  it("warns (does not fail) when RESUPPLY_ADMIN_EMAILS is missing", () => {
+    // requireAdmin reads roles from auth.users.role; the env var is
+    // not consulted by the auth gate, so an empty value is non-fatal.
+    const { exitCode, stdout } = run(withEnv({ RESUPPLY_ADMIN_EMAILS: undefined }));
+    expect(exitCode).toBe(0);
     expect(stdout).toContain("RESUPPLY_ADMIN_EMAILS");
+    expect(stdout).toContain("WARN");
+  });
+
+  it("warns (does not fail) when RESUPPLY_ADMIN_EMAILS is all commas (no real entries)", () => {
+    const { exitCode, stdout } = run(withEnv({ RESUPPLY_ADMIN_EMAILS: ",,," }));
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain("RESUPPLY_ADMIN_EMAILS");
+    expect(stdout).toContain("WARN");
   });
 
   it("passes when RESUPPLY_ADMIN_EMAILS has multiple entries", () => {
@@ -628,7 +656,7 @@ describe("edge cases and regression", () => {
     expect(stdout).toContain("SUPABASE_URL");
   });
 
-  it("fails when SUPABASE_URL is https://127.0.0.1 — localhost check does NOT apply to SUPABASE_URL (forbidLocalhost=false)", () => {
+  it("passes when SUPABASE_URL is https://127.0.0.1 — localhost check does NOT apply to SUPABASE_URL (forbidLocalhost=false)", () => {
     // SUPABASE_URL uses requireHttpsUrl with forbidLocalhost=false, so localhost IS allowed
     const env = withEnv({ SUPABASE_URL: "https://127.0.0.1:8080" });
     const { exitCode } = run(env);
@@ -640,7 +668,7 @@ describe("edge cases and regression", () => {
     const env = withEnv({
       PORT: undefined,
       DATABASE_URL: undefined,
-      RESUPPLY_ADMIN_EMAILS: undefined,
+      SUPABASE_URL: undefined,
     });
     const { exitCode, stdout } = run(env);
     expect(exitCode).toBe(1);
