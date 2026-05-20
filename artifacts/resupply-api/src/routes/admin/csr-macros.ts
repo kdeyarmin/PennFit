@@ -95,144 +95,151 @@ router.post(
   requirePermission("admin.tools.manage"),
   adminRateLimit({ name: "csr_macros.create", preset: "mutation" }),
   async (req, res) => {
-  const parsed = createBody.safeParse(req.body);
-  if (!parsed.success) {
-    res.status(400).json({
-      error: "invalid_body",
-      issues: parsed.error.issues.map((i) => ({
-        path: i.path.join("."),
-        message: i.message,
-      })),
-    });
-    return;
-  }
-  const supabase = getSupabaseServiceRoleClient();
-  const adminId = req.adminUserId ?? null;
-  const { data: inserted, error } = await supabase
-    .schema("resupply")
-    .from("csr_macros")
-    .insert({
-      key: parsed.data.key,
-      label: parsed.data.label,
-      category: parsed.data.category ?? null,
-      body: parsed.data.body,
-      channels: parsed.data.channels,
-      sort_order: parsed.data.sortOrder ?? 100,
-      created_by: adminId,
-      updated_by: adminId,
-    })
-    .select("*")
-    .single();
-  if (error) {
-    // 23505 unique_violation on the (key) UNIQUE index.
-    if (error.code === "23505") {
-      res.status(409).json({ error: "key_already_exists" });
+    const parsed = createBody.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: "invalid_body",
+        issues: parsed.error.issues.map((i) => ({
+          path: i.path.join("."),
+          message: i.message,
+        })),
+      });
       return;
     }
-    throw error;
-  }
-  res.status(201).json({ macro: serialize(inserted) });
-});
+    const supabase = getSupabaseServiceRoleClient();
+    const adminId = req.adminUserId ?? null;
+    const { data: inserted, error } = await supabase
+      .schema("resupply")
+      .from("csr_macros")
+      .insert({
+        key: parsed.data.key,
+        label: parsed.data.label,
+        category: parsed.data.category ?? null,
+        body: parsed.data.body,
+        channels: parsed.data.channels,
+        sort_order: parsed.data.sortOrder ?? 100,
+        created_by: adminId,
+        updated_by: adminId,
+      })
+      .select("*")
+      .single();
+    if (error) {
+      // 23505 unique_violation on the (key) UNIQUE index.
+      if (error.code === "23505") {
+        res.status(409).json({ error: "key_already_exists" });
+        return;
+      }
+      throw error;
+    }
+    res.status(201).json({ macro: serialize(inserted) });
+  },
+);
 
 router.patch(
   "/admin/csr-macros/:id",
   requirePermission("admin.tools.manage"),
   adminRateLimit({ name: "csr_macros.update", preset: "mutation" }),
   async (req, res) => {
-  const id = req.params.id;
-  if (!id || typeof id !== "string") {
-    res.status(400).json({ error: "missing_id" });
-    return;
-  }
-  const parsed = patchBody.safeParse(req.body);
-  if (!parsed.success) {
-    res.status(400).json({
-      error: "invalid_body",
-      issues: parsed.error.issues.map((i) => ({
-        path: i.path.join("."),
-        message: i.message,
-      })),
-    });
-    return;
-  }
-  const supabase = getSupabaseServiceRoleClient();
-  const adminId = req.adminUserId ?? null;
-  // Build the update record translating camelCase request keys to
-  // snake_case columns.
-  const updateRow: CsrMacroUpdate = {
-    updated_by: adminId,
-    updated_at: new Date().toISOString(),
-  };
-  if (parsed.data.label !== undefined) updateRow.label = parsed.data.label;
-  if (parsed.data.category !== undefined) updateRow.category = parsed.data.category;
-  if (parsed.data.body !== undefined) updateRow.body = parsed.data.body;
-  if (parsed.data.channels !== undefined) updateRow.channels = parsed.data.channels as Database["resupply"]["Tables"]["csr_macros"]["Row"]["channels"];
-  if (parsed.data.sortOrder !== undefined) updateRow.sort_order = parsed.data.sortOrder;
-  if (parsed.data.isActive !== undefined) updateRow.is_active = parsed.data.isActive;
+    const id = req.params.id;
+    if (!id || typeof id !== "string") {
+      res.status(400).json({ error: "missing_id" });
+      return;
+    }
+    const parsed = patchBody.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: "invalid_body",
+        issues: parsed.error.issues.map((i) => ({
+          path: i.path.join("."),
+          message: i.message,
+        })),
+      });
+      return;
+    }
+    const supabase = getSupabaseServiceRoleClient();
+    const adminId = req.adminUserId ?? null;
+    // Build the update record translating camelCase request keys to
+    // snake_case columns.
+    const updateRow: CsrMacroUpdate = {
+      updated_by: adminId,
+      updated_at: new Date().toISOString(),
+    };
+    if (parsed.data.label !== undefined) updateRow.label = parsed.data.label;
+    if (parsed.data.category !== undefined)
+      updateRow.category = parsed.data.category;
+    if (parsed.data.body !== undefined) updateRow.body = parsed.data.body;
+    if (parsed.data.channels !== undefined)
+      updateRow.channels = parsed.data.channels as Database["resupply"]["Tables"]["csr_macros"]["Row"]["channels"];
+    if (parsed.data.sortOrder !== undefined)
+      updateRow.sort_order = parsed.data.sortOrder;
+    if (parsed.data.isActive !== undefined)
+      updateRow.is_active = parsed.data.isActive;
 
-  const { data: updated, error } = await supabase
-    .schema("resupply")
-    .from("csr_macros")
-    .update(updateRow)
-    .eq("id", id)
-    .select("*");
-  if (error) throw error;
-  if (!updated || updated.length === 0) {
-    res.status(404).json({ error: "macro_not_found" });
-    return;
-  }
-  res.json({ macro: serialize(updated[0]!) });
-});
+    const { data: updated, error } = await supabase
+      .schema("resupply")
+      .from("csr_macros")
+      .update(updateRow)
+      .eq("id", id)
+      .select("*");
+    if (error) throw error;
+    if (!updated || updated.length === 0) {
+      res.status(404).json({ error: "macro_not_found" });
+      return;
+    }
+    res.json({ macro: serialize(updated[0]!) });
+  },
+);
 
 router.delete(
   "/admin/csr-macros/:id",
   requirePermission("admin.tools.manage"),
   adminRateLimit({ name: "csr_macros.delete", preset: "destroy" }),
   async (req, res) => {
-  const id = req.params.id;
-  if (!id || typeof id !== "string") {
-    res.status(400).json({ error: "missing_id" });
-    return;
-  }
-  // Soft-delete: keep the row for audit + analytics, just hide from
-  // the picker. Callers who really want to purge can DELETE again
-  // with ?hard=1 (admin-only escape hatch).
-  const hard = req.query.hard === "1";
-  const supabase = getSupabaseServiceRoleClient();
-  if (hard) {
+    const id = req.params.id;
+    if (!id || typeof id !== "string") {
+      res.status(400).json({ error: "missing_id" });
+      return;
+    }
+    // Soft-delete: keep the row for audit + analytics, just hide from
+    // the picker. Callers who really want to purge can DELETE again
+    // with ?hard=1 (admin-only escape hatch).
+    const hard = req.query.hard === "1";
+    const supabase = getSupabaseServiceRoleClient();
+    if (hard) {
+      const { data, error } = await supabase
+        .schema("resupply")
+        .from("csr_macros")
+        .delete()
+        .eq("id", id)
+        .select("id");
+      if (error) throw error;
+      if (!data || data.length === 0) {
+        res.status(404).json({ error: "macro_not_found" });
+        return;
+      }
+      res.json({ ok: true, hardDeleted: true });
+      return;
+    }
+    const adminId = req.adminUserId ?? null;
     const { data, error } = await supabase
       .schema("resupply")
       .from("csr_macros")
-      .delete()
+      .update({
+        is_active: false,
+        updated_by: adminId,
+        updated_at: new Date().toISOString(),
+      })
       .eq("id", id)
+      .eq("is_active", true)
       .select("id");
     if (error) throw error;
     if (!data || data.length === 0) {
-      res.status(404).json({ error: "macro_not_found" });
+      res.status(404).json({ error: "macro_not_found_or_already_inactive" });
       return;
     }
-    res.json({ ok: true, hardDeleted: true });
-    return;
-  }
-  const adminId = req.adminUserId ?? null;
-  const { data, error } = await supabase
-    .schema("resupply")
-    .from("csr_macros")
-    .update({
-      is_active: false,
-      updated_by: adminId,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", id)
-    .eq("is_active", true)
-    .select("id");
-  if (error) throw error;
-  if (!data || data.length === 0) {
-    res.status(404).json({ error: "macro_not_found_or_already_inactive" });
-    return;
-  }
-  res.json({ ok: true, hardDeleted: false });
-});
+    res.json({ ok: true, hardDeleted: false });
+  },
+);
 
 function serialize(row: CsrMacroRow) {
   return {

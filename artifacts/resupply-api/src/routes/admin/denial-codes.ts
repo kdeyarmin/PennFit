@@ -136,109 +136,111 @@ router.post(
   requireAdminOnly,
   adminRateLimit({ name: "denial_codes.create", preset: "sensitive" }),
   async (req, res) => {
-  const parsed = upsertBody.safeParse(req.body);
-  if (!parsed.success) {
-    res.status(400).json({
-      error: "invalid_body",
-      issues: parsed.error.issues.map((i) => ({
-        path: i.path.join("."),
-        message: i.message,
-      })),
-    });
-    return;
-  }
-  const b = parsed.data;
-  const supabase = getSupabaseServiceRoleClient();
-  const { data, error } = await supabase
-    .schema("resupply")
-    .from("denial_codes")
-    .insert({
-      code_system: b.codeSystem,
-      code: b.code.toUpperCase(),
-      description: b.description,
-      category: b.category,
-      recommended_action: b.recommendedAction ?? null,
-      is_terminal: b.isTerminal,
-    })
-    .select("id")
-    .single();
-  if (error) {
-    if (typeof error.code === "string" && error.code === "23505") {
-      res.status(409).json({ error: "code_conflict" });
+    const parsed = upsertBody.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: "invalid_body",
+        issues: parsed.error.issues.map((i) => ({
+          path: i.path.join("."),
+          message: i.message,
+        })),
+      });
       return;
     }
-    throw error;
-  }
-  await logAudit({
-    action: "denial_code.create",
-    adminEmail: req.adminEmail ?? null,
-    adminUserId: req.adminUserId ?? null,
-    targetTable: "denial_codes",
-    targetId: data.id,
-    metadata: { code_system: b.codeSystem, code: b.code },
-    ip: req.ip ?? null,
-    userAgent: req.get("user-agent") ?? null,
-  }).catch((err) => {
-    logger.warn({ err }, "denial_code.create audit write failed");
-  });
-  res.status(201).json({ id: data.id });
-});
+    const b = parsed.data;
+    const supabase = getSupabaseServiceRoleClient();
+    const { data, error } = await supabase
+      .schema("resupply")
+      .from("denial_codes")
+      .insert({
+        code_system: b.codeSystem,
+        code: b.code.toUpperCase(),
+        description: b.description,
+        category: b.category,
+        recommended_action: b.recommendedAction ?? null,
+        is_terminal: b.isTerminal,
+      })
+      .select("id")
+      .single();
+    if (error) {
+      if (typeof error.code === "string" && error.code === "23505") {
+        res.status(409).json({ error: "code_conflict" });
+        return;
+      }
+      throw error;
+    }
+    await logAudit({
+      action: "denial_code.create",
+      adminEmail: req.adminEmail ?? null,
+      adminUserId: req.adminUserId ?? null,
+      targetTable: "denial_codes",
+      targetId: data.id,
+      metadata: { code_system: b.codeSystem, code: b.code },
+      ip: req.ip ?? null,
+      userAgent: req.get("user-agent") ?? null,
+    }).catch((err) => {
+      logger.warn({ err }, "denial_code.create audit write failed");
+    });
+    res.status(201).json({ id: data.id });
+  },
+);
 
 router.patch(
   "/admin/denial-codes/:id",
   requireAdminOnly,
   adminRateLimit({ name: "denial_codes.update", preset: "mutation" }),
   async (req, res) => {
-  const idParsed = idParam.safeParse(req.params);
-  if (!idParsed.success) {
-    res.status(404).json({ error: "not_found" });
-    return;
-  }
-  const parsed = patchBody.safeParse(req.body);
-  if (!parsed.success) {
-    res.status(400).json({
-      error: "invalid_body",
-      issues: parsed.error.issues.map((i) => ({
-        path: i.path.join("."),
-        message: i.message,
-      })),
+    const idParsed = idParam.safeParse(req.params);
+    if (!idParsed.success) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    const parsed = patchBody.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: "invalid_body",
+        issues: parsed.error.issues.map((i) => ({
+          path: i.path.join("."),
+          message: i.message,
+        })),
+      });
+      return;
+    }
+    const b = parsed.data;
+    const update: Database["resupply"]["Tables"]["denial_codes"]["Update"] = {
+      updated_at: new Date().toISOString(),
+    };
+    if (b.codeSystem !== undefined) update.code_system = b.codeSystem;
+    if (b.code !== undefined) update.code = b.code.toUpperCase();
+    if (b.description !== undefined) update.description = b.description;
+    if (b.category !== undefined) update.category = b.category;
+    if (b.recommendedAction !== undefined)
+      update.recommended_action = b.recommendedAction;
+    if (b.isTerminal !== undefined) update.is_terminal = b.isTerminal;
+    const supabase = getSupabaseServiceRoleClient();
+    const { error } = await supabase
+      .schema("resupply")
+      .from("denial_codes")
+      .update(update)
+      .eq("id", idParsed.data.id);
+    if (error) throw error;
+    await logAudit({
+      action: "denial_code.update",
+      adminEmail: req.adminEmail ?? null,
+      adminUserId: req.adminUserId ?? null,
+      targetTable: "denial_codes",
+      targetId: idParsed.data.id,
+      metadata: {
+        fields_changed: Object.keys(update).filter((k) => k !== "updated_at"),
+      },
+      ip: req.ip ?? null,
+      userAgent: req.get("user-agent") ?? null,
+    }).catch((err) => {
+      logger.warn({ err }, "denial_code.update audit write failed");
     });
-    return;
-  }
-  const b = parsed.data;
-  const update: Database["resupply"]["Tables"]["denial_codes"]["Update"] = {
-    updated_at: new Date().toISOString(),
-  };
-  if (b.codeSystem !== undefined) update.code_system = b.codeSystem;
-  if (b.code !== undefined) update.code = b.code.toUpperCase();
-  if (b.description !== undefined) update.description = b.description;
-  if (b.category !== undefined) update.category = b.category;
-  if (b.recommendedAction !== undefined)
-    update.recommended_action = b.recommendedAction;
-  if (b.isTerminal !== undefined) update.is_terminal = b.isTerminal;
-  const supabase = getSupabaseServiceRoleClient();
-  const { error } = await supabase
-    .schema("resupply")
-    .from("denial_codes")
-    .update(update)
-    .eq("id", idParsed.data.id);
-  if (error) throw error;
-  await logAudit({
-    action: "denial_code.update",
-    adminEmail: req.adminEmail ?? null,
-    adminUserId: req.adminUserId ?? null,
-    targetTable: "denial_codes",
-    targetId: idParsed.data.id,
-    metadata: {
-      fields_changed: Object.keys(update).filter((k) => k !== "updated_at"),
-    },
-    ip: req.ip ?? null,
-    userAgent: req.get("user-agent") ?? null,
-  }).catch((err) => {
-    logger.warn({ err }, "denial_code.update audit write failed");
-  });
-  res.json({ ok: true });
-});
+    res.json({ ok: true });
+  },
+);
 
 function isCodeSystem(v: string): v is DenialCodeRow["code_system"] {
   return (CODE_SYSTEM_VALUES as readonly string[]).includes(v);
