@@ -7,9 +7,9 @@
 // transitions are deferred to a follow-up sprint once the
 // verifications team confirms the form ergonomics.
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus } from "lucide-react";
+import { Plus, ShieldCheck } from "lucide-react";
 
 import { Spinner } from "@/components/admin/Spinner";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
@@ -19,13 +19,16 @@ import {
   createInsuranceCoverage,
   createPriorAuthorization,
   createSleepStudy,
+  listEligibilityChecks,
   listInsuranceCoverages,
   listPriorAuthorizations,
   listSleepStudies,
+  verifyEligibility,
   type CoverageRank,
   type CreateInsuranceCoverageRequest,
   type CreatePriorAuthorizationRequest,
   type CreateSleepStudyRequest,
+  type EligibilityCheck,
   type InsuranceCoverage,
   type PriorAuthStatus,
   type SleepStudyType,
@@ -225,11 +228,60 @@ function humanizeStudyType(t: SleepStudyType): string {
 export function InsuranceCoveragesTab({ patientId }: { patientId: string }) {
   const qc = useQueryClient();
   const queryKey = ["admin", "patient", patientId, "insurance"] as const;
+  const eligibilityKey = [
+    "admin",
+    "patient",
+    patientId,
+    "eligibility",
+  ] as const;
+
   const { data, isPending, isError, error, refetch } = useQuery({
     queryKey,
     queryFn: () => listInsuranceCoverages(patientId),
   });
+  const checks = useQuery({
+    queryKey: eligibilityKey,
+    queryFn: () => listEligibilityChecks(patientId),
+    staleTime: 30_000,
+  });
   const [showAdd, setShowAdd] = useState(false);
+  const [verifyingCoverageId, setVerifyingCoverageId] = useState<string | null>(
+    null,
+  );
+  const [verifyError, setVerifyError] = useState<string | null>(null);
+
+  const verify = useMutation({
+    mutationFn: ({ coverageId }: { coverageId: string }) =>
+      verifyEligibility(patientId, coverageId),
+    onMutate: ({ coverageId }) => {
+      setVerifyingCoverageId(coverageId);
+      setVerifyError(null);
+    },
+    onSettled: () => setVerifyingCoverageId(null),
+    onSuccess: () => {
+      // The verify endpoint returns immediately; the check row may
+      // still be in "queued" state until Office Ally responds. Pull
+      // fresh history so the new row shows up, and invalidate the
+      // patient summary too in case downstream tiles read it.
+      void qc.invalidateQueries({ queryKey: eligibilityKey });
+    },
+    onError: (err) => {
+      setVerifyError(err instanceof Error ? err.message : "Verify failed.");
+    },
+  });
+
+  // Per-coverage "latest check" lookup. The checks endpoint returns
+  // newest-first; group by coverage so each row can render its own
+  // most-recent result inline.
+  const latestByCoverage = useMemo(() => {
+    const m = new Map<string, EligibilityCheck>();
+    for (const c of checks.data?.checks ?? []) {
+      if (!m.has(c.insurance_coverage_id)) {
+        m.set(c.insurance_coverage_id, c);
+      }
+    }
+    return m;
+  }, [checks.data]);
 
   if (isPending) return <Spinner />;
   if (isError) return <ErrorPanel error={error} onRetry={() => void refetch()} />;
@@ -239,14 +291,24 @@ export function InsuranceCoveragesTab({ patientId }: { patientId: string }) {
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">
           Verified payer coverage — primary, secondary, and any tertiary
-          policies. Capture-only for now; the Tier-2b sprint adds 270/271
-          eligibility automation on this same data.
+          policies. Use the per-coverage Verify button to run a 270/271
+          eligibility round-trip; results render inline once the payer
+          responds (status moves queued → parsed).
         </p>
         <Button onClick={() => setShowAdd(true)}>
           <Plus className="h-4 w-4 mr-1.5" />
           Add coverage
         </Button>
       </div>
+      {verifyError && (
+        <p
+          className="text-xs"
+          style={{ color: "#b91c1c" }}
+          data-testid="coverage-verify-error"
+        >
+          {verifyError}
+        </p>
+      )}
       {data.coverages.length === 0 ? (
         <p className="text-sm text-muted-foreground py-2">
           No coverage on file. Capture from the insurance lead form once
@@ -255,7 +317,13 @@ export function InsuranceCoveragesTab({ patientId }: { patientId: string }) {
       ) : (
         <ul className="space-y-3">
           {data.coverages.map((c) => (
-            <CoverageRow key={c.id} c={c} />
+            <CoverageRow
+              key={c.id}
+              c={c}
+              latestCheck={latestByCoverage.get(c.id) ?? null}
+              isVerifying={verifyingCoverageId === c.id}
+              onVerify={() => verify.mutate({ coverageId: c.id })}
+            />
           ))}
         </ul>
       )}
@@ -273,11 +341,27 @@ export function InsuranceCoveragesTab({ patientId }: { patientId: string }) {
   );
 }
 
-function CoverageRow({ c }: { c: InsuranceCoverage }) {
+function formatCents(cents: number | null | undefined): string {
+  if (cents == null || Number.isNaN(cents)) return "—";
+  return `$${(cents / 100).toFixed(0)}`;
+}
+
+function CoverageRow({
+  c,
+  latestCheck,
+  isVerifying,
+  onVerify,
+}: {
+  c: InsuranceCoverage;
+  latestCheck: EligibilityCheck | null;
+  isVerifying: boolean;
+  onVerify: () => void;
+}) {
   return (
     <li
       className="rounded border p-3"
       style={{ borderColor: "hsl(var(--line-1))" }}
+      data-testid={`coverage-row-${c.id}`}
     >
       <div className="flex items-center justify-between">
         <div>
@@ -293,9 +377,24 @@ function CoverageRow({ c }: { c: InsuranceCoverage }) {
             </span>
           )}
         </div>
-        <span className="text-xs text-muted-foreground">
-          {c.verifiedAt ? `Verified ${c.verifiedAt.slice(0, 10)}` : "Unverified"}
-        </span>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-muted-foreground">
+            {c.verifiedAt
+              ? `Verified ${c.verifiedAt.slice(0, 10)}`
+              : "Unverified"}
+          </span>
+          <Button
+            intent="secondary"
+            size="sm"
+            disabled={isVerifying}
+            isLoading={isVerifying}
+            onClick={onVerify}
+            data-testid={`coverage-verify-${c.id}`}
+          >
+            <ShieldCheck className="h-3 w-3" />
+            {isVerifying ? "Verifying…" : "Verify eligibility"}
+          </Button>
+        </div>
       </div>
       <div className="mt-2 grid grid-cols-3 gap-3 text-xs text-muted-foreground">
         <div>Member ID: <span className="font-mono">{c.memberId}</span></div>
@@ -310,7 +409,89 @@ function CoverageRow({ c }: { c: InsuranceCoverage }) {
             : ""}
         </div>
       </div>
+      {latestCheck && (
+        <CoverageLatestCheck check={latestCheck} />
+      )}
     </li>
+  );
+}
+
+function CoverageLatestCheck({ check }: { check: EligibilityCheck }) {
+  const tone = (() => {
+    switch (check.status) {
+      case "parsed":
+        return { color: "#15803d", bg: "rgba(21, 128, 61, 0.10)" };
+      case "submitted":
+      case "queued":
+        return { color: "#b45309", bg: "rgba(180, 83, 9, 0.10)" };
+      case "rejected":
+      case "transport_failed":
+        return { color: "#b91c1c", bg: "rgba(185, 28, 28, 0.10)" };
+    }
+  })();
+  return (
+    <div
+      className="mt-2.5 rounded p-2 text-[11px]"
+      style={{ borderTop: "1px dashed hsl(var(--line-1))" }}
+      data-testid={`coverage-latest-check-${check.insurance_coverage_id}`}
+    >
+      <div className="flex items-center justify-between">
+        <span className="inline-flex items-center gap-1.5">
+          <span
+            className="inline-block px-1.5 py-0.5 rounded font-semibold uppercase tracking-wider"
+            style={{ color: tone.color, backgroundColor: tone.bg }}
+          >
+            {check.status.replace("_", " ")}
+          </span>
+          {check.is_active === true && (
+            <span style={{ color: "#15803d" }}>
+              active
+              {check.in_network === true ? " · in-network" : ""}
+              {check.in_network === false ? " · out-of-network" : ""}
+            </span>
+          )}
+          {check.is_active === false && (
+            <span style={{ color: "#b91c1c" }}>inactive</span>
+          )}
+          {check.requires_prior_auth === true && (
+            <span style={{ color: "#b45309" }}>· PA required</span>
+          )}
+        </span>
+        <span className="text-muted-foreground">
+          {new Date(check.requested_at).toLocaleString()}
+        </span>
+      </div>
+      <div className="mt-1 grid grid-cols-3 gap-3 text-muted-foreground">
+        <div>
+          Deductible: {formatCents(check.deductible_cents)}
+          {check.deductible_met_cents != null && (
+            <> (met {formatCents(check.deductible_met_cents)})</>
+          )}
+        </div>
+        <div>
+          OOP max: {formatCents(check.oop_max_cents)}
+          {check.oop_met_cents != null && (
+            <> (met {formatCents(check.oop_met_cents)})</>
+          )}
+        </div>
+        <div>
+          {check.copay_cents != null && (
+            <>Copay: {formatCents(check.copay_cents)}</>
+          )}
+          {check.coinsurance_pct != null && (
+            <>
+              {check.copay_cents != null ? " · " : ""}
+              Coinsurance: {check.coinsurance_pct}%
+            </>
+          )}
+        </div>
+      </div>
+      {check.error_message && (
+        <p className="mt-1" style={{ color: "#b91c1c" }}>
+          {check.error_message}
+        </p>
+      )}
+    </div>
   );
 }
 
