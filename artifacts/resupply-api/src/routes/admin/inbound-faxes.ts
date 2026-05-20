@@ -38,6 +38,7 @@ import {
   ObjectNotFoundError,
   ObjectStorageService,
 } from "../../lib/object-storage/objectStorage";
+import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
 
 type InboundFaxUpdate =
@@ -269,7 +270,11 @@ router.get(
   },
 );
 
-router.patch("/admin/inbound-faxes/:id", requirePermission("conversations.manage"), async (req, res) => {
+router.patch(
+  "/admin/inbound-faxes/:id",
+  requirePermission("conversations.manage"),
+  adminRateLimit({ name: "inbound_faxes.update", preset: "mutation" }),
+  async (req, res) => {
   const params = idParam.safeParse(req.params);
   if (!params.success) {
     res.status(404).json({ error: "not_found" });

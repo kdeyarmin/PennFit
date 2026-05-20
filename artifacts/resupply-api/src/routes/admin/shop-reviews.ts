@@ -22,6 +22,7 @@ import { z } from "zod";
 
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
+import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
 import {
   encodeCompositeCursor,
@@ -160,6 +161,7 @@ router.get("/admin/shop/reviews", requirePermission("conversations.manage"), asy
 router.post(
   "/admin/shop/reviews/:id/approve",
   requirePermission("conversations.manage"),
+  adminRateLimit({ name: "shop_reviews.approve", preset: "mutation" }),
   async (req, res) => {
     const id = String(req.params.id ?? "");
     if (!id) {
@@ -229,6 +231,7 @@ router.post(
 router.post(
   "/admin/shop/reviews/:id/reject",
   requirePermission("conversations.manage"),
+  adminRateLimit({ name: "shop_reviews.reject", preset: "mutation" }),
   async (req, res) => {
     const id = String(req.params.id ?? "");
     if (!id) {
@@ -315,6 +318,7 @@ router.post(
 router.post(
   "/admin/shop/reviews/:id/unreject",
   requirePermission("conversations.manage"),
+  adminRateLimit({ name: "shop_reviews.unreject", preset: "mutation" }),
   async (req, res) => {
     const id = String(req.params.id ?? "");
     if (!id) {
@@ -372,7 +376,11 @@ router.post(
 // customer already got one when the review was first rejected. If a
 // fresh notice is desired, the operator should un-reject and
 // re-reject, which goes through the existing email path.
-router.patch("/admin/shop/reviews/:id/note", requirePermission("conversations.manage"), async (req, res) => {
+router.patch(
+  "/admin/shop/reviews/:id/note",
+  requirePermission("conversations.manage"),
+  adminRateLimit({ name: "shop_reviews.note", preset: "mutation" }),
+  async (req, res) => {
   const id = String(req.params.id ?? "");
   if (!id) {
     res.status(400).json({ error: "missing_id" });

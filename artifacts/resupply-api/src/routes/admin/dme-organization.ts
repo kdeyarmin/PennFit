@@ -18,6 +18,7 @@ import {
 } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
+import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import {
   requireAdmin,
   requireAdminOnly,
@@ -224,7 +225,11 @@ router.get("/admin/dme-organization", requireAdmin, async (_req, res) => {
   });
 });
 
-router.put("/admin/dme-organization", requireAdminOnly, async (req, res) => {
+router.put(
+  "/admin/dme-organization",
+  requireAdminOnly,
+  adminRateLimit({ name: "dme_organization.upsert", preset: "sensitive" }),
+  async (req, res) => {
   const parsed = orgBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({
@@ -330,6 +335,7 @@ router.put("/admin/dme-organization", requireAdminOnly, async (req, res) => {
 router.post(
   "/admin/dme-organization/contacts",
   requireAdminOnly,
+  adminRateLimit({ name: "dme_organization_contacts.create", preset: "mutation" }),
   async (req, res) => {
     const parsed = contactBody.safeParse(req.body);
     if (!parsed.success) {
@@ -393,6 +399,7 @@ router.post(
 router.patch(
   "/admin/dme-organization/contacts/:id",
   requireAdminOnly,
+  adminRateLimit({ name: "dme_organization_contacts.update", preset: "mutation" }),
   async (req, res) => {
     const idParsed = idParam.safeParse(req.params);
     if (!idParsed.success) {
@@ -435,6 +442,7 @@ router.patch(
 router.delete(
   "/admin/dme-organization/contacts/:id",
   requireAdminOnly,
+  adminRateLimit({ name: "dme_organization_contacts.delete", preset: "destroy" }),
   async (req, res) => {
     const idParsed = idParam.safeParse(req.params);
     if (!idParsed.success) {

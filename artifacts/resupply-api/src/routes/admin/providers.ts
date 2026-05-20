@@ -32,6 +32,7 @@ import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { lookupNpi, NppesLookupError } from "../../lib/nppes";
+import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
@@ -173,7 +174,11 @@ router.get("/admin/providers/:id", requirePermission("patients.read"), async (re
   });
 });
 
-router.post("/admin/providers", requirePermission("patients.update"), async (req, res) => {
+router.post(
+  "/admin/providers",
+  requirePermission("patients.update"),
+  adminRateLimit({ name: "providers.create", preset: "mutation" }),
+  async (req, res) => {
   const parsed = createBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({
@@ -329,6 +334,7 @@ router.post(
   // Mints a signed provider-portal token. Write/share workflow,
   // gated like the other patient-update endpoints.
   requirePermission("patients.update"),
+  adminRateLimit({ name: "providers.portal_link", preset: "mutation" }),
   async (req, res) => {
     const idParse = z.string().uuid().safeParse(req.params.id);
     if (!idParse.success) {
@@ -352,6 +358,7 @@ router.post(
   // External NPI registry lookup — read-side action, used during
   // provider record creation, so same scope as the read endpoints.
   requirePermission("patients.read"),
+  adminRateLimit({ name: "providers.nppes_lookup", preset: "mutation" }),
   async (req, res) => {
     const parsed = lookupBody.safeParse(req.body);
     if (!parsed.success) {
