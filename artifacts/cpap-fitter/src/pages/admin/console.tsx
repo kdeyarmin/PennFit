@@ -77,6 +77,8 @@ import { AdminBillingAiQueuePage } from "@/pages/admin/admin-billing-ai-queue";
 import { AdminBillingAgingPage } from "@/pages/admin/admin-billing-aging";
 import { AdminBillingDenialsPage } from "@/pages/admin/admin-billing-denials";
 import { AdminBillingEraPage } from "@/pages/admin/admin-billing-era";
+import { AdminBillingEligibilityPage } from "@/pages/admin/admin-billing-eligibility";
+import { AdminBillingPriorAuthsPage } from "@/pages/admin/admin-billing-prior-auths";
 import { AdminNpsPage } from "@/pages/admin/admin-nps";
 import { AdminCustomerDetailPage } from "@/pages/admin/admin-customer-detail";
 import { AdminShopCustomersPage } from "@/pages/admin/admin-shop-customers";
@@ -148,6 +150,14 @@ function AdminConsole() {
           <Route
             path="/admin/billing/era"
             component={AdminBillingEraPage}
+          />
+          <Route
+            path="/admin/billing/eligibility"
+            component={AdminBillingEligibilityPage}
+          />
+          <Route
+            path="/admin/billing/prior-auths"
+            component={AdminBillingPriorAuthsPage}
           />
           <Route path="/admin/patients" component={PatientsPage} />
           <Route path="/admin/patients/:patientId/insurance-claims">

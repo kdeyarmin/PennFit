@@ -113,6 +113,8 @@ describe("AppShell NAV_GROUPS — billing group", () => {
   const billingRoutes: ReadonlyArray<[string, string]> = [
     ["/admin/billing", "Billing Hub"],
     ["/admin/billing/ai-queue", "AI queue"],
+    ["/admin/billing/eligibility", "Eligibility"],
+    ["/admin/billing/prior-auths", "Prior auths"],
     ["/admin/billing/aging", "A/R aging"],
     ["/admin/billing/denials", "Denials & DSO"],
     ["/admin/billing/era", "ERA files"],
@@ -132,6 +134,8 @@ describe("AppShell NAV_GROUPS — billing group", () => {
     expect(APPSHELL_SRC).toContain("Bot");
     expect(APPSHELL_SRC).toContain("ListFilter");
     expect(APPSHELL_SRC).toContain("TrendingDown");
+    expect(APPSHELL_SRC).toContain("ClipboardCheck");
+    expect(APPSHELL_SRC).toContain("ShieldAlert");
   });
 });
 

@@ -22,10 +22,12 @@ import { Link } from "wouter";
 import {
   AlertTriangle,
   Bot,
+  ClipboardCheck,
   ClipboardList,
   DollarSign,
   ListFilter,
   Send,
+  ShieldAlert,
   Sparkles,
   TrendingDown,
   Wallet,
@@ -420,6 +422,26 @@ export function AdminBillingHubPage() {
             >
               <Bot className="h-3.5 w-3.5" />
               AI billing queue →
+            </Link>
+          </li>
+          <li>
+            <Link
+              href="/admin/billing/eligibility"
+              className="underline inline-flex items-center gap-1.5"
+              style={{ color: "hsl(var(--ink-1))" }}
+            >
+              <ClipboardCheck className="h-3.5 w-3.5" />
+              Eligibility worklist →
+            </Link>
+          </li>
+          <li>
+            <Link
+              href="/admin/billing/prior-auths"
+              className="underline inline-flex items-center gap-1.5"
+              style={{ color: "hsl(var(--ink-1))" }}
+            >
+              <ShieldAlert className="h-3.5 w-3.5" />
+              Prior auth queue (SLA + expiring) →
             </Link>
           </li>
         </ul>

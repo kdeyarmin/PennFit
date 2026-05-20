@@ -235,6 +235,127 @@ export function ingestEraFile(input: {
   return postJSON<EraIngestResponse>("/admin/billing/era-ingest", input);
 }
 
+// ─── Eligibility (system-wide recent) ───────────────────────────────
+
+export type EligibilityStatus =
+  | "queued"
+  | "submitted"
+  | "parsed"
+  | "rejected"
+  | "transport_failed";
+
+export interface EligibilityCheck {
+  id: string;
+  patientId: string;
+  insuranceCoverageId: string;
+  payerProfileId: string | null;
+  payerName: string | null;
+  serviceHcpcs: string | null;
+  status: EligibilityStatus;
+  isActive: boolean | null;
+  inNetwork: boolean | null;
+  deductibleCents: number | null;
+  deductibleMetCents: number | null;
+  oopMaxCents: number | null;
+  oopMetCents: number | null;
+  copayCents: number | null;
+  coinsurancePct: number | null;
+  requiresPriorAuth: boolean | null;
+  errorMessage: string | null;
+  requestedAt: string;
+  respondedAt: string | null;
+  requestedByEmail: string;
+}
+
+export interface EligibilityRecentResponse {
+  checks: EligibilityCheck[];
+  counts: {
+    total: number;
+    byStatus: Record<EligibilityStatus, number>;
+    activeCoverage: number;
+    inactiveCoverage: number;
+    priorAuthFlagged: number;
+  };
+  windowDays: number;
+  generatedAt: string;
+}
+
+export function fetchEligibilityRecent(params?: {
+  status?: EligibilityStatus;
+  days?: number;
+  limit?: number;
+}): Promise<EligibilityRecentResponse> {
+  const search = new URLSearchParams();
+  if (params?.status) search.set("status", params.status);
+  if (params?.days) search.set("days", String(params.days));
+  if (params?.limit) search.set("limit", String(params.limit));
+  const qs = search.toString();
+  return getJSON<EligibilityRecentResponse>(
+    `/admin/billing/eligibility-recent${qs ? `?${qs}` : ""}`,
+  );
+}
+
+// ─── Prior-auth queue (system-wide) ─────────────────────────────────
+
+export type PriorAuthStatus =
+  | "draft"
+  | "submitted"
+  | "approved"
+  | "denied"
+  | "appealed"
+  | "expired";
+
+export type McoSlaStatus = "on_track" | "at_risk" | "missed" | "decided";
+
+export interface PriorAuthRow {
+  id: string;
+  patientId: string;
+  payerName: string;
+  hcpcsCode: string;
+  status: PriorAuthStatus;
+  authNumber: string | null;
+  submittedAt: string | null;
+  decisionAt: string | null;
+  approvedThrough: string | null;
+  mcoSlaStatus: McoSlaStatus | null;
+  mcoSlaTargetDate: string | null;
+  daysToTarget: number | null;
+  daysToExpiry: number | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PriorAuthQueueResponse {
+  atRisk: PriorAuthRow[];
+  missed: PriorAuthRow[];
+  awaiting: PriorAuthRow[];
+  expiringSoon: PriorAuthRow[];
+  drafts: PriorAuthRow[];
+  counts: {
+    atRisk: number;
+    missed: number;
+    awaiting: number;
+    expiringSoon: number;
+    drafts: number;
+  };
+  expiringWithinDays: number;
+  generatedAt: string;
+}
+
+export function fetchPriorAuthQueue(params?: {
+  expiringWithinDays?: number;
+  limit?: number;
+}): Promise<PriorAuthQueueResponse> {
+  const search = new URLSearchParams();
+  if (params?.expiringWithinDays)
+    search.set("expiringWithinDays", String(params.expiringWithinDays));
+  if (params?.limit) search.set("limit", String(params.limit));
+  const qs = search.toString();
+  return getJSON<PriorAuthQueueResponse>(
+    `/admin/billing/prior-auth-queue${qs ? `?${qs}` : ""}`,
+  );
+}
+
 // ─── Format helpers ─────────────────────────────────────────────────
 
 export function formatMoneyCents(cents: number | null | undefined): string {

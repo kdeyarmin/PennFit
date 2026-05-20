@@ -112,6 +112,8 @@ import claimAppealsRouter from "./admin/claim-appeals.js";
 import webhookSubscriptionsRouter from "./admin/webhook-subscriptions.js";
 import webhookEventCatalogRouter from "./admin/webhook-event-catalog.js";
 import billingDirectorRouter from "./admin/billing-director.js";
+import eligibilityRecentRouter from "./admin/eligibility-recent.js";
+import priorAuthQueueRouter from "./admin/prior-auth-queue.js";
 import webhookTestSendRouter from "./admin/webhook-test-send.js";
 import payerFeeSchedulesImportRouter from "./admin/payer-fee-schedules-import.js";
 import systemIntegrationsStatusRouter from "./admin/system-integrations-status.js";
@@ -353,6 +355,14 @@ router.use(webhookEventCatalogRouter);
 // director loads every morning. Consolidates counts + dollar
 // rollups + denial-rate trend + top payers + webhook health.
 router.use(billingDirectorRouter);
+// /admin/billing/eligibility-recent — system-wide recent
+// eligibility checks (last 30 days by default), feeding the
+// verification team's daily worklist.
+router.use(eligibilityRecentRouter);
+// /admin/billing/prior-auth-queue — system-wide PA queue grouped
+// by at-risk / missed SLA / awaiting decision / expiring soon /
+// drafts. Source for the admin PA director page.
+router.use(priorAuthQueueRouter);
 // /admin/webhook-subscriptions/:id/test-send — fire a synthetic
 // webhook delivery to validate the subscriber endpoint end-to-end.
 router.use(webhookTestSendRouter);

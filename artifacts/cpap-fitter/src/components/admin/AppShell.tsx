@@ -51,6 +51,8 @@ import {
   Bot,
   ListFilter,
   TrendingDown,
+  ClipboardCheck,
+  ShieldAlert,
 } from "lucide-react";
 import {
   Sheet,
@@ -327,6 +329,20 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         icon: Bot,
         matchPrefix: "/admin/billing/ai-queue",
         hint: "Scrubber-blocked + denial-analyzer worklist with auto-resubmit",
+      },
+      {
+        href: "/admin/billing/eligibility",
+        label: "Eligibility",
+        icon: ClipboardCheck,
+        matchPrefix: "/admin/billing/eligibility",
+        hint: "System-wide 270/271 worklist — rejected and inactive coverage rise to the top",
+      },
+      {
+        href: "/admin/billing/prior-auths",
+        label: "Prior auths",
+        icon: ShieldAlert,
+        matchPrefix: "/admin/billing/prior-auths",
+        hint: "Missed / at-risk SLA + auths expiring soon + drafts to submit",
       },
       {
         href: "/admin/billing/aging",
