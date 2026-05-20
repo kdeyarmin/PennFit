@@ -105,6 +105,11 @@ const ShopWishlist = lazy(() =>
 const AccountPage = lazy(() =>
   import("@/pages/account").then((m) => ({ default: m.AccountPage })),
 );
+const AccountBillingPage = lazy(() =>
+  import("@/pages/account-billing").then((m) => ({
+    default: m.AccountBillingPage,
+  })),
+);
 const SignInPage = lazy(() =>
   import("@/pages/sign-in").then((m) => ({ default: m.SignInPage })),
 );
@@ -301,6 +306,13 @@ function GuardedAccount() {
   return <AccountPage />;
 }
 
+function GuardedAccountBilling() {
+  const { isSignedIn, isLoaded } = useShopIdentity();
+  if (!isLoaded) return <RouteFallback />;
+  if (!isSignedIn) return <Redirect to={`${basePath}/sign-in`} />;
+  return <AccountBillingPage />;
+}
+
 /**
  * Order-success has its own gating: the order confirmation lives in
  * sessionStorage (so a refresh after order doesn't re-submit) rather
@@ -373,6 +385,7 @@ function PatientRouter() {
           <Route path="/shop/orders" component={GuardedShopOrders} />
           <Route path="/shop/wishlist" component={ShopWishlist} />
           <Route path="/account" component={GuardedAccount} />
+          <Route path="/account/billing" component={GuardedAccountBilling} />
           <Route path="/reminders" component={Reminders} />
           <Route path="/reminders/manage" component={RemindersManage} />
           <Route path="/privacy" component={Privacy} />

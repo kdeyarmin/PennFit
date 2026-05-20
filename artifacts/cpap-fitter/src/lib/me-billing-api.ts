@@ -1,0 +1,100 @@
+// Tiny typed client for /api/me/billing-balance + /api/me/payments +
+// /api/me/billing-statements. Patterned on account-api.ts but keeps
+// scope narrow: read-only patient-portal queries plus the
+// statement-PDF download URL.
+//
+// The /api/me/* surfaces all gate on the shop-customer session
+// cookie (`credentials: "include"` puts it on the wire). The mounted
+// path is /api/* — NOT /resupply-api/* — see
+// artifacts/resupply-api/src/app.ts:380 for the mount.
+
+export interface OpenBalanceClaim {
+  id: string;
+  payerName: string;
+  dateOfService: string | null;
+  patientResponsibilityCents: number;
+}
+
+export interface BillingBalanceResponse {
+  totalOpenCents: number;
+  claimCount: number;
+  claims: OpenBalanceClaim[];
+}
+
+export interface PatientStatement {
+  id: string;
+  totalPatientResponsibilityCents: number;
+  lineItemCount: number;
+  deliveryMethod: string | null;
+  deliveredAt: string | null;
+  createdAt: string;
+}
+
+export interface PatientStatementsResponse {
+  statements: PatientStatement[];
+}
+
+export type PatientPaymentStatus =
+  | "pending"
+  | "requires_action"
+  | "succeeded"
+  | "failed"
+  | "cancelled"
+  | "refunded";
+
+export interface PatientPayment {
+  id: string;
+  amount_cents: number;
+  currency: string;
+  status: PatientPaymentStatus;
+  applied_claims_json: Array<{
+    claim_id: string;
+    amount_applied_cents: number;
+  }>;
+  note: string | null;
+  failure_reason: string | null;
+  succeeded_at: string | null;
+  created_at: string;
+}
+
+export interface PatientPaymentsResponse {
+  payments: PatientPayment[];
+}
+
+async function meGet<T>(path: string): Promise<T> {
+  const res = await fetch(`/api${path}`, {
+    credentials: "include",
+    headers: { Accept: "application/json" },
+  });
+  if (!res.ok) {
+    throw new Error(`GET /api${path} failed (${res.status})`);
+  }
+  return (await res.json()) as T;
+}
+
+export function fetchBillingBalance(): Promise<BillingBalanceResponse> {
+  return meGet<BillingBalanceResponse>("/me/billing-balance");
+}
+
+export function fetchPatientStatements(): Promise<PatientStatementsResponse> {
+  return meGet<PatientStatementsResponse>("/me/billing-statements");
+}
+
+export function fetchPatientPayments(): Promise<PatientPaymentsResponse> {
+  return meGet<PatientPaymentsResponse>("/me/payments");
+}
+
+/** Direct download URL for a statement PDF. Anchor `download` is
+ *  the simplest path — the browser handles auth via the session
+ *  cookie (mount is /api/me/billing-statements/:id/pdf). */
+export function statementPdfUrl(statementId: string): string {
+  return `/api/me/billing-statements/${statementId}/pdf`;
+}
+
+export function formatMoneyCents(cents: number | null | undefined): string {
+  if (cents == null || Number.isNaN(cents)) return "—";
+  return `$${(cents / 100).toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+}
