@@ -565,11 +565,44 @@ function NavItem({
   );
 }
 
-function isLinkActive(location: string, link: NavLink): boolean {
-  if (link.href === "/admin")
+function linkMatchPrefix(link: NavLink): string {
+  return link.matchPrefix ?? link.href;
+}
+
+function linkMatchesLocation(location: string, link: NavLink): boolean {
+  // The Dashboard ("/admin") item is exact-only — the bare /admin
+  // route shouldn't claim every /admin/* subpath.
+  if (link.href === "/admin") {
     return location === "/admin" || location === "/admin/";
-  const prefix = link.matchPrefix ?? link.href;
+  }
+  const prefix = linkMatchPrefix(link);
   return location === prefix || location.startsWith(`${prefix}/`);
+}
+
+/**
+ * Longest-prefix-wins active selection. When a parent ("Billing Hub"
+ * @ /admin/billing) and a child ("AI queue" @ /admin/billing/ai-queue)
+ * both match the current location, only the child should highlight.
+ * We compute the winning href once per render and the per-link
+ * checker compares to it instead of doing its own prefix match.
+ */
+function pickActiveHref(
+  location: string,
+  groups: ReadonlyArray<NavGroup>,
+): string | null {
+  let best: { href: string; specificity: number } | null = null;
+  for (const g of groups) {
+    for (const link of g.items) {
+      if (!linkMatchesLocation(location, link)) continue;
+      // Specificity = length of the prefix that matched; ties go to
+      // the first one seen (NAV_GROUPS order).
+      const specificity = linkMatchPrefix(link).length;
+      if (!best || specificity > best.specificity) {
+        best = { href: link.href, specificity };
+      }
+    }
+  }
+  return best?.href ?? null;
 }
 
 /**
@@ -604,6 +637,9 @@ function SidebarNavBody({
     retry: false,
     enabled: isAdminConfirmed,
   });
+  // Resolve "which nav link is active" once per render so a parent
+  // and a child of the current location don't both highlight.
+  const activeHref = pickActiveHref(location, NAV_GROUPS);
   return (
     <div className="flex flex-col gap-5">
       {NAV_GROUPS.map((group) => (
@@ -618,7 +654,7 @@ function SidebarNavBody({
             <div key={link.href} onClick={onItemClick}>
               <NavItem
                 {...link}
-                isActive={isLinkActive(location, link)}
+                isActive={activeHref === link.href}
                 badgeCount={badgeCountFor(link, counts)}
               />
             </div>

@@ -8,8 +8,8 @@
 // workbench takes over (apply patch, mark resubmit, etc.).
 //
 // Pure list view — pulls one round-trip from /admin/billing/ai-queue,
-// no PHI in the response. Confidence values render with two decimals
-// so a 0.83 reads as "83%" without surprise rounding.
+// no PHI in the response. Confidence values render as whole percent
+// (0.83 → "83%") to keep the row dense.
 
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
@@ -35,7 +35,10 @@ export function AdminBillingAiQueuePage() {
   });
 
   return (
-    <div className="space-y-6 max-w-5xl" data-testid="admin-billing-ai-queue">
+    <div
+      className="admin-root space-y-6 max-w-5xl"
+      data-testid="admin-billing-ai-queue"
+    >
       <header>
         <h1
           className="text-2xl font-semibold mb-1"
@@ -205,16 +208,33 @@ function AutoResubmitSection({ items }: { items: AutoResubmitReadyItem[] }) {
           className="divide-y -mt-1 -mb-1"
           style={{ borderColor: "hsl(var(--line-1))" }}
         >
-          {items.map((a) => (
+          {items.map((a) => {
+            // Deep-link to the per-patient claim workbench. Fall back
+            // to a non-link span when the backend couldn't resolve a
+            // patient_id (orphaned analysis row) so the row still
+            // renders cleanly instead of a dead anchor.
+            const linkTarget = a.patientId
+              ? `/admin/patients/${a.patientId}/insurance-claims`
+              : null;
+            return (
             <li key={a.analysisId} className="py-2.5 text-sm space-y-1">
               <div className="flex items-center justify-between gap-3">
-                <Link
-                  href={`/admin/billing/claims/${a.claimId}`}
-                  className="font-medium underline"
-                  style={{ color: "hsl(var(--ink-1))" }}
-                >
-                  {a.recommendation}
-                </Link>
+                {linkTarget ? (
+                  <Link
+                    href={linkTarget}
+                    className="font-medium underline"
+                    style={{ color: "hsl(var(--ink-1))" }}
+                  >
+                    {a.recommendation}
+                  </Link>
+                ) : (
+                  <span
+                    className="font-medium"
+                    style={{ color: "hsl(var(--ink-1))" }}
+                  >
+                    {a.recommendation}
+                  </span>
+                )}
                 <span
                   className="text-[11px] tabular-nums shrink-0 px-2 py-0.5 rounded-full"
                   style={{
@@ -234,7 +254,8 @@ function AutoResubmitSection({ items }: { items: AutoResubmitReadyItem[] }) {
                 </p>
               )}
             </li>
-          ))}
+            );
+          })}
         </ul>
       )}
     </Card>

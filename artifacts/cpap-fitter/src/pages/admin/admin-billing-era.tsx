@@ -30,7 +30,9 @@ import {
 const MAX_FILE_BYTES = 4 * 1024 * 1024;
 
 function statusTone(status: string): string {
-  if (status === "ok") return "#15803d";
+  // era_files.status is one of: "processed" | "partial" | "rejected"
+  // (see lib/resupply-db/drizzle/0118_insurance_claims.sql).
+  if (status === "processed") return "#15803d";
   if (status === "partial") return "#b45309";
   if (status === "rejected") return "#b91c1c";
   return "hsl(var(--ink-2))";
@@ -75,13 +77,22 @@ export function AdminBillingEraPage() {
       setUploadError(
         `${file.name} is ${(file.size / 1024 / 1024).toFixed(1)} MB. Max is 4 MB.`,
       );
+      // Drop the previous success card so the operator isn't reading
+      // stale data under the new error; also reset the file input so
+      // the same file can be re-picked after a fix (some browsers
+      // suppress the `change` event when the value matches).
+      setLastResult(null);
+      if (fileInputRef.current) fileInputRef.current.value = "";
       return;
     }
     upload.mutate(file);
   }
 
   return (
-    <div className="space-y-6 max-w-6xl" data-testid="admin-billing-era">
+    <div
+      className="admin-root space-y-6 max-w-6xl"
+      data-testid="admin-billing-era"
+    >
       <header>
         <h1
           className="text-2xl font-semibold mb-1"
@@ -134,50 +145,56 @@ export function AdminBillingEraPage() {
           </p>
         )}
 
-        {lastResult && (
-          <div
-            className="mt-4 rounded-md border p-3 text-sm space-y-1"
-            style={{
-              borderColor: "rgba(21, 128, 61, 0.32)",
-              backgroundColor: "rgba(21, 128, 61, 0.06)",
-              color: "hsl(var(--ink-1))",
-            }}
-            data-testid="era-upload-result"
-          >
-            <p>
-              <strong>Posted</strong> — status{" "}
-              <span style={{ color: statusTone(lastResult.status) }}>
-                {lastResult.status}
-              </span>
-              {typeof lastResult.summary.linesProcessed === "number" && (
-                <>
-                  , {lastResult.summary.linesProcessed} line(s) processed
-                </>
-              )}
-              .
-            </p>
-            {typeof lastResult.summary.totalPaidCents === "number" && (
+        {lastResult && (() => {
+          const s = lastResult.summary;
+          // Sum paidCents from per-claim outcomes — the reconciler
+          // doesn't return a single totalPaidCents field, so we
+          // derive it here for the headline.
+          const totalPaidCents = s.outcomes.reduce(
+            (acc, o) => acc + (o.paidCents ?? 0),
+            0,
+          );
+          return (
+            <div
+              className="mt-4 rounded-md border p-3 text-sm space-y-1"
+              style={{
+                borderColor: "rgba(21, 128, 61, 0.32)",
+                backgroundColor: "rgba(21, 128, 61, 0.06)",
+                color: "hsl(var(--ink-1))",
+              }}
+              data-testid="era-upload-result"
+            >
+              <p>
+                <strong>Posted</strong> — status{" "}
+                <span style={{ color: statusTone(lastResult.status) }}>
+                  {lastResult.status}
+                </span>
+                , {s.linesUpdated} line(s) updated.
+              </p>
               <p>
                 Posted{" "}
-                <strong>
-                  {formatMoneyCents(lastResult.summary.totalPaidCents)}
-                </strong>{" "}
-                across{" "}
-                {lastResult.summary.claimsMatched ?? 0} matched claim(s).
-                {(lastResult.summary.claimsUnmatched ?? 0) > 0 && (
+                <strong>{formatMoneyCents(totalPaidCents)}</strong> across{" "}
+                {s.matchedClaims} matched claim(s)
+                {s.paidClaims > 0 && (
+                  <>
+                    {" "}({s.paidClaims} paid
+                    {s.deniedClaims > 0 ? `, ${s.deniedClaims} denied` : ""})
+                  </>
+                )}
+                .
+                {s.unmatchedClaims > 0 && (
                   <>
                     {" "}
                     <span style={{ color: "#b45309" }}>
-                      {lastResult.summary.claimsUnmatched} unmatched
-                    </span>
-                    {" "}
+                      {s.unmatchedClaims} unmatched
+                    </span>{" "}
                     need manual link.
                   </>
                 )}
               </p>
-            )}
-          </div>
-        )}
+            </div>
+          );
+        })()}
       </Card>
 
       {history.isError && (

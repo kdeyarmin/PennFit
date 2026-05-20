@@ -58,7 +58,14 @@ function daysBetween(future: string | null, now: number): number | null {
   if (!future) return null;
   const t = new Date(future).getTime();
   if (Number.isNaN(t)) return null;
-  return Math.round((t - now) / (24 * 3600 * 1000));
+  // Avoid Math.round near a midday boundary — it can flip an
+  // identical clock-time between adjacent day counts depending on
+  // whether the comparison runs in the AM or PM. Use floor for
+  // future targets ("3 days remaining" stays 3 from now+3.0d down
+  // to now+3.99d) and ceil for past targets ("2 days past" stays 2
+  // from now-2.01d down to now-2.99d).
+  const deltaDays = (t - now) / (24 * 3600 * 1000);
+  return deltaDays >= 0 ? Math.floor(deltaDays) : Math.ceil(deltaDays);
 }
 
 router.get(

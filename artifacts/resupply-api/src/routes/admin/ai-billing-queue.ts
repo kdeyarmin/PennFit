@@ -64,7 +64,7 @@ router.get("/admin/billing/ai-queue", requireAdmin, async (_req, res) => {
       .schema("resupply")
       .from("claim_denial_analyses")
       .select(
-        "id, claim_id, recommendation, confidence, root_cause_summary, created_at",
+        "id, claim_id, recommendation, confidence, root_cause_summary, created_at, insurance_claims!inner(patient_id)",
       )
       .eq("can_auto_resubmit", true)
       .eq("review_status", "pending")
@@ -97,14 +97,29 @@ router.get("/admin/billing/ai-queue", requireAdmin, async (_req, res) => {
       decisionAt: c.decision_at,
       denialReason: c.denial_reason,
     })),
-    autoResubmitReady: (autoReady ?? []).map((a) => ({
-      analysisId: a.id,
-      claimId: a.claim_id,
-      recommendation: a.recommendation,
-      confidence: a.confidence,
-      rootCauseSummary: a.root_cause_summary,
-      createdAt: a.created_at,
-    })),
+    autoResubmitReady: (autoReady ?? []).map((a) => {
+      // PostgREST returns the joined `insurance_claims` as an array
+      // (one row, since it's an inner join on the FK). Pull the
+      // patient_id off so the SPA can deep-link to the claim
+      // workbench without an extra round-trip.
+      const joined = (
+        a as unknown as {
+          insurance_claims?: { patient_id: string } | { patient_id: string }[];
+        }
+      ).insurance_claims;
+      const patientId = Array.isArray(joined)
+        ? (joined[0]?.patient_id ?? null)
+        : (joined?.patient_id ?? null);
+      return {
+        analysisId: a.id,
+        claimId: a.claim_id,
+        patientId,
+        recommendation: a.recommendation,
+        confidence: a.confidence,
+        rootCauseSummary: a.root_cause_summary,
+        createdAt: a.created_at,
+      };
+    }),
     counts: {
       scrubBlocking: blocking?.length ?? 0,
       scrubFixable: fixable?.length ?? 0,

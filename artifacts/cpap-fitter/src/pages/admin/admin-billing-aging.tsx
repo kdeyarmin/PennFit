@@ -44,7 +44,10 @@ export function AdminBillingAgingPage() {
   });
 
   return (
-    <div className="space-y-6 max-w-6xl" data-testid="admin-billing-aging">
+    <div
+      className="admin-root space-y-6 max-w-6xl"
+      data-testid="admin-billing-aging"
+    >
       <header>
         <h1
           className="text-2xl font-semibold mb-1"

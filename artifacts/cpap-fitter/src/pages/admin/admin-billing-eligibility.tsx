@@ -88,7 +88,7 @@ export function AdminBillingEligibilityPage() {
 
   return (
     <div
-      className="space-y-6 max-w-6xl"
+      className="admin-root space-y-6 max-w-6xl"
       data-testid="admin-billing-eligibility"
     >
       <header>

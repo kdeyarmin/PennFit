@@ -112,7 +112,10 @@ export function AdminBillingHubPage() {
   ];
 
   return (
-    <div className="space-y-6 max-w-6xl" data-testid="admin-billing-hub">
+    <div
+      className="admin-root space-y-6 max-w-6xl"
+      data-testid="admin-billing-hub"
+    >
       <header>
         <h1
           className="text-2xl font-semibold mb-1"

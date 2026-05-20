@@ -34,8 +34,26 @@ async function postJSON<T>(path: string, body: unknown): Promise<T> {
   if (!res.ok) {
     let detail: string | undefined;
     try {
-      const json = (await res.json()) as { message?: string; error?: string };
-      detail = json.message ?? json.error;
+      const json = (await res.json()) as {
+        message?: string;
+        error?: string;
+        issues?: Array<{ path?: string; message?: string }>;
+      };
+      // Field-level validation responses (`{ error: "invalid_body",
+      // issues: [...] }`) carry the actually-actionable detail in
+      // `issues`, not `message`. Surface the first issue (or all of
+      // them, comma-separated) so operators see "fileName: required"
+      // instead of "invalid_body".
+      if (Array.isArray(json.issues) && json.issues.length > 0) {
+        detail = json.issues
+          .map((i) =>
+            i.path ? `${i.path}: ${i.message ?? "invalid"}` : i.message,
+          )
+          .filter(Boolean)
+          .join("; ");
+      } else {
+        detail = json.message ?? json.error;
+      }
     } catch {
       // ignore — fall back to status text
     }
@@ -101,6 +119,9 @@ export interface ClaimQueueItem {
 export interface AutoResubmitReadyItem {
   analysisId: string;
   claimId: string;
+  /** Resolved via JOIN to insurance_claims so the SPA can deep-link
+   *  into the per-patient claim workbench without an extra fetch. */
+  patientId: string | null;
   recommendation: string;
   confidence: number | null;
   rootCauseSummary: string | null;
@@ -215,16 +236,32 @@ export function fetchEraFiles(): Promise<EraFilesResponse> {
   return getJSON<EraFilesResponse>("/admin/billing/era-files");
 }
 
+/** Mirror of `ReconciliationSummary` from
+ *  artifacts/resupply-api/src/lib/billing/era-reconciler.ts. The
+ *  field names match the actual API payload — `matchedClaims` etc,
+ *  NOT `linesProcessed`/`totalPaidCents`. */
+export interface EraIngestSummary {
+  matchedClaims: number;
+  unmatchedClaims: number;
+  linesUpdated: number;
+  paidClaims: number;
+  deniedClaims: number;
+  outcomes: Array<{
+    patientControlNumber: string;
+    matched: boolean;
+    newStatus: string | null;
+    paidCents: number;
+    patientResponsibilityCents: number;
+    denialReason: string | null;
+  }>;
+}
+
 export interface EraIngestResponse {
   eraFileId: string;
-  status: string;
-  summary: {
-    claimsMatched?: number;
-    claimsUnmatched?: number;
-    linesProcessed?: number;
-    totalPaidCents?: number;
-    [key: string]: unknown;
-  };
+  /** era_files.status — "processed" when every claim matched,
+   *  "partial" when some did not, "rejected" on parser failure. */
+  status: "processed" | "partial" | "rejected";
+  summary: EraIngestSummary;
 }
 
 export function ingestEraFile(input: {
@@ -359,7 +396,7 @@ export function fetchPriorAuthQueue(params?: {
 // ─── Format helpers ─────────────────────────────────────────────────
 
 export function formatMoneyCents(cents: number | null | undefined): string {
-  if (cents == null) return "—";
+  if (cents == null || Number.isNaN(cents)) return "—";
   return `$${(cents / 100).toLocaleString("en-US", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,

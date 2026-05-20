@@ -88,11 +88,15 @@ router.get(
     );
     const payerMap = new Map<string, string>();
     if (profileIds.length > 0) {
-      const { data: profiles } = await supabase
+      const { data: profiles, error: profilesError } = await supabase
         .schema("resupply")
         .from("payer_profiles")
         .select("id, display_name")
         .in("id", profileIds);
+      // Surface the failure rather than silently dropping payer
+      // names — a 500 here is preferable to rows rendered as "—"
+      // with no clue why.
+      if (profilesError) throw profilesError;
       for (const p of profiles ?? []) payerMap.set(p.id, p.display_name);
     }
 
