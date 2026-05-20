@@ -72,7 +72,7 @@ the vendor keys called out by name in the launch brief.
 | Variable                          | Production value                                                          |
 | --------------------------------- | ------------------------------------------------------------------------- |
 | `STRIPE_SECRET_KEY`               | `sk_live_…` (NOT `sk_test_…`). Stripe Dashboard → Developers → API keys → live mode. |
-| `STRIPE_WEBHOOK_SIGNING_SECRET`   | `whsec_…` from the production webhook endpoint (`{SHOP_PUBLIC_BASE_URL}/resupply-api/webhooks/stripe`). |
+| `STRIPE_WEBHOOK_SIGNING_SECRET`   | `whsec_…` from the production webhook endpoint (`https://pennpaps.com/resupply-api/webhooks/stripe`). |
 | `SENDGRID_API_KEY`                | Production `SG.…` key with Mail Send + Event Webhook scopes.              |
 | `TWILIO_ACCOUNT_SID`              | Production `AC…` SID (not the trial account).                             |
 | `TWILIO_AUTH_TOKEN`               | Production auth token from the same Twilio sub-account.                   |
@@ -306,7 +306,7 @@ If any smoke test fails:
 
 ## After launch
 
-- Tag the deployed commit: `git tag prod-launch-YYYY-MM-DD && git push --tags`.
+- Tag the deployed commit: `git tag "prod-launch-$(date -u +%Y-%m-%d)" && git push --tags`.
 - Confirm Postgres point-in-time recovery is enabled on the production
   Supabase project (PRODUCTION_READINESS.md §5).
 - Schedule the first restore-to-staging drill — backups you haven't

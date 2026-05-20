@@ -122,8 +122,9 @@ function requirePrefix(name: string, prefix: string): void {
  *
  * @param name - The environment variable name to validate
  * @param forbidLocalhost - If `true`, values with hostnames `localhost` or `127.0.0.1` are treated as failures
- * 
+ *
  * On success, records a `"pass"` with the URL origin; on failure, records a `"fail"` with a concise reason.
+ */
 function requireHttpsUrl(name: string, forbidLocalhost: boolean): void {
   const value = getTrimmed(name);
   if (value === undefined) {
@@ -151,6 +152,7 @@ function requireHttpsUrl(name: string, forbidLocalhost: boolean): void {
 // Base64-decoded byte length. Used for the two HMAC keys, both of which
 // pass through `openssl rand -base64 48` → ~36 characters of base64 →
 // 32 raw bytes. The audit module rejects anything shorter than 32 at
+// boot; mirror that here.
 /**
  * Validates that an environment variable contains valid base64 that decodes to at least a given number of bytes.
  *
