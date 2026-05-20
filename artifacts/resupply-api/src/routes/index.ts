@@ -51,6 +51,7 @@ import patientTherapyNightsManualRouter from "./admin/patient-therapy-nights-man
 import patientIdentityVerificationsRouter from "./admin/patient-identity-verifications.js";
 import providerPortalRouter from "./provider-portal.js";
 import shopOrderPodRouter from "./admin/shop-order-pod.js";
+import shopOrderPodUploadRouter from "./admin/shop-order-pod-upload.js";
 import integrationsStatusRouter from "./admin/integrations-status.js";
 import integrationsNightlySyncRouter from "./admin/integrations-nightly-sync.js";
 import integrationsWebhooksRouter from "./integrations-webhooks.js";
@@ -602,6 +603,11 @@ router.use(providerPortalRouter);
 // /admin/shop/orders/:orderId/pod — proof-of-delivery photo upload
 // stamp for accreditation + dispute resolution.
 router.use(shopOrderPodRouter);
+// /admin/shop/orders/:orderId/pod/* — 3-step upload (presigned PUT
+// → finalize-verifies-bucket → admin-only GET stream + DELETE) for
+// the proof-of-delivery photo. Co-exists with the legacy PATCH
+// above; pattern mirrors prescription-attachment for consistency.
+router.use(shopOrderPodUploadRouter);
 // /admin/integrations/status — vendor-adapter health dashboard.
 router.use(integrationsStatusRouter);
 // /admin/integrations/nightly-sync — manual trigger for the nightly
