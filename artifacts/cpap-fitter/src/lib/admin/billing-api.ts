@@ -301,7 +301,6 @@ export interface EligibilityCheck {
   errorMessage: string | null;
   requestedAt: string;
   respondedAt: string | null;
-  requestedByEmail: string;
 }
 
 export interface EligibilityRecentResponse {

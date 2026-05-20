@@ -340,7 +340,6 @@ function EligibilityRow({ check }: { check: EligibilityCheck }) {
         <span className="block">
           {new Date(check.requestedAt).toLocaleString()}
         </span>
-        <span className="block">{check.requestedByEmail}</span>
       </td>
       <td className="p-3 text-right">
         <Link

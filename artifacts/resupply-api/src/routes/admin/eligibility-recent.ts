@@ -67,7 +67,11 @@ router.get(
       .schema("resupply")
       .from("eligibility_checks")
       .select(
-        "id, patient_id, insurance_coverage_id, payer_profile_id, service_hcpcs, status, is_active, in_network, deductible_cents, deductible_met_cents, oop_max_cents, oop_met_cents, copay_cents, coinsurance_pct, requires_prior_auth, error_message, requested_at, responded_at, requested_by_email",
+        // Aggregate / queue view — deliberately omit `requested_by_email`.
+        // The per-patient eligibility-checks endpoint surfaces it for
+        // audit-trail purposes; in this system-wide aggregate the
+        // operator identifier is unnecessary identifier exposure.
+        "id, patient_id, insurance_coverage_id, payer_profile_id, service_hcpcs, status, is_active, in_network, deductible_cents, deductible_met_cents, oop_max_cents, oop_met_cents, copay_cents, coinsurance_pct, requires_prior_auth, error_message, requested_at, responded_at",
       )
       .gte("requested_at", cutoff)
       .order("requested_at", { ascending: false })
@@ -142,7 +146,6 @@ router.get(
         errorMessage: r.error_message,
         requestedAt: r.requested_at,
         respondedAt: r.responded_at,
-        requestedByEmail: r.requested_by_email,
       })),
       counts: {
         total: data?.length ?? 0,
