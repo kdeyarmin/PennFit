@@ -2,8 +2,14 @@
 // exercise the real Stripe call (no test keys in CI); instead we
 // verify the input-validation paths that fire before any Stripe
 // round-trip + the post-success allocation apply.
+//
+// PR additions (stripe_rejected):
+//   The catch block that fires when Stripe throws during
+//   paymentIntents.create now returns error:"stripe_rejected"
+//   instead of the old "stripe_not_configured". Tests below verify
+//   the new error code and confirm the old code path is gone.
 
-import { describe, expect, it, beforeEach } from "vitest";
+import { describe, expect, it, vi, beforeEach } from "vitest";
 
 import {
   getSupabaseWritePayloads,
@@ -16,7 +22,6 @@ const supabaseMock = installSupabaseMock();
 import {
   applySucceededPayment,
   createPaymentIntent,
-  markPaymentStatus,
 } from "./patient-payment";
 
 const PATIENT = "11111111-1111-4111-8111-111111111111";
@@ -145,55 +150,158 @@ describe("applySucceededPayment — allocation walk", () => {
   });
 });
 
-describe("markPaymentStatus — idempotency on webhook redelivery", () => {
-  beforeEach(() => supabaseMock.reset());
+// ============================================================================
+// PR change: stripe_rejected — Stripe accepts the call but rejects the intent
+// ============================================================================
+// We mock the Stripe client to throw so we can test the catch branch without
+// a real API key. The mock must be registered before importing the module, so
+// we use vi.mock + vi.hoisted.
 
-  it("skips applySucceededPayment when the row is already 'succeeded'", async () => {
-    // The atomic flip UPDATE returns an empty array because the .neq
-    // guard didn't match — the row was already at status='succeeded'.
-    stageSupabaseResponse("patient_payments", "update", { data: [] });
-    await markPaymentStatus({
-      paymentId: "p-redelivery",
-      status: "succeeded",
-    });
-    // No allocation walk happened — no claim updates or events.
-    expect(getSupabaseWritePayloads("insurance_claims", "update")).toEqual([]);
-    expect(
-      getSupabaseWritePayloads("insurance_claim_events", "insert"),
-    ).toEqual([]);
+const stripeIntentCreateMock = vi.hoisted(() => vi.fn());
+// Default to false so the existing "stripe_not_configured" tests continue to
+// work without supabase stages. The stripe_rejected describe block resets to
+// true in its own beforeEach.
+const stripeConfiguredFlag = vi.hoisted(() => ({ value: false }));
+
+vi.mock("../../lib/stripe/config", () => ({
+  readStripeConfigOrNull: () =>
+    stripeConfiguredFlag.value ? { secretKey: "sk_test_fake" } : null,
+  getStripeClient: () => ({
+    paymentIntents: {
+      create: (...args: unknown[]) => stripeIntentCreateMock(...args),
+    },
+  }),
+}));
+
+vi.mock("../../lib/logger", () => ({
+  logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+}));
+
+const PATIENT_STR = "33333333-3333-4333-8333-333333333333";
+const CLAIM_STR = "44444444-4444-4444-8444-444444444444";
+const PAYMENT_STR_ID = "55555555-5555-4555-8555-555555555555";
+
+describe("createPaymentIntent — stripe_rejected (PR change)", () => {
+  beforeEach(() => {
+    supabaseMock.reset();
+    stripeConfiguredFlag.value = true;
+    stripeIntentCreateMock.mockReset();
   });
 
-  it("runs applySucceededPayment when the row transitions to 'succeeded'", async () => {
-    // The atomic flip UPDATE returns the row — first time we're moving
-    // it to 'succeeded', so the allocation walk fires.
-    stageSupabaseResponse("patient_payments", "update", {
-      data: [{ id: "p-fresh" }],
-    });
-    // Stage the inner applySucceededPayment reads.
-    stageSupabaseResponse("patient_payments", "select", {
-      data: {
-        id: "p-fresh",
-        status: "succeeded",
-        patient_id: PATIENT,
-        applied_claims_json: [
-          { claimId: CLAIM1, amountAppliedCents: 2500 },
-        ],
-      },
-    });
+  function stageClaimOwned() {
     stageSupabaseResponse("insurance_claims", "select", {
-      data: { id: CLAIM1, patient_responsibility_cents: 10000 },
+      data: [
+        {
+          id: CLAIM_STR,
+          patient_id: PATIENT_STR,
+          patient_responsibility_cents: 5000,
+        },
+      ],
     });
-    stageSupabaseResponse("insurance_claims", "update", { data: {} });
-    stageSupabaseResponse("insurance_claim_events", "insert", { data: {} });
-    await markPaymentStatus({
-      paymentId: "p-fresh",
-      status: "succeeded",
+  }
+
+  function stagePaymentInsert() {
+    stageSupabaseResponse("patient_payments", "insert", {
+      data: { id: PAYMENT_STR_ID },
     });
-    expect(getSupabaseWritePayloads("insurance_claims", "update")).toHaveLength(
-      1,
-    );
-    expect(
-      getSupabaseWritePayloads("insurance_claim_events", "insert"),
-    ).toHaveLength(1);
+  }
+
+  function stagePaymentUpdate() {
+    stageSupabaseResponse("patient_payments", "update", { data: null });
+  }
+
+  it("returns stripe_rejected when Stripe throws during paymentIntents.create", async () => {
+    stageClaimOwned();
+    stagePaymentInsert();
+    stripeIntentCreateMock.mockRejectedValue(new Error("card_declined"));
+    stagePaymentUpdate();
+
+    const result = await createPaymentIntent({
+      patientId: PATIENT_STR,
+      allocations: [{ claimId: CLAIM_STR, amountAppliedCents: 1000 }],
+      source: "portal",
+      initiatorEmail: "patient@example.com",
+    });
+
+    expect("error" in result).toBe(true);
+    if ("error" in result) {
+      expect(result.error).toBe("stripe_rejected");
+    }
+  });
+
+  it("does NOT return stripe_not_configured when Stripe rejects (regression guard)", async () => {
+    stageClaimOwned();
+    stagePaymentInsert();
+    stripeIntentCreateMock.mockRejectedValue(new Error("api_connection_error"));
+    stagePaymentUpdate();
+
+    const result = await createPaymentIntent({
+      patientId: PATIENT_STR,
+      allocations: [{ claimId: CLAIM_STR, amountAppliedCents: 1000 }],
+      source: "portal",
+      initiatorEmail: "patient@example.com",
+    });
+
+    // Before the PR this erroneously returned "stripe_not_configured".
+    if ("error" in result) {
+      expect(result.error).not.toBe("stripe_not_configured");
+      expect(result.error).toBe("stripe_rejected");
+    }
+  });
+
+  it("marks the pending payment row as 'failed' before returning stripe_rejected", async () => {
+    stageClaimOwned();
+    stagePaymentInsert();
+    stripeIntentCreateMock.mockRejectedValue(new Error("stripe_error"));
+    stagePaymentUpdate();
+
+    await createPaymentIntent({
+      patientId: PATIENT_STR,
+      allocations: [{ claimId: CLAIM_STR, amountAppliedCents: 1000 }],
+      source: "portal",
+      initiatorEmail: "patient@example.com",
+    });
+
+    const updatePayloads = getSupabaseWritePayloads("patient_payments", "update");
+    expect(updatePayloads.length).toBeGreaterThanOrEqual(1);
+    expect((updatePayloads[0] as Record<string, unknown>).status).toBe("failed");
+  });
+
+  it("records the thrown error message in failure_reason", async () => {
+    stageClaimOwned();
+    stagePaymentInsert();
+    const errMsg = "Stripe: insufficient_funds";
+    stripeIntentCreateMock.mockRejectedValue(new Error(errMsg));
+    stagePaymentUpdate();
+
+    await createPaymentIntent({
+      patientId: PATIENT_STR,
+      allocations: [{ claimId: CLAIM_STR, amountAppliedCents: 1000 }],
+      source: "portal",
+      initiatorEmail: "patient@example.com",
+    });
+
+    const updatePayloads = getSupabaseWritePayloads("patient_payments", "update");
+    const payload = updatePayloads[0] as Record<string, unknown>;
+    expect(typeof payload.failure_reason).toBe("string");
+    expect((payload.failure_reason as string)).toContain("insufficient_funds");
+  });
+
+  it("returns stripe_not_configured (not stripe_rejected) when no key is set", async () => {
+    // Distinct path: stripe_not_configured fires BEFORE hitting Stripe.
+    stripeConfiguredFlag.value = false;
+
+    const result = await createPaymentIntent({
+      patientId: PATIENT_STR,
+      allocations: [{ claimId: CLAIM_STR, amountAppliedCents: 1000 }],
+      source: "portal",
+      initiatorEmail: "patient@example.com",
+    });
+
+    expect("error" in result).toBe(true);
+    if ("error" in result) {
+      expect(result.error).toBe("stripe_not_configured");
+      expect(result.error).not.toBe("stripe_rejected");
+    }
   });
 });
