@@ -25,6 +25,7 @@ import { Link } from "wouter";
 import {
   AlertCircle,
   CheckCircle2,
+  Image as ImageIcon,
   Loader2,
   Mail,
   MapPin,
@@ -698,6 +699,13 @@ function ShipmentSection({
         )}
       </div>
 
+      {order.podUploadedAt && (
+        <PodPhotoSection
+          orderId={order.id}
+          sessionId={order.sessionId}
+        />
+      )}
+
       {/* Address row */}
       {order.shippingAddress && (
         <div className="flex flex-wrap items-start gap-3">
@@ -1119,3 +1127,87 @@ function OrdersSkeleton() {
 }
 
 ShopOrders.displayName = "ShopOrders";
+
+/**
+ * Inline "View delivery photo" affordance. Renders a small disclosure
+ * button that, when expanded, fetches the POD image bytes via
+ * `GET /shop/orders/:sessionId/pod` and shows them inline. The
+ * session id is the access grant (long opaque Stripe token); we
+ * don't pre-fetch the bytes on render because not every patient
+ * who lands on /shop/orders cares to look at every POD.
+ */
+function PodPhotoSection({
+  orderId,
+  sessionId,
+}: {
+  orderId: string;
+  sessionId: string;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const [imgUrl, setImgUrl] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!expanded) return;
+    let revoked = false;
+    let url: string | null = null;
+    setError(null);
+    void fetch(
+      `/resupply-api/shop/orders/${encodeURIComponent(sessionId)}/pod`,
+    )
+      .then(async (res) => {
+        if (!res.ok) {
+          throw new Error(
+            res.status === 404
+              ? "Delivery photo is no longer available."
+              : `Couldn't load delivery photo (${res.status}).`,
+          );
+        }
+        return res.blob();
+      })
+      .then((blob) => {
+        if (revoked) return;
+        url = URL.createObjectURL(blob);
+        setImgUrl(url);
+      })
+      .catch((err) => {
+        if (revoked) return;
+        setError(err instanceof Error ? err.message : "Couldn't load photo.");
+      });
+    return () => {
+      revoked = true;
+      if (url) URL.revokeObjectURL(url);
+      setImgUrl(null);
+    };
+  }, [expanded, sessionId]);
+
+  return (
+    <div className="flex flex-col gap-2" data-testid={`order-${orderId}-pod`}>
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        className="text-xs font-semibold text-primary hover:underline inline-flex items-center gap-1 self-start"
+        data-testid={`order-${orderId}-pod-toggle`}
+      >
+        <ImageIcon className="w-3.5 h-3.5" />
+        {expanded ? "Hide delivery photo" : "View delivery photo"}
+      </button>
+      {expanded && error && (
+        <p
+          className="text-xs text-destructive"
+          data-testid={`order-${orderId}-pod-error`}
+        >
+          {error}
+        </p>
+      )}
+      {expanded && imgUrl && (
+        <img
+          src={imgUrl}
+          alt="Delivery photo"
+          className="max-w-sm max-h-72 rounded-md border border-border/60"
+          data-testid={`order-${orderId}-pod-img`}
+        />
+      )}
+    </div>
+  );
+}

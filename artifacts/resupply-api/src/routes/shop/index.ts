@@ -27,6 +27,7 @@ import myOrdersRouter from "./my-orders";
 import myReturnsRouter from "./my-returns";
 import mySubscriptionsRouter from "./my-subscriptions";
 import orderRouter from "./order";
+import orderPodRouter from "./order-pod";
 import productsRouter from "./products";
 import quickCheckoutRouter from "./quick-checkout";
 import resendReceiptRouter from "./resend-receipt";
@@ -57,6 +58,7 @@ const router: IRouter = Router();
 router.use(productsRouter);
 router.use(checkoutRouter);
 router.use(orderRouter);
+router.use(orderPodRouter);
 // /shop/me/* — auth-aware patient account endpoints. Mounted
 // alongside the public catalog so the frontend can reach both with
 // the same base path. The handlers themselves apply the auth provider gating

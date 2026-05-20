@@ -231,6 +231,11 @@ export interface OrderSummaryResponse {
   }>;
   shippingCity: string | null;
   shippingState: string | null;
+  /** Timestamp the delivery driver / CSR uploaded a proof-of-
+   *  delivery photo, or null if no POD on file. When non-null the
+   *  patient-facing pages can render a "View delivery photo" link
+   *  that fetches the image from GET /shop/orders/:sessionId/pod. */
+  podUploadedAt: string | null;
 }
 
 export async function fetchOrderSummary(
@@ -466,6 +471,10 @@ export interface OrderHistoryItem {
   tracking: OrderTracking | null;
   shippedAt: string | null;
   deliveredAt: string | null;
+  /** Truthy when a delivery photo (POD) has been uploaded for
+   *  this order. UI shows a "View delivery photo" link that hits
+   *  GET /shop/orders/:sessionId/pod for the image bytes. */
+  podUploadedAt: string | null;
   /**
    * Server-side hint: customer is allowed to PATCH the shipping
    * address only while the parcel hasn't shipped. The server
