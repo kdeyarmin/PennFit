@@ -57,9 +57,12 @@ crypto. The only remaining application-layer secret in this family is:
 
 ### Admin allowlist
 
-- [ ] `RESUPPLY_ADMIN_EMAILS` — comma-separated allowlist. At least
-      ONE entry is required; `requireAdmin` 503s on every request
-      when this is empty in `NODE_ENV=production`.
+- [ ] `RESUPPLY_ADMIN_EMAILS` — optional comma-separated allowlist
+      kept for convenience only. Actual admin access is gated by
+      `auth.users.role` (DB roles) plus the preflight/launch flow
+      semantics; `requireAdmin` no longer 503s in production when
+      this is empty. Seed the first admin with
+      `pnpm --filter @workspace/scripts auth:bootstrap-admin`.
 - [ ] `RESUPPLY_AGENT_EMAILS` — optional allowlist for CSRs.
 - [ ] DB-backed members (added via `/admin/team`) layer on top once
       migration 0020 is applied.
