@@ -12,9 +12,20 @@ Source-of-truth for individual findings stays in the review docs; this
 file is the **operational rollout strategy**. Every line item below
 cites the canonical finding so reviewers can drill in.
 
+> **Revision (2026-05-20, same-day):** the initial draft of this plan
+> built on `docs/app-review-2026-05-13.md` without re-verifying every
+> finding against the tree. A spot-check found several items already
+> shipped (PR #204 closed both halves of original Phase 1 PR 1.1; the
+> HIPAA per-doc audit and storefront CSRF have also landed; the
+> admin-rate-limit middleware exists; `requirePermission` jumped from
+> 7 → 78 admin routes). The phase list below has been re-keyed to the
+> _genuinely open_ work as of this revision. The shipped items are
+> retained in the [Already-shipped log](#already-shipped-log) at the
+> bottom for traceability.
+
 ---
 
-## Snapshot at start of plan (2026-05-20)
+## Snapshot at start of plan (2026-05-20, post-verification)
 
 | Signal                                 | 5/8     | 5/13    | **5/20**    | Direction       |
 | -------------------------------------- | ------- | ------- | ----------- | --------------- |
@@ -23,12 +34,18 @@ cites the canonical finding so reviewers can drill in.
 | `account.tsx` LOC                      | 1,918   | 2,069   | **2,148**   | Worse           |
 | `patients.tsx` LOC                     | 1,694   | 1,694   | **1,694**   | Stable          |
 | `shop-product-detail.tsx` LOC          | 1,480   | 1,488   | **1,488**   | Stable          |
-| Admin routes using `requirePermission` | —       | 7 / 108 | (carry)     | Carry from 5/13 |
+| Admin routes using `requirePermission` | —       | 7 / 108 | **78 / 126** | **Better**     |
+| Admin routes wired to `adminRateLimit` middleware | — | — (middleware didn't exist) | **19 / 126** | New (middleware shipped; sweep open) |
+| Integration clients with `AbortSignal.timeout()` | — | 0 / 4 (per 5/13) | **3 / 3** (health-connect has no fetch) | **Fixed** |
+| Atomic MFA recovery-code consumption   | No      | No      | **Yes** (`auth-deps.ts:275`) | **Fixed** |
+| HIPAA retention sweep audit rows       | No      | No      | **Yes** (`patient-documents-retention-sweep.ts:129`) | **Fixed** |
+| Storefront CSRF on `/shop/orders`      | No      | No      | **Yes** (`routes/storefront/orders.ts:43`) | **Fixed** |
 | E2E specs                              | 2       | 2       | **2**       | Stable          |
 
 The migration-journal gap widened by 28 files in the seven days since
-the last review. The single load-bearing item for the first phase is
-unchanged: **stop the bleeding on the drift gap and on file growth.**
+the last review. With Phase 1's S-effort security items already shipped
+(by an unrelated PR wave), **the new single load-bearing item for the
+first phase is migration-drift reconciliation** (P0.1/P0.2).
 
 ---
 
@@ -54,36 +71,18 @@ unchanged: **stop the bleeding on the drift gap and on file growth.**
 
 ---
 
-## Phase 1 — Stop the bleeding (1 week, ~3 PRs)
+## Phase 1 — Stop the bleeding (1 week, 1 PR)
 
-**Goal:** Address the two compounding hazards (migration drift, HIGH
-HTTP-timeout gap) and the single-PR S-effort security fixes from the
-5/13 review. After this phase, no production incident should be
-attributable to an item already on the backlog.
+**Goal:** Address the one remaining compounding hazard (migration
+drift). The S-effort security items originally bundled here have all
+shipped (see [Already-shipped log](#already-shipped-log)).
 
-### PR 1.1 — Integration HTTP timeouts + atomic recovery-code consumption (S, P0)
-
-Per N1 + N2 in [`docs/app-review-2026-05-13.md`](./app-review-2026-05-13.md#new-findings-2026-05-08--2026-05-13).
-
-- Add `withTimeout(ms)` helper in `lib/resupply-integrations/src/http.ts`
-  using `AbortSignal.timeout()`.
-- Pipe `signal:` through all four integration clients
-  (`react-health`, `airview`, `care-orchestrator`, `health-connect`).
-  Default: 30s OAuth, 60s API GETs; per-call override allowed.
-- Replace the two-step recovery-code SELECT-then-UPDATE in
-  `artifacts/resupply-api/src/lib/auth-deps.ts:205-244` with an
-  atomic `UPDATE … WHERE id=$1 AND used_at IS NULL RETURNING id`.
-  Treat zero rows as "already spent → fail."
-- Tests: timeout helper (fake timers), recovery-code race (two
-  concurrent calls → exactly one wins).
-
-**Exit criteria:** Both packages have no bare `fetch()` and a vitest
-suite green; one MFA recovery-code can only be consumed once.
-
-### PR 1.2 — Migration drift reconciliation (M, P0)
+### PR 1.2 — Migration drift reconciliation (M, P0) — **only Phase 1 item**
 
 Per P0.1 + P0.2 in 5/13 review and
 [`migration-drift-status-2026-05-13.md`](./migration-drift-status-2026-05-13.md).
+**Gap widened to Δ 96 files between 5/13 and 5/20** — the longer this
+waits, the bigger the reconciliation surface.
 
 - Inspect production `drizzle.resupply_migrations` history table; build
   a mapping of applied tags → on-disk SQL files. (Requires read access;
@@ -95,92 +94,71 @@ Per P0.1 + P0.2 in 5/13 review and
   free prefix; record the rename in the journal as a no-op tag rewrite.
 - Flip `ci.yml` drift check from `continue-on-error: true` → `false`
   in the **same PR** that reconciles. (Don't flip earlier; flip is
-  the gating event.)
+  the gating event.) **Note (5/20):** `ci.yml` no longer references
+  `check-drizzle-drift.sh` — the carve-out may already be retired.
+  Verify before opening the PR; if the step is gone, this work
+  reduces to the journal backfill + duplicate-prefix rename.
 - Add `pnpm migrate:dry-run` script that diffs disk vs journal and
   exits non-zero on mismatch — same logic the CI step runs.
 
-**Exit criteria:** `scripts/check-drizzle-drift.sh` exits 0; the CI
-check is mandatory (not `continue-on-error`).
-
-### PR 1.3 — Per-document HIPAA retention audit rows (S, P0)
-
-Per N3 in 5/13 review.
-
-- After the batch UPDATE in
-  `artifacts/resupply-api/src/worker/jobs/patient-documents-retention-sweep.ts:100-115`,
-  emit one `logAuditBestEffort` row per flagged document (cap at
-  the existing defensive 5k/batch limit).
-- Event tag: `patient-documents.retention-sweep.flagged`,
-  actor: `system:retention-sweep`, subject: `patient_documents.id`,
-  metadata: `{ retention_until_at }`.
-- Test: stub `logAuditBestEffort`, run sweep with 3 flagged rows,
-  assert 3 calls with the expected shape.
-
-**Exit criteria:** A SELECT on `resupply.audit_log` for
-`event = 'patient-documents.retention-sweep.flagged'` returns one row
-per flagged document.
+**Exit criteria:** `scripts/check-drizzle-drift.sh` (or its
+replacement) exits 0; the CI check is mandatory (not
+`continue-on-error`).
 
 ---
 
-## Phase 2 — Security hardening (1–2 weeks, ~4 PRs)
+## Phase 2 — Security hardening (1–2 weeks, 3 PRs)
 
 **Goal:** Close the open security items so the platform passes
-external pen-test review without compensating controls. All items are
-existing P0/P1 backlog.
+external pen-test review without compensating controls. The CSRF item
+(originally PR 2.3) has shipped; the middleware for admin rate-limits
+exists but adoption is still 19/126.
 
-### PR 2.1 — Unified admin rate-limit middleware (M, P0.7)
+### PR 2.1 — `adminRateLimit` adoption sweep (M, P0.7)
 
-- Land `adminRateLimit(actorIdGetter, { window, max })` in
-  `artifacts/resupply-api/src/middlewares/`. Re-export the existing
-  `csr-compliance-alerts.ts` limiter shape so call-sites stay tiny.
-- Wire it on the 12 already-protected routes (no behavior change),
-  then sweep the remaining ~89 admin route files in batches of ~15
-  per follow-up commit.
-- Per-route presets in `middlewares/admin-rate-limits.ts`:
-  `scan` (high read), `mutate` (POST/PATCH/DELETE), `bulk`
-  (campaign/export endpoints).
-- Add an architecture-check rule (`scripts/check-resupply-architecture.sh`)
-  that fails CI if a route under `routes/admin/` does not mount
-  `adminRateLimit`.
+The middleware exists at
+`artifacts/resupply-api/src/middlewares/admin-rate-limit.ts` with a
+4-preset shape (`destroy`, `bulk`, `sensitive`, `mutation`) and a
+test. **Adoption sweep is the open work.**
 
-**Exit criteria:** Every admin route is rate-limited; the arch
-check enforces it.
+- Inventory: ~107 admin route files don't mount `adminRateLimit`
+  (19/126 do today).
+- Sweep in batches of ~15 per commit. Map each route's HTTP verbs to
+  the existing preset:
+  - `destroy` for DELETE on PHI / financial rows.
+  - `bulk` for POST that fan out (campaigns, mass scans, exports).
+  - `sensitive` for role/permission/template mutations.
+  - `mutation` for standard POST/PATCH writes.
+- Add an architecture-check rule
+  (`scripts/check-resupply-architecture.sh`) that fails CI if a
+  route under `routes/admin/` defines a POST/PATCH/DELETE handler
+  without mounting `adminRateLimit`. Read-only routes (GET) are
+  exempt.
 
-### PR 2.2 — RBAC Phase B: `requirePermission` catalog (S–M, N4)
+**Exit criteria:** Every mutating admin route is rate-limited; the
+arch check enforces it on new PRs.
+
+### PR 2.2 — RBAC `requirePermission` sweep + permission catalog (S–M, N4)
+
+`requirePermission` is now in 78/126 admin route files (up from 7 on
+5/13). 48 remain on bare `requireAdmin`. The remaining sweep:
 
 - Define the permission catalog in
-  `lib/resupply-domain/src/permissions.ts` as a `const` union:
-  `<area>.<action>` (e.g., `billing.write`, `loss-claims.read`,
-  `recall.remediate`, `coaching-plan.author`).
-- Audit the ~25 new admin routes from the recent feature wave
-  (loss-claims, telehealth, provider portal, POD, coaching plans,
-  recall remediation, mask-leak wizard, accreditation attestations).
-  Replace `requireAdmin` with `requirePermission(...)`.
+  `lib/resupply-domain/src/permissions.ts` as a `const` union if it
+  doesn't already exist there (it may be inline today — verify and
+  centralize). Naming: `<area>.<action>` (e.g., `billing.write`,
+  `loss-claims.read`, `recall.remediate`, `coaching-plan.author`).
+- Audit each of the 48 remaining `requireAdmin`-only admin routes and
+  replace with `requirePermission(...)` OR add a code comment
+  `// requireAdmin: full-admin gating justified because …`.
 - Add a startup assertion in `artifacts/resupply-api/src/app.ts`:
-  every route under `/admin` must call `requirePermission` OR
-  carry a code comment `// requireAdmin: full-admin gating justified
-  because …`. Boot fails fast on violation.
-- Add an admin "Roles & permissions" page (read-only first) under
-  `/admin/team/roles` to surface what each role can do.
+  every route under `/admin` must call `requirePermission` OR carry
+  the justification comment. Boot fails fast on violation.
+- Add a read-only admin "Roles & permissions" page under
+  `/admin/team/roles` that surfaces what each role can do.
 
 **Exit criteria:** `requireAdmin`-only admin routes count drops from
-101 → near-zero with the remaining ones explicitly justified.
-
-### PR 2.3 — Storefront CSRF on state-changing endpoints (M, P1.3)
-
-- Land a `csrfMiddleware` (or extend the existing
-  `attachSignedIn`) that enforces a same-origin token on POST/PATCH/
-  DELETE under `/shop/*`, `/api/me/*`, `/shop/me-payments/*`,
-  `/shop/me-claims/*`.
-- Storefront SPA already exposes `csrfHeader()` via
-  `artifacts/cpap-fitter/src/lib/shop-api.ts` (P2.13 fix). Add the
-  header on every mutating fetch; confirm the 6 existing call-sites
-  pick it up automatically.
-- Tests: unit test that POST `/shop/orders` without the header
-  returns 403; with the header succeeds.
-
-**Exit criteria:** Cross-origin mutating request to `/shop/*` returns
-403 without a valid token.
+48 → near-zero with remainders explicitly justified.
 
 ### PR 2.4 — MFA enforcement ADR + audit row (S, N5)
 
@@ -423,20 +401,51 @@ ADR; on-call has a runbook for every paged alert.
 
 ---
 
-## Quick reference — phase totals
+## Quick reference — phase totals (post-revision)
 
 | Phase | Theme                          | Duration   | PRs | Risk | Blocks                                  |
 | ----- | ------------------------------ | ---------- | --- | ---- | --------------------------------------- |
-| 1     | Stop the bleeding              | 1 week     | 3   | Low  | Production deploys (drift)              |
-| 2     | Security hardening             | 1–2 weeks  | 4   | Med  | External pen-test, RBAC promise         |
+| 1     | Stop the bleeding              | 1 week     | 1   | Med  | Production deploys (drift)              |
+| 2     | Security hardening             | 1–2 weeks  | 3   | Med  | External pen-test, RBAC promise         |
 | 3     | Reliability & observability    | 1–2 weeks  | 3   | Low  | Incident response time                  |
 | 4     | Code structure & DB integrity  | 2 weeks    | 4   | Med  | Feature velocity on patient-detail      |
 | 5     | UX, a11y, perf polish          | 2 weeks    | 5   | Low  | Customer NPS, accreditation review      |
 | 6     | DX, docs, coverage             | 1 week     | 3   | Low  | Cost of the next polish wave            |
 
-**Total:** ~9 weeks, ~22 PRs. Phases 1–3 are the production-critical
-spine; phases 4–6 are leverage investments that pay back in the next
-quarter's velocity.
+**Total:** ~9 weeks, **~19 PRs** (down from 22 in the initial draft;
+3 already-shipped items removed). Phases 1–3 are the production-
+critical spine; phases 4–6 are leverage investments that pay back in
+the next quarter's velocity.
+
+## Recommended starting order (post-revision)
+
+| # | Item                                              | Effort | Why                                                                                        |
+| - | ------------------------------------------------- | ------ | ------------------------------------------------------------------------------------------ |
+| 1 | Phase 4 PR 4.1 (extract Overview tab from `patient-detail.tsx`) | S | The file-growth trend is the most visible code-quality regression and the simplest stop.   |
+| 2 | Phase 2 PR 2.1 (`adminRateLimit` adoption sweep)  | M      | Middleware exists; sweep is mechanical batches. Closes the largest open P0 surface.        |
+| 3 | Phase 2 PR 2.2 (RBAC sweep finish)                | S–M    | 48 routes left; pairs naturally with PR 2.1's batches.                                     |
+| 4 | Phase 1 PR 1.2 (migration drift reconciliation)   | M      | Highest leverage but needs production DB inspection — schedule when operator is available. |
+
+---
+
+## Already-shipped log
+
+Items removed from the active phases above because verification on
+2026-05-20 found them already in the tree. Citations point to the
+verifying evidence.
+
+| Original phase item                       | Shipped by | Evidence                                                                                        |
+| ----------------------------------------- | ---------- | ----------------------------------------------------------------------------------------------- |
+| Phase 1 PR 1.1 — integration HTTP timeouts | PR #204    | `lib/resupply-integrations-airview/src/client.ts:99-118` (`fetchWithTimeout` + env overrides). Same pattern in care-orchestrator and react-health. health-connect has no `fetch()`. |
+| Phase 1 PR 1.1 — atomic MFA recovery code | PR #204    | `artifacts/resupply-api/src/lib/auth-deps.ts:275-303` (`consumeRecoveryCode` runs UPDATE with `.is("used_at", null)` in the WHERE). |
+| Phase 1 PR 1.3 — HIPAA per-doc audit rows | (unconfirmed PR) | `artifacts/resupply-api/src/worker/jobs/patient-documents-retention-sweep.ts:38,123,129` (`logAuditBestEffort` imported and called per flagged batch). |
+| Phase 2 PR 2.3 — storefront CSRF          | (unconfirmed PR) | `artifacts/resupply-api/src/routes/storefront/orders.ts:43` (`requireCsrfWhenSession` imported and mounted).                              |
+| Phase 2 PR 2.1 (middleware only)          | (unconfirmed PR) | `artifacts/resupply-api/src/middlewares/admin-rate-limit.ts` + adjacent test exist with 4 presets. **Adoption sweep is still open** — see PR 2.1 above. |
+| Phase 2 PR 2.2 (partial)                  | (in flight) | `requirePermission` jumped from 7 → 78 admin route files since 5/13. **Remaining 48-file sweep is open** — see PR 2.2 above.            |
+
+**Lesson for future plan docs:** always run a tree spot-check against
+the source-of-truth review doc before sequencing — the codebase moves
+faster than the review cadence implies.
 
 ---
 
