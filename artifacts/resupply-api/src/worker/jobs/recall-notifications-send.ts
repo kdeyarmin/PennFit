@@ -256,7 +256,9 @@ export async function runRecallSendSweep(
     const patient = patientById.get(row.patient_id);
     if (!recall || !patient) {
       // Source row vanished mid-sweep — skip and let a human
-      // figure out what happened.
+      // figure out what happened. Gate on status='queued' so a
+      // sibling worker that already finished this row doesn't get
+      // its terminal status overwritten by 'skipped'.
       await supabase
         .schema("resupply")
         .from("recall_notifications")
@@ -265,7 +267,8 @@ export async function runRecallSendSweep(
           failed_reason: !recall ? "recall_missing" : "patient_missing",
           failed_at: new Date().toISOString(),
         })
-        .eq("id", row.id);
+        .eq("id", row.id)
+        .eq("status", "queued");
       stats.skipped += 1;
       continue;
     }
@@ -289,6 +292,17 @@ export async function runRecallSendSweep(
       cfg,
     );
 
+    // Defense-in-depth: gate every terminal status flip on
+    // status='queued'. Today pg-boss runs this sweep with teamSize=1
+    // so the SELECT-then-loop above won't really race within a
+    // single process, but if a future deploy ever horizontally
+    // scales the worker, two instances could both pull the same row
+    // from the SELECT. The .eq("status", "queued") guard makes the
+    // final UPDATE a no-op for the losing worker — DB state stays
+    // consistent (the original outcome wins) rather than getting
+    // re-written by a slower second send. The duplicate vendor call
+    // upstream is a separate concern (would require an in_progress
+    // intermediate status to fully close, which is a migration).
     const nowIso = new Date().toISOString();
     if (outcome.kind === "sent") {
       await supabase
@@ -299,7 +313,8 @@ export async function runRecallSendSweep(
           channel: outcome.channel,
           notified_at: nowIso,
         })
-        .eq("id", row.id);
+        .eq("id", row.id)
+        .eq("status", "queued");
       stats.sent += 1;
     } else if (outcome.kind === "failed") {
       await supabase
@@ -311,7 +326,8 @@ export async function runRecallSendSweep(
           failed_at: nowIso,
           failed_reason: outcome.reason.slice(0, 500),
         })
-        .eq("id", row.id);
+        .eq("id", row.id)
+        .eq("status", "queued");
       stats.failed += 1;
     } else {
       await supabase
@@ -322,7 +338,8 @@ export async function runRecallSendSweep(
           failed_at: nowIso,
           failed_reason: outcome.reason,
         })
-        .eq("id", row.id);
+        .eq("id", row.id)
+        .eq("status", "queued");
       stats.skipped += 1;
     }
   }
