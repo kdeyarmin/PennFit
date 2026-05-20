@@ -108,7 +108,6 @@ beforeEach(() => {
   mockAdmin.current = null;
   rateLimitBlocked.current = false;
   supabaseMock.reset();
-  adminRateLimitSpy.mockClear();
 });
 
 // ── POST /admin/denial-codes ─────────────────────────────────────────────────
