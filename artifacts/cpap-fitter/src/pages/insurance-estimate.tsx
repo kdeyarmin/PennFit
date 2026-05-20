@@ -92,8 +92,10 @@ export function InsuranceEstimate() {
       .then((r) => {
         if (!cancelled) setPersonal(r);
       })
-      .catch((err) => {
-        console.error("Failed to fetch personal estimate:", err);
+      .catch(() => {
+        // Best-effort enhancement — the form below is the canonical
+        // flow. Silently fall back rather than logging noise; the
+        // user sees no degradation when this fetch fails.
       });
     return () => {
       cancelled = true;
@@ -269,6 +271,7 @@ export function InsuranceEstimate() {
                 <p
                   className="text-sm text-destructive"
                   data-testid="estimate-error"
+                  role="alert"
                 >
                   {error}
                 </p>
