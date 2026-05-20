@@ -375,7 +375,13 @@ export function Shop() {
       ) : error ? (
         <ShopLoadError message={error} onRetry={retry} />
       ) : sections.length === 0 ? (
-        <ShopComingSoon message="No products are available right now." />
+        <ShopComingSoon
+          message={
+            machineFilter.enabled
+              ? "No products match your device. Try turning off the device filter to see everything."
+              : "No products are available right now."
+          }
+        />
       ) : (
         <>
           {data?.previewMode && <PreviewModeBanner />}

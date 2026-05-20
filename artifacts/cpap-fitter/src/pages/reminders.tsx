@@ -410,7 +410,7 @@ export function Reminders() {
                   disabled={isPending}
                   data-testid="button-subscribe"
                 >
-                  {isPending ? "Saving..." : "Sign me up"}
+                  {isPending ? "Saving…" : "Sign me up"}
                 </Button>
                 <Link href="/">
                   <Button type="button" variant="ghost">
