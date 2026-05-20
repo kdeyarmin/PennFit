@@ -104,7 +104,7 @@ export function AdminBillingConfigModifierRulesPage() {
       <Card>
         {rules.isPending ? (
           <Spinner label="Loading modifier rules…" />
-        ) : (rules.data?.rules.length ?? 0) === 0 ? (
+        ) : !rules.isError && (rules.data?.rules.length ?? 0) === 0 ? (
           <p className="text-sm" style={{ color: "hsl(var(--ink-3))" }}>
             No rules match.
           </p>

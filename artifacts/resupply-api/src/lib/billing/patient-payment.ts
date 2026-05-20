@@ -84,13 +84,13 @@ export async function createPaymentIntent(
   // Validate every claim belongs to the patient AND the requested
   // allocation doesn't exceed the open balance.
   const claimIds = input.allocations.map((a) => a.claimId);
-  const { data: claims } = await supabase
+  const { data: claimsData } = await supabase
     .schema("resupply")
     .from("insurance_claims")
     .select("id, patient_id, patient_responsibility_cents")
     .in("id", claimIds);
   for (const allocation of input.allocations) {
-    const claim = (claims ?? []).find((c) => c.id === allocation.claimId);
+    const claim = (claimsData ?? []).find((c) => c.id === allocation.claimId);
     if (!claim || claim.patient_id !== input.patientId) {
       return {
         error: "claim_not_owned",
@@ -250,13 +250,13 @@ export async function createPaymentCheckoutSession(
   // flow — duplicated here rather than refactored because the
   // failure modes intentionally surface as different HTTP statuses.
   const claimIds = input.allocations.map((a) => a.claimId);
-  const { data: claims } = await supabase
+  const { data: claimsData } = await supabase
     .schema("resupply")
     .from("insurance_claims")
     .select("id, patient_id, patient_responsibility_cents")
     .in("id", claimIds);
   for (const allocation of input.allocations) {
-    const claim = (claims ?? []).find((c) => c.id === allocation.claimId);
+    const claim = (claimsData ?? []).find((c) => c.id === allocation.claimId);
     if (!claim || claim.patient_id !== input.patientId) {
       return {
         error: "claim_not_owned",
@@ -354,7 +354,16 @@ export async function createPaymentCheckoutSession(
 
   if (!session.url) {
     // Stripe should always return a URL for hosted sessions; this
-    // is belt-and-braces for the typed-as-nullable field.
+    // is belt-and-braces for the typed-as-nullable field. Mark the
+    // row as failed before returning.
+    await supabase
+      .schema("resupply")
+      .from("patient_payments")
+      .update({
+        status: "failed",
+        failure_reason: "Stripe session missing url",
+      })
+      .eq("id", row.id);
     return {
       error: "stripe_not_configured",
       message: "Stripe returned a session without a hosted URL",

@@ -343,7 +343,7 @@ export function InsuranceCoveragesTab({ patientId }: { patientId: string }) {
 
 function formatCents(cents: number | null | undefined): string {
   if (cents == null || Number.isNaN(cents)) return "—";
-  return `$${(cents / 100).toFixed(0)}`;
+  return `$${(cents / 100).toFixed(2)}`;
 }
 
 function CoverageRow({

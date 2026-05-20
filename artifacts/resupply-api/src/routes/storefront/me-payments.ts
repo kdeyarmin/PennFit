@@ -149,22 +149,20 @@ router.post("/me/payments/checkout-session", async (req, res) => {
 
   // Resolve absolute success/cancel URLs from the request origin.
   // Stripe needs absolute URLs; the caller passes relative paths so
-  // the same code works across preview deployments.
-  const origin = req.get("origin") ?? req.get("referer") ?? "";
-  if (!origin || !/^https?:\/\//.test(origin)) {
+  // the same code works across preview deployments. Parse with URL
+  // constructor to extract origin and reject malformed input.
+  const originRaw = req.get("origin") ?? req.get("referer") ?? "";
+  let baseOrigin: string;
+  try {
+    const parsed = new URL(originRaw);
+    baseOrigin = parsed.origin;
+  } catch {
     res.status(400).json({
       error: "invalid_origin",
       message: "Origin header required for hosted checkout redirect",
     });
     return;
   }
-  // Strip trailing `/` via a manual scan rather than
-  // `.replace(/\/+$/, "")` to dodge CodeQL's
-  // `js/polynomial-redos` rule on a user-controlled string. Same
-  // pattern as base64UrlEncode in lib/resupply-auth/mfa-challenge.
-  let end = origin.length;
-  while (end > 0 && origin.charCodeAt(end - 1) === 0x2f /* "/" */) end--;
-  const baseOrigin = origin.slice(0, end);
   const successUrl = `${baseOrigin}${parsed.data.successPath ?? "/account/billing?paid=1"}`;
   const cancelUrl = `${baseOrigin}${parsed.data.cancelPath ?? "/account/billing?cancelled=1"}`;
 

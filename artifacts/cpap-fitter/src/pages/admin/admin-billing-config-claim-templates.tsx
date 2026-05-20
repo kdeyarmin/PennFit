@@ -52,14 +52,12 @@ export function AdminBillingConfigClaimTemplatesPage() {
         </p>
       </header>
 
-      {templates.isError && (
+      {templates.isError ? (
         <ErrorPanel
           error={templates.error}
           onRetry={() => void templates.refetch()}
         />
-      )}
-
-      {templates.isPending ? (
+      ) : templates.isPending ? (
         <Spinner label="Loading templates…" />
       ) : (templates.data?.templates.length ?? 0) === 0 ? (
         <Card>

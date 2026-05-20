@@ -92,7 +92,7 @@ export function AdminBillingConfigDenialCodesPage() {
       <Card>
         {isPending ? (
           <Spinner label="Loading denial codes…" />
-        ) : (data?.denialCodes.length ?? 0) === 0 ? (
+        ) : !isError && (data?.denialCodes.length ?? 0) === 0 ? (
           <p className="text-sm" style={{ color: "hsl(var(--ink-3))" }}>
             No denial codes match.
           </p>

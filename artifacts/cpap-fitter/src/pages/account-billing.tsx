@@ -143,6 +143,8 @@ function AccountBillingInner() {
       // otherwise.
       window.location.href = session.url;
     },
+    onMutate: () => setPayError(null),
+    onSuccess: () => setPayError(null),
     onError: (err) => {
       setPayError(err instanceof Error ? err.message : "Couldn't start checkout.");
     },
@@ -236,12 +238,14 @@ function AccountBillingInner() {
               Open balance
             </p>
             <p className="mt-1 text-4xl font-bold tabular-nums text-slate-900">
-              {balance.isPending ? "—" : formatMoneyCents(totalOpen)}
+              {balance.isPending ? "—" : balance.isError ? "Error" : formatMoneyCents(totalOpen)}
             </p>
             <p className="mt-1 text-sm text-slate-600">
               {balance.isPending
                 ? "Loading…"
-                : claimCount === 0
+                : balance.isError
+                  ? (balance.error instanceof Error ? balance.error.message : "Failed to load balance.")
+                  : claimCount === 0
                   ? "No outstanding balance."
                   : `${claimCount} claim${claimCount === 1 ? "" : "s"} with patient responsibility after insurance.`}
             </p>
@@ -320,6 +324,10 @@ function AccountBillingInner() {
 
         {statements.isPending ? (
           <p className="mt-4 text-sm text-slate-500">Loading…</p>
+        ) : statements.isError ? (
+          <p className="mt-4 text-sm text-red-600">
+            {statements.error instanceof Error ? statements.error.message : "Failed to load statements."}
+          </p>
         ) : (statements.data?.statements.length ?? 0) === 0 ? (
           <p className="mt-4 text-sm text-slate-500">
             No statements yet. We email one whenever there's a new
@@ -373,6 +381,10 @@ function AccountBillingInner() {
 
         {payments.isPending ? (
           <p className="mt-4 text-sm text-slate-500">Loading…</p>
+        ) : payments.isError ? (
+          <p className="mt-4 text-sm text-red-600">
+            {payments.error instanceof Error ? payments.error.message : "Failed to load payments."}
+          </p>
         ) : (payments.data?.payments.length ?? 0) === 0 ? (
           <p className="mt-4 text-sm text-slate-500">
             No payments on file yet.

@@ -351,6 +351,13 @@ export function PatientBillingTab({ patientId }: { patientId: string }) {
       >
         {claims.isPending ? (
           <Spinner label="Loading claims…" />
+        ) : claims.isError ? (
+          <p
+            className="text-sm py-1"
+            style={{ color: "#b91c1c" }}
+          >
+            {claims.error instanceof Error ? claims.error.message : "Failed to load claims."}
+          </p>
         ) : (claims.data?.claims.length ?? 0) === 0 ? (
           <p
             className="text-sm py-1"
@@ -429,6 +436,13 @@ export function PatientBillingTab({ patientId }: { patientId: string }) {
       >
         {eligibility.isPending ? (
           <Spinner label="Loading eligibility…" />
+        ) : eligibility.isError ? (
+          <p
+            className="text-sm py-1"
+            style={{ color: "#b91c1c" }}
+          >
+            {eligibility.error instanceof Error ? eligibility.error.message : "Failed to load eligibility checks."}
+          </p>
         ) : (eligibility.data?.checks.length ?? 0) === 0 ? (
           <p
             className="text-sm py-1"
@@ -525,6 +539,13 @@ export function PatientBillingTab({ patientId }: { patientId: string }) {
       >
         {priorAuths.isPending ? (
           <Spinner label="Loading prior auths…" />
+        ) : priorAuths.isError ? (
+          <p
+            className="text-sm py-1"
+            style={{ color: "#b91c1c" }}
+          >
+            {priorAuths.error instanceof Error ? priorAuths.error.message : "Failed to load prior authorizations."}
+          </p>
         ) : (priorAuths.data?.priorAuthorizations.length ?? 0) === 0 ? (
           <p
             className="text-sm py-1"
@@ -595,6 +616,13 @@ export function PatientBillingTab({ patientId }: { patientId: string }) {
       >
         {statements.isPending ? (
           <Spinner label="Loading statements…" />
+        ) : statements.isError ? (
+          <p
+            className="text-sm py-1"
+            style={{ color: "#b91c1c" }}
+          >
+            {statements.error instanceof Error ? statements.error.message : "Failed to load statements."}
+          </p>
         ) : (statements.data?.statements.length ?? 0) === 0 ? (
           <div className="flex items-start gap-2 text-sm">
             <AlertTriangle
@@ -722,6 +750,13 @@ export function PatientBillingTab({ patientId }: { patientId: string }) {
 
         {packets.isPending ? (
           <Spinner label="Loading packets…" />
+        ) : packets.isError ? (
+          <p
+            className="text-sm py-1"
+            style={{ color: "#b91c1c" }}
+          >
+            {packets.error instanceof Error ? packets.error.message : "Failed to load packets."}
+          </p>
         ) : (packets.data?.packets.length ?? 0) === 0 ? (
           <p
             className="text-sm py-1"

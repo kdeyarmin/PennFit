@@ -354,10 +354,10 @@ function CycleRow({ c }: { c: CappedRentalCycle }) {
             style={{ color: daysTone.color, backgroundColor: daysTone.bg }}
           >
             <CalendarClock className="inline h-3 w-3 mr-0.5 -mt-0.5" />
-            {days <= 0
-              ? `${Math.abs(days)}d past`
-              : days === 0
-                ? "today"
+            {days === 0
+              ? "today"
+              : days < 0
+                ? `${Math.abs(days)}d past`
                 : `${days}d`}
           </span>
         ) : (

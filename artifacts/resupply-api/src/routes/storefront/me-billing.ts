@@ -33,21 +33,23 @@ async function resolvePatientForCustomer(
   customerId: string,
 ): Promise<{ patientId: string } | null> {
   const supabase = getSupabaseServiceRoleClient();
-  const { data: customer } = await supabase
+  const { data: customer, error: customerErr } = await supabase
     .schema("resupply")
     .from("shop_customers")
     .select("customer_id, email_lower")
     .eq("customer_id", customerId)
     .limit(1)
     .maybeSingle();
+  if (customerErr) throw customerErr;
   if (!customer?.email_lower) return null;
-  const { data: patient } = await supabase
+  const { data: patient, error: patientErr } = await supabase
     .schema("resupply")
     .from("patients")
     .select("id")
     .eq("email", customer.email_lower)
     .limit(1)
     .maybeSingle();
+  if (patientErr) throw patientErr;
   return patient ? { patientId: patient.id } : null;
 }
 
@@ -124,7 +126,7 @@ router.get("/me/billing-statements/:id/pdf", async (req, res) => {
     return;
   }
   const supabase = getSupabaseServiceRoleClient();
-  const { data: statement } = await supabase
+  const { data: statement, error: statementErr } = await supabase
     .schema("resupply")
     .from("patient_billing_statements")
     .select(
@@ -134,6 +136,14 @@ router.get("/me/billing-statements/:id/pdf", async (req, res) => {
     .eq("patient_id", link.patientId)
     .limit(1)
     .maybeSingle();
+  if (statementErr) {
+    logger.warn(
+      { err: statementErr.message, statementId: parsed.data.id },
+      "me-billing.statement_pdf: query failed",
+    );
+    res.status(500).json({ error: "lookup_failed" });
+    return;
+  }
   if (!statement) {
     res.status(404).json({ error: "not_found" });
     return;
@@ -145,13 +155,21 @@ router.get("/me/billing-statements/:id/pdf", async (req, res) => {
   // org changes its address, the patient downloading an old
   // statement should see the current org details rather than a
   // stale snapshot.
-  const { data: patient } = await supabase
+  const { data: patient, error: patientErr } = await supabase
     .schema("resupply")
     .from("patients")
     .select("legal_first_name, legal_last_name, address, email")
     .eq("id", link.patientId)
     .limit(1)
     .maybeSingle();
+  if (patientErr) {
+    logger.warn(
+      { err: patientErr.message, patientId: link.patientId },
+      "me-billing.statement_pdf: patient query failed",
+    );
+    res.status(500).json({ error: "lookup_failed" });
+    return;
+  }
   if (!patient) {
     res.status(404).json({ error: "not_found" });
     return;
@@ -162,15 +180,19 @@ router.get("/me/billing-statements/:id/pdf", async (req, res) => {
     return;
   }
 
-  const lineItems = (statement.line_items_json as unknown as PersistedLineItem[]).map(
-    (li) => ({
-      claimId: li.claim_id,
-      payerName: li.payer_name,
-      dateOfService: li.date_of_service,
-      billedCents: li.billed_cents,
-      paidCents: li.paid_cents,
-      patientResponsibilityCents: li.patient_responsibility_cents,
-    }),
+  const lineItemsRaw = statement.line_items_json;
+  const lineItems = (Array.isArray(lineItemsRaw) ? lineItemsRaw : []).map(
+    (li) => {
+      const item = li as unknown as PersistedLineItem;
+      return {
+        claimId: item.claim_id,
+        payerName: item.payer_name,
+        dateOfService: item.date_of_service,
+        billedCents: item.billed_cents,
+        paidCents: item.paid_cents,
+        patientResponsibilityCents: item.patient_responsibility_cents,
+      };
+    },
   );
 
   const address = patient.address as
