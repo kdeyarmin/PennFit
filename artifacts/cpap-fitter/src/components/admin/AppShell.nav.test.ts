@@ -101,6 +101,41 @@ describe("AppShell NAV_GROUPS — accreditation-binder entry (System group)", ()
 });
 
 // ---------------------------------------------------------------------------
+// New nav group: Billing — five entries mounted alongside Orders & Shop.
+//   Headline page: /admin/billing  (Billing Hub)
+//   Sub-pages:     /admin/billing/{ai-queue,aging,denials,era}
+// ---------------------------------------------------------------------------
+describe("AppShell NAV_GROUPS — billing group", () => {
+  it("registers a 'Billing' nav group label", () => {
+    expect(APPSHELL_SRC).toContain('label: "Billing"');
+  });
+
+  const billingRoutes: ReadonlyArray<[string, string]> = [
+    ["/admin/billing", "Billing Hub"],
+    ["/admin/billing/ai-queue", "AI queue"],
+    ["/admin/billing/aging", "A/R aging"],
+    ["/admin/billing/denials", "Denials & DSO"],
+    ["/admin/billing/era", "ERA files"],
+  ];
+
+  for (const [href, label] of billingRoutes) {
+    it(`mounts ${label} at ${href}`, () => {
+      expect(APPSHELL_SRC).toContain(`href: "${href}"`);
+      expect(APPSHELL_SRC).toContain(`label: "${label}"`);
+      expect(APPSHELL_SRC).toContain(`matchPrefix: "${href}"`);
+    });
+  }
+
+  it("imports the lucide icons used by the billing group", () => {
+    expect(APPSHELL_SRC).toContain("CircleDollarSign");
+    expect(APPSHELL_SRC).toContain("Wallet");
+    expect(APPSHELL_SRC).toContain("Bot");
+    expect(APPSHELL_SRC).toContain("ListFilter");
+    expect(APPSHELL_SRC).toContain("TrendingDown");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Regression: pre-existing routes are undisturbed
 // ---------------------------------------------------------------------------
 describe("AppShell NAV_GROUPS — pre-existing routes not removed by this PR", () => {

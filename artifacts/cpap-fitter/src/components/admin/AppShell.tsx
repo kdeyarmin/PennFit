@@ -46,6 +46,11 @@ import {
   ClipboardList,
   Plug,
   Menu,
+  CircleDollarSign,
+  Wallet,
+  Bot,
+  ListFilter,
+  TrendingDown,
 } from "lucide-react";
 import {
   Sheet,
@@ -303,6 +308,46 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         icon: Boxes,
         matchPrefix: "/admin/shop/inventory",
         hint: "Catalog, stock levels, product editor",
+      },
+    ],
+  },
+  {
+    label: "Billing",
+    items: [
+      {
+        href: "/admin/billing",
+        label: "Billing Hub",
+        icon: CircleDollarSign,
+        matchPrefix: "/admin/billing",
+        hint: "AR director dashboard — KPIs, money in flight, top payers",
+      },
+      {
+        href: "/admin/billing/ai-queue",
+        label: "AI queue",
+        icon: Bot,
+        matchPrefix: "/admin/billing/ai-queue",
+        hint: "Scrubber-blocked + denial-analyzer worklist with auto-resubmit",
+      },
+      {
+        href: "/admin/billing/aging",
+        label: "A/R aging",
+        icon: ListFilter,
+        matchPrefix: "/admin/billing/aging",
+        hint: "Open claims by 0/30/60/90 day bucket and by payer",
+      },
+      {
+        href: "/admin/billing/denials",
+        label: "Denials & DSO",
+        icon: TrendingDown,
+        matchPrefix: "/admin/billing/denials",
+        hint: "90-day denial rate + 180-day days-to-pay, per payer",
+      },
+      {
+        href: "/admin/billing/era",
+        label: "ERA files",
+        icon: Wallet,
+        matchPrefix: "/admin/billing/era",
+        hint: "Upload an 835 to auto-post payer adjudications",
       },
     ],
   },
