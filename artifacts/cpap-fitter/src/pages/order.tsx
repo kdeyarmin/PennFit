@@ -181,6 +181,12 @@ export function Order() {
   if (!chosenMask) return null;
 
   const onSubmit = (values: FormValues) => {
+    // Defense against a fast double-click on the submit button:
+    // react-hook-form's handleSubmit doesn't await fire-and-forget
+    // mutate() calls, so the disabled-while-isPending button doesn't
+    // close the race on its own. Skip a second submission while the
+    // first is still in flight.
+    if (isPending) return;
     // Frontend honeypot. Bots tend to fill in every visible input they
     // can find — including ones we hide visually. Silently pretend
     // success without ever hitting the API.

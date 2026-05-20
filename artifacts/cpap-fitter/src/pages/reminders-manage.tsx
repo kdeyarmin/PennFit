@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { Link, useSearch } from "wouter";
+import React, { useEffect, useState } from "react";
+import { Link } from "wouter";
 import {
   useGetReminderSubscription,
   getGetReminderSubscriptionQueryKey,
@@ -64,11 +64,30 @@ function buildState(
 
 export function RemindersManage() {
   useDocumentTitle(PAGE_TITLE);
-  const search = useSearch();
-  const token = useMemo(
-    () => new URLSearchParams(search).get("token") ?? "",
-    [search],
-  );
+  // Read the token ONCE on mount, then strip it from the URL so the
+  // single-use manage secret doesn't persist in browser history,
+  // autocomplete, or shareable URLs. Subsequent updates / unsubscribe
+  // calls reuse the captured token rather than re-reading window.location.
+  const [token] = useState(() => {
+    if (typeof window === "undefined") return "";
+    return new URLSearchParams(window.location.search).get("token") ?? "";
+  });
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const params = new URLSearchParams(window.location.search);
+      if (!params.has("token")) return;
+      params.delete("token");
+      const qs = params.toString();
+      const next =
+        window.location.pathname +
+        (qs ? `?${qs}` : "") +
+        window.location.hash;
+      window.history.replaceState(null, "", next);
+    } catch {
+      // History API not available: no-op.
+    }
+  }, []);
 
   // The Orval-generated hook's typed `query` option requires `queryKey`
   // even though the runtime defaults it from the params — pass it

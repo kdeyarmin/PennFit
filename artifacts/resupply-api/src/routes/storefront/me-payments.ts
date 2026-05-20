@@ -32,7 +32,7 @@ const intentBody = z
 
 async function resolvePatientForCustomer(
   customerId: string,
-): Promise<{ patientId: string } | null> {
+): Promise<{ patientId: string; customerEmail: string } | null> {
   const supabase = getSupabaseServiceRoleClient();
   const { data: customer } = await supabase
     .schema("resupply")
@@ -49,7 +49,9 @@ async function resolvePatientForCustomer(
     .eq("email", customer.email_lower)
     .limit(1)
     .maybeSingle();
-  return patient ? { patientId: patient.id } : null;
+  return patient
+    ? { patientId: patient.id, customerEmail: customer.email_lower }
+    : null;
 }
 
 router.post("/me/payments/intent", async (req, res) => {
@@ -80,10 +82,20 @@ router.post("/me/payments/intent", async (req, res) => {
     allocations: parsed.data.allocations,
     source: "portal",
     note: parsed.data.note,
-    initiatorEmail: customerId,
+    initiatorEmail: link.customerEmail,
   });
   if ("error" in result) {
-    res.status(result.error === "stripe_not_configured" ? 503 : 409).json(result);
+    // 503 — Stripe not configured (service unavailable in this env).
+    // 502 — Stripe accepted the call but rejected (upstream error).
+    // 409 — caller error (no_allocations / claim_not_owned /
+    //       claim_balance_mismatch).
+    const status =
+      result.error === "stripe_not_configured"
+        ? 503
+        : result.error === "stripe_rejected"
+          ? 502
+          : 409;
+    res.status(status).json(result);
     return;
   }
   logger.info(
