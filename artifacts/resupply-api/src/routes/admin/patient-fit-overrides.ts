@@ -12,6 +12,7 @@ import { logAudit } from "@workspace/resupply-audit";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
+import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
@@ -71,6 +72,7 @@ router.put(
   // fitter (not csr/agent), so we use `patients.update` here as the
   // broader, role-accurate gate to match the existing access matrix.
   requirePermission("patients.update"),
+  adminRateLimit({ name: "patient_fit_overrides.upsert", preset: "mutation" }),
   async (req, res) => {
     const p = idParam.safeParse(req.params);
     if (!p.success) {
@@ -124,6 +126,7 @@ router.delete(
   "/admin/patients/:id/fit-override",
   // Revert to camera recommendation. Same scope as the PUT.
   requirePermission("patients.update"),
+  adminRateLimit({ name: "patient_fit_overrides.delete", preset: "destroy" }),
   async (req, res) => {
     const p = idParam.safeParse(req.params);
     if (!p.success) {

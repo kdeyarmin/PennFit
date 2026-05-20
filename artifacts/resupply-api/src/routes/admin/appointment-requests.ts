@@ -6,6 +6,7 @@ import { z } from "zod";
 
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
+import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requireAdmin, requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
@@ -55,6 +56,7 @@ router.get(
 router.patch(
   "/admin/appointment-requests/:id",
   requirePermission("conversations.manage"),
+  adminRateLimit({ name: "appointment_requests.update", preset: "mutation" }),
   async (req, res) => {
     const params = idParam.safeParse(req.params);
     if (!params.success) {
