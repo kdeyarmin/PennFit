@@ -14,7 +14,7 @@
 // the top-of-funnel "will it be covered?" question, which the heavy
 // form was scaring away.
 
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -40,6 +40,10 @@ import {
   findPayerEstimate,
   formatEstimateRange,
 } from "@/lib/insurance-estimate-data";
+import {
+  fetchPersonalEstimate,
+  type PersonalEstimateResponse,
+} from "@/lib/me-billing-api";
 import { submitInsuranceEstimate } from "@/lib/shop-api";
 
 // Lightweight email-shape guard. Server still validates canonically.
@@ -74,6 +78,23 @@ export function InsuranceEstimate() {
   const emailValid = EMAIL_RE.test(trimmedEmail);
   const zipValid = zip.length === 0 || ZIP_RE.test(zip.trim());
   const canSubmit = emailValid && payerSlug !== "" && zipValid && !submitting;
+
+  // Best-effort personalized estimate. Fires once on mount; if the
+  // user isn't signed in (or there's no parsed 270/271 on file) the
+  // endpoint returns { available: false } and we silently fall back
+  // to the static-table flow below.
+  const [personal, setPersonal] = useState<PersonalEstimateResponse | null>(
+    null,
+  );
+  useEffect(() => {
+    let cancelled = false;
+    void fetchPersonalEstimate().then((r) => {
+      if (!cancelled) setPersonal(r);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const selected = useMemo(
     () => (payerSlug ? findPayerEstimate(payerSlug) : null),
@@ -123,6 +144,10 @@ export function InsuranceEstimate() {
           estimate of what most patients pay. No member-id required.
         </p>
       </header>
+
+      {personal?.available === true && (
+        <PersonalEstimatePanel personal={personal} />
+      )}
 
       <Card className="border-0 glass-card rounded-2xl">
         <CardHeader>
@@ -386,5 +411,192 @@ function ResultPanel({
         DME benefit before any charge.
       </p>
     </div>
+  );
+}
+
+// Per-page formatter — the storefront doesn't import the admin
+// billing-api so we redefine locally rather than pull a heavier
+// helper into this bundle.
+function fmt(cents: number | null | undefined): string {
+  if (cents == null || Number.isNaN(cents)) return "—";
+  return `$${(cents / 100).toLocaleString("en-US", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  })}`;
+}
+
+// "$200 typical resupply" → patient owe under the parsed plan
+// terms. Treats the resupply pack as fully allowed (which it is for
+// CPAP DME under most US payers), then walks:
+//
+//   1. fill any remaining deductible at 100% patient,
+//   2. then apply coinsurance % to the remainder,
+//   3. plus copay,
+//   4. cap at the remaining OOP-max (after which the patient owes 0).
+//
+// The result is a clinical estimate, not a quote — the page banner
+// makes that explicit. Returns null when we can't responsibly
+// compute (no deductible/coinsurance fields).
+function estimateOweCents(
+  typicalAllowedCents: number,
+  e: Extract<PersonalEstimateResponse, { available: true }>,
+): number | null {
+  if (e.coinsurancePct == null && e.copayCents == null) return null;
+  const dedRemaining = Math.max(
+    0,
+    (e.deductibleCents ?? 0) - (e.deductibleMetCents ?? 0),
+  );
+  const oopRemaining =
+    e.oopMaxCents != null
+      ? Math.max(0, e.oopMaxCents - (e.oopMetCents ?? 0))
+      : Infinity;
+  let owe = 0;
+  let remaining = typicalAllowedCents;
+  const dedAbsorb = Math.min(remaining, dedRemaining);
+  owe += dedAbsorb;
+  remaining -= dedAbsorb;
+  if (remaining > 0 && e.coinsurancePct != null) {
+    owe += Math.round((remaining * e.coinsurancePct) / 100);
+  }
+  if (e.copayCents != null) owe += e.copayCents;
+  return Math.min(owe, oopRemaining);
+}
+
+function PersonalEstimatePanel({
+  personal,
+}: {
+  personal: Extract<PersonalEstimateResponse, { available: true }>;
+}) {
+  // "Typical resupply" anchor — $200 in cents. Matches the
+  // typical-range midpoint in lib/insurance-estimate-data.ts. We
+  // could refine per-product in a follow-up; for the first cut a
+  // single anchor keeps the math legible.
+  const typicalAllowedCents = 20_000;
+  const oweCents = estimateOweCents(typicalAllowedCents, personal);
+  const dedRemaining = Math.max(
+    0,
+    (personal.deductibleCents ?? 0) - (personal.deductibleMetCents ?? 0),
+  );
+  const oopRemaining =
+    personal.oopMaxCents != null
+      ? Math.max(
+          0,
+          personal.oopMaxCents - (personal.oopMetCents ?? 0),
+        )
+      : null;
+
+  return (
+    <Card
+      className="border-0 glass-card rounded-2xl"
+      data-testid="personal-estimate-panel"
+    >
+      <CardHeader>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <CardTitle className="text-xl font-semibold tracking-tight inline-flex items-center gap-2">
+              <Stethoscope className="w-5 h-5 text-[hsl(var(--penn-gold-deep))]" />
+              Your personal estimate
+            </CardTitle>
+            <CardDescription>
+              Based on your actual plan benefits
+              {personal.payerName ? ` with ${personal.payerName}` : ""}.
+              {personal.asOf && (
+                <>
+                  {" "}Verified{" "}
+                  {new Date(personal.asOf).toLocaleDateString()}.
+                </>
+              )}
+            </CardDescription>
+          </div>
+          {personal.isActive === false && (
+            <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wider bg-red-100 text-red-800">
+              inactive
+            </span>
+          )}
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {oweCents != null ? (
+          <div className="rounded-xl glass-panel p-4 sm:p-5">
+            <p className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">
+              Estimated patient cost per resupply
+            </p>
+            <p className="text-3xl font-bold tabular-nums mt-1">
+              {fmt(oweCents)}
+            </p>
+            <p className="text-xs text-muted-foreground mt-2">
+              On a typical {fmt(typicalAllowedCents)} payer-allowed
+              resupply pack.
+            </p>
+          </div>
+        ) : (
+          <p className="text-sm text-muted-foreground">
+            We have your eligibility verified but not enough financial
+            detail to estimate per-resupply cost. The form below will
+            send you a written conservative estimate.
+          </p>
+        )}
+
+        <dl className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">
+          <div>
+            <dt className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Deductible
+            </dt>
+            <dd className="font-semibold tabular-nums">
+              {fmt(personal.deductibleCents)}
+            </dd>
+            {personal.deductibleMetCents != null &&
+              personal.deductibleCents != null && (
+                <dd className="text-xs text-muted-foreground">
+                  met {fmt(personal.deductibleMetCents)} (
+                  {fmt(dedRemaining)} left)
+                </dd>
+              )}
+          </div>
+          <div>
+            <dt className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Out-of-pocket max
+            </dt>
+            <dd className="font-semibold tabular-nums">
+              {fmt(personal.oopMaxCents)}
+            </dd>
+            {oopRemaining != null && personal.oopMetCents != null && (
+              <dd className="text-xs text-muted-foreground">
+                met {fmt(personal.oopMetCents)} ({fmt(oopRemaining)}{" "}
+                left)
+              </dd>
+            )}
+          </div>
+          <div>
+            <dt className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Coinsurance / copay
+            </dt>
+            <dd className="font-semibold tabular-nums">
+              {personal.coinsurancePct == null
+                ? "—"
+                : `${personal.coinsurancePct}%`}
+              {personal.copayCents != null && personal.copayCents > 0 && (
+                <> + {fmt(personal.copayCents)} copay</>
+              )}
+            </dd>
+            <dd className="text-xs text-muted-foreground">
+              {personal.inNetwork === true
+                ? "in-network"
+                : personal.inNetwork === false
+                  ? "out-of-network"
+                  : ""}
+            </dd>
+          </div>
+        </dl>
+
+        {personal.requiresPriorAuth === true && (
+          <p className="text-xs rounded-md bg-amber-50 border border-amber-200 text-amber-900 px-3 py-2">
+            Your plan requires prior authorization. We handle the
+            paperwork before any dispense — no action needed from you
+            today.
+          </p>
+        )}
+      </CardContent>
+    </Card>
   );
 }

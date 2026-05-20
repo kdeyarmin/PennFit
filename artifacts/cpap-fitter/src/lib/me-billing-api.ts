@@ -141,3 +141,42 @@ export function formatMoneyCents(cents: number | null | undefined): string {
     maximumFractionDigits: 2,
   })}`;
 }
+
+// ─── Personalized cost estimate ─────────────────────────────────────
+
+export type PersonalEstimateResponse =
+  | { available: false }
+  | {
+      available: true;
+      payerName: string | null;
+      isActive: boolean | null;
+      inNetwork: boolean | null;
+      deductibleCents: number | null;
+      deductibleMetCents: number | null;
+      oopMaxCents: number | null;
+      oopMetCents: number | null;
+      copayCents: number | null;
+      coinsurancePct: number | null;
+      requiresPriorAuth: boolean | null;
+      asOf: string | null;
+    };
+
+/** Returns the signed-in patient's most-recent parsed 270/271
+ *  financials, or `{ available: false }` if there's no parsed check
+ *  on file (either no eligibility check was run, the patient isn't
+ *  linked to a shop customer, or the call is unauthenticated). The
+ *  call is intentionally tolerant — a 401 also resolves as
+ *  `{ available: false }` so the page can fall back to the static
+ *  estimator without forcing a sign-in redirect. */
+export async function fetchPersonalEstimate(): Promise<PersonalEstimateResponse> {
+  try {
+    const res = await fetch("/api/me/insurance-estimate", {
+      credentials: "include",
+      headers: { Accept: "application/json" },
+    });
+    if (!res.ok) return { available: false };
+    return (await res.json()) as PersonalEstimateResponse;
+  } catch {
+    return { available: false };
+  }
+}
