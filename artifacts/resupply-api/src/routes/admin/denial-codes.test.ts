@@ -100,7 +100,7 @@ const validCreateBody = {
   codeSystem: "carc",
   code: "CO97",
   description: "The benefit for this service is included in the payment",
-  category: "bundled",
+  category: "other",
   isTerminal: false,
 };
 
