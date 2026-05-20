@@ -15,6 +15,7 @@
 //     sides asynchronously).
 
 import { Router, type IRouter } from "express";
+import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
@@ -59,11 +60,10 @@ router.post("/voice/status-callback", signatureMiddleware, async (req, res) => {
   // appear if the auth token leaked — but a malformed value would
   // still flow into our DB query as a no-op; matching SMS callback's
   // validation here keeps audit metadata consistently UUID-shaped.
-  const rawConvId = req.query.conversationId;
-  const conversationId =
-    typeof rawConvId === "string" && /^[0-9a-f-]{36}$/i.test(rawConvId)
-      ? rawConvId
-      : null;
+  const conversationIdParse = z.string().uuid().safeParse(req.query.conversationId);
+  const conversationId = conversationIdParse.success
+    ? conversationIdParse.data
+    : null;
 
   if (!callStatus || !callSid || !conversationId) {
     // ack so Twilio doesn't retry, but don't audit a malformed event

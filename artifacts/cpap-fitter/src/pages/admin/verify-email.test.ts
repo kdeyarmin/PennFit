@@ -131,6 +131,6 @@ describe("admin/verify-email — regression: core verification logic intact", ()
   });
 
   it("redirects to /admin/sign-in on success via Link", () => {
-    expect(SRC).toContain("/admin/sign-in");
+    expect(SRC).toContain(`\${basePath}/sign-in`);
   });
 });

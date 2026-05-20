@@ -193,10 +193,8 @@ describe("POST /admin/shop/returns/:id/refund — requirePermission gate (PR cha
       .post(`/resupply-api/admin/shop/returns/${RETURN_ID}/refund`)
       .send({ amountCents: 4998 });
 
-    expect([200, 201]).toContain(res.status);
-    // Not 401 or 403 — the permission gate passed.
-    expect(res.status).not.toBe(401);
-    expect(res.status).not.toBe(403);
+    // Permission gate passed and handler succeeded
+    expect(res.status).toBe(200);
   });
 
   it("allows a full admin (role: 'admin') to reach the route handler", async () => {
@@ -222,8 +220,8 @@ describe("POST /admin/shop/returns/:id/refund — requirePermission gate (PR cha
       .post(`/resupply-api/admin/shop/returns/${RETURN_ID}/refund`)
       .send({ amountCents: 4998 });
 
-    expect(res.status).not.toBe(401);
-    expect(res.status).not.toBe(403);
+    // Permission gate passed and handler succeeded
+    expect(res.status).toBe(200);
   });
 });
 
