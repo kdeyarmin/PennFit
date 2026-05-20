@@ -12,7 +12,7 @@
 // happy-path test stages five `select` responses in the same order the
 // route awaits them (atRisk → missed → awaiting → expiring → drafts).
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import express, { type Express } from "express";
 import request from "supertest";
 
@@ -76,6 +76,13 @@ describe("/admin/billing/prior-auth-queue", () => {
   beforeEach(() => {
     supabaseMock.reset();
     mockAdmin.current = null;
+  });
+
+  // Belt-and-braces cleanup: restore any Date.now / fake-timer
+  // setup that a thrown assertion might have leaked.
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.useRealTimers();
   });
 
   it("401s when no admin session", async () => {
@@ -175,32 +182,38 @@ describe("/admin/billing/prior-auth-queue", () => {
     // for past targets, both of which are time-of-day invariant
     // within the source UTC day.
     //
-    // Verify that by running the same request at two different
-    // clock-times within the same UTC day and asserting the result
-    // is identical.
+    // Mock Date.now() directly rather than vi.useFakeTimers() —
+    // the latter mocks setImmediate/setTimeout which would deadlock
+    // supertest's HTTP plumbing. Targeted Date.now spy is what the
+    // route actually reads.
     stubVerifiedAdmin();
     const target = "2026-05-25";
 
     async function runAt(nowIso: string): Promise<number | null> {
-      vi.setSystemTime(new Date(nowIso));
-      stageSupabaseResponse("prior_authorizations", "select", {
-        data: [
-          paRow({
-            id: "atrisk-deterministic",
-            mco_sla_status: "at_risk",
-            mco_sla_target_date: target,
-          }),
-        ],
-      });
-      stageSupabaseResponse("prior_authorizations", "select", { data: [] });
-      stageSupabaseResponse("prior_authorizations", "select", { data: [] });
-      stageSupabaseResponse("prior_authorizations", "select", { data: [] });
-      stageSupabaseResponse("prior_authorizations", "select", { data: [] });
-      const res = await request(makeApp()).get(
-        "/resupply-api/admin/billing/prior-auth-queue",
-      );
-      expect(res.status).toBe(200);
-      return res.body.atRisk[0].daysToTarget;
+      const fixedNow = new Date(nowIso).getTime();
+      const dateNowSpy = vi.spyOn(Date, "now").mockReturnValue(fixedNow);
+      try {
+        stageSupabaseResponse("prior_authorizations", "select", {
+          data: [
+            paRow({
+              id: "atrisk-deterministic",
+              mco_sla_status: "at_risk",
+              mco_sla_target_date: target,
+            }),
+          ],
+        });
+        stageSupabaseResponse("prior_authorizations", "select", { data: [] });
+        stageSupabaseResponse("prior_authorizations", "select", { data: [] });
+        stageSupabaseResponse("prior_authorizations", "select", { data: [] });
+        stageSupabaseResponse("prior_authorizations", "select", { data: [] });
+        const res = await request(makeApp()).get(
+          "/resupply-api/admin/billing/prior-auth-queue",
+        );
+        expect(res.status).toBe(200);
+        return res.body.atRisk[0].daysToTarget;
+      } finally {
+        dateNowSpy.mockRestore();
+      }
     }
 
     const morning = await runAt("2026-05-20T08:00:00.000Z");
@@ -211,8 +224,6 @@ describe("/admin/billing/prior-auth-queue", () => {
       role: "admin",
     };
     const afternoon = await runAt("2026-05-20T16:00:00.000Z");
-    vi.useRealTimers();
-
     expect(morning).toBe(afternoon);
     expect(typeof morning).toBe("number");
   });
