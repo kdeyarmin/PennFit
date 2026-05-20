@@ -164,8 +164,8 @@ function requireHttpsUrl(name: string, forbidLocalhost: boolean): void {
 }
 
 // Base64-decoded byte length. Used for the two HMAC keys, both of which
-// pass through `openssl rand -base64 48` → ~36 characters of base64 →
-// 32 raw bytes. The audit module rejects anything shorter than 32 at
+// pass through `openssl rand -base64 48` → 64 base64 characters →
+// 48 raw bytes. The audit module rejects anything shorter than 32 at
 // boot; mirror that here.
 /**
  * Validates that an environment variable contains valid base64 that decodes to at least a given number of bytes.
