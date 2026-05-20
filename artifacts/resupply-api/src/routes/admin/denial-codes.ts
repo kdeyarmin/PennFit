@@ -242,6 +242,12 @@ router.patch(
   },
 );
 
+/**
+ * Determines whether a string is a valid denial-code `code_system`.
+ *
+ * @param v - The string to test
+ * @returns `true` if `v` is one of the allowed code system values (`"carc"`, `"rarc"`, or `"custom"`), `false` otherwise.
+ */
 function isCodeSystem(v: string): v is DenialCodeRow["code_system"] {
   return (CODE_SYSTEM_VALUES as readonly string[]).includes(v);
 }

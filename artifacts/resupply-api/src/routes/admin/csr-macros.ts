@@ -241,6 +241,12 @@ router.delete(
   },
 );
 
+/**
+ * Converts a database CSR macro row into an API-facing object with camelCase field names.
+ *
+ * @param row - The database row for a CSR macro (snake_case DB columns).
+ * @returns An object containing the CSR macro fields mapped to API names: `id`, `key`, `label`, `category`, `body`, `channels`, `isActive`, `sortOrder`, `createdAt`, `updatedAt`, `createdBy`, and `updatedBy`.
+ */
 function serialize(row: CsrMacroRow) {
   return {
     id: row.id,
