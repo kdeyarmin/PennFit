@@ -96,8 +96,8 @@ beforeEach(() => {
   mockAdmin.current = null;
   rateLimitBlocked.current = false;
   supabaseMock.reset();
-  adminRateLimitSpy.mockClear();
   sendReviewRequestEmailMock.mockClear();
+});
 });
 
 // ── POST /admin/shop/review-requests/send-due ────────────────────────────────
