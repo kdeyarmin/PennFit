@@ -261,8 +261,11 @@ function makeTableBuilder(table: string): TableBuilder {
 }
 
 
-// Keep this mock at module scope so Vitest hoists it before any route/helper
-// imports execute. `installSupabaseMock()` then only manages staged responses.
+// Keep this mock at module scope so Vitest hoists it within this helper
+// module once the helper has been loaded. Tests must still import this file
+// (or configure it in a Vitest setupFile) before importing any route/helper
+// that imports `@workspace/resupply-db`. `installSupabaseMock()` only manages
+// staged responses after the mock has been registered.
 vi.mock("@workspace/resupply-db", async () => {
   const actual = await vi.importActual<
     typeof import("@workspace/resupply-db")
