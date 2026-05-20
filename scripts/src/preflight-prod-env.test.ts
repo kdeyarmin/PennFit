@@ -691,3 +691,278 @@ describe("edge cases and regression", () => {
     expect(stdout).toContain("Launch-eligible with warnings.");
   });
 });
+
+// ---------------------------------------------------------------------------
+// Optional placeholder checks (section 6 of runChecks)
+// ---------------------------------------------------------------------------
+
+describe("optional placeholder variable checks", () => {
+  it("fails when OPENAI_API_KEY is the placeholder sk-replace_me", () => {
+    const env = withEnv({ OPENAI_API_KEY: "sk-replace_me" });
+    const { exitCode, stdout } = run(env);
+    expect(exitCode).toBe(1);
+    expect(stdout).toContain("OPENAI_API_KEY");
+    expect(stdout).toContain("placeholder");
+  });
+
+  it("passes when OPENAI_API_KEY is unset (optional var)", () => {
+    const env = withEnv({ OPENAI_API_KEY: undefined });
+    const { exitCode } = run(env);
+    expect(exitCode).toBe(0);
+  });
+
+  it("passes when OPENAI_API_KEY is set to a real-looking value", () => {
+    const env = withEnv({ OPENAI_API_KEY: "sk-realkey123abc" });
+    const { exitCode } = run(env);
+    expect(exitCode).toBe(0);
+  });
+
+  it("fails when TWILIO_PHONE_NUMBER is the .env.example placeholder +15555550123", () => {
+    const env = withEnv({
+      TWILIO_MESSAGING_SERVICE_SID: undefined,
+      TWILIO_PHONE_NUMBER: "+15555550123",
+    });
+    const { exitCode, stdout } = run(env);
+    expect(exitCode).toBe(1);
+    expect(stdout).toContain("TWILIO_PHONE_NUMBER");
+    expect(stdout).toContain("placeholder");
+  });
+
+  it("fails when PENN_FULFILLMENT_EMAIL is the placeholder fulfillment@example.com", () => {
+    const env = withEnv({ PENN_FULFILLMENT_EMAIL: "fulfillment@example.com" });
+    const { exitCode, stdout } = run(env);
+    expect(exitCode).toBe(1);
+    expect(stdout).toContain("PENN_FULFILLMENT_EMAIL");
+    expect(stdout).toContain("placeholder");
+  });
+
+  it("passes when PENN_FULFILLMENT_EMAIL is unset (optional var)", () => {
+    const env = withEnv({ PENN_FULFILLMENT_EMAIL: undefined });
+    const { exitCode } = run(env);
+    expect(exitCode).toBe(0);
+  });
+
+  it("fails when VITE_RESUPPLY_CONTACT_EMAIL is the placeholder support@example.com", () => {
+    const env = withEnv({ VITE_RESUPPLY_CONTACT_EMAIL: "support@example.com" });
+    const { exitCode, stdout } = run(env);
+    expect(exitCode).toBe(1);
+    expect(stdout).toContain("VITE_RESUPPLY_CONTACT_EMAIL");
+    expect(stdout).toContain("placeholder");
+  });
+
+  it("fails when RESUPPLY_AUDIT_HMAC_KEY is the placeholder replace_me_with_32_byte_secret", () => {
+    const env = withEnv({ RESUPPLY_AUDIT_HMAC_KEY: "replace_me_with_32_byte_secret" });
+    const { exitCode, stdout } = run(env);
+    expect(exitCode).toBe(1);
+    expect(stdout).toContain("RESUPPLY_AUDIT_HMAC_KEY");
+    expect(stdout).toContain("placeholder");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Belt-and-braces @example.* email scan
+// ---------------------------------------------------------------------------
+
+describe("@example.* email scan for arbitrary _EMAIL vars", () => {
+  it("fails when an arbitrary _EMAIL var points at @example.com", () => {
+    // Inject a custom var that ends in _EMAIL with an @example.com address.
+    const env = withEnv({ CUSTOM_NOTIFY_EMAIL: "notify@example.com" });
+    const { exitCode, stdout } = run(env);
+    expect(exitCode).toBe(1);
+    expect(stdout).toContain("CUSTOM_NOTIFY_EMAIL");
+    expect(stdout).toContain("@example");
+  });
+
+  it("fails when an _EMAIL var points at @example.org", () => {
+    const env = withEnv({ CUSTOM_NOTIFY_EMAIL: "notify@example.org" });
+    const { exitCode, stdout } = run(env);
+    expect(exitCode).toBe(1);
+    expect(stdout).toContain("CUSTOM_NOTIFY_EMAIL");
+  });
+
+  it("fails when an _EMAIL var points at @example.net", () => {
+    const env = withEnv({ CUSTOM_NOTIFY_EMAIL: "notify@example.net" });
+    const { exitCode, stdout } = run(env);
+    expect(exitCode).toBe(1);
+    expect(stdout).toContain("CUSTOM_NOTIFY_EMAIL");
+  });
+
+  it("passes when an _EMAIL var uses a real domain (not @example.*)", () => {
+    const env = withEnv({ CUSTOM_NOTIFY_EMAIL: "notify@pennpaps.com" });
+    const { exitCode } = run(env);
+    expect(exitCode).toBe(0);
+  });
+
+  it("does not double-flag PENN_FULFILLMENT_EMAIL when already reported by refusePlaceholder", () => {
+    // When PENN_FULFILLMENT_EMAIL=fulfillment@example.com, refusePlaceholder fires first.
+    // The belt-and-braces loop should skip it (already in alreadyReported set).
+    // Either way exit code must be 1 and exactly one entry for that var name.
+    const env = withEnv({ PENN_FULFILLMENT_EMAIL: "fulfillment@example.com" });
+    const { exitCode, stdout } = run(env);
+    expect(exitCode).toBe(1);
+    // Count occurrences of the var name — should not appear more than twice
+    // (once for the FAIL line, once for the detail line).
+    const occurrences = stdout.split("PENN_FULFILLMENT_EMAIL").length - 1;
+    expect(occurrences).toBeLessThanOrEqual(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Non-production severity: missing optional vars → warn not fail
+// ---------------------------------------------------------------------------
+
+describe("non-production mode — missing vendor vars warn rather than fail", () => {
+  it("warns (not fails) when STRIPE_WEBHOOK_SIGNING_SECRET is missing in non-prod", () => {
+    const env = withEnv({
+      NODE_ENV: "staging",
+      STRIPE_WEBHOOK_SIGNING_SECRET: undefined,
+    });
+    const { exitCode, stdout } = run(env);
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain("STRIPE_WEBHOOK_SIGNING_SECRET");
+    expect(stdout).toContain("WARN");
+  });
+
+  it("warns (not fails) when SENDGRID_API_KEY is missing in non-prod", () => {
+    const env = withEnv({
+      NODE_ENV: "staging",
+      SENDGRID_API_KEY: undefined,
+    });
+    const { exitCode, stdout } = run(env);
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain("SENDGRID_API_KEY");
+    expect(stdout).toContain("WARN");
+  });
+
+  it("warns (not fails) when TWILIO_AUTH_TOKEN is missing in non-prod", () => {
+    const env = withEnv({
+      NODE_ENV: "staging",
+      TWILIO_AUTH_TOKEN: undefined,
+    });
+    const { exitCode, stdout } = run(env);
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain("TWILIO_AUTH_TOKEN");
+    expect(stdout).toContain("WARN");
+  });
+
+  it("warns (not fails) when a public URL var is missing in non-prod", () => {
+    const env = withEnv({
+      NODE_ENV: "staging",
+      SHOP_PUBLIC_BASE_URL: undefined,
+    });
+    const { exitCode, stdout } = run(env);
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain("SHOP_PUBLIC_BASE_URL");
+    expect(stdout).toContain("WARN");
+  });
+
+  it("passes (not warns) when RESUPPLY_FITTER_REENGAGE_ENABLED is '0' in non-prod", () => {
+    const env = withEnv({
+      NODE_ENV: "staging",
+      RESUPPLY_FITTER_REENGAGE_ENABLED: "0",
+    });
+    const { exitCode, stdout } = run(env);
+    expect(exitCode).toBe(0);
+    // In non-prod the script records a "pass" for non-1 values (intentionally OFF)
+    expect(stdout).toContain("PASS");
+  });
+
+  it("passes (not warns) when RESUPPLY_FITTER_REENGAGE_ENABLED is unset in non-prod", () => {
+    const env = withEnv({
+      NODE_ENV: "staging",
+      RESUPPLY_FITTER_REENGAGE_ENABLED: undefined,
+    });
+    const { exitCode, stdout } = run(env);
+    expect(exitCode).toBe(0);
+    // Should not have a warn for RESUPPLY_FITTER_REENGAGE_ENABLED in non-prod
+    // (it records a pass with "intentionally OFF" detail)
+    const fitterWarnLine = stdout
+      .split("\n")
+      .some((l) => l.includes("WARN") && l.includes("RESUPPLY_FITTER_REENGAGE_ENABLED"));
+    expect(fitterWarnLine).toBe(false);
+  });
+
+  it("warns when TWILIO_ACCOUNT_SID is unset in production mode", () => {
+    const env = withEnv({
+      TWILIO_ACCOUNT_SID: undefined,
+      TWILIO_MESSAGING_SERVICE_SID: undefined,
+      TWILIO_AUTH_TOKEN: undefined,
+    });
+    const { exitCode, stdout } = run(env);
+    // Unset TWILIO_ACCOUNT_SID in production → warn (no SMS/voice),
+    // but unset TWILIO_AUTH_TOKEN in production → fail per prodSeverity.
+    // So this is actually exit 1 because TWILIO_AUTH_TOKEN is missing in prod.
+    // Verify the specific TWILIO_ACCOUNT_SID warn line is present:
+    expect(stdout).toContain("TWILIO_ACCOUNT_SID");
+    // The important assertion: TWILIO_ACCOUNT_SID alone is only a warn
+    // (it won't be FAIL for ACCOUNT_SID specifically).
+    const accountSidFailLine = stdout
+      .split("\n")
+      .some((l) => l.includes("FAIL") && l.includes("TWILIO_ACCOUNT_SID"));
+    expect(accountSidFailLine).toBe(false);
+  });
+
+  it("warns (not fails) for TWILIO_ACCOUNT_SID unset in prod — exit 0 when AUTH_TOKEN is also omitted via non-prod", () => {
+    // In non-prod, TWILIO_ACCOUNT_SID unset simply produces no entry at all
+    // (the tsid===undefined && prodMode guard is false).
+    const env = withEnv({
+      NODE_ENV: "staging",
+      TWILIO_ACCOUNT_SID: undefined,
+      TWILIO_AUTH_TOKEN: undefined,
+      TWILIO_MESSAGING_SERVICE_SID: undefined,
+    });
+    const { exitCode } = run(env);
+    expect(exitCode).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// NODE_ENV variations
+// ---------------------------------------------------------------------------
+
+describe("NODE_ENV variants", () => {
+  it("treats NODE_ENV=development the same as non-production (warn)", () => {
+    const env = withEnv({ NODE_ENV: "development" });
+    const { exitCode, stdout } = run(env);
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain("NODE_ENV");
+    expect(stdout).toContain("WARN");
+  });
+
+  it("treats NODE_ENV=test the same as non-production (warn)", () => {
+    const env = withEnv({ NODE_ENV: "test" });
+    const { exitCode, stdout } = run(env);
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain("NODE_ENV");
+    expect(stdout).toContain("WARN");
+  });
+
+  it("exits 0 with no NODE_ENV warning when NODE_ENV=production", () => {
+    const { stdout } = run(VALID_PROD_ENV);
+    // NODE_ENV should be a PASS line, not a WARN line
+    const nodeEnvWarnLine = stdout
+      .split("\n")
+      .some((l) => l.includes("WARN") && l.includes("NODE_ENV"));
+    expect(nodeEnvWarnLine).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// SENDGRID_FROM_EMAIL in non-production
+// ---------------------------------------------------------------------------
+
+describe("SENDGRID_FROM_EMAIL in non-production mode", () => {
+  it("passes (not warns) when SENDGRID_FROM_EMAIL is set to any valid address in non-prod", () => {
+    const env = withEnv({
+      NODE_ENV: "staging",
+      SENDGRID_FROM_EMAIL: "staging-sender@mycompany.com",
+    });
+    const { exitCode, stdout } = run(env);
+    expect(exitCode).toBe(0);
+    // Should record a PASS for SENDGRID_FROM_EMAIL, not a WARN
+    const fromEmailWarnLine = stdout
+      .split("\n")
+      .some((l) => l.includes("WARN") && l.includes("SENDGRID_FROM_EMAIL"));
+    expect(fromEmailWarnLine).toBe(false);
+  });
+});
