@@ -285,7 +285,10 @@ describe("POST /admin/conversations/:id/auto-assign — adminRateLimit integrati
     maybeAutoAssignMock.mockResolvedValueOnce({
       assigned: false,
       reason: "already_assigned",
-    } as any);
+    maybeAutoAssignMock.mockResolvedValueOnce({
+      assigned: false,
+      reason: "already_assigned",
+    });
     const res = await request(makeApp()).post(
       `/admin/conversations/${CONV_UUID}/auto-assign`,
     );
@@ -298,7 +301,7 @@ describe("POST /admin/conversations/:id/auto-assign — adminRateLimit integrati
     maybeAutoAssignMock.mockResolvedValueOnce({
       assigned: false,
       reason: "conversation_not_found",
-    } as any);
+    });
     const res = await request(makeApp()).post(
       `/admin/conversations/${CONV_UUID}/auto-assign`,
     );
