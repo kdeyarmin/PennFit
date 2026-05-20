@@ -19,6 +19,7 @@ import {
 
 import { logger } from "../../lib/logger";
 import { VALID_EVENT_TYPE_SET } from "../../lib/webhooks/event-catalog";
+import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import {
   requireAdmin,
   requireAdminOnly,
@@ -66,6 +67,7 @@ router.get(
 router.post(
   "/admin/webhook-subscriptions",
   requireAdminOnly,
+  adminRateLimit({ name: "webhook_subscriptions.create", preset: "sensitive" }),
   async (req, res) => {
     const parsed = upsertBody.safeParse(req.body);
     if (!parsed.success) {
@@ -134,6 +136,7 @@ router.post(
 router.patch(
   "/admin/webhook-subscriptions/:id",
   requireAdminOnly,
+  adminRateLimit({ name: "webhook_subscriptions.update", preset: "sensitive" }),
   async (req, res) => {
     const idParsed = idParam.safeParse(req.params);
     if (!idParsed.success) {
@@ -169,6 +172,7 @@ router.patch(
 router.delete(
   "/admin/webhook-subscriptions/:id",
   requireAdminOnly,
+  adminRateLimit({ name: "webhook_subscriptions.delete", preset: "destroy" }),
   async (req, res) => {
     const idParsed = idParam.safeParse(req.params);
     if (!idParsed.success) {
