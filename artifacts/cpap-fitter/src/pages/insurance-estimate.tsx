@@ -88,9 +88,13 @@ export function InsuranceEstimate() {
   );
   useEffect(() => {
     let cancelled = false;
-    void fetchPersonalEstimate().then((r) => {
-      if (!cancelled) setPersonal(r);
-    });
+    void fetchPersonalEstimate()
+      .then((r) => {
+        if (!cancelled) setPersonal(r);
+      })
+      .catch((err) => {
+        console.error("Failed to fetch personal estimate:", err);
+      });
     return () => {
       cancelled = true;
     };

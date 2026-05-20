@@ -84,11 +84,18 @@ export async function createPaymentIntent(
   // Validate every claim belongs to the patient AND the requested
   // allocation doesn't exceed the open balance.
   const claimIds = input.allocations.map((a) => a.claimId);
-  const { data: claimsData } = await supabase
+  const { data: claimsData, error } = await supabase
     .schema("resupply")
     .from("insurance_claims")
     .select("id, patient_id, patient_responsibility_cents")
     .in("id", claimIds);
+  if (error) {
+    logger.warn(
+      { err: error, patientId: input.patientId },
+      "patient_payment: failed to fetch insurance_claims",
+    );
+    throw new Error(`Database query failed: ${error.message}`);
+  }
   for (const allocation of input.allocations) {
     const claim = (claimsData ?? []).find((c) => c.id === allocation.claimId);
     if (!claim || claim.patient_id !== input.patientId) {
@@ -250,11 +257,18 @@ export async function createPaymentCheckoutSession(
   // flow — duplicated here rather than refactored because the
   // failure modes intentionally surface as different HTTP statuses.
   const claimIds = input.allocations.map((a) => a.claimId);
-  const { data: claimsData } = await supabase
+  const { data: claimsData, error } = await supabase
     .schema("resupply")
     .from("insurance_claims")
     .select("id, patient_id, patient_responsibility_cents")
     .in("id", claimIds);
+  if (error) {
+    logger.warn(
+      { err: error, patientId: input.patientId },
+      "patient_payment: failed to fetch insurance_claims",
+    );
+    throw new Error(`Database query failed: ${error.message}`);
+  }
   for (const allocation of input.allocations) {
     const claim = (claimsData ?? []).find((c) => c.id === allocation.claimId);
     if (!claim || claim.patient_id !== input.patientId) {

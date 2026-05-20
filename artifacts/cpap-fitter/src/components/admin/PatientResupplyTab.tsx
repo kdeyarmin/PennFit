@@ -143,7 +143,7 @@ export function PatientResupplyTab({ patientId }: { patientId: string }) {
   const data = summary.data;
 
   return (
-    <div className="space-y-6" data-testid="patient-resupply-tab">
+    <div className="admin-root space-y-6" data-testid="patient-resupply-tab">
       <AdherenceCard adherence={data.adherence} />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
