@@ -17,15 +17,10 @@
 // nothing and risks leaking config the patient can't act on).
 
 import { Router, type IRouter } from "express";
-import { z } from "zod";
 
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 const router: IRouter = Router();
-
-const RequestSchema = z.object({
-  shopCustomerId: z.string().min(1),
-});
 
 async function resolvePatientForCustomer(
   customerId: string,
@@ -60,15 +55,19 @@ async function resolvePatientForCustomer(
 }
 
 router.get("/me/insurance-estimate", async (req, res) => {
-  const parsed = RequestSchema.safeParse(req as unknown as Record<string, unknown>);
-  if (!parsed.success) {
-    res.status(400).json({
-      error: "invalid_request",
-      message: "shopCustomerId is required",
-    });
+  // shopCustomerId is set by the storefront session middleware in
+  // app.ts. Treat its absence as "not signed in" → 401, which the
+  // SPA's fetchPersonalEstimate() resolves to { available: false }
+  // and falls back to the static estimator. NOTE: do NOT zod-parse
+  // `req` here — the field is a middleware-set property, not HTTP
+  // input, and a 400 response would break the silent-fallback the
+  // page relies on for unauthenticated visitors.
+  const customerId =
+    (req as unknown as { shopCustomerId?: string }).shopCustomerId ?? null;
+  if (!customerId) {
+    res.status(401).json({ error: "sign_in_required" });
     return;
   }
-  const customerId = parsed.data.shopCustomerId;
   const link = await resolvePatientForCustomer(customerId);
   if (!link) {
     res.json({ available: false });
