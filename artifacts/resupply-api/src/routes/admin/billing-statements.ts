@@ -17,6 +17,7 @@ import { resolveBillingIdentity } from "../../lib/billing/identity-resolver";
 import { renderStatementPdf } from "../../lib/billing/statement-pdf";
 import { logger } from "../../lib/logger";
 import { publishEvent } from "../../lib/webhooks/publisher";
+import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requireAdmin } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
@@ -56,6 +57,10 @@ router.get(
 router.post(
   "/admin/patients/:id/billing-statements",
   requireAdmin,
+  adminRateLimit({
+    name: "patient_billing_statements.create",
+    preset: "sensitive",
+  }),
   async (req, res) => {
     const idParsed = idParam.safeParse(req.params);
     if (!idParsed.success) {

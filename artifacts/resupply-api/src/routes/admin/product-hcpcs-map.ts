@@ -14,6 +14,7 @@ import {
 } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
+import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import {
   requireAdmin,
   requireAdminOnly,
@@ -101,7 +102,11 @@ router.get("/admin/product-hcpcs-map", requireAdmin, async (req, res) => {
   res.json({ rows: (data ?? []).map(rowToApi) });
 });
 
-router.post("/admin/product-hcpcs-map", requireAdminOnly, async (req, res) => {
+router.post(
+  "/admin/product-hcpcs-map",
+  requireAdminOnly,
+  adminRateLimit({ name: "product_hcpcs_map.create", preset: "sensitive" }),
+  async (req, res) => {
   const parsed = upsertBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({
@@ -155,6 +160,7 @@ router.post("/admin/product-hcpcs-map", requireAdminOnly, async (req, res) => {
 router.patch(
   "/admin/product-hcpcs-map/:id",
   requireAdminOnly,
+  adminRateLimit({ name: "product_hcpcs_map.update", preset: "mutation" }),
   async (req, res) => {
     const idParsed = idParam.safeParse(req.params);
     if (!idParsed.success) {
