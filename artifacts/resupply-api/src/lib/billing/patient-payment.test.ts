@@ -16,6 +16,7 @@ const supabaseMock = installSupabaseMock();
 import {
   applySucceededPayment,
   createPaymentIntent,
+  markPaymentStatus,
 } from "./patient-payment";
 
 const PATIENT = "11111111-1111-4111-8111-111111111111";
@@ -141,5 +142,58 @@ describe("applySucceededPayment — allocation walk", () => {
     expect(getSupabaseWritePayloads("insurance_claims", "update")).toEqual(
       [],
     );
+  });
+});
+
+describe("markPaymentStatus — idempotency on webhook redelivery", () => {
+  beforeEach(() => supabaseMock.reset());
+
+  it("skips applySucceededPayment when the row is already 'succeeded'", async () => {
+    // The atomic flip UPDATE returns an empty array because the .neq
+    // guard didn't match — the row was already at status='succeeded'.
+    stageSupabaseResponse("patient_payments", "update", { data: [] });
+    await markPaymentStatus({
+      paymentId: "p-redelivery",
+      status: "succeeded",
+    });
+    // No allocation walk happened — no claim updates or events.
+    expect(getSupabaseWritePayloads("insurance_claims", "update")).toEqual([]);
+    expect(
+      getSupabaseWritePayloads("insurance_claim_events", "insert"),
+    ).toEqual([]);
+  });
+
+  it("runs applySucceededPayment when the row transitions to 'succeeded'", async () => {
+    // The atomic flip UPDATE returns the row — first time we're moving
+    // it to 'succeeded', so the allocation walk fires.
+    stageSupabaseResponse("patient_payments", "update", {
+      data: [{ id: "p-fresh" }],
+    });
+    // Stage the inner applySucceededPayment reads.
+    stageSupabaseResponse("patient_payments", "select", {
+      data: {
+        id: "p-fresh",
+        status: "succeeded",
+        patient_id: PATIENT,
+        applied_claims_json: [
+          { claimId: CLAIM1, amountAppliedCents: 2500 },
+        ],
+      },
+    });
+    stageSupabaseResponse("insurance_claims", "select", {
+      data: { id: CLAIM1, patient_responsibility_cents: 10000 },
+    });
+    stageSupabaseResponse("insurance_claims", "update", { data: {} });
+    stageSupabaseResponse("insurance_claim_events", "insert", { data: {} });
+    await markPaymentStatus({
+      paymentId: "p-fresh",
+      status: "succeeded",
+    });
+    expect(getSupabaseWritePayloads("insurance_claims", "update")).toHaveLength(
+      1,
+    );
+    expect(
+      getSupabaseWritePayloads("insurance_claim_events", "insert"),
+    ).toHaveLength(1);
   });
 });

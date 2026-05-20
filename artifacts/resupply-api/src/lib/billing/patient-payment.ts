@@ -194,8 +194,12 @@ export async function createPaymentIntent(
 
 /**
  * Apply a succeeded payment: decrement patient_responsibility_cents
- * on each claim in the allocation. Idempotent — a re-application
- * after the row is already 'succeeded' is a no-op.
+ * on each claim in the allocation.
+ *
+ * Caller contract: only invoke this AFTER an atomic transition of
+ * patient_payments.status from non-'succeeded' to 'succeeded'. See
+ * `markPaymentStatus` for the check-and-set that gates this. Calling
+ * twice on the same paymentId WILL double-decrement claim balances.
  */
 export async function applySucceededPayment(
   supabase: SupabaseClient,
@@ -209,11 +213,6 @@ export async function applySucceededPayment(
     .limit(1)
     .maybeSingle();
   if (!row) return;
-  // Already-applied check via succeeded_at — `status='succeeded'` is
-  // set by the webhook BEFORE we walk allocations, so guard on the
-  // explicit per-claim decrement by tracking a flag on each claim
-  // event instead. For now: only apply when status hasn't already
-  // moved past 'succeeded' with a non-null succeeded_at.
   type Allocation = {
     claimId: string;
     amountAppliedCents: number;
@@ -275,12 +274,31 @@ export async function markPaymentStatus(
   if (input.failureReason !== undefined) {
     update.failure_reason = input.failureReason;
   }
+  if (input.status === "succeeded") {
+    // Atomic check-and-set: only flip to 'succeeded' when the row
+    // isn't already there. Stripe redelivers webhooks on transient
+    // 5xx, and we don't want to re-apply the per-claim balance
+    // decrement on every redelivery. The .neq("status", "succeeded")
+    // guard turns a re-delivery into a no-op at the SQL level, so
+    // applySucceededPayment below runs exactly once per payment row.
+    const { data: flipped, error: flipErr } = await supabase
+      .schema("resupply")
+      .from("patient_payments")
+      .update(update)
+      .eq("id", input.paymentId)
+      .neq("status", "succeeded")
+      .select("id");
+    if (flipErr) throw flipErr;
+    // .update().select() returns the rows actually updated. An empty
+    // array means the row was already 'succeeded' — webhook redelivery,
+    // skip the allocation walk so we don't double-decrement claims.
+    if (!flipped || flipped.length === 0) return;
+    await applySucceededPayment(supabase, input.paymentId);
+    return;
+  }
   await supabase
     .schema("resupply")
     .from("patient_payments")
     .update(update)
     .eq("id", input.paymentId);
-  if (input.status === "succeeded") {
-    await applySucceededPayment(supabase, input.paymentId);
-  }
 }
