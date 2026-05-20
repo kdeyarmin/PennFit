@@ -13,6 +13,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { useDocumentTitle } from "@/hooks/use-document-title";
 import { openPennBot } from "@/lib/chat-events";
+import { SUPPORT_EMAIL, SUPPORT_PHONE_E164 } from "@/lib/contact";
 
 export function ReturnsPage() {
   useDocumentTitle(
@@ -199,16 +200,16 @@ export function ReturnsPage() {
         </p>
         <div className="flex flex-col sm:flex-row gap-3 pt-1">
           <a
-            href="tel:+18142345678"
+            href={`tel:${SUPPORT_PHONE_E164}`}
             className="inline-flex items-center gap-2 text-sm font-medium text-primary hover:underline"
           >
             <Phone className="w-4 h-4" /> Call Penn Home Medical Supply
           </a>
           <a
-            href="mailto:support@pennpaps.com"
+            href={`mailto:${SUPPORT_EMAIL}`}
             className="inline-flex items-center gap-2 text-sm font-medium text-primary hover:underline"
           >
-            <Mail className="w-4 h-4" /> support@pennpaps.com
+            <Mail className="w-4 h-4" /> {SUPPORT_EMAIL}
           </a>
         </div>
       </section>

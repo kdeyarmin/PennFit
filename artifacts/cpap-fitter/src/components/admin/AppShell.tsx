@@ -32,6 +32,7 @@ import {
   Boxes,
   AlertOctagon,
   CalendarOff,
+  CalendarPlus,
   TruckIcon,
   Activity,
   BarChart3,
@@ -42,6 +43,8 @@ import {
   UsersRound,
   Settings,
   FileSearch,
+  ClipboardList,
+  Plug,
   Menu,
 } from "lucide-react";
 import {
@@ -153,6 +156,13 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         matchPrefix: "/admin/followups",
         hint: "Today's queue of CSR-scheduled callbacks across customers and patients",
         badgeKey: "overdueFollowups",
+      },
+      {
+        href: "/admin/appointment-requests",
+        label: "Appointment requests",
+        icon: CalendarPlus,
+        matchPrefix: "/admin/appointment-requests",
+        hint: "CSR queue for patient-initiated appointment requests",
       },
       {
         href: "/admin/macros",
@@ -307,6 +317,13 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         hint: "Health of background jobs and pipelines",
       },
       {
+        href: "/admin/integrations",
+        label: "Integrations",
+        icon: Plug,
+        matchPrefix: "/admin/integrations",
+        hint: "Therapy-cloud vendor connections and nightly sync status",
+      },
+      {
         href: "/admin/delivery-failures",
         label: "Delivery Failures",
         icon: TruckIcon,
@@ -394,6 +411,13 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         icon: ShieldCheck,
         matchPrefix: "/admin/compliance",
         hint: "Staff training records + patient grievances for DMEPOS surveyors",
+      },
+      {
+        href: "/admin/accreditation-binder",
+        label: "Accreditation binder",
+        icon: ClipboardList,
+        matchPrefix: "/admin/accreditation-binder",
+        hint: "Surveyor-facing DMEPOS evidence rollup",
       },
       {
         href: "/admin/coaching",

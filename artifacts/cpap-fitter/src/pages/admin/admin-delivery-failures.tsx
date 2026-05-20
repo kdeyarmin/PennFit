@@ -196,7 +196,7 @@ function MessageRow({ row }: { row: MessageFailureEvent }) {
       <td className="px-3 py-2 text-sm">
         {row.patientId ? (
           <Link
-            href={`/patients/${row.patientId}`}
+            href={`/admin/patients/${row.patientId}`}
             className="underline decoration-dotted"
             style={{ color: "hsl(var(--ink-1))" }}
           >
@@ -212,7 +212,7 @@ function MessageRow({ row }: { row: MessageFailureEvent }) {
       <td className="px-3 py-2 text-xs">
         {row.conversationId ? (
           <Link
-            href={`/conversations/${row.conversationId}`}
+            href={`/admin/conversations/${row.conversationId}`}
             className="underline decoration-dotted"
             style={{ color: "hsl(var(--ink-1))" }}
           >

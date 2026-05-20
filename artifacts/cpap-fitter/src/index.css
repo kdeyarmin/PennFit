@@ -111,81 +111,80 @@
   --elevate-2: rgba(8, 14, 28, 0.08);
 
   /*
-   * PennPaps brand palette — "Obsidian Aurum".
+   * PennPaps brand palette — "Penn Blue & Gold".
    *
-   * Evolution of the prior "Onyx & Champagne" — same DNA (deep
-   * inky primary, warm metallic accent, pearl canvas) but
-   * tightened toward an editorial / haute-horlogerie register:
+   * Drawn directly from the logo:
+   *   - Navy gradient #1F3A5C → #2E5687 (HSL ~213° / 50% / 24–35%)
+   *   - Gold swoosh   #F4B942           (HSL ~42° / 89% / 61%)
    *
-   *   - The canvas drops its warm 42° hue for a cool architectural
-   *     pearl (216°). Reads less hotel-lobby, more Apple flagship.
-   *   - The primary deepens toward true obsidian (222 / 60% / 9%)
-   *     so the ink reads near-black without going dead.
-   *   - The accent pulls back from honey-yellow to a refined
-   *     aurum bronze (34° / 46% / 50%) — restrained, not brassy.
-   *   - A sapphire-steel tertiary tone lets state colors breathe
-   *     without reaching for the accent every time.
+   * Replaces the prior near-black "obsidian aurum" register, which
+   * read as muddy black-ink on the canvas and fought the gold
+   * accent for legibility. The new palette uses a vibrant,
+   * readable Penn blue and a sunny, confident gold — same brand
+   * DNA as the institutional Penn mark but tuned for a modern
+   * commercial storefront. Background drops the warm 216° pearl
+   * for a clean cool white so navy ink and gold accents both pop.
    *
    * Tokens are raw HSL triplets so utilities can compose alpha
    * through `hsl(var(--token) / alpha)`.
    */
 
-  /* Canvas + ink — cool architectural pearl, not warm cream. The
-   * 216° hue at very low saturation keeps the page calm and the
-   * obsidian ink crisp without ever feeling clinical. */
-  --background: 216 22% 98%;
-  --foreground: 222 50% 9%;
+  /* Canvas + ink — clean cool white, no warm cream undertone.
+   * Slightly cooler than pure white so card surfaces (pure white)
+   * still read as elevated above the page. */
+  --background: 210 30% 99%;
+  --foreground: 215 45% 16%;
   --card: 0 0% 100%;
-  --card-foreground: 222 50% 9%;
-  --card-border: 218 18% 90%;
+  --card-foreground: 215 45% 16%;
+  --card-border: 214 22% 90%;
   --popover: 0 0% 100%;
-  --popover-foreground: 222 50% 8%;
-  --popover-border: 218 18% 90%;
+  --popover-foreground: 215 45% 16%;
+  --popover-border: 214 22% 90%;
 
-  /* Primary = obsidian. Pushed deeper and slightly cooler than
-   * the prior midnight navy so the brand ink reads as forged
-   * black-blue under directional light, not as a saturated blue. */
-  --primary: 222 60% 10%;
+  /* Primary = Penn navy. Mid-tone navy that matches the logo
+   * gradient's deeper end — saturated enough to read as a brand
+   * blue (not as ink), light enough to keep WCAG AA contrast on
+   * white without going dead. */
+  --primary: 213 58% 28%;
   --primary-foreground: 0 0% 100%;
 
-  /* Secondary = cool platinum. Slightly cooler and lower-sat
-   * than before so it recedes harder behind primary surfaces. */
-  --secondary: 218 20% 94%;
-  --secondary-foreground: 222 48% 12%;
+  /* Secondary = cool sky platinum. */
+  --secondary: 213 24% 94%;
+  --secondary-foreground: 215 45% 18%;
 
-  --muted: 218 20% 95%;
-  --muted-foreground: 220 12% 36%;
+  --muted: 213 24% 95%;
+  --muted-foreground: 215 18% 38%;
 
-  /* Accent = aurum bronze. Refined from the previous 40° honey
-   * champagne — same metallic intent, less saturated, more
-   * sophisticated. Reads as antique gold rather than brass. */
-  --accent: 34 46% 50%;
-  --accent-foreground: 222 60% 10%;
+  /* Accent = Penn gold. Direct match to the logo's #F4B942 swoosh —
+   * sunny, confident, instantly readable as the brand mark's
+   * companion. Pair on navy or on white; never on cream. */
+  --accent: 42 92% 56%;
+  --accent-foreground: 215 55% 16%;
 
   --destructive: 354 64% 46%;
   --destructive-foreground: 0 0% 100%;
 
-  --border: 218 18% 89%;
-  --input: 218 18% 89%;
-  --ring: 222 60% 22%;
+  --border: 214 22% 89%;
+  --input: 214 22% 89%;
+  --ring: 213 58% 32%;
 
-  /* Charts — anchored on brand obsidian and aurum, with three
-   * supports (sapphire-steel, slate, burnt copper) that read as
-   * "from the same family" without ever competing. */
-  --chart-1: 222 60% 22%;
-  --chart-2: 34 46% 50%;
-  --chart-3: 204 52% 38%;
-  --chart-4: 220 32% 50%;
-  --chart-5: 24 58% 48%;
+  /* Charts — anchored on Penn navy and Penn gold, with three
+   * supports (azure-steel, slate, copper) tuned to read as a
+   * coordinated family without competing with the brand pair. */
+  --chart-1: 213 58% 32%;
+  --chart-2: 42 92% 56%;
+  --chart-3: 204 60% 42%;
+  --chart-4: 215 36% 48%;
+  --chart-5: 24 62% 50%;
 
-  --sidebar: 218 24% 98.5%;
-  --sidebar-foreground: 222 50% 9%;
-  --sidebar-border: 218 18% 89%;
-  --sidebar-primary: 222 60% 10%;
+  --sidebar: 213 28% 98.5%;
+  --sidebar-foreground: 215 45% 16%;
+  --sidebar-border: 214 22% 89%;
+  --sidebar-primary: 213 58% 28%;
   --sidebar-primary-foreground: 0 0% 100%;
-  --sidebar-accent: 34 50% 88%;
-  --sidebar-accent-foreground: 222 60% 10%;
-  --sidebar-ring: 222 60% 22%;
+  --sidebar-accent: 42 88% 90%;
+  --sidebar-accent-foreground: 215 55% 16%;
+  --sidebar-ring: 213 58% 32%;
 
   --app-font-sans:
     "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
@@ -194,52 +193,54 @@
   --app-font-mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
   --radius: 0.75rem;
 
-  /* Shadow scale — tinted with the brand obsidian so every
+  /* Shadow scale — tinted with the brand Penn navy so every
    * elevated surface shares one shadow language. Two-layer
    * structure (1px sharp + larger soft) keeps cards lifted,
    * not floating. */
-  --shadow-2xs: 0 1px 1px hsl(222 60% 8% / 0.04);
-  --shadow-xs: 0 1px 2px hsl(222 60% 8% / 0.05);
+  --shadow-2xs: 0 1px 1px hsl(215 55% 14% / 0.04);
+  --shadow-xs: 0 1px 2px hsl(215 55% 14% / 0.05);
   --shadow-sm:
-    0 1px 2px hsl(222 60% 8% / 0.06), 0 1px 3px hsl(222 60% 8% / 0.04);
-  --shadow: 0 2px 4px hsl(222 60% 8% / 0.06), 0 4px 8px hsl(222 60% 8% / 0.05);
+    0 1px 2px hsl(215 55% 14% / 0.06), 0 1px 3px hsl(215 55% 14% / 0.04);
+  --shadow: 0 2px 4px hsl(215 55% 14% / 0.06), 0 4px 8px hsl(215 55% 14% / 0.05);
   --shadow-md:
-    0 4px 8px hsl(222 60% 8% / 0.07), 0 8px 16px hsl(222 60% 8% / 0.05);
+    0 4px 8px hsl(215 55% 14% / 0.07), 0 8px 16px hsl(215 55% 14% / 0.05);
   --shadow-lg:
-    0 8px 16px hsl(222 60% 8% / 0.08), 0 16px 32px hsl(222 60% 8% / 0.06);
+    0 8px 16px hsl(215 55% 14% / 0.08), 0 16px 32px hsl(215 55% 14% / 0.06);
   --shadow-xl:
-    0 16px 32px hsl(222 60% 8% / 0.09), 0 24px 48px hsl(222 60% 8% / 0.07);
+    0 16px 32px hsl(215 55% 14% / 0.09), 0 24px 48px hsl(215 55% 14% / 0.07);
   --shadow-2xl:
-    0 24px 48px hsl(222 60% 8% / 0.11), 0 40px 80px hsl(222 60% 8% / 0.09);
+    0 24px 48px hsl(215 55% 14% / 0.11), 0 40px 80px hsl(215 55% 14% / 0.09);
   --tracking-normal: 0em;
   --spacing: 0.25rem;
 
   /*
-   * Brand accents — raw HSL triplets.
+   * Brand accents — raw HSL triplets, drawn from the logo.
+   * Logo navy gradient: #1F3A5C (213 49% 24%) → #2E5687 (213 49% 35%).
+   * Logo gold swoosh:   #F4B942 (42 89% 61%).
    *
-   *   --penn-onyx        true obsidian black, sentinel surfaces
-   *   --penn-navy-deep   deep obsidian for shadows / gradient feet
-   *   --penn-navy        primary brand obsidian
-   *   --penn-navy-soft   sapphire-steel mid-tone for highlights / hover
-   *   --penn-gold-deep   antique aurum bronze for gradient feet
-   *   --penn-gold        refined aurum accent
-   *   --penn-gold-soft   pale champagne for surfaces / halos
+   *   --penn-onyx        deepest navy for shadow feet
+   *   --penn-navy-deep   logo navy top-stop (#1F3A5C)
+   *   --penn-navy        primary Penn navy (between logo stops)
+   *   --penn-navy-soft   logo navy lower-stop (#2E5687), highlights / hover
+   *   --penn-gold-deep   amber gold for gradient feet / shadows
+   *   --penn-gold        Penn gold (#F4B942) — primary accent
+   *   --penn-gold-soft   pale gold tint for surfaces / halos
    *   --penn-platinum    cool platinum grey for hairlines
-   *   --penn-pearl       cool pearl canvas
-   *   --penn-mist        sapphire-steel ambient wash
-   *   --penn-steel       sapphire-steel for tertiary state colour
+   *   --penn-pearl       clean cool canvas
+   *   --penn-mist        sky-tinted ambient wash
+   *   --penn-steel       sapphire steel for tertiary state colour
    */
-  --penn-onyx: 222 70% 6%;
-  --penn-navy-deep: 222 65% 8%;
-  --penn-navy: 222 60% 10%;
-  --penn-navy-soft: 220 36% 24%;
-  --penn-gold-deep: 30 50% 32%;
-  --penn-gold: 34 46% 50%;
-  --penn-gold-soft: 36 56% 86%;
-  --penn-platinum: 218 16% 86%;
-  --penn-pearl: 216 22% 98%;
-  --penn-mist: 216 28% 95%;
-  --penn-steel: 210 38% 38%;
+  --penn-onyx: 215 60% 10%;
+  --penn-navy-deep: 213 50% 24%;
+  --penn-navy: 213 55% 28%;
+  --penn-navy-soft: 213 49% 38%;
+  --penn-gold-deep: 36 92% 42%;
+  --penn-gold: 42 92% 56%;
+  --penn-gold-soft: 44 95% 88%;
+  --penn-platinum: 214 18% 86%;
+  --penn-pearl: 210 30% 99%;
+  --penn-mist: 213 30% 95%;
+  --penn-steel: 210 50% 42%;
 
   /*
    * Cyan tokens — retained for niche on-device computer-vision UI
@@ -257,7 +258,7 @@
   --penn-cyan-deep: 204 95% 38%;
 
   --glass-bg: 255 255 255;
-  --glass-stroke: 218 20% 88%;
+  --glass-stroke: 214 22% 88%;
 
   --sidebar-primary-border: hsl(
     from hsl(var(--sidebar-primary)) h s
@@ -317,104 +318,15 @@
       "cv11",
       "tnum" 0;
     letter-spacing: -0.005em;
-    /* "Obsidian Aurum" atmosphere — four restrained corner
-       aurorae plus a soft horizon plinth. Each layer is tuned
-       to whisper: the brand should land in interactions
-       (buttons, hover, accents), not in a wall-to-wall wash.
-
-       Layer stack, back-to-front:
-         1. Top-right: aurum corner glow — a bare metallic catch.
-         2. Bottom-left: obsidian aurora — quiet counterweight.
-         3. Top-left: sapphire-steel halo — architectural top-light.
-         4. Bottom plinth: cool mist anchoring the page floor.
-         5. A pearl wash behind everything for a calm, even canvas.
-
-
-       The 140s alternate `body-bloom-drift` is intentionally slower
-       than a heartbeat — one slow breath in each direction. You
-       sense the page is alive; you never see motion. */
-    background-image:
-      radial-gradient(
-        ellipse 46% 36% at 96% 4%,
-        hsl(var(--penn-gold) / 0.07),
-        transparent 70%
-      ),
-      radial-gradient(
-        ellipse 52% 42% at 4% 96%,
-        hsl(var(--penn-navy) / 0.08),
-        transparent 72%
-      ),
-      radial-gradient(
-        ellipse 36% 28% at 4% 4%,
-        hsl(var(--penn-steel) / 0.1),
-        transparent 72%
-      ),
-      radial-gradient(
-        ellipse 110% 36% at 50% 112%,
-        hsl(var(--penn-mist) / 0.55),
-        transparent 72%
-      ),
-      radial-gradient(
-        ellipse 100% 80% at 50% 50%,
-        hsl(var(--penn-pearl) / 0.92),
-        hsl(var(--penn-pearl) / 0.7) 100%
-      );
-
-    background-attachment: fixed;
-    background-size: 112% 112%;
-    animation: body-bloom-drift 140s ease-in-out infinite alternate;
+    /* Clean solid canvas — no drifting blooms, no SVG arcs, no
+       grain noise. A medical storefront reads as professional
+       when the page is calm; brand color belongs on buttons,
+       dividers, and icons, never as wall-to-wall atmospherics. */
   }
 
-  /* Slow ambient drift on the body mesh blooms — 140s alternate is one
-     long breath in each direction; you don't notice it while reading,
-     you only notice that the page feels alive. */
-  @keyframes body-bloom-drift {
-    0% {
-      background-position: 0% 0%;
-    }
-    100% {
-      background-position: 100% 100%;
-    }
-  }
-
-  /* Aurum hairline — a single oversized gold curve traced behind the
-     hero region, echoing the swoop under the wordmark in the logo.
-     Replaces the prior CAD-grid lattice; gives the page a quiet,
-     editorial flourish instead of a designed HUD surface. The arc is
-     duplicated above and mirrored below to hint at a wide horizontal
-     ribbon without ever drawing a literal one. The gold hue is
-     hsl(34 46% 50%) — same as `--penn-gold`; data: URIs can't read
-     CSS vars so the value is duplicated. If you change `--penn-gold`,
-     update this stroke too. */
-
-  body::before {
-    content: "";
-    position: fixed;
-    inset: 0;
-    pointer-events: none;
-    z-index: 0;
-    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1600 900' preserveAspectRatio='xMidYMid slice' fill='none'><path d='M-40 280 Q800 420 1640 280' stroke='hsl(34 46%25 50%25)' stroke-opacity='0.18' stroke-width='2' stroke-linecap='round'/><path d='M-40 620 Q800 480 1640 620' stroke='hsl(222 60%25 10%25)' stroke-opacity='0.07' stroke-width='1.5' stroke-linecap='round'/></svg>");
-    background-size: cover;
-    background-position: center;
-    background-repeat: no-repeat;
-    opacity: 0.9;
-  }
-
-  /* Whisper grain — keep just enough to break up flat digital
-     gradients (matte-paper feel) without competing with content. */
-  body::after {
-    content: "";
-    position: fixed;
-    inset: 0;
-    pointer-events: none;
-    z-index: 0;
-    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='240' height='240' viewBox='0 0 240 240'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.12  0 0 0 0 0.18  0 0 0 0 0.30  0 0 0 0.55 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
-    background-size: 240px 240px;
-    opacity: 0.04;
-    mix-blend-mode: multiply;
-  }
-
-  /* Make sure app content sits above the decorative layers */
+  /* Place app content above any future decorative layers (kept for
+     defensive z-ordering even though the body itself no longer
+     paints any). */
   #root {
     position: relative;
     z-index: 1;
@@ -462,17 +374,13 @@
     background-clip: content-box;
   }
 
-  /* Print: hide ambient layers + nav chrome for clean receipt prints.
-     The order-success and shop-checkout-success pages are the most
-     likely candidates to be printed; this gives them a paper-friendly
-     surface without each page having to manage its own print rules. */
+  /* Print: hide nav chrome for clean receipt prints. The order-success
+     and shop-checkout-success pages are the most likely candidates to
+     be printed; this gives them a paper-friendly surface without each
+     page having to manage its own print rules. */
   @media print {
     body {
       background: #ffffff !important;
-    }
-    body::before,
-    body::after {
-      display: none !important;
     }
     header[role="banner"],
     footer,
@@ -527,7 +435,7 @@
       0 1px 2px hsl(var(--penn-navy-deep) / 0.06),
       0 14px 32px hsl(var(--penn-navy-deep) / 0.09),
       0 36px 72px hsl(var(--penn-navy-deep) / 0.07),
-      0 0 60px hsl(var(--penn-cyan) / 0.03);
+      0 0 60px hsl(var(--penn-gold) / 0.04);
   }
 
   .glass-panel {
@@ -626,27 +534,13 @@
     color: hsl(var(--penn-navy));
   }
 
-  /* Gradient text accent — deep navy with a slight luminosity sweep */
+  /* Solid Penn navy — replaces the prior gradient-clipped text.
+     Same class name kept so existing call sites don't churn. */
   .text-gradient-brand {
-    background: linear-gradient(
-      135deg,
-      hsl(var(--penn-navy-deep)) 0%,
-      hsl(var(--penn-navy)) 50%,
-      hsl(213 55% 30%) 100%
-    );
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
+    color: hsl(var(--penn-navy));
   }
   .text-gradient-stat {
-    background: linear-gradient(
-      180deg,
-      hsl(var(--penn-navy-deep)) 0%,
-      hsl(var(--penn-navy)) 100%
-    );
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
+    color: hsl(var(--penn-navy));
   }
 
   /* Premium primary button — forged obsidian CTA.
@@ -673,7 +567,7 @@
     text-shadow: 0 1px 0 hsl(var(--penn-navy-deep) / 0.65);
     box-shadow:
       0 1px 0 rgba(255, 255, 255, 0.32) inset,
-      0 0 0 1px hsl(var(--penn-cyan) / 0.16) inset,
+      0 0 0 1px hsl(var(--penn-gold) / 0.18) inset,
       0 -1px 0 hsl(var(--penn-onyx)) inset,
       0 0 0 1px hsl(var(--penn-onyx) / 0.3),
       0 1px 2px hsl(var(--penn-navy-deep) / 0.34),
@@ -692,9 +586,9 @@
     background: linear-gradient(
       115deg,
       transparent 35%,
-      hsl(0 0% 100% / 0.18) 48%,
-      hsl(var(--penn-cyan) / 0.2) 50%,
-      hsl(0 0% 100% / 0.18) 52%,
+      hsl(0 0% 100% / 0.22) 48%,
+      hsl(var(--penn-gold) / 0.32) 50%,
+      hsl(0 0% 100% / 0.22) 52%,
       transparent 65%
     );
     transform: translateX(-110%);
@@ -704,21 +598,21 @@
     transform: translateY(-1px);
     background-image: linear-gradient(
       180deg,
-      hsl(220 36% 30%) 0%,
+      hsl(213 50% 46%) 0%,
       hsl(var(--penn-navy-soft)) 30%,
       hsl(var(--penn-navy)) 76%,
       hsl(var(--penn-navy-deep)) 100%
     );
     box-shadow:
       0 1px 0 rgba(255, 255, 255, 0.4) inset,
-      0 0 0 1px hsl(var(--penn-cyan) / 0.28) inset,
+      0 0 0 1px hsl(var(--penn-gold) / 0.32) inset,
       0 -1px 0 hsl(var(--penn-onyx)) inset,
       0 0 0 1px hsl(var(--penn-onyx) / 0.32),
       0 1px 2px hsl(var(--penn-navy-deep) / 0.36),
       0 16px 36px hsl(var(--penn-navy-deep) / 0.42),
       0 6px 12px hsl(var(--penn-navy-deep) / 0.28),
-      0 0 0 5px hsl(var(--penn-gold) / 0.22),
-      0 0 26px hsl(var(--penn-cyan) / 0.3);
+      0 0 0 5px hsl(var(--penn-gold) / 0.28),
+      0 0 26px hsl(var(--penn-gold) / 0.28);
   }
   .btn-primary-glow:hover::after {
     transform: translateX(110%);
@@ -749,7 +643,7 @@
     background-image: linear-gradient(
       180deg,
       hsl(var(--penn-gold-soft)) 0%,
-      hsl(36 54% 60%) 30%,
+      hsl(42 92% 68%) 30%,
       hsl(var(--penn-gold)) 68%,
       hsl(var(--penn-gold-deep)) 100%
     );
@@ -785,9 +679,9 @@
     transform: translateY(-1px);
     background-image: linear-gradient(
       180deg,
-      hsl(36 64% 90%) 0%,
-      hsl(34 58% 66%) 30%,
-      hsl(34 50% 54%) 70%,
+      hsl(44 95% 92%) 0%,
+      hsl(42 92% 72%) 30%,
+      hsl(42 92% 58%) 70%,
       hsl(var(--penn-gold-deep)) 100%
     );
     box-shadow:
@@ -857,63 +751,32 @@
     transform: translateY(0);
   }
 
-  /* Aurum highlight strip — navy ramp into a warm gold catch in the
-     middle, mirrored back into navy. Reads as polished metal rather
-     than a cyan-laced HUD pass. Animated variant `aurora-divider-live`
-     slowly pans the highlight left-to-right so the chrome feels alive. */
-  .aurora-divider {
-    height: 1px;
-    background: linear-gradient(
-      90deg,
-      transparent 0%,
-      hsl(var(--penn-navy) / 0.18) 22%,
-      hsl(var(--penn-gold-deep) / 0.4) 42%,
-      hsl(var(--penn-gold) / 0.7) 50%,
-      hsl(var(--penn-gold-deep) / 0.4) 58%,
-      hsl(var(--penn-navy) / 0.18) 78%,
-      transparent 100%
-    );
-    box-shadow: 0 1px 0 hsl(var(--penn-platinum) / 0.45);
-  }
+  /* Static brand hairline — a quiet platinum line with a subtle gold
+     middle catch. Used as a section separator. Both class names
+     (`aurora-divider` and `aurora-divider-live`) point at the same
+     static rule; the animated variant was retired because the
+     panning gold highlight read as gimmicky. */
+  .aurora-divider,
   .aurora-divider-live {
     height: 1px;
     background: linear-gradient(
       90deg,
       transparent 0%,
-      hsl(var(--penn-navy) / 0.1) 20%,
-      hsl(var(--penn-gold-deep) / 0.45) 40%,
-      hsl(var(--penn-gold) / 0.75) 50%,
-      hsl(var(--penn-gold-deep) / 0.45) 60%,
-      hsl(var(--penn-navy) / 0.1) 80%,
+      hsl(var(--penn-platinum) / 0.7) 20%,
+      hsl(var(--penn-gold) / 0.45) 50%,
+      hsl(var(--penn-platinum) / 0.7) 80%,
       transparent 100%
     );
-    background-size: 220% 100%;
-    background-position: 0% 0%;
-    animation: aurora-pan 14s linear infinite;
-  }
-  @keyframes aurora-pan {
-    0% {
-      background-position: 0% 0%;
-    }
-    100% {
-      background-position: 200% 0%;
-    }
   }
 
-  /* Navy → aurum gradient text — editorial register that echoes the
-     logo's wordmark gradient finished with the gold accent below it.
-     Companion to .text-gradient-brand (pure navy). */
+  /* Display headline color — solid Penn navy. The class name is
+     retained from the prior multi-stop gradient (to avoid touching
+     every page using it) but the treatment is now a single solid
+     ink. Splitting a headline word across colors reads as gaudy on
+     a medical storefront — keep the gold accent on actual UI
+     elements (buttons, dividers, icons) instead. */
   .text-gradient-tech {
-    background: linear-gradient(
-      135deg,
-      hsl(var(--penn-navy-deep)) 0%,
-      hsl(var(--penn-navy)) 40%,
-      hsl(var(--penn-gold-deep)) 82%,
-      hsl(var(--penn-gold)) 100%
-    );
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
+    color: hsl(var(--penn-navy));
   }
 
   /* Live status pill — tiny dot + label, used for "On-device only",
@@ -959,75 +822,27 @@
     }
   }
 
-  /* Faint aurum sheen — a 2px gold band gliding top-to-bottom on a
-     3.2s loop. Same diagrammatic rhythm as the prior cyan scan line,
-     but reads as warm light passing across leather-bound stationery
-     rather than a sci-fi laser pass. */
+  /* Retired: the animated gold "scan line" sweep read as gimmicky
+     on a medical storefront. The class is kept as a no-op so
+     existing markup (`<span className="scan-line" />`) renders
+     nothing instead of removing it from every call site. */
   .scan-line {
-    position: absolute;
-    inset: 0;
-    pointer-events: none;
-    overflow: hidden;
-    border-radius: inherit;
-  }
-  .scan-line::after {
-    content: "";
-    position: absolute;
-    left: 0;
-    right: 0;
-    height: 2px;
-    background: linear-gradient(
-      90deg,
-      transparent,
-      hsl(var(--penn-gold) / 0.55) 50%,
-      transparent
-    );
-    box-shadow: 0 0 14px hsl(var(--penn-gold) / 0.4);
-    animation: scan-sweep 3.2s ease-in-out infinite;
-  }
-  @keyframes scan-sweep {
-    0% {
-      top: -2px;
-      opacity: 0;
-    }
-    8% {
-      opacity: 1;
-    }
-    92% {
-      opacity: 1;
-    }
-    100% {
-      top: 100%;
-      opacity: 0;
-    }
+    display: none;
   }
 
-  /* Holographic outline — color-cycling conic ring for "best match" cards
-     or any "AI-selected" surface. The `holo-spin` keyframe animates
-     `hue-rotate` (not element rotation) so the conic gradient cycles
-     through the spectrum; use `transform: rotate(…)` instead if a
-     physically spinning ring is desired. Used as a wrapper element
-     behind a glass-card. */
+  /* Static gold ring frame — replaces the prior spinning conic
+     "holographic" wrapper. Used behind featured / best-match
+     cards to mark them as premium without spinning. */
   .holo-ring {
     position: relative;
     border-radius: calc(var(--radius) + 2px);
     padding: 1px;
-    background: conic-gradient(
-      from 0deg,
-      hsl(var(--penn-cyan) / 0.55),
-      hsl(var(--penn-gold) / 0.55),
-      hsl(var(--penn-navy) / 0.55),
-      hsl(var(--penn-cyan) / 0.55)
+    background: linear-gradient(
+      135deg,
+      hsl(var(--penn-gold) / 0.55) 0%,
+      hsl(var(--penn-gold) / 0.2) 50%,
+      hsl(var(--penn-navy) / 0.35) 100%
     );
-    animation: holo-spin 12s linear infinite;
-  }
-  @keyframes holo-spin {
-    from {
-      transform: rotate(0deg);
-    }
-    to {
-      transform: rotate(360deg);
-    }
   }
 
   /* Subtle entrance for hero sections */
@@ -1271,5 +1086,129 @@
     font-style: italic;
     letter-spacing: -0.005em;
     color: hsl(var(--penn-navy));
+  }
+
+  /* Landing hero — bounded Penn-navy gradient card with a soft
+     warm-light catch in the top-right corner (echoes the logo's
+     gold swoosh without painting it across the page). Pairs white
+     display type with the gold accent CTA and brand swoosh
+     underline. Sits inside the page's max-w-6xl container so it
+     reads as a deliberate hero card, not a full-bleed band. */
+  .hero-card {
+    position: relative;
+    overflow: hidden;
+    border-radius: 1.75rem;
+    background: linear-gradient(
+      150deg,
+      hsl(var(--penn-navy-deep)) 0%,
+      hsl(var(--penn-navy)) 55%,
+      hsl(var(--penn-navy-soft)) 100%
+    );
+    box-shadow:
+      0 1px 0 hsl(0 0% 100% / 0.08) inset,
+      0 0 0 1px hsl(var(--penn-onyx) / 0.4),
+      0 24px 48px hsl(var(--penn-navy-deep) / 0.22),
+      0 56px 112px hsl(var(--penn-navy-deep) / 0.12);
+  }
+  /* Single warm catch in the corner — a clean radial, not a
+     floating animated blob. */
+  .hero-card::before {
+    content: "";
+    position: absolute;
+    top: -30%;
+    right: -10%;
+    width: 70%;
+    height: 110%;
+    background: radial-gradient(
+      ellipse at center,
+      hsl(var(--penn-gold) / 0.18) 0%,
+      transparent 65%
+    );
+    pointer-events: none;
+  }
+  /* Thin gold rule along the bottom edge — echoes the logo's
+     swoosh under the wordmark. */
+  .hero-card::after {
+    content: "";
+    position: absolute;
+    left: 8%;
+    right: 8%;
+    bottom: 0;
+    height: 2px;
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      hsl(var(--penn-gold) / 0.55) 35%,
+      hsl(var(--penn-gold) / 0.8) 50%,
+      hsl(var(--penn-gold) / 0.55) 65%,
+      transparent 100%
+    );
+    pointer-events: none;
+  }
+
+  /* Hand-drawn gold swoosh beneath an accented headline line —
+     echoes the logo's signature swoosh under "PennPaps", which
+     dips DOWN through the middle (Q60 56 120 48 in the logo SVG).
+     Use as `<span class="hero-headline-swoosh">Fit. Shop. Resupply.</span>`. */
+  .hero-headline-swoosh {
+    position: relative;
+    display: inline-block;
+  }
+  .hero-headline-swoosh::after {
+    content: "";
+    position: absolute;
+    left: -2%;
+    right: -2%;
+    bottom: -0.32em;
+    height: 0.48em;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 320 28' preserveAspectRatio='none' fill='none'><path d='M6 6 Q160 30 314 9' stroke='hsl(42 92%25 56%25)' stroke-width='5' stroke-linecap='round'/></svg>");
+    background-repeat: no-repeat;
+    background-position: center;
+    background-size: 100% 100%;
+    pointer-events: none;
+  }
+
+  /* Status pill — on-dark variant for use inside .hero-card. Same
+     pulsing dot, but a translucent white chip with gold dot reads
+     as a credential on navy without competing with the CTA. */
+  .status-pill-on-dark {
+    background: hsl(0 0% 100% / 0.10);
+    border-color: hsl(0 0% 100% / 0.22);
+    color: hsl(0 0% 100% / 0.92);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+  }
+
+  /* Outline CTA tuned for use on a dark hero surface. Translucent
+     white fill, white text, white hairline border — matches the
+     btn-primary-glow weight without competing for attention. */
+  .btn-on-dark-outline {
+    background: hsl(0 0% 100% / 0.10);
+    border: 1px solid hsl(0 0% 100% / 0.32);
+    color: hsl(0 0% 100%);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    transition:
+      background 220ms ease,
+      border-color 220ms ease,
+      transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+  .btn-on-dark-outline:hover {
+    background: hsl(0 0% 100% / 0.18);
+    border-color: hsl(0 0% 100% / 0.55);
+    transform: translateY(-1px);
+  }
+
+  /* Section-level tinted band — a subtle off-white-blue bed for the
+     trust strip, just enough to chapter the page into hero / strip /
+     features without painting a wash. */
+  .section-tint-mist {
+    background: linear-gradient(
+      180deg,
+      hsl(var(--penn-pearl)) 0%,
+      hsl(var(--penn-mist) / 0.7) 100%
+    );
+    border-top: 1px solid hsl(var(--penn-platinum) / 0.7);
+    border-bottom: 1px solid hsl(var(--penn-platinum) / 0.7);
   }
 }

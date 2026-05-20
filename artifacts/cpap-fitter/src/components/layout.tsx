@@ -129,17 +129,11 @@ export function Layout({ children }: { children: React.ReactNode }) {
               href="/"
               className="flex items-center gap-3 transition-opacity hover:opacity-80"
             >
-              <div className="relative">
-                <div
-                  className="absolute -inset-1 rounded-xl bg-gradient-to-br from-[hsl(var(--penn-cyan)/0.18)] via-[hsl(var(--penn-navy)/0.12)] to-[hsl(var(--penn-gold)/0.22)] blur-md"
-                  aria-hidden="true"
-                />
-                <img
-                  src={pennLogo}
-                  alt="PennPaps"
-                  className="relative h-12 md:h-14 w-auto rounded-md ring-1 ring-[hsl(var(--penn-cyan)/0.18)]"
-                />
-              </div>
+              <img
+                src={pennLogo}
+                alt="PennPaps"
+                className="h-12 md:h-14 w-auto"
+              />
               <div className="hidden sm:flex flex-col leading-tight border-l border-border/60 pl-3">
                 <span className="font-semibold tracking-tight text-base text-primary">
                   PennPaps
@@ -177,7 +171,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
                     data-testid={`nav-${l.href.replace(/\//g, "")}`}
                     className={`relative py-1 transition-colors hover:text-primary focus-visible:text-primary ${
                       isActive
-                        ? "text-primary after:absolute after:left-0 after:right-0 after:-bottom-1 after:h-[2px] after:rounded-full after:bg-gradient-to-r after:from-[hsl(var(--penn-cyan))] after:via-[hsl(var(--penn-gold))] after:to-[hsl(var(--penn-cyan))]"
+                        ? "text-primary after:absolute after:left-0 after:right-0 after:-bottom-1 after:h-[2px] after:rounded-full after:bg-[hsl(var(--penn-gold))]"
                         : "text-foreground/75"
                     }`}
                   >
@@ -354,6 +348,14 @@ export function Layout({ children }: { children: React.ReactNode }) {
                       className="text-muted-foreground hover:text-primary transition-colors"
                     >
                       My Account
+                    </Link>
+                  </li>
+                  <li>
+                    <Link
+                      href="/track-order"
+                      className="text-muted-foreground hover:text-primary transition-colors"
+                    >
+                      Track an order
                     </Link>
                   </li>
                   <li>

@@ -8,8 +8,10 @@
 //
 // Action buttons:
 //   requested      → Approve · Reject
-//   approved       → Mark received (skip-shipped is allowed; happens
-//                    when ops scans inbound parcel directly).
+//   approved       → Mark shipped back · Mark received
+//                    (the in-transit step is optional — admins can
+//                    skip straight to "received" when ops scans
+//                    inbound parcel directly).
 //   shipped_back   → Mark received
 //   received       → Refund · Replace
 //
@@ -26,6 +28,7 @@ import {
   approveReturn,
   listAdminShopReturns,
   markReceived,
+  markShipped,
   noteReturn,
   refundReturn,
   rejectReturn,
@@ -202,6 +205,10 @@ function ReturnCard({ item }: { item: AdminReturn }) {
     mutationFn: (note: string) => rejectReturn(item.id, note),
     onSuccess: invalidate,
   });
+  const shippedMut = useMutation({
+    mutationFn: () => markShipped(item.id),
+    onSuccess: invalidate,
+  });
   const receivedMut = useMutation({
     mutationFn: () => markReceived(item.id),
     onSuccess: invalidate,
@@ -240,15 +247,17 @@ function ReturnCard({ item }: { item: AdminReturn }) {
       ? approveMut.error.message
       : rejectMut.error instanceof Error
         ? rejectMut.error.message
-        : receivedMut.error instanceof Error
-          ? receivedMut.error.message
-          : refundMut.error instanceof Error
-            ? refundMut.error.message
-            : replaceMut.error instanceof Error
-              ? replaceMut.error.message
-              : noteMut.error instanceof Error
-                ? noteMut.error.message
-                : null;
+        : shippedMut.error instanceof Error
+          ? shippedMut.error.message
+          : receivedMut.error instanceof Error
+            ? receivedMut.error.message
+            : refundMut.error instanceof Error
+              ? refundMut.error.message
+              : replaceMut.error instanceof Error
+                ? replaceMut.error.message
+                : noteMut.error instanceof Error
+                  ? noteMut.error.message
+                  : null;
 
   return (
     <li
@@ -375,6 +384,24 @@ function ReturnCard({ item }: { item: AdminReturn }) {
             )}
           </>
         )}
+        {item.status === "approved" && (
+          <button
+            type="button"
+            onClick={() => {
+              if (
+                window.confirm(
+                  "Mark this return as shipped back? Use this when the customer confirms they've handed off the parcel, before it physically arrives.",
+                )
+              )
+                shippedMut.mutate();
+            }}
+            disabled={shippedMut.isPending}
+            className="rounded bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-60"
+            data-testid={`return-${item.id}-mark-shipped`}
+          >
+            {shippedMut.isPending ? "Marking…" : "Mark shipped back"}
+          </button>
+        )}
         {(item.status === "approved" || item.status === "shipped_back") && (
           <button
             type="button"
@@ -384,6 +411,7 @@ function ReturnCard({ item }: { item: AdminReturn }) {
             }}
             disabled={receivedMut.isPending}
             className="rounded bg-violet-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-violet-700 disabled:opacity-60"
+            data-testid={`return-${item.id}-mark-received`}
           >
             {receivedMut.isPending ? "Marking…" : "Mark received"}
           </button>
