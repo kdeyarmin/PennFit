@@ -8,6 +8,7 @@ import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { scoreAndPersistAdherence } from "../../lib/clinical/adherence-predictor";
 import { logger } from "../../lib/logger";
+import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requireAdmin } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
@@ -17,6 +18,7 @@ const idParam = z.object({ id: z.string().uuid() });
 router.post(
   "/admin/patients/:id/adherence/score",
   requireAdmin,
+  adminRateLimit({ name: "adherence_predictions.score", preset: "mutation" }),
   async (req, res) => {
     const parsed = idParam.safeParse(req.params);
     if (!parsed.success) {
