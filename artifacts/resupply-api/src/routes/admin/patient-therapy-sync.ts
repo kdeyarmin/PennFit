@@ -28,6 +28,7 @@ import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { adapterFor } from "../../lib/therapy-cloud";
 import { logger } from "../../lib/logger";
+import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
@@ -102,6 +103,7 @@ router.post(
   // tightens fulfillment + compliance_officer out of clinical
   // data sync.
   requirePermission("patients.update"),
+  adminRateLimit({ name: "patient_therapy.sync", preset: "mutation" }),
   async (req, res) => {
     const idCheck = patientIdParam.safeParse(req.params.id);
     if (!idCheck.success) {
