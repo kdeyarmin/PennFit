@@ -403,7 +403,13 @@ const refundBody = z
 
 router.post(
   "/admin/shop/returns/:id/refund",
-  requireAdmin,
+  // Money-out path — mirror the shop_orders refund gate so a CSR
+  // can't issue a Stripe refund directly via the returns lifecycle
+  // when they couldn't issue one against the order itself. The
+  // /approve endpoint above already documents the supervisor-and-up
+  // posture; refund is the same money-out decision and gets the
+  // same `returns.approve` gate.
+  requirePermission("returns.approve"),
   adminReturnFinancialLimiter,
   async (req, res) => {
     const id = req.params.id;

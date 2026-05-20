@@ -49,7 +49,12 @@ export interface CreateIntentResult {
 }
 
 export interface CreateIntentFailure {
-  error: "stripe_not_configured" | "no_allocations" | "claim_not_owned" | "claim_balance_mismatch";
+  error:
+    | "stripe_not_configured"
+    | "stripe_rejected"
+    | "no_allocations"
+    | "claim_not_owned"
+    | "claim_balance_mismatch";
   message: string;
 }
 
@@ -153,7 +158,7 @@ export async function createPaymentIntent(
       "patient_payment: stripe paymentIntents.create failed",
     );
     return {
-      error: "stripe_not_configured",
+      error: "stripe_rejected",
       message: "Stripe rejected the payment intent create",
     };
   }
