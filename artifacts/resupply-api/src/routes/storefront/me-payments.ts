@@ -158,7 +158,13 @@ router.post("/me/payments/checkout-session", async (req, res) => {
     });
     return;
   }
-  const baseOrigin = origin.replace(/\/+$/, "");
+  // Strip trailing `/` via a manual scan rather than
+  // `.replace(/\/+$/, "")` to dodge CodeQL's
+  // `js/polynomial-redos` rule on a user-controlled string. Same
+  // pattern as base64UrlEncode in lib/resupply-auth/mfa-challenge.
+  let end = origin.length;
+  while (end > 0 && origin.charCodeAt(end - 1) === 0x2f /* "/" */) end--;
+  const baseOrigin = origin.slice(0, end);
   const successUrl = `${baseOrigin}${parsed.data.successPath ?? "/account/billing?paid=1"}`;
   const cancelUrl = `${baseOrigin}${parsed.data.cancelPath ?? "/account/billing?cancelled=1"}`;
 
