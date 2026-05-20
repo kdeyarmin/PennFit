@@ -71,7 +71,11 @@ export function ResetPasswordPage() {
     reset.mutate(
       { token, password },
       {
-        onSuccess: () => setLocation("/sign-in"),
+        // Land on /sign-in with the ?reset=success flag so the user
+        // gets a confirmation banner — without it, post-redirect they
+        // see a fresh form and wonder if anything happened.
+        onSuccess: () =>
+          setLocation("/sign-in?reset=success", { replace: true }),
         onError: (err) => {
           setSubmitError(
             err instanceof AuthError

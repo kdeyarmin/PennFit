@@ -79,7 +79,7 @@ export function VerifyEmailPage() {
           <>
             <p>Your email is verified. You can now sign in.</p>
             <Link
-              href={`${basePath}/sign-in`}
+              href={`${basePath}/sign-in?verified=success`}
               className="block text-center rounded-md bg-[hsl(var(--penn-navy-deep))] text-white font-semibold py-2"
             >
               Continue to sign in
