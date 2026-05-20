@@ -4,7 +4,7 @@
 // lands on their order history. New customers should use
 // /sign-up instead — there's a link below the form.
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { Link, useLocation } from "wouter";
 
 import { AuthError } from "@workspace/resupply-auth-react";
@@ -37,6 +37,11 @@ export function SignInPage() {
   const [successFlag] = useState(readSuccessFlag);
   const signIn = authHooks.useSignIn();
   const [, setLocation] = useLocation();
+
+  useEffect(() => {
+    if (!successFlag) return;
+    setLocation("/sign-in", { replace: true });
+  }, [successFlag, setLocation]);
 
   function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
