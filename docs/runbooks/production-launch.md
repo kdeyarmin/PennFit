@@ -65,10 +65,13 @@ the vendor keys called out by name in the launch brief.
 | `SUPABASE_SERVICE_ROLE_KEY`  | Service-role JWT from the same page. Bypasses RLS — never expose client-side.    |
 | `RESUPPLY_LINK_HMAC_KEY`     | First `openssl` output from §1.                                                   |
 | `RESUPPLY_AUDIT_HMAC_KEY`    | Second `openssl` output from §1.                                                  |
+| `RESUPPLY_ALLOWED_ORIGINS` **or** `REPLIT_DOMAINS` | Comma-separated hostnames (origin form for the first, bare-host for the second) that the CORS allowlist trusts. On Replit deployments `REPLIT_DOMAINS` is auto-populated; on any other host you must set `RESUPPLY_ALLOWED_ORIGINS`. With both empty in `NODE_ENV=production` the API throws at boot — `artifacts/resupply-api/src/app.ts:85`. |
 
-These six are what `assertRequiredEnv()` checks at boot
-(`artifacts/resupply-api/src/lib/env-check.ts`); the API fails to
-start if any is missing.
+These six (plus the CORS-allowlist gate) are what
+`assertRequiredEnv()` + the CORS sanity check
+(`artifacts/resupply-api/src/lib/env-check.ts` and
+`artifacts/resupply-api/src/app.ts:63`) enforce at boot; the API
+fails to start if any is missing.
 
 ### Vendor secrets — production credentials, not test
 

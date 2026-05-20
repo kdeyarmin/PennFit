@@ -124,8 +124,11 @@ the `pf_session` cookie and respect `SameSite=Lax` / `Secure`.
 - [ ] Verify the deployed proxy strips no headers between the
       cpap-fitter and the resupply-api.
 - [ ] Verify the dashboard SPA and the resupply-api are co-located
-      under the same hostname (or set `PENN_ALLOWED_ORIGINS` for
-      explicit cross-origin allowlists).
+      under the same hostname (or set `RESUPPLY_ALLOWED_ORIGINS` to
+      a comma-separated list of allowed origins, in scheme+host form
+      — see `artifacts/resupply-api/src/app.ts:44`). On Replit
+      deployments, `REPLIT_DOMAINS` is auto-populated and serves
+      as the fallback when `RESUPPLY_ALLOWED_ORIGINS` is unset.
 
 ---
 
