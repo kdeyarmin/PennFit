@@ -23,7 +23,11 @@ import { z } from "zod";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { requirePermission } from "../../middlewares/requireAdmin";
-import { encodeCompositeCursor, parseCompositeCursor } from "../../lib/cursor";
+import {
+  encodeCompositeCursor,
+  isUuidCursorId,
+  parseCompositeCursor,
+} from "../../lib/cursor";
 import {
   sendReviewApprovedEmail,
   sendReviewRejectedEmail,
@@ -90,6 +94,13 @@ router.get("/admin/shop/reviews", requirePermission("conversations.manage"), asy
   const { status, cursor, limit } = parse.data;
   const parsedCursor = parseCompositeCursor(cursor);
   if (!parsedCursor.ok) {
+    res.status(400).json({ error: "invalid_cursor" });
+    return;
+  }
+  // shop_reviews.id is a UUID. Reject anything else so a hostile
+  // cursor can't smuggle PostgREST structural characters into the
+  // `.or()` filter expression below.
+  if (parsedCursor.id !== null && !isUuidCursorId(parsedCursor.id)) {
     res.status(400).json({ error: "invalid_cursor" });
     return;
   }
