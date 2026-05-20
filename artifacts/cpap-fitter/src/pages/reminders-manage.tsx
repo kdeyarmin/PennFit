@@ -274,6 +274,17 @@ export function RemindersManage() {
   }
 
   function onUnsubscribe() {
+    // Confirmation guard before the destructive call — a misclick on
+    // "Unsubscribe from all reminders" would otherwise wipe the
+    // user's entire setup with no recovery path other than re-creating
+    // it from /reminders.
+    if (
+      !window.confirm(
+        "Stop all reminders for this email? You'll need to sign up again from /reminders if you change your mind.",
+      )
+    ) {
+      return;
+    }
     unsub.mutate(
       { params: { token } },
       { onSuccess: () => setUnsubscribed(true) },
@@ -413,13 +424,26 @@ export function RemindersManage() {
               </Alert>
             )}
 
+            {unsub.error && (
+              <Alert
+                variant="destructive"
+                className="mt-4"
+                data-testid="reminders-unsubscribe-error"
+              >
+                <AlertDescription>
+                  Could not unsubscribe. Try again in a moment, or contact
+                  support if it keeps failing.
+                </AlertDescription>
+              </Alert>
+            )}
+
             <div className="flex flex-wrap items-center gap-3 mt-6">
               <Button
                 onClick={onSave}
                 disabled={update.isPending}
                 data-testid="button-save-manage"
               >
-                {update.isPending ? "Saving..." : "Save changes"}
+                {update.isPending ? "Saving…" : "Save changes"}
               </Button>
               <Button
                 variant="outline"
@@ -428,7 +452,7 @@ export function RemindersManage() {
                 data-testid="button-unsubscribe"
               >
                 {unsub.isPending
-                  ? "Unsubscribing..."
+                  ? "Unsubscribing…"
                   : "Unsubscribe from all reminders"}
               </Button>
             </div>
