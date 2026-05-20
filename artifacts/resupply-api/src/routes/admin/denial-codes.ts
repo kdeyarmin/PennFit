@@ -15,6 +15,7 @@ import {
 } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
+import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import {
   requireAdmin,
   requireAdminOnly,
@@ -130,7 +131,11 @@ router.get(
   },
 );
 
-router.post("/admin/denial-codes", requireAdminOnly, async (req, res) => {
+router.post(
+  "/admin/denial-codes",
+  requireAdminOnly,
+  adminRateLimit({ name: "denial_codes.create", preset: "sensitive" }),
+  async (req, res) => {
   const parsed = upsertBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({
@@ -179,7 +184,11 @@ router.post("/admin/denial-codes", requireAdminOnly, async (req, res) => {
   res.status(201).json({ id: data.id });
 });
 
-router.patch("/admin/denial-codes/:id", requireAdminOnly, async (req, res) => {
+router.patch(
+  "/admin/denial-codes/:id",
+  requireAdminOnly,
+  adminRateLimit({ name: "denial_codes.update", preset: "mutation" }),
+  async (req, res) => {
   const idParsed = idParam.safeParse(req.params);
   if (!idParsed.success) {
     res.status(404).json({ error: "not_found" });
