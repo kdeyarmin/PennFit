@@ -11,20 +11,24 @@
 // Auth: gated by <SignedIn>. The /api/me/* endpoints 401 without a
 // shop-customer cookie, which the global error boundary catches.
 
-import { useQuery } from "@tanstack/react-query";
-import { Link } from "wouter";
+import { useEffect, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link, useLocation } from "wouter";
 import {
   ArrowLeft,
+  CheckCircle2,
   CreditCard,
   Download,
   FileText,
   Wallet,
+  XCircle,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { SignedIn } from "@/lib/identity";
 import { useDocumentTitle } from "@/hooks/use-document-title";
 import {
+  createPaymentCheckoutSession,
   fetchBillingBalance,
   fetchPatientPayments,
   fetchPatientStatements,
@@ -82,6 +86,14 @@ export function AccountBillingPage() {
 }
 
 function AccountBillingInner() {
+  const qc = useQueryClient();
+  const [location, setLocation] = useLocation();
+  const params = new URLSearchParams(
+    location.includes("?") ? location.split("?")[1] : "",
+  );
+  const justPaid = params.get("paid") === "1";
+  const cancelled = params.get("cancelled") === "1";
+
   const balance = useQuery({
     queryKey: ["me-billing-balance"],
     queryFn: fetchBillingBalance,
@@ -99,8 +111,51 @@ function AccountBillingInner() {
     staleTime: 30_000,
   });
 
+  // After a Stripe-hosted success redirect the webhook fires async;
+  // give it ~3s to land before the user reads stale balance. We
+  // refetch on focus too — the page is the typical landing spot.
+  useEffect(() => {
+    if (!justPaid) return;
+    const t = setTimeout(() => {
+      void qc.invalidateQueries({ queryKey: ["me-billing-balance"] });
+      void qc.invalidateQueries({ queryKey: ["me-billing-payments"] });
+    }, 3000);
+    return () => clearTimeout(t);
+  }, [justPaid, qc]);
+
+  const [payError, setPayError] = useState<string | null>(null);
+  const startCheckout = useMutation({
+    mutationFn: async (): Promise<void> => {
+      const claims = balance.data?.claims ?? [];
+      if (claims.length === 0) {
+        throw new Error("No open balance to pay.");
+      }
+      // Pay every open claim in full. A future iteration could add
+      // per-claim checkboxes, but for v1 "pay everything" is the
+      // overwhelmingly common case and mirrors the statement format.
+      const allocations = claims.map((c) => ({
+        claimId: c.id,
+        amountAppliedCents: c.patientResponsibilityCents,
+      }));
+      const session = await createPaymentCheckoutSession({ allocations });
+      // Hosted Checkout — full-window redirect. Don't open in a new
+      // tab; Stripe blocks the page back-button → return-URL handoff
+      // otherwise.
+      window.location.href = session.url;
+    },
+    onError: (err) => {
+      setPayError(err instanceof Error ? err.message : "Couldn't start checkout.");
+    },
+  });
+
   const totalOpen = balance.data?.totalOpenCents ?? 0;
   const claimCount = balance.data?.claimCount ?? 0;
+  const showPayBanner = totalOpen > 0;
+  // Use `setLocation` to dismiss the success/cancel banner — strips
+  // the query string without a full reload.
+  function dismissBanner() {
+    setLocation("/account/billing", { replace: true });
+  }
 
   return (
     <main className="mx-auto max-w-3xl px-4 py-10 space-y-8">
@@ -119,6 +174,56 @@ function AccountBillingInner() {
           generated; this page is the always-current view.
         </p>
       </header>
+
+      {justPaid && (
+        <div
+          className="rounded-lg border bg-emerald-50 border-emerald-200 p-4 flex items-start gap-3"
+          data-testid="payment-success-banner"
+        >
+          <CheckCircle2 className="h-5 w-5 text-emerald-700 mt-0.5 shrink-0" />
+          <div className="flex-1">
+            <p className="text-sm font-semibold text-emerald-900">
+              Payment received
+            </p>
+            <p className="text-xs text-emerald-800 mt-0.5">
+              Thanks — your payment is processing. The balance below
+              updates within a few seconds.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={dismissBanner}
+            className="text-xs underline text-emerald-700"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
+      {cancelled && (
+        <div
+          className="rounded-lg border bg-amber-50 border-amber-200 p-4 flex items-start gap-3"
+          data-testid="payment-cancelled-banner"
+        >
+          <XCircle className="h-5 w-5 text-amber-700 mt-0.5 shrink-0" />
+          <div className="flex-1">
+            <p className="text-sm font-semibold text-amber-900">
+              Payment cancelled
+            </p>
+            <p className="text-xs text-amber-800 mt-0.5">
+              No charge was made. You can retry below whenever you're
+              ready.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={dismissBanner}
+            className="text-xs underline text-amber-700"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
 
       <section
         className="rounded-2xl border bg-white p-6 shadow-sm"
@@ -141,20 +246,29 @@ function AccountBillingInner() {
                   : `${claimCount} claim${claimCount === 1 ? "" : "s"} with patient responsibility after insurance.`}
             </p>
           </div>
-          {totalOpen > 0 && (
-            <div className="shrink-0">
-              <a
-                href="mailto:billing@pennpaps.com?subject=Pay%20my%20balance"
-                className="inline-flex"
+          {showPayBanner && (
+            <div className="shrink-0 flex flex-col items-end gap-1">
+              <Button
+                onClick={() => startCheckout.mutate()}
+                disabled={startCheckout.isPending}
+                data-testid="pay-balance-button"
               >
-                <Button>
-                  <CreditCard className="mr-1.5 h-4 w-4" />
-                  Pay by card
-                </Button>
-              </a>
-              <p className="mt-1 text-[11px] text-slate-500 text-right">
-                Email billing to pay now
+                <CreditCard className="mr-1.5 h-4 w-4" />
+                {startCheckout.isPending
+                  ? "Redirecting…"
+                  : `Pay ${formatMoneyCents(totalOpen)} by card`}
+              </Button>
+              <p className="text-[11px] text-slate-500 text-right">
+                Hosted by Stripe — your card never touches our servers
               </p>
+              {payError && (
+                <p
+                  className="text-[11px] text-red-600 text-right max-w-[220px]"
+                  data-testid="pay-balance-error"
+                >
+                  {payError}
+                </p>
+              )}
             </div>
           )}
         </div>

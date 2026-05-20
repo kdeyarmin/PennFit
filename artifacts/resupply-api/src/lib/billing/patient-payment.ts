@@ -187,6 +187,187 @@ export async function createPaymentIntent(
   };
 }
 
+// ─── Stripe Checkout Session (hosted card-on-file flow) ───────────
+
+export interface CreateCheckoutSessionInput {
+  patientId: string;
+  allocations: Array<{
+    claimId: string;
+    amountAppliedCents: number;
+  }>;
+  /** Where Stripe sends the customer after a successful payment. */
+  successUrl: string;
+  /** Where Stripe sends the customer if they cancel mid-checkout. */
+  cancelUrl: string;
+  /** Caller for the audit trail. */
+  initiatorEmail: string;
+}
+
+export interface CreateCheckoutSessionResult {
+  paymentId: string;
+  url: string;
+  amountCents: number;
+}
+
+/**
+ * Hosted-checkout equivalent of `createPaymentIntent`. Mirrors the
+ * /shop/checkout pattern (Stripe Checkout Session → redirect URL)
+ * but for an arbitrary patient_responsibility balance instead of a
+ * cart of products. The existing webhook handler at
+ * lib/stripe/webhook-handler.ts processes payment_intent.* on the
+ * patient_payment_id metadata key — we set the same metadata here
+ * via `payment_intent_data` so no new webhook plumbing is needed.
+ */
+export async function createPaymentCheckoutSession(
+  input: CreateCheckoutSessionInput,
+): Promise<CreateCheckoutSessionResult | CreateIntentFailure> {
+  if (input.allocations.length === 0) {
+    return {
+      error: "no_allocations",
+      message: "at least one claim allocation is required",
+    };
+  }
+  const totalCents = input.allocations.reduce(
+    (s, a) => s + a.amountAppliedCents,
+    0,
+  );
+  if (totalCents <= 0) {
+    return {
+      error: "no_allocations",
+      message: "allocation total must be > 0",
+    };
+  }
+  const config = readStripeConfigOrNull();
+  if (!config) {
+    return {
+      error: "stripe_not_configured",
+      message: "Stripe secret key is not set",
+    };
+  }
+  const supabase = getSupabaseServiceRoleClient();
+
+  // Same per-allocation ownership + balance gates as the intent
+  // flow — duplicated here rather than refactored because the
+  // failure modes intentionally surface as different HTTP statuses.
+  const claimIds = input.allocations.map((a) => a.claimId);
+  const { data: claims } = await supabase
+    .schema("resupply")
+    .from("insurance_claims")
+    .select("id, patient_id, patient_responsibility_cents")
+    .in("id", claimIds);
+  for (const allocation of input.allocations) {
+    const claim = (claims ?? []).find((c) => c.id === allocation.claimId);
+    if (!claim || claim.patient_id !== input.patientId) {
+      return {
+        error: "claim_not_owned",
+        message: `claim ${allocation.claimId} does not belong to this patient`,
+      };
+    }
+    if (allocation.amountAppliedCents > claim.patient_responsibility_cents) {
+      return {
+        error: "claim_balance_mismatch",
+        message: `claim ${allocation.claimId}: allocation ${allocation.amountAppliedCents} exceeds open balance ${claim.patient_responsibility_cents}`,
+      };
+    }
+  }
+
+  // Reserve our patient_payments row up front so the Checkout
+  // Session metadata can reference it; if Stripe rejects we mark
+  // the row failed so the audit trail is complete.
+  const { data: row, error: insertErr } = await supabase
+    .schema("resupply")
+    .from("patient_payments")
+    .insert({
+      patient_id: input.patientId,
+      amount_cents: totalCents,
+      currency: "usd",
+      status: "pending",
+      applied_claims_json: input.allocations as unknown as Json,
+      source: "portal",
+    })
+    .select("id")
+    .single();
+  if (insertErr) throw insertErr;
+
+  let session: Stripe.Checkout.Session;
+  try {
+    const stripe = getStripeClient(config);
+    session = await stripe.checkout.sessions.create({
+      mode: "payment",
+      payment_method_types: ["card"],
+      // We only have one synthetic line item: "Patient balance —
+      // $X.XX". The breakdown is in our DB via applied_claims_json;
+      // exposing per-claim line items here would leak PHI in the
+      // hosted page (claim IDs render in the receipt).
+      line_items: [
+        {
+          quantity: 1,
+          price_data: {
+            currency: "usd",
+            unit_amount: totalCents,
+            product_data: {
+              name: "Patient balance — PennPaps",
+            },
+          },
+        },
+      ],
+      success_url: input.successUrl,
+      cancel_url: input.cancelUrl,
+      // The metadata.patient_payment_id key is what
+      // webhook-handler.ts looks for on payment_intent.* — keep
+      // both layers stamped so a refund webhook hitting the
+      // Session also resolves to our row.
+      metadata: {
+        patient_payment_id: row.id,
+        patient_id: input.patientId,
+        source: "portal",
+        initiator_email: input.initiatorEmail,
+      },
+      payment_intent_data: {
+        metadata: {
+          patient_payment_id: row.id,
+          patient_id: input.patientId,
+          source: "portal",
+          initiator_email: input.initiatorEmail,
+        },
+      },
+    });
+  } catch (err) {
+    await supabase
+      .schema("resupply")
+      .from("patient_payments")
+      .update({
+        status: "failed",
+        failure_reason:
+          err instanceof Error ? err.message.slice(0, 2000) : String(err),
+      })
+      .eq("id", row.id);
+    logger.warn(
+      { err: err instanceof Error ? err.message : String(err) },
+      "patient_payment: stripe checkout.sessions.create failed",
+    );
+    return {
+      error: "stripe_not_configured",
+      message: "Stripe rejected the checkout session create",
+    };
+  }
+
+  if (!session.url) {
+    // Stripe should always return a URL for hosted sessions; this
+    // is belt-and-braces for the typed-as-nullable field.
+    return {
+      error: "stripe_not_configured",
+      message: "Stripe returned a session without a hosted URL",
+    };
+  }
+
+  return {
+    paymentId: row.id,
+    url: session.url,
+    amountCents: totalCents,
+  };
+}
+
 /**
  * Apply a succeeded payment: decrement patient_responsibility_cents
  * on each claim in the allocation. Idempotent — a re-application

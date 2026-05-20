@@ -91,6 +91,49 @@ export function statementPdfUrl(statementId: string): string {
   return `/api/me/billing-statements/${statementId}/pdf`;
 }
 
+export interface CheckoutSessionResponse {
+  paymentId: string;
+  url: string;
+  amountCents: number;
+}
+
+export interface CheckoutSessionAllocation {
+  claimId: string;
+  amountAppliedCents: number;
+}
+
+/** Create a Stripe Checkout Session for a balance payment. The
+ *  caller should navigate the browser to the returned URL. The
+ *  underlying patient_payments row is settled by the existing
+ *  payment_intent.* webhook handler — no client confirmation step
+ *  is needed. */
+export async function createPaymentCheckoutSession(input: {
+  allocations: CheckoutSessionAllocation[];
+}): Promise<CheckoutSessionResponse> {
+  const res = await fetch("/api/me/payments/checkout-session", {
+    method: "POST",
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) {
+    let detail = "";
+    try {
+      const json = (await res.json()) as { message?: string; error?: string };
+      detail = json.message ?? json.error ?? "";
+    } catch {
+      // ignore
+    }
+    throw new Error(
+      detail || `Checkout session create failed (${res.status})`,
+    );
+  }
+  return (await res.json()) as CheckoutSessionResponse;
+}
+
 export function formatMoneyCents(cents: number | null | undefined): string {
   if (cents == null || Number.isNaN(cents)) return "—";
   return `$${(cents / 100).toLocaleString("en-US", {
