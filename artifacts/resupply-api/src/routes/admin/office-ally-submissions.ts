@@ -20,6 +20,7 @@ import {
 } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
+import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import {
   requireAdmin,
   requireAdminOnly,
@@ -172,6 +173,10 @@ router.patch(
   // claim status interpretation, and the ack rows are the auditable
   // truth source for billing reconciliation.
   requireAdminOnly,
+  adminRateLimit({
+    name: "office_ally_submissions.ack",
+    preset: "sensitive",
+  }),
   async (req, res) => {
     const idParsed = idParam.safeParse(req.params);
     if (!idParsed.success) {

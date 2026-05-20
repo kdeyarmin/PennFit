@@ -14,6 +14,7 @@ import {
 } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
+import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import {
   requireAdmin,
   requireAdminOnly,
@@ -105,6 +106,7 @@ router.get("/admin/payer-modifier-rules", requireAdmin, async (req, res) => {
 router.post(
   "/admin/payer-modifier-rules",
   requireAdminOnly,
+  adminRateLimit({ name: "payer_modifier_rules.create", preset: "sensitive" }),
   async (req, res) => {
     const parsed = upsertBody.safeParse(req.body);
     if (!parsed.success) {
@@ -158,6 +160,7 @@ router.post(
 router.patch(
   "/admin/payer-modifier-rules/:id",
   requireAdminOnly,
+  adminRateLimit({ name: "payer_modifier_rules.update", preset: "sensitive" }),
   async (req, res) => {
     const idParsed = idParam.safeParse(req.params);
     if (!idParsed.success) {
