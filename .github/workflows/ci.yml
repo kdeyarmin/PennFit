@@ -100,11 +100,21 @@ jobs:
           POSTGRES_DB: pennfit_test
         ports:
           - 5432:5432
+        # GitHub's runner gates the entire job (no step runs until
+        # the service container reports healthy). If healthchecks
+        # exhaust before postgres is ready, the job dies in setup
+        # with no log of which step failed — we saw this as ~45 s
+        # job-failed-without-output runs on bigger PRs on this
+        # branch. 20 × 10 s = 200 s gives initdb + first
+        # connection plenty of headroom on a contested runner
+        # while still failing the job in a reasonable window if
+        # the service is genuinely broken.
         options: >-
           --health-cmd "pg_isready -U pennfit -d pennfit_test"
           --health-interval 10s
           --health-timeout 5s
-          --health-retries 5
+          --health-retries 20
+          --health-start-period 20s
 
     env:
       DATABASE_URL: postgresql://pennfit:pennfit@localhost:5432/pennfit_test
