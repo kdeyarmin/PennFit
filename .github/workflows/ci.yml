@@ -134,23 +134,32 @@ jobs:
       # fail with `ECONNREFUSED 127.0.0.1:5432` — most plausibly a
       # narrow window between the healthcheck succeeding and the
       # container's published port becoming reachable from the job's
-      # network namespace. A 30 s busy-wait closes that race without
-      # making the job appreciably slower (the loop exits as soon as
-      # postgres responds — typically on the very first iteration).
+      # network namespace.
+      #
+      # The original 30s window started failing periodically on the
+      # bigger-PR runs (45s total job runtime = ~10s pnpm-install +
+      # 30s wait timeout + cleanup, with the wait expiring before
+      # postgres responded). Bumping to 120s with a 2s poll keeps
+      # the average case fast (loop exits on the very first
+      # iteration) while giving cold-cache + heavier-runner jobs
+      # the headroom they need.
       - name: Wait for postgres
         shell: bash
         run: |
           set -x
           ss -tlnp 2>&1 | head -20 || true
-          for i in {1..30}; do
+          # Use `nc` if available; fall back to bash /dev/tcp. Both
+          # exit 0 the moment a TCP connection can be established.
+          for i in $(seq 1 60); do
             if (echo > /dev/tcp/127.0.0.1/5432) >/dev/null 2>&1; then
-              echo "postgres up after ${i}s"
+              echo "postgres up after ${i} polls (~$((i * 2))s)"
               exit 0
             fi
-            sleep 1
+            sleep 2
           done
-          echo "postgres did not become reachable on 127.0.0.1:5432 within 30s" >&2
+          echo "postgres did not become reachable on 127.0.0.1:5432 within 120s" >&2
           ss -tlnp 2>&1 | head -20 || true
+          docker ps --format 'table {{.Names}}\t{{.Status}}' 2>&1 | head -10 || true
           exit 1
 
       # Run the test suite. Show vitest output verbosely so a single
