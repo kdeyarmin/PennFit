@@ -93,6 +93,23 @@ are intentionally NOT required at boot — the services run in a
 partially-configured mode so dev / preview environments don't need
 every third-party credential.
 
+### Deploying to production
+
+Run [`pnpm --filter @workspace/scripts preflight:prod`](./scripts/src/preflight-prod-env.ts)
+against the loaded env to catch shape-level mistakes (test keys in
+prod, localhost URLs, identical HMAC keys, `STRIPE_WEBHOOK_SECRET`
+name confusion, `.env.example` placeholders still in place, etc.)
+**before** the API tries to boot. The script exits non-zero on any
+FAIL so it can gate the deploy.
+
+The full five-step first-launch procedure (generate HMAC keys → set
+production secrets → run preflight → migrate the prod DB → bootstrap
+the first admin → smoke-test) lives in
+[`docs/runbooks/production-launch.md`](./docs/runbooks/production-launch.md).
+The broader operator checklist (TLS, CORS, logging, dependency
+hygiene, backups) is in
+[`docs/PRODUCTION_READINESS.md`](./docs/PRODUCTION_READINESS.md).
+
 ## Environment variables
 
 The full template lives in [`.env.example`](./.env.example), organised
