@@ -27,6 +27,7 @@ import {
   SleepStudiesTab,
 } from "@/components/admin/ClinicalTabs";
 import { EquipmentTab } from "@/components/admin/EquipmentTab";
+import { PatientBillingTab } from "@/components/admin/PatientBillingTab";
 import {
   openPdfInNewTab,
   summarizePdfError,
@@ -124,6 +125,7 @@ type Tab =
   | "sleep-studies"
   | "insurance"
   | "prior-auths"
+  | "billing"
   | "equipment"
   | "forms";
 
@@ -384,6 +386,12 @@ export function PatientDetailPage({ id }: { id: string }) {
           Prior auths
         </TabButton>
         <TabButton
+          active={tab === "billing"}
+          onClick={() => setTab("billing")}
+        >
+          Billing
+        </TabButton>
+        <TabButton
           active={false}
           onClick={() =>
             setLocation(`/admin/patients/${id}/insurance-claims`)
@@ -447,6 +455,7 @@ export function PatientDetailPage({ id }: { id: string }) {
         {tab === "sleep-studies" && <SleepStudiesTab patientId={id} />}
         {tab === "insurance" && <InsuranceCoveragesTab patientId={id} />}
         {tab === "prior-auths" && <PriorAuthorizationsTab patientId={id} />}
+        {tab === "billing" && <PatientBillingTab patientId={id} />}
         {tab === "equipment" && <EquipmentTab patientId={id} />}
         {tab === "forms" && <FormAcksTab patientId={id} />}
       </Card>
