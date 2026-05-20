@@ -967,7 +967,7 @@ export function ShopCart() {
                 ) : probing ? (
                   <>
                     <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    Preparing checkout…
+                    Checking shop status…
                   </>
                 ) : checkingOut ? (
                   <>
