@@ -134,11 +134,15 @@ pnpm --filter @workspace/scripts preflight:prod
 pre-flight before you've pushed the secrets to Replit.
 
 ```bash
-# .env.production-candidate is git-ignored; export the secrets you
-# intend to push, one KEY=value per line. Node v22's native flag
-# loads the file into process.env for the subprocess only.
-node --env-file=.env.production-candidate --import=tsx \
-  scripts/src/preflight-prod-env.ts
+# Drop the production secrets you intend to push into an env file
+# (KEY=value per line) — .env*.production* is git-ignored. The
+# `pnpm exec` wrapper puts the scripts package's tsx binary on
+# PATH for the inner `node` so --import=tsx resolves cleanly;
+# --env-file is a Node 20.6+ builtin that loads the file into
+# process.env for the subprocess only.
+pnpm --filter @workspace/scripts exec \
+  node --env-file=$(pwd)/.env.production-candidate \
+       --import=tsx ./src/preflight-prod-env.ts
 ```
 
 Expected output: `Ready for launch.` with no FAILs. The exit code is
