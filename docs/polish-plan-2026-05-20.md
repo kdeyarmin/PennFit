@@ -334,15 +334,17 @@ dashboard within a week of deploy.
 
 ### PR 6.1 — `cpap-fitter` ESLint enforcement (S, P3.1)
 
-- Extend `pnpm lint:resupply` to fail on warnings inside
-  `artifacts/cpap-fitter/src/**/*.{ts,tsx}` (it currently lints the
-  files but doesn't fail on the existing warnings).
+- Keep `pnpm lint:resupply` as the enforced warning-failing lint gate
+  for `artifacts/cpap-fitter/src/**/*.{ts,tsx}`, and verify whether
+  any storefront files or adjacent lint targets still sit outside that
+  coverage.
 - Fix or `eslint-disable-next-line` with justification each existing
   warning. Cap PR size — split into 2 if it exceeds ~600 LOC of
   diff.
 
-**Exit criteria:** `pnpm lint:resupply` exits 0 with
-`--max-warnings 0` on the storefront.
+**Exit criteria:** `pnpm lint:resupply` exits 0 on the storefront
+with the existing `--max-warnings 0` enforcement, and any missing lint
+coverage identified during the audit is added.
 
 ### PR 6.2 — Test coverage thresholds + new specs (M, P3.x)
 
