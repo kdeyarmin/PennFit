@@ -23,6 +23,7 @@ import {
 } from "../../lib/billing/gfe-pdf";
 import { resolveBillingIdentity } from "../../lib/billing/identity-resolver";
 import { logger } from "../../lib/logger";
+import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import {
   requireAdmin,
   requireAdminOnly,
@@ -111,6 +112,7 @@ router.get(
 router.post(
   "/admin/good-faith-estimates",
   requireAdminOnly,
+  adminRateLimit({ name: "good_faith_estimates.create", preset: "sensitive" }),
   async (req, res) => {
     const parsed = body.safeParse(req.body);
     if (!parsed.success) {
