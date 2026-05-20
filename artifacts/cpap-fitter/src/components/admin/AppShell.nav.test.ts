@@ -118,6 +118,7 @@ describe("AppShell NAV_GROUPS — billing group", () => {
     ["/admin/billing/aging", "A/R aging"],
     ["/admin/billing/denials", "Denials & DSO"],
     ["/admin/billing/era", "ERA files"],
+    ["/admin/billing/config", "Config"],
   ];
 
   for (const [href, label] of billingRoutes) {
@@ -136,6 +137,7 @@ describe("AppShell NAV_GROUPS — billing group", () => {
     expect(APPSHELL_SRC).toContain("TrendingDown");
     expect(APPSHELL_SRC).toContain("ClipboardCheck");
     expect(APPSHELL_SRC).toContain("ShieldAlert");
+    expect(APPSHELL_SRC).toContain("SlidersHorizontal");
   });
 });
 

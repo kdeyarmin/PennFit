@@ -53,6 +53,7 @@ import {
   TrendingDown,
   ClipboardCheck,
   ShieldAlert,
+  SlidersHorizontal,
 } from "lucide-react";
 import {
   Sheet,
@@ -364,6 +365,13 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         icon: Wallet,
         matchPrefix: "/admin/billing/era",
         hint: "Upload an 835 to auto-post payer adjudications",
+      },
+      {
+        href: "/admin/billing/config",
+        label: "Config",
+        icon: SlidersHorizontal,
+        matchPrefix: "/admin/billing/config",
+        hint: "Payer profiles, fee schedules, modifier rules, denial codes, claim templates",
       },
     ],
   },

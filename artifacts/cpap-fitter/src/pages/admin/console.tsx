@@ -79,6 +79,12 @@ import { AdminBillingDenialsPage } from "@/pages/admin/admin-billing-denials";
 import { AdminBillingEraPage } from "@/pages/admin/admin-billing-era";
 import { AdminBillingEligibilityPage } from "@/pages/admin/admin-billing-eligibility";
 import { AdminBillingPriorAuthsPage } from "@/pages/admin/admin-billing-prior-auths";
+import { AdminBillingConfigHubPage } from "@/pages/admin/admin-billing-config";
+import { AdminBillingConfigPayersPage } from "@/pages/admin/admin-billing-config-payers";
+import { AdminBillingConfigFeeSchedulesPage } from "@/pages/admin/admin-billing-config-fee-schedules";
+import { AdminBillingConfigModifierRulesPage } from "@/pages/admin/admin-billing-config-modifier-rules";
+import { AdminBillingConfigDenialCodesPage } from "@/pages/admin/admin-billing-config-denial-codes";
+import { AdminBillingConfigClaimTemplatesPage } from "@/pages/admin/admin-billing-config-claim-templates";
 import { AdminNpsPage } from "@/pages/admin/admin-nps";
 import { AdminCustomerDetailPage } from "@/pages/admin/admin-customer-detail";
 import { AdminShopCustomersPage } from "@/pages/admin/admin-shop-customers";
@@ -158,6 +164,30 @@ function AdminConsole() {
           <Route
             path="/admin/billing/prior-auths"
             component={AdminBillingPriorAuthsPage}
+          />
+          <Route
+            path="/admin/billing/config"
+            component={AdminBillingConfigHubPage}
+          />
+          <Route
+            path="/admin/billing/config/payers"
+            component={AdminBillingConfigPayersPage}
+          />
+          <Route
+            path="/admin/billing/config/fee-schedules"
+            component={AdminBillingConfigFeeSchedulesPage}
+          />
+          <Route
+            path="/admin/billing/config/modifier-rules"
+            component={AdminBillingConfigModifierRulesPage}
+          />
+          <Route
+            path="/admin/billing/config/denial-codes"
+            component={AdminBillingConfigDenialCodesPage}
+          />
+          <Route
+            path="/admin/billing/config/claim-templates"
+            component={AdminBillingConfigClaimTemplatesPage}
           />
           <Route path="/admin/patients" component={PatientsPage} />
           <Route path="/admin/patients/:patientId/insurance-claims">
