@@ -51,6 +51,7 @@ import patientTherapyNightsManualRouter from "./admin/patient-therapy-nights-man
 import patientIdentityVerificationsRouter from "./admin/patient-identity-verifications.js";
 import providerPortalRouter from "./provider-portal.js";
 import shopOrderPodRouter from "./admin/shop-order-pod.js";
+import shopOrderPodUploadRouter from "./admin/shop-order-pod-upload.js";
 import integrationsStatusRouter from "./admin/integrations-status.js";
 import integrationsNightlySyncRouter from "./admin/integrations-nightly-sync.js";
 import integrationsWebhooksRouter from "./integrations-webhooks.js";
@@ -72,6 +73,7 @@ import patientPortalInviteRouter from "./admin/patient-portal-invite.js";
 import prescriptionRenewalsRouter from "./admin/prescription-renewals.js";
 import shopProductCompatibilityAdminRouter from "./admin/product-compatibility.js";
 import patientTherapySyncRouter from "./admin/patient-therapy-sync.js";
+import patientResupplySummaryRouter from "./admin/patient-resupply-summary.js";
 import patientTherapyLinksRouter from "./admin/patient-therapy-links.js";
 import patientIntegrationsRouter from "./admin/patient-integrations.js";
 import smartTriggersRouter from "./admin/smart-triggers.js";
@@ -112,6 +114,8 @@ import claimAppealsRouter from "./admin/claim-appeals.js";
 import webhookSubscriptionsRouter from "./admin/webhook-subscriptions.js";
 import webhookEventCatalogRouter from "./admin/webhook-event-catalog.js";
 import billingDirectorRouter from "./admin/billing-director.js";
+import eligibilityRecentRouter from "./admin/eligibility-recent.js";
+import priorAuthQueueRouter from "./admin/prior-auth-queue.js";
 import webhookTestSendRouter from "./admin/webhook-test-send.js";
 import payerFeeSchedulesImportRouter from "./admin/payer-fee-schedules-import.js";
 import systemIntegrationsStatusRouter from "./admin/system-integrations-status.js";
@@ -211,6 +215,11 @@ router.use(shopProductCompatibilityAdminRouter);
 // + API access is in place. Sync endpoint 503s until the chosen
 // adapter's env var is set.
 router.use(patientTherapySyncRouter);
+// /admin/patients/:id/resupply-summary — single round-trip
+// aggregate of the last 60 therapy nights + open smart-trigger
+// events + open compliance alerts + 30-day Medicare adherence
+// math. Source for the Resupply tab on patient detail.
+router.use(patientResupplySummaryRouter);
 // /admin/patients/:id/therapy-links/* — durable per-patient mapping
 // to a therapy-cloud account so the nightly sync worker doesn't
 // need a human re-typing the partner id. See patient-therapy-sync
@@ -353,6 +362,14 @@ router.use(webhookEventCatalogRouter);
 // director loads every morning. Consolidates counts + dollar
 // rollups + denial-rate trend + top payers + webhook health.
 router.use(billingDirectorRouter);
+// /admin/billing/eligibility-recent — system-wide recent
+// eligibility checks (last 30 days by default), feeding the
+// verification team's daily worklist.
+router.use(eligibilityRecentRouter);
+// /admin/billing/prior-auth-queue — system-wide PA queue grouped
+// by at-risk / missed SLA / awaiting decision / expiring soon /
+// drafts. Source for the admin PA director page.
+router.use(priorAuthQueueRouter);
 // /admin/webhook-subscriptions/:id/test-send — fire a synthetic
 // webhook delivery to validate the subscriber endpoint end-to-end.
 router.use(webhookTestSendRouter);
@@ -586,6 +603,11 @@ router.use(providerPortalRouter);
 // /admin/shop/orders/:orderId/pod — proof-of-delivery photo upload
 // stamp for accreditation + dispute resolution.
 router.use(shopOrderPodRouter);
+// /admin/shop/orders/:orderId/pod/* — 3-step upload (presigned PUT
+// → finalize-verifies-bucket → admin-only GET stream + DELETE) for
+// the proof-of-delivery photo. Co-exists with the legacy PATCH
+// above; pattern mirrors prescription-attachment for consistency.
+router.use(shopOrderPodUploadRouter);
 // /admin/integrations/status — vendor-adapter health dashboard.
 router.use(integrationsStatusRouter);
 // /admin/integrations/nightly-sync — manual trigger for the nightly

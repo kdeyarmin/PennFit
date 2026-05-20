@@ -177,7 +177,7 @@ router.get("/shop/me/orders", requireSignedIn, async (req, res) => {
     .schema("resupply")
     .from("shop_orders")
     .select(
-      "id, stripe_session_id, status, amount_total_cents, currency, created_at, paid_at, shipping_address_json, tracking_carrier, tracking_number, shipped_at, delivered_at",
+      "id, stripe_session_id, status, amount_total_cents, currency, created_at, paid_at, shipping_address_json, tracking_carrier, tracking_number, shipped_at, delivered_at, pod_uploaded_at",
     )
     .eq("customer_id", req.userCustomerId!)
     .eq("status", "paid")
@@ -257,6 +257,10 @@ router.get("/shop/me/orders", requireSignedIn, async (req, res) => {
           : null,
       shippedAt: o.shipped_at,
       deliveredAt: o.delivered_at,
+      // Truthy when a delivery photo has been uploaded. The image
+      // bytes come from a separate /shop/orders/:sessionId/pod
+      // endpoint so the list payload stays JSON-only.
+      podUploadedAt: o.pod_uploaded_at,
       // Convenience boolean for the UI: "is the customer still allowed
       // to edit the address?". The same predicate is enforced server-
       // side in the POST handler below, so the UI flag is purely a

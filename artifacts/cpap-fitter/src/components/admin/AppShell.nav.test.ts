@@ -101,6 +101,49 @@ describe("AppShell NAV_GROUPS — accreditation-binder entry (System group)", ()
 });
 
 // ---------------------------------------------------------------------------
+// New nav group: Billing — five entries mounted alongside Orders & Shop.
+//   Headline page: /admin/billing  (Billing Hub)
+//   Sub-pages:     /admin/billing/{ai-queue,aging,denials,era}
+// ---------------------------------------------------------------------------
+describe("AppShell NAV_GROUPS — billing group", () => {
+  it("registers a 'Billing' nav group label", () => {
+    expect(APPSHELL_SRC).toContain('label: "Billing"');
+  });
+
+  const billingRoutes: ReadonlyArray<[string, string]> = [
+    ["/admin/billing", "Billing Hub"],
+    ["/admin/billing/ai-queue", "AI queue"],
+    ["/admin/billing/eligibility", "Eligibility"],
+    ["/admin/billing/prior-auths", "Prior auths"],
+    ["/admin/billing/aging", "A/R aging"],
+    ["/admin/billing/denials", "Denials & DSO"],
+    ["/admin/billing/era", "ERA files"],
+    ["/admin/billing/capped-rentals", "Capped rentals"],
+    ["/admin/billing/config", "Config"],
+  ];
+
+  for (const [href, label] of billingRoutes) {
+    it(`mounts ${label} at ${href}`, () => {
+      expect(APPSHELL_SRC).toContain(`href: "${href}"`);
+      expect(APPSHELL_SRC).toContain(`label: "${label}"`);
+      expect(APPSHELL_SRC).toContain(`matchPrefix: "${href}"`);
+    });
+  }
+
+  it("imports the lucide icons used by the billing group", () => {
+    expect(APPSHELL_SRC).toContain("CircleDollarSign");
+    expect(APPSHELL_SRC).toContain("Wallet");
+    expect(APPSHELL_SRC).toContain("Bot");
+    expect(APPSHELL_SRC).toContain("ListFilter");
+    expect(APPSHELL_SRC).toContain("TrendingDown");
+    expect(APPSHELL_SRC).toContain("ClipboardCheck");
+    expect(APPSHELL_SRC).toContain("ShieldAlert");
+    expect(APPSHELL_SRC).toContain("SlidersHorizontal");
+    expect(APPSHELL_SRC).toContain("CalendarRange");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Regression: pre-existing routes are undisturbed
 // ---------------------------------------------------------------------------
 describe("AppShell NAV_GROUPS — pre-existing routes not removed by this PR", () => {

@@ -3418,7 +3418,23 @@ export interface Database {
       };
     };
     Views: { [_ in never]: never };
-    Functions: { [_ in never]: never };
+    Functions: {
+      validate_payment_allocations: {
+        Args: {
+          p_patient_id: string;
+          p_claim_ids: string[];
+          p_allocations: Array<{
+            claim_id: string;
+            amount_applied_cents: number;
+          }>;
+        };
+        Returns: Array<{
+          id: string;
+          patient_id: string;
+          patient_responsibility_cents: number;
+        }>;
+      };
+    };
     Enums: { [_ in never]: never };
     CompositeTypes: { [_ in never]: never };
   };

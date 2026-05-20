@@ -46,6 +46,15 @@ import {
   ClipboardList,
   Plug,
   Menu,
+  CircleDollarSign,
+  Wallet,
+  Bot,
+  ListFilter,
+  TrendingDown,
+  ClipboardCheck,
+  ShieldAlert,
+  SlidersHorizontal,
+  CalendarRange,
 } from "lucide-react";
 import {
   Sheet,
@@ -307,6 +316,74 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
     ],
   },
   {
+    label: "Billing",
+    items: [
+      {
+        href: "/admin/billing",
+        label: "Billing Hub",
+        icon: CircleDollarSign,
+        matchPrefix: "/admin/billing",
+        hint: "AR director dashboard — KPIs, money in flight, top payers",
+      },
+      {
+        href: "/admin/billing/ai-queue",
+        label: "AI queue",
+        icon: Bot,
+        matchPrefix: "/admin/billing/ai-queue",
+        hint: "Scrubber-blocked + denial-analyzer worklist with auto-resubmit",
+      },
+      {
+        href: "/admin/billing/eligibility",
+        label: "Eligibility",
+        icon: ClipboardCheck,
+        matchPrefix: "/admin/billing/eligibility",
+        hint: "System-wide 270/271 worklist — rejected and inactive coverage rise to the top",
+      },
+      {
+        href: "/admin/billing/prior-auths",
+        label: "Prior auths",
+        icon: ShieldAlert,
+        matchPrefix: "/admin/billing/prior-auths",
+        hint: "Missed / at-risk SLA + auths expiring soon + drafts to submit",
+      },
+      {
+        href: "/admin/billing/aging",
+        label: "A/R aging",
+        icon: ListFilter,
+        matchPrefix: "/admin/billing/aging",
+        hint: "Open claims by 0/30/60/90 day bucket and by payer",
+      },
+      {
+        href: "/admin/billing/denials",
+        label: "Denials & DSO",
+        icon: TrendingDown,
+        matchPrefix: "/admin/billing/denials",
+        hint: "90-day denial rate + 180-day days-to-pay, per payer",
+      },
+      {
+        href: "/admin/billing/era",
+        label: "ERA files",
+        icon: Wallet,
+        matchPrefix: "/admin/billing/era",
+        hint: "Upload an 835 to auto-post payer adjudications",
+      },
+      {
+        href: "/admin/billing/capped-rentals",
+        label: "Capped rentals",
+        icon: CalendarRange,
+        matchPrefix: "/admin/billing/capped-rentals",
+        hint: "13- and 36-month CMS rental cycle tracker + KH/KI/KX modifier rotation",
+      },
+      {
+        href: "/admin/billing/config",
+        label: "Config",
+        icon: SlidersHorizontal,
+        matchPrefix: "/admin/billing/config",
+        hint: "Payer profiles, fee schedules, modifier rules, denial codes, claim templates",
+      },
+    ],
+  },
+  {
     label: "Insights",
     items: [
       {
@@ -504,11 +581,44 @@ function NavItem({
   );
 }
 
-function isLinkActive(location: string, link: NavLink): boolean {
-  if (link.href === "/admin")
+function linkMatchPrefix(link: NavLink): string {
+  return link.matchPrefix ?? link.href;
+}
+
+function linkMatchesLocation(location: string, link: NavLink): boolean {
+  // The Dashboard ("/admin") item is exact-only — the bare /admin
+  // route shouldn't claim every /admin/* subpath.
+  if (link.href === "/admin") {
     return location === "/admin" || location === "/admin/";
-  const prefix = link.matchPrefix ?? link.href;
+  }
+  const prefix = linkMatchPrefix(link);
   return location === prefix || location.startsWith(`${prefix}/`);
+}
+
+/**
+ * Longest-prefix-wins active selection. When a parent ("Billing Hub"
+ * @ /admin/billing) and a child ("AI queue" @ /admin/billing/ai-queue)
+ * both match the current location, only the child should highlight.
+ * We compute the winning href once per render and the per-link
+ * checker compares to it instead of doing its own prefix match.
+ */
+function pickActiveHref(
+  location: string,
+  groups: ReadonlyArray<NavGroup>,
+): string | null {
+  let best: { href: string; specificity: number } | null = null;
+  for (const g of groups) {
+    for (const link of g.items) {
+      if (!linkMatchesLocation(location, link)) continue;
+      // Specificity = length of the prefix that matched; ties go to
+      // the first one seen (NAV_GROUPS order).
+      const specificity = linkMatchPrefix(link).length;
+      if (!best || specificity > best.specificity) {
+        best = { href: link.href, specificity };
+      }
+    }
+  }
+  return best?.href ?? null;
 }
 
 /**
@@ -543,6 +653,9 @@ function SidebarNavBody({
     retry: false,
     enabled: isAdminConfirmed,
   });
+  // Resolve "which nav link is active" once per render so a parent
+  // and a child of the current location don't both highlight.
+  const activeHref = pickActiveHref(location, NAV_GROUPS);
   return (
     <div className="flex flex-col gap-5">
       {NAV_GROUPS.map((group) => (
@@ -557,7 +670,7 @@ function SidebarNavBody({
             <div key={link.href} onClick={onItemClick}>
               <NavItem
                 {...link}
-                isActive={isLinkActive(location, link)}
+                isActive={activeHref === link.href}
                 badgeCount={badgeCountFor(link, counts)}
               />
             </div>

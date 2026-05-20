@@ -72,6 +72,20 @@ import { AdminShopAbandonedCartsPage } from "@/pages/admin/admin-shop-abandoned-
 import { AdminShopBackInStockPage } from "@/pages/admin/admin-shop-back-in-stock";
 import { AdminInsuranceLeadsPage } from "@/pages/admin/admin-insurance-leads";
 import { AdminInsuranceClaimsPage } from "@/pages/admin/admin-insurance-claims";
+import { AdminBillingHubPage } from "@/pages/admin/admin-billing-hub";
+import { AdminBillingAiQueuePage } from "@/pages/admin/admin-billing-ai-queue";
+import { AdminBillingAgingPage } from "@/pages/admin/admin-billing-aging";
+import { AdminBillingDenialsPage } from "@/pages/admin/admin-billing-denials";
+import { AdminBillingEraPage } from "@/pages/admin/admin-billing-era";
+import { AdminBillingEligibilityPage } from "@/pages/admin/admin-billing-eligibility";
+import { AdminBillingPriorAuthsPage } from "@/pages/admin/admin-billing-prior-auths";
+import { AdminBillingConfigHubPage } from "@/pages/admin/admin-billing-config";
+import { AdminBillingConfigPayersPage } from "@/pages/admin/admin-billing-config-payers";
+import { AdminBillingConfigFeeSchedulesPage } from "@/pages/admin/admin-billing-config-fee-schedules";
+import { AdminBillingConfigModifierRulesPage } from "@/pages/admin/admin-billing-config-modifier-rules";
+import { AdminBillingConfigDenialCodesPage } from "@/pages/admin/admin-billing-config-denial-codes";
+import { AdminBillingConfigClaimTemplatesPage } from "@/pages/admin/admin-billing-config-claim-templates";
+import { AdminBillingCappedRentalsPage } from "@/pages/admin/admin-billing-capped-rentals";
 import { AdminNpsPage } from "@/pages/admin/admin-nps";
 import { AdminCustomerDetailPage } from "@/pages/admin/admin-customer-detail";
 import { AdminShopCustomersPage } from "@/pages/admin/admin-shop-customers";
@@ -127,6 +141,59 @@ function AdminConsole() {
           <Route path="/admin/dashboard">
             <Redirect to="/admin" replace />
           </Route>
+          <Route path="/admin/billing" component={AdminBillingHubPage} />
+          <Route
+            path="/admin/billing/ai-queue"
+            component={AdminBillingAiQueuePage}
+          />
+          <Route
+            path="/admin/billing/aging"
+            component={AdminBillingAgingPage}
+          />
+          <Route
+            path="/admin/billing/denials"
+            component={AdminBillingDenialsPage}
+          />
+          <Route
+            path="/admin/billing/era"
+            component={AdminBillingEraPage}
+          />
+          <Route
+            path="/admin/billing/eligibility"
+            component={AdminBillingEligibilityPage}
+          />
+          <Route
+            path="/admin/billing/prior-auths"
+            component={AdminBillingPriorAuthsPage}
+          />
+          <Route
+            path="/admin/billing/config"
+            component={AdminBillingConfigHubPage}
+          />
+          <Route
+            path="/admin/billing/config/payers"
+            component={AdminBillingConfigPayersPage}
+          />
+          <Route
+            path="/admin/billing/config/fee-schedules"
+            component={AdminBillingConfigFeeSchedulesPage}
+          />
+          <Route
+            path="/admin/billing/config/modifier-rules"
+            component={AdminBillingConfigModifierRulesPage}
+          />
+          <Route
+            path="/admin/billing/config/denial-codes"
+            component={AdminBillingConfigDenialCodesPage}
+          />
+          <Route
+            path="/admin/billing/config/claim-templates"
+            component={AdminBillingConfigClaimTemplatesPage}
+          />
+          <Route
+            path="/admin/billing/capped-rentals"
+            component={AdminBillingCappedRentalsPage}
+          />
           <Route path="/admin/patients" component={PatientsPage} />
           <Route path="/admin/patients/:patientId/insurance-claims">
             {(params) => (
