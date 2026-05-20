@@ -19,6 +19,7 @@ import {
 } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
+import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requireAdminOnly } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
@@ -28,6 +29,10 @@ const idParam = z.object({ id: z.string().uuid() });
 router.post(
   "/admin/webhook-subscriptions/:id/test-send",
   requireAdminOnly,
+  adminRateLimit({
+    name: "webhook_subscriptions.test_send",
+    preset: "mutation",
+  }),
   async (req, res) => {
     const parsed = idParam.safeParse(req.params);
     if (!parsed.success) {
