@@ -22,6 +22,7 @@ import {
   ClipboardCheck,
   DollarSign,
   FileText,
+  FolderArchive,
   ShieldAlert,
 } from "lucide-react";
 
@@ -78,6 +79,28 @@ interface StatementRow {
   line_items_json: unknown;
 }
 
+type PacketKind =
+  | "prior_auth_support"
+  | "appeal_support"
+  | "accreditation_audit"
+  | "medical_records_request";
+
+const PACKET_KIND_LABEL: Record<PacketKind, string> = {
+  prior_auth_support: "Prior-auth support",
+  appeal_support: "Appeal support",
+  accreditation_audit: "Accreditation audit",
+  medical_records_request: "Medical records request",
+};
+
+interface DocPacketRow {
+  id: string;
+  kind: PacketKind;
+  page_count: number | null;
+  notes: string | null;
+  generated_by_email: string;
+  created_at: string;
+}
+
 function formatMoney(cents: number | null | undefined): string {
   if (cents == null || Number.isNaN(cents)) return "—";
   return `$${(cents / 100).toLocaleString("en-US", {
@@ -127,6 +150,14 @@ export function PatientBillingTab({ patientId }: { patientId: string }) {
     queryFn: () =>
       getJSON<{ statements: StatementRow[] }>(
         `/admin/patients/${patientId}/billing-statements`,
+      ),
+    staleTime: 30_000,
+  });
+  const packets = useQuery({
+    queryKey: ["patient-doc-packets", patientId],
+    queryFn: () =>
+      getJSON<{ packets: DocPacketRow[] }>(
+        `/admin/patients/${patientId}/documentation-packets`,
       ),
     staleTime: 30_000,
   });
@@ -192,6 +223,69 @@ export function PatientBillingTab({ patientId }: { patientId: string }) {
     },
     onError: (err) => {
       setGenerateError(err instanceof Error ? err.message : "Failed.");
+    },
+  });
+
+  // ── Documentation-packet generator. A minimal picker — choose
+  // the packet kind and compliance window; the backend snapshots
+  // the patient's sleep studies / Rx / DWO catalog at render time
+  // (we send empty include-* arrays so the route falls back to its
+  // "everything available" defaults). Per-document selection lives
+  // on the existing /documents tab; this is for the most-common
+  // case where billing just wants the standard packet.
+  const [packetKind, setPacketKind] = useState<PacketKind>(
+    "prior_auth_support",
+  );
+  const [packetWindow, setPacketWindow] = useState(30);
+  const [packetError, setPacketError] = useState<string | null>(null);
+  const generatePacket = useMutation({
+    mutationFn: async (): Promise<void> => {
+      const res = await fetch(
+        `${BASE}/admin/patients/${patientId}/documentation-packets`,
+        {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            kind: packetKind,
+            includeSleepStudyIds: [],
+            includePrescriptionIds: [],
+            includeDwoDocumentIds: [],
+            includeComplianceWindowDays: packetWindow,
+          }),
+        },
+      );
+      if (!res.ok) {
+        let detail = "";
+        try {
+          const json = (await res.json()) as {
+            error?: string;
+            message?: string;
+          };
+          detail = json.message ?? json.error ?? "";
+        } catch {
+          // ignore
+        }
+        throw new Error(detail || `request failed (${res.status})`);
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `packet-${packetKind}-${patientId.slice(0, 8)}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    },
+    onSuccess: () => {
+      setPacketError(null);
+      void qc.invalidateQueries({
+        queryKey: ["patient-doc-packets", patientId],
+      });
+    },
+    onError: (err) => {
+      setPacketError(err instanceof Error ? err.message : "Failed.");
     },
   });
 
@@ -543,6 +637,129 @@ export function PatientBillingTab({ patientId }: { patientId: string }) {
                   style={{ color: "hsl(var(--ink-3))" }}
                 >
                   #{s.id.slice(0, 8)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
+
+      <Card
+        title={
+          <span className="inline-flex items-center gap-2">
+            <FolderArchive className="h-4 w-4" />
+            Documentation packets
+          </span>
+        }
+        subtitle="Bundle face-to-face, sleep study, Rx, CMN/DWO into one PDF for audits, appeals, or prior-auth submissions"
+      >
+        <div className="flex flex-wrap items-end gap-3 mb-4">
+          <label className="block">
+            <span
+              className="text-xs font-semibold block mb-1"
+              style={{ color: "hsl(var(--ink-3))" }}
+            >
+              Packet kind
+            </span>
+            <select
+              value={packetKind}
+              onChange={(e) => setPacketKind(e.target.value as PacketKind)}
+              disabled={generatePacket.isPending}
+              className="rounded border border-slate-300 px-2 py-1.5 text-sm min-w-[220px]"
+              data-testid="packet-kind-select"
+            >
+              {(Object.keys(PACKET_KIND_LABEL) as PacketKind[]).map((k) => (
+                <option key={k} value={k}>
+                  {PACKET_KIND_LABEL[k]}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="block">
+            <span
+              className="text-xs font-semibold block mb-1"
+              style={{ color: "hsl(var(--ink-3))" }}
+            >
+              Compliance window (days)
+            </span>
+            <input
+              type="number"
+              min={0}
+              max={120}
+              step={1}
+              value={packetWindow}
+              onChange={(e) =>
+                setPacketWindow(
+                  Math.max(0, Math.min(120, Number(e.target.value) || 0)),
+                )
+              }
+              disabled={generatePacket.isPending}
+              className="rounded border border-slate-300 px-2 py-1.5 text-sm w-[80px] tabular-nums"
+              data-testid="packet-window-input"
+            />
+          </label>
+          <Button
+            intent="primary"
+            size="sm"
+            disabled={generatePacket.isPending}
+            isLoading={generatePacket.isPending}
+            onClick={() => generatePacket.mutate()}
+            data-testid="patient-billing-generate-packet"
+          >
+            <FolderArchive className="h-3.5 w-3.5" />
+            {generatePacket.isPending ? "Generating…" : "Generate packet (PDF)"}
+          </Button>
+          {packetError && (
+            <span
+              className="text-xs"
+              style={{ color: "#b91c1c" }}
+              data-testid="patient-billing-packet-error"
+            >
+              {packetError}
+            </span>
+          )}
+        </div>
+
+        {packets.isPending ? (
+          <Spinner label="Loading packets…" />
+        ) : (packets.data?.packets.length ?? 0) === 0 ? (
+          <p
+            className="text-sm py-1"
+            style={{ color: "hsl(var(--ink-3))" }}
+          >
+            No packets generated yet.
+          </p>
+        ) : (
+          <ul
+            className="divide-y -mt-1 -mb-1"
+            style={{ borderColor: "hsl(var(--line-1))" }}
+          >
+            {(packets.data?.packets ?? []).slice(0, 8).map((p) => (
+              <li
+                key={p.id}
+                className="py-2 text-sm flex items-center justify-between gap-3"
+              >
+                <div>
+                  <span
+                    className="font-medium"
+                    style={{ color: "hsl(var(--ink-1))" }}
+                  >
+                    {PACKET_KIND_LABEL[p.kind] ?? p.kind}
+                  </span>
+                  <span
+                    className="ml-2 text-[11px]"
+                    style={{ color: "hsl(var(--ink-3))" }}
+                  >
+                    {new Date(p.created_at).toLocaleString()}
+                    {p.page_count != null && ` · ${p.page_count}pp`}
+                    {` · by ${p.generated_by_email}`}
+                  </span>
+                </div>
+                <span
+                  className="text-[11px]"
+                  style={{ color: "hsl(var(--ink-3))" }}
+                >
+                  #{p.id.slice(0, 8)}
                 </span>
               </li>
             ))}

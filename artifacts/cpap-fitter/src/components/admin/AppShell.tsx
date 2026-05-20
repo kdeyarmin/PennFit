@@ -54,6 +54,7 @@ import {
   ClipboardCheck,
   ShieldAlert,
   SlidersHorizontal,
+  CalendarRange,
 } from "lucide-react";
 import {
   Sheet,
@@ -365,6 +366,13 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         icon: Wallet,
         matchPrefix: "/admin/billing/era",
         hint: "Upload an 835 to auto-post payer adjudications",
+      },
+      {
+        href: "/admin/billing/capped-rentals",
+        label: "Capped rentals",
+        icon: CalendarRange,
+        matchPrefix: "/admin/billing/capped-rentals",
+        hint: "13- and 36-month CMS rental cycle tracker + KH/KI/KX modifier rotation",
       },
       {
         href: "/admin/billing/config",

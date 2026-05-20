@@ -118,6 +118,7 @@ describe("AppShell NAV_GROUPS — billing group", () => {
     ["/admin/billing/aging", "A/R aging"],
     ["/admin/billing/denials", "Denials & DSO"],
     ["/admin/billing/era", "ERA files"],
+    ["/admin/billing/capped-rentals", "Capped rentals"],
     ["/admin/billing/config", "Config"],
   ];
 
@@ -138,6 +139,7 @@ describe("AppShell NAV_GROUPS — billing group", () => {
     expect(APPSHELL_SRC).toContain("ClipboardCheck");
     expect(APPSHELL_SRC).toContain("ShieldAlert");
     expect(APPSHELL_SRC).toContain("SlidersHorizontal");
+    expect(APPSHELL_SRC).toContain("CalendarRange");
   });
 });
 
