@@ -61,7 +61,7 @@ first phase is migration-drift reconciliation** (P0.1/P0.2).
    working agreement: don't grow `patient-detail.tsx`, don't add a new
    bare `fetch()` in an integration client, don't add an admin route
    without `requirePermission`. These are listed in
-   [Working agreements](#working-agreements) below.
+   [Working agreements](`#working-agreements-active-during-all-phases`) below.
 4. **Build on existing infra.** Reuse `withMetrics()`, `requestContext`,
    `logAuditBestEffort`, `csrfHeader()`, `attachSignedIn`,
    `checkLoginRateLimit`. Don't introduce new patterns when an
