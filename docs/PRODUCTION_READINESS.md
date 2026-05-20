@@ -63,12 +63,22 @@ crypto. The only remaining application-layer secret in this family is:
 
 ### Admin allowlist
 
-- [ ] `RESUPPLY_ADMIN_EMAILS` — comma-separated allowlist. At least
-      ONE entry is required; `requireAdmin` 503s on every request
-      when this is empty in `NODE_ENV=production`.
-- [ ] `RESUPPLY_AGENT_EMAILS` — optional allowlist for CSRs.
-- [ ] DB-backed members (added via `/admin/team`) layer on top once
-      migration 0020 is applied.
+The role gate is DB-driven now — `requireAdmin` reads
+`auth.users.role` directly (see
+`artifacts/resupply-api/src/middlewares/requireAdmin.ts:21`,
+"there is no env-var allowlist anymore"). The env vars listed below
+are display-only and do NOT influence authorization.
+
+- [ ] At least one row in `resupply_auth.users` with
+      `role = 'admin'`. Bootstrap via
+      `pnpm --filter @workspace/scripts auth:bootstrap-admin --email=<addr> --role=admin`.
+- [ ] `RESUPPLY_ADMIN_EMAILS` (optional) — populates the
+      "admin allowlist count" tile on `/admin/operations`. Safe to
+      leave empty; auth is unaffected.
+- [ ] `RESUPPLY_AGENT_EMAILS` (optional) — same posture for the CSR
+      allowlist count tile.
+- [ ] Subsequent admins are invited via `/admin/team` from inside the
+      console once the first row exists.
 
 ### Vendors (graceful-degrade if missing — dashboard `/admin/operations`
 
@@ -104,11 +114,12 @@ shows green/red dots per vendor)
 
 ## 2. CORS / proxy
 
-The API has no `credentials: include` CORS policy — it requires
-Bearer tokens, deliberately. For the customer-facing `/account` page
-to talk to `/resupply-api/shop/me`, both must be served from the
-**same origin** OR the proxy in front must forward the auth-provider
-session cookie (`__session`) and respect SameSite=Lax / Secure.
+The API uses the in-house session cookie `pf_session` (set by
+`lib/resupply-auth`, see
+`lib/resupply-auth/src/cookies.ts:7`). For the customer-facing
+`/account` page to talk to `/resupply-api/shop/me`, both must be
+served from the **same origin** OR the proxy in front must forward
+the `pf_session` cookie and respect `SameSite=Lax` / `Secure`.
 
 - [ ] Verify the deployed proxy strips no headers between the
       cpap-fitter and the resupply-api.

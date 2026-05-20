@@ -156,6 +156,11 @@ every WARN should be read and consciously dismissed:
 - Stale-secret warnings (`AUTH_PASSWORD_PEPPER`, the
   `RESUPPLY_MASTER_KEY` family) — silently ignored at runtime; the
   WARN is a prompt to prune the secret store, not a launch gate.
+- `STRIPE_WEBHOOK_SECRET` set alongside the canonical
+  `STRIPE_WEBHOOK_SIGNING_SECRET` — only the latter is consulted
+  by the webhook handler. The legacy name is read in one
+  `/admin/operations` display tile and is otherwise dead. Delete
+  the legacy entry from the secret store after launch.
 
 What the script does NOT cover: it does not hit Postgres, Supabase,
 Stripe, SendGrid, or Twilio. A credential that's correctly shaped but
@@ -300,8 +305,11 @@ launch:
 - [ ] `/admin/operations` shows GREEN dots for Stripe, SendGrid,
       Twilio. Red dots here mean a credential is wrong or missing —
       compare against §2 and rotate as needed.
-- [ ] An out-of-allowlist email signing in lands on the
-      "not authorized" page (not the generic "transient" error).
+- [ ] A user without an `admin`/`agent` row in `auth.users` who tries
+      to reach `/admin` is rejected with 401 ("Sign in required") or
+      403 ("not authorized"), NOT the generic "transient" error.
+      The gate is the DB role — see
+      `artifacts/resupply-api/src/middlewares/requireAdmin.ts`.
 - [ ] One real test purchase via the storefront produces a Stripe
       `checkout.session.completed` webhook and a row in
       `shop_orders` with `status=paid`. (Use a real card with a small

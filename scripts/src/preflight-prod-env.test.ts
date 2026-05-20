@@ -1005,3 +1005,47 @@ describe("SENDGRID_FROM_EMAIL in non-production mode", () => {
     expect(fromEmailWarnLine).toBe(false);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Legacy / commonly-confused env names — STRIPE_WEBHOOK_SECRET
+// ---------------------------------------------------------------------------
+
+describe("STRIPE_WEBHOOK_SECRET vs STRIPE_WEBHOOK_SIGNING_SECRET name confusion", () => {
+  it("fails when STRIPE_WEBHOOK_SECRET (legacy name) is set but the canonical name is unset", () => {
+    // The runtime handler reads STRIPE_WEBHOOK_SIGNING_SECRET only;
+    // setting the legacy display-only name silently breaks webhook
+    // verification on the first Stripe event.
+    const env = withEnv({
+      STRIPE_WEBHOOK_SECRET: "whsec" + "_abc",
+      STRIPE_WEBHOOK_SIGNING_SECRET: undefined,
+    });
+    const { exitCode, stdout } = run(env);
+    expect(exitCode).toBe(1);
+    expect(stdout).toContain("STRIPE_WEBHOOK_SECRET");
+    expect(stdout).toContain("STRIPE_WEBHOOK_SIGNING_SECRET");
+  });
+
+  it("warns (does not fail) when both names are set — only the canonical one matters", () => {
+    const env = withEnv({
+      STRIPE_WEBHOOK_SECRET: "whsec" + "_legacy",
+      STRIPE_WEBHOOK_SIGNING_SECRET: "whsec" + "_canonical",
+    });
+    const { exitCode, stdout } = run(env);
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain("STRIPE_WEBHOOK_SECRET");
+    expect(stdout).toContain("WARN");
+  });
+
+  it("does not flag STRIPE_WEBHOOK_SECRET when it is unset (the happy path)", () => {
+    const env = withEnv({
+      STRIPE_WEBHOOK_SECRET: undefined,
+    });
+    const { exitCode, stdout } = run(env);
+    expect(exitCode).toBe(0);
+    // No record should be made for STRIPE_WEBHOOK_SECRET at all.
+    const legacyMention = stdout
+      .split("\n")
+      .some((l) => /\bSTRIPE_WEBHOOK_SECRET\b/.test(l));
+    expect(legacyMention).toBe(false);
+  });
+});

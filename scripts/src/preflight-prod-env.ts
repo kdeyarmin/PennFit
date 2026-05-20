@@ -12,6 +12,9 @@
 // What it covers (and what it does NOT):
 //   * Presence + shape of every var the resupply-api refuses to boot
 //     without (mirrors artifacts/resupply-api/src/lib/env-check.ts).
+//   * Strict base64 (regex + round-trip) for the two HMAC keys —
+//     mirrors lib/resupply-audit so preflight can't pass values
+//     that boot-time validation would reject.
 //   * Production-only sanity for the vendor keys called out in
 //     docs/runbooks/production-launch.md — sk_live_ vs sk_test_,
 //     https vs http://localhost on every public URL, @example.* on
@@ -21,6 +24,9 @@
 //     AUTH_PASSWORD_PEPPER, migration 0025's RESUPPLY_MASTER_KEY
 //     family). Stale values are silently ignored at runtime; flag
 //     them here so the operator can prune the secret store.
+//   * Common name-confusion: STRIPE_WEBHOOK_SECRET (the
+//     display-only legacy alias) set while STRIPE_WEBHOOK_SIGNING_SECRET
+//     (the runtime-consumed canonical name) is unset.
 //
 // What it does NOT do:
 //   * Hit Postgres, Supabase, Stripe, SendGrid, or Twilio. A
@@ -555,6 +561,33 @@ function runChecks(): void {
     if (/@example\.(com|org|net)$/i.test(value)) {
       record(name, "fail", `points at @example.* (placeholder domain): "${value}"`);
     }
+  }
+
+  // 7. Common name-confusion / legacy aliases.
+  //
+  // STRIPE_WEBHOOK_SECRET vs STRIPE_WEBHOOK_SIGNING_SECRET: an older
+  // `admin/system-integrations-status` field reads `STRIPE_WEBHOOK_SECRET`
+  // for a display tile, but the actual webhook handler in
+  // `artifacts/resupply-api/src/lib/stripe/config.ts:66` reads
+  // `STRIPE_WEBHOOK_SIGNING_SECRET`. An operator who mistakes the
+  // display name for the production name silently breaks webhook
+  // verification on the first event. Flag the mismatch loudly.
+  const legacyStripeWebhook = getTrimmed("STRIPE_WEBHOOK_SECRET");
+  const realStripeWebhook = getTrimmed("STRIPE_WEBHOOK_SIGNING_SECRET");
+  if (legacyStripeWebhook !== undefined && realStripeWebhook === undefined) {
+    record(
+      "STRIPE_WEBHOOK_SECRET",
+      "fail",
+      "set but STRIPE_WEBHOOK_SIGNING_SECRET (the canonical name) is unset — " +
+        "the webhook handler reads only the latter. Rename the env var.",
+    );
+  } else if (legacyStripeWebhook !== undefined && realStripeWebhook !== undefined) {
+    record(
+      "STRIPE_WEBHOOK_SECRET",
+      "warn",
+      "set alongside STRIPE_WEBHOOK_SIGNING_SECRET — only the latter is " +
+        "consulted by the webhook handler. The legacy name can be deleted.",
+    );
   }
 }
 
