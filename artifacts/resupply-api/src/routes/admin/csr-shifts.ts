@@ -10,6 +10,7 @@ import { z } from "zod";
 
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
+import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import {
   requireAdminOnly,
   requirePermission,
@@ -93,7 +94,11 @@ router.get(
   },
 );
 
-router.post("/admin/csr-shifts", requireAdminOnly, async (req, res) => {
+router.post(
+  "/admin/csr-shifts",
+  requireAdminOnly,
+  adminRateLimit({ name: "csr_shifts.create", preset: "mutation" }),
+  async (req, res) => {
   const parsed = createBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: "invalid_body" });
@@ -119,6 +124,7 @@ router.post("/admin/csr-shifts", requireAdminOnly, async (req, res) => {
 router.patch(
   "/admin/csr-shifts/:id",
   requireAdminOnly,
+  adminRateLimit({ name: "csr_shifts.update", preset: "mutation" }),
   async (req, res) => {
     const params = idParam.safeParse(req.params);
     if (!params.success) {

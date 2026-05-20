@@ -27,6 +27,7 @@ import { logAudit } from "@workspace/resupply-audit";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
+import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
@@ -123,6 +124,7 @@ router.post(
   // `conversations.manage` is the operational tier that authors
   // these notes.
   requirePermission("conversations.manage"),
+  adminRateLimit({ name: "shop_customer_notes.create", preset: "mutation" }),
   async (req, res) => {
     const idCheck = userIdParam.safeParse(req.params.userId);
     if (!idCheck.success) {

@@ -10,6 +10,7 @@ import {
 } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
+import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requireAdmin } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
@@ -82,7 +83,11 @@ router.get("/admin/dwo-documents/expiring", requireAdmin, async (req, res) => {
   res.json({ documents: data ?? [] });
 });
 
-router.post("/admin/dwo-documents", requireAdmin, async (req, res) => {
+router.post(
+  "/admin/dwo-documents",
+  requireAdmin,
+  adminRateLimit({ name: "dwo_documents.create", preset: "mutation" }),
+  async (req, res) => {
   const parsed = createBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({
@@ -135,6 +140,7 @@ router.post("/admin/dwo-documents", requireAdmin, async (req, res) => {
 router.delete(
   "/admin/dwo-documents/:id",
   requireAdmin,
+  adminRateLimit({ name: "dwo_documents.delete", preset: "destroy" }),
   async (req, res) => {
     const idParsed = idParam.safeParse(req.params);
     if (!idParsed.success) {

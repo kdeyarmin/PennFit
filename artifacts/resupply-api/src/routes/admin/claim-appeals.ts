@@ -20,6 +20,7 @@ import { renderAppealPdf } from "../../lib/billing/appeal-pdf";
 import { resolveBillingIdentity } from "../../lib/billing/identity-resolver";
 import { logger } from "../../lib/logger";
 import { publishEvent } from "../../lib/webhooks/publisher";
+import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requireAdmin } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
@@ -63,6 +64,7 @@ router.get(
 router.post(
   "/admin/patients/:id/insurance-claims/:claimId/appeal-letter",
   requireAdmin,
+  adminRateLimit({ name: "claim_appeals.create", preset: "sensitive" }),
   async (req, res) => {
     const idParsed = params.safeParse(req.params);
     if (!idParsed.success) {

@@ -16,6 +16,7 @@ import {
 } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
+import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requireAdmin } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
@@ -42,6 +43,10 @@ const params = z.object({ customerId: z.string().uuid() });
 router.patch(
   "/admin/shop/customers/:customerId/membership",
   requireAdmin,
+  adminRateLimit({
+    name: "shop_customers.membership_tier",
+    preset: "sensitive",
+  }),
   async (req, res) => {
     const idParsed = params.safeParse(req.params);
     if (!idParsed.success) {

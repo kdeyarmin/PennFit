@@ -13,6 +13,7 @@ import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { runAccreditationReadiness } from "../../lib/accreditation/readiness-engine";
 import { logger } from "../../lib/logger";
+import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import {
   requireAdmin,
   requireAdminOnly,
@@ -127,6 +128,10 @@ router.get(
 router.post(
   "/admin/accreditation/readiness/run-now",
   requireAdminOnly,
+  adminRateLimit({
+    name: "accreditation.readiness_run_now",
+    preset: "bulk",
+  }),
   async (req, res) => {
     const result = await runAccreditationReadiness();
     if (!result) {
