@@ -29,6 +29,7 @@ import {
 
 import { getIntegrationAdapters } from "../../lib/integrations/registry";
 import { logger } from "../../lib/logger";
+import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
@@ -41,6 +42,10 @@ router.post(
   // CRUD, etc.) so the same roles can drive the workflow end-to-
   // end.
   requirePermission("patients.update"),
+  adminRateLimit({
+    name: "integrations.refresh_supplies",
+    preset: "mutation",
+  }),
   async (req, res) => {
     const idParse = z.string().uuid().safeParse(req.params.id);
     if (!idParse.success) {

@@ -21,6 +21,7 @@ import {
 import { getIntegrationAdapters } from "../../lib/integrations/registry";
 import { persistTherapyNights } from "../../lib/integrations/persist-nights";
 import { logger } from "../../lib/logger";
+import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
@@ -67,6 +68,7 @@ router.post(
   "/admin/integrations/errors/retry",
   // Manual retry trigger — admin-tools tier.
   requirePermission("admin.tools.manage"),
+  adminRateLimit({ name: "integrations.errors_retry", preset: "bulk" }),
   async (req, res) => {
     const parsed = retryBody.safeParse(req.body);
     if (!parsed.success) {
