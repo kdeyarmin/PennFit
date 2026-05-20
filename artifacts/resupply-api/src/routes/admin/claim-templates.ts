@@ -237,7 +237,7 @@ router.patch(
 
 // ── APPLY TEMPLATE TO A DRAFT CLAIM ─────────────────────────────────
 router.post(
-  "/patients/:id/insurance-claims/:claimId/apply-template",
+  "/admin/patients/:id/insurance-claims/:claimId/apply-template",
   requireAdmin,
   adminRateLimit({ name: "claim_templates.apply", preset: "mutation" }),
   async (req, res) => {
