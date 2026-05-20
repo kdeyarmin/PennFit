@@ -9,6 +9,12 @@ classes of misconfiguration (the `assertRequiredEnv` boot check,
 `requireAdmin` failure modes). What's left is the human-in-the-loop
 work an operator has to confirm once per environment.
 
+For the first-launch procedure (the ordered run-once sequence:
+generate keys → set secrets → preflight → migrate → bootstrap admin →
+smoke-test), see [`runbooks/production-launch.md`](./runbooks/production-launch.md).
+The `pnpm --filter @workspace/scripts preflight:prod` script validates
+every required variable below in one pass.
+
 ---
 
 ## 1. Required environment variables
