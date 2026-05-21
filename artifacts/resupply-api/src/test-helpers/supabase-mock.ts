@@ -65,6 +65,14 @@ export interface CapturedFilterCall {
 }
 const filterCalls = new Map<string, CapturedFilterCall[]>();
 
+// Separate FIFO queues for `supabase.schema(...).rpc(fnName, args)`
+// calls. Keyed by function name. Counters and arg-payload lists are
+// kept alongside so tests can assert "the route called fn X N times
+// with args { ... }".
+const rpcQueues = new Map<string, StagedSupabaseResponse[]>();
+const rpcCallCounts = new Map<string, number>();
+const rpcCallArgs = new Map<string, unknown[]>();
+
 function key(table: string, op: SupabaseOp): string {
   return `${table}.${op}`;
 }
@@ -275,6 +283,18 @@ vi.mock("@workspace/resupply-db", async () => {
     getSupabaseServiceRoleClient: () => ({
       schema: () => ({
         from: (table: string) => makeTableBuilder(table),
+        rpc: (fnName: string, args: unknown) => {
+          const prev = rpcCallCounts.get(fnName) ?? 0;
+          rpcCallCounts.set(fnName, prev + 1);
+          const argList = rpcCallArgs.get(fnName) ?? [];
+          argList.push(args);
+          rpcCallArgs.set(fnName, argList);
+          const queue = rpcQueues.get(fnName);
+          if (!queue || queue.length === 0) {
+            return Promise.resolve({ data: null, error: null });
+          }
+          return Promise.resolve(queue.shift()!);
+        },
       }),
     }),
     // Best-effort projection upserts — the route tests don't
@@ -284,6 +304,30 @@ vi.mock("@workspace/resupply-db", async () => {
     tryUpsertPatientLatestMessageSb: vi.fn(async () => true),
   };
 });
+
+/**
+ * Stage one `{ data, error }` envelope for the next call to
+ * `supabase.schema(...).rpc(fnName, ...)`. FIFO across multiple stages
+ * on the same function name.
+ */
+export function stageSupabaseRpcResponse(
+  fnName: string,
+  result: StagedSupabaseResponse,
+): void {
+  const list = rpcQueues.get(fnName) ?? [];
+  list.push(result);
+  rpcQueues.set(fnName, list);
+}
+
+/** How many times the route invoked `.rpc(fnName, ...)` since the last reset. */
+export function getSupabaseRpcCallCount(fnName: string): number {
+  return rpcCallCounts.get(fnName) ?? 0;
+}
+
+/** Argument payloads passed to each `.rpc(fnName, args)` call since the last reset. */
+export function getSupabaseRpcArgs(fnName: string): unknown[] {
+  return rpcCallArgs.get(fnName) ?? [];
+}
 
 export interface SupabaseMockHandle {
   /** Reset all staged responses + call counts. Call from `beforeEach`. */
@@ -340,6 +384,9 @@ export function installSupabaseMock(): SupabaseMockHandle {
       callCounts.clear();
       writePayloads.clear();
       filterCalls.clear();
+      rpcQueues.clear();
+      rpcCallCounts.clear();
+      rpcCallArgs.clear();
     },
     stage(table, op, result) {
       stageSupabaseResponse(table, op, result);
