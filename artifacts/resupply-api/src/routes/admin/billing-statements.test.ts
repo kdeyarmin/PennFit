@@ -24,6 +24,7 @@ import {
   installSupabaseMock,
   stageSupabaseResponse,
 } from "../../test-helpers/supabase-mock";
+import { type MockBillingIdentity } from "./test-helpers/billing-mocks";
 
 // ── Supabase mock (module-scoped) ────────────────────────────────────────────
 const supabaseMock = installSupabaseMock();
@@ -66,19 +67,6 @@ vi.mock("../../lib/billing/statement-pdf", () => ({
   renderStatementPdf: renderStatementPdfMock,
 }));
 
-type MockBillingIdentity = {
-  source: "db" | "env" | "stub";
-  organization: {
-    legal_name: string;
-    phone_e164: string;
-    billing_email: string;
-  } | null;
-  billingProvider: {
-    organizationName: string;
-    npi: string;
-    address: { line1: string; city: string; state: string; zip: string };
-  };
-};
 const resolveBillingIdentityMock = vi.hoisted(() =>
   vi.fn<() => Promise<MockBillingIdentity>>(async () => ({
     source: "db",
