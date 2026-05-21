@@ -46,7 +46,7 @@ export function PortalTab({
   const [busy, setBusy] = useState(false);
 
   // Invite form state
-  const [email, setEmail] = useState(patient.hasEmail ? "" : "");
+  const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [insurancePayer, setInsurancePayer] = useState(
     patient.insurancePayer ?? "",
