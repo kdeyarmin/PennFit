@@ -6,7 +6,7 @@
 //   pending     — show invite status + resend / revoke buttons
 //   active      — show "account active" + revoke button
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import type { PatientDetail } from "@workspace/api-client-react/admin";
 
@@ -44,6 +44,10 @@ export function PortalTab({
   } | null>(null);
   const [inviteLink, setInviteLink] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    setPortalStatus(patient.portalStatus);
+  }, [patient.id, patient.portalStatus]);
 
   // Invite form state
   const [email, setEmail] = useState("");
@@ -159,7 +163,7 @@ export function PortalTab({
   }
 
   return (
-    <div className="space-y-6">
+    <div className="admin-root space-y-6">
       <div className="flex items-center gap-3">
         <h3
           className="text-base font-semibold"
