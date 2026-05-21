@@ -23,6 +23,7 @@ import {
 
 import { bucketizeTrainingExpiry } from "../../lib/compliance/training-expiry";
 import { logger } from "../../lib/logger";
+import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
 
 type StaffTrainingUpdate =
@@ -115,6 +116,7 @@ router.get(
 router.post(
   "/admin/compliance/training-records",
   requirePermission("training.manage"),
+  adminRateLimit({ name: "training_records.create", preset: "mutation" }),
   async (req, res) => {
     const parsed = createBody.safeParse(req.body);
     if (!parsed.success) {
@@ -186,6 +188,7 @@ router.post(
 router.patch(
   "/admin/compliance/training-records/:id",
   requirePermission("training.manage"),
+  adminRateLimit({ name: "training_records.update", preset: "mutation" }),
   async (req, res) => {
     const params = idParam.safeParse(req.params);
     if (!params.success) {

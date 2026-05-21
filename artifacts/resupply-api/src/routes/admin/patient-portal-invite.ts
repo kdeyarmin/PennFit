@@ -42,6 +42,7 @@ import {
 
 import { getAuthDeps } from "../../lib/auth-deps";
 import { logger } from "../../lib/logger";
+import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
 
 type PatientUpdate = Database["resupply"]["Tables"]["patients"]["Update"];
@@ -499,6 +500,7 @@ router.delete(
   "/admin/patients/:id/portal-invite",
   // Revokes an outstanding invite. `patients.update` scope.
   requirePermission("patients.update"),
+  adminRateLimit({ name: "patient_portal_invite.revoke", preset: "destroy" }),
   async (req, res) => {
     const idCheck = patientIdParam.safeParse(req.params.id);
     if (!idCheck.success) {

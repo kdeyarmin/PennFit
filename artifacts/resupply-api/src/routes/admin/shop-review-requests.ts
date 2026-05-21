@@ -40,6 +40,7 @@ import {
   type CommunicationPreferences,
 } from "@workspace/resupply-db";
 
+import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
 import { isInDndWindow } from "../../lib/comm-prefs";
 import { sendReviewRequestEmail } from "../../lib/messaging/review-request-email";
@@ -56,6 +57,7 @@ router.post(
   // `conversations.manage` matches the rest of the customer-touch
   // operational surface.
   requirePermission("conversations.manage"),
+  adminRateLimit({ name: "shop_review_requests.send_due", preset: "bulk" }),
   async (req, res) => {
     const supabase = getSupabaseServiceRoleClient();
 
