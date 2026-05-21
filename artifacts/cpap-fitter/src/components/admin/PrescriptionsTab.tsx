@@ -408,6 +408,15 @@ function PrescriptionAttachmentCell({
           color: isBusy || isDisabled ? "#9ca3af" : "#1d4ed8",
           cursor: isBusy || isDisabled ? "not-allowed" : "pointer",
         }}
+        role="button"
+        tabIndex={isBusy || isDisabled ? -1 : 0}
+        aria-disabled={isBusy || isDisabled}
+        onKeyDown={(e) => {
+          if ((e.key === "Enter" || e.key === " ") && !isBusy && !isDisabled) {
+            e.preventDefault();
+            document.getElementById(inputId)?.click();
+          }
+        }}
       >
         {isBusy ? "Uploading…" : "Attach document"}
       </label>
