@@ -66,8 +66,18 @@ vi.mock("@workspace/resupply-audit", () => ({
   logAudit: vi.fn(async () => undefined),
 }));
 
+type AutoAssignResultLike =
+  | { assigned: true; adminUserId: string; matchedSkillCount: number }
+  | {
+      assigned: false;
+      reason:
+        | "conversation_not_found"
+        | "already_assigned"
+        | "no_required_skills"
+        | "no_eligible_candidate";
+    };
 const maybeAutoAssignMock = vi.hoisted(() =>
-  vi.fn(async () => ({
+  vi.fn<() => Promise<AutoAssignResultLike>>(async () => ({
     assigned: true,
     adminUserId: "u_assignee",
     matchedSkillCount: 1,
@@ -282,9 +292,6 @@ describe("POST /admin/conversations/:id/auto-assign — adminRateLimit integrati
 
   it("returns 409 when conversation is already assigned", async () => {
     stubAdmin();
-    maybeAutoAssignMock.mockResolvedValueOnce({
-      assigned: false,
-      reason: "already_assigned",
     maybeAutoAssignMock.mockResolvedValueOnce({
       assigned: false,
       reason: "already_assigned",

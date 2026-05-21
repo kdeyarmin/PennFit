@@ -98,7 +98,6 @@ beforeEach(() => {
   supabaseMock.reset();
   sendReviewRequestEmailMock.mockClear();
 });
-});
 
 // ── POST /admin/shop/review-requests/send-due ────────────────────────────────
 
