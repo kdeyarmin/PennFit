@@ -20,6 +20,7 @@ import {
 } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
+import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import {
   requireAdmin,
   requireAdminOnly,
@@ -180,6 +181,10 @@ router.get(
 router.post(
   "/admin/hipaa-breach-incidents",
   requireAdminOnly,
+  adminRateLimit({
+    name: "hipaa_breach_incidents.create",
+    preset: "sensitive",
+  }),
   async (req, res) => {
     const parsed = upsertBody.safeParse(req.body);
     if (!parsed.success) {
@@ -240,6 +245,10 @@ router.post(
 router.patch(
   "/admin/hipaa-breach-incidents/:id",
   requireAdminOnly,
+  adminRateLimit({
+    name: "hipaa_breach_incidents.update",
+    preset: "sensitive",
+  }),
   async (req, res) => {
     const idParsed = idParam.safeParse(req.params);
     if (!idParsed.success) {
