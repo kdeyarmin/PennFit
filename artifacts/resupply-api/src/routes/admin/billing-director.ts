@@ -20,13 +20,13 @@ import { Router, type IRouter } from "express";
 
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
-import { requireAdmin } from "../../middlewares/requireAdmin";
+import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
 
 router.get(
   "/admin/billing/director-summary",
-  requireAdmin,
+  requirePermission("reports.read"),
   async (_req, res) => {
     const supabase = getSupabaseServiceRoleClient();
     const now = Date.now();

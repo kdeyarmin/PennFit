@@ -20,8 +20,8 @@ import {
 import { logger } from "../../lib/logger";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import {
-  requireAdmin,
   requireAdminOnly,
+  requirePermission,
 } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
@@ -188,7 +188,10 @@ function orgRowToApi(r: OrgRow) {
   };
 }
 
-router.get("/admin/dme-organization", requireAdmin, async (_req, res) => {
+router.get(
+  "/admin/dme-organization",
+  requirePermission("admin.tools.manage"),
+  async (_req, res) => {
   const supabase = getSupabaseServiceRoleClient();
   const { data: org } = await supabase
     .schema("resupply")

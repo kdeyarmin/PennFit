@@ -25,7 +25,7 @@ import {
 } from "../../lib/coaching/transitions";
 import { logger } from "../../lib/logger";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
-import { requireAdmin, requirePermission } from "../../middlewares/requireAdmin";
+import { requirePermission } from "../../middlewares/requireAdmin";
 
 type CoachingUpdate =
   Database["resupply"]["Tables"]["patient_coaching_plans"]["Update"];
@@ -65,7 +65,7 @@ const patchBody = z
 
 router.get(
   "/admin/coaching-plans",
-  requireAdmin,
+  requirePermission("patients.read"),
   async (req, res) => {
     const showClosed = req.query.include === "closed";
     const supabase = getSupabaseServiceRoleClient();

@@ -10,13 +10,13 @@ import { Router, type IRouter } from "express";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { resolveBillingIdentity, resolveClearinghouse } from "../../lib/billing/identity-resolver";
-import { requireAdmin } from "../../middlewares/requireAdmin";
+import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
 
 router.get(
   "/admin/system/integrations-status",
-  requireAdmin,
+  requirePermission("admin.tools.manage"),
   async (_req, res) => {
     const supabase = getSupabaseServiceRoleClient();
     const env = process.env;
