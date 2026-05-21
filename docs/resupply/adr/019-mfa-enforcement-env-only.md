@@ -39,17 +39,19 @@ operator with Replit secrets-access permission edits the value,
 the API process restarts, and every subsequent
 `/admin/mfa/status` call returns the new mode.
 
-The audit trail for "when did MFA enforcement change?" lives in
-**two** places:
+The audit trail for "when did MFA enforcement change?" lives
+primarily in **Replit secrets history**:
 
 1. **Replit secrets history.** The hosting layer records the
    identity of the operator who edited the secret plus the
    timestamp. This is the canonical chain-of-custody record for
    accreditation surveys.
-2. **Deploy logs.** Every restart of the API logs the resolved
-   enforcement mode at boot (see `getEnforcementMode` callsite).
-   A grep against the deploy log gives the timestamp at which the
-   new value took effect.
+2. **Deploy/restart timing (supporting evidence only).** The
+   current API does **not** log the resolved enforcement mode at
+   boot. Operators may still use deploy/restart timestamps as
+   corroborating evidence for roughly when a changed secret became
+   active, but the authoritative record of the change itself is
+   the hosting layer's secret history.
 
 ## Why env-var-only, not an admin route
 
