@@ -28,6 +28,7 @@ import {
   reviewDispenseReadiness,
 } from "../../lib/billing/dispense-readiness-reviewer";
 import { logger } from "../../lib/logger";
+import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import {
   requireAdmin,
   requireAdminOnly,
@@ -79,6 +80,7 @@ const patchBody = z
 router.post(
   "/admin/patients/:id/dispense-readiness-reviews",
   requireAdmin,
+  adminRateLimit({ name: "dispense_readiness.review", preset: "mutation" }),
   async (req, res) => {
     const idParsed = idParam.safeParse(req.params);
     if (!idParsed.success) {
@@ -227,6 +229,7 @@ router.get(
 router.patch(
   "/admin/patients/:id/dispense-readiness-reviews/:reviewId",
   requireAdminOnly,
+  adminRateLimit({ name: "dispense_readiness.update", preset: "mutation" }),
   async (req, res) => {
     const idParsed = reviewParams.safeParse(req.params);
     if (!idParsed.success) {

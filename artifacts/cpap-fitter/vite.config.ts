@@ -66,6 +66,14 @@ export default defineConfig({
   build: {
     outDir: path.resolve(import.meta.dirname, "dist/public"),
     emptyOutDir: true,
+    // Warn when any chunk crosses 400 kB (uncompressed). The existing
+    // manualChunks function already splits big vendor groups (react,
+    // recharts, framer-motion, lucide, …) into separate chunks, so a
+    // breach typically means a page module or feature bundle grew past
+    // the budget without splitting. Default is 500; we tighten to 400
+    // so the warning fires before main-thread parse cost gets noticeable
+    // on 3G / older Android.
+    chunkSizeWarningLimit: 400,
     rollupOptions: {
       onwarn(warning, warn) {
         if (

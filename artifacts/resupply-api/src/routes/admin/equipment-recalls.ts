@@ -33,6 +33,7 @@ import {
   recallMatchesAsset,
   type RecallSerialMatch,
 } from "../../lib/equipment/recall-match";
+import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requireAdmin, requirePermission } from "../../middlewares/requireAdmin";
 
 type EquipmentRecallUpdate =
@@ -135,7 +136,11 @@ router.get("/admin/equipment-recalls", requireAdmin, async (_req, res) => {
   });
 });
 
-router.post("/admin/equipment-recalls", requirePermission("returns.manage"), async (req, res) => {
+router.post(
+  "/admin/equipment-recalls",
+  requirePermission("returns.manage"),
+  adminRateLimit({ name: "equipment_recalls.create", preset: "sensitive" }),
+  async (req, res) => {
   const parsed = createBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({
@@ -203,6 +208,7 @@ router.post("/admin/equipment-recalls", requirePermission("returns.manage"), asy
 router.patch(
   "/admin/equipment-recalls/:id",
   requirePermission("returns.manage"),
+  adminRateLimit({ name: "equipment_recalls.update", preset: "sensitive" }),
   async (req, res) => {
     const params = idParam.safeParse(req.params);
     if (!params.success) {
@@ -384,6 +390,7 @@ router.get(
 router.post(
   "/admin/equipment-recalls/:id/match-assets",
   requirePermission("returns.manage"),
+  adminRateLimit({ name: "equipment_recalls.match_assets", preset: "bulk" }),
   async (req, res) => {
     const idCheck = z.string().uuid().safeParse(req.params.id);
     if (!idCheck.success) {
@@ -505,6 +512,7 @@ const remediationBody = z
 router.post(
   "/admin/equipment-recalls/:id/remediation",
   requirePermission("returns.manage"),
+  adminRateLimit({ name: "equipment_recalls.remediation", preset: "mutation" }),
   async (req, res) => {
     const idCheck = z.string().uuid().safeParse(req.params.id);
     if (!idCheck.success) {

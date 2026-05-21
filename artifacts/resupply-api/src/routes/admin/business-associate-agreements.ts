@@ -23,6 +23,7 @@ import {
 } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
+import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import {
   requireAdminOnly,
   requirePermission,
@@ -138,6 +139,10 @@ router.post(
   // BAA insertion is a procurement / compliance-officer action; gate
   // tighter than general compliance.read.
   requirePermission("compliance.resolve"),
+  adminRateLimit({
+    name: "business_associate_agreements.create",
+    preset: "sensitive",
+  }),
   async (req, res) => {
     const parsed = createBody.safeParse(req.body);
     if (!parsed.success) {
@@ -201,6 +206,10 @@ router.post(
 router.patch(
   "/admin/compliance/business-associate-agreements/:id",
   requirePermission("compliance.resolve"),
+  adminRateLimit({
+    name: "business_associate_agreements.update",
+    preset: "sensitive",
+  }),
   async (req, res) => {
     const params = idParam.safeParse(req.params);
     if (!params.success) {
@@ -276,6 +285,10 @@ router.patch(
 router.delete(
   "/admin/compliance/business-associate-agreements/:id",
   requireAdminOnly,
+  adminRateLimit({
+    name: "business_associate_agreements.delete",
+    preset: "destroy",
+  }),
   async (req, res) => {
     const params = idParam.safeParse(req.params);
     if (!params.success) {

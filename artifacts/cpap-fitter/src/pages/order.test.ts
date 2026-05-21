@@ -176,3 +176,32 @@ describe("formatUsPhone — boundary: 10-digit truncation", () => {
     expect(formatUsPhone("9991234567890")).toBe("(999) 123-4567");
   });
 });
+
+// ---------------------------------------------------------------------------
+// PR change: role="alert" removed from consent-to-contact error paragraph
+// ---------------------------------------------------------------------------
+// The consentToContact error message element had role="alert" stripped in
+// this PR. We verify the structural change so the attribute doesn't
+// inadvertently creep back in.
+
+describe("order — consentToContact error paragraph does not have role=alert", () => {
+  it("still renders the consentToContact error conditionally", () => {
+    // The conditional rendering block must still be present.
+    expect(SRC).toContain("errors.consentToContact");
+  });
+
+  it("consentToContact error paragraph no longer carries role=alert", () => {
+    const idx = SRC.indexOf("errors.consentToContact.message");
+    expect(idx).toBeGreaterThan(-1);
+    // Inspect the paragraph element that wraps the error message.
+    const elementContext = SRC.slice(idx - 150, idx + 50);
+    expect(elementContext).not.toContain('role="alert"');
+  });
+
+  it("consentToContact error paragraph still has the destructive text style", () => {
+    const idx = SRC.indexOf("errors.consentToContact.message");
+    expect(idx).toBeGreaterThan(-1);
+    const elementContext = SRC.slice(idx - 150, idx + 50);
+    expect(elementContext).toContain("text-destructive");
+  });
+});
