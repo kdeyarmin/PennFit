@@ -79,10 +79,11 @@ When extracting a tab / section / modal:
 6. **`role="alert"` on transient error displays** as you encounter
    them during the move — the moved file is the right place to
    apply the storefront a11y convention (PR #260, #273).
-7. **Zero behavior change in the same PR as the extract.** If you
-   want to refactor logic or add a feature, do it in a follow-up
-   PR after the extract lands — the extract diff stays clean and
-   reviewable as "this is purely a move."
+7. **Otherwise, zero behavior change in the same PR as the
+   extract.** Aside from the a11y-only `role="alert"` markup above,
+   if you want to refactor logic or add a feature, do it in a
+   follow-up PR after the extract lands — the extract diff stays
+   clean and reviewable as "this is purely a move."
 
 ### Naming
 
