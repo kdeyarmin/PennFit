@@ -119,3 +119,169 @@ describe("admin-shop-returns — pre-existing action buttons not removed", () =>
     expect(SRC).toContain("replaceMut");
   });
 });
+
+// ---------------------------------------------------------------------------
+// useUrlState migration (PR change: replace bespoke tab-URL sync with hook)
+// ---------------------------------------------------------------------------
+
+describe("admin-shop-returns — useUrlState import", () => {
+  it("imports useUrlState from the hooks module", () => {
+    expect(SRC).toContain('from "@/hooks/use-url-state"');
+  });
+
+  it("names useUrlState in the import statement", () => {
+    expect(SRC).toContain("useUrlState");
+  });
+});
+
+describe("admin-shop-returns — custom URL helpers removed", () => {
+  it("no longer defines a standalone readTabFromUrl function", () => {
+    expect(SRC).not.toContain("readTabFromUrl");
+  });
+
+  it("no longer has inline params.delete / params.set URL-building inside the component", () => {
+    // The bespoke setTab function built URLs inline; that logic now lives in
+    // useUrlState. The component source should not contain the old local setTab
+    // arrow that called setTabState.
+    expect(SRC).not.toContain("setTabState");
+  });
+});
+
+describe("admin-shop-returns — useUrlState call-site configuration", () => {
+  it('uses key "tab" for the URL param', () => {
+    expect(SRC).toContain('key: "tab"');
+  });
+
+  it('uses "open" as the defaultValue', () => {
+    expect(SRC).toContain('defaultValue: "open"');
+  });
+
+  it("passes isTab as the isAllowed predicate", () => {
+    expect(SRC).toContain("isAllowed: isTab");
+  });
+
+  it("destructures [tab, setTab] from useUrlState", () => {
+    expect(SRC).toContain("tab, setTab");
+  });
+});
+
+describe("admin-shop-returns — TAB_IDS and isTab predicate (new additions)", () => {
+  it("defines TAB_IDS as a ReadonlySet<string>", () => {
+    // Updated from ReadonlySet<Tab> to ReadonlySet<string> in this PR.
+    expect(SRC).toContain("ReadonlySet<string>");
+    expect(SRC).toContain("TAB_IDS");
+  });
+
+  it("defines isTab as a type-predicate (v is Tab)", () => {
+    expect(SRC).toContain("v is Tab");
+    expect(SRC).toContain("isTab");
+  });
+
+  it("derives TAB_IDS from the TABS array", () => {
+    expect(SRC).toContain("TABS.map");
+    expect(SRC).toContain("TAB_IDS");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Pure-logic re-implementation of isTab (verbatim from source)
+// ---------------------------------------------------------------------------
+//
+// Source:
+//   type Tab = ReturnStatus | "all" | "open";
+//   const TABS = [
+//     { id: "open" }, { id: "requested" }, { id: "approved" },
+//     { id: "shipped_back" }, { id: "received" }, { id: "refunded" },
+//     { id: "replaced" }, { id: "rejected" }, { id: "all" },
+//   ];
+//   const TAB_IDS: ReadonlySet<string> = new Set(TABS.map((t) => t.id));
+//   const isTab = (v: string): v is Tab => TAB_IDS.has(v);
+
+type ReturnTab =
+  | "open"
+  | "requested"
+  | "approved"
+  | "shipped_back"
+  | "received"
+  | "refunded"
+  | "replaced"
+  | "rejected"
+  | "all";
+
+const TABS_RETURNS: ReadonlyArray<{ id: ReturnTab }> = [
+  { id: "open" },
+  { id: "requested" },
+  { id: "approved" },
+  { id: "shipped_back" },
+  { id: "received" },
+  { id: "refunded" },
+  { id: "replaced" },
+  { id: "rejected" },
+  { id: "all" },
+];
+
+const TAB_IDS_RETURNS: ReadonlySet<string> = new Set(
+  TABS_RETURNS.map((t) => t.id),
+);
+const isTabReturns = (v: string): v is ReturnTab =>
+  TAB_IDS_RETURNS.has(v);
+
+describe("admin-shop-returns — isTab predicate (valid inputs)", () => {
+  const valid: ReturnTab[] = [
+    "open",
+    "requested",
+    "approved",
+    "shipped_back",
+    "received",
+    "refunded",
+    "replaced",
+    "rejected",
+    "all",
+  ];
+
+  it.each(valid)('accepts "%s"', (t) => {
+    expect(isTabReturns(t)).toBe(true);
+  });
+});
+
+describe("admin-shop-returns — isTab predicate (invalid inputs)", () => {
+  it("rejects an empty string", () => {
+    expect(isTabReturns("")).toBe(false);
+  });
+
+  it("rejects an unknown status value", () => {
+    expect(isTabReturns("pending")).toBe(false);
+    expect(isTabReturns("closed_out")).toBe(false);
+  });
+
+  it("rejects wrong casing of a valid tab", () => {
+    expect(isTabReturns("Open")).toBe(false);
+    expect(isTabReturns("APPROVED")).toBe(false);
+    expect(isTabReturns("Shipped_Back")).toBe(false);
+  });
+
+  it("rejects a partial match (prefix of a valid tab id)", () => {
+    expect(isTabReturns("ship")).toBe(false);
+    expect(isTabReturns("req")).toBe(false);
+  });
+
+  it("rejects whitespace-padded versions of valid values", () => {
+    expect(isTabReturns(" open")).toBe(false);
+    expect(isTabReturns("open ")).toBe(false);
+  });
+});
+
+describe("admin-shop-returns — TAB_IDS covers exactly 9 tabs", () => {
+  it("has size 9", () => {
+    expect(TAB_IDS_RETURNS.size).toBe(9);
+  });
+
+  it("TABS array has 9 entries", () => {
+    expect(TABS_RETURNS).toHaveLength(9);
+  });
+
+  it("includes the synthetic 'open' and 'all' aggregate tabs", () => {
+    expect(isTabReturns("open")).toBe(true);
+    expect(isTabReturns("all")).toBe(true);
+  });
+});
