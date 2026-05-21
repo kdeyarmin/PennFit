@@ -1,18 +1,18 @@
-// Tests for pages/admin/admin-shop-reviews.tsx — useUrlState migration
+// Tests for pages/admin/admin-shop-reviews.tsx
 //
-// PR change: replaced useState<Tab> with useUrlState. A new TAB_IDS set and
-// isTab predicate were added to validate URL params.
+// PR change: removed useUrlState hook, removed TAB_IDS/isTab predicate, and
+// replaced the URL-persisted tab state with a plain useState<Tab>("pending").
 //
 // The component uses React + @tanstack/react-query which cannot be rendered
 // in the vitest node environment without jsdom. We use two complementary
 // strategies:
 //
-//   1. Static source analysis — readFileSync + SRC.toContain() assertions to
-//      verify structural invariants (import, hook call site, config values,
-//      data-testid attributes).
+//   1. Static source analysis — readFileSync + SRC.toContain() / not.toContain()
+//      assertions to verify structural invariants that changed in this PR.
 //
-//   2. Pure-logic re-implementation — isTab is re-implemented verbatim
-//      from the source so its boundary behaviour can be tested exhaustively.
+//   2. Pure-logic re-implementation — the TABS array and isTab logic are
+//      re-implemented verbatim so their boundary behaviour can be tested
+//      exhaustively without React.
 
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -26,84 +26,128 @@ const SRC = readFileSync(
 );
 
 // ---------------------------------------------------------------------------
-// Import checks
+// PR change: useUrlState removed — now uses plain useState
 // ---------------------------------------------------------------------------
 
-describe("admin-shop-reviews — useUrlState import", () => {
-  it("imports useUrlState from the hooks module", () => {
-    expect(SRC).toContain('from "@/hooks/use-url-state"');
+describe("admin-shop-reviews — useUrlState removed in this PR", () => {
+  it("does not import useUrlState", () => {
+    expect(SRC).not.toContain("useUrlState");
   });
 
-  it("names useUrlState in the import statement", () => {
-    expect(SRC).toContain("useUrlState");
+  it("does not import from @/hooks/use-url-state", () => {
+    expect(SRC).not.toContain("use-url-state");
+  });
+
+  it("no longer defines TAB_IDS", () => {
+    expect(SRC).not.toContain("TAB_IDS");
+  });
+
+  it("no longer defines an isTab predicate", () => {
+    expect(SRC).not.toContain("isTab");
   });
 });
 
 // ---------------------------------------------------------------------------
-// useUrlState call-site configuration
+// useState replaces useUrlState
 // ---------------------------------------------------------------------------
 
-describe("admin-shop-reviews — useUrlState call site", () => {
-  it('uses key "tab" for the URL param', () => {
-    expect(SRC).toContain('key: "tab"');
+describe("admin-shop-reviews — useState with 'pending' default", () => {
+  it('uses useState<Tab>("pending") for tab state', () => {
+    expect(SRC).toContain('useState<Tab>("pending")');
   });
 
-  it('uses "pending" as the defaultValue', () => {
-    expect(SRC).toContain('defaultValue: "pending"');
+  it("imports useState from react", () => {
+    expect(SRC).toContain("useState");
   });
 
-  it("passes isTab as the isAllowed predicate", () => {
-    expect(SRC).toContain("isAllowed: isTab");
-  });
-
-  it("destructures [tab, setTab] from useUrlState", () => {
-    expect(SRC).toContain("tab, setTab");
+  it('does not hard-code defaultValue: "pending" in a useUrlState config object', () => {
+    // Ensure the old hook config is gone.
+    expect(SRC).not.toContain("defaultValue:");
   });
 });
 
 // ---------------------------------------------------------------------------
-// TAB_IDS set and isTab predicate
+// TABS array contents (structure should be unchanged)
 // ---------------------------------------------------------------------------
-
-describe("admin-shop-reviews — TAB_IDS set structure", () => {
-  it("defines TAB_IDS as a ReadonlySet<string>", () => {
-    expect(SRC).toContain("ReadonlySet<string>");
-    expect(SRC).toContain("TAB_IDS");
-  });
-
-  it("derives TAB_IDS from the TABS array using map", () => {
-    expect(SRC).toContain("TABS.map");
-    expect(SRC).toContain("TAB_IDS");
-  });
-
-  it("defines isTab as a type-predicate returning v is Tab", () => {
-    expect(SRC).toContain("v is Tab");
-    expect(SRC).toContain("isTab");
-  });
-});
 
 describe("admin-shop-reviews — TABS array contents", () => {
   const expectedTabs = ["pending", "approved", "rejected", "all"];
 
   for (const t of expectedTabs) {
-    it(`TABS includes a tab with id "${t}"`, () => {
+    it(`TABS includes tab id "${t}"`, () => {
       expect(SRC).toContain(`"${t}"`);
     });
   }
+
+  it('includes the "all" aggregate tab for read-only audit view', () => {
+    expect(SRC).toContain('"all"');
+  });
 });
 
 // ---------------------------------------------------------------------------
-// Pure-logic re-implementation of isTab (verbatim from source)
+// ARIA / accessibility markup (unchanged by the PR)
+// ---------------------------------------------------------------------------
+
+describe("admin-shop-reviews — ARIA tab roles", () => {
+  it('has role="tablist" on the tab container', () => {
+    expect(SRC).toContain('role="tablist"');
+  });
+
+  it('has role="tab" on each tab button', () => {
+    expect(SRC).toContain('role="tab"');
+  });
+
+  it("sets aria-selected based on the active tab", () => {
+    expect(SRC).toContain("aria-selected");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// data-testid attributes
+// ---------------------------------------------------------------------------
+
+describe("admin-shop-reviews — data-testid attributes", () => {
+  it('has data-testid="admin-shop-reviews-page" on the root element', () => {
+    expect(SRC).toContain('data-testid="admin-shop-reviews-page"');
+  });
+
+  it('uses "shop-reviews-tab-" prefix in the tab button data-testid', () => {
+    expect(SRC).toContain("shop-reviews-tab-");
+  });
+
+  it("derives the tab data-testid from the tab id dynamically", () => {
+    // Template literal interpolates t.id.
+    expect(SRC).toMatch(/shop-reviews-tab-.*t\.id/s);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// XSS defense (unchanged)
+// ---------------------------------------------------------------------------
+
+describe("admin-shop-reviews — XSS defense", () => {
+  it("does not use dangerouslySetInnerHTML for review bodies", () => {
+    expect(SRC).not.toContain("dangerouslySetInnerHTML");
+  });
+
+  it("documents the plain-text rendering rationale in the file header", () => {
+    expect(SRC).toContain("plain text");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Pure-logic re-implementation: TABS array and tab-membership check
+// (verbatim from source)
 // ---------------------------------------------------------------------------
 //
 // Source:
 //   type Tab = ReviewStatus | "all";
-//   const TABS = [
-//     { id: "pending", ... }, { id: "approved", ... },
-//     { id: "rejected", ... }, { id: "all", ... },
+//   const TABS: ReadonlyArray<{ id: Tab; label: string }> = [
+//     { id: "pending", label: "Pending" },
+//     { id: "approved", label: "Approved" },
+//     { id: "rejected", label: "Rejected" },
+//     { id: "all", label: "All" },
 //   ];
-//   const TAB_IDS: ReadonlySet<string> = new Set(TABS.map((t) => t.id));
-//   const isTab = (v: string): v is Tab => TAB_IDS.has(v);
 
 type ReviewTab = "pending" | "approved" | "rejected" | "all";
 
@@ -114,119 +158,92 @@ const TABS_REVIEWS: ReadonlyArray<{ id: ReviewTab; label: string }> = [
   { id: "all", label: "All" },
 ];
 
-const TAB_IDS_REVIEWS: ReadonlySet<string> = new Set(
-  TABS_REVIEWS.map((t) => t.id),
-);
-const isTabReviews = (v: string): v is ReviewTab => TAB_IDS_REVIEWS.has(v);
+// Re-implement the membership check without a Set (the source no longer has isTab).
+const isReviewTab = (v: string): v is ReviewTab =>
+  TABS_REVIEWS.some((t) => t.id === v);
 
-describe("admin-shop-reviews — isTab predicate (valid inputs)", () => {
-  const valid: ReviewTab[] = ["pending", "approved", "rejected", "all"];
-
-  it.each(valid)('accepts "%s"', (t) => {
-    expect(isTabReviews(t)).toBe(true);
-  });
-});
-
-describe("admin-shop-reviews — isTab predicate (invalid inputs)", () => {
-  it("rejects an empty string", () => {
-    expect(isTabReviews("")).toBe(false);
-  });
-
-  it("rejects an entirely unknown value", () => {
-    expect(isTabReviews("open")).toBe(false);
-    expect(isTabReviews("moderated")).toBe(false);
-  });
-
-  it("rejects wrong casing of a valid tab", () => {
-    expect(isTabReviews("Pending")).toBe(false);
-    expect(isTabReviews("APPROVED")).toBe(false);
-    expect(isTabReviews("All")).toBe(false);
-  });
-
-  it("rejects a partial match (prefix of a valid tab)", () => {
-    expect(isTabReviews("pend")).toBe(false);
-    expect(isTabReviews("appro")).toBe(false);
-    expect(isTabReviews("al")).toBe(false);
-  });
-
-  it("rejects whitespace-padded versions of valid values", () => {
-    expect(isTabReviews(" pending")).toBe(false);
-    expect(isTabReviews("pending ")).toBe(false);
-  });
-
-  it("rejects a value that is a superset of a valid tab", () => {
-    expect(isTabReviews("pending_review")).toBe(false);
-    expect(isTabReviews("all_reviews")).toBe(false);
-  });
-});
-
-describe("admin-shop-reviews — TAB_IDS covers exactly 4 tabs", () => {
-  it("has size 4", () => {
-    expect(TAB_IDS_REVIEWS.size).toBe(4);
-  });
-
-  it("TABS array has 4 entries", () => {
+describe("admin-shop-reviews — TABS array structure", () => {
+  it("has exactly 4 tabs", () => {
     expect(TABS_REVIEWS).toHaveLength(4);
   });
 
-  it("includes the synthetic 'all' aggregate tab", () => {
-    expect(isTabReviews("all")).toBe(true);
+  it("lists tabs in pending → approved → rejected → all order", () => {
+    const ids = TABS_REVIEWS.map((t) => t.id);
+    expect(ids).toEqual(["pending", "approved", "rejected", "all"]);
   });
 
-  it("all three ReviewStatus values are included", () => {
+  it("includes the synthetic 'all' aggregate tab", () => {
+    expect(isReviewTab("all")).toBe(true);
+  });
+
+  it("all three ReviewStatus values are present", () => {
     const statuses: ReviewTab[] = ["pending", "approved", "rejected"];
     for (const s of statuses) {
-      expect(isTabReviews(s)).toBe(true);
+      expect(isReviewTab(s)).toBe(true);
     }
   });
 });
 
-// ---------------------------------------------------------------------------
-// data-testid attributes used by the tab buttons
-// ---------------------------------------------------------------------------
+describe("admin-shop-reviews — tab membership (valid inputs)", () => {
+  it.each(["pending", "approved", "rejected", "all"] as ReviewTab[])(
+    'recognises "%s" as a valid tab',
+    (t) => {
+      expect(isReviewTab(t)).toBe(true);
+    },
+  );
+});
 
-describe("admin-shop-reviews — tab button data-testid attributes", () => {
-  it("uses a template-literal data-testid with the shop-reviews-tab- prefix", () => {
-    // Source uses: data-testid={`shop-reviews-tab-${t.id}`}
-    expect(SRC).toContain("shop-reviews-tab-");
+describe("admin-shop-reviews — tab membership (invalid inputs)", () => {
+  it("rejects an empty string", () => {
+    expect(isReviewTab("")).toBe(false);
   });
 
-  it("data-testid is dynamically derived from the tab id", () => {
-    // The template literal interpolates t.id so each tab gets a unique testid.
-    expect(SRC).toMatch(/shop-reviews-tab-.*t\.id/s);
+  it("rejects an entirely unknown value", () => {
+    expect(isReviewTab("open")).toBe(false);
+    expect(isReviewTab("moderated")).toBe(false);
+  });
+
+  it("rejects wrong casing of a valid tab", () => {
+    expect(isReviewTab("Pending")).toBe(false);
+    expect(isReviewTab("APPROVED")).toBe(false);
+    expect(isReviewTab("All")).toBe(false);
+  });
+
+  it("rejects a partial match", () => {
+    expect(isReviewTab("pend")).toBe(false);
+    expect(isReviewTab("appro")).toBe(false);
+    expect(isReviewTab("al")).toBe(false);
+  });
+
+  it("rejects whitespace-padded versions of valid values", () => {
+    expect(isReviewTab(" pending")).toBe(false);
+    expect(isReviewTab("pending ")).toBe(false);
+  });
+
+  it("rejects a superset of a valid tab name", () => {
+    expect(isReviewTab("pending_review")).toBe(false);
+    expect(isReviewTab("all_reviews")).toBe(false);
   });
 });
 
-describe("admin-shop-reviews — root page data-testid", () => {
-  it('has data-testid="admin-shop-reviews-page" on the root element', () => {
-    expect(SRC).toContain('data-testid="admin-shop-reviews-page"');
-  });
-});
-
 // ---------------------------------------------------------------------------
-// Regression: tab strip uses ARIA tablist/tab roles
+// Regression: moderation API functions still imported
 // ---------------------------------------------------------------------------
 
-describe("admin-shop-reviews — ARIA tab roles", () => {
-  it('includes role="tablist" on the tab container', () => {
-    expect(SRC).toContain('role="tablist"');
+describe("admin-shop-reviews — API imports unchanged", () => {
+  it("imports approveAdminShopReview", () => {
+    expect(SRC).toContain("approveAdminShopReview");
   });
 
-  it('includes role="tab" on each tab button', () => {
-    expect(SRC).toContain('role="tab"');
+  it("imports rejectAdminShopReview", () => {
+    expect(SRC).toContain("rejectAdminShopReview");
   });
 
-  it("sets aria-selected based on active tab", () => {
-    expect(SRC).toContain("aria-selected");
+  it("imports unrejectAdminShopReview", () => {
+    expect(SRC).toContain("unrejectAdminShopReview");
   });
-});
 
-// ---------------------------------------------------------------------------
-// Security: review body rendered as plain text (not innerHTML)
-// ---------------------------------------------------------------------------
-
-describe("admin-shop-reviews — XSS defense", () => {
-  it("does not use dangerouslySetInnerHTML for review body", () => {
-    expect(SRC).not.toContain("dangerouslySetInnerHTML");
+  it("imports listAdminShopReviews", () => {
+    expect(SRC).toContain("listAdminShopReviews");
   });
 });
