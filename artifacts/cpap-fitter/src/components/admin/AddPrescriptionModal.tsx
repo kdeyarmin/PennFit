@@ -124,7 +124,7 @@ export function AddPrescriptionModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      className="admin-root fixed inset-0 z-50 flex items-center justify-center p-4"
       style={{ backgroundColor: "rgba(10,31,68,0.45)" }}
       onClick={() => !isPending && onClose()}
       role="dialog"
