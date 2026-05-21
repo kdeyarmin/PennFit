@@ -45,6 +45,7 @@ import {
   type ShopAbandonedCartItem,
 } from "@workspace/resupply-db";
 
+import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requireAdmin, requirePermission } from "../../middlewares/requireAdmin";
 import { sendCartAbandonmentEmail } from "../../lib/cart-abandonment/send-cart-abandonment-email";
 import { isInDndWindow } from "../../lib/comm-prefs";
@@ -104,6 +105,7 @@ router.get("/admin/shop/abandoned-carts", requireAdmin, async (_req, res) => {
 router.post(
   "/admin/shop/abandoned-carts/send-due",
   requirePermission("bulk_campaigns.send"),
+  adminRateLimit({ name: "abandoned_carts.send_due", preset: "bulk" }),
   async (req, res) => {
     const supabase = getSupabaseServiceRoleClient();
     const cutoffIso = new Date(Date.now() - NUDGE_WAIT_MS).toISOString();
