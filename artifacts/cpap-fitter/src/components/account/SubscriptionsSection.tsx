@@ -20,7 +20,7 @@
 // state to keep those buttons from racing each other, while the
 // cadence-change flow tracks its own submitting state.
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import {
   AlertCircle,
@@ -84,6 +84,9 @@ export function SubscriptionsSection({
     string | null
   >(null);
   const [cadenceSubmitting, setCadenceSubmitting] = useState(false);
+  // Tracks which subscription's options fetch is in flight so stale
+  // responses from a previous open can't overwrite the current dialog.
+  const cadenceRequestSubIdRef = useRef<string | null>(null);
 
   // Cancel-intercept dialog — offers "Pause instead" before letting
   // the customer follow through with a hard cancel. Holds the
@@ -261,14 +264,17 @@ export function SubscriptionsSection({
     setCadenceOptions(null);
     setCadenceLoadError(null);
     setCadenceSelectedPriceId(null);
+    cadenceRequestSubIdRef.current = sub.id;
     try {
       const r = await fetchShopCadenceOptions(sub.id);
+      if (cadenceRequestSubIdRef.current !== sub.id) return;
       setCadenceOptions(r.options);
       // Default-select the current cadence so the radio group has
       // a chosen value immediately (better than empty selection).
       const current = r.options.find((o) => o.isCurrent);
       if (current) setCadenceSelectedPriceId(current.priceId);
     } catch (err: unknown) {
+      if (cadenceRequestSubIdRef.current !== sub.id) return;
       setCadenceLoadError(err instanceof Error ? err.message : String(err));
       setCadenceOptions([]);
     }
@@ -276,6 +282,7 @@ export function SubscriptionsSection({
 
   function closeCadenceDialog() {
     if (cadenceSubmitting) return;
+    cadenceRequestSubIdRef.current = null;
     setCadenceSub(null);
     setCadenceOptions(null);
     setCadenceLoadError(null);
