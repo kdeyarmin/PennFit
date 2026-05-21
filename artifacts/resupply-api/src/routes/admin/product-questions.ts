@@ -24,6 +24,7 @@ import {
   parseCompositeCursor,
 } from "../../lib/cursor";
 import { logger } from "../../lib/logger";
+import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
@@ -151,6 +152,7 @@ router.patch(
   "/admin/shop/product-questions/:id",
   // Answer / approve / reject — same scope as the read above.
   requirePermission("conversations.manage"),
+  adminRateLimit({ name: "product_questions.moderate", preset: "mutation" }),
   async (req, res) => {
     const idCheck = idParam.safeParse(req.params.id);
     if (!idCheck.success) {

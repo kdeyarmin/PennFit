@@ -22,6 +22,7 @@ import { z } from "zod";
 
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
+import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
 import {
   encodeCompositeCursor,
@@ -160,6 +161,7 @@ router.get("/admin/shop/reviews", requirePermission("conversations.manage"), asy
 router.post(
   "/admin/shop/reviews/:id/approve",
   requirePermission("conversations.manage"),
+  adminRateLimit({ name: "shop_reviews.approve", preset: "mutation" }),
   async (req, res) => {
     const id = String(req.params.id ?? "");
     if (!id) {
@@ -229,6 +231,7 @@ router.post(
 router.post(
   "/admin/shop/reviews/:id/reject",
   requirePermission("conversations.manage"),
+  adminRateLimit({ name: "shop_reviews.reject", preset: "mutation" }),
   async (req, res) => {
     const id = String(req.params.id ?? "");
     if (!id) {
@@ -315,6 +318,7 @@ router.post(
 router.post(
   "/admin/shop/reviews/:id/unreject",
   requirePermission("conversations.manage"),
+  adminRateLimit({ name: "shop_reviews.unreject", preset: "mutation" }),
   async (req, res) => {
     const id = String(req.params.id ?? "");
     if (!id) {
@@ -372,52 +376,57 @@ router.post(
 // customer already got one when the review was first rejected. If a
 // fresh notice is desired, the operator should un-reject and
 // re-reject, which goes through the existing email path.
-router.patch("/admin/shop/reviews/:id/note", requirePermission("conversations.manage"), async (req, res) => {
-  const id = String(req.params.id ?? "");
-  if (!id) {
-    res.status(400).json({ error: "missing_id" });
-    return;
-  }
-  const parse = noteBody.safeParse(req.body ?? {});
-  if (!parse.success) {
-    res.status(400).json({ error: "invalid_body" });
-    return;
-  }
-  const note =
-    typeof parse.data.note === "string" && parse.data.note.trim() !== ""
-      ? parse.data.note.trim()
-      : null;
-  const supabase = getSupabaseServiceRoleClient();
-  // Same guard as unreject: only `rejected` rows can have their
-  // note edited. Approved + pending rows have no public note slot.
-  const { data: row, error } = await supabase
-    .schema("resupply")
-    .from("shop_reviews")
-    .update({
-      moderation_note: note,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", id)
-    .eq("status", "rejected")
-    .select("id, status, moderation_note, moderated_at")
-    .limit(1)
-    .maybeSingle();
-  if (error) throw error;
-  if (!row) {
-    res.status(404).json({ error: "not_found_or_not_rejected" });
-    return;
-  }
-  req.log?.info?.(
-    { reviewId: row.id },
-    "shop/admin/reviews: rejection note edited",
-  );
-  res.json({
-    id: row.id,
-    status: row.status,
-    moderationNote: row.moderation_note,
-    moderatedAt: row.moderated_at,
-  });
-});
+router.patch(
+  "/admin/shop/reviews/:id/note",
+  requirePermission("conversations.manage"),
+  adminRateLimit({ name: "shop_reviews.note", preset: "mutation" }),
+  async (req, res) => {
+    const id = String(req.params.id ?? "");
+    if (!id) {
+      res.status(400).json({ error: "missing_id" });
+      return;
+    }
+    const parse = noteBody.safeParse(req.body ?? {});
+    if (!parse.success) {
+      res.status(400).json({ error: "invalid_body" });
+      return;
+    }
+    const note =
+      typeof parse.data.note === "string" && parse.data.note.trim() !== ""
+        ? parse.data.note.trim()
+        : null;
+    const supabase = getSupabaseServiceRoleClient();
+    // Same guard as unreject: only `rejected` rows can have their
+    // note edited. Approved + pending rows have no public note slot.
+    const { data: row, error } = await supabase
+      .schema("resupply")
+      .from("shop_reviews")
+      .update({
+        moderation_note: note,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", id)
+      .eq("status", "rejected")
+      .select("id, status, moderation_note, moderated_at")
+      .limit(1)
+      .maybeSingle();
+    if (error) throw error;
+    if (!row) {
+      res.status(404).json({ error: "not_found_or_not_rejected" });
+      return;
+    }
+    req.log?.info?.(
+      { reviewId: row.id },
+      "shop/admin/reviews: rejection note edited",
+    );
+    res.json({
+      id: row.id,
+      status: row.status,
+      moderationNote: row.moderation_note,
+      moderatedAt: row.moderated_at,
+    });
+  },
+);
 
 /**
  * Look up a product's display name from Stripe. Wrapped in

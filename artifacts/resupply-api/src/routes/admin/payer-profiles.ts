@@ -24,6 +24,7 @@ import {
 } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
+import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import {
   requireAdmin,
   requireAdminOnly,
@@ -190,7 +191,11 @@ router.get("/admin/payer-profiles/:id", requireAdmin, async (req, res) => {
 });
 
 // ── CREATE (admin only) ─────────────────────────────────────────────
-router.post("/admin/payer-profiles", requireAdminOnly, async (req, res) => {
+router.post(
+  "/admin/payer-profiles",
+  requireAdminOnly,
+  adminRateLimit({ name: "payer_profiles.create", preset: "sensitive" }),
+  async (req, res) => {
   const parsed = upsertBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({
@@ -264,7 +269,11 @@ router.post("/admin/payer-profiles", requireAdminOnly, async (req, res) => {
 });
 
 // ── PATCH (admin only) ──────────────────────────────────────────────
-router.patch("/admin/payer-profiles/:id", requireAdminOnly, async (req, res) => {
+router.patch(
+  "/admin/payer-profiles/:id",
+  requireAdminOnly,
+  adminRateLimit({ name: "payer_profiles.update", preset: "sensitive" }),
+  async (req, res) => {
   const idParsed = idParam.safeParse(req.params);
   if (!idParsed.success) {
     res.status(404).json({ error: "not_found" });

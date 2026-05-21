@@ -24,6 +24,7 @@ import {
   type CoachingStatus,
 } from "../../lib/coaching/transitions";
 import { logger } from "../../lib/logger";
+import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requireAdmin, requirePermission } from "../../middlewares/requireAdmin";
 
 type CoachingUpdate =
@@ -103,6 +104,7 @@ router.get(
 router.post(
   "/admin/coaching-plans",
   requirePermission("patients.update"),
+  adminRateLimit({ name: "coaching_plans.create", preset: "mutation" }),
   async (req, res) => {
     const parsed = createBody.safeParse(req.body);
     if (!parsed.success) {
@@ -179,6 +181,7 @@ router.post(
 router.patch(
   "/admin/coaching-plans/:id",
   requirePermission("patients.update"),
+  adminRateLimit({ name: "coaching_plans.update", preset: "mutation" }),
   async (req, res) => {
     const params = idParam.safeParse(req.params);
     if (!params.success) {
