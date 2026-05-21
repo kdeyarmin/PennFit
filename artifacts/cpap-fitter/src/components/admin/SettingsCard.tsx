@@ -192,8 +192,14 @@ export function SettingsCard({
     patient.channelPreference != null;
 
   return (
-    <Card>
-      <div className="flex items-start justify-between gap-4 mb-4">
+    <div className="admin-root">
+      <Card>
+        <div className="flex items-start justify-between gap-4 mb-4">
+          {/* remaining component content */}
+        </div>
+      </Card>
+    </div>
+  );
         <div>
           <h2
             className="text-sm uppercase tracking-wider font-semibold mb-1"
