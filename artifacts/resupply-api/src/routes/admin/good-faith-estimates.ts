@@ -25,8 +25,8 @@ import { resolveBillingIdentity } from "../../lib/billing/identity-resolver";
 import { logger } from "../../lib/logger";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import {
-  requireAdmin,
   requireAdminOnly,
+  requirePermission,
 } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
@@ -70,7 +70,10 @@ const body = z
 
 const idParam = z.object({ id: z.string().uuid() });
 
-router.get("/admin/good-faith-estimates", requireAdmin, async (_req, res) => {
+router.get(
+  "/admin/good-faith-estimates",
+  requirePermission("reports.read"),
+  async (_req, res) => {
   const supabase = getSupabaseServiceRoleClient();
   const { data, error } = await supabase
     .schema("resupply")
@@ -86,7 +89,7 @@ router.get("/admin/good-faith-estimates", requireAdmin, async (_req, res) => {
 
 router.get(
   "/admin/good-faith-estimates/:id",
-  requireAdmin,
+  requirePermission("reports.read"),
   async (req, res) => {
     const idParsed = idParam.safeParse(req.params);
     if (!idParsed.success) {
