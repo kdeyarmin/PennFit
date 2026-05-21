@@ -29,6 +29,7 @@ import {
 } from "../../lib/compliance/training-expiry";
 import { logger } from "../../lib/logger";
 import { buildMedWatchSummary } from "../../lib/medwatch/build-summary";
+import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
 
 type GrievanceUpdate =
@@ -166,6 +167,7 @@ router.post(
   // grievance rows directly — surveyors expect a compliance-officer
   // chain-of-custody on the write path).
   requirePermission("grievances.resolve"),
+  adminRateLimit({ name: "grievances.create", preset: "sensitive" }),
   async (req, res) => {
     const parsed = createBody.safeParse(req.body);
     if (!parsed.success) {
@@ -246,6 +248,7 @@ router.patch(
   // Move state (resolved / closed / escalated). `grievances.resolve`
   // is the catalog's resolution permission — same scope as POST.
   requirePermission("grievances.resolve"),
+  adminRateLimit({ name: "grievances.update", preset: "sensitive" }),
   async (req, res) => {
     const params = idParam.safeParse(req.params);
     if (!params.success) {
