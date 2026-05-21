@@ -18,7 +18,7 @@
 // All other states are terminal — only the Add note button remains
 // for posterity.
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   useInfiniteQuery,
   useMutation,
@@ -54,8 +54,36 @@ const TABS: ReadonlyArray<{ id: Tab; label: string }> = [
 
 const PAGE_SIZE = 25;
 
+const TAB_IDS: ReadonlySet<Tab> = new Set(TABS.map((t) => t.id));
+
+function readTabFromUrl(): Tab {
+  if (typeof window === "undefined") return "open";
+  const raw = new URLSearchParams(window.location.search).get("tab");
+  return raw && TAB_IDS.has(raw as Tab) ? (raw as Tab) : "open";
+}
+
 export function AdminShopReturnsPage() {
-  const [tab, setTab] = useState<Tab>("open");
+  // Persist the active tab in `?tab=<id>` so a refresh, back/forward
+  // nav, or bookmarked link lands on the same view. Default "open" is
+  // omitted from the URL to keep the canonical URL clean.
+  const [tab, setTabState] = useState<Tab>(readTabFromUrl);
+  const setTab = (next: Tab): void => {
+    setTabState(next);
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    if (next === "open") params.delete("tab");
+    else params.set("tab", next);
+    const qs = params.toString();
+    const newUrl =
+      window.location.pathname + (qs ? `?${qs}` : "") + window.location.hash;
+    window.history.replaceState(window.history.state, "", newUrl);
+  };
+  // Browser back/forward should rehydrate the tab.
+  useEffect(() => {
+    const handler = (): void => setTabState(readTabFromUrl());
+    window.addEventListener("popstate", handler);
+    return () => window.removeEventListener("popstate", handler);
+  }, []);
   return (
     <div className="space-y-6" data-testid="admin-shop-returns-page">
       <header className="space-y-1">
