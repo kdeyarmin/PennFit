@@ -31,6 +31,7 @@ import {
   getSupabaseServiceRoleClient,
 } from "@workspace/resupply-db";
 
+import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
 
 type InsuranceLeadsUpdate = Database["resupply"]["Tables"]["insurance_leads"]["Update"];
@@ -176,6 +177,7 @@ router.patch(
   // Status mutations (move lead through new → contacted → verified
   // → closed). Same scope as the list above.
   requirePermission("conversations.manage"),
+  adminRateLimit({ name: "insurance_leads.update", preset: "mutation" }),
   async (req, res) => {
     // req.params is typed as Record<string, string | string[]> in
     // strict express; this route's path uses a single :id segment so
