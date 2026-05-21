@@ -497,45 +497,68 @@ router.post(
       if (appliedProductIds.has(row.product_id)) row.applied = true;
     }
 
-    const { error: linesInsErr } = await supabase
-      .schema("resupply")
-      .from("inventory_reconciliation_lines")
-      .insert(lineInserts);
-    if (linesInsErr) {
-      logger.error(
-        { err: linesInsErr },
-        "inventory_reconciliation.submit: lines insert failed",
-      );
-      res
-        .status(500)
-        .json({ error: "lines_insert_failed", message: linesInsErr.message });
-      return;
-    }
-
     const totalVarianceUnits = lineInserts.reduce(
       (acc, l) => acc + Math.abs(l.variance),
       0,
     );
 
-    const { error: updErr } = await supabase
+    // Atomic DB write — see migration 0143. The function takes a row
+    // lock on the header (eliminating concurrent-submit lost updates),
+    // inserts every line, and flips status → 'submitted' in one
+    // transaction. Stripe writes already happened above and are
+    // intentionally outside the transaction (external state cannot
+    // participate in a Postgres txn); each line carries its own
+    // `applied` flag so the persisted record reflects what actually
+    // reached Stripe even if some per-SKU updates failed.
+    const rpcLines = lineInserts.map((l) => ({
+      product_id: l.product_id,
+      product_name: l.product_name,
+      // jsonb stringification of null comes through as JSON null,
+      // which the function's NULLIF(... '')::integer turns into NULL.
+      system_count: l.system_count,
+      counted_qty: l.counted_qty,
+      variance: l.variance,
+      applied: l.applied,
+    }));
+    const { data: rpcData, error: rpcErr } = await supabase
       .schema("resupply")
-      .from("inventory_reconciliations")
-      .update({
-        status: "submitted",
-        submitted_at: new Date().toISOString(),
-        total_lines: lineInserts.length,
-        total_variance_units: totalVarianceUnits,
-        applied_to_stripe: applyToStripe,
-      })
-      .eq("id", id);
-    if (updErr) {
+      .rpc("submit_inventory_reconciliation", {
+        p_id: id,
+        p_lines: rpcLines,
+        p_applied_to_stripe: applyToStripe,
+        p_total_variance_units: totalVarianceUnits,
+      });
+    if (rpcErr) {
       logger.error(
-        { err: updErr },
-        "inventory_reconciliation.submit: header update failed",
+        { err: rpcErr },
+        "inventory_reconciliation.submit: rpc failed",
       );
       res
         .status(500)
-        .json({ error: "header_update_failed", message: updErr.message });
+        .json({ error: "submit_rpc_failed", message: rpcErr.message });
+      return;
+    }
+    // The function returns a JSON object — Supabase passes it through
+    // unchanged. Cast through unknown so TS doesn't complain about
+    // the dynamic shape.
+    const rpc = rpcData as unknown as
+      | { ok: true; total_lines: number; total_variance_units: number }
+      | { ok: false; error: "not_found" | "already_submitted" | "duplicate_line" };
+    if (!rpc.ok) {
+      if (rpc.error === "not_found") {
+        res.status(404).json({ error: "not_found" });
+        return;
+      }
+      if (rpc.error === "already_submitted") {
+        res.status(409).json({ error: "already_submitted" });
+        return;
+      }
+      // duplicate_line — the route already filters duplicates before
+      // calling the RPC, so this only fires when the same SKU appears
+      // twice inside the input (defense in depth) or a partial earlier
+      // submit left lines behind. Surface as 400 so the client can
+      // retry without polluting the 500 channel.
+      res.status(400).json({ error: rpc.error });
       return;
     }
 

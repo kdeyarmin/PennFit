@@ -3482,6 +3482,31 @@ export interface Database {
           patient_responsibility_cents: number;
         }>;
       };
+      submit_inventory_reconciliation: {
+        Args: {
+          p_id: string;
+          p_lines: Array<{
+            product_id: string;
+            product_name: string;
+            system_count: number | null;
+            counted_qty: number;
+            variance: number;
+            applied: boolean;
+          }>;
+          p_applied_to_stripe: boolean;
+          p_total_variance_units: number;
+        };
+        Returns:
+          | {
+              ok: true;
+              total_lines: number;
+              total_variance_units: number;
+            }
+          | {
+              ok: false;
+              error: "not_found" | "already_submitted" | "duplicate_line";
+            };
+      };
     };
     Enums: { [_ in never]: never };
     CompositeTypes: { [_ in never]: never };
