@@ -28,6 +28,7 @@ import {
   unrejectAdminShopReview,
   updateAdminShopReviewNote,
 } from "@/lib/admin/shop-reviews-api";
+import { useUrlState } from "@/hooks/use-url-state";
 
 type Tab = ReviewStatus | "all";
 
@@ -40,8 +41,15 @@ const TABS: ReadonlyArray<{ id: Tab; label: string }> = [
 
 const PAGE_SIZE = 25;
 
+const TAB_IDS: ReadonlySet<string> = new Set(TABS.map((t) => t.id));
+const isTab = (v: string): v is Tab => TAB_IDS.has(v);
+
 export function AdminShopReviewsPage() {
-  const [tab, setTab] = useState<Tab>("pending");
+  const [tab, setTab] = useUrlState<Tab>({
+    key: "tab",
+    defaultValue: "pending",
+    isAllowed: isTab,
+  });
   return (
     <div className="space-y-6" data-testid="admin-shop-reviews-page">
       <header className="space-y-1">
