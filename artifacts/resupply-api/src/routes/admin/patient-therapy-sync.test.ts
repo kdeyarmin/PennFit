@@ -102,8 +102,8 @@ function makeApp(): Express {
 beforeEach(() => {
   mockAdmin.current = null;
   supabaseMock.reset();
-  logAuditMock.mockClear();
   adminRateLimitSpy.mockClear();
+  logAuditMock.mockClear();
   adapterState.configured = true;
   adapterState.fetch = async () => ({ nights: [], hasMore: false });
 });

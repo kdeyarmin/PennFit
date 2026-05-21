@@ -34,7 +34,7 @@ import {
 import { resolveBillingIdentity } from "../../lib/billing/identity-resolver";
 import { logger } from "../../lib/logger";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
-import { requireAdmin } from "../../middlewares/requireAdmin";
+import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
 
@@ -45,7 +45,7 @@ const params = z.object({
 
 router.post(
   "/admin/patients/:id/prior-authorizations/:paId/submit-davinci-pas",
-  requireAdmin,
+  requirePermission("patients.update"),
   adminRateLimit({ name: "davinci_pas.submit", preset: "mutation" }),
   async (req, res) => {
     const idParsed = params.safeParse(req.params);

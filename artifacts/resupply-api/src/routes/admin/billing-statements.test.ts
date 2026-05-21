@@ -24,6 +24,7 @@ import {
   installSupabaseMock,
   stageSupabaseResponse,
 } from "../../test-helpers/supabase-mock";
+import { type MockBillingIdentity } from "../../test-helpers/billing-mocks";
 
 // ── Supabase mock (module-scoped) ────────────────────────────────────────────
 const supabaseMock = installSupabaseMock();
@@ -67,8 +68,8 @@ vi.mock("../../lib/billing/statement-pdf", () => ({
 }));
 
 const resolveBillingIdentityMock = vi.hoisted(() =>
-  vi.fn(async () => ({
-    source: "db" as const,
+  vi.fn<() => Promise<MockBillingIdentity>>(async () => ({
+    source: "db",
     organization: {
       legal_name: "Test DME",
       phone_e164: "+15550001234",
@@ -96,9 +97,9 @@ vi.mock("../../lib/webhooks/publisher", () => ({
 
 import billingStatementsRouter from "./billing-statements";
 
-const PATIENT_UUID = "bbbbbbbb-2222-0000-0000-000000000001";
-const STATEMENT_UUID = "cccccccc-3333-0000-0000-000000000001";
-const CLAIM_UUID = "dddddddd-4444-0000-0000-000000000001";
+const PATIENT_UUID = "bbbbbbbb-2222-4000-8000-000000000001";
+const STATEMENT_UUID = "cccccccc-3333-4000-8000-000000000001";
+const CLAIM_UUID = "dddddddd-4444-4000-8000-000000000001";
 
 function makeApp(): Express {
   const app = express();

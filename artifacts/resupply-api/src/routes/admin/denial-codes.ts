@@ -17,8 +17,8 @@ import {
 import { logger } from "../../lib/logger";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import {
-  requireAdmin,
   requireAdminOnly,
+  requirePermission,
 } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
@@ -69,7 +69,10 @@ function rowToApi(r: DenialCodeRow) {
   };
 }
 
-router.get("/admin/denial-codes", requireAdmin, async (req, res) => {
+router.get(
+  "/admin/denial-codes",
+  requirePermission("reports.read"),
+  async (req, res) => {
   const supabase = getSupabaseServiceRoleClient();
   let query = supabase
     .schema("resupply")
@@ -102,7 +105,7 @@ router.get("/admin/denial-codes", requireAdmin, async (req, res) => {
 
 router.get(
   "/admin/denial-codes/:codeSystem/:code",
-  requireAdmin,
+  requirePermission("reports.read"),
   async (req, res) => {
     const { codeSystem, code } = req.params;
     const csParam = typeof codeSystem === "string" ? codeSystem : "";

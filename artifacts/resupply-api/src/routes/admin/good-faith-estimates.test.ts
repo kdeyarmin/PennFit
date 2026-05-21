@@ -24,6 +24,7 @@ import {
   installSupabaseMock,
   stageSupabaseResponse,
 } from "../../test-helpers/supabase-mock";
+import { type MockBillingIdentity } from "../../test-helpers/billing-mocks";
 
 // ── Supabase mock (module-scoped) ────────────────────────────────────────────
 const supabaseMock = installSupabaseMock();
@@ -68,8 +69,8 @@ vi.mock("../../lib/billing/gfe-pdf", () => ({
 }));
 
 const resolveBillingIdentityMock = vi.hoisted(() =>
-  vi.fn(async () => ({
-    source: "db" as const,
+  vi.fn<() => Promise<MockBillingIdentity>>(async () => ({
+    source: "db",
     organization: {
       legal_name: "Test DME LLC",
       phone_e164: "+15550001234",
@@ -93,7 +94,7 @@ vi.mock("../../lib/billing/identity-resolver", () => ({
 
 import goodFaithEstimatesRouter from "./good-faith-estimates";
 
-const GFE_UUID = "22222222-bbbb-cccc-0000-000000000001";
+const GFE_UUID = "22222222-bbbb-4ccc-8000-000000000001";
 
 function makeApp(): Express {
   const app = express();

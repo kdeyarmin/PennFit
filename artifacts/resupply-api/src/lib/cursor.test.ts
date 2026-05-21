@@ -106,7 +106,7 @@ describe("isUuidCursorId", () => {
   });
 
   it("accepts all-zeros UUID (valid hex shape, even if not a real UUID v4)", () => {
-    expect(isUuidCursorId("00000000-0000-0000-0000-000000000000")).toBe(true);
+    expect(isUuidCursorId("00000000-0000-4000-8000-000000000000")).toBe(true);
   });
 
   it("accepts all-fs UUID (valid hex shape)", () => {

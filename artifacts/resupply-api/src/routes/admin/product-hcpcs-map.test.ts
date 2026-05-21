@@ -56,7 +56,7 @@ vi.mock("@workspace/resupply-audit", () => ({
 
 import productHcpcsMapRouter from "./product-hcpcs-map";
 
-const MAP_UUID = "77777777-0000-1111-0000-000000000001";
+const MAP_UUID = "77777777-0000-1111-8000-000000000001";
 
 function makeApp(): Express {
   const app = express();

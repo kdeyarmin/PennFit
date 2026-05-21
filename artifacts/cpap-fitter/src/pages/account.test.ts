@@ -23,6 +23,19 @@ import { describe, expect, it } from "vitest";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SRC = readFileSync(path.join(__dirname, "account.tsx"), "utf8");
+const SECTIONS_DIR = path.join(__dirname, "..", "components", "account");
+const DOCS_SRC = readFileSync(
+  path.join(SECTIONS_DIR, "DocumentsSection.tsx"),
+  "utf8",
+);
+const ORDERS_SRC = readFileSync(
+  path.join(SECTIONS_DIR, "OrdersSection.tsx"),
+  "utf8",
+);
+const SUBS_SRC = readFileSync(
+  path.join(SECTIONS_DIR, "SubscriptionsSection.tsx"),
+  "utf8",
+);
 
 // ---------------------------------------------------------------------------
 // ProfileSection extraction — import location
@@ -70,16 +83,14 @@ describe("account — relocated imports no longer present in account.tsx", () =>
 
 describe("account — account-doc-upload-error no longer has role=alert", () => {
   it("still renders data-testid account-doc-upload-error", () => {
-    expect(SRC).toContain('data-testid="account-doc-upload-error"');
+    expect(DOCS_SRC).toContain('data-testid="account-doc-upload-error"');
   });
 
   it("account-doc-upload-error element does not carry role=alert", () => {
-    // Find the element and verify the nearby context has no role="alert".
-    const idx = SRC.indexOf('data-testid="account-doc-upload-error"');
+    const idx = DOCS_SRC.indexOf('data-testid="account-doc-upload-error"');
     expect(idx).toBeGreaterThan(-1);
-    // Inspect the surrounding 200 characters (the whole element opening tag).
-    const elementContext = SRC.slice(
-      SRC.lastIndexOf("<p", idx),
+    const elementContext = DOCS_SRC.slice(
+      DOCS_SRC.lastIndexOf("<p", idx),
       idx + 'data-testid="account-doc-upload-error"'.length + 10,
     );
     expect(elementContext).not.toContain('role="alert"');
@@ -111,13 +122,13 @@ describe("account — account-card-error no longer has role=alert", () => {
 
 describe("account — account-reorder-error no longer has role=alert", () => {
   it("still renders data-testid account-reorder-error", () => {
-    expect(SRC).toContain('data-testid="account-reorder-error"');
+    expect(ORDERS_SRC).toContain('data-testid="account-reorder-error"');
   });
 
   it("account-reorder-error element does not carry role=alert", () => {
-    const idx = SRC.indexOf('data-testid="account-reorder-error"');
+    const idx = ORDERS_SRC.indexOf('data-testid="account-reorder-error"');
     expect(idx).toBeGreaterThan(-1);
-    const elementContext = SRC.slice(idx - 150, idx + 50);
+    const elementContext = ORDERS_SRC.slice(idx - 150, idx + 50);
     expect(elementContext).not.toContain('role="alert"');
   });
 });
@@ -128,13 +139,13 @@ describe("account — account-reorder-error no longer has role=alert", () => {
 
 describe("account — account-subscription-action-error no longer has role=alert", () => {
   it("still renders data-testid account-subscription-action-error", () => {
-    expect(SRC).toContain('data-testid="account-subscription-action-error"');
+    expect(SUBS_SRC).toContain('data-testid="account-subscription-action-error"');
   });
 
   it("account-subscription-action-error element does not carry role=alert", () => {
-    const idx = SRC.indexOf('data-testid="account-subscription-action-error"');
+    const idx = SUBS_SRC.indexOf('data-testid="account-subscription-action-error"');
     expect(idx).toBeGreaterThan(-1);
-    const elementContext = SRC.slice(idx - 150, idx + 50);
+    const elementContext = SUBS_SRC.slice(idx - 150, idx + 50);
     expect(elementContext).not.toContain('role="alert"');
   });
 });
@@ -145,17 +156,16 @@ describe("account — account-subscription-action-error no longer has role=alert
 
 describe("account — cadenceLoadError paragraph no longer has role=alert", () => {
   it("still renders the cadence load error text", () => {
-    expect(SRC).toContain(
+    expect(SUBS_SRC).toContain(
       "Couldn't load cadence options. Please try again.",
     );
   });
 
   it("cadenceLoadError paragraph does not carry role=alert", () => {
     const errorText = "Couldn't load cadence options. Please try again.";
-    const idx = SRC.indexOf(errorText);
+    const idx = SUBS_SRC.indexOf(errorText);
     expect(idx).toBeGreaterThan(-1);
-    // Check the surrounding element opening tag for the absence of role="alert".
-    const elementContext = SRC.slice(idx - 80, idx + errorText.length + 20);
+    const elementContext = SUBS_SRC.slice(idx - 80, idx + errorText.length + 20);
     expect(elementContext).not.toContain('role="alert"');
   });
 });
@@ -166,19 +176,15 @@ describe("account — cadenceLoadError paragraph no longer has role=alert", () =
 
 describe("account — ReportLostLink error span no longer has role=alert", () => {
   it("ReportLostLink renders the error message in a span", () => {
-    // The error span uses result.message; confirm the pattern is still present.
-    expect(SRC).toContain("result.message");
+    expect(ORDERS_SRC).toContain("result.message");
   });
 
   it("the error span inside ReportLostLink does not carry role=alert", () => {
-    // Locate the ReportLostLink function and check the error span inside it.
-    const fnStart = SRC.indexOf("function ReportLostLink(");
+    const fnStart = ORDERS_SRC.indexOf("function ReportLostLink(");
     expect(fnStart).toBeGreaterThan(-1);
-    // Find the first occurrence of result.message after the function definition.
-    const msgIdx = SRC.indexOf("result.message", fnStart);
+    const msgIdx = ORDERS_SRC.indexOf("result.message", fnStart);
     expect(msgIdx).toBeGreaterThan(-1);
-    // The containing span element — look at 100 chars before the expression.
-    const spanContext = SRC.slice(msgIdx - 100, msgIdx + 50);
+    const spanContext = ORDERS_SRC.slice(msgIdx - 100, msgIdx + 50);
     expect(spanContext).not.toContain('role="alert"');
   });
 });

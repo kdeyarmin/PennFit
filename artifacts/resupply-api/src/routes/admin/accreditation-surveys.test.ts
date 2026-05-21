@@ -58,7 +58,7 @@ vi.mock("@workspace/resupply-audit", () => ({
 
 import accreditationSurveysRouter from "./accreditation-surveys";
 
-const SURVEY_ID = "aaaaaaaa-1111-0000-0000-000000000001";
+const SURVEY_ID = "aaaaaaaa-1111-4000-8000-000000000001";
 
 function makeApp(): Express {
   const app = express();

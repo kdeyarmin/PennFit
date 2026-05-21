@@ -66,8 +66,18 @@ vi.mock("@workspace/resupply-audit", () => ({
   logAudit: vi.fn(async () => undefined),
 }));
 
+type AutoAssignResultLike =
+  | { assigned: true; adminUserId: string; matchedSkillCount: number }
+  | {
+      assigned: false;
+      reason:
+        | "conversation_not_found"
+        | "already_assigned"
+        | "no_required_skills"
+        | "no_eligible_candidate";
+    };
 const maybeAutoAssignMock = vi.hoisted(() =>
-  vi.fn(async () => ({
+  vi.fn<() => Promise<AutoAssignResultLike>>(async () => ({
     assigned: true,
     adminUserId: "u_assignee",
     matchedSkillCount: 1,
@@ -83,7 +93,7 @@ vi.mock("../../lib/routing/skill-score", () => ({
 
 import routingRouter from "./conversation-routing";
 
-const CONV_UUID = "ccccdddd-0000-0000-0000-000000000001";
+const CONV_UUID = "ccccdddd-0000-4000-8000-000000000001";
 const TEAM_ID = "team-member-id-1";
 
 function makeApp(): Express {
@@ -113,7 +123,6 @@ beforeEach(() => {
   mockAdmin.current = null;
   rateLimitBlocked.current = false;
   supabaseMock.reset();
-  adminRateLimitSpy.mockClear();
   maybeAutoAssignMock.mockClear();
   maybeAutoAssignMock.mockResolvedValue({
     assigned: true,
@@ -282,9 +291,6 @@ describe("POST /admin/conversations/:id/auto-assign — adminRateLimit integrati
 
   it("returns 409 when conversation is already assigned", async () => {
     stubAdmin();
-    maybeAutoAssignMock.mockResolvedValueOnce({
-      assigned: false,
-      reason: "already_assigned",
     maybeAutoAssignMock.mockResolvedValueOnce({
       assigned: false,
       reason: "already_assigned",

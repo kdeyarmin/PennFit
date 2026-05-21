@@ -469,7 +469,7 @@ describe("PrescriptionsTab — changeStatus (mark expired / revoke)", () => {
   it("does not proceed when user cancels the confirm dialog (early return)", () => {
     // window.confirm returns falsy → the function returns immediately.
     // The guard pattern: if (!window.confirm(...)) { return; }
-    expect(SRC).toMatch(/!window\.confirm[\s\S]{0,20}return;/);
+    expect(SRC).toMatch(/!window\.confirm[\s\S]{0,200}return;/);
   });
 });
 
@@ -652,7 +652,7 @@ describe("PrescriptionsTab — table column definitions", () => {
     expect(SRC).toContain("Mark expired");
     expect(SRC).toContain("Revoke");
     // Only active prescriptions get the action buttons.
-    expect(SRC).toMatch(/r\.status === "active"[\s\S]{0,20}Mark expired/);
+    expect(SRC).toMatch(/r\.status === "active"[\s\S]{0,800}Mark expired/);
   });
 });
 

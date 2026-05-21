@@ -29,7 +29,7 @@ vi.mock("../../lib/logger", () => ({
 import meClaimsRouter from "./me-claims";
 
 const CUSTOMER_ID = "cust-alice-001";
-const PATIENT_ID = "aaaaaaaa-0000-0000-0000-000000000001";
+const PATIENT_ID = "aaaaaaaa-0000-4000-8000-000000000001";
 
 function makeApp(customerId: string | null = CUSTOMER_ID): Express {
   const app = express();

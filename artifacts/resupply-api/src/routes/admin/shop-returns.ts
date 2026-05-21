@@ -40,10 +40,7 @@ import {
   type ShopReturnStatus,
 } from "@workspace/resupply-db";
 
-import {
-  requireAdmin,
-  requirePermission,
-} from "../../middlewares/requireAdmin";
+import { requirePermission } from "../../middlewares/requireAdmin";
 import { rateLimit } from "../../middlewares/rate-limit";
 import { withMetrics } from "../../lib/observability";
 import { parseCompositeCursor, isUuidCursorId } from "../../lib/cursor";
@@ -96,7 +93,10 @@ const PAGE_SIZE_MAX = 100;
 const RETURN_COLUMNS =
   "id, customer_id, order_id, stripe_session_id, status, reason, reason_note, resolution, refund_cents, stripe_refund_id, exchange_product_id, exchange_price_id, exchange_order_id, return_label_url, return_carrier, return_tracking_number, admin_note, admin_user_id, created_at, updated_at, approved_at, rejected_at, shipped_back_at, received_at, resolved_at, closed_at";
 
-router.get("/admin/shop/returns", requireAdmin, async (req, res) => {
+router.get(
+  "/admin/shop/returns",
+  requirePermission("returns.read"),
+  async (req, res) => {
   const status = String(req.query.status ?? "open");
   if (!STATUS_FILTER.has(status)) {
     res.status(400).json({ error: "invalid_status" });
@@ -172,7 +172,10 @@ router.get("/admin/shop/returns", requireAdmin, async (req, res) => {
   });
 });
 
-router.get("/admin/shop/returns/:id", requireAdmin, async (req, res) => {
+router.get(
+  "/admin/shop/returns/:id",
+  requirePermission("returns.read"),
+  async (req, res) => {
   const id = req.params.id;
   if (!id || typeof id !== "string") {
     res.status(400).json({ error: "missing_id" });
@@ -265,7 +268,7 @@ const noteOnly = z
 
 router.post(
   "/admin/shop/returns/:id/reject",
-  requireAdmin,
+  requirePermission("returns.manage"),
   adminReturnLifecycleLimiter,
   async (req, res) => {
     const id = req.params.id;
@@ -308,7 +311,7 @@ router.post(
 
 router.post(
   "/admin/shop/returns/:id/mark-shipped",
-  requireAdmin,
+  requirePermission("returns.manage"),
   adminReturnLifecycleLimiter,
   async (req, res) => {
     const id = req.params.id;
@@ -350,7 +353,7 @@ router.post(
 
 router.post(
   "/admin/shop/returns/:id/mark-received",
-  requireAdmin,
+  requirePermission("returns.manage"),
   adminReturnLifecycleLimiter,
   async (req, res) => {
     const id = req.params.id;
@@ -566,7 +569,7 @@ const replaceBody = z
 
 router.post(
   "/admin/shop/returns/:id/replace",
-  requireAdmin,
+  requirePermission("returns.manage"),
   adminReturnFinancialLimiter,
   async (req, res) => {
     const id = req.params.id;
@@ -615,7 +618,10 @@ router.post(
   },
 );
 
-router.post("/admin/shop/returns/:id/note", requireAdmin, async (req, res) => {
+router.post(
+  "/admin/shop/returns/:id/note",
+  requirePermission("returns.manage"),
+  async (req, res) => {
   const id = req.params.id;
   if (!id || typeof id !== "string") {
     res.status(400).json({ error: "missing_id" });

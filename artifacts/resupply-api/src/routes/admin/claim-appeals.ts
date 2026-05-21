@@ -21,7 +21,7 @@ import { resolveBillingIdentity } from "../../lib/billing/identity-resolver";
 import { logger } from "../../lib/logger";
 import { publishEvent } from "../../lib/webhooks/publisher";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
-import { requireAdmin } from "../../middlewares/requireAdmin";
+import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
 
@@ -42,7 +42,7 @@ const body = z
 
 router.get(
   "/admin/patients/:id/insurance-claims/:claimId/appeal-letter",
-  requireAdmin,
+  requirePermission("patients.read"),
   async (req, res) => {
     const parsed = params.safeParse(req.params);
     if (!parsed.success) {
@@ -63,7 +63,7 @@ router.get(
 
 router.post(
   "/admin/patients/:id/insurance-claims/:claimId/appeal-letter",
-  requireAdmin,
+  requirePermission("patients.update"),
   adminRateLimit({ name: "claim_appeals.create", preset: "sensitive" }),
   async (req, res) => {
     const idParsed = params.safeParse(req.params);

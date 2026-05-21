@@ -18,7 +18,7 @@ import { renderStatementPdf } from "../../lib/billing/statement-pdf";
 import { logger } from "../../lib/logger";
 import { publishEvent } from "../../lib/webhooks/publisher";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
-import { requireAdmin } from "../../middlewares/requireAdmin";
+import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
 
@@ -35,7 +35,7 @@ const body = z
 
 router.get(
   "/admin/patients/:id/billing-statements",
-  requireAdmin,
+  requirePermission("patients.read"),
   async (req, res) => {
     const parsed = idParam.safeParse(req.params);
     if (!parsed.success) {
@@ -56,7 +56,7 @@ router.get(
 
 router.post(
   "/admin/patients/:id/billing-statements",
-  requireAdmin,
+  requirePermission("patients.update"),
   adminRateLimit({
     name: "patient_billing_statements.create",
     preset: "sensitive",

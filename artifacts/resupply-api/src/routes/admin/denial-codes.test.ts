@@ -71,7 +71,7 @@ vi.mock("@workspace/resupply-audit", () => ({
 
 import denialCodesRouter from "./denial-codes";
 
-const CODE_ID = "11111111-aaaa-0000-0000-000000000001";
+const CODE_ID = "11111111-aaaa-4000-8000-000000000001";
 
 function makeApp(): Express {
   const app = express();

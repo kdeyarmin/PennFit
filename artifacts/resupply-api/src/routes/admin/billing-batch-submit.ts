@@ -40,9 +40,7 @@ import { resolveBillingIdentity } from "../../lib/billing/identity-resolver";
 import { logger } from "../../lib/logger";
 import { publishEvent } from "../../lib/webhooks/publisher";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
-import {
-  requireAdmin,
-} from "../../middlewares/requireAdmin";
+import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
 
@@ -57,7 +55,7 @@ type ClaimRow = Database["resupply"]["Tables"]["insurance_claims"]["Row"];
 
 router.post(
   "/admin/billing/batch-submit-office-ally",
-  requireAdmin,
+  requirePermission("admin.tools.manage"),
   adminRateLimit({ name: "billing.batch_submit_office_ally", preset: "bulk" }),
   async (req, res) => {
     const parsed = body.safeParse(req.body);

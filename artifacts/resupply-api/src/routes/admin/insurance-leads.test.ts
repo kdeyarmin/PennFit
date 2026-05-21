@@ -63,7 +63,7 @@ vi.mock("../../middlewares/admin-rate-limit", () => ({
 import insuranceLeadsRouter from "./insurance-leads";
 
 // The route validates :id against a UUID regex (ID_RE in the source).
-const LEAD_ID = "aabbccdd-1122-0000-0000-000000000099";
+const LEAD_ID = "aabbccdd-1122-4000-8000-000000000099";
 
 function makeApp(): Express {
   const app = express();
@@ -98,7 +98,6 @@ beforeEach(() => {
   mockAdmin.current = null;
   rateLimitBlocked.current = false;
   supabaseMock.reset();
-  adminRateLimitSpy.mockClear();
 });
 
 // ── PATCH /admin/shop/insurance-leads/:id ────────────────────────────────────

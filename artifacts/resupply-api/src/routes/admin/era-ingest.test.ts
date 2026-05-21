@@ -85,7 +85,7 @@ vi.mock("../../lib/webhooks/publisher", () => ({
 
 import eraIngestRouter from "./era-ingest";
 
-const ERA_FILE_UUID = "11111111-aaaa-bbbb-0000-000000000001";
+const ERA_FILE_UUID = "11111111-aaaa-4bbb-8000-000000000001";
 
 // Minimal valid 835 EDI payload (> 50 chars to pass the min length check).
 const VALID_PAYLOAD = "ISA*00*          *00*          *ZZ*SENDER         *ZZ*RECEIVER       *260115*1200*^*00501*000000001*0*P*:~";

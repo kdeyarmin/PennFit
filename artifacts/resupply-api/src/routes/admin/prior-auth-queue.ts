@@ -25,7 +25,7 @@ import { z } from "zod";
 
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
-import { requireAdmin } from "../../middlewares/requireAdmin";
+import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
 
@@ -70,7 +70,7 @@ function daysBetween(future: string | null, now: number): number | null {
 
 router.get(
   "/admin/billing/prior-auth-queue",
-  requireAdmin,
+  requirePermission("patients.update"),
   async (req, res) => {
     const parsed = querySchema.safeParse(req.query);
     if (!parsed.success) {

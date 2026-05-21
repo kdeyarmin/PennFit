@@ -23,7 +23,7 @@ import {
 import { resolveBillingIdentity } from "../../lib/billing/identity-resolver";
 import { logger } from "../../lib/logger";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
-import { requireAdmin } from "../../middlewares/requireAdmin";
+import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
 
@@ -54,7 +54,7 @@ const body = z
 
 router.get(
   "/admin/patients/:id/documentation-packets",
-  requireAdmin,
+  requirePermission("patients.read"),
   async (req, res) => {
     const parsed = idParam.safeParse(req.params);
     if (!parsed.success) {
@@ -75,7 +75,7 @@ router.get(
 
 router.post(
   "/admin/patients/:id/documentation-packets",
-  requireAdmin,
+  requirePermission("patients.update"),
   adminRateLimit({
     name: "documentation_packets.create",
     preset: "sensitive",

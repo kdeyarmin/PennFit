@@ -41,10 +41,7 @@ import {
   type ShopMeResponse,
   type SavedCard,
 } from "@/lib/account-api";
-import {
-  fetchShopProducts,
-  formatMoneyCents,
-} from "@/lib/shop-api";
+import { fetchShopProducts } from "@/lib/shop-api";
 import { OrdersSection } from "@/components/account/OrdersSection";
 import { SubscriptionsSection } from "@/components/account/SubscriptionsSection";
 import { DocumentsSection } from "@/components/account/DocumentsSection";

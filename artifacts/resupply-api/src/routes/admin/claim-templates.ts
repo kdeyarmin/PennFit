@@ -19,8 +19,8 @@ import {
 
 import { logger } from "../../lib/logger";
 import {
-  requireAdmin,
   requireAdminOnly,
+  requirePermission,
 } from "../../middlewares/requireAdmin";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 
@@ -100,7 +100,10 @@ function rowToApi(r: Row) {
   };
 }
 
-router.get("/admin/claim-templates", requireAdmin, async (req, res) => {
+router.get(
+  "/admin/claim-templates",
+  requirePermission("admin.tools.manage"),
+  async (req, res) => {
   const supabase = getSupabaseServiceRoleClient();
   let query = supabase
     .schema("resupply")
@@ -238,7 +241,7 @@ router.patch(
 // ── APPLY TEMPLATE TO A DRAFT CLAIM ─────────────────────────────────
 router.post(
   "/admin/patients/:id/insurance-claims/:claimId/apply-template",
-  requireAdmin,
+  requirePermission("patients.update"),
   adminRateLimit({ name: "claim_templates.apply", preset: "mutation" }),
   async (req, res) => {
     const idParsed = applyParams.safeParse(req.params);

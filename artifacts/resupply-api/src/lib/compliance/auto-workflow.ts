@@ -132,7 +132,7 @@ async function runOigOverduePass(
   // Singleton event — pin by the literal "system" target so the
   // cooldown gate is shared across runs.
   const auditAction = "compliance.oig_screening_overdue.published";
-  const targetId = "00000000-0000-0000-0000-000000000000";
+  const targetId = "00000000-0000-4000-8000-000000000000";
   if (await isOnCooldown(supabase, auditAction, targetId)) return;
   try {
     await publishEvent({

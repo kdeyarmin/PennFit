@@ -288,7 +288,7 @@ function ReportLostLink({ orderId }: { orderId: string }) {
         Cancel
       </button>
       {result?.kind === "error" && (
-        <span className="text-xs text-destructive ml-1" role="alert">
+        <span className="text-xs text-destructive ml-1">
           {result.message}
         </span>
       )}

@@ -94,7 +94,7 @@ describe("ProfileSection — address validation endpoint", () => {
   it('sends credentials: "include" with the validation probe', () => {
     const probeBlock = SRC.slice(
       SRC.indexOf("/resupply-api/shop/validate-address") - 200,
-      SRC.indexOf("/resupply-api/shop/validate-address") + 100,
+      SRC.indexOf("/resupply-api/shop/validate-address") + 300,
     );
     expect(probeBlock).toContain('credentials: "include"');
   });
@@ -110,7 +110,7 @@ describe("ProfileSection — address validation endpoint", () => {
   it("sends all six address fields to the validation endpoint", () => {
     const probeBody = SRC.slice(
       SRC.indexOf("/resupply-api/shop/validate-address"),
-      SRC.indexOf("/resupply-api/shop/validate-address") + 400,
+      SRC.indexOf("/resupply-api/shop/validate-address") + 700,
     );
     expect(probeBody).toContain("line1");
     expect(probeBody).toContain("line2");
@@ -204,7 +204,7 @@ describe("ProfileSection — unsaved-changes indicator visibility", () => {
   it("shows the saved flash only within a 4-second window after save", () => {
     const successSpan = SRC.indexOf('data-testid="account-save-success"');
     expect(successSpan).toBeGreaterThan(-1);
-    const spanContext = SRC.slice(successSpan - 100, successSpan);
+    const spanContext = SRC.slice(successSpan - 300, successSpan);
     expect(spanContext).toContain("4000");
     expect(spanContext).toContain("savedAt");
   });

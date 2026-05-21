@@ -69,8 +69,8 @@ vi.mock("@workspace/resupply-audit", () => ({
 
 import payerFeeSchedulesRouter from "./payer-fee-schedules";
 
-const FEE_SCHEDULE_UUID = "44444444-dddd-0000-0000-000000000001";
-const PAYER_PROFILE_UUID = "55555555-eeee-0000-0000-000000000001";
+const FEE_SCHEDULE_UUID = "44444444-dddd-4000-8000-000000000001";
+const PAYER_PROFILE_UUID = "55555555-eeee-4000-8000-000000000001";
 
 function makeApp(): Express {
   const app = express();

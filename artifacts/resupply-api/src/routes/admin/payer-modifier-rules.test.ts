@@ -56,8 +56,8 @@ vi.mock("@workspace/resupply-audit", () => ({
 
 import payerModifierRulesRouter from "./payer-modifier-rules";
 
-const RULE_UUID = "55555555-eeee-ffff-0000-000000000001";
-const PAYER_PROFILE_UUID = "66666666-ffff-0000-0000-000000000001";
+const RULE_UUID = "55555555-eeee-4fff-8000-000000000001";
+const PAYER_PROFILE_UUID = "66666666-ffff-4000-8000-000000000001";
 
 function makeApp(): Express {
   const app = express();

@@ -56,7 +56,7 @@ vi.mock("@workspace/resupply-audit", () => ({
 
 import officeAllySubmissionsRouter from "./office-ally-submissions";
 
-const SUBMISSION_UUID = "33333333-cccc-dddd-0000-000000000001";
+const SUBMISSION_UUID = "33333333-cccc-4ddd-8000-000000000001";
 
 function makeApp(): Express {
   const app = express();

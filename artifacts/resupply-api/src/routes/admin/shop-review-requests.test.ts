@@ -98,7 +98,6 @@ beforeEach(() => {
   supabaseMock.reset();
   sendReviewRequestEmailMock.mockClear();
 });
-});
 
 // ── POST /admin/shop/review-requests/send-due ────────────────────────────────
 
@@ -138,7 +137,7 @@ describe("POST /admin/shop/review-requests/send-due — adminRateLimit integrati
       "/admin/shop/review-requests/send-due",
     );
     expect(res.status).toBe(200);
-    expect(res.body).toMatchObject({ attempted: 0, sent: 0 });
+    expect(res.body).toMatchObject({ scanned: 0, sent: 0 });
     expect(sendReviewRequestEmailMock).not.toHaveBeenCalled();
   });
 
@@ -170,7 +169,7 @@ describe("POST /admin/shop/review-requests/send-due — adminRateLimit integrati
       "/admin/shop/review-requests/send-due",
     );
     expect(res.status).toBe(200);
-    expect(res.body.attempted).toBeGreaterThanOrEqual(0);
+    expect(res.body.scanned).toBeGreaterThanOrEqual(0);
   });
 
   it("does not send emails when the 429 path is hit (rate limit fires before handler)", async () => {

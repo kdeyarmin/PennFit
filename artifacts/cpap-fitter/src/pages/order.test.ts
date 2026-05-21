@@ -37,14 +37,10 @@ describe("order — double-submit guard in onSubmit", () => {
   it("places the isPending guard before mutate() call", () => {
     const guardIdx = SRC.indexOf("if (isPending) return;");
     expect(guardIdx).toBeGreaterThanOrEqual(0);
-    // Find the onSubmit function block to scope the search for mutate()
-    const onSubmitStart = SRC.indexOf("const onSubmit = (values: FormValues) => {");
-    expect(onSubmitStart).toBeGreaterThan(-1);
-    // Find the closing brace of onSubmit - look for the mutate call inside
-    const onSubmitEnd = SRC.indexOf("};", onSubmitStart + 100); // skip at least past the opening
-    expect(onSubmitEnd).toBeGreaterThan(onSubmitStart);
-    const onSubmitBlock = SRC.slice(onSubmitStart, onSubmitEnd);
-    const mutateIdx = onSubmitStart + onSubmitBlock.indexOf("mutate(");
+    // The actual mutate call uses a newline before the args block —
+    // `mutate(\n      {`. Match that pattern to skip past comments that
+    // contain bare "mutate()" mentions.
+    const mutateIdx = SRC.search(/\bmutate\(\s*\n\s+\{/);
     expect(mutateIdx).toBeGreaterThan(guardIdx);
   });
 

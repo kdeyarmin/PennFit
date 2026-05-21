@@ -16,8 +16,8 @@ import {
 import { logger } from "../../lib/logger";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import {
-  requireAdmin,
   requireAdminOnly,
+  requirePermission,
 } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
@@ -80,7 +80,10 @@ function rowToApi(r: Row) {
   };
 }
 
-router.get("/admin/payer-modifier-rules", requireAdmin, async (req, res) => {
+router.get(
+  "/admin/payer-modifier-rules",
+  requirePermission("reports.read"),
+  async (req, res) => {
   const supabase = getSupabaseServiceRoleClient();
   let query = supabase
     .schema("resupply")

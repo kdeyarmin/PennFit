@@ -77,8 +77,8 @@ vi.mock("../../lib/compliance/training-expiry", () => ({
 
 import trainingRecordsRouter from "./training-records";
 
-const RECORD_UUID = "66666666-ffff-0000-0000-000000000001";
-const STAFF_UUID = "77777777-aaaa-0000-0000-000000000001";
+const RECORD_UUID = "66666666-ffff-4000-8000-000000000001";
+const STAFF_UUID = "77777777-aaaa-4000-8000-000000000001";
 
 function makeApp(): Express {
   const app = express();
@@ -97,8 +97,8 @@ function stubAdmin() {
 
 const validCreateBody = {
   staffUserId: STAFF_UUID,
-  trainingType: "hipaa_annual",
-  completedAt: "2026-01-15T00:00:00.000Z",
+  trainingType: "hipaa_privacy",
+  completedAt: "2026-01-15",
 };
 
 beforeEach(() => {

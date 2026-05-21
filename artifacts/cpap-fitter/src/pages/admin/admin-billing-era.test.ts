@@ -109,22 +109,22 @@ describe("admin-billing-era — upload result display", () => {
     expect(SRC).toContain("Posted");
   });
 
-  it("shows lines processed count from summary.linesProcessed", () => {
-    expect(SRC).toContain("linesProcessed");
-    expect(SRC).toContain("line(s) processed");
+  it("shows lines updated count from summary.linesUpdated", () => {
+    expect(SRC).toContain("linesUpdated");
+    expect(SRC).toContain("line(s) updated");
   });
 
   it("shows totalPaidCents via formatMoneyCents in the result", () => {
     expect(SRC).toContain("totalPaidCents");
   });
 
-  it("shows claimsMatched count in the result", () => {
-    expect(SRC).toContain("claimsMatched");
+  it("shows matchedClaims count in the result", () => {
+    expect(SRC).toContain("matchedClaims");
     expect(SRC).toContain("matched claim(s)");
   });
 
   it("warns about unmatched claims and need for manual link", () => {
-    expect(SRC).toContain("claimsUnmatched");
+    expect(SRC).toContain("unmatchedClaims");
     expect(SRC).toContain("need manual link");
   });
 });
@@ -137,8 +137,8 @@ describe("admin-billing-era — statusTone colour helper", () => {
     expect(SRC).toContain("function statusTone");
   });
 
-  it("maps 'ok' status to green (#15803d)", () => {
-    expect(SRC).toContain('"ok"');
+  it("maps 'processed' status to green (#15803d)", () => {
+    expect(SRC).toContain('"processed"');
     expect(SRC).toContain("#15803d");
   });
 

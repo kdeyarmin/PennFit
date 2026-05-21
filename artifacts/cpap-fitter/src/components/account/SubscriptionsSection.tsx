@@ -619,7 +619,7 @@ export function SubscriptionsSection({
             </div>
           )}
           {cadenceLoadError && (
-            <p className="py-4 text-sm text-destructive" role="alert">
+            <p className="py-4 text-sm text-destructive">
               Couldn't load cadence options. Please try again.
             </p>
           )}

@@ -68,9 +68,9 @@ vi.mock("@workspace/resupply-audit", () => ({ logAudit: vi.fn(async () => undefi
 
 import coachingRouter from "./coaching-plans";
 
-const CONV_ID = "00000000-0000-0000-0000-000000000001";
-const PLAN_ID = "00000000-0000-0000-0000-000000000002";
-const PATIENT_ID = "00000000-0000-0000-0000-000000000003";
+const CONV_ID = "00000000-0000-4000-8000-000000000001";
+const PLAN_ID = "00000000-0000-4000-8000-000000000002";
+const PATIENT_ID = "00000000-0000-4000-8000-000000000003";
 
 function makeApp(): Express {
   const app = express();
@@ -91,7 +91,6 @@ beforeEach(() => {
   mockAdmin.current = null;
   rateLimitBlocked.current = false;
   supabaseMock.reset();
-  adminRateLimitSpy.mockClear();
 });
 
 // ── POST /admin/coaching-plans ───────────────────────────────────────────────

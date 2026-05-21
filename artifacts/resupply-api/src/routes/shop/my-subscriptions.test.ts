@@ -78,7 +78,7 @@ vi.mock("../../lib/stripe/config", () => ({
 
 import myySubsRouter from "./my-subscriptions";
 
-const VALID_ID = "11111111-2222-3333-4444-555555555555";
+const VALID_ID = "11111111-2222-3333-8444-555555555555";
 const USER_ID = "user_alice";
 const STRIPE_SUB_ID = "sub_test_1";
 const STRIPE_ITEM_ID = "si_test_1";
