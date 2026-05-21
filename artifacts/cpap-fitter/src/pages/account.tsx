@@ -537,7 +537,7 @@ function DocumentsSection() {
       </div>
 
       {uploadError && (
-        <p className="text-sm text-destructive" data-testid="account-doc-upload-error">
+        <p className="text-sm text-destructive" data-testid="account-doc-upload-error" role="alert">
           {uploadError}
         </p>
       )}
@@ -880,6 +880,7 @@ function ProfileSection({
           <p
             className="text-sm text-destructive"
             data-testid="account-save-error"
+            role="alert"
           >
             {error}
           </p>
@@ -1076,6 +1077,7 @@ function SavedCardSection({ card }: { card: SavedCard | null }) {
             <p
               className="text-xs text-destructive mt-2"
               data-testid="account-card-error"
+              role="alert"
             >
               {error}
             </p>
@@ -1320,6 +1322,7 @@ function OrdersSection({
         <p
           className="mt-3 text-sm text-destructive"
           data-testid="account-reorder-error"
+          role="alert"
         >
           {reorderError}
         </p>
@@ -1391,7 +1394,9 @@ function ReportLostLink({ orderId }: { orderId: string }) {
         Cancel
       </button>
       {result?.kind === "error" && (
-        <span className="text-xs text-destructive ml-1">{result.message}</span>
+        <span className="text-xs text-destructive ml-1" role="alert">
+          {result.message}
+        </span>
       )}
     </div>
   );
@@ -1929,6 +1934,7 @@ function SubscriptionsSection({ previewMode }: { previewMode: boolean }) {
         <p
           className="mt-3 text-sm text-destructive"
           data-testid="account-subscription-action-error"
+          role="alert"
         >
           {actionError}
         </p>
@@ -1963,7 +1969,7 @@ function SubscriptionsSection({ previewMode }: { previewMode: boolean }) {
             </div>
           )}
           {cadenceLoadError && (
-            <p className="py-4 text-sm text-destructive">
+            <p className="py-4 text-sm text-destructive" role="alert">
               Couldn't load cadence options. Please try again.
             </p>
           )}
