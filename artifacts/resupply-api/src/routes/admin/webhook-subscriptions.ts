@@ -21,8 +21,8 @@ import { logger } from "../../lib/logger";
 import { VALID_EVENT_TYPE_SET } from "../../lib/webhooks/event-catalog";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import {
-  requireAdmin,
   requireAdminOnly,
+  requirePermission,
 } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
@@ -46,7 +46,7 @@ const idParam = z.object({ id: z.string().uuid() });
 
 router.get(
   "/admin/webhook-subscriptions",
-  requireAdmin,
+  requirePermission("admin.tools.manage"),
   async (_req, res) => {
     const supabase = getSupabaseServiceRoleClient();
     const { data } = await supabase
@@ -191,7 +191,7 @@ router.delete(
 
 router.get(
   "/admin/webhook-deliveries",
-  requireAdmin,
+  requirePermission("admin.tools.manage"),
   async (req, res) => {
     const supabase = getSupabaseServiceRoleClient();
     let query = supabase

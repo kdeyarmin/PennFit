@@ -22,8 +22,8 @@ import {
 import { logger } from "../../lib/logger";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import {
-  requireAdmin,
   requireAdminOnly,
+  requirePermission,
 } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
@@ -100,7 +100,7 @@ const FULL_SELECT =
 // ── LIST ────────────────────────────────────────────────────────────
 router.get(
   "/admin/office-ally-submissions",
-  requireAdmin,
+  requirePermission("admin.tools.manage"),
   async (req, res) => {
     const supabase = getSupabaseServiceRoleClient();
     let query = supabase
@@ -123,7 +123,7 @@ router.get(
 // ── DETAIL incl linked claims ──────────────────────────────────────
 router.get(
   "/admin/office-ally-submissions/:id",
-  requireAdmin,
+  requirePermission("admin.tools.manage"),
   async (req, res) => {
     const parsed = idParam.safeParse(req.params);
     if (!parsed.success) {
