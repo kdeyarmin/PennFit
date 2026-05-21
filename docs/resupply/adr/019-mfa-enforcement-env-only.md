@@ -82,10 +82,10 @@ We picked env-only because:
   `docs/runbooks/production-launch.md` as part of the launch
   procedure. The same runbook covers how to read the secrets
   history when the question comes up.
-- **The `/admin/operations` page** surfaces the resolved mode at
-  the top of the security section so on-call CSRs can see at a
-  glance whether MFA is mandatory. The page reads
-  `/admin/mfa/enforcement-mode` which is the same env-var resolver.
+- **The admin shell sticky banner** surfaces the resolved mode so
+  admins can see at a glance whether MFA is mandatory. The SPA
+  reads `/admin/mfa/status`, whose response includes the resolved
+  `enforcementMode` from the same env-var-backed logic.
 - **No SPA write surface exists** for this setting. The
   `/admin/security` page lets an individual admin enroll/remove
   devices but cannot change the global enforcement mode.
