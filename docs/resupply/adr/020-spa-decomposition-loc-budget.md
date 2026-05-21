@@ -140,4 +140,4 @@ predictable from the in-page label.
 - [`docs/polish-plan-2026-05-20.md`](../../polish-plan-2026-05-20.md) Phase 4 PRs 4.1 + 4.2 — the original plan that drove the May 2026 decomposition.
 - [`docs/app-review-2026-05-13.md`](../../app-review-2026-05-13.md) P2.1 + P2.2 — the regression call-out that surfaced the LOC growth.
 - Decomposition PRs: #254 (DocumentsTab), #266 (PortalTab), #267 (PatientActionBar), #270 (AddPrescriptionModal), #271 (SettingsCard), #272 (PrescriptionsTab), #274 (DocumentsSection), #275 (ProfileSection), #276 (OrdersSection), #277 (SubscriptionsSection).
-- `CLAUDE.md` "Working agreements" — short-form restatement of this convention for AI assistants reading the codebase.
+- This ADR is the canonical reference for the LOC budget and extraction convention for AI assistants and human reviewers until any shorter restatement is added elsewhere.
