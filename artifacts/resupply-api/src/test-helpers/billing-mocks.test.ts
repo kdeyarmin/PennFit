@@ -244,3 +244,73 @@ describe("MockBillingIdentity — NPI string type", () => {
     expect(identity.billingProvider.npi).toBe("0123456789");
   });
 });
+
+// ---------------------------------------------------------------------------
+// Boundary: makeFullIdentity overrides don't mutate each other
+// ---------------------------------------------------------------------------
+
+describe("MockBillingIdentity — makeFullIdentity independence", () => {
+  it("two calls to makeFullIdentity produce independent objects", () => {
+    const a = makeFullIdentity({ source: "db" });
+    const b = makeFullIdentity({ source: "env" });
+    // Mutating b must not change a.
+    b.billingProvider.npi = "9999999999";
+    expect(a.billingProvider.npi).toBe("1234567890");
+  });
+
+  it("overriding source does not affect other fields", () => {
+    const identity = makeFullIdentity({ source: "stub" });
+    // organization and billingProvider come from the base object.
+    expect(identity.organization?.legal_name).toBe("Test DME");
+    expect(identity.billingProvider.organizationName).toBe("Test DME");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Boundary: organization phone_e164 and billing_email are preserved verbatim
+// ---------------------------------------------------------------------------
+
+describe("MockBillingIdentity — organization string field fidelity", () => {
+  it("phone_e164 is stored exactly as provided (E.164 leading +)", () => {
+    const identity = makeFullIdentity({
+      organization: {
+        legal_name: "Fidelity DME",
+        phone_e164: "+18005551234",
+        billing_email: "pay@fidelity.example",
+      },
+    });
+    expect(identity.organization!.phone_e164).toBe("+18005551234");
+  });
+
+  it("billing_email is stored exactly as provided", () => {
+    const identity = makeFullIdentity({
+      organization: {
+        legal_name: "Fidelity DME",
+        phone_e164: "+18005551234",
+        billing_email: "ar+billing@fidelity.example",
+      },
+    });
+    expect(identity.organization!.billing_email).toBe(
+      "ar+billing@fidelity.example",
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Boundary: all three source values are exhaustive — no fourth value exists
+// in the union at runtime (structural check)
+// ---------------------------------------------------------------------------
+
+describe("MockBillingIdentity — source union exhaustiveness", () => {
+  it("all valid source values can be stored and retrieved", () => {
+    const sources: Array<MockBillingIdentity["source"]> = [
+      "db",
+      "env",
+      "stub",
+    ];
+    sources.forEach((src) => {
+      const identity = makeFullIdentity({ source: src });
+      expect(identity.source).toBe(src);
+    });
+  });
+});

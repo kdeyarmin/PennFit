@@ -216,4 +216,23 @@ describe("account — formatMoneyCents no longer imported from @/lib/shop-api", 
     expect(shopApiImport).not.toBeNull();
     expect(shopApiImport![0]).not.toContain("formatMoneyCents");
   });
+
+  it("shop-api import contains exactly one exported name (fetchShopProducts only)", () => {
+    // After the PR the brace-group must contain only fetchShopProducts —
+    // no trailing comma or second identifier.
+    const shopApiImport = SRC.match(/import\s*\{([^}]*)\}\s*from\s*["']@\/lib\/shop-api["']/);
+    expect(shopApiImport).not.toBeNull();
+    const names = shopApiImport![1]
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    expect(names).toHaveLength(1);
+    expect(names[0]).toBe("fetchShopProducts");
+  });
+
+  it("formatMoneyCents does not appear anywhere in account.tsx (not used, not re-exported)", () => {
+    // Belt-and-suspenders: the identifier must be absent from the whole file,
+    // not just the import line, to confirm it was completely removed.
+    expect(SRC).not.toContain("formatMoneyCents");
+  });
 });
