@@ -34,6 +34,7 @@ import {
   computeDueByIso,
 } from "../../lib/compliance/patient-rights-clock";
 import { logger } from "../../lib/logger";
+import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
 
 type RightsUpdate =
@@ -131,6 +132,10 @@ router.get(
 router.post(
   "/admin/compliance/patient-rights-requests",
   requirePermission("compliance.resolve"),
+  adminRateLimit({
+    name: "patient_rights_requests.create",
+    preset: "sensitive",
+  }),
   async (req, res) => {
     const parsed = createBody.safeParse(req.body);
     if (!parsed.success) {
@@ -183,6 +188,10 @@ router.post(
 router.patch(
   "/admin/compliance/patient-rights-requests/:id",
   requirePermission("compliance.resolve"),
+  adminRateLimit({
+    name: "patient_rights_requests.update",
+    preset: "sensitive",
+  }),
   async (req, res) => {
     const params = idParam.safeParse(req.params);
     if (!params.success) {
