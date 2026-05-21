@@ -22,6 +22,7 @@ import {
 } from "../../lib/billing/documentation-packet";
 import { resolveBillingIdentity } from "../../lib/billing/identity-resolver";
 import { logger } from "../../lib/logger";
+import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requireAdmin } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
@@ -75,6 +76,10 @@ router.get(
 router.post(
   "/admin/patients/:id/documentation-packets",
   requireAdmin,
+  adminRateLimit({
+    name: "documentation_packets.create",
+    preset: "sensitive",
+  }),
   async (req, res) => {
     const idParsed = idParam.safeParse(req.params);
     if (!idParsed.success) {

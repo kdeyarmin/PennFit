@@ -30,6 +30,7 @@ import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 import { maybeAutoAssignConversation } from "../../lib/routing/auto-assign";
 import { scoreCandidates } from "../../lib/routing/skill-score";
 import { logger } from "../../lib/logger";
+import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import {
   requireAdminOnly,
   requirePermission,
@@ -57,6 +58,7 @@ const requiredSkillsBody = z
 router.patch(
   "/admin/team/:id/skills",
   requireAdminOnly,
+  adminRateLimit({ name: "conversation_routing.set_skills", preset: "mutation" }),
   async (req, res) => {
     const idCheck = z.string().min(1).safeParse(req.params.id);
     if (!idCheck.success) {
@@ -112,6 +114,10 @@ router.patch(
 router.patch(
   "/admin/conversations/:id/required-skills",
   requireAdminOnly,
+  adminRateLimit({
+    name: "conversation_routing.set_required_skills",
+    preset: "mutation",
+  }),
   async (req, res) => {
     const idCheck = z.string().uuid().safeParse(req.params.id);
     if (!idCheck.success) {
@@ -252,6 +258,10 @@ router.post(
   // Auto-assign action — same scope as the suggestions GET above
   // (it's the action the suggestions feed).
   requirePermission("conversations.manage"),
+  adminRateLimit({
+    name: "conversation_routing.auto_assign",
+    preset: "mutation",
+  }),
   async (req, res) => {
     const idCheck = z.string().uuid().safeParse(req.params.id);
     if (!idCheck.success) {
