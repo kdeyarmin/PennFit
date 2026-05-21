@@ -25,6 +25,7 @@ import {
 import { findActiveClosure } from "../../lib/office-closure/active";
 import { buildClosuresIcal } from "../../lib/office-closure/build-ical";
 import { logger } from "../../lib/logger";
+import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
 
 type ClosureUpdate =
@@ -103,6 +104,7 @@ router.get(
 router.post(
   "/admin/office-closures",
   requirePermission("admin.tools.manage"),
+  adminRateLimit({ name: "office_closures.create", preset: "mutation" }),
   async (req, res) => {
     const parsed = createBody.safeParse(req.body);
     if (!parsed.success) {
@@ -152,6 +154,7 @@ router.post(
 router.patch(
   "/admin/office-closures/:id",
   requirePermission("admin.tools.manage"),
+  adminRateLimit({ name: "office_closures.update", preset: "mutation" }),
   async (req, res) => {
     const params = idParam.safeParse(req.params);
     if (!params.success) {
@@ -185,6 +188,7 @@ router.patch(
 router.post(
   "/admin/office-closures/:id/end-now",
   requirePermission("admin.tools.manage"),
+  adminRateLimit({ name: "office_closures.end_now", preset: "mutation" }),
   async (req, res) => {
     const params = idParam.safeParse(req.params);
     if (!params.success) {
@@ -304,6 +308,10 @@ router.get(
 router.post(
   "/admin/office-closures/recurring",
   requirePermission("admin.tools.manage"),
+  adminRateLimit({
+    name: "office_closures_recurring.create",
+    preset: "mutation",
+  }),
   async (req, res) => {
     const parsed = recurringCreateBody.safeParse(req.body);
     if (!parsed.success) {
@@ -357,6 +365,10 @@ router.post(
 router.patch(
   "/admin/office-closures/recurring/:id",
   requirePermission("admin.tools.manage"),
+  adminRateLimit({
+    name: "office_closures_recurring.update",
+    preset: "mutation",
+  }),
   async (req, res) => {
     const params = idParam.safeParse(req.params);
     if (!params.success) {

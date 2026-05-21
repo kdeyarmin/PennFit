@@ -8,6 +8,7 @@ import { logAudit } from "@workspace/resupply-audit";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
+import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
@@ -31,6 +32,7 @@ const tagsBody = z
 router.patch(
   "/admin/conversations/:id/snooze",
   requirePermission("conversations.manage"),
+  adminRateLimit({ name: "conversation_triage.snooze", preset: "mutation" }),
   async (req, res) => {
     const params = idParam.safeParse(req.params);
     if (!params.success) {
@@ -64,6 +66,7 @@ router.patch(
 router.patch(
   "/admin/conversations/:id/tags",
   requirePermission("conversations.manage"),
+  adminRateLimit({ name: "conversation_triage.tags", preset: "mutation" }),
   async (req, res) => {
     const params = idParam.safeParse(req.params);
     if (!params.success) {
@@ -101,6 +104,7 @@ router.patch(
 router.post(
   "/admin/conversations/:id/claim",
   requirePermission("conversations.manage"),
+  adminRateLimit({ name: "conversation_triage.claim", preset: "mutation" }),
   async (req, res) => {
     const params = idParam.safeParse(req.params);
     if (!params.success) {

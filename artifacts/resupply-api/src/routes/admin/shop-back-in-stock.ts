@@ -20,6 +20,7 @@ import { Router, type IRouter } from "express";
 
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
+import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
 import {
   getStripeClient,
@@ -215,6 +216,10 @@ router.post(
   // Manual fanout — sends notifications to every queued
   // subscriber. Treated as catalog/inventory admin tooling.
   requirePermission("admin.tools.manage"),
+  adminRateLimit({
+    name: "shop_back_in_stock.send_notifications",
+    preset: "bulk",
+  }),
   async (req, res) => {
     const productId = String(req.params.productId ?? "");
     if (!/^prod_[A-Za-z0-9_-]+$/.test(productId)) {

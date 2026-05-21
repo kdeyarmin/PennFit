@@ -28,6 +28,7 @@ type SubstituteUpdate =
   Database["resupply"]["Tables"]["shop_sku_substitutes"]["Update"];
 
 import { logger } from "../../lib/logger";
+import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import {
   requireAdminOnly,
   requirePermission,
@@ -117,6 +118,7 @@ router.post(
   // agent) — which matches the prior any-staff posture but
   // excludes the policy-only roles.
   requirePermission("returns.manage"),
+  adminRateLimit({ name: "shop_backorders.mark", preset: "mutation" }),
   async (req, res) => {
     const parsed = markBody.safeParse(req.body);
     if (!parsed.success) {
@@ -171,6 +173,7 @@ router.post(
   // Clear a backorder mark — same operational tier as the POST
   // mark.
   requirePermission("returns.manage"),
+  adminRateLimit({ name: "shop_backorders.clear", preset: "mutation" }),
   async (req, res) => {
     const params = idParam.safeParse(req.params);
     if (!params.success) {
@@ -277,6 +280,7 @@ router.get(
 router.post(
   "/admin/shop/sku-substitutes",
   requireAdminOnly,
+  adminRateLimit({ name: "shop_sku_substitutes.create", preset: "mutation" }),
   async (req, res) => {
     const parsed = substituteCreateBody.safeParse(req.body);
     if (!parsed.success) {
@@ -335,6 +339,7 @@ router.post(
 router.patch(
   "/admin/shop/sku-substitutes/:id",
   requireAdminOnly,
+  adminRateLimit({ name: "shop_sku_substitutes.update", preset: "mutation" }),
   async (req, res) => {
     const params = idParam.safeParse(req.params);
     if (!params.success) {
@@ -366,6 +371,7 @@ router.patch(
 router.delete(
   "/admin/shop/sku-substitutes/:id",
   requireAdminOnly,
+  adminRateLimit({ name: "shop_sku_substitutes.delete", preset: "destroy" }),
   async (req, res) => {
     const params = idParam.safeParse(req.params);
     if (!params.success) {
