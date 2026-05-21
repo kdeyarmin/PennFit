@@ -39,9 +39,9 @@ vi.mock("../../lib/logger", () => ({
 import mePaymentsRouter from "./me-payments";
 
 const CUSTOMER_ID = "cust-bob-001";
-const PATIENT_ID = "aaaaaaaa-1111-1111-1111-111111111111";
+const PATIENT_ID = "aaaaaaaa-1111-1111-8111-111111111111";
 const CUSTOMER_EMAIL = "bob@example.com";
-const CLAIM_ID = "cccccccc-1111-1111-1111-111111111111";
+const CLAIM_ID = "cccccccc-1111-1111-8111-111111111111";
 
 function makeApp(customerId: string | null = CUSTOMER_ID): Express {
   const app = express();

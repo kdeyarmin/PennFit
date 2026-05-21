@@ -112,7 +112,7 @@ export async function runOigLeieSync(
     .schema("resupply")
     .from("oig_leie_exclusions")
     .delete()
-    .neq("id", "00000000-0000-0000-0000-000000000000");
+    .neq("id", "00000000-0000-4000-8000-000000000000");
   if (clearErr) throw clearErr;
 
   for (let i = 0; i < rows.length; i += INSERT_BATCH_SIZE) {

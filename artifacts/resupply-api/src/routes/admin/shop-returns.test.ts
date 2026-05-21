@@ -57,8 +57,8 @@ vi.mock("../../lib/observability", () => ({
 
 import shopReturnsRouter from "./shop-returns";
 
-const RETURN_ID = "aaaa1111-0000-0000-0000-000000000001";
-const ORDER_ID  = "bbbb2222-0000-0000-0000-000000000001";
+const RETURN_ID = "aaaa1111-0000-4000-8000-000000000001";
+const ORDER_ID  = "bbbb2222-0000-4000-8000-000000000001";
 
 function makeApp(): Express {
   const app = express();

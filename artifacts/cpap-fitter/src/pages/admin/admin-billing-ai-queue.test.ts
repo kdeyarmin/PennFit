@@ -110,8 +110,8 @@ describe("admin-billing-ai-queue — patient claim deep-link", () => {
     );
   });
 
-  it("links auto-resubmit rows to /admin/billing/claims/:claimId", () => {
-    expect(SRC).toContain("/admin/billing/claims/${a.claimId}");
+  it("links auto-resubmit rows to /admin/patients/:patientId/insurance-claims", () => {
+    expect(SRC).toContain("/admin/patients/${a.patientId}/insurance-claims");
   });
 });
 

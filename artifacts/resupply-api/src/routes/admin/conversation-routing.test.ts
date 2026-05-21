@@ -93,7 +93,7 @@ vi.mock("../../lib/routing/skill-score", () => ({
 
 import routingRouter from "./conversation-routing";
 
-const CONV_UUID = "ccccdddd-0000-0000-0000-000000000001";
+const CONV_UUID = "ccccdddd-0000-4000-8000-000000000001";
 const TEAM_ID = "team-member-id-1";
 
 function makeApp(): Express {
@@ -123,7 +123,6 @@ beforeEach(() => {
   mockAdmin.current = null;
   rateLimitBlocked.current = false;
   supabaseMock.reset();
-  adminRateLimitSpy.mockClear();
   maybeAutoAssignMock.mockClear();
   maybeAutoAssignMock.mockResolvedValue({
     assigned: true,

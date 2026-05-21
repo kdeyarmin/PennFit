@@ -105,7 +105,7 @@ function pdfFetchResponse(bytes: Uint8Array): Response {
 
 describe("ingestInboundFax — insert behavior", () => {
   it("inserts a new row and reports inserted", async () => {
-    stageInsertSuccess("00000000-0000-0000-0000-0000000000aa");
+    stageInsertSuccess("00000000-0000-4000-8000-0000000000aa");
     // Don't bother with media path — null mediaUrl skips it.
     const result = await ingestInboundFax(
       { ...baseInput, mediaUrl: null },
@@ -114,14 +114,14 @@ describe("ingestInboundFax — insert behavior", () => {
     );
     expect(result).toEqual({
       kind: "inserted",
-      id: "00000000-0000-0000-0000-0000000000aa",
+      id: "00000000-0000-4000-8000-0000000000aa",
       mediaPersisted: false,
     });
   });
 
   it("returns already_recorded on unique-violation (Twilio replay)", async () => {
     stageInsertConflict();
-    stageSelectExisting("00000000-0000-0000-0000-0000000000bb");
+    stageSelectExisting("00000000-0000-4000-8000-0000000000bb");
     const result = await ingestInboundFax(
       baseInput,
       loggerStub as unknown as Logger,
@@ -129,7 +129,7 @@ describe("ingestInboundFax — insert behavior", () => {
     );
     expect(result.kind).toBe("already_recorded");
     if (result.kind === "already_recorded") {
-      expect(result.id).toBe("00000000-0000-0000-0000-0000000000bb");
+      expect(result.id).toBe("00000000-0000-4000-8000-0000000000bb");
     }
     // No fetch attempted — we trust the prior attempt's outcome.
     expect(fetchMock).not.toHaveBeenCalled();

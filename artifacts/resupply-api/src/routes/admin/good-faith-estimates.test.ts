@@ -94,7 +94,7 @@ vi.mock("../../lib/billing/identity-resolver", () => ({
 
 import goodFaithEstimatesRouter from "./good-faith-estimates";
 
-const GFE_UUID = "22222222-bbbb-cccc-0000-000000000001";
+const GFE_UUID = "22222222-bbbb-4ccc-8000-000000000001";
 
 function makeApp(): Express {
   const app = express();

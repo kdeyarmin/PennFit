@@ -97,9 +97,9 @@ vi.mock("../../lib/webhooks/publisher", () => ({
 
 import billingStatementsRouter from "./billing-statements";
 
-const PATIENT_UUID = "bbbbbbbb-2222-0000-0000-000000000001";
-const STATEMENT_UUID = "cccccccc-3333-0000-0000-000000000001";
-const CLAIM_UUID = "dddddddd-4444-0000-0000-000000000001";
+const PATIENT_UUID = "bbbbbbbb-2222-4000-8000-000000000001";
+const STATEMENT_UUID = "cccccccc-3333-4000-8000-000000000001";
+const CLAIM_UUID = "dddddddd-4444-4000-8000-000000000001";
 
 function makeApp(): Express {
   const app = express();

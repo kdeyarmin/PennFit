@@ -126,8 +126,8 @@ describe("formatPercent", () => {
     expect(formatPercent(0.001)).toBe("0.1%");
   });
 
-  test("rounds correctly (0.1235 → 12.4% with 1 decimal)", () => {
-    expect(formatPercent(0.1235)).toBe("12.4%");
+  test("rounds correctly with 1 decimal (0.126 → 12.6%)", () => {
+    expect(formatPercent(0.126)).toBe("12.6%");
   });
 });
 

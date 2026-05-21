@@ -76,8 +76,8 @@ vi.mock("../../lib/compliance/patient-rights-clock", () => ({
 
 import patientRightsRouter from "./patient-rights-requests";
 
-const REQUEST_UUID = "22222222-bbbb-0000-0000-000000000001";
-const PATIENT_UUID = "33333333-cccc-0000-0000-000000000001";
+const REQUEST_UUID = "22222222-bbbb-4000-8000-000000000001";
+const PATIENT_UUID = "33333333-cccc-4000-8000-000000000001";
 
 function makeApp(): Express {
   const app = express();

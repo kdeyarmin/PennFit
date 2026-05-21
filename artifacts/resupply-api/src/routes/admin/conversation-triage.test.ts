@@ -70,7 +70,7 @@ vi.mock("@workspace/resupply-audit", () => ({
 
 import triageRouter from "./conversation-triage";
 
-const CONV_UUID = "aaaabbbb-0000-0000-0000-000000000001";
+const CONV_UUID = "aaaabbbb-0000-4000-8000-000000000001";
 const ADMIN_USER_ID = "u_admin_42";
 
 function makeApp(): Express {
@@ -92,7 +92,6 @@ beforeEach(() => {
   mockAdmin.current = null;
   rateLimitBlocked.current = false;
   supabaseMock.reset();
-  adminRateLimitSpy.mockClear();
 });
 
 // ── PATCH /admin/conversations/:id/snooze ────────────────────────────────────

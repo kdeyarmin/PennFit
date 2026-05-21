@@ -198,7 +198,6 @@ export function TrackOrder() {
                 <p
                   className="text-sm text-destructive"
                   data-testid="track-error"
-                  role="alert"
                 >
                   {error}
                 </p>
