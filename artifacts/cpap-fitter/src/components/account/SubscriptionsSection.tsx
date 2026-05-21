@@ -16,8 +16,9 @@
 //     letting the customer follow through with a hard cancel
 //   - Cadence-change dialog with lazy-fetched Stripe options
 //
-// All four mutations go through the same `pending` state to keep
-// the buttons from racing each other.
+// Pause / resume / cancel actions share the row-level `pending`
+// state to keep those buttons from racing each other, while the
+// cadence-change flow tracks its own submitting state.
 
 import { useEffect, useState } from "react";
 
