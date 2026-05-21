@@ -26,8 +26,8 @@ import {
 import { logger } from "../../lib/logger";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import {
-  requireAdmin,
   requireAdminOnly,
+  requirePermission,
 } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
@@ -131,7 +131,10 @@ const FULL_SELECT =
   "id, slug, display_name, payer_legal_name, parent_org, line_of_business, region, office_ally_payer_id, edi_5010_payer_id, claim_format, paper_only, requires_prior_auth_dme, prior_auth_phone_e164, claim_status_phone_e164, provider_portal_url, fee_schedule_source, notes, is_active, created_at, updated_at";
 
 // ── LIST ────────────────────────────────────────────────────────────
-router.get("/admin/payer-profiles", requireAdmin, async (req, res) => {
+router.get(
+  "/admin/payer-profiles",
+  requirePermission("reports.read"),
+  async (req, res) => {
   const supabase = getSupabaseServiceRoleClient();
   let query = supabase
     .schema("resupply")
@@ -168,7 +171,10 @@ router.get("/admin/payer-profiles", requireAdmin, async (req, res) => {
 });
 
 // ── DETAIL ──────────────────────────────────────────────────────────
-router.get("/admin/payer-profiles/:id", requireAdmin, async (req, res) => {
+router.get(
+  "/admin/payer-profiles/:id",
+  requirePermission("reports.read"),
+  async (req, res) => {
   const parsed = idParam.safeParse(req.params);
   if (!parsed.success) {
     res.status(404).json({ error: "not_found" });

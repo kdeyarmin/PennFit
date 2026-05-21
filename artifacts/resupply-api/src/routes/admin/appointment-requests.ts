@@ -7,14 +7,14 @@ import { z } from "zod";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
-import { requireAdmin, requirePermission } from "../../middlewares/requireAdmin";
+import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
 const idParam = z.object({ id: z.string().uuid() });
 
 router.get(
   "/admin/appointment-requests",
-  requireAdmin,
+  requirePermission("patients.update"),
   async (req, res) => {
     const supabase = getSupabaseServiceRoleClient();
     const includeClosed = req.query.include === "closed";
