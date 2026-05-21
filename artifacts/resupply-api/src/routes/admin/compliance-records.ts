@@ -28,6 +28,7 @@ import {
 
 import { logDisclosure } from "../../lib/compliance/disclosure-logger";
 import { logger } from "../../lib/logger";
+import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
@@ -72,6 +73,7 @@ router.get(
 router.post(
   "/admin/compliance/risk-assessments",
   requirePermission("compliance.resolve"),
+  adminRateLimit({ name: "compliance.risk_assessments.create", preset: "sensitive" }),
   async (req, res) => {
     const parsed = riskCreate.safeParse(req.body);
     if (!parsed.success) {
@@ -159,6 +161,7 @@ router.get(
 router.post(
   "/admin/compliance/contingency-attestations",
   requirePermission("compliance.resolve"),
+  adminRateLimit({ name: "compliance.contingency_attestations.create", preset: "sensitive" }),
   async (req, res) => {
     const parsed = contingencyCreate.safeParse(req.body);
     if (!parsed.success) {
@@ -238,6 +241,7 @@ router.get(
 router.post(
   "/admin/compliance/disaster-drills",
   requirePermission("compliance.resolve"),
+  adminRateLimit({ name: "compliance.disaster_drills.create", preset: "mutation" }),
   async (req, res) => {
     const parsed = drillCreate.safeParse(req.body);
     if (!parsed.success) {
@@ -321,6 +325,7 @@ router.get(
 router.post(
   "/admin/compliance/qi-initiatives",
   requirePermission("compliance.resolve"),
+  adminRateLimit({ name: "compliance.qi_initiatives.create", preset: "mutation" }),
   async (req, res) => {
     const parsed = qiCreate.safeParse(req.body);
     if (!parsed.success) {
@@ -391,6 +396,7 @@ const qiPatch = z
 router.patch(
   "/admin/compliance/qi-initiatives/:id",
   requirePermission("compliance.resolve"),
+  adminRateLimit({ name: "compliance.qi_initiatives.update", preset: "mutation" }),
   async (req, res) => {
     const params = z
       .object({ id: z.string().uuid() })
@@ -478,6 +484,7 @@ router.get(
 router.post(
   "/admin/compliance/qi-measurements",
   requirePermission("compliance.resolve"),
+  adminRateLimit({ name: "compliance.qi_measurements.create", preset: "mutation" }),
   async (req, res) => {
     const parsed = measurementCreate.safeParse(req.body);
     if (!parsed.success) {
@@ -568,6 +575,7 @@ router.get(
 router.post(
   "/admin/compliance/ownership-disclosures",
   requirePermission("compliance.resolve"),
+  adminRateLimit({ name: "compliance.ownership_disclosures.create", preset: "sensitive" }),
   async (req, res) => {
     const parsed = ownershipCreate.safeParse(req.body);
     if (!parsed.success) {
@@ -622,6 +630,7 @@ router.post(
 router.delete(
   "/admin/compliance/ownership-disclosures/:id",
   requirePermission("compliance.resolve"),
+  adminRateLimit({ name: "compliance.ownership_disclosures.delete", preset: "destroy" }),
   async (req, res) => {
     const params = z
       .object({ id: z.string().uuid() })
@@ -682,6 +691,7 @@ const disclosureCreate = z
 router.post(
   "/admin/compliance/disclosure-log",
   requirePermission("compliance.resolve"),
+  adminRateLimit({ name: "compliance.disclosure_log.create", preset: "sensitive" }),
   async (req, res) => {
     const parsed = disclosureCreate.safeParse(req.body);
     if (!parsed.success) {
