@@ -17,8 +17,8 @@ import {
 
 import { logger } from "../../lib/logger";
 import {
-  requireAdmin,
   requireAdminOnly,
+  requirePermission,
 } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
@@ -83,7 +83,10 @@ function rowToApi(r: FeeRow) {
   };
 }
 
-router.get("/admin/payer-fee-schedules", requireAdmin, async (req, res) => {
+router.get(
+  "/admin/payer-fee-schedules",
+  requirePermission("reports.read"),
+  async (req, res) => {
   const supabase = getSupabaseServiceRoleClient();
   let query = supabase
     .schema("resupply")
@@ -110,7 +113,7 @@ router.get("/admin/payer-fee-schedules", requireAdmin, async (req, res) => {
  */
 router.get(
   "/admin/payer-fee-schedules/lookup",
-  requireAdmin,
+  requirePermission("reports.read"),
   async (req, res) => {
     const payerProfileId =
       typeof req.query.payerProfileId === "string" ? req.query.payerProfileId : "";

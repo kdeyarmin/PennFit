@@ -21,8 +21,8 @@ import {
 
 import { logger } from "../../lib/logger";
 import {
-  requireAdmin,
   requireAdminOnly,
+  requirePermission,
 } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
@@ -132,7 +132,7 @@ function rowToApi(r: Row) {
 
 router.get(
   "/admin/hipaa-breach-incidents",
-  requireAdmin,
+  requirePermission("compliance.read"),
   async (req, res) => {
     const supabase = getSupabaseServiceRoleClient();
     let query = supabase
@@ -154,7 +154,7 @@ router.get(
 
 router.get(
   "/admin/hipaa-breach-incidents/:id",
-  requireAdmin,
+  requirePermission("compliance.read"),
   async (req, res) => {
     const parsed = idParam.safeParse(req.params);
     if (!parsed.success) {
