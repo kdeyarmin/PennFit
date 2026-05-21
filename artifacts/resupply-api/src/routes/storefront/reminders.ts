@@ -32,8 +32,6 @@ import {
   SubscribeToRemindersBody,
   UpdateReminderSubscriptionBody,
   GetReminderSubscriptionQueryParams,
-  UpdateReminderSubscriptionQueryParams,
-  UnsubscribeFromRemindersQueryParams,
   type ReminderItem,
 } from "../../lib/api-zod/index.js";
 import {
@@ -45,6 +43,7 @@ import {
   sendReminderConfirmation,
   sendReminderManageLink,
 } from "../../lib/storefront/reminderEmail.js";
+import { attachSignedIn } from "../../middlewares/requireSignedIn.js";
 
 type ReminderSubscriptionRow =
   Database["public"]["Tables"]["reminder_subscriptions"]["Row"];
@@ -282,13 +281,51 @@ router.post("/reminders", async (req, res) => {
   });
 });
 
-// ---------- GET /reminders/manage?token=... ----------
-router.get("/reminders/manage", async (req, res) => {
-  const parsed = GetReminderSubscriptionQueryParams.safeParse(req.query);
-  if (!parsed.success) {
-    res
-      .status(400)
-      .json({ error: "Invalid query", details: ["token: required"] });
+/**
+ * Manage-route lookup key resolver (P5).
+ *
+ * The historical contract for /reminders/manage* was "token in query
+ * = sole auth" so the magic-link emails worked for guest subscribers.
+ * That broke the UX for signed-in shoppers, who had to leave the SPA,
+ * open their inbox, and click a link just to edit a list they could
+ * already see in /account. We now accept EITHER:
+ *
+ *   1. `?token=...` (capability token, unchanged), OR
+ *   2. an `attachSignedIn` session — we look up by the session's
+ *      email (lowercased the same way the subscribe path stores it).
+ *
+ * Token wins when both are present so a deep-linked manage email
+ * always lands on the row it refers to, even if the recipient was
+ * happening to be signed in as a different customer at the time.
+ *
+ * Returns `{ column, value }` for a `.eq()` clause, or null with a
+ * status + message the handler should return.
+ */
+function resolveManageLookup(req: import("express").Request):
+  | { ok: true; column: "manage_token" | "email"; value: string }
+  | { ok: false; status: number; message: string } {
+  const tokenParsed = GetReminderSubscriptionQueryParams.safeParse(req.query);
+  if (tokenParsed.success) {
+    return { ok: true, column: "manage_token", value: tokenParsed.data.token };
+  }
+  const email = req.shopCustomerEmail?.toLowerCase().trim();
+  if (email) {
+    return { ok: true, column: "email", value: email };
+  }
+  return {
+    ok: false,
+    status: 401,
+    message:
+      "sign_in_required or token query parameter — pass one of the two",
+  };
+}
+
+// ---------- GET /reminders/manage[?token=...] ----------
+// Auth: token in query OR signed-in session. See resolveManageLookup.
+router.get("/reminders/manage", attachSignedIn, async (req, res) => {
+  const lookup = resolveManageLookup(req);
+  if (!lookup.ok) {
+    res.status(lookup.status).json({ error: lookup.message });
     return;
   }
   const supabase = getSupabaseServiceRoleClient();
@@ -298,7 +335,7 @@ router.get("/reminders/manage", async (req, res) => {
     .select(
       "id, email, manage_token, status, items, last_sent_at, created_at, updated_at",
     )
-    .eq("manage_token", parsed.data.token)
+    .eq(lookup.column, lookup.value)
     .limit(1)
     .maybeSingle();
   if (error) throw error;
@@ -309,18 +346,15 @@ router.get("/reminders/manage", async (req, res) => {
   res.json(toView(row));
 });
 
-// ---------- PATCH /reminders/manage?token=... ----------
-router.patch("/reminders/manage", async (req, res) => {
-  const queryParsed = UpdateReminderSubscriptionQueryParams.safeParse(
-    req.query,
-  );
-  const bodyParsed = UpdateReminderSubscriptionBody.safeParse(req.body);
-  if (!queryParsed.success) {
-    res
-      .status(400)
-      .json({ error: "Invalid query", details: ["token: required"] });
+// ---------- PATCH /reminders/manage[?token=...] ----------
+// Auth: token in query OR signed-in session. See resolveManageLookup.
+router.patch("/reminders/manage", attachSignedIn, async (req, res) => {
+  const lookup = resolveManageLookup(req);
+  if (!lookup.ok) {
+    res.status(lookup.status).json({ error: lookup.message });
     return;
   }
+  const bodyParsed = UpdateReminderSubscriptionBody.safeParse(req.body);
   if (!bodyParsed.success) {
     res.status(400).json({
       error: "Invalid update",
@@ -348,7 +382,7 @@ router.patch("/reminders/manage", async (req, res) => {
       status: "active",
       updated_at: new Date().toISOString(),
     })
-    .eq("manage_token", queryParsed.data.token)
+    .eq(lookup.column, lookup.value)
     .select(
       "id, email, manage_token, status, items, last_sent_at, created_at, updated_at",
     )
@@ -362,36 +396,39 @@ router.patch("/reminders/manage", async (req, res) => {
   res.json(toView(updated));
 });
 
-// ---------- POST /reminders/manage/unsubscribe?token=... ----------
-router.post("/reminders/manage/unsubscribe", async (req, res) => {
-  const parsed = UnsubscribeFromRemindersQueryParams.safeParse(req.query);
-  if (!parsed.success) {
-    res
-      .status(400)
-      .json({ error: "Invalid query", details: ["token: required"] });
-    return;
-  }
-  const supabase = getSupabaseServiceRoleClient();
-  const { data: updated, error } = await supabase
-    .schema("public")
-    .from("reminder_subscriptions")
-    .update({
-      status: "unsubscribed",
-      updated_at: new Date().toISOString(),
-    })
-    .eq("manage_token", parsed.data.token)
-    .select("id")
-    .limit(1)
-    .maybeSingle();
-  if (error) throw error;
-  if (!updated) {
-    res.status(404).json({ error: "Subscription not found" });
-    return;
-  }
-  res.json({
-    success: true,
-    message: "You've been unsubscribed from PennPaps supply reminders.",
-  });
-});
+// ---------- POST /reminders/manage/unsubscribe[?token=...] ----------
+// Auth: token in query OR signed-in session. See resolveManageLookup.
+router.post(
+  "/reminders/manage/unsubscribe",
+  attachSignedIn,
+  async (req, res) => {
+    const lookup = resolveManageLookup(req);
+    if (!lookup.ok) {
+      res.status(lookup.status).json({ error: lookup.message });
+      return;
+    }
+    const supabase = getSupabaseServiceRoleClient();
+    const { data: updated, error } = await supabase
+      .schema("public")
+      .from("reminder_subscriptions")
+      .update({
+        status: "unsubscribed",
+        updated_at: new Date().toISOString(),
+      })
+      .eq(lookup.column, lookup.value)
+      .select("id")
+      .limit(1)
+      .maybeSingle();
+    if (error) throw error;
+    if (!updated) {
+      res.status(404).json({ error: "Subscription not found" });
+      return;
+    }
+    res.json({
+      success: true,
+      message: "You've been unsubscribed from PennPaps supply reminders.",
+    });
+  },
+);
 
 export default router;

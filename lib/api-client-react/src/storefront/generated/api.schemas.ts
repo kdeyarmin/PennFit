@@ -455,14 +455,22 @@ export interface OrderResponse {
   message: string;
 }
 
+/**
+ * P5 — `token` is optional. The route accepts EITHER a `token` query
+ * parameter (the magic-link capability for guest subscribers) OR a
+ * signed-in session cookie (lookup by the session's email). Callers
+ * pass `{ token }` when they have one in the URL and `{}` (or omit
+ * the param block entirely) when they're signed in. See
+ * artifacts/resupply-api/src/routes/storefront/reminders.ts.
+ */
 export type GetReminderSubscriptionParams = {
-  token: string;
+  token?: string;
 };
 
 export type UpdateReminderSubscriptionParams = {
-  token: string;
+  token?: string;
 };
 
 export type UnsubscribeFromRemindersParams = {
-  token: string;
+  token?: string;
 };

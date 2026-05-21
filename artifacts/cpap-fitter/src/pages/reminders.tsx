@@ -1,9 +1,10 @@
 import React, { useState } from "react";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import {
   useSubscribeToReminders,
   ApiError,
 } from "@workspace/api-client-react/storefront";
+import { useShopIdentity } from "@/lib/identity";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -62,7 +63,14 @@ interface SuccessState {
 
 export function Reminders() {
   useDocumentTitle(PAGE_TITLE);
-  const [email, setEmail] = useState("");
+  const [, setLocation] = useLocation();
+  // P5 — for signed-in shoppers we skip the magic-link round-trip and
+  // SPA-route straight to /reminders/manage on successful subscribe.
+  // The manage page resolves the row by session email, so the patient
+  // never has to leave the SPA, open their inbox, or click a token
+  // link to edit a list they just typed.
+  const { isSignedIn, email: identityEmail } = useShopIdentity();
+  const [email, setEmail] = useState(identityEmail ?? "");
   const [website, setWebsite] = useState(""); // honeypot
   const [items, setItems] = useState(buildInitialState);
   const [success, setSuccess] = useState<SuccessState | null>(null);
@@ -101,16 +109,29 @@ export function Reminders() {
       return;
     }
 
+    const submittedEmail = email.trim();
+    const willSkipTokenStep =
+      isSignedIn &&
+      identityEmail !== null &&
+      submittedEmail.toLowerCase() === identityEmail.toLowerCase();
+
     mutate(
       {
         data: {
-          email: email.trim(),
+          email: submittedEmail,
           items: enabledItems,
           website: website || undefined,
         },
       },
       {
         onSuccess: (resp) => {
+          if (willSkipTokenStep) {
+            // Signed-in subscriber subscribing under their own email:
+            // jump straight into the manage page. The backend's manage
+            // route will resolve the new row by session email.
+            setLocation("/reminders/manage");
+            return;
+          }
           setSuccess({
             emailStatus: resp.emailStatus,
             message: resp.message,
