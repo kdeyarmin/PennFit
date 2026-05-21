@@ -88,24 +88,26 @@ router.get(
   "/admin/payer-fee-schedules",
   requirePermission("reports.read"),
   async (req, res) => {
-  const supabase = getSupabaseServiceRoleClient();
-  let query = supabase
-    .schema("resupply")
-    .from("payer_fee_schedules")
-    .select(
-      "id, payer_profile_id, hcpcs_code, modifier, allowed_cents, effective_from, effective_through, source, notes, created_at, updated_at",
-    )
-    .order("effective_from", { ascending: false })
-    .limit(500);
-  const payerProfileId =
-    typeof req.query.payerProfileId === "string" ? req.query.payerProfileId : undefined;
-  if (payerProfileId) query = query.eq("payer_profile_id", payerProfileId);
-  const hcpcs = typeof req.query.hcpcs === "string" ? req.query.hcpcs.toUpperCase() : undefined;
-  if (hcpcs) query = query.eq("hcpcs_code", hcpcs);
-  const { data, error } = await query;
-  if (error) throw error;
-  res.json({ feeSchedules: (data ?? []).map(rowToApi) });
-});
+    const supabase = getSupabaseServiceRoleClient();
+    let query = supabase
+      .schema("resupply")
+      .from("payer_fee_schedules")
+      .select(
+        "id, payer_profile_id, hcpcs_code, modifier, allowed_cents, effective_from, effective_through, source, notes, created_at, updated_at",
+      )
+      .order("effective_from", { ascending: false })
+      .limit(500);
+    const payerProfileId =
+      typeof req.query.payerProfileId === "string" ? req.query.payerProfileId : undefined;
+    if (payerProfileId) query = query.eq("payer_profile_id", payerProfileId);
+    const hcpcs =
+      typeof req.query.hcpcs === "string" ? req.query.hcpcs.toUpperCase() : undefined;
+    if (hcpcs) query = query.eq("hcpcs_code", hcpcs);
+    const { data, error } = await query;
+    if (error) throw error;
+    res.json({ feeSchedules: (data ?? []).map(rowToApi) });
+  },
+);
 
 /**
  * Best-match lookup: returns the most-specific row whose effective
