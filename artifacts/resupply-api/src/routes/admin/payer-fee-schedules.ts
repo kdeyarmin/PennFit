@@ -16,6 +16,7 @@ import {
 } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
+import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import {
   requireAdminOnly,
   requirePermission,
@@ -164,6 +165,7 @@ router.get(
 router.post(
   "/admin/payer-fee-schedules",
   requireAdminOnly,
+  adminRateLimit({ name: "payer_fee_schedules.create", preset: "sensitive" }),
   async (req, res) => {
     const parsed = upsertBody.safeParse(req.body);
     if (!parsed.success) {
@@ -229,6 +231,7 @@ router.post(
 router.patch(
   "/admin/payer-fee-schedules/:id",
   requireAdminOnly,
+  adminRateLimit({ name: "payer_fee_schedules.update", preset: "sensitive" }),
   async (req, res) => {
     const idParsed = idParam.safeParse(req.params);
     if (!idParsed.success) {
