@@ -313,4 +313,52 @@ describe("POST /admin/conversations/:id/auto-assign — adminRateLimit integrati
     );
     expect(res.status).toBe(404);
   });
+
+  it("returns 409 when there are no required skills (no_required_skills reason)", async () => {
+    // Regression: AutoAssignResultLike union variant "no_required_skills" must
+    // map to 409 — same as "already_assigned" — per the route comment that all
+    // non-404 unassigned outcomes use 409 so the SPA can branch on status.
+    stubAdmin();
+    maybeAutoAssignMock.mockResolvedValueOnce({
+      assigned: false,
+      reason: "no_required_skills",
+    });
+    const res = await request(makeApp()).post(
+      `/admin/conversations/${CONV_UUID}/auto-assign`,
+    );
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe("no_required_skills");
+  });
+
+  it("returns 409 when no eligible candidate is found (no_eligible_candidate reason)", async () => {
+    // Regression: AutoAssignResultLike union variant "no_eligible_candidate"
+    // must also map to 409, not 404 or 422.
+    stubAdmin();
+    maybeAutoAssignMock.mockResolvedValueOnce({
+      assigned: false,
+      reason: "no_eligible_candidate",
+    });
+    const res = await request(makeApp()).post(
+      `/admin/conversations/${CONV_UUID}/auto-assign`,
+    );
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe("no_eligible_candidate");
+  });
+
+  it("returns 200 with assignment details when auto-assign succeeds", async () => {
+    // Positive path for AutoAssignResultLike { assigned: true } variant.
+    stubAdmin();
+    maybeAutoAssignMock.mockResolvedValueOnce({
+      assigned: true,
+      adminUserId: "u_specific_assignee",
+      matchedSkillCount: 3,
+    });
+    const res = await request(makeApp()).post(
+      `/admin/conversations/${CONV_UUID}/auto-assign`,
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.assigned).toBe(true);
+    expect(res.body.adminUserId).toBe("u_specific_assignee");
+    expect(res.body.matchedSkillCount).toBe(3);
+  });
 });
