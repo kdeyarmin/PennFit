@@ -37,10 +37,7 @@ import {
   findBestAdherenceWindow,
 } from "../../lib/compliance-attestation";
 import { logger } from "../../lib/logger";
-import {
-  requireAdmin,
-  requirePermission,
-} from "../../middlewares/requireAdmin";
+import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
 
@@ -50,7 +47,7 @@ const windowSchema = z.object({
 
 router.get(
   "/admin/analytics/resupply-funnel",
-  requireAdmin,
+  requirePermission("reports.read"),
   async (req, res) => {
     const parsed = windowSchema.safeParse(req.query);
     if (!parsed.success) {
@@ -74,7 +71,7 @@ router.get(
 
 router.get(
   "/admin/analytics/compliance-cohorts",
-  requireAdmin,
+  requirePermission("reports.read"),
   async (req, res) => {
     // Default to a wider window than the others — compliance cohorts
     // are most useful at the 6+ month horizon since the 90-day trial
@@ -174,7 +171,7 @@ router.get(
 
 router.get(
   "/admin/analytics/csr-productivity",
-  requireAdmin,
+  requirePermission("reports.read"),
   async (req, res) => {
     const parsed = windowSchema.safeParse(req.query);
     if (!parsed.success) {
