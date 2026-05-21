@@ -100,7 +100,7 @@ const validCreateBody = {
   hcpcsCode: "A7030",
   allowedCents: 2500,
   effectiveFrom: "2026-01-01",
-  source: "cms_fee_schedule",
+  source: "cms_published",
 };
 
 beforeEach(() => {
