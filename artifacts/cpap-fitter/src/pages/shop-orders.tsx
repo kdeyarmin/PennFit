@@ -1196,6 +1196,7 @@ function PodPhotoSection({
         <p
           className="text-xs text-destructive"
           data-testid={`order-${orderId}-pod-error`}
+          role="alert"
         >
           {error}
         </p>
