@@ -24,7 +24,7 @@ import {
   installSupabaseMock,
   stageSupabaseResponse,
 } from "../../test-helpers/supabase-mock";
-import { type MockBillingIdentity } from "./test-helpers/billing-mocks";
+import { type MockBillingIdentity } from "../../test-helpers/billing-mocks";
 
 // ── Supabase mock (module-scoped) ────────────────────────────────────────────
 const supabaseMock = installSupabaseMock();
