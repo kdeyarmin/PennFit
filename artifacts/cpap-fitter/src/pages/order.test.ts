@@ -174,30 +174,63 @@ describe("formatUsPhone — boundary: 10-digit truncation", () => {
 });
 
 // ---------------------------------------------------------------------------
-// PR change: role="alert" removed from consent-to-contact error paragraph
+// P1 — second consent moment removed from /order
 // ---------------------------------------------------------------------------
-// The consentToContact error message element had role="alert" stripped in
-// this PR. We verify the structural change so the attribute doesn't
-// inadvertently creep back in.
+// Patient already consented on /consent (GuardedOrder enforces the gate
+// before this page mounts). The page no longer renders a checkbox for
+// `consentToContact` — instead the field is defaulted to `true` in the
+// form's defaultValues and the disclosure copy is shown as an
+// acknowledgement panel. Verify both the removal of the checkbox UI
+// and the auto-true default so the server (which strictly requires
+// `consentToContact === true`) still gets a valid payload.
 
-describe("order — consentToContact error paragraph does not have role=alert", () => {
-  it("still renders the consentToContact error conditionally", () => {
-    // The conditional rendering block must still be present.
-    expect(SRC).toContain("errors.consentToContact");
+describe("order — consentToContact checkbox removed (P1)", () => {
+  it("no longer renders a checkbox bound to consentToContact", () => {
+    // The old UI was: <Checkbox id="consent" data-testid="checkbox-consent" ... />
+    // We assert both anchors are gone so a partial re-introduction is caught.
+    expect(SRC).not.toContain('data-testid="checkbox-consent"');
+    expect(SRC).not.toContain('setValue("consentToContact"');
   });
 
-  it("consentToContact error paragraph no longer carries role=alert", () => {
-    const idx = SRC.indexOf("errors.consentToContact.message");
-    expect(idx).toBeGreaterThan(-1);
-    // Inspect the paragraph element that wraps the error message.
-    const elementContext = SRC.slice(idx - 150, idx + 50);
-    expect(elementContext).not.toContain('role="alert"');
+  it("no longer reads the consentToContact form value (no watch)", () => {
+    expect(SRC).not.toContain('watch("consentToContact")');
+    expect(SRC).not.toMatch(/\bconsentValue\b/);
   });
 
-  it("consentToContact error paragraph still has the destructive text style", () => {
-    const idx = SRC.indexOf("errors.consentToContact.message");
-    expect(idx).toBeGreaterThan(-1);
-    const elementContext = SRC.slice(idx - 150, idx + 50);
-    expect(elementContext).toContain("text-destructive");
+  it("no longer renders an inline error for consentToContact", () => {
+    // The old block was: `{isSubmitted && errors.consentToContact && ...}`
+    expect(SRC).not.toContain("errors.consentToContact");
+  });
+
+  it("defaults consentToContact to true so the API payload satisfies the route's strict check", () => {
+    // Look for the literal default. We accept any whitespace around `: true`.
+    expect(SRC).toMatch(/consentToContact:\s*true/);
+  });
+
+  it("still drops the unused Checkbox import (lint hygiene)", () => {
+    // The component renders no Checkbox of its own anymore. Make sure
+    // the import was cleaned up so the build doesn't warn.
+    expect(SRC).not.toContain("@/components/ui/checkbox");
+  });
+
+  it("still renders an acknowledgement panel where the checkbox used to be", () => {
+    // The replacement is a panel marked with this testid; it keeps
+    // the TCPA + storage disclosure visible without requiring a click.
+    expect(SRC).toContain('data-testid="order-acknowledgement"');
+  });
+
+  it("keeps the TCPA SMS disclosure copy verbatim (TCPA-protective)", () => {
+    // The disclosure satisfies "prior express written consent" alongside
+    // the act of providing the phone — the copy must stay.
+    expect(SRC).toContain("Message and data rates may apply.");
+    expect(SRC).toContain("Reply");
+    expect(SRC).toContain("STOP");
+  });
+
+  it("forwards consentToContact in the order payload (server still requires it)", () => {
+    // The route at /api/orders enforces `consentToContact === true` strictly.
+    // The submit handler must still include the field; we only changed the
+    // source of its value (default-true instead of checkbox-driven).
+    expect(SRC).toContain("consentToContact: values.consentToContact");
   });
 });
