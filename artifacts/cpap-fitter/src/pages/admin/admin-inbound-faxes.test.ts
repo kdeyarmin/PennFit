@@ -1,17 +1,13 @@
-// Tests for pages/admin/admin-inbound-faxes.tsx — useUrlState migration
+// Tests for pages/admin/admin-inbound-faxes.tsx — post-revert state
 //
-// PR change: replaced useState<Filter> + manual URL sync with useUrlState.
-// A new FILTER_IDS set and isFilter predicate were added to validate URL params.
+// PR change: reverted from useUrlState (with FILTER_IDS + isFilter predicate)
+// back to plain useState<Filter>("open"). The FILTER_IDS set, isFilter
+// predicate, and useUrlState import/call-site were all removed.
 //
-// The component uses React + @tanstack/react-query which cannot be rendered
-// in the vitest node environment without jsdom. We use two complementary
-// strategies:
-//
-//   1. Static source analysis — readFileSync + SRC.toContain() assertions to
-//      verify structural invariants (import, hook call site, config values).
-//
-//   2. Pure-logic re-implementation — isFilter is re-implemented verbatim
-//      from the source so its boundary behaviour can be tested exhaustively.
+// Because the component uses React + @tanstack/react-query (not renderable in
+// the node vitest environment without jsdom), we use static source analysis:
+// readFileSync + SRC.toContain() / SRC.not.toContain() to verify structural
+// invariants of the reverted code.
 
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -25,136 +21,62 @@ const SRC = readFileSync(
 );
 
 // ---------------------------------------------------------------------------
-// Import checks
+// Revert: useUrlState and its supporting code must be gone
 // ---------------------------------------------------------------------------
 
-describe("admin-inbound-faxes — useUrlState import", () => {
-  it("imports useUrlState from the hooks module", () => {
-    expect(SRC).toContain('from "@/hooks/use-url-state"');
+describe("admin-inbound-faxes — useUrlState removed", () => {
+  it("does not import useUrlState", () => {
+    expect(SRC).not.toContain("useUrlState");
   });
 
-  it("imports useUrlState by name", () => {
-    expect(SRC).toContain("useUrlState");
+  it("does not import from @/hooks/use-url-state", () => {
+    expect(SRC).not.toContain('from "@/hooks/use-url-state"');
+  });
+
+  it("does not define FILTER_IDS", () => {
+    expect(SRC).not.toContain("FILTER_IDS");
+  });
+
+  it("does not define isFilter", () => {
+    expect(SRC).not.toContain("isFilter");
+  });
+
+  it("does not use ReadonlySet (which was part of the FILTER_IDS declaration)", () => {
+    expect(SRC).not.toContain("ReadonlySet");
   });
 });
 
 // ---------------------------------------------------------------------------
-// useUrlState call-site configuration
+// Reverted state: plain useState drives the active filter
 // ---------------------------------------------------------------------------
 
-describe("admin-inbound-faxes — useUrlState call site", () => {
-  it('uses key "filter" for the URL param', () => {
-    expect(SRC).toContain('key: "filter"');
+describe("admin-inbound-faxes — useState<Filter> replaces useUrlState", () => {
+  it("uses useState to hold the active filter", () => {
+    expect(SRC).toContain("useState");
   });
 
-  it('uses "open" as the defaultValue', () => {
-    expect(SRC).toContain('defaultValue: "open"');
+  it('defaults to "open" as the initial filter value', () => {
+    expect(SRC).toContain('"open"');
   });
 
-  it("passes isFilter as the isAllowed predicate", () => {
-    expect(SRC).toContain("isAllowed: isFilter");
-  });
-
-  it("destructures [filter, setFilter] from useUrlState", () => {
+  it("destructures [filter, setFilter] from useState", () => {
     expect(SRC).toContain("filter, setFilter");
   });
 });
 
 // ---------------------------------------------------------------------------
-// FILTER_IDS set and isFilter predicate
+// Filter values — all five filters still present in the render
 // ---------------------------------------------------------------------------
 
-describe("admin-inbound-faxes — FILTER_IDS set contents", () => {
-  const expectedFilters = ["open", "new", "triaged", "attached", "archived"];
+describe("admin-inbound-faxes — all five filter values rendered", () => {
+  const filters = ["open", "new", "triaged", "attached", "archived"] as const;
 
-  for (const f of expectedFilters) {
-    it(`FILTER_IDS contains "${f}"`, () => {
+  for (const f of filters) {
+    it(`renders filter value "${f}" in the chip list`, () => {
       expect(SRC).toContain(`"${f}"`);
     });
   }
 
-  it("defines FILTER_IDS as a ReadonlySet<string>", () => {
-    expect(SRC).toContain("ReadonlySet<string>");
-    expect(SRC).toContain("FILTER_IDS");
-  });
-
-  it("defines isFilter as a type-predicate returning v is Filter", () => {
-    expect(SRC).toContain("v is Filter");
-    expect(SRC).toContain("isFilter");
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Pure-logic re-implementation of isFilter (verbatim from source)
-// ---------------------------------------------------------------------------
-//
-// Source:
-//   type Filter = "open" | "new" | "triaged" | "attached" | "archived";
-//   const FILTER_IDS: ReadonlySet<string> = new Set<Filter>([
-//     "open", "new", "triaged", "attached", "archived",
-//   ]);
-//   const isFilter = (v: string): v is Filter => FILTER_IDS.has(v);
-
-type Filter = "open" | "new" | "triaged" | "attached" | "archived";
-
-const FILTER_IDS: ReadonlySet<string> = new Set<Filter>([
-  "open",
-  "new",
-  "triaged",
-  "attached",
-  "archived",
-]);
-const isFilter = (v: string): v is Filter => FILTER_IDS.has(v);
-
-describe("admin-inbound-faxes — isFilter predicate (valid inputs)", () => {
-  const valid: Filter[] = ["open", "new", "triaged", "attached", "archived"];
-
-  it.each(valid)('accepts "%s"', (f) => {
-    expect(isFilter(f)).toBe(true);
-  });
-});
-
-describe("admin-inbound-faxes — isFilter predicate (invalid inputs)", () => {
-  it("rejects an empty string", () => {
-    expect(isFilter("")).toBe(false);
-  });
-
-  it("rejects a completely unknown value", () => {
-    expect(isFilter("unknown")).toBe(false);
-  });
-
-  it("rejects a valid value with wrong casing", () => {
-    expect(isFilter("Open")).toBe(false);
-    expect(isFilter("OPEN")).toBe(false);
-  });
-
-  it("rejects a partial match (prefix of a valid filter)", () => {
-    expect(isFilter("tri")).toBe(false);
-    expect(isFilter("arch")).toBe(false);
-  });
-
-  it("rejects whitespace-padded versions of valid values", () => {
-    expect(isFilter(" open")).toBe(false);
-    expect(isFilter("open ")).toBe(false);
-  });
-
-  it("rejects a value that is a superset of a valid filter", () => {
-    expect(isFilter("opened")).toBe(false);
-    expect(isFilter("new_item")).toBe(false);
-  });
-});
-
-describe("admin-inbound-faxes — isFilter covers exactly 5 filters", () => {
-  it("FILTER_IDS has size 5", () => {
-    expect(FILTER_IDS.size).toBe(5);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Regression: filter chips still rendered in the correct order
-// ---------------------------------------------------------------------------
-
-describe("admin-inbound-faxes — filter chip order in source", () => {
   it("renders filter chips in open→new→triaged→attached→archived order", () => {
     const openIdx = SRC.indexOf('"open"');
     const newIdx = SRC.indexOf('"new"', openIdx);
@@ -170,15 +92,55 @@ describe("admin-inbound-faxes — filter chip order in source", () => {
 });
 
 // ---------------------------------------------------------------------------
-// data-testid not broken by the migration
+// FilterChip component still wired to setFilter
 // ---------------------------------------------------------------------------
 
-describe("admin-inbound-faxes — structural markup unchanged by migration", () => {
-  it("still renders FilterChip components for each filter value", () => {
+describe("admin-inbound-faxes — FilterChip structural markup unchanged", () => {
+  it("renders FilterChip components for each filter value", () => {
     expect(SRC).toContain("FilterChip");
   });
 
-  it("still passes setFilter as the onClick handler for chips", () => {
+  it("passes setFilter as the onClick handler for chips", () => {
     expect(SRC).toContain("setFilter");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// No bespoke URL-sync code introduced
+// ---------------------------------------------------------------------------
+
+describe("admin-inbound-faxes — no URL sync code present", () => {
+  it("does not call history.replaceState for filter changes", () => {
+    expect(SRC).not.toContain("replaceState");
+  });
+
+  it("does not add a popstate event listener", () => {
+    expect(SRC).not.toContain('addEventListener("popstate"');
+  });
+
+  it("does not read from URLSearchParams for filter initialisation", () => {
+    expect(SRC).not.toContain("URLSearchParams");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Type definition: Filter type includes all five members
+// ---------------------------------------------------------------------------
+
+describe("admin-inbound-faxes — Filter type definition", () => {
+  it("defines the Filter type", () => {
+    expect(SRC).toContain("type Filter");
+  });
+
+  it("Filter type includes all expected members", () => {
+    const typeBlock = SRC.slice(
+      SRC.indexOf("type Filter"),
+      SRC.indexOf("type Filter") + 80,
+    );
+    expect(typeBlock).toContain("open");
+    expect(typeBlock).toContain("new");
+    expect(typeBlock).toContain("triaged");
+    expect(typeBlock).toContain("attached");
+    expect(typeBlock).toContain("archived");
   });
 });
