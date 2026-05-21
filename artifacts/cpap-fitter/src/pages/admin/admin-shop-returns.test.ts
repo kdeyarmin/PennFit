@@ -121,81 +121,120 @@ describe("admin-shop-returns — pre-existing action buttons not removed", () =>
 });
 
 // ---------------------------------------------------------------------------
-// useUrlState migration (PR change: replace bespoke tab-URL sync with hook)
-// ---------------------------------------------------------------------------
-
-describe("admin-shop-returns — useUrlState import", () => {
-  it("imports useUrlState from the hooks module", () => {
-    expect(SRC).toContain('from "@/hooks/use-url-state"');
-  });
-
-  it("names useUrlState in the import statement", () => {
-    expect(SRC).toContain("useUrlState");
-  });
-});
-
-describe("admin-shop-returns — custom URL helpers removed", () => {
-  it("no longer defines a standalone readTabFromUrl function", () => {
-    expect(SRC).not.toContain("readTabFromUrl");
-  });
-
-  it("no longer has inline params.delete / params.set URL-building inside the component", () => {
-    // The bespoke setTab function built URLs inline; that logic now lives in
-    // useUrlState. The component source should not contain the old local setTab
-    // arrow that called setTabState.
-    expect(SRC).not.toContain("setTabState");
-  });
-});
-
-describe("admin-shop-returns — useUrlState call-site configuration", () => {
-  it('uses key "tab" for the URL param', () => {
-    expect(SRC).toContain('key: "tab"');
-  });
-
-  it('uses "open" as the defaultValue', () => {
-    expect(SRC).toContain('defaultValue: "open"');
-  });
-
-  it("passes isTab as the isAllowed predicate", () => {
-    expect(SRC).toContain("isAllowed: isTab");
-  });
-
-  it("destructures [tab, setTab] from useUrlState", () => {
-    expect(SRC).toContain("tab, setTab");
-  });
-});
-
-describe("admin-shop-returns — TAB_IDS and isTab predicate (new additions)", () => {
-  it("defines TAB_IDS as a ReadonlySet<string>", () => {
-    // Updated from ReadonlySet<Tab> to ReadonlySet<string> in this PR.
-    expect(SRC).toContain("ReadonlySet<string>");
-    expect(SRC).toContain("TAB_IDS");
-  });
-
-  it("defines isTab as a type-predicate (v is Tab)", () => {
-    expect(SRC).toContain("v is Tab");
-    expect(SRC).toContain("isTab");
-  });
-
-  it("derives TAB_IDS from the TABS array", () => {
-    expect(SRC).toContain("TABS.map");
-    expect(SRC).toContain("TAB_IDS");
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Pure-logic re-implementation of isTab (verbatim from source)
+// PR change: manual URL state management (reverted from useUrlState hook)
 // ---------------------------------------------------------------------------
 //
-// Source:
+// The PR reverts the useUrlState migration and replaces it with:
+//   1. readTabFromUrl() — reads ?tab= from URLSearchParams, validates against
+//      TAB_IDS set, falls back to "open" on SSR or unknown values.
+//   2. setTab(next: Tab) — updates component state AND calls
+//      history.replaceState with the new URL.
+//   3. useEffect popstate listener — rehydrates state on browser back/forward.
+
+describe("admin-shop-returns — URL state: useUrlState removed", () => {
+  it("no longer imports useUrlState", () => {
+    expect(SRC).not.toContain('from "@/hooks/use-url-state"');
+  });
+
+  it("no longer calls useUrlState", () => {
+    expect(SRC).not.toContain("useUrlState(");
+  });
+});
+
+describe("admin-shop-returns — readTabFromUrl structure", () => {
+  it("defines readTabFromUrl as a function", () => {
+    expect(SRC).toContain("function readTabFromUrl");
+  });
+
+  it("guards against SSR with typeof window === 'undefined'", () => {
+    expect(SRC).toContain('typeof window === "undefined"');
+  });
+
+  it("reads the 'tab' search param via URLSearchParams", () => {
+    expect(SRC).toContain('window.location.search');
+    expect(SRC).toContain('"tab"');
+  });
+
+  it("falls back to 'open' for unknown/missing params", () => {
+    expect(SRC).toContain('"open"');
+  });
+});
+
+describe("admin-shop-returns — setTab URL building", () => {
+  it("calls history.replaceState (not pushState)", () => {
+    expect(SRC).toContain("replaceState");
+    expect(SRC).not.toContain("pushState");
+  });
+
+  it("deletes the tab param when next equals 'open' (the default)", () => {
+    expect(SRC).toContain('params.delete("tab")');
+  });
+
+  it("sets the tab param for non-default values", () => {
+    expect(SRC).toContain('params.set("tab", next)');
+  });
+
+  it("appends window.location.hash to the rebuilt URL", () => {
+    expect(SRC).toContain("window.location.hash");
+  });
+});
+
+describe("admin-shop-returns — popstate listener", () => {
+  it("adds a popstate event listener", () => {
+    expect(SRC).toContain('addEventListener("popstate"');
+  });
+
+  it("removes the popstate listener on cleanup", () => {
+    expect(SRC).toContain('removeEventListener("popstate"');
+  });
+
+  it("rehydrates state by calling readTabFromUrl in the handler", () => {
+    expect(SRC).toContain("readTabFromUrl()");
+  });
+});
+
+describe("admin-shop-returns — TAB_IDS and tabs", () => {
+  it("defines TAB_IDS as a ReadonlySet", () => {
+    expect(SRC).toContain("ReadonlySet");
+    expect(SRC).toContain("TAB_IDS");
+  });
+
+  const expectedTabs = [
+    "open",
+    "requested",
+    "approved",
+    "shipped_back",
+    "received",
+    "refunded",
+    "replaced",
+    "rejected",
+    "all",
+  ];
+  for (const tab of expectedTabs) {
+    it(`TABS includes tab id "${tab}"`, () => {
+      expect(SRC).toContain(`"${tab}"`);
+    });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Pure-logic re-implementation of readTabFromUrl (verbatim from source)
+// ---------------------------------------------------------------------------
+//
+// Source (from admin-shop-returns.tsx):
 //   type Tab = ReturnStatus | "all" | "open";
 //   const TABS = [
 //     { id: "open" }, { id: "requested" }, { id: "approved" },
 //     { id: "shipped_back" }, { id: "received" }, { id: "refunded" },
 //     { id: "replaced" }, { id: "rejected" }, { id: "all" },
 //   ];
-//   const TAB_IDS: ReadonlySet<string> = new Set(TABS.map((t) => t.id));
-//   const isTab = (v: string): v is Tab => TAB_IDS.has(v);
+//   const TAB_IDS: ReadonlySet<Tab> = new Set(TABS.map((t) => t.id));
+//
+//   function readTabFromUrl(): Tab {
+//     if (typeof window === "undefined") return "open";
+//     const raw = new URLSearchParams(window.location.search).get("tab");
+//     return raw && TAB_IDS.has(raw as Tab) ? (raw as Tab) : "open";
+//   }
 
 type ReturnTab =
   | "open"
@@ -220,14 +259,44 @@ const TABS_RETURNS: ReadonlyArray<{ id: ReturnTab }> = [
   { id: "all" },
 ];
 
-const TAB_IDS_RETURNS: ReadonlySet<string> = new Set(
+const TAB_IDS_RETURNS: ReadonlySet<ReturnTab> = new Set(
   TABS_RETURNS.map((t) => t.id),
 );
-const isTabReturns = (v: string): v is ReturnTab =>
-  TAB_IDS_RETURNS.has(v);
 
-describe("admin-shop-returns — isTab predicate (valid inputs)", () => {
-  const valid: ReturnTab[] = [
+// Parameterised re-implementation that accepts the search string so
+// tests don't need a real window.
+function readTabFromSearch(search: string): ReturnTab {
+  const raw = new URLSearchParams(search).get("tab");
+  return raw && TAB_IDS_RETURNS.has(raw as ReturnTab)
+    ? (raw as ReturnTab)
+    : "open";
+}
+
+describe("readTabFromUrl logic — returns 'open' by default", () => {
+  it("returns 'open' when search string is empty", () => {
+    expect(readTabFromSearch("")).toBe("open");
+  });
+
+  it("returns 'open' when 'tab' param is absent", () => {
+    expect(readTabFromSearch("?page=2")).toBe("open");
+  });
+
+  it("returns 'open' when 'tab' param is empty", () => {
+    expect(readTabFromSearch("?tab=")).toBe("open");
+  });
+
+  it("returns 'open' for an unknown tab value", () => {
+    expect(readTabFromSearch("?tab=unknown")).toBe("open");
+  });
+
+  it("returns 'open' for a value with wrong casing", () => {
+    expect(readTabFromSearch("?tab=Approved")).toBe("open");
+    expect(readTabFromSearch("?tab=OPEN")).toBe("open");
+  });
+});
+
+describe("readTabFromUrl logic — returns valid tab values", () => {
+  const validTabs: ReturnTab[] = [
     "open",
     "requested",
     "approved",
@@ -239,49 +308,103 @@ describe("admin-shop-returns — isTab predicate (valid inputs)", () => {
     "all",
   ];
 
-  it.each(valid)('accepts "%s"', (t) => {
-    expect(isTabReturns(t)).toBe(true);
+  it.each(validTabs)('returns "%s" when it is in the search string', (tab) => {
+    expect(readTabFromSearch(`?tab=${tab}`)).toBe(tab);
+  });
+
+  it("returns the tab even when there are other params before it", () => {
+    expect(readTabFromSearch("?page=3&tab=received")).toBe("received");
+  });
+
+  it("returns the tab even when there are other params after it", () => {
+    expect(readTabFromSearch("?tab=refunded&sort=asc")).toBe("refunded");
   });
 });
 
-describe("admin-shop-returns — isTab predicate (invalid inputs)", () => {
-  it("rejects an empty string", () => {
-    expect(isTabReturns("")).toBe(false);
-  });
-
-  it("rejects an unknown status value", () => {
-    expect(isTabReturns("pending")).toBe(false);
-    expect(isTabReturns("closed_out")).toBe(false);
-  });
-
-  it("rejects wrong casing of a valid tab", () => {
-    expect(isTabReturns("Open")).toBe(false);
-    expect(isTabReturns("APPROVED")).toBe(false);
-    expect(isTabReturns("Shipped_Back")).toBe(false);
-  });
-
-  it("rejects a partial match (prefix of a valid tab id)", () => {
-    expect(isTabReturns("ship")).toBe(false);
-    expect(isTabReturns("req")).toBe(false);
-  });
-
-  it("rejects whitespace-padded versions of valid values", () => {
-    expect(isTabReturns(" open")).toBe(false);
-    expect(isTabReturns("open ")).toBe(false);
-  });
-});
-
-describe("admin-shop-returns — TAB_IDS covers exactly 9 tabs", () => {
-  it("has size 9", () => {
+describe("readTabFromUrl logic — TAB_IDS invariants", () => {
+  it("contains exactly 9 tabs", () => {
     expect(TAB_IDS_RETURNS.size).toBe(9);
   });
 
-  it("TABS array has 9 entries", () => {
-    expect(TABS_RETURNS).toHaveLength(9);
+  it("includes both the synthetic 'open' and 'all' tabs", () => {
+    expect(TAB_IDS_RETURNS.has("open")).toBe(true);
+    expect(TAB_IDS_RETURNS.has("all")).toBe(true);
   });
 
-  it("includes the synthetic 'open' and 'all' aggregate tabs", () => {
-    expect(isTabReturns("open")).toBe(true);
-    expect(isTabReturns("all")).toBe(true);
+  it("includes the 'shipped_back' status (underscore, not hyphen)", () => {
+    expect(TAB_IDS_RETURNS.has("shipped_back")).toBe(true);
+  });
+
+  it("does not include partial matches like 'ship'", () => {
+    expect(readTabFromSearch("?tab=ship")).toBe("open");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Pure-logic re-implementation of setTab URL building (verbatim from source)
+// ---------------------------------------------------------------------------
+//
+// Source:
+//   const params = new URLSearchParams(window.location.search);
+//   if (next === "open") params.delete("tab");
+//   else params.set("tab", next);
+//   const qs = params.toString();
+//   const newUrl = window.location.pathname + (qs ? `?${qs}` : "") + window.location.hash;
+
+function buildTabUrl(
+  next: ReturnTab,
+  currentSearch: string,
+  pathname: string,
+  hash: string,
+): string {
+  const params = new URLSearchParams(currentSearch);
+  if (next === "open") params.delete("tab");
+  else params.set("tab", next);
+  const qs = params.toString();
+  return pathname + (qs ? `?${qs}` : "") + hash;
+}
+
+describe("setTab URL building — 'open' removes the param", () => {
+  it("produces a clean pathname when next is 'open' and no other params", () => {
+    expect(buildTabUrl("open", "", "/admin/returns", "")).toBe("/admin/returns");
+  });
+
+  it("removes only the tab param, preserving other params", () => {
+    const url = buildTabUrl("open", "?tab=approved&page=2", "/admin/returns", "");
+    expect(url).not.toContain("tab=");
+    expect(url).toContain("page=2");
+  });
+
+  it("removes tab param and preserves hash", () => {
+    const url = buildTabUrl("open", "?tab=received", "/admin/returns", "#top");
+    expect(url).toBe("/admin/returns#top");
+  });
+});
+
+describe("setTab URL building — non-default values set the param", () => {
+  it("sets tab=approved in the URL", () => {
+    const url = buildTabUrl("approved", "", "/admin/returns", "");
+    expect(url).toBe("/admin/returns?tab=approved");
+  });
+
+  it("sets tab=shipped_back in the URL", () => {
+    const url = buildTabUrl("shipped_back", "", "/admin/returns", "");
+    expect(url).toContain("tab=shipped_back");
+  });
+
+  it("replaces an existing tab param value", () => {
+    const url = buildTabUrl("rejected", "?tab=approved", "/admin/returns", "");
+    expect(url).toBe("/admin/returns?tab=rejected");
+  });
+
+  it("preserves hash when setting a non-default tab", () => {
+    const url = buildTabUrl("all", "", "/admin/returns", "#section");
+    expect(url).toBe("/admin/returns?tab=all#section");
+  });
+
+  it("preserves unrelated query params", () => {
+    const url = buildTabUrl("requested", "?page=5", "/admin/returns", "");
+    expect(url).toContain("tab=requested");
+    expect(url).toContain("page=5");
   });
 });
