@@ -37,11 +37,12 @@ or sequencing belongs in a follow-up polish-plan revision.
 **Today.** The patient must consent to camera + email at
 `artifacts/cpap-fitter/src/pages/consent.tsx:70` (three checkboxes plus
 optional phone/SMS) and then *again* to a "contact me about my order"
-block at `artifacts/cpap-fitter/src/pages/order.tsx:96` (`consentToContact`
-refines to `=== true`, blocks submit). Two consent moments invite
-mismatch: a patient who unchecks the order-page box at
-`pages/order.tsx:175` has already opted in upstream — the legal record
-is now ambiguous.
+block at `artifacts/cpap-fitter/src/pages/order.tsx:776-829` (the
+checkbox + label that drives the `consentToContact` field, which the
+form schema at `:95-97` refines to `=== true` and blocks submit on).
+Two consent moments invite mismatch: a patient who unchecks the
+order-page box has already opted in upstream — the legal record is
+now ambiguous.
 
 **Smarter.** Persist the `/consent` opt-in on the server (already
 happens via `submitFitterLead` at `consent.tsx:83`) and treat that row
@@ -53,15 +54,20 @@ abandon-risk page.
 
 ### P2. SMS opt-in disabled when phone empty <a id="p2-sms-checkbox-disabled"></a>
 
-**Today.** `consent.tsx:333-349` greys the SMS checkbox until a valid
-phone is typed. Patients who tick SMS-opt-in *before* typing the
-phone silently lose the opt-in (`smsOptIn={phoneFilled && smsOptIn}` at
-line 344) — the box visually unchecks on edit.
+**Today.** `consent.tsx:333-363` greys out the SMS checkbox until a
+valid phone is typed (`disabled={!phoneFilled || !phoneValid}` at
+line 345; `checked={smsOptIn && phoneFilled && phoneValid}` at
+line 344). A patient who wants to opt in to SMS has to discover the
+ordering by trial: they click the disabled checkbox, nothing happens,
+they scroll up, type the phone, scroll back, find the box now
+enabled, and click it. The funnel-top form makes them do tasks in a
+strict order with no on-screen explanation of why.
 
-**Smarter.** Reverse the order: let the patient tick SMS-opt-in first,
-then expand the phone field below it on demand ("We'll need a phone
-number — enter it below"). Same outcome, but the consent is preserved
-and the UI reflects intent, not blocked intent.
+**Smarter.** Reverse the order: let the patient tick SMS-opt-in
+first, then progressively reveal the phone field below it on demand
+("We'll need a phone number — enter it below"). The checkbox is the
+disclosure of intent; the field collection should follow it, not
+gate it.
 
 ### P3. `/order` is a long form with almost no pre-fill <a id="p3-no-prefill-on-order"></a>
 
@@ -82,12 +88,14 @@ re-typing.
 ### P4. Questionnaire `false` ≠ "not answered" <a id="p4-questionnaire-skip-defaults"></a>
 
 **Today.** `pages/questionnaire.tsx` is one-question-per-screen with no
-explicit skip. Patients can click Back but not Skip. On
-the backend the missing answers default to `false`/`"unknown"`
-(noted by the explore agent at `pages/results.tsx:81-93`), which
-silently feeds the scoring engine wrong inputs (e.g. a patient who
-didn't answer "do you breathe through your mouth?" is scored as a
-non-mouth-breather, which can recommend a nasal mask that won't seal).
+explicit skip. Patients can click Back but not Skip. The client
+backfills missing answers to `false`/`"unknown"` in
+`artifacts/cpap-fitter/src/pages/results.tsx` (when assembling
+`fullAnswers` for the recommend call) BEFORE the request leaves
+the browser, so the API receives a payload that looks complete but
+isn't — and the recommendation engine treats e.g. an un-answered
+"do you breathe through your mouth?" as a non-mouth-breather,
+which can recommend a nasal mask that won't seal.
 
 **Smarter.** Two changes at `questionnaire.tsx:163`:
    (1) Add an explicit **"I'm not sure"** tile per boolean question
@@ -149,10 +157,13 @@ for adults). Render as a banner above the questionnaire entry with a
 
 ### C1. `/account` is a single 18-section scroll <a id="c1-account-scroll"></a>
 
-**Today.** `pages/account.tsx` is 2,148 lines (see
-[`docs/polish-plan-2026-05-20.md`](./polish-plan-2026-05-20.md), Snapshot
-table) and renders 18 sections inline. Customers must scroll past
-"profile" to reach "orders" or "subscriptions"; no in-page navigation.
+**Today.** `pages/account.tsx` itself is ~595 lines after recent
+extractions, but it composes 18 child Section components inline
+(`<ProfileSection>`, `<ClinicalInfoSection>`, `<OrdersSection>`,
+`<SubscriptionsSection>`, etc. at `account.tsx:277-328`). Customers
+must scroll past "profile" to reach "orders" or "subscriptions";
+there is no in-page navigation, so locating a specific section on
+mobile is a long thumb-scroll.
 
 **Smarter.** Surface a sticky left-rail TOC (or top tabs on mobile)
 keyed to the 18 sections. No schema or API change — pure markup +
@@ -190,7 +201,8 @@ unsigned/guest users.
 ### A1. Cart abandonment is admin-triggered <a id="a1-manual-cart-abandonment"></a>
 
 **Today.** `/admin/shop/abandoned-carts/send-due` is a manual button
-(noted by the explore agent: `lib/cart-abandonment/send-cart-abandonment-email.ts`).
+(noted by the explore agent:
+`artifacts/resupply-api/src/lib/cart-abandonment/send-cart-abandonment-email.ts`).
 The job exists and the dispatcher works; only the trigger is human.
 
 **Smarter.** Schedule via `pg-boss` alongside the existing reminder
@@ -279,7 +291,7 @@ customer.
      changes.
    - **Coverage denied/missing:** raise an admin ticket *and* email the
      customer: "we need a bit more info — can you confirm your member
-     ID / try a secondary plan?" *before* the order ships.
+     ID or try a secondary plan?" *before* the order ships.
 Catches misspelled member IDs and plan-change-of-year issues at minute
 five instead of week three.
 
