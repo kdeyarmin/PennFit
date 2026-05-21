@@ -177,14 +177,27 @@ export async function runLowStockAlerts(): Promise<LowStockAlertStats> {
   }
   const stripe = getStripeClient(config);
 
-  const list = await stripe.products.list({
-    active: true,
-    limit: 100,
-    expand: ["data.default_price"],
-  });
-  const products = list.data
-    .map(projectProduct)
-    .filter((p): p is ShopProductView => p !== null);
+  // Page through every active product. The PennPaps catalog is small
+  // (dozens) so this is usually one round-trip, but we MUST page
+  // rather than `limit: 100` once — otherwise SKUs beyond page 1 are
+  // never scanned for alerts and an in-progress alert can never
+  // resolve. Hard cap at 10 pages (1000 products) as a defense bound.
+  const products: ShopProductView[] = [];
+  let startingAfter: string | undefined;
+  for (let page = 0; page < 10; page++) {
+    const list = await stripe.products.list({
+      active: true,
+      limit: 100,
+      expand: ["data.default_price"],
+      ...(startingAfter ? { starting_after: startingAfter } : {}),
+    });
+    for (const p of list.data) {
+      const projected = projectProduct(p);
+      if (projected) products.push(projected);
+    }
+    if (!list.has_more || list.data.length === 0) break;
+    startingAfter = list.data[list.data.length - 1]!.id;
+  }
   stats.scanned = products.length;
 
   // Two buckets:
@@ -232,7 +245,7 @@ export async function runLowStockAlerts(): Promise<LowStockAlertStats> {
       .select("product_id");
     if (resolveErr) {
       logger.warn(
-        { err: resolveErr.message },
+        { err: resolveErr },
         "low-stock-alerts: failed to mark resolved",
       );
     } else {
@@ -347,10 +360,7 @@ export async function runLowStockAlerts(): Promise<LowStockAlertStats> {
       anySent = true;
     } catch (err) {
       logger.warn(
-        {
-          to,
-          err: err instanceof Error ? err.message : String(err),
-        },
+        { to, err },
         "low-stock-alerts: send failed for one recipient",
       );
     }
@@ -387,7 +397,7 @@ async function upsertAlertState(
     .upsert(rows, { onConflict: "product_id" });
   if (error) {
     logger.warn(
-      { err: error.message },
+      { err: error },
       "low-stock-alerts: state upsert failed",
     );
   }

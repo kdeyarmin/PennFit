@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   useMutation,
   useQuery,
@@ -83,12 +83,24 @@ export function AdminShopInventoryReconcileEditPage() {
   const [applyToStripe, setApplyToStripe] = useState(true);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
-  // Hydrate draft state once the detail lands. We don't want to
-  // re-hydrate on every refetch — the operator's typed counts would
-  // be wiped. So only initialise when null.
-  if (drafts === null && data && data.reconciliation.status === "draft") {
+  // Hydrate draft state once the detail lands. Keyed on the
+  // reconciliation id so a navigation between two drafts re-seeds the
+  // grid, but a refetch of the same draft does not — the operator's
+  // typed counts must survive a background refetch. The condition
+  // inside `useEffect` is the same guard the older setState-in-render
+  // pattern carried (only seed when null), but lifted out of the
+  // render body so React StrictMode + the concurrent renderer don't
+  // double-schedule the update or drop user input during the gap.
+  const detailKey =
+    data && data.reconciliation.status === "draft"
+      ? `${data.reconciliation.id}:${data.currentProducts?.length ?? 0}`
+      : null;
+  useEffect(() => {
+    if (!data || data.reconciliation.status !== "draft") return;
+    if (drafts !== null) return;
     setDrafts(buildDraftLines(data));
-  }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detailKey]);
 
   const submitMutation = useMutation({
     mutationFn: async () => {

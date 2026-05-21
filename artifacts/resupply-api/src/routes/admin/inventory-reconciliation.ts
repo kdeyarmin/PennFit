@@ -44,21 +44,33 @@ const router: IRouter = Router();
 
 // Fetch every active shop product, projected through the same gate
 // the public storefront uses. Returns null when Stripe is not
-// configured so the caller can respond with 503.
+// configured so the caller can respond with 503. Pages through
+// `starting_after` with a hard cap of 10 pages (1000 products) as
+// defense-in-depth — mirrors the pattern in
+// `routes/admin/shop-back-in-stock.ts`.
 async function listShopProductsForReconciliation(): Promise<
   ShopProductView[] | null
 > {
   const config = readStripeConfigOrNull();
   if (!config) return null;
   const stripe = getStripeClient(config);
-  const list = await stripe.products.list({
-    active: true,
-    limit: 100,
-    expand: ["data.default_price"],
-  });
-  return list.data
-    .map(projectProduct)
-    .filter((p): p is ShopProductView => p !== null);
+  const all: ShopProductView[] = [];
+  let startingAfter: string | undefined;
+  for (let page = 0; page < 10; page++) {
+    const list = await stripe.products.list({
+      active: true,
+      limit: 100,
+      expand: ["data.default_price"],
+      ...(startingAfter ? { starting_after: startingAfter } : {}),
+    });
+    for (const p of list.data) {
+      const projected = projectProduct(p);
+      if (projected) all.push(projected);
+    }
+    if (!list.has_more || list.data.length === 0) break;
+    startingAfter = list.data[list.data.length - 1]!.id;
+  }
+  return all;
 }
 
 // Period label: "2026-05" is the canonical form; we accept anything
@@ -131,7 +143,7 @@ router.post(
       .single();
     if (insErr) {
       logger.error(
-        { err: insErr.message },
+        { err: insErr },
         "inventory_reconciliation.create insert failed",
       );
       res.status(500).json({ error: "insert_failed" });
@@ -274,9 +286,7 @@ router.get(
         }
       } catch (err) {
         logger.warn(
-          {
-            err: err instanceof Error ? err.message : String(err),
-          },
+          { err },
           "inventory_reconciliation: live catalog fetch failed",
         );
       }
@@ -401,7 +411,7 @@ router.post(
       catalog = products ?? [];
     } catch (err) {
       logger.warn(
-        { err: err instanceof Error ? err.message : String(err) },
+        { err },
         "inventory_reconciliation.submit: catalog fetch failed",
       );
       res.status(502).json({ error: "stripe_list_failed" });
@@ -477,10 +487,7 @@ router.post(
           appliedProductIds.add(target.productId);
         } catch (err) {
           logger.warn(
-            {
-              productId: target.productId,
-              err: err instanceof Error ? err.message : String(err),
-            },
+            { productId: target.productId, err },
             "inventory_reconciliation.submit: stripe update failed for SKU",
           );
         }
@@ -496,7 +503,7 @@ router.post(
       .insert(lineInserts);
     if (linesInsErr) {
       logger.error(
-        { err: linesInsErr.message },
+        { err: linesInsErr },
         "inventory_reconciliation.submit: lines insert failed",
       );
       res
@@ -523,7 +530,7 @@ router.post(
       .eq("id", id);
     if (updErr) {
       logger.error(
-        { err: updErr.message },
+        { err: updErr },
         "inventory_reconciliation.submit: header update failed",
       );
       res
