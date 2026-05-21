@@ -20,18 +20,18 @@ extracting a component. The feature wave was outpacing the
 cleanup, and the cleanup was getting harder with every PR.
 
 The May polish wave (PRs #254, #266, #267, #270, #271, #272, #274,
-#275, #276, #277) extracted ten sibling components — six tabs from
-`patient-detail.tsx` and four sections from `account.tsx`. After
-that wave:
+#275, #276, #277) is projected to extract ten sibling components —
+six tabs from `patient-detail.tsx` and four sections from
+`account.tsx` — once those PRs land. Projected once that wave lands:
 
 | File | Post-decomp LOC | Reduction |
 | ---- | --------------: | --------: |
 | `pages/admin/patient-detail.tsx` | ~2,500 | 45% |
 | `pages/account.tsx`              | ~800   | 63% |
 
-This ADR codifies the budget that this work brought us into and
-the convention every future extract should follow, so the next
-feature wave doesn't unwind it.
+This ADR codifies the budget that this work is intended to bring us
+into and the convention every future extract should follow, so the
+next feature wave doesn't unwind it.
 
 ## Decision
 
