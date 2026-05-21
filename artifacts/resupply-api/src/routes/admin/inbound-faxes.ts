@@ -38,6 +38,7 @@ import {
   ObjectNotFoundError,
   ObjectStorageService,
 } from "../../lib/object-storage/objectStorage";
+import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
 
 type InboundFaxUpdate =
@@ -269,119 +270,124 @@ router.get(
   },
 );
 
-router.patch("/admin/inbound-faxes/:id", requirePermission("conversations.manage"), async (req, res) => {
-  const params = idParam.safeParse(req.params);
-  if (!params.success) {
-    res.status(404).json({ error: "not_found" });
-    return;
-  }
-  const parsed = patchBody.safeParse(req.body);
-  if (!parsed.success) {
-    res.status(400).json({
-      error: "invalid_body",
-      issues: parsed.error.issues.map((i) => ({
-        path: i.path.join("."),
-        message: i.message,
-      })),
-    });
-    return;
-  }
-  const fields = parsed.data;
-  if (Object.keys(fields).length === 0) {
-    res.status(200).json({ changed: false });
-    return;
-  }
-
-  const supabase = getSupabaseServiceRoleClient();
-  const { data: existing, error: getErr } = await supabase
-    .schema("resupply")
-    .from("inbound_faxes")
-    .select("id, status, attached_patient_id")
-    .eq("id", params.data.id)
-    .limit(1)
-    .maybeSingle();
-  if (getErr) throw getErr;
-  if (!existing) {
-    res.status(404).json({ error: "not_found" });
-    return;
-  }
-
-  // Validate status transition.
-  if (fields.status !== undefined && fields.status !== existing.status) {
-    const allowed = VALID_TRANSITIONS[existing.status as InboundFaxStatus];
-    if (!allowed.includes(fields.status)) {
+router.patch(
+  "/admin/inbound-faxes/:id",
+  requirePermission("conversations.manage"),
+  adminRateLimit({ name: "inbound_faxes.update", preset: "mutation" }),
+  async (req, res) => {
+    const params = idParam.safeParse(req.params);
+    if (!params.success) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    const parsed = patchBody.safeParse(req.body);
+    if (!parsed.success) {
       res.status(400).json({
-        error: "invalid_transition",
-        message: `Cannot transition fax from "${existing.status}" to "${fields.status}".`,
+        error: "invalid_body",
+        issues: parsed.error.issues.map((i) => ({
+          path: i.path.join("."),
+          message: i.message,
+        })),
       });
       return;
     }
-    // Attached requires a patient — either being set in this PATCH or
-    // already present on the row.
-    if (fields.status === "attached") {
-      const willHavePatient =
-        fields.attachedPatientId !== undefined
-          ? fields.attachedPatientId !== null
-          : existing.attached_patient_id !== null;
-      if (!willHavePatient) {
+    const fields = parsed.data;
+    if (Object.keys(fields).length === 0) {
+      res.status(200).json({ changed: false });
+      return;
+    }
+
+    const supabase = getSupabaseServiceRoleClient();
+    const { data: existing, error: getErr } = await supabase
+      .schema("resupply")
+      .from("inbound_faxes")
+      .select("id, status, attached_patient_id")
+      .eq("id", params.data.id)
+      .limit(1)
+      .maybeSingle();
+    if (getErr) throw getErr;
+    if (!existing) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+
+    // Validate status transition.
+    if (fields.status !== undefined && fields.status !== existing.status) {
+      const allowed = VALID_TRANSITIONS[existing.status as InboundFaxStatus];
+      if (!allowed.includes(fields.status)) {
         res.status(400).json({
-          error: "missing_patient",
-          message: "Cannot mark a fax 'attached' without linking a patient.",
+          error: "invalid_transition",
+          message: `Cannot transition fax from "${existing.status}" to "${fields.status}".`,
         });
         return;
       }
+      // Attached requires a patient — either being set in this PATCH or
+      // already present on the row.
+      if (fields.status === "attached") {
+        const willHavePatient =
+          fields.attachedPatientId !== undefined
+            ? fields.attachedPatientId !== null
+            : existing.attached_patient_id !== null;
+        if (!willHavePatient) {
+          res.status(400).json({
+            error: "missing_patient",
+            message: "Cannot mark a fax 'attached' without linking a patient.",
+          });
+          return;
+        }
+      }
     }
-  }
 
-  const updates: InboundFaxUpdate = {};
-  if (fields.status !== undefined) updates.status = fields.status;
-  if (fields.attachedPatientId !== undefined)
-    updates.attached_patient_id = fields.attachedPatientId;
-  if (fields.attachedProviderId !== undefined)
-    updates.attached_provider_id = fields.attachedProviderId;
-  if (fields.attachedPrescriptionId !== undefined)
-    updates.attached_prescription_id = fields.attachedPrescriptionId;
-  if (fields.attachedDocumentType !== undefined)
-    updates.attached_document_type = fields.attachedDocumentType;
-  if (fields.notes !== undefined) updates.notes = fields.notes;
-  // Stamp the triaged_at + triaged_by_user_id on the first transition
-  // out of `new`. Once stamped, leave alone — these track WHO first
-  // owned the fax, not subsequent edits.
-  if (
-    fields.status !== undefined &&
-    existing.status === "new" &&
-    fields.status !== "new"
-  ) {
-    updates.triaged_at = new Date().toISOString();
-    updates.triaged_by_user_id = req.adminUserId ?? null;
-  }
+    const updates: InboundFaxUpdate = {};
+    if (fields.status !== undefined) updates.status = fields.status;
+    if (fields.attachedPatientId !== undefined)
+      updates.attached_patient_id = fields.attachedPatientId;
+    if (fields.attachedProviderId !== undefined)
+      updates.attached_provider_id = fields.attachedProviderId;
+    if (fields.attachedPrescriptionId !== undefined)
+      updates.attached_prescription_id = fields.attachedPrescriptionId;
+    if (fields.attachedDocumentType !== undefined)
+      updates.attached_document_type = fields.attachedDocumentType;
+    if (fields.notes !== undefined) updates.notes = fields.notes;
+    // Stamp the triaged_at + triaged_by_user_id on the first transition
+    // out of `new`. Once stamped, leave alone — these track WHO first
+    // owned the fax, not subsequent edits.
+    if (
+      fields.status !== undefined &&
+      existing.status === "new" &&
+      fields.status !== "new"
+    ) {
+      updates.triaged_at = new Date().toISOString();
+      updates.triaged_by_user_id = req.adminUserId ?? null;
+    }
 
-  const { error: updErr } = await supabase
-    .schema("resupply")
-    .from("inbound_faxes")
-    .update(updates)
-    .eq("id", params.data.id);
-  if (updErr) throw updErr;
+    const { error: updErr } = await supabase
+      .schema("resupply")
+      .from("inbound_faxes")
+      .update(updates)
+      .eq("id", params.data.id);
+    if (updErr) throw updErr;
 
-  await logAudit({
-    action: "fax.inbound.triage",
-    adminEmail: req.adminEmail ?? null,
-    adminUserId: req.adminUserId ?? null,
-    targetTable: "inbound_faxes",
-    targetId: params.data.id,
-    metadata: {
-      from_status: existing.status,
-      to_status: fields.status ?? existing.status,
-      updated_fields: Object.keys(fields),
-    },
-    ip: req.ip ?? null,
-    userAgent: req.get("user-agent") ?? null,
-  }).catch((err) => {
-    logger.warn({ err }, "fax.inbound.triage audit write failed");
-  });
+    await logAudit({
+      action: "fax.inbound.triage",
+      adminEmail: req.adminEmail ?? null,
+      adminUserId: req.adminUserId ?? null,
+      targetTable: "inbound_faxes",
+      targetId: params.data.id,
+      metadata: {
+        from_status: existing.status,
+        to_status: fields.status ?? existing.status,
+        updated_fields: Object.keys(fields),
+      },
+      ip: req.ip ?? null,
+      userAgent: req.get("user-agent") ?? null,
+    }).catch((err) => {
+      logger.warn({ err }, "fax.inbound.triage audit write failed");
+    });
 
-  res.status(200).json({ id: params.data.id, changed: true });
-});
+    res.status(200).json({ id: params.data.id, changed: true });
+  },
+);
 
 // GET /admin/inbound-faxes/:id/suggested-patients — saves CSRs a
 // search step by surfacing patient candidates that share the fax
