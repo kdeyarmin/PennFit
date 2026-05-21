@@ -21,10 +21,11 @@ function getEnforcementMode(): EnforcementMode {
 }
 ```
 
-When `required`, the SPA forces unenrolled admins to
-`/admin/security` on every nav until they finish enrollment. When
-`off`, enrollment stays optional and the rest of the admin surface
-is reachable without MFA.
+When `required`, the admin shell does not hard-redirect unenrolled
+admins on every nav; instead it shows a sticky MFA-enforcement
+banner with an "Enroll now" link to `/admin/security` until they
+finish enrollment. When `off`, enrollment stays optional and the
+rest of the admin surface is reachable without MFA.
 
 There is no admin UI to flip the toggle and no `audit_log` row
 emitted when the value changes. This ADR documents that posture
