@@ -32,8 +32,8 @@ import { resolveClearinghouse } from "../../lib/billing/identity-resolver";
 import { logger } from "../../lib/logger";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import {
-  requireAdmin,
   requireAdminOnly,
+  requirePermission,
 } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
@@ -94,7 +94,7 @@ function rowToApi(r: Row) {
 
 router.get(
   "/admin/clearinghouse-credentials",
-  requireAdmin,
+  requirePermission("admin.tools.manage"),
   async (_req, res) => {
     const supabase = getSupabaseServiceRoleClient();
     const { data, error } = await supabase
@@ -109,7 +109,7 @@ router.get(
 
 router.get(
   "/admin/clearinghouse-credentials/:id",
-  requireAdmin,
+  requirePermission("admin.tools.manage"),
   async (req, res) => {
     const parsed = idParam.safeParse(req.params);
     if (!parsed.success) {
@@ -370,7 +370,7 @@ router.post(
 // ── INBOUND FILE AUDIT LIST ────────────────────────────────────────
 router.get(
   "/admin/clearinghouse-inbound-files",
-  requireAdmin,
+  requirePermission("admin.tools.manage"),
   async (req, res) => {
     const supabase = getSupabaseServiceRoleClient();
     let query = supabase

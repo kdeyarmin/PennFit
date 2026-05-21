@@ -34,7 +34,7 @@ import {
   type RecallSerialMatch,
 } from "../../lib/equipment/recall-match";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
-import { requireAdmin, requirePermission } from "../../middlewares/requireAdmin";
+import { requirePermission } from "../../middlewares/requireAdmin";
 
 type EquipmentRecallUpdate =
   Database["resupply"]["Tables"]["equipment_recalls"]["Update"];
@@ -103,7 +103,10 @@ const patchBody = z
   })
   .strict();
 
-router.get("/admin/equipment-recalls", requireAdmin, async (_req, res) => {
+router.get(
+  "/admin/equipment-recalls",
+  requirePermission("returns.read"),
+  async (_req, res) => {
   const supabase = getSupabaseServiceRoleClient();
   const { data, error } = await supabase
     .schema("resupply")
@@ -289,7 +292,7 @@ router.patch(
  */
 router.get(
   "/admin/equipment-recalls/:id/scan",
-  requireAdmin,
+  requirePermission("returns.read"),
   async (req, res) => {
     const params = idParam.safeParse(req.params);
     if (!params.success) {
@@ -440,7 +443,7 @@ router.post(
 // ────────────────────────────────────────────────────────────────
 router.get(
   "/admin/equipment-recalls/:id/notifications",
-  requireAdmin,
+  requirePermission("returns.read"),
   async (req, res) => {
     const idCheck = z.string().uuid().safeParse(req.params.id);
     if (!idCheck.success) {
@@ -615,7 +618,7 @@ router.post(
 
 router.get(
   "/admin/equipment-recalls/:id/remediation",
-  requireAdmin,
+  requirePermission("returns.read"),
   async (req, res) => {
     const idCheck = z.string().uuid().safeParse(req.params.id);
     if (!idCheck.success) {
@@ -662,7 +665,7 @@ router.get(
 // remediation state so the FDA visit gets a single document.
 router.get(
   "/admin/equipment-recalls/:id/roster.csv",
-  requireAdmin,
+  requirePermission("returns.read"),
   async (req, res) => {
     const idCheck = z.string().uuid().safeParse(req.params.id);
     if (!idCheck.success) {

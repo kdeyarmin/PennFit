@@ -22,7 +22,7 @@ import { z } from "zod";
 
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
-import { requireAdmin } from "../../middlewares/requireAdmin";
+import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
 
@@ -44,7 +44,7 @@ const querySchema = z
 
 router.get(
   "/admin/billing/eligibility-recent",
-  requireAdmin,
+  requirePermission("reports.read"),
   async (req, res) => {
     const parsed = querySchema.safeParse(req.query);
     if (!parsed.success) {
