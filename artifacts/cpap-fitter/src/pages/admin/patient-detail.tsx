@@ -20,6 +20,7 @@ import {
   PriorAuthorizationsTab,
   SleepStudiesTab,
 } from "@/components/admin/ClinicalTabs";
+import { AddPrescriptionModal } from "@/components/admin/AddPrescriptionModal";
 import { DocumentsTab } from "@/components/admin/DocumentsTab";
 import { EquipmentTab } from "@/components/admin/EquipmentTab";
 import { PatientActionBar } from "@/components/admin/PatientActionBar";
