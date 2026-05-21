@@ -821,7 +821,7 @@ export function Order() {
                   for full SMS program details.
                 </p>
                 {isSubmitted && errors.consentToContact && (
-                  <p className="text-xs text-destructive mt-1">
+                  <p className="text-xs text-destructive mt-1" role="alert">
                     {errors.consentToContact.message}
                   </p>
                 )}

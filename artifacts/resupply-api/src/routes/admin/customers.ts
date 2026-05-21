@@ -68,6 +68,7 @@ import {
   getStripeClient,
   readStripeConfigOrNull,
 } from "../../lib/stripe/config";
+import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
@@ -740,6 +741,7 @@ router.post(
   // Stripe Checkout Session. `conversations.manage` keeps this in
   // the same operational tier as the rest of customer-360 surface.
   requirePermission("conversations.manage"),
+  adminRateLimit({ name: "shop_customers.reorder", preset: "mutation" }),
   async (req, res) => {
     const idCheck = userIdParam.safeParse(req.params.userId);
     if (!idCheck.success) {
