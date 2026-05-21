@@ -124,7 +124,7 @@ export function SubscriptionsSection({
   }
 
   function handleCancel(sub: ShopSubscriptionView) {
-    if (pending) return;
+    if (pending || travelModeBusy) return;
     // Open the cancel-intercept dialog instead of going straight to
     // a confirm-and-cancel. The dialog surfaces "Pause instead" as
     // the primary CTA — most patients who hit cancel just need a
@@ -168,7 +168,7 @@ export function SubscriptionsSection({
   // intent without us having to guess Stripe's `pause_collection`
   // value. Both endpoints are idempotent server-side.
   async function handlePause(sub: ShopSubscriptionView) {
-    if (pending) return;
+    if (pending || travelModeBusy) return;
     if (
       !window.confirm(
         "Pause auto-ship? We'll stop charging your card and shipping until you " +
@@ -190,7 +190,7 @@ export function SubscriptionsSection({
   }
 
   async function handleResume(sub: ShopSubscriptionView) {
-    if (pending) return;
+    if (pending || travelModeBusy) return;
     setPending({ id: sub.id, action: "resume" });
     setActionError(null);
     try {
@@ -485,7 +485,7 @@ export function SubscriptionsSection({
                     <Button
                       size="sm"
                       variant="ghost"
-                      disabled={previewMode || isPending(sub.id)}
+                      disabled={previewMode || isPending(sub.id) || travelModeBusy}
                       onClick={() => void handlePause(sub)}
                       data-testid={`account-subscription-pause-${sub.id}`}
                       title={
@@ -509,7 +509,7 @@ export function SubscriptionsSection({
                     <Button
                       size="sm"
                       variant="ghost"
-                      disabled={previewMode || isPending(sub.id)}
+                      disabled={previewMode || isPending(sub.id) || travelModeBusy}
                       onClick={() => void handleResume(sub)}
                       data-testid={`account-subscription-resume-${sub.id}`}
                       title={
@@ -533,7 +533,7 @@ export function SubscriptionsSection({
                     <Button
                       size="sm"
                       variant="ghost"
-                      disabled={previewMode || isPending(sub.id)}
+                      disabled={previewMode || isPending(sub.id) || travelModeBusy}
                       onClick={() => void openCadenceDialog(sub)}
                       data-testid={`account-subscription-cadence-${sub.id}`}
                       title={
@@ -548,7 +548,7 @@ export function SubscriptionsSection({
                     <Button
                       size="sm"
                       variant="outline"
-                      disabled={previewMode || isPending(sub.id)}
+                      disabled={previewMode || isPending(sub.id) || travelModeBusy}
                       onClick={() => void handleCancel(sub)}
                       data-testid={`account-subscription-cancel-${sub.id}`}
                       title={
