@@ -12,11 +12,9 @@
 // refetch the patient (audit log, episodes, status all change).
 
 import { useEffect, useMemo, useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
 
 import {
   ApiError,
-  getGetPatientQueryKey,
   usePlaceVoiceCall,
   useSendEmailReminder,
   useSendSmsReminder,
@@ -35,7 +33,6 @@ export function PatientActionBar({
   patient: PatientDetail;
   onAfterAction: () => void;
 }) {
-  const queryClient = useQueryClient();
   const sms = useSendSmsReminder();
   const email = useSendEmailReminder();
   const voice = usePlaceVoiceCall();
@@ -121,9 +118,6 @@ export function PatientActionBar({
         id: patient.id,
         data: { status: next, expectedUpdatedAt: patient.updatedAt },
       });
-      await queryClient.invalidateQueries({
-        queryKey: getGetPatientQueryKey(patient.id),
-      });
       onAfterAction();
       if (next === "closed") {
         // Surface the undo affordance INSTEAD of the regular feedback
@@ -145,9 +139,6 @@ export function PatientActionBar({
         setFeedback({
           kind: "error",
           text: "Patient was changed elsewhere — refreshing. Please re-apply the status change.",
-        });
-        await queryClient.invalidateQueries({
-          queryKey: getGetPatientQueryKey(patient.id),
         });
         onAfterAction();
         return;
@@ -176,9 +167,6 @@ export function PatientActionBar({
         id: patient.id,
         data: { status: "active", expectedUpdatedAt: patient.updatedAt },
       });
-      await queryClient.invalidateQueries({
-        queryKey: getGetPatientQueryKey(patient.id),
-      });
       onAfterAction();
       setFeedback({
         kind: "success",
@@ -189,9 +177,6 @@ export function PatientActionBar({
         setFeedback({
           kind: "error",
           text: "Patient was changed elsewhere during undo — refreshing.",
-        });
-        await queryClient.invalidateQueries({
-          queryKey: getGetPatientQueryKey(patient.id),
         });
         onAfterAction();
         return;
