@@ -81,7 +81,7 @@ export function PushPromptBanner() {
           shipment status.
         </p>
         {error && (
-          <p className="text-xs text-destructive" data-testid="push-prompt-error">
+          <p className="text-xs text-destructive" data-testid="push-prompt-error" role="alert">
             {error}
           </p>
         )}
