@@ -1,4 +1,4 @@
-import React, { useId, isValidElement, cloneElement } from "react";
+import React, { useId, isValidElement, cloneElement, useState } from "react";
 import { useLocation, Link } from "wouter";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -9,6 +9,8 @@ import {
   useSubmitOrder,
   ApiError,
 } from "@workspace/api-client-react/storefront";
+import { fetchShopMe } from "@/lib/account-api";
+import { useShopIdentity } from "@/lib/identity";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -121,6 +123,28 @@ type FormValues = z.infer<typeof formSchema>;
  * with no parens) so international or unusual formats aren't
  * mangled — only obvious 10-digit US phones get reformatted.
  */
+/**
+ * Split a display name into first / last for the order form.
+ * `displayName` is a single string on shop_customers (the customer
+ * picked it themselves), so we fall back to "everything before the
+ * last whitespace token = first name, last token = last name". A
+ * single-token name (e.g. "Pat") becomes firstName="Pat", lastName="".
+ * The patient can edit either field before submitting.
+ */
+export function splitDisplayName(name: string | null | undefined): {
+  firstName: string;
+  lastName: string;
+} {
+  const trimmed = (name ?? "").trim();
+  if (!trimmed) return { firstName: "", lastName: "" };
+  const parts = trimmed.split(/\s+/);
+  if (parts.length === 1) return { firstName: parts[0], lastName: "" };
+  return {
+    firstName: parts.slice(0, -1).join(" "),
+    lastName: parts[parts.length - 1],
+  };
+}
+
 function formatUsPhone(input: string): string {
   if (!input) return "";
   // Skip reformat for international-looking inputs.
@@ -183,6 +207,65 @@ export function Order() {
   useEffect(() => {
     track("order_started");
   }, []);
+
+  // P3 — pre-fill from /shop/me for signed-in customers. Best-effort;
+  // a failure here (401 between identity probe and /shop/me, network
+  // hiccup, etc.) just leaves the form blank and the patient types
+  // from scratch. We use setValue per field rather than reset() so we
+  // never blow away anything the patient already touched between
+  // mount and the /shop/me round-trip. `prefilledFromAccount` flips
+  // once any field was actually populated so the UI can show a small
+  // "pre-filled from your account" hint near the top of the form.
+  const { isSignedIn, isLoaded: identityLoaded } = useShopIdentity();
+  const [prefilledFromAccount, setPrefilledFromAccount] = useState(false);
+  useEffect(() => {
+    if (!identityLoaded || !isSignedIn || prefilledFromAccount) return;
+    let cancelled = false;
+    fetchShopMe()
+      .then((res) => {
+        if (cancelled || !res.signedIn || !res.profile) return;
+        const p = res.profile;
+        let touched = false;
+        const { firstName, lastName } = splitDisplayName(p.displayName);
+        if (firstName) {
+          setValue("patient.firstName", firstName);
+          touched = true;
+        }
+        if (lastName) {
+          setValue("patient.lastName", lastName);
+          touched = true;
+        }
+        // Order page already pre-fills email from the fitter store; if
+        // /shop/me has a more authoritative email (the signed-in
+        // account), let it win — the patient can still edit either.
+        if (p.email) {
+          setValue("patient.email", p.email);
+          touched = true;
+        }
+        const addr = p.shippingAddress;
+        if (addr) {
+          setValue("shippingAddress.street1", addr.line1 ?? "");
+          if (addr.line2) setValue("shippingAddress.street2", addr.line2);
+          setValue("shippingAddress.city", addr.city ?? "");
+          setValue(
+            "shippingAddress.state",
+            (addr.state ?? "").toUpperCase(),
+            { shouldValidate: true },
+          );
+          setValue("shippingAddress.zip", addr.postalCode ?? "");
+          touched = true;
+        }
+        if (touched) setPrefilledFromAccount(true);
+      })
+      .catch((err) => {
+        // Logged so ops can see a spike in /shop/me 5xx rates, but
+        // never surfaced to the patient — the form still works.
+        console.warn("order: prefill from /shop/me failed", err);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [identityLoaded, isSignedIn, prefilledFromAccount, setValue]);
 
   if (!chosenMask) return null;
 
@@ -392,6 +475,25 @@ export function Order() {
               )}
           </AlertDescription>
         </Alert>
+      )}
+
+      {prefilledFromAccount && (
+        <div
+          className="mb-6 glass-card rounded-xl p-4 flex items-start gap-3 border-l-4 border-l-[hsl(var(--penn-gold))]"
+          data-testid="order-prefilled-hint"
+        >
+          <ShieldCheck className="w-5 h-5 mt-0.5 shrink-0 text-[hsl(var(--penn-gold))]" />
+          <div className="text-sm leading-relaxed">
+            <p className="font-semibold text-[hsl(var(--penn-navy))]">
+              Pre-filled from your account
+            </p>
+            <p className="text-muted-foreground mt-0.5">
+              We&apos;ve filled in your name, email, and shipping address
+              from your PennPaps account. Double-check everything below and
+              edit anything that&apos;s out of date before submitting.
+            </p>
+          </div>
+        </div>
       )}
 
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
