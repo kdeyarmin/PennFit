@@ -21,6 +21,7 @@ const supabaseMock = installSupabaseMock();
 
 import {
   applySucceededPayment,
+  createPaymentCheckoutSession,
   createPaymentIntent,
 } from "./patient-payment";
 
@@ -158,6 +159,7 @@ describe("applySucceededPayment — allocation walk", () => {
 // we use vi.mock + vi.hoisted.
 
 const stripeIntentCreateMock = vi.hoisted(() => vi.fn());
+const stripeCheckoutCreateMock = vi.hoisted(() => vi.fn());
 // Default to false so the existing "stripe_not_configured" tests continue to
 // work without supabase stages. The stripe_rejected describe block resets to
 // true in its own beforeEach.
@@ -169,6 +171,11 @@ vi.mock("../../lib/stripe/config", () => ({
   getStripeClient: () => ({
     paymentIntents: {
       create: (...args: unknown[]) => stripeIntentCreateMock(...args),
+    },
+    checkout: {
+      sessions: {
+        create: (...args: unknown[]) => stripeCheckoutCreateMock(...args),
+      },
     },
   }),
 }));
@@ -326,5 +333,72 @@ describe("createPaymentIntent — stripe_rejected (PR change)", () => {
       expect(result.error).toBe("stripe_not_configured");
       expect(result.error).not.toBe("stripe_rejected");
     }
+  });
+});
+
+// ============================================================================
+// createPaymentCheckoutSession — idempotency key
+// ============================================================================
+// Verify that stripe.checkout.sessions.create receives the RequestOptions
+// second argument with idempotencyKey: `pennpaps-patient-checkout-${row.id}`.
+
+const CHECKOUT_PATIENT = "66666666-6666-4666-8666-666666666666";
+const CHECKOUT_CLAIM = "77777777-7777-4777-8777-777777777777";
+const CHECKOUT_PAYMENT_ID = "88888888-8888-4888-8888-888888888888";
+
+describe("createPaymentCheckoutSession — idempotency key", () => {
+  beforeEach(() => {
+    supabaseMock.reset();
+    stripeConfiguredFlag.value = true;
+    stripeCheckoutCreateMock.mockReset();
+  });
+
+  it("passes idempotencyKey: pennpaps-patient-checkout-<payment.id> to checkout.sessions.create", async () => {
+    // Stage claim ownership check
+    stageSupabaseResponse("insurance_claims", "select", {
+      data: [
+        {
+          id: CHECKOUT_CLAIM,
+          patient_id: CHECKOUT_PATIENT,
+          patient_responsibility_cents: 5000,
+        },
+      ],
+    });
+    // Stage patient_payments insert returning the stable row id
+    stageSupabaseResponse("patient_payments", "insert", {
+      data: { id: CHECKOUT_PAYMENT_ID },
+    });
+    // Mock stripe returning a valid session with a URL
+    stripeCheckoutCreateMock.mockResolvedValue({
+      id: "cs_test_fake",
+      url: "https://checkout.stripe.com/pay/cs_test_fake",
+    });
+
+    const result = await createPaymentCheckoutSession({
+      patientId: CHECKOUT_PATIENT,
+      allocations: [{ claimId: CHECKOUT_CLAIM, amountAppliedCents: 2000 }],
+      successUrl: "https://example.com/success",
+      cancelUrl: "https://example.com/cancel",
+      initiatorEmail: "patient@example.com",
+    });
+
+    // The result should be a successful checkout session
+    expect("error" in result).toBe(false);
+    if (!("error" in result)) {
+      expect(result.url).toBe("https://checkout.stripe.com/pay/cs_test_fake");
+      expect(result.paymentId).toBe(CHECKOUT_PAYMENT_ID);
+    }
+
+    // Core assertion: the idempotency key was forwarded as a RequestOptions
+    // second argument to stripe.checkout.sessions.create.
+    expect(stripeCheckoutCreateMock).toHaveBeenCalledOnce();
+    const [, requestOptions] = stripeCheckoutCreateMock.mock.calls[0] as [
+      unknown,
+      { idempotencyKey: string },
+    ];
+    expect(requestOptions).toBeDefined();
+    expect(requestOptions.idempotencyKey).toBe(
+      `pennpaps-patient-checkout-${CHECKOUT_PAYMENT_ID}`,
+    );
   });
 });
