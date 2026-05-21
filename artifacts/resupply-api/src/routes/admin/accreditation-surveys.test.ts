@@ -255,3 +255,96 @@ describe("PATCH /admin/accreditation/surveys/:id — adminRateLimit removed", ()
     expect(res.body.error).toBe("invalid_body");
   });
 });
+
+// ── GET /admin/accreditation/surveys ─────────────────────────────────────────
+//
+// This route was changed in this PR: requireAdmin → requirePermission("compliance.read").
+// Tests verify:
+//   1. Returns 401 when unauthenticated.
+//   2. Returns 403 when caller is an agent without compliance.read permission.
+//   3. Returns 200 with surveys array for an admin.
+
+describe("GET /admin/accreditation/surveys — requirePermission(compliance.read)", () => {
+  it("returns 401 when unauthenticated", async () => {
+    const res = await request(makeApp()).get("/admin/accreditation/surveys");
+    expect(res.status).toBe(401);
+  });
+
+  it("returns 403 when caller is an agent (lacks compliance.read)", async () => {
+    stubAgent();
+    const res = await request(makeApp()).get("/admin/accreditation/surveys");
+    expect(res.status).toBe(403);
+    expect(res.body.error).toBe("permission_denied");
+  });
+
+  it("returns 200 with surveys array for an admin", async () => {
+    stubAdmin();
+    stageSupabaseResponse("accreditation_surveys", "select", {
+      data: [
+        {
+          id: SURVEY_ID,
+          organization_id: "org-id-1",
+          accreditation_body: "achc",
+          survey_type: "initial",
+          scheduled_for: null,
+          completed_on: null,
+          outcome: null,
+          findings_count: 0,
+          corrective_action_due_on: null,
+          corrective_action_completed_on: null,
+          surveyor_name: null,
+          report_document_object_key: null,
+          notes: null,
+          created_at: "2026-01-01T00:00:00Z",
+          updated_at: "2026-01-01T00:00:00Z",
+        },
+      ],
+    });
+    const res = await request(makeApp()).get("/admin/accreditation/surveys");
+    expect(res.status).toBe(200);
+    expect(res.body.surveys).toBeInstanceOf(Array);
+    expect(res.body.surveys).toHaveLength(1);
+    expect(res.body.surveys[0].id).toBe(SURVEY_ID);
+  });
+
+  it("returns 200 with empty surveys array when none exist", async () => {
+    stubAdmin();
+    stageSupabaseResponse("accreditation_surveys", "select", { data: [] });
+    const res = await request(makeApp()).get("/admin/accreditation/surveys");
+    expect(res.status).toBe(200);
+    expect(res.body.surveys).toEqual([]);
+  });
+
+  it("returns survey rows with camelCase keys", async () => {
+    stubAdmin();
+    stageSupabaseResponse("accreditation_surveys", "select", {
+      data: [
+        {
+          id: SURVEY_ID,
+          organization_id: "org-id-1",
+          accreditation_body: "tjc",
+          survey_type: "renewal",
+          scheduled_for: "2026-03-01",
+          completed_on: "2026-03-15",
+          outcome: "passed",
+          findings_count: 2,
+          corrective_action_due_on: null,
+          corrective_action_completed_on: null,
+          surveyor_name: "Jane Inspector",
+          report_document_object_key: null,
+          notes: "All good",
+          created_at: "2026-01-01T00:00:00Z",
+          updated_at: "2026-03-15T00:00:00Z",
+        },
+      ],
+    });
+    const res = await request(makeApp()).get("/admin/accreditation/surveys");
+    expect(res.status).toBe(200);
+    const survey = res.body.surveys[0];
+    expect(survey.accreditationBody).toBe("tjc");
+    expect(survey.surveyType).toBe("renewal");
+    expect(survey.outcome).toBe("passed");
+    expect(survey.findingsCount).toBe(2);
+    expect(survey.surveyorName).toBe("Jane Inspector");
+  });
+});
