@@ -44,6 +44,7 @@ import { linkEquipmentFromSnapshot } from "../../lib/integrations/link-equipment
 import { scanRecallsForAsset } from "../../lib/integrations/scan-recalls-for-asset";
 import { evaluatePatientSmartTriggers } from "../../lib/smart-triggers/evaluate-patient";
 import { logger } from "../../lib/logger";
+import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
@@ -201,6 +202,7 @@ router.post(
   // `patients.update` scope; tightens out fulfillment +
   // compliance_officer.
   requirePermission("patients.update"),
+  adminRateLimit({ name: "patient_integrations.refresh", preset: "mutation" }),
   async (req, res) => {
     const idCheck = patientIdParam.safeParse(req.params.id);
     if (!idCheck.success) {
