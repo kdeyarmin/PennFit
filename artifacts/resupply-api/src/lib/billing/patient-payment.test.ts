@@ -287,6 +287,29 @@ describe("createPaymentIntent — stripe_rejected (PR change)", () => {
     expect((payload.failure_reason as string)).toContain("insufficient_funds");
   });
 
+  it("calls paymentIntents.create with the idempotency key derived from patient_payment.id", async () => {
+    stageClaimOwned();
+    stagePaymentInsert();
+    stripeIntentCreateMock.mockResolvedValue({
+      id: "pi_test_123",
+      status: "requires_payment_method",
+      client_secret: "pi_test_123_secret",
+    });
+    stagePaymentUpdate();
+
+    await createPaymentIntent({
+      patientId: PATIENT_STR,
+      allocations: [{ claimId: CLAIM_STR, amountAppliedCents: 1000 }],
+      source: "portal",
+      initiatorEmail: "patient@example.com",
+    });
+
+    expect(stripeIntentCreateMock).toHaveBeenCalledWith(
+      expect.objectContaining({ metadata: expect.any(Object) }),
+      { idempotencyKey: `pennpaps-patient-payment-${PAYMENT_STR_ID}` },
+    );
+  });
+
   it("returns stripe_not_configured (not stripe_rejected) when no key is set", async () => {
     // Distinct path: stripe_not_configured fires BEFORE hitting Stripe.
     stripeConfiguredFlag.value = false;
