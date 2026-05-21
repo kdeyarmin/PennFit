@@ -3034,6 +3034,54 @@ export interface Database {
         Update: Partial<Database["resupply"]["Tables"]["shop_customer_notes"]["Row"]>;
         Relationships: [];
       };
+      inventory_reconciliations: {
+        Row: {
+          id: string;
+          period_label: string;
+          status: "draft" | "submitted";
+          started_by_email: string;
+          started_by_user_id: string | null;
+          started_at: string;
+          submitted_at: string | null;
+          notes: string | null;
+          total_lines: number;
+          total_variance_units: number;
+          applied_to_stripe: boolean;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["inventory_reconciliations"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["inventory_reconciliations"]["Row"]>;
+        Relationships: [];
+      };
+      inventory_reconciliation_lines: {
+        Row: {
+          id: string;
+          reconciliation_id: string;
+          product_id: string;
+          product_name: string;
+          system_count: number | null;
+          counted_qty: number;
+          variance: number;
+          applied: boolean;
+          created_at: string;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["inventory_reconciliation_lines"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["inventory_reconciliation_lines"]["Row"]>;
+        Relationships: [];
+      };
+      low_stock_alert_state: {
+        Row: {
+          product_id: string;
+          last_observed_count: number | null;
+          last_threshold: number | null;
+          last_alerted_at: string | null;
+          last_resolved_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["low_stock_alert_state"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["low_stock_alert_state"]["Row"]>;
+        Relationships: [];
+      };
       shop_product_compatibility: {
         Row: {
           id: string;

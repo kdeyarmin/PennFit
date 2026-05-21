@@ -68,6 +68,8 @@ import { AdminRuleTesterPage } from "@/pages/admin/admin-rule-tester";
 import { AdminSettingsPage } from "@/pages/admin/admin-settings";
 import { AdminShopInventoryPage } from "@/pages/admin/admin-shop-inventory";
 import { AdminShopProductNewPage } from "@/pages/admin/admin-shop-product-new";
+import { AdminShopInventoryReconcilePage } from "@/pages/admin/admin-shop-inventory-reconcile";
+import { AdminShopInventoryReconcileEditPage } from "@/pages/admin/admin-shop-inventory-reconcile-edit";
 import { AdminShopAbandonedCartsPage } from "@/pages/admin/admin-shop-abandoned-carts";
 import { AdminShopBackInStockPage } from "@/pages/admin/admin-shop-back-in-stock";
 import { AdminInsuranceLeadsPage } from "@/pages/admin/admin-insurance-leads";
@@ -222,6 +224,14 @@ function AdminConsole() {
           <Route
             path="/admin/shop/inventory/new"
             component={AdminShopProductNewPage}
+          />
+          <Route
+            path="/admin/shop/inventory/reconcile"
+            component={AdminShopInventoryReconcilePage}
+          />
+          <Route
+            path="/admin/shop/inventory/reconcile/:id"
+            component={AdminShopInventoryReconcileEditPage}
           />
           <Route
             path="/admin/shop/abandoned-carts"
