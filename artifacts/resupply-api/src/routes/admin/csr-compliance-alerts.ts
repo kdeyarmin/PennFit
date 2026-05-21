@@ -26,7 +26,6 @@ import {
 import { scanCompliance } from "../../lib/compliance-scanner";
 import { logger } from "../../lib/logger";
 import {
-  requireAdmin,
   requirePermission,
 } from "../../middlewares/requireAdmin";
 import { rateLimit } from "../../middlewares/rate-limit";
@@ -75,7 +74,7 @@ const SEVERITY_ORDER: Record<string, number> = {
 
 router.get(
   "/admin/csr-compliance-alerts",
-  requireAdmin,
+  requirePermission("compliance.read"),
   async (req, res) => {
     const parsed = listQuery.safeParse(req.query);
     if (!parsed.success) {
@@ -176,7 +175,7 @@ router.get(
 
 router.post(
   "/admin/csr-compliance-alerts/scan-now",
-  requireAdmin,
+  requirePermission("admin.tools.manage"),
   adminScanLimiter,
   async (req, res) => {
     const summary = await scanCompliance();
@@ -339,7 +338,7 @@ const createBody = z
 
 router.post(
   "/admin/csr-compliance-alerts",
-  requireAdmin,
+  requirePermission("compliance.resolve"),
   adminCreateLimiter,
   async (req, res) => {
     const parsed = createBody.safeParse(req.body);
