@@ -139,17 +139,26 @@ export async function createPaymentIntent(
   let intent: Stripe.PaymentIntent;
   try {
     const stripe = getStripeClient(config);
-    intent = await stripe.paymentIntents.create({
-      amount: totalCents,
-      currency: "usd",
-      payment_method_types: input.paymentMethodTypes ?? ["card"],
-      metadata: {
-        patient_id: input.patientId,
-        patient_payment_id: row.id,
-        source: input.source,
-        initiator_email: input.initiatorEmail,
+    intent = await stripe.paymentIntents.create(
+      {
+        amount: totalCents,
+        currency: "usd",
+        payment_method_types: input.paymentMethodTypes ?? ["card"],
+        metadata: {
+          patient_id: input.patientId,
+          patient_payment_id: row.id,
+          source: input.source,
+          initiator_email: input.initiatorEmail,
+        },
       },
-    });
+      // Idempotency-key namespaced to our patient_payment row id so a
+      // network-level retry of this single attempt collapses to one
+      // PaymentIntent at Stripe. Each fresh row id (= each fresh
+      // patient click on "Pay") still produces a new PI -- the row
+      // id is generated server-side on insert and is unique per
+      // attempt.
+      { idempotencyKey: `pennpaps-patient-payment-${row.id}` },
+    );
   } catch (err) {
     await supabase
       .schema("resupply")
@@ -365,7 +374,13 @@ export async function createPaymentCheckoutSession(
           initiator_email: input.initiatorEmail,
         },
       },
-    });
+    },
+    // Idempotency-key namespaced to the patient_payment row id so
+    // a network retry collapses to one Checkout Session at Stripe.
+    // Each fresh row id (= each fresh patient checkout intent)
+    // still produces a new Session.
+    { idempotencyKey: `pennpaps-patient-checkout-${row.id}` },
+    );
   } catch (err) {
     await supabase
       .schema("resupply")
