@@ -161,7 +161,10 @@ export function ProfileSection({
           <input
             type="text"
             value={displayName}
-            onChange={(e) => setDisplayName(e.target.value)}
+            onChange={(e) => {
+              setDisplayName(e.target.value);
+              setOverrideAddrWarning(false);
+            }}
             placeholder="Jane Doe"
             className="form-input"
             data-testid="account-name"
@@ -178,7 +181,10 @@ export function ProfileSection({
               <input
                 type="text"
                 value={addr.line1}
-                onChange={(e) => setAddr({ ...addr, line1: e.target.value })}
+                onChange={(e) => {
+                  setAddr({ ...addr, line1: e.target.value });
+                  setOverrideAddrWarning(false);
+                }}
                 placeholder="123 Main St"
                 className="form-input"
                 data-testid="account-addr-line1"
@@ -189,7 +195,10 @@ export function ProfileSection({
               <input
                 type="text"
                 value={addr.line2 ?? ""}
-                onChange={(e) => setAddr({ ...addr, line2: e.target.value })}
+                onChange={(e) => {
+                  setAddr({ ...addr, line2: e.target.value });
+                  setOverrideAddrWarning(false);
+                }}
                 placeholder="Apt 4B"
                 className="form-input"
                 data-testid="account-addr-line2"
@@ -201,7 +210,10 @@ export function ProfileSection({
                 <input
                   type="text"
                   value={addr.city}
-                  onChange={(e) => setAddr({ ...addr, city: e.target.value })}
+                  onChange={(e) => {
+                    setAddr({ ...addr, city: e.target.value });
+                    setOverrideAddrWarning(false);
+                  }}
                   className="form-input"
                   data-testid="account-addr-city"
                   autoComplete="address-level2"
@@ -211,12 +223,13 @@ export function ProfileSection({
                 <input
                   type="text"
                   value={addr.state}
-                  onChange={(e) =>
+                  onChange={(e) => {
                     setAddr({
                       ...addr,
                       state: e.target.value.toUpperCase().slice(0, 2),
-                    })
-                  }
+                    });
+                    setOverrideAddrWarning(false);
+                  }}
                   maxLength={2}
                   placeholder="CA"
                   className="form-input"
@@ -228,9 +241,10 @@ export function ProfileSection({
                 <input
                   type="text"
                   value={addr.postalCode}
-                  onChange={(e) =>
-                    setAddr({ ...addr, postalCode: e.target.value })
-                  }
+                  onChange={(e) => {
+                    setAddr({ ...addr, postalCode: e.target.value });
+                    setOverrideAddrWarning(false);
+                  }}
                   inputMode="numeric"
                   className="form-input"
                   data-testid="account-addr-zip"
