@@ -195,11 +195,12 @@ export function PatientActionBar({
       : null;
 
   return (
-    <Card
-      title="Quick actions"
-      subtitle="Every action writes to the audit log."
-    >
-      <div className="space-y-3">
+    <div className="admin-root">
+      <Card
+        title="Quick actions"
+        subtitle="Every action writes to the audit log."
+      >
+        <div className="space-y-3">
         <div>
           <p
             className="text-xs uppercase tracking-wider font-semibold mb-2"
