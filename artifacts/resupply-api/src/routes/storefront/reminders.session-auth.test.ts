@@ -244,3 +244,164 @@ describe("POST /api/reminders/manage/unsubscribe — session-auth fallback (P5)"
     expect(res.status).toBe(401);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Regression — token-only flow still works for PATCH and unsubscribe
+// ---------------------------------------------------------------------------
+// The P5 change added session-auth as an alternative to token. These tests
+// verify the existing token-only guest flow was not broken by the change.
+
+describe("PATCH /api/reminders/manage — token-only flow regression (P5)", () => {
+  it("with a token only (no session) updates the row by manage_token", async () => {
+    stageSupabaseResponse("reminder_subscriptions", "update", {
+      data: SUB_ROW,
+    });
+    const app = await buildApp();
+
+    const res = await request(app)
+      .patch("/api/reminders/manage")
+      .query({ token: "abc123abc123abc123" })
+      .send({
+        items: [
+          { sku: "maskCushion", lastReplacedAt: "2026-05-01", intervalDays: 30 },
+        ],
+      });
+
+    expect(res.status).toBe(200);
+    const filters = getSupabaseFilterCalls("reminder_subscriptions", "update");
+    expect(filters).toContainEqual({
+      verb: "eq",
+      args: ["manage_token", "abc123abc123abc123"],
+    });
+  });
+
+  it("token wins over session for PATCH — lookup uses manage_token, not email", async () => {
+    mockSession.current = {
+      customerId: "cust-bob",
+      email: "bob@example.com",
+      displayName: "Bob",
+    };
+    stageSupabaseResponse("reminder_subscriptions", "update", {
+      data: SUB_ROW,
+    });
+    const app = await buildApp();
+
+    const res = await request(app)
+      .patch("/api/reminders/manage")
+      .query({ token: "abc123abc123abc123" })
+      .send({
+        items: [
+          { sku: "maskCushion", lastReplacedAt: "2026-05-01", intervalDays: 30 },
+        ],
+      });
+
+    expect(res.status).toBe(200);
+    const filters = getSupabaseFilterCalls("reminder_subscriptions", "update");
+    // Must have used token column, not email.
+    expect(filters).toContainEqual({
+      verb: "eq",
+      args: ["manage_token", "abc123abc123abc123"],
+    });
+    const usedEmail = filters.some(
+      (f) => f.verb === "eq" && f.args[0] === "email",
+    );
+    expect(usedEmail).toBe(false);
+  });
+
+  it("400s when PATCH body items contain an impossible calendar date (2026-02-31)", async () => {
+    mockSession.current = {
+      customerId: "cust-1",
+      email: "pat@example.com",
+      displayName: "Pat Q.",
+    };
+    const app = await buildApp();
+
+    const res = await request(app)
+      .patch("/api/reminders/manage")
+      .send({
+        items: [
+          // Feb 31 is not a real date — JS rolls over to March 3 without
+          // strict validation; the route must reject it with 400.
+          { sku: "maskCushion", lastReplacedAt: "2026-02-31", intervalDays: 30 },
+        ],
+      });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe("Invalid update");
+    expect(res.body.details).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("lastReplacedAt"),
+      ]),
+    );
+  });
+});
+
+describe("POST /api/reminders/manage/unsubscribe — token-only flow regression (P5)", () => {
+  it("with a token only (no session) unsubscribes by manage_token", async () => {
+    stageSupabaseResponse("reminder_subscriptions", "update", {
+      data: { id: SUB_ROW.id },
+    });
+    const app = await buildApp();
+
+    const res = await request(app)
+      .post("/api/reminders/manage/unsubscribe")
+      .query({ token: "abc123abc123abc123" });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ success: true });
+    const filters = getSupabaseFilterCalls("reminder_subscriptions", "update");
+    expect(filters).toContainEqual({
+      verb: "eq",
+      args: ["manage_token", "abc123abc123abc123"],
+    });
+  });
+
+  it("token wins over session for unsubscribe — lookup uses manage_token, not email", async () => {
+    mockSession.current = {
+      customerId: "cust-bob",
+      email: "bob@example.com",
+      displayName: "Bob",
+    };
+    stageSupabaseResponse("reminder_subscriptions", "update", {
+      data: { id: SUB_ROW.id },
+    });
+    const app = await buildApp();
+
+    const res = await request(app)
+      .post("/api/reminders/manage/unsubscribe")
+      .query({ token: "abc123abc123abc123" });
+
+    expect(res.status).toBe(200);
+    const filters = getSupabaseFilterCalls("reminder_subscriptions", "update");
+    expect(filters).toContainEqual({
+      verb: "eq",
+      args: ["manage_token", "abc123abc123abc123"],
+    });
+    const usedEmail = filters.some(
+      (f) => f.verb === "eq" && f.args[0] === "email",
+    );
+    expect(usedEmail).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// resolveManageLookup — edge: session email is null
+// ---------------------------------------------------------------------------
+// If attachSignedIn runs but yields no email (unusual but possible when the
+// customer row has a null email), the route must fall through to 401 rather
+// than querying with a null value that would match every row.
+
+describe("GET /api/reminders/manage — null session email falls through to 401", () => {
+  it("returns 401 when the session exists but has no email", async () => {
+    mockSession.current = {
+      customerId: "cust-no-email",
+      email: null,
+      displayName: "Ghost",
+    };
+    const app = await buildApp();
+    const res = await request(app).get("/api/reminders/manage");
+    // A null email must NOT be passed to the eq() filter — it would match
+    // every row whose email is NULL. The route must 401 in this case.
+    expect(res.status).toBe(401);
+  });
+});
