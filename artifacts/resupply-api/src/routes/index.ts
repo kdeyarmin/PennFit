@@ -22,6 +22,7 @@ import providersRouter from "./admin/providers.js";
 import swoRouter from "./admin/swo.js";
 import complianceAttestationRouter from "./admin/compliance-attestation.js";
 import inboundFaxesRouter from "./admin/inbound-faxes.js";
+import inboundReferralsRouter from "./admin/inbound-referrals.js";
 import equipmentRecallsRouter from "./admin/equipment-recalls.js";
 import analyticsRouter from "./admin/analytics.js";
 import rtOverviewRouter from "./admin/rt-overview.js";
@@ -514,6 +515,11 @@ router.use(complianceAttestationRouter);
 // the CSR-facing surface for listing, attaching to patient/Rx/
 // provider, and archiving.
 router.use(inboundFaxesRouter);
+// /admin/inbound-referrals/* — triage queue for electronic
+// referral orders that landed via /integrations/inbound/parachute
+// (and, in Phase 4, EHR FHIR sources). Mirror of the inbound-faxes
+// surface for the typed-referral schema in migration 0144.
+router.use(inboundReferralsRouter);
 // /admin/equipment-recalls/* — manufacturer recall registry + the
 // scan endpoint that surfaces affected patients. Required for
 // Philips-DreamStation-style workflows where every DME needs to

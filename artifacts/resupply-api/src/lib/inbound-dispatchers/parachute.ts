@@ -38,6 +38,16 @@ import {
 } from "@workspace/resupply-db";
 
 import { logger } from "../logger";
+import { classifyReferral } from "./ai-classify";
+import { matchPatient } from "./match-patient";
+import { matchProvider } from "./match-provider";
+
+/**
+ * AI confidence threshold above which an inbound referral with both
+ * patient + provider matches auto-promotes `new` → `triaged`. Below
+ * this, the row stays `new` so a human looks at it.
+ */
+const AUTO_TRIAGE_CONFIDENCE_THRESHOLD = 0.85;
 
 type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
 type InboundWebhookRow =
@@ -122,6 +132,40 @@ export async function dispatchParachute(
   }
   const order = parsed.order;
 
+  // Phase 2: run matchers + AI classifier BEFORE insert so the row
+  // lands with patient/provider FKs already populated and the CSR
+  // sees triage hints inline. Matcher failures are non-fatal — the
+  // row lands with null FKs and the CSR handles it.
+  const [patientMatch, providerMatch] = await Promise.all([
+    matchPatient({
+      lastName: order.patient.lastName,
+      dob: order.patient.dob,
+      phoneE164: order.patient.phoneE164,
+    }),
+    matchProvider({ npi: order.provider.npi }),
+  ]);
+
+  const classification = await classifyReferral({
+    order,
+    patientMatched: patientMatch.patientId !== null,
+    providerMatched: providerMatch.providerId !== null,
+    env,
+  }).catch((err) => {
+    logger.warn(
+      { err: err instanceof Error ? err.message : String(err) },
+      "inbound_referral.classify.unexpected_error",
+    );
+    return null;
+  });
+
+  // Auto-triage: only when AI is confident AND both matchers hit.
+  // Anything else stays `new` for a human.
+  const autoTriage =
+    classification !== null &&
+    classification.confidence >= AUTO_TRIAGE_CONFIDENCE_THRESHOLD &&
+    patientMatch.patientId !== null &&
+    providerMatch.providerId !== null;
+
   const supabase = getSupabaseServiceRoleClient();
   const { data: inserted, error: insertErr } = await supabase
     .schema("resupply")
@@ -130,12 +174,19 @@ export async function dispatchParachute(
       source: input.row.source,
       source_order_id: order.sourceOrderId,
       inbound_webhook_id: input.row.id,
+      patient_match_id: patientMatch.patientId,
+      patient_match_kind: patientMatch.kind,
+      provider_match_id: providerMatch.providerId,
+      provider_match_kind: providerMatch.kind,
+      ai_classification_json: classification as unknown as Json,
+      ai_confidence: classification?.confidence ?? null,
       payer_name: order.payerName,
       ordering_npi: order.provider.npi,
       hcpcs_items_json: order.hcpcsLines as unknown as Json,
       icd10_codes_json: order.icd10Codes as unknown as Json,
       raw_parsed_json: order as unknown as Json,
-      triage_status: "new",
+      triage_status: autoTriage ? "triaged" : "new",
+      triaged_at: autoTriage ? new Date().toISOString() : null,
       received_at: order.occurredAt,
     })
     .select("id")

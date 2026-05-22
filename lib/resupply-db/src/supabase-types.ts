@@ -1616,6 +1616,71 @@ export interface Database {
         >;
         Relationships: [];
       };
+      inbound_referral_orders: {
+        Row: {
+          id: string;
+          source: string;
+          source_order_id: string;
+          inbound_webhook_id: string | null;
+          patient_match_id: string | null;
+          patient_match_kind: string | null;
+          provider_match_id: string | null;
+          provider_match_kind: string | null;
+          payer_name: string | null;
+          ordering_npi: string | null;
+          hcpcs_items_json: Json;
+          icd10_codes_json: Json;
+          raw_parsed_json: Json;
+          ai_classification_json: Json | null;
+          ai_confidence: number | null;
+          triage_status:
+            | "new"
+            | "triaged"
+            | "accepted"
+            | "rejected"
+            | "duplicate"
+            | "archived";
+          assigned_admin_user_id: string | null;
+          triaged_at: string | null;
+          triaged_by_user_id: string | null;
+          accepted_order_id: string | null;
+          accepted_order_kind: string | null;
+          accepted_at: string | null;
+          accepted_by_user_id: string | null;
+          notes: string | null;
+          received_at: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["inbound_referral_orders"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["inbound_referral_orders"]["Row"]
+        >;
+        Relationships: [];
+      };
+      inbound_referral_documents: {
+        Row: {
+          id: string;
+          referral_id: string;
+          doc_kind: string;
+          source_filename: string | null;
+          content_type: string | null;
+          size_bytes: number | null;
+          object_key: string | null;
+          source_url: string | null;
+          source_document_id: string | null;
+          created_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["inbound_referral_documents"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["inbound_referral_documents"]["Row"]
+        >;
+        Relationships: [];
+      };
       documentation_packets: {
         Row: {
           id: string;
