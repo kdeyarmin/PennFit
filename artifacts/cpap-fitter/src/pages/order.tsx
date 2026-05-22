@@ -889,8 +889,6 @@ export function Order() {
                 )}
               </div>
             </div>
-              </div>
-            </div>
           </CardContent>
         </Card>
 
