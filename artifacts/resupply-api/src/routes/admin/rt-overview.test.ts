@@ -51,26 +51,14 @@ beforeEach(() => {
   // Pin the clock so the 7-day default window deterministically
   // includes every fixture night (2026-05-15..17). Without this the
   // suite is a midnight-UTC flake: a run before 00:00Z 2026-05-22
-  // sees all 3 nights, after sees only 2.
+  // sees all 3 nights, after sees only 2. 2026-05-17T12:00Z also
+  // keeps the smart-trigger detected_at fixture (2026-05-15T02:00Z)
+  // inside the 7-day alert window.
   vi.useFakeTimers();
   vi.setSystemTime(new Date("2026-05-17T12:00:00Z"));
   logAuditMock.mockClear();
   mockAdmin.current = ADMIN;
   supabaseMock.reset();
-  // Pin "today" so the hard-coded night dates 2026-05-15..17 in the
-  // fixtures below always land inside the default 7-day window. The
-  // route uses `new Date()` for asOf; without this seam the suite
-  // flakes the moment real wall-clock time moves past 2026-05-21
-  // (the 2026-05-15 night falls outside the lower bound). Picking
-  // 2026-05-17 keeps all three staged nights in window AND keeps
-  // smart-trigger detected_at (2026-05-15T02:00:00Z) inside the
-  // 7-day alert window.
-  vi.useFakeTimers();
-  vi.setSystemTime(new Date("2026-05-17T18:00:00Z"));
-});
-
-afterEach(() => {
-  vi.useRealTimers();
 });
 
 afterEach(() => {
