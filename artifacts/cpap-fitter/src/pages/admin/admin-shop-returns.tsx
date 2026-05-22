@@ -66,15 +66,7 @@ export function AdminShopReturnsPage() {
   // Persist the active tab in `?tab=<id>` so a refresh, back/forward
   // nav, or bookmarked link lands on the same view. The "open" default
   // is omitted from the URL.
-  const [tab, setTabState] = useState<Tab>("open");
-
-  // Sync with URL after hydration to avoid hydration mismatch
-  useEffect(() => {
-    const urlTab = readTabFromUrl();
-    if (urlTab !== tab) {
-      setTabState(urlTab);
-    }
-  }, []);
+  const [tab, setTabState] = useState<Tab>(() => readTabFromUrl());
 
   function setTab(next: Tab) {
     setTabState(next);
