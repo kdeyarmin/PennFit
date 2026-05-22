@@ -38,6 +38,7 @@ import {
   rawEdiDownloadHref,
   resubmitOaSubmission,
   testClearinghouseConnection,
+  uploadOaAck,
   type ClearinghouseRow,
   type ConnectionTestResult,
   type EnrollmentWatchlistEntry,
@@ -660,6 +661,7 @@ const FILE_KIND_OPTIONS: Array<{ value: "" | InboundFileKind; label: string }> =
 
 function InboundFilesSection() {
   const [kind, setKind] = useState<"" | InboundFileKind>("");
+  const [uploadOpen, setUploadOpen] = useState(false);
   const { data, isPending, isError, error, refetch } = useQuery({
     queryKey: ["admin-oa-inbound-files", { kind }],
     queryFn: () => fetchInboundFiles(kind ? { fileKind: kind } : undefined),
@@ -696,6 +698,14 @@ function InboundFilesSection() {
         >
           ↻ Refresh
         </button>
+        <button
+          type="button"
+          onClick={() => setUploadOpen(true)}
+          className="rounded border border-slate-300 px-3 py-1.5 text-sm font-semibold hover:bg-slate-50"
+          data-testid="oa-inbound-upload-button"
+        >
+          ↑ Upload ack file
+        </button>
         <p
           className="text-xs ml-auto"
           style={{ color: "hsl(var(--ink-3))" }}
@@ -703,6 +713,12 @@ function InboundFilesSection() {
           {data?.files.length ?? 0} shown
         </p>
       </div>
+      {uploadOpen && (
+        <UploadAckModal
+          onClose={() => setUploadOpen(false)}
+          onUploaded={() => void refetch()}
+        />
+      )}
 
       {isError && <ErrorPanel error={error} onRetry={() => void refetch()} />}
 
@@ -801,6 +817,226 @@ function InboundFileRow({ f }: { f: InboundFile }) {
         )}
       </td>
     </tr>
+  );
+}
+
+// ── Manual ack upload modal ─────────────────────────────────────────
+//
+// Two ways in: paste the EDI text into a textarea, or pick a .txt /
+// .835 file and we read it with FileReader. The backend classifies
+// + dispatches via the same code the cron poller uses, so the
+// resulting state changes (submission status, per-claim events,
+// ERA reconciliation) are identical regardless of the source path.
+
+function UploadAckModal({
+  onClose,
+  onUploaded,
+}: {
+  onClose: () => void;
+  onUploaded: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const [content, setContent] = useState("");
+  const [fileName, setFileName] = useState("");
+  const [result, setResult] = useState<
+    | { ok: true; inboundFileId: string; fileKind: string; fileSizeBytes: number }
+    | { error: string }
+    | null
+  >(null);
+
+  const uploadMut = useMutation({
+    mutationFn: () =>
+      uploadOaAck({
+        content,
+        fileName: fileName.trim() || undefined,
+      }),
+    onSuccess: async (r) => {
+      setResult(r);
+      onUploaded();
+      await queryClient.invalidateQueries({
+        queryKey: ["admin-oa-submissions"],
+      });
+      await queryClient.invalidateQueries({
+        queryKey: ["admin-oa-operations-summary"],
+      });
+    },
+    onError: (err: unknown) => {
+      setResult({
+        error: err instanceof Error ? err.message : String(err),
+      });
+    },
+  });
+
+  function handleFile(file: File | null) {
+    if (!file) return;
+    setFileName(file.name);
+    file.text().then(
+      (text) => setContent(text),
+      (err) =>
+        setResult({
+          error: `Could not read file: ${err instanceof Error ? err.message : String(err)}`,
+        }),
+    );
+  }
+
+  const succeeded = result && "ok" in result;
+
+  return (
+    <div
+      className="fixed inset-0 z-40 flex items-center justify-center bg-slate-900/40 p-4"
+      role="dialog"
+      aria-modal="true"
+      onClick={onClose}
+      data-testid="oa-upload-ack-modal"
+    >
+      <div
+        className="w-full max-w-2xl rounded bg-white p-5 shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <header className="mb-3 flex items-start justify-between gap-3">
+          <div>
+            <h2
+              className="text-lg font-semibold"
+              style={{ color: "hsl(var(--ink-1))" }}
+            >
+              Upload Office Ally ack file
+            </h2>
+            <p
+              className="text-[12px]"
+              style={{ color: "hsl(var(--ink-3))" }}
+            >
+              Drop a 999 / 277CA / 835 / 271 file we received out-of-band (email, support ticket, manual SFTP grab). The backend classifies + dispatches it the same way the cron poller does.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded p-1 text-slate-500 hover:bg-slate-100"
+            aria-label="Close"
+          >
+            ✕
+          </button>
+        </header>
+
+        {succeeded ? (
+          <div
+            className="space-y-2 rounded border p-3"
+            style={{
+              backgroundColor: "rgba(21,128,61,0.06)",
+              borderColor: "#15803d",
+            }}
+          >
+            <p className="text-sm font-semibold" style={{ color: "#15803d" }}>
+              ✓ Uploaded + dispatched ({result.fileKind.toUpperCase()})
+            </p>
+            <p className="text-[12px]" style={{ color: "hsl(var(--ink-2))" }}>
+              {result.fileSizeBytes} bytes · inbound file id{" "}
+              <code className="font-mono text-[11px]">{result.inboundFileId}</code>
+            </p>
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded bg-slate-900 px-3 py-1 text-sm font-semibold text-white hover:bg-slate-800"
+            >
+              Done
+            </button>
+          </div>
+        ) : (
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              setResult(null);
+              uploadMut.mutate();
+            }}
+            className="space-y-3"
+          >
+            <label className="block">
+              <span
+                className="text-[11px] font-semibold uppercase tracking-wider mb-1 block"
+                style={{ color: "hsl(var(--ink-3))" }}
+              >
+                Pick a file
+              </span>
+              <input
+                type="file"
+                accept=".txt,.835,.999,.277,.271,text/plain"
+                onChange={(e) => handleFile(e.target.files?.[0] ?? null)}
+                className="block w-full text-sm"
+                data-testid="oa-upload-ack-file-input"
+              />
+            </label>
+            <label className="block">
+              <span
+                className="text-[11px] font-semibold uppercase tracking-wider mb-1 block"
+                style={{ color: "hsl(var(--ink-3))" }}
+              >
+                File name (optional)
+              </span>
+              <input
+                type="text"
+                value={fileName}
+                onChange={(e) => setFileName(e.target.value)}
+                placeholder="e.g. 277CA-2026-05-22-batch3.txt"
+                className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm font-mono"
+              />
+            </label>
+            <label className="block">
+              <span
+                className="text-[11px] font-semibold uppercase tracking-wider mb-1 block"
+                style={{ color: "hsl(var(--ink-3))" }}
+              >
+                …or paste EDI content
+              </span>
+              <textarea
+                value={content}
+                onChange={(e) => setContent(e.target.value)}
+                rows={8}
+                placeholder="ISA*00*..."
+                className="w-full rounded border border-slate-300 px-2 py-1.5 text-[11px] font-mono"
+                data-testid="oa-upload-ack-textarea"
+              />
+              <span
+                className="mt-1 block text-[10px]"
+                style={{ color: "hsl(var(--ink-3))" }}
+              >
+                Must start with ISA and contain ST*999, ST*277, ST*835, or ST*271 in the first 4 KB.
+              </span>
+            </label>
+
+            {result && "error" in result && (
+              <p
+                className="rounded border p-2 text-[12px]"
+                style={{
+                  backgroundColor: "rgba(190,18,60,0.06)",
+                  borderColor: "#be123c",
+                  color: "#9f1239",
+                }}
+              >
+                ✗ {result.error}
+              </p>
+            )}
+
+            <footer className="flex justify-end gap-2 border-t pt-3">
+              <button
+                type="button"
+                onClick={onClose}
+                className="rounded border border-slate-300 px-3 py-1.5 text-sm font-semibold hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={uploadMut.isPending || content.length < 20}
+                className="rounded bg-slate-900 px-3 py-1.5 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
+                data-testid="oa-upload-ack-submit"
+              >
+                {uploadMut.isPending ? "Uploading…" : "Upload + dispatch"}
+              </button>
+            </footer>
+          </form>
+        )}
+      </div>
+    </div>
   );
 }
 

@@ -300,3 +300,17 @@ export function fetchInboundFiles(filters?: {
     `/admin/clearinghouse-inbound-files${tail ? `?${tail}` : ""}`,
   );
 }
+
+export interface UploadAckResponse {
+  ok: true;
+  inboundFileId: string;
+  fileKind: InboundFileKind;
+  fileSizeBytes: number;
+}
+
+export function uploadOaAck(body: {
+  content: string;
+  fileName?: string;
+}): Promise<UploadAckResponse> {
+  return postJSON("/admin/office-ally/upload-ack", body);
+}
