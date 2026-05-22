@@ -44,12 +44,19 @@ export async function matchPatient(
 
   // 1. exact_phone
   if (input.phoneE164) {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .schema("resupply")
       .from("patients")
       .select("id")
       .eq("phone_e164", input.phoneE164)
       .limit(2);
+    if (error) {
+      logger.error(
+        { event: "inbound_referral.match_patient.db_error", err: error.message },
+        "inbound referral patient matcher: database error on exact_phone",
+      );
+      throw error;
+    }
     if (data && data.length === 1) {
       return { patientId: data[0].id, kind: "exact_phone" };
     }
@@ -58,13 +65,20 @@ export async function matchPatient(
 
   // 2. exact_dob_last_name
   if (input.dob && input.lastName) {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .schema("resupply")
       .from("patients")
       .select("id")
       .eq("date_of_birth", input.dob)
       .ilike("legal_last_name", input.lastName)
       .limit(2);
+    if (error) {
+      logger.error(
+        { event: "inbound_referral.match_patient.db_error", err: error.message },
+        "inbound referral patient matcher: database error on exact_dob_last_name",
+      );
+      throw error;
+    }
     if (data && data.length === 1) {
       return { patientId: data[0].id, kind: "exact_dob_last_name" };
     }
@@ -74,12 +88,19 @@ export async function matchPatient(
   if (input.phoneE164 && input.phoneE164.length >= 7) {
     const tail = input.phoneE164.slice(-7);
     if (/^\d{7}$/.test(tail)) {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .schema("resupply")
         .from("patients")
         .select("id")
         .ilike("phone_e164", `%${tail}%`)
         .limit(2);
+      if (error) {
+        logger.error(
+          { event: "inbound_referral.match_patient.db_error", err: error.message },
+          "inbound referral patient matcher: database error on fuzzy_phone_tail",
+        );
+        throw error;
+      }
       if (data && data.length === 1) {
         return { patientId: data[0].id, kind: "fuzzy_phone_tail" };
       }

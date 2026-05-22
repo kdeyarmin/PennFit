@@ -60,19 +60,23 @@ export async function runInboundReferralPreflightTick(): Promise<PreflightTickSt
     failed: 0,
   };
 
+  // Atomically claim a batch of rows by setting updated_at to a marker value.
+  // This prevents race conditions when multiple workers run simultaneously.
+  const claimMarker = new Date().toISOString();
   const { data: rows, error } = await supabase
     .schema("resupply")
     .from("inbound_referral_orders")
-    .select("id")
+    .update({ updated_at: claimMarker })
     .is("preflight_completed_at", null)
     .in("triage_status", ["new", "triaged"])
     .not("patient_match_id", "is", null)
     .order("received_at", { ascending: true })
-    .limit(BATCH_SIZE);
+    .limit(BATCH_SIZE)
+    .select("id");
   if (error) {
     logger.error(
       { err: error.message },
-      "inbound_referral.preflight.select_failed",
+      "inbound_referral.preflight.claim_failed",
     );
     throw error;
   }

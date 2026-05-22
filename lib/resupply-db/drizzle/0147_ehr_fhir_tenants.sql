@@ -53,7 +53,7 @@ CREATE TABLE IF NOT EXISTS "resupply"."ehr_fhir_tenants" (
   "created_at" timestamp with time zone NOT NULL DEFAULT now(),
   "updated_at" timestamp with time zone NOT NULL DEFAULT now(),
   CONSTRAINT "ehr_fhir_tenants_slug_format"
-    CHECK ("slug" ~ '^[a-z0-9_]+$')
+    CHECK ("slug" ~ '^[a-z0-9_]{2,38}$')
 );
 --> statement-breakpoint
 

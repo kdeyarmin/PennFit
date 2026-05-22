@@ -78,7 +78,7 @@ export async function matchProvider(
       );
     } else {
       logger.warn(
-        { npi: input.npi },
+        { npi: input.npi, error: err instanceof Error ? err.message : String(err) },
         "inbound_referral.match_provider.nppes_unexpected_error",
       );
     }

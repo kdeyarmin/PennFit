@@ -389,6 +389,13 @@ const fhirJson = express.raw({
   limit: "2mb",
 });
 
+const bundleSchema = z.object({
+  resourceType: z.literal("Bundle"),
+  id: z.string().optional(),
+  type: z.string().optional(),
+  entry: z.array(z.any()).optional(),
+});
+
 router.post(
   "/fhir/r4/ServiceRequest",
   requireSmartFhirAccess,
@@ -408,9 +415,9 @@ router.post(
         .json(operationOutcome("invalid", "empty_body"));
       return;
     }
-    let payload: unknown;
+    let parsed: unknown;
     try {
-      payload = JSON.parse(buf.toString("utf8"));
+      parsed = JSON.parse(buf.toString("utf8"));
     } catch {
       res
         .status(400)
@@ -418,26 +425,20 @@ router.post(
         .json(operationOutcome("invalid", "invalid_json"));
       return;
     }
-    if (
-      !payload ||
-      typeof payload !== "object" ||
-      Array.isArray(payload) ||
-      (payload as { resourceType?: unknown }).resourceType !== "Bundle"
-    ) {
+    const validation = bundleSchema.safeParse(parsed);
+    if (!validation.success) {
       res
         .status(400)
         .type("application/fhir+json")
         .json(operationOutcome("invalid", "not_a_bundle"));
       return;
     }
+    const payload = validation.data;
     const source = `ehr_fhir_${tenant.slug}`;
 
     // Dedupe key: prefer the bundle.id when present, fall back to a
     // sha256 of the raw bytes.
-    const bundleId =
-      typeof (payload as { id?: unknown }).id === "string"
-        ? ((payload as { id: string }).id as string).slice(0, 120)
-        : null;
+    const bundleId = payload.id ? payload.id.slice(0, 120) : null;
     const dedupeKey =
       bundleId !== null
         ? `bundle_id:${bundleId}`
