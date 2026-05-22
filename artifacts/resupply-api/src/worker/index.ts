@@ -62,6 +62,7 @@ import { registerDwoExpirySweepJob } from "./jobs/dwo-expiry-sweep.js";
 import { registerWebhookDispatcherJob } from "./jobs/webhook-dispatcher.js";
 import { registerAutoWorkflowJob } from "./jobs/auto-workflow.js";
 import { registerComplianceAutoWorkflowJob } from "./jobs/compliance-auto-workflow.js";
+import { registerLowStockAlertsJob } from "./jobs/low-stock-alerts.js";
 
 let bossInstance: PgBoss | null = null;
 let workerReady = false;
@@ -379,6 +380,11 @@ export async function startWorker(): Promise<void> {
   // .oig_screening_overdue / .patient_rights_overdue webhook events
   // with 24-hour cooldown gates.
   await registerComplianceAutoWorkflowJob(boss);
+
+  // Every 6 hours — shop inventory low-stock alert digest. Reads
+  // Stripe catalog, dedups per-SKU via resupply.low_stock_alert_state,
+  // emails RESUPPLY_ADMIN_EMAILS one rollup per tick.
+  await registerLowStockAlertsJob(boss);
 
   workerReady = true;
   logger.info(
