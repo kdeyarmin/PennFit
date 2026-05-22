@@ -30,10 +30,13 @@
 //   token counts, and error codes — never message contents.
 //
 // Failure mode:
-//   Functions reject with a typed error on transport / API failures
-//   so callers can fall through to OpenAI or a degraded reply.
-//   They never throw on a recoverable 4xx — those resolve normally
-//   with the error surfaced through `errorMessage`.
+//   `send()` and `stream()` always RESOLVE — recoverable errors
+//   (transport, HTTP non-2xx, timeout, empty response) come back as
+//   `{ ok: false, errorCode, errorMessage }` so callers can fall
+//   through to OpenAI or a degraded reply without try/catch. The
+//   one exception is `createAnthropicClient({ apiKey: "" })`, which
+//   throws at construction so a misconfigured deploy fails loudly
+//   at boot rather than silently every request.
 
 const DEFAULT_API_URL = "https://api.anthropic.com/v1/messages";
 const DEFAULT_API_VERSION = "2023-06-01";
@@ -60,9 +63,49 @@ export interface AnthropicTextBlock {
   cache_control?: { type: "ephemeral" };
 }
 
+/**
+ * Tool-use block — emitted by the model on an assistant turn when it
+ * decides to call a tool. Callers send these BACK to the model in the
+ * next round's assistant message so the conversation history stays
+ * coherent; the matching `tool_result` block goes in the following
+ * user message.
+ */
+export interface AnthropicToolUseBlock {
+  type: "tool_use";
+  id: string;
+  name: string;
+  input: Record<string, unknown>;
+}
+
+/**
+ * Tool-result block — the caller's reply to a `tool_use`. Anthropic
+ * frames tool results as "user" messages (the model is the assistant,
+ * the runtime executing tools is conceptually the user). `content`
+ * is the serialized tool output the model should read.
+ */
+export interface AnthropicToolResultBlock {
+  type: "tool_result";
+  tool_use_id: string;
+  content: string;
+  /** Set when the tool failed so the model can adapt. */
+  is_error?: boolean;
+}
+
+/**
+ * Content block union for messages sent INTO the Messages API.
+ * Anthropic accepts text blocks on either role and tool_use /
+ * tool_result blocks where appropriate (tool_use only on assistant,
+ * tool_result only on user). The type is unified here so callers
+ * can build a message array without juggling role-keyed unions.
+ */
+export type AnthropicContentBlock =
+  | AnthropicTextBlock
+  | AnthropicToolUseBlock
+  | AnthropicToolResultBlock;
+
 export interface AnthropicMessage {
   role: AnthropicRole;
-  content: string | AnthropicTextBlock[];
+  content: string | AnthropicContentBlock[];
 }
 
 export interface AnthropicSystemBlock {
@@ -306,7 +349,7 @@ export function createAnthropicClient(
           return {
             ok: false,
             errorCode: "empty",
-            errorMessage: "anthropic stream ended without message_stop",
+            errorMessage: "anthropic stream produced no content blocks",
             latencyMs,
           };
         }

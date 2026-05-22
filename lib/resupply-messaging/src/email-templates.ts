@@ -90,7 +90,7 @@ export function renderResupplyReminder(
     "Pick one:",
     `  Yes, ship it: ${input.confirmUrl}`,
     `  Change my address: ${input.editUrl}`,
-    `  Pause these reminders: ${input.stopUrl}`,
+    `  Stop these reminders: ${input.stopUrl}`,
     "",
     "If a link doesn't work, just reply to this email — a real person reads it.",
     "",
@@ -128,7 +128,7 @@ export function renderResupplyReminder(
       <a href="${escapeHtml(input.editUrl)}" style="color:#0f766e;text-decoration:underline;">Change my shipping address</a>
     </p>
     <p style="margin:0 0 24px;font-size:14px;line-height:20px;color:#475569;">
-      <a href="${escapeHtml(input.stopUrl)}" style="color:#0f766e;text-decoration:underline;">Pause these reminders</a>
+      <a href="${escapeHtml(input.stopUrl)}" style="color:#0f766e;text-decoration:underline;">Stop these reminders</a>
     </p>
     <hr style="border:none;border-top:1px solid #e2e8f0;margin:24px 0;" />
     <p style="margin:0;font-size:12px;line-height:18px;color:#64748b;">
@@ -243,7 +243,7 @@ export function renderClickConfirmation(
       ? "You're all set — your refill is on the way. We'll text or email tracking the moment it ships."
       : input.action === "edit"
         ? "Got it — someone from our team will be in touch about the address change shortly."
-        : "You're unsubscribed from CPAP refill reminders, no more emails from us on this. If you change your mind, just reply to a past email and we'll re-enroll you.";
+        : "You're unsubscribed from CPAP refill reminders for now — no more emails from us on this. Reply to a past email any time and we'll turn them back on.";
   const heading =
     input.action === "confirm"
       ? "Order confirmed"

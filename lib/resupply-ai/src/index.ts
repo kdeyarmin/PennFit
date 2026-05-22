@@ -57,6 +57,7 @@ export {
   DEFAULT_ANTHROPIC_MODEL_REASONING,
   type AnthropicClient,
   type AnthropicClientOptions,
+  type AnthropicContentBlock,
   type AnthropicRequest,
   type AnthropicResponse,
   type AnthropicResponseContentBlock,
@@ -65,6 +66,8 @@ export {
   type AnthropicTextBlock,
   type AnthropicTool,
   type AnthropicToolChoice,
+  type AnthropicToolResultBlock,
+  type AnthropicToolUseBlock,
   type AnthropicUsage,
   type AnthropicCallResult,
 } from "./anthropic-client";

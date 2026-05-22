@@ -78,6 +78,7 @@ import {
   getResponseToolCalls,
   selectLlmProvider,
   type AnthropicClient,
+  type AnthropicContentBlock,
   type AnthropicMessage,
   type AnthropicTool,
 } from "../../lib/llm-provider.js";
@@ -743,15 +744,7 @@ function convertOpenAiToAnthropicMessages(
       continue;
     }
     if (m.role === "assistant") {
-      const blocks: Array<
-        | { type: "text"; text: string }
-        | {
-            type: "tool_use";
-            id: string;
-            name: string;
-            input: Record<string, unknown>;
-          }
-      > = [];
+      const blocks: AnthropicContentBlock[] = [];
       if (typeof m.content === "string" && m.content.length > 0) {
         blocks.push({ type: "text", text: m.content });
       }
@@ -774,7 +767,7 @@ function convertOpenAiToAnthropicMessages(
         }
       }
       if (blocks.length > 0) {
-        out.push({ role: "assistant", content: blocks as never });
+        out.push({ role: "assistant", content: blocks });
       }
       continue;
     }
@@ -786,8 +779,8 @@ function convertOpenAiToAnthropicMessages(
             type: "tool_result",
             tool_use_id: m.tool_call_id,
             content: m.content,
-          } as never,
-        ] as never,
+          },
+        ],
       });
     }
   }

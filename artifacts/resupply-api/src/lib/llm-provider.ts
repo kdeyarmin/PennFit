@@ -31,11 +31,14 @@ import {
   getResponseText,
   getResponseToolCalls,
   type AnthropicClient,
+  type AnthropicContentBlock,
   type AnthropicMessage,
   type AnthropicRequest,
   type AnthropicResponse,
   type AnthropicSystemBlock,
   type AnthropicTool,
+  type AnthropicToolResultBlock,
+  type AnthropicToolUseBlock,
 } from "@workspace/resupply-ai";
 
 export type LlmProvider = "anthropic" | "openai" | "offline";
@@ -101,9 +104,12 @@ export {
   getResponseText,
   getResponseToolCalls,
   type AnthropicClient,
+  type AnthropicContentBlock,
   type AnthropicMessage,
   type AnthropicRequest,
   type AnthropicResponse,
   type AnthropicSystemBlock,
   type AnthropicTool,
+  type AnthropicToolResultBlock,
+  type AnthropicToolUseBlock,
 };

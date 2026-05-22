@@ -604,19 +604,22 @@ function runChecks(): void {
   //    that matches the example placeholder verbatim is a copy-
   //    paste oversight worth flagging.
   refusePlaceholder("OPENAI_API_KEY", "sk-replace_me");
-  refusePlaceholder("ANTHROPIC_API_KEY", "sk-ant-replace_me");
   refusePlaceholder("TWILIO_PHONE_NUMBER", "+15555550123");
   refusePlaceholder("PENN_FULFILLMENT_EMAIL", "fulfillment@example.com");
   refusePlaceholder("VITE_RESUPPLY_CONTACT_EMAIL", "support@example.com");
 
   // Shape checks for the new vendor keys (May 2026):
   //   - ANTHROPIC_API_KEY: prefix is `sk-ant-`.
-  //   - DEEPGRAM_API_KEY:  a 40-char hex token (no fixed prefix).
-  //   - ELEVENLABS_API_KEY: no documented prefix, but should be long
-  //     enough that a placeholder is obviously wrong.
+  //   - DEEPGRAM_API_KEY:  40-char hex token (no fixed prefix).
+  //   - ELEVENLABS_API_KEY: no documented prefix, but real keys are
+  //     ≥ 24 chars so a placeholder is obvious.
   // All three are OPTIONAL — a deployment that only uses OpenAI is
   // still fully functional. Each missing one gets a `warn` so the
-  // operator can see what's available.
+  // operator can see what's available. `refusePlaceholder` for these
+  // keys is called HERE (not in the block above) because the same
+  // check also gates the shape/warn logic — calling it in both
+  // places would record duplicate FAIL entries on placeholder
+  // matches.
   if (!refusePlaceholder("ANTHROPIC_API_KEY", "sk-ant-replace_me")) {
     const anth = getTrimmed("ANTHROPIC_API_KEY");
     if (anth === undefined || anth === "") {
@@ -639,14 +642,14 @@ function runChecks(): void {
         "warn",
         "unset (post-call audit transcripts will use OpenAI gpt-4o-mini-transcribe — set Deepgram for higher accuracy on phone audio)",
       );
-    } else if (dg.length < 32) {
+    } else if (!/^[0-9a-f]{40}$/i.test(dg)) {
       record(
         "DEEPGRAM_API_KEY",
         "fail",
-        `looks too short (${dg.length} chars; Deepgram keys are 40 hex chars)`,
+        `expected 40 hex characters, got ${dg.length} chars (Deepgram API keys are a 40-char hex token)`,
       );
     } else {
-      record("DEEPGRAM_API_KEY", "pass", "set");
+      record("DEEPGRAM_API_KEY", "pass", "40 hex chars");
     }
   }
   {
