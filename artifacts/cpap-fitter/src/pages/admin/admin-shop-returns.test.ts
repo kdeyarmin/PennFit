@@ -151,8 +151,8 @@ describe("admin-shop-returns — readTabFromUrl structure", () => {
   });
 
   it("reads the 'tab' search param via URLSearchParams", () => {
-    expect(SRC).toContain('window.location.search');
-    expect(SRC).toContain('"tab"');
+    expect(SRC).toMatch(/URLSearchParams\s*\(/);
+    expect(SRC).toMatch(/\.get\(\s*["']tab["']\s*\)/);
   });
 
   it("falls back to 'open' for unknown/missing params", () => {
