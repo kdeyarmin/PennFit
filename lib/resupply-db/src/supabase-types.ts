@@ -527,9 +527,48 @@ export interface Database {
           sms_opt_in: boolean;
           source: "consent" | "sleep_apnea_quiz" | "insurance_quote";
           first_day_nudged_at: string | null;
+          // Mig 0151 — fitter completion + supply-campaign journey.
+          completed_at: string | null;
+          recommended_mask_id: string | null;
+          recommended_mask_name: string | null;
+          recommended_mask_type: string | null;
+          journey_stage:
+            | "consent"
+            | "completed"
+            | "campaign_active"
+            | "converted"
+            | "unsubscribed"
+            | "expired";
+          campaign_touch_count: number;
+          last_campaign_touch_at: string | null;
+          next_campaign_touch_at: string | null;
+          unsubscribed_at: string | null;
+          first_order_id: string | null;
+          first_order_placed_at: string | null;
         };
         Insert: Partial<Database["resupply"]["Tables"]["fitter_leads"]["Row"]>;
         Update: Partial<Database["resupply"]["Tables"]["fitter_leads"]["Row"]>;
+        Relationships: [];
+      };
+      // Mig 0151 — per-send audit log for the multi-touch supply
+      // campaign. One row per (lead, touch_index, channel).
+      fitter_campaign_touches: {
+        Row: {
+          id: string;
+          lead_id: string;
+          touch_index: number;
+          channel: "email" | "sms";
+          template_key: string;
+          status: "sent" | "failed" | "skipped";
+          error_message: string | null;
+          sent_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["fitter_campaign_touches"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["fitter_campaign_touches"]["Row"]
+        >;
         Relationships: [];
       };
       shop_product_questions: {
