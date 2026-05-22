@@ -27,13 +27,20 @@
 // accept the in-house admin session only; a token-based gate lands
 // when the patient portal launches a SMART app.
 
-import { Router, type IRouter } from "express";
+import { createHash } from "node:crypto";
+
+import express, { Router, type IRouter } from "express";
 import { z } from "zod";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { logAudit } from "@workspace/resupply-audit";
+import {
+  type Json,
+  getSupabaseServiceRoleClient,
+} from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { requireAdmin } from "../../middlewares/requireAdmin";
+import { requireSmartFhirAccess } from "../../middlewares/requireSmartFhirAccess";
 
 const router: IRouter = Router();
 
@@ -68,6 +75,12 @@ router.get("/fhir/r4/metadata", (_req, res) => {
             { type: "Condition", interaction: [{ code: "read" }] },
             { type: "MedicationRequest", interaction: [{ code: "read" }] },
             { type: "Device", interaction: [{ code: "read" }] },
+            // ServiceRequest is the inbound write surface — SMART-on-
+            // FHIR backend-services partners POST a Bundle containing
+            // a ServiceRequest plus Patient / Practitioner / Coverage
+            // / DocumentReference resources to land an electronic DME
+            // order.
+            { type: "ServiceRequest", interaction: [{ code: "create" }] },
           ],
         },
       ],
@@ -355,6 +368,131 @@ function notFound(resourceType: string): Record<string, unknown> {
         diagnostics: `${resourceType} not found`,
       },
     ],
+  };
+}
+
+// ────────────────────────────────────────────────────────────────────
+// POST /fhir/r4/ServiceRequest — SMART-on-FHIR backend-services
+// intake from EHR partners (Athena, Epic, PointClickCare). The
+// middleware verifies the partner JWT against their JWKS and sets
+// req.fhirTenant; we land the Bundle in inbound_webhooks with
+// source = `ehr_fhir_<slug>` so the Phase 1+2 dispatcher pipeline
+// processes it like any other inbound referral source.
+//
+// We use express.raw() per-route because the FHIR Bundle MUST be
+// stored verbatim — downstream parsers and any future signature-
+// over-bundle checks need byte-exact fidelity.
+// ────────────────────────────────────────────────────────────────────
+
+const fhirJson = express.raw({
+  type: ["application/fhir+json", "application/json"],
+  limit: "2mb",
+});
+
+const bundleSchema = z.object({
+  resourceType: z.literal("Bundle"),
+  id: z.string().optional(),
+  type: z.string().optional(),
+  entry: z.array(z.any()).optional(),
+});
+
+router.post(
+  "/fhir/r4/ServiceRequest",
+  requireSmartFhirAccess,
+  fhirJson,
+  async (req, res) => {
+    const tenant = req.fhirTenant;
+    if (!tenant) {
+      // Middleware should have rejected; defensive guard.
+      res.status(401).json({ error: "missing_fhir_tenant" });
+      return;
+    }
+    const buf = req.body;
+    if (!Buffer.isBuffer(buf) || buf.length === 0) {
+      res
+        .status(400)
+        .type("application/fhir+json")
+        .json(operationOutcome("invalid", "empty_body"));
+      return;
+    }
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(buf.toString("utf8"));
+    } catch {
+      res
+        .status(400)
+        .type("application/fhir+json")
+        .json(operationOutcome("invalid", "invalid_json"));
+      return;
+    }
+    const validation = bundleSchema.safeParse(parsed);
+    if (!validation.success) {
+      res
+        .status(400)
+        .type("application/fhir+json")
+        .json(operationOutcome("invalid", "not_a_bundle"));
+      return;
+    }
+    const payload = validation.data;
+    const source = `ehr_fhir_${tenant.slug}`;
+
+    // Dedupe key: prefer the bundle.id when present, fall back to a
+    // sha256 of the raw bytes.
+    const bundleId = payload.id ? payload.id.slice(0, 120) : null;
+    const dedupeKey =
+      bundleId !== null
+        ? `bundle_id:${bundleId}`
+        : `sha256:${createHash("sha256").update(buf).digest("hex")}`;
+
+    const supabase = getSupabaseServiceRoleClient();
+    const { error } = await supabase
+      .schema("resupply")
+      .from("inbound_webhooks")
+      .insert({
+        source,
+        source_event_type: "fhir.ServiceRequest",
+        payload_json: payload as unknown as Json,
+        verification_headers_json: null,
+        // JWT was verified by requireSmartFhirAccess — flag the row
+        // so the dispatcher knows it doesn't need to re-verify.
+        signature_verified: true,
+        dedupe_key: dedupeKey,
+        status: "received",
+      });
+    if (error) {
+      if (typeof error.code === "string" && error.code === "23505") {
+        res.status(200).json({ ok: true, deduped: true });
+        return;
+      }
+      logger.error(
+        { err: error.message, tenant_slug: tenant.slug },
+        "fhir.ServiceRequest: insert failed",
+      );
+      throw error;
+    }
+    await logAudit({
+      action: "fhir.service_request.received",
+      adminEmail: `system:fhir:${tenant.slug}`,
+      adminUserId: null,
+      targetTable: "inbound_webhooks",
+      targetId: null,
+      metadata: { source, tenant_id: tenant.id, dedupe_key: dedupeKey },
+      ip: req.ip ?? null,
+      userAgent: req.get("user-agent") ?? null,
+    }).catch((err) => {
+      logger.warn({ err }, "fhir.service_request.received audit write failed");
+    });
+    res.status(202).json({ ok: true });
+  },
+);
+
+function operationOutcome(
+  code: string,
+  diagnostics: string,
+): Record<string, unknown> {
+  return {
+    resourceType: "OperationOutcome",
+    issue: [{ severity: "error", code, diagnostics }],
   };
 }
 
