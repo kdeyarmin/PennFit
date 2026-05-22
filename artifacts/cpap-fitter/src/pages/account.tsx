@@ -27,7 +27,6 @@ import { useDocumentTitle } from "@/hooks/use-document-title";
 import { SignedIn, useShopIdentity } from "@/lib/identity";
 import {
   AlertCircle,
-  Bell,
   CreditCard,
   Loader2,
   Package,
@@ -310,7 +309,6 @@ function AccountInner() {
           <EducationFeedSection />
           <InsightsSection />
           <ReorderSuggestionsSection />
-          <RemindersSection />
           <SubscriptionsSection previewMode={previewMode === true} />
           <OrdersSection
             orders={data.recentOrders ?? []}
@@ -500,59 +498,6 @@ function SavedCardSection({ card }: { card: SavedCard | null }) {
           </Link>
         </div>
       )}
-    </section>
-  );
-}
-
-/**
- * P5 — Replacement-reminders tile on /account.
- *
- * Signed-in customers previously had to dig through an email to reach
- * the manage page even though they were already authenticated in the
- * SPA. This tile links straight into /reminders/manage, which the
- * backend now resolves by session email (no token required). For
- * customers who haven't subscribed yet, the same tile points at
- * /reminders so they can opt in without leaving /account.
- *
- * We deliberately don't probe `/api/reminders/manage` here to render a
- * "you have N reminders active" preview — that would double the
- * account-page load fan-out for a low-value badge. The tile is a
- * deterministic two-button card that's correct in both states.
- */
-function RemindersSection() {
-  return (
-    <section
-      className="glass-card rounded-2xl p-6"
-      data-testid="account-reminders-section"
-    >
-      <div className="flex items-center gap-2 mb-3">
-        <Bell className="h-5 w-5 text-muted-foreground" />
-        <h2 className="font-semibold">Replacement reminders</h2>
-      </div>
-      <p className="text-sm text-muted-foreground mb-4">
-        Skip the inbox round-trip — manage which supplies you get nudged
-        about, and update your last-replaced dates right from here.
-      </p>
-      <div className="flex flex-wrap gap-2">
-        <Link href="/reminders/manage">
-          <Button
-            variant="outline"
-            size="sm"
-            data-testid="account-link-reminders-manage"
-          >
-            Manage reminders
-          </Button>
-        </Link>
-        <Link href="/reminders">
-          <Button
-            variant="ghost"
-            size="sm"
-            data-testid="account-link-reminders-signup"
-          >
-            Set up new
-          </Button>
-        </Link>
-      </div>
     </section>
   );
 }
