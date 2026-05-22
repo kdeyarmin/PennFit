@@ -36,9 +36,12 @@
 import type PgBoss from "pg-boss";
 
 import {
+  type Database,
   escapePostgRESTFilterValue,
   getSupabaseServiceRoleClient,
 } from "@workspace/resupply-db";
+
+type FitterLeadsUpdate = Database["resupply"]["Tables"]["fitter_leads"]["Update"];
 
 import { logger } from "../../lib/logger";
 
@@ -78,7 +81,7 @@ export async function runFitterConversionAttribution(): Promise<AttributionStats
   const { data: orders, error: ordErr } = await supabase
     .schema("public")
     .from("orders")
-    .select("id, patient_email, created_at")
+    .select("id, patient_email, patient_first_name, created_at")
     .gte("created_at", sinceIso)
     .not("patient_email", "is", null)
     .order("created_at", { ascending: true });
@@ -87,21 +90,35 @@ export async function runFitterConversionAttribution(): Promise<AttributionStats
   if (!orders || orders.length === 0) return stats;
 
   // Build a map from lowercased email → most-recent order id +
-  // placed_at. Multiple orders for the same email collapse to the
-  // FIRST one (in createdAt-ascending order, the first match wins
-  // so the lead's first_order_* columns reflect the genuinely
-  // first attributed order even if the scan window contains two).
+  // placed_at + patient_first_name. Multiple orders for the same
+  // email collapse to the FIRST one (in createdAt-ascending order,
+  // the first match wins so the lead's first_order_* columns reflect
+  // the genuinely first attributed order even if the scan window
+  // contains two).
   const byEmail = new Map<
     string,
-    { orderId: string; placedAt: string }
+    { orderId: string; placedAt: string; firstName: string | null }
   >();
   for (const o of orders) {
     const e = typeof o.patient_email === "string" ? o.patient_email.toLowerCase() : null;
     if (!e) continue;
     if (byEmail.has(e)) continue;
+    // Use public.orders.patient_first_name directly — the storefront
+    // checkout form splits the name into first / last at /order, so
+    // we don't need to parse a combined "Sarah Smith" string. The
+    // cap-at-30-chars filter in composeTouchpoint is a backstop
+    // against unlikely long strings.
+    let firstName: string | null = null;
+    if (typeof o.patient_first_name === "string") {
+      const trimmed = o.patient_first_name.trim();
+      if (trimmed.length > 0 && trimmed.length <= 30) {
+        firstName = trimmed;
+      }
+    }
     byEmail.set(e, {
       orderId: o.id as string,
       placedAt: (o.created_at as string) ?? new Date().toISOString(),
+      firstName,
     });
   }
   if (byEmail.size === 0) return stats;
@@ -150,6 +167,11 @@ export async function runFitterConversionAttribution(): Promise<AttributionStats
   }
   stats.leadsMatched = leadByEmail.size;
 
+  // Re-order phase first-touch (T7) lands 30 days after the order.
+  // Imported from the route module so the offset stays in sync
+  // (single source of truth across the route + worker).
+  const REORDER_T7_OFFSET_MS = 30 * 86_400_000;
+
   // Stamp each matched lead.
   for (const [email, order] of byEmail) {
     const lead = leadByEmail.get(email);
@@ -167,15 +189,48 @@ export async function runFitterConversionAttribution(): Promise<AttributionStats
       continue;
     }
 
+    // Branch on the lead's current stage:
+    //   * 'consent', 'completed', 'campaign_active' — actively
+    //     engaged. Flip to 'reorder_active' so the supply-campaign
+    //     worker now sends re-order nudges (T7-T10) instead of the
+    //     pre-purchase touches. campaign_touch_count is pinned to
+    //     TOTAL_TOUCHPOINTS (=6) so the next touch the dispatcher
+    //     computes is T7 regardless of where they were in the
+    //     pre-purchase journey.
+    //   * 'expired' — campaign already ran its full 60d sequence.
+    //     The patient came back later and bought; stamp the
+    //     attribution but DON'T restart campaigns. They explicitly
+    //     aged out of the nurture sequence. (The
+    //     lapsed-customer-winback worker handles them 180d later.)
+    const willStartReorder =
+      lead.journey_stage === "consent" ||
+      lead.journey_stage === "completed" ||
+      lead.journey_stage === "campaign_active";
+
+    const update: FitterLeadsUpdate = {
+      first_order_id: order.orderId,
+      first_order_placed_at: order.placedAt,
+      // Always stamp first_name when we have one — it's useful even
+      // for the no-reorder branches (e.g. ops reading the admin
+      // queue), and the column is otherwise empty for converted
+      // leads.
+      ...(order.firstName ? { first_name: order.firstName } : {}),
+    };
+    if (willStartReorder) {
+      update.journey_stage = "reorder_active";
+      update.campaign_touch_count = 6; // TOTAL_TOUCHPOINTS — next touch is T7
+      update.next_campaign_touch_at = new Date(
+        new Date(order.placedAt).getTime() + REORDER_T7_OFFSET_MS,
+      ).toISOString();
+    } else {
+      update.journey_stage = "converted";
+      update.next_campaign_touch_at = null;
+    }
+
     const { error: updateErr } = await supabase
       .schema("resupply")
       .from("fitter_leads")
-      .update({
-        first_order_id: order.orderId,
-        first_order_placed_at: order.placedAt,
-        journey_stage: "converted",
-        next_campaign_touch_at: null,
-      })
+      .update(update)
       .eq("id", lead.id)
       // Belt-and-suspenders: only stamp if first_order_id is still
       // null. A concurrent worker run can't double-attribute.

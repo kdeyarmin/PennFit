@@ -44,8 +44,14 @@ const STAGE_STYLE: Record<
   campaign_active: {
     bg: "#fef3c7",
     fg: "#854d0e",
-    label: "In campaign",
-    description: "Receiving nurture touches",
+    label: "Pre-purchase",
+    description: "T1–T6 nurture (60d)",
+  },
+  reorder_active: {
+    bg: "#cffafe",
+    fg: "#155e75",
+    label: "Re-order nurture",
+    description: "T7–T10 supply touches (180d)",
   },
   converted: {
     bg: "#dcfce7",
@@ -71,6 +77,7 @@ const STAGE_ORDER: readonly FitterLeadJourneyStage[] = [
   "consent",
   "completed",
   "campaign_active",
+  "reorder_active",
   "converted",
   "unsubscribed",
   "expired",
@@ -137,6 +144,7 @@ export function AdminFitterLeadsPage() {
         consent: 0,
         completed: 0,
         campaign_active: 0,
+        reorder_active: 0,
         converted: 0,
         unsubscribed: 0,
         expired: 0,
@@ -163,9 +171,12 @@ export function AdminFitterLeadsPage() {
         <p className="text-sm text-slate-600 max-w-2xl">
           Patients who started or finished the at-home mask fitter on{" "}
           <span className="font-mono text-xs">/consent → /results</span>.
-          Completing the fitter enrolls a lead into a 6-touch nurture
-          campaign over 60 days; conversions (orders placed) drop the lead
-          out of the sequence automatically.
+          Completing the fitter enrolls a lead into a <strong>6-touch
+          pre-purchase nurture</strong> over 60 days. Placing an order
+          flips them into the <strong>4-touch post-purchase re-order
+          nurture</strong> (cushion at 30d, filter at 60d, headgear at
+          90d, full refresh at 180d) so first-time buyers turn into
+          recurring supply orders.
         </p>
       </header>
 
@@ -187,9 +198,11 @@ export function AdminFitterLeadsPage() {
           </div>
         </div>
         <div className="text-xs text-slate-500 leading-snug">
-          {counts.converted} converted out of{" "}
+          {counts.converted + counts.reorder_active} converted (incl.{" "}
+          {counts.reorder_active} in active re-order nurture) out of{" "}
           {counts.completed +
             counts.campaign_active +
+            counts.reorder_active +
             counts.converted +
             counts.expired}{" "}
           completed-fitter leads.{" "}
@@ -330,6 +343,7 @@ export function AdminFitterLeadsPage() {
               const stageStyle = STAGE_STYLE[r.journeyStage];
               const canUnsubscribe =
                 r.journeyStage === "campaign_active" ||
+                r.journeyStage === "reorder_active" ||
                 r.journeyStage === "completed" ||
                 r.journeyStage === "consent";
               return (
@@ -339,7 +353,16 @@ export function AdminFitterLeadsPage() {
                   data-testid={`lead-row-${r.id}`}
                 >
                   <td className="px-3 py-2 align-top">
-                    <div className="font-medium">{r.email}</div>
+                    <div className="font-medium">
+                      {r.firstName && (
+                        <span className="text-slate-900">
+                          {r.firstName}{" "}
+                        </span>
+                      )}
+                      <span className="text-slate-600 font-normal">
+                        {r.email}
+                      </span>
+                    </div>
                     {r.phoneE164 && (
                       <div className="text-xs text-slate-500">
                         {r.phoneE164}
@@ -378,7 +401,7 @@ export function AdminFitterLeadsPage() {
                     </span>
                   </td>
                   <td className="px-3 py-2 align-top text-sm tabular-nums">
-                    {r.campaignTouchCount}/6
+                    {r.campaignTouchCount}/10
                   </td>
                   <td className="px-3 py-2 align-top text-xs text-slate-600">
                     {r.nextCampaignTouchAt

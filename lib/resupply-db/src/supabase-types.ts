@@ -536,6 +536,7 @@ export interface Database {
             | "consent"
             | "completed"
             | "campaign_active"
+            | "reorder_active"
             | "converted"
             | "unsubscribed"
             | "expired";
@@ -545,6 +546,9 @@ export interface Database {
           unsubscribed_at: string | null;
           first_order_id: string | null;
           first_order_placed_at: string | null;
+          // Mig 0152 — first-name personalization, captured from
+          // public.orders.patient_name on conversion.
+          first_name: string | null;
         };
         Insert: Partial<Database["resupply"]["Tables"]["fitter_leads"]["Row"]>;
         Update: Partial<Database["resupply"]["Tables"]["fitter_leads"]["Row"]>;

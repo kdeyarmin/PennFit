@@ -9,6 +9,7 @@ export type FitterLeadJourneyStage =
   | "consent"
   | "completed"
   | "campaign_active"
+  | "reorder_active"
   | "converted"
   | "unsubscribed"
   | "expired";
@@ -29,6 +30,8 @@ export interface FitterLeadRow {
   recommendedMaskId: string | null;
   recommendedMaskName: string | null;
   recommendedMaskType: string | null;
+  /** Mig 0152 — first-name personalization captured on conversion. */
+  firstName: string | null;
   campaignTouchCount: number;
   lastCampaignTouchAt: string | null;
   nextCampaignTouchAt: string | null;

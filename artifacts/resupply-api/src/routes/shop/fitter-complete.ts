@@ -35,9 +35,10 @@ import { logger } from "../../lib/logger";
 
 const router: IRouter = Router();
 
-// Cadence of touchpoints, in milliseconds offset from `completed_at`.
-// Day 1 → Day 60, six touches total. The dispatcher worker uses the
-// same constant so this is the single source of truth.
+// Pre-purchase cadence — touch_index 1-6, anchored on `completed_at`.
+// Goal: convert "fit but haven't ordered" into a first-time buyer.
+// The dispatcher worker imports this so it stays the single source
+// of truth.
 export const TOUCHPOINT_OFFSETS_MS = [
   1 * 86_400_000, //   T1 — day 1: recap of recommendation
   3 * 86_400_000, //   T2 — day 3: social proof
@@ -48,6 +49,40 @@ export const TOUCHPOINT_OFFSETS_MS = [
 ] as const;
 
 export const TOTAL_TOUCHPOINTS = TOUCHPOINT_OFFSETS_MS.length;
+
+// Re-order cadence — touch_index 7-10, anchored on
+// `first_order_placed_at`. Goal: drive recurring supply purchases.
+// Schedule mirrors AASM hygiene + manufacturer wear guidance:
+//
+//   * cushion / pillow seal — replace every 14-30 days; we nudge at
+//     30d because anything sooner reads spammy.
+//   * disposable inline filter — replace every 30 days; we bundle
+//     the cushion-and-filter reminder at 30d (T7) but lead with
+//     "filter check" at 60d (T8) so customers running low between
+//     T7 and T8 still get a touch.
+//   * headgear / chinstrap — replace every 90-180 days; nudge at
+//     90d (T9) catches loose-strap complaints early.
+//   * full mask refresh — replace at 6-12 months; T10 at 180d sets
+//     up the new-mask conversation before the cushion warranty
+//     window closes.
+//
+// Why these numbers and not the existing reminders.ts cadence?
+//   reminders.ts is tied to patient_smart_trigger_events which only
+//   fires when therapy data is wired up (CPAP modem upload). A
+//   cash-pay shop customer who bought a mask without setting up a
+//   modem account never hits that path. This dispatcher gives them
+//   a re-order nurture independent of therapy-data integration.
+export const REORDER_TOUCHPOINT_OFFSETS_MS = [
+  30 * 86_400_000, //  T7  — day 30: cushion replacement
+  60 * 86_400_000, //  T8  — day 60: filter check
+  90 * 86_400_000, //  T9  — day 90: headgear
+  180 * 86_400_000, // T10 — day 180: full mask refresh
+] as const;
+
+export const TOTAL_REORDER_TOUCHPOINTS = REORDER_TOUCHPOINT_OFFSETS_MS.length;
+/** Total touches across both phases, 1-indexed. */
+export const TOTAL_ALL_TOUCHPOINTS =
+  TOTAL_TOUCHPOINTS + TOTAL_REORDER_TOUCHPOINTS;
 
 const MASK_TYPES = ["fullFace", "nasal", "nasalPillow", "hybrid"] as const;
 

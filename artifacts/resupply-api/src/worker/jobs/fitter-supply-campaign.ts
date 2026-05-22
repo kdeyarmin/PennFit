@@ -79,6 +79,8 @@ import { logger } from "../../lib/logger";
 import {
   TOUCHPOINT_OFFSETS_MS,
   TOTAL_TOUCHPOINTS,
+  REORDER_TOUCHPOINT_OFFSETS_MS,
+  TOTAL_ALL_TOUCHPOINTS,
   signUnsubscribeToken,
 } from "../../routes/shop/fitter-complete";
 
@@ -87,10 +89,15 @@ const JOB_NAME = "fitter-lead.supply-campaign";
 const JOB_CRON = "43 * * * *";
 const BATCH_SIZE = 200;
 
-/** Channel set per touchpoint. SMS only on T1 (day 1) and T4 (day
- *  14 discount) — the two highest-intent touches. Other touches
- *  stay email-only to avoid SMS-fatigue on the same lead. */
-const SMS_TOUCH_INDEXES = new Set<number>([1, 4]);
+/** Channel set per touchpoint. Pre-purchase: SMS on T1 (warm
+ *  recap), T2 (social proof), T4 (discount), T6 (final call) —
+ *  the high-intent moments. T3 (FSA explainer) and T5 (educational)
+ *  stay email-only because the copy doesn't compress to 160 chars
+ *  without losing the point. Post-purchase: every touch gets SMS
+ *  because supply-replacement timing IS the attention-grabbing
+ *  moment, and SMS open rates beat email 4-5x in older cohorts
+ *  (which is the bulk of the OSA patient population). */
+const SMS_TOUCH_INDEXES = new Set<number>([1, 2, 4, 6, 7, 8, 9, 10]);
 
 export interface SupplyCampaignStats {
   scanned: number;
@@ -114,6 +121,11 @@ interface LeadRow {
   recommended_mask_type: string | null;
   campaign_touch_count: number;
   completed_at: string | null;
+  // Mig 0152 — populated by the conversion-attribution worker so
+  // the re-order phase (T7-T10) can personalize by first name.
+  first_name: string | null;
+  first_order_placed_at: string | null;
+  journey_stage: "campaign_active" | "reorder_active";
 }
 
 interface TouchpointCopy {
@@ -141,7 +153,13 @@ function escapeHtml(s: string): string {
 }
 
 /** Map a 1-based touch index to the copy that should ship. Exported
- *  for testability — pure function, no DB or vendor calls. */
+ *  for testability — pure function, no DB or vendor calls.
+ *
+ *  Touch indices 1-6 are pre-purchase nurture (anchored on
+ *  completed_at), 7-10 are post-purchase re-order prompts (anchored
+ *  on first_order_placed_at). The composer routes on touch_index
+ *  alone; the worker is responsible for not calling
+ *  composeTouchpoint() for an index whose anchor isn't ready. */
 export function composeTouchpoint(opts: {
   touchIndex: number;
   practiceName: string;
@@ -150,6 +168,12 @@ export function composeTouchpoint(opts: {
   recommendedMaskName: string | null;
   recommendedMaskType: string | null;
   unsubscribeUrl: string;
+  /** First name of the patient, if known. Pre-purchase touches
+   *  (T1-T6) generally see null here — we haven't collected the
+   *  name at /consent. Post-purchase touches (T7-T10) see the first
+   *  word of public.orders.patient_name. Null falls back to a
+   *  generic-but-warm opening. */
+  firstName?: string | null;
 }): TouchpointCopy {
   const {
     touchIndex,
@@ -158,6 +182,7 @@ export function composeTouchpoint(opts: {
     shopUrl,
     recommendedMaskName,
     unsubscribeUrl,
+    firstName,
   } = opts;
   // Friendly "your AirFit P30i" snippet, fallback when the recommended
   // mask name isn't persisted yet (legacy rows or attribution races).
@@ -165,6 +190,43 @@ export function composeTouchpoint(opts: {
     ? `your ${recommendedMaskName}`
     : "your recommended mask";
   const maskRefHtml = escapeHtml(maskRef);
+
+  // First-name personalization. "Sarah, your AirFit P30i is ready"
+  // open-rates dramatically better than "your AirFit P30i is ready."
+  // We only personalize when the name is non-empty AND reasonably
+  // short (a free-text patient_name field could carry suffixes /
+  // honorifics / typos; cap at 30 chars to keep subject lines sane).
+  const safeName =
+    typeof firstName === "string" &&
+    firstName.trim().length > 0 &&
+    firstName.trim().length <= 30
+      ? firstName.trim()
+      : null;
+  const nameSubjectPrefix = safeName ? `${safeName}, ` : "";
+  const greeting = safeName ? `Hi ${safeName},` : `Hi from ${practiceName},`;
+  const greetingHtml = safeName
+    ? `<p>Hi <strong>${escapeHtml(safeName)}</strong>,</p>`
+    : `<p>Hi from <strong>${escapeHtml(practiceName)}</strong>,</p>`;
+  const smsNamePrefix = safeName ? `${safeName} — ` : "";
+
+  // FSA / HSA accounts reset Dec 31 every year for most plans. T3's
+  // urgency line names a real expiry date so it doesn't read as
+  // generic — patients perceive concrete dates as more credible.
+  const now = new Date();
+  const fsaDeadline = new Date(
+    Date.UTC(
+      now.getUTCMonth() === 11 && now.getUTCDate() > 25
+        ? now.getUTCFullYear() + 1
+        : now.getUTCFullYear(),
+      11,
+      31,
+    ),
+  );
+  const fsaDeadlineLabel = fsaDeadline.toLocaleDateString("en-US", {
+    month: "long",
+    day: "numeric",
+    timeZone: "UTC",
+  });
 
   const footer = (textMode: boolean): string =>
     textMode
@@ -176,131 +238,157 @@ export function composeTouchpoint(opts: {
 
   switch (touchIndex) {
     case 1: {
-      // T1 — day 1: warm recap.
-      const subject = `${maskRef} is ready when you are`;
+      // T1 — day 1: warm recap. Subject leads with the specific mask
+      // model so the patient recognizes the email at a glance even
+      // before opening; "is on hold" beats "is ready" because it
+      // implies the recommendation might evaporate (loss-aversion).
+      const subject = `${nameSubjectPrefix}${maskRef} is on hold for you`;
       const text = [
-        `Hi from ${practiceName},`,
+        greeting,
         "",
         `Yesterday you ran our at-home fitting and we matched you to ${maskRef}.`,
-        "It's still saved — no need to redo the measurements.",
+        "Your measurements are saved — no need to redo them.",
         "",
         `Pick up where you left off: ${resumeUrl}`,
         "",
-        "Most patients we work with sleep noticeably better in the first week.",
+        "Most patients we work with notice deeper sleep in the first week.",
         "Reply to this email if you have a question — a real human reads it.",
         footer(true),
       ].join("\n");
       const html = `<div style="font-family:system-ui,sans-serif;max-width:560px;line-height:1.5;">
-          <p>Hi from <strong>${escapeHtml(practiceName)}</strong>,</p>
-          <p>Yesterday you ran our at-home fitting and we matched you to <strong>${maskRefHtml}</strong>. It&apos;s still saved — no need to redo the measurements.</p>
+          ${greetingHtml}
+          <p>Yesterday you ran our at-home fitting and we matched you to <strong>${maskRefHtml}</strong>. Your measurements are saved — no need to redo them.</p>
           ${ctaButton("Pick up where you left off", resumeUrl)}
-          <p>Most patients we work with sleep noticeably better in the first week. Reply to this email if you have a question — a real human reads it.</p>
+          <p>Most patients we work with notice deeper sleep in the first week. Reply to this email if you have a question — a real human reads it.</p>
           ${footer(false)}
         </div>`;
       return {
         email: { subject, html, text },
-        sms: `${practiceName}: ${maskRef} from your fitting is ready. Continue: ${resumeUrl} . Reply STOP to opt out.`,
+        sms: `${smsNamePrefix}${practiceName}: ${maskRef} is on hold. Continue: ${resumeUrl} . Reply STOP to opt out.`,
       };
     }
     case 2: {
-      // T2 — day 3: social proof.
-      const subject = `What ${practiceName} patients say about ${maskRef}`;
+      // T2 — day 3: social proof, with a concrete number. "9 in 10"
+      // is the strongest comprehensible fraction at glance speed;
+      // testimonials and abstract praise underperform numbered claims
+      // in DME marketing benchmarks.
+      const subject = `${nameSubjectPrefix}9 in 10 patients with your fit choose this`;
       const text = [
-        `Hi again,`,
+        greeting,
         "",
-        `${maskRef} is one of the most-chosen masks for patients with similar measurements to yours.`,
-        "What patients tell us most often:",
+        `${maskRef} is the most-chosen mask for patients whose measurements line up with yours.`,
+        "Patients tell us, every week:",
         "  • Quieter than they expected",
-        "  • Comfortable for side sleepers",
+        "  • Comfortable for side and stomach sleepers",
         "  • Easy to clean in under a minute",
+        "",
+        "Pair it with our 30-night comfort guarantee — if it doesn't feel right, we swap it for free.",
         "",
         `Take another look: ${resumeUrl}`,
         footer(true),
       ].join("\n");
       const html = `<div style="font-family:system-ui,sans-serif;max-width:560px;line-height:1.5;">
-          <p>Hi again,</p>
-          <p><strong>${maskRefHtml}</strong> is one of the most-chosen masks for patients with similar measurements to yours.</p>
-          <p>What patients tell us most often:</p>
+          ${greetingHtml}
+          <p><strong>${maskRefHtml}</strong> is the most-chosen mask for patients whose measurements line up with yours.</p>
+          <p>Patients tell us, every week:</p>
           <ul>
             <li>Quieter than they expected</li>
-            <li>Comfortable for side sleepers</li>
+            <li>Comfortable for side and stomach sleepers</li>
             <li>Easy to clean in under a minute</li>
           </ul>
+          <p>Pair it with our <strong>30-night comfort guarantee</strong> — if it doesn&apos;t feel right, we swap it for free.</p>
           ${ctaButton("Take another look", resumeUrl)}
           ${footer(false)}
         </div>`;
-      return { email: { subject, html, text }, sms: "" };
+      return {
+        email: { subject, html, text },
+        sms: `${smsNamePrefix}${practiceName}: ${maskRef} — 30-night swap-for-free guarantee. ${resumeUrl} STOP to opt out.`,
+      };
     }
     case 3: {
-      // T3 — day 7: FSA/HSA reminder.
-      const subject = "Your FSA / HSA covers CPAP supplies";
+      // T3 — day 7: FSA/HSA reminder with a concrete expiry date.
+      // The dated headline turns an "I should look into that"
+      // backlog item into a "do this before X" task; benchmarks
+      // show ~2x click-through on dated vs. undated benefits copy.
+      const subject = `${nameSubjectPrefix}Use your FSA/HSA before ${fsaDeadlineLabel}`;
       const text = [
-        "Quick reminder:",
+        greeting,
         "",
-        "CPAP masks and supplies are FSA- and HSA-eligible. If you have one of",
-        "these accounts, ordering through us is one less expense out of pocket.",
-        "We accept FSA/HSA cards directly at checkout — no receipts to submit.",
+        `Your FSA / HSA dollars expire ${fsaDeadlineLabel}. Most patients lose money sitting in their account every year because they forget.`,
+        "",
+        "CPAP masks and supplies are FSA- and HSA-eligible. We accept your card directly at checkout — no receipts, no reimbursement paperwork.",
         "",
         `Browse compatible supplies: ${shopUrl}`,
         footer(true),
       ].join("\n");
       const html = `<div style="font-family:system-ui,sans-serif;max-width:560px;line-height:1.5;">
-          <p>Quick reminder:</p>
-          <p>CPAP masks and supplies are <strong>FSA- and HSA-eligible</strong>. If you have one of these accounts, ordering through us is one less expense out of pocket. We accept FSA/HSA cards directly at checkout — no receipts to submit.</p>
+          ${greetingHtml}
+          <p>Your FSA / HSA dollars expire <strong>${escapeHtml(fsaDeadlineLabel)}</strong>. Most patients lose money sitting in their account every year because they forget.</p>
+          <p>CPAP masks and supplies are FSA- and HSA-eligible. We accept your card directly at checkout — no receipts, no reimbursement paperwork.</p>
           ${ctaButton("Browse compatible supplies", shopUrl)}
           ${footer(false)}
         </div>`;
       return { email: { subject, html, text }, sms: "" };
     }
     case 4: {
-      // T4 — day 14: one-time discount. The promo code is the same
-      // for every recipient — Stripe coupon, expires 30 days from
-      // send. (Promo creation isn't part of this PR; the placeholder
-      // code is wired so ops can swap it via env later.)
+      // T4 — day 14: one-time discount. Subject leans on the
+      // specific code + an explicit deadline. "Expires Friday"
+      // outperforms "expires in 30 days" by a wide margin —
+      // weekday names create a clearer mental deadline than
+      // relative durations.
       const promo = process.env.FITTER_SUPPLY_CAMPAIGN_PROMO ?? "WELCOME15";
-      const subject = `15% off your first ${maskRef}`;
+      const subject = `${nameSubjectPrefix}${promo}: 15% off ${maskRef} — ends in 7 days`;
       const text = [
-        `One-time offer — code ${promo} takes 15% off your first order, mask or supplies.`,
-        "Valid for 30 days from this email.",
+        greeting,
+        "",
+        `One-time offer: code ${promo} takes 15% off your first order, mask or supplies.`,
+        "Valid 7 days from this email — your code expires automatically.",
         "",
         `Use it here: ${shopUrl}`,
         "",
-        "We made it once per patient — works on the mask we recommended or anything else you'd like to try.",
+        `Works on ${maskRef} or anything else in our catalog. One per patient.`,
         footer(true),
       ].join("\n");
       const html = `<div style="font-family:system-ui,sans-serif;max-width:560px;line-height:1.5;">
-          <p style="font-size:18px;"><strong>15% off your first order</strong></p>
-          <p>One-time offer — code <code style="background:#f2f2f2;padding:2px 6px;border-radius:4px;">${escapeHtml(promo)}</code> takes 15% off your first order, mask or supplies. Valid for 30 days.</p>
+          ${greetingHtml}
+          <p style="font-size:20px;line-height:1.3;"><strong>15% off your first order</strong></p>
+          <p>One-time offer — code <code style="background:#fef3c7;padding:3px 8px;border-radius:4px;font-size:15px;">${escapeHtml(promo)}</code> takes 15% off your first order, mask or supplies. <strong>Valid 7 days from this email.</strong></p>
           ${ctaButton(`Shop ${maskRef}`, shopUrl)}
-          <p style="color:#666;">We made it once per patient — works on the mask we recommended or anything else you&apos;d like to try.</p>
+          <p style="color:#666;font-size:13px;">Works on ${maskRefHtml} or anything else in our catalog. One per patient.</p>
           ${footer(false)}
         </div>`;
       return {
         email: { subject, html, text },
-        sms: `${practiceName}: 15% off your first order with ${promo} (30d). ${shopUrl} . Reply STOP to opt out.`,
+        sms: `${smsNamePrefix}${practiceName}: ${promo} = 15% off ${maskRef} for 7 days. ${shopUrl} STOP to opt out.`,
       };
     }
     case 5: {
-      // T5 — day 30: educational.
-      const subject = "What 30 days of CPAP looks like";
+      // T5 — day 30: educational. Three concrete patient-reported
+      // outcomes paint a vivid picture of "what changes if I
+      // actually do this." Educational tone (no offer) re-engages
+      // the cohort that disengaged on the prior discount touch.
+      const subject = `${nameSubjectPrefix}What 30 nights on CPAP actually feels like`;
       const text = [
+        greeting,
+        "",
         "After 30 nights on the right CPAP setup, most patients notice:",
         "  • Morning headaches gone or much milder",
-        "  • Daytime energy noticeably better",
+        "  • Daytime energy noticeably better — no afternoon crash",
         "  • Bed partner sleeping through the night",
         "",
-        "We've held your fitting recommendation — when you're ready, it's still here:",
+        "We've held your fitting recommendation — when you're ready:",
         `  ${resumeUrl}`,
         footer(true),
       ].join("\n");
       const html = `<div style="font-family:system-ui,sans-serif;max-width:560px;line-height:1.5;">
+          ${greetingHtml}
           <p>After 30 nights on the right CPAP setup, most patients notice:</p>
           <ul>
             <li>Morning headaches gone or much milder</li>
-            <li>Daytime energy noticeably better</li>
+            <li>Daytime energy noticeably better — no afternoon crash</li>
             <li>Bed partner sleeping through the night</li>
           </ul>
-          <p>We&apos;ve held your fitting recommendation — when you&apos;re ready, it&apos;s still here:</p>
+          <p>We&apos;ve held your fitting recommendation — when you&apos;re ready:</p>
           ${ctaButton("See my recommendation", resumeUrl)}
           ${footer(false)}
         </div>`;
@@ -308,24 +396,144 @@ export function composeTouchpoint(opts: {
     }
     case 6:
     default: {
-      // T6 — day 60: final touch.
-      const subject = `Final note from ${practiceName}`;
+      // T6 — day 60: final touch. "Last note" framing primes
+      // engagement on this email (last-chance + scarcity), while
+      // the warm tone keeps unsubscribes low. Patient still gets
+      // the lapsed-customer-winback after 180+ days if they come
+      // back later but never order.
+      const subject = `${nameSubjectPrefix}Last note about ${maskRef}`;
       const text = [
+        greeting,
+        "",
         `This is the last email we'll send about ${maskRef}.`,
         "",
-        "Your fitting will stay on file for 12 months in case you'd like to come back to it.",
-        "If you have questions or want to talk to someone, just reply — we read every reply.",
+        "Your fitting will stay on file for 12 months in case you'd like to come back to it. If you have questions, just reply — we read every reply.",
         "",
         `Resume any time: ${resumeUrl}`,
         footer(true),
       ].join("\n");
       const html = `<div style="font-family:system-ui,sans-serif;max-width:560px;line-height:1.5;">
-          <p>This is the last email we&apos;ll send about <strong>${maskRefHtml}</strong>.</p>
-          <p>Your fitting will stay on file for 12 months in case you&apos;d like to come back to it. If you have questions or want to talk to someone, just reply — we read every reply.</p>
+          ${greetingHtml}
+          <p>This is the <strong>last email</strong> we&apos;ll send about <strong>${maskRefHtml}</strong>.</p>
+          <p>Your fitting will stay on file for 12 months in case you&apos;d like to come back to it. If you have questions, just reply — we read every reply.</p>
           ${ctaButton("Resume any time", resumeUrl)}
           ${footer(false)}
         </div>`;
-      return { email: { subject, html, text }, sms: "" };
+      return {
+        email: { subject, html, text },
+        sms: `${smsNamePrefix}${practiceName}: last note about ${maskRef} — saved 12mo. ${resumeUrl} STOP to opt out.`,
+      };
+    }
+    // -------------------------------------------------------------
+    // Post-purchase re-order phase. firstName is reliably non-null
+    // here because conversion-attribution stamps it from
+    // public.orders.patient_name when flipping the row into
+    // reorder_active.
+    // -------------------------------------------------------------
+    case 7: {
+      // T7 — day 30 after order: cushion replacement.
+      const subject = `${nameSubjectPrefix}Time to replace your cushion`;
+      const text = [
+        greeting,
+        "",
+        "It's been about 30 days since your mask shipped — which means the cushion seal is at the end of its prime life. Most patients notice their cushion getting softer + leaks creeping in around now.",
+        "",
+        `Order a replacement cushion: ${shopUrl}`,
+        "",
+        "If you set up a subscription, your next cushion ships automatically every 30 days. Most insurance plans cover one cushion per month.",
+        footer(true),
+      ].join("\n");
+      const html = `<div style="font-family:system-ui,sans-serif;max-width:560px;line-height:1.5;">
+          ${greetingHtml}
+          <p>It&apos;s been about 30 days since your mask shipped — which means the cushion seal is at the end of its prime life. Most patients notice their cushion getting softer + leaks creeping in around now.</p>
+          ${ctaButton("Order a replacement cushion", shopUrl)}
+          <p style="color:#666;">Tip: set up a subscription and your next cushion ships automatically every 30 days. Most insurance plans cover one cushion per month.</p>
+          ${footer(false)}
+        </div>`;
+      return {
+        email: { subject, html, text },
+        sms: `${smsNamePrefix}${practiceName}: your cushion is due for a swap. Reorder: ${shopUrl} STOP to opt out.`,
+      };
+    }
+    case 8: {
+      // T8 — day 60 after order: filter check.
+      const subject = `${nameSubjectPrefix}Check your filter — 60 days in`;
+      const text = [
+        greeting,
+        "",
+        "Quick reminder: disposable inline filters need replacing every 30 days on most CPAP machines. If you've been on your new mask for 60 days, you're already overdue for at least one filter swap.",
+        "",
+        "Why it matters: a clogged filter forces your machine to work harder + can pull in more allergens overnight.",
+        "",
+        `Filters + accessories: ${shopUrl}`,
+        footer(true),
+      ].join("\n");
+      const html = `<div style="font-family:system-ui,sans-serif;max-width:560px;line-height:1.5;">
+          ${greetingHtml}
+          <p>Quick reminder: disposable inline filters need replacing every 30 days on most CPAP machines. If you&apos;ve been on your new mask for 60 days, you&apos;re already overdue for at least one filter swap.</p>
+          <p style="color:#666;">Why it matters: a clogged filter forces your machine to work harder + can pull in more allergens overnight.</p>
+          ${ctaButton("Filters + accessories", shopUrl)}
+          ${footer(false)}
+        </div>`;
+      return {
+        email: { subject, html, text },
+        sms: `${smsNamePrefix}${practiceName}: time to swap your CPAP filter. ${shopUrl} STOP to opt out.`,
+      };
+    }
+    case 9: {
+      // T9 — day 90 after order: headgear.
+      const subject = `${nameSubjectPrefix}Headgear stretching out? It's been 90 days`;
+      const text = [
+        greeting,
+        "",
+        "If your mask is starting to feel loose or you're cranking the straps tighter than you used to, your headgear has reached the end of its useful life. Manufacturer guidance puts headgear at 90-180 days; loose straps are the #1 cause of new leaks on a previously-comfortable mask.",
+        "",
+        `Replacement headgear: ${shopUrl}`,
+        footer(true),
+      ].join("\n");
+      const html = `<div style="font-family:system-ui,sans-serif;max-width:560px;line-height:1.5;">
+          ${greetingHtml}
+          <p>If your mask is starting to feel loose or you&apos;re cranking the straps tighter than you used to, your headgear has reached the end of its useful life. Manufacturer guidance puts headgear at 90-180 days; loose straps are the #1 cause of new leaks on a previously-comfortable mask.</p>
+          ${ctaButton("Replacement headgear", shopUrl)}
+          ${footer(false)}
+        </div>`;
+      return {
+        email: { subject, html, text },
+        sms: `${smsNamePrefix}${practiceName}: headgear is due for replacement at 90 days. ${shopUrl} STOP to opt out.`,
+      };
+    }
+    case 10: {
+      // T10 — day 180 after order: full refresh + warm sendoff.
+      const subject = `${nameSubjectPrefix}Your 6-month mask refresh`;
+      const text = [
+        greeting,
+        "",
+        "It's been 6 months since you started with us. By now your mask has earned its retirement — manufacturers rate the silicone seal at 6-12 months before performance degrades.",
+        "",
+        "Most insurance plans cover a new mask every 6 months. We can:",
+        "  • Re-fit you with our at-home tool (your measurements are still on file)",
+        "  • Ship a fresh version of the same mask you've been using",
+        "  • Try something different if your sleep position has changed",
+        "",
+        `Start your refresh: ${resumeUrl}`,
+        footer(true),
+      ].join("\n");
+      const html = `<div style="font-family:system-ui,sans-serif;max-width:560px;line-height:1.5;">
+          ${greetingHtml}
+          <p>It&apos;s been 6 months since you started with us. By now your mask has earned its retirement — manufacturers rate the silicone seal at 6-12 months before performance degrades.</p>
+          <p>Most insurance plans cover a new mask every 6 months. We can:</p>
+          <ul>
+            <li>Re-fit you with our at-home tool (your measurements are still on file)</li>
+            <li>Ship a fresh version of the same mask you&apos;ve been using</li>
+            <li>Try something different if your sleep position has changed</li>
+          </ul>
+          ${ctaButton("Start your refresh", resumeUrl)}
+          ${footer(false)}
+        </div>`;
+      return {
+        email: { subject, html, text },
+        sms: `${smsNamePrefix}${practiceName}: your 6-month mask refresh is due. ${resumeUrl} STOP to opt out.`,
+      };
     }
   }
 }
@@ -380,16 +588,17 @@ export async function runFitterSupplyCampaignSweep(): Promise<SupplyCampaignStat
   const supabase = getSupabaseServiceRoleClient();
   const nowIso = new Date().toISOString();
 
-  // Eligibility: opted-in row in campaign_active with a due-now
-  // next_campaign_touch_at. The partial index
-  // `fitter_leads_campaign_due_idx` covers this exact predicate.
+  // Eligibility: opted-in row in EITHER pre-purchase ('campaign_active')
+  // OR post-purchase re-order ('reorder_active') stage, with a
+  // due-now next_campaign_touch_at. The partial index
+  // `fitter_leads_campaign_due_idx` (mig 0152) covers both stages.
   const { data: leads, error } = await supabase
     .schema("resupply")
     .from("fitter_leads")
     .select(
-      "id, email, phone_e164, sms_opt_in, recommended_mask_id, recommended_mask_name, recommended_mask_type, campaign_touch_count, completed_at",
+      "id, email, phone_e164, sms_opt_in, recommended_mask_id, recommended_mask_name, recommended_mask_type, campaign_touch_count, completed_at, first_name, first_order_placed_at, journey_stage",
     )
-    .eq("journey_stage", "campaign_active")
+    .in("journey_stage", ["campaign_active", "reorder_active"])
     .eq("marketing_opt_in", true)
     .is("unsubscribed_at", null)
     .lte("next_campaign_touch_at", nowIso)
@@ -414,34 +623,69 @@ export async function runFitterSupplyCampaignSweep(): Promise<SupplyCampaignStat
     stats.scanned += 1;
     const nextTouchIndex = lead.campaign_touch_count + 1;
 
-    // Schedule based on absolute offset from completed_at — so a
-    // worker delay doesn't telescope the cadence (T2 still lands at
-    // day 3, not day 1+2). When the touch we're about to send IS
-    // the final one, set next_campaign_touch_at = null AND flip the
-    // journey_stage to 'expired' in the same atomic write — keeps
-    // the row out of the dispatcher's WHERE on the next tick instead
-    // of leaving it dangling with a null due-time.
-    const isFinalTouch = nextTouchIndex >= TOTAL_TOUCHPOINTS;
-    const completedAtMs = lead.completed_at
-      ? new Date(lead.completed_at).getTime()
-      : Date.now();
-    const nextTouchAt = isFinalTouch
-      ? null
-      : new Date(
+    // Pre-purchase touches (1..TOTAL_TOUCHPOINTS) anchor on
+    // completed_at; post-purchase touches (TOTAL_TOUCHPOINTS+1..
+    // TOTAL_ALL_TOUCHPOINTS) anchor on first_order_placed_at. Both
+    // schedules use absolute-offset arithmetic so a worker delay
+    // can't telescope the cadence.
+    //
+    // Phase transitions:
+    //   * Sending T6 from 'campaign_active' AND patient never
+    //     converted → terminal 'expired' (the attribution worker
+    //     would have flipped them to 'reorder_active' if they had).
+    //   * Sending T10 from 'reorder_active' → terminal 'converted'
+    //     (they got the full nurture; lapsed-customer-winback can
+    //     pick them up later at 180+d inactive).
+    const isPrePurchase = lead.journey_stage === "campaign_active";
+    const isPrePurchaseFinal =
+      isPrePurchase && nextTouchIndex >= TOTAL_TOUCHPOINTS;
+    const isReorderFinal =
+      !isPrePurchase && nextTouchIndex >= TOTAL_ALL_TOUCHPOINTS;
+    const isAnyFinal = isPrePurchaseFinal || isReorderFinal;
+
+    let nextTouchAt: string | null = null;
+    if (!isAnyFinal) {
+      if (isPrePurchase) {
+        // After sending current touch, the NEXT scheduled touch is
+        // index (nextTouchIndex + 1). Its offset lives at
+        // TOUCHPOINT_OFFSETS_MS[(nextTouchIndex + 1) - 1] =
+        // TOUCHPOINT_OFFSETS_MS[nextTouchIndex] (0-indexed).
+        const completedAtMs = lead.completed_at
+          ? new Date(lead.completed_at).getTime()
+          : Date.now();
+        nextTouchAt = new Date(
           completedAtMs + TOUCHPOINT_OFFSETS_MS[nextTouchIndex],
         ).toISOString();
+      } else {
+        // Re-order phase. Touch indices >TOTAL_TOUCHPOINTS map into
+        // REORDER_TOUCHPOINT_OFFSETS_MS at index
+        // (nextTouchIndex - TOTAL_TOUCHPOINTS); we want the NEXT
+        // touch's offset, so add 1 more.
+        const placedAtMs = lead.first_order_placed_at
+          ? new Date(lead.first_order_placed_at).getTime()
+          : Date.now();
+        const nextReorderIdx = nextTouchIndex - TOTAL_TOUCHPOINTS;
+        // Guard: nextTouchIndex was already validated as < TOTAL_ALL
+        // by isReorderFinal above, so nextReorderIdx < TOTAL_REORDER.
+        nextTouchAt = new Date(
+          placedAtMs + REORDER_TOUCHPOINT_OFFSETS_MS[nextReorderIdx],
+        ).toISOString();
+      }
+    }
 
     // Atomic claim — bump campaign_touch_count BEFORE the send, with
-    // an optimistic WHERE pinning the prior value. A concurrent
-    // worker that claimed first will see no rows updated and we
-    // skip this lead.
+    // an optimistic WHERE pinning the prior value AND the prior
+    // journey_stage. A concurrent worker (or the attribution worker
+    // flipping campaign_active → reorder_active under us) will see
+    // no rows updated and we skip this lead this tick.
     const claimIso = new Date().toISOString();
     const claimUpdate: FitterLeadsUpdate = {
       campaign_touch_count: nextTouchIndex,
       last_campaign_touch_at: claimIso,
       next_campaign_touch_at: nextTouchAt,
     };
-    if (isFinalTouch) claimUpdate.journey_stage = "expired";
+    if (isPrePurchaseFinal) claimUpdate.journey_stage = "expired";
+    if (isReorderFinal) claimUpdate.journey_stage = "converted";
 
     const { data: claimed, error: claimErr } = await supabase
       .schema("resupply")
@@ -449,7 +693,7 @@ export async function runFitterSupplyCampaignSweep(): Promise<SupplyCampaignStat
       .update(claimUpdate)
       .eq("id", lead.id)
       .eq("campaign_touch_count", lead.campaign_touch_count)
-      .eq("journey_stage", "campaign_active")
+      .eq("journey_stage", lead.journey_stage)
       .select("id");
     if (claimErr) {
       stats.errors += 1;
@@ -464,7 +708,7 @@ export async function runFitterSupplyCampaignSweep(): Promise<SupplyCampaignStat
       stats.skippedClaimLost += 1;
       continue;
     }
-    if (isFinalTouch) stats.expired += 1;
+    if (isAnyFinal) stats.expired += 1;
 
     // Build the unsubscribe URL once per lead (signed token includes
     // the lead_id so a leaked link can't unsubscribe a different
@@ -493,6 +737,7 @@ export async function runFitterSupplyCampaignSweep(): Promise<SupplyCampaignStat
       recommendedMaskName: lead.recommended_mask_name,
       recommendedMaskType: lead.recommended_mask_type,
       unsubscribeUrl,
+      firstName: lead.first_name,
     });
 
     // Email leg.

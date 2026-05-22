@@ -35,6 +35,7 @@ const JOURNEY_STAGES = [
   "consent",
   "completed",
   "campaign_active",
+  "reorder_active",
   "converted",
   "unsubscribed",
   "expired",
@@ -84,7 +85,7 @@ router.get(
       .schema("resupply")
       .from("fitter_leads")
       .select(
-        "id, email, phone_e164, sms_opt_in, marketing_opt_in, source, journey_stage, recommended_mask_id, recommended_mask_name, recommended_mask_type, campaign_touch_count, last_campaign_touch_at, next_campaign_touch_at, first_order_id, first_order_placed_at, unsubscribed_at, completed_at, created_at",
+        "id, email, phone_e164, sms_opt_in, marketing_opt_in, source, journey_stage, recommended_mask_id, recommended_mask_name, recommended_mask_type, first_name, campaign_touch_count, last_campaign_touch_at, next_campaign_touch_at, first_order_id, first_order_placed_at, unsubscribed_at, completed_at, created_at",
       )
       // Most-recently-completed first when looking at the in-funnel
       // bucket; falls back to created_at for rows that never reached
@@ -106,6 +107,7 @@ router.get(
       consentCount,
       completedCount,
       campaignActiveCount,
+      reorderActiveCount,
       convertedCount,
       unsubscribedCount,
       expiredCount,
@@ -129,6 +131,11 @@ router.get(
         .schema("resupply")
         .from("fitter_leads")
         .select("*", { count: "exact", head: true })
+        .eq("journey_stage", "reorder_active"),
+      supabase
+        .schema("resupply")
+        .from("fitter_leads")
+        .select("*", { count: "exact", head: true })
         .eq("journey_stage", "converted"),
       supabase
         .schema("resupply")
@@ -146,6 +153,7 @@ router.get(
       consentCount,
       completedCount,
       campaignActiveCount,
+      reorderActiveCount,
       convertedCount,
       unsubscribedCount,
       expiredCount,
@@ -157,22 +165,27 @@ router.get(
       consent: consentCount.count ?? 0,
       completed: completedCount.count ?? 0,
       campaign_active: campaignActiveCount.count ?? 0,
+      reorder_active: reorderActiveCount.count ?? 0,
       converted: convertedCount.count ?? 0,
       unsubscribed: unsubscribedCount.count ?? 0,
       expired: expiredCount.count ?? 0,
     };
 
-    // Conversion rate: converted / (completed + campaign_active +
-    // converted + expired). Excludes 'consent' (pre-completion) and
-    // 'unsubscribed' (terminal opt-out). Returned as a float on
-    // [0..1]; UI formats as a percent.
+    // Conversion rate: (reorder_active + converted) / completed-cohort.
+    // The reorder_active stage IS a converted lead — they bought
+    // their first mask; the campaign just keeps nurturing them
+    // toward supply re-orders. Excludes 'consent' (pre-completion)
+    // and 'unsubscribed' (terminal opt-out). Returned as a float
+    // on [0..1]; UI formats as a percent.
+    const convertedTotal = counts.converted + counts.reorder_active;
     const denominator =
       counts.completed +
       counts.campaign_active +
+      counts.reorder_active +
       counts.converted +
       counts.expired;
     const conversionRate =
-      denominator > 0 ? counts.converted / denominator : 0;
+      denominator > 0 ? convertedTotal / denominator : 0;
 
     req.log?.info?.(
       {
@@ -195,6 +208,7 @@ router.get(
         recommendedMaskId: r.recommended_mask_id,
         recommendedMaskName: r.recommended_mask_name,
         recommendedMaskType: r.recommended_mask_type,
+        firstName: r.first_name,
         campaignTouchCount: r.campaign_touch_count ?? 0,
         lastCampaignTouchAt: r.last_campaign_touch_at,
         nextCampaignTouchAt: r.next_campaign_touch_at,
