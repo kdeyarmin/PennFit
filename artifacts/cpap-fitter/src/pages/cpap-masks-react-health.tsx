@@ -3,6 +3,12 @@ import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
+import {
   ArrowRight,
   Award,
   Sparkles,
@@ -17,6 +23,7 @@ import {
   Truck,
 } from "lucide-react";
 import { useDocumentTitle } from "@/hooks/use-document-title";
+import { ShareArticle } from "@/components/share-article";
 import nasalPillowImg from "@/assets/masks/nasal-pillow.webp";
 import nasalImg from "@/assets/masks/nasal.webp";
 import fullFaceImg from "@/assets/masks/full-face.webp";
@@ -337,6 +344,73 @@ export function CpapMasksReactHealth() {
             — Verified PennPaps patient · West Chester, PA
           </div>
         </div>
+      </div>
+
+      {/* FAQ — React-Health-specific objections. Five questions
+          answering the most common things shoppers ask before
+          committing to the flagship line. */}
+      <div className="w-full mb-12">
+        <div className="text-center max-w-2xl mx-auto mb-6">
+          <h2 className="text-display text-2xl md:text-3xl font-bold tracking-tight text-foreground/90 mb-2">
+            React Health questions, answered.
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            The specific things shoppers ask before switching from a name they
+            recognize.
+          </p>
+        </div>
+        <div className="glass-card rounded-2xl p-5 md:p-7">
+          <Accordion type="single" collapsible className="w-full">
+            {[
+              {
+                q: "I've never heard of React Health. Is it a real brand?",
+                a: "Yes — React Health is the rebrand of 3B Medical, a US respiratory equipment maker that's been in CPAP since 2009 and now owns Sefam (Europe) and the Luna line of devices. They're FDA-cleared, ECRI-vetted, and stocked by DMEs nationwide. The reason their masks feel like an upstart is that ResMed and Philips' marketing budgets are roughly 100× theirs.",
+              },
+              {
+                q: "How is it cheaper if it's clinically equivalent?",
+                a: "Three reasons. (1) US engineering and assembly avoids the import tariff stack the Australian and New Zealand brands carry. (2) Smaller marketing spend — no Super Bowl ads, no celebrity endorsements. (3) Direct-to-DME relationships skip a layer of distribution markup. None of those affect the silicone or the diffuser geometry on the cushion itself.",
+              },
+              {
+                q: "My sleep lab fit me in ResMed. Can I switch?",
+                a: "Yes. The mask types map cleanly — Rio II is the React Health analog of the AirFit P10, Viva of the AirFit N20, and Numa of the AirFit F30. Your prescribed pressure, your face geometry, and your AHI target don't change. We can run the fitter on file and recommend the closest React Health equivalent.",
+              },
+              {
+                q: "Is the cushion replacement schedule the same?",
+                a: "Yes — every 30 days for nasal pillows, 90 days for cushions and headgear, six months for tubing, the same as ResMed and F&P. Insurance allowables are the same. Our resupply program ships React Health cushions on the same cadence as the other brands.",
+              },
+              {
+                q: "What if I want to try it but I'm not sure?",
+                a: "Our 30-day comfort guarantee covers a one-time mask exchange — including into a different brand. Try the Rio II, and if it doesn't work, exchange it for an AirFit P10 or an F&P Brevida. No re-stocking fee, no insurance impact.",
+              },
+            ].map((item, idx) => (
+              <AccordionItem
+                key={item.q}
+                value={`item-${idx}`}
+                className={idx === 4 ? "border-b-0" : undefined}
+              >
+                <AccordionTrigger className="text-base font-semibold tracking-tight text-foreground/90 hover:no-underline py-4">
+                  {item.q}
+                </AccordionTrigger>
+                <AccordionContent className="text-sm text-muted-foreground leading-relaxed pb-4">
+                  {item.a}
+                </AccordionContent>
+              </AccordionItem>
+            ))}
+          </Accordion>
+        </div>
+      </div>
+
+      {/* Share rail — these brand pages double as awareness content
+          for the React Health line, and the comfort/value angle is
+          worth forwarding to a friend who's struggling with a heavier
+          mask. */}
+      <div className="w-full mb-12">
+        <ShareArticle
+          path="/cpap-masks/react-health"
+          title="React Health CPAP masks — lighter, quieter, better value"
+          blurb="If you or someone you know is on CPAP and the mask is the problem, take a look at React Health. The Rio II is 88g and a third the price of equivalents."
+          testIdPrefix="share-react-health"
+        />
       </div>
 
       {/* Bottom dual CTA */}

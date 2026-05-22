@@ -3,6 +3,12 @@ import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
+import {
   ArrowRight,
   ShieldCheck,
   Globe2,
@@ -11,8 +17,10 @@ import {
   Layers,
   Award,
   Activity,
+  Heart,
 } from "lucide-react";
 import { useDocumentTitle } from "@/hooks/use-document-title";
+import { ShareArticle } from "@/components/share-article";
 import nasalPillowImg from "@/assets/masks/nasal-pillow.webp";
 import nasalImg from "@/assets/masks/nasal.webp";
 import fullFaceImg from "@/assets/masks/full-face.webp";
@@ -303,6 +311,92 @@ export function CpapMasksResmed() {
             </div>
           ))}
         </div>
+      </div>
+
+      {/* Testimonial — sleep-lab continuity angle. Specific to ResMed
+          because the most common reason patients pick ResMed is "I was
+          fit in one at the lab." */}
+      <div className="w-full glass-card-tech rounded-2xl p-8 md:p-12 mb-12 relative overflow-hidden">
+        <span className="scan-line" aria-hidden="true" />
+        <div className="relative z-10 max-w-3xl mx-auto text-center">
+          <div className="flex justify-center mb-5">
+            <Heart
+              className="w-8 h-8 text-[hsl(var(--penn-gold))]"
+              fill="currentColor"
+            />
+          </div>
+          <blockquote className="text-display text-xl md:text-2xl font-semibold tracking-tight text-foreground/85 leading-relaxed mb-5">
+            &ldquo;The sleep lab put me in an AirFit P10 four years ago and
+            I&apos;ve worn one every night since. PennPaps had it on
+            auto-resupply within an hour of my first order. I haven&apos;t
+            thought about cushions since.&rdquo;
+          </blockquote>
+          <div className="text-sm font-medium text-foreground/70">
+            — Verified PennPaps patient · Drexel Hill, PA
+          </div>
+        </div>
+      </div>
+
+      {/* ResMed-specific FAQ */}
+      <div className="w-full mb-12">
+        <div className="text-center max-w-2xl mx-auto mb-6">
+          <h2 className="text-display text-2xl md:text-3xl font-bold tracking-tight text-foreground/90 mb-2">
+            ResMed questions, answered.
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            The questions shoppers ask most when sticking with what their
+            sleep lab fit them in.
+          </p>
+        </div>
+        <div className="glass-card rounded-2xl p-5 md:p-7">
+          <Accordion type="single" collapsible className="w-full">
+            {[
+              {
+                q: "Does PennPaps stock the AirFit F40 / the newest cushion?",
+                a: "We stock the AirFit F30i, F30, F40, N30i, N20, P10, P30i, and the AirTouch F20 / N20 memory-foam variants. If you need a specific cushion size or a less-common SKU, call us — most ResMed inventory is one business day away even when it's not on the shelf.",
+              },
+              {
+                q: "Will my insurance cover an AirTouch / memory-foam mask?",
+                a: "Yes, the same way it covers AirFit. AirTouch is a cushion swap on the same frame — your DME billing codes don't change. The catch: AirTouch cushions are replaced more often than silicone (every 30 days instead of 90), and not every plan reimburses the higher cadence. We run benefits before shipping.",
+              },
+              {
+                q: "What's the difference between AirFit N30i and N30?",
+                a: "The 'i' suffix means top-of-head tube routing — the hose attaches at the crown of your head rather than at the front. Same cushion, same seal pressure. N30i is better for stomach sleepers, claustrophobic sleepers, and bedtime readers. N30 is lower-profile and slightly lighter.",
+              },
+              {
+                q: "I'm on a ResMed AirSense. Do I have to use a ResMed mask?",
+                a: "No — every mask we sell works with every CPAP we sell. The mask and machine are independent devices joined by a standard 22mm hose. Mixing brands (e.g. Rio II on an AirSense) is common and clinically equivalent.",
+              },
+              {
+                q: "How fast does a ResMed mask actually arrive?",
+                a: "In-stock systems ship the same business day if ordered before 1pm ET. Most ResMed cushion sizes are in-stock. Backorder windows happen occasionally on newer SKUs (the F40 saw early supply tightness); we surface live availability on the product page.",
+              },
+            ].map((item, idx) => (
+              <AccordionItem
+                key={item.q}
+                value={`item-${idx}`}
+                className={idx === 4 ? "border-b-0" : undefined}
+              >
+                <AccordionTrigger className="text-base font-semibold tracking-tight text-foreground/90 hover:no-underline py-4">
+                  {item.q}
+                </AccordionTrigger>
+                <AccordionContent className="text-sm text-muted-foreground leading-relaxed pb-4">
+                  {item.a}
+                </AccordionContent>
+              </AccordionItem>
+            ))}
+          </Accordion>
+        </div>
+      </div>
+
+      {/* Share rail */}
+      <div className="w-full mb-12">
+        <ShareArticle
+          path="/cpap-masks/resmed"
+          title="ResMed CPAP masks at PennPaps"
+          blurb="The market-leading line with the deepest sizing matrix in CPAP. Full AirFit and AirTouch catalog with same-day shipping and insurance billed for you."
+          testIdPrefix="share-resmed"
+        />
       </div>
 
       {/* Compare to React Health rail */}

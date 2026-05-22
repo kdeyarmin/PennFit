@@ -3,6 +3,12 @@ import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
+import {
   ArrowRight,
   Heart,
   Leaf,
@@ -14,6 +20,7 @@ import {
   Moon,
 } from "lucide-react";
 import { useDocumentTitle } from "@/hooks/use-document-title";
+import { ShareArticle } from "@/components/share-article";
 import nasalPillowImg from "@/assets/masks/nasal-pillow.webp";
 import nasalImg from "@/assets/masks/nasal.webp";
 import fullFaceImg from "@/assets/masks/full-face.webp";
@@ -303,6 +310,92 @@ export function CpapMasksFisherPaykel() {
             </div>
           ))}
         </div>
+      </div>
+
+      {/* Testimonial — RollFit / restless-sleeper angle. Most F&P
+          buyers picked the brand specifically for movement tolerance,
+          so the quote leans into that. */}
+      <div className="w-full glass-card-tech rounded-2xl p-8 md:p-12 mb-12 relative overflow-hidden">
+        <span className="scan-line" aria-hidden="true" />
+        <div className="relative z-10 max-w-3xl mx-auto text-center">
+          <div className="flex justify-center mb-5">
+            <Heart
+              className="w-8 h-8 text-[hsl(var(--penn-gold))]"
+              fill="currentColor"
+            />
+          </div>
+          <blockquote className="text-display text-xl md:text-2xl font-semibold tracking-tight text-foreground/85 leading-relaxed mb-5">
+            &ldquo;I roll between side and stomach all night. Three masks
+            broke seal every time I moved. The F&amp;P Evora just&hellip; goes
+            with me. First mask I&apos;ve worn through a full night without
+            an alarm.&rdquo;
+          </blockquote>
+          <div className="text-sm font-medium text-foreground/70">
+            — Verified PennPaps patient · Bryn Mawr, PA
+          </div>
+        </div>
+      </div>
+
+      {/* F&P-specific FAQ */}
+      <div className="w-full mb-12">
+        <div className="text-center max-w-2xl mx-auto mb-6">
+          <h2 className="text-display text-2xl md:text-3xl font-bold tracking-tight text-foreground/90 mb-2">
+            Fisher &amp; Paykel questions, answered.
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            The things shoppers ask most when comparing F&amp;P to the bigger
+            two brands.
+          </p>
+        </div>
+        <div className="glass-card rounded-2xl p-5 md:p-7">
+          <Accordion type="single" collapsible className="w-full">
+            {[
+              {
+                q: "What actually is RollFit?",
+                a: "RollFit XT is F&P's cushion design that rolls along the bridge of your nose as you move — instead of a static seal pressed onto a fixed point, the cushion auto-adjusts in real time. The practical result: side and stomach sleepers leak less. The mechanism is mechanical, not pneumatic; it's a feature of the cushion shape, not the machine.",
+              },
+              {
+                q: "Is the Brevida really gentler than other nasal pillows?",
+                a: "Yes, for most users. Most nasal pillows wedge a silicone tip into the nostril opening. The Brevida AirPillow inflates softly around the nostril instead — pressure spreads circumferentially rather than pressing on a single contact ring. The trade-off is that the Brevida tolerates slightly lower peak pressures than a P10. If your prescription is 14+ cmH₂O, ResMed P10 or Rio II usually seal better.",
+              },
+              {
+                q: "Why is F&P sometimes listed as out of stock?",
+                a: "F&P ships fewer SKUs to the US than ResMed does, so inventory tightens on specific cushion sizes faster. We surface live availability on the product page and offer a one-tap notify-me. Most F&P backorders clear in 5–10 business days.",
+              },
+              {
+                q: "Does F&P work with non-F&P machines?",
+                a: "Yes — every mask we sell uses the standard 22mm hose connector and works with any CPAP we stock. F&P masks pair just as cleanly with a ResMed AirSense or React Health Luna as they do with the F&P Solo or SleepStyle.",
+              },
+              {
+                q: "Is the eco-packaging actually meaningful or marketing?",
+                a: "Genuine. F&P switched the AirFit-equivalent SKUs to recyclable molded-pulp inserts that replace EPS foam, and their packaging weight is measurably lower per unit. In a category that ships a lot of cardboard, it's a real cumulative reduction. We mention it because customers ask, not because it should drive the buying decision.",
+              },
+            ].map((item, idx) => (
+              <AccordionItem
+                key={item.q}
+                value={`item-${idx}`}
+                className={idx === 4 ? "border-b-0" : undefined}
+              >
+                <AccordionTrigger className="text-base font-semibold tracking-tight text-foreground/90 hover:no-underline py-4">
+                  {item.q}
+                </AccordionTrigger>
+                <AccordionContent className="text-sm text-muted-foreground leading-relaxed pb-4">
+                  {item.a}
+                </AccordionContent>
+              </AccordionItem>
+            ))}
+          </Accordion>
+        </div>
+      </div>
+
+      {/* Share rail */}
+      <div className="w-full mb-12">
+        <ShareArticle
+          path="/cpap-masks/fisher-paykel"
+          title="Fisher & Paykel CPAP masks at PennPaps"
+          blurb="Designed in New Zealand. RollFit and AirPillow cushion technology that follows you through the night. Best leak resistance for restless sleepers."
+          testIdPrefix="share-fisher-paykel"
+        />
       </div>
 
       {/* Compare back to flagship */}
