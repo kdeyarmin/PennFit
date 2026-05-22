@@ -48,6 +48,7 @@
 
 import type PgBoss from "pg-boss";
 
+import { escapeHtml } from "@workspace/resupply-messaging";
 import {
   getSupabaseServiceRoleClient,
   type Database,
@@ -133,7 +134,7 @@ function composeDigestEmail(opts: {
   const listHtml = rows
     .map(
       (r) =>
-        `        <li><code>${r.orderReference}</code> &mdash; created ${r.createdAt}</li>`,
+        `        <li><code>${escapeHtml(r.orderReference)}</code> &mdash; created ${escapeHtml(r.createdAt)}</li>`,
     )
     .join("\n");
   const overflowHtml =
@@ -147,7 +148,7 @@ function composeDigestEmail(opts: {
     <h2 style="color: #001f3f;">${totalCount} order ${
       totalCount === 1 ? "confirmation" : "confirmations"
     } failed in the last ${windowHours}h</h2>
-    <p style="color: #444;">${introText}</p>
+    <p style="color: #444;">${escapeHtml(introText)}</p>
     <ul style="font-family: monospace; line-height: 1.7;">
 ${listHtml}
     </ul>
@@ -179,13 +180,27 @@ export async function runFailedEmailDigest(opts: {
   const supabase = getSupabaseServiceRoleClient();
   // We deliberately select only the two PHI-safe columns. The
   // patient_* columns and the `payload` jsonb stay in the database.
+  const { count, error: countError } = await supabase
+    .schema("public")
+    .from("orders")
+    .select("id", { count: "exact", head: true })
+    .eq("email_status", "failed")
+    .gte("created_at", cutoffIso);
+  if (countError) throw countError;
+  const failedCount = count ?? 0;
+
+  if (failedCount === 0) {
+    return { failedCount: 0, sent: false, skippedReason: "no_failures" };
+  }
+
   const { data: rows, error } = await supabase
     .schema("public")
     .from("orders")
     .select("order_reference, created_at")
     .eq("email_status", "failed")
     .gte("created_at", cutoffIso)
-    .order("created_at", { ascending: false });
+    .order("created_at", { ascending: false })
+    .limit(DIGEST_MAX_REFERENCES_LISTED);
   if (error) throw error;
 
   const matched: FailedRow[] = (rows ?? []).map(
@@ -195,17 +210,13 @@ export async function runFailedEmailDigest(opts: {
     }),
   );
 
-  if (matched.length === 0) {
-    return { failedCount: 0, sent: false, skippedReason: "no_failures" };
-  }
-
   let sendgrid;
   try {
     sendgrid = createSendgridClient();
   } catch (err) {
     if (err instanceof EmailConfigError) {
       return {
-        failedCount: matched.length,
+        failedCount,
         sent: false,
         skippedReason: "sendgrid_not_configured",
       };
@@ -215,8 +226,8 @@ export async function runFailedEmailDigest(opts: {
 
   const message = composeDigestEmail({
     recipient,
-    rows: matched.slice(0, DIGEST_MAX_REFERENCES_LISTED),
-    totalCount: matched.length,
+    rows: matched,
+    totalCount: failedCount,
     windowHours: DIGEST_LOOKBACK_MS / (60 * 60 * 1000),
   });
 
@@ -228,7 +239,7 @@ export async function runFailedEmailDigest(opts: {
     customArgs: { kind: "ops_failed_order_emails_digest_v1" },
   });
 
-  return { failedCount: matched.length, sent: true };
+  return { failedCount, sent: true };
 }
 
 export async function registerFailedEmailDigestJob(

@@ -110,7 +110,7 @@ describe("runFailedEmailDigest — outcomes", () => {
 
   it("returns no_failures when nothing matches the lookback window", async () => {
     process.env.RESUPPLY_ADMIN_ALERTS_EMAIL = "ops@example.com";
-    stageSupabaseResponse("orders", "select", { data: [] });
+    stageSupabaseResponse("orders", "select", { count: 0, data: null });
     const out = await runFailedEmailDigest();
     expect(out).toEqual({
       failedCount: 0,
@@ -122,6 +122,10 @@ describe("runFailedEmailDigest — outcomes", () => {
 
   it("returns sendgrid_not_configured when the client throws EmailConfigError", async () => {
     process.env.RESUPPLY_ADMIN_ALERTS_EMAIL = "ops@example.com";
+    stageSupabaseResponse("orders", "select", {
+      count: 1,
+      data: null,
+    });
     stageSupabaseResponse("orders", "select", {
       data: [makeFailedRow()],
     });
@@ -140,6 +144,10 @@ describe("runFailedEmailDigest — outcomes", () => {
 
   it("sends a single digest when there are failures", async () => {
     process.env.RESUPPLY_ADMIN_ALERTS_EMAIL = "ops@example.com";
+    stageSupabaseResponse("orders", "select", {
+      count: 2,
+      data: null,
+    });
     stageSupabaseResponse("orders", "select", {
       data: [
         makeFailedRow({ order_reference: "PENN-AAA111" }),
@@ -188,6 +196,10 @@ describe("runFailedEmailDigest — PHI safety", () => {
     // Stage a "polluted" row — extra fields a future bad SELECT
     // might pull through. The composer must ignore them.
     stageSupabaseResponse("orders", "select", {
+      count: 1,
+      data: null,
+    });
+    stageSupabaseResponse("orders", "select", {
       data: [
         {
           order_reference: "PENN-AAA111",
@@ -225,6 +237,27 @@ describe("runFailedEmailDigest — PHI safety", () => {
     expect(blob).not.toContain("delivery to");
   });
 
+  it("HTML-escapes dynamic order fields in the digest body", async () => {
+    process.env.RESUPPLY_ADMIN_ALERTS_EMAIL = "ops@example.com";
+    stageSupabaseResponse("orders", "select", { count: 1, data: null });
+    stageSupabaseResponse("orders", "select", {
+      data: [
+        makeFailedRow({
+          order_reference: `<img src=x onerror="alert('xss')">`,
+          created_at: `2026-05-21T10:00:00.000Z</li><script>alert(1)</script>`,
+        }),
+      ],
+    });
+
+    await runFailedEmailDigest();
+    const call = sendEmailMock.mock.calls[0][0] as { html: string };
+    expect(call.html).toContain("&lt;img src=x onerror=&quot;alert(&#39;xss&#39;)&quot;&gt;");
+    expect(call.html).toContain(
+      "2026-05-21T10:00:00.000Z&lt;/li&gt;&lt;script&gt;alert(1)&lt;/script&gt;",
+    );
+    expect(call.html).not.toContain("<script>");
+  });
+
   it("caps the body to DIGEST_MAX_REFERENCES_LISTED entries with an overflow note", async () => {
     process.env.RESUPPLY_ADMIN_ALERTS_EMAIL = "ops@example.com";
     const big = Array.from({ length: DIGEST_MAX_REFERENCES_LISTED + 5 }, (_, i) =>
@@ -232,7 +265,13 @@ describe("runFailedEmailDigest — PHI safety", () => {
         order_reference: `PENN-${String(i).padStart(6, "0")}`,
       }),
     );
-    stageSupabaseResponse("orders", "select", { data: big });
+    stageSupabaseResponse("orders", "select", {
+      count: big.length,
+      data: null,
+    });
+    stageSupabaseResponse("orders", "select", {
+      data: big.slice(0, DIGEST_MAX_REFERENCES_LISTED),
+    });
 
     const out = await runFailedEmailDigest();
     expect(out.failedCount).toBe(big.length);
