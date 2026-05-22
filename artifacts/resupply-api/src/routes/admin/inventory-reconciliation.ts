@@ -474,42 +474,20 @@ router.post(
       return;
     }
 
-    // Apply to Stripe BEFORE marking applied=true on the line rows.
-    // Track which succeeded so partial failures don't lie about
-    // applied state.
-    const appliedProductIds = new Set<string>();
-    if (applyToStripe) {
-      for (const target of stripeApplyTargets) {
-        try {
-          await stripe.products.update(target.productId, {
-            metadata: { stock_count: String(target.newStockCount) },
-          });
-          appliedProductIds.add(target.productId);
-        } catch (err) {
-          logger.warn(
-            { productId: target.productId, err },
-            "inventory_reconciliation.submit: stripe update failed for SKU",
-          );
-        }
-      }
-    }
-    for (const row of lineInserts) {
-      if (appliedProductIds.has(row.product_id)) row.applied = true;
-    }
-
     const totalVarianceUnits = lineInserts.reduce(
       (acc, l) => acc + Math.abs(l.variance),
       0,
     );
 
-    // Atomic DB write — see migration 0143. The function takes a row
+    // Atomic DB write FIRST (migration 0143). The function takes a row
     // lock on the header (eliminating concurrent-submit lost updates),
-    // inserts every line, and flips status → 'submitted' in one
-    // transaction. Stripe writes already happened above and are
-    // intentionally outside the transaction (external state cannot
-    // participate in a Postgres txn); each line carries its own
-    // `applied` flag so the persisted record reflects what actually
-    // reached Stripe even if some per-SKU updates failed.
+    // inserts every line with applied=false, and flips status →
+    // 'submitted' in one transaction. Stripe writes happen AFTER this
+    // succeeds, so a loser of the row-lock race returns 409 BEFORE
+    // mutating Stripe — no split-brain between the reconciliation
+    // record and the live catalog. The trade-off: per-line `applied`
+    // flags are stamped in a follow-up UPDATE once we know which
+    // Stripe writes succeeded.
     const rpcLines = lineInserts.map((l) => ({
       product_id: l.product_id,
       product_name: l.product_name,
@@ -518,7 +496,7 @@ router.post(
       system_count: l.system_count,
       counted_qty: l.counted_qty,
       variance: l.variance,
-      applied: l.applied,
+      applied: false,
     }));
     const { data: rpcData, error: rpcErr } = await supabase
       .schema("resupply")
@@ -560,6 +538,46 @@ router.post(
       // retry without polluting the 500 channel.
       res.status(400).json({ error: rpc.error });
       return;
+    }
+
+    // RPC succeeded — we own the submitted row. Now safely mutate
+    // Stripe and stamp per-line `applied` flags for whatever reached
+    // the catalog. Failures are intentionally non-fatal here: the
+    // reconciliation IS submitted; per-line `applied=false` accurately
+    // records that this SKU didn't make it to Stripe.
+    const appliedProductIds = new Set<string>();
+    if (applyToStripe) {
+      for (const target of stripeApplyTargets) {
+        try {
+          await stripe.products.update(target.productId, {
+            metadata: { stock_count: String(target.newStockCount) },
+          });
+          appliedProductIds.add(target.productId);
+        } catch (err) {
+          logger.warn(
+            { productId: target.productId, err },
+            "inventory_reconciliation.submit: stripe update failed for SKU",
+          );
+        }
+      }
+    }
+    if (appliedProductIds.size > 0) {
+      const { error: applyErr } = await supabase
+        .schema("resupply")
+        .from("inventory_reconciliation_lines")
+        .update({ applied: true })
+        .eq("reconciliation_id", id)
+        .in("product_id", Array.from(appliedProductIds));
+      if (applyErr) {
+        // The reconciliation header is durably submitted; only the
+        // applied=true stamps are missing. Log and continue — the
+        // operator sees success and the per-line flags can be
+        // reconciled later from the audit envelope if needed.
+        logger.warn(
+          { err: applyErr },
+          "inventory_reconciliation.submit: applied-flag update failed",
+        );
+      }
     }
 
     await logAudit({

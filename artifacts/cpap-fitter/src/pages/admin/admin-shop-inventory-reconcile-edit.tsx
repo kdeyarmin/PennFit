@@ -82,25 +82,34 @@ export function AdminShopInventoryReconcileEditPage() {
   const [drafts, setDrafts] = useState<DraftLine[] | null>(null);
   const [applyToStripe, setApplyToStripe] = useState(true);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  // Track which detailKey we've already hydrated for. Using a key (vs
+  // a boolean) is the gate that lets a SPA navigation between two
+  // drafts re-seed the grid: the new detailKey ≠ hydratedDetailKey, so
+  // the effect re-runs even though `drafts` is already non-null from
+  // the prior reconciliation. A boolean flag would stick true after
+  // the first seed and silently strand the operator with stale rows.
+  const [hydratedDetailKey, setHydratedDetailKey] = useState<string | null>(
+    null,
+  );
 
   // Hydrate draft state once the detail lands. Keyed on the
   // reconciliation id so a navigation between two drafts re-seeds the
   // grid, but a refetch of the same draft does not — the operator's
-  // typed counts must survive a background refetch. The condition
-  // inside `useEffect` is the same guard the older setState-in-render
-  // pattern carried (only seed when null), but lifted out of the
-  // render body so React StrictMode + the concurrent renderer don't
-  // double-schedule the update or drop user input during the gap.
+  // typed counts must survive a background refetch. We also reset
+  // applyToStripe + submitError on navigation so a prior session's
+  // choices don't carry over to the new reconciliation.
   const detailKey =
     data && data.reconciliation.status === "draft"
       ? `${data.reconciliation.id}:${data.currentProducts?.length ?? 0}`
       : null;
   useEffect(() => {
-    if (!data || data.reconciliation.status !== "draft") return;
-    if (drafts !== null) return;
+    if (!data || data.reconciliation.status !== "draft" || !detailKey) return;
+    if (hydratedDetailKey === detailKey) return;
     setDrafts(buildDraftLines(data));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [detailKey]);
+    setApplyToStripe(true);
+    setSubmitError(null);
+    setHydratedDetailKey(detailKey);
+  }, [data, detailKey, hydratedDetailKey]);
 
   const submitMutation = useMutation({
     mutationFn: async () => {

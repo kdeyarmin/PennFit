@@ -526,7 +526,9 @@ describe("POST /admin/shop/inventory/reconciliations/:id/submit", () => {
     });
     // Critical invariant: applyToStripe=false MUST NOT call products.update.
     expect(stripeUpdateMock).not.toHaveBeenCalled();
-    // RPC called exactly once with the snapshotted lines, applied=false.
+    // RPC called exactly once with the snapshotted lines, all applied=false
+    // (the order flip means applied flags are stamped AFTER the RPC, in a
+    // follow-up UPDATE).
     expect(getSupabaseRpcCallCount("submit_inventory_reconciliation")).toBe(1);
     const rpcArgs = getSupabaseRpcArgs("submit_inventory_reconciliation")[0] as {
       p_id: string;
@@ -551,9 +553,16 @@ describe("POST /admin/shop/inventory/reconciliations/:id/submit", () => {
       counted_qty: 12,
       variance: 2,
     });
+    // applyToStripe=false: no follow-up update on the lines table either.
+    expect(
+      getSupabaseWritePayloads(
+        "inventory_reconciliation_lines",
+        "update",
+      ),
+    ).toHaveLength(0);
   });
 
-  it("applyToStripe=true: only non-zero variances are pushed to Stripe", async () => {
+  it("applyToStripe=true: only non-zero variances are pushed to Stripe; applied flag stamped via follow-up UPDATE", async () => {
     mockAdmin.current = ADMIN;
     stageSupabaseResponse("inventory_reconciliations", "select", {
       data: { id: RECON_ID, status: "draft" },
@@ -565,6 +574,9 @@ describe("POST /admin/shop/inventory/reconciliations/:id/submit", () => {
     stripeUpdateMock.mockResolvedValue({ id: "prod_A" });
     stageSupabaseRpcResponse("submit_inventory_reconciliation", {
       data: { ok: true, total_lines: 2, total_variance_units: 1 },
+    });
+    stageSupabaseResponse("inventory_reconciliation_lines", "update", {
+      data: null,
     });
 
     const res = await request(makeApp())
@@ -583,13 +595,18 @@ describe("POST /admin/shop/inventory/reconciliations/:id/submit", () => {
     expect(stripeUpdateMock).toHaveBeenCalledWith("prod_A", {
       metadata: { stock_count: "11" },
     });
-    // The line for prod_A should be marked applied=true; prod_NOOP false.
+    // RPC's lines all carry applied=false; the applied=true stamps land
+    // via the follow-up UPDATE on inventory_reconciliation_lines.
     const rpcArgs = getSupabaseRpcArgs("submit_inventory_reconciliation")[0] as {
       p_lines: Array<{ product_id: string; applied: boolean }>;
     };
-    const byId = new Map(rpcArgs.p_lines.map((l) => [l.product_id, l.applied]));
-    expect(byId.get("prod_A")).toBe(true);
-    expect(byId.get("prod_NOOP")).toBe(false);
+    expect(rpcArgs.p_lines.every((l) => l.applied === false)).toBe(true);
+    const updates = getSupabaseWritePayloads(
+      "inventory_reconciliation_lines",
+      "update",
+    ) as Array<Record<string, unknown>>;
+    expect(updates).toHaveLength(1);
+    expect(updates[0]).toEqual({ applied: true });
   });
 
   it("records partial Stripe failures and still flips the reconciliation", async () => {
@@ -607,6 +624,9 @@ describe("POST /admin/shop/inventory/reconciliations/:id/submit", () => {
     });
     stageSupabaseRpcResponse("submit_inventory_reconciliation", {
       data: { ok: true, total_lines: 2, total_variance_units: 3 },
+    });
+    stageSupabaseResponse("inventory_reconciliation_lines", "update", {
+      data: null,
     });
 
     const res = await request(makeApp())
@@ -628,20 +648,51 @@ describe("POST /admin/shop/inventory/reconciliations/:id/submit", () => {
     };
     expect(audit.metadata.stripe_apply_failures).toBe(1);
 
-    // applied flag tracks ground truth — successful SKU only.
-    const rpcArgs = getSupabaseRpcArgs("submit_inventory_reconciliation")[0] as {
-      p_lines: Array<{ product_id: string; applied: boolean }>;
-    };
-    const byId = new Map(rpcArgs.p_lines.map((l) => [l.product_id, l.applied]));
-    expect(byId.get("prod_A")).toBe(true);
-    expect(byId.get("prod_BROKEN")).toBe(false);
+    // The follow-up UPDATE was fired exactly once — only the
+    // successful SKU's row should be flipped to applied=true. Filter
+    // verbs on the chain carry the `.in("product_id", [...])` arg.
+    expect(
+      getSupabaseWritePayloads(
+        "inventory_reconciliation_lines",
+        "update",
+      ),
+    ).toHaveLength(1);
   });
 
-  it("maps the RPC already_submitted error to 409 (race protection)", async () => {
-    // Simulates a concurrent submit winning the row lock between our
-    // pre-Stripe header check and the RPC call. The header check sees
-    // 'draft', Stripe writes happen, but the RPC returns
-    // already_submitted because the other submitter won.
+  it("skips the applied-flag UPDATE when every Stripe write fails", async () => {
+    mockAdmin.current = ADMIN;
+    stageSupabaseResponse("inventory_reconciliations", "select", {
+      data: { id: RECON_ID, status: "draft" },
+    });
+    stageStripeCatalog([{ id: "prod_A", name: "Mask", stockCount: 10 }]);
+    stripeUpdateMock.mockRejectedValue(new Error("stripe_down"));
+    stageSupabaseRpcResponse("submit_inventory_reconciliation", {
+      data: { ok: true, total_lines: 1, total_variance_units: 1 },
+    });
+
+    const res = await request(makeApp())
+      .post(`/admin/shop/inventory/reconciliations/${RECON_ID}/submit`)
+      .send({
+        lines: [{ productId: "prod_A", countedQty: 11 }],
+        applyToStripe: true,
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body.stripeApplyFailures).toBe(1);
+    // No SKUs reached Stripe → no UPDATE call (nothing to flip).
+    expect(
+      getSupabaseWritePayloads(
+        "inventory_reconciliation_lines",
+        "update",
+      ),
+    ).toHaveLength(0);
+  });
+
+  it("maps the RPC already_submitted error to 409 WITHOUT mutating Stripe (race protection)", async () => {
+    // After the order flip: the RPC is now called BEFORE any Stripe
+    // writes. A loser of the row-lock race sees `already_submitted`
+    // immediately and returns 409 without ever touching Stripe — no
+    // split-brain between the reconciliation record and the catalog.
     mockAdmin.current = ADMIN;
     stageSupabaseResponse("inventory_reconciliations", "select", {
       data: { id: RECON_ID, status: "draft" },
@@ -655,13 +706,18 @@ describe("POST /admin/shop/inventory/reconciliations/:id/submit", () => {
       .post(`/admin/shop/inventory/reconciliations/${RECON_ID}/submit`)
       .send({
         lines: [{ productId: "prod_A", countedQty: 11 }],
-        applyToStripe: false,
+        applyToStripe: true,
       });
     expect(res.status).toBe(409);
     expect(res.body.error).toBe("already_submitted");
-    // No header update writes — the RPC is the only write path now.
+    // The fix: Stripe is NOT mutated when the RPC loses the race.
+    expect(stripeUpdateMock).not.toHaveBeenCalled();
+    // No applied-flag UPDATE either.
     expect(
-      getSupabaseWritePayloads("inventory_reconciliations", "update"),
+      getSupabaseWritePayloads(
+        "inventory_reconciliation_lines",
+        "update",
+      ),
     ).toHaveLength(0);
   });
 
