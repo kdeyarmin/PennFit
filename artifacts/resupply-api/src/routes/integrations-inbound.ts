@@ -50,7 +50,22 @@ const sourceParam = z.object({
     .regex(/^[a-z0-9_]{2,40}$/, "source slug is letters/digits/underscores"),
 });
 
-const SUPPORTED_SOURCES = new Set(["parachute", "itamar_hsat", "test"]);
+const SUPPORTED_SOURCE_SET = new Set(["parachute", "itamar_hsat", "test"]);
+
+/**
+ * Accept a source slug if it's in the hard-coded set OR matches the
+ * `ehr_fhir_<tenant_slug>` pattern. The tenant existence check
+ * happens lazily — the dispatcher (lib/inbound-dispatchers/ehr-fhir.ts)
+ * refuses to land a referral if signature_verified=false, and the
+ * normal POST path lands here only after middleware sets
+ * signature_verified=true. A non-FHIR partner posting plain JSON to
+ * /integrations/inbound/ehr_fhir_<tenant> would land with
+ * signature_verified=false and be rejected by the dispatcher.
+ */
+function isSupportedSource(source: string): boolean {
+  if (SUPPORTED_SOURCE_SET.has(source)) return true;
+  return /^ehr_fhir_[a-z0-9_]{2,38}$/.test(source);
+}
 
 // Body cap mirrors the manufacturer-cloud webhooks route. 1MB is
 // well above any plausible inbound order payload — Parachute's
@@ -64,7 +79,7 @@ router.post("/integrations/inbound/:source", rawJson, async (req, res) => {
     return;
   }
   const source = parsed.data.source;
-  if (!SUPPORTED_SOURCES.has(source)) {
+  if (!isSupportedSource(source)) {
     res.status(404).json({ error: "unknown_source" });
     return;
   }

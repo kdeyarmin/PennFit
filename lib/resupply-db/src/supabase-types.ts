@@ -1702,6 +1702,28 @@ export interface Database {
         >;
         Relationships: [];
       };
+      ehr_fhir_tenants: {
+        Row: {
+          id: string;
+          slug: string;
+          display_name: string;
+          jwks_uri: string;
+          audience: string;
+          expected_issuer: string;
+          expected_subject: string;
+          is_active: boolean;
+          notes: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["ehr_fhir_tenants"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["ehr_fhir_tenants"]["Row"]
+        >;
+        Relationships: [];
+      };
       documentation_packets: {
         Row: {
           id: string;

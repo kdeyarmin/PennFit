@@ -36,6 +36,7 @@ import type PgBoss from "pg-boss";
 
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
+import { dispatchEhrFhir } from "../../lib/inbound-dispatchers/ehr-fhir";
 import { dispatchParachute } from "../../lib/inbound-dispatchers/parachute";
 import { logger } from "../../lib/logger";
 
@@ -88,23 +89,28 @@ export async function runInboundWebhookDispatcher(): Promise<DispatchStats> {
   stats.scanned = rows.length;
 
   for (const row of rows) {
+    let outcome: Awaited<ReturnType<typeof dispatchParachute>> | null = null;
     if (row.source === "parachute") {
-      const outcome = await dispatchParachute({ row });
-      if (outcome.ok) {
-        await markProcessed(supabase, row.id);
-        stats.processed += 1;
-      } else if (outcome.permanent) {
-        await markRejected(supabase, row.id, outcome.reason);
-        stats.rejected += 1;
-      } else {
-        await markRetry(supabase, row.id, outcome.reason);
-        stats.retried += 1;
-      }
-    } else {
-      // No dispatcher for this source yet. Leave the row in its
-      // current status so the admin dashboard can flag it. Counting
-      // only — no DB writes here.
+      outcome = await dispatchParachute({ row });
+    } else if (row.source.startsWith("ehr_fhir_")) {
+      outcome = await dispatchEhrFhir({ row });
+    }
+
+    if (outcome === null) {
+      // No dispatcher for this source. Leave the row in its current
+      // status so the admin dashboard can flag it.
       stats.skipped_unknown_source += 1;
+      continue;
+    }
+    if (outcome.ok) {
+      await markProcessed(supabase, row.id);
+      stats.processed += 1;
+    } else if (outcome.permanent) {
+      await markRejected(supabase, row.id, outcome.reason);
+      stats.rejected += 1;
+    } else {
+      await markRetry(supabase, row.id, outcome.reason);
+      stats.retried += 1;
     }
   }
 

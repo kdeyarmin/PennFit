@@ -4,21 +4,14 @@
 // ('received', 'processing_failed')) and:
 //
 //   1. Re-verifies the signature header against PARACHUTE_SIGNING_SECRET.
-//      Phase 1 also verifies inline at /integrations/inbound/parachute
-//      so a forged payload never lands in inbound_webhooks in the
-//      first place; the dispatcher-side check is defence-in-depth
+//      The route at /integrations/inbound/parachute also verifies
+//      inline so a forged payload never lands in inbound_webhooks in
+//      the first place; the dispatcher-side check is defence-in-depth
 //      against a stale signing-secret rotation.
 //   2. Parses the verbatim payload into a typed ParachuteOrder.
-//   3. Inserts an inbound_referral_orders row (idempotent on
-//      (source, source_order_id) — re-runs are no-ops).
-//   4. Inserts one inbound_referral_documents row per attachment.
-//      Document bytes are NOT mirrored to object storage in Phase 1;
-//      source_url is persisted and a Phase 2 worker will mirror.
-//   5. Flips the inbound_webhooks row to 'processed' on success,
-//      'processing_failed' (+ processing_error) on a transient
-//      failure, 'rejected' on a permanent failure (bad signature,
-//      malformed shape).
-//   6. Emits an audit row keyed to the referral id.
+//   3. Hands off to landReferralFromOrder (which is shared with the
+//      EHR FHIR dispatcher) for matchers + classifier + insert +
+//      document mirror + audit.
 //
 // PHI posture: the dispatcher logs the referral id, source slug,
 // HCPCS code count, and signature outcome only. Never the payload,
@@ -30,35 +23,23 @@ import {
   verifyParachuteSignature,
 } from "@workspace/resupply-integrations-parachute";
 
-import { logAudit } from "@workspace/resupply-audit";
 import {
   type Database,
-  type Json,
   getSupabaseServiceRoleClient,
 } from "@workspace/resupply-db";
 
-import { logger } from "../logger";
-import { classifyReferral } from "./ai-classify";
-import { matchPatient } from "./match-patient";
-import { matchProvider } from "./match-provider";
+import { landReferralFromOrder, type LandOutcome } from "./land-referral";
 
-/**
- * AI confidence threshold above which an inbound referral with both
- * patient + provider matches auto-promotes `new` → `triaged`. Below
- * this, the row stays `new` so a human looks at it.
- */
-const AUTO_TRIAGE_CONFIDENCE_THRESHOLD = 0.85;
-
-type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
 type InboundWebhookRow =
   Database["resupply"]["Tables"]["inbound_webhooks"]["Row"];
 
-export type DispatchOutcome =
-  | { ok: true; referralId: string; deduped: boolean }
-  | { ok: false; permanent: true; reason: string }
-  | { ok: false; permanent: false; reason: string };
+// Re-export the outcome shape so existing callers keep working.
+export type DispatchOutcome = LandOutcome;
+// Keep the unused getSupabaseServiceRoleClient + type imports alive
+// for a follow-up that adds dispatcher-level metrics.
+void getSupabaseServiceRoleClient;
 
-interface DispatchInput {
+export interface DispatchInput {
   row: Pick<
     InboundWebhookRow,
     | "id"
@@ -67,22 +48,14 @@ interface DispatchInput {
     | "verification_headers_json"
     | "signature_verified"
   >;
-  /**
-   * Optional env override (tests). Defaults to process.env.
-   */
+  /** Tests override; defaults to process.env. */
   env?: NodeJS.ProcessEnv;
 }
 
 /**
- * Process a single Parachute inbound webhook row: validate its signature, parse the payload,
- * create an idempotent inbound referral record, persist attachment metadata, and record an audit.
- *
- * The function returns a DispatchOutcome describing success (including `referralId` and `deduped`)
- * or a failure that indicates whether the failure is permanent or transient and a machine-readable `reason`.
- *
- * @returns A DispatchOutcome:
- * - On success: `{ ok: true, referralId: string, deduped: boolean }`
- * - On failure: `{ ok: false, permanent: boolean, reason: string }`
+ * Dispatch a single Parachute inbound_webhooks row. Returns a tagged
+ * outcome; the caller (worker/jobs/inbound-webhook-dispatch.ts) is
+ * responsible for flipping the inbound_webhooks.status based on it.
  */
 export async function dispatchParachute(
   input: DispatchInput,
@@ -91,9 +64,6 @@ export async function dispatchParachute(
   const config = readParachuteConfigOrNull(env);
   if (!config) {
     // No PARACHUTE_SIGNING_SECRET in env — dev / preview deploys.
-    // We don't reject (a stub-mode tester would never get past
-    // signature check); we leave the row as 'received' for human
-    // triage by returning a transient failure.
     return {
       ok: false,
       permanent: false,
@@ -101,7 +71,6 @@ export async function dispatchParachute(
     };
   }
 
-  // Re-verify the signature using the headers we captured at intake.
   const headers =
     (input.row.verification_headers_json as Record<string, string> | null) ??
     {};
@@ -113,8 +82,7 @@ export async function dispatchParachute(
     signingSecret: config.signingSecret,
   });
   if (!verifyOutcome.ok) {
-    // Bad signature is permanent — re-running won't fix it. Mark
-    // the row 'rejected' so the worker doesn't loop on it.
+    // Bad signature is permanent — re-running won't fix it.
     return {
       ok: false,
       permanent: true,
@@ -130,182 +98,12 @@ export async function dispatchParachute(
       reason: "parse_invalid_shape",
     };
   }
-  const order = parsed.order;
 
-  // Phase 2: run matchers + AI classifier BEFORE insert so the row
-  // lands with patient/provider FKs already populated and the CSR
-  // sees triage hints inline. Matcher failures are non-fatal — the
-  // row lands with null FKs and the CSR handles it.
-  const [patientMatch, providerMatch] = await Promise.all([
-    matchPatient({
-      lastName: order.patient.lastName,
-      dob: order.patient.dob,
-      phoneE164: order.patient.phoneE164,
-    }),
-    matchProvider({ npi: order.provider.npi }),
-  ]);
-
-  const classification = await classifyReferral({
-    order,
-    patientMatched: patientMatch.patientId !== null,
-    providerMatched: providerMatch.providerId !== null,
+  return landReferralFromOrder({
+    source: input.row.source,
+    inboundWebhookId: input.row.id,
+    order: parsed.order,
+    dispatcherLabel: "parachute",
     env,
-  }).catch((err) => {
-    logger.warn(
-      { err: err instanceof Error ? err.message : String(err) },
-      "inbound_referral.classify.unexpected_error",
-    );
-    return null;
   });
-
-  // Auto-triage: only when AI is confident AND both matchers hit.
-  // Anything else stays `new` for a human.
-  const autoTriage =
-    classification !== null &&
-    classification.confidence >= AUTO_TRIAGE_CONFIDENCE_THRESHOLD &&
-    patientMatch.patientId !== null &&
-    providerMatch.providerId !== null;
-
-  const supabase = getSupabaseServiceRoleClient();
-  const { data: inserted, error: insertErr } = await supabase
-    .schema("resupply")
-    .from("inbound_referral_orders")
-    .insert({
-      source: input.row.source,
-      source_order_id: order.sourceOrderId,
-      inbound_webhook_id: input.row.id,
-      patient_match_id: patientMatch.patientId,
-      patient_match_kind: patientMatch.kind,
-      provider_match_id: providerMatch.providerId,
-      provider_match_kind: providerMatch.kind,
-      ai_classification_json: classification as unknown as Json,
-      ai_confidence: classification?.confidence ?? null,
-      payer_name: order.payerName,
-      ordering_npi: order.provider.npi,
-      hcpcs_items_json: order.hcpcsLines as unknown as Json,
-      icd10_codes_json: order.icd10Codes as unknown as Json,
-      raw_parsed_json: order as unknown as Json,
-      triage_status: autoTriage ? "triaged" : "new",
-      triaged_at: autoTriage ? new Date().toISOString() : null,
-      received_at: order.occurredAt,
-    })
-    .select("id")
-    .maybeSingle();
-
-  let referralId: string;
-  let deduped = false;
-  if (insertErr) {
-    // Duplicate on (source, source_order_id) — Parachute re-delivered
-    // a webhook we've already turned into a referral. Treat as success.
-    if (typeof insertErr.code === "string" && insertErr.code === "23505") {
-      const { data: existing } = await supabase
-        .schema("resupply")
-        .from("inbound_referral_orders")
-        .select("id")
-        .eq("source", input.row.source)
-        .eq("source_order_id", order.sourceOrderId)
-        .limit(1)
-        .maybeSingle();
-      if (!existing) {
-        return {
-          ok: false,
-          permanent: false,
-          reason: "duplicate_lookup_failed",
-        };
-      }
-      referralId = existing.id;
-      deduped = true;
-    } else {
-      logger.warn(
-        {
-          webhook_id: input.row.id,
-          err_code: insertErr.code,
-        },
-        "parachute_dispatcher_insert_failed",
-      );
-      return {
-        ok: false,
-        permanent: false,
-        reason: `insert_${insertErr.code ?? "unknown"}`,
-      };
-    }
-  } else {
-    if (!inserted) {
-      return {
-        ok: false,
-        permanent: false,
-        reason: "insert_no_row",
-      };
-    }
-    referralId = inserted.id;
-  }
-
-  // Mirror attachments (metadata only — Phase 2 worker downloads the
-  // bytes). Per-row insert errors are non-fatal; we log and continue
-  // so a single bad attachment doesn't strand the whole referral.
-  if (!deduped && order.documents.length > 0) {
-    await persistDocuments(supabase, referralId, order.documents);
-  }
-
-  await logAudit({
-    action: deduped
-      ? "inbound_referral.parachute.dispatched_duplicate"
-      : "inbound_referral.parachute.dispatched",
-    adminEmail: "system:dispatcher:parachute",
-    adminUserId: null,
-    targetTable: "inbound_referral_orders",
-    targetId: referralId,
-    metadata: {
-      source_order_id: order.sourceOrderId,
-      event_type: order.eventType,
-      hcpcs_count: order.hcpcsLines.length,
-      document_count: order.documents.length,
-    },
-    ip: null,
-    userAgent: null,
-  }).catch((err) => {
-    logger.warn({ err }, "inbound_referral.parachute audit write failed");
-  });
-
-  return { ok: true, referralId, deduped };
-}
-
-/**
- * Persist metadata for Parachute documents into the resupply.inbound_referral_documents table.
- *
- * Inserts one row per entry in `documents`. If an insert fails, the function ignores unique-violation errors
- * (Postgres code `"23505"`) and logs a warning for other error codes, then continues processing remaining documents.
- *
- * @param referralId - The inbound referral row ID to associate each document with
- * @param documents - Array of Parachute document metadata to persist
- */
-async function persistDocuments(
-  supabase: SupabaseClient,
-  referralId: string,
-  documents: import("@workspace/resupply-integrations-parachute").ParachuteDocument[],
-): Promise<void> {
-  for (const doc of documents) {
-    const { error } = await supabase
-      .schema("resupply")
-      .from("inbound_referral_documents")
-      .insert({
-        referral_id: referralId,
-        doc_kind: doc.kind,
-        source_filename: doc.filename,
-        content_type: doc.contentType,
-        size_bytes: doc.sizeBytes,
-        source_url: doc.sourceUrl,
-        source_document_id: doc.sourceDocumentId,
-      });
-    if (error && error.code !== "23505") {
-      logger.warn(
-        {
-          referral_id: referralId,
-          source_document_id: doc.sourceDocumentId,
-          err_code: error.code,
-        },
-        "parachute_dispatcher_document_insert_failed",
-      );
-    }
-  }
 }
