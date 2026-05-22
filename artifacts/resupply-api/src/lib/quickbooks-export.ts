@@ -1,4 +1,6 @@
-// QuickBooks export helpers.
+import { createHash } from "node:crypto";
+
+
 //
 // Two emitter functions, sharing one input shape:
 //   * `renderIif(input)`     — Intuit Interchange Format. Tab-
@@ -34,6 +36,8 @@
 //     same return-vs-original-order pairing PennPaps does; we emit
 //     refunds as their own credit memo rows referencing the original
 //     order number in the memo column.
+
+import { createHash } from "node:crypto";
 
 export interface QuickbooksRowInput {
   /**
@@ -243,9 +247,7 @@ export function customerKeyForId(rawId: string | null): string {
   if (!rawId) return "cust-unknown";
   // Use a deterministic cryptographic hash to avoid leaking source-ID
   // structure. SHA-256 with a fixed salt produces a stable, opaque key.
-  const crypto = require("node:crypto");
-  const hash = crypto
-    .createHash("sha256")
+  const hash = createHash("sha256")
     .update("pennpaps-customer-key-v1")
     .update(rawId)
     .digest("hex");

@@ -527,9 +527,85 @@ export interface Database {
           sms_opt_in: boolean;
           source: "consent" | "sleep_apnea_quiz" | "insurance_quote";
           first_day_nudged_at: string | null;
+          // Mig 0151 — fitter completion + supply-campaign journey.
+          completed_at: string | null;
+          recommended_mask_id: string | null;
+          recommended_mask_name: string | null;
+          recommended_mask_type: string | null;
+          journey_stage:
+            | "consent"
+            | "completed"
+            | "campaign_active"
+            | "reorder_active"
+            | "final_call_pending"
+            | "converted"
+            | "unsubscribed"
+            | "expired";
+          campaign_touch_count: number;
+          last_campaign_touch_at: string | null;
+          next_campaign_touch_at: string | null;
+          unsubscribed_at: string | null;
+          first_order_id: string | null;
+          first_order_placed_at: string | null;
+          // Mig 0152 — first-name personalization, captured from
+          // public.orders.patient_name on conversion.
+          first_name: string | null;
+          // Mig 0153 — engagement tracking via tracking-pixel opens.
+          engagement_score: number;
+          hot_lead_at: string | null;
+          // Mig 0154 — click tracking + CSR contact workflow.
+          click_count: number;
+          csr_contacted_at: string | null;
+          csr_contacted_by: string | null;
+          // Mig 0155 — per-lead engagement recency.
+          last_open_at: string | null;
+          last_click_at: string | null;
         };
         Insert: Partial<Database["resupply"]["Tables"]["fitter_leads"]["Row"]>;
         Update: Partial<Database["resupply"]["Tables"]["fitter_leads"]["Row"]>;
+        Relationships: [];
+      };
+      // Mig 0151 — per-send audit log for the multi-touch supply
+      // campaign. One row per (lead, touch_index, channel).
+      fitter_campaign_touches: {
+        Row: {
+          id: string;
+          lead_id: string;
+          touch_index: number;
+          channel: "email" | "sms";
+          template_key: string;
+          status: "sent" | "failed" | "skipped";
+          error_message: string | null;
+          sent_at: string;
+          // Mig 0155 — per-touch open tracking.
+          open_count: number;
+          first_opened_at: string | null;
+          last_opened_at: string | null;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["fitter_campaign_touches"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["fitter_campaign_touches"]["Row"]
+        >;
+        Relationships: [];
+      };
+      // Mig 0154 — per-click audit log. One row per CTA click.
+      fitter_campaign_clicks: {
+        Row: {
+          id: string;
+          lead_id: string;
+          touch_index: number;
+          link_key: string;
+          clicked_at: string;
+          submitter_ip: string | null;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["fitter_campaign_clicks"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["fitter_campaign_clicks"]["Row"]
+        >;
         Relationships: [];
       };
       shop_product_questions: {
@@ -3660,8 +3736,31 @@ export interface Database {
         Relationships: [];
       };
     };
-    Views: { [_ in never]: never };
+    Views: {
+      // Mig 0155 — per-touch aggregate metrics for the admin
+      // reporting surface.
+      fitter_campaign_touch_metrics: {
+        Row: {
+          touch_index: number;
+          email_sends: number;
+          email_failures: number;
+          opens: number;
+          sms_sends: number;
+          sms_failures: number;
+          clicks: number;
+        };
+      };
+    };
     Functions: {
+      // Mig 0155 — atomic per-touch open-count bump, called by
+      // the open-tracking pixel endpoint on every pixel load.
+      record_fitter_touch_open: {
+        Args: {
+          p_lead_id: string;
+          p_touch_index: number;
+        };
+        Returns: void;
+      };
       validate_payment_allocations: {
         Args: {
           p_patient_id: string;

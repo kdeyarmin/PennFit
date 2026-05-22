@@ -360,6 +360,7 @@ export async function buildEdiPayloadForSubmission(
       interchangeControlNumber: sub.isa_control_number,
       groupControlNumber: sub.gs_control_number,
       transactionSetControlNumber: "0001",
+      builtAt: Date.now(),
     },
     usageIndicator: identity.usageIndicator,
   });

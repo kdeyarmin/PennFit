@@ -84,6 +84,7 @@ import physicianFaxOutreachRouter from "./admin/physician-fax-outreach.js";
 import shopBackInStockAdminRouter from "./admin/shop-back-in-stock.js";
 import shopSubsMetricsRouter from "./admin/shop-subscriptions-metrics.js";
 import insuranceLeadsAdminRouter from "./admin/insurance-leads.js";
+import fitterLeadsAdminRouter from "./admin/fitter-leads.js";
 import payerProfilesRouter from "./admin/payer-profiles.js";
 import officeAllySubmissionsRouter from "./admin/office-ally-submissions.js";
 import officeAllyUploadAckRouter from "./admin/office-ally-upload-ack.js";
@@ -258,6 +259,11 @@ router.use(shopBackInStockAdminRouter);
 // for submissions to the public POST /shop/insurance-leads form.
 // requireAdmin gate is on the router itself.
 router.use(insuranceLeadsAdminRouter);
+// /admin/fitter-leads/* — funnel queue + conversion KPIs for the
+// at-home fitter. Powers the "Fitter Prospects" admin page; the
+// dispatchers (fitter-supply-campaign + fitter-conversion-
+// attribution) handle the actual sends and conversion stamps.
+router.use(fitterLeadsAdminRouter);
 // /admin/payer-profiles/* — Pennsylvania payer catalog (migration
 // 0128). Read by every admin; write restricted to requireAdminOnly.
 // Drives 837P NM1*PR loop population on Office Ally submissions.
