@@ -78,6 +78,37 @@ describe("isFeatureEnabled", () => {
     expect(await isFeatureEnabled("storefront.checkout")).toBe(true);
   });
 
+  it("defaults to enabled when Supabase is unreachable (ENOTFOUND)", async () => {
+    // CI / dev environments with no DNS entry for the Supabase host
+    // raise ENOTFOUND. The PR (0151 branch) merged ENOTFOUND into the
+    // same fail-open branch as ECONNREFUSED + missing DB config.
+    stageSupabaseResponse("feature_flags", "select", {
+      error: { message: "ENOTFOUND db.xyz.supabase.co" },
+    });
+    invalidateFeatureFlagCache();
+    expect(await isFeatureEnabled("fitter_supply_campaign.dispatcher")).toBe(true);
+  });
+
+  it("defaults to enabled when Supabase is unreachable (EAI_AGAIN)", async () => {
+    // Some DNS resolvers emit EAI_AGAIN (temporary DNS failure) rather
+    // than ENOTFOUND. This should be treated identically — fail open.
+    stageSupabaseResponse("feature_flags", "select", {
+      error: { message: "EAI_AGAIN db.xyz.supabase.co" },
+    });
+    invalidateFeatureFlagCache();
+    expect(await isFeatureEnabled("smart_triggers.dispatcher")).toBe(true);
+  });
+
+  it("defaults to enabled when the error message is 'fetch failed' (no port detail)", async () => {
+    // A bare "fetch failed" message (without ECONNREFUSED or similar)
+    // should also be treated as an unreachable-DB scenario.
+    stageSupabaseResponse("feature_flags", "select", {
+      error: { message: "fetch failed" },
+    });
+    invalidateFeatureFlagCache();
+    expect(await isFeatureEnabled("patient_onboarding.dispatcher")).toBe(true);
+  });
+
   it("caches within the TTL — a second call doesn't re-query", async () => {
     stageSupabaseResponse("feature_flags", "select", {
       data: { enabled: false },
