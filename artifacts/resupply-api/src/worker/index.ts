@@ -65,6 +65,7 @@ import { registerComplianceAutoWorkflowJob } from "./jobs/compliance-auto-workfl
 import { registerLowStockAlertsJob } from "./jobs/low-stock-alerts.js";
 import { registerInboundWebhookDispatchJob } from "./jobs/inbound-webhook-dispatch.js";
 import { registerInboundReferralPreflightJob } from "./jobs/inbound-referral-preflight.js";
+import { registerReferralStatusOutboundJob } from "./jobs/inbound-referral-status-outbound.js";
 
 let bossInstance: PgBoss | null = null;
 let workerReady = false;
@@ -400,6 +401,12 @@ export async function startWorker(): Promise<void> {
   // inbound referrals that have a matched patient. Migration 0146
   // lands the inbound_referral_preflight_checks history table.
   await registerInboundReferralPreflightJob(boss);
+
+  // Every minute — drain inbound_referral_status_outbox and POST
+  // lifecycle callbacks (accept, ship, PA decision) back to the
+  // originating Parachute / EHR partner. HMAC-SHA256 signed; expo
+  // backoff per migration 0148.
+  await registerReferralStatusOutboundJob(boss);
 
   workerReady = true;
   logger.info(

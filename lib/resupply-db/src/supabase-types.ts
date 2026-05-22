@@ -1713,6 +1713,8 @@ export interface Database {
           expected_subject: string;
           is_active: boolean;
           notes: string | null;
+          callback_url: string | null;
+          outbound_signing_secret: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -1721,6 +1723,31 @@ export interface Database {
         >;
         Update: Partial<
           Database["resupply"]["Tables"]["ehr_fhir_tenants"]["Row"]
+        >;
+        Relationships: [];
+      };
+      inbound_referral_status_outbox: {
+        Row: {
+          id: string;
+          referral_id: string;
+          target_kind: "parachute" | "ehr_fhir";
+          event_type: string;
+          payload_json: Json;
+          status: "queued" | "delivered" | "failed" | "exhausted";
+          attempt_count: number;
+          last_http_status: number | null;
+          last_error: string | null;
+          next_attempt_at: string;
+          delivered_at: string | null;
+          max_retries: number;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["inbound_referral_status_outbox"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["inbound_referral_status_outbox"]["Row"]
         >;
         Relationships: [];
       };

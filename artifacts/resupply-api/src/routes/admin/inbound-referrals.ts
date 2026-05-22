@@ -40,6 +40,7 @@ import {
 
 import { runReferralPreflight } from "../../lib/inbound-dispatchers/preflight";
 import { logger } from "../../lib/logger";
+import { enqueueReferralStatusEvent } from "../../lib/referral-callbacks";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
 
@@ -187,32 +188,44 @@ router.get(
       return;
     }
     const supabase = getSupabaseServiceRoleClient();
-    const [{ data: row }, { data: docs }, { data: preflightChecks }] =
-      await Promise.all([
-        supabase
-          .schema("resupply")
-          .from("inbound_referral_orders")
-          .select("*")
-          .eq("id", params.data.id)
-          .limit(1)
-          .maybeSingle(),
-        supabase
-          .schema("resupply")
-          .from("inbound_referral_documents")
-          .select(
-            "id, doc_kind, source_filename, content_type, size_bytes, source_url, source_document_id, object_key, created_at",
-          )
-          .eq("referral_id", params.data.id)
-          .order("created_at", { ascending: true }),
-        supabase
-          .schema("resupply")
-          .from("inbound_referral_preflight_checks")
-          .select(
-            "id, check_kind, outcome_status, outcome_json, produced_row_table, produced_row_id, ran_by, created_at",
-          )
-          .eq("referral_id", params.data.id)
-          .order("created_at", { ascending: false }),
-      ]);
+    const [
+      { data: row },
+      { data: docs },
+      { data: preflightChecks },
+      { data: outboxRows },
+    ] = await Promise.all([
+      supabase
+        .schema("resupply")
+        .from("inbound_referral_orders")
+        .select("*")
+        .eq("id", params.data.id)
+        .limit(1)
+        .maybeSingle(),
+      supabase
+        .schema("resupply")
+        .from("inbound_referral_documents")
+        .select(
+          "id, doc_kind, source_filename, content_type, size_bytes, source_url, source_document_id, object_key, created_at",
+        )
+        .eq("referral_id", params.data.id)
+        .order("created_at", { ascending: true }),
+      supabase
+        .schema("resupply")
+        .from("inbound_referral_preflight_checks")
+        .select(
+          "id, check_kind, outcome_status, outcome_json, produced_row_table, produced_row_id, ran_by, created_at",
+        )
+        .eq("referral_id", params.data.id)
+        .order("created_at", { ascending: false }),
+      supabase
+        .schema("resupply")
+        .from("inbound_referral_status_outbox")
+        .select(
+          "id, target_kind, event_type, status, attempt_count, last_http_status, last_error, delivered_at, next_attempt_at, created_at",
+        )
+        .eq("referral_id", params.data.id)
+        .order("created_at", { ascending: false }),
+    ]);
     if (!row) {
       res.status(404).json({ error: "not_found" });
       return;
@@ -267,6 +280,18 @@ router.get(
         producedRowId: c.produced_row_id,
         ranBy: c.ran_by,
         createdAt: c.created_at,
+      })),
+      statusCallbacks: (outboxRows ?? []).map((o) => ({
+        id: o.id,
+        targetKind: o.target_kind,
+        eventType: o.event_type,
+        status: o.status,
+        attemptCount: o.attempt_count,
+        lastHttpStatus: o.last_http_status,
+        lastError: o.last_error,
+        deliveredAt: o.delivered_at,
+        nextAttemptAt: o.next_attempt_at,
+        createdAt: o.created_at,
       })),
     });
   },
@@ -693,7 +718,100 @@ router.post(
       logger.warn({ err }, "inbound_referral.accept audit write failed");
     });
 
+    // Fire-and-forget outbound callback. Source-not-callback-capable
+    // sources (e.g. inbound 'test') silently no-op. A real enqueue
+    // error throws — but we don't want a failed callback to block
+    // the accept response; the CSR's "I accepted this" succeeded.
+    await enqueueReferralStatusEvent({
+      referralId: params.data.id,
+      eventType: "order.accepted",
+      data: {
+        accepted_order_kind: parsed.data.acceptedOrderKind,
+      },
+    }).catch((err) => {
+      logger.warn(
+        {
+          referral_id: params.data.id,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        "inbound_referral.accept.callback_enqueue_failed",
+      );
+    });
+
     res.status(200).json({ id: params.data.id, accepted: true });
+  },
+);
+
+router.post(
+  "/admin/inbound-referrals/:id/resend-status",
+  requirePermission("conversations.manage"),
+  adminRateLimit({
+    name: "inbound_referrals.resend_status",
+    preset: "mutation",
+  }),
+  async (req, res) => {
+    const params = idParam.safeParse(req.params);
+    if (!params.success) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    const body = z
+      .object({
+        eventType: z.enum([
+          "order.accepted",
+          "order.rejected",
+          "prior_auth.decision",
+          "shop_order.shipped",
+          "shop_order.delivered",
+        ]),
+      })
+      .strict()
+      .safeParse(req.body);
+    if (!body.success) {
+      res.status(400).json({ error: "invalid_body" });
+      return;
+    }
+    try {
+      const outcome = await enqueueReferralStatusEvent({
+        referralId: params.data.id,
+        eventType: body.data.eventType,
+      });
+      if (outcome.outboxId === null) {
+        res.status(409).json({
+          error: "skipped",
+          reason: outcome.skippedReason ?? "unknown",
+        });
+        return;
+      }
+      await logAudit({
+        action: "inbound_referral.callback.manual_resend",
+        adminEmail: req.adminEmail ?? null,
+        adminUserId: req.adminUserId ?? null,
+        targetTable: "inbound_referral_status_outbox",
+        targetId: outcome.outboxId,
+        metadata: {
+          referral_id: params.data.id,
+          event_type: body.data.eventType,
+        },
+        ip: req.ip ?? null,
+        userAgent: req.get("user-agent") ?? null,
+      }).catch((err) => {
+        logger.warn(
+          { err },
+          "inbound_referral.callback.manual_resend audit write failed",
+        );
+      });
+      res.status(200).json({ outboxId: outcome.outboxId, queued: true });
+    } catch (err) {
+      logger.warn(
+        {
+          referral_id: params.data.id,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        "inbound_referral.callback.manual_resend_failed",
+      );
+      res.status(500).json({ error: "enqueue_failed" });
+    }
   },
 );
 
