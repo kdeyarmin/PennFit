@@ -28,7 +28,7 @@
 //     * bad signature → 400 HTML "Link no longer valid."
 //     * DB error → 500 HTML "Something went wrong."
 
-import { describe, it, expect, vi, beforeEach, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeEach, beforeAll, afterAll } from "vitest";
 import express, { type Express } from "express";
 import request from "supertest";
 

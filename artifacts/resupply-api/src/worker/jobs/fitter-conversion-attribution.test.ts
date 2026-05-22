@@ -76,7 +76,7 @@ describe("runFitterConversionAttribution", () => {
     expect(stats.errors).toBe(0);
   });
 
-  it("writes first_order_id, first_order_placed_at, and journey_stage='converted' on attribution", async () => {
+  it("writes first_order_id, first_order_placed_at, and journey_stage='reorder_active' on attribution", async () => {
     const order = makeOrder("order-abc", "bob@example.com", "2025-01-15T10:00:00Z");
     const lead = makeLead("lead-bob", "bob@example.com");
 
@@ -93,8 +93,9 @@ describe("runFitterConversionAttribution", () => {
     expect(updatePayload).toBeDefined();
     expect(updatePayload.first_order_id).toBe("order-abc");
     expect(updatePayload.first_order_placed_at).toBe("2025-01-15T10:00:00Z");
-    expect(updatePayload.journey_stage).toBe("converted");
-    expect(updatePayload.next_campaign_touch_at).toBeNull();
+    expect(updatePayload.journey_stage).toBe("reorder_active");
+    expect(updatePayload.campaign_touch_count).toBe(6);
+    expect(updatePayload.next_campaign_touch_at).toBeTruthy();
   });
 
   it("matches orders to leads in a case-insensitive manner", async () => {
