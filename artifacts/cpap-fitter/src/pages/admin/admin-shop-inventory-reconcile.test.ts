@@ -184,7 +184,7 @@ describe("formatDate — valid ISO strings", () => {
     // If the date is valid, toLocaleDateString should not throw and
     // the result should not equal the ISO string itself.
     if (!isNaN(d.getTime())) {
-      // Result is the locale string, which differs from raw ISO
+      expect(result).not.toBe(iso);
       expect(result.length).toBeGreaterThan(0);
     }
   });
