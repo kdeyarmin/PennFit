@@ -27,6 +27,7 @@ import {
   todayIso,
   type ReminderSku,
 } from "@/lib/reminder-defaults";
+import { useShopIdentity } from "@/lib/identity";
 
 const PAGE_TITLE = "Manage your reminders";
 
@@ -89,18 +90,24 @@ export function RemindersManage() {
     }
   }, []);
 
-  // The Orval-generated hook's typed `query` option requires `queryKey`
-  // even though the runtime defaults it from the params — pass it
-  // explicitly via the helper so TypeScript is satisfied.
-  const { data, isLoading, error } = useGetReminderSubscription(
-    { token },
-    {
-      query: {
-        enabled: token.length > 0,
-        queryKey: getGetReminderSubscriptionQueryKey({ token }),
-      },
+  // P5 — the backend manage route accepts EITHER a token query param
+  // (the magic-link capability from the email) OR a signed-in session
+  // cookie. Signed-in customers who land here from /account skip the
+  // inbox round-trip entirely. We pass {} to the hook when there's no
+  // token and rely on the session cookie on the wire; when there IS a
+  // token we pass it through unchanged so the existing email flow
+  // works for guest subscribers exactly as before.
+  const { isSignedIn, isLoaded: identityLoaded } = useShopIdentity();
+  const hasToken = token.length > 0;
+  const params = hasToken ? { token } : {};
+  const queryEnabled = hasToken || (identityLoaded && isSignedIn);
+
+  const { data, isLoading, error } = useGetReminderSubscription(params, {
+    query: {
+      enabled: queryEnabled,
+      queryKey: getGetReminderSubscriptionQueryKey(params),
     },
-  );
+  });
   const update = useUpdateReminderSubscription();
   const unsub = useUnsubscribeFromReminders();
 
@@ -119,7 +126,10 @@ export function RemindersManage() {
     if (data?.items) setItems(buildState(data.items));
   }, [data]);
 
-  if (!token) {
+  // Wait until the identity probe settles before deciding the user
+  // has no way in — otherwise a signed-in customer would briefly see
+  // the "Manage link missing" screen during the /api/auth/me round-trip.
+  if (!hasToken && identityLoaded && !isSignedIn) {
     return (
         <main
           id="main-content"
@@ -131,17 +141,24 @@ export function RemindersManage() {
               <div className="mx-auto w-14 h-14 rounded-2xl icon-halo-navy flex items-center justify-center">
                 <ShieldOff className="w-6 h-6" />
               </div>
-              <CardTitle>Manage link missing</CardTitle>
+              <CardTitle>Sign in or use your manage link</CardTitle>
               <CardDescription>
-                This page needs the link from your subscription confirmation
-                email. If you've lost it, just sign up again with the same email
-                — we'll send a fresh manage link.
+                Use the manage link from your subscription confirmation email,
+                or sign in to your PennPaps account and open this page from
+                your account dashboard.
               </CardDescription>
             </CardHeader>
-            <CardContent className="text-center">
+            <CardContent className="text-center space-y-2">
               <Link href="/reminders">
                 <Button>Go to signup</Button>
               </Link>
+              <div>
+                <Link href="/sign-in">
+                  <Button variant="ghost" size="sm">
+                    Sign in
+                  </Button>
+                </Link>
+              </div>
             </CardContent>
           </Card>
         </main>
@@ -267,8 +284,12 @@ export function RemindersManage() {
       return;
     }
     setValidationError(null);
+    // P5 — when there's no token in the URL, omit the query param
+    // entirely and rely on the session cookie. The backend resolves
+    // EITHER token OR session; passing `{ token: "" }` would round-trip
+    // an empty query string that the Zod parser rejects.
     update.mutate(
-      { params: { token }, data: { items: enabled } },
+      { params: hasToken ? { token } : {}, data: { items: enabled } },
       { onSuccess: () => setSavedAt(Date.now()) },
     );
   }
@@ -286,7 +307,7 @@ export function RemindersManage() {
       return;
     }
     unsub.mutate(
-      { params: { token } },
+      { params: hasToken ? { token } : {} },
       { onSuccess: () => setUnsubscribed(true) },
     );
   }
