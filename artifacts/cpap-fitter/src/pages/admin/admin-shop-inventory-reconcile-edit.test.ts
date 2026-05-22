@@ -400,6 +400,8 @@ describe("buildDraftLines — sorting", () => {
     expect(lines).toHaveLength(2);
     expect(lines[0].productName).toBe("Same Name");
     expect(lines[1].productName).toBe("Same Name");
+    expect(lines[0].productId).toBe("prod_1");
+    expect(lines[1].productId).toBe("prod_2");
   });
 
   it("sorts a single product with no-op sort", () => {
