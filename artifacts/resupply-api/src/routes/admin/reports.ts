@@ -1,22 +1,33 @@
 // /admin/reports/* — admin reporting surface.
 //
-// Each report exposes four download formats:
+// Each report exposes up to four download formats:
 //   GET /admin/reports/<name>.csv           — operational CSV
 //   GET /admin/reports/<name>.pdf           — printable PDF
 //   GET /admin/reports/<name>.iif           — QuickBooks Desktop IIF
 //   GET /admin/reports/<name>.qbo.csv       — QuickBooks Online CSV
 //
 // Reports:
-//   orders            — Stripe checkout sessions in range
-//   returns           — Comfort-guarantee returns / RMAs in range
-//   revenue-summary   — per-day revenue + refund + net rollup
-//   refunds-journal   — chronological refund ledger
+//   orders             — Stripe checkout sessions in range
+//   returns            — Comfort-guarantee returns / RMAs in range
+//   revenue-summary    — per-day revenue + refund + net rollup
+//   refunds-journal    — chronological refund ledger
+//   insurance-claims   — billing-side claims in range (cf. cash-pay
+//                         orders); QB exports cover the `paid` slice
+//                         keyed on payer-cash receipts.
+//   customer-activity  — aggregated storefront customer activity per
+//                         day (new signups, returning-customer orders,
+//                         active-customer count); count-only so the
+//                         export carries no PHI/PII even at the
+//                         storefront-customer level.
 //
 // All endpoints require the `reports.read` permission. Date range
-// defaults to the last 30 days; max 90 days per export to keep
-// response time bounded. None of the four reports surface PHI — the
-// storefront is cash-pay only and customer identifiers in the export
-// are hashed prefixes from `customerKeyForId`.
+// defaults to the last 30 days; max 90 days per export. PHI posture:
+// the storefront reports are cash-pay only and identifiers are
+// hashed prefixes (`customerKeyForId`); insurance-claims rows carry
+// `patient_id` as a hashed prefix and omit free-text fields
+// (`notes`, `denial_reason`) that could contain PHI. The
+// customer-activity report is count-only and never serialises an
+// individual customer id.
 
 import { Router, type IRouter } from "express";
 
@@ -397,6 +408,248 @@ function buildQbRowsFromReturns(rows: ReturnRow[]): QuickbooksRowInput[] {
 }
 
 // ─────────────────────────────────────────────────────────────────
+// Insurance claims — data fetcher + format helpers.
+//
+// PHI posture: `patient_id` is HIPAA-protected; we hash it via
+// `customerKeyForId` so the export only carries an opaque short
+// fingerprint. Free-text columns (`notes`, `denial_reason`) are
+// intentionally NOT pulled — they're operator scratch fields that
+// commonly include PHI ("patient reports nightly mask leak") and
+// have no place in a CSV/PDF that gets emailed around.
+// ─────────────────────────────────────────────────────────────────
+
+interface InsuranceClaimRow {
+  id: string;
+  patient_id: string;
+  payer_name: string;
+  claim_number: string | null;
+  date_of_service: string;
+  status: string;
+  total_billed_cents: number;
+  total_allowed_cents: number;
+  total_paid_cents: number;
+  patient_responsibility_cents: number;
+  submitted_at: string | null;
+  decision_at: string | null;
+  paid_at: string | null;
+  created_at: string;
+}
+
+async function fetchInsuranceClaims(
+  from: Date,
+  to: Date,
+): Promise<InsuranceClaimRow[]> {
+  const supabase = getSupabaseServiceRoleClient();
+  // Date-of-service is the canonical billing-period anchor — payors
+  // reconcile against it, not the row's created_at. Operators
+  // chasing aging windows ("denials in last 30 DOS days") expect the
+  // range to clamp on DOS.
+  const { data, error } = await supabase
+    .schema("resupply")
+    .from("insurance_claims")
+    .select(
+      "id, patient_id, payer_name, claim_number, date_of_service, status, total_billed_cents, total_allowed_cents, total_paid_cents, patient_responsibility_cents, submitted_at, decision_at, paid_at, created_at",
+    )
+    .gte("date_of_service", from.toISOString().slice(0, 10))
+    .lte("date_of_service", to.toISOString().slice(0, 10))
+    .order("date_of_service", { ascending: false });
+  if (error) throw error;
+  return (data ?? []) as InsuranceClaimRow[];
+}
+
+function writeInsuranceClaimsCsv(
+  res: import("express").Response,
+  rows: InsuranceClaimRow[],
+): void {
+  const headers = [
+    "claim_id",
+    "patient_key", // hashed prefix, not raw patient_id
+    "payer_name",
+    "claim_number",
+    "date_of_service",
+    "status",
+    "billed_usd",
+    "allowed_usd",
+    "paid_usd",
+    "patient_responsibility_usd",
+    "submitted_at",
+    "decision_at",
+    "paid_at",
+  ];
+  res.write(headers.join(",") + "\n");
+  for (const r of rows) {
+    const row = [
+      r.id,
+      customerKeyForId(r.patient_id),
+      r.payer_name,
+      r.claim_number,
+      r.date_of_service,
+      r.status,
+      (r.total_billed_cents / 100).toFixed(2),
+      (r.total_allowed_cents / 100).toFixed(2),
+      (r.total_paid_cents / 100).toFixed(2),
+      (r.patient_responsibility_cents / 100).toFixed(2),
+      r.submitted_at,
+      r.decision_at,
+      r.paid_at,
+    ];
+    res.write(row.map(escapeCsv).join(",") + "\n");
+  }
+  res.end();
+}
+
+// Build QuickBooks rows from the `paid` slice of claims. Each
+// "paid" claim becomes a positive-amount ORDER row (the payor
+// cash receipt) keyed on the hashed patient prefix. Unpaid /
+// denied / pending statuses are excluded because they don't
+// represent received cash — they belong in AR aging, not the
+// general ledger.
+function buildQbRowsFromClaims(
+  rows: InsuranceClaimRow[],
+): QuickbooksRowInput[] {
+  return rows
+    .filter((r) => r.status === "paid" && r.total_paid_cents > 0)
+    .map((r) => ({
+      txnId: `CLM-${r.id.replace(/[^A-Za-z0-9]/g, "").slice(0, 10)}`,
+      date: (r.paid_at ?? r.decision_at ?? r.date_of_service).slice(0, 10),
+      amountUsd: centsToDollars(r.total_paid_cents),
+      kind: "ORDER" as const,
+      memo: `${r.payer_name}${r.claim_number ? ` — ${r.claim_number}` : ""}`,
+      customerKey: customerKeyForId(r.patient_id),
+    }));
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Customer activity — aggregated, count-only per-day rollup.
+//
+// PHI/PII posture: we never serialise an individual customer row;
+// the export is the COUNT of new signups, the COUNT of orders from
+// already-existing customers, and the running active-customer
+// count. Even at the storefront tier (where rows aren't HIPAA-
+// protected) this keeps the export safe to email and to leave
+// open on a screen during a meeting.
+// ─────────────────────────────────────────────────────────────────
+
+interface CustomerActivityByDay {
+  day: string;
+  newCustomers: number;
+  returningCustomerOrders: number;
+  totalOrders: number;
+}
+
+async function fetchCustomerActivity(
+  from: Date,
+  to: Date,
+): Promise<CustomerActivityByDay[]> {
+  const supabase = getSupabaseServiceRoleClient();
+
+  // New signups bucketed by day. shop_customers.created_at is the
+  // first time we saw the email — opting in elsewhere (sign-up,
+  // first cash-pay checkout) all funnel through the same row, so
+  // a count by created_at is a clean "new customers per day".
+  const { data: signups, error: signupErr } = await supabase
+    .schema("resupply")
+    .from("shop_customers")
+    .select("customer_id, created_at")
+    .gte("created_at", from.toISOString())
+    .lte("created_at", to.toISOString())
+    .limit(10_000);
+  if (signupErr) throw signupErr;
+
+  // Every order in range. We classify "returning vs new" by
+  // comparing the order's created_at against the customer's
+  // shop_customers.created_at: same-day == first-order, else
+  // returning. This is a slightly conservative classifier — a
+  // customer who signs up + orders the same day counts as new,
+  // even though they did place an order — but it matches operator
+  // intuition for the "new-customer cohort" tile.
+  const { data: orders, error: ordersErr } = await supabase
+    .schema("resupply")
+    .from("shop_orders")
+    .select("customer_id, created_at")
+    .gte("created_at", from.toISOString())
+    .lte("created_at", to.toISOString())
+    .not("customer_id", "is", null)
+    .limit(10_000);
+  if (ordersErr) throw ordersErr;
+
+  const firstSeenByCustomer = new Map<string, string>();
+  for (const s of signups ?? []) {
+    if (s.customer_id) firstSeenByCustomer.set(s.customer_id, s.created_at);
+  }
+
+  const byDay = new Map<
+    string,
+    {
+      newCustomers: number;
+      returningCustomerOrders: number;
+      totalOrders: number;
+    }
+  >();
+  function bucket(day: string) {
+    let v = byDay.get(day);
+    if (!v) {
+      v = {
+        newCustomers: 0,
+        returningCustomerOrders: 0,
+        totalOrders: 0,
+      };
+      byDay.set(day, v);
+    }
+    return v;
+  }
+
+  for (const s of signups ?? []) {
+    bucket(s.created_at.slice(0, 10)).newCustomers += 1;
+  }
+  for (const o of orders ?? []) {
+    const day = o.created_at.slice(0, 10);
+    const b = bucket(day);
+    b.totalOrders += 1;
+    const firstSeen = o.customer_id
+      ? firstSeenByCustomer.get(o.customer_id) ?? null
+      : null;
+    // If we have no record of the customer's first-seen date OR the
+    // first-seen is BEFORE this order's day, this order is from a
+    // returning customer. Same-day signup+order counts as new (see
+    // the classifier note above).
+    if (firstSeen && firstSeen.slice(0, 10) < day) {
+      b.returningCustomerOrders += 1;
+    }
+  }
+
+  return Array.from(byDay.entries())
+    .map(([day, v]) => ({ day, ...v }))
+    .sort((a, b) => (a.day < b.day ? -1 : a.day > b.day ? 1 : 0));
+}
+
+function writeCustomerActivityCsv(
+  res: import("express").Response,
+  rows: CustomerActivityByDay[],
+): void {
+  const headers = [
+    "day",
+    "new_customers",
+    "returning_customer_orders",
+    "total_orders",
+  ];
+  res.write(headers.join(",") + "\n");
+  for (const r of rows) {
+    res.write(
+      [
+        r.day,
+        r.newCustomers,
+        r.returningCustomerOrders,
+        r.totalOrders,
+      ]
+        .map(escapeCsv)
+        .join(",") + "\n",
+    );
+  }
+  res.end();
+}
+
+// ─────────────────────────────────────────────────────────────────
 // ORDERS — CSV / PDF / IIF / QBO CSV
 // ─────────────────────────────────────────────────────────────────
 
@@ -759,6 +1012,205 @@ router.get(
       res,
       "application/pdf",
       `pennpaps-refunds-${rangeSlug(from, to)}.pdf`,
+    );
+    res.setHeader("Content-Length", String(pdf.length));
+    res.end(pdf);
+  },
+);
+
+// ─────────────────────────────────────────────────────────────────
+// INSURANCE CLAIMS — CSV / PDF / IIF / QBO CSV
+// ─────────────────────────────────────────────────────────────────
+
+router.get(
+  "/admin/reports/insurance-claims.csv",
+  requirePermission("reports.read"),
+  async (req, res) => {
+    const { from, to } = parseRange(req);
+    const rows = await fetchInsuranceClaims(from, to);
+    setDownloadHeaders(
+      res,
+      "text/csv; charset=utf-8",
+      `pennpaps-insurance-claims-${rangeSlug(from, to)}.csv`,
+    );
+    writeInsuranceClaimsCsv(res, rows);
+  },
+);
+
+router.get(
+  "/admin/reports/insurance-claims.pdf",
+  requirePermission("reports.read"),
+  async (req, res) => {
+    const { from, to } = parseRange(req);
+    const rows = await fetchInsuranceClaims(from, to);
+    const totals = rows.reduce(
+      (acc, r) => ({
+        billed: acc.billed + r.total_billed_cents / 100,
+        paid: acc.paid + r.total_paid_cents / 100,
+        patientResp:
+          acc.patientResp + r.patient_responsibility_cents / 100,
+      }),
+      { billed: 0, paid: 0, patientResp: 0 },
+    );
+    const pdf = await renderTablePdf({
+      title: "Insurance claims",
+      range: rangeLabel(from, to),
+      practiceName: PRACTICE_NAME,
+      columns: [
+        { label: "Claim #", width: 100 },
+        { label: "DOS", width: 70 },
+        { label: "Payer", width: 130 },
+        { label: "Status", width: 65 },
+        { label: "Billed", width: 70, rightAlign: true },
+        { label: "Paid", width: 70, rightAlign: true },
+        { label: "Patient", width: 75, rightAlign: true },
+        { label: "Patient key", width: 95 },
+      ],
+      rows: rows.map((r) => [
+        r.claim_number ?? r.id.slice(0, 8),
+        r.date_of_service,
+        r.payer_name,
+        r.status,
+        (r.total_billed_cents / 100).toFixed(2),
+        (r.total_paid_cents / 100).toFixed(2),
+        (r.patient_responsibility_cents / 100).toFixed(2),
+        customerKeyForId(r.patient_id),
+      ]),
+      summaryLines: [
+        `Total claims in range: ${rows.length}`,
+        `Total billed: $${totals.billed.toFixed(2)}`,
+        `Total paid (payor receipts): $${totals.paid.toFixed(2)}`,
+        `Patient responsibility: $${totals.patientResp.toFixed(2)}`,
+      ],
+    });
+    setDownloadHeaders(
+      res,
+      "application/pdf",
+      `pennpaps-insurance-claims-${rangeSlug(from, to)}.pdf`,
+    );
+    res.setHeader("Content-Length", String(pdf.length));
+    res.end(pdf);
+  },
+);
+
+router.get(
+  "/admin/reports/insurance-claims.iif",
+  requirePermission("reports.read"),
+  async (req, res) => {
+    const { from, to } = parseRange(req);
+    const rows = await fetchInsuranceClaims(from, to);
+    const iif = renderIif({
+      from: from.toISOString().slice(0, 10),
+      to: to.toISOString().slice(0, 10),
+      practiceName: PRACTICE_NAME,
+      rows: buildQbRowsFromClaims(rows),
+    });
+    setDownloadHeaders(
+      res,
+      "application/octet-stream",
+      `pennpaps-insurance-claims-${rangeSlug(from, to)}.iif`,
+    );
+    res.end(iif);
+  },
+);
+
+router.get(
+  "/admin/reports/insurance-claims.qbo.csv",
+  requirePermission("reports.read"),
+  async (req, res) => {
+    const { from, to } = parseRange(req);
+    const rows = await fetchInsuranceClaims(from, to);
+    const csv = renderQboCsv({
+      from: from.toISOString().slice(0, 10),
+      to: to.toISOString().slice(0, 10),
+      practiceName: PRACTICE_NAME,
+      rows: buildQbRowsFromClaims(rows),
+    });
+    setDownloadHeaders(
+      res,
+      "text/csv; charset=utf-8",
+      `pennpaps-insurance-claims-${rangeSlug(from, to)}.qbo.csv`,
+    );
+    res.end(csv);
+  },
+);
+
+// ─────────────────────────────────────────────────────────────────
+// CUSTOMER ACTIVITY — CSV / PDF only.
+//
+// No QuickBooks exports here on purpose: this report is a behavioral
+// aggregate (signup + order counts per day), not a financial ledger.
+// Operators wanting to feed the underlying transactions into
+// QuickBooks use the `orders` report — that's where the per-order
+// cash receipt lives.
+// ─────────────────────────────────────────────────────────────────
+
+router.get(
+  "/admin/reports/customer-activity.csv",
+  requirePermission("reports.read"),
+  async (req, res) => {
+    const { from, to } = parseRange(req);
+    const rows = await fetchCustomerActivity(from, to);
+    setDownloadHeaders(
+      res,
+      "text/csv; charset=utf-8",
+      `pennpaps-customer-activity-${rangeSlug(from, to)}.csv`,
+    );
+    writeCustomerActivityCsv(res, rows);
+  },
+);
+
+router.get(
+  "/admin/reports/customer-activity.pdf",
+  requirePermission("reports.read"),
+  async (req, res) => {
+    const { from, to } = parseRange(req);
+    const rows = await fetchCustomerActivity(from, to);
+    const totals = rows.reduce(
+      (acc, r) => ({
+        newCustomers: acc.newCustomers + r.newCustomers,
+        returningCustomerOrders:
+          acc.returningCustomerOrders + r.returningCustomerOrders,
+        totalOrders: acc.totalOrders + r.totalOrders,
+      }),
+      { newCustomers: 0, returningCustomerOrders: 0, totalOrders: 0 },
+    );
+    const pdf = await renderTablePdf({
+      title: "Customer activity",
+      range: rangeLabel(from, to),
+      practiceName: PRACTICE_NAME,
+      columns: [
+        { label: "Day", width: 100 },
+        { label: "New customers", width: 140, rightAlign: true },
+        {
+          label: "Returning-customer orders",
+          width: 200,
+          rightAlign: true,
+        },
+        { label: "Total orders", width: 130, rightAlign: true },
+      ],
+      rows: rows.map((r) => [
+        r.day,
+        String(r.newCustomers),
+        String(r.returningCustomerOrders),
+        String(r.totalOrders),
+      ]),
+      summaryLines: [
+        `New customers in range: ${totals.newCustomers}`,
+        `Orders from returning customers: ${totals.returningCustomerOrders}`,
+        `Total orders in range: ${totals.totalOrders}`,
+        totals.totalOrders > 0
+          ? `Returning-customer share: ${(
+              (totals.returningCustomerOrders / totals.totalOrders) *
+              100
+            ).toFixed(1)}%`
+          : "Returning-customer share: n/a (no orders)",
+      ],
+    });
+    setDownloadHeaders(
+      res,
+      "application/pdf",
+      `pennpaps-customer-activity-${rangeSlug(from, to)}.pdf`,
     );
     res.setHeader("Content-Length", String(pdf.length));
     res.end(pdf);

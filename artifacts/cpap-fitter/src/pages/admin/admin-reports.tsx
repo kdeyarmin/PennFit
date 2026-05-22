@@ -57,6 +57,20 @@ const REPORTS: ReadonlyArray<ReportDefinition> = [
       "Chronological refund ledger — useful for AR reconciliation against Stripe payouts.",
     formats: ["csv", "pdf"],
   },
+  {
+    slug: "insurance-claims",
+    title: "Insurance claims",
+    subtitle:
+      "Billed / allowed / paid / patient-responsibility across every claim in the date range. Patient IDs are hashed; free-text notes are excluded. QuickBooks exports cover the paid slice (payor cash receipts).",
+    formats: ["csv", "pdf", "iif", "qbo"],
+  },
+  {
+    slug: "customer-activity",
+    title: "Customer activity",
+    subtitle:
+      "Per-day rollup of new signups, returning-customer orders, and total orders. Counts only — never serialises an individual customer.",
+    formats: ["csv", "pdf"],
+  },
 ];
 
 const FORMAT_LABELS: Record<"csv" | "pdf" | "iif" | "qbo", string> = {

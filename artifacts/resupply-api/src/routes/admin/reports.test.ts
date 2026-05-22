@@ -613,3 +613,250 @@ describe("GET /admin/reports/returns.csv (regression)", () => {
     expect(res.headers["content-type"]).toContain("text/csv");
   });
 });
+
+// ─── insurance-claims ───────────────────────────────────────────────────
+
+function makeClaimRow(
+  over: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    id: "claim-abc123",
+    patient_id: "patient-xyz789",
+    payer_name: "Aetna",
+    claim_number: "CLM-001",
+    date_of_service: "2026-04-10",
+    status: "paid",
+    total_billed_cents: 50000,
+    total_allowed_cents: 35000,
+    total_paid_cents: 28000,
+    patient_responsibility_cents: 7000,
+    submitted_at: "2026-04-12T10:00:00.000Z",
+    decision_at: "2026-04-15T10:00:00.000Z",
+    paid_at: "2026-04-16T10:00:00.000Z",
+    created_at: "2026-04-11T10:00:00.000Z",
+    ...over,
+  };
+}
+
+describe("GET /admin/reports/insurance-claims.csv", () => {
+  it("returns 200 with Content-Type: text/csv", async () => {
+    stubAdmin();
+    stageSupabaseResponse("insurance_claims", "select", { data: [] });
+
+    const res = await request(makeApp())
+      .get(`/admin/reports/insurance-claims.csv?from=${FROM}&to=${TO}`);
+
+    expect(res.status).toBe(200);
+    expect(res.headers["content-type"]).toContain("text/csv");
+  });
+
+  it("uses patient_key (hashed) column, never raw patient_id", async () => {
+    stubAdmin();
+    stageSupabaseResponse("insurance_claims", "select", {
+      data: [makeClaimRow()],
+    });
+
+    const res = await request(makeApp())
+      .get(`/admin/reports/insurance-claims.csv?from=${FROM}&to=${TO}`);
+
+    const header = res.text.split("\n")[0]!;
+    expect(header).toContain("patient_key");
+    expect(header).not.toContain("patient_id");
+    // The raw patient id is not in the body either.
+    expect(res.text).not.toContain("patient-xyz789");
+  });
+
+  it("never serialises free-text PHI fields", async () => {
+    stubAdmin();
+    stageSupabaseResponse("insurance_claims", "select", {
+      data: [makeClaimRow()],
+    });
+
+    const res = await request(makeApp())
+      .get(`/admin/reports/insurance-claims.csv?from=${FROM}&to=${TO}`);
+
+    const header = res.text.split("\n")[0]!;
+    expect(header).not.toContain("notes");
+    expect(header).not.toContain("denial_reason");
+  });
+});
+
+describe("GET /admin/reports/insurance-claims.pdf", () => {
+  it("returns 200 with Content-Type: application/pdf", async () => {
+    stubAdmin();
+    stageSupabaseResponse("insurance_claims", "select", { data: [] });
+
+    const res = await request(makeApp())
+      .get(`/admin/reports/insurance-claims.pdf?from=${FROM}&to=${TO}`);
+
+    expect(res.status).toBe(200);
+    expect(res.headers["content-type"]).toContain("application/pdf");
+  });
+
+  it("passes Insurance claims as the title", async () => {
+    stubAdmin();
+    stageSupabaseResponse("insurance_claims", "select", { data: [] });
+
+    await request(makeApp())
+      .get(`/admin/reports/insurance-claims.pdf?from=${FROM}&to=${TO}`);
+
+    expect(renderTablePdfMock).toHaveBeenCalledOnce();
+    const call = renderTablePdfMock.mock.calls[0]![0] as { title: string };
+    expect(call.title).toBe("Insurance claims");
+  });
+});
+
+describe("GET /admin/reports/insurance-claims.iif", () => {
+  it("returns 200 with Content-Type: application/octet-stream", async () => {
+    stubAdmin();
+    stageSupabaseResponse("insurance_claims", "select", { data: [] });
+
+    const res = await request(makeApp())
+      .get(`/admin/reports/insurance-claims.iif?from=${FROM}&to=${TO}`);
+
+    expect(res.status).toBe(200);
+    expect(res.headers["content-type"]).toContain(
+      "application/octet-stream",
+    );
+  });
+
+  it("includes only paid-status claims in the QB row stream", async () => {
+    stubAdmin();
+    stageSupabaseResponse("insurance_claims", "select", {
+      data: [
+        makeClaimRow({ id: "c1", status: "paid", total_paid_cents: 10000 }),
+        makeClaimRow({
+          id: "c2",
+          status: "denied",
+          total_paid_cents: 0,
+        }),
+        makeClaimRow({
+          id: "c3",
+          status: "submitted",
+          total_paid_cents: 0,
+        }),
+      ],
+    });
+
+    await request(makeApp())
+      .get(`/admin/reports/insurance-claims.iif?from=${FROM}&to=${TO}`);
+
+    expect(renderIifMock).toHaveBeenCalledOnce();
+    const call = renderIifMock.mock.calls[0]![0] as {
+      rows: { kind: string }[];
+    };
+    expect(call.rows).toHaveLength(1);
+    expect(call.rows[0]!.kind).toBe("ORDER");
+  });
+});
+
+describe("GET /admin/reports/insurance-claims.qbo.csv", () => {
+  it("returns 200 with Content-Type: text/csv", async () => {
+    stubAdmin();
+    stageSupabaseResponse("insurance_claims", "select", { data: [] });
+
+    const res = await request(makeApp())
+      .get(`/admin/reports/insurance-claims.qbo.csv?from=${FROM}&to=${TO}`);
+
+    expect(res.status).toBe(200);
+    expect(res.headers["content-type"]).toContain("text/csv");
+  });
+});
+
+// ─── customer-activity ──────────────────────────────────────────────────
+
+describe("GET /admin/reports/customer-activity.csv", () => {
+  it("returns 200 with Content-Type: text/csv", async () => {
+    stubAdmin();
+    stageSupabaseResponse("shop_customers", "select", { data: [] });
+    stageSupabaseResponse("shop_orders", "select", { data: [] });
+
+    const res = await request(makeApp())
+      .get(`/admin/reports/customer-activity.csv?from=${FROM}&to=${TO}`);
+
+    expect(res.status).toBe(200);
+    expect(res.headers["content-type"]).toContain("text/csv");
+  });
+
+  it("uses count-only column headers (never individual customer ids)", async () => {
+    stubAdmin();
+    stageSupabaseResponse("shop_customers", "select", { data: [] });
+    stageSupabaseResponse("shop_orders", "select", { data: [] });
+
+    const res = await request(makeApp())
+      .get(`/admin/reports/customer-activity.csv?from=${FROM}&to=${TO}`);
+
+    const header = res.text.split("\n")[0]!;
+    expect(header).toContain("new_customers");
+    expect(header).toContain("returning_customer_orders");
+    expect(header).toContain("total_orders");
+    expect(header).not.toContain("customer_id");
+    expect(header).not.toContain("email");
+  });
+
+  it("classifies an order from a prior-day signup as returning", async () => {
+    stubAdmin();
+    stageSupabaseResponse("shop_customers", "select", {
+      data: [
+        {
+          customer_id: "cust-1",
+          // Signed up the previous month — outside the report range.
+          created_at: "2026-03-15T10:00:00Z",
+        },
+      ],
+    });
+    stageSupabaseResponse("shop_orders", "select", {
+      data: [
+        {
+          customer_id: "cust-1",
+          created_at: "2026-04-10T12:00:00Z",
+        },
+      ],
+    });
+
+    const res = await request(makeApp())
+      .get(`/admin/reports/customer-activity.csv?from=${FROM}&to=${TO}`);
+
+    // header + one data row for the 2026-04-10 bucket
+    const lines = res.text.split("\n").filter((l) => l.trim().length > 0);
+    expect(lines.length).toBeGreaterThanOrEqual(2);
+    const dataRow = lines.find((l) => l.startsWith("2026-04-10"));
+    expect(dataRow).toBeDefined();
+    // Columns: day, new_customers, returning_customer_orders, total_orders
+    const cells = dataRow!.split(",");
+    expect(cells[2]).toBe("1"); // returning_customer_orders
+    expect(cells[3]).toBe("1"); // total_orders
+  });
+});
+
+describe("GET /admin/reports/customer-activity.pdf", () => {
+  it("returns 200 with Content-Type: application/pdf", async () => {
+    stubAdmin();
+    stageSupabaseResponse("shop_customers", "select", { data: [] });
+    stageSupabaseResponse("shop_orders", "select", { data: [] });
+
+    const res = await request(makeApp())
+      .get(`/admin/reports/customer-activity.pdf?from=${FROM}&to=${TO}`);
+
+    expect(res.status).toBe(200);
+    expect(res.headers["content-type"]).toContain("application/pdf");
+  });
+});
+
+describe("permission gate — new reports", () => {
+  it("rejects insurance-claims.csv without reports.read with 403", async () => {
+    // No stubAdmin call → mockAdmin.current stays null, requireAdmin
+    // returns 401. We deliberately don't stage supabase here.
+    const res = await request(makeApp()).get(
+      `/admin/reports/insurance-claims.csv?from=${FROM}&to=${TO}`,
+    );
+    expect(res.status).toBe(401);
+  });
+
+  it("rejects customer-activity.csv without reports.read with 401", async () => {
+    const res = await request(makeApp()).get(
+      `/admin/reports/customer-activity.csv?from=${FROM}&to=${TO}`,
+    );
+    expect(res.status).toBe(401);
+  });
+});
