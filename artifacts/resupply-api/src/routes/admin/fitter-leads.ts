@@ -93,7 +93,7 @@ router.get(
       .schema("resupply")
       .from("fitter_leads")
       .select(
-        "id, email, phone_e164, sms_opt_in, marketing_opt_in, source, journey_stage, recommended_mask_id, recommended_mask_name, recommended_mask_type, first_name, campaign_touch_count, last_campaign_touch_at, next_campaign_touch_at, first_order_id, first_order_placed_at, unsubscribed_at, completed_at, created_at, engagement_score, hot_lead_at, click_count, csr_contacted_at, csr_contacted_by",
+        "id, email, phone_e164, sms_opt_in, marketing_opt_in, source, journey_stage, recommended_mask_id, recommended_mask_name, recommended_mask_type, first_name, campaign_touch_count, last_campaign_touch_at, next_campaign_touch_at, first_order_id, first_order_placed_at, unsubscribed_at, completed_at, created_at, engagement_score, hot_lead_at, click_count, csr_contacted_at, csr_contacted_by, last_open_at, last_click_at",
       )
       // Hot leads sort to the top when present (CSR outreach queue);
       // otherwise most-recently-completed first; falls back to
@@ -274,6 +274,8 @@ router.get(
         clickCount: r.click_count ?? 0,
         csrContactedAt: r.csr_contacted_at,
         csrContactedBy: r.csr_contacted_by,
+        lastOpenAt: r.last_open_at,
+        lastClickAt: r.last_click_at,
       })),
       counts,
       conversionRate,
@@ -379,6 +381,214 @@ router.post(
       id: row.id,
       csrContactedAt: row.csr_contacted_at,
       csrContactedBy: row.csr_contacted_by,
+    });
+  },
+);
+
+// GET /admin/fitter-leads/metrics — per-touch send/open/click
+// aggregates pulled from the fitter_campaign_touch_metrics view
+// (mig 0155). One row per touch_index 1..11 even when the touch
+// hasn't shipped yet (the view's generate_series outer join
+// fills zero rows).
+router.get(
+  "/admin/fitter-leads/metrics",
+  requirePermission("conversations.manage"),
+  async (req, res) => {
+    const supabase = getSupabaseServiceRoleClient();
+    const { data: rows, error } = await supabase
+      .schema("resupply")
+      .from("fitter_campaign_touch_metrics")
+      .select(
+        "touch_index, email_sends, email_failures, opens, sms_sends, sms_failures, clicks",
+      )
+      .order("touch_index", { ascending: true });
+    if (error) throw error;
+
+    req.log?.info?.(
+      { rowCount: rows?.length ?? 0 },
+      "admin/fitter-leads/metrics: list",
+    );
+
+    // Compute open + click rates on the API side so the UI never
+    // has to do the arithmetic + divide-by-zero guarding. Rate
+    // = signal / email_sends because opens + clicks both ride
+    // the email channel.
+    res.json({
+      touches: (rows ?? []).map((r) => {
+        const sends = r.email_sends ?? 0;
+        const opens = r.opens ?? 0;
+        const clicks = r.clicks ?? 0;
+        return {
+          touchIndex: r.touch_index,
+          emailSends: sends,
+          emailFailures: r.email_failures ?? 0,
+          smsSends: r.sms_sends ?? 0,
+          smsFailures: r.sms_failures ?? 0,
+          opens,
+          clicks,
+          openRate: sends > 0 ? opens / sends : 0,
+          clickRate: sends > 0 ? clicks / sends : 0,
+        };
+      }),
+    });
+  },
+);
+
+// GET /admin/fitter-leads/:id/timeline — chronological event log
+// for CSR call-prep. Pulls from fitter_campaign_touches +
+// fitter_campaign_clicks + the lead row's lifecycle columns, then
+// sorts by timestamp and returns a flat array.
+//
+// Each event has { ts, kind, label, detail? }. The UI renders this
+// directly as a vertical timeline; clients can also filter on the
+// kind enum.
+router.get(
+  "/admin/fitter-leads/:id/timeline",
+  requirePermission("conversations.manage"),
+  async (req, res) => {
+    const idParam = req.params.id;
+    if (typeof idParam !== "string" || !ID_RE.test(idParam)) {
+      res.status(400).json({ error: "invalid_id" });
+      return;
+    }
+
+    const supabase = getSupabaseServiceRoleClient();
+
+    // Fetch the lead row + its full audit history in parallel.
+    const [leadResult, touchesResult, clicksResult] = await Promise.all([
+      supabase
+        .schema("resupply")
+        .from("fitter_leads")
+        .select(
+          "id, email, first_name, journey_stage, created_at, completed_at, unsubscribed_at, csr_contacted_at, csr_contacted_by, hot_lead_at, first_order_placed_at, last_open_at, last_click_at, recommended_mask_name",
+        )
+        .eq("id", idParam)
+        .maybeSingle(),
+      supabase
+        .schema("resupply")
+        .from("fitter_campaign_touches")
+        .select(
+          "touch_index, channel, status, sent_at, first_opened_at, last_opened_at, open_count, error_message",
+        )
+        .eq("lead_id", idParam)
+        .order("sent_at", { ascending: true }),
+      supabase
+        .schema("resupply")
+        .from("fitter_campaign_clicks")
+        .select("touch_index, link_key, clicked_at")
+        .eq("lead_id", idParam)
+        .order("clicked_at", { ascending: true }),
+    ]);
+
+    if (leadResult.error) throw leadResult.error;
+    if (touchesResult.error) throw touchesResult.error;
+    if (clicksResult.error) throw clicksResult.error;
+
+    const lead = leadResult.data;
+    if (!lead) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+
+    type TimelineEvent = {
+      ts: string;
+      kind: string;
+      label: string;
+      detail?: string | null;
+    };
+    const events: TimelineEvent[] = [];
+
+    if (lead.created_at) {
+      events.push({
+        ts: lead.created_at,
+        kind: "lead_created",
+        label: "Lead created at /consent",
+      });
+    }
+    if (lead.completed_at) {
+      events.push({
+        ts: lead.completed_at,
+        kind: "fitter_completed",
+        label: "Fitter completed — saw the recommendation",
+        detail: lead.recommended_mask_name,
+      });
+    }
+    for (const t of touchesResult.data ?? []) {
+      if (t.status === "sent") {
+        events.push({
+          ts: t.sent_at as string,
+          kind: `touch_sent_${t.channel}`,
+          label: `T${t.touch_index} ${t.channel} sent`,
+        });
+        if (t.first_opened_at) {
+          events.push({
+            ts: t.first_opened_at as string,
+            kind: "touch_opened",
+            label: `Opened T${t.touch_index}`,
+            detail:
+              (t.open_count ?? 0) > 1
+                ? `${t.open_count} opens through ${t.last_opened_at ?? t.first_opened_at}`
+                : null,
+          });
+        }
+      } else if (t.status === "failed") {
+        events.push({
+          ts: t.sent_at as string,
+          kind: `touch_failed_${t.channel}`,
+          label: `T${t.touch_index} ${t.channel} send failed`,
+          detail: t.error_message,
+        });
+      }
+    }
+    for (const c of clicksResult.data ?? []) {
+      events.push({
+        ts: c.clicked_at as string,
+        kind: "click",
+        label: `Clicked "${c.link_key}" from T${c.touch_index}`,
+      });
+    }
+    if (lead.hot_lead_at) {
+      events.push({
+        ts: lead.hot_lead_at,
+        kind: "hot_flipped",
+        label: "Flipped to hot lead",
+      });
+    }
+    if (lead.csr_contacted_at) {
+      events.push({
+        ts: lead.csr_contacted_at,
+        kind: "csr_contacted",
+        label: "CSR contacted",
+        detail: lead.csr_contacted_by,
+      });
+    }
+    if (lead.first_order_placed_at) {
+      events.push({
+        ts: lead.first_order_placed_at,
+        kind: "order_placed",
+        label: "First order placed",
+      });
+    }
+    if (lead.unsubscribed_at) {
+      events.push({
+        ts: lead.unsubscribed_at,
+        kind: "unsubscribed",
+        label: "Unsubscribed",
+      });
+    }
+
+    events.sort((a, b) => a.ts.localeCompare(b.ts));
+
+    req.log?.info?.(
+      { leadId: lead.id, eventCount: events.length },
+      "admin/fitter-leads/:id/timeline: list",
+    );
+
+    res.json({
+      leadId: lead.id,
+      // Counts-only log — never per-event detail to the
+      // browser console (events carry no PHI, but discipline).
+      events,
     });
   },
 );

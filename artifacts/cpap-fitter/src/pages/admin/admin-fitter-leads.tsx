@@ -21,6 +21,7 @@ import {
   type FitterLeadJourneyStage,
   type FitterLeadSource,
   listFitterLeads,
+  listFitterTouchMetrics,
   unsubscribeFitterLead,
   markContactedFitterLead,
 } from "@/lib/admin/fitter-leads-api";
@@ -132,6 +133,16 @@ export function AdminFitterLeadsPage() {
   const { data, isPending, isError, error, refetch } = useQuery({
     queryKey,
     queryFn: () => listFitterLeads(stage, source, hotOnly),
+  });
+  // Per-touch metrics are an independent query — they don't change
+  // with stage/source filters and update on a slower clock than
+  // the row list.
+  const metricsQuery = useQuery({
+    queryKey: ["admin", "fitter-leads", "metrics"] as const,
+    queryFn: listFitterTouchMetrics,
+    // Per-touch numbers shift more slowly than the row list — a
+    // fresh refetch on every interaction would be wasted bandwidth.
+    staleTime: 60_000,
   });
 
   const [pendingId, setPendingId] = useState<string | null>(null);
@@ -282,6 +293,102 @@ export function AdminFitterLeadsPage() {
         </button>
       </div>
 
+      {/* Per-touch send / open / click metrics. Single horizontal
+          table so ops can scan across the 11 touchpoints and see
+          which ones earn engagement. */}
+      <div
+        className="border rounded-lg bg-white overflow-x-auto"
+        style={{ borderColor: "hsl(var(--line-1))" }}
+        data-testid="leads-touch-metrics"
+      >
+        <div className="px-4 py-3 border-b" style={{ borderColor: "hsl(var(--line-1))" }}>
+          <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+            Per-touch metrics
+          </div>
+          <div className="text-xs text-slate-500 mt-0.5">
+            T1–T6 pre-purchase · T7–T10 re-order · T11 final-call. Open + click rates are against email_sends.
+          </div>
+        </div>
+        <table className="w-full text-xs min-w-[720px]">
+          <thead style={{ backgroundColor: "#f8fafc", color: "#475569" }}>
+            <tr>
+              <th className="text-left px-3 py-2 font-semibold">Touch</th>
+              <th className="text-right px-3 py-2 font-semibold">Email sends</th>
+              <th className="text-right px-3 py-2 font-semibold">Opens</th>
+              <th className="text-right px-3 py-2 font-semibold">Open %</th>
+              <th className="text-right px-3 py-2 font-semibold">Clicks</th>
+              <th className="text-right px-3 py-2 font-semibold">Click %</th>
+              <th className="text-right px-3 py-2 font-semibold">SMS sends</th>
+              <th className="text-right px-3 py-2 font-semibold">Failures</th>
+            </tr>
+          </thead>
+          <tbody>
+            {metricsQuery.isPending && (
+              <tr>
+                <td colSpan={8} className="px-3 py-4 text-center text-slate-500">
+                  Loading metrics…
+                </td>
+              </tr>
+            )}
+            {!metricsQuery.isPending && (metricsQuery.data?.touches ?? []).map((m) => (
+              <tr
+                key={m.touchIndex}
+                style={{ borderTop: "1px solid hsl(var(--line-1))" }}
+                data-testid={`touch-metric-T${m.touchIndex}`}
+              >
+                <td className="px-3 py-1.5 font-medium">T{m.touchIndex}</td>
+                <td className="px-3 py-1.5 text-right tabular-nums">
+                  {m.emailSends}
+                </td>
+                <td className="px-3 py-1.5 text-right tabular-nums">
+                  {m.opens}
+                </td>
+                <td
+                  className="px-3 py-1.5 text-right tabular-nums"
+                  style={{
+                    color:
+                      m.openRate >= 0.5
+                        ? "#14532d"
+                        : m.openRate >= 0.25
+                          ? "#854d0e"
+                          : "#475569",
+                  }}
+                >
+                  {m.emailSends > 0 ? `${(m.openRate * 100).toFixed(0)}%` : "—"}
+                </td>
+                <td className="px-3 py-1.5 text-right tabular-nums">
+                  {m.clicks}
+                </td>
+                <td
+                  className="px-3 py-1.5 text-right tabular-nums"
+                  style={{
+                    color:
+                      m.clickRate >= 0.1
+                        ? "#14532d"
+                        : m.clickRate >= 0.05
+                          ? "#854d0e"
+                          : "#475569",
+                  }}
+                >
+                  {m.emailSends > 0 ? `${(m.clickRate * 100).toFixed(1)}%` : "—"}
+                </td>
+                <td className="px-3 py-1.5 text-right tabular-nums text-slate-500">
+                  {m.smsSends}
+                </td>
+                <td
+                  className="px-3 py-1.5 text-right tabular-nums"
+                  style={{
+                    color: m.emailFailures + m.smsFailures > 0 ? "#9f1239" : "#9ca3af",
+                  }}
+                >
+                  {m.emailFailures + m.smsFailures}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
       <div
         className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3"
         data-testid="leads-counts"
@@ -385,6 +492,7 @@ export function AdminFitterLeadsPage() {
               <th className="text-left px-3 py-2 font-semibold">Stage</th>
               <th className="text-left px-3 py-2 font-semibold">Touches</th>
               <th className="text-left px-3 py-2 font-semibold">Engaged</th>
+              <th className="text-left px-3 py-2 font-semibold">Last engaged</th>
               <th className="text-left px-3 py-2 font-semibold">Next touch</th>
               <th className="text-left px-3 py-2 font-semibold">Started</th>
               <th className="text-right px-3 py-2 font-semibold">Actions</th>
@@ -394,7 +502,7 @@ export function AdminFitterLeadsPage() {
             {isPending && (
               <tr>
                 <td
-                  colSpan={9}
+                  colSpan={10}
                   className="px-3 py-6 text-center text-slate-500"
                 >
                   Loading…
@@ -404,7 +512,7 @@ export function AdminFitterLeadsPage() {
             {!isPending && rows.length === 0 && (
               <tr>
                 <td
-                  colSpan={9}
+                  colSpan={10}
                   className="px-3 py-6 text-center text-slate-500"
                 >
                   No fitter leads match the current filter.
@@ -515,6 +623,34 @@ export function AdminFitterLeadsPage() {
                         </span>
                       )}
                     </div>
+                  </td>
+                  <td className="px-3 py-2 align-top text-xs text-slate-600">
+                    {(() => {
+                      // Show the most recent of opens / clicks /
+                      // CSR-contact, with a label so a CSR
+                      // scanning the queue can triage at a glance.
+                      const opens = r.lastOpenAt
+                        ? new Date(r.lastOpenAt).getTime()
+                        : 0;
+                      const clicks = r.lastClickAt
+                        ? new Date(r.lastClickAt).getTime()
+                        : 0;
+                      if (clicks > 0 && clicks >= opens) {
+                        return (
+                          <span style={{ color: "#075985" }}>
+                            clicked {formatRelative(r.lastClickAt as string, nowMs)}
+                          </span>
+                        );
+                      }
+                      if (opens > 0) {
+                        return (
+                          <span style={{ color: "#155e75" }}>
+                            opened {formatRelative(r.lastOpenAt as string, nowMs)}
+                          </span>
+                        );
+                      }
+                      return <span className="text-slate-400">—</span>;
+                    })()}
                   </td>
                   <td className="px-3 py-2 align-top text-xs text-slate-600">
                     {r.nextCampaignTouchAt

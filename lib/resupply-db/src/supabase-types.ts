@@ -557,6 +557,9 @@ export interface Database {
           click_count: number;
           csr_contacted_at: string | null;
           csr_contacted_by: string | null;
+          // Mig 0155 — per-lead engagement recency.
+          last_open_at: string | null;
+          last_click_at: string | null;
         };
         Insert: Partial<Database["resupply"]["Tables"]["fitter_leads"]["Row"]>;
         Update: Partial<Database["resupply"]["Tables"]["fitter_leads"]["Row"]>;
@@ -574,6 +577,10 @@ export interface Database {
           status: "sent" | "failed" | "skipped";
           error_message: string | null;
           sent_at: string;
+          // Mig 0155 — per-touch open tracking.
+          open_count: number;
+          first_opened_at: string | null;
+          last_opened_at: string | null;
         };
         Insert: Partial<
           Database["resupply"]["Tables"]["fitter_campaign_touches"]["Row"]
@@ -3729,8 +3736,31 @@ export interface Database {
         Relationships: [];
       };
     };
-    Views: { [_ in never]: never };
+    Views: {
+      // Mig 0155 — per-touch aggregate metrics for the admin
+      // reporting surface.
+      fitter_campaign_touch_metrics: {
+        Row: {
+          touch_index: number;
+          email_sends: number;
+          email_failures: number;
+          opens: number;
+          sms_sends: number;
+          sms_failures: number;
+          clicks: number;
+        };
+      };
+    };
     Functions: {
+      // Mig 0155 — atomic per-touch open-count bump, called by
+      // the open-tracking pixel endpoint on every pixel load.
+      record_fitter_touch_open: {
+        Args: {
+          p_lead_id: string;
+          p_touch_index: number;
+        };
+        Returns: void;
+      };
       validate_payment_allocations: {
         Args: {
           p_patient_id: string;

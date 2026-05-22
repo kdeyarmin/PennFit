@@ -551,11 +551,15 @@ async function recordOpenEvent(
     !lead.hot_lead_at &&
     !lead.first_order_id &&
     nextScore >= HOT_LEAD_THRESHOLD;
+  const nowIso = new Date().toISOString();
   const update: FitterLeadsUpdate = {
     engagement_score: nextScore,
+    // Mig 0155 — recency stamp for the admin "last engagement"
+    // column + CSR triage. Always bumped on a successful open.
+    last_open_at: nowIso,
   };
   if (shouldFlipHot) {
-    update.hot_lead_at = new Date().toISOString();
+    update.hot_lead_at = nowIso;
   }
   const { error: writeErr } = await supabase
     .schema("resupply")
@@ -567,6 +571,30 @@ async function recordOpenEvent(
     logger.info(
       { event: "fitter_lead.hot_lead_flipped", leadId, score: nextScore, touchIndex },
       "shop/track/o: lead crossed hot-lead threshold",
+    );
+  }
+
+  // Mig 0155 — atomically bump the touch row's open_count +
+  // stamp first/last_opened_at. Best-effort: a failure here just
+  // means per-touch reporting under-counts, not that the open
+  // signal is lost (engagement_score is already bumped above).
+  try {
+    const { error: rpcErr } = await supabase
+      .schema("resupply")
+      .rpc("record_fitter_touch_open", {
+        p_lead_id: leadId,
+        p_touch_index: touchIndex,
+      });
+    if (rpcErr) {
+      logger.warn(
+        { err: rpcErr.message, leadId, touchIndex },
+        "shop/track/o: touch open-count bump failed",
+      );
+    }
+  } catch (err) {
+    logger.warn(
+      { err, leadId, touchIndex },
+      "shop/track/o: touch open-count bump threw",
     );
   }
 }
@@ -814,12 +842,16 @@ async function recordClickEvent(
   const nextScore = (lead.engagement_score ?? 0) + CLICK_SCORE_WEIGHT;
   const nextClickCount = (lead.click_count ?? 0) + 1;
   const shouldFlipHot = !lead.hot_lead_at && !lead.first_order_id;
+  const nowIso = new Date().toISOString();
   const update: FitterLeadsUpdate = {
     engagement_score: nextScore,
     click_count: nextClickCount,
+    // Mig 0155 — recency stamp for the admin "last engagement"
+    // column.
+    last_click_at: nowIso,
   };
   if (shouldFlipHot) {
-    update.hot_lead_at = new Date().toISOString();
+    update.hot_lead_at = nowIso;
   }
   const { error: writeErr } = await supabase
     .schema("resupply")

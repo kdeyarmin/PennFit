@@ -48,6 +48,9 @@ export interface FitterLeadRow {
   clickCount: number;
   csrContactedAt: string | null;
   csrContactedBy: string | null;
+  /** Mig 0155 — per-lead engagement recency. */
+  lastOpenAt: string | null;
+  lastClickAt: string | null;
 }
 
 export interface ListFitterLeadsResponse {
@@ -126,4 +129,55 @@ export async function markContactedFitterLead(
     throw new Error(`Failed to mark lead contacted (${res.status})`);
   }
   return (await res.json()) as MarkContactedFitterLeadResponse;
+}
+
+export interface FitterTouchMetric {
+  touchIndex: number;
+  emailSends: number;
+  emailFailures: number;
+  smsSends: number;
+  smsFailures: number;
+  opens: number;
+  clicks: number;
+  openRate: number;
+  clickRate: number;
+}
+
+export interface ListFitterTouchMetricsResponse {
+  touches: FitterTouchMetric[];
+}
+
+export async function listFitterTouchMetrics(): Promise<ListFitterTouchMetricsResponse> {
+  const res = await fetch("/resupply-api/admin/fitter-leads/metrics", {
+    headers: { Accept: "application/json" },
+  });
+  if (!res.ok) {
+    throw new Error(`Failed to load fitter metrics (${res.status})`);
+  }
+  return (await res.json()) as ListFitterTouchMetricsResponse;
+}
+
+export interface FitterTimelineEvent {
+  ts: string;
+  kind: string;
+  label: string;
+  detail?: string | null;
+}
+
+export interface FitterLeadTimelineResponse {
+  leadId: string;
+  events: FitterTimelineEvent[];
+}
+
+export async function getFitterLeadTimeline(
+  id: string,
+): Promise<FitterLeadTimelineResponse> {
+  const res = await fetch(
+    `/resupply-api/admin/fitter-leads/${encodeURIComponent(id)}/timeline`,
+    { headers: { Accept: "application/json" } },
+  );
+  if (!res.ok) {
+    throw new Error(`Failed to load timeline (${res.status})`);
+  }
+  return (await res.json()) as FitterLeadTimelineResponse;
 }
