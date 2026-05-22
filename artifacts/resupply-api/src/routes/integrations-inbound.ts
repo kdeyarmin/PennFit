@@ -107,7 +107,7 @@ router.post("/integrations/inbound/:source", rawJson, async (req, res) => {
     });
     return;
   }
-  const payload = payloadResult.data;
+  const payload: Record<string, unknown> = payloadResult.data;
   // Build a dedupe key — prefer the source's delivery-id header,
   // fall back to a sha256 of the body.
   const headerKeys = [
