@@ -138,17 +138,22 @@ describe("reminders-manage — buildState helper structure", () => {
 // Regression: core page behaviour still present
 // ---------------------------------------------------------------------------
 describe("reminders-manage — regression: core manage behaviour intact", () => {
+  it("shows a 'Manage link missing' card when no token is present", () => {
+    expect(SRC).toContain("Manage link missing");
+  });
+
   it("surfaces a validation error when the user tries to save with no items selected", () => {
     expect(SRC).toContain("Pick at least one supply");
   });
 
-  it("calls update.mutate with the items payload on Save", () => {
+  it("calls update.mutate with the token and enabled items on Save", () => {
     expect(SRC).toContain("update.mutate(");
-    expect(SRC).toContain("data: { items: enabled }");
+    expect(SRC).toContain("{ params: { token }");
   });
 
-  it("calls unsub.mutate on Unsubscribe", () => {
+  it("calls unsub.mutate with the token on Unsubscribe", () => {
     expect(SRC).toContain("unsub.mutate(");
+    expect(SRC).toContain("{ params: { token } }");
   });
 
   it("renders the unsubscribed confirmation card after successful unsubscribe", () => {
@@ -157,56 +162,60 @@ describe("reminders-manage — regression: core manage behaviour intact", () => 
 });
 
 // ---------------------------------------------------------------------------
-// P5 — session-auth fallback for signed-in customers
+// PR change: P5 session-auth fallback removed — token-only approach restored
 // ---------------------------------------------------------------------------
-// The manage page previously gated on `?token=…` being present; signed-in
-// customers had to round-trip through a confirmation email to reach this
-// page even though they were already authenticated in the SPA. The backend
-// route now accepts a session cookie as a fallback to the token, and this
-// page passes empty params (no token) when there's a session.
+// The manage page previously had a session-auth fallback that allowed signed-in
+// customers to skip the magic-link token. This PR reverts that: the page now
+// requires a token in the URL and shows "Manage link missing" without one.
 
-describe("reminders-manage — session-auth fallback (P5)", () => {
-  it("imports useShopIdentity to detect the signed-in branch", () => {
-    expect(SRC).toContain('from "@/lib/identity"');
-    expect(SRC).toMatch(/useShopIdentity/);
+describe("reminders-manage — session-auth fallback removed (P5 reversion)", () => {
+  it("does not import useShopIdentity", () => {
+    expect(SRC).not.toContain("useShopIdentity");
   });
 
-  it("derives hasToken from the URL token capture", () => {
-    expect(SRC).toContain("const hasToken = token.length > 0;");
+  it("does not import from @/lib/identity at all", () => {
+    expect(SRC).not.toContain('from "@/lib/identity"');
   });
 
-  it("enables the GET only when there is a token OR a confirmed session", () => {
-    // The query must NOT fire for an anonymous visitor with no token —
-    // that would be a guaranteed 401. We wait for the identity probe
-    // to settle (identityLoaded) before enabling the session branch.
-    expect(SRC).toMatch(/enabled:\s*queryEnabled/);
-    expect(SRC).toContain("hasToken || (identityLoaded && isSignedIn)");
+  it("does not define a hasToken variable", () => {
+    expect(SRC).not.toContain("hasToken");
   });
 
-  it("passes empty params to useGetReminderSubscription when no token", () => {
-    // The generated URL builder skips the `?token=` query string when
-    // the field is undefined, so the route falls into its session-auth
-    // branch.
-    expect(SRC).toContain("hasToken ? { token } : {}");
+  it("does not reference identityLoaded", () => {
+    expect(SRC).not.toContain("identityLoaded");
   });
 
-  it("uses the same hasToken-based param choice for PATCH and unsubscribe", () => {
-    const allTokenSwitches = SRC.match(/hasToken \? \{ token \} : \{\}/g) ?? [];
-    // GET options + PATCH mutate + unsubscribe mutate
-    expect(allTokenSwitches.length).toBeGreaterThanOrEqual(3);
+  it("does not reference isSignedIn", () => {
+    expect(SRC).not.toContain("isSignedIn");
   });
 
-  it("does NOT show the 'manage link missing' screen while identity is still loading", () => {
-    // The new condition is `!hasToken && identityLoaded && !isSignedIn`,
-    // which means the screen is suppressed until the identity probe
-    // resolves to "definitely signed out".
-    expect(SRC).toContain("!hasToken && identityLoaded && !isSignedIn");
+  it("uses simple !token guard (not the P5 compound condition)", () => {
+    // P5 used: !hasToken && identityLoaded && !isSignedIn
+    // This PR reverts to: if (!token)
+    expect(SRC).toContain("if (!token)");
+    expect(SRC).not.toContain("identityLoaded && !isSignedIn");
   });
 
-  it("renames the no-auth screen to mention the sign-in path too", () => {
-    // The copy now invites the customer to sign in instead of always
-    // forcing them back to the signup page.
-    expect(SRC).toContain("Sign in or use your manage link");
-    expect(SRC).toContain("/sign-in");
+  it("query is enabled only when token.length > 0", () => {
+    expect(SRC).toContain("enabled: token.length > 0");
+  });
+
+  it("no longer shows 'Sign in or use your manage link' copy", () => {
+    expect(SRC).not.toContain("Sign in or use your manage link");
+  });
+
+  it("no longer links to /sign-in", () => {
+    expect(SRC).not.toContain('href="/sign-in"');
+  });
+
+  it("always passes { token } as params (no conditional hasToken switch)", () => {
+    // P5 used: hasToken ? { token } : {}
+    // This PR passes { token } unconditionally.
+    expect(SRC).not.toContain("hasToken ? { token } : {}");
+  });
+
+  it("passes { token } to useGetReminderSubscription params", () => {
+    expect(SRC).toContain("{ token }");
+    expect(SRC).toContain("useGetReminderSubscription");
   });
 });
