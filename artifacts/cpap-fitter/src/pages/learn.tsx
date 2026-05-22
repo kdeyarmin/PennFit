@@ -2,6 +2,7 @@ import React from "react";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { LearnVideoLibrary } from "@/components/learn-video-library";
+import { NewsletterSignup } from "@/components/newsletter-signup";
 import { useDocumentTitle } from "@/hooks/use-document-title";
 import {
   BookOpen,
@@ -861,6 +862,62 @@ export function Learn() {
               testid: "learn-link-deep-glossary",
               tone: "icon-halo-navy",
             },
+            {
+              href: "/learn/sleep-apnea-women",
+              Icon: Moon,
+              title: "Sleep apnea in women",
+              body: "Women present with insomnia, fatigue, and mood symptoms — not the textbook loud-snoring profile. Diagnosed 5–8 years late on average.",
+              testid: "learn-link-deep-women",
+              tone: "icon-halo-gold",
+            },
+            {
+              href: "/learn/sleep-apnea-diabetes",
+              Icon: Activity,
+              title: "Sleep apnea & diabetes",
+              body: "70% of T2D patients have undiagnosed OSA. Treating one moves the other — A1C improves measurably on adherent therapy.",
+              testid: "learn-link-deep-diabetes",
+              tone: "icon-halo-navy",
+            },
+            {
+              href: "/learn/sleep-apnea-mental-health",
+              Icon: AlertTriangle,
+              title: "Sleep apnea & mental health",
+              body: "The dense overlap with depression, anxiety, PTSD, and the brain-fog symptom cluster — and what treatment moves.",
+              testid: "learn-link-deep-mental-health",
+              tone: "icon-halo-gold",
+            },
+            {
+              href: "/learn/pediatric-sleep-apnea",
+              Icon: Users,
+              title: "Pediatric sleep apnea",
+              body: "Children with OSA look hyperactive, not sleepy. Why the symptoms are different, and what parents should flag at the pediatric visit.",
+              testid: "learn-link-deep-pediatric",
+              tone: "icon-halo-navy",
+            },
+            {
+              href: "/learn/sleep-apnea-seniors",
+              Icon: Heart,
+              title: "Sleep apnea in older adults",
+              body: "Prevalence climbs sharply with age — and so do the cognitive, cardiovascular, and falls stakes. Medicare-friendly framing.",
+              testid: "learn-link-deep-seniors",
+              tone: "icon-halo-navy",
+            },
+            {
+              href: "/learn/partner-guide",
+              Icon: Heart,
+              title: "The bed partner's guide",
+              body: "If your partner snores loudly enough you've thought about earplugs — this is the article for you. How to bring it up, what to expect.",
+              testid: "learn-link-deep-partner",
+              tone: "icon-halo-gold",
+            },
+            {
+              href: "/learn/talking-to-a-loved-one",
+              Icon: Users,
+              title: "Talking to a loved one",
+              body: "Five scripts — what works, what backfires — when you need to suggest someone get tested for sleep apnea.",
+              testid: "learn-link-deep-talking",
+              tone: "icon-halo-gold",
+            },
           ].map(({ href, Icon, title, body, testid, tone }) => (
             <Link
               key={href}
@@ -886,6 +943,11 @@ export function Learn() {
           ))}
         </div>
       </section>
+
+      {/* Newsletter signup — capture readers who finished the library and
+          aren't ready to commit to ordering yet. Gold-trimmed tech card
+          so it doesn't compete with the disclaimer or final CTA below. */}
+      <NewsletterSignup />
 
       {/* Cross-links */}
       <section className="grid sm:grid-cols-2 gap-4">

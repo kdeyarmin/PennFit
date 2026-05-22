@@ -209,6 +209,47 @@ const SleepApnea101 = lazy(() =>
   })),
 );
 
+// Specialty-audience articles — comorbidity and population-specific
+// long-form resources that round out the library for the people most
+// affected (women, diabetes, mental health, kids, seniors) plus the
+// "for partners & family" pair that drives shareable, conversion-
+// relevant content.
+const LearnSleepApneaWomen = lazy(() =>
+  import("@/pages/learn-sleep-apnea-women").then((m) => ({
+    default: m.LearnSleepApneaWomen,
+  })),
+);
+const LearnSleepApneaDiabetes = lazy(() =>
+  import("@/pages/learn-sleep-apnea-diabetes").then((m) => ({
+    default: m.LearnSleepApneaDiabetes,
+  })),
+);
+const LearnSleepApneaMentalHealth = lazy(() =>
+  import("@/pages/learn-sleep-apnea-mental-health").then((m) => ({
+    default: m.LearnSleepApneaMentalHealth,
+  })),
+);
+const LearnPediatricSleepApnea = lazy(() =>
+  import("@/pages/learn-pediatric-sleep-apnea").then((m) => ({
+    default: m.LearnPediatricSleepApnea,
+  })),
+);
+const LearnSleepApneaSeniors = lazy(() =>
+  import("@/pages/learn-sleep-apnea-seniors").then((m) => ({
+    default: m.LearnSleepApneaSeniors,
+  })),
+);
+const LearnPartnerGuide = lazy(() =>
+  import("@/pages/learn-partner-guide").then((m) => ({
+    default: m.LearnPartnerGuide,
+  })),
+);
+const LearnTalkingToALovedOne = lazy(() =>
+  import("@/pages/learn-talking-to-a-loved-one").then((m) => ({
+    default: m.LearnTalkingToALovedOne,
+  })),
+);
+
 // Brand marketing pages — a hub plus per-brand spotlights (React Health
 // is our flagship line, ResMed and Fisher & Paykel round out the catalog).
 // Lazy-loaded because they're SEO landing surfaces, not entry points for
@@ -511,6 +552,34 @@ function PatientRouter() {
             component={LearnInsuranceGuide}
           />
           <Route path="/sleep-apnea-101" component={SleepApnea101} />
+          <Route
+            path="/learn/sleep-apnea-women"
+            component={LearnSleepApneaWomen}
+          />
+          <Route
+            path="/learn/sleep-apnea-diabetes"
+            component={LearnSleepApneaDiabetes}
+          />
+          <Route
+            path="/learn/sleep-apnea-mental-health"
+            component={LearnSleepApneaMentalHealth}
+          />
+          <Route
+            path="/learn/pediatric-sleep-apnea"
+            component={LearnPediatricSleepApnea}
+          />
+          <Route
+            path="/learn/sleep-apnea-seniors"
+            component={LearnSleepApneaSeniors}
+          />
+          <Route
+            path="/learn/partner-guide"
+            component={LearnPartnerGuide}
+          />
+          <Route
+            path="/learn/talking-to-a-loved-one"
+            component={LearnTalkingToALovedOne}
+          />
           <Route path="/comfort-guarantee" component={ComfortGuaranteePage} />
           <Route path="/insurance" component={Insurance} />
           <Route path="/insurance/estimate" component={InsuranceEstimate} />
