@@ -1126,6 +1126,39 @@ export interface Database {
           // Da Vinci PAS endpoint URL (CMS-0057-F). Null when the
           // payer hasn't stood up a FHIR PAS server yet. (Migration 0136)
           davinci_pas_endpoint_url: string | null;
+          // Submission-readiness columns added by migration 0149. See
+          // 0149_pa_payers_phase2.sql for the per-column rationale —
+          // briefly, these are the fields the OA-enrollment CSV
+          // exports and the admin edit drawer surfaces so an op can
+          // submit a clean claim without grepping `notes`.
+          timely_filing_days: number | null;
+          claims_address_line1: string | null;
+          claims_address_line2: string | null;
+          claims_city: string | null;
+          claims_state: string | null;
+          claims_zip: string | null;
+          claims_phone_e164: string | null;
+          claims_fax_e164: string | null;
+          prior_auth_submission_method:
+            | "portal"
+            | "fax"
+            | "phone"
+            | "electronic_278"
+            | "paper"
+            | "none"
+            | null;
+          prior_auth_fax_e164: string | null;
+          prior_auth_turnaround_business_days: number | null;
+          required_claim_modifiers: string[];
+          accepts_electronic_secondary: boolean;
+          edi_enrollment_status:
+            | "enrolled"
+            | "pending"
+            | "not_enrolled"
+            | "not_applicable";
+          member_id_format_hint: string | null;
+          requirements_last_verified_at: string | null;
+          requirements_last_verified_by: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -1613,6 +1646,141 @@ export interface Database {
         >;
         Update: Partial<
           Database["resupply"]["Tables"]["inbound_webhooks"]["Row"]
+        >;
+        Relationships: [];
+      };
+      inbound_referral_orders: {
+        Row: {
+          id: string;
+          source: string;
+          source_order_id: string;
+          inbound_webhook_id: string | null;
+          patient_match_id: string | null;
+          patient_match_kind: string | null;
+          provider_match_id: string | null;
+          provider_match_kind: string | null;
+          payer_name: string | null;
+          ordering_npi: string | null;
+          hcpcs_items_json: Json;
+          icd10_codes_json: Json;
+          raw_parsed_json: Json;
+          ai_classification_json: Json | null;
+          ai_confidence: number | null;
+          triage_status:
+            | "new"
+            | "triaged"
+            | "accepted"
+            | "rejected"
+            | "duplicate"
+            | "archived";
+          assigned_admin_user_id: string | null;
+          triaged_at: string | null;
+          triaged_by_user_id: string | null;
+          accepted_order_id: string | null;
+          accepted_order_kind: string | null;
+          accepted_at: string | null;
+          accepted_by_user_id: string | null;
+          notes: string | null;
+          received_at: string;
+          created_at: string;
+          updated_at: string;
+          preflight_completed_at: string | null;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["inbound_referral_orders"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["inbound_referral_orders"]["Row"]
+        >;
+        Relationships: [];
+      };
+      inbound_referral_documents: {
+        Row: {
+          id: string;
+          referral_id: string;
+          doc_kind: string;
+          source_filename: string | null;
+          content_type: string | null;
+          size_bytes: number | null;
+          object_key: string | null;
+          source_url: string | null;
+          source_document_id: string | null;
+          created_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["inbound_referral_documents"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["inbound_referral_documents"]["Row"]
+        >;
+        Relationships: [];
+      };
+      inbound_referral_preflight_checks: {
+        Row: {
+          id: string;
+          referral_id: string;
+          check_kind: string;
+          outcome_json: Json;
+          outcome_status: "info" | "ok" | "warn" | "error" | "skipped";
+          produced_row_table: string | null;
+          produced_row_id: string | null;
+          ran_by: string;
+          created_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["inbound_referral_preflight_checks"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["inbound_referral_preflight_checks"]["Row"]
+        >;
+        Relationships: [];
+      };
+      ehr_fhir_tenants: {
+        Row: {
+          id: string;
+          slug: string;
+          display_name: string;
+          jwks_uri: string;
+          audience: string;
+          expected_issuer: string;
+          expected_subject: string;
+          is_active: boolean;
+          notes: string | null;
+          callback_url: string | null;
+          outbound_signing_secret: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["ehr_fhir_tenants"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["ehr_fhir_tenants"]["Row"]
+        >;
+        Relationships: [];
+      };
+      inbound_referral_status_outbox: {
+        Row: {
+          id: string;
+          referral_id: string;
+          target_kind: "parachute" | "ehr_fhir";
+          event_type: string;
+          payload_json: Json;
+          status: "queued" | "delivered" | "failed" | "exhausted";
+          attempt_count: number;
+          last_http_status: number | null;
+          last_error: string | null;
+          next_attempt_at: string;
+          delivered_at: string | null;
+          max_retries: number;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["inbound_referral_status_outbox"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["inbound_referral_status_outbox"]["Row"]
         >;
         Relationships: [];
       };
@@ -2118,6 +2286,14 @@ export interface Database {
           submitted_by_email: string;
           submitted_at: string;
           updated_at: string;
+          // ── 0150 columns ──
+          // Claim IDs the batch *tried* to send. Populated regardless of
+          // upload outcome so a failed batch can be resubmitted without
+          // rebuilding the list. Empty array on legacy rows.
+          attempted_claim_ids: string[];
+          // Soft self-FK; non-null on resubmit rows pointing at the
+          // submission this one re-attempts.
+          parent_submission_id: string | null;
         };
         Insert: Partial<
           Database["resupply"]["Tables"]["office_ally_submissions"]["Row"]
@@ -2556,6 +2732,25 @@ export interface Database {
         };
         Insert: Partial<Database["resupply"]["Tables"]["csr_shifts"]["Row"]>;
         Update: Partial<Database["resupply"]["Tables"]["csr_shifts"]["Row"]>;
+        Relationships: [];
+      };
+      feature_flags: {
+        Row: {
+          key: string;
+          enabled: boolean;
+          description: string;
+          category: string;
+          updated_by_user_id: string | null;
+          updated_by_email: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["feature_flags"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["feature_flags"]["Row"]
+        >;
         Relationships: [];
       };
       appointment_requests: {

@@ -344,7 +344,7 @@ async function processRemoteFile(
   }
 }
 
-async function dispatch999(
+export async function dispatch999(
   supabase: SupabaseClient,
   inboundFileId: string,
   content: string,
@@ -398,7 +398,7 @@ async function dispatch999(
   }
 }
 
-async function dispatch277ca(
+export async function dispatch277ca(
   supabase: SupabaseClient,
   inboundFileId: string,
   content: string,
@@ -465,7 +465,7 @@ async function dispatch277ca(
   }
 }
 
-async function dispatch835(
+export async function dispatch835(
   supabase: SupabaseClient,
   inboundFileId: string,
   fileName: string,
@@ -609,7 +609,7 @@ async function runDenialAnalysisQuietly(
   }
 }
 
-async function dispatch271(
+export async function dispatch271(
   supabase: SupabaseClient,
   inboundFileId: string,
   content: string,

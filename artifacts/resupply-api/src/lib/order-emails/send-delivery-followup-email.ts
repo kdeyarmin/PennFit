@@ -36,6 +36,8 @@ import {
   EmailConfigError,
 } from "@workspace/resupply-email";
 
+import { isFeatureEnabled } from "../feature-flags";
+
 const DEFAULT_BASE_URL = "https://pennpaps.com";
 
 export interface SendDeliveryFollowupEmailInput {
@@ -108,8 +110,13 @@ export async function sendDeliveryFollowupEmail(
   // a 30-day TTL. Importing lazily so the test harness for this
   // module can construct messages without needing the HMAC key wired
   // (the legacy worker tests do exactly this).
+  // Control Center feature gate. When the NPS toggle is off we skip
+  // the NPS rating block entirely; the delivery-followup email still
+  // sends with the review-request + returns links so the customer-
+  // facing copy doesn't lose anything else when only NPS is paused.
+  const npsEnabled = await isFeatureEnabled("storefront.nps");
   let npsRow: { html: string; text: string[] } | null = null;
-  if (orderId) {
+  if (orderId && npsEnabled) {
     try {
       const { signNpsToken } = await import("../nps-token");
       const cells = Array.from({ length: 11 }, (_, score) => {

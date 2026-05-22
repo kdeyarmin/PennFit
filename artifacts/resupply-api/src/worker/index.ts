@@ -63,6 +63,9 @@ import { registerWebhookDispatcherJob } from "./jobs/webhook-dispatcher.js";
 import { registerAutoWorkflowJob } from "./jobs/auto-workflow.js";
 import { registerComplianceAutoWorkflowJob } from "./jobs/compliance-auto-workflow.js";
 import { registerLowStockAlertsJob } from "./jobs/low-stock-alerts.js";
+import { registerInboundWebhookDispatchJob } from "./jobs/inbound-webhook-dispatch.js";
+import { registerInboundReferralPreflightJob } from "./jobs/inbound-referral-preflight.js";
+import { registerReferralStatusOutboundJob } from "./jobs/inbound-referral-status-outbound.js";
 
 let bossInstance: PgBoss | null = null;
 let workerReady = false;
@@ -76,12 +79,13 @@ export function getBoss(): PgBoss | null {
 }
 
 /**
- * Start and configure the resupply in-process pg-boss worker and register scheduled jobs.
+ * Start and configure the resupply in-process pg-boss worker and register all resupply scheduled and dispatch jobs.
  *
- * Throws if `DATABASE_URL` is not set. On success this sets the module's pg-boss instance,
- * attaches error and monitor-state handlers that emit structured logs, registers resupply-related
- * recurring and dispatch jobs (reminders, retention/cleanup tasks, campaign ticks, nightly syncs,
- * prior-auth expiry sweep, etc.), and marks the worker ready.
+ * On success this sets the module-level pg-boss instance, attaches structured error and monitor-state handlers,
+ * registers recurring resupply and dispatch jobs (reminders, sweeps, campaign ticks, nightly syncs, webhook/inbound
+ * dispatchers, workflows, alerts, and other scheduled tasks), and marks the worker ready.
+ *
+ * @throws If `DATABASE_URL` is not set in the environment.
  */
 export async function startWorker(): Promise<void> {
   const databaseUrl = process.env["DATABASE_URL"];
@@ -385,6 +389,24 @@ export async function startWorker(): Promise<void> {
   // Stripe catalog, dedups per-SKU via resupply.low_stock_alert_state,
   // emails RESUPPLY_ADMIN_EMAILS one rollup per tick.
   await registerLowStockAlertsJob(boss);
+
+  // Every minute — drain pending inbound_webhooks rows and route
+  // each to its per-source dispatcher (Parachute today; Phase 4
+  // will add ehr_fhir_* sources). Migration 0144 lands the typed
+  // referral inbox the dispatcher writes into.
+  await registerInboundWebhookDispatchJob(boss);
+
+  // Every 5 minutes — run pre-flight checks (PA requirement,
+  // eligibility, docs gap, physician fax fallback) on new
+  // inbound referrals that have a matched patient. Migration 0146
+  // lands the inbound_referral_preflight_checks history table.
+  await registerInboundReferralPreflightJob(boss);
+
+  // Every minute — drain inbound_referral_status_outbox and POST
+  // lifecycle callbacks (accept, ship, PA decision) back to the
+  // originating Parachute / EHR partner. HMAC-SHA256 signed; expo
+  // backoff per migration 0148.
+  await registerReferralStatusOutboundJob(boss);
 
   workerReady = true;
   logger.info(

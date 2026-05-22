@@ -56,6 +56,7 @@ import { AdminShopSubscriptionsPage } from "@/pages/admin/admin-shop-subscriptio
 import { AdminTeamPage } from "@/pages/admin/admin-team";
 import { AdminOperationsPage } from "@/pages/admin/admin-operations";
 import { AdminReportsPage } from "@/pages/admin/admin-reports";
+import { AdminControlCenterPage } from "@/pages/admin/admin-control-center";
 import { AdminProductivityPage } from "@/pages/admin/admin-productivity";
 import { AdminBackordersPage } from "@/pages/admin/admin-backorders";
 import { AdminClosuresPage } from "@/pages/admin/admin-closures";
@@ -88,6 +89,8 @@ import { AdminBillingConfigModifierRulesPage } from "@/pages/admin/admin-billing
 import { AdminBillingConfigDenialCodesPage } from "@/pages/admin/admin-billing-config-denial-codes";
 import { AdminBillingConfigClaimTemplatesPage } from "@/pages/admin/admin-billing-config-claim-templates";
 import { AdminBillingCappedRentalsPage } from "@/pages/admin/admin-billing-capped-rentals";
+import { AdminBillingOfficeAllyPage } from "@/pages/admin/admin-billing-office-ally";
+import { AdminOfficeAllySubmissionDetailPage } from "@/pages/admin/admin-billing-office-ally-detail";
 import { AdminNpsPage } from "@/pages/admin/admin-nps";
 import { AdminCustomerDetailPage } from "@/pages/admin/admin-customer-detail";
 import { AdminShopCustomersPage } from "@/pages/admin/admin-shop-customers";
@@ -196,6 +199,17 @@ function AdminConsole() {
             path="/admin/billing/capped-rentals"
             component={AdminBillingCappedRentalsPage}
           />
+          <Route
+            path="/admin/billing/office-ally"
+            component={AdminBillingOfficeAllyPage}
+          />
+          <Route path="/admin/billing/office-ally/:submissionId">
+            {(params) => (
+              <AdminOfficeAllySubmissionDetailPage
+                submissionId={params.submissionId}
+              />
+            )}
+          </Route>
           <Route path="/admin/patients" component={PatientsPage} />
           <Route path="/admin/patients/:patientId/insurance-claims">
             {(params) => (
@@ -284,6 +298,10 @@ function AdminConsole() {
           <Route path="/admin/team" component={AdminTeamPage} />
           <Route path="/admin/operations" component={AdminOperationsPage} />
           <Route path="/admin/reports" component={AdminReportsPage} />
+          <Route
+            path="/admin/control-center"
+            component={AdminControlCenterPage}
+          />
           <Route path="/admin/nps" component={AdminNpsPage} />
           <Route
             path="/admin/productivity"

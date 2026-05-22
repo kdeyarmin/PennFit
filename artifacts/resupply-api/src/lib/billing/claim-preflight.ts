@@ -109,7 +109,7 @@ export async function preflightClaim(claimId: string): Promise<PreflightSummary>
       .schema("resupply")
       .from("payer_profiles")
       .select(
-        "id, display_name, is_active, paper_only, office_ally_payer_id, claim_format, requires_prior_auth_dme",
+        "id, display_name, is_active, paper_only, office_ally_payer_id, claim_format, requires_prior_auth_dme, edi_enrollment_status",
       )
       .eq("id", claim.payer_profile_id)
       .limit(1)
@@ -138,11 +138,24 @@ export async function preflightClaim(claimId: string): Promise<PreflightSummary>
         label: "Payer has no Office Ally id",
         detail: `${payer.display_name} is missing office_ally_payer_id in the catalog.`,
       });
+    } else if (payer.edi_enrollment_status !== "enrolled") {
+      // Migration 0149 wired enrollment status onto every row. A
+      // payer that's set up in the catalog but not enrolled in
+      // Office Ally yet will reject the 837P at the clearinghouse,
+      // so block submit here — the CSR's fix is to chase the
+      // enrollment, not to send and hope.
+      items.push({
+        key: "payer_profile",
+        severity: "error",
+        label: "Payer is not EDI-enrolled with Office Ally",
+        detail: `${payer.display_name} enrollment status is "${payer.edi_enrollment_status}". Office Ally will reject this 837P. Update the enrollment status to "enrolled" once OA confirms.`,
+        fixAction: { kind: "pick_payer_profile", claimId: claim.id },
+      });
     } else {
       items.push({
         key: "payer_profile",
         severity: "ok",
-        label: "Payer profile linked",
+        label: "Payer profile linked + EDI-enrolled",
         detail: `${payer.display_name} • OA payer id ${payer.office_ally_payer_id}`,
       });
     }

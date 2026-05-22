@@ -1,11 +1,13 @@
-// Typed fetch wrappers for the read-only billing-config admin routes
+// Typed fetch wrappers for the billing-config admin routes
 // (/admin/payer-profiles, /admin/payer-fee-schedules,
 //  /admin/payer-modifier-rules, /admin/denial-codes,
 //  /admin/claim-templates).
 //
-// Config edits are still done via the existing backend routes — the
-// SPA pages here are list / filter / inspect surfaces so admins can
-// SEE the configuration that drives the scrubber and claim-builder.
+// The payer-profile surface is read + write (create / patch) so the
+// catalog page can inline-edit a row when Office Ally publishes a
+// quarterly payer-ID change or an op needs to refresh contact /
+// prior-auth details. The other config tables remain read-only here;
+// edits still flow through their dedicated backend routes.
 
 const BASE = "/resupply-api";
 
@@ -13,15 +15,7 @@ async function getJSON<T>(
   path: string,
   params?: Record<string, string | undefined>,
 ): Promise<T> {
-  const search = params
-    ? new URLSearchParams(
-        Object.entries(params).flatMap(([k, v]) =>
-          v == null || v === "" ? [] : [[k, v] as [string, string]],
-        ),
-      )
-    : null;
-  const qs = search?.toString();
-  const res = await fetch(`${BASE}${path}${qs ? `?${qs}` : ""}`, {
+  const res = await fetch(`${BASE}${path}${buildQs(params)}`, {
     credentials: "same-origin",
     headers: { Accept: "application/json" },
   });
@@ -29,7 +23,72 @@ async function getJSON<T>(
   return (await res.json()) as T;
 }
 
+function buildQs(params?: Record<string, string | undefined>): string {
+  if (!params) return "";
+  const search = new URLSearchParams(
+    Object.entries(params).flatMap(([k, v]) =>
+      v == null || v === "" ? [] : [[k, v] as [string, string]],
+    ),
+  );
+  const qs = search.toString();
+  return qs ? `?${qs}` : "";
+}
+
+async function sendJSON<T>(
+  method: "POST" | "PATCH",
+  path: string,
+  body: unknown,
+): Promise<T> {
+  const res = await fetch(`${BASE}${path}`, {
+    method,
+    credentials: "same-origin",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    let detail = "";
+    try {
+      detail = JSON.stringify(await res.json());
+    } catch {
+      // Body not JSON or unreadable — fall through with empty detail.
+    }
+    throw new Error(`${method} ${path} failed (${res.status})${detail ? `: ${detail}` : ""}`);
+  }
+  return (await res.json()) as T;
+}
+
 // ─── Payer profiles ────────────────────────────────────────────────
+
+export type PayerLineOfBusiness =
+  | "commercial"
+  | "medicare_advantage"
+  | "medicare_part_b"
+  | "medicaid_ffs"
+  | "medicaid_mco"
+  | "federal"
+  | "workers_comp"
+  | "other";
+
+export type PayerRegion = "pa" | "multi_state" | "national";
+
+export type PayerClaimFormat = "837p" | "837i" | "paper_1500";
+
+export type PayerPaSubmissionMethod =
+  | "portal"
+  | "fax"
+  | "phone"
+  | "electronic_278"
+  | "paper"
+  | "none";
+
+export type PayerEdiEnrollmentStatus =
+  | "enrolled"
+  | "pending"
+  | "not_enrolled"
+  | "not_applicable";
 
 export interface PayerProfile {
   id: string;
@@ -37,11 +96,11 @@ export interface PayerProfile {
   displayName: string;
   payerLegalName: string;
   parentOrg: string | null;
-  lineOfBusiness: string;
-  region: string;
+  lineOfBusiness: PayerLineOfBusiness;
+  region: PayerRegion;
   officeAllyPayerId: string | null;
   edi5010PayerId: string | null;
-  claimFormat: string;
+  claimFormat: PayerClaimFormat;
   paperOnly: boolean;
   requiresPriorAuthDme: boolean;
   priorAuthPhoneE164: string | null;
@@ -50,9 +109,64 @@ export interface PayerProfile {
   feeScheduleSource: string | null;
   notes: string | null;
   isActive: boolean;
+  // ── 0149 submission-readiness fields ──
+  timelyFilingDays: number | null;
+  claimsAddressLine1: string | null;
+  claimsAddressLine2: string | null;
+  claimsCity: string | null;
+  claimsState: string | null;
+  claimsZip: string | null;
+  claimsPhoneE164: string | null;
+  claimsFaxE164: string | null;
+  priorAuthSubmissionMethod: PayerPaSubmissionMethod | null;
+  priorAuthFaxE164: string | null;
+  priorAuthTurnaroundBusinessDays: number | null;
+  requiredClaimModifiers: string[];
+  acceptsElectronicSecondary: boolean;
+  ediEnrollmentStatus: PayerEdiEnrollmentStatus;
+  memberIdFormatHint: string | null;
+  requirementsLastVerifiedAt: string | null;
+  requirementsLastVerifiedBy: string | null;
   createdAt: string;
   updatedAt: string;
 }
+
+export interface PayerProfileUpsert {
+  slug: string;
+  displayName: string;
+  payerLegalName: string;
+  parentOrg?: string | null;
+  lineOfBusiness: PayerLineOfBusiness;
+  region?: PayerRegion;
+  officeAllyPayerId?: string | null;
+  edi5010PayerId?: string | null;
+  claimFormat?: PayerClaimFormat;
+  paperOnly?: boolean;
+  requiresPriorAuthDme?: boolean;
+  priorAuthPhoneE164?: string | null;
+  claimStatusPhoneE164?: string | null;
+  providerPortalUrl?: string | null;
+  feeScheduleSource?: string | null;
+  notes?: string | null;
+  isActive?: boolean;
+  timelyFilingDays?: number | null;
+  claimsAddressLine1?: string | null;
+  claimsAddressLine2?: string | null;
+  claimsCity?: string | null;
+  claimsState?: string | null;
+  claimsZip?: string | null;
+  claimsPhoneE164?: string | null;
+  claimsFaxE164?: string | null;
+  priorAuthSubmissionMethod?: PayerPaSubmissionMethod | null;
+  priorAuthFaxE164?: string | null;
+  priorAuthTurnaroundBusinessDays?: number | null;
+  requiredClaimModifiers?: string[];
+  acceptsElectronicSecondary?: boolean;
+  ediEnrollmentStatus?: PayerEdiEnrollmentStatus;
+  memberIdFormatHint?: string | null;
+}
+
+export type PayerProfilePatch = Partial<PayerProfileUpsert>;
 
 export function fetchPayerProfiles(filters?: {
   region?: string;
@@ -61,6 +175,41 @@ export function fetchPayerProfiles(filters?: {
   q?: string;
 }): Promise<{ payerProfiles: PayerProfile[] }> {
   return getJSON("/admin/payer-profiles", filters);
+}
+
+export function fetchPayerProfile(
+  id: string,
+): Promise<{ payerProfile: PayerProfile }> {
+  return getJSON(`/admin/payer-profiles/${encodeURIComponent(id)}`);
+}
+
+export function createPayerProfile(
+  body: PayerProfileUpsert,
+): Promise<{ id: string }> {
+  return sendJSON("POST", "/admin/payer-profiles", body);
+}
+
+export function updatePayerProfile(
+  id: string,
+  body: PayerProfilePatch,
+): Promise<{ ok: true }> {
+  return sendJSON(
+    "PATCH",
+    `/admin/payer-profiles/${encodeURIComponent(id)}`,
+    body,
+  );
+}
+
+// URL the browser hits to download the OA enrollment CSV. Plain
+// `<a href>` works (cookie auth, no preflight); admins can right-click
+// to save-as without us juggling Blob URLs.
+export function officeAllyExportCsvHref(opts?: {
+  includeNonElectronic?: boolean;
+}): string {
+  const qs = buildQs({
+    includeNonElectronic: opts?.includeNonElectronic ? "true" : undefined,
+  });
+  return `${BASE}/admin/payer-profiles/export.csv${qs}`;
 }
 
 // ─── Payer fee schedules ───────────────────────────────────────────
