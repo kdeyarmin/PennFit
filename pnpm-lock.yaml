@@ -348,6 +348,9 @@ importers:
       '@workspace/resupply-integrations-office-ally':
         specifier: workspace:*
         version: link:../../lib/resupply-integrations-office-ally
+      '@workspace/resupply-integrations-parachute':
+        specifier: workspace:*
+        version: link:../../lib/resupply-integrations-parachute
       '@workspace/resupply-integrations-react-health':
         specifier: workspace:*
         version: link:../../lib/resupply-integrations-react-health
@@ -693,6 +696,19 @@ importers:
         version: 4.1.6(@types/node@25.8.0)(@vitest/coverage-v8@4.1.6)(esbuild@0.28.0)(jiti@2.7.0)(jsdom@29.1.1(@noble/hashes@1.8.0))(tsx@4.22.0)
 
   lib/resupply-integrations-office-ally:
+    dependencies:
+      zod:
+        specifier: 'catalog:'
+        version: 4.4.3
+    devDependencies:
+      '@types/node':
+        specifier: 'catalog:'
+        version: 25.8.0
+      vitest:
+        specifier: ^4.1.6
+        version: 4.1.6(@types/node@25.8.0)(@vitest/coverage-v8@4.1.6)(esbuild@0.28.0)(jiti@2.7.0)(jsdom@29.1.1(@noble/hashes@1.8.0))(tsx@4.22.0)
+
+  lib/resupply-integrations-parachute:
     dependencies:
       zod:
         specifier: 'catalog:'

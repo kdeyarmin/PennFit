@@ -26,6 +26,7 @@
     "@workspace/resupply-integrations-davinci-pas": "workspace:*",
     "@workspace/resupply-integrations-health-connect": "workspace:*",
     "@workspace/resupply-integrations-office-ally": "workspace:*",
+    "@workspace/resupply-integrations-parachute": "workspace:*",
     "@workspace/resupply-integrations-react-health": "workspace:*",
     "@workspace/resupply-messaging": "workspace:*",
     "@workspace/resupply-reminders": "workspace:*",

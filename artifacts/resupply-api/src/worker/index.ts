@@ -63,6 +63,7 @@ import { registerWebhookDispatcherJob } from "./jobs/webhook-dispatcher.js";
 import { registerAutoWorkflowJob } from "./jobs/auto-workflow.js";
 import { registerComplianceAutoWorkflowJob } from "./jobs/compliance-auto-workflow.js";
 import { registerLowStockAlertsJob } from "./jobs/low-stock-alerts.js";
+import { registerInboundWebhookDispatchJob } from "./jobs/inbound-webhook-dispatch.js";
 
 let bossInstance: PgBoss | null = null;
 let workerReady = false;
@@ -385,6 +386,12 @@ export async function startWorker(): Promise<void> {
   // Stripe catalog, dedups per-SKU via resupply.low_stock_alert_state,
   // emails RESUPPLY_ADMIN_EMAILS one rollup per tick.
   await registerLowStockAlertsJob(boss);
+
+  // Every minute — drain pending inbound_webhooks rows and route
+  // each to its per-source dispatcher (Parachute today; Phase 4
+  // will add ehr_fhir_* sources). Migration 0144 lands the typed
+  // referral inbox the dispatcher writes into.
+  await registerInboundWebhookDispatchJob(boss);
 
   workerReady = true;
   logger.info(
