@@ -35,6 +35,7 @@ import {
   getStripeClient,
   readStripeConfigOrNull,
 } from "../../lib/stripe/config";
+import { isFeatureEnabled } from "../../lib/feature-flags";
 import { getOrCreateStripeCustomer } from "../../lib/stripe/customer";
 import { readCustomerProfile } from "../../lib/customer-profile";
 import { rateLimit } from "../../middlewares/rate-limit";
@@ -112,6 +113,19 @@ router.post(
   checkoutLimiter,
   attachSignedIn,
   async (req, res) => {
+    // Control Center feature gate. Admins can disable new checkouts
+    // from the UI (e.g. during an outage or inventory freeze) without
+    // a deploy; existing orders and webhooks keep flowing because the
+    // gate is only on this create-session endpoint.
+    if (!(await isFeatureEnabled("storefront.checkout"))) {
+      res.status(503).json({
+        error: "checkout_disabled",
+        message:
+          "Checkout is temporarily unavailable. Please try again in a few minutes.",
+      });
+      return;
+    }
+
     const config = readStripeConfigOrNull();
     if (!config) {
       res.status(503).json(SHOP_UNAVAILABLE_BODY);

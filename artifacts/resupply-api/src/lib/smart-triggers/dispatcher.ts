@@ -39,6 +39,7 @@ import {
   TwilioConfigError,
 } from "@workspace/resupply-telecom";
 
+import { isFeatureEnabled } from "../feature-flags";
 import { logger } from "../logger";
 import { sendPushToCustomerByEmail } from "../web-push";
 import { withRetry } from "../with-retry";
@@ -86,6 +87,26 @@ export async function runSmartTriggerSendDue(
   actor: DispatcherActor,
   renderers: SmartTriggerRenderers,
 ): Promise<DispatcherOutcome> {
+  // Control Center feature gate. When the smart-trigger dispatcher
+  // is disabled we report `not_configured` so the existing admin /
+  // worker callers that already treat "vendor not wired" as a
+  // benign no-op continue to work without a new code path. The
+  // per-channel SMS / email flags also gate the underlying send
+  // step below; this top-level gate avoids the candidate scan
+  // entirely when neither channel can send.
+  const triggerEnabled = await isFeatureEnabled(
+    "smart_triggers.dispatcher",
+  );
+  if (!triggerEnabled) {
+    return { status: "not_configured", channel };
+  }
+  if (channel === "email" && !(await isFeatureEnabled("email.reminders"))) {
+    return { status: "not_configured", channel };
+  }
+  if (channel === "sms" && !(await isFeatureEnabled("sms.reminders"))) {
+    return { status: "not_configured", channel };
+  }
+
   const supabase = getSupabaseServiceRoleClient();
 
   let sg: ReturnType<typeof createSendgridClient> | null = null;
