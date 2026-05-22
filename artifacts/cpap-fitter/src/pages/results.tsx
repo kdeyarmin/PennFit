@@ -72,23 +72,26 @@ export function Results() {
     if (!measurements) return;
     if (!hasRequested.current) {
       hasRequested.current = true;
-      // The questionnaire intentionally lets the user skip questions, so
-      // we fill in safe defaults here to satisfy the API contract. The
-      // `cpapPressureSetting: "unknown"` value is special-cased server-side
-      // (it disables pressure-related scoring rather than penalizing).
-      // Typed as QuestionnaireAnswers so any future schema changes break
-      // this construction at compile time, not at runtime.
+      // P4 — the questionnaire intentionally lets the user skip questions
+      // and offers an explicit "I'm not sure" option. We forward `null`
+      // for un-answered booleans (was: coerced to `false`) so the
+      // recommendation engine can distinguish "the patient said no"
+      // from "the patient declined to answer" and not over-claim a
+      // need in the reasons text. `priorMaskExperience` falls back to
+      // "none" (its own sentinel) and `cpapPressureSetting` to
+      // "unknown" (its own sentinel) since both already have a
+      // third-option value in their enum.
       const fullAnswers: QuestionnaireAnswers = {
-        mouthBreather: answers.mouthBreather ?? false,
-        claustrophobic: answers.claustrophobic ?? false,
-        sideOrStomachSleeper: answers.sideOrStomachSleeper ?? false,
-        heavyFacialHair: answers.heavyFacialHair ?? false,
-        wearsGlasses: answers.wearsGlasses ?? false,
-        frequentCongestion: answers.frequentCongestion ?? false,
+        mouthBreather: answers.mouthBreather ?? null,
+        claustrophobic: answers.claustrophobic ?? null,
+        sideOrStomachSleeper: answers.sideOrStomachSleeper ?? null,
+        heavyFacialHair: answers.heavyFacialHair ?? null,
+        wearsGlasses: answers.wearsGlasses ?? null,
+        frequentCongestion: answers.frequentCongestion ?? null,
         priorMaskExperience: answers.priorMaskExperience ?? "none",
-        mobilityLimitations: answers.mobilityLimitations ?? false,
-        sensitiveSkin: answers.sensitiveSkin ?? false,
-        siliconeSensitivity: answers.siliconeSensitivity ?? false,
+        mobilityLimitations: answers.mobilityLimitations ?? null,
+        sensitiveSkin: answers.sensitiveSkin ?? null,
+        siliconeSensitivity: answers.siliconeSensitivity ?? null,
         cpapPressureSetting: answers.cpapPressureSetting ?? "unknown",
       };
 
