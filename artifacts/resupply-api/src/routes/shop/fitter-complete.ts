@@ -27,7 +27,6 @@
 
 import { Router, type IRouter } from "express";
 import rateLimit from "express-rate-limit";
-import rateLimit from "express-rate-limit";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 
@@ -281,7 +280,7 @@ router.post("/shop/fitter-complete", async (req, res) => {
     if (!lead.marketing_opt_in) {
       // Still stamp completed_at so admin reporting knows the
       // patient finished the fitter, but don't schedule a touch.
-      await supabase
+      const { error: updateErr } = await supabase
         .schema("resupply")
         .from("fitter_leads")
         .update({
@@ -292,6 +291,12 @@ router.post("/shop/fitter-complete", async (req, res) => {
           journey_stage: "completed",
         })
         .eq("id", lead.id);
+      if (updateErr) {
+        req.log?.warn?.(
+          { err: updateErr, leadId: lead.id },
+          "fitter-complete: failed to stamp completion for non-opted-in lead",
+        );
+      }
       res.json({ ok: true, enrolled: false, reason: "no_marketing_opt_in" });
       return;
     }
@@ -731,7 +736,7 @@ function verifyClickTrackingToken(
 }
 
 function publicBaseUrl(): string {
-router.get("/shop/track/c", clickTrackRateLimiter, async (req, res) => {
+  return (
     process.env.SHOP_PUBLIC_BASE_URL ??
     process.env.RESUPPLY_VOICE_PUBLIC_BASE_URL ??
     (process.env.REPLIT_DEV_DOMAIN
@@ -748,7 +753,7 @@ function fallbackDestination(): string {
   return `${publicBaseUrl()}/shop`;
 }
 
-router.get("/shop/track/c", async (req, res) => {
+router.get("/shop/track/c", clickTrackRateLimiter, async (req, res) => {
   const token = typeof req.query.t === "string" ? req.query.t : "";
   if (!token) {
     res.redirect(302, fallbackDestination());
