@@ -133,11 +133,14 @@ describe("TOTAL_TOUCHPOINTS", () => {
 describe("signUnsubscribeToken", () => {
   it("throws when RESUPPLY_LINK_HMAC_KEY is not set", () => {
     const orig = process.env.RESUPPLY_LINK_HMAC_KEY;
-    delete process.env.RESUPPLY_LINK_HMAC_KEY;
-    expect(() => signUnsubscribeToken("any-id")).toThrow(
-      "RESUPPLY_LINK_HMAC_KEY",
-    );
-    process.env.RESUPPLY_LINK_HMAC_KEY = orig ?? TEST_HMAC_KEY;
+    try {
+      delete process.env.RESUPPLY_LINK_HMAC_KEY;
+      expect(() => signUnsubscribeToken("any-id")).toThrow(
+        "RESUPPLY_LINK_HMAC_KEY",
+      );
+    } finally {
+      process.env.RESUPPLY_LINK_HMAC_KEY = orig ?? TEST_HMAC_KEY;
+    }
   });
 
   it("returns a string containing exactly one '.'", () => {
