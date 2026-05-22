@@ -571,6 +571,276 @@ async function recordOpenEvent(
   }
 }
 
+// -----------------------------------------------------------------
+// Click-tracking redirect — mig 0154.
+// -----------------------------------------------------------------
+//
+// Every CTA in a campaign email goes through this redirect so we
+// can record which call-to-action the lead actually tapped. A
+// click is a dramatically stronger engagement signal than an open
+// (opens are noisy — Apple Mail Privacy + image pre-fetch — but a
+// click requires deliberate intent), and a single click flips the
+// lead into the "hot" CSR-outreach queue immediately.
+//
+// Open-redirect safety
+// --------------------
+// The signed token payload carries a closed-enum `link_key`, NOT
+// a target URL. The route looks the key up in CTA_DESTINATIONS
+// below and 302s to the corresponding path on the same origin.
+// An attacker who forged a valid HMAC (they can't — but as a
+// defense-in-depth principle) still couldn't redirect anywhere
+// outside our own catalog.
+
+/** Closed enum of legitimate CTA destinations. The link_key in
+ *  every signed click token MUST be in this map. */
+const CTA_DESTINATIONS: Record<string, (baseUrl: string) => string> = {
+  results: (b) => `${b}/results`,
+  shop: (b) => `${b}/shop`,
+  subscribe: (b) => `${b}/shop/subscribe`,
+  refer: (b) => `${b}/shop/refer`,
+  promo: (b) => `${b}/shop`,
+  consent: (b) => `${b}/consent`,
+};
+
+const CLICK_TOKEN_TTL_MS = 180 * 86_400_000;
+
+/** Mint a per-CTA click token. Exported so the dispatcher worker
+ *  can wrap every outbound HTML CTA. */
+export function signClickTrackingToken(
+  leadId: string,
+  touchIndex: number,
+  linkKey: string,
+  now: Date = new Date(),
+): string {
+  const issuedSec = Math.floor(now.getTime() / 1000);
+  // Distinct payload prefix 'c' so a leaked click token can't be
+  // cross-replayed against the open-tracking or unsubscribe
+  // endpoints (and vice versa). Pipe-separated shape stays
+  // grep-able and matches signOpenTrackingToken's convention.
+  const payload = `c|${leadId}|${touchIndex}|${linkKey}|${issuedSec}`;
+  const payloadEncoded = base64urlEncode(Buffer.from(payload, "utf8"));
+  const sig = createHmac("sha256", getLinkHmacKey())
+    .update(payloadEncoded, "utf8")
+    .digest();
+  return `${payloadEncoded}.${base64urlEncode(sig)}`;
+}
+
+type ClickVerifyResult =
+  | { valid: true; leadId: string; touchIndex: number; linkKey: string }
+  | { valid: false; reason: "malformed" | "bad_signature" | "expired" };
+
+function verifyClickTrackingToken(
+  token: string,
+  now: Date = new Date(),
+): ClickVerifyResult {
+  const idx = token.indexOf(".");
+  if (idx <= 0 || idx === token.length - 1) {
+    return { valid: false, reason: "malformed" };
+  }
+  const payloadEncoded = token.slice(0, idx);
+  const sigEncoded = token.slice(idx + 1);
+  const sigBuf = base64urlDecode(sigEncoded);
+  if (!sigBuf) return { valid: false, reason: "malformed" };
+  const expected = createHmac("sha256", getLinkHmacKey())
+    .update(payloadEncoded, "utf8")
+    .digest();
+  if (sigBuf.length !== expected.length) {
+    return { valid: false, reason: "bad_signature" };
+  }
+  if (!timingSafeEqual(sigBuf, expected)) {
+    return { valid: false, reason: "bad_signature" };
+  }
+  const payloadBuf = base64urlDecode(payloadEncoded);
+  if (!payloadBuf) return { valid: false, reason: "malformed" };
+  const parts = payloadBuf.toString("utf8").split("|");
+  if (parts.length !== 5 || parts[0] !== "c") {
+    return { valid: false, reason: "malformed" };
+  }
+  const leadId = parts[1];
+  const touchIndex = Number.parseInt(parts[2], 10);
+  const linkKey = parts[3];
+  const issuedSec = Number.parseInt(parts[4], 10);
+  if (
+    !leadId ||
+    !Number.isFinite(touchIndex) ||
+    !Number.isFinite(issuedSec) ||
+    !linkKey ||
+    !(linkKey in CTA_DESTINATIONS) ||
+    touchIndex < 1 ||
+    touchIndex > 50
+  ) {
+    return { valid: false, reason: "malformed" };
+  }
+  if (issuedSec * 1000 + CLICK_TOKEN_TTL_MS <= now.getTime()) {
+    return { valid: false, reason: "expired" };
+  }
+  return { valid: true, leadId, touchIndex, linkKey };
+}
+
+function publicBaseUrl(): string {
+  return (
+    process.env.SHOP_PUBLIC_BASE_URL ??
+    process.env.RESUPPLY_VOICE_PUBLIC_BASE_URL ??
+    (process.env.REPLIT_DEV_DOMAIN
+      ? `https://${process.env.REPLIT_DEV_DOMAIN}`
+      : "https://pennpaps.com")
+  ).replace(/\/$/, "");
+}
+
+/** Fallback destination when verification fails — we still 302 the
+ *  user somewhere (a broken CTA mid-marketing-email is a worse UX
+ *  than a redirect to the storefront), but we don't record the
+ *  click. */
+function fallbackDestination(): string {
+  return `${publicBaseUrl()}/shop`;
+}
+
+router.get("/shop/track/c", async (req, res) => {
+  const token = typeof req.query.t === "string" ? req.query.t : "";
+  if (!token) {
+    res.redirect(302, fallbackDestination());
+    return;
+  }
+
+  let verify: ClickVerifyResult;
+  try {
+    verify = verifyClickTrackingToken(token);
+  } catch (err) {
+    logger.warn({ err }, "shop/track/c: verify threw");
+    res.redirect(302, fallbackDestination());
+    return;
+  }
+  if (!verify.valid) {
+    res.redirect(302, fallbackDestination());
+    return;
+  }
+
+  // Compute the destination from our server-side allowlist.
+  // CTA_DESTINATIONS has been narrowed by verifyClickTrackingToken
+  // (verify.linkKey is guaranteed to be a key), but the optional-
+  // chain guard is belt-and-suspenders.
+  const dest =
+    CTA_DESTINATIONS[verify.linkKey]?.(publicBaseUrl()) ??
+    fallbackDestination();
+
+  // Best-effort: record the click + bump engagement_score by 5.
+  // We don't await this — the redirect is the patient's primary
+  // experience and we don't want to add 50ms of DB latency.
+  const submitterIp =
+    req.ip ||
+    req.socket?.remoteAddress ||
+    req.headers["x-forwarded-for"]?.toString().split(",")[0]?.trim() ||
+    null;
+  recordClickEvent(
+    verify.leadId,
+    verify.touchIndex,
+    verify.linkKey,
+    submitterIp,
+  ).catch((err) => {
+    logger.warn(
+      { err, leadId: verify.leadId },
+      "shop/track/c: record failed",
+    );
+  });
+
+  res.redirect(302, dest);
+});
+
+/** Click weighting in engagement_score. A click is dramatically
+ *  more meaningful than an open — pumping the score by 5 lets a
+ *  single click flip a previously-uninterested lead into the hot
+ *  queue without waiting for additional opens. */
+const CLICK_SCORE_WEIGHT = 5;
+
+async function recordClickEvent(
+  leadId: string,
+  touchIndex: number,
+  linkKey: string,
+  submitterIp: string | null,
+): Promise<void> {
+  const supabase = getSupabaseServiceRoleClient();
+  // 1. Read the lead row so we can decide whether to flip hot.
+  const { data: lead, error: readErr } = await supabase
+    .schema("resupply")
+    .from("fitter_leads")
+    .select(
+      "id, engagement_score, click_count, hot_lead_at, journey_stage, first_order_id",
+    )
+    .eq("id", leadId)
+    .maybeSingle();
+  if (readErr) throw readErr;
+  if (!lead) return;
+  // Terminal-state rows shouldn't be re-scored. Differs from open
+  // tracking only in that 'converted'/'reorder_active' rows DO
+  // get their click counters bumped — a click from a converted
+  // patient is signal for "they're engaged, follow up on the
+  // re-order touches" rather than noise.
+  if (
+    lead.journey_stage === "unsubscribed" ||
+    lead.journey_stage === "expired"
+  ) {
+    return;
+  }
+
+  // 2. Insert the audit row. Best-effort — a failed audit insert
+  // shouldn't block the engagement-score bump.
+  try {
+    const { error: clickInsertErr } = await supabase
+      .schema("resupply")
+      .from("fitter_campaign_clicks")
+      .insert({
+        lead_id: leadId,
+        touch_index: touchIndex,
+        link_key: linkKey,
+        submitter_ip: submitterIp,
+      });
+    if (clickInsertErr) {
+      logger.warn(
+        { err: clickInsertErr.message, leadId, touchIndex, linkKey },
+        "shop/track/c: audit insert failed",
+      );
+    }
+  } catch (err) {
+    logger.warn(
+      { err, leadId, touchIndex, linkKey },
+      "shop/track/c: audit insert threw",
+    );
+  }
+
+  // 3. Bump the lead's running counters + flip hot if needed.
+  // ANY click flips hot_lead_at when the lead hasn't yet ordered
+  // (a click is a much stronger signal than the 3-open threshold
+  // used for opens).
+  const nextScore = (lead.engagement_score ?? 0) + CLICK_SCORE_WEIGHT;
+  const nextClickCount = (lead.click_count ?? 0) + 1;
+  const shouldFlipHot = !lead.hot_lead_at && !lead.first_order_id;
+  const update: FitterLeadsUpdate = {
+    engagement_score: nextScore,
+    click_count: nextClickCount,
+  };
+  if (shouldFlipHot) {
+    update.hot_lead_at = new Date().toISOString();
+  }
+  const { error: writeErr } = await supabase
+    .schema("resupply")
+    .from("fitter_leads")
+    .update(update)
+    .eq("id", leadId);
+  if (writeErr) throw writeErr;
+  if (shouldFlipHot) {
+    logger.info(
+      {
+        event: "fitter_lead.hot_lead_flipped",
+        leadId,
+        touchIndex,
+        linkKey,
+        via: "click",
+      },
+      "shop/track/c: lead flipped to hot via click",
+    );
+  }
+}
+
 type UnsubscribeVerifyResult =
   | { valid: true; leadId: string }
   | { valid: false; reason: "malformed" | "bad_signature" | "expired" };

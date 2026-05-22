@@ -553,6 +553,10 @@ export interface Database {
           // Mig 0153 — engagement tracking via tracking-pixel opens.
           engagement_score: number;
           hot_lead_at: string | null;
+          // Mig 0154 — click tracking + CSR contact workflow.
+          click_count: number;
+          csr_contacted_at: string | null;
+          csr_contacted_by: string | null;
         };
         Insert: Partial<Database["resupply"]["Tables"]["fitter_leads"]["Row"]>;
         Update: Partial<Database["resupply"]["Tables"]["fitter_leads"]["Row"]>;
@@ -576,6 +580,24 @@ export interface Database {
         >;
         Update: Partial<
           Database["resupply"]["Tables"]["fitter_campaign_touches"]["Row"]
+        >;
+        Relationships: [];
+      };
+      // Mig 0154 — per-click audit log. One row per CTA click.
+      fitter_campaign_clicks: {
+        Row: {
+          id: string;
+          lead_id: string;
+          touch_index: number;
+          link_key: string;
+          clicked_at: string;
+          submitter_ip: string | null;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["fitter_campaign_clicks"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["fitter_campaign_clicks"]["Row"]
         >;
         Relationships: [];
       };

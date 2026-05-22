@@ -22,6 +22,7 @@ import {
   type FitterLeadSource,
   listFitterLeads,
   unsubscribeFitterLead,
+  markContactedFitterLead,
 } from "@/lib/admin/fitter-leads-api";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
 
@@ -134,11 +135,32 @@ export function AdminFitterLeadsPage() {
   });
 
   const [pendingId, setPendingId] = useState<string | null>(null);
+  const [pendingAction, setPendingAction] = useState<
+    "unsubscribe" | "contacted" | null
+  >(null);
   const unsubscribeMut = useMutation({
     mutationFn: (id: string) => unsubscribeFitterLead(id),
-    onMutate: (id) => setPendingId(id),
+    onMutate: (id) => {
+      setPendingId(id);
+      setPendingAction("unsubscribe");
+    },
     onSettled: () => {
       setPendingId(null);
+      setPendingAction(null);
+      void queryClient.invalidateQueries({
+        queryKey: ["admin", "fitter-leads"],
+      });
+    },
+  });
+  const markContactedMut = useMutation({
+    mutationFn: (id: string) => markContactedFitterLead(id),
+    onMutate: (id) => {
+      setPendingId(id);
+      setPendingAction("contacted");
+    },
+    onSettled: () => {
+      setPendingId(null);
+      setPendingAction(null);
       void queryClient.invalidateQueries({
         queryKey: ["admin", "fitter-leads"],
       });
@@ -161,6 +183,7 @@ export function AdminFitterLeadsPage() {
     [data?.counts],
   );
   const hotLeadsActive = data?.hotLeadsActive ?? 0;
+  const hotLeadsNeedingContact = data?.hotLeadsNeedingContact ?? 0;
   const total = useMemo(
     () => Object.values(counts).reduce((a, b) => a + b, 0),
     [counts],
@@ -243,11 +266,14 @@ export function AdminFitterLeadsPage() {
               className="text-3xl font-semibold tabular-nums"
               style={{ color: "hsl(var(--ink-1))" }}
             >
-              {hotLeadsActive}
+              {hotLeadsNeedingContact}
             </div>
           </div>
           <div className="text-xs text-slate-500 leading-snug">
-            Opened 3+ campaign emails without ordering.
+            {hotLeadsNeedingContact} need a CSR call now ·{" "}
+            {hotLeadsActive - hotLeadsNeedingContact} already contacted.
+            <br />
+            Hot = 3+ opens or any click without ordering.
             <br />
             {hotOnly
               ? "Filter is ON — click to show all leads."
@@ -452,21 +478,43 @@ export function AdminFitterLeadsPage() {
                     {r.campaignTouchCount}/11
                   </td>
                   <td className="px-3 py-2 align-top text-xs">
-                    <span
-                      className="tabular-nums font-medium"
-                      style={{ color: r.engagementScore > 0 ? "#155e75" : "#9ca3af" }}
-                    >
-                      {r.engagementScore}
-                    </span>
-                    {isHot && (
+                    <div className="flex items-center gap-2 flex-wrap">
                       <span
-                        className="ml-2 inline-block px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider"
-                        style={{ background: "#fee2e2", color: "#9f1239" }}
-                        data-testid={`lead-hot-badge-${r.id}`}
+                        className="tabular-nums font-medium"
+                        title={`${r.engagementScore} engagement points (1 per open, 5 per click)`}
+                        style={{ color: r.engagementScore > 0 ? "#155e75" : "#9ca3af" }}
                       >
-                        Hot
+                        {r.engagementScore}
                       </span>
-                    )}
+                      {r.clickCount > 0 && (
+                        <span
+                          className="tabular-nums text-[11px] px-1 rounded"
+                          title={`${r.clickCount} CTA click${r.clickCount === 1 ? "" : "s"}`}
+                          style={{ background: "#e0f2fe", color: "#075985" }}
+                        >
+                          {r.clickCount}🖱
+                        </span>
+                      )}
+                      {isHot && !r.csrContactedAt && (
+                        <span
+                          className="inline-block px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider"
+                          style={{ background: "#fee2e2", color: "#9f1239" }}
+                          data-testid={`lead-hot-badge-${r.id}`}
+                        >
+                          Hot
+                        </span>
+                      )}
+                      {isHot && r.csrContactedAt && (
+                        <span
+                          className="inline-block px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider"
+                          style={{ background: "#dcfce7", color: "#14532d" }}
+                          title={`Contacted ${formatRelative(r.csrContactedAt, nowMs)} by ${r.csrContactedBy ?? "—"}`}
+                          data-testid={`lead-contacted-badge-${r.id}`}
+                        >
+                          Contacted
+                        </span>
+                      )}
+                    </div>
                   </td>
                   <td className="px-3 py-2 align-top text-xs text-slate-600">
                     {r.nextCampaignTouchAt
@@ -479,21 +527,44 @@ export function AdminFitterLeadsPage() {
                     {formatRelative(r.createdAt, nowMs)}
                   </td>
                   <td className="px-3 py-2 align-top text-right">
-                    {canUnsubscribe && (
-                      <button
-                        type="button"
-                        onClick={() => unsubscribeMut.mutate(r.id)}
-                        disabled={pendingId === r.id}
-                        className="px-2 py-1 rounded text-xs font-semibold border bg-white disabled:opacity-50"
-                        style={{
-                          color: "#7f1d1d",
-                          borderColor: "#fecaca",
-                        }}
-                        data-testid={`lead-unsubscribe-${r.id}`}
-                      >
-                        {pendingId === r.id ? "…" : "Unsubscribe"}
-                      </button>
-                    )}
+                    <div className="flex gap-1.5 justify-end flex-wrap">
+                      {isHot && !r.csrContactedAt && (
+                        <button
+                          type="button"
+                          onClick={() => markContactedMut.mutate(r.id)}
+                          disabled={pendingId === r.id}
+                          className="px-2 py-1 rounded text-xs font-semibold border bg-white disabled:opacity-50"
+                          style={{
+                            color: "#14532d",
+                            borderColor: "#86efac",
+                            background: "#f0fdf4",
+                          }}
+                          data-testid={`lead-mark-contacted-${r.id}`}
+                          title="Stamp this lead as CSR-contacted so it drops out of the call-now queue."
+                        >
+                          {pendingId === r.id && pendingAction === "contacted"
+                            ? "…"
+                            : "Mark contacted"}
+                        </button>
+                      )}
+                      {canUnsubscribe && (
+                        <button
+                          type="button"
+                          onClick={() => unsubscribeMut.mutate(r.id)}
+                          disabled={pendingId === r.id}
+                          className="px-2 py-1 rounded text-xs font-semibold border bg-white disabled:opacity-50"
+                          style={{
+                            color: "#7f1d1d",
+                            borderColor: "#fecaca",
+                          }}
+                          data-testid={`lead-unsubscribe-${r.id}`}
+                        >
+                          {pendingId === r.id && pendingAction === "unsubscribe"
+                            ? "…"
+                            : "Unsubscribe"}
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               );

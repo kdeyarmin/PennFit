@@ -84,6 +84,7 @@ import {
   FINAL_CALL_OFFSET_MS,
   signUnsubscribeToken,
   signOpenTrackingToken,
+  signClickTrackingToken,
 } from "../../routes/shop/fitter-complete";
 
 const JOB_NAME = "fitter-lead.supply-campaign";
@@ -334,16 +335,22 @@ function maskPartVocabulary(maskType: string | null): MaskPartVocab {
 
 /** Subscription auto-ship upsell snippet rendered into T7-T9
  *  footers. Single CTA + one-sentence value prop; T10 (the warm
- *  sendoff) deliberately omits this to keep the tone non-salesy. */
-function renderSubscriptionUpsell(shopUrl: string): {
-  html: string;
-  text: string;
-} {
+ *  sendoff) deliberately omits this to keep the tone non-salesy.
+ *
+ *  `shopUrl` is the bare subscription URL used in the plain-text
+ *  body; `wrappedSubscribeUrl` (when provided) is the click-
+ *  tracked redirect URL used in the HTML CTA. Plain text keeps
+ *  the bare URL so spam filters don't down-weight obvious
+ *  redirect domains. */
+function renderSubscriptionUpsell(
+  shopUrl: string,
+  wrappedSubscribeUrl: string,
+): { html: string; text: string } {
   const subscribeUrl = `${shopUrl}/subscribe`;
   return {
     html: `<div style="margin-top:18px;padding:14px 16px;background:#fef6e0;border-left:3px solid ${BRAND_GOLD};border-radius:4px;font-size:14px;line-height:1.5;">
       <strong>Never run out:</strong> set up auto-ship and save 10% on every order. Skip or cancel any month — no commitment.
-      <div style="margin-top:8px;"><a href="${subscribeUrl}" style="color:${BRAND_NAVY};font-weight:600;text-decoration:underline;">Set up auto-ship</a></div>
+      <div style="margin-top:8px;"><a href="${wrappedSubscribeUrl}" style="color:${BRAND_NAVY};font-weight:600;text-decoration:underline;">Set up auto-ship</a></div>
     </div>`,
     text: `\n\nNever run out: set up auto-ship and save 10% on every order. Skip or cancel any month — no commitment.\n${subscribeUrl}`,
   };
@@ -375,6 +382,14 @@ export function composeTouchpoint(opts: {
    *  Optional so the pure function stays testable without the link
    *  HMAC key configured. When null, no pixel is embedded. */
   trackingPixelUrl?: string | null;
+  /** Per-CTA click-tracking wrapper. Given a link_key (one of
+   *  CTA_DESTINATIONS in fitter-complete.ts), returns the signed
+   *  redirect URL that records the click before 302-ing to the
+   *  destination. When null, HTML CTAs use the bare URL (testing
+   *  + dev mode where the link HMAC key isn't configured). Plain-
+   *  text CTAs ALWAYS use the bare URL — tracking-redirect domains
+   *  in plain text read as spammy and trip filters. */
+  wrapCta?: ((linkKey: string) => string) | null;
 }): TouchpointCopy {
   const {
     touchIndex,
@@ -386,7 +401,15 @@ export function composeTouchpoint(opts: {
     unsubscribeUrl,
     firstName,
     trackingPixelUrl,
+    wrapCta,
   } = opts;
+
+  /** HTML CTA URL — wrapped through the click-tracking redirect
+   *  when wrapCta is configured, bare otherwise. The `fallback`
+   *  is the plain URL we'd 302 to and is what plain-text bodies
+   *  reference directly. */
+  const ctaHref = (linkKey: string, fallback: string): string =>
+    wrapCta ? wrapCta(linkKey) : fallback;
   // Friendly "your AirFit P30i" snippet, fallback when the recommended
   // mask name isn't persisted yet (legacy rows or attribution races).
   const maskRef = recommendedMaskName
@@ -474,7 +497,7 @@ export function composeTouchpoint(opts: {
       ].join("\n");
       const bodyHtml = `
         <p>Yesterday you ran our at-home fitting and we matched you to <strong>${maskRefHtml}</strong>. Your measurements are saved — no need to redo them.</p>
-        ${renderCtaButton("Pick up where you left off", resumeUrl)}
+        ${renderCtaButton("Pick up where you left off", ctaHref("results", resumeUrl))}
         <p style="color:${MUTED};font-size:14px;">Most patients we work with notice deeper sleep in the first week. Reply to this email if you have a question — a real human reads it.</p>`;
       return {
         email: buildEmail(subject, preheader, bodyHtml, bodyText),
@@ -506,7 +529,7 @@ export function composeTouchpoint(opts: {
           <li>Easy to clean in under a minute</li>
         </ul>
         <p>Pair it with our <strong>30-night comfort guarantee</strong> — if it doesn&apos;t feel right, we swap it for free.</p>
-        ${renderCtaButton("Take another look", resumeUrl)}`;
+        ${renderCtaButton("Take another look", ctaHref("results", resumeUrl))}`;
       return {
         email: buildEmail(subject, preheader, bodyHtml, bodyText),
         sms: `${smsNamePrefix}${practiceName}: ${maskRef} — 30-night swap-for-free guarantee. ${resumeUrl} STOP to opt out.`,
@@ -526,7 +549,7 @@ export function composeTouchpoint(opts: {
       const bodyHtml = `
         <p>Your FSA / HSA dollars expire <strong>${escapeHtml(fsaDeadlineLabel)}</strong>. Most patients lose money sitting in their account every year because they forget.</p>
         <p>CPAP masks and supplies are FSA- and HSA-eligible. We accept your card directly at checkout — no receipts, no reimbursement paperwork.</p>
-        ${renderCtaButton("Browse compatible supplies", shopUrl)}`;
+        ${renderCtaButton("Browse compatible supplies", ctaHref("shop", shopUrl))}`;
       return {
         email: buildEmail(subject, preheader, bodyHtml, bodyText),
         sms: "",
@@ -548,7 +571,7 @@ export function composeTouchpoint(opts: {
       const bodyHtml = `
         <p style="font-size:22px;line-height:1.3;margin:0 0 12px 0;"><strong style="color:${BRAND_NAVY};">15% off your first order</strong></p>
         <p>One-time offer — code <code style="background:#fef3c7;padding:4px 10px;border-radius:4px;font-size:16px;font-weight:600;letter-spacing:0.5px;">${escapeHtml(promo)}</code> takes 15% off your first order, mask or supplies. <strong>Valid 7 days from this email.</strong></p>
-        ${renderCtaButton(`Shop ${maskRef}`, shopUrl)}
+        ${renderCtaButton(`Shop ${maskRef}`, ctaHref("promo", shopUrl))}
         <p style="color:${MUTED};font-size:13px;">Works on ${maskRefHtml} or anything else in our catalog. One per patient.</p>`;
       return {
         email: buildEmail(subject, preheader, bodyHtml, bodyText),
@@ -577,7 +600,7 @@ export function composeTouchpoint(opts: {
           <li>Bed partner sleeping through the night</li>
         </ul>
         <p>We&apos;ve held your fitting recommendation — when you&apos;re ready:</p>
-        ${renderCtaButton("See my recommendation", resumeUrl)}`;
+        ${renderCtaButton("See my recommendation", ctaHref("results", resumeUrl))}`;
       return {
         email: buildEmail(subject, preheader, bodyHtml, bodyText),
         sms: "",
@@ -598,7 +621,7 @@ export function composeTouchpoint(opts: {
       const bodyHtml = `
         <p>This is the <strong>last email</strong> we&apos;ll send about <strong>${maskRefHtml}</strong>.</p>
         <p>Your fitting will stay on file for 12 months in case you&apos;d like to come back to it. If you have questions, just reply — we read every reply.</p>
-        ${renderCtaButton("Resume any time", resumeUrl)}`;
+        ${renderCtaButton("Resume any time", ctaHref("results", resumeUrl))}`;
       return {
         email: buildEmail(subject, preheader, bodyHtml, bodyText),
         sms: `${smsNamePrefix}${practiceName}: last note about ${maskRef} — saved 12mo. ${resumeUrl} STOP to opt out.`,
@@ -613,7 +636,7 @@ export function composeTouchpoint(opts: {
       // T7 — day 30 after order: cushion / pillow-insert replacement.
       const subject = `${nameSubjectPrefix}Time to replace your ${vocab.cushionTerm}`;
       const preheader = `30 days in — your seal is at the end of its prime life.`;
-      const sub = renderSubscriptionUpsell(shopUrl);
+      const sub = renderSubscriptionUpsell(shopUrl, ctaHref("subscribe", `${shopUrl}/subscribe`));
       const bodyText = [
         `It's been about 30 days since your mask shipped. ${vocab.cushionNote}`,
         "",
@@ -622,7 +645,7 @@ export function composeTouchpoint(opts: {
       ].join("\n");
       const bodyHtml = `
         <p>It&apos;s been about 30 days since your mask shipped. ${escapeHtml(vocab.cushionNote)}</p>
-        ${renderCtaButton(`Order replacement ${vocab.cushionTerm}`, shopUrl)}
+        ${renderCtaButton(`Order replacement ${vocab.cushionTerm}`, ctaHref("shop", shopUrl))}
         ${sub.html}`;
       return {
         email: buildEmail(subject, preheader, bodyHtml, bodyText),
@@ -633,7 +656,7 @@ export function composeTouchpoint(opts: {
       // T8 — day 60 after order: filter check + mask-type cross-sell.
       const subject = `${nameSubjectPrefix}Check your filter — 60 days in`;
       const preheader = `Disposable filters expire every 30 days. You're overdue.`;
-      const sub = renderSubscriptionUpsell(shopUrl);
+      const sub = renderSubscriptionUpsell(shopUrl, ctaHref("subscribe", `${shopUrl}/subscribe`));
       const bodyText = [
         "Quick reminder: disposable inline filters need replacing every 30 days on most CPAP machines. If you've been on your new mask for 60 days, you're already overdue for at least one filter swap.",
         "",
@@ -648,7 +671,7 @@ export function composeTouchpoint(opts: {
         <p>Quick reminder: disposable inline filters need replacing every 30 days on most CPAP machines. If you&apos;ve been on your new mask for 60 days, you&apos;re already overdue for at least one filter swap.</p>
         <p style="color:${MUTED};font-size:14px;">Why it matters: a clogged filter forces your machine to work harder + can pull in more allergens overnight.</p>
         <p><em>${escapeHtml(vocab.filterCrossSell)}</em></p>
-        ${renderCtaButton("Filters + accessories", shopUrl)}
+        ${renderCtaButton("Filters + accessories", ctaHref("shop", shopUrl))}
         ${sub.html}`;
       return {
         email: buildEmail(subject, preheader, bodyHtml, bodyText),
@@ -659,7 +682,7 @@ export function composeTouchpoint(opts: {
       // T9 — day 90 after order: mask-type-aware headgear language.
       const subject = `${nameSubjectPrefix}Your ${vocab.headgearTerm} at 90 days`;
       const preheader = `Loose straps are the #1 cause of new leaks on a comfortable mask.`;
-      const sub = renderSubscriptionUpsell(shopUrl);
+      const sub = renderSubscriptionUpsell(shopUrl, ctaHref("subscribe", `${shopUrl}/subscribe`));
       const bodyText = [
         `If your mask is starting to feel loose or you're cranking the straps tighter than you used to, your ${vocab.headgearTerm} have reached the end of their useful life. Manufacturer guidance puts headgear at 90-180 days; loose straps are the #1 cause of new leaks on a previously-comfortable mask.`,
         "",
@@ -668,7 +691,7 @@ export function composeTouchpoint(opts: {
       ].join("\n");
       const bodyHtml = `
         <p>If your mask is starting to feel loose or you&apos;re cranking the straps tighter than you used to, your ${escapeHtml(vocab.headgearTerm)} have reached the end of their useful life. Manufacturer guidance puts headgear at 90-180 days; loose straps are the #1 cause of new leaks on a previously-comfortable mask.</p>
-        ${renderCtaButton(`Replacement ${vocab.headgearTerm}`, shopUrl)}
+        ${renderCtaButton(`Replacement ${vocab.headgearTerm}`, ctaHref("shop", shopUrl))}
         ${sub.html}`;
       return {
         email: buildEmail(subject, preheader, bodyHtml, bodyText),
@@ -686,6 +709,7 @@ export function composeTouchpoint(opts: {
       const subject = `${nameSubjectPrefix}Your 6-month mask refresh`;
       const preheader = `Most insurance covers a new mask every 6 months. Plus a referral perk.`;
       const referUrl = `${shopUrl}/refer`;
+      const wrappedReferUrl = ctaHref("refer", referUrl);
       const bodyText = [
         "It's been 6 months since you started with us. By now your mask has earned its retirement — manufacturers rate the silicone seal at 6-12 months before performance degrades.",
         "",
@@ -707,10 +731,10 @@ export function composeTouchpoint(opts: {
           <li>Ship a fresh version of the same mask you&apos;ve been using</li>
           <li>Try something different if your sleep position has changed</li>
         </ul>
-        ${renderCtaButton("Start your refresh", resumeUrl)}
+        ${renderCtaButton("Start your refresh", ctaHref("results", resumeUrl))}
         <div style="margin-top:22px;padding:14px 16px;background:#eef2f7;border-left:3px solid ${BRAND_NAVY};border-radius:4px;font-size:14px;line-height:1.5;">
           <strong>Know someone who snores?</strong> Share us — you both get $25 off your next order.
-          <div style="margin-top:8px;"><a href="${referUrl}" style="color:${BRAND_NAVY};font-weight:600;text-decoration:underline;">Share with a friend</a></div>
+          <div style="margin-top:8px;"><a href="${wrappedReferUrl}" style="color:${BRAND_NAVY};font-weight:600;text-decoration:underline;">Share with a friend</a></div>
         </div>`;
       return {
         email: buildEmail(subject, preheader, bodyHtml, bodyText),
@@ -745,7 +769,7 @@ export function composeTouchpoint(opts: {
         <p>It&apos;s been a few months since you ran our at-home fitting and matched to <strong>${maskRefHtml}</strong>. We&apos;re cleaning up our records this week.</p>
         <p style="font-size:20px;line-height:1.3;margin:18px 0 12px 0;"><strong style="color:${BRAND_NAVY};">20% off your first order</strong></p>
         <p>Before we close your fitting, here&apos;s a final offer: code <code style="background:#fef3c7;padding:4px 10px;border-radius:4px;font-size:16px;font-weight:600;letter-spacing:0.5px;">${escapeHtml(promo)}</code> takes 20% off your first order — masks, supplies, anything in the catalog. <strong>Valid 14 days.</strong></p>
-        ${renderCtaButton(`Shop with ${promo}`, shopUrl)}
+        ${renderCtaButton(`Shop with ${promo}`, ctaHref("promo", shopUrl))}
         <p style="color:${MUTED};font-size:14px;">After this email we won&apos;t reach out about this fitting again. Your measurements stay on file for 12 months in case you change your mind, but we&apos;ll stop showing up in your inbox.</p>
         <p style="color:${MUTED};font-size:14px;">Reply to this email if you have a question — we read every reply.</p>`;
       return {
@@ -943,6 +967,7 @@ export async function runFitterSupplyCampaignSweep(): Promise<SupplyCampaignStat
     // forged or replayed against another patient.
     let unsubscribeUrl: string;
     let trackingPixelUrl: string | null = null;
+    let wrapCta: ((linkKey: string) => string) | null;
     try {
       const unsubToken = signUnsubscribeToken(lead.id);
       unsubscribeUrl = `${baseUrl}/shop/fitter-leads/unsubscribe?t=${encodeURIComponent(unsubToken)}`;
@@ -960,6 +985,49 @@ export async function runFitterSupplyCampaignSweep(): Promise<SupplyCampaignStat
           "fitter-lead.supply-campaign: open tracking token mint failed",
         );
       }
+      // Click-tracking redirect wrapper. Mints one token per
+      // (lead, touch, link_key) on demand. Same key as the open
+      // pixel; distinct payload prefix 'c|' so cross-replay across
+      // the open/unsubscribe/click endpoints all fail closed.
+      const safeLeadId = lead.id;
+      const safeTouchIndex = nextTouchIndex;
+      wrapCta = (linkKey: string): string => {
+        try {
+          const token = signClickTrackingToken(
+            safeLeadId,
+            safeTouchIndex,
+            linkKey,
+          );
+          return `${baseUrl}/shop/track/c?t=${encodeURIComponent(token)}`;
+        } catch (err) {
+          // If we can't mint a click token, fall back to the bare
+          // destination — better a working CTA without tracking
+          // than a broken email.
+          logger.warn(
+            { err, leadId: safeLeadId, linkKey },
+            "fitter-lead.supply-campaign: click token mint failed (using bare URL)",
+          );
+          // The composer's ctaHref() inserts the fallback URL when
+          // wrapCta returns the same value as the bare; signalling
+          // "no wrap" is easier here than threading a "null this
+          // particular CTA" through.
+          switch (linkKey) {
+            case "results":
+              return `${baseUrl}/results`;
+            case "shop":
+            case "promo":
+              return `${baseUrl}/shop`;
+            case "subscribe":
+              return `${baseUrl}/shop/subscribe`;
+            case "refer":
+              return `${baseUrl}/shop/refer`;
+            case "consent":
+              return `${baseUrl}/consent`;
+            default:
+              return `${baseUrl}/shop`;
+          }
+        }
+      };
     } catch (err) {
       // RESUPPLY_LINK_HMAC_KEY missing → service misconfig. Skip
       // sending; we never want to ship an email without a working
@@ -982,6 +1050,7 @@ export async function runFitterSupplyCampaignSweep(): Promise<SupplyCampaignStat
       unsubscribeUrl,
       firstName: lead.first_name,
       trackingPixelUrl,
+      wrapCta,
     });
 
     // Email leg.

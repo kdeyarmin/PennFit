@@ -93,7 +93,7 @@ router.get(
       .schema("resupply")
       .from("fitter_leads")
       .select(
-        "id, email, phone_e164, sms_opt_in, marketing_opt_in, source, journey_stage, recommended_mask_id, recommended_mask_name, recommended_mask_type, first_name, campaign_touch_count, last_campaign_touch_at, next_campaign_touch_at, first_order_id, first_order_placed_at, unsubscribed_at, completed_at, created_at, engagement_score, hot_lead_at",
+        "id, email, phone_e164, sms_opt_in, marketing_opt_in, source, journey_stage, recommended_mask_id, recommended_mask_name, recommended_mask_type, first_name, campaign_touch_count, last_campaign_touch_at, next_campaign_touch_at, first_order_id, first_order_placed_at, unsubscribed_at, completed_at, created_at, engagement_score, hot_lead_at, click_count, csr_contacted_at, csr_contacted_by",
       )
       // Hot leads sort to the top when present (CSR outreach queue);
       // otherwise most-recently-completed first; falls back to
@@ -123,6 +123,7 @@ router.get(
       unsubscribedCount,
       expiredCount,
       hotLeadCount,
+      hotNeedsContactCount,
     ] = await Promise.all([
       supabase
         .schema("resupply")
@@ -165,13 +166,26 @@ router.get(
         .select("*", { count: "exact", head: true })
         .eq("journey_stage", "expired"),
       // Hot-lead tile: opted-in, in any pre-conversion stage, with
-      // hot_lead_at stamped. These are the ones a CSR should call
-      // RIGHT NOW.
+      // hot_lead_at stamped. The "active" count includes leads
+      // whether or not a CSR has reached out yet.
       supabase
         .schema("resupply")
         .from("fitter_leads")
         .select("*", { count: "exact", head: true })
         .not("hot_lead_at", "is", null)
+        .is("first_order_id", null)
+        .is("unsubscribed_at", null),
+      // "Needs CSR contact" — narrower subset of the above. Mig
+      // 0154 partial index `fitter_leads_hot_uncontacted_idx`
+      // covers this exact predicate. THIS is the actionable
+      // "call now" number for ops; the broader hotLeadsActive
+      // includes leads ops has already worked.
+      supabase
+        .schema("resupply")
+        .from("fitter_leads")
+        .select("*", { count: "exact", head: true })
+        .not("hot_lead_at", "is", null)
+        .is("csr_contacted_at", null)
         .is("first_order_id", null)
         .is("unsubscribed_at", null),
     ]);
@@ -186,6 +200,7 @@ router.get(
       unsubscribedCount,
       expiredCount,
       hotLeadCount,
+      hotNeedsContactCount,
     ]) {
       if (r.error) throw r.error;
     }
@@ -201,6 +216,7 @@ router.get(
       expired: expiredCount.count ?? 0,
     };
     const hotLeadsActive = hotLeadCount.count ?? 0;
+    const hotLeadsNeedingContact = hotNeedsContactCount.count ?? 0;
 
     // Conversion rate: (reorder_active + converted) / completed-cohort.
     // The reorder_active stage IS a converted lead — they bought
@@ -227,6 +243,7 @@ router.get(
         filter: { stage, source, hotOnly: hotOnly === true },
         counts,
         hotLeadsActive,
+        hotLeadsNeedingContact,
       },
       "admin/fitter-leads: list",
     );
@@ -254,10 +271,14 @@ router.get(
         createdAt: r.created_at,
         engagementScore: r.engagement_score ?? 0,
         hotLeadAt: r.hot_lead_at,
+        clickCount: r.click_count ?? 0,
+        csrContactedAt: r.csr_contacted_at,
+        csrContactedBy: r.csr_contacted_by,
       })),
       counts,
       conversionRate,
       hotLeadsActive,
+      hotLeadsNeedingContact,
     });
   },
 );
@@ -303,6 +324,61 @@ router.post(
       id: row.id,
       journeyStage: row.journey_stage,
       unsubscribedAt: row.unsubscribed_at,
+    });
+  },
+);
+
+// POST /admin/fitter-leads/:id/mark-contacted — CSR acknowledges
+// outreach to a hot lead. Stamps csr_contacted_at + csr_contacted_by
+// so the row drops out of the "hot leads needing contact" queue;
+// hot_lead_at stays stamped (we keep the historical signal).
+//
+// Idempotent: a repeated call updates the stamp to the latest
+// time so ops can see "I followed up again N minutes ago" rather
+// than the original first-contact time. If that's a problem we
+// can split into two columns (first_contacted vs latest_contacted)
+// later — keeping it simple now.
+router.post(
+  "/admin/fitter-leads/:id/mark-contacted",
+  requirePermission("conversations.manage"),
+  adminRateLimit({ name: "fitter_leads.mark_contacted", preset: "mutation" }),
+  async (req, res) => {
+    const idParam = req.params.id;
+    if (typeof idParam !== "string" || !ID_RE.test(idParam)) {
+      res.status(400).json({ error: "invalid_id" });
+      return;
+    }
+
+    const supabase = getSupabaseServiceRoleClient();
+    const { data: row, error } = await supabase
+      .schema("resupply")
+      .from("fitter_leads")
+      .update({
+        csr_contacted_at: new Date().toISOString(),
+        csr_contacted_by: req.adminEmail ?? null,
+      })
+      .eq("id", idParam)
+      .select("id, csr_contacted_at, csr_contacted_by, hot_lead_at")
+      .maybeSingle();
+    if (error) throw error;
+    if (!row) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+
+    req.log?.info?.(
+      {
+        leadId: row.id,
+        actor: req.adminEmail ?? null,
+        wasHot: row.hot_lead_at !== null,
+      },
+      "admin/fitter-leads: marked contacted",
+    );
+
+    res.json({
+      id: row.id,
+      csrContactedAt: row.csr_contacted_at,
+      csrContactedBy: row.csr_contacted_by,
     });
   },
 );

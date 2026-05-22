@@ -44,6 +44,10 @@ export interface FitterLeadRow {
   /** Mig 0153 — engagement signals from open tracking. */
   engagementScore: number;
   hotLeadAt: string | null;
+  /** Mig 0154 — click tracking + CSR contact workflow. */
+  clickCount: number;
+  csrContactedAt: string | null;
+  csrContactedBy: string | null;
 }
 
 export interface ListFitterLeadsResponse {
@@ -53,6 +57,9 @@ export interface ListFitterLeadsResponse {
   /** Count of active (un-converted, un-unsubscribed) hot leads
    *  across all stages — the CSR outreach priority queue. */
   hotLeadsActive: number;
+  /** Subset of hotLeadsActive that hasn't been contacted yet —
+   *  the actionable "call now" number for ops. */
+  hotLeadsNeedingContact: number;
 }
 
 export async function listFitterLeads(
@@ -97,4 +104,26 @@ export async function unsubscribeFitterLead(
     throw new Error(`Failed to unsubscribe lead (${res.status})`);
   }
   return (await res.json()) as UnsubscribeFitterLeadResponse;
+}
+
+export interface MarkContactedFitterLeadResponse {
+  id: string;
+  csrContactedAt: string;
+  csrContactedBy: string | null;
+}
+
+export async function markContactedFitterLead(
+  id: string,
+): Promise<MarkContactedFitterLeadResponse> {
+  const res = await fetch(
+    `/resupply-api/admin/fitter-leads/${encodeURIComponent(id)}/mark-contacted`,
+    {
+      method: "POST",
+      headers: { Accept: "application/json" },
+    },
+  );
+  if (!res.ok) {
+    throw new Error(`Failed to mark lead contacted (${res.status})`);
+  }
+  return (await res.json()) as MarkContactedFitterLeadResponse;
 }

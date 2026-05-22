@@ -427,6 +427,57 @@ describe("composeTouchpoint — T10 refer-a-friend + T11 final call", () => {
   });
 });
 
+describe("composeTouchpoint — click tracking", () => {
+  const wrapCta = (linkKey: string) =>
+    `https://example.test/shop/track/c?t=TOK&k=${linkKey}`;
+
+  it("routes HTML CTAs through the wrapCta callback (T1 results)", () => {
+    const out = composeTouchpoint({
+      ...BASE_OPTS,
+      touchIndex: 1,
+      wrapCta,
+    });
+    expect(out.email.html).toContain("/shop/track/c?t=TOK&k=results");
+    // Plain text never uses the wrapped URL — only the bare URL.
+    expect(out.email.text).not.toContain("/shop/track/c");
+    expect(out.email.text).toContain("https://example.test/results");
+  });
+
+  it("routes the T4 promo CTA through the promo link_key", () => {
+    const out = composeTouchpoint({
+      ...BASE_OPTS,
+      touchIndex: 4,
+      wrapCta,
+    });
+    expect(out.email.html).toContain("/shop/track/c?t=TOK&k=promo");
+  });
+
+  it("routes the T7 subscription upsell through the subscribe link_key", () => {
+    const out = composeTouchpoint({
+      ...BASE_OPTS,
+      touchIndex: 7,
+      wrapCta,
+    });
+    expect(out.email.html).toContain("/shop/track/c?t=TOK&k=subscribe");
+    expect(out.email.html).toContain("/shop/track/c?t=TOK&k=shop");
+  });
+
+  it("routes the T10 refer-a-friend CTA through the refer link_key", () => {
+    const out = composeTouchpoint({
+      ...BASE_OPTS,
+      touchIndex: 10,
+      wrapCta,
+    });
+    expect(out.email.html).toContain("/shop/track/c?t=TOK&k=refer");
+  });
+
+  it("uses bare URLs when wrapCta is not provided (test seam)", () => {
+    const out = composeTouchpoint({ ...BASE_OPTS, touchIndex: 1 });
+    expect(out.email.html).not.toContain("/shop/track/c");
+    expect(out.email.html).toContain("https://example.test/results");
+  });
+});
+
 describe("composeTouchpoint — tracking pixel", () => {
   it("embeds the tracking pixel URL in the HTML when provided", () => {
     const out = composeTouchpoint({

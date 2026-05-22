@@ -35,6 +35,7 @@ vi.mock("@workspace/resupply-db", async () => {
 import fitterCompleteRouter, {
   signOpenTrackingToken,
   signUnsubscribeToken,
+  signClickTrackingToken,
 } from "./fitter-complete";
 
 function makeApp(): Express {
@@ -160,5 +161,117 @@ describe("signOpenTrackingToken / cross-token isolation", () => {
       "base64",
     ).toString("utf8");
     expect(payload).toMatch(/^o\|lead-1\|5\|\d+$/);
+  });
+});
+
+describe("GET /shop/track/c — click tracking redirect", () => {
+  it("302s to the correct destination on a valid token", async () => {
+    const token = signClickTrackingToken("lead-1", 4, "shop");
+    const res = await request(makeApp())
+      .get("/resupply-api/shop/track/c")
+      .query({ t: token });
+    expect(res.status).toBe(302);
+    expect(res.headers.location).toContain("/shop");
+  });
+
+  it("routes each link_key to its own allowlisted destination", async () => {
+    const cases: Array<[string, string]> = [
+      ["results", "/results"],
+      ["shop", "/shop"],
+      ["subscribe", "/shop/subscribe"],
+      ["refer", "/shop/refer"],
+      ["consent", "/consent"],
+    ];
+    for (const [key, suffix] of cases) {
+      const token = signClickTrackingToken("lead-1", 1, key);
+      const res = await request(makeApp())
+        .get("/resupply-api/shop/track/c")
+        .query({ t: token });
+      expect(res.status, `${key} route`).toBe(302);
+      expect(res.headers.location, `${key} destination`).toContain(suffix);
+    }
+  });
+
+  it("falls back to /shop on a missing token (still 302, never a 4xx)", async () => {
+    const res = await request(makeApp()).get("/resupply-api/shop/track/c");
+    expect(res.status).toBe(302);
+    expect(res.headers.location).toContain("/shop");
+  });
+
+  it("falls back on garbage token (no Supabase calls made)", async () => {
+    const res = await request(makeApp())
+      .get("/resupply-api/shop/track/c")
+      .query({ t: "garbage" });
+    expect(res.status).toBe(302);
+    expect(res.headers.location).toContain("/shop");
+    expect(supabaseMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects a click token whose link_key was tampered with", async () => {
+    // Re-mint a known-good token, then alter the link_key segment
+    // inside the payload (which invalidates the signature).
+    const goodToken = signClickTrackingToken("lead-1", 1, "shop");
+    const [payloadEncoded, sig] = goodToken.split(".");
+    // Decode payload, swap link_key from 'shop' to 'malicious',
+    // re-encode (signature is now mismatched).
+    const buf = Buffer.from(
+      payloadEncoded.replace(/-/g, "+").replace(/_/g, "/"),
+      "base64",
+    );
+    const tampered = buf.toString("utf8").replace("shop", "evilurl");
+    const tamperedEncoded = Buffer.from(tampered)
+      .toString("base64")
+      .replaceAll("+", "-")
+      .replaceAll("/", "_")
+      .replaceAll("=", "");
+    const tamperedToken = `${tamperedEncoded}.${sig}`;
+    const res = await request(makeApp())
+      .get("/resupply-api/shop/track/c")
+      .query({ t: tamperedToken });
+    // Bad signature → falls back to /shop, NEVER 302s to "evilurl".
+    expect(res.status).toBe(302);
+    expect(res.headers.location).toContain("/shop");
+    expect(res.headers.location).not.toContain("evilurl");
+  });
+
+  it("rejects an unknown link_key even with a valid signature", async () => {
+    // Even if an attacker controlled the HMAC key (they don't),
+    // an unknown link_key can't redirect somewhere outside the
+    // CTA_DESTINATIONS allowlist — verifyClickTrackingToken
+    // returns invalid before the redirect is built.
+    const token = signClickTrackingToken("lead-1", 1, "not_a_real_key");
+    const res = await request(makeApp())
+      .get("/resupply-api/shop/track/c")
+      .query({ t: token });
+    expect(res.status).toBe(302);
+    expect(res.headers.location).toContain("/shop"); // fallback
+  });
+
+  it("rejects an open-tracking token replayed at the click endpoint", async () => {
+    const openToken = signOpenTrackingToken("lead-1", 1);
+    const res = await request(makeApp())
+      .get("/resupply-api/shop/track/c")
+      .query({ t: openToken });
+    expect(res.status).toBe(302);
+    // Falls back since the prefix is 'o|' not 'c|'.
+    expect(res.headers.location).toContain("/shop");
+    expect(supabaseMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("signClickTrackingToken / cross-token isolation", () => {
+  it("uses the 'c|' payload prefix to keep open + click + unsubscribe distinct", () => {
+    const tok = signClickTrackingToken("lead-1", 7, "subscribe");
+    const payload = Buffer.from(
+      tok.split(".")[0].replace(/-/g, "+").replace(/_/g, "/"),
+      "base64",
+    ).toString("utf8");
+    expect(payload).toMatch(/^c\|lead-1\|7\|subscribe\|\d+$/);
+  });
+
+  it("produces a distinct token for the same lead+touch with a different link_key", () => {
+    const a = signClickTrackingToken("lead-1", 7, "shop");
+    const b = signClickTrackingToken("lead-1", 7, "subscribe");
+    expect(a).not.toBe(b);
   });
 });
