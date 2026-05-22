@@ -242,3 +242,115 @@ describe("account — formatMoneyCents no longer imported from @/lib/shop-api", 
     expect(SRC).not.toContain("formatMoneyCents");
   });
 });
+
+// ---------------------------------------------------------------------------
+// RemindersSection — P5: new tile on /account (process-simplification PR)
+// ---------------------------------------------------------------------------
+// Signed-in customers previously had to dig through a confirmation email to
+// reach /reminders/manage. The backend now resolves manage requests by
+// session email (no magic-link token required). This tile gives customers a
+// direct /account → /reminders/manage shortcut, and a secondary link to
+// /reminders for customers who haven't subscribed yet.
+
+describe("account — RemindersSection added (P5)", () => {
+  it("defines a RemindersSection function in account.tsx", () => {
+    expect(SRC).toContain("function RemindersSection");
+  });
+
+  it("renders RemindersSection inside AccountInner's section list", () => {
+    expect(SRC).toContain("<RemindersSection />");
+  });
+
+  it("wraps the tile in a section with data-testid='account-reminders-section'", () => {
+    expect(SRC).toContain('data-testid="account-reminders-section"');
+  });
+
+  it("imports Bell from lucide-react for the section header icon", () => {
+    expect(SRC).toContain("Bell,");
+    expect(SRC).toMatch(/import\s*\{[^}]*Bell[^}]*\}\s*from\s*["']lucide-react["']/);
+  });
+
+  it("renders a 'Manage reminders' link pointing to /reminders/manage", () => {
+    expect(SRC).toContain('href="/reminders/manage"');
+    expect(SRC).toContain('data-testid="account-link-reminders-manage"');
+  });
+
+  it("renders a 'Set up new' link pointing to /reminders", () => {
+    // Use a reminders-specific testid so the generic /reminders href doesn't
+    // accidentally match an unrelated element on the page.
+    expect(SRC).toContain('data-testid="account-link-reminders-signup"');
+    // Verify both testids are near /reminders and /reminders/manage hrefs.
+    const signupIdx = SRC.indexOf('data-testid="account-link-reminders-signup"');
+    const signupContext = SRC.slice(signupIdx - 400, signupIdx + 100);
+    expect(signupContext).toContain('href="/reminders"');
+  });
+
+  it("uses Link (SPA navigation) for both reminders targets", () => {
+    const manageIdx = SRC.indexOf('data-testid="account-link-reminders-manage"');
+    const signupIdx = SRC.indexOf('data-testid="account-link-reminders-signup"');
+    // Both elements must appear inside a <Link> wrapper.
+    const manageContext = SRC.slice(manageIdx - 300, manageIdx + 50);
+    const signupContext = SRC.slice(signupIdx - 300, signupIdx + 50);
+    expect(manageContext).toContain("Link");
+    expect(signupContext).toContain("Link");
+  });
+
+  it("does NOT issue a live API fetch to the manage endpoint from /account", () => {
+    // The section comment explicitly documents that probing the manage endpoint
+    // was intentionally omitted to avoid doubling the page fan-out.
+    expect(SRC).not.toContain("useGetReminderSubscription");
+    expect(SRC).not.toMatch(/fetch\(.*reminders\/manage/);
+  });
+
+  it("uses glass-card styling matching the other account tiles", () => {
+    const sectionIdx = SRC.indexOf('data-testid="account-reminders-section"');
+    const sectionContext = SRC.slice(sectionIdx, sectionIdx + 400);
+    expect(sectionContext).toContain("glass-card");
+  });
+
+  it("uses outline variant for the primary Manage reminders button", () => {
+    const manageIdx = SRC.indexOf('data-testid="account-link-reminders-manage"');
+    const manageContext = SRC.slice(manageIdx - 400, manageIdx + 50);
+    expect(manageContext).toContain('variant="outline"');
+  });
+
+  it("uses ghost variant for the secondary Set up new button", () => {
+    const signupIdx = SRC.indexOf('data-testid="account-link-reminders-signup"');
+    const signupContext = SRC.slice(signupIdx - 400, signupIdx + 50);
+    expect(signupContext).toContain('variant="ghost"');
+  });
+
+  it("renders the section heading 'Replacement reminders'", () => {
+    expect(SRC).toContain("Replacement reminders");
+  });
+
+  it("includes copy that communicates the skip-inbox benefit", () => {
+    // This copy must stay — it's the primary value proposition for the tile.
+    expect(SRC).toContain("Skip the inbox round-trip");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// RemindersSection ordering — placement regression
+// ---------------------------------------------------------------------------
+// The tile must appear BEFORE SubscriptionsSection (insurance-specific) and
+// AFTER ReorderSuggestionsSection so the most accessible self-service action
+// for non-insurance patients ranks appropriately in the page flow.
+
+describe("account — RemindersSection placement regression", () => {
+  it("appears before SubscriptionsSection in the source order", () => {
+    const remindersIdx = SRC.indexOf("<RemindersSection />");
+    const subscriptionsIdx = SRC.indexOf("<SubscriptionsSection");
+    expect(remindersIdx).toBeGreaterThan(-1);
+    expect(subscriptionsIdx).toBeGreaterThan(-1);
+    expect(remindersIdx).toBeLessThan(subscriptionsIdx);
+  });
+
+  it("appears after ReorderSuggestionsSection in the source order", () => {
+    const reorderIdx = SRC.indexOf("<ReorderSuggestionsSection />");
+    const remindersIdx = SRC.indexOf("<RemindersSection />");
+    expect(reorderIdx).toBeGreaterThan(-1);
+    expect(remindersIdx).toBeGreaterThan(-1);
+    expect(remindersIdx).toBeGreaterThan(reorderIdx);
+  });
+});
