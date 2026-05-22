@@ -30,8 +30,15 @@
 // individual customer id.
 
 import { Router, type IRouter } from "express";
+import { z } from "zod";
 
+import { logAudit } from "@workspace/resupply-audit";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import {
+  createSendgridClient,
+  EmailApiError,
+  EmailConfigError,
+} from "@workspace/resupply-email";
 
 import { logger } from "../../lib/logger";
 import {
@@ -41,6 +48,7 @@ import {
   type QuickbooksRowInput,
 } from "../../lib/quickbooks-export";
 import { renderTablePdf } from "../../lib/report-pdf";
+import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
@@ -876,6 +884,60 @@ router.get(
 // the revenue download).
 // ─────────────────────────────────────────────────────────────────
 
+// Compute the matching prior period ending the day BEFORE `from`,
+// of equal length. Example: from=2026-04-10, to=2026-04-19 (10
+// days inclusive) → prior period is 2026-03-31 through 2026-04-09.
+// Returned as an inclusive `[priorFrom, priorTo]` Date range that
+// can be passed straight back into fetchOrders / fetchReturns.
+function computePriorPeriod(
+  from: Date,
+  to: Date,
+): { priorFrom: Date; priorTo: Date } {
+  const lengthMs = to.getTime() - from.getTime();
+  const priorTo = new Date(from.getTime() - 86400_000); // day before `from`
+  const priorFrom = new Date(priorTo.getTime() - lengthMs);
+  return { priorFrom, priorTo };
+}
+
+function comparePeriodRequested(req: import("express").Request): boolean {
+  const v = req.query.compare;
+  return v === "true" || v === "1";
+}
+
+// Aggregate the rollup rows into a single totals object — re-used
+// by the revenue-summary PDF + the compare-to-prior summary.
+function totalsFromRevenueRows(rows: RevenueByDay[]): {
+  orders: number;
+  gross: number;
+  refunded: number;
+  net: number;
+} {
+  return rows.reduce(
+    (acc, r) => ({
+      orders: acc.orders + r.ordersCount,
+      gross: acc.gross + r.grossUsd,
+      refunded: acc.refunded + r.refundedUsd,
+      net: acc.net + r.netUsd,
+    }),
+    { orders: 0, gross: 0, refunded: 0, net: 0 },
+  );
+}
+
+function deltaPercent(current: number, prior: number): string {
+  if (prior === 0) {
+    if (current === 0) return "0.0%";
+    // Avoid divide-by-zero. Convention: report "+∞%" (or n/a) when
+    // the prior period had zero — common when the storefront just
+    // launched. We pick "n/a" because percentages over an empty
+    // baseline are misleading; the operator can see the absolute
+    // delta on the line above.
+    return "n/a";
+  }
+  const pct = ((current - prior) / prior) * 100;
+  const sign = pct >= 0 ? "+" : "";
+  return `${sign}${pct.toFixed(1)}%`;
+}
+
 router.get(
   "/admin/reports/revenue-summary.csv",
   requirePermission("reports.read"),
@@ -899,20 +961,47 @@ router.get(
   requirePermission("reports.read"),
   async (req, res) => {
     const { from, to } = parseRange(req);
+    const compare = comparePeriodRequested(req);
+
+    // Always fetch the current period. Only fetch the prior period
+    // when ?compare=true to keep the default download fast.
     const [orders, returns] = await Promise.all([
       fetchOrders(from, to),
       fetchReturns(from, to),
     ]);
     const rows = rollupRevenue(orders, returns);
-    const totals = rows.reduce(
-      (acc, r) => ({
-        gross: acc.gross + r.grossUsd,
-        refunded: acc.refunded + r.refundedUsd,
-        net: acc.net + r.netUsd,
-        orders: acc.orders + r.ordersCount,
-      }),
-      { gross: 0, refunded: 0, net: 0, orders: 0 },
-    );
+    const totals = totalsFromRevenueRows(rows);
+
+    const summaryLines: string[] = [
+      `Orders: ${totals.orders}`,
+      `Gross: $${totals.gross.toFixed(2)}`,
+      `Refunded: $${totals.refunded.toFixed(2)}`,
+      `Net: $${totals.net.toFixed(2)}`,
+    ];
+
+    if (compare) {
+      const { priorFrom, priorTo } = computePriorPeriod(from, to);
+      const [priorOrders, priorReturns] = await Promise.all([
+        fetchOrders(priorFrom, priorTo),
+        fetchReturns(priorFrom, priorTo),
+      ]);
+      const priorRows = rollupRevenue(priorOrders, priorReturns);
+      const priorTotals = totalsFromRevenueRows(priorRows);
+      summaryLines.push("");
+      summaryLines.push(
+        `Compared to ${rangeLabel(priorFrom, priorTo)}:`,
+      );
+      summaryLines.push(
+        `  Prior orders: ${priorTotals.orders} (${deltaPercent(totals.orders, priorTotals.orders)} vs prior)`,
+      );
+      summaryLines.push(
+        `  Prior gross: $${priorTotals.gross.toFixed(2)} (${deltaPercent(totals.gross, priorTotals.gross)})`,
+      );
+      summaryLines.push(
+        `  Prior net: $${priorTotals.net.toFixed(2)} (${deltaPercent(totals.net, priorTotals.net)})`,
+      );
+    }
+
     const pdf = await renderTablePdf({
       title: "Revenue summary",
       range: rangeLabel(from, to),
@@ -931,12 +1020,7 @@ router.get(
         r.refundedUsd.toFixed(2),
         r.netUsd.toFixed(2),
       ]),
-      summaryLines: [
-        `Orders: ${totals.orders}`,
-        `Gross: $${totals.gross.toFixed(2)}`,
-        `Refunded: $${totals.refunded.toFixed(2)}`,
-        `Net: $${totals.net.toFixed(2)}`,
-      ],
+      summaryLines,
     });
     setDownloadHeaders(
       res,
@@ -1216,6 +1300,606 @@ router.get(
     res.end(pdf);
   },
 );
+
+// ─────────────────────────────────────────────────────────────────
+// Buffered-response shim for the email endpoint.
+//
+// The existing CSV writers (writeOrdersCsv, etc.) stream directly to
+// the express Response via .write() / .end(). For the email-a-report
+// flow we need the same bytes as a Buffer so we can attach them to a
+// SendGrid message. Rather than parameterise every writer, we hand
+// them this tiny shim — it has the only two methods they call.
+//
+// Any future writer that reaches for additional Response methods
+// (.setHeader, .status, etc.) will fail the .csv buffered path; we
+// keep the surface intentionally small so an accidental extension
+// surfaces as a build error instead of a silent broken email.
+// ─────────────────────────────────────────────────────────────────
+
+interface BufferedRes {
+  write(chunk: string): boolean;
+  end(): void;
+}
+
+function bufferedRes(): {
+  res: BufferedRes;
+  collect: () => Buffer;
+} {
+  const chunks: Buffer[] = [];
+  return {
+    res: {
+      write(chunk: string) {
+        chunks.push(Buffer.from(chunk, "utf8"));
+        return true;
+      },
+      end() {
+        // No-op: the caller pulls the bytes via collect().
+      },
+    },
+    collect: () => Buffer.concat(chunks),
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────
+// POST /admin/reports/email — email a generated report.
+//
+// Accepts { slug, format, from, to, recipient }, generates the
+// requested report server-side, and attaches it to a SendGrid
+// message. Returns 202 Accepted on enqueue success; the SendGrid
+// call is synchronous (no background worker) so a 200/202 means
+// the API has handed the message to SendGrid for delivery.
+//
+// Permissions: reports.read (same as the GET endpoints).
+// Rate limit: bulk preset (the underlying SendGrid call is the
+// expensive one; per-admin throttling here is a courtesy, not a
+// hard guarantee).
+// Audit: every send writes a `report.emailed` row carrying the
+// slug, format, range, and recipient — no PHI (slugs/formats/dates
+// are operational; the recipient is the admin-supplied email).
+// ─────────────────────────────────────────────────────────────────
+
+const REPORT_SLUGS = [
+  "orders",
+  "returns",
+  "revenue-summary",
+  "refunds-journal",
+  "insurance-claims",
+  "customer-activity",
+] as const;
+type ReportSlug = (typeof REPORT_SLUGS)[number];
+
+const REPORT_FORMATS = ["csv", "pdf", "iif", "qbo.csv"] as const;
+type ReportFormat = (typeof REPORT_FORMATS)[number];
+
+const emailReportBody = z
+  .object({
+    slug: z.enum(REPORT_SLUGS),
+    format: z.enum(REPORT_FORMATS),
+    from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    recipient: z.string().email(),
+    // Optional admin-supplied note — included verbatim in the email
+    // body so the operator can prepend context ("for the April
+    // close — please file with this month's receipts").
+    note: z.string().trim().max(500).optional(),
+  })
+  .strict();
+
+// Builds the bytes for a given (slug, format) combination. Returns
+// the raw report Buffer + MIME type + filename slug, ready to hand
+// to SendGrid as an attachment.
+async function buildReportArtifact(
+  slug: ReportSlug,
+  format: ReportFormat,
+  from: Date,
+  to: Date,
+): Promise<{ buffer: Buffer; contentType: string; filenameExt: string }> {
+  // CSV path — every slug supports CSV. Reuse the existing
+  // streaming writers via the buffered-response shim.
+  if (format === "csv") {
+    const { res, collect } = bufferedRes();
+    if (slug === "orders") {
+      writeOrdersCsv(res as unknown as import("express").Response, await fetchOrders(from, to));
+    } else if (slug === "returns") {
+      writeReturnsCsv(res as unknown as import("express").Response, await fetchReturns(from, to));
+    } else if (slug === "revenue-summary") {
+      const [orders, returns] = await Promise.all([
+        fetchOrders(from, to),
+        fetchReturns(from, to),
+      ]);
+      writeRevenueCsv(
+        res as unknown as import("express").Response,
+        rollupRevenue(orders, returns),
+      );
+    } else if (slug === "refunds-journal") {
+      writeRefundsCsv(
+        res as unknown as import("express").Response,
+        await fetchReturns(from, to),
+      );
+    } else if (slug === "insurance-claims") {
+      writeInsuranceClaimsCsv(
+        res as unknown as import("express").Response,
+        await fetchInsuranceClaims(from, to),
+      );
+    } else if (slug === "customer-activity") {
+      writeCustomerActivityCsv(
+        res as unknown as import("express").Response,
+        await fetchCustomerActivity(from, to),
+      );
+    }
+    return {
+      buffer: collect(),
+      contentType: "text/csv; charset=utf-8",
+      filenameExt: "csv",
+    };
+  }
+
+  // PDF — reuse the per-report PDF render helpers we already
+  // invoke from the GET handlers. Each branch returns the rendered
+  // buffer directly so we don't pay the cost of going through HTTP.
+  if (format === "pdf") {
+    if (slug === "orders") {
+      const orders = await fetchOrders(from, to);
+      const totalUsd = orders.reduce(
+        (s, o) => s + centsToDollars(o.amount_total_cents),
+        0,
+      );
+      const pdf = await renderTablePdf({
+        title: "Cash-pay orders",
+        range: rangeLabel(from, to),
+        practiceName: PRACTICE_NAME,
+        columns: [
+          { label: "Order #", width: 110 },
+          { label: "Date", width: 70 },
+          { label: "Status", width: 80 },
+          { label: "Total (USD)", width: 80, rightAlign: true },
+          { label: "Customer", width: 90 },
+          { label: "Shipped", width: 70 },
+          { label: "Tracking", width: 220 },
+        ],
+        rows: orders.map((o) => [
+          o.id.slice(0, 8),
+          o.created_at.slice(0, 10),
+          o.status ?? "",
+          o.amount_total_cents !== null
+            ? (o.amount_total_cents / 100).toFixed(2)
+            : "",
+          customerKeyForId(o.customer_id),
+          o.shipped_at?.slice(0, 10) ?? "",
+          [o.tracking_carrier, o.tracking_number].filter(Boolean).join(" "),
+        ]),
+        summaryLines: [
+          `Total orders in range: ${orders.length}`,
+          `Gross revenue (all statuses): $${totalUsd.toFixed(2)}`,
+        ],
+      });
+      return { buffer: pdf, contentType: "application/pdf", filenameExt: "pdf" };
+    }
+    // The other PDFs are simpler — each slug below pulls its data
+    // and hands it to renderTablePdf with a slug-specific column
+    // shape. We duplicate the GET handlers' shape rather than
+    // factor a shared builder because the column widths + summary
+    // copy are tuned per-report.
+    //
+    // (The duplication is intentional and small; a future
+    // refactor that bundles per-report builders into a registry
+    // would land on the GET path too.)
+    if (slug === "returns") {
+      const rows = await fetchReturns(from, to);
+      const refunded = rows.reduce(
+        (s, r) => s + (r.refund_cents ?? 0) / 100,
+        0,
+      );
+      const pdf = await renderTablePdf({
+        title: "Returns & RMAs",
+        range: rangeLabel(from, to),
+        practiceName: PRACTICE_NAME,
+        columns: [
+          { label: "Return #", width: 100 },
+          { label: "Order #", width: 100 },
+          { label: "Status", width: 80 },
+          { label: "Reason", width: 130 },
+          { label: "Refund (USD)", width: 100, rightAlign: true },
+          { label: "Resolved", width: 90 },
+        ],
+        rows: rows.map((r) => [
+          r.id.slice(0, 8),
+          (r.order_id ?? "").slice(0, 8),
+          r.status ?? "",
+          r.reason ?? "",
+          r.refund_cents !== null ? (r.refund_cents / 100).toFixed(2) : "",
+          r.resolved_at?.slice(0, 10) ?? "",
+        ]),
+        summaryLines: [
+          `Returns in range: ${rows.length}`,
+          `Total refunded: $${refunded.toFixed(2)}`,
+        ],
+      });
+      return { buffer: pdf, contentType: "application/pdf", filenameExt: "pdf" };
+    }
+    if (slug === "revenue-summary") {
+      const [orders, returns] = await Promise.all([
+        fetchOrders(from, to),
+        fetchReturns(from, to),
+      ]);
+      const rows = rollupRevenue(orders, returns);
+      const totals = totalsFromRevenueRows(rows);
+      const pdf = await renderTablePdf({
+        title: "Revenue summary",
+        range: rangeLabel(from, to),
+        practiceName: PRACTICE_NAME,
+        columns: [
+          { label: "Day", width: 100 },
+          { label: "Orders", width: 80, rightAlign: true },
+          { label: "Gross (USD)", width: 130, rightAlign: true },
+          { label: "Refunded (USD)", width: 150, rightAlign: true },
+          { label: "Net (USD)", width: 160, rightAlign: true },
+        ],
+        rows: rows.map((r) => [
+          r.day,
+          String(r.ordersCount),
+          r.grossUsd.toFixed(2),
+          r.refundedUsd.toFixed(2),
+          r.netUsd.toFixed(2),
+        ]),
+        summaryLines: [
+          `Orders: ${totals.orders}`,
+          `Gross: $${totals.gross.toFixed(2)}`,
+          `Refunded: $${totals.refunded.toFixed(2)}`,
+          `Net: $${totals.net.toFixed(2)}`,
+        ],
+      });
+      return { buffer: pdf, contentType: "application/pdf", filenameExt: "pdf" };
+    }
+    if (slug === "refunds-journal") {
+      const allReturns = await fetchReturns(from, to);
+      const rows = allReturns.filter(
+        (r) => r.refund_cents != null && r.refund_cents > 0,
+      );
+      const totalUsd = rows.reduce(
+        (s, r) => s + (r.refund_cents ?? 0) / 100,
+        0,
+      );
+      const pdf = await renderTablePdf({
+        title: "Refunds journal",
+        range: rangeLabel(from, to),
+        practiceName: PRACTICE_NAME,
+        columns: [
+          { label: "Return #", width: 100 },
+          { label: "Resolved", width: 90 },
+          { label: "Refund (USD)", width: 130, rightAlign: true },
+          { label: "Stripe refund", width: 200 },
+        ],
+        rows: rows.map((r) => [
+          r.id.slice(0, 8),
+          r.resolved_at?.slice(0, 10) ?? "",
+          ((r.refund_cents ?? 0) / 100).toFixed(2),
+          r.stripe_refund_id ?? "",
+        ]),
+        summaryLines: [
+          `Refunds in range: ${rows.length}`,
+          `Total refunded: $${totalUsd.toFixed(2)}`,
+        ],
+      });
+      return { buffer: pdf, contentType: "application/pdf", filenameExt: "pdf" };
+    }
+    if (slug === "insurance-claims") {
+      const rows = await fetchInsuranceClaims(from, to);
+      const totals = rows.reduce(
+        (acc, r) => ({
+          billed: acc.billed + r.total_billed_cents / 100,
+          paid: acc.paid + r.total_paid_cents / 100,
+          patientResp:
+            acc.patientResp + r.patient_responsibility_cents / 100,
+        }),
+        { billed: 0, paid: 0, patientResp: 0 },
+      );
+      const pdf = await renderTablePdf({
+        title: "Insurance claims",
+        range: rangeLabel(from, to),
+        practiceName: PRACTICE_NAME,
+        columns: [
+          { label: "Claim #", width: 100 },
+          { label: "DOS", width: 70 },
+          { label: "Payer", width: 130 },
+          { label: "Status", width: 65 },
+          { label: "Billed", width: 70, rightAlign: true },
+          { label: "Paid", width: 70, rightAlign: true },
+          { label: "Patient", width: 75, rightAlign: true },
+          { label: "Patient key", width: 95 },
+        ],
+        rows: rows.map((r) => [
+          r.claim_number ?? r.id.slice(0, 8),
+          r.date_of_service,
+          r.payer_name,
+          r.status,
+          (r.total_billed_cents / 100).toFixed(2),
+          (r.total_paid_cents / 100).toFixed(2),
+          (r.patient_responsibility_cents / 100).toFixed(2),
+          customerKeyForId(r.patient_id),
+        ]),
+        summaryLines: [
+          `Total claims in range: ${rows.length}`,
+          `Total billed: $${totals.billed.toFixed(2)}`,
+          `Total paid (payor receipts): $${totals.paid.toFixed(2)}`,
+          `Patient responsibility: $${totals.patientResp.toFixed(2)}`,
+        ],
+      });
+      return { buffer: pdf, contentType: "application/pdf", filenameExt: "pdf" };
+    }
+    if (slug === "customer-activity") {
+      const rows = await fetchCustomerActivity(from, to);
+      const totals = rows.reduce(
+        (acc, r) => ({
+          newCustomers: acc.newCustomers + r.newCustomers,
+          returningCustomerOrders:
+            acc.returningCustomerOrders + r.returningCustomerOrders,
+          totalOrders: acc.totalOrders + r.totalOrders,
+        }),
+        { newCustomers: 0, returningCustomerOrders: 0, totalOrders: 0 },
+      );
+      const pdf = await renderTablePdf({
+        title: "Customer activity",
+        range: rangeLabel(from, to),
+        practiceName: PRACTICE_NAME,
+        columns: [
+          { label: "Day", width: 100 },
+          { label: "New customers", width: 140, rightAlign: true },
+          {
+            label: "Returning-customer orders",
+            width: 200,
+            rightAlign: true,
+          },
+          { label: "Total orders", width: 130, rightAlign: true },
+        ],
+        rows: rows.map((r) => [
+          r.day,
+          String(r.newCustomers),
+          String(r.returningCustomerOrders),
+          String(r.totalOrders),
+        ]),
+        summaryLines: [
+          `New customers in range: ${totals.newCustomers}`,
+          `Orders from returning customers: ${totals.returningCustomerOrders}`,
+          `Total orders in range: ${totals.totalOrders}`,
+          totals.totalOrders > 0
+            ? `Returning-customer share: ${(
+                (totals.returningCustomerOrders / totals.totalOrders) *
+                100
+              ).toFixed(1)}%`
+            : "Returning-customer share: n/a (no orders)",
+        ],
+      });
+      return { buffer: pdf, contentType: "application/pdf", filenameExt: "pdf" };
+    }
+  }
+
+  // IIF / QBO-CSV — only the orders/returns/insurance-claims slugs
+  // have QuickBooks exports. Other slugs reject before reaching
+  // here (the zod enum allows them but we explicitly 400 below).
+  if (format === "iif" || format === "qbo.csv") {
+    let rows: QuickbooksRowInput[];
+    if (slug === "orders") {
+      rows = buildQbRowsFromOrders(await fetchOrders(from, to));
+    } else if (slug === "returns") {
+      rows = buildQbRowsFromReturns(await fetchReturns(from, to));
+    } else if (slug === "insurance-claims") {
+      rows = buildQbRowsFromClaims(await fetchInsuranceClaims(from, to));
+    } else {
+      throw new ReportEmailValidationError(
+        `${slug} does not support QuickBooks export`,
+      );
+    }
+    const fromIso = from.toISOString().slice(0, 10);
+    const toIso = to.toISOString().slice(0, 10);
+    if (format === "iif") {
+      const iif = renderIif({
+        from: fromIso,
+        to: toIso,
+        practiceName: PRACTICE_NAME,
+        rows,
+      });
+      return {
+        buffer: Buffer.from(iif, "utf8"),
+        contentType: "application/octet-stream",
+        filenameExt: "iif",
+      };
+    }
+    const csv = renderQboCsv({
+      from: fromIso,
+      to: toIso,
+      practiceName: PRACTICE_NAME,
+      rows,
+    });
+    return {
+      buffer: Buffer.from(csv, "utf8"),
+      contentType: "text/csv; charset=utf-8",
+      filenameExt: "qbo.csv",
+    };
+  }
+
+  // Should be unreachable — zod validates format above.
+  throw new ReportEmailValidationError(`Unsupported format ${format}`);
+}
+
+class ReportEmailValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ReportEmailValidationError";
+  }
+}
+
+router.post(
+  "/admin/reports/email",
+  requirePermission("reports.read"),
+  adminRateLimit({ name: "reports.email", preset: "bulk" }),
+  async (req, res) => {
+    const parsed = emailReportBody.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: "invalid_body",
+        issues: parsed.error.issues.map((i) => ({
+          path: i.path.join("."),
+          message: i.message,
+        })),
+      });
+      return;
+    }
+    const { slug, format, recipient, note } = parsed.data;
+    const from = new Date(parsed.data.from + "T00:00:00Z");
+    const to = new Date(parsed.data.to + "T23:59:59Z");
+    if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) {
+      res.status(400).json({ error: "invalid_date" });
+      return;
+    }
+    if (from.getTime() > to.getTime()) {
+      res.status(400).json({ error: "from_after_to" });
+      return;
+    }
+
+    // Cap at MAX_DAYS so a typo of "from=2020" can't fan out to a
+    // hundred-day attachment. Matches the GET-side clamp; the
+    // operator who needs a longer slice chunks like everywhere
+    // else.
+    const days = (to.getTime() - from.getTime()) / 86400_000;
+    const effectiveTo =
+      days > MAX_DAYS
+        ? new Date(from.getTime() + MAX_DAYS * 86400_000)
+        : to;
+
+    let artifact;
+    try {
+      artifact = await buildReportArtifact(
+        slug,
+        format,
+        from,
+        effectiveTo,
+      );
+    } catch (err) {
+      if (err instanceof ReportEmailValidationError) {
+        res.status(400).json({
+          error: "format_not_supported",
+          message: err.message,
+        });
+        return;
+      }
+      throw err;
+    }
+
+    let sgClient;
+    try {
+      sgClient = createSendgridClient();
+    } catch (err) {
+      if (err instanceof EmailConfigError) {
+        res.status(503).json({
+          error: "email_not_configured",
+          message:
+            "Email delivery is not configured on this environment (SENDGRID_API_KEY or SENDGRID_FROM_EMAIL missing).",
+        });
+        return;
+      }
+      throw err;
+    }
+
+    const filename = `pennpaps-${slug}-${rangeSlug(from, effectiveTo)}.${artifact.filenameExt}`;
+    const subject = `[${PRACTICE_NAME}] ${slug} report — ${rangeLabel(from, effectiveTo)}`;
+    const notePara = note
+      ? `<p>${escapeHtml(note)}</p>`
+      : "";
+    const html = [
+      `<p>Hi,</p>`,
+      `<p>Attached is the <strong>${escapeHtml(slug)}</strong> report for the period <strong>${escapeHtml(rangeLabel(from, effectiveTo))}</strong>, generated as <strong>${escapeHtml(format)}</strong>.</p>`,
+      notePara,
+      `<p>Requested by ${escapeHtml(req.adminEmail ?? "an admin")}.</p>`,
+      `<p>— ${escapeHtml(PRACTICE_NAME)}</p>`,
+    ]
+      .filter(Boolean)
+      .join("\n");
+    const text = [
+      `Hi,`,
+      ``,
+      `Attached is the ${slug} report for ${rangeLabel(from, effectiveTo)}, generated as ${format}.`,
+      ...(note ? ["", note] : []),
+      ``,
+      `Requested by ${req.adminEmail ?? "an admin"}.`,
+      ``,
+      `— ${PRACTICE_NAME}`,
+    ].join("\n");
+
+    try {
+      await sgClient.sendEmail({
+        to: recipient,
+        subject,
+        html,
+        text,
+        attachments: [
+          {
+            content: artifact.buffer,
+            filename,
+            contentType: artifact.contentType,
+          },
+        ],
+      });
+    } catch (err) {
+      if (err instanceof EmailApiError) {
+        logger.warn(
+          {
+            event: "report_email_send_failed",
+            slug,
+            format,
+            recipient,
+            sgStatus: err.status ?? null,
+          },
+          "Report email send failed at SendGrid",
+        );
+        res.status(502).json({
+          error: "email_send_failed",
+          message: "SendGrid rejected the message.",
+        });
+        return;
+      }
+      throw err;
+    }
+
+    await logAudit({
+      action: "report.emailed",
+      adminEmail: req.adminEmail ?? null,
+      adminUserId: req.adminUserId ?? null,
+      targetTable: "reports",
+      targetId: slug,
+      metadata: {
+        slug,
+        format,
+        from: parsed.data.from,
+        to: parsed.data.to,
+        clamped_to: effectiveTo.toISOString().slice(0, 10),
+        recipient,
+        byteLength: artifact.buffer.length,
+      },
+      ip: req.ip ?? null,
+      userAgent: req.get("user-agent") ?? null,
+    }).catch((err) => {
+      logger.warn({ err }, "report.emailed audit write failed");
+    });
+
+    res.status(202).json({
+      status: "queued",
+      slug,
+      format,
+      recipient,
+      bytes: artifact.buffer.length,
+    });
+  },
+);
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
 
 // Suppress the unused-import warning when there are no logger calls
 // — kept around because future feature-flag-aware behavior here

@@ -57,8 +57,21 @@ async function jsonFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
   return (await res.json()) as T;
 }
 
+export interface FeatureFlagActivity {
+  occurredAt: string;
+  operatorEmail: string | null;
+  key: string;
+  from: boolean;
+  to: boolean;
+}
+
 export const listFeatureFlags = () =>
   jsonFetch<{ flags: FeatureFlag[] }>("/admin/feature-flags");
+
+export const listFeatureFlagActivity = (limit = 20) =>
+  jsonFetch<{ activity: FeatureFlagActivity[] }>(
+    `/admin/feature-flags/activity?limit=${encodeURIComponent(String(limit))}`,
+  );
 
 export const toggleFeatureFlag = (key: string, enabled: boolean) =>
   jsonFetch<{ flag: FeatureFlag }>(

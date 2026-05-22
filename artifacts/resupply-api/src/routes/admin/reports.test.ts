@@ -72,6 +72,67 @@ vi.mock("../../lib/quickbooks-export", () => ({
   customerKeyForId: (id: string | null) => (id ? `cust-${id.slice(0, 6)}` : "cust-unknown"),
 }));
 
+// ─── Stub SendGrid + audit for the email-this-report endpoint ────────────
+
+const {
+  sendEmailMock,
+  createSendgridClientMock,
+  EmailConfigErrorStub,
+  EmailApiErrorStub,
+} = vi.hoisted(() => {
+  const sendEmailMock = vi.fn<
+    (input: Record<string, unknown>) => Promise<{ messageId: string }>
+  >(async () => ({ messageId: "test-msg-id-1" }));
+  const createSendgridClientMock = vi.fn(() => ({
+    sendEmail: sendEmailMock,
+  }));
+  class EmailConfigErrorStub extends Error {
+    constructor(msg: string) {
+      super(msg);
+      this.name = "EmailConfigError";
+    }
+  }
+  class EmailApiErrorStub extends Error {
+    status?: number;
+    constructor(msg: string, status?: number) {
+      super(msg);
+      this.name = "EmailApiError";
+      this.status = status;
+    }
+  }
+  return {
+    sendEmailMock,
+    createSendgridClientMock,
+    EmailConfigErrorStub,
+    EmailApiErrorStub,
+  };
+});
+vi.mock("@workspace/resupply-email", () => ({
+  createSendgridClient: createSendgridClientMock,
+  EmailConfigError: EmailConfigErrorStub,
+  EmailApiError: EmailApiErrorStub,
+}));
+
+const logAuditMock = vi.hoisted(() =>
+  vi.fn<(event: Record<string, unknown>) => Promise<void>>(() =>
+    Promise.resolve(),
+  ),
+);
+vi.mock("@workspace/resupply-audit", () => ({
+  logAudit: logAuditMock,
+}));
+
+vi.mock("../../middlewares/admin-rate-limit", () => ({
+  adminRateLimit:
+    () =>
+    (
+      _req: import("express").Request,
+      _res: import("express").Response,
+      next: import("express").NextFunction,
+    ) =>
+      next(),
+}));
+
 // ─── SUT ──────────────────────────────────────────────────────────────────
 
 import reportsRouter from "./reports";
@@ -141,6 +202,13 @@ beforeEach(() => {
   renderTablePdfMock.mockClear();
   renderIifMock.mockClear();
   renderQboCsvMock.mockClear();
+  sendEmailMock.mockClear();
+  createSendgridClientMock.mockClear();
+  createSendgridClientMock.mockImplementation(() => ({
+    sendEmail: sendEmailMock,
+  }));
+  sendEmailMock.mockResolvedValue({ messageId: "test-msg-id-1" });
+  logAuditMock.mockClear();
 });
 
 // ─── Auth guards ──────────────────────────────────────────────────────────
@@ -858,5 +926,215 @@ describe("permission gate — new reports", () => {
       `/admin/reports/customer-activity.csv?from=${FROM}&to=${TO}`,
     );
     expect(res.status).toBe(401);
+  });
+});
+
+// ─── POST /admin/reports/email ──────────────────────────────────────────
+
+describe("POST /admin/reports/email — auth + validation", () => {
+  it("returns 401 when not signed in", async () => {
+    const res = await request(makeApp())
+      .post("/admin/reports/email")
+      .send({
+        slug: "orders",
+        format: "csv",
+        from: FROM,
+        to: TO,
+        recipient: "accounting@example.com",
+      });
+    expect(res.status).toBe(401);
+  });
+
+  it("returns 400 invalid_body on unknown slug", async () => {
+    stubAdmin();
+    const res = await request(makeApp()).post("/admin/reports/email").send({
+      slug: "nonexistent",
+      format: "csv",
+      from: FROM,
+      to: TO,
+      recipient: "ops@example.com",
+    });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe("invalid_body");
+  });
+
+  it("returns 400 invalid_body on malformed recipient", async () => {
+    stubAdmin();
+    const res = await request(makeApp()).post("/admin/reports/email").send({
+      slug: "orders",
+      format: "csv",
+      from: FROM,
+      to: TO,
+      recipient: "not-an-email",
+    });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe("invalid_body");
+  });
+
+  it("returns 400 invalid_body on malformed date string", async () => {
+    stubAdmin();
+    const res = await request(makeApp()).post("/admin/reports/email").send({
+      slug: "orders",
+      format: "csv",
+      from: "not-a-date",
+      to: TO,
+      recipient: "ops@example.com",
+    });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe("invalid_body");
+  });
+
+  it("returns 400 from_after_to when from > to", async () => {
+    stubAdmin();
+    const res = await request(makeApp()).post("/admin/reports/email").send({
+      slug: "orders",
+      format: "csv",
+      from: "2026-05-30",
+      to: "2026-05-01",
+      recipient: "ops@example.com",
+    });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe("from_after_to");
+  });
+});
+
+describe("POST /admin/reports/email — happy path", () => {
+  it("returns 202 with bytes/recipient + invokes SendGrid + writes an audit row", async () => {
+    stubAdmin();
+    stageSupabaseResponse("shop_orders", "select", { data: [] });
+
+    const res = await request(makeApp()).post("/admin/reports/email").send({
+      slug: "orders",
+      format: "csv",
+      from: FROM,
+      to: TO,
+      recipient: "accounting@example.com",
+      note: "for the April close",
+    });
+
+    expect(res.status).toBe(202);
+    expect(res.body.status).toBe("queued");
+    expect(res.body.recipient).toBe("accounting@example.com");
+    expect(typeof res.body.bytes).toBe("number");
+
+    expect(sendEmailMock).toHaveBeenCalledOnce();
+    const sendCall = sendEmailMock.mock.calls[0]![0] as {
+      to: string;
+      attachments?: { filename: string; contentType: string }[];
+    };
+    expect(sendCall.to).toBe("accounting@example.com");
+    expect(sendCall.attachments).toHaveLength(1);
+    expect(sendCall.attachments![0]!.filename).toMatch(/^pennpaps-orders-.*\.csv$/);
+
+    expect(logAuditMock).toHaveBeenCalledOnce();
+    const audit = logAuditMock.mock.calls[0]![0] as {
+      action: string;
+      metadata: { slug: string; format: string; recipient: string };
+    };
+    expect(audit.action).toBe("report.emailed");
+    expect(audit.metadata.slug).toBe("orders");
+    expect(audit.metadata.recipient).toBe("accounting@example.com");
+  });
+
+  it("returns 503 when SendGrid is not configured (EmailConfigError)", async () => {
+    stubAdmin();
+    stageSupabaseResponse("shop_orders", "select", { data: [] });
+
+    createSendgridClientMock.mockImplementationOnce(() => {
+      throw new EmailConfigErrorStub("SENDGRID_API_KEY is not set");
+    });
+
+    const res = await request(makeApp()).post("/admin/reports/email").send({
+      slug: "orders",
+      format: "csv",
+      from: FROM,
+      to: TO,
+      recipient: "ops@example.com",
+    });
+
+    expect(res.status).toBe(503);
+    expect(res.body.error).toBe("email_not_configured");
+  });
+
+  it("returns 502 when SendGrid rejects the message (EmailApiError)", async () => {
+    stubAdmin();
+    stageSupabaseResponse("shop_orders", "select", { data: [] });
+
+    sendEmailMock.mockRejectedValueOnce(
+      new EmailApiErrorStub("rejected by recipient policy", 400),
+    );
+
+    const res = await request(makeApp()).post("/admin/reports/email").send({
+      slug: "orders",
+      format: "csv",
+      from: FROM,
+      to: TO,
+      recipient: "ops@example.com",
+    });
+
+    expect(res.status).toBe(502);
+    expect(res.body.error).toBe("email_send_failed");
+  });
+
+  it("returns 400 format_not_supported when slug doesn't support the format", async () => {
+    stubAdmin();
+    // customer-activity does NOT support .iif; the route should
+    // refuse with format_not_supported, NOT try to build the
+    // artifact.
+    const res = await request(makeApp()).post("/admin/reports/email").send({
+      slug: "customer-activity",
+      format: "iif",
+      from: FROM,
+      to: TO,
+      recipient: "ops@example.com",
+    });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe("format_not_supported");
+  });
+});
+
+// ─── GET /admin/reports/revenue-summary.pdf?compare=true ────────────────
+
+describe("GET /admin/reports/revenue-summary.pdf with compare flag", () => {
+  it("fetches the prior period when ?compare=true is set", async () => {
+    stubAdmin();
+    // The current period needs 2 staged selects (orders + returns).
+    // The prior period adds another 2.
+    stageSupabaseResponse("shop_orders", "select", { data: [] });
+    stageSupabaseResponse("shop_returns", "select", { data: [] });
+    stageSupabaseResponse("shop_orders", "select", { data: [] });
+    stageSupabaseResponse("shop_returns", "select", { data: [] });
+
+    const res = await request(makeApp()).get(
+      `/admin/reports/revenue-summary.pdf?from=${FROM}&to=${TO}&compare=true`,
+    );
+
+    expect(res.status).toBe(200);
+    expect(renderTablePdfMock).toHaveBeenCalledOnce();
+    const call = renderTablePdfMock.mock.calls[0]![0] as {
+      summaryLines: string[];
+    };
+    // The compare branch appends a "Compared to ..." line + per-
+    // metric prior totals; verify at least the marker line is in.
+    const joined = call.summaryLines.join("\n");
+    expect(joined).toContain("Compared to");
+    expect(joined).toContain("Prior orders");
+  });
+
+  it("does NOT fetch the prior period when compare is absent / false", async () => {
+    stubAdmin();
+    stageSupabaseResponse("shop_orders", "select", { data: [] });
+    stageSupabaseResponse("shop_returns", "select", { data: [] });
+
+    const res = await request(makeApp()).get(
+      `/admin/reports/revenue-summary.pdf?from=${FROM}&to=${TO}`,
+    );
+
+    expect(res.status).toBe(200);
+    const call = renderTablePdfMock.mock.calls[0]![0] as {
+      summaryLines: string[];
+    };
+    expect(call.summaryLines.join("\n")).not.toContain("Compared to");
   });
 });

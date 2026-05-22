@@ -158,4 +158,88 @@ router.patch(
   },
 );
 
+// ─────────────────────────────────────────────────────────────────
+// GET /admin/feature-flags/activity — recent toggle events.
+//
+// Read-only feed of the last `limit` (default 20, max 100) audit
+// rows where action='feature_flag.toggle'. Drives the "Recent
+// toggle activity" panel on the Control Center.
+//
+// Permission: reports.read (same as the list endpoint above). The
+// underlying audit_log table is broader; this endpoint filters to
+// just feature-flag actions so it stays usable from the Control
+// Center without granting `audit.read` more widely.
+//
+// PHI posture: feature-flag toggle metadata never contains PHI
+// (the keys are static constants), so the response is safe to
+// surface in the admin UI as-is.
+// ─────────────────────────────────────────────────────────────────
+
+const ACTIVITY_DEFAULT_LIMIT = 20;
+const ACTIVITY_MAX_LIMIT = 100;
+
+interface ToggleActivityRow {
+  occurredAt: string;
+  operatorEmail: string | null;
+  key: string;
+  from: boolean;
+  to: boolean;
+}
+
+router.get(
+  "/admin/feature-flags/activity",
+  requirePermission("reports.read"),
+  async (req, res) => {
+    const limitRaw = Number.parseInt(
+      typeof req.query.limit === "string" ? req.query.limit : "",
+      10,
+    );
+    const limit =
+      Number.isFinite(limitRaw) && limitRaw > 0
+        ? Math.min(limitRaw, ACTIVITY_MAX_LIMIT)
+        : ACTIVITY_DEFAULT_LIMIT;
+
+    const supabase = getSupabaseServiceRoleClient();
+    const { data, error } = await supabase
+      .schema("resupply")
+      .from("audit_log")
+      .select("occurred_at, operator_email, metadata")
+      .eq("action", "feature_flag.toggle")
+      .order("occurred_at", { ascending: false })
+      .limit(limit);
+    if (error) throw error;
+
+    const activity: ToggleActivityRow[] = [];
+    for (const r of data ?? []) {
+      // Audit metadata is JSON; the toggle handler above writes
+      // { key, from, to }. Anything that doesn't parse to that
+      // shape is a corrupt row — log and skip rather than crashing
+      // the feed.
+      const m = r.metadata as Record<string, unknown> | null;
+      if (!m || typeof m !== "object") continue;
+      const key = typeof m.key === "string" ? m.key : null;
+      const fromVal = typeof m.from === "boolean" ? m.from : null;
+      const toVal = typeof m.to === "boolean" ? m.to : null;
+      if (key === null || fromVal === null || toVal === null) {
+        logger.warn(
+          {
+            event: "feature_flag_activity_malformed_audit_row",
+            occurred_at: r.occurred_at,
+          },
+          "feature_flag.toggle audit row has unexpected metadata shape",
+        );
+        continue;
+      }
+      activity.push({
+        occurredAt: r.occurred_at,
+        operatorEmail: r.operator_email ?? null,
+        key,
+        from: fromVal,
+        to: toVal,
+      });
+    }
+    res.json({ activity });
+  },
+);
+
 export default router;

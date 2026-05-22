@@ -16,12 +16,15 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
   isHighRiskFlag,
+  listFeatureFlagActivity,
   listFeatureFlags,
   toggleFeatureFlag,
   type FeatureFlag,
+  type FeatureFlagActivity,
 } from "@/lib/admin/feature-flags-api";
 
 const QUERY_KEY = ["admin-feature-flags"] as const;
+const ACTIVITY_QUERY_KEY = ["admin-feature-flags-activity"] as const;
 
 export function AdminControlCenterPage() {
   return (
@@ -49,6 +52,7 @@ export function AdminControlCenterPage() {
       </header>
       <SummaryTiles />
       <FlagsList />
+      <ActivityPanel />
     </div>
   );
 }
@@ -297,6 +301,11 @@ function FlagRow({ flag }: { flag: FeatureFlag }) {
     },
     onSettled: () => {
       void queryClient.invalidateQueries({ queryKey: QUERY_KEY });
+      // A successful (or even failed-then-corrected) toggle writes
+      // an audit row, so the activity panel needs a refetch too.
+      // Without this invalidation the panel stays stale until the
+      // user manually reloads the page.
+      void queryClient.invalidateQueries({ queryKey: ACTIVITY_QUERY_KEY });
     },
   });
 
@@ -522,5 +531,104 @@ function ToggleSwitch({
         ].join(" ")}
       />
     </button>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Recent toggle activity panel.
+//
+// Last N feature-flag toggle events from the audit log, newest
+// first. Each line shows operator email, the flag, and the
+// direction (on → off or off → on). Useful during incidents
+// ("did anyone flip checkout off in the last hour?") and for
+// multi-admin coordination.
+//
+// The panel polls every 60 seconds in case another admin made a
+// change while this tab was open. Toggling a switch on this page
+// also invalidates the cache (see the mutation's onSettled) so
+// the feed reflects the operator's own action immediately.
+// ─────────────────────────────────────────────────────────────────
+
+function ActivityPanel() {
+  const query = useQuery({
+    queryKey: ACTIVITY_QUERY_KEY,
+    queryFn: () => listFeatureFlagActivity(20),
+    refetchInterval: 60_000,
+  });
+
+  return (
+    <section
+      aria-label="Recent toggle activity"
+      data-testid="control-center-activity"
+    >
+      <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-600 mb-2">
+        Recent toggle activity
+      </h2>
+      <div className="rounded-lg border border-slate-200 bg-white">
+        {query.isPending ? (
+          <p className="px-4 py-3 text-sm text-slate-500">Loading…</p>
+        ) : query.isError ? (
+          <p
+            className="px-4 py-3 text-sm text-rose-700"
+            role="alert"
+            data-testid="control-center-activity-error"
+          >
+            Couldn&apos;t load activity:{" "}
+            {query.error instanceof Error ? query.error.message : "unknown"}
+          </p>
+        ) : (query.data?.activity ?? []).length === 0 ? (
+          <p className="px-4 py-3 text-sm text-slate-500">
+            No toggle events recorded yet. Flipping a switch above will
+            show up here.
+          </p>
+        ) : (
+          <ul className="divide-y divide-slate-200">
+            {(query.data?.activity ?? []).map((row, i) => (
+              <ActivityRow key={`${row.occurredAt}-${row.key}-${i}`} row={row} />
+            ))}
+          </ul>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function ActivityRow({ row }: { row: FeatureFlagActivity }) {
+  const when = new Date(row.occurredAt);
+  const directionLabel = row.from && !row.to ? "Disabled" : !row.from && row.to ? "Enabled" : "Changed";
+  // Re-enables are green; disables are amber. "Changed" (the
+  // theoretical from===to case) shouldn't show up because the
+  // toggle handler skips no-op writes, but if it ever does we
+  // render a neutral chip.
+  const chipClass =
+    directionLabel === "Disabled"
+      ? "bg-amber-100 text-amber-800"
+      : directionLabel === "Enabled"
+        ? "bg-emerald-100 text-emerald-800"
+        : "bg-slate-100 text-slate-700";
+
+  return (
+    <li
+      className="flex items-center gap-3 px-4 py-2 text-sm"
+      data-testid={`activity-row-${row.key}`}
+    >
+      <span
+        className={["rounded px-1.5 py-0.5 text-xs font-semibold", chipClass].join(" ")}
+      >
+        {directionLabel}
+      </span>
+      <code className="rounded bg-slate-100 px-1.5 py-0.5 text-xs font-mono text-slate-700">
+        {row.key}
+      </code>
+      <span className="text-slate-600 truncate">
+        {row.operatorEmail ?? "system"}
+      </span>
+      <span
+        className="ml-auto text-xs text-slate-500"
+        title={when.toLocaleString()}
+      >
+        {renderRelativeAge(when)}
+      </span>
+    </li>
   );
 }
