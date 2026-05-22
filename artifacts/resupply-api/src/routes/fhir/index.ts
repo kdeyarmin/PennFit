@@ -39,6 +39,7 @@ import {
 } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
+import { rateLimit } from "../../middlewares/rate-limit";
 import { requireAdmin } from "../../middlewares/requireAdmin";
 import { requireSmartFhirAccess } from "../../middlewares/requireSmartFhirAccess";
 
@@ -389,6 +390,21 @@ const fhirJson = express.raw({
   limit: "2mb",
 });
 
+// SMART-on-FHIR backend-services intake is JWT-authenticated, but
+// JWT verification + a Bundle insert + a downstream dispatcher job
+// is non-trivial work per request. Without a limiter, a partner
+// with a leaked/rotated client_id (or a misconfigured retry loop)
+// could flood the inbox. Cap to 60 requests / minute / IP — well
+// above any healthy partner POST cadence (Epic / Athena bulk
+// referral exports run at single-digit RPS) but enough headroom for
+// the occasional burst at clinic open. Keyed on req.ip because the
+// limiter runs before requireSmartFhirAccess populates req.fhirTenant.
+const serviceRequestPostLimiter = rateLimit({
+  windowMs: 60_000,
+  max: 60,
+  name: "fhir_service_request_post_ip",
+});
+
 const bundleSchema = z.object({
   resourceType: z.literal("Bundle"),
   id: z.string().optional(),
@@ -398,6 +414,7 @@ const bundleSchema = z.object({
 
 router.post(
   "/fhir/r4/ServiceRequest",
+  serviceRequestPostLimiter,
   requireSmartFhirAccess,
   fhirJson,
   async (req, res) => {

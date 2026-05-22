@@ -27,11 +27,21 @@ const SRC = readFileSync(path.join(__dirname, "App.tsx"), "utf8");
 // Helpers
 // ---------------------------------------------------------------------------
 
+/** Escape every regex metacharacter so user-supplied strings can be
+ * embedded literally inside a `new RegExp(...)` pattern. The previous
+ * implementation only escaped `/` (which isn't a regex metachar in
+ * `new RegExp`), leaving characters like `.`, `?`, `+`, `*`, `(`, `)`,
+ * `[`, `]`, `{`, `}`, `^`, `$`, `|`, and `\` un-escaped. CodeQL
+ * (js/incomplete-sanitization) flagged this as incomplete escaping. */
+function escapeRegExp(input: string): string {
+  return input.replace(/[\\^$.*+?()[\]{}|/]/g, "\\$&");
+}
+
 /** True when the source contains a Route element with path and component. */
 function hasRoute(src: string, routePath: string, component: string): boolean {
   // Matches both single-line and multi-line Route declarations.
   const re = new RegExp(
-    `path="${routePath.replace(/\//g, "\\/")}"[\\s\\S]{0,120}component=\\{${component}\\}`,
+    `path="${escapeRegExp(routePath)}"[\\s\\S]{0,120}component=\\{${escapeRegExp(component)}\\}`,
   );
   return re.test(src);
 }
