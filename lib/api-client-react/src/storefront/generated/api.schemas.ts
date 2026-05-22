@@ -64,19 +64,31 @@ export const QuestionnaireAnswersCpapPressureSetting = {
 } as const;
 
 /**
- * Clinical questionnaire answers affecting mask type suitability
+ * Clinical questionnaire answers affecting mask type suitability.
+ *
+ * P4 — every boolean field is `boolean | null`. `null` means "the
+ * patient declined to answer / said 'I'm not sure'." The
+ * recommendation engine treats null as "no opinion" and skips that
+ * question's weight adjustment entirely (rather than coercing to
+ * `false`, which silently lied about the patient's intent and could
+ * recommend a mask that depends on a guessed-no answer).
+ *
+ * `priorMaskExperience` already has a "none" option for first-time
+ * patients; `cpapPressureSetting` already has "unknown" for
+ * un-titrated patients. The boolean fields needed `null` as the
+ * equivalent third option.
  */
 export interface QuestionnaireAnswers {
-  mouthBreather: boolean;
-  claustrophobic: boolean;
-  sideOrStomachSleeper: boolean;
-  heavyFacialHair: boolean;
-  wearsGlasses: boolean;
-  frequentCongestion: boolean;
+  mouthBreather: boolean | null;
+  claustrophobic: boolean | null;
+  sideOrStomachSleeper: boolean | null;
+  heavyFacialHair: boolean | null;
+  wearsGlasses: boolean | null;
+  frequentCongestion: boolean | null;
   priorMaskExperience: QuestionnaireAnswersPriorMaskExperience;
-  mobilityLimitations: boolean;
-  sensitiveSkin: boolean;
-  siliconeSensitivity: boolean;
+  mobilityLimitations: boolean | null;
+  sensitiveSkin: boolean | null;
+  siliconeSensitivity: boolean | null;
   /** Patient's prescribed CPAP pressure (cmH2O). low = 4–9, medium = 10–14, high = 15+. unknown if patient hasn't been titrated yet. High pressures favor full-face/hybrid masks because most nasal pillows aren't rated above ~20 cmH2O. */
   cpapPressureSetting: QuestionnaireAnswersCpapPressureSetting;
 }
