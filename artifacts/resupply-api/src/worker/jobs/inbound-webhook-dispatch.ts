@@ -51,6 +51,13 @@ export interface DispatchStats {
   skipped_unknown_source: number;
 }
 
+/**
+ * Dispatches pending inbound webhook rows to per-source handlers and updates each row's status based on the handler outcome.
+ *
+ * Selects up to the configured batch size of rows from resupply.inbound_webhooks with status `received` or `processing_failed`, routes recognized sources to their dispatcher (e.g., `parachute`), and updates database status to `processed`, `rejected`, or `processing_failed` as appropriate. Rows with no implemented dispatcher are left unchanged and counted as skipped.
+ *
+ * @returns Aggregated dispatch statistics: `scanned` is the number of rows examined, `processed` is the count marked processed, `rejected` is the count marked rejected, `retried` is the count marked for retry, and `skipped_unknown_source` is the count of rows skipped due to an unknown source.
+ */
 export async function runInboundWebhookDispatcher(): Promise<DispatchStats> {
   const supabase = getSupabaseServiceRoleClient();
   const stats: DispatchStats = {
@@ -104,6 +111,16 @@ export async function runInboundWebhookDispatcher(): Promise<DispatchStats> {
   return stats;
 }
 
+/**
+ * Mark an inbound webhook row as processed in the resupply.inbound_webhooks table.
+ *
+ * Updates the row with `status = "processed"`, sets `processed_at` to the current
+ * ISO timestamp, and clears `processing_error`. If the database update fails,
+ * a warning is logged but the function does not throw.
+ *
+ * @param supabase - Supabase service-role client used to perform the update
+ * @param rowId - The `id` of the inbound_webhooks row to mark as processed
+ */
 async function markProcessed(
   supabase: ReturnType<typeof getSupabaseServiceRoleClient>,
   rowId: string,
@@ -125,6 +142,17 @@ async function markProcessed(
   }
 }
 
+/**
+ * Mark an inbound webhook row as rejected and record its processing error.
+ *
+ * Updates the `resupply.inbound_webhooks` row with the given `rowId` to set
+ * `status` to `"rejected"`, `processed_at` to the current ISO timestamp, and
+ * `processing_error` to `reason` truncated to 2000 characters. If the update
+ * fails, a warning is logged; the function does not throw.
+ *
+ * @param rowId - The `id` of the inbound webhook row to update
+ * @param reason - Error message to store in `processing_error`; will be truncated to 2000 characters
+ */
 async function markRejected(
   supabase: ReturnType<typeof getSupabaseServiceRoleClient>,
   rowId: string,
@@ -147,6 +175,14 @@ async function markRejected(
   }
 }
 
+/**
+ * Marks an inbound webhook row for retry by setting its status to `processing_failed`.
+ *
+ * Updates the row's `processing_error` with `reason` truncated to 2000 characters and does not set `processed_at`. If the database update fails, a warning is logged.
+ *
+ * @param rowId - The `id` of the inbound webhook row to update
+ * @param reason - Human-readable explanation for the retry that will be stored (truncated to 2000 characters)
+ */
 async function markRetry(
   supabase: ReturnType<typeof getSupabaseServiceRoleClient>,
   rowId: string,
@@ -168,6 +204,14 @@ async function markRetry(
   }
 }
 
+/**
+ * Registers and schedules the inbound webhook dispatch pg-boss job and its worker.
+ *
+ * Creates the job queue named by `JOB`, registers a worker that runs `runInboundWebhookDispatcher`
+ * on each tick (logging completion or failure), and schedules the job on the cron defined by `CRON`.
+ *
+ * @param boss - PgBoss instance used to create the queue, register the worker, and schedule the job
+ */
 export async function registerInboundWebhookDispatchJob(
   boss: PgBoss,
 ): Promise<void> {

@@ -92,6 +92,12 @@ export interface ParseIssue {
   message: string;
 }
 
+/**
+ * Parse and validate an unknown Parachute Health webhook payload into a typed ParachuteOrder structure.
+ *
+ * @param input - The raw webhook payload to validate and convert
+ * @returns `{ ok: true; order: ParachuteOrder }` when the payload is valid; otherwise `{ ok: false; reason: "invalid_shape"; issues: ParseIssue[] }` with a list of validation issues describing invalid or missing fields
+ */
 export function parseParachuteOrder(input: unknown): ParseOutcome {
   const result = payloadSchema.safeParse(input);
   if (!result.success) {
@@ -138,6 +144,16 @@ export function parseParachuteOrder(input: unknown): ParseOutcome {
   return { ok: true, order };
 }
 
+/**
+ * Normalize a validated HCPCS line into the canonical ParachuteHcpcsLine shape.
+ *
+ * @param line - The HCPCS line as validated by `hcpcsLineSchema`
+ * @returns A `ParachuteHcpcsLine` where:
+ *  - `code` is uppercased and trimmed,
+ *  - `modifiers` are uppercased, trimmed, empty entries removed, and limited to 4 entries,
+ *  - `quantity` is a positive number (defaults to `1` when missing, non-finite, or <= 0),
+ *  - `description` is the provided string or `null`
+ */
 function normaliseHcpcsLine(
   line: z.infer<typeof hcpcsLineSchema>,
 ): ParachuteHcpcsLine {
@@ -156,6 +172,12 @@ function normaliseHcpcsLine(
   };
 }
 
+/**
+ * Map a validated document payload to a ParachuteDocument, normalizing optional fields to `null`.
+ *
+ * @param doc - The parsed `documentSchema` object to convert
+ * @returns A `ParachuteDocument` whose fields are mapped from `doc`, with missing optional values set to `null`
+ */
 function normaliseDocument(
   doc: z.infer<typeof documentSchema>,
 ): ParachuteDocument {
@@ -170,10 +192,10 @@ function normaliseDocument(
 }
 
 /**
- * Phone numbers from Parachute arrive in mixed formats. We try to
- * normalise to E.164 (+1NNNNNNNNNN for US) but accept anything we
- * can't and return the raw string — the Phase 2 matcher does
- * tail-7 fuzzy match anyway.
+ * Normalizes a Parachute-provided phone value to E.164 when possible.
+ *
+ * @param raw - The raw phone value from the payload; may be `string`, `null`, or `undefined`
+ * @returns An E.164 phone string (starting with `+`) when successfully normalized, the original `raw` string when it cannot be normalized, or `null` when `raw` is empty or not a string
  */
 function normalisePhone(raw: string | null | undefined): string | null {
   if (typeof raw !== "string" || raw.length === 0) return null;
@@ -184,6 +206,12 @@ function normalisePhone(raw: string | null | undefined): string | null {
   return raw;
 }
 
+/**
+ * Convert an NPI-like input into a normalized 10-digit NPI string.
+ *
+ * @param raw - Input that may contain an NPI with formatting characters, or `null`/`undefined`
+ * @returns The 10-digit NPI (digits only) if `raw` contains exactly 10 digits after stripping nondigits, `null` otherwise
+ */
 function normaliseNpi(raw: string | null | undefined): string | null {
   if (typeof raw !== "string" || raw.length === 0) return null;
   const digits = raw.replace(/\D/g, "");

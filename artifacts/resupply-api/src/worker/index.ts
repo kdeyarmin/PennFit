@@ -77,12 +77,13 @@ export function getBoss(): PgBoss | null {
 }
 
 /**
- * Start and configure the resupply in-process pg-boss worker and register scheduled jobs.
+ * Start and configure the resupply in-process pg-boss worker and register all resupply scheduled and dispatch jobs.
  *
- * Throws if `DATABASE_URL` is not set. On success this sets the module's pg-boss instance,
- * attaches error and monitor-state handlers that emit structured logs, registers resupply-related
- * recurring and dispatch jobs (reminders, retention/cleanup tasks, campaign ticks, nightly syncs,
- * prior-auth expiry sweep, etc.), and marks the worker ready.
+ * On success this sets the module-level pg-boss instance, attaches structured error and monitor-state handlers,
+ * registers recurring resupply and dispatch jobs (reminders, sweeps, campaign ticks, nightly syncs, webhook/inbound
+ * dispatchers, workflows, alerts, and other scheduled tasks), and marks the worker ready.
+ *
+ * @throws If `DATABASE_URL` is not set in the environment.
  */
 export async function startWorker(): Promise<void> {
   const databaseUrl = process.env["DATABASE_URL"];

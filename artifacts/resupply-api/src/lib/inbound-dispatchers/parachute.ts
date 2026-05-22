@@ -64,13 +64,15 @@ interface DispatchInput {
 }
 
 /**
- * Dispatch a single inbound_webhooks row that arrived from
- * Parachute. The worker (worker/jobs/inbound-webhook-dispatch.ts)
- * calls this once per pending row.
+ * Process a single Parachute inbound webhook row: validate its signature, parse the payload,
+ * create an idempotent inbound referral record, persist attachment metadata, and record an audit.
  *
- * Pure-ish: returns an outcome; the caller is responsible for
- * flipping the inbound_webhooks.status based on it (keeps the
- * status-transition logic in one place).
+ * The function returns a DispatchOutcome describing success (including `referralId` and `deduped`)
+ * or a failure that indicates whether the failure is permanent or transient and a machine-readable `reason`.
+ *
+ * @returns A DispatchOutcome:
+ * - On success: `{ ok: true, referralId: string, deduped: boolean }`
+ * - On failure: `{ ok: false, permanent: boolean, reason: string }`
  */
 export async function dispatchParachute(
   input: DispatchInput,
@@ -217,6 +219,15 @@ export async function dispatchParachute(
   return { ok: true, referralId, deduped };
 }
 
+/**
+ * Persist metadata for Parachute documents into the resupply.inbound_referral_documents table.
+ *
+ * Inserts one row per entry in `documents`. If an insert fails, the function ignores unique-violation errors
+ * (Postgres code `"23505"`) and logs a warning for other error codes, then continues processing remaining documents.
+ *
+ * @param referralId - The inbound referral row ID to associate each document with
+ * @param documents - Array of Parachute document metadata to persist
+ */
 async function persistDocuments(
   supabase: SupabaseClient,
   referralId: string,

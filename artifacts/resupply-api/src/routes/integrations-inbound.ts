@@ -193,13 +193,14 @@ type SigOutcome =
   | { outcome: "configured_bad"; reason: string };
 
 /**
- * Per-source signature check. Returns:
- *   - 'configured_ok'  → secret set and the signature matched
- *   - 'configured_bad' → secret set and the signature failed
- *   - 'no_secret'      → secret unset; caller persists with
- *                        signature_verified=false (downstream
- *                        dispatcher re-checks before any side
- *                        effects)
+ * Perform per-source inline signature verification for an inbound webhook.
+ *
+ * @param source - The integration source identifier (e.g., `"parachute"`)
+ * @param rawBody - The raw UTF-8 request body string used for signature verification
+ * @param headers - The incoming request headers
+ * @returns `{ outcome: "configured_ok" }` if a signing secret is configured and the signature matches,
+ * `{ outcome: "configured_bad"; reason: string }` if a secret is configured but the signature check fails,
+ * `{ outcome: "no_secret" }` if no signing secret is configured or inline verification is not implemented for the source. 
  */
 function verifyInlineSignature(
   source: string,

@@ -26,6 +26,15 @@ export interface ParachuteConfig {
   clientSecret: string | null;
 }
 
+/**
+ * Read Parachute adapter configuration from environment variables or indicate unconfigured.
+ *
+ * Returns `null` when stub mode is enabled via `PARACHUTE_STUB=1` or when `PARACHUTE_SIGNING_SECRET` is missing.
+ * Otherwise returns a `ParachuteConfig` with `signingSecret`, `apiBaseUrl` (trailing slash removed or `null`),
+ * and optional `clientId` and `clientSecret`.
+ *
+ * @returns A `ParachuteConfig` populated from environment variables, or `null` if unconfigured.
+ */
 export function readParachuteConfigOrNull(
   env: NodeJS.ProcessEnv = process.env,
 ): ParachuteConfig | null {
@@ -40,6 +49,12 @@ export function readParachuteConfigOrNull(
   };
 }
 
+/**
+ * Checks whether Parachute stub mode is enabled.
+ *
+ * @param env - Environment variables object to read `PARACHUTE_STUB` from; defaults to `process.env`
+ * @returns `true` if `PARACHUTE_STUB` is set to `'1'`, `false` otherwise
+ */
 export function isParachuteStubMode(
   env: NodeJS.ProcessEnv = process.env,
 ): boolean {

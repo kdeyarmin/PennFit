@@ -38,6 +38,17 @@ interface VerifyInput {
   toleranceSeconds?: number;
 }
 
+/**
+ * Verify a Parachute webhook payload by validating its timestamped HMAC-SHA256 signature and replay window.
+ *
+ * @param input - Object containing the values required for verification:
+ *   - `signatureHeader`: the raw `x-parachute-signature` header value expected in the form `t=<unix_seconds>,v1=<hex_hmac>`.
+ *   - `rawBody`: the exact request body string that was signed.
+ *   - `signingSecret`: the shared secret used to compute the HMAC.
+ *   - `nowSeconds` (optional): override for current time in seconds; defaults to the current system time.
+ *   - `toleranceSeconds` (optional): allowed clock skew in seconds; defaults to 300.
+ * @returns `{ ok: true }` when the header, timestamp, and signature are valid; otherwise `{ ok: false; reason: ... }` where `reason` is one of `missing_header`, `malformed_header`, `stale_timestamp`, or `bad_signature`.
+ */
 export function verifyParachuteSignature(input: VerifyInput): VerifyOutcome {
   const header = input.signatureHeader;
   if (typeof header !== "string" || header.length === 0) {
@@ -82,8 +93,12 @@ export function verifyParachuteSignature(input: VerifyInput): VerifyOutcome {
 }
 
 /**
- * Convenience helper for the sending side. Used in tests + by the
- * Phase 5 outbound status callbacks.
+ * Create a Parachute signature header value for a raw payload.
+ *
+ * @param rawBody - The raw request body to include in the signed payload
+ * @param signingSecret - The HMAC-SHA256 secret used to compute the signature
+ * @param nowSeconds - Seconds-since-epoch timestamp to include as `t`; defaults to the current time
+ * @returns A header string formatted as `t=<timestamp>,v1=<hex HMAC-SHA256>`
  */
 export function signParachutePayload(
   rawBody: string,
