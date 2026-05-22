@@ -27,6 +27,7 @@
 
 import { Router, type IRouter } from "express";
 import rateLimit from "express-rate-limit";
+import rateLimit from "express-rate-limit";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 
@@ -40,6 +41,13 @@ import { logger } from "../../lib/logger";
 type FitterLeadsUpdate = Database["resupply"]["Tables"]["fitter_leads"]["Update"];
 
 const router: IRouter = Router();
+const clickTrackRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // limit each IP to 100 requests per window
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 
 const openTrackingRateLimiter = rateLimit({
   windowMs: 60 * 1000,
@@ -723,7 +731,7 @@ function verifyClickTrackingToken(
 }
 
 function publicBaseUrl(): string {
-  return (
+router.get("/shop/track/c", clickTrackRateLimiter, async (req, res) => {
     process.env.SHOP_PUBLIC_BASE_URL ??
     process.env.RESUPPLY_VOICE_PUBLIC_BASE_URL ??
     (process.env.REPLIT_DEV_DOMAIN
