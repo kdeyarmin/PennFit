@@ -1156,7 +1156,7 @@ async function recordTouch(
       const code = (error as { code?: string }).code;
       if (code !== "23505") {
         logger.warn(
-          { err: error.message, leadId, touchIndex, channel },
+          { err: error, leadId, touchIndex, channel },
           "fitter-lead.supply-campaign: touch audit insert failed",
         );
       }
