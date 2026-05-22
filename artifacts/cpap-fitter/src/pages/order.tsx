@@ -858,6 +858,12 @@ export function Order() {
                 id="consent-checkbox"
                 data-testid="checkbox-consent"
                 checked={consentValue === true}
+                aria-invalid={errors.consentToContact ? "true" : "false"}
+                aria-describedby={
+                  isSubmitted && errors.consentToContact
+                    ? "consent-checkbox-error"
+                    : undefined
+                }
                 onCheckedChange={(checked) =>
                   setValue("consentToContact", checked === true, {
                     shouldValidate: true,
@@ -874,10 +880,15 @@ export function Order() {
                   data-storage terms above.
                 </Label>
                 {isSubmitted && errors.consentToContact && (
-                  <p className="text-xs text-destructive mt-1">
+                  <p
+                    id="consent-checkbox-error"
+                    className="text-xs text-destructive mt-1"
+                  >
                     {errors.consentToContact.message}
                   </p>
                 )}
+              </div>
+            </div>
               </div>
             </div>
           </CardContent>
