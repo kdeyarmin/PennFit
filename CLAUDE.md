@@ -164,15 +164,29 @@ Vendor clients live in `lib/resupply-ai/src/`:
 
 - `anthropic-client.ts` — Claude Messages API (REST + SSE streaming +
   prompt caching). `createAnthropicClient()`. Used by the chatbot,
-  sleep coach, and SMS classifier.
+  sleep coach, SMS classifier, and the **post-call summarizer** in
+  `artifacts/resupply-api/src/lib/voice/post-call-summary.ts`.
 - `deepgram-client.ts` — Nova-3 STT (REST batch + WebSocket
-  streaming). `createDeepgramClient()`. Currently unwired on the live
-  voice path (follow-up); ready for post-call audit transcription and
-  one-shot STT.
+  streaming). `createDeepgramClient()`. Wired into the voice WS
+  handler when `DEEPGRAM_API_KEY` is set: opens a parallel Nova-3
+  session on the caller-side µ-law audio, accumulates final
+  transcripts, and writes a `voice.call.deepgram_transcript` audit
+  row on hangup. The OpenAI Realtime model still drives the
+  conversation — Deepgram is the audit-grade backup transcript.
 - `elevenlabs-client.ts` — TTS (REST + streaming + voice list).
   `createElevenLabsClient()`. Currently unwired on the live voice path
   (follow-up); ready for opt-in deployments that want the most natural
   voice quality available.
+
+**Post-call summarization** (`artifacts/resupply-api/src/lib/voice/post-call-summary.ts`)
+runs Claude Sonnet 4.6 on the accumulated transcript turns after every
+voice call ends. Produces a structured JSON object with the call
+outcome, patient sentiment (`positive | neutral | concerned |
+distressed`), any clinical concerns mentioned, follow-ups the agent
+committed to, and a `recommendsHandoff` flag for the human-review
+queue. Persisted as a `voice.call.summary` audit row. Fires
+fire-and-forget after `voice.call.completed` — a flaky model call
+NEVER delays hangup.
 
 Voice agent prompt: `lib/resupply-ai/src/prompts.ts` (version
 `2026-05-22.v2`). Tuned for natural prosody — contractions,
