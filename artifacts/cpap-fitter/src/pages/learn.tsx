@@ -23,6 +23,7 @@ import {
   Sunrise,
   LifeBuoy,
   ClipboardList,
+  AlertTriangle,
 } from "lucide-react";
 
 type Category =
@@ -624,6 +625,101 @@ export function Learn() {
               </p>
             </div>
           </div>
+        </div>
+      </section>
+
+      {/* Deep-dive guides — long-form, share-friendly articles covering
+          the disease, the therapy, the benefits, and the cardiology
+          angle. Built to be passed around to friends and family, not
+          just read once. */}
+      <section className="space-y-6">
+        <div className="space-y-2 text-center md:text-left">
+          <span className="text-xs font-semibold uppercase tracking-[0.28em] text-[hsl(var(--penn-gold))]">
+            Deep-dive guides
+          </span>
+          <h2 className="text-display text-2xl md:text-3xl font-bold tracking-tight text-primary">
+            Long-form reading you can share.
+          </h2>
+          <p className="text-sm md:text-base text-muted-foreground max-w-2xl leading-relaxed mx-auto md:mx-0">
+            Six in-depth articles on what sleep apnea is, what untreated
+            apnea costs your body, what treatment actually feels like, and
+            how the therapy itself works. Each has a built-in share button
+            for passing to a partner, parent, or friend.
+          </p>
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2">
+          {[
+            {
+              href: "/learn/sleep-apnea-explained",
+              Icon: Moon,
+              title: "What sleep apnea really is",
+              body: "OSA, CSA, mixed apnea — what each one actually is, how it happens, and who's most at risk.",
+              testid: "learn-link-deep-sleep-apnea-explained",
+              tone: "icon-halo-navy",
+            },
+            {
+              href: "/learn/health-risks",
+              Icon: AlertTriangle,
+              title: "The hidden cost of leaving it alone",
+              body: "The cardiovascular, metabolic, cognitive, and daily-safety risks of untreated sleep apnea — and the reversal that therapy delivers.",
+              testid: "learn-link-deep-health-risks",
+              tone: "icon-halo-gold",
+            },
+            {
+              href: "/learn/pap-therapy-benefits",
+              Icon: Sunrise,
+              title: "What treatment actually feels like",
+              body: "The benefits of PAP therapy on a real timeline — week one, month one, quarter one, year one.",
+              testid: "learn-link-deep-benefits",
+              tone: "icon-halo-gold",
+            },
+            {
+              href: "/learn/how-pap-works",
+              Icon: Wind,
+              title: "How PAP therapy actually works",
+              body: "The pneumatic-splint mechanism, what cmH₂O means, exhalation relief, and the numbers your machine measures every night.",
+              testid: "learn-link-deep-how-pap-works",
+              tone: "icon-halo-navy",
+            },
+            {
+              href: "/learn/therapy-types",
+              Icon: Activity,
+              title: "CPAP vs APAP vs BiPAP vs ASV",
+              body: "The four therapy modes explained — what each does, who it's prescribed for, and how your physician picks.",
+              testid: "learn-link-deep-therapy-types",
+              tone: "icon-halo-navy",
+            },
+            {
+              href: "/learn/sleep-apnea-heart-health",
+              Icon: Heart,
+              title: "Sleep apnea is a cardiovascular disease",
+              body: "How sleep apnea drives hypertension, AFib, stroke, and heart failure — and why the AHA now recommends OSA screening in cardiology.",
+              testid: "learn-link-deep-heart-health",
+              tone: "icon-halo-gold",
+            },
+          ].map(({ href, Icon, title, body, testid, tone }) => (
+            <Link
+              key={href}
+              href={href}
+              className="glass-card lift-on-hover rounded-2xl p-6 flex items-start gap-4 group"
+              data-testid={testid}
+            >
+              <div
+                className={`shrink-0 h-11 w-11 rounded-xl ${tone} flex items-center justify-center`}
+              >
+                <Icon className="w-5 h-5" />
+              </div>
+              <div className="space-y-1 flex-1 min-w-0">
+                <h3 className="font-semibold tracking-tight group-hover:text-primary transition-colors">
+                  {title}
+                </h3>
+                <p className="text-sm text-muted-foreground leading-relaxed">
+                  {body}
+                </p>
+              </div>
+              <ArrowRight className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors mt-1 shrink-0" />
+            </Link>
+          ))}
         </div>
       </section>
 

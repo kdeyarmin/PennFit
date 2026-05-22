@@ -135,6 +135,41 @@ const ReturnsPage = lazy(() =>
   import("@/pages/returns").then((m) => ({ default: m.ReturnsPage })),
 );
 
+// Educational long-form articles under /learn/*. Lazy-loaded — these are
+// shareable awareness pages, not entry points for the fitter flow, so
+// they shouldn't bloat the initial bundle. The marketing/contact flows
+// link out to these URLs directly.
+const LearnSleepApneaExplained = lazy(() =>
+  import("@/pages/learn-sleep-apnea-explained").then((m) => ({
+    default: m.LearnSleepApneaExplained,
+  })),
+);
+const LearnHealthRisks = lazy(() =>
+  import("@/pages/learn-health-risks").then((m) => ({
+    default: m.LearnHealthRisks,
+  })),
+);
+const LearnPapTherapyBenefits = lazy(() =>
+  import("@/pages/learn-pap-therapy-benefits").then((m) => ({
+    default: m.LearnPapTherapyBenefits,
+  })),
+);
+const LearnHowPapWorks = lazy(() =>
+  import("@/pages/learn-how-pap-works").then((m) => ({
+    default: m.LearnHowPapWorks,
+  })),
+);
+const LearnTherapyTypes = lazy(() =>
+  import("@/pages/learn-therapy-types").then((m) => ({
+    default: m.LearnTherapyTypes,
+  })),
+);
+const LearnSleepApneaHeartHealth = lazy(() =>
+  import("@/pages/learn-sleep-apnea-heart-health").then((m) => ({
+    default: m.LearnSleepApneaHeartHealth,
+  })),
+);
+
 // Brand marketing pages — a hub plus per-brand spotlights (React Health
 // is our flagship line, ResMed and Fisher & Paykel round out the catalog).
 // Lazy-loaded because they're SEO landing surfaces, not entry points for
@@ -400,6 +435,21 @@ function PatientRouter() {
           />
           <Route path="/learn/device-setup" component={DeviceSetup} />
           <Route path="/learn/sleep-apnea-quiz" component={SleepApneaQuiz} />
+          <Route
+            path="/learn/sleep-apnea-explained"
+            component={LearnSleepApneaExplained}
+          />
+          <Route path="/learn/health-risks" component={LearnHealthRisks} />
+          <Route
+            path="/learn/pap-therapy-benefits"
+            component={LearnPapTherapyBenefits}
+          />
+          <Route path="/learn/how-pap-works" component={LearnHowPapWorks} />
+          <Route path="/learn/therapy-types" component={LearnTherapyTypes} />
+          <Route
+            path="/learn/sleep-apnea-heart-health"
+            component={LearnSleepApneaHeartHealth}
+          />
           <Route path="/comfort-guarantee" component={ComfortGuaranteePage} />
           <Route path="/insurance" component={Insurance} />
           <Route path="/insurance/estimate" component={InsuranceEstimate} />
