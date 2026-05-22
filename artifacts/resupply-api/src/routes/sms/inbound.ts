@@ -62,7 +62,7 @@ import {
 } from "@workspace/resupply-messaging";
 
 import { logger } from "../../lib/logger";
-import { createOpenAiFallbackAdapter } from "../../lib/messaging/ai-fallback-impl";
+import { createAiFallbackAdapter } from "../../lib/messaging/ai-fallback-impl";
 import { ingestInboundMmsMedia } from "../../lib/messaging/ingest-mms";
 import { rateLimit } from "../../middlewares/rate-limit";
 import {
@@ -89,10 +89,11 @@ export function __setAiFallbackAdapterForTests(
 
 function getAiAdapter(): AiFallbackAdapter | null {
   if (_aiAdapterOverride) return _aiAdapterOverride;
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) return null;
+  // Prefers Claude Haiku when ANTHROPIC_API_KEY is set, otherwise
+  // falls back to OpenAI's gpt-4o-mini, otherwise returns null and
+  // the route routes to the human-handoff queue.
   try {
-    return createOpenAiFallbackAdapter({ apiKey });
+    return createAiFallbackAdapter();
   } catch {
     return null;
   }

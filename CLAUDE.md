@@ -135,6 +135,53 @@ The full env table — including every optional variable and where it's
 read — lives in [`README.md`](./README.md#environment-variables) and
 [`.env.example`](./.env.example).
 
+## AI / communications stack (May 2026)
+
+Three independent AI vendors are wired into the codebase, each used
+where it's strongest. All three are HIPAA-eligible (require a BAA on
+the vendor side) and gracefully degrade when their API key is unset.
+
+| Surface                 | Primary                  | Fallback              | Key                    |
+| ----------------------- | ------------------------ | --------------------- | ---------------------- |
+| Voice agent (LLM brain) | OpenAI `gpt-realtime`    | n/a (offline if down) | `OPENAI_API_KEY`       |
+| Voice agent (STT)       | `gpt-4o-mini-transcribe` | Deepgram Nova-3 (opt) | `OPENAI_API_KEY`, `DEEPGRAM_API_KEY` |
+| Voice agent (TTS)       | OpenAI `cedar` voice     | ElevenLabs (opt)      | `OPENAI_API_KEY`, `ELEVENLABS_API_KEY` |
+| Storefront chatbot      | Claude Sonnet 4.6        | `gpt-4o-mini`         | `ANTHROPIC_API_KEY` (preferred), `OPENAI_API_KEY` |
+| Sleep coach             | Claude Sonnet 4.6        | `gpt-4o-mini`         | `ANTHROPIC_API_KEY` (preferred), `OPENAI_API_KEY` |
+| SMS intent classifier   | Claude Haiku 4.5         | `gpt-4o-mini`         | `ANTHROPIC_API_KEY` (preferred), `OPENAI_API_KEY` |
+
+Provider selection happens in
+`artifacts/resupply-api/src/lib/llm-provider.ts:selectLlmProvider()` —
+when `ANTHROPIC_API_KEY` is set, Claude takes priority for every
+text-only LLM call (Sonnet 4.6 writes noticeably warmer patient-facing
+copy than gpt-4o-mini-class models and is at least as strong on tool
+selection). When only `OPENAI_API_KEY` is configured, OpenAI is used
+end to end. When neither is set, routes return a static "offline"
+reply and stay 200 (deploys must not break because a vendor key is
+missing).
+
+Vendor clients live in `lib/resupply-ai/src/`:
+
+- `anthropic-client.ts` — Claude Messages API (REST + SSE streaming +
+  prompt caching). `createAnthropicClient()`. Used by the chatbot,
+  sleep coach, and SMS classifier.
+- `deepgram-client.ts` — Nova-3 STT (REST batch + WebSocket
+  streaming). `createDeepgramClient()`. Currently unwired on the live
+  voice path (follow-up); ready for post-call audit transcription and
+  one-shot STT.
+- `elevenlabs-client.ts` — TTS (REST + streaming + voice list).
+  `createElevenLabsClient()`. Currently unwired on the live voice path
+  (follow-up); ready for opt-in deployments that want the most natural
+  voice quality available.
+
+Voice agent prompt: `lib/resupply-ai/src/prompts.ts` (version
+`2026-05-22.v2`). Tuned for natural prosody — contractions,
+backchannels, brief empathy, name-pronunciation guidance. The Realtime
+session uses `semantic_vad` with `eagerness: "low"` and `temperature:
+0.8` for natural turn-taking and phrasing variation (see
+`lib/resupply-ai/src/realtime-client.ts`). Default voice is `cedar`,
+the warmest of the current Realtime voices.
+
 ## Conventions worth knowing
 
 - **Validation:** Zod at every HTTP boundary in `resupply-api`.

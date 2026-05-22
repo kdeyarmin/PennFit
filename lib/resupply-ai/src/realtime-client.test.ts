@@ -102,7 +102,7 @@ describe("RealtimeClient", () => {
     expect(capturedHeaders["OpenAI-Beta"]).toBe("realtime=v1");
   });
 
-  it("sends a session.update on open with µ-law I/O, server-VAD, and the tool list", () => {
+  it("sends a session.update on open with µ-law I/O, semantic-VAD, temperature, and the tool list", () => {
     const { fake } = build({ instructions: "do the thing" });
     fake.fakeOpen();
     expect(fake.received.length).toBe(1);
@@ -110,8 +110,16 @@ describe("RealtimeClient", () => {
     expect(sent.type).toBe("session.update");
     expect(sent.session.input_audio_format).toBe("g711_ulaw");
     expect(sent.session.output_audio_format).toBe("g711_ulaw");
-    expect(sent.session.turn_detection).toEqual({ type: "server_vad" });
-    expect(sent.session.voice).toBe("marin");
+    // semantic_vad waits for end-of-thought rather than fixed silence —
+    // the single biggest "feels human" tuning lever on Realtime API.
+    expect(sent.session.turn_detection.type).toBe("semantic_vad");
+    expect(sent.session.turn_detection.eagerness).toBe("low");
+    expect(sent.session.turn_detection.interrupt_response).toBe(true);
+    // Small temperature bump for natural phrasing variation across turns.
+    expect(sent.session.temperature).toBeGreaterThan(0);
+    expect(sent.session.max_response_output_tokens).toBeGreaterThan(0);
+    // cedar is the warmest of the current Realtime voices.
+    expect(sent.session.voice).toBe("cedar");
     expect(sent.session.instructions).toBe("do the thing");
     expect(Array.isArray(sent.session.tools)).toBe(true);
     expect(sent.session.tools).toHaveLength(TOOL_NAMES.length);

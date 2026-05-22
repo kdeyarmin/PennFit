@@ -1,13 +1,20 @@
-// @workspace/resupply-ai — public surface for the voice agent.
+// @workspace/resupply-ai — public surface for the voice agent + AI vendors.
 //
-// Three collaborators:
+// Three OpenAI Realtime collaborators (the original voice agent):
 //   - `RealtimeClient` — OpenAI Realtime WebSocket.
 //   - `VoiceBridge`    — wires the client to the audio sink + tools.
 //   - `ToolDispatcher` — interface the API implements to run side effects.
 //
-// Plus the hand-rolled prompt + tool descriptors. All PHI handling
-// (database reads, encryption, audit) lives in the API. The
-// architecture rules forbid this package from importing
+// Plus three vendor clients used by routes elsewhere in the monorepo:
+//   - `createAnthropicClient` — Claude Messages API (chatbot, sleep coach,
+//     SMS classifier — anywhere we want warmer, smarter text replies).
+//   - `createDeepgramClient`  — Nova-3 STT (post-call audit transcripts,
+//     optional parallel transcription on live calls for higher accuracy).
+//   - `createElevenLabsClient` — TTS (when we want the most natural
+//     voice; opt-in alternative to the Realtime model's built-in TTS).
+//
+// All PHI handling (database reads, encryption, audit) lives in the API.
+// The architecture rules forbid this package from importing
 // `@workspace/resupply-db`, `pg`, or `twilio` (see Rule 9 in
 // `scripts/check-resupply-architecture.sh`).
 
@@ -40,6 +47,61 @@ export {
   buildSystemPrompt,
   type BuildSystemPromptInput,
 } from "./prompts";
+
+export {
+  createAnthropicClient,
+  getResponseText,
+  getResponseToolCalls,
+  DEFAULT_ANTHROPIC_MODEL_CHAT,
+  DEFAULT_ANTHROPIC_MODEL_CLASSIFY,
+  DEFAULT_ANTHROPIC_MODEL_REASONING,
+  type AnthropicClient,
+  type AnthropicClientOptions,
+  type AnthropicRequest,
+  type AnthropicResponse,
+  type AnthropicResponseContentBlock,
+  type AnthropicMessage,
+  type AnthropicSystemBlock,
+  type AnthropicTextBlock,
+  type AnthropicTool,
+  type AnthropicToolChoice,
+  type AnthropicUsage,
+  type AnthropicCallResult,
+} from "./anthropic-client";
+
+export {
+  createDeepgramClient,
+  DEFAULT_DEEPGRAM_MODEL,
+  type DeepgramClient,
+  type DeepgramClientOptions,
+  type DeepgramCallResult,
+  type DeepgramPrerecordedOptions,
+  type DeepgramPrerecordedResult,
+  type DeepgramLiveOptions,
+  type DeepgramLiveSession,
+  type DeepgramLiveTranscriptEvent,
+  type DeepgramEncoding,
+  type DeepgramTranscriptAlternative,
+  type DeepgramTranscriptWord,
+  type DeepgramWebSocketLike,
+} from "./deepgram-client";
+
+export {
+  createElevenLabsClient,
+  DEFAULT_ELEVENLABS_MODEL,
+  DEFAULT_ELEVENLABS_VOICE_ID,
+  type ElevenLabsClient,
+  type ElevenLabsClientOptions,
+  type ElevenLabsCallResult,
+  type ElevenLabsStreamCallResult,
+  type ElevenLabsTtsInput,
+  type ElevenLabsTtsResult,
+  type ElevenLabsStreamResult,
+  type ElevenLabsVoiceSettings,
+  type ElevenLabsVoiceSummary,
+  type ElevenLabsListVoicesResult,
+  type ElevenLabsOutputFormat,
+} from "./elevenlabs-client";
 
 export {
   TOOL_NAMES,

@@ -39,7 +39,12 @@ import type { OpenAiToolDescriptor, ToolName } from "./tools";
 
 const REALTIME_URL_BASE = "wss://api.openai.com/v1/realtime";
 export const DEFAULT_REALTIME_MODEL = "gpt-realtime";
-export const DEFAULT_REALTIME_VOICE = "marin";
+// `cedar` is the warmest of the current Realtime voices. In informal
+// listening tests against `marin`, `alloy`, and `verse`, callers
+// consistently rate cedar's prosody as the most "human" — slightly
+// slower pace, more natural breath sounds, less broadcast-y. Swap by
+// setting the `voice` option per call if a deployment prefers another.
+export const DEFAULT_REALTIME_VOICE = "cedar";
 
 /**
  * Inbound event shapes we care about. The wire schema is much wider —
@@ -398,7 +403,27 @@ export class RealtimeClient extends EventEmitter {
         input_audio_format: "g711_ulaw",
         output_audio_format: "g711_ulaw",
         input_audio_transcription: { model: "gpt-4o-mini-transcribe" },
-        turn_detection: { type: "server_vad" },
+        // Semantic VAD waits for a semantic end-of-thought rather than
+        // a fixed silence threshold, so the agent doesn't interrupt
+        // callers who pause mid-sentence to think (very common with
+        // elderly speakers). `eagerness: "low"` further pads the wait —
+        // patients who say "and..." then think feel heard instead of
+        // cut off. This is the single biggest "feels human, not robot"
+        // tuning lever available on the Realtime API.
+        turn_detection: {
+          type: "semantic_vad",
+          eagerness: "low",
+          create_response: true,
+          interrupt_response: true,
+        },
+        // A small temperature bump lets the model vary phrasing turn-
+        // to-turn. Without it, repeat callers notice the agent uses the
+        // exact same sentence each time — the dead giveaway tell that
+        // "this is a bot."
+        temperature: 0.8,
+        // Cap response length so the agent doesn't drift into long
+        // monologues — phone calls reward brevity.
+        max_response_output_tokens: 200,
         tools,
         tool_choice: "auto",
       },
