@@ -29,9 +29,14 @@ import { Router, type IRouter } from "express";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import {
+  type Database,
+  getSupabaseServiceRoleClient,
+} from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
+
+type FitterLeadsUpdate = Database["resupply"]["Tables"]["fitter_leads"]["Update"];
 
 const router: IRouter = Router();
 
@@ -83,6 +88,20 @@ export const TOTAL_REORDER_TOUCHPOINTS = REORDER_TOUCHPOINT_OFFSETS_MS.length;
 /** Total touches across both phases, 1-indexed. */
 export const TOTAL_ALL_TOUCHPOINTS =
   TOTAL_TOUCHPOINTS + TOTAL_REORDER_TOUCHPOINTS;
+
+// Cold-lead reactivation — mig 0153. T11 is a single final email
+// scheduled 90 days after T6 if the lead never converted. Anchored
+// on `last_campaign_touch_at` (the T6 send time), not the original
+// completed_at.
+export const FINAL_CALL_OFFSET_MS = 90 * 86_400_000;
+/** 1-based index of the final-call touch. */
+export const FINAL_CALL_TOUCH_INDEX = TOTAL_ALL_TOUCHPOINTS + 1; // T11
+/** Total touches including the final call. */
+export const TOTAL_WITH_FINAL_CALL = TOTAL_ALL_TOUCHPOINTS + 1;
+
+/** Open-tracking — leads with this many recorded opens before
+ *  ordering get flipped into the hot-lead queue for CSR outreach. */
+export const HOT_LEAD_THRESHOLD = 3;
 
 const MASK_TYPES = ["fullFace", "nasal", "nasalPillow", "hybrid"] as const;
 
@@ -342,6 +361,214 @@ export function signUnsubscribeToken(leadId: string, now: Date = new Date()): st
     .update(payloadEncoded, "utf8")
     .digest();
   return `${payloadEncoded}.${base64urlEncode(sig)}`;
+}
+
+// -----------------------------------------------------------------
+// Open-tracking pixel — mig 0153.
+// -----------------------------------------------------------------
+//
+// Every campaign email embeds a 1x1 transparent GIF whose src URL
+// carries an HMAC-signed token (leadId|touchIndex|issuedAt). When
+// the recipient's client renders the image, we record the open
+// against the lead row + (best-effort) increment engagement_score.
+//
+// Why pixel vs SendGrid event webhook
+//   * Works in any ESP; no per-vendor signature plumbing.
+//   * The token is self-validating — no DB round-trip to look up
+//     "did we actually send this?" before recording the event.
+//   * The risk is image-blocking clients (Outlook desktop, some
+//     security-conscious users). That's fine — the signal is
+//     ordinal ("more engaged than another lead"), not absolute
+//     ("definitely opened").
+//
+// Token shape mirrors signUnsubscribeToken but is DISTINCT (the
+// payload includes the touchIndex segment) so a leaked unsubscribe
+// token can't be replayed as an open, and vice versa.
+
+/** Token TTL — long enough that an email opened months later still
+ *  records, short enough that a re-mailed coupon code can't be
+ *  retroactively counted decades later. 180 days matches the
+ *  unsubscribe TTL. */
+const OPEN_TOKEN_TTL_MS = 180 * 86_400_000;
+
+/** Mint a per-touch tracking-pixel token. Exported so the
+ *  dispatcher worker can embed one URL per outbound email. */
+export function signOpenTrackingToken(
+  leadId: string,
+  touchIndex: number,
+  now: Date = new Date(),
+): string {
+  const issuedSec = Math.floor(now.getTime() / 1000);
+  // Distinct payload prefix ('o' for open) means a leaked
+  // unsubscribe token (prefix 'u' implied by the lack of segment)
+  // can't be replayed as an open and the reverse. The pipe-
+  // separated shape stays grep-able.
+  const payload = `o|${leadId}|${touchIndex}|${issuedSec}`;
+  const payloadEncoded = base64urlEncode(Buffer.from(payload, "utf8"));
+  const sig = createHmac("sha256", getLinkHmacKey())
+    .update(payloadEncoded, "utf8")
+    .digest();
+  return `${payloadEncoded}.${base64urlEncode(sig)}`;
+}
+
+type OpenVerifyResult =
+  | { valid: true; leadId: string; touchIndex: number }
+  | { valid: false; reason: "malformed" | "bad_signature" | "expired" };
+
+function verifyOpenTrackingToken(
+  token: string,
+  now: Date = new Date(),
+): OpenVerifyResult {
+  const idx = token.indexOf(".");
+  if (idx <= 0 || idx === token.length - 1) {
+    return { valid: false, reason: "malformed" };
+  }
+  const payloadEncoded = token.slice(0, idx);
+  const sigEncoded = token.slice(idx + 1);
+  const sigBuf = base64urlDecode(sigEncoded);
+  if (!sigBuf) return { valid: false, reason: "malformed" };
+  const expected = createHmac("sha256", getLinkHmacKey())
+    .update(payloadEncoded, "utf8")
+    .digest();
+  if (sigBuf.length !== expected.length) {
+    return { valid: false, reason: "bad_signature" };
+  }
+  if (!timingSafeEqual(sigBuf, expected)) {
+    return { valid: false, reason: "bad_signature" };
+  }
+  const payloadBuf = base64urlDecode(payloadEncoded);
+  if (!payloadBuf) return { valid: false, reason: "malformed" };
+  const parts = payloadBuf.toString("utf8").split("|");
+  if (parts.length !== 4 || parts[0] !== "o") {
+    return { valid: false, reason: "malformed" };
+  }
+  const leadId = parts[1];
+  const touchIndex = Number.parseInt(parts[2], 10);
+  const issuedSec = Number.parseInt(parts[3], 10);
+  if (
+    !leadId ||
+    !Number.isFinite(touchIndex) ||
+    !Number.isFinite(issuedSec) ||
+    touchIndex < 1 ||
+    touchIndex > 50
+  ) {
+    return { valid: false, reason: "malformed" };
+  }
+  if (issuedSec * 1000 + OPEN_TOKEN_TTL_MS <= now.getTime()) {
+    return { valid: false, reason: "expired" };
+  }
+  return { valid: true, leadId, touchIndex };
+}
+
+// 1x1 transparent GIF — the smallest valid GIF that renders as
+// "nothing." 43 bytes. Returned with no-cache headers so each open
+// gets recorded (otherwise a single load + browser cache would
+// suppress subsequent opens from the same client).
+const TRANSPARENT_GIF = Buffer.from(
+  "R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7",
+  "base64",
+);
+
+router.get("/shop/track/o", async (req, res) => {
+  // Always return the pixel — even on a bad token. NEVER 4xx /
+  // 5xx here: an error response would render as a broken-image
+  // icon in the patient's inbox.
+  const sendPixel = (): void => {
+    res.set({
+      "Content-Type": "image/gif",
+      "Cache-Control": "no-store, no-cache, must-revalidate, private",
+      Pragma: "no-cache",
+      "Content-Length": String(TRANSPARENT_GIF.length),
+    });
+    res.status(200).end(TRANSPARENT_GIF);
+  };
+
+  const token = typeof req.query.t === "string" ? req.query.t : "";
+  if (!token) {
+    sendPixel();
+    return;
+  }
+
+  let verify: OpenVerifyResult;
+  try {
+    verify = verifyOpenTrackingToken(token);
+  } catch (err) {
+    logger.warn({ err }, "shop/track/o: verify threw");
+    sendPixel();
+    return;
+  }
+  if (!verify.valid) {
+    sendPixel();
+    return;
+  }
+
+  // Best-effort: bump the engagement counter + flip hot_lead_at
+  // when crossing the threshold. We do this in a single Supabase
+  // RPC-style update to keep the latency low (the patient is
+  // waiting for the pixel response).
+  recordOpenEvent(verify.leadId, verify.touchIndex).catch((err) => {
+    // Async fire-and-forget; never block the pixel response.
+    logger.warn({ err, leadId: verify.leadId }, "shop/track/o: record failed");
+  });
+
+  sendPixel();
+});
+
+async function recordOpenEvent(
+  leadId: string,
+  touchIndex: number,
+): Promise<void> {
+  const supabase = getSupabaseServiceRoleClient();
+  // Read → compute → write. PostgREST doesn't expose a server-side
+  // increment expression, so we do the read-modify-write here. The
+  // tight loop on this code path is tiny (one open per send per
+  // recipient), so the lack of an atomic increment is fine. A
+  // concurrent open by the same recipient at the same instant might
+  // be counted once instead of twice — acceptable for a noisy signal.
+  const { data: lead, error: readErr } = await supabase
+    .schema("resupply")
+    .from("fitter_leads")
+    .select("id, engagement_score, hot_lead_at, journey_stage, first_order_id")
+    .eq("id", leadId)
+    .maybeSingle();
+  if (readErr) throw readErr;
+  if (!lead) return;
+  // Don't bump the engagement score on terminal-state rows — the
+  // signal is meant to inform CSR outreach for ACTIVE leads. A
+  // re-opened email from a converted/unsubscribed lead is noise.
+  if (
+    lead.journey_stage === "unsubscribed" ||
+    lead.journey_stage === "expired" ||
+    lead.journey_stage === "converted"
+  ) {
+    return;
+  }
+  const nextScore = (lead.engagement_score ?? 0) + 1;
+  // Flip hot_lead_at the first time score crosses HOT_LEAD_THRESHOLD,
+  // but ONLY for un-converted leads. A patient who's already in
+  // reorder_active shouldn't be flagged "hot" — they already bought.
+  const shouldFlipHot =
+    !lead.hot_lead_at &&
+    !lead.first_order_id &&
+    nextScore >= HOT_LEAD_THRESHOLD;
+  const update: FitterLeadsUpdate = {
+    engagement_score: nextScore,
+  };
+  if (shouldFlipHot) {
+    update.hot_lead_at = new Date().toISOString();
+  }
+  const { error: writeErr } = await supabase
+    .schema("resupply")
+    .from("fitter_leads")
+    .update(update)
+    .eq("id", leadId);
+  if (writeErr) throw writeErr;
+  if (shouldFlipHot) {
+    logger.info(
+      { event: "fitter_lead.hot_lead_flipped", leadId, score: nextScore, touchIndex },
+      "shop/track/o: lead crossed hot-lead threshold",
+    );
+  }
 }
 
 type UnsubscribeVerifyResult =

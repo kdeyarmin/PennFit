@@ -24,10 +24,10 @@ const BASE_OPTS = {
   unsubscribeUrl: "https://example.test/shop/fitter-leads/unsubscribe?t=tok",
 };
 
-const ALL_TOUCHES = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] as const;
+const ALL_TOUCHES = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11] as const;
 const REORDER = [7, 8, 9, 10] as const;
 const SMS_TOUCHES = [1, 2, 4, 6, 7, 8, 9, 10] as const;
-const EMAIL_ONLY = [3, 5] as const;
+const EMAIL_ONLY = [3, 5, 11] as const;
 
 describe("composeTouchpoint — pre-purchase phase (T1-T6)", () => {
   it("substitutes the recommended mask name into T1 subject + body", () => {
@@ -393,5 +393,65 @@ describe("composeTouchpoint — universal invariants", () => {
         `touch ${i} text should reference recommended mask`,
       ).toContain("ResMed AirFit P30i");
     }
+  });
+});
+
+describe("composeTouchpoint — T10 refer-a-friend + T11 final call", () => {
+  it("T10 includes a refer-a-friend CTA with the $25 perk", () => {
+    const out = composeTouchpoint({ ...BASE_OPTS, touchIndex: 10 });
+    expect(out.email.text.toLowerCase()).toContain("$25 off");
+    expect(out.email.html.toLowerCase()).toContain("share with a friend");
+    expect(out.email.text).toContain(`${BASE_OPTS.shopUrl}/refer`);
+  });
+
+  it("T11 (final call) carries a stronger 20% discount + LAST20 code", () => {
+    const out = composeTouchpoint({ ...BASE_OPTS, touchIndex: 11 });
+    expect(out.email.subject.toLowerCase()).toContain("last chance");
+    expect(out.email.subject).toContain("20%");
+    expect(out.email.text).toContain("LAST20");
+    expect(out.email.html).toContain("LAST20");
+  });
+
+  it("T11 sets a closing-the-loop expectation in the body", () => {
+    const out = composeTouchpoint({ ...BASE_OPTS, touchIndex: 11 });
+    // The body should make it clear this is the last email so the
+    // patient understands the framing isn't a manipulative ploy.
+    expect(out.email.text.toLowerCase()).toContain(
+      "won't reach out about this fitting again",
+    );
+  });
+
+  it("T11 is email-only (no SMS — too cold at 150 days)", () => {
+    const out = composeTouchpoint({ ...BASE_OPTS, touchIndex: 11 });
+    expect(out.sms).toBe("");
+  });
+});
+
+describe("composeTouchpoint — tracking pixel", () => {
+  it("embeds the tracking pixel URL in the HTML when provided", () => {
+    const out = composeTouchpoint({
+      ...BASE_OPTS,
+      touchIndex: 1,
+      trackingPixelUrl: "https://example.test/shop/track/o?t=PIXEL_TOKEN",
+    });
+    expect(out.email.html).toContain(
+      "https://example.test/shop/track/o?t=PIXEL_TOKEN",
+    );
+    // Width + height = 1, display:block (so it doesn't reflow).
+    expect(out.email.html).toMatch(/width="1"\s+height="1"/);
+  });
+
+  it("omits the tracking pixel when not provided (test seam)", () => {
+    const out = composeTouchpoint({ ...BASE_OPTS, touchIndex: 1 });
+    expect(out.email.html).not.toContain("track/o?t=");
+  });
+
+  it("plain-text body never carries the tracking pixel URL", () => {
+    const out = composeTouchpoint({
+      ...BASE_OPTS,
+      touchIndex: 1,
+      trackingPixelUrl: "https://example.test/shop/track/o?t=PIXEL_TOKEN",
+    });
+    expect(out.email.text).not.toContain("track/o?t=");
   });
 });

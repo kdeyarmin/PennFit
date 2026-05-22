@@ -10,6 +10,7 @@ export type FitterLeadJourneyStage =
   | "completed"
   | "campaign_active"
   | "reorder_active"
+  | "final_call_pending"
   | "converted"
   | "unsubscribed"
   | "expired";
@@ -40,21 +41,29 @@ export interface FitterLeadRow {
   unsubscribedAt: string | null;
   completedAt: string | null;
   createdAt: string;
+  /** Mig 0153 — engagement signals from open tracking. */
+  engagementScore: number;
+  hotLeadAt: string | null;
 }
 
 export interface ListFitterLeadsResponse {
   rows: FitterLeadRow[];
   counts: Record<FitterLeadJourneyStage, number>;
   conversionRate: number;
+  /** Count of active (un-converted, un-unsubscribed) hot leads
+   *  across all stages — the CSR outreach priority queue. */
+  hotLeadsActive: number;
 }
 
 export async function listFitterLeads(
   stage: FitterLeadJourneyStage | "all" = "all",
   source: FitterLeadSource | "all" = "all",
+  hotOnly: boolean = false,
 ): Promise<ListFitterLeadsResponse> {
   const params = new URLSearchParams();
   if (stage !== "all") params.set("stage", stage);
   if (source !== "all") params.set("source", source);
+  if (hotOnly) params.set("hotOnly", "1");
   const qs = params.toString();
   const res = await fetch(
     `/resupply-api/admin/fitter-leads${qs ? `?${qs}` : ""}`,

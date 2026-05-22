@@ -36,6 +36,7 @@ const JOURNEY_STAGES = [
   "completed",
   "campaign_active",
   "reorder_active",
+  "final_call_pending",
   "converted",
   "unsubscribed",
   "expired",
@@ -55,6 +56,13 @@ const listQuery = z.object({
     .enum(["all", "consent", "sleep_apnea_quiz", "insurance_quote"])
     .optional()
     .default("all"),
+  // Optional "hot leads only" filter — drives the CSR outreach queue.
+  // Truthy values: '1', 'true'. Anything else (incl. omitted) means
+  // "no filter".
+  hotOnly: z
+    .string()
+    .optional()
+    .transform((v) => v === "1" || v === "true"),
   limit: z
     .string()
     .optional()
@@ -78,23 +86,25 @@ router.get(
       res.status(400).json({ error: "invalid_query" });
       return;
     }
-    const { stage, source, limit } = parsed.data;
+    const { stage, source, hotOnly, limit } = parsed.data;
     const supabase = getSupabaseServiceRoleClient();
 
     let rowsQuery = supabase
       .schema("resupply")
       .from("fitter_leads")
       .select(
-        "id, email, phone_e164, sms_opt_in, marketing_opt_in, source, journey_stage, recommended_mask_id, recommended_mask_name, recommended_mask_type, first_name, campaign_touch_count, last_campaign_touch_at, next_campaign_touch_at, first_order_id, first_order_placed_at, unsubscribed_at, completed_at, created_at",
+        "id, email, phone_e164, sms_opt_in, marketing_opt_in, source, journey_stage, recommended_mask_id, recommended_mask_name, recommended_mask_type, first_name, campaign_touch_count, last_campaign_touch_at, next_campaign_touch_at, first_order_id, first_order_placed_at, unsubscribed_at, completed_at, created_at, engagement_score, hot_lead_at",
       )
-      // Most-recently-completed first when looking at the in-funnel
-      // bucket; falls back to created_at for rows that never reached
-      // /results.
+      // Hot leads sort to the top when present (CSR outreach queue);
+      // otherwise most-recently-completed first; falls back to
+      // created_at for rows that never reached /results.
+      .order("hot_lead_at", { ascending: false, nullsFirst: false })
       .order("completed_at", { ascending: false, nullsFirst: false })
       .order("created_at", { ascending: false })
       .limit(limit);
     if (stage !== "all") rowsQuery = rowsQuery.eq("journey_stage", stage);
     if (source !== "all") rowsQuery = rowsQuery.eq("source", source);
+    if (hotOnly) rowsQuery = rowsQuery.not("hot_lead_at", "is", null);
 
     const { data: rows, error: listErr } = await rowsQuery;
     if (listErr) throw listErr;
@@ -108,9 +118,11 @@ router.get(
       completedCount,
       campaignActiveCount,
       reorderActiveCount,
+      finalCallPendingCount,
       convertedCount,
       unsubscribedCount,
       expiredCount,
+      hotLeadCount,
     ] = await Promise.all([
       supabase
         .schema("resupply")
@@ -136,6 +148,11 @@ router.get(
         .schema("resupply")
         .from("fitter_leads")
         .select("*", { count: "exact", head: true })
+        .eq("journey_stage", "final_call_pending"),
+      supabase
+        .schema("resupply")
+        .from("fitter_leads")
+        .select("*", { count: "exact", head: true })
         .eq("journey_stage", "converted"),
       supabase
         .schema("resupply")
@@ -147,6 +164,16 @@ router.get(
         .from("fitter_leads")
         .select("*", { count: "exact", head: true })
         .eq("journey_stage", "expired"),
+      // Hot-lead tile: opted-in, in any pre-conversion stage, with
+      // hot_lead_at stamped. These are the ones a CSR should call
+      // RIGHT NOW.
+      supabase
+        .schema("resupply")
+        .from("fitter_leads")
+        .select("*", { count: "exact", head: true })
+        .not("hot_lead_at", "is", null)
+        .is("first_order_id", null)
+        .is("unsubscribed_at", null),
     ]);
 
     for (const r of [
@@ -154,9 +181,11 @@ router.get(
       completedCount,
       campaignActiveCount,
       reorderActiveCount,
+      finalCallPendingCount,
       convertedCount,
       unsubscribedCount,
       expiredCount,
+      hotLeadCount,
     ]) {
       if (r.error) throw r.error;
     }
@@ -166,22 +195,27 @@ router.get(
       completed: completedCount.count ?? 0,
       campaign_active: campaignActiveCount.count ?? 0,
       reorder_active: reorderActiveCount.count ?? 0,
+      final_call_pending: finalCallPendingCount.count ?? 0,
       converted: convertedCount.count ?? 0,
       unsubscribed: unsubscribedCount.count ?? 0,
       expired: expiredCount.count ?? 0,
     };
+    const hotLeadsActive = hotLeadCount.count ?? 0;
 
     // Conversion rate: (reorder_active + converted) / completed-cohort.
     // The reorder_active stage IS a converted lead — they bought
     // their first mask; the campaign just keeps nurturing them
     // toward supply re-orders. Excludes 'consent' (pre-completion)
     // and 'unsubscribed' (terminal opt-out). Returned as a float
-    // on [0..1]; UI formats as a percent.
+    // on [0..1]; UI formats as a percent. final_call_pending
+    // counts as unconverted — it's the "between T6 and T11"
+    // holding pattern.
     const convertedTotal = counts.converted + counts.reorder_active;
     const denominator =
       counts.completed +
       counts.campaign_active +
       counts.reorder_active +
+      counts.final_call_pending +
       counts.converted +
       counts.expired;
     const conversionRate =
@@ -190,8 +224,9 @@ router.get(
     req.log?.info?.(
       {
         rowCount: rows?.length ?? 0,
-        filter: { stage, source },
+        filter: { stage, source, hotOnly: hotOnly === true },
         counts,
+        hotLeadsActive,
       },
       "admin/fitter-leads: list",
     );
@@ -217,9 +252,12 @@ router.get(
         unsubscribedAt: r.unsubscribed_at,
         completedAt: r.completed_at,
         createdAt: r.created_at,
+        engagementScore: r.engagement_score ?? 0,
+        hotLeadAt: r.hot_lead_at,
       })),
       counts,
       conversionRate,
+      hotLeadsActive,
     });
   },
 );

@@ -537,6 +537,7 @@ export interface Database {
             | "completed"
             | "campaign_active"
             | "reorder_active"
+            | "final_call_pending"
             | "converted"
             | "unsubscribed"
             | "expired";
@@ -549,6 +550,9 @@ export interface Database {
           // Mig 0152 — first-name personalization, captured from
           // public.orders.patient_name on conversion.
           first_name: string | null;
+          // Mig 0153 — engagement tracking via tracking-pixel opens.
+          engagement_score: number;
+          hot_lead_at: string | null;
         };
         Insert: Partial<Database["resupply"]["Tables"]["fitter_leads"]["Row"]>;
         Update: Partial<Database["resupply"]["Tables"]["fitter_leads"]["Row"]>;

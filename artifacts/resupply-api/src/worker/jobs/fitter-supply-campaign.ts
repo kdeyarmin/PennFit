@@ -81,7 +81,9 @@ import {
   TOTAL_TOUCHPOINTS,
   REORDER_TOUCHPOINT_OFFSETS_MS,
   TOTAL_ALL_TOUCHPOINTS,
+  FINAL_CALL_OFFSET_MS,
   signUnsubscribeToken,
+  signOpenTrackingToken,
 } from "../../routes/shop/fitter-complete";
 
 const JOB_NAME = "fitter-lead.supply-campaign";
@@ -125,7 +127,7 @@ interface LeadRow {
   // the re-order phase (T7-T10) can personalize by first name.
   first_name: string | null;
   first_order_placed_at: string | null;
-  journey_stage: "campaign_active" | "reorder_active";
+  journey_stage: "campaign_active" | "reorder_active" | "final_call_pending";
 }
 
 interface TouchpointCopy {
@@ -205,14 +207,20 @@ function renderCtaButton(label: string, href: string): string {
 /** Render the full responsive email shell around the per-touch
  *  body content. The body content carries paragraphs + CTAs +
  *  any lists; the shell adds the brand band, preheader, frame,
- *  and footer. */
+ *  footer, and (optionally) the 1x1 open-tracking pixel. */
 function renderBrandedHtml(opts: {
   practiceName: string;
   preheader: string;
   bodyHtml: string;
   unsubscribeUrl: string;
+  /** URL of the 1x1 open-tracking GIF (signed per-touch token).
+   *  Embedded at the very end of the body so it doesn't render
+   *  visibly. Omitted in tests / dev when the link HMAC key isn't
+   *  configured. */
+  trackingPixelUrl?: string | null;
 }): string {
-  const { practiceName, preheader, bodyHtml, unsubscribeUrl } = opts;
+  const { practiceName, preheader, bodyHtml, unsubscribeUrl, trackingPixelUrl } =
+    opts;
   // Inbox-preview hidden text. Trailing zero-width-non-joiners
   // pushed in to keep Gmail from grabbing email-source text after
   // the preheader and showing it as part of the preview snippet.
@@ -244,6 +252,7 @@ function renderBrandedHtml(opts: {
     </table>
   </td></tr>
 </table>
+${trackingPixelUrl ? `<img src="${trackingPixelUrl}" alt="" width="1" height="1" border="0" style="display:block;width:1px;height:1px;border:0;" />` : ""}
 </body></html>`;
 }
 
@@ -362,6 +371,10 @@ export function composeTouchpoint(opts: {
    *  word of public.orders.patient_name. Null falls back to a
    *  generic-but-warm opening. */
   firstName?: string | null;
+  /** Per-touch open-tracking pixel URL, signed by the dispatcher.
+   *  Optional so the pure function stays testable without the link
+   *  HMAC key configured. When null, no pixel is embedded. */
+  trackingPixelUrl?: string | null;
 }): TouchpointCopy {
   const {
     touchIndex,
@@ -372,6 +385,7 @@ export function composeTouchpoint(opts: {
     recommendedMaskType,
     unsubscribeUrl,
     firstName,
+    trackingPixelUrl,
   } = opts;
   // Friendly "your AirFit P30i" snippet, fallback when the recommended
   // mask name isn't persisted yet (legacy rows or attribution races).
@@ -436,6 +450,7 @@ export function composeTouchpoint(opts: {
       preheader,
       bodyHtml: `${greetingHtml}${bodyHtml}`,
       unsubscribeUrl,
+      trackingPixelUrl,
     }),
     text: `${greetingText}\n\n${bodyText}\n\n— ${practiceName}\nUnsubscribe: ${unsubscribeUrl}`,
   });
@@ -661,10 +676,16 @@ export function composeTouchpoint(opts: {
       };
     }
     case 10: {
-      // T10 — day 180 after order: full refresh, warm sendoff. No
-      // subscription upsell here — keep the tone non-salesy.
+      // T10 — day 180 after order: full refresh, warm sendoff +
+      // refer-a-friend ask. The 6-month mark is the warmest moment
+      // in the journey: the patient has been sleeping well for half
+      // a year, the campaign hasn't bothered them excessively, and
+      // they're now eligible for an insurance-covered refresh.
+      // Asking for a referral here lands far better than anywhere
+      // else in the funnel.
       const subject = `${nameSubjectPrefix}Your 6-month mask refresh`;
-      const preheader = `Most insurance covers a new mask every 6 months. Your measurements are still on file.`;
+      const preheader = `Most insurance covers a new mask every 6 months. Plus a referral perk.`;
+      const referUrl = `${shopUrl}/refer`;
       const bodyText = [
         "It's been 6 months since you started with us. By now your mask has earned its retirement — manufacturers rate the silicone seal at 6-12 months before performance degrades.",
         "",
@@ -674,6 +695,9 @@ export function composeTouchpoint(opts: {
         "  • Try something different if your sleep position has changed",
         "",
         `Start your refresh: ${resumeUrl}`,
+        "",
+        "Know someone who snores? Share us — you both get $25 off:",
+        `  ${referUrl}`,
       ].join("\n");
       const bodyHtml = `
         <p>It&apos;s been 6 months since you started with us. By now your mask has earned its retirement — manufacturers rate the silicone seal at 6-12 months before performance degrades.</p>
@@ -683,10 +707,50 @@ export function composeTouchpoint(opts: {
           <li>Ship a fresh version of the same mask you&apos;ve been using</li>
           <li>Try something different if your sleep position has changed</li>
         </ul>
-        ${renderCtaButton("Start your refresh", resumeUrl)}`;
+        ${renderCtaButton("Start your refresh", resumeUrl)}
+        <div style="margin-top:22px;padding:14px 16px;background:#eef2f7;border-left:3px solid ${BRAND_NAVY};border-radius:4px;font-size:14px;line-height:1.5;">
+          <strong>Know someone who snores?</strong> Share us — you both get $25 off your next order.
+          <div style="margin-top:8px;"><a href="${referUrl}" style="color:${BRAND_NAVY};font-weight:600;text-decoration:underline;">Share with a friend</a></div>
+        </div>`;
       return {
         email: buildEmail(subject, preheader, bodyHtml, bodyText),
         sms: `${smsNamePrefix}${practiceName}: your 6-month mask refresh is due. ${resumeUrl} STOP to opt out.`,
+      };
+    }
+    case 11: {
+      // T11 — final-call. 90 days after the pre-purchase campaign
+      // expired without a conversion. ONE more email with a
+      // stronger, time-limited offer + clear "we're closing your
+      // fitting" framing. After this, the lead is truly terminal
+      // and only the lapsed-customer-winback worker (180d+) can
+      // reach them. SMS deliberately omitted — at 150 days post-
+      // fitting most patients have forgotten they ever ran the
+      // tool; an SMS reads as cold-spam where the email reads as
+      // a courtesy.
+      const promo = process.env.FITTER_FINAL_CALL_PROMO ?? "LAST20";
+      const subject = `${nameSubjectPrefix}We're closing your ${recommendedMaskName ?? "fitting"} — last chance, 20% off`;
+      const preheader = `Code ${promo} for 20% off. After this we won't email again about your fitting.`;
+      const bodyText = [
+        `It's been a few months since you ran our at-home fitting and matched to ${maskRef}. We're cleaning up our records this week.`,
+        "",
+        `Before we close your fitting, here's a final offer: code ${promo} takes 20% off your first order — masks, supplies, anything in the catalog. Valid 14 days.`,
+        "",
+        `Use it here: ${shopUrl}`,
+        "",
+        "After this email we won't reach out about this fitting again. Your measurements stay on file for 12 months in case you change your mind, but we'll stop showing up in your inbox.",
+        "",
+        "Reply to this email if you have a question — we read every reply.",
+      ].join("\n");
+      const bodyHtml = `
+        <p>It&apos;s been a few months since you ran our at-home fitting and matched to <strong>${maskRefHtml}</strong>. We&apos;re cleaning up our records this week.</p>
+        <p style="font-size:20px;line-height:1.3;margin:18px 0 12px 0;"><strong style="color:${BRAND_NAVY};">20% off your first order</strong></p>
+        <p>Before we close your fitting, here&apos;s a final offer: code <code style="background:#fef3c7;padding:4px 10px;border-radius:4px;font-size:16px;font-weight:600;letter-spacing:0.5px;">${escapeHtml(promo)}</code> takes 20% off your first order — masks, supplies, anything in the catalog. <strong>Valid 14 days.</strong></p>
+        ${renderCtaButton(`Shop with ${promo}`, shopUrl)}
+        <p style="color:${MUTED};font-size:14px;">After this email we won&apos;t reach out about this fitting again. Your measurements stay on file for 12 months in case you change your mind, but we&apos;ll stop showing up in your inbox.</p>
+        <p style="color:${MUTED};font-size:14px;">Reply to this email if you have a question — we read every reply.</p>`;
+      return {
+        email: buildEmail(subject, preheader, bodyHtml, bodyText),
+        sms: "",
       };
     }
   }
@@ -742,17 +806,22 @@ export async function runFitterSupplyCampaignSweep(): Promise<SupplyCampaignStat
   const supabase = getSupabaseServiceRoleClient();
   const nowIso = new Date().toISOString();
 
-  // Eligibility: opted-in row in EITHER pre-purchase ('campaign_active')
-  // OR post-purchase re-order ('reorder_active') stage, with a
-  // due-now next_campaign_touch_at. The partial index
-  // `fitter_leads_campaign_due_idx` (mig 0152) covers both stages.
+  // Eligibility: opted-in row in pre-purchase ('campaign_active'),
+  // re-order ('reorder_active'), OR cold-lead final-call
+  // ('final_call_pending', mig 0153) stage, with a due-now
+  // next_campaign_touch_at. The partial index
+  // `fitter_leads_campaign_due_idx` (mig 0153) covers all three.
   const { data: leads, error } = await supabase
     .schema("resupply")
     .from("fitter_leads")
     .select(
       "id, email, phone_e164, sms_opt_in, recommended_mask_id, recommended_mask_name, recommended_mask_type, campaign_touch_count, completed_at, first_name, first_order_placed_at, journey_stage",
     )
-    .in("journey_stage", ["campaign_active", "reorder_active"])
+    .in("journey_stage", [
+      "campaign_active",
+      "reorder_active",
+      "final_call_pending",
+    ])
     .eq("marketing_opt_in", true)
     .is("unsubscribed_at", null)
     .lte("next_campaign_touch_at", nowIso)
@@ -777,55 +846,61 @@ export async function runFitterSupplyCampaignSweep(): Promise<SupplyCampaignStat
     stats.scanned += 1;
     const nextTouchIndex = lead.campaign_touch_count + 1;
 
-    // Pre-purchase touches (1..TOTAL_TOUCHPOINTS) anchor on
-    // completed_at; post-purchase touches (TOTAL_TOUCHPOINTS+1..
-    // TOTAL_ALL_TOUCHPOINTS) anchor on first_order_placed_at. Both
-    // schedules use absolute-offset arithmetic so a worker delay
-    // can't telescope the cadence.
-    //
-    // Phase transitions:
-    //   * Sending T6 from 'campaign_active' AND patient never
-    //     converted → terminal 'expired' (the attribution worker
-    //     would have flipped them to 'reorder_active' if they had).
-    //   * Sending T10 from 'reorder_active' → terminal 'converted'
-    //     (they got the full nurture; lapsed-customer-winback can
-    //     pick them up later at 180+d inactive).
-    const isPrePurchase = lead.journey_stage === "campaign_active";
+    // Phase routing:
+    //   * 'campaign_active' (T1-T6) — touches anchor on completed_at.
+    //     Sending T6 transitions to 'final_call_pending' with the
+    //     T11 due-time scheduled +90d. (Was 'expired' before mig
+    //     0153; now we give the patient one final reactivation
+    //     chance before truly closing the loop.)
+    //   * 'reorder_active' (T7-T10) — touches anchor on
+    //     first_order_placed_at. Sending T10 transitions to terminal
+    //     'converted'.
+    //   * 'final_call_pending' (T11 only) — single touch at the
+    //     90-day mark. Sending T11 transitions to terminal 'expired'.
+    const stage = lead.journey_stage;
     const isPrePurchaseFinal =
-      isPrePurchase && nextTouchIndex >= TOTAL_TOUCHPOINTS;
+      stage === "campaign_active" && nextTouchIndex >= TOTAL_TOUCHPOINTS;
     const isReorderFinal =
-      !isPrePurchase && nextTouchIndex >= TOTAL_ALL_TOUCHPOINTS;
-    const isAnyFinal = isPrePurchaseFinal || isReorderFinal;
+      stage === "reorder_active" && nextTouchIndex >= TOTAL_ALL_TOUCHPOINTS;
+    const isFinalCallTouch = stage === "final_call_pending";
 
+    // Compute next_campaign_touch_at and the post-send journey_stage
+    // together — they're tightly coupled and clearer paired.
     let nextTouchAt: string | null = null;
-    if (!isAnyFinal) {
-      if (isPrePurchase) {
-        // After sending current touch, the NEXT scheduled touch is
-        // index (nextTouchIndex + 1). Its offset lives at
-        // TOUCHPOINT_OFFSETS_MS[(nextTouchIndex + 1) - 1] =
-        // TOUCHPOINT_OFFSETS_MS[nextTouchIndex] (0-indexed).
-        const completedAtMs = lead.completed_at
-          ? new Date(lead.completed_at).getTime()
-          : Date.now();
-        nextTouchAt = new Date(
-          completedAtMs + TOUCHPOINT_OFFSETS_MS[nextTouchIndex],
-        ).toISOString();
-      } else {
-        // Re-order phase. Touch indices >TOTAL_TOUCHPOINTS map into
-        // REORDER_TOUCHPOINT_OFFSETS_MS at index
-        // (nextTouchIndex - TOTAL_TOUCHPOINTS); we want the NEXT
-        // touch's offset, so add 1 more.
-        const placedAtMs = lead.first_order_placed_at
-          ? new Date(lead.first_order_placed_at).getTime()
-          : Date.now();
-        const nextReorderIdx = nextTouchIndex - TOTAL_TOUCHPOINTS;
-        // Guard: nextTouchIndex was already validated as < TOTAL_ALL
-        // by isReorderFinal above, so nextReorderIdx < TOTAL_REORDER.
-        nextTouchAt = new Date(
-          placedAtMs + REORDER_TOUCHPOINT_OFFSETS_MS[nextReorderIdx],
-        ).toISOString();
-      }
+    let postSendStage: LeadRow["journey_stage"] | "expired" | "converted" | null =
+      null;
+
+    if (isFinalCallTouch) {
+      // T11 is the only touch in this stage. Final.
+      postSendStage = "expired";
+    } else if (isPrePurchaseFinal) {
+      // T6 just sent. Schedule T11 90d out + flip into the final-
+      // call holding stage.
+      postSendStage = "final_call_pending";
+      nextTouchAt = new Date(Date.now() + FINAL_CALL_OFFSET_MS).toISOString();
+    } else if (isReorderFinal) {
+      // T10 just sent. Terminal converted.
+      postSendStage = "converted";
+    } else if (stage === "campaign_active") {
+      // T1-T5 — schedule next pre-purchase touch from completed_at.
+      const completedAtMs = lead.completed_at
+        ? new Date(lead.completed_at).getTime()
+        : Date.now();
+      nextTouchAt = new Date(
+        completedAtMs + TOUCHPOINT_OFFSETS_MS[nextTouchIndex],
+      ).toISOString();
+    } else if (stage === "reorder_active") {
+      // T7-T9 — schedule next re-order touch from first_order_placed_at.
+      const placedAtMs = lead.first_order_placed_at
+        ? new Date(lead.first_order_placed_at).getTime()
+        : Date.now();
+      const nextReorderIdx = nextTouchIndex - TOTAL_TOUCHPOINTS;
+      nextTouchAt = new Date(
+        placedAtMs + REORDER_TOUCHPOINT_OFFSETS_MS[nextReorderIdx],
+      ).toISOString();
     }
+
+    const isAnyFinal = isPrePurchaseFinal || isReorderFinal || isFinalCallTouch;
 
     // Atomic claim — bump campaign_touch_count BEFORE the send, with
     // an optimistic WHERE pinning the prior value AND the prior
@@ -838,8 +913,7 @@ export async function runFitterSupplyCampaignSweep(): Promise<SupplyCampaignStat
       last_campaign_touch_at: claimIso,
       next_campaign_touch_at: nextTouchAt,
     };
-    if (isPrePurchaseFinal) claimUpdate.journey_stage = "expired";
-    if (isReorderFinal) claimUpdate.journey_stage = "converted";
+    if (postSendStage) claimUpdate.journey_stage = postSendStage;
 
     const { data: claimed, error: claimErr } = await supabase
       .schema("resupply")
@@ -864,13 +938,28 @@ export async function runFitterSupplyCampaignSweep(): Promise<SupplyCampaignStat
     }
     if (isAnyFinal) stats.expired += 1;
 
-    // Build the unsubscribe URL once per lead (signed token includes
-    // the lead_id so a leaked link can't unsubscribe a different
-    // patient).
+    // Build the unsubscribe + tracking-pixel URLs once per lead.
+    // Both signed tokens include the lead_id so they can't be
+    // forged or replayed against another patient.
     let unsubscribeUrl: string;
+    let trackingPixelUrl: string | null = null;
     try {
-      const token = signUnsubscribeToken(lead.id);
-      unsubscribeUrl = `${baseUrl}/shop/fitter-leads/unsubscribe?t=${encodeURIComponent(token)}`;
+      const unsubToken = signUnsubscribeToken(lead.id);
+      unsubscribeUrl = `${baseUrl}/shop/fitter-leads/unsubscribe?t=${encodeURIComponent(unsubToken)}`;
+      // Open tracking pixel — minted with the SAME HMAC key, but a
+      // distinct payload prefix so the two tokens can't be
+      // cross-replayed. If anything in the mint fails, we still
+      // ship the email — the open signal is nice-to-have, the
+      // unsubscribe is mandatory.
+      try {
+        const openToken = signOpenTrackingToken(lead.id, nextTouchIndex);
+        trackingPixelUrl = `${baseUrl}/shop/track/o?t=${encodeURIComponent(openToken)}`;
+      } catch (openErr) {
+        logger.warn(
+          { err: openErr, leadId: lead.id },
+          "fitter-lead.supply-campaign: open tracking token mint failed",
+        );
+      }
     } catch (err) {
       // RESUPPLY_LINK_HMAC_KEY missing → service misconfig. Skip
       // sending; we never want to ship an email without a working
@@ -892,6 +981,7 @@ export async function runFitterSupplyCampaignSweep(): Promise<SupplyCampaignStat
       recommendedMaskType: lead.recommended_mask_type,
       unsubscribeUrl,
       firstName: lead.first_name,
+      trackingPixelUrl,
     });
 
     // Email leg.

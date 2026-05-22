@@ -53,6 +53,12 @@ const STAGE_STYLE: Record<
     label: "Re-order nurture",
     description: "T7–T10 supply touches (180d)",
   },
+  final_call_pending: {
+    bg: "#ffe4e6",
+    fg: "#9f1239",
+    label: "Final call queued",
+    description: "T11 cold-lead reactivation due",
+  },
   converted: {
     bg: "#dcfce7",
     fg: "#14532d",
@@ -78,6 +84,7 @@ const STAGE_ORDER: readonly FitterLeadJourneyStage[] = [
   "completed",
   "campaign_active",
   "reorder_active",
+  "final_call_pending",
   "converted",
   "unsubscribed",
   "expired",
@@ -119,10 +126,11 @@ export function AdminFitterLeadsPage() {
     "campaign_active",
   );
   const [source, setSource] = useState<FitterLeadSource | "all">("all");
-  const queryKey = ["admin", "fitter-leads", stage, source] as const;
+  const [hotOnly, setHotOnly] = useState(false);
+  const queryKey = ["admin", "fitter-leads", stage, source, hotOnly] as const;
   const { data, isPending, isError, error, refetch } = useQuery({
     queryKey,
-    queryFn: () => listFitterLeads(stage, source),
+    queryFn: () => listFitterLeads(stage, source, hotOnly),
   });
 
   const [pendingId, setPendingId] = useState<string | null>(null);
@@ -145,12 +153,14 @@ export function AdminFitterLeadsPage() {
         completed: 0,
         campaign_active: 0,
         reorder_active: 0,
+        final_call_pending: 0,
         converted: 0,
         unsubscribed: 0,
         expired: 0,
       },
     [data?.counts],
   );
+  const hotLeadsActive = data?.hotLeadsActive ?? 0;
   const total = useMemo(
     () => Object.values(counts).reduce((a, b) => a + b, 0),
     [counts],
@@ -180,39 +190,74 @@ export function AdminFitterLeadsPage() {
         </p>
       </header>
 
-      {/* Headline conversion KPI — the one number ops cares most about. */}
-      <div
-        className="border rounded-lg bg-white p-4 flex items-baseline gap-4"
-        style={{ borderColor: "hsl(var(--line-1))" }}
-        data-testid="leads-conversion-rate"
-      >
-        <div>
-          <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
-            Fitter → Order conversion
+      {/* Headline KPIs — conversion rate + hot-leads CSR queue. */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div
+          className="border rounded-lg bg-white p-4 flex items-baseline gap-4"
+          style={{ borderColor: "hsl(var(--line-1))" }}
+          data-testid="leads-conversion-rate"
+        >
+          <div>
+            <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+              Fitter → Order conversion
+            </div>
+            <div
+              className="text-3xl font-semibold tabular-nums"
+              style={{ color: "hsl(var(--ink-1))" }}
+            >
+              {conversionPct}%
+            </div>
           </div>
-          <div
-            className="text-3xl font-semibold tabular-nums"
-            style={{ color: "hsl(var(--ink-1))" }}
-          >
-            {conversionPct}%
+          <div className="text-xs text-slate-500 leading-snug">
+            {counts.converted + counts.reorder_active} converted (incl.{" "}
+            {counts.reorder_active} in active re-order nurture) out of{" "}
+            {counts.completed +
+              counts.campaign_active +
+              counts.reorder_active +
+              counts.final_call_pending +
+              counts.converted +
+              counts.expired}{" "}
+            completed-fitter leads.
           </div>
         </div>
-        <div className="text-xs text-slate-500 leading-snug">
-          {counts.converted + counts.reorder_active} converted (incl.{" "}
-          {counts.reorder_active} in active re-order nurture) out of{" "}
-          {counts.completed +
-            counts.campaign_active +
-            counts.reorder_active +
-            counts.converted +
-            counts.expired}{" "}
-          completed-fitter leads.{" "}
-          <br />
-          Excludes opted-out and pre-completion rows.
-        </div>
+        <button
+          type="button"
+          onClick={() => setHotOnly((v) => !v)}
+          className="border rounded-lg p-4 flex items-baseline gap-4 text-left hover:shadow transition-shadow"
+          style={{
+            borderColor: hotOnly ? "#9f1239" : "hsl(var(--line-1))",
+            outline: hotOnly ? "2px solid #9f1239" : "none",
+            outlineOffset: "-2px",
+            background: hotOnly ? "#fef2f4" : "#fff",
+          }}
+          data-testid="leads-hot-tile"
+        >
+          <div>
+            <div
+              className="text-[10px] font-bold uppercase tracking-wider"
+              style={{ color: "#9f1239" }}
+            >
+              Hot leads · call now
+            </div>
+            <div
+              className="text-3xl font-semibold tabular-nums"
+              style={{ color: "hsl(var(--ink-1))" }}
+            >
+              {hotLeadsActive}
+            </div>
+          </div>
+          <div className="text-xs text-slate-500 leading-snug">
+            Opened 3+ campaign emails without ordering.
+            <br />
+            {hotOnly
+              ? "Filter is ON — click to show all leads."
+              : "Click to filter the list to just these."}
+          </div>
+        </button>
       </div>
 
       <div
-        className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3"
+        className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3"
         data-testid="leads-counts"
       >
         {STAGE_ORDER.map((s) => {
@@ -313,6 +358,7 @@ export function AdminFitterLeadsPage() {
               </th>
               <th className="text-left px-3 py-2 font-semibold">Stage</th>
               <th className="text-left px-3 py-2 font-semibold">Touches</th>
+              <th className="text-left px-3 py-2 font-semibold">Engaged</th>
               <th className="text-left px-3 py-2 font-semibold">Next touch</th>
               <th className="text-left px-3 py-2 font-semibold">Started</th>
               <th className="text-right px-3 py-2 font-semibold">Actions</th>
@@ -322,7 +368,7 @@ export function AdminFitterLeadsPage() {
             {isPending && (
               <tr>
                 <td
-                  colSpan={8}
+                  colSpan={9}
                   className="px-3 py-6 text-center text-slate-500"
                 >
                   Loading…
@@ -332,7 +378,7 @@ export function AdminFitterLeadsPage() {
             {!isPending && rows.length === 0 && (
               <tr>
                 <td
-                  colSpan={8}
+                  colSpan={9}
                   className="px-3 py-6 text-center text-slate-500"
                 >
                   No fitter leads match the current filter.
@@ -344,8 +390,10 @@ export function AdminFitterLeadsPage() {
               const canUnsubscribe =
                 r.journeyStage === "campaign_active" ||
                 r.journeyStage === "reorder_active" ||
+                r.journeyStage === "final_call_pending" ||
                 r.journeyStage === "completed" ||
                 r.journeyStage === "consent";
+              const isHot = r.hotLeadAt !== null;
               return (
                 <tr
                   key={r.id}
@@ -401,7 +449,24 @@ export function AdminFitterLeadsPage() {
                     </span>
                   </td>
                   <td className="px-3 py-2 align-top text-sm tabular-nums">
-                    {r.campaignTouchCount}/10
+                    {r.campaignTouchCount}/11
+                  </td>
+                  <td className="px-3 py-2 align-top text-xs">
+                    <span
+                      className="tabular-nums font-medium"
+                      style={{ color: r.engagementScore > 0 ? "#155e75" : "#9ca3af" }}
+                    >
+                      {r.engagementScore}
+                    </span>
+                    {isHot && (
+                      <span
+                        className="ml-2 inline-block px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider"
+                        style={{ background: "#fee2e2", color: "#9f1239" }}
+                        data-testid={`lead-hot-badge-${r.id}`}
+                      >
+                        Hot
+                      </span>
+                    )}
                   </td>
                   <td className="px-3 py-2 align-top text-xs text-slate-600">
                     {r.nextCampaignTouchAt
