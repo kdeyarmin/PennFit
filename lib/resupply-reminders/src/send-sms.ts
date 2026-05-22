@@ -153,9 +153,7 @@ export async function sendReminderSms(
 
   const messageBody =
     input.body ??
-    `Hi ${patient.legal_first_name ?? "there"}, this is ${cfg.practiceName}. Time to refill ` +
-      "your CPAP supplies — reply YES to confirm shipping to the address on " +
-      "file, EDIT to change it, or STOP to opt out.";
+    `Hi ${patient.legal_first_name ?? "there"}, it's ${cfg.practiceName}. You're due for a CPAP refill — reply YES and we'll ship today to the address on file, EDIT to change it, or STOP if you'd rather not hear from us.`;
 
   const statusCallbackUrl = `${cfg.publicBaseUrl}/resupply-api/sms/status-callback?conversationId=${encodeURIComponent(
     conversationId,

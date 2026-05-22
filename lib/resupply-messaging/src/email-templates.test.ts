@@ -214,7 +214,7 @@ describe("renderClickConfirmation", () => {
     });
     expect(html).toContain("Order confirmed");
     expect(html).toContain("Penn Sleep Center");
-    expect(html).toContain("on its way");
+    expect(html).toContain("on the way");
   });
 
   it("renders an edit-redirect page", () => {

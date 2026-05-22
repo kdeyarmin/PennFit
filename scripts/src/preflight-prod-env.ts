@@ -608,6 +608,69 @@ function runChecks(): void {
   refusePlaceholder("PENN_FULFILLMENT_EMAIL", "fulfillment@example.com");
   refusePlaceholder("VITE_RESUPPLY_CONTACT_EMAIL", "support@example.com");
 
+  // Shape checks for the new vendor keys (May 2026):
+  //   - ANTHROPIC_API_KEY: prefix is `sk-ant-`.
+  //   - DEEPGRAM_API_KEY:  40-char hex token (no fixed prefix).
+  //   - ELEVENLABS_API_KEY: no documented prefix, but real keys are
+  //     ≥ 24 chars so a placeholder is obvious.
+  // All three are OPTIONAL — a deployment that only uses OpenAI is
+  // still fully functional. Each missing one gets a `warn` so the
+  // operator can see what's available. `refusePlaceholder` for these
+  // keys is called HERE (not in the block above) because the same
+  // check also gates the shape/warn logic — calling it in both
+  // places would record duplicate FAIL entries on placeholder
+  // matches.
+  if (!refusePlaceholder("ANTHROPIC_API_KEY", "sk-ant-replace_me")) {
+    const anth = getTrimmed("ANTHROPIC_API_KEY");
+    if (anth === undefined || anth === "") {
+      record(
+        "ANTHROPIC_API_KEY",
+        "warn",
+        "unset (chatbot/sleep-coach/SMS will use OpenAI gpt-4o-mini fallback — set for warmer Claude replies)",
+      );
+    } else if (!anth.startsWith("sk-ant-")) {
+      record("ANTHROPIC_API_KEY", "fail", "must start with \"sk-ant-\"");
+    } else {
+      record("ANTHROPIC_API_KEY", "pass", "starts with sk-ant-");
+    }
+  }
+  {
+    const dg = getTrimmed("DEEPGRAM_API_KEY");
+    if (dg === undefined || dg === "") {
+      record(
+        "DEEPGRAM_API_KEY",
+        "warn",
+        "unset (post-call audit transcripts will use OpenAI gpt-4o-mini-transcribe — set Deepgram for higher accuracy on phone audio)",
+      );
+    } else if (!/^[0-9a-f]{40}$/i.test(dg)) {
+      record(
+        "DEEPGRAM_API_KEY",
+        "fail",
+        `expected 40 hex characters, got ${dg.length} chars (Deepgram API keys are a 40-char hex token)`,
+      );
+    } else {
+      record("DEEPGRAM_API_KEY", "pass", "40 hex chars");
+    }
+  }
+  {
+    const el = getTrimmed("ELEVENLABS_API_KEY");
+    if (el === undefined || el === "") {
+      record(
+        "ELEVENLABS_API_KEY",
+        "warn",
+        "unset (voice agent will use OpenAI Realtime built-in voices — set ElevenLabs for the most natural TTS available)",
+      );
+    } else if (el.length < 24) {
+      record(
+        "ELEVENLABS_API_KEY",
+        "fail",
+        `looks too short (${el.length} chars)`,
+      );
+    } else {
+      record("ELEVENLABS_API_KEY", "pass", "set");
+    }
+  }
+
   // Belt-and-braces: any email-shaped env var landing on @example.com
   // in production is a placeholder leak even if it isn't one of the
   // four named above. Scan every var whose name ends in _EMAIL.
