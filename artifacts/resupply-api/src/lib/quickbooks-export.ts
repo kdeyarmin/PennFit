@@ -1,4 +1,6 @@
-// QuickBooks export helpers.
+import { createHash } from "node:crypto";
+
+
 //
 // Two emitter functions, sharing one input shape:
 //   * `renderIif(input)`     — Intuit Interchange Format. Tab-
