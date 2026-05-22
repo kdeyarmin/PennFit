@@ -47,7 +47,9 @@ vi.mock("../../middlewares/requireAdmin", () =>
 // ─── Stub PDF / QB rendering to avoid pdfkit in tests ────────────────────
 
 const renderTablePdfMock = vi.hoisted(() =>
-  vi.fn(async () => Buffer.from("%PDF-1.4 mock pdf content")),
+  vi.fn<(input: Record<string, unknown>) => Promise<Buffer>>(async () =>
+    Buffer.from("%PDF-1.4 mock pdf content"),
+  ),
 );
 vi.mock("../../lib/report-pdf", () => ({
   renderTablePdf: renderTablePdfMock,
@@ -55,10 +57,14 @@ vi.mock("../../lib/report-pdf", () => ({
 }));
 
 const renderIifMock = vi.hoisted(() =>
-  vi.fn(() => "!TRNS\tmock iif content\n"),
+  vi.fn<(input: Record<string, unknown>) => string>(
+    () => "!TRNS\tmock iif content\n",
+  ),
 );
 const renderQboCsvMock = vi.hoisted(() =>
-  vi.fn(() => "Date,Description,Customer,Amount,Type,Reference\n"),
+  vi.fn<(input: Record<string, unknown>) => string>(
+    () => "Date,Description,Customer,Amount,Type,Reference\n",
+  ),
 );
 vi.mock("../../lib/quickbooks-export", () => ({
   renderIif: renderIifMock,
