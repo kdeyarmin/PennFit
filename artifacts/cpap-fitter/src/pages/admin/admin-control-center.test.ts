@@ -73,3 +73,55 @@ describe("admin-control-center — SummaryTiles wiring", () => {
     expect(SRC).toContain("function renderRelativeAge(");
   });
 });
+
+// ─── High-risk confirmation modal ───────────────────────────────────────
+
+describe("admin-control-center — high-risk confirmation modal", () => {
+  it("imports isHighRiskFlag from the feature-flags-api lib", () => {
+    expect(SRC).toMatch(/import\s*{[^}]*isHighRiskFlag[^}]*}\s*from\s*"@\/lib\/admin\/feature-flags-api"/s);
+  });
+
+  it("defines a ConfirmDisableModal component", () => {
+    expect(SRC).toContain("function ConfirmDisableModal(");
+  });
+
+  it("routes high-risk disables through the modal, not the mutation directly", () => {
+    // The handleToggle gate: when next=false AND the flag is
+    // high-risk, we open the modal instead of mutating. Re-enables
+    // (next=true) always fall through to mutation.mutate.
+    expect(SRC).toMatch(/if\s*\(!next\s*&&\s*isHighRiskFlag\(flag\.key\)\)/);
+    expect(SRC).toContain("setPendingDisable(flag)");
+  });
+
+  it("only commits the disable mutation after onConfirm fires", () => {
+    // The modal's onConfirm closes itself THEN fires the disable.
+    // If a refactor inverts these, the modal stays open while the
+    // mutation runs — minor UX bug but worth a guard.
+    const onConfirmMatch = SRC.match(
+      /onConfirm=\{\(\)\s*=>\s*\{[\s\S]*?setPendingDisable\(null\);[\s\S]*?mutation\.mutate\(false\);[\s\S]*?\}\}/,
+    );
+    expect(onConfirmMatch).not.toBeNull();
+  });
+
+  it("disables the Confirm button until the typed string matches the flag key exactly", () => {
+    // The modal binds `matches = typed === flag.key`. Anything other
+    // than an exact-match check (e.g., includes, startsWith) would
+    // weaken the guard.
+    expect(SRC).toMatch(/const\s+matches\s*=\s*typed\s*===\s*flag\.key/);
+    expect(SRC).toMatch(/disabled=\{!matches\}/);
+  });
+
+  it("dismisses on Escape and on backdrop click", () => {
+    // Keyboard-only operators must be able to bail. Backdrop click
+    // is the mouse equivalent. Both routes call onCancel.
+    expect(SRC).toMatch(/e\.key\s*===\s*"Escape"/);
+    expect(SRC).toMatch(/onClick=\{onCancel\}/);
+  });
+
+  it("shows a High-risk badge on rows for the gated flags", () => {
+    // The badge is the visual cue that explains why the toggle
+    // routes through the modal instead of firing immediately.
+    expect(SRC).toContain("High-risk");
+    expect(SRC).toContain("flag-row-${flag.key}-high-risk-badge");
+  });
+});

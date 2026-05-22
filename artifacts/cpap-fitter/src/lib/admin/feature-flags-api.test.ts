@@ -12,7 +12,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Mock } from "vitest";
 
-import { listFeatureFlags, toggleFeatureFlag } from "./feature-flags-api";
+import {
+  HIGH_RISK_FLAG_KEYS,
+  isHighRiskFlag,
+  listFeatureFlags,
+  toggleFeatureFlag,
+} from "./feature-flags-api";
 
 const ORIGINAL_FETCH = globalThis.fetch;
 
@@ -194,5 +199,41 @@ describe("jsonFetch error handling", () => {
 
     // The implementation coalesces: message ?? error ?? fallback
     await expect(listFeatureFlags()).rejects.toThrow("the message field");
+  });
+});
+
+// ─── High-risk classifier ───────────────────────────────────────────────
+
+describe("isHighRiskFlag", () => {
+  it("returns true for storefront.checkout (revenue impact)", () => {
+    // Disabling checkout blocks every new cash-pay order.
+    expect(isHighRiskFlag("storefront.checkout")).toBe(true);
+  });
+
+  it("returns true for voice.agent (clinical-channel impact)", () => {
+    // Disabling voice hangs up every inbound call.
+    expect(isHighRiskFlag("voice.agent")).toBe(true);
+  });
+
+  it("returns false for low-impact flags (NPS, reviews, etc.)", () => {
+    expect(isHighRiskFlag("storefront.nps")).toBe(false);
+    expect(isHighRiskFlag("storefront.reviews_collection")).toBe(false);
+    expect(isHighRiskFlag("cart_abandonment.dispatcher")).toBe(false);
+  });
+
+  it("returns false for unknown flag keys (closed enum, safe default)", () => {
+    // A future flag the UI sees but doesn't know about should
+    // default to one-click (no modal). Failing closed here would
+    // make every new flag require a typed confirm — wrong direction.
+    expect(isHighRiskFlag("some.future.flag")).toBe(false);
+  });
+
+  it("HIGH_RISK_FLAG_KEYS lists exactly the two seeded high-risk flags", () => {
+    // Adding a flag here is an editorial decision; the test pins
+    // the current set so a casual edit doesn't accidentally promote
+    // (or demote) a flag without a PR conversation.
+    expect([...HIGH_RISK_FLAG_KEYS].sort()).toEqual(
+      ["storefront.checkout", "voice.agent"].sort(),
+    );
   });
 });

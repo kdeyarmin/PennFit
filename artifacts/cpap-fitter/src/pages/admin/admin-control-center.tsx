@@ -11,10 +11,11 @@
 // optimistic value back and surface a per-row inline error so the
 // admin sees which flag rejected.
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
+  isHighRiskFlag,
   listFeatureFlags,
   toggleFeatureFlag,
   type FeatureFlag,
@@ -261,6 +262,14 @@ function FlagsList() {
 
 function FlagRow({ flag }: { flag: FeatureFlag }) {
   const queryClient = useQueryClient();
+  // Confirmation modal state for high-risk disables. `null` = modal
+  // closed. A non-null value means "the admin clicked the switch to
+  // turn this off; show the modal and only commit when they type the
+  // flag key correctly". Re-enabling never opens the modal — see the
+  // onChange handler below.
+  const [pendingDisable, setPendingDisable] = useState<FeatureFlag | null>(
+    null,
+  );
 
   const mutation = useMutation({
     mutationFn: (next: boolean) => toggleFeatureFlag(flag.key, next),
@@ -291,9 +300,23 @@ function FlagRow({ flag }: { flag: FeatureFlag }) {
     },
   });
 
+  // Drive the toggle UI through this single handler so the
+  // "high-risk disable needs a typed confirmation" rule is enforced
+  // in exactly one place. Re-enables (next=true) and disables of
+  // non-high-risk flags fall straight through to the optimistic
+  // mutation — only the dangerous direction routes through the modal.
+  const handleToggle = (next: boolean) => {
+    if (!next && isHighRiskFlag(flag.key)) {
+      setPendingDisable(flag);
+      return;
+    }
+    mutation.mutate(next);
+  };
+
   const updatedRelative = flag.updatedByEmail
     ? `Last changed by ${flag.updatedByEmail} • ${new Date(flag.updatedAt).toLocaleString()}`
     : "Default value";
+  const highRisk = isHighRiskFlag(flag.key);
 
   return (
     <div
@@ -301,13 +324,22 @@ function FlagRow({ flag }: { flag: FeatureFlag }) {
       data-testid={`flag-row-${flag.key}`}
     >
       <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <code className="rounded bg-slate-100 px-1.5 py-0.5 text-xs font-mono text-slate-700">
             {flag.key}
           </code>
           {!flag.enabled && (
             <span className="rounded bg-amber-100 text-amber-800 px-1.5 py-0.5 text-xs font-semibold">
               Disabled
+            </span>
+          )}
+          {highRisk && (
+            <span
+              className="rounded bg-rose-100 text-rose-800 px-1.5 py-0.5 text-xs font-semibold"
+              title="Disabling this flag has immediate revenue or clinical impact. Confirmation required."
+              data-testid={`flag-row-${flag.key}-high-risk-badge`}
+            >
+              High-risk
             </span>
           )}
         </div>
@@ -329,9 +361,129 @@ function FlagRow({ flag }: { flag: FeatureFlag }) {
       <ToggleSwitch
         enabled={flag.enabled}
         loading={mutation.isPending}
-        onChange={(next) => mutation.mutate(next)}
+        onChange={handleToggle}
         ariaLabel={`Toggle ${flag.key}`}
       />
+      {pendingDisable && (
+        <ConfirmDisableModal
+          flag={pendingDisable}
+          onCancel={() => setPendingDisable(null)}
+          onConfirm={() => {
+            setPendingDisable(null);
+            mutation.mutate(false);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Confirmation modal for high-risk flag disables.
+//
+// UX contract: the admin must type the flag key EXACTLY for the
+// "Disable" button to enable. Pressing Esc / clicking Cancel /
+// clicking the backdrop closes the modal without firing the
+// mutation. The modal is rendered into the row's existing DOM
+// rather than into a portal — the admin console doesn't have
+// nested-scroll containers that would clip a fixed-position
+// overlay, and avoiding a portal keeps the test surface simpler.
+// ─────────────────────────────────────────────────────────────────
+
+function ConfirmDisableModal({
+  flag,
+  onConfirm,
+  onCancel,
+}: {
+  flag: FeatureFlag;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  const [typed, setTyped] = useState("");
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const matches = typed === flag.key;
+
+  // Focus the input on open + Esc to dismiss. A modal that doesn't
+  // grab focus or respond to Esc fails the keyboard-only operator
+  // test (we lean on keyboard nav for the console).
+  useEffect(() => {
+    inputRef.current?.focus();
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onCancel();
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [onCancel]);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby={`confirm-disable-title-${flag.key}`}
+      onClick={onCancel}
+      data-testid={`confirm-disable-${flag.key}`}
+    >
+      <div
+        className="w-full max-w-md rounded-lg bg-white shadow-xl border border-slate-200 p-5 space-y-4"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="space-y-1">
+          <h3
+            id={`confirm-disable-title-${flag.key}`}
+            className="text-base font-bold text-slate-900"
+          >
+            Disable high-risk feature?
+          </h3>
+          <p className="text-sm text-slate-700">{flag.description}</p>
+        </div>
+        <div className="rounded border border-rose-200 bg-rose-50 p-3 text-sm text-rose-900 space-y-1">
+          <p className="font-semibold">This change takes effect within seconds.</p>
+          <p>
+            Type the flag key below to confirm. The disable button stays
+            inactive until the key matches exactly.
+          </p>
+        </div>
+        <div>
+          <label className="block text-xs font-semibold text-slate-600 mb-1">
+            Type <code className="font-mono">{flag.key}</code> to confirm
+          </label>
+          <input
+            ref={inputRef}
+            type="text"
+            value={typed}
+            onChange={(e) => setTyped(e.target.value)}
+            className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm font-mono"
+            data-testid={`confirm-disable-${flag.key}-input`}
+            autoComplete="off"
+            spellCheck={false}
+          />
+        </div>
+        <div className="flex items-center justify-end gap-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="rounded border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
+            data-testid={`confirm-disable-${flag.key}-cancel`}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={!matches}
+            className={[
+              "rounded px-3 py-1.5 text-sm font-semibold text-white",
+              matches
+                ? "bg-rose-600 hover:bg-rose-700"
+                : "bg-rose-300 cursor-not-allowed",
+            ].join(" ")}
+            data-testid={`confirm-disable-${flag.key}-confirm`}
+          >
+            Disable
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
