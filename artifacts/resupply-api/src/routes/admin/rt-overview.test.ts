@@ -1,6 +1,6 @@
 // Tests for /admin/rt-overview + /admin/rt-overview.csv.
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import express, { type Express } from "express";
 import request from "supertest";
 
@@ -51,6 +51,20 @@ beforeEach(() => {
   logAuditMock.mockClear();
   mockAdmin.current = ADMIN;
   supabaseMock.reset();
+  // Pin "today" so the hard-coded night dates 2026-05-15..17 in the
+  // fixtures below always land inside the default 7-day window. The
+  // route uses `new Date()` for asOf; without this seam the suite
+  // flakes the moment real wall-clock time moves past 2026-05-21
+  // (the 2026-05-15 night falls outside the lower bound). Picking
+  // 2026-05-17 keeps all three staged nights in window AND keeps
+  // smart-trigger detected_at (2026-05-15T02:00:00Z) inside the
+  // 7-day alert window.
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date("2026-05-17T18:00:00Z"));
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 describe("GET /admin/rt-overview", () => {
