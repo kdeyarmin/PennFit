@@ -40,6 +40,8 @@ import { registerRecallNotificationSendJob } from "./jobs/recall-notifications-s
 import { registerMaintenanceNudgeJob } from "./jobs/maintenance-nudges.js";
 import { registerFitterLeadReengageJob } from "./jobs/fitter-lead-reengage.js";
 import { registerFitterLeadFirstDayNudgeJob } from "./jobs/fitter-lead-first-day-nudge.js";
+import { registerCartAbandonmentJob } from "./jobs/cart-abandonment-scan.js";
+import { registerFailedEmailDigestJob } from "./jobs/failed-order-emails-digest.js";
 import { registerAuditLogArchiveSweepJob } from "./jobs/audit-log-archive-sweep.js";
 import { registerTherapyNightlySyncJob } from "./jobs/therapy-integrations-nightly-sync.js";
 import { registerCoachingProgressJob } from "./jobs/coaching-plan-progress.js";
@@ -233,6 +235,21 @@ export async function startWorker(): Promise<void> {
   // first_day_nudged_at column so the 3-30d worker above can still
   // fire later if the patient stays cold.
   await registerFitterLeadFirstDayNudgeJob(boss);
+  // Cart-abandonment sweep — hourly at :13. Runs the same dispatcher
+  // that backs POST /admin/shop/abandoned-carts/send-due so abandoned
+  // carts get nudged without a human clicking the button. Suppression
+  // (comm-prefs, DND, 24h cool-down, single-nudge-per-cart) is owned
+  // by the shared helper. Off by default — flip
+  // RESUPPLY_CART_ABANDONMENT_CRON_ENABLED=1 to turn it on.
+  await registerCartAbandonmentJob(boss);
+  // Failed-email order digest — daily at 13:00 UTC. Scans
+  // public.orders for rows with email_status=failed in the last 24h
+  // and sends a single PHI-safe summary email to
+  // RESUPPLY_ADMIN_ALERTS_EMAIL so ops can chase the failures
+  // without hand-querying the DB. Body contains only order_reference
+  // + created_at; patient name, email, error text NEVER appear.
+  // Off by default — requires the flag AND the recipient env var.
+  await registerFailedEmailDigestJob(boss);
   // HIPAA audit-log retention sweep — nightly flag of rows past
   // the 6-year floor. Destruction stays human-triggered.
   await registerAuditLogArchiveSweepJob(boss);
