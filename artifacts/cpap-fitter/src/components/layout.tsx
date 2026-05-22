@@ -60,6 +60,7 @@ function ScrollToTop() {
 const navLinks = [
   { href: "/how-it-works", label: "Virtual Mask Fitter" },
   { href: "/masks", label: "Mask Catalog" },
+  { href: "/cpap-masks", label: "Brands" },
   { href: "/shop", label: "Shop" },
   { href: "/learn", label: "Learn" },
   { href: "/faq", label: "FAQ" },

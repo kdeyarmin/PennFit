@@ -135,6 +135,29 @@ const ReturnsPage = lazy(() =>
   import("@/pages/returns").then((m) => ({ default: m.ReturnsPage })),
 );
 
+// Brand marketing pages — a hub plus per-brand spotlights (React Health
+// is our flagship line, ResMed and Fisher & Paykel round out the catalog).
+// Lazy-loaded because they're SEO landing surfaces, not entry points for
+// the fitter flow — they shouldn't bloat the initial bundle.
+const CpapMasks = lazy(() =>
+  import("@/pages/cpap-masks").then((m) => ({ default: m.CpapMasks })),
+);
+const CpapMasksReactHealth = lazy(() =>
+  import("@/pages/cpap-masks-react-health").then((m) => ({
+    default: m.CpapMasksReactHealth,
+  })),
+);
+const CpapMasksResmed = lazy(() =>
+  import("@/pages/cpap-masks-resmed").then((m) => ({
+    default: m.CpapMasksResmed,
+  })),
+);
+const CpapMasksFisherPaykel = lazy(() =>
+  import("@/pages/cpap-masks-fisher-paykel").then((m) => ({
+    default: m.CpapMasksFisherPaykel,
+  })),
+);
+
 // Admin auth pages — separate sign-in flow because admins post to
 // /resupply-api/auth/* (allowlist-gated) while customers post to
 // /api/auth/* (open self-signup). The shared `pf_session` cookie is
@@ -358,6 +381,16 @@ function PatientRouter() {
           <Route path="/consent" component={Consent} />
           <Route path="/capture" component={GuardedCapture} />
           <Route path="/masks" component={Masks} />
+          <Route path="/cpap-masks" component={CpapMasks} />
+          <Route
+            path="/cpap-masks/react-health"
+            component={CpapMasksReactHealth}
+          />
+          <Route path="/cpap-masks/resmed" component={CpapMasksResmed} />
+          <Route
+            path="/cpap-masks/fisher-paykel"
+            component={CpapMasksFisherPaykel}
+          />
           <Route path="/how-it-works" component={HowItWorks} />
           <Route path="/faq" component={Faq} />
           <Route path="/learn" component={Learn} />
