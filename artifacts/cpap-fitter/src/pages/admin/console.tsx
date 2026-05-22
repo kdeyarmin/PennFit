@@ -74,6 +74,7 @@ import { AdminShopInventoryReconcileEditPage } from "@/pages/admin/admin-shop-in
 import { AdminShopAbandonedCartsPage } from "@/pages/admin/admin-shop-abandoned-carts";
 import { AdminShopBackInStockPage } from "@/pages/admin/admin-shop-back-in-stock";
 import { AdminInsuranceLeadsPage } from "@/pages/admin/admin-insurance-leads";
+import { AdminFitterLeadsPage } from "@/pages/admin/admin-fitter-leads";
 import { AdminInsuranceClaimsPage } from "@/pages/admin/admin-insurance-claims";
 import { AdminBillingHubPage } from "@/pages/admin/admin-billing-hub";
 import { AdminBillingAiQueuePage } from "@/pages/admin/admin-billing-ai-queue";
@@ -258,6 +259,10 @@ function AdminConsole() {
           <Route
             path="/admin/shop/insurance-leads"
             component={AdminInsuranceLeadsPage}
+          />
+          <Route
+            path="/admin/fitter-leads"
+            component={AdminFitterLeadsPage}
           />
           <Route
             path="/admin/shop/customers"

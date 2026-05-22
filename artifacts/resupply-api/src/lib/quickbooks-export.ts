@@ -37,6 +37,8 @@ import { createHash } from "node:crypto";
 //     refunds as their own credit memo rows referencing the original
 //     order number in the memo column.
 
+import { createHash } from "node:crypto";
+
 export interface QuickbooksRowInput {
   /**
    * Stable per-transaction identifier the operator can search for in

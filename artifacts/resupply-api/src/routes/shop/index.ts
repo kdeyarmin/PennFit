@@ -11,6 +11,7 @@ import cartSnapshotRouter from "./cart-snapshot";
 import checkoutRouter from "./checkout";
 import insuranceLeadRouter from "./insurance-lead";
 import fitterLeadRouter from "./fitter-lead";
+import fitterCompleteRouter from "./fitter-complete";
 import quizLeadRouter from "./quiz-lead";
 import insuranceEstimateRouter from "./insurance-estimate";
 import npsResponseRouter from "./nps-response";
@@ -180,6 +181,12 @@ router.use(insuranceLeadRouter);
 // flow re-engagement dispatcher can scan for opt-ins without an
 // order row.
 router.use(fitterLeadRouter);
+// /shop/fitter-complete — fired by the cpap-fitter /results page when
+// the patient sees a mask recommendation. Marks the lead "completed"
+// and enrolls them in the multi-touch supply-campaign dispatcher.
+// /shop/fitter-leads/unsubscribe — one-click unsubscribe footer link
+// rendered into every supply-campaign email.
+router.use(fitterCompleteRouter);
 // Public email-capture for the sleep-apnea quiz on /learn. Posts a
 // fitter_leads row with source='sleep_apnea_quiz' and fires a
 // transactional results email so the patient has the score in

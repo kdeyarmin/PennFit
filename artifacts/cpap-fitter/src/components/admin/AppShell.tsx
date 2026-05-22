@@ -293,6 +293,13 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         hint: "New benefit-verification requests",
       },
       {
+        href: "/admin/fitter-leads",
+        label: "Fitter Prospects",
+        icon: UsersRound,
+        matchPrefix: "/admin/fitter-leads",
+        hint: "Fitter funnel + supply-campaign conversion",
+      },
+      {
         href: "/admin/shop/reviews",
         label: "Reviews",
         icon: Star,
