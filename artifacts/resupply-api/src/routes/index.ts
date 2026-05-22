@@ -85,6 +85,7 @@ import shopSubsMetricsRouter from "./admin/shop-subscriptions-metrics.js";
 import insuranceLeadsAdminRouter from "./admin/insurance-leads.js";
 import payerProfilesRouter from "./admin/payer-profiles.js";
 import officeAllySubmissionsRouter from "./admin/office-ally-submissions.js";
+import officeAllyUploadAckRouter from "./admin/office-ally-upload-ack.js";
 import denialCodesRouter from "./admin/denial-codes.js";
 import payerFeeSchedulesRouter from "./admin/payer-fee-schedules.js";
 import eraIngestRouter from "./admin/era-ingest.js";
@@ -265,6 +266,12 @@ router.use(payerProfilesRouter);
 // lives on the patients router so it's co-located with the per-claim
 // state machine.
 router.use(officeAllySubmissionsRouter);
+// /admin/office-ally/upload-ack — manual ack-file ingestion path
+// (admin-only) for when the poller can't reach OA or OA emails an
+// ack out-of-band. Reuses the dispatchers exported from the poll
+// worker so manual + auto paths share parsing + state-machine
+// updates.
+router.use(officeAllyUploadAckRouter);
 // /admin/denial-codes/* — CARC / RARC catalog (Phase 4 of the
 // billing build). Seeded in migration 0129 with the ~50 codes DME
 // suppliers hit most often; admin UI surfaces them on claim denials.

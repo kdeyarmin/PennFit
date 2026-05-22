@@ -1126,6 +1126,39 @@ export interface Database {
           // Da Vinci PAS endpoint URL (CMS-0057-F). Null when the
           // payer hasn't stood up a FHIR PAS server yet. (Migration 0136)
           davinci_pas_endpoint_url: string | null;
+          // Submission-readiness columns added by migration 0149. See
+          // 0149_pa_payers_phase2.sql for the per-column rationale —
+          // briefly, these are the fields the OA-enrollment CSV
+          // exports and the admin edit drawer surfaces so an op can
+          // submit a clean claim without grepping `notes`.
+          timely_filing_days: number | null;
+          claims_address_line1: string | null;
+          claims_address_line2: string | null;
+          claims_city: string | null;
+          claims_state: string | null;
+          claims_zip: string | null;
+          claims_phone_e164: string | null;
+          claims_fax_e164: string | null;
+          prior_auth_submission_method:
+            | "portal"
+            | "fax"
+            | "phone"
+            | "electronic_278"
+            | "paper"
+            | "none"
+            | null;
+          prior_auth_fax_e164: string | null;
+          prior_auth_turnaround_business_days: number | null;
+          required_claim_modifiers: string[];
+          accepts_electronic_secondary: boolean;
+          edi_enrollment_status:
+            | "enrolled"
+            | "pending"
+            | "not_enrolled"
+            | "not_applicable";
+          member_id_format_hint: string | null;
+          requirements_last_verified_at: string | null;
+          requirements_last_verified_by: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -2253,6 +2286,14 @@ export interface Database {
           submitted_by_email: string;
           submitted_at: string;
           updated_at: string;
+          // ── 0150 columns ──
+          // Claim IDs the batch *tried* to send. Populated regardless of
+          // upload outcome so a failed batch can be resubmitted without
+          // rebuilding the list. Empty array on legacy rows.
+          attempted_claim_ids: string[];
+          // Soft self-FK; non-null on resubmit rows pointing at the
+          // submission this one re-attempts.
+          parent_submission_id: string | null;
         };
         Insert: Partial<
           Database["resupply"]["Tables"]["office_ally_submissions"]["Row"]

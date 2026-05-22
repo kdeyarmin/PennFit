@@ -88,6 +88,8 @@ import { AdminBillingConfigModifierRulesPage } from "@/pages/admin/admin-billing
 import { AdminBillingConfigDenialCodesPage } from "@/pages/admin/admin-billing-config-denial-codes";
 import { AdminBillingConfigClaimTemplatesPage } from "@/pages/admin/admin-billing-config-claim-templates";
 import { AdminBillingCappedRentalsPage } from "@/pages/admin/admin-billing-capped-rentals";
+import { AdminBillingOfficeAllyPage } from "@/pages/admin/admin-billing-office-ally";
+import { AdminOfficeAllySubmissionDetailPage } from "@/pages/admin/admin-billing-office-ally-detail";
 import { AdminNpsPage } from "@/pages/admin/admin-nps";
 import { AdminCustomerDetailPage } from "@/pages/admin/admin-customer-detail";
 import { AdminShopCustomersPage } from "@/pages/admin/admin-shop-customers";
@@ -196,6 +198,17 @@ function AdminConsole() {
             path="/admin/billing/capped-rentals"
             component={AdminBillingCappedRentalsPage}
           />
+          <Route
+            path="/admin/billing/office-ally"
+            component={AdminBillingOfficeAllyPage}
+          />
+          <Route path="/admin/billing/office-ally/:submissionId">
+            {(params) => (
+              <AdminOfficeAllySubmissionDetailPage
+                submissionId={params.submissionId}
+              />
+            )}
+          </Route>
           <Route path="/admin/patients" component={PatientsPage} />
           <Route path="/admin/patients/:patientId/insurance-claims">
             {(params) => (

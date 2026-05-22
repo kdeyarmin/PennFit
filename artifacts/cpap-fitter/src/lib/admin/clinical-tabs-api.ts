@@ -444,3 +444,53 @@ export const createInsuranceClaimEvent = (
       body: JSON.stringify(body),
     },
   );
+
+// ─── Preflight + Submit-to-Office-Ally (per-claim) ────────────────
+
+export type PreflightSeverity = "ok" | "warning" | "error";
+
+export interface PreflightItem {
+  key: string;
+  severity: PreflightSeverity;
+  label: string;
+  detail: string;
+}
+
+export interface PreflightSummary {
+  readyToSubmit: boolean;
+  errorCount: number;
+  warningCount: number;
+  items: PreflightItem[];
+}
+
+export const fetchInsuranceClaimPreflight = (
+  patientId: string,
+  claimId: string,
+) =>
+  jsonFetch<{ preflight: PreflightSummary }>(
+    `/patients/${encodeURIComponent(patientId)}/insurance-claims/${encodeURIComponent(claimId)}/preflight`,
+  );
+
+export interface SubmitClaimToOfficeAllyResponse {
+  ok: true;
+  submissionId: string;
+  isaControlNumber: string;
+  gsControlNumber: string;
+  claimCount: number;
+  fileSizeBytes: number;
+  transport: string;
+}
+
+export const submitInsuranceClaimToOfficeAlly = (
+  patientId: string,
+  claimId: string,
+  body?: { usageIndicator?: "P" | "T"; note?: string },
+) =>
+  jsonFetch<SubmitClaimToOfficeAllyResponse>(
+    `/patients/${encodeURIComponent(patientId)}/insurance-claims/${encodeURIComponent(claimId)}/submit-office-ally`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body ?? {}),
+    },
+  );
