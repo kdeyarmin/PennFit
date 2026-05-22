@@ -63,6 +63,7 @@ import integrationsSyncEquipmentRouter from "./admin/integrations-sync-equipment
 import bulkCampaignsRouter from "./admin/bulk-campaigns.js";
 import mfaRouter from "./admin/mfa.js";
 import reportsRouter from "./admin/reports.js";
+import featureFlagsRouter from "./admin/feature-flags.js";
 import npsSummaryRouter from "./admin/nps-summary.js";
 import deliveryFailuresRouter from "./admin/delivery-failures.js";
 import lookupRouter from "./admin/lookup.js";
@@ -652,8 +653,12 @@ router.use(bulkCampaignsRouter);
 // enrollment + status + disable only. Sign-in gating ships in Phase B
 // after the enrollment flow has been proven in production.
 router.use(mfaRouter);
-// /admin/reports/*.csv — date-bounded CSV exports for ops + finance.
+// /admin/reports/* — date-bounded CSV/PDF/QuickBooks exports for ops
+// + finance.
 router.use(reportsRouter);
+// /admin/feature-flags/* — Control Center on/off toggles that gate
+// dispatchers and route handlers in real time.
+router.use(featureFlagsRouter);
 // /admin/nps/recent — last-N-days NPS rollup for the post-delivery
 // follow-up. Surfaces band counts + canonical NPS score + a comment
 // tail. Powered by shop_order_nps_responses (migration 0127).

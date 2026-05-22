@@ -2693,6 +2693,25 @@ export interface Database {
         Update: Partial<Database["resupply"]["Tables"]["csr_shifts"]["Row"]>;
         Relationships: [];
       };
+      feature_flags: {
+        Row: {
+          key: string;
+          enabled: boolean;
+          description: string;
+          category: string;
+          updated_by_user_id: string | null;
+          updated_by_email: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["feature_flags"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["feature_flags"]["Row"]
+        >;
+        Relationships: [];
+      };
       appointment_requests: {
         Row: {
           id: string;

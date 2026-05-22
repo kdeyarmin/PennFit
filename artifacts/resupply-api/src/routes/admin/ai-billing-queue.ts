@@ -17,11 +17,33 @@ import { Router, type IRouter } from "express";
 
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
+import { isFeatureEnabled } from "../../lib/feature-flags";
 import { requireAdmin } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
 
 router.get("/admin/billing/ai-queue", requireAdmin, async (_req, res) => {
+  // Control Center feature gate. When AI billing suggestions are
+  // turned off we return an empty queue so the admin UI stays
+  // functional (manual workflow keeps going); the flag display in
+  // the response lets the UI surface an "AI offline" banner.
+  if (!(await isFeatureEnabled("ai_billing.suggestions"))) {
+    res.json({
+      scrubBlockingClaims: [],
+      scrubFixableClaims: [],
+      deniedNeedsAnalysis: [],
+      autoResubmitReady: [],
+      counts: {
+        scrubBlocking: 0,
+        scrubFixable: 0,
+        deniedNeedsAnalysis: 0,
+        autoResubmitReady: 0,
+      },
+      featureDisabled: true,
+      generatedAt: new Date().toISOString(),
+    });
+    return;
+  }
   const supabase = getSupabaseServiceRoleClient();
 
   const [

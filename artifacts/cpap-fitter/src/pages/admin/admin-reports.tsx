@@ -1,17 +1,90 @@
-// /admin/reports — CSV downloads for ops + finance.
+// /admin/reports — expansive reporting surface for ops + finance.
 //
-// Two reports today (orders, returns), date-bounded. Each is a
-// direct browser-side <a download> on the API endpoint so the
-// browser handles the file save without a JS fetch loop. Auth
-// rides on the `pf_session` cookie sent automatically with the
-// download request.
+// Each report has up to four downloadable formats:
+//
+//   * CSV          — operational, full-fidelity dump (every column)
+//   * PDF          — printable summary for filing / sharing
+//   * QuickBooks   — IIF (QuickBooks Desktop / Enterprise) + a QBO-
+//                    friendly CSV with the column headers QuickBooks
+//                    Online recognizes on import
+//
+// All downloads ride the same /admin/reports/<name>.<ext> endpoint
+// with the active date range as query params; the browser handles
+// the file save via <a download>. Auth follows the pf_session cookie
+// automatically.
 
 import { useState } from "react";
 
 const DEFAULT_DAYS_BACK = 30;
+const MAX_DAYS = 90;
+
+interface ReportDefinition {
+  /** Slug used in the URL: /admin/reports/<slug>.csv etc. */
+  slug: string;
+  title: string;
+  subtitle: string;
+  /** Which formats this report supports. CSV + PDF are mandatory;
+   *  QuickBooks formats are only on the finance-transaction reports. */
+  formats: ReadonlyArray<"csv" | "pdf" | "iif" | "qbo">;
+}
+
+const REPORTS: ReadonlyArray<ReportDefinition> = [
+  {
+    slug: "orders",
+    title: "Cash-pay orders",
+    subtitle:
+      "Stripe checkout sessions in the date range, including payment and shipping state.",
+    formats: ["csv", "pdf", "iif", "qbo"],
+  },
+  {
+    slug: "returns",
+    title: "Returns & RMAs",
+    subtitle:
+      "Comfort-guarantee returns initiated in the date range, with resolution and refund details.",
+    formats: ["csv", "pdf", "iif", "qbo"],
+  },
+  {
+    slug: "revenue-summary",
+    title: "Revenue summary",
+    subtitle:
+      "Per-day rollup of gross sales, refunds, and net revenue across the storefront.",
+    formats: ["csv", "pdf"],
+  },
+  {
+    slug: "refunds-journal",
+    title: "Refunds journal",
+    subtitle:
+      "Chronological refund ledger — useful for AR reconciliation against Stripe payouts.",
+    formats: ["csv", "pdf"],
+  },
+];
+
+const FORMAT_LABELS: Record<"csv" | "pdf" | "iif" | "qbo", string> = {
+  csv: "CSV",
+  pdf: "PDF",
+  iif: "QuickBooks Desktop (.iif)",
+  qbo: "QuickBooks Online (.csv)",
+};
 
 function isoDate(d: Date): string {
   return d.toISOString().slice(0, 10);
+}
+
+function diffDays(fromIso: string, toIso: string): number {
+  const f = new Date(fromIso).getTime();
+  const t = new Date(toIso).getTime();
+  return Math.round((t - f) / 86400_000);
+}
+
+function reportUrl(
+  slug: string,
+  format: "csv" | "pdf" | "iif" | "qbo",
+  from: string,
+  to: string,
+): string {
+  const params = new URLSearchParams({ from, to }).toString();
+  const ext = format === "qbo" ? "qbo.csv" : format;
+  return `/resupply-api/admin/reports/${slug}.${ext}?${params}`;
 }
 
 export function AdminReportsPage() {
@@ -20,12 +93,11 @@ export function AdminReportsPage() {
   const [from, setFrom] = useState(isoDate(defaultFrom));
   const [to, setTo] = useState(isoDate(today));
 
-  const params = new URLSearchParams({ from, to }).toString();
-  const ordersUrl = `/resupply-api/admin/reports/orders.csv?${params}`;
-  const returnsUrl = `/resupply-api/admin/reports/returns.csv?${params}`;
+  const days = diffDays(from, to);
+  const clamped = days > MAX_DAYS;
 
   return (
-    <div className="space-y-6 max-w-3xl" data-testid="admin-reports-page">
+    <div className="space-y-6 max-w-5xl" data-testid="admin-reports-page">
       <header className="space-y-1">
         <h1
           className="text-2xl font-bold tracking-tight"
@@ -34,8 +106,10 @@ export function AdminReportsPage() {
           Reports
         </h1>
         <p className="text-sm text-slate-600">
-          CSV downloads for ops and finance reconciliation. Pick a date range
-          (max 90 days per export) and click a report.
+          Expansive operational + finance exports. Pick a date range
+          (max 90 days per export) and choose a format. PDF is best for
+          archival; CSV is best for spreadsheets; the QuickBooks formats
+          plug directly into Desktop (.iif) or Online (.csv).
         </p>
       </header>
 
@@ -68,52 +142,64 @@ export function AdminReportsPage() {
               data-testid="reports-to"
             />
           </div>
+          <div className="ml-auto text-xs text-slate-500">
+            Range: {days} day{days === 1 ? "" : "s"}
+            {clamped && (
+              <span className="ml-2 text-amber-700">
+                (server caps at {MAX_DAYS} days)
+              </span>
+            )}
+          </div>
         </div>
       </section>
 
       <section className="grid gap-3 sm:grid-cols-2">
-        <ReportCard
-          title="Cash-pay orders"
-          subtitle="Stripe checkout sessions in the date range, including payment + shipping state."
-          href={ordersUrl}
-          testId="reports-orders-link"
-        />
-        <ReportCard
-          title="Returns / RMAs"
-          subtitle="Comfort-guarantee returns initiated in the date range, with resolution + refund details."
-          href={returnsUrl}
-          testId="reports-returns-link"
-        />
+        {REPORTS.map((r) => (
+          <ReportCard key={r.slug} report={r} from={from} to={to} />
+        ))}
       </section>
     </div>
   );
 }
 
 function ReportCard({
-  title,
-  subtitle,
-  href,
-  testId,
+  report,
+  from,
+  to,
 }: {
-  title: string;
-  subtitle: string;
-  href: string;
-  testId: string;
+  report: ReportDefinition;
+  from: string;
+  to: string;
 }) {
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-4 space-y-3">
+    <div
+      className="rounded-lg border border-slate-200 bg-white p-4 space-y-3"
+      data-testid={`report-card-${report.slug}`}
+    >
       <div>
-        <h3 className="text-sm font-semibold text-slate-900">{title}</h3>
-        <p className="text-xs text-slate-600 mt-0.5">{subtitle}</p>
+        <h3 className="text-sm font-semibold text-slate-900">{report.title}</h3>
+        <p className="text-xs text-slate-600 mt-0.5">{report.subtitle}</p>
       </div>
-      <a
-        href={href}
-        download
-        className="inline-flex items-center gap-2 rounded bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700"
-        data-testid={testId}
-      >
-        Download CSV
-      </a>
+      <div className="flex flex-wrap gap-2">
+        {report.formats.map((format) => (
+          <a
+            key={format}
+            href={reportUrl(report.slug, format, from, to)}
+            download
+            className={[
+              "inline-flex items-center gap-1.5 rounded px-2.5 py-1.5 text-xs font-semibold text-white transition-colors",
+              format === "csv"
+                ? "bg-blue-600 hover:bg-blue-700"
+                : format === "pdf"
+                  ? "bg-slate-700 hover:bg-slate-800"
+                  : "bg-emerald-700 hover:bg-emerald-800",
+            ].join(" ")}
+            data-testid={`report-${report.slug}-${format}`}
+          >
+            {FORMAT_LABELS[format]}
+          </a>
+        ))}
+      </div>
     </div>
   );
 }
