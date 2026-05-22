@@ -46,6 +46,12 @@ const clickTrackRateLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
 });
+const unsubscribeRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // limit each IP to 100 requests per window
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 
 
 const openTrackingRateLimiter = rateLimit({
@@ -945,7 +951,7 @@ function verifyUnsubscribeToken(
   return { valid: true, leadId };
 }
 
-router.get("/shop/fitter-leads/unsubscribe", async (req, res) => {
+router.get("/shop/fitter-leads/unsubscribe", unsubscribeRateLimiter, async (req, res) => {
   // Rate limit BEFORE the HMAC verify. The verify is constant-time
   // so it doesn't leak per-attempt info, but capping by IP closes
   // the CodeQL "authorization without rate limiting" finding and
