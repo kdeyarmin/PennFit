@@ -31,6 +31,8 @@ import {
   fetchClearinghouses,
   fetchEnrollmentWatchlist,
   fetchInboundFiles,
+  fetchOaHealth,
+  fetchOaOperationsSummary,
   fetchOaSubmissions,
   pollNow,
   rawEdiDownloadHref,
@@ -41,6 +43,7 @@ import {
   type EnrollmentWatchlistEntry,
   type InboundFile,
   type InboundFileKind,
+  type OaHealth,
   type OaSubmission,
   type OaSubmissionStatus,
 } from "@/lib/admin/office-ally-api";
@@ -63,10 +66,213 @@ export function AdminBillingOfficeAllyPage() {
         </p>
       </header>
 
+      <HealthBanner />
+      <KpiRow />
       <EnrollmentWatchlistBanner />
       <SubmissionsSection />
       <InboundFilesSection />
       <ClearinghousesSection />
+    </div>
+  );
+}
+
+// ── Health banner (transport / poll status) ─────────────────────────
+
+function HealthBanner() {
+  const { data, isPending } = useQuery({
+    queryKey: ["admin-oa-health"],
+    queryFn: fetchOaHealth,
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+  });
+  if (isPending || !data) return null;
+
+  // Hide the banner when everything is healthy AND no recent
+  // transport failures — the dashboard already shows green KPIs.
+  if (
+    data.hasActiveClearinghouse &&
+    data.pollStatus === "fresh" &&
+    data.recentTransportFailures === 0
+  ) {
+    return null;
+  }
+
+  const { tone, headline, body } = healthMessage(data);
+  return (
+    <div
+      className="rounded border-l-4 p-3"
+      style={{ backgroundColor: tone.bg, borderColor: tone.fg }}
+      data-testid="oa-health-banner"
+      data-poll-status={data.pollStatus}
+    >
+      <p className="text-sm font-semibold" style={{ color: tone.fg }}>
+        {headline}
+      </p>
+      <p
+        className="text-[12px] mt-0.5"
+        style={{ color: "hsl(var(--ink-2))" }}
+      >
+        {body}
+      </p>
+    </div>
+  );
+}
+
+function healthMessage(h: OaHealth): {
+  tone: { bg: string; fg: string };
+  headline: string;
+  body: string;
+} {
+  const red = { bg: "rgba(190,18,60,0.08)", fg: "#be123c" };
+  const amber = { bg: "rgba(180,83,9,0.08)", fg: "#b45309" };
+  const slate = { bg: "rgba(100,116,139,0.1)", fg: "#475569" };
+
+  if (!h.hasActiveClearinghouse) {
+    return {
+      tone: slate,
+      headline: "No active clearinghouse configured",
+      body: "Set up OFFICE_ALLY_* env or add a clearinghouse_credentials row to submit electronically.",
+    };
+  }
+  if (h.pollStatus === "outage") {
+    return {
+      tone: red,
+      headline: `⛔ Office Ally poller has not run in ${h.minutesSinceLastPoll} min`,
+      body: `Inbound 999 / 277CA / 835 files may be stuck on OA's side. Hit "Poll Office Ally now" below to retry — if that errors, check SFTP creds.`,
+    };
+  }
+  if (h.pollStatus === "never") {
+    return {
+      tone: amber,
+      headline: "Office Ally poller has never run on this clearinghouse",
+      body: `Hit "Poll Office Ally now" below to verify the SFTP connection.`,
+    };
+  }
+  if (h.pollStatus === "stale") {
+    return {
+      tone: amber,
+      headline: `⚠ Last poll was ${h.minutesSinceLastPoll} min ago`,
+      body: `The cron runs every 15 min; > 60 min is unusual. Check the worker logs if this persists.`,
+    };
+  }
+  // pollStatus === "fresh" + recentTransportFailures > 0
+  return {
+    tone: red,
+    headline: `⛔ ${h.recentTransportFailures} 837P upload${h.recentTransportFailures === 1 ? "" : "s"} failed at transport in the last hour`,
+    body: "Open the failed submission(s) below, click Resubmit. If the failure repeats, run Test connection on the clearinghouse.",
+  };
+}
+
+// ── KPI row (last 30 days) ──────────────────────────────────────────
+
+function KpiRow() {
+  const { data, isPending, isError } = useQuery({
+    queryKey: ["admin-oa-operations-summary"],
+    queryFn: fetchOaOperationsSummary,
+    staleTime: 60_000,
+  });
+  if (isError) return null;
+  return (
+    <div
+      className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6"
+      data-testid="oa-kpi-row"
+    >
+      <KpiTile label="Submissions (30d)" value={data?.counts.totalSubmissions} loading={isPending} />
+      <KpiTile label="Claims (30d)" value={data?.counts.totalClaims} loading={isPending} />
+      <KpiTile
+        label="Acceptance"
+        value={
+          data?.rates.acceptanceRatePct == null
+            ? "—"
+            : `${data.rates.acceptanceRatePct}%`
+        }
+        loading={isPending}
+        tone={
+          data?.rates.acceptanceRatePct != null && data.rates.acceptanceRatePct < 90
+            ? "alert"
+            : "ok"
+        }
+      />
+      <KpiTile
+        label="Pending acks"
+        value={data?.counts.pendingAck}
+        hint=">1h uploaded, no 999"
+        loading={isPending}
+        tone={
+          data?.counts.pendingAck != null && data.counts.pendingAck > 0
+            ? "warn"
+            : "neutral"
+        }
+      />
+      <KpiTile
+        label="Transport failed"
+        value={data?.counts.transportFailed}
+        loading={isPending}
+        tone={
+          data?.counts.transportFailed != null && data.counts.transportFailed > 0
+            ? "alert"
+            : "neutral"
+        }
+      />
+      <KpiTile
+        label="Avg min to 999"
+        value={
+          data?.rates.avgMinutesToAck999 == null
+            ? "—"
+            : `${data.rates.avgMinutesToAck999}m`
+        }
+        loading={isPending}
+      />
+    </div>
+  );
+}
+
+function KpiTile({
+  label,
+  value,
+  hint,
+  loading,
+  tone = "neutral",
+}: {
+  label: string;
+  value: number | string | undefined;
+  hint?: string;
+  loading?: boolean;
+  tone?: "neutral" | "ok" | "warn" | "alert";
+}) {
+  const toneColor =
+    tone === "ok"
+      ? "#15803d"
+      : tone === "warn"
+        ? "#b45309"
+        : tone === "alert"
+          ? "#be123c"
+          : "hsl(var(--ink-1))";
+  return (
+    <div
+      className="rounded border p-3"
+      style={{ borderColor: "hsl(var(--line-1))" }}
+    >
+      <p
+        className="text-[10px] font-semibold uppercase tracking-wider"
+        style={{ color: "hsl(var(--ink-3))" }}
+      >
+        {label}
+      </p>
+      <p
+        className="mt-1 text-xl font-semibold tabular-nums"
+        style={{ color: toneColor }}
+      >
+        {loading ? "…" : (value ?? "—")}
+      </p>
+      {hint && (
+        <p
+          className="mt-0.5 text-[10px]"
+          style={{ color: "hsl(var(--ink-3))" }}
+        >
+          {hint}
+        </p>
+      )}
     </div>
   );
 }
@@ -166,19 +372,37 @@ const SUBMISSION_STATUS_OPTIONS: Array<{
 
 function SubmissionsSection() {
   const [statusFilter, setStatusFilter] = useState<"" | OaSubmissionStatus>("");
+  const [search, setSearch] = useState("");
 
   const { data, isPending, isError, error, refetch } = useQuery({
-    queryKey: ["admin-oa-submissions", { status: statusFilter }],
+    queryKey: ["admin-oa-submissions", { status: statusFilter, q: search }],
     queryFn: () =>
-      fetchOaSubmissions(
-        statusFilter ? { status: statusFilter } : undefined,
-      ),
+      fetchOaSubmissions({
+        status: statusFilter || undefined,
+        q: search || undefined,
+      }),
     staleTime: 15_000,
   });
 
   return (
     <Card title="Submissions (outbound 837P)">
       <div className="flex flex-wrap gap-3 items-end mb-3">
+        <label className="block">
+          <span
+            className="text-xs font-semibold block mb-1"
+            style={{ color: "hsl(var(--ink-3))" }}
+          >
+            Search
+          </span>
+          <input
+            type="search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="ISA control # or file name"
+            className="rounded border border-slate-300 px-2 py-1.5 text-sm font-mono w-64"
+            data-testid="oa-submissions-search"
+          />
+        </label>
         <label className="block">
           <span
             className="text-xs font-semibold block mb-1"

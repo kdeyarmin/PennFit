@@ -81,9 +81,53 @@ export interface OaSubmission {
 
 export function fetchOaSubmissions(filters?: {
   status?: OaSubmissionStatus;
+  q?: string;
 }): Promise<{ submissions: OaSubmission[] }> {
-  const qs = filters?.status ? `?status=${encodeURIComponent(filters.status)}` : "";
-  return getJSON(`/admin/office-ally-submissions${qs}`);
+  const qs = new URLSearchParams();
+  if (filters?.status) qs.set("status", filters.status);
+  if (filters?.q) qs.set("q", filters.q);
+  const tail = qs.toString();
+  return getJSON(
+    `/admin/office-ally-submissions${tail ? `?${tail}` : ""}`,
+  );
+}
+
+// ─── Operations summary + health (KPI tiles + outage banner) ─────
+
+export interface OaOperationsSummary {
+  window: { sinceIso: string; days: number };
+  counts: {
+    totalSubmissions: number;
+    totalClaims: number;
+    accepted: number;
+    rejected: number;
+    transportFailed: number;
+    pendingAck: number;
+  };
+  rates: {
+    acceptanceRatePct: number | null;
+    avgMinutesToAck999: number | null;
+  };
+}
+
+export function fetchOaOperationsSummary(): Promise<OaOperationsSummary> {
+  return getJSON("/admin/office-ally/operations-summary");
+}
+
+export type OaPollStatus = "fresh" | "stale" | "outage" | "never";
+
+export interface OaHealth {
+  hasActiveClearinghouse: boolean;
+  activeClearinghouseSlug: string | null;
+  activeClearinghouseName: string | null;
+  lastPolledAt: string | null;
+  minutesSinceLastPoll: number | null;
+  pollStatus: OaPollStatus;
+  recentTransportFailures: number;
+}
+
+export function fetchOaHealth(): Promise<OaHealth> {
+  return getJSON("/admin/office-ally/health");
 }
 
 export interface OaSubmissionLinkedClaim {
