@@ -40,6 +40,13 @@ vi.mock("../comm-prefs", () => ({
   shouldSendSms: vi.fn(() => true),
 }));
 
+// Feature flag gate — defaults to enabled (true) so existing tests are
+// unaffected. Set to false in the feature-gate describe block below.
+const isFeatureEnabledMock = vi.hoisted(() => vi.fn(async () => true));
+vi.mock("../feature-flags", () => ({
+  isFeatureEnabled: isFeatureEnabledMock,
+}));
+
 // ─── Install supabase mock (must happen before SUT import) ────────────────
 const supabaseMock = installSupabaseMock();
 
@@ -110,6 +117,8 @@ beforeEach(() => {
   });
   isInDndWindowMock.mockClear();
   isInDndWindowMock.mockReturnValue(false);
+  isFeatureEnabledMock.mockClear();
+  isFeatureEnabledMock.mockResolvedValue(true);
 });
 
 // ─── Constants ────────────────────────────────────────────────────────────
@@ -624,5 +633,66 @@ describe("runCartAbandonmentDispatch — zero claimed rows after race", () => {
     expect(stats.scanned).toBe(0);
     expect(stats.sent).toBe(0);
     expect(sendCartAbandonmentEmailMock).not.toHaveBeenCalled();
+  });
+});
+
+// ─── Control Center feature flag gate ────────────────────────────────────
+
+describe("runCartAbandonmentDispatch — feature flag gate", () => {
+  it("returns zeroed stats immediately when cart_abandonment.dispatcher is disabled", async () => {
+    isFeatureEnabledMock.mockResolvedValue(false);
+
+    const stats = await runCartAbandonmentDispatch();
+
+    expect(stats).toEqual({
+      scanned: 0,
+      sent: 0,
+      skippedNoConfig: 0,
+      skippedFailed: 0,
+      skippedOptOut: 0,
+      sendgridConfigured: true,
+    });
+  });
+
+  it("makes no DB calls when the feature flag is disabled", async () => {
+    isFeatureEnabledMock.mockResolvedValue(false);
+
+    await runCartAbandonmentDispatch();
+
+    expect(getSupabaseCallCount("shop_abandoned_carts", "select")).toBe(0);
+    expect(getSupabaseCallCount("shop_abandoned_carts", "update")).toBe(0);
+    expect(getSupabaseCallCount("shop_customers", "select")).toBe(0);
+  });
+
+  it("does not invoke sendCartAbandonmentEmail when the feature flag is disabled", async () => {
+    isFeatureEnabledMock.mockResolvedValue(false);
+
+    await runCartAbandonmentDispatch();
+
+    expect(sendCartAbandonmentEmailMock).not.toHaveBeenCalled();
+  });
+
+  it("calls log.warn when the feature flag is disabled", async () => {
+    isFeatureEnabledMock.mockResolvedValue(false);
+    const warnMock = vi.fn();
+
+    await runCartAbandonmentDispatch({ log: { warn: warnMock } });
+
+    expect(warnMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: "cart_abandonment_dispatch_skipped_feature_disabled",
+      }),
+      expect.stringContaining("feature flag disabled"),
+    );
+  });
+
+  it("proceeds normally when the feature flag is enabled", async () => {
+    isFeatureEnabledMock.mockResolvedValue(true);
+    stageMinimalDispatch();
+
+    const stats = await runCartAbandonmentDispatch();
+
+    expect(stats.sent).toBe(1);
+    expect(sendCartAbandonmentEmailMock).toHaveBeenCalledTimes(1);
   });
 });
