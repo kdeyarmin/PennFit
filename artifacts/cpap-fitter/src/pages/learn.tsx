@@ -918,6 +918,46 @@ export function Learn() {
               testid: "learn-link-deep-talking",
               tone: "icon-halo-gold",
             },
+            {
+              href: "/learn/dry-mouth",
+              Icon: Droplets,
+              title: "Fixing CPAP dry mouth",
+              body: "The #1 comfort complaint. Three causes (humidifier, mouth breathing, heated tubing) and the order to try them.",
+              testid: "learn-link-deep-dry-mouth",
+              tone: "icon-halo-navy",
+            },
+            {
+              href: "/learn/cpap-bloating",
+              Icon: Wind,
+              title: "CPAP bloating & gas",
+              body: "Aerophagia — when CPAP gives you stomach distension. Four fixes from positional changes to pressure setting tweaks.",
+              testid: "learn-link-deep-bloating",
+              tone: "icon-halo-navy",
+            },
+            {
+              href: "/learn/mask-leaks",
+              Icon: Wind,
+              title: "Fixing mask leaks",
+              body: "Where the leak is tells you how to fix it — bridge, side, mouth, or top (where vents are supposed to leak).",
+              testid: "learn-link-deep-leaks",
+              tone: "icon-halo-gold",
+            },
+            {
+              href: "/learn/cpap-claustrophobia",
+              Icon: LifeBuoy,
+              title: "Claustrophobia & anxiety",
+              body: "A structured desensitization protocol that works in 5-7 days for almost everyone. Plus what to do mid-night.",
+              testid: "learn-link-deep-claustro",
+              tone: "icon-halo-navy",
+            },
+            {
+              href: "/learn/nasal-congestion",
+              Icon: Droplets,
+              title: "Nasal congestion on CPAP",
+              body: "Four causes — usually dry air, sometimes allergies, occasionally sleep position. Plus a 5-tip quick-wins list.",
+              testid: "learn-link-deep-congestion",
+              tone: "icon-halo-gold",
+            },
           ].map(({ href, Icon, title, body, testid, tone }) => (
             <Link
               key={href}

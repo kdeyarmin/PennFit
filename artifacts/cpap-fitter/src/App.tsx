@@ -250,6 +250,32 @@ const LearnTalkingToALovedOne = lazy(() =>
   })),
 );
 
+// Troubleshooting cluster — focused, high-search-volume fix-it articles
+// for the issues that drive most first-month adherence drop-off.
+const LearnDryMouth = lazy(() =>
+  import("@/pages/learn-dry-mouth").then((m) => ({ default: m.LearnDryMouth })),
+);
+const LearnCpapBloating = lazy(() =>
+  import("@/pages/learn-cpap-bloating").then((m) => ({
+    default: m.LearnCpapBloating,
+  })),
+);
+const LearnMaskLeaks = lazy(() =>
+  import("@/pages/learn-mask-leaks").then((m) => ({
+    default: m.LearnMaskLeaks,
+  })),
+);
+const LearnCpapClaustrophobia = lazy(() =>
+  import("@/pages/learn-cpap-claustrophobia").then((m) => ({
+    default: m.LearnCpapClaustrophobia,
+  })),
+);
+const LearnNasalCongestion = lazy(() =>
+  import("@/pages/learn-nasal-congestion").then((m) => ({
+    default: m.LearnNasalCongestion,
+  })),
+);
+
 // Brand marketing pages — a hub plus per-brand spotlights (React Health
 // is our flagship line, ResMed and Fisher & Paykel round out the catalog).
 // Lazy-loaded because they're SEO landing surfaces, not entry points for
@@ -579,6 +605,17 @@ function PatientRouter() {
           <Route
             path="/learn/talking-to-a-loved-one"
             component={LearnTalkingToALovedOne}
+          />
+          <Route path="/learn/dry-mouth" component={LearnDryMouth} />
+          <Route path="/learn/cpap-bloating" component={LearnCpapBloating} />
+          <Route path="/learn/mask-leaks" component={LearnMaskLeaks} />
+          <Route
+            path="/learn/cpap-claustrophobia"
+            component={LearnCpapClaustrophobia}
+          />
+          <Route
+            path="/learn/nasal-congestion"
+            component={LearnNasalCongestion}
           />
           <Route path="/comfort-guarantee" component={ComfortGuaranteePage} />
           <Route path="/insurance" component={Insurance} />
