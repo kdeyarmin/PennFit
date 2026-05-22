@@ -26,6 +26,7 @@
 // journey_stage flips to 'unsubscribed', terminal forever.
 
 import { Router, type IRouter } from "express";
+import rateLimit from "express-rate-limit";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 
@@ -39,6 +40,22 @@ import { logger } from "../../lib/logger";
 type FitterLeadsUpdate = Database["resupply"]["Tables"]["fitter_leads"]["Update"];
 
 const router: IRouter = Router();
+
+const openTrackingRateLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (_req, res) => {
+    res.set({
+      "Content-Type": "image/gif",
+      "Cache-Control": "no-store, no-cache, must-revalidate, private",
+      Pragma: "no-cache",
+      "Content-Length": String(TRANSPARENT_GIF.length),
+    });
+    res.status(200).end(TRANSPARENT_GIF);
+  },
+});
 
 // Pre-purchase cadence — touch_index 1-6, anchored on `completed_at`.
 // Goal: convert "fit but haven't ordered" into a first-time buyer.
@@ -469,7 +486,7 @@ const TRANSPARENT_GIF = Buffer.from(
   "base64",
 );
 
-router.get("/shop/track/o", async (req, res) => {
+router.get("/shop/track/o", openTrackingRateLimiter, async (req, res) => {
   // Always return the pixel — even on a bad token. NEVER 4xx /
   // 5xx here: an error response would render as a broken-image
   // icon in the patient's inbox.
