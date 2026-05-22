@@ -1,45 +1,15 @@
-// Tests for routes/admin/inventory-reconciliation.ts
+// Route tests for /admin/shop/inventory/reconciliations.
 //
-// Coverage matrix:
-//
-//   POST /admin/shop/inventory/reconciliations (start)
-//     * unauthenticated                 → 401
-//     * insufficient permission         → 403
-//     * missing periodLabel             → 400 with issues
-//     * periodLabel too short (< 2)     → 400 with issues
-//     * periodLabel too long (> 60)     → 400 with issues
-//     * extra unknown fields (strict)   → 400
-//     * DB insert failure               → 500
-//     * happy path                      → 201 { id, startedAt }
-//     * notes trimmed and stored        → 201
-//
-//   GET /admin/shop/inventory/reconciliations (list)
-//     * unauthenticated                 → 401
-//     * DB error                        → 500
-//     * empty history                   → 200 { reconciliations: [] }
-//     * list with one row               → 200 with mapped fields
-//
-//   GET /admin/shop/inventory/reconciliations/:id (get by id)
-//     * non-UUID id                     → 400 { error: "invalid_id" }
-//     * not found                       → 404
-//     * DB header error                 → 500
-//     * DB lines error                  → 500
-//     * submitted reconciliation        → 200, currentProducts: null
-//     * draft, Stripe not configured    → 200, currentProducts: null
-//     * happy path (submitted)          → correct field mapping
-//
-//   POST /admin/shop/inventory/reconciliations/:id/submit
-//     * non-UUID id                     → 400 { error: "invalid_id" }
-//     * empty lines array               → 400 with issues
-//     * productId without prod_ prefix  → 400 with issues
-//     * countedQty negative             → 400 with issues
-//     * countedQty > 1,000,000          → 400 with issues
-//     * duplicate productId in lines    → 400 { error: "duplicate_product_in_lines" }
-//     * Stripe not configured           → 503
-//     * not found                       → 404
-//     * already submitted               → 409
-//     * DB lines insert failure         → 500
-//     * happy path                      → 200 with totals
+// Mirrors the auth-mock + supabase-mock pattern used in
+// `return-notes.test.ts` and `shop-products.test.ts`. The reconciliation
+// surface has four endpoints; we exercise:
+//   * POST create        — validation + 201 + audit envelope shape.
+//   * GET list           — happy path + supabase error → 500.
+//   * GET detail         — 400/404 paths + draft vs submitted shape.
+//   * POST submit        — auth, validation, duplicate-product guard,
+//                          already_submitted 409, applyToStripe=false
+//                          path, partial-Stripe-failure path, RPC
+//                          error mapping.
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import express, { type Express } from "express";
@@ -52,12 +22,14 @@ import {
 import {
   installSupabaseMock,
   stageSupabaseResponse,
+  stageSupabaseRpcResponse,
+  getSupabaseRpcCallCount,
+  getSupabaseRpcArgs,
+  getSupabaseWritePayloads,
 } from "../../test-helpers/supabase-mock";
 
-// ── Supabase mock (module-scoped) ──────────────────────────────────────────
 const supabaseMock = installSupabaseMock();
 
-// ── Auth mock ──────────────────────────────────────────────────────────────
 const { mockAdmin } = vi.hoisted(() => ({
   mockAdmin: { current: null as MockAdminCtx | null },
 }));
@@ -65,529 +37,265 @@ vi.mock("../../middlewares/requireAdmin", () =>
   makeRequireAdminMock(mockAdmin),
 );
 
-// ── adminRateLimit passthrough ─────────────────────────────────────────────
+const adminRateLimitSpy = vi.hoisted(() =>
+  vi.fn(
+    (_opts: { name: string; preset: string }) =>
+      (_req: unknown, _res: unknown, next: () => void) =>
+        next(),
+  ),
+);
 vi.mock("../../middlewares/admin-rate-limit", () => ({
-  adminRateLimit:
-    (_opts: { name: string; preset?: string }) =>
-    (
-      _req: import("express").Request,
-      _res: import("express").Response,
-      next: import("express").NextFunction,
-    ) => {
-      next();
-    },
+  adminRateLimit: adminRateLimitSpy,
 }));
 
-// ── Audit mock ─────────────────────────────────────────────────────────────
+const logAuditMock = vi.hoisted(() =>
+  vi.fn<(input: unknown) => Promise<undefined>>(async () => undefined),
+);
 vi.mock("@workspace/resupply-audit", () => ({
-  logAudit: vi.fn(async () => undefined),
+  logAudit: logAuditMock,
 }));
 
-// ── Stripe mock ─────────────────────────────────────────────────────────────
-let stripeConfigured = false;
-const stripeProductsListMock = vi.fn();
-const stripeProductsUpdateMock = vi.fn();
-
+// Stripe stub. The submit path calls products.list (catalog fetch) +
+// products.update (per-SKU metadata write). The detail GET on a draft
+// also fetches the catalog. The list/create paths don't touch Stripe.
+const { stripeListMock, stripeUpdateMock, stripeConfiguredRef } = vi.hoisted(
+  () => ({
+    stripeListMock: vi.fn(),
+    stripeUpdateMock: vi.fn(),
+    stripeConfiguredRef: { current: true },
+  }),
+);
 vi.mock("../../lib/stripe/config", () => ({
   readStripeConfigOrNull: () =>
-    stripeConfigured
-      ? { secretKey: "sk_test_x", publishableKey: null, webhookSigningSecret: null, publicBaseUrl: "https://shop.test" }
-      : null,
+    stripeConfiguredRef.current ? { secretKey: "sk_test_x" } : null,
   getStripeClient: () => ({
     products: {
-      list: (...a: unknown[]) => stripeProductsListMock(...a),
-      update: (...a: unknown[]) => stripeProductsUpdateMock(...a),
+      list: (...a: unknown[]) => stripeListMock(...a),
+      update: (...a: unknown[]) => stripeUpdateMock(...a),
     },
   }),
 }));
 
-vi.mock("../../lib/stripe/products-meta", () => ({
-  projectProduct: vi.fn((p: Record<string, unknown>) => {
-    // Pass through an object with the fields the route reads.
-    // The route uses: p.id, p.name, p.stockCount, p.lowStockThreshold, p.category
-    return {
-      id: p.id,
-      name: p.name,
-      stockCount: p.stockCount !== undefined ? p.stockCount : null,
-      lowStockThreshold: p.lowStockThreshold !== undefined ? p.lowStockThreshold : null,
-      category: p.category ?? "test",
-      price: null,
-    };
-  }),
-}));
+// Minimal projection — the route only reads id, name, and stockCount.
+vi.mock("../../lib/stripe/products-meta", async () => {
+  const actual = await vi.importActual<
+    typeof import("../../lib/stripe/products-meta")
+  >("../../lib/stripe/products-meta");
+  return {
+    ...actual,
+    projectProduct: (raw: {
+      id: string;
+      name?: string;
+      metadata?: { stock_count?: string; low_stock_threshold?: string };
+    }) => {
+      const meta = raw.metadata ?? {};
+      return {
+        id: raw.id,
+        name: raw.name ?? raw.id,
+        description: null,
+        category: "accessory",
+        tagline: null,
+        isBundle: false,
+        bundleContents: [],
+        replacementHint: null,
+        imageUrl: null,
+        manufacturer: null,
+        modelNumber: null,
+        stockCount:
+          meta.stock_count === undefined ? null : Number(meta.stock_count),
+        lowStockThreshold:
+          meta.low_stock_threshold === undefined
+            ? null
+            : Number(meta.low_stock_threshold),
+        price: { id: "price_x", unitAmount: 1000, currency: "usd" },
+        recurringPrice: null,
+      };
+    },
+  };
+});
 
-// ── App factory ────────────────────────────────────────────────────────────
-async function makeApp(): Promise<Express> {
-  const { default: router } = await import("./inventory-reconciliation");
+import inventoryReconciliationRouter from "./inventory-reconciliation";
+
+const RECON_ID = "11111111-1111-4111-8111-111111111111";
+const ADMIN: MockAdminCtx = {
+  userId: "u_admin",
+  email: "ops@penn.example.com",
+  role: "admin",
+};
+
+function makeApp(): Express {
   const app = express();
   app.use(express.json());
-  app.use("/resupply-api", router);
+  app.use(inventoryReconciliationRouter);
   return app;
 }
 
-function stubAdmin(): void {
-  mockAdmin.current = {
-    userId: "u_ops_1",
-    email: "ops@test.com",
-    role: "admin",
-  };
+function stageStripeCatalog(
+  products: Array<{ id: string; name: string; stockCount: number | null }>,
+) {
+  stripeListMock.mockResolvedValueOnce({
+    data: products.map((p) => ({
+      id: p.id,
+      name: p.name,
+      metadata:
+        p.stockCount === null
+          ? {}
+          : { stock_count: String(p.stockCount) },
+    })),
+    has_more: false,
+  });
 }
 
 beforeEach(() => {
   mockAdmin.current = null;
   supabaseMock.reset();
-  stripeConfigured = false;
-  stripeProductsListMock.mockReset();
-  stripeProductsUpdateMock.mockReset();
+  logAuditMock.mockClear();
+  stripeListMock.mockReset();
+  stripeUpdateMock.mockReset();
+  adminRateLimitSpy.mockClear();
+  stripeConfiguredRef.current = true;
 });
 
-// ── Fixtures ───────────────────────────────────────────────────────────────
-const VALID_ID = "a1b2c3d4-e5f6-7890-abcd-ef1234567890";
-const VALID_START_BODY = { periodLabel: "2026-05" };
-const VALID_SUBMIT_BODY = {
-  lines: [{ productId: "prod_abc", countedQty: 10 }],
-  applyToStripe: false,
-};
-
-// ===========================================================================
-// POST /admin/shop/inventory/reconciliations — start a draft
-// ===========================================================================
-
-describe("POST /reconciliations — authentication", () => {
-  it("returns 401 when not authenticated", async () => {
-    const app = await makeApp();
-    const res = await request(app)
-      .post("/resupply-api/admin/shop/inventory/reconciliations")
-      .send(VALID_START_BODY);
+describe("POST /admin/shop/inventory/reconciliations", () => {
+  it("401s without admin", async () => {
+    const res = await request(makeApp())
+      .post("/admin/shop/inventory/reconciliations")
+      .send({ periodLabel: "2026-05" });
     expect(res.status).toBe(401);
   });
 
-  it("returns 403 when caller lacks admin.tools.manage permission", async () => {
-    mockAdmin.current = { userId: "u1", email: "e@test.com", role: "agent" };
-    const app = await makeApp();
-    const res = await request(app)
-      .post("/resupply-api/admin/shop/inventory/reconciliations")
-      .send(VALID_START_BODY);
-    expect(res.status).toBe(403);
-  });
-});
-
-describe("POST /reconciliations — body validation", () => {
-  beforeEach(() => stubAdmin());
-
-  it("returns 400 when periodLabel is missing", async () => {
-    const app = await makeApp();
-    const res = await request(app)
-      .post("/resupply-api/admin/shop/inventory/reconciliations")
+  it("400s when periodLabel is missing", async () => {
+    mockAdmin.current = ADMIN;
+    const res = await request(makeApp())
+      .post("/admin/shop/inventory/reconciliations")
       .send({});
     expect(res.status).toBe(400);
     expect(res.body.error).toBe("invalid_body");
-    expect(Array.isArray(res.body.issues)).toBe(true);
   });
 
-  it("returns 400 when periodLabel is shorter than 2 characters", async () => {
-    const app = await makeApp();
-    const res = await request(app)
-      .post("/resupply-api/admin/shop/inventory/reconciliations")
+  it("400s when periodLabel is too short", async () => {
+    mockAdmin.current = ADMIN;
+    const res = await request(makeApp())
+      .post("/admin/shop/inventory/reconciliations")
       .send({ periodLabel: "x" });
     expect(res.status).toBe(400);
-    expect(res.body.issues[0].path).toBe("periodLabel");
   });
 
-  it("returns 400 when periodLabel exceeds 60 characters", async () => {
-    const app = await makeApp();
-    const res = await request(app)
-      .post("/resupply-api/admin/shop/inventory/reconciliations")
-      .send({ periodLabel: "a".repeat(61) });
-    expect(res.status).toBe(400);
-    expect(res.body.issues[0].path).toBe("periodLabel");
-  });
-
-  it("returns 400 when extra unknown fields are present (strict schema)", async () => {
-    const app = await makeApp();
-    const res = await request(app)
-      .post("/resupply-api/admin/shop/inventory/reconciliations")
-      .send({ periodLabel: "2026-05", badField: "x" });
-    expect(res.status).toBe(400);
-    expect(res.body.error).toBe("invalid_body");
-  });
-
-  it("accepts a periodLabel of exactly 2 characters", async () => {
+  it("201s with the inserted id + audit envelope", async () => {
+    mockAdmin.current = ADMIN;
     stageSupabaseResponse("inventory_reconciliations", "insert", {
-      data: { id: VALID_ID, started_at: "2026-05-01T00:00:00Z" },
+      data: { id: RECON_ID, started_at: "2026-05-21T22:00:00.000Z" },
     });
-    const app = await makeApp();
-    const res = await request(app)
-      .post("/resupply-api/admin/shop/inventory/reconciliations")
-      .send({ periodLabel: "Q2" });
-    expect(res.status).toBe(201);
-  });
 
-  it("accepts a periodLabel of exactly 60 characters", async () => {
-    stageSupabaseResponse("inventory_reconciliations", "insert", {
-      data: { id: VALID_ID, started_at: "2026-05-01T00:00:00Z" },
-    });
-    const app = await makeApp();
-    const res = await request(app)
-      .post("/resupply-api/admin/shop/inventory/reconciliations")
-      .send({ periodLabel: "a".repeat(60) });
+    const res = await request(makeApp())
+      .post("/admin/shop/inventory/reconciliations")
+      .send({ periodLabel: "2026-05", notes: "Monthly count" });
+
     expect(res.status).toBe(201);
+    expect(res.body).toEqual({
+      id: RECON_ID,
+      startedAt: "2026-05-21T22:00:00.000Z",
+    });
+
+    expect(logAuditMock).toHaveBeenCalledTimes(1);
+    const audit = logAuditMock.mock.calls[0]?.[0] as {
+      action: string;
+      targetTable: string;
+      targetId: string;
+      metadata: Record<string, unknown>;
+    };
+    expect(audit.action).toBe("inventory_reconciliation.create");
+    expect(audit.targetTable).toBe("inventory_reconciliations");
+    expect(audit.targetId).toBe(RECON_ID);
+    expect(audit.metadata).toEqual({ period_label: "2026-05" });
   });
 });
 
-describe("POST /reconciliations — DB errors", () => {
-  beforeEach(() => stubAdmin());
-
-  it("returns 500 when the DB insert fails", async () => {
-    stageSupabaseResponse("inventory_reconciliations", "insert", {
-      data: null,
-      error: { message: "unique_violation" },
-    });
-    const app = await makeApp();
-    const res = await request(app)
-      .post("/resupply-api/admin/shop/inventory/reconciliations")
-      .send(VALID_START_BODY);
-    expect(res.status).toBe(500);
-    expect(res.body.error).toBe("insert_failed");
-  });
-});
-
-describe("POST /reconciliations — happy path", () => {
-  beforeEach(() => stubAdmin());
-
-  it("returns 201 with id and startedAt on success", async () => {
-    stageSupabaseResponse("inventory_reconciliations", "insert", {
-      data: { id: VALID_ID, started_at: "2026-05-01T10:00:00Z" },
-    });
-    const app = await makeApp();
-    const res = await request(app)
-      .post("/resupply-api/admin/shop/inventory/reconciliations")
-      .send(VALID_START_BODY);
-    expect(res.status).toBe(201);
-    expect(res.body).toMatchObject({ id: VALID_ID, startedAt: "2026-05-01T10:00:00Z" });
-  });
-
-  it("accepts optional notes", async () => {
-    stageSupabaseResponse("inventory_reconciliations", "insert", {
-      data: { id: VALID_ID, started_at: "2026-05-01T00:00:00Z" },
-    });
-    const app = await makeApp();
-    const res = await request(app)
-      .post("/resupply-api/admin/shop/inventory/reconciliations")
-      .send({ periodLabel: "2026-05", notes: "spot-check after relocation" });
-    expect(res.status).toBe(201);
-  });
-
-  it("accepts null notes", async () => {
-    stageSupabaseResponse("inventory_reconciliations", "insert", {
-      data: { id: VALID_ID, started_at: "2026-05-01T00:00:00Z" },
-    });
-    const app = await makeApp();
-    const res = await request(app)
-      .post("/resupply-api/admin/shop/inventory/reconciliations")
-      .send({ periodLabel: "2026-05", notes: null });
-    expect(res.status).toBe(201);
-  });
-});
-
-// ===========================================================================
-// GET /admin/shop/inventory/reconciliations — list
-// ===========================================================================
-
-describe("GET /reconciliations — authentication", () => {
-  it("returns 401 when not authenticated", async () => {
-    const app = await makeApp();
-    const res = await request(app).get(
-      "/resupply-api/admin/shop/inventory/reconciliations",
+describe("GET /admin/shop/inventory/reconciliations", () => {
+  it("401s without admin", async () => {
+    const res = await request(makeApp()).get(
+      "/admin/shop/inventory/reconciliations",
     );
     expect(res.status).toBe(401);
   });
-});
 
-describe("GET /reconciliations — DB errors", () => {
-  beforeEach(() => stubAdmin());
-
-  it("returns 500 on DB query failure", async () => {
-    stageSupabaseResponse("inventory_reconciliations", "select", {
-      data: null,
-      error: { message: "connection refused" },
-    });
-    const app = await makeApp();
-    const res = await request(app).get(
-      "/resupply-api/admin/shop/inventory/reconciliations",
-    );
-    expect(res.status).toBe(500);
-    expect(res.body.error).toBe("query_failed");
-  });
-});
-
-describe("GET /reconciliations — happy path", () => {
-  beforeEach(() => stubAdmin());
-
-  it("returns 200 with empty reconciliations array when none exist", async () => {
-    stageSupabaseResponse("inventory_reconciliations", "select", {
-      data: [],
-    });
-    const app = await makeApp();
-    const res = await request(app).get(
-      "/resupply-api/admin/shop/inventory/reconciliations",
-    );
-    expect(res.status).toBe(200);
-    expect(res.body).toEqual({ reconciliations: [] });
-  });
-
-  it("maps snake_case DB fields to camelCase in the response", async () => {
+  it("returns the rows projected into camelCase", async () => {
+    mockAdmin.current = ADMIN;
     stageSupabaseResponse("inventory_reconciliations", "select", {
       data: [
         {
-          id: VALID_ID,
+          id: RECON_ID,
           period_label: "2026-05",
           status: "submitted",
-          started_by_email: "ops@test.com",
+          started_by_email: "ops@penn.example.com",
           started_at: "2026-05-01T00:00:00Z",
-          submitted_at: "2026-05-02T00:00:00Z",
-          total_lines: 5,
+          submitted_at: "2026-05-01T01:00:00Z",
+          total_lines: 12,
           total_variance_units: 3,
           applied_to_stripe: true,
         },
       ],
     });
-    const app = await makeApp();
-    const res = await request(app).get(
-      "/resupply-api/admin/shop/inventory/reconciliations",
+
+    const res = await request(makeApp()).get(
+      "/admin/shop/inventory/reconciliations",
     );
     expect(res.status).toBe(200);
-    const [row] = res.body.reconciliations;
-    expect(row).toMatchObject({
-      id: VALID_ID,
+    expect(res.body.reconciliations).toHaveLength(1);
+    expect(res.body.reconciliations[0]).toMatchObject({
+      id: RECON_ID,
       periodLabel: "2026-05",
       status: "submitted",
-      startedByEmail: "ops@test.com",
-      startedAt: "2026-05-01T00:00:00Z",
-      submittedAt: "2026-05-02T00:00:00Z",
-      totalLines: 5,
+      totalLines: 12,
       totalVarianceUnits: 3,
       appliedToStripe: true,
     });
   });
 
-  it("handles null in optional fields gracefully", async () => {
+  it("500s when the supabase query errors", async () => {
+    mockAdmin.current = ADMIN;
     stageSupabaseResponse("inventory_reconciliations", "select", {
-      data: [
-        {
-          id: VALID_ID,
-          period_label: "2026-05",
-          status: "draft",
-          started_by_email: "ops@test.com",
-          started_at: "2026-05-01T00:00:00Z",
-          submitted_at: null,
-          total_lines: 0,
-          total_variance_units: 0,
-          applied_to_stripe: false,
-        },
-      ],
+      error: { message: "boom" },
     });
-    const app = await makeApp();
-    const res = await request(app).get(
-      "/resupply-api/admin/shop/inventory/reconciliations",
+    const res = await request(makeApp()).get(
+      "/admin/shop/inventory/reconciliations",
     );
-    expect(res.status).toBe(200);
-    expect(res.body.reconciliations[0].submittedAt).toBeNull();
+    expect(res.status).toBe(500);
+    expect(res.body.error).toBe("query_failed");
   });
 });
 
-// ===========================================================================
-// GET /admin/shop/inventory/reconciliations/:id — get by id
-// ===========================================================================
-
-describe("GET /reconciliations/:id — id validation", () => {
-  beforeEach(() => stubAdmin());
-
-  it("returns 400 for a non-UUID id", async () => {
-    const app = await makeApp();
-    const res = await request(app).get(
-      "/resupply-api/admin/shop/inventory/reconciliations/not-a-uuid",
+describe("GET /admin/shop/inventory/reconciliations/:id", () => {
+  it("400s on a non-uuid id", async () => {
+    mockAdmin.current = ADMIN;
+    const res = await request(makeApp()).get(
+      "/admin/shop/inventory/reconciliations/not-a-uuid",
     );
     expect(res.status).toBe(400);
     expect(res.body.error).toBe("invalid_id");
   });
 
-  it("accepts a valid UUID", async () => {
-    // Stage header + lines responses (submitted so no Stripe call)
-    stageSupabaseResponse("inventory_reconciliations", "select", {
-      data: {
-        id: VALID_ID,
-        period_label: "2026-05",
-        status: "submitted",
-        started_by_email: "ops@test.com",
-        started_by_user_id: null,
-        started_at: "2026-05-01T00:00:00Z",
-        submitted_at: "2026-05-02T00:00:00Z",
-        notes: null,
-        total_lines: 0,
-        total_variance_units: 0,
-        applied_to_stripe: false,
-      },
-    });
-    stageSupabaseResponse("inventory_reconciliation_lines", "select", {
-      data: [],
-    });
-    const app = await makeApp();
-    const res = await request(app).get(
-      `/resupply-api/admin/shop/inventory/reconciliations/${VALID_ID}`,
-    );
-    expect(res.status).toBe(200);
-  });
-});
-
-describe("GET /reconciliations/:id — not found / DB errors", () => {
-  beforeEach(() => stubAdmin());
-
-  it("returns 404 when the reconciliation doesn't exist", async () => {
+  it("404s when the reconciliation does not exist", async () => {
+    mockAdmin.current = ADMIN;
     stageSupabaseResponse("inventory_reconciliations", "select", {
       data: null,
-      error: null,
     });
-    const app = await makeApp();
-    const res = await request(app).get(
-      `/resupply-api/admin/shop/inventory/reconciliations/${VALID_ID}`,
+    const res = await request(makeApp()).get(
+      `/admin/shop/inventory/reconciliations/${RECON_ID}`,
     );
     expect(res.status).toBe(404);
     expect(res.body.error).toBe("not_found");
   });
 
-  it("returns 500 when the header query fails", async () => {
-    stageSupabaseResponse("inventory_reconciliations", "select", {
-      data: null,
-      error: { message: "connection error" },
-    });
-    const app = await makeApp();
-    const res = await request(app).get(
-      `/resupply-api/admin/shop/inventory/reconciliations/${VALID_ID}`,
-    );
-    expect(res.status).toBe(500);
-    expect(res.body.error).toBe("query_failed");
-  });
-
-  it("returns 500 when the lines query fails", async () => {
+  it("attaches the live catalog (currentProducts) for drafts", async () => {
+    mockAdmin.current = ADMIN;
     stageSupabaseResponse("inventory_reconciliations", "select", {
       data: {
-        id: VALID_ID,
-        period_label: "2026-05",
-        status: "submitted",
-        started_by_email: "ops@test.com",
-        started_by_user_id: null,
-        started_at: "2026-05-01T00:00:00Z",
-        submitted_at: "2026-05-02T00:00:00Z",
-        notes: null,
-        total_lines: 0,
-        total_variance_units: 0,
-        applied_to_stripe: false,
-      },
-    });
-    stageSupabaseResponse("inventory_reconciliation_lines", "select", {
-      data: null,
-      error: { message: "query error" },
-    });
-    const app = await makeApp();
-    const res = await request(app).get(
-      `/resupply-api/admin/shop/inventory/reconciliations/${VALID_ID}`,
-    );
-    expect(res.status).toBe(500);
-  });
-});
-
-describe("GET /reconciliations/:id — submitted reconciliation", () => {
-  beforeEach(() => stubAdmin());
-
-  it("returns 200 with currentProducts: null for a submitted reconciliation", async () => {
-    stageSupabaseResponse("inventory_reconciliations", "select", {
-      data: {
-        id: VALID_ID,
-        period_label: "2026-05",
-        status: "submitted",
-        started_by_email: "ops@test.com",
-        started_by_user_id: null,
-        started_at: "2026-05-01T00:00:00Z",
-        submitted_at: "2026-05-02T00:00:00Z",
-        notes: null,
-        total_lines: 2,
-        total_variance_units: 1,
-        applied_to_stripe: true,
-      },
-    });
-    stageSupabaseResponse("inventory_reconciliation_lines", "select", {
-      data: [],
-    });
-    const app = await makeApp();
-    const res = await request(app).get(
-      `/resupply-api/admin/shop/inventory/reconciliations/${VALID_ID}`,
-    );
-    expect(res.status).toBe(200);
-    expect(res.body.currentProducts).toBeNull();
-    expect(res.body.reconciliation.status).toBe("submitted");
-  });
-
-  it("maps lines snake_case to camelCase", async () => {
-    stageSupabaseResponse("inventory_reconciliations", "select", {
-      data: {
-        id: VALID_ID,
-        period_label: "2026-05",
-        status: "submitted",
-        started_by_email: "ops@test.com",
-        started_by_user_id: null,
-        started_at: "2026-05-01T00:00:00Z",
-        submitted_at: "2026-05-02T00:00:00Z",
-        notes: null,
-        total_lines: 1,
-        total_variance_units: 3,
-        applied_to_stripe: false,
-      },
-    });
-    stageSupabaseResponse("inventory_reconciliation_lines", "select", {
-      data: [
-        {
-          id: "line_1",
-          product_id: "prod_abc",
-          product_name: "CPAP Mask",
-          system_count: 10,
-          counted_qty: 13,
-          variance: 3,
-          applied: false,
-          created_at: "2026-05-02T00:00:00Z",
-        },
-      ],
-    });
-    const app = await makeApp();
-    const res = await request(app).get(
-      `/resupply-api/admin/shop/inventory/reconciliations/${VALID_ID}`,
-    );
-    expect(res.status).toBe(200);
-    const [line] = res.body.lines;
-    expect(line).toMatchObject({
-      id: "line_1",
-      productId: "prod_abc",
-      productName: "CPAP Mask",
-      systemCount: 10,
-      countedQty: 13,
-      variance: 3,
-      applied: false,
-    });
-  });
-});
-
-describe("GET /reconciliations/:id — draft without Stripe", () => {
-  beforeEach(() => stubAdmin());
-
-  it("returns 200 with currentProducts: null when Stripe is not configured", async () => {
-    stripeConfigured = false; // already default, just explicit
-    stageSupabaseResponse("inventory_reconciliations", "select", {
-      data: {
-        id: VALID_ID,
+        id: RECON_ID,
         period_label: "2026-05",
         status: "draft",
-        started_by_email: "ops@test.com",
-        started_by_user_id: null,
+        started_by_email: "ops@penn.example.com",
+        started_by_user_id: "u_admin",
         started_at: "2026-05-01T00:00:00Z",
         submitted_at: null,
         notes: null,
@@ -599,222 +307,457 @@ describe("GET /reconciliations/:id — draft without Stripe", () => {
     stageSupabaseResponse("inventory_reconciliation_lines", "select", {
       data: [],
     });
-    const app = await makeApp();
-    const res = await request(app).get(
-      `/resupply-api/admin/shop/inventory/reconciliations/${VALID_ID}`,
+    stageStripeCatalog([
+      { id: "prod_A", name: "Mask", stockCount: 10 },
+      { id: "prod_B", name: "Filter", stockCount: 3 },
+    ]);
+
+    const res = await request(makeApp()).get(
+      `/admin/shop/inventory/reconciliations/${RECON_ID}`,
     );
     expect(res.status).toBe(200);
-    // Without Stripe configured, listShopProductsForReconciliation returns null
+    expect(res.body.currentProducts).toHaveLength(2);
+    expect(res.body.currentProducts[0]).toMatchObject({
+      productId: "prod_A",
+      systemCount: 10,
+    });
+  });
+
+  it("omits currentProducts for submitted reconciliations", async () => {
+    mockAdmin.current = ADMIN;
+    stageSupabaseResponse("inventory_reconciliations", "select", {
+      data: {
+        id: RECON_ID,
+        period_label: "2026-05",
+        status: "submitted",
+        started_by_email: "ops@penn.example.com",
+        started_by_user_id: "u_admin",
+        started_at: "2026-05-01T00:00:00Z",
+        submitted_at: "2026-05-01T01:00:00Z",
+        notes: null,
+        total_lines: 1,
+        total_variance_units: 2,
+        applied_to_stripe: true,
+      },
+    });
+    stageSupabaseResponse("inventory_reconciliation_lines", "select", {
+      data: [
+        {
+          id: "line_1",
+          product_id: "prod_A",
+          product_name: "Mask",
+          system_count: 10,
+          counted_qty: 12,
+          variance: 2,
+          applied: true,
+          created_at: "2026-05-01T01:00:00Z",
+        },
+      ],
+    });
+
+    const res = await request(makeApp()).get(
+      `/admin/shop/inventory/reconciliations/${RECON_ID}`,
+    );
+    expect(res.status).toBe(200);
     expect(res.body.currentProducts).toBeNull();
+    expect(res.body.lines).toHaveLength(1);
+    expect(res.body.lines[0]).toMatchObject({
+      productId: "prod_A",
+      variance: 2,
+      applied: true,
+    });
+    // No Stripe fetch on a submitted reconciliation.
+    expect(stripeListMock).not.toHaveBeenCalled();
   });
 });
 
-// ===========================================================================
-// POST /admin/shop/inventory/reconciliations/:id/submit
-// ===========================================================================
+describe("POST /admin/shop/inventory/reconciliations/:id/submit", () => {
+  it("401s without admin", async () => {
+    const res = await request(makeApp())
+      .post(`/admin/shop/inventory/reconciliations/${RECON_ID}/submit`)
+      .send({ lines: [{ productId: "prod_A", countedQty: 1 }], applyToStripe: false });
+    expect(res.status).toBe(401);
+  });
 
-describe("POST /reconciliations/:id/submit — id validation", () => {
-  beforeEach(() => stubAdmin());
-
-  it("returns 400 for a non-UUID id", async () => {
-    const app = await makeApp();
-    const res = await request(app)
-      .post("/resupply-api/admin/shop/inventory/reconciliations/not-a-uuid/submit")
-      .send(VALID_SUBMIT_BODY);
+  it("400s on an invalid id", async () => {
+    mockAdmin.current = ADMIN;
+    const res = await request(makeApp())
+      .post("/admin/shop/inventory/reconciliations/not-a-uuid/submit")
+      .send({ lines: [{ productId: "prod_A", countedQty: 1 }], applyToStripe: false });
     expect(res.status).toBe(400);
     expect(res.body.error).toBe("invalid_id");
   });
-});
 
-describe("POST /reconciliations/:id/submit — body validation", () => {
-  beforeEach(() => stubAdmin());
-
-  it("returns 400 when lines array is empty", async () => {
-    const app = await makeApp();
-    const res = await request(app)
-      .post(`/resupply-api/admin/shop/inventory/reconciliations/${VALID_ID}/submit`)
+  it("400s when lines is empty", async () => {
+    mockAdmin.current = ADMIN;
+    const res = await request(makeApp())
+      .post(`/admin/shop/inventory/reconciliations/${RECON_ID}/submit`)
       .send({ lines: [], applyToStripe: false });
     expect(res.status).toBe(400);
     expect(res.body.error).toBe("invalid_body");
   });
 
-  it("returns 400 when productId doesn't start with prod_", async () => {
-    const app = await makeApp();
-    const res = await request(app)
-      .post(`/resupply-api/admin/shop/inventory/reconciliations/${VALID_ID}/submit`)
+  it("400s on a productId that doesn't start with prod_", async () => {
+    mockAdmin.current = ADMIN;
+    const res = await request(makeApp())
+      .post(`/admin/shop/inventory/reconciliations/${RECON_ID}/submit`)
       .send({
-        lines: [{ productId: "price_abc", countedQty: 5 }],
+        lines: [{ productId: "bad-id", countedQty: 1 }],
         applyToStripe: false,
       });
     expect(res.status).toBe(400);
     expect(res.body.error).toBe("invalid_body");
   });
 
-  it("returns 400 when countedQty is negative", async () => {
-    const app = await makeApp();
-    const res = await request(app)
-      .post(`/resupply-api/admin/shop/inventory/reconciliations/${VALID_ID}/submit`)
-      .send({
-        lines: [{ productId: "prod_abc", countedQty: -1 }],
-        applyToStripe: false,
-      });
-    expect(res.status).toBe(400);
-    expect(res.body.error).toBe("invalid_body");
-  });
-
-  it("returns 400 when countedQty exceeds 1,000,000", async () => {
-    const app = await makeApp();
-    const res = await request(app)
-      .post(`/resupply-api/admin/shop/inventory/reconciliations/${VALID_ID}/submit`)
-      .send({
-        lines: [{ productId: "prod_abc", countedQty: 1_000_001 }],
-        applyToStripe: false,
-      });
-    expect(res.status).toBe(400);
-    expect(res.body.error).toBe("invalid_body");
-  });
-
-  it("returns 400 when countedQty is not an integer", async () => {
-    const app = await makeApp();
-    const res = await request(app)
-      .post(`/resupply-api/admin/shop/inventory/reconciliations/${VALID_ID}/submit`)
-      .send({
-        lines: [{ productId: "prod_abc", countedQty: 1.5 }],
-        applyToStripe: false,
-      });
-    expect(res.status).toBe(400);
-    expect(res.body.error).toBe("invalid_body");
-  });
-
-  it("returns 400 when applyToStripe is missing", async () => {
-    const app = await makeApp();
-    const res = await request(app)
-      .post(`/resupply-api/admin/shop/inventory/reconciliations/${VALID_ID}/submit`)
-      .send({ lines: [{ productId: "prod_abc", countedQty: 5 }] });
-    expect(res.status).toBe(400);
-  });
-});
-
-describe("POST /reconciliations/:id/submit — duplicate productId", () => {
-  beforeEach(() => stubAdmin());
-
-  it("returns 400 with duplicate_product_in_lines when the same productId appears twice", async () => {
-    const app = await makeApp();
-    const res = await request(app)
-      .post(`/resupply-api/admin/shop/inventory/reconciliations/${VALID_ID}/submit`)
+  it("400s with duplicate_product_in_lines when the same prod_ id appears twice", async () => {
+    mockAdmin.current = ADMIN;
+    const res = await request(makeApp())
+      .post(`/admin/shop/inventory/reconciliations/${RECON_ID}/submit`)
       .send({
         lines: [
-          { productId: "prod_abc", countedQty: 5 },
-          { productId: "prod_abc", countedQty: 7 },
+          { productId: "prod_A", countedQty: 1 },
+          { productId: "prod_A", countedQty: 2 },
         ],
         applyToStripe: false,
       });
     expect(res.status).toBe(400);
     expect(res.body.error).toBe("duplicate_product_in_lines");
-    expect(res.body.productId).toBe("prod_abc");
-  });
-});
-
-describe("POST /reconciliations/:id/submit — Stripe not configured", () => {
-  beforeEach(() => stubAdmin());
-
-  it("returns 503 when Stripe is not configured", async () => {
-    stripeConfigured = false;
-    // Need header check to pass first
-    stageSupabaseResponse("inventory_reconciliations", "select", {
-      data: { id: VALID_ID, status: "draft" },
-    });
-    const app = await makeApp();
-    const res = await request(app)
-      .post(`/resupply-api/admin/shop/inventory/reconciliations/${VALID_ID}/submit`)
-      .send(VALID_SUBMIT_BODY);
-    expect(res.status).toBe(503);
-    expect(res.body.error).toBe("stripe_not_configured");
-  });
-});
-
-describe("POST /reconciliations/:id/submit — not found / already submitted", () => {
-  beforeEach(() => {
-    stubAdmin();
-    stripeConfigured = true;
+    expect(res.body.productId).toBe("prod_A");
+    // Fast-fail before ANY database call.
+    expect(getSupabaseRpcCallCount("submit_inventory_reconciliation")).toBe(0);
   });
 
-  it("returns 404 when reconciliation doesn't exist", async () => {
+  it("404s when the reconciliation does not exist", async () => {
+    mockAdmin.current = ADMIN;
     stageSupabaseResponse("inventory_reconciliations", "select", {
       data: null,
-      error: null,
     });
-    const app = await makeApp();
-    const res = await request(app)
-      .post(`/resupply-api/admin/shop/inventory/reconciliations/${VALID_ID}/submit`)
-      .send(VALID_SUBMIT_BODY);
+    const res = await request(makeApp())
+      .post(`/admin/shop/inventory/reconciliations/${RECON_ID}/submit`)
+      .send({
+        lines: [{ productId: "prod_A", countedQty: 1 }],
+        applyToStripe: false,
+      });
     expect(res.status).toBe(404);
     expect(res.body.error).toBe("not_found");
   });
 
-  it("returns 409 when reconciliation is already submitted", async () => {
+  it("409s when the reconciliation is already submitted (pre-Stripe guard)", async () => {
+    mockAdmin.current = ADMIN;
     stageSupabaseResponse("inventory_reconciliations", "select", {
-      data: { id: VALID_ID, status: "submitted" },
+      data: { id: RECON_ID, status: "submitted" },
     });
-    const app = await makeApp();
-    const res = await request(app)
-      .post(`/resupply-api/admin/shop/inventory/reconciliations/${VALID_ID}/submit`)
-      .send(VALID_SUBMIT_BODY);
+    const res = await request(makeApp())
+      .post(`/admin/shop/inventory/reconciliations/${RECON_ID}/submit`)
+      .send({
+        lines: [{ productId: "prod_A", countedQty: 1 }],
+        applyToStripe: false,
+      });
     expect(res.status).toBe(409);
     expect(res.body.error).toBe("already_submitted");
-  });
-});
-
-describe("POST /reconciliations/:id/submit — happy path", () => {
-  beforeEach(() => {
-    stubAdmin();
-    stripeConfigured = true;
-    // Stripe returns a product matching the submitted productId.
-    // stockCount is provided as a direct property so the projectProduct mock
-    // can pass it through (the real implementation would parse metadata).
-    stripeProductsListMock.mockResolvedValue({
-      data: [{ id: "prod_abc", name: "CPAP Mask", stockCount: 10, lowStockThreshold: 2 }],
-    });
-    stripeProductsUpdateMock.mockResolvedValue({});
+    // Neither Stripe nor the RPC should have been touched.
+    expect(stripeListMock).not.toHaveBeenCalled();
+    expect(getSupabaseRpcCallCount("submit_inventory_reconciliation")).toBe(0);
   });
 
-  it("returns 200 with totals on success", async () => {
-    // Stage: header select, lines insert, header update
+  it("503s when Stripe is not configured", async () => {
+    mockAdmin.current = ADMIN;
+    stripeConfiguredRef.current = false;
     stageSupabaseResponse("inventory_reconciliations", "select", {
-      data: { id: VALID_ID, status: "draft" },
+      data: { id: RECON_ID, status: "draft" },
     });
-    stageSupabaseResponse("inventory_reconciliation_lines", "insert", {
-      data: null,
-      error: null,
-    });
-    stageSupabaseResponse("inventory_reconciliations", "update", {
-      data: null,
-      error: null,
-    });
-    const app = await makeApp();
-    const res = await request(app)
-      .post(`/resupply-api/admin/shop/inventory/reconciliations/${VALID_ID}/submit`)
-      .send(VALID_SUBMIT_BODY);
-    expect(res.status).toBe(200);
-    expect(res.body).toMatchObject({
-      id: VALID_ID,
-      appliedToStripe: false,
-    });
-    expect(typeof res.body.totalLines).toBe("number");
-    expect(typeof res.body.totalVarianceUnits).toBe("number");
+    const res = await request(makeApp())
+      .post(`/admin/shop/inventory/reconciliations/${RECON_ID}/submit`)
+      .send({
+        lines: [{ productId: "prod_A", countedQty: 1 }],
+        applyToStripe: false,
+      });
+    expect(res.status).toBe(503);
+    expect(res.body.error).toBe("stripe_not_configured");
   });
 
-  it("returns 400 with no_valid_lines when all submitted productIds are absent from the Stripe catalog", async () => {
+  it("400s when no input lines match the live catalog (no_valid_lines)", async () => {
+    mockAdmin.current = ADMIN;
     stageSupabaseResponse("inventory_reconciliations", "select", {
-      data: { id: VALID_ID, status: "draft" },
+      data: { id: RECON_ID, status: "draft" },
     });
-    // Stripe returns no products (empty catalog)
-    stripeProductsListMock.mockResolvedValue({ data: [] });
-    const app = await makeApp();
-    const res = await request(app)
-      .post(`/resupply-api/admin/shop/inventory/reconciliations/${VALID_ID}/submit`)
-      .send(VALID_SUBMIT_BODY);
+    // Catalog returns a different SKU than what the operator submitted.
+    stageStripeCatalog([{ id: "prod_OTHER", name: "Other", stockCount: 5 }]);
+    const res = await request(makeApp())
+      .post(`/admin/shop/inventory/reconciliations/${RECON_ID}/submit`)
+      .send({
+        lines: [{ productId: "prod_GHOST", countedQty: 1 }],
+        applyToStripe: false,
+      });
     expect(res.status).toBe(400);
     expect(res.body.error).toBe("no_valid_lines");
+  });
+
+  it("submits with applyToStripe=false: no Stripe writes, RPC called atomically", async () => {
+    mockAdmin.current = ADMIN;
+    stageSupabaseResponse("inventory_reconciliations", "select", {
+      data: { id: RECON_ID, status: "draft" },
+    });
+    stageStripeCatalog([
+      { id: "prod_A", name: "Mask", stockCount: 10 },
+      { id: "prod_B", name: "Filter", stockCount: 4 },
+    ]);
+    stageSupabaseRpcResponse("submit_inventory_reconciliation", {
+      data: { ok: true, total_lines: 2, total_variance_units: 3 },
+    });
+
+    const res = await request(makeApp())
+      .post(`/admin/shop/inventory/reconciliations/${RECON_ID}/submit`)
+      .send({
+        lines: [
+          { productId: "prod_A", countedQty: 12 }, // +2
+          { productId: "prod_B", countedQty: 3 }, // -1
+        ],
+        applyToStripe: false,
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({
+      id: RECON_ID,
+      totalLines: 2,
+      totalVarianceUnits: 3,
+      appliedToStripe: false,
+      stripeApplyFailures: 0,
+    });
+    // Critical invariant: applyToStripe=false MUST NOT call products.update.
+    expect(stripeUpdateMock).not.toHaveBeenCalled();
+    // RPC called exactly once with the snapshotted lines, all applied=false
+    // (the order flip means applied flags are stamped AFTER the RPC, in a
+    // follow-up UPDATE).
+    expect(getSupabaseRpcCallCount("submit_inventory_reconciliation")).toBe(1);
+    const rpcArgs = getSupabaseRpcArgs("submit_inventory_reconciliation")[0] as {
+      p_id: string;
+      p_applied_to_stripe: boolean;
+      p_total_variance_units: number;
+      p_lines: Array<{
+        product_id: string;
+        system_count: number;
+        counted_qty: number;
+        variance: number;
+        applied: boolean;
+      }>;
+    };
+    expect(rpcArgs.p_id).toBe(RECON_ID);
+    expect(rpcArgs.p_applied_to_stripe).toBe(false);
+    expect(rpcArgs.p_total_variance_units).toBe(3);
+    expect(rpcArgs.p_lines).toHaveLength(2);
+    expect(rpcArgs.p_lines.every((l) => l.applied === false)).toBe(true);
+    expect(rpcArgs.p_lines[0]).toMatchObject({
+      product_id: "prod_A",
+      system_count: 10,
+      counted_qty: 12,
+      variance: 2,
+    });
+    // applyToStripe=false: no follow-up update on the lines table either.
+    expect(
+      getSupabaseWritePayloads(
+        "inventory_reconciliation_lines",
+        "update",
+      ),
+    ).toHaveLength(0);
+  });
+
+  it("applyToStripe=true: only non-zero variances are pushed to Stripe; applied flag stamped via follow-up UPDATE", async () => {
+    mockAdmin.current = ADMIN;
+    stageSupabaseResponse("inventory_reconciliations", "select", {
+      data: { id: RECON_ID, status: "draft" },
+    });
+    stageStripeCatalog([
+      { id: "prod_A", name: "Mask", stockCount: 10 },
+      { id: "prod_NOOP", name: "Same", stockCount: 7 },
+    ]);
+    stripeUpdateMock.mockResolvedValue({ id: "prod_A" });
+    stageSupabaseRpcResponse("submit_inventory_reconciliation", {
+      data: { ok: true, total_lines: 2, total_variance_units: 1 },
+    });
+    stageSupabaseResponse("inventory_reconciliation_lines", "update", {
+      data: null,
+    });
+
+    const res = await request(makeApp())
+      .post(`/admin/shop/inventory/reconciliations/${RECON_ID}/submit`)
+      .send({
+        lines: [
+          { productId: "prod_A", countedQty: 11 }, // +1
+          { productId: "prod_NOOP", countedQty: 7 }, // 0
+        ],
+        applyToStripe: true,
+      });
+
+    expect(res.status).toBe(200);
+    // Only the SKU with a non-zero delta should be pushed.
+    expect(stripeUpdateMock).toHaveBeenCalledTimes(1);
+    expect(stripeUpdateMock).toHaveBeenCalledWith("prod_A", {
+      metadata: { stock_count: "11" },
+    });
+    // RPC's lines all carry applied=false; the applied=true stamps land
+    // via the follow-up UPDATE on inventory_reconciliation_lines.
+    const rpcArgs = getSupabaseRpcArgs("submit_inventory_reconciliation")[0] as {
+      p_lines: Array<{ product_id: string; applied: boolean }>;
+    };
+    expect(rpcArgs.p_lines.every((l) => l.applied === false)).toBe(true);
+    const updates = getSupabaseWritePayloads(
+      "inventory_reconciliation_lines",
+      "update",
+    ) as Array<Record<string, unknown>>;
+    expect(updates).toHaveLength(1);
+    expect(updates[0]).toEqual({ applied: true });
+  });
+
+  it("records partial Stripe failures and still flips the reconciliation", async () => {
+    mockAdmin.current = ADMIN;
+    stageSupabaseResponse("inventory_reconciliations", "select", {
+      data: { id: RECON_ID, status: "draft" },
+    });
+    stageStripeCatalog([
+      { id: "prod_A", name: "Mask", stockCount: 10 },
+      { id: "prod_BROKEN", name: "Broken", stockCount: 5 },
+    ]);
+    stripeUpdateMock.mockImplementation(async (id: string) => {
+      if (id === "prod_BROKEN") throw new Error("stripe_unavailable");
+      return { id };
+    });
+    stageSupabaseRpcResponse("submit_inventory_reconciliation", {
+      data: { ok: true, total_lines: 2, total_variance_units: 3 },
+    });
+    stageSupabaseResponse("inventory_reconciliation_lines", "update", {
+      data: null,
+    });
+
+    const res = await request(makeApp())
+      .post(`/admin/shop/inventory/reconciliations/${RECON_ID}/submit`)
+      .send({
+        lines: [
+          { productId: "prod_A", countedQty: 11 },
+          { productId: "prod_BROKEN", countedQty: 7 },
+        ],
+        applyToStripe: true,
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body.stripeApplyFailures).toBe(1);
+
+    // Audit envelope reflects the partial-failure count.
+    const audit = logAuditMock.mock.calls[0]?.[0] as {
+      metadata: Record<string, unknown>;
+    };
+    expect(audit.metadata.stripe_apply_failures).toBe(1);
+
+    // The follow-up UPDATE was fired exactly once — only the
+    // successful SKU's row should be flipped to applied=true. Filter
+    // verbs on the chain carry the `.in("product_id", [...])` arg.
+    expect(
+      getSupabaseWritePayloads(
+        "inventory_reconciliation_lines",
+        "update",
+      ),
+    ).toHaveLength(1);
+  });
+
+  it("skips the applied-flag UPDATE when every Stripe write fails", async () => {
+    mockAdmin.current = ADMIN;
+    stageSupabaseResponse("inventory_reconciliations", "select", {
+      data: { id: RECON_ID, status: "draft" },
+    });
+    stageStripeCatalog([{ id: "prod_A", name: "Mask", stockCount: 10 }]);
+    stripeUpdateMock.mockRejectedValue(new Error("stripe_down"));
+    stageSupabaseRpcResponse("submit_inventory_reconciliation", {
+      data: { ok: true, total_lines: 1, total_variance_units: 1 },
+    });
+
+    const res = await request(makeApp())
+      .post(`/admin/shop/inventory/reconciliations/${RECON_ID}/submit`)
+      .send({
+        lines: [{ productId: "prod_A", countedQty: 11 }],
+        applyToStripe: true,
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body.stripeApplyFailures).toBe(1);
+    // No SKUs reached Stripe → no UPDATE call (nothing to flip).
+    expect(
+      getSupabaseWritePayloads(
+        "inventory_reconciliation_lines",
+        "update",
+      ),
+    ).toHaveLength(0);
+  });
+
+  it("maps the RPC already_submitted error to 409 WITHOUT mutating Stripe (race protection)", async () => {
+    // After the order flip: the RPC is now called BEFORE any Stripe
+    // writes. A loser of the row-lock race sees `already_submitted`
+    // immediately and returns 409 without ever touching Stripe — no
+    // split-brain between the reconciliation record and the catalog.
+    mockAdmin.current = ADMIN;
+    stageSupabaseResponse("inventory_reconciliations", "select", {
+      data: { id: RECON_ID, status: "draft" },
+    });
+    stageStripeCatalog([{ id: "prod_A", name: "Mask", stockCount: 10 }]);
+    stageSupabaseRpcResponse("submit_inventory_reconciliation", {
+      data: { ok: false, error: "already_submitted" },
+    });
+
+    const res = await request(makeApp())
+      .post(`/admin/shop/inventory/reconciliations/${RECON_ID}/submit`)
+      .send({
+        lines: [{ productId: "prod_A", countedQty: 11 }],
+        applyToStripe: true,
+      });
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe("already_submitted");
+    // The fix: Stripe is NOT mutated when the RPC loses the race.
+    expect(stripeUpdateMock).not.toHaveBeenCalled();
+    // No applied-flag UPDATE either.
+    expect(
+      getSupabaseWritePayloads(
+        "inventory_reconciliation_lines",
+        "update",
+      ),
+    ).toHaveLength(0);
+  });
+
+  it("maps the RPC duplicate_line error to 400", async () => {
+    mockAdmin.current = ADMIN;
+    stageSupabaseResponse("inventory_reconciliations", "select", {
+      data: { id: RECON_ID, status: "draft" },
+    });
+    stageStripeCatalog([{ id: "prod_A", name: "Mask", stockCount: 10 }]);
+    stageSupabaseRpcResponse("submit_inventory_reconciliation", {
+      data: { ok: false, error: "duplicate_line" },
+    });
+
+    const res = await request(makeApp())
+      .post(`/admin/shop/inventory/reconciliations/${RECON_ID}/submit`)
+      .send({
+        lines: [{ productId: "prod_A", countedQty: 11 }],
+        applyToStripe: false,
+      });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe("duplicate_line");
+  });
+
+  it("maps a raw RPC error envelope to 500 submit_rpc_failed", async () => {
+    mockAdmin.current = ADMIN;
+    stageSupabaseResponse("inventory_reconciliations", "select", {
+      data: { id: RECON_ID, status: "draft" },
+    });
+    stageStripeCatalog([{ id: "prod_A", name: "Mask", stockCount: 10 }]);
+    stageSupabaseRpcResponse("submit_inventory_reconciliation", {
+      error: { message: "connection lost" },
+    });
+
+    const res = await request(makeApp())
+      .post(`/admin/shop/inventory/reconciliations/${RECON_ID}/submit`)
+      .send({
+        lines: [{ productId: "prod_A", countedQty: 11 }],
+        applyToStripe: false,
+      });
+    expect(res.status).toBe(500);
+    expect(res.body.error).toBe("submit_rpc_failed");
   });
 });

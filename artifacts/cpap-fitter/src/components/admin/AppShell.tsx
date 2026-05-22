@@ -313,6 +313,13 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         matchPrefix: "/admin/shop/inventory",
         hint: "Catalog, stock levels, product editor",
       },
+      {
+        href: "/admin/shop/inventory/reconcile",
+        label: "Reconcile",
+        icon: ClipboardCheck,
+        matchPrefix: "/admin/shop/inventory/reconcile",
+        hint: "Monthly physical count & variance report",
+      },
     ],
   },
   {
