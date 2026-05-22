@@ -882,6 +882,7 @@ export function Order() {
                 {isSubmitted && errors.consentToContact && (
                   <p
                     id="consent-checkbox-error"
+                    role="alert"
                     className="text-xs text-destructive mt-1"
                   >
                     {errors.consentToContact.message}
