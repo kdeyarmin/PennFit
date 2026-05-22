@@ -378,7 +378,9 @@ export async function buildOneDetail(
     { data: patient },
     { data: lines },
     { data: sleep },
+    { data: renderingProvider },
     { data: referringProvider },
+    { data: secondaryCoverage },
   ] = await Promise.all([
     supabase
       .schema("resupply")
@@ -409,12 +411,30 @@ export async function buildOneDetail(
       .order("study_date", { ascending: false })
       .limit(1)
       .maybeSingle(),
+    claim.rendering_provider_id
+      ? supabase
+          .schema("resupply")
+          .from("providers")
+          .select("legal_name, npi")
+          .eq("id", claim.rendering_provider_id)
+          .limit(1)
+          .maybeSingle()
+      : Promise.resolve({ data: null }),
     claim.referring_provider_id
       ? supabase
           .schema("resupply")
           .from("providers")
           .select("legal_name, npi")
           .eq("id", claim.referring_provider_id)
+          .limit(1)
+          .maybeSingle()
+      : Promise.resolve({ data: null }),
+    claim.secondary_coverage_id
+      ? supabase
+          .schema("resupply")
+          .from("insurance_coverages")
+          .select("member_id, payer_name, policyholder_relationship")
+          .eq("id", claim.secondary_coverage_id)
           .limit(1)
           .maybeSingle()
       : Promise.resolve({ data: null }),
@@ -425,6 +445,12 @@ export async function buildOneDetail(
     | null;
   if (!addr?.line1 || !addr.city || !addr.state || !addr.zip) return null;
   const primaryDx = sleep?.diagnosis_icd10 ?? "G47.33";
+  const subscriberAddress = {
+    line1: addr.line1,
+    city: addr.city,
+    state: addr.state,
+    zip: addr.zip,
+  };
   return {
     internalClaimId: claim.id.slice(0, 38),
     totalBilledCents: claim.total_billed_cents,
@@ -437,20 +463,8 @@ export async function buildOneDetail(
       dateOfBirth: patient.date_of_birth,
       gender: "U",
       memberId: coverage.member_id,
-      address: {
-        line1: addr.line1,
-        city: addr.city,
-        state: addr.state,
-        zip: addr.zip,
-      },
-      relationshipCode:
-        coverage.policyholder_relationship === "self"
-          ? "18"
-          : coverage.policyholder_relationship === "spouse"
-            ? "01"
-            : coverage.policyholder_relationship === "child"
-              ? "19"
-              : "G8",
+      address: subscriberAddress,
+      relationshipCode: relationshipFor(coverage.policyholder_relationship),
     },
     payer: {
       organizationName: payerLegalName,
@@ -467,6 +481,13 @@ export async function buildOneDetail(
       serviceDate: claim.date_of_service,
       diagnosisPointers: [1],
     })),
+    renderingProvider: renderingProvider
+      ? {
+          npi: renderingProvider.npi,
+          firstName: splitFirstName(renderingProvider.legal_name),
+          lastName: splitLastName(renderingProvider.legal_name),
+        }
+      : null,
     referringProvider: referringProvider
       ? {
           npi: referringProvider.npi,
@@ -474,7 +495,42 @@ export async function buildOneDetail(
           lastName: splitLastName(referringProvider.legal_name),
         }
       : null,
+    // Loop 2320/2330 — secondary-payer coordination of benefits. We
+    // attach the secondary when one is linked; prior-payer paid is
+    // null because we don't compute pre-adjudication amounts at
+    // submit time.
+    otherSubscriber: secondaryCoverage
+      ? {
+          payerResponsibility: "S",
+          priorPayerPaidCents: null,
+          subscriber: {
+            firstName: patient.legal_first_name,
+            lastName: patient.legal_last_name,
+            dateOfBirth: patient.date_of_birth,
+            gender: "U",
+            memberId: secondaryCoverage.member_id,
+            address: subscriberAddress,
+            relationshipCode: relationshipFor(
+              secondaryCoverage.policyholder_relationship,
+            ),
+          },
+          payer: {
+            organizationName: secondaryCoverage.payer_name,
+            payerId: secondaryCoverage.payer_name.slice(0, 20),
+          },
+        }
+      : null,
   };
+}
+
+function relationshipFor(r: string | null | undefined): "18" | "01" | "19" | "G8" {
+  return r === "self"
+    ? "18"
+    : r === "spouse"
+      ? "01"
+      : r === "child"
+        ? "19"
+        : "G8";
 }
 
 function splitFirstName(name: string): string {
