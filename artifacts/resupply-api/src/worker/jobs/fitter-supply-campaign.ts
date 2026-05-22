@@ -950,7 +950,7 @@ export async function runFitterSupplyCampaignSweep(): Promise<SupplyCampaignStat
     if (claimErr) {
       stats.errors += 1;
       logger.warn(
-        { err: claimErr.message, leadId: lead.id, touchIndex: nextTouchIndex },
+        { err: claimErr, leadId: lead.id, touchIndex: nextTouchIndex },
         "fitter-lead.supply-campaign: claim failed",
       );
       continue;
