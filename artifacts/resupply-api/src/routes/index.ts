@@ -7,6 +7,7 @@ import followupsListRouter from "./admin/followups-list.js";
 import shopOrderNotesRouter from "./admin/order-notes.js";
 import shopOrdersAdminRouter from "./admin/shop-orders.js";
 import shopProductsAdminRouter from "./admin/shop-products.js";
+import inventoryReconciliationRouter from "./admin/inventory-reconciliation.js";
 import csrMacrosRouter from "./admin/csr-macros.js";
 import messageTemplatesRouter from "./admin/message-templates.js";
 import messageTemplateOverridesRouter from "./admin/message-template-overrides.js";
@@ -209,6 +210,12 @@ router.use(prescriptionRenewalsRouter);
 // the product-to-machine compatibility map (Phase B.3 / feature
 // #11). Public reads live alongside the catalog router.
 router.use(shopProductCompatibilityAdminRouter);
+// /admin/shop/inventory/reconciliations/* — monthly physical-count
+// workflow. Admin enters counted quantities per SKU, server records
+// variance against the live Stripe stock_count, optionally pushes
+// the new counts back to Stripe. requireAdmin gate via
+// requirePermission("admin.tools.manage") on the router.
+router.use(inventoryReconciliationRouter);
 // /admin/patients/:id/therapy-nights/* — therapy-cloud sync
 // (Phase E.1 / feature #18). Adapter stubs for ResMed AirView +
 // Philips Care; the actual partner integration lands once a BAA
