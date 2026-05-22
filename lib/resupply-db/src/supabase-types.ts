@@ -1651,6 +1651,7 @@ export interface Database {
           received_at: string;
           created_at: string;
           updated_at: string;
+          preflight_completed_at: string | null;
         };
         Insert: Partial<
           Database["resupply"]["Tables"]["inbound_referral_orders"]["Row"]
@@ -1678,6 +1679,26 @@ export interface Database {
         >;
         Update: Partial<
           Database["resupply"]["Tables"]["inbound_referral_documents"]["Row"]
+        >;
+        Relationships: [];
+      };
+      inbound_referral_preflight_checks: {
+        Row: {
+          id: string;
+          referral_id: string;
+          check_kind: string;
+          outcome_json: Json;
+          outcome_status: "info" | "ok" | "warn" | "error" | "skipped";
+          produced_row_table: string | null;
+          produced_row_id: string | null;
+          ran_by: string;
+          created_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["inbound_referral_preflight_checks"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["inbound_referral_preflight_checks"]["Row"]
         >;
         Relationships: [];
       };

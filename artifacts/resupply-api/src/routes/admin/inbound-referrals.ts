@@ -38,6 +38,7 @@ import {
   getSupabaseServiceRoleClient,
 } from "@workspace/resupply-db";
 
+import { runReferralPreflight } from "../../lib/inbound-dispatchers/preflight";
 import { logger } from "../../lib/logger";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
@@ -186,23 +187,32 @@ router.get(
       return;
     }
     const supabase = getSupabaseServiceRoleClient();
-    const [{ data: row }, { data: docs }] = await Promise.all([
-      supabase
-        .schema("resupply")
-        .from("inbound_referral_orders")
-        .select("*")
-        .eq("id", params.data.id)
-        .limit(1)
-        .maybeSingle(),
-      supabase
-        .schema("resupply")
-        .from("inbound_referral_documents")
-        .select(
-          "id, doc_kind, source_filename, content_type, size_bytes, source_url, source_document_id, object_key, created_at",
-        )
-        .eq("referral_id", params.data.id)
-        .order("created_at", { ascending: true }),
-    ]);
+    const [{ data: row }, { data: docs }, { data: preflightChecks }] =
+      await Promise.all([
+        supabase
+          .schema("resupply")
+          .from("inbound_referral_orders")
+          .select("*")
+          .eq("id", params.data.id)
+          .limit(1)
+          .maybeSingle(),
+        supabase
+          .schema("resupply")
+          .from("inbound_referral_documents")
+          .select(
+            "id, doc_kind, source_filename, content_type, size_bytes, source_url, source_document_id, object_key, created_at",
+          )
+          .eq("referral_id", params.data.id)
+          .order("created_at", { ascending: true }),
+        supabase
+          .schema("resupply")
+          .from("inbound_referral_preflight_checks")
+          .select(
+            "id, check_kind, outcome_status, outcome_json, produced_row_table, produced_row_id, ran_by, created_at",
+          )
+          .eq("referral_id", params.data.id)
+          .order("created_at", { ascending: false }),
+      ]);
     if (!row) {
       res.status(404).json({ error: "not_found" });
       return;
@@ -236,6 +246,7 @@ router.get(
       notes: row.notes,
       receivedAt: row.received_at,
       createdAt: row.created_at,
+      preflightCompletedAt: row.preflight_completed_at,
       documents: (docs ?? []).map((d) => ({
         id: d.id,
         kind: d.doc_kind,
@@ -247,7 +258,103 @@ router.get(
         objectKey: d.object_key,
         createdAt: d.created_at,
       })),
+      preflightChecks: (preflightChecks ?? []).map((c) => ({
+        id: c.id,
+        checkKind: c.check_kind,
+        outcomeStatus: c.outcome_status,
+        outcomeJson: c.outcome_json,
+        producedRowTable: c.produced_row_table,
+        producedRowId: c.produced_row_id,
+        ranBy: c.ran_by,
+        createdAt: c.created_at,
+      })),
     });
+  },
+);
+
+router.post(
+  "/admin/inbound-referrals/:id/run-preflight",
+  requirePermission("conversations.manage"),
+  adminRateLimit({
+    name: "inbound_referrals.run_preflight",
+    preset: "mutation",
+  }),
+  async (req, res) => {
+    const params = idParam.safeParse(req.params);
+    if (!params.success) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    const supabase = getSupabaseServiceRoleClient();
+
+    const { data: existing } = await supabase
+      .schema("resupply")
+      .from("inbound_referral_orders")
+      .select("id, triage_status")
+      .eq("id", params.data.id)
+      .limit(1)
+      .maybeSingle();
+    if (!existing) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    if (
+      existing.triage_status === "archived" ||
+      existing.triage_status === "rejected" ||
+      existing.triage_status === "duplicate"
+    ) {
+      res.status(409).json({
+        error: "invalid_status",
+        message: `Cannot run preflight on a "${existing.triage_status}" referral.`,
+      });
+      return;
+    }
+
+    // Clear the stamp so the run-preflight call writes fresh history
+    // rows and re-stamps on completion. The library always inserts
+    // (never updates) so the CSR sees prior runs in the timeline.
+    await supabase
+      .schema("resupply")
+      .from("inbound_referral_orders")
+      .update({ preflight_completed_at: null })
+      .eq("id", params.data.id);
+
+    try {
+      const outcome = await runReferralPreflight({
+        referralId: params.data.id,
+        ranBy: req.adminEmail ?? "admin:unknown",
+      });
+      await logAudit({
+        action: "inbound_referral.preflight.manual",
+        adminEmail: req.adminEmail ?? null,
+        adminUserId: req.adminUserId ?? null,
+        targetTable: "inbound_referral_orders",
+        targetId: params.data.id,
+        metadata: {
+          checks: outcome.checks.map((c) => `${c.kind}:${c.status}`),
+        },
+        ip: req.ip ?? null,
+        userAgent: req.get("user-agent") ?? null,
+      }).catch((err) => {
+        logger.warn(
+          { err },
+          "inbound_referral.preflight.manual audit write failed",
+        );
+      });
+      res.status(200).json({
+        id: params.data.id,
+        checks: outcome.checks,
+      });
+    } catch (err) {
+      logger.warn(
+        {
+          referral_id: params.data.id,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        "inbound_referral.preflight.manual_failed",
+      );
+      res.status(500).json({ error: "preflight_failed" });
+    }
   },
 );
 

@@ -64,6 +64,7 @@ import { registerAutoWorkflowJob } from "./jobs/auto-workflow.js";
 import { registerComplianceAutoWorkflowJob } from "./jobs/compliance-auto-workflow.js";
 import { registerLowStockAlertsJob } from "./jobs/low-stock-alerts.js";
 import { registerInboundWebhookDispatchJob } from "./jobs/inbound-webhook-dispatch.js";
+import { registerInboundReferralPreflightJob } from "./jobs/inbound-referral-preflight.js";
 
 let bossInstance: PgBoss | null = null;
 let workerReady = false;
@@ -393,6 +394,12 @@ export async function startWorker(): Promise<void> {
   // will add ehr_fhir_* sources). Migration 0144 lands the typed
   // referral inbox the dispatcher writes into.
   await registerInboundWebhookDispatchJob(boss);
+
+  // Every 5 minutes — run pre-flight checks (PA requirement,
+  // eligibility, docs gap, physician fax fallback) on new
+  // inbound referrals that have a matched patient. Migration 0146
+  // lands the inbound_referral_preflight_checks history table.
+  await registerInboundReferralPreflightJob(boss);
 
   workerReady = true;
   logger.info(
