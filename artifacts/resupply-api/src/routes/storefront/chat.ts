@@ -296,14 +296,22 @@ router.post("/chat", chatRateLimit, async (req, res) => {
   // matches the existing unconfigured-LLM branch below so the
   // widget doesn't have to special-case anything.
   if (!(await isFeatureEnabled("storefront.chatbot"))) {
-    res.json({
-      message: {
-        role: "assistant",
-        content:
-          "The PennPaps chat assistant is currently offline. Please reach us by phone or email — we'll respond as soon as we can.",
-      },
-      offline: true,
-    });
+    const offlineMessage =
+      "The PennPaps chat assistant is currently offline. Please reach us by phone or email — we'll respond as soon as we can.";
+    if (streaming) {
+      startSseHeaders(res);
+      writeSseEvent(res, { type: "chunk", text: offlineMessage });
+      writeSseEvent(res, { type: "done", offline: true });
+      res.end();
+    } else {
+      res.json({
+        reply: {
+          role: "assistant",
+          content: offlineMessage,
+        },
+        offline: true,
+      });
+    }
     return;
   }
 

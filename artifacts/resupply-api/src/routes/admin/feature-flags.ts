@@ -47,6 +47,23 @@ const patchBody = z
   })
   .strict();
 
+const featureFlagSchema = z.object({
+  key: z.string(),
+  enabled: z.boolean(),
+  description: z.string(),
+  category: z.string(),
+  updatedByEmail: z.string().nullable(),
+  updatedAt: z.string(),
+});
+
+const listResponseSchema = z.object({
+  flags: z.array(featureFlagSchema),
+});
+
+const patchResponseSchema = z.object({
+  flag: featureFlagSchema,
+});
+
 function rowToApi(r: Row) {
   return {
     key: r.key,
@@ -72,9 +89,10 @@ router.get(
       .order("category", { ascending: true })
       .order("key", { ascending: true });
     if (error) throw error;
-    res.json({
+    const response = listResponseSchema.parse({
       flags: (data ?? []).map((r) => rowToApi(r as Row)),
     });
+    res.json(response);
   },
 );
 
@@ -154,7 +172,10 @@ router.patch(
       logger.warn({ err }, "feature_flag.toggle audit write failed");
     });
 
-    res.json({ flag: rowToApi(updated as Row) });
+    const response = patchResponseSchema.parse({
+      flag: rowToApi(updated as Row),
+    });
+    res.json(response);
   },
 );
 

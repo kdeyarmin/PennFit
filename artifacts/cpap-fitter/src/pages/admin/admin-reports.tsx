@@ -16,71 +16,15 @@
 import { useEffect, useRef, useState } from "react";
 
 import { DATE_PRESETS, isoDate } from "./admin-reports-presets";
+import {
+  REPORTS,
+  FORMAT_LABELS,
+  type FormatKey,
+  type ReportDefinition,
+} from "./reports-metadata";
 
 const DEFAULT_DAYS_BACK = 30;
 const MAX_DAYS = 90;
-
-interface ReportDefinition {
-  /** Slug used in the URL: /admin/reports/<slug>.csv etc. */
-  slug: string;
-  title: string;
-  subtitle: string;
-  /** Which formats this report supports. CSV + PDF are mandatory;
-   *  QuickBooks formats are only on the finance-transaction reports. */
-  formats: ReadonlyArray<"csv" | "pdf" | "iif" | "qbo">;
-}
-
-const REPORTS: ReadonlyArray<ReportDefinition> = [
-  {
-    slug: "orders",
-    title: "Cash-pay orders",
-    subtitle:
-      "Stripe checkout sessions in the date range, including payment and shipping state.",
-    formats: ["csv", "pdf", "iif", "qbo"],
-  },
-  {
-    slug: "returns",
-    title: "Returns & RMAs",
-    subtitle:
-      "Comfort-guarantee returns initiated in the date range, with resolution and refund details.",
-    formats: ["csv", "pdf", "iif", "qbo"],
-  },
-  {
-    slug: "revenue-summary",
-    title: "Revenue summary",
-    subtitle:
-      "Per-day rollup of gross sales, refunds, and net revenue across the storefront.",
-    formats: ["csv", "pdf"],
-  },
-  {
-    slug: "refunds-journal",
-    title: "Refunds journal",
-    subtitle:
-      "Chronological refund ledger — useful for AR reconciliation against Stripe payouts.",
-    formats: ["csv", "pdf"],
-  },
-  {
-    slug: "insurance-claims",
-    title: "Insurance claims",
-    subtitle:
-      "Billed / allowed / paid / patient-responsibility across every claim in the date range. Patient IDs are hashed; free-text notes are excluded. QuickBooks exports cover the paid slice (payor cash receipts).",
-    formats: ["csv", "pdf", "iif", "qbo"],
-  },
-  {
-    slug: "customer-activity",
-    title: "Customer activity",
-    subtitle:
-      "Per-day rollup of new signups, returning-customer orders, and total orders. Counts only — never serialises an individual customer.",
-    formats: ["csv", "pdf"],
-  },
-];
-
-const FORMAT_LABELS: Record<"csv" | "pdf" | "iif" | "qbo", string> = {
-  csv: "CSV",
-  pdf: "PDF",
-  iif: "QuickBooks Desktop (.iif)",
-  qbo: "QuickBooks Online (.csv)",
-};
 
 function diffDays(fromIso: string, toIso: string): number {
   const f = new Date(fromIso).getTime();
@@ -90,7 +34,7 @@ function diffDays(fromIso: string, toIso: string): number {
 
 function reportUrl(
   slug: string,
-  format: "csv" | "pdf" | "iif" | "qbo",
+  format: FormatKey,
   from: string,
   to: string,
   options: { compare?: boolean } = {},
@@ -273,7 +217,7 @@ function ReportCard({
         <p className="text-xs text-slate-600 mt-0.5">{report.subtitle}</p>
       </div>
       <div className="flex flex-wrap gap-2">
-        {report.formats.map((format) => {
+        {report.formats.map((format: FormatKey) => {
           const useCompare =
             compareToPrior && supportsCompare(report.slug, format);
           return (
@@ -440,7 +384,7 @@ function EmailReportModal({
             className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
             data-testid={`email-report-${report.slug}-format`}
           >
-            {report.formats.map((f) => (
+            {report.formats.map((f: FormatKey) => (
               <option key={f} value={f}>
                 {FORMAT_LABELS[f]}
               </option>

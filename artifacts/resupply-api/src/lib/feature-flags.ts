@@ -156,9 +156,21 @@ export async function isFeatureEnabled(key: FeatureFlagKey): Promise<boolean> {
       message.includes("ENOTFOUND") ||
       message.includes("EAI_AGAIN") ||
       message.includes("fetch failed");
-    if (isMissingDbConfig || isUnreachable) {
+    if (isMissingDbConfig) {
       cache.set(key, { value: true, expiresAt: now + CACHE_TTL_MS });
       return true;
+    }
+    if (isUnreachable) {
+      logger.warn(
+        {
+          event: "feature_flag_lookup_unreachable",
+          key,
+          err: message,
+        },
+        "feature flag lookup unreachable; failing closed (disabled)",
+      );
+      cache.set(key, { value: false, expiresAt: now + 1_000 });
+      return false;
     }
     logger.warn(
       {

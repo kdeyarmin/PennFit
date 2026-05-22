@@ -236,14 +236,18 @@ export function renderQboCsv(input: QuickbooksExportInput): string {
  * Build a stable customer key from an opaque customer id (Stripe
  * customer id or PennPaps customer id). QuickBooks uses the
  * customer name to match rows to the customer list; emitting the
- * raw uuid is too unfriendly, so we emit "cust-<first-6-of-hash>".
+ * raw uuid is too unfriendly, so we emit "cust-<hash>".
  * Exported for tests + so reports.ts can share the algorithm.
  */
 export function customerKeyForId(rawId: string | null): string {
   if (!rawId) return "cust-unknown";
-  // Take the leading 6 chars after stripping non-alphanumerics so
-  // a future change in the customer id format (Stripe cus_… vs
-  // bare uuid) still gives a readable key.
-  const cleaned = rawId.replace(/[^A-Za-z0-9]/g, "");
-  return `cust-${cleaned.slice(0, 6).toLowerCase() || "unknown"}`;
+  // Use a deterministic cryptographic hash to avoid leaking source-ID
+  // structure. SHA-256 with a fixed salt produces a stable, opaque key.
+  const crypto = require("node:crypto");
+  const hash = crypto
+    .createHash("sha256")
+    .update("pennpaps-customer-key-v1")
+    .update(rawId)
+    .digest("hex");
+  return `cust-${hash.slice(0, 12)}`;
 }

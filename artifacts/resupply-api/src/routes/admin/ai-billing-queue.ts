@@ -14,6 +14,7 @@
 // All values are aggregate; no PHI in the response.
 
 import { Router, type IRouter } from "express";
+import { z } from "zod";
 
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
@@ -22,13 +23,49 @@ import { requireAdmin } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
 
+const claimSchema = z.object({
+  id: z.string(),
+  patientId: z.string(),
+  payerName: z.string().nullable(),
+  totalBilledCents: z.number().nullable(),
+  latestScrubAt: z.string().optional(),
+  latestScrubResultId: z.string().nullable().optional(),
+  decisionAt: z.string().optional(),
+  denialReason: z.string().nullable().optional(),
+});
+
+const analysisSchema = z.object({
+  analysisId: z.string(),
+  claimId: z.string(),
+  patientId: z.string().nullable(),
+  recommendation: z.string().nullable(),
+  confidence: z.number().nullable(),
+  rootCauseSummary: z.string().nullable(),
+  createdAt: z.string(),
+});
+
+const aiBillingQueueResponseSchema = z.object({
+  scrubBlockingClaims: z.array(claimSchema),
+  scrubFixableClaims: z.array(claimSchema),
+  deniedNeedsAnalysis: z.array(claimSchema),
+  autoResubmitReady: z.array(analysisSchema),
+  counts: z.object({
+    scrubBlocking: z.number(),
+    scrubFixable: z.number(),
+    deniedNeedsAnalysis: z.number(),
+    autoResubmitReady: z.number(),
+  }),
+  featureDisabled: z.boolean().optional(),
+  generatedAt: z.string(),
+});
+
 router.get("/admin/billing/ai-queue", requireAdmin, async (_req, res) => {
   // Control Center feature gate. When AI billing suggestions are
   // turned off we return an empty queue so the admin UI stays
   // functional (manual workflow keeps going); the flag display in
   // the response lets the UI surface an "AI offline" banner.
   if (!(await isFeatureEnabled("ai_billing.suggestions"))) {
-    res.json({
+    const disabledResponse = aiBillingQueueResponseSchema.parse({
       scrubBlockingClaims: [],
       scrubFixableClaims: [],
       deniedNeedsAnalysis: [],
@@ -42,6 +79,7 @@ router.get("/admin/billing/ai-queue", requireAdmin, async (_req, res) => {
       featureDisabled: true,
       generatedAt: new Date().toISOString(),
     });
+    res.json(disabledResponse);
     return;
   }
   const supabase = getSupabaseServiceRoleClient();
@@ -94,7 +132,7 @@ router.get("/admin/billing/ai-queue", requireAdmin, async (_req, res) => {
       .limit(50),
   ]);
 
-  res.json({
+  const enabledResponse = aiBillingQueueResponseSchema.parse({
     scrubBlockingClaims: (blocking ?? []).map((c) => ({
       id: c.id,
       patientId: c.patient_id,
@@ -150,6 +188,7 @@ router.get("/admin/billing/ai-queue", requireAdmin, async (_req, res) => {
     },
     generatedAt: new Date().toISOString(),
   });
+  res.json(enabledResponse);
 });
 
 export default router;

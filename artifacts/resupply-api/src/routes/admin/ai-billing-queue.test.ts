@@ -122,8 +122,9 @@ describe("GET /admin/billing/ai-queue — feature flag gate", () => {
 
     const res = await request(makeApp()).get("/admin/billing/ai-queue");
 
-    expect(res.body.generatedAt).toBeDefined();
-    expect(() => new Date(res.body.generatedAt as string)).not.toThrow();
+    const ts = res.body.generatedAt as string;
+    expect(ts).toBeDefined();
+    expect(isNaN(Date.parse(ts))).toBe(false);
   });
 
   it("makes no DB queries when the feature flag is off", async () => {
