@@ -150,9 +150,23 @@ describe("customerKeyForId", () => {
     expect(customerKeyForId(null)).toBe("cust-unknown");
   });
 
-  it("emits a stable lowercase 6-char prefix", () => {
-    expect(customerKeyForId("cus_ABC123XYZ")).toBe("cust-cusabc");
-    // The hyphen and underscore are stripped before truncation.
-    expect(customerKeyForId("3e29-ab-7d")).toBe("cust-3e29ab");
+  it("emits a 'cust-' prefix followed by 12 lowercase hex chars", () => {
+    // The implementation hashes the raw id with SHA-256 + a fixed
+    // salt and slices the first 12 hex chars — opaque on purpose so
+    // the key doesn't leak the Stripe / internal id shape.
+    expect(customerKeyForId("cus_ABC123XYZ")).toMatch(/^cust-[0-9a-f]{12}$/);
+    expect(customerKeyForId("3e29-ab-7d")).toMatch(/^cust-[0-9a-f]{12}$/);
+  });
+
+  it("is deterministic — same input always produces the same key", () => {
+    expect(customerKeyForId("cus_ABC123XYZ")).toBe(
+      customerKeyForId("cus_ABC123XYZ"),
+    );
+  });
+
+  it("produces different keys for different inputs", () => {
+    expect(customerKeyForId("cus_ABC123XYZ")).not.toBe(
+      customerKeyForId("cus_DIFFERENT"),
+    );
   });
 });

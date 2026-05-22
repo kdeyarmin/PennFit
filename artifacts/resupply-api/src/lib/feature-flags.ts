@@ -157,21 +157,16 @@ export async function isFeatureEnabled(key: FeatureFlagKey): Promise<boolean> {
       message.includes("ENOTFOUND") ||
       message.includes("EAI_AGAIN") ||
       message.includes("fetch failed");
-    if (isMissingDbConfig) {
+    if (isMissingDbConfig || isUnreachable) {
+      // Both branches fall back to "all features enabled" so dev /
+      // smoke environments stay usable when the DB isn't there. The
+      // block comment above (and feature-flags.test.ts) pins this
+      // posture; a CodeRabbit auto-fix briefly split it into a
+      // fail-closed branch for `isUnreachable` (commit a8f037b) but
+      // that contradicted both the docstring and the test. Restored
+      // here so the documented contract holds.
       cache.set(key, { value: true, expiresAt: now + CACHE_TTL_MS });
       return true;
-    }
-    if (isUnreachable) {
-      logger.warn(
-        {
-          event: "feature_flag_lookup_unreachable",
-          key,
-          err: message,
-        },
-        "feature flag lookup unreachable; failing closed (disabled)",
-      );
-      cache.set(key, { value: false, expiresAt: now + 1_000 });
-      return false;
     }
     logger.warn(
       {
