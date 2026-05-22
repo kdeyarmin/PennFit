@@ -89,6 +89,7 @@ export function fetchOaSubmissions(filters?: {
 export interface OaSubmissionLinkedClaim {
   id: string;
   patientId: string;
+  patientName: string | null;
   payerName: string;
   claimNumber: string | null;
   dateOfService: string;
@@ -96,10 +97,37 @@ export interface OaSubmissionLinkedClaim {
   totalBilledCents: number;
 }
 
+export interface OaSubmissionLineage {
+  parent: OaSubmission | null;
+  children: OaSubmission[];
+}
+
 export function fetchOaSubmissionDetail(
   id: string,
-): Promise<{ submission: OaSubmission; claims: OaSubmissionLinkedClaim[] }> {
+): Promise<{
+  submission: OaSubmission;
+  claims: OaSubmissionLinkedClaim[];
+  lineage: OaSubmissionLineage;
+}> {
   return getJSON(`/admin/office-ally-submissions/${encodeURIComponent(id)}`);
+}
+
+// ─── EDI enrollment watchlist (OA Operations banner) ─────────────
+
+export interface EnrollmentWatchlistEntry {
+  id: string;
+  slug: string;
+  displayName: string;
+  lineOfBusiness: string;
+  ediEnrollmentStatus: "pending" | "not_enrolled";
+  officeAllyPayerId: string | null;
+  requirementsLastVerifiedAt: string | null;
+}
+
+export function fetchEnrollmentWatchlist(): Promise<{
+  payers: EnrollmentWatchlistEntry[];
+}> {
+  return getJSON("/admin/office-ally/enrollment-watchlist");
 }
 
 export function resubmitOaSubmission(id: string): Promise<{

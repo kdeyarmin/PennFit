@@ -132,7 +132,44 @@ router.get(
   },
 );
 
-// ── DETAIL incl linked claims ──────────────────────────────────────
+// ── EDI ENROLLMENT WATCHLIST ────────────────────────────────────────
+// Quick read of payers whose `edi_enrollment_status` is anything but
+// 'enrolled' or 'not_applicable' — i.e. payers we set up in the
+// catalog but haven't yet been able to bill through OA. Powers the
+// "N payers awaiting OA enrollment" banner on the OA Operations page
+// so an op can see at a glance whether anything is stuck in OA's
+// enrollment queue.
+router.get(
+  "/admin/office-ally/enrollment-watchlist",
+  requirePermission("admin.tools.manage"),
+  async (_req, res) => {
+    const supabase = getSupabaseServiceRoleClient();
+    const { data, error } = await supabase
+      .schema("resupply")
+      .from("payer_profiles")
+      .select(
+        "id, slug, display_name, line_of_business, edi_enrollment_status, office_ally_payer_id, requirements_last_verified_at",
+      )
+      .eq("is_active", true)
+      .in("edi_enrollment_status", ["pending", "not_enrolled"])
+      .order("display_name", { ascending: true })
+      .limit(100);
+    if (error) throw error;
+    res.json({
+      payers: (data ?? []).map((p) => ({
+        id: p.id,
+        slug: p.slug,
+        displayName: p.display_name,
+        lineOfBusiness: p.line_of_business,
+        ediEnrollmentStatus: p.edi_enrollment_status,
+        officeAllyPayerId: p.office_ally_payer_id,
+        requirementsLastVerifiedAt: p.requirements_last_verified_at,
+      })),
+    });
+  },
+);
+
+// ── DETAIL incl linked claims, patient names, resubmit chain ──────
 router.get(
   "/admin/office-ally-submissions/:id",
   requirePermission("admin.tools.manage"),
@@ -155,7 +192,11 @@ router.get(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const { data: claims } = await supabase
+
+    // Linked claims = claims whose office_ally_submission_id matches
+    // (set on accepted upload). For transport_failed rows this returns
+    // empty; the page falls back to `attempted_claim_ids` below.
+    const { data: linkedClaims } = await supabase
       .schema("resupply")
       .from("insurance_claims")
       .select(
@@ -163,17 +204,83 @@ router.get(
       )
       .eq("office_ally_submission_id", submission.id)
       .order("date_of_service", { ascending: false });
+
+    // For transport_failed rows the linked-claims query returns
+    // nothing (no claim got advanced); fall back to attempted_claim_ids
+    // so the detail page can still show what we tried to send.
+    const fallbackClaimIds =
+      linkedClaims && linkedClaims.length > 0
+        ? []
+        : submission.attempted_claim_ids ?? [];
+    const fallbackClaims =
+      fallbackClaimIds.length > 0
+        ? (
+            await supabase
+              .schema("resupply")
+              .from("insurance_claims")
+              .select(
+                "id, patient_id, payer_name, claim_number, date_of_service, status, total_billed_cents",
+              )
+              .in("id", fallbackClaimIds)
+          ).data ?? []
+        : [];
+    const claims = linkedClaims && linkedClaims.length > 0
+      ? linkedClaims
+      : fallbackClaims;
+
+    // Patient name lookup (single-statement batch via .in()).
+    const patientIds = [...new Set(claims.map((c) => c.patient_id))];
+    const patientNames = new Map<string, string>();
+    if (patientIds.length > 0) {
+      const { data: patients } = await supabase
+        .schema("resupply")
+        .from("patients")
+        .select("id, legal_first_name, legal_last_name")
+        .in("id", patientIds);
+      for (const p of patients ?? []) {
+        patientNames.set(
+          p.id,
+          `${p.legal_first_name} ${p.legal_last_name}`.trim(),
+        );
+      }
+    }
+
+    // Resubmit lineage: optional parent (older row this one resubmits)
+    // + optional children (rows that resubmit this one).
+    const [parentRes, childrenRes] = await Promise.all([
+      submission.parent_submission_id
+        ? supabase
+            .schema("resupply")
+            .from("office_ally_submissions")
+            .select(FULL_SELECT)
+            .eq("id", submission.parent_submission_id)
+            .limit(1)
+            .maybeSingle()
+        : Promise.resolve({ data: null }),
+      supabase
+        .schema("resupply")
+        .from("office_ally_submissions")
+        .select(FULL_SELECT)
+        .eq("parent_submission_id", submission.id)
+        .order("submitted_at", { ascending: false }),
+    ]);
+
     res.json({
       submission: rowToApi(submission),
-      claims: (claims ?? []).map((c) => ({
+      claims: claims.map((c) => ({
         id: c.id,
         patientId: c.patient_id,
+        patientName: patientNames.get(c.patient_id) ?? null,
         payerName: c.payer_name,
         claimNumber: c.claim_number,
         dateOfService: c.date_of_service,
         status: c.status,
         totalBilledCents: c.total_billed_cents,
       })),
+      lineage: {
+        parent: parentRes.data ? rowToApi(parentRes.data) : null,
+        children: (childrenRes.data ?? []).map(rowToApi),
+      },
     });
   },
 );

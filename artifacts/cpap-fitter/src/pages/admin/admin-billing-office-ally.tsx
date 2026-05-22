@@ -17,6 +17,7 @@
 // page is the missing UI that made them usable.
 
 import { useState } from "react";
+import { Link } from "wouter";
 import {
   useMutation,
   useQuery,
@@ -28,6 +29,7 @@ import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { Spinner } from "@/components/admin/Spinner";
 import {
   fetchClearinghouses,
+  fetchEnrollmentWatchlist,
   fetchInboundFiles,
   fetchOaSubmissions,
   pollNow,
@@ -36,6 +38,7 @@ import {
   testClearinghouseConnection,
   type ClearinghouseRow,
   type ConnectionTestResult,
+  type EnrollmentWatchlistEntry,
   type InboundFile,
   type InboundFileKind,
   type OaSubmission,
@@ -60,10 +63,88 @@ export function AdminBillingOfficeAllyPage() {
         </p>
       </header>
 
+      <EnrollmentWatchlistBanner />
       <SubmissionsSection />
       <InboundFilesSection />
       <ClearinghousesSection />
     </div>
+  );
+}
+
+// ── Enrollment watchlist (pending / not_enrolled payers) ───────────
+
+function EnrollmentWatchlistBanner() {
+  const { data, isPending, isError } = useQuery({
+    queryKey: ["admin-oa-enrollment-watchlist"],
+    queryFn: fetchEnrollmentWatchlist,
+    staleTime: 60_000,
+  });
+  if (isPending || isError) return null;
+  const payers = data?.payers ?? [];
+  if (payers.length === 0) return null;
+  return (
+    <div
+      className="rounded border-l-4 p-3"
+      style={{
+        backgroundColor: "rgba(180,83,9,0.08)",
+        borderColor: "#b45309",
+      }}
+      data-testid="oa-enrollment-watchlist-banner"
+    >
+      <p className="text-sm font-semibold" style={{ color: "#b45309" }}>
+        ⚠ {payers.length}{" "}
+        {payers.length === 1 ? "payer is" : "payers are"} awaiting Office Ally enrollment
+      </p>
+      <p
+        className="text-[12px] mt-0.5 mb-2"
+        style={{ color: "hsl(var(--ink-2))" }}
+      >
+        Claims to these payers will be blocked at preflight until the enrollment status is updated to{" "}
+        <code className="font-mono text-[11px]">enrolled</code>{" "}
+        in the payer catalog.
+      </p>
+      <ul className="text-[12px] space-y-0.5">
+        {payers.slice(0, 8).map((p) => (
+          <EnrollmentEntry key={p.id} p={p} />
+        ))}
+        {payers.length > 8 && (
+          <li className="text-[11px]" style={{ color: "hsl(var(--ink-3))" }}>
+            …and {payers.length - 8} more.
+          </li>
+        )}
+      </ul>
+    </div>
+  );
+}
+
+function EnrollmentEntry({ p }: { p: EnrollmentWatchlistEntry }) {
+  return (
+    <li className="flex flex-wrap items-center gap-2">
+      <span
+        className="inline-block px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase"
+        style={{
+          backgroundColor:
+            p.ediEnrollmentStatus === "pending"
+              ? "rgba(180,83,9,0.18)"
+              : "rgba(190,18,60,0.16)",
+          color: p.ediEnrollmentStatus === "pending" ? "#b45309" : "#be123c",
+        }}
+      >
+        {p.ediEnrollmentStatus.replace("_", " ")}
+      </span>
+      <span style={{ color: "hsl(var(--ink-1))" }}>{p.displayName}</span>
+      <span className="text-[10px]" style={{ color: "hsl(var(--ink-3))" }}>
+        {p.lineOfBusiness}
+        {p.officeAllyPayerId && ` · OA ${p.officeAllyPayerId}`}
+      </span>
+      <Link
+        href="/admin/billing/config/payers"
+        className="text-[11px] font-semibold hover:underline ml-auto"
+        style={{ color: "hsl(var(--penn-navy, 215 70% 35%))" }}
+      >
+        Open in catalog →
+      </Link>
+    </li>
   );
 }
 
@@ -214,7 +295,14 @@ function SubmissionRow({ s }: { s: OaSubmission }) {
         className="p-2 font-mono text-[12px]"
         style={{ color: "hsl(var(--ink-2))" }}
       >
-        {s.fileName}
+        <Link
+          href={`/admin/billing/office-ally/${s.id}`}
+          className="hover:underline"
+          style={{ color: "hsl(var(--penn-navy, 215 70% 35%))" }}
+          data-testid={`oa-submission-link-${s.id}`}
+        >
+          {s.fileName}
+        </Link>
         <br />
         <span className="text-[10px]" style={{ color: "hsl(var(--ink-3))" }}>
           {(s.fileSizeBytes / 1024).toFixed(1)} KB
