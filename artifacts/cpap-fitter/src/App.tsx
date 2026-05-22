@@ -169,6 +169,45 @@ const LearnSleepApneaHeartHealth = lazy(() =>
     default: m.LearnSleepApneaHeartHealth,
   })),
 );
+const LearnFirstTwoWeeks = lazy(() =>
+  import("@/pages/learn-first-two-weeks").then((m) => ({
+    default: m.LearnFirstTwoWeeks,
+  })),
+);
+const LearnTravelingWithCpap = lazy(() =>
+  import("@/pages/learn-traveling-with-cpap").then((m) => ({
+    default: m.LearnTravelingWithCpap,
+  })),
+);
+const LearnCleaningRoutine = lazy(() =>
+  import("@/pages/learn-cleaning-routine").then((m) => ({
+    default: m.LearnCleaningRoutine,
+  })),
+);
+const LearnMythsDebunked = lazy(() =>
+  import("@/pages/learn-myths-debunked").then((m) => ({
+    default: m.LearnMythsDebunked,
+  })),
+);
+const LearnGlossary = lazy(() =>
+  import("@/pages/learn-glossary").then((m) => ({
+    default: m.LearnGlossary,
+  })),
+);
+const LearnInsuranceGuide = lazy(() =>
+  import("@/pages/learn-insurance-guide").then((m) => ({
+    default: m.LearnInsuranceGuide,
+  })),
+);
+
+// SEO landing — the "front door" mega-page that anchors the whole
+// educational library. Lazy because it's marketing content, not part
+// of any fitter/checkout flow.
+const SleepApnea101 = lazy(() =>
+  import("@/pages/sleep-apnea-101").then((m) => ({
+    default: m.SleepApnea101,
+  })),
+);
 
 // Brand marketing pages — a hub plus per-brand spotlights (React Health
 // is our flagship line, ResMed and Fisher & Paykel round out the catalog).
@@ -450,6 +489,28 @@ function PatientRouter() {
             path="/learn/sleep-apnea-heart-health"
             component={LearnSleepApneaHeartHealth}
           />
+          <Route
+            path="/learn/first-two-weeks"
+            component={LearnFirstTwoWeeks}
+          />
+          <Route
+            path="/learn/traveling-with-cpap"
+            component={LearnTravelingWithCpap}
+          />
+          <Route
+            path="/learn/cleaning-routine"
+            component={LearnCleaningRoutine}
+          />
+          <Route
+            path="/learn/myths-debunked"
+            component={LearnMythsDebunked}
+          />
+          <Route path="/learn/glossary" component={LearnGlossary} />
+          <Route
+            path="/learn/insurance-guide"
+            component={LearnInsuranceGuide}
+          />
+          <Route path="/sleep-apnea-101" component={SleepApnea101} />
           <Route path="/comfort-guarantee" component={ComfortGuaranteePage} />
           <Route path="/insurance" component={Insurance} />
           <Route path="/insurance/estimate" component={InsuranceEstimate} />
