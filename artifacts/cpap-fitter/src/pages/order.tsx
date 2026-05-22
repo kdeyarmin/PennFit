@@ -1,4 +1,4 @@
-import React, { useId, isValidElement, cloneElement } from "react";
+import React, { useId, isValidElement, cloneElement, useState } from "react";
 import { useLocation, Link } from "wouter";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -9,6 +9,8 @@ import {
   useSubmitOrder,
   ApiError,
 } from "@workspace/api-client-react/storefront";
+import { fetchShopMe } from "@/lib/account-api";
+import { useShopIdentity } from "@/lib/identity";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -20,7 +22,6 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
   SelectContent,
@@ -89,10 +90,11 @@ const formSchema = z.object({
     physicianPhone: z.string().max(30).optional().or(z.literal("")),
   }),
   notes: z.string().max(1000).optional().or(z.literal("")),
-  // Use a boolean (typed `boolean`) with a refine() instead of z.literal(true)
-  // so we can write `setValue("consentToContact", false)` without an awful
-  // `false as unknown as true` cast. The refine() still enforces the same
-  // submit-blocking behaviour.
+  // Server (route handler) enforces `consentToContact === true` strictly,
+  // so we keep the field in the payload but no longer surface a UI
+  // checkbox for it — the patient cleared the /consent gate before
+  // <GuardedOrder> would mount this page, and the form defaults this
+  // field to true. See the acknowledgement panel below.
   consentToContact: z.boolean().refine((v) => v === true, {
     message: "You must consent to be contacted to submit an order",
   }),
@@ -121,6 +123,28 @@ type FormValues = z.infer<typeof formSchema>;
  * with no parens) so international or unusual formats aren't
  * mangled — only obvious 10-digit US phones get reformatted.
  */
+/**
+ * Split a display name into first / last for the order form.
+ * `displayName` is a single string on shop_customers (the customer
+ * picked it themselves), so we fall back to "everything before the
+ * last whitespace token = first name, last token = last name". A
+ * single-token name (e.g. "Pat") becomes firstName="Pat", lastName="".
+ * The patient can edit either field before submitting.
+ */
+export function splitDisplayName(name: string | null | undefined): {
+  firstName: string;
+  lastName: string;
+} {
+  const trimmed = (name ?? "").trim();
+  if (!trimmed) return { firstName: "", lastName: "" };
+  const parts = trimmed.split(/\s+/);
+  if (parts.length === 1) return { firstName: parts[0], lastName: "" };
+  return {
+    firstName: parts.slice(0, -1).join(" "),
+    lastName: parts[parts.length - 1],
+  };
+}
+
 function formatUsPhone(input: string): string {
   if (!input) return "";
   // Skip reformat for international-looking inputs.
@@ -152,7 +176,7 @@ export function Order() {
     handleSubmit,
     setValue,
     watch,
-    formState: { errors, isSubmitted },
+    formState: { errors },
   } = useForm<FormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
@@ -163,7 +187,14 @@ export function Order() {
       patient: fitterEmail ? { email: fitterEmail } : undefined,
       prescription: { hasExistingPrescription: false },
       shippingAddress: { state: "" },
-      consentToContact: false,
+      // The route-level <GuardedOrder> guarantees the patient cleared
+      // the /consent gate (email + emailConsent) before this page
+      // mounts, so the order-page "consent to contact" is provably
+      // true at form-submit time. Default to true and forward as-is;
+      // the disclosure copy in the Acknowledgement card below keeps
+      // the TCPA / data-storage disclosures in view without making
+      // the patient click the same consent twice.
+      consentToContact: true,
       website: "",
     } as Partial<FormValues> as FormValues,
     mode: "onBlur",
@@ -172,11 +203,69 @@ export function Order() {
   const stateValue = watch("shippingAddress.state");
   const relationshipValue = watch("insurance.policyholderRelationship");
   const hasRxValue = watch("prescription.hasExistingPrescription");
-  const consentValue = watch("consentToContact");
 
   useEffect(() => {
     track("order_started");
   }, []);
+
+  // P3 — pre-fill from /shop/me for signed-in customers. Best-effort;
+  // a failure here (401 between identity probe and /shop/me, network
+  // hiccup, etc.) just leaves the form blank and the patient types
+  // from scratch. We use setValue per field rather than reset() so we
+  // never blow away anything the patient already touched between
+  // mount and the /shop/me round-trip. `prefilledFromAccount` flips
+  // once any field was actually populated so the UI can show a small
+  // "pre-filled from your account" hint near the top of the form.
+  const { isSignedIn, isLoaded: identityLoaded } = useShopIdentity();
+  const [prefilledFromAccount, setPrefilledFromAccount] = useState(false);
+  useEffect(() => {
+    if (!identityLoaded || !isSignedIn || prefilledFromAccount) return;
+    let cancelled = false;
+    fetchShopMe()
+      .then((res) => {
+        if (cancelled || !res.signedIn || !res.profile) return;
+        const p = res.profile;
+        let touched = false;
+        const { firstName, lastName } = splitDisplayName(p.displayName);
+        if (firstName) {
+          setValue("patient.firstName", firstName);
+          touched = true;
+        }
+        if (lastName) {
+          setValue("patient.lastName", lastName);
+          touched = true;
+        }
+        // Order page already pre-fills email from the fitter store; if
+        // /shop/me has a more authoritative email (the signed-in
+        // account), let it win — the patient can still edit either.
+        if (p.email) {
+          setValue("patient.email", p.email);
+          touched = true;
+        }
+        const addr = p.shippingAddress;
+        if (addr) {
+          setValue("shippingAddress.street1", addr.line1 ?? "");
+          if (addr.line2) setValue("shippingAddress.street2", addr.line2);
+          setValue("shippingAddress.city", addr.city ?? "");
+          setValue(
+            "shippingAddress.state",
+            (addr.state ?? "").toUpperCase(),
+            { shouldValidate: true },
+          );
+          setValue("shippingAddress.zip", addr.postalCode ?? "");
+          touched = true;
+        }
+        if (touched) setPrefilledFromAccount(true);
+      })
+      .catch((err) => {
+        // Logged so ops can see a spike in /shop/me 5xx rates, but
+        // never surfaced to the patient — the form still works.
+        console.warn("order: prefill from /shop/me failed", err);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [identityLoaded, isSignedIn, prefilledFromAccount, setValue]);
 
   if (!chosenMask) return null;
 
@@ -386,6 +475,25 @@ export function Order() {
               )}
           </AlertDescription>
         </Alert>
+      )}
+
+      {prefilledFromAccount && (
+        <div
+          className="mb-6 glass-card rounded-xl p-4 flex items-start gap-3 border-l-4 border-l-[hsl(var(--penn-gold))]"
+          data-testid="order-prefilled-hint"
+        >
+          <ShieldCheck className="w-5 h-5 mt-0.5 shrink-0 text-[hsl(var(--penn-gold))]" />
+          <div className="text-sm leading-relaxed">
+            <p className="font-semibold text-[hsl(var(--penn-navy))]">
+              Pre-filled from your account
+            </p>
+            <p className="text-muted-foreground mt-0.5">
+              We&apos;ve filled in your name, email, and shipping address
+              from your PennPaps account. Double-check everything below and
+              edit anything that&apos;s out of date before submitting.
+            </p>
+          </div>
+        </div>
       )}
 
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
@@ -773,32 +881,40 @@ export function Order() {
               />
             </Field>
 
-            <div className="flex items-start gap-3 p-4 rounded-lg border border-border bg-muted/30">
-              <Checkbox
-                id="consent"
-                data-testid="checkbox-consent"
-                checked={!!consentValue}
-                onCheckedChange={(c) =>
-                  setValue("consentToContact", c === true, {
-                    shouldValidate: true,
-                  })
-                }
-              />
-              <div className="flex-1 -mt-0.5 space-y-2">
-                <Label
-                  htmlFor="consent"
-                  className="cursor-pointer font-normal text-sm leading-relaxed block"
-                >
-                  I authorize Penn Home Medical Supply to{" "}
-                  <strong>contact me</strong> by phone, email, and SMS text
-                  message at the number and email above regarding this order,
+            {/*
+              Acknowledgement panel (formerly a second consent
+              checkbox). The patient cleared the /consent gate before
+              this page mounted — see <GuardedOrder> in App.tsx — so
+              the contact / email consent is on file server-side
+              (recorded via submitFitterLead). Re-prompting here for
+              the same consent caused two well-documented problems:
+                * ambiguity in the legal record when the upstream
+                  opt-in said yes but the downstream box was missed,
+                * an extra required click at the highest-abandon-risk
+                  page of the funnel.
+              We keep the TCPA disclosure copy verbatim — TCPA "prior
+              express written consent" for transactional SMS is
+              satisfied by the disclosure plus the act of providing
+              the phone number on this form, not by the checkbox
+              itself. The "data storage" disclosure also stays
+              visible so the patient knows what submitting persists.
+            */}
+            <div
+              className="flex items-start gap-3 p-4 rounded-lg border border-border bg-muted/30"
+              data-testid="order-acknowledgement"
+            >
+              <ShieldCheck className="w-5 h-5 mt-0.5 shrink-0 text-primary" />
+              <div className="flex-1 space-y-2">
+                <p className="text-sm leading-relaxed">
+                  By submitting this order, you authorize Penn Home Medical
+                  Supply to <strong>contact you</strong> by phone, email, and
+                  SMS at the number and email above regarding this order,
                   insurance verification, shipping updates, and ongoing CPAP
                   resupply reminders, and to{" "}
-                  <strong>store the order details I've entered above</strong>{" "}
-                  (including my contact, shipping, insurance, and prescription
-                  information) in Penn Home Medical Supply's secure system for
-                  fulfillment and recordkeeping.
-                </Label>
+                  <strong>store the order details above</strong> in their secure
+                  system for fulfillment and recordkeeping. The camera /
+                  email consent you gave on the previous step also applies.
+                </p>
                 <p className="text-xs text-muted-foreground leading-relaxed">
                   <strong>SMS terms:</strong> By providing your mobile number
                   you consent to receive transactional text messages from Penn
@@ -820,11 +936,6 @@ export function Order() {
                   </Link>{" "}
                   for full SMS program details.
                 </p>
-                {isSubmitted && errors.consentToContact && (
-                  <p className="text-xs text-destructive mt-1">
-                    {errors.consentToContact.message}
-                  </p>
-                )}
               </div>
             </div>
 
