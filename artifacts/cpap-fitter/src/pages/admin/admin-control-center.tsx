@@ -46,9 +46,158 @@ export function AdminControlCenterPage() {
           the action <code>feature_flag.toggle</code>.
         </p>
       </header>
+      <SummaryTiles />
       <FlagsList />
     </div>
   );
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Summary tiles — at-a-glance status above the flag table.
+//
+// Reads from the same /admin/feature-flags query that drives the
+// table below. The shared queryKey means the tiles re-render
+// automatically when an admin flips a switch (the table's optimistic
+// update writes back to the same cache).
+// ─────────────────────────────────────────────────────────────────
+
+function SummaryTiles() {
+  const query = useQuery({
+    queryKey: QUERY_KEY,
+    queryFn: listFeatureFlags,
+  });
+
+  // We render three tiles regardless of load state (empty/loading
+  // placeholders are simpler than gating the whole row). On error,
+  // the table below will surface the actual message — tiles just
+  // render zero counts.
+  const flags = query.data?.flags ?? [];
+  const total = flags.length;
+  const enabled = flags.filter((f) => f.enabled).length;
+  const disabled = total - enabled;
+
+  // The seed migration inserts every flag with updated_by_email
+  // NULL. An admin toggle writes the email + a fresh updated_at.
+  // Filter to operator-attributed rows so the "last toggle" tile
+  // doesn't show the seed time.
+  const operatorTouched = flags.filter(
+    (f) => f.updatedByEmail !== null && f.updatedByEmail !== undefined,
+  );
+  const lastToggle =
+    operatorTouched.length > 0
+      ? operatorTouched.reduce((latest, f) =>
+          new Date(f.updatedAt).getTime() >
+          new Date(latest.updatedAt).getTime()
+            ? f
+            : latest,
+        )
+      : null;
+
+  return (
+    <section
+      aria-label="Feature flag summary"
+      className="grid gap-3 sm:grid-cols-3"
+      data-testid="control-center-summary"
+    >
+      <Tile
+        label="Features enabled"
+        value={
+          query.isPending ? "—" : `${enabled} of ${total}`
+        }
+        accent={disabled === 0 ? "ok" : "warn"}
+        testId="tile-enabled"
+      />
+      <Tile
+        label="Disabled overrides"
+        value={query.isPending ? "—" : String(disabled)}
+        accent={disabled === 0 ? "ok" : "warn"}
+        testId="tile-disabled"
+      />
+      <Tile
+        label="Last toggle"
+        value={
+          query.isPending
+            ? "—"
+            : lastToggle
+              ? renderRelativeAge(new Date(lastToggle.updatedAt))
+              : "No operator toggles yet"
+        }
+        // The "by foo@example.com on <flag>" detail goes under the value.
+        sublabel={
+          lastToggle
+            ? `${lastToggle.updatedByEmail ?? "unknown"} • ${lastToggle.key}`
+            : "Seed defaults active"
+        }
+        accent="neutral"
+        testId="tile-last-toggle"
+      />
+    </section>
+  );
+}
+
+function Tile({
+  label,
+  value,
+  sublabel,
+  accent,
+  testId,
+}: {
+  label: string;
+  value: string;
+  sublabel?: string;
+  accent: "ok" | "warn" | "neutral";
+  testId: string;
+}) {
+  const accentClass =
+    accent === "ok"
+      ? "border-emerald-200 bg-emerald-50"
+      : accent === "warn"
+        ? "border-amber-200 bg-amber-50"
+        : "border-slate-200 bg-white";
+  return (
+    <div
+      className={[
+        "rounded-lg border p-3 space-y-0.5",
+        accentClass,
+      ].join(" ")}
+      data-testid={testId}
+    >
+      <div className="text-xs font-semibold uppercase tracking-wider text-slate-600">
+        {label}
+      </div>
+      <div className="text-xl font-bold tabular-nums text-slate-900">
+        {value}
+      </div>
+      {sublabel && (
+        <div
+          className="text-xs text-slate-600 truncate"
+          title={sublabel}
+          data-testid={`${testId}-sublabel`}
+        >
+          {sublabel}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Compact "5m ago" / "2h ago" / "3d ago" formatter. Falls back to a
+// localised timestamp once we're past a week — relative times stop
+// being useful at that horizon.
+function renderRelativeAge(when: Date): string {
+  const deltaMs = Date.now() - when.getTime();
+  if (Number.isNaN(deltaMs) || deltaMs < 0) {
+    return when.toLocaleString();
+  }
+  const sec = Math.floor(deltaMs / 1000);
+  if (sec < 60) return `${sec}s ago`;
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  const day = Math.floor(hr / 24);
+  if (day < 7) return `${day}d ago`;
+  return when.toLocaleDateString();
 }
 
 function FlagsList() {
