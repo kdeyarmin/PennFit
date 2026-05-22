@@ -181,9 +181,9 @@ CREATE TABLE IF NOT EXISTS "resupply"."fitter_campaign_touches" (
   "channel" text NOT NULL,
   "template_key" text NOT NULL,
   "status" text NOT NULL,
-  -- SendGrid / Twilio error message when status='failed'. Bounded
-  -- length so a vendor that returns a 100KB HTML error page can't
-  -- balloon the row.
+  -- SendGrid / Twilio error message when status='failed'. Stored
+  -- as text in this migration; any payload-size limiting must be
+  -- handled outside this schema.
   "error_message" text,
   "sent_at" timestamp with time zone DEFAULT now() NOT NULL
 );
