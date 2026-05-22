@@ -51,6 +51,69 @@ export const TOTAL_TOUCHPOINTS = TOUCHPOINT_OFFSETS_MS.length;
 
 const MASK_TYPES = ["fullFace", "nasal", "nasalPillow", "hybrid"] as const;
 
+// ---------------------------------------------------------------
+// Per-IP rate limit shared by both routes in this file.
+// ---------------------------------------------------------------
+// Mirrors the in-process bucket used by /shop/fitter-leads,
+// /shop/quiz-leads, /shop/insurance-leads. We keep it self-contained
+// in this file (rather than reaching for express-rate-limit) so it
+// stays a small dependency surface and the test seam below can clear
+// state between vitest runs.
+//
+// Why both routes need it
+// -----------------------
+//   * POST /shop/fitter-complete   — fires once per finished fitter
+//     in normal use, but a refresh / botted /results spam could push
+//     it higher. Tight cap stops a script from churning the supply-
+//     campaign state machine.
+//   * GET /shop/fitter-leads/unsubscribe — performs HMAC-bound
+//     authorization. The HMAC-SHA256 key space makes brute force
+//     practically impossible, but CodeQL flags any authorizing route
+//     that lacks a rate limit (cf. PR #310 review). Adding the cap
+//     closes the finding AND slows down enumeration noise in the
+//     audit log.
+const RATE_WINDOW_MS = 15 * 60 * 1000;
+const RATE_MAX = 10;
+const rateBucket = new Map<string, number[]>();
+const RATE_SWEEP_EVERY = 200;
+let rateBucketSweepCounter = 0;
+
+function sweepRateBucket(now: number): void {
+  for (const [key, timestamps] of rateBucket) {
+    if (timestamps.every((t) => now - t >= RATE_WINDOW_MS)) {
+      rateBucket.delete(key);
+    }
+  }
+}
+
+function rateLimited(key: string): boolean {
+  const now = Date.now();
+  if (++rateBucketSweepCounter % RATE_SWEEP_EVERY === 0) {
+    sweepRateBucket(now);
+  }
+  const arr = (rateBucket.get(key) ?? []).filter(
+    (t) => now - t < RATE_WINDOW_MS,
+  );
+  if (arr.length >= RATE_MAX) {
+    rateBucket.set(key, arr);
+    return true;
+  }
+  arr.push(now);
+  rateBucket.set(key, arr);
+  return false;
+}
+
+function callerIp(req: { ip?: string; socket?: { remoteAddress?: string }; headers: Record<string, unknown> }): string {
+  return (
+    req.ip ||
+    req.socket?.remoteAddress ||
+    (typeof req.headers["x-forwarded-for"] === "string"
+      ? req.headers["x-forwarded-for"].split(",")[0]?.trim()
+      : null) ||
+    "unknown"
+  );
+}
+
 // Email + recommended mask. Measurements are intentionally NOT in
 // the body (HIPAA minimization — they never leave the browser); the
 // catalog reference is enough to personalize the campaign copy.
@@ -67,6 +130,11 @@ const completeBody = z
   .strict();
 
 router.post("/shop/fitter-complete", async (req, res) => {
+  const ipKey = `${callerIp(req)}:fitter-complete`;
+  if (rateLimited(ipKey)) {
+    res.status(429).json({ error: "rate_limited" });
+    return;
+  }
   const parse = completeBody.safeParse(req.body);
   if (!parse.success) {
     res.status(400).json({
@@ -284,6 +352,15 @@ function verifyUnsubscribeToken(
 }
 
 router.get("/shop/fitter-leads/unsubscribe", async (req, res) => {
+  // Rate limit BEFORE the HMAC verify. The verify is constant-time
+  // so it doesn't leak per-attempt info, but capping by IP closes
+  // the CodeQL "authorization without rate limiting" finding and
+  // keeps an enumeration attacker out of the audit log.
+  const ipKey = `${callerIp(req)}:fitter-unsubscribe`;
+  if (rateLimited(ipKey)) {
+    res.status(429).type("text/html").send(unsubscribeHtml("rate_limited"));
+    return;
+  }
   const token = typeof req.query.t === "string" ? req.query.t : "";
   if (!token) {
     res.status(400).type("text/html").send(unsubscribeHtml("invalid"));
@@ -330,19 +407,25 @@ router.get("/shop/fitter-leads/unsubscribe", async (req, res) => {
   }
 });
 
-function unsubscribeHtml(state: "ok" | "invalid" | "error"): string {
+function unsubscribeHtml(
+  state: "ok" | "invalid" | "error" | "rate_limited",
+): string {
   const headline =
     state === "ok"
       ? "You're unsubscribed."
       : state === "invalid"
         ? "Link no longer valid."
-        : "Something went wrong.";
+        : state === "rate_limited"
+          ? "Too many attempts."
+          : "Something went wrong.";
   const body =
     state === "ok"
       ? "We won't send you any more fitting follow-ups. You can still place an order at any time."
       : state === "invalid"
         ? "This unsubscribe link has expired or was already used. If you keep getting emails, reply to one and we'll handle it directly."
-        : "We couldn't complete your unsubscribe. Please reply to the email you received and we'll take care of it.";
+        : state === "rate_limited"
+          ? "Please wait a few minutes and try this link again. If you keep getting emails, reply to one and we'll handle it directly."
+          : "We couldn't complete your unsubscribe. Please reply to the email you received and we'll take care of it.";
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
@@ -352,3 +435,10 @@ function unsubscribeHtml(state: "ok" | "invalid" | "error"): string {
 }
 
 export default router;
+
+// Test-only seam — clears the in-memory rate bucket between vitest
+// runs so a 429 from one test doesn't leak into the next.
+export function _resetFitterCompleteRateBucketForTests(): void {
+  rateBucket.clear();
+  rateBucketSweepCounter = 0;
+}
