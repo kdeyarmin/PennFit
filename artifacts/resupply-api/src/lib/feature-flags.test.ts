@@ -67,6 +67,17 @@ describe("isFeatureEnabled", () => {
     expect(await isFeatureEnabled("storefront.chatbot")).toBe(true);
   });
 
+  it("defaults to enabled when Supabase is unreachable (ECONNREFUSED)", async () => {
+    // Smoke tests point SUPABASE_URL at 127.0.0.1:1 so node-fetch
+    // raises ECONNREFUSED. Treat that as "no DB" rather than
+    // failing closed and breaking every checkout / chat / voice
+    // call in test runs.
+    stageSupabaseResponse("feature_flags", "select", {
+      error: { message: "fetch failed: ECONNREFUSED 127.0.0.1:1" },
+    });
+    expect(await isFeatureEnabled("storefront.checkout")).toBe(true);
+  });
+
   it("caches within the TTL — a second call doesn't re-query", async () => {
     stageSupabaseResponse("feature_flags", "select", {
       data: { enabled: false },

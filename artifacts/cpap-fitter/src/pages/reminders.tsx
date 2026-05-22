@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Link, useLocation } from "wouter";
 import {
   useSubscribeToReminders,
@@ -69,8 +69,6 @@ export function Reminders() {
   // The manage page resolves the row by session email, so the patient
   // never has to leave the SPA, open their inbox, or click a token
   // link to edit a list they just typed.
-import React, { useEffect, useState } from "react";
-
   const { isSignedIn, isLoaded: identityLoaded, email: identityEmail } =
     useShopIdentity();
   const [email, setEmail] = useState("");

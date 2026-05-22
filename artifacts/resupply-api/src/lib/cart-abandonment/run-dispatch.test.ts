@@ -21,12 +21,28 @@ import {
 
 // ─── Module-scope mocks (must be hoisted before any import of the SUT) ───
 
+// Widen the mock's inferred return type to the full
+// `SendCartAbandonmentEmailResult` shape so individual tests can
+// stage envelopes that omit the optional `messageId` /  set the
+// optional `error` field. The hoisted vi.fn() without an explicit
+// generic infers from the initial implementation, which is the
+// happy-path "delivered" envelope — using mockResolvedValueOnce
+// with the failure / not-configured shapes would otherwise fail
+// the strict-return-type check.
+type SendCartAbandonmentEmailMockResult = {
+  configured: boolean;
+  delivered: boolean;
+  error?: string;
+  messageId?: string;
+};
 const sendCartAbandonmentEmailMock = vi.hoisted(() =>
-  vi.fn(async (_input: unknown) => ({
-    configured: true,
-    delivered: true,
-    messageId: "msg-1",
-  })),
+  vi.fn<(_input: unknown) => Promise<SendCartAbandonmentEmailMockResult>>(
+    async () => ({
+      configured: true,
+      delivered: true,
+      messageId: "msg-1",
+    }),
+  ),
 );
 vi.mock("./send-cart-abandonment-email", () => ({
   sendCartAbandonmentEmail: sendCartAbandonmentEmailMock,
@@ -578,6 +594,12 @@ describe("runCartAbandonmentDispatch — claim payload", () => {
   });
 });
 
+// ─── Batch unclaim error path ─────────────────────────────────────────────
+// Pre-existing CodeRabbit-generated test that was authored outside any
+// describe block, breaking the parser for the whole file. Wrapped here
+// without behavior change so the suite compiles.
+
+describe("runCartAbandonmentDispatch — batch unclaim error path", () => {
   it("calls log.warn when the batch unclaimMany UPDATE fails, but does not throw", async () => {
     const warnMock = vi.fn();
     // Two-row batch; first send throws so unclaimMany is called for the second row.

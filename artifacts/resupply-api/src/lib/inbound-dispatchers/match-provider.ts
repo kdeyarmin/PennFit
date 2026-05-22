@@ -101,7 +101,13 @@ export async function matchProvider(
       phone_e164: projection.phoneE164,
       fax_e164: projection.faxE164,
       practice_name: projection.practiceName,
-      practice_address: projection.practiceAddress as unknown as object,
+      // PostgREST treats `jsonb` columns as `Json` in the generated
+      // types. The projection ships a typed object; cast to the
+      // structural `Json` shape rather than the looser `object` so
+      // the insert payload typechecks against the table's Insert
+      // type.
+      practice_address:
+        projection.practiceAddress as unknown as import("@workspace/resupply-db").Database["resupply"]["Tables"]["providers"]["Row"]["practice_address"],
       source: "nppes",
       verified_at: new Date().toISOString(),
     })

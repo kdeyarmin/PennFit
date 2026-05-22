@@ -40,7 +40,11 @@ vi.mock("../../middlewares/admin-rate-limit", () => ({
       next(),
 }));
 
-const logAuditMock = vi.hoisted(() => vi.fn(() => Promise.resolve()));
+const logAuditMock = vi.hoisted(() =>
+  vi.fn<(event: Record<string, unknown>) => Promise<void>>(() =>
+    Promise.resolve(),
+  ),
+);
 vi.mock("@workspace/resupply-audit", () => ({
   logAudit: logAuditMock,
 }));

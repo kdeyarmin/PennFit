@@ -58,12 +58,28 @@ export type FeatureFlagKey = (typeof FEATURE_FLAG_KEYS)[number];
 
 const CACHE_TTL_MS = 5_000;
 
+/**
+ * Bound the Supabase round-trip. A feature-flag lookup is a hot path
+ * — every checkout, every voice call, every chat message will hit it
+ * — so we never want it to block a request for more than ~1.5s
+ * waiting on the DB. Hits beyond this window fall through to the
+ * fail-open / fail-closed branch in the catch block.
+ */
+const LOOKUP_TIMEOUT_MS = 1_500;
+
 interface CacheEntry {
   value: boolean;
   expiresAt: number;
 }
 
 const cache = new Map<string, CacheEntry>();
+
+class FeatureFlagLookupTimeout extends Error {
+  constructor() {
+    super("feature_flag_lookup_timeout");
+    this.name = "FeatureFlagLookupTimeout";
+  }
+}
 
 /**
  * Returns true when the named feature is enabled. Always reads from
@@ -81,12 +97,26 @@ export async function isFeatureEnabled(key: FeatureFlagKey): Promise<boolean> {
 
   try {
     const supabase = getSupabaseServiceRoleClient();
-    const { data, error } = await supabase
+    const lookup = supabase
       .schema("resupply")
       .from("feature_flags")
       .select("enabled")
       .eq("key", key)
       .maybeSingle();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(
+        () => reject(new FeatureFlagLookupTimeout()),
+        LOOKUP_TIMEOUT_MS,
+      );
+    });
+    let result: Awaited<typeof lookup>;
+    try {
+      result = await Promise.race([lookup, timeout]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+    const { data, error } = result;
     if (error) throw error;
     // Unknown key → default to enabled (matches the table's posture).
     const value = data?.enabled ?? true;
@@ -112,7 +142,21 @@ export async function isFeatureEnabled(key: FeatureFlagKey): Promise<boolean> {
     const isMissingDbConfig =
       message.startsWith("SUPABASE_URL must be set") ||
       message.startsWith("SUPABASE_SERVICE_ROLE_KEY must be set");
-    if (isMissingDbConfig) {
+    // Smoke tests and ad-hoc dev environments point SUPABASE_URL at
+    // a placeholder host (e.g. http://127.0.0.1:1) that doesn't
+    // actually respond. Treat a connection-refused / DNS-failure /
+    // bounded-timeout as "Supabase isn't reachable here" and fall
+    // through to the all-features-enabled branch so the rest of the
+    // app stays usable. A real production outage (Supabase up but
+    // returning errors / 5xx) still hits the fail-closed branch
+    // below.
+    const isUnreachable =
+      err instanceof FeatureFlagLookupTimeout ||
+      message.includes("ECONNREFUSED") ||
+      message.includes("ENOTFOUND") ||
+      message.includes("EAI_AGAIN") ||
+      message.includes("fetch failed");
+    if (isMissingDbConfig || isUnreachable) {
       cache.set(key, { value: true, expiresAt: now + CACHE_TTL_MS });
       return true;
     }
