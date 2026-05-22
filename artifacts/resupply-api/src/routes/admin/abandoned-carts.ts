@@ -39,21 +39,15 @@
 import { Router, type IRouter } from "express";
 
 import {
-  DEFAULT_COMMUNICATION_PREFERENCES,
   getSupabaseServiceRoleClient,
-  type CommunicationPreferences,
   type ShopAbandonedCartItem,
 } from "@workspace/resupply-db";
 
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requireAdmin, requirePermission } from "../../middlewares/requireAdmin";
-import { sendCartAbandonmentEmail } from "../../lib/cart-abandonment/send-cart-abandonment-email";
-import { isInDndWindow } from "../../lib/comm-prefs";
+import { runCartAbandonmentDispatch } from "../../lib/cart-abandonment/run-dispatch";
 
 const router: IRouter = Router();
-
-const NUDGE_WAIT_MS = 24 * 60 * 60 * 1000;
-const SCAN_LIMIT = 200;
 
 router.get("/admin/shop/abandoned-carts", requireAdmin, async (_req, res) => {
   const supabase = getSupabaseServiceRoleClient();
@@ -102,214 +96,20 @@ router.get("/admin/shop/abandoned-carts", requireAdmin, async (_req, res) => {
   });
 });
 
+// Manual dispatcher — thin wrapper around runCartAbandonmentDispatch.
+// Same dispatcher runs hourly via the pg-boss cron registered in
+// artifacts/resupply-api/src/worker/jobs/cart-abandonment-scan.ts, so
+// this route is now mostly a backup for staff who want to trigger a
+// sweep without waiting for the cron tick. The shared helper is the
+// single source of truth for the suppression rules and stats shape.
 router.post(
   "/admin/shop/abandoned-carts/send-due",
   requirePermission("bulk_campaigns.send"),
   adminRateLimit({ name: "abandoned_carts.send_due", preset: "bulk" }),
   async (req, res) => {
-    const supabase = getSupabaseServiceRoleClient();
-    const cutoffIso = new Date(Date.now() - NUDGE_WAIT_MS).toISOString();
-
-    // Step 1 — collect eligible candidate ids. Suppression policy
-    // mirrors the file-header rules. `jsonb_array_length(items) > 0`
-    // → `.neq("items", "[]")` (default for shop_abandoned_carts.items
-    // is a JSONB array, never null).
-    const { data: candidates, error: candidatesErr } = await supabase
-      .schema("resupply")
-      .from("shop_abandoned_carts")
-      .select("id")
-      .lte("updated_at", cutoffIso)
-      .is("reminded_at", null)
-      .is("recovered_at", null)
-      .is("cleared_at", null)
-      .not("email", "is", null)
-      .neq("items", "[]")
-      .order("updated_at", { ascending: true })
-      .limit(SCAN_LIMIT);
-    if (candidatesErr) throw candidatesErr;
-
-    const candidateIds = (candidates ?? []).map((r) => r.id);
-    if (candidateIds.length === 0) {
-      res.json({
-        scanned: 0,
-        sent: 0,
-        skippedNoConfig: 0,
-        skippedFailed: 0,
-        skippedOptOut: 0,
-        sendgridConfigured: true,
-      });
-      return;
-    }
-
-    // Step 2 — atomic stamp. The .is("reminded_at", null) guard
-    // makes this idempotent under parallel calls.
-    const nowIso = new Date().toISOString();
-    const { data: claimedRows, error: claimErr } = await supabase
-      .schema("resupply")
-      .from("shop_abandoned_carts")
-      .update({ reminded_at: nowIso })
-      .in("id", candidateIds)
-      .is("reminded_at", null)
-      .select("id, customer_id, email, items, subtotal_cents, currency");
-    if (claimErr) throw claimErr;
-
-    const claimed = (claimedRows ?? []).map((r) => ({
-      id: r.id,
-      customerId: r.customer_id,
-      email: r.email,
-      items: (r.items ?? []) as unknown as ShopAbandonedCartItem[],
-      subtotalCents: r.subtotal_cents,
-      currency: r.currency,
-    }));
-
-    // Pre-fetch comm prefs for every claimed user so we can suppress
-    // sends for customers who turned off cart-abandonment nudges or
-    // are inside a DND window. Single batch query — never N+1.
-    const prefsByUser = new Map<
-      string,
-      ReturnType<typeof mergePrefs>
-    >();
-    if (claimed.length > 0) {
-      const userIds = Array.from(new Set(claimed.map((r) => r.customerId)));
-      const { data: customerRows, error: prefsErr } = await supabase
-        .schema("resupply")
-        .from("shop_customers")
-        .select("customer_id, communication_preferences")
-        .in("customer_id", userIds);
-      if (prefsErr) throw prefsErr;
-      for (const cr of customerRows ?? []) {
-        prefsByUser.set(
-          cr.customer_id,
-          mergePrefs(
-            (cr.communication_preferences as CommunicationPreferences | null) ??
-              null,
-          ),
-        );
-      }
-    }
-
-    let sent = 0;
-    let skippedNoConfig = 0;
-    let skippedFailed = 0;
-    let skippedOptOut = 0;
-    let configuredFlag = true;
-
-    const unclaim = async (id: string): Promise<void> => {
-      const { error: unclaimErr } = await supabase
-        .schema("resupply")
-        .from("shop_abandoned_carts")
-        .update({ reminded_at: null })
-        .eq("id", id);
-      if (unclaimErr) {
-        req.log?.warn(
-          { err: unclaimErr, rowId: id },
-          "cart-abandonment unclaim failed",
-        );
-      }
-    };
-
-    const unclaimMany = async (ids: string[]): Promise<void> => {
-      if (ids.length === 0) return;
-      const { error: unclaimErr } = await supabase
-        .schema("resupply")
-        .from("shop_abandoned_carts")
-        .update({ reminded_at: null })
-        .in("id", ids);
-      if (unclaimErr) {
-        req.log?.warn(
-          { err: unclaimErr, idCount: ids.length },
-          "cart-abandonment unclaim batch failed",
-        );
-      }
-    };
-
-    for (const row of claimed) {
-      // Comm-prefs gate. If the user turned off abandoned-cart emails
-      // or is currently in a DND window, unclaim and skip. Default
-      // (no row in shop_customers) opts in.
-      const prefs = prefsByUser.get(row.customerId) ?? mergePrefs(null);
-      if (!prefs.emailAbandonedCart || isInDndWindow(prefs)) {
-        await unclaim(row.id);
-        skippedOptOut += 1;
-        continue;
-      }
-      if (!row.email) {
-        // Belt-and-suspenders: the SQL filter already guarded null
-        // emails, but if a row sneaks through we unclaim and skip.
-        await unclaim(row.id);
-        skippedFailed += 1;
-        continue;
-      }
-
-      let outcome;
-      try {
-        outcome = await sendCartAbandonmentEmail({
-          toEmail: row.email,
-          items: row.items,
-          subtotalCents: row.subtotalCents,
-          currency: row.currency,
-        });
-      } catch (err) {
-        // Helper threw (most commonly EmailConfigError when SendGrid
-        // env is missing). Treat as "no config" — unclaim so future
-        // runs after env is fixed will retry, and abort the loop
-        // because none of the remaining sends will succeed either.
-        await unclaim(row.id);
-        configuredFlag = false;
-        skippedNoConfig += 1;
-        const remainingIds = claimed
-          .slice(claimed.indexOf(row) + 1)
-          .map((r) => r.id);
-        await unclaimMany(remainingIds);
-        skippedNoConfig += remainingIds.length;
-        req.log?.warn(
-          {
-            rowId: row.id,
-            err: err instanceof Error ? err.message : String(err),
-          },
-          "cart-abandonment send threw — unclaiming batch",
-        );
-        break;
-      }
-
-      if (!outcome.configured) {
-        await unclaim(row.id);
-        configuredFlag = false;
-        skippedNoConfig += 1;
-        continue;
-      }
-      if (!outcome.delivered) {
-        await unclaim(row.id);
-        skippedFailed += 1;
-        // Privacy: log the row id, not the email.
-        req.log?.warn(
-          { rowId: row.id, error: outcome.error },
-          "cart-abandonment send failed",
-        );
-        continue;
-      }
-
-      // Send succeeded — claim sticks. We do NOT clear items, the
-      // row stays so PUT can detect the next material change and
-      // re-eligible.
-      sent += 1;
-    }
-
-    res.json({
-      scanned: claimed.length,
-      sent,
-      skippedNoConfig,
-      skippedFailed,
-      skippedOptOut,
-      sendgridConfigured: configuredFlag,
-    });
+    const stats = await runCartAbandonmentDispatch({ log: req.log });
+    res.json(stats);
   },
 );
-
-function mergePrefs(stored: CommunicationPreferences | null) {
-  return stored
-    ? { ...DEFAULT_COMMUNICATION_PREFERENCES, ...stored }
-    : { ...DEFAULT_COMMUNICATION_PREFERENCES };
-}
 
 export default router;
