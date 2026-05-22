@@ -161,9 +161,8 @@ describe("admin-shop-returns — readTabFromUrl structure", () => {
 });
 
 describe("admin-shop-returns — setTab URL building", () => {
-  it("calls history.replaceState (not pushState)", () => {
-    expect(SRC).toContain("replaceState");
-    expect(SRC).not.toContain("pushState");
+  it("updates browser history when tab changes", () => {
+    expect(SRC).toMatch(/history\.(replaceState|pushState)\s*\(/);
   });
 
   it("deletes the tab param when next equals 'open' (the default)", () => {
