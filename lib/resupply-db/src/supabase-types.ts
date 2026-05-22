@@ -2286,6 +2286,14 @@ export interface Database {
           submitted_by_email: string;
           submitted_at: string;
           updated_at: string;
+          // ── 0150 columns ──
+          // Claim IDs the batch *tried* to send. Populated regardless of
+          // upload outcome so a failed batch can be resubmitted without
+          // rebuilding the list. Empty array on legacy rows.
+          attempted_claim_ids: string[];
+          // Soft self-FK; non-null on resubmit rows pointing at the
+          // submission this one re-attempts.
+          parent_submission_id: string | null;
         };
         Insert: Partial<
           Database["resupply"]["Tables"]["office_ally_submissions"]["Row"]

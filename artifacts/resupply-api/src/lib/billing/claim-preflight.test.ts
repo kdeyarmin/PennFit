@@ -206,6 +206,11 @@ function stagePayerProfile(overrides: {
       office_ally_payer_id: overrides.office_ally_payer_id,
       claim_format: "837p",
       requires_prior_auth_dme: overrides.requires_prior_auth_dme,
+      // Default to "enrolled" so happy-path preflight tests pass the
+      // new EDI-enrollment gate (migration 0149 + preflight check).
+      // Tests that exercise the enrollment failure path can pass an
+      // override into stagePayerProfile to flip this.
+      edi_enrollment_status: "enrolled",
     },
   });
 }

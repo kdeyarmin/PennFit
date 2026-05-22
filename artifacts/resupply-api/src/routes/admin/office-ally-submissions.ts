@@ -1,14 +1,18 @@
-// /admin/office-ally-submissions — read-only tracking surface for
-// 837P claim files we've uploaded to Office Ally.
+// /admin/office-ally-submissions — tracking + simple-recovery surface
+// for 837P claim files we've uploaded to Office Ally.
 //
-//   GET   /admin/office-ally-submissions           — list newest-first
-//   GET   /admin/office-ally-submissions/:id       — detail incl. linked claims
-//   PATCH /admin/office-ally-submissions/:id       — ack-file ingest + status edit
+//   GET   /admin/office-ally-submissions               — list newest-first
+//   GET   /admin/office-ally-submissions/:id           — detail incl. linked claims
+//   GET   /admin/office-ally-submissions/:id/raw-837p  — download the EDI we
+//                                                        sent (regenerated)
+//   POST  /admin/office-ally-submissions/:id/resubmit  — re-attempt a
+//                                                        transport_failed batch
+//   PATCH /admin/office-ally-submissions/:id           — ack-file ingest + status edit
 //
-// The actual UPLOAD happens at
-// /admin/patients/:patientId/insurance-claims/:claimId/submit-office-ally
-// (mounted from the patients router). This route is the read + ack
-// triage surface.
+// The original UPLOAD happens at
+// /admin/billing/batch-submit-office-ally (and the per-claim variant
+// on the patients router). This route is the read + ack triage +
+// resubmit surface.
 
 import { Router, type IRouter } from "express";
 import { z } from "zod";
@@ -19,6 +23,10 @@ import {
   getSupabaseServiceRoleClient,
 } from "@workspace/resupply-db";
 
+import {
+  buildEdiPayloadForSubmission,
+  executeOfficeAllyBatchSubmit,
+} from "../../lib/billing/office-ally-batch";
 import { logger } from "../../lib/logger";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import {
@@ -71,6 +79,8 @@ interface SubmissionRow {
   submitted_by_email: string;
   submitted_at: string;
   updated_at: string;
+  attempted_claim_ids: string[] | null;
+  parent_submission_id: string | null;
 }
 
 function rowToApi(r: SubmissionRow) {
@@ -91,11 +101,13 @@ function rowToApi(r: SubmissionRow) {
     submittedByEmail: r.submitted_by_email,
     submittedAt: r.submitted_at,
     updatedAt: r.updated_at,
+    attemptedClaimIds: r.attempted_claim_ids ?? [],
+    parentSubmissionId: r.parent_submission_id,
   };
 }
 
 const FULL_SELECT =
-  "id, file_name, isa_control_number, gs_control_number, status, file_size_bytes, claim_count, office_ally_session_id, ack_999_file_name, ack_999_received_at, ack_277ca_file_name, ack_277ca_received_at, rejection_reason, submitted_by_email, submitted_at, updated_at";
+  "id, file_name, isa_control_number, gs_control_number, status, file_size_bytes, claim_count, office_ally_session_id, ack_999_file_name, ack_999_received_at, ack_277ca_file_name, ack_277ca_received_at, rejection_reason, submitted_by_email, submitted_at, updated_at, attempted_claim_ids, parent_submission_id";
 
 // ── LIST ────────────────────────────────────────────────────────────
 router.get(
@@ -162,6 +174,140 @@ router.get(
         status: c.status,
         totalBilledCents: c.total_billed_cents,
       })),
+    });
+  },
+);
+
+// ── RAW 837P DOWNLOAD ──────────────────────────────────────────────
+// Regenerates the exact 837P payload from the submission's linked
+// claims and original ISA/GS control numbers. Used by the admin UI's
+// "View raw 837P" download for audit + Office-Ally support tickets.
+//
+// PHI gate: the payload contains the full patient/claim payload that
+// was sent. requireAdminOnly + the response carries no-store +
+// Content-Disposition: attachment so it never lands in a browser
+// cache or proxy intermediary.
+router.get(
+  "/admin/office-ally-submissions/:id/raw-837p",
+  requireAdminOnly,
+  adminRateLimit({
+    name: "office_ally_submissions.raw_837p",
+    preset: "sensitive",
+  }),
+  async (req, res) => {
+    const parsed = idParam.safeParse(req.params);
+    if (!parsed.success) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    const built = await buildEdiPayloadForSubmission(parsed.data.id);
+    if (!built) {
+      res.status(404).json({ error: "submission_unrecoverable" });
+      return;
+    }
+    await logAudit({
+      action: "office_ally_submission.download_raw_837p",
+      adminEmail: req.adminEmail ?? null,
+      adminUserId: req.adminUserId ?? null,
+      targetTable: "office_ally_submissions",
+      targetId: parsed.data.id,
+      metadata: {
+        usage_indicator: built.usageIndicator,
+        size_bytes: Buffer.byteLength(built.payload, "utf8"),
+      },
+      ip: req.ip ?? null,
+      userAgent: req.get("user-agent") ?? null,
+    }).catch((err) => {
+      logger.warn(
+        { err },
+        "office_ally_submission.download_raw_837p audit write failed",
+      );
+    });
+    res.setHeader("Content-Type", "text/plain; charset=utf-8");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="PF-837P-${parsed.data.id.slice(0, 8)}.txt"`,
+    );
+    res.setHeader("Cache-Control", "no-store");
+    res.send(built.payload);
+  },
+);
+
+// ── RESUBMIT ────────────────────────────────────────────────────────
+// One-click recovery for `transport_failed` submissions. Forwards to
+// the shared batch-submit core, recording parent_submission_id so the
+// dashboard can show the resubmit chain. Only valid on a row whose
+// upload failed at transport — once OA has accepted the file, the
+// claims have already advanced and a true resubmit is a different
+// (corrected-claim) flow.
+router.post(
+  "/admin/office-ally-submissions/:id/resubmit",
+  requirePermission("admin.tools.manage"),
+  adminRateLimit({
+    name: "office_ally_submissions.resubmit",
+    preset: "bulk",
+  }),
+  async (req, res) => {
+    const parsed = idParam.safeParse(req.params);
+    if (!parsed.success) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    const supabase = getSupabaseServiceRoleClient();
+    const { data: original } = await supabase
+      .schema("resupply")
+      .from("office_ally_submissions")
+      .select("id, status, attempted_claim_ids")
+      .eq("id", parsed.data.id)
+      .limit(1)
+      .maybeSingle();
+    if (!original) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    if (original.status !== "transport_failed") {
+      res.status(409).json({
+        error: "not_resubmittable",
+        message:
+          "only transport_failed submissions can be resubmitted (claims for accepted batches advance past draft, so a corrected-claim flow is needed instead)",
+        currentStatus: original.status,
+      });
+      return;
+    }
+    const claimIds = original.attempted_claim_ids ?? [];
+    if (claimIds.length === 0) {
+      res.status(409).json({
+        error: "no_attempted_claims",
+        message:
+          "this submission predates migration 0150 and has no recorded claim list; submit a fresh batch instead",
+      });
+      return;
+    }
+    const result = await executeOfficeAllyBatchSubmit({
+      claimIds,
+      parentSubmissionId: original.id,
+      adminEmail: req.adminEmail ?? null,
+      adminUserId: req.adminUserId ?? null,
+      ip: req.ip ?? null,
+      userAgent: req.get("user-agent") ?? null,
+    });
+    if (!result.ok) {
+      const status =
+        result.kind === "no_claims_matched"
+          ? 404
+          : 409;
+      res.status(status).json({ error: result.kind, ...result.detail });
+      return;
+    }
+    res.status(result.uploadOk ? 201 : 502).json({
+      ok: result.uploadOk,
+      submissionId: result.submissionId,
+      parentSubmissionId: original.id,
+      claimCount: result.claimCount,
+      isaControlNumber: result.isaControlNumber,
+      gsControlNumber: result.gsControlNumber,
+      transport: result.transport,
+      uploadError: result.uploadError,
     });
   },
 );
