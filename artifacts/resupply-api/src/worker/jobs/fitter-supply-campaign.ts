@@ -152,6 +152,194 @@ function escapeHtml(s: string): string {
     .replace(/'/g, "&#39;");
 }
 
+// ---------------------------------------------------------------
+// Email rendering helpers — preheader + branded template.
+// ---------------------------------------------------------------
+//
+// Why a branded template
+// ----------------------
+// The original touch HTML was plain system-ui paragraphs. That's
+// fine for transactional email but reads as "marketing afterthought"
+// next to the polished templates patients see from competitors. A
+// branded table-based layout (a header band in penn-navy, a single
+// content cell, an accent border) lifts perceived legitimacy AND
+// click-through; the bar is "looks like every other professional
+// transactional email the patient receives."
+//
+// Table-based layout because:
+//   * Gmail/iOS Mail/Outlook ignore most modern CSS — flexbox,
+//     grid, custom properties. <table> + inline styles are the only
+//     reliably-rendered structure across the top 5 email clients.
+//   * Width clamps via `max-width` work in modern clients but Outlook
+//     stubbornly ignores them; we use a fixed 560px wrapping table
+//     and a 100%-width outer table so Outlook centers it cleanly.
+//
+// Preheader text
+// --------------
+// The preheader is the gray subtitle that appears next to the
+// subject line in mobile inbox previews. When unset, clients use
+// the first visible body content — usually our greeting, which
+// wastes the most valuable real estate in the inbox. Setting an
+// explicit preheader (a hidden <div> at the top of the body)
+// reliably lifts open rates 5-15% across DME marketing benchmarks
+// because it gives the patient a SECOND hook beyond the subject
+// line.
+
+const BRAND_NAVY = "#1F3A5C";
+const BRAND_GOLD = "#F4B942";
+const BG = "#f4f6f8";
+const CARD_BG = "#ffffff";
+const TEXT = "#1f2a37";
+const MUTED = "#6b7280";
+const BORDER = "#e5e7eb";
+
+/** Render a single CTA button as a table (Outlook-safe). */
+function renderCtaButton(label: string, href: string): string {
+  return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:16px 0;">
+    <tr><td style="border-radius:6px;background:${BRAND_NAVY};">
+      <a href="${href}" style="display:inline-block;padding:13px 26px;font-family:-apple-system,Segoe UI,Roboto,sans-serif;font-size:15px;font-weight:600;color:#fff;text-decoration:none;border-radius:6px;">${escapeHtml(label)}</a>
+    </td></tr>
+  </table>`;
+}
+
+/** Render the full responsive email shell around the per-touch
+ *  body content. The body content carries paragraphs + CTAs +
+ *  any lists; the shell adds the brand band, preheader, frame,
+ *  and footer. */
+function renderBrandedHtml(opts: {
+  practiceName: string;
+  preheader: string;
+  bodyHtml: string;
+  unsubscribeUrl: string;
+}): string {
+  const { practiceName, preheader, bodyHtml, unsubscribeUrl } = opts;
+  // Inbox-preview hidden text. Trailing zero-width-non-joiners
+  // pushed in to keep Gmail from grabbing email-source text after
+  // the preheader and showing it as part of the preview snippet.
+  // The exact tail length is tuned to keep total preview-content
+  // under 100 chars for most clients.
+  const previewPad = "&zwnj;&nbsp;".repeat(30);
+  return `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>${escapeHtml(practiceName)}</title>
+</head><body style="margin:0;padding:0;background:${BG};font-family:-apple-system,Segoe UI,Roboto,sans-serif;color:${TEXT};">
+<div style="display:none;max-height:0;overflow:hidden;font-size:1px;line-height:1px;color:${BG};opacity:0;">${escapeHtml(preheader)}${previewPad}</div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:${BG};">
+  <tr><td align="center" style="padding:24px 12px;">
+    <table role="presentation" width="560" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:560px;background:${CARD_BG};border:1px solid ${BORDER};border-radius:8px;overflow:hidden;">
+      <tr><td style="background:${BRAND_NAVY};padding:16px 24px;">
+        <div style="font-size:13px;letter-spacing:1px;text-transform:uppercase;color:#fff;font-weight:600;">${escapeHtml(practiceName)}</div>
+        <div style="height:3px;width:48px;background:${BRAND_GOLD};margin-top:8px;border-radius:2px;"></div>
+      </td></tr>
+      <tr><td style="padding:28px 28px 8px 28px;font-size:15px;line-height:1.55;color:${TEXT};">
+        ${bodyHtml}
+      </td></tr>
+      <tr><td style="padding:0 28px 28px 28px;">
+        <hr style="border:none;border-top:1px solid ${BORDER};margin:12px 0;"/>
+        <p style="color:${MUTED};font-size:12px;line-height:1.5;margin:0;">
+          ${escapeHtml(practiceName)} · <a href="${unsubscribeUrl}" style="color:${MUTED};text-decoration:underline;">Unsubscribe from these emails</a>
+        </p>
+      </td></tr>
+    </table>
+  </td></tr>
+</table>
+</body></html>`;
+}
+
+// ---------------------------------------------------------------
+// Mask-type vocabulary.
+// ---------------------------------------------------------------
+//
+// The re-order touchpoints (T7-T10) speak about specific mask parts.
+// A patient on a nasal-pillow mask doesn't have "cushions" the way
+// a full-face patient does — they have pillow inserts. Saying the
+// wrong word costs credibility and lifts unsubscribe rates because
+// patients perceive the email as bot-generated.
+//
+// `recommended_mask_type` is one of fullFace | nasal | nasalPillow |
+// hybrid (the MaskType enum from data/maskCatalog.ts). Null falls
+// back to neutral, slightly less-personalized language.
+
+interface MaskPartVocab {
+  /** Singular replacement noun used in T7 ("your X is due"). */
+  cushionTerm: string;
+  /** Mask-type-specific wear note used in T7 body. */
+  cushionNote: string;
+  /** Singular replacement noun for T9. Some masks call this
+   *  "straps", others "headgear", others "headgear + chinstrap". */
+  headgearTerm: string;
+  /** Mask-type-specific cross-sell hint for T8 (filter touch). */
+  filterCrossSell: string;
+}
+
+function maskPartVocabulary(maskType: string | null): MaskPartVocab {
+  switch (maskType) {
+    case "nasalPillow":
+      return {
+        cushionTerm: "pillow inserts",
+        cushionNote:
+          "Pillow inserts wear faster than larger cushions — most nasal-pillow users swap every 14-28 days. After 30, the silicone seal loses its springback and starts whistling.",
+        headgearTerm: "headgear straps",
+        filterCrossSell:
+          "While you're here: pair your filter order with fresh pillow inserts so you're set for the next 30 days.",
+      };
+    case "fullFace":
+      return {
+        cushionTerm: "full-face cushion (and forehead pad)",
+        cushionNote:
+          "Full-face seals carry more pressure than smaller masks, so the cushion + forehead pad soften noticeably faster. By day 30 most patients are getting subtle leaks around the bridge of the nose.",
+        headgearTerm: "headgear (and chinstrap loops if you use them)",
+        filterCrossSell:
+          "While you're here: full-face users often pair filter orders with a fresh cushion since both wear on the same 30-day cycle.",
+      };
+    case "hybrid":
+      return {
+        cushionTerm: "hybrid cushion",
+        cushionNote:
+          "The dual nasal-and-oral seal on a hybrid cushion carries more wear than a single-port mask — manufacturers rate hybrid cushions at 30 days even though the silicone looks fine to the eye.",
+        headgearTerm: "headgear straps",
+        filterCrossSell:
+          "While you're here: hybrid users often add a backup cushion to the same order — replacement timing is the same 30-day window.",
+      };
+    case "nasal":
+      return {
+        cushionTerm: "nasal cushion",
+        cushionNote:
+          "Most nasal-cushion users notice the seal getting softer + faint leak whistles around day 25-30. Replacement timing tracks manufacturer guidance of 30 days.",
+        headgearTerm: "headgear",
+        filterCrossSell:
+          "While you're here: pair your filter order with a fresh nasal cushion — both wear on the same monthly cycle.",
+      };
+    default:
+      return {
+        cushionTerm: "cushion",
+        cushionNote:
+          "Most patients notice their cushion getting softer + faint leak whistles around day 25-30. Manufacturer guidance is replacement every 30 days.",
+        headgearTerm: "headgear",
+        filterCrossSell:
+          "While you're here: pair your filter order with a fresh cushion — both wear on the same monthly cycle.",
+      };
+  }
+}
+
+/** Subscription auto-ship upsell snippet rendered into T7-T9
+ *  footers. Single CTA + one-sentence value prop; T10 (the warm
+ *  sendoff) deliberately omits this to keep the tone non-salesy. */
+function renderSubscriptionUpsell(shopUrl: string): {
+  html: string;
+  text: string;
+} {
+  const subscribeUrl = `${shopUrl}/subscribe`;
+  return {
+    html: `<div style="margin-top:18px;padding:14px 16px;background:#fef6e0;border-left:3px solid ${BRAND_GOLD};border-radius:4px;font-size:14px;line-height:1.5;">
+      <strong>Never run out:</strong> set up auto-ship and save 10% on every order. Skip or cancel any month — no commitment.
+      <div style="margin-top:8px;"><a href="${subscribeUrl}" style="color:${BRAND_NAVY};font-weight:600;text-decoration:underline;">Set up auto-ship</a></div>
+    </div>`,
+    text: `\n\nNever run out: set up auto-ship and save 10% on every order. Skip or cancel any month — no commitment.\n${subscribeUrl}`,
+  };
+}
+
 /** Map a 1-based touch index to the copy that should ship. Exported
  *  for testability — pure function, no DB or vendor calls.
  *
@@ -181,6 +369,7 @@ export function composeTouchpoint(opts: {
     resumeUrl,
     shopUrl,
     recommendedMaskName,
+    recommendedMaskType,
     unsubscribeUrl,
     firstName,
   } = opts;
@@ -203,10 +392,10 @@ export function composeTouchpoint(opts: {
       ? firstName.trim()
       : null;
   const nameSubjectPrefix = safeName ? `${safeName}, ` : "";
-  const greeting = safeName ? `Hi ${safeName},` : `Hi from ${practiceName},`;
   const greetingHtml = safeName
-    ? `<p>Hi <strong>${escapeHtml(safeName)}</strong>,</p>`
-    : `<p>Hi from <strong>${escapeHtml(practiceName)}</strong>,</p>`;
+    ? `<p style="margin:0 0 14px 0;">Hi <strong>${escapeHtml(safeName)}</strong>,</p>`
+    : `<p style="margin:0 0 14px 0;">Hi from <strong>${escapeHtml(practiceName)}</strong>,</p>`;
+  const greetingText = safeName ? `Hi ${safeName},` : `Hi from ${practiceName},`;
   const smsNamePrefix = safeName ? `${safeName} — ` : "";
 
   // FSA / HSA accounts reset Dec 31 every year for most plans. T3's
@@ -228,13 +417,28 @@ export function composeTouchpoint(opts: {
     timeZone: "UTC",
   });
 
-  const footer = (textMode: boolean): string =>
-    textMode
-      ? `\n\n— ${practiceName}\nDon't want these? Unsubscribe: ${unsubscribeUrl}`
-      : `<p style="color:#888;font-size:12px;margin-top:32px;">${escapeHtml(practiceName)} · <a href="${unsubscribeUrl}" style="color:#888;">Unsubscribe from these emails</a></p>`;
+  // Mask-type vocabulary for the re-order phase. Pre-purchase touches
+  // ignore this (they speak about the mask as a whole, not its parts).
+  const vocab = maskPartVocabulary(recommendedMaskType);
 
-  const ctaButton = (label: string, href: string): string =>
-    `<p><a href="${href}" style="display:inline-block;padding:12px 22px;background:#0f1d3a;color:#fff;text-decoration:none;border-radius:6px;font-weight:600;">${escapeHtml(label)}</a></p>`;
+  // Internal builder so every case returns the same shape and the
+  // branded shell is applied uniformly. Avoids per-case copy-paste
+  // of the renderBrandedHtml call.
+  const buildEmail = (
+    subject: string,
+    preheader: string,
+    bodyHtml: string,
+    bodyText: string,
+  ): { subject: string; html: string; text: string } => ({
+    subject,
+    html: renderBrandedHtml({
+      practiceName,
+      preheader,
+      bodyHtml: `${greetingHtml}${bodyHtml}`,
+      unsubscribeUrl,
+    }),
+    text: `${greetingText}\n\n${bodyText}\n\n— ${practiceName}\nUnsubscribe: ${unsubscribeUrl}`,
+  });
 
   switch (touchIndex) {
     case 1: {
@@ -243,9 +447,8 @@ export function composeTouchpoint(opts: {
       // before opening; "is on hold" beats "is ready" because it
       // implies the recommendation might evaporate (loss-aversion).
       const subject = `${nameSubjectPrefix}${maskRef} is on hold for you`;
-      const text = [
-        greeting,
-        "",
+      const preheader = `Your measurements are saved — finish your fitting in 2 minutes.`;
+      const bodyText = [
         `Yesterday you ran our at-home fitting and we matched you to ${maskRef}.`,
         "Your measurements are saved — no need to redo them.",
         "",
@@ -253,29 +456,22 @@ export function composeTouchpoint(opts: {
         "",
         "Most patients we work with notice deeper sleep in the first week.",
         "Reply to this email if you have a question — a real human reads it.",
-        footer(true),
       ].join("\n");
-      const html = `<div style="font-family:system-ui,sans-serif;max-width:560px;line-height:1.5;">
-          ${greetingHtml}
-          <p>Yesterday you ran our at-home fitting and we matched you to <strong>${maskRefHtml}</strong>. Your measurements are saved — no need to redo them.</p>
-          ${ctaButton("Pick up where you left off", resumeUrl)}
-          <p>Most patients we work with notice deeper sleep in the first week. Reply to this email if you have a question — a real human reads it.</p>
-          ${footer(false)}
-        </div>`;
+      const bodyHtml = `
+        <p>Yesterday you ran our at-home fitting and we matched you to <strong>${maskRefHtml}</strong>. Your measurements are saved — no need to redo them.</p>
+        ${renderCtaButton("Pick up where you left off", resumeUrl)}
+        <p style="color:${MUTED};font-size:14px;">Most patients we work with notice deeper sleep in the first week. Reply to this email if you have a question — a real human reads it.</p>`;
       return {
-        email: { subject, html, text },
+        email: buildEmail(subject, preheader, bodyHtml, bodyText),
         sms: `${smsNamePrefix}${practiceName}: ${maskRef} is on hold. Continue: ${resumeUrl} . Reply STOP to opt out.`,
       };
     }
     case 2: {
       // T2 — day 3: social proof, with a concrete number. "9 in 10"
-      // is the strongest comprehensible fraction at glance speed;
-      // testimonials and abstract praise underperform numbered claims
-      // in DME marketing benchmarks.
+      // is the strongest comprehensible fraction at glance speed.
       const subject = `${nameSubjectPrefix}9 in 10 patients with your fit choose this`;
-      const text = [
-        greeting,
-        "",
+      const preheader = `Plus our 30-night comfort guarantee — if it doesn't fit, we swap it free.`;
+      const bodyText = [
         `${maskRef} is the most-chosen mask for patients whose measurements line up with yours.`,
         "Patients tell us, every week:",
         "  • Quieter than they expected",
@@ -285,92 +481,71 @@ export function composeTouchpoint(opts: {
         "Pair it with our 30-night comfort guarantee — if it doesn't feel right, we swap it for free.",
         "",
         `Take another look: ${resumeUrl}`,
-        footer(true),
       ].join("\n");
-      const html = `<div style="font-family:system-ui,sans-serif;max-width:560px;line-height:1.5;">
-          ${greetingHtml}
-          <p><strong>${maskRefHtml}</strong> is the most-chosen mask for patients whose measurements line up with yours.</p>
-          <p>Patients tell us, every week:</p>
-          <ul>
-            <li>Quieter than they expected</li>
-            <li>Comfortable for side and stomach sleepers</li>
-            <li>Easy to clean in under a minute</li>
-          </ul>
-          <p>Pair it with our <strong>30-night comfort guarantee</strong> — if it doesn&apos;t feel right, we swap it for free.</p>
-          ${ctaButton("Take another look", resumeUrl)}
-          ${footer(false)}
-        </div>`;
+      const bodyHtml = `
+        <p><strong>${maskRefHtml}</strong> is the most-chosen mask for patients whose measurements line up with yours.</p>
+        <p>Patients tell us, every week:</p>
+        <ul style="margin:8px 0;padding-left:22px;">
+          <li>Quieter than they expected</li>
+          <li>Comfortable for side and stomach sleepers</li>
+          <li>Easy to clean in under a minute</li>
+        </ul>
+        <p>Pair it with our <strong>30-night comfort guarantee</strong> — if it doesn&apos;t feel right, we swap it for free.</p>
+        ${renderCtaButton("Take another look", resumeUrl)}`;
       return {
-        email: { subject, html, text },
+        email: buildEmail(subject, preheader, bodyHtml, bodyText),
         sms: `${smsNamePrefix}${practiceName}: ${maskRef} — 30-night swap-for-free guarantee. ${resumeUrl} STOP to opt out.`,
       };
     }
     case 3: {
       // T3 — day 7: FSA/HSA reminder with a concrete expiry date.
-      // The dated headline turns an "I should look into that"
-      // backlog item into a "do this before X" task; benchmarks
-      // show ~2x click-through on dated vs. undated benefits copy.
       const subject = `${nameSubjectPrefix}Use your FSA/HSA before ${fsaDeadlineLabel}`;
-      const text = [
-        greeting,
-        "",
+      const preheader = `CPAP supplies are eligible — and we accept your FSA/HSA card at checkout.`;
+      const bodyText = [
         `Your FSA / HSA dollars expire ${fsaDeadlineLabel}. Most patients lose money sitting in their account every year because they forget.`,
         "",
         "CPAP masks and supplies are FSA- and HSA-eligible. We accept your card directly at checkout — no receipts, no reimbursement paperwork.",
         "",
         `Browse compatible supplies: ${shopUrl}`,
-        footer(true),
       ].join("\n");
-      const html = `<div style="font-family:system-ui,sans-serif;max-width:560px;line-height:1.5;">
-          ${greetingHtml}
-          <p>Your FSA / HSA dollars expire <strong>${escapeHtml(fsaDeadlineLabel)}</strong>. Most patients lose money sitting in their account every year because they forget.</p>
-          <p>CPAP masks and supplies are FSA- and HSA-eligible. We accept your card directly at checkout — no receipts, no reimbursement paperwork.</p>
-          ${ctaButton("Browse compatible supplies", shopUrl)}
-          ${footer(false)}
-        </div>`;
-      return { email: { subject, html, text }, sms: "" };
+      const bodyHtml = `
+        <p>Your FSA / HSA dollars expire <strong>${escapeHtml(fsaDeadlineLabel)}</strong>. Most patients lose money sitting in their account every year because they forget.</p>
+        <p>CPAP masks and supplies are FSA- and HSA-eligible. We accept your card directly at checkout — no receipts, no reimbursement paperwork.</p>
+        ${renderCtaButton("Browse compatible supplies", shopUrl)}`;
+      return {
+        email: buildEmail(subject, preheader, bodyHtml, bodyText),
+        sms: "",
+      };
     }
     case 4: {
-      // T4 — day 14: one-time discount. Subject leans on the
-      // specific code + an explicit deadline. "Expires Friday"
-      // outperforms "expires in 30 days" by a wide margin —
-      // weekday names create a clearer mental deadline than
-      // relative durations.
+      // T4 — day 14: one-time discount with explicit 7-day deadline.
       const promo = process.env.FITTER_SUPPLY_CAMPAIGN_PROMO ?? "WELCOME15";
       const subject = `${nameSubjectPrefix}${promo}: 15% off ${maskRef} — ends in 7 days`;
-      const text = [
-        greeting,
-        "",
+      const preheader = `One-time offer. Use code ${promo} at checkout — expires automatically.`;
+      const bodyText = [
         `One-time offer: code ${promo} takes 15% off your first order, mask or supplies.`,
         "Valid 7 days from this email — your code expires automatically.",
         "",
         `Use it here: ${shopUrl}`,
         "",
         `Works on ${maskRef} or anything else in our catalog. One per patient.`,
-        footer(true),
       ].join("\n");
-      const html = `<div style="font-family:system-ui,sans-serif;max-width:560px;line-height:1.5;">
-          ${greetingHtml}
-          <p style="font-size:20px;line-height:1.3;"><strong>15% off your first order</strong></p>
-          <p>One-time offer — code <code style="background:#fef3c7;padding:3px 8px;border-radius:4px;font-size:15px;">${escapeHtml(promo)}</code> takes 15% off your first order, mask or supplies. <strong>Valid 7 days from this email.</strong></p>
-          ${ctaButton(`Shop ${maskRef}`, shopUrl)}
-          <p style="color:#666;font-size:13px;">Works on ${maskRefHtml} or anything else in our catalog. One per patient.</p>
-          ${footer(false)}
-        </div>`;
+      const bodyHtml = `
+        <p style="font-size:22px;line-height:1.3;margin:0 0 12px 0;"><strong style="color:${BRAND_NAVY};">15% off your first order</strong></p>
+        <p>One-time offer — code <code style="background:#fef3c7;padding:4px 10px;border-radius:4px;font-size:16px;font-weight:600;letter-spacing:0.5px;">${escapeHtml(promo)}</code> takes 15% off your first order, mask or supplies. <strong>Valid 7 days from this email.</strong></p>
+        ${renderCtaButton(`Shop ${maskRef}`, shopUrl)}
+        <p style="color:${MUTED};font-size:13px;">Works on ${maskRefHtml} or anything else in our catalog. One per patient.</p>`;
       return {
-        email: { subject, html, text },
+        email: buildEmail(subject, preheader, bodyHtml, bodyText),
         sms: `${smsNamePrefix}${practiceName}: ${promo} = 15% off ${maskRef} for 7 days. ${shopUrl} STOP to opt out.`,
       };
     }
     case 5: {
-      // T5 — day 30: educational. Three concrete patient-reported
-      // outcomes paint a vivid picture of "what changes if I
-      // actually do this." Educational tone (no offer) re-engages
-      // the cohort that disengaged on the prior discount touch.
+      // T5 — day 30: educational. No offer — concrete patient-reported
+      // outcomes re-engage the cohort that disengaged on T4.
       const subject = `${nameSubjectPrefix}What 30 nights on CPAP actually feels like`;
-      const text = [
-        greeting,
-        "",
+      const preheader = `Morning headaches, daytime energy, your bed partner — what changes first.`;
+      const bodyText = [
         "After 30 nights on the right CPAP setup, most patients notice:",
         "  • Morning headaches gone or much milder",
         "  • Daytime energy noticeably better — no afternoon crash",
@@ -378,136 +553,119 @@ export function composeTouchpoint(opts: {
         "",
         "We've held your fitting recommendation — when you're ready:",
         `  ${resumeUrl}`,
-        footer(true),
       ].join("\n");
-      const html = `<div style="font-family:system-ui,sans-serif;max-width:560px;line-height:1.5;">
-          ${greetingHtml}
-          <p>After 30 nights on the right CPAP setup, most patients notice:</p>
-          <ul>
-            <li>Morning headaches gone or much milder</li>
-            <li>Daytime energy noticeably better — no afternoon crash</li>
-            <li>Bed partner sleeping through the night</li>
-          </ul>
-          <p>We&apos;ve held your fitting recommendation — when you&apos;re ready:</p>
-          ${ctaButton("See my recommendation", resumeUrl)}
-          ${footer(false)}
-        </div>`;
-      return { email: { subject, html, text }, sms: "" };
+      const bodyHtml = `
+        <p>After 30 nights on the right CPAP setup, most patients notice:</p>
+        <ul style="margin:8px 0;padding-left:22px;">
+          <li>Morning headaches gone or much milder</li>
+          <li>Daytime energy noticeably better — no afternoon crash</li>
+          <li>Bed partner sleeping through the night</li>
+        </ul>
+        <p>We&apos;ve held your fitting recommendation — when you&apos;re ready:</p>
+        ${renderCtaButton("See my recommendation", resumeUrl)}`;
+      return {
+        email: buildEmail(subject, preheader, bodyHtml, bodyText),
+        sms: "",
+      };
     }
     case 6:
     default: {
-      // T6 — day 60: final touch. "Last note" framing primes
-      // engagement on this email (last-chance + scarcity), while
-      // the warm tone keeps unsubscribes low. Patient still gets
-      // the lapsed-customer-winback after 180+ days if they come
-      // back later but never order.
+      // T6 — day 60: final touch. "Last note" framing.
       const subject = `${nameSubjectPrefix}Last note about ${maskRef}`;
-      const text = [
-        greeting,
-        "",
+      const preheader = `We're holding your fitting for 12 months — come back any time.`;
+      const bodyText = [
         `This is the last email we'll send about ${maskRef}.`,
         "",
         "Your fitting will stay on file for 12 months in case you'd like to come back to it. If you have questions, just reply — we read every reply.",
         "",
         `Resume any time: ${resumeUrl}`,
-        footer(true),
       ].join("\n");
-      const html = `<div style="font-family:system-ui,sans-serif;max-width:560px;line-height:1.5;">
-          ${greetingHtml}
-          <p>This is the <strong>last email</strong> we&apos;ll send about <strong>${maskRefHtml}</strong>.</p>
-          <p>Your fitting will stay on file for 12 months in case you&apos;d like to come back to it. If you have questions, just reply — we read every reply.</p>
-          ${ctaButton("Resume any time", resumeUrl)}
-          ${footer(false)}
-        </div>`;
+      const bodyHtml = `
+        <p>This is the <strong>last email</strong> we&apos;ll send about <strong>${maskRefHtml}</strong>.</p>
+        <p>Your fitting will stay on file for 12 months in case you&apos;d like to come back to it. If you have questions, just reply — we read every reply.</p>
+        ${renderCtaButton("Resume any time", resumeUrl)}`;
       return {
-        email: { subject, html, text },
+        email: buildEmail(subject, preheader, bodyHtml, bodyText),
         sms: `${smsNamePrefix}${practiceName}: last note about ${maskRef} — saved 12mo. ${resumeUrl} STOP to opt out.`,
       };
     }
     // -------------------------------------------------------------
-    // Post-purchase re-order phase. firstName is reliably non-null
-    // here because conversion-attribution stamps it from
-    // public.orders.patient_name when flipping the row into
-    // reorder_active.
+    // Post-purchase re-order phase. Mask-type-specific vocabulary
+    // pulled from maskPartVocabulary() above; subscription upsell
+    // appears in T7-T9 footers but not in T10 (warm sendoff).
     // -------------------------------------------------------------
     case 7: {
-      // T7 — day 30 after order: cushion replacement.
-      const subject = `${nameSubjectPrefix}Time to replace your cushion`;
-      const text = [
-        greeting,
+      // T7 — day 30 after order: cushion / pillow-insert replacement.
+      const subject = `${nameSubjectPrefix}Time to replace your ${vocab.cushionTerm}`;
+      const preheader = `30 days in — your seal is at the end of its prime life.`;
+      const sub = renderSubscriptionUpsell(shopUrl);
+      const bodyText = [
+        `It's been about 30 days since your mask shipped. ${vocab.cushionNote}`,
         "",
-        "It's been about 30 days since your mask shipped — which means the cushion seal is at the end of its prime life. Most patients notice their cushion getting softer + leaks creeping in around now.",
-        "",
-        `Order a replacement cushion: ${shopUrl}`,
-        "",
-        "If you set up a subscription, your next cushion ships automatically every 30 days. Most insurance plans cover one cushion per month.",
-        footer(true),
+        `Order a replacement ${vocab.cushionTerm}: ${shopUrl}`,
+        sub.text,
       ].join("\n");
-      const html = `<div style="font-family:system-ui,sans-serif;max-width:560px;line-height:1.5;">
-          ${greetingHtml}
-          <p>It&apos;s been about 30 days since your mask shipped — which means the cushion seal is at the end of its prime life. Most patients notice their cushion getting softer + leaks creeping in around now.</p>
-          ${ctaButton("Order a replacement cushion", shopUrl)}
-          <p style="color:#666;">Tip: set up a subscription and your next cushion ships automatically every 30 days. Most insurance plans cover one cushion per month.</p>
-          ${footer(false)}
-        </div>`;
+      const bodyHtml = `
+        <p>It&apos;s been about 30 days since your mask shipped. ${escapeHtml(vocab.cushionNote)}</p>
+        ${renderCtaButton(`Order replacement ${vocab.cushionTerm}`, shopUrl)}
+        ${sub.html}`;
       return {
-        email: { subject, html, text },
-        sms: `${smsNamePrefix}${practiceName}: your cushion is due for a swap. Reorder: ${shopUrl} STOP to opt out.`,
+        email: buildEmail(subject, preheader, bodyHtml, bodyText),
+        sms: `${smsNamePrefix}${practiceName}: your ${vocab.cushionTerm} are due for a swap. Reorder: ${shopUrl} STOP to opt out.`,
       };
     }
     case 8: {
-      // T8 — day 60 after order: filter check.
+      // T8 — day 60 after order: filter check + mask-type cross-sell.
       const subject = `${nameSubjectPrefix}Check your filter — 60 days in`;
-      const text = [
-        greeting,
-        "",
+      const preheader = `Disposable filters expire every 30 days. You're overdue.`;
+      const sub = renderSubscriptionUpsell(shopUrl);
+      const bodyText = [
         "Quick reminder: disposable inline filters need replacing every 30 days on most CPAP machines. If you've been on your new mask for 60 days, you're already overdue for at least one filter swap.",
         "",
         "Why it matters: a clogged filter forces your machine to work harder + can pull in more allergens overnight.",
         "",
+        vocab.filterCrossSell,
+        "",
         `Filters + accessories: ${shopUrl}`,
-        footer(true),
+        sub.text,
       ].join("\n");
-      const html = `<div style="font-family:system-ui,sans-serif;max-width:560px;line-height:1.5;">
-          ${greetingHtml}
-          <p>Quick reminder: disposable inline filters need replacing every 30 days on most CPAP machines. If you&apos;ve been on your new mask for 60 days, you&apos;re already overdue for at least one filter swap.</p>
-          <p style="color:#666;">Why it matters: a clogged filter forces your machine to work harder + can pull in more allergens overnight.</p>
-          ${ctaButton("Filters + accessories", shopUrl)}
-          ${footer(false)}
-        </div>`;
+      const bodyHtml = `
+        <p>Quick reminder: disposable inline filters need replacing every 30 days on most CPAP machines. If you&apos;ve been on your new mask for 60 days, you&apos;re already overdue for at least one filter swap.</p>
+        <p style="color:${MUTED};font-size:14px;">Why it matters: a clogged filter forces your machine to work harder + can pull in more allergens overnight.</p>
+        <p><em>${escapeHtml(vocab.filterCrossSell)}</em></p>
+        ${renderCtaButton("Filters + accessories", shopUrl)}
+        ${sub.html}`;
       return {
-        email: { subject, html, text },
+        email: buildEmail(subject, preheader, bodyHtml, bodyText),
         sms: `${smsNamePrefix}${practiceName}: time to swap your CPAP filter. ${shopUrl} STOP to opt out.`,
       };
     }
     case 9: {
-      // T9 — day 90 after order: headgear.
-      const subject = `${nameSubjectPrefix}Headgear stretching out? It's been 90 days`;
-      const text = [
-        greeting,
+      // T9 — day 90 after order: mask-type-aware headgear language.
+      const subject = `${nameSubjectPrefix}Your ${vocab.headgearTerm} at 90 days`;
+      const preheader = `Loose straps are the #1 cause of new leaks on a comfortable mask.`;
+      const sub = renderSubscriptionUpsell(shopUrl);
+      const bodyText = [
+        `If your mask is starting to feel loose or you're cranking the straps tighter than you used to, your ${vocab.headgearTerm} have reached the end of their useful life. Manufacturer guidance puts headgear at 90-180 days; loose straps are the #1 cause of new leaks on a previously-comfortable mask.`,
         "",
-        "If your mask is starting to feel loose or you're cranking the straps tighter than you used to, your headgear has reached the end of its useful life. Manufacturer guidance puts headgear at 90-180 days; loose straps are the #1 cause of new leaks on a previously-comfortable mask.",
-        "",
-        `Replacement headgear: ${shopUrl}`,
-        footer(true),
+        `Replacement ${vocab.headgearTerm}: ${shopUrl}`,
+        sub.text,
       ].join("\n");
-      const html = `<div style="font-family:system-ui,sans-serif;max-width:560px;line-height:1.5;">
-          ${greetingHtml}
-          <p>If your mask is starting to feel loose or you&apos;re cranking the straps tighter than you used to, your headgear has reached the end of its useful life. Manufacturer guidance puts headgear at 90-180 days; loose straps are the #1 cause of new leaks on a previously-comfortable mask.</p>
-          ${ctaButton("Replacement headgear", shopUrl)}
-          ${footer(false)}
-        </div>`;
+      const bodyHtml = `
+        <p>If your mask is starting to feel loose or you&apos;re cranking the straps tighter than you used to, your ${escapeHtml(vocab.headgearTerm)} have reached the end of their useful life. Manufacturer guidance puts headgear at 90-180 days; loose straps are the #1 cause of new leaks on a previously-comfortable mask.</p>
+        ${renderCtaButton(`Replacement ${vocab.headgearTerm}`, shopUrl)}
+        ${sub.html}`;
       return {
-        email: { subject, html, text },
-        sms: `${smsNamePrefix}${practiceName}: headgear is due for replacement at 90 days. ${shopUrl} STOP to opt out.`,
+        email: buildEmail(subject, preheader, bodyHtml, bodyText),
+        sms: `${smsNamePrefix}${practiceName}: ${vocab.headgearTerm} due at 90 days. ${shopUrl} STOP to opt out.`,
       };
     }
     case 10: {
-      // T10 — day 180 after order: full refresh + warm sendoff.
+      // T10 — day 180 after order: full refresh, warm sendoff. No
+      // subscription upsell here — keep the tone non-salesy.
       const subject = `${nameSubjectPrefix}Your 6-month mask refresh`;
-      const text = [
-        greeting,
-        "",
+      const preheader = `Most insurance covers a new mask every 6 months. Your measurements are still on file.`;
+      const bodyText = [
         "It's been 6 months since you started with us. By now your mask has earned its retirement — manufacturers rate the silicone seal at 6-12 months before performance degrades.",
         "",
         "Most insurance plans cover a new mask every 6 months. We can:",
@@ -516,22 +674,18 @@ export function composeTouchpoint(opts: {
         "  • Try something different if your sleep position has changed",
         "",
         `Start your refresh: ${resumeUrl}`,
-        footer(true),
       ].join("\n");
-      const html = `<div style="font-family:system-ui,sans-serif;max-width:560px;line-height:1.5;">
-          ${greetingHtml}
-          <p>It&apos;s been 6 months since you started with us. By now your mask has earned its retirement — manufacturers rate the silicone seal at 6-12 months before performance degrades.</p>
-          <p>Most insurance plans cover a new mask every 6 months. We can:</p>
-          <ul>
-            <li>Re-fit you with our at-home tool (your measurements are still on file)</li>
-            <li>Ship a fresh version of the same mask you&apos;ve been using</li>
-            <li>Try something different if your sleep position has changed</li>
-          </ul>
-          ${ctaButton("Start your refresh", resumeUrl)}
-          ${footer(false)}
-        </div>`;
+      const bodyHtml = `
+        <p>It&apos;s been 6 months since you started with us. By now your mask has earned its retirement — manufacturers rate the silicone seal at 6-12 months before performance degrades.</p>
+        <p>Most insurance plans cover a new mask every 6 months. We can:</p>
+        <ul style="margin:8px 0;padding-left:22px;">
+          <li>Re-fit you with our at-home tool (your measurements are still on file)</li>
+          <li>Ship a fresh version of the same mask you&apos;ve been using</li>
+          <li>Try something different if your sleep position has changed</li>
+        </ul>
+        ${renderCtaButton("Start your refresh", resumeUrl)}`;
       return {
-        email: { subject, html, text },
+        email: buildEmail(subject, preheader, bodyHtml, bodyText),
         sms: `${smsNamePrefix}${practiceName}: your 6-month mask refresh is due. ${resumeUrl} STOP to opt out.`,
       };
     }

@@ -75,11 +75,53 @@ describe("composeTouchpoint — pre-purchase phase (T1-T6)", () => {
 });
 
 describe("composeTouchpoint — re-order phase (T7-T10)", () => {
-  it("T7 mentions cushion replacement", () => {
-    const out = composeTouchpoint({ ...BASE_OPTS, touchIndex: 7 });
+  it("T7 with nasalPillow mask says 'pillow inserts' (not 'cushion')", () => {
+    const out = composeTouchpoint({
+      ...BASE_OPTS,
+      touchIndex: 7,
+      recommendedMaskType: "nasalPillow",
+    });
+    expect(out.email.subject.toLowerCase()).toContain("pillow inserts");
+    expect(out.email.text.toLowerCase()).toContain("pillow inserts");
+    expect(out.email.html.toLowerCase()).toContain("pillow inserts");
+  });
+
+  it("T7 with nasal mask says 'nasal cushion'", () => {
+    const out = composeTouchpoint({
+      ...BASE_OPTS,
+      touchIndex: 7,
+      recommendedMaskType: "nasal",
+    });
+    expect(out.email.subject.toLowerCase()).toContain("nasal cushion");
+    expect(out.email.text.toLowerCase()).toContain("nasal cushion");
+  });
+
+  it("T7 with fullFace mask says 'full-face cushion'", () => {
+    const out = composeTouchpoint({
+      ...BASE_OPTS,
+      touchIndex: 7,
+      recommendedMaskType: "fullFace",
+    });
+    expect(out.email.subject.toLowerCase()).toContain("full-face cushion");
+    expect(out.email.text.toLowerCase()).toContain("forehead pad");
+  });
+
+  it("T7 with hybrid mask says 'hybrid cushion'", () => {
+    const out = composeTouchpoint({
+      ...BASE_OPTS,
+      touchIndex: 7,
+      recommendedMaskType: "hybrid",
+    });
+    expect(out.email.subject.toLowerCase()).toContain("hybrid cushion");
+  });
+
+  it("T7 with null mask type falls back to neutral 'cushion'", () => {
+    const out = composeTouchpoint({
+      ...BASE_OPTS,
+      touchIndex: 7,
+      recommendedMaskType: null,
+    });
     expect(out.email.subject.toLowerCase()).toContain("cushion");
-    expect(out.email.text.toLowerCase()).toContain("cushion");
-    expect(out.email.html.toLowerCase()).toContain("cushion");
   });
 
   it("T8 mentions filter replacement", () => {
@@ -88,16 +130,112 @@ describe("composeTouchpoint — re-order phase (T7-T10)", () => {
     expect(out.email.text.toLowerCase()).toContain("filter");
   });
 
-  it("T9 mentions headgear", () => {
-    const out = composeTouchpoint({ ...BASE_OPTS, touchIndex: 9 });
-    expect(out.email.subject.toLowerCase()).toContain("headgear");
-    expect(out.email.text.toLowerCase()).toContain("headgear");
+  it("T8 cross-sells the mask-type-specific replacement part", () => {
+    // Nasal pillow filter touch should hint at pillow inserts as
+    // the bundled cross-sell, not generic cushions.
+    const out = composeTouchpoint({
+      ...BASE_OPTS,
+      touchIndex: 8,
+      recommendedMaskType: "nasalPillow",
+    });
+    expect(out.email.text.toLowerCase()).toContain("pillow inserts");
+  });
+
+  it("T9 mentions mask-type-specific headgear vocabulary", () => {
+    // Nasal pillow → "headgear straps"; fullFace → mentions "chinstrap";
+    // nasal → plain "headgear".
+    const pillow = composeTouchpoint({
+      ...BASE_OPTS,
+      touchIndex: 9,
+      recommendedMaskType: "nasalPillow",
+    });
+    expect(pillow.email.subject.toLowerCase()).toContain("headgear straps");
+
+    const fullFace = composeTouchpoint({
+      ...BASE_OPTS,
+      touchIndex: 9,
+      recommendedMaskType: "fullFace",
+    });
+    expect(fullFace.email.text.toLowerCase()).toContain("chinstrap");
   });
 
   it("T10 mentions the 6-month refresh", () => {
     const out = composeTouchpoint({ ...BASE_OPTS, touchIndex: 10 });
     expect(out.email.subject.toLowerCase()).toContain("6-month");
     expect(out.email.text).toContain("6 months");
+  });
+
+  it("T7-T9 include the subscription auto-ship upsell", () => {
+    for (const i of [7, 8, 9] as const) {
+      const out = composeTouchpoint({ ...BASE_OPTS, touchIndex: i });
+      expect(out.email.text.toLowerCase(), `T${i} text upsell`).toContain(
+        "auto-ship",
+      );
+      expect(out.email.html.toLowerCase(), `T${i} html upsell`).toContain(
+        "auto-ship",
+      );
+    }
+  });
+
+  it("T10 omits the subscription upsell (warm sendoff)", () => {
+    const out = composeTouchpoint({ ...BASE_OPTS, touchIndex: 10 });
+    expect(out.email.text.toLowerCase()).not.toContain("auto-ship");
+    expect(out.email.html.toLowerCase()).not.toContain("auto-ship");
+  });
+});
+
+describe("composeTouchpoint — branded HTML template", () => {
+  it("wraps every email in a table-based responsive shell", () => {
+    for (const i of ALL_TOUCHES) {
+      const out = composeTouchpoint({ ...BASE_OPTS, touchIndex: i });
+      // Table-based layout for Outlook compatibility.
+      expect(
+        out.email.html,
+        `T${i} html should use table layout`,
+      ).toContain('<table role="presentation"');
+      // Branded navy color band.
+      expect(
+        out.email.html.toLowerCase(),
+        `T${i} html should carry brand navy header`,
+      ).toContain("#1f3a5c");
+      // <!doctype html> marker so clients render in standards mode.
+      expect(out.email.html.toLowerCase().startsWith("<!doctype html>")).toBe(
+        true,
+      );
+    }
+  });
+
+  it("includes a non-empty hidden preheader at the top of every email", () => {
+    for (const i of ALL_TOUCHES) {
+      const out = composeTouchpoint({ ...BASE_OPTS, touchIndex: i });
+      // The preheader div uses display:none + max-height:0 so it
+      // doesn't render in the body but DOES show in the inbox preview.
+      expect(
+        out.email.html,
+        `T${i} html should contain a hidden preheader div`,
+      ).toMatch(/display:none[^>]*max-height:0/);
+      // The preheader contains real content (we keep a per-touch
+      // string), not just padding.
+      // Find the preheader's actual text — between the opening and
+      // closing tags of the display:none div.
+      const match = out.email.html.match(
+        /display:none[^>]*>([^<]+)</,
+      );
+      expect(match, `T${i} preheader div should have content`).toBeTruthy();
+      const content = (match?.[1] ?? "").trim();
+      expect(
+        content.length,
+        `T${i} preheader content length is ${content.length}`,
+      ).toBeGreaterThan(15);
+    }
+  });
+
+  it("places the practice-name brand bar before the body content", () => {
+    const out = composeTouchpoint({ ...BASE_OPTS, touchIndex: 1 });
+    const brandPos = out.email.html.indexOf("PennPaps");
+    const greetingPos = out.email.html.indexOf("Hi from");
+    expect(brandPos).toBeGreaterThan(0);
+    expect(greetingPos).toBeGreaterThan(brandPos);
   });
 });
 
