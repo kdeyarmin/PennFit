@@ -35,6 +35,7 @@ const sourceParam = z.object({
 });
 
 const SUPPORTED_SOURCES = new Set(["parachute", "itamar_hsat", "test"]);
+const inboundPayloadSchema = z.record(z.string(), z.unknown());
 
 router.post("/integrations/inbound/:source", async (req, res) => {
   const parsed = sourceParam.safeParse(req.params);
@@ -47,11 +48,12 @@ router.post("/integrations/inbound/:source", async (req, res) => {
     res.status(404).json({ error: "unknown_source" });
     return;
   }
-  const payload = req.body as unknown;
-  if (!payload || typeof payload !== "object") {
-    res.status(400).json({ error: "invalid_payload" });
+  const payloadResult = inboundPayloadSchema.safeParse(req.body);
+  if (!payloadResult.success) {
+    res.status(400).json({ error: "invalid_payload", details: payloadResult.error.format() });
     return;
   }
+  const payload = payloadResult.data;
   // Build a dedupe key — prefer the source's delivery-id header,
   // fall back to a sha256 of the body.
   const headerKeys = [
