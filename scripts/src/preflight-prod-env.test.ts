@@ -65,6 +65,14 @@ const VALID_PROD_ENV: Record<string, string> = {
   PENN_ADMIN_PUBLIC_BASE_URL: "https://pennpaps.com",
   // Feature flag:
   RESUPPLY_FITTER_REENGAGE_ENABLED: "1",
+  // Vendor keys (May 2026 addition — Anthropic / Deepgram / ElevenLabs).
+  // All optional at boot, but in the "Ready for launch" fixture we set
+  // them to syntactically valid sample values so the preflight does NOT
+  // emit a warn line. Tests that exercise the unset / placeholder paths
+  // override these via `withEnv`.
+  ANTHROPIC_API_KEY: "sk-ant" + "-fake-sample-1234567890abcdef",
+  DEEPGRAM_API_KEY: "0123456789abcdef0123456789abcdef01234567",
+  ELEVENLABS_API_KEY: "sk-elevenlabs-fake-sample-abc123def456",
 };
 
 /** Run the preflight script as a subprocess with the given env. */
@@ -652,6 +660,67 @@ describe("warnings that do not block launch", () => {
     expect(exitCode).toBe(0);
     expect(stdout).toContain("SENDGRID_FROM_EMAIL");
     expect(stdout).toContain("WARN");
+  });
+
+  // Vendor keys (May 2026 addition — Anthropic / Deepgram / ElevenLabs).
+  // All three are optional. Unset = warn (graceful degrade to existing
+  // OpenAI/built-in paths). Set with the .env.example placeholder or a
+  // shape-invalid value = fail.
+
+  it("warns but exits 0 when ANTHROPIC_API_KEY is unset", () => {
+    const env = withEnv({ ANTHROPIC_API_KEY: undefined });
+    const { exitCode, stdout } = run(env);
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain("ANTHROPIC_API_KEY");
+    expect(stdout).toContain("WARN");
+  });
+
+  it("fails when ANTHROPIC_API_KEY is the .env.example placeholder", () => {
+    const env = withEnv({ ANTHROPIC_API_KEY: "sk-ant-replace_me" });
+    const { exitCode, stdout } = run(env);
+    expect(exitCode).not.toBe(0);
+    expect(stdout).toContain("ANTHROPIC_API_KEY");
+    expect(stdout).toContain("FAIL");
+  });
+
+  it("fails when ANTHROPIC_API_KEY does not start with sk-ant-", () => {
+    const env = withEnv({ ANTHROPIC_API_KEY: "sk-something-else-1234" });
+    const { exitCode, stdout } = run(env);
+    expect(exitCode).not.toBe(0);
+    expect(stdout).toContain("ANTHROPIC_API_KEY");
+    expect(stdout).toContain("FAIL");
+  });
+
+  it("warns but exits 0 when DEEPGRAM_API_KEY is unset", () => {
+    const env = withEnv({ DEEPGRAM_API_KEY: undefined });
+    const { exitCode, stdout } = run(env);
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain("DEEPGRAM_API_KEY");
+    expect(stdout).toContain("WARN");
+  });
+
+  it("fails when DEEPGRAM_API_KEY looks too short", () => {
+    const env = withEnv({ DEEPGRAM_API_KEY: "short" });
+    const { exitCode, stdout } = run(env);
+    expect(exitCode).not.toBe(0);
+    expect(stdout).toContain("DEEPGRAM_API_KEY");
+    expect(stdout).toContain("FAIL");
+  });
+
+  it("warns but exits 0 when ELEVENLABS_API_KEY is unset", () => {
+    const env = withEnv({ ELEVENLABS_API_KEY: undefined });
+    const { exitCode, stdout } = run(env);
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain("ELEVENLABS_API_KEY");
+    expect(stdout).toContain("WARN");
+  });
+
+  it("fails when ELEVENLABS_API_KEY looks too short", () => {
+    const env = withEnv({ ELEVENLABS_API_KEY: "short" });
+    const { exitCode, stdout } = run(env);
+    expect(exitCode).not.toBe(0);
+    expect(stdout).toContain("ELEVENLABS_API_KEY");
+    expect(stdout).toContain("FAIL");
   });
 });
 
