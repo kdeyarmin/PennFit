@@ -370,6 +370,42 @@ describe("runLowStockAlerts: cooldown + recovery", () => {
     });
   });
 
+  it("alerts again after a prior run marks the SKU as resolved", async () => {
+    // Run 1: SKU recovered above threshold, so we stamp last_resolved_at.
+    stageSingleStripePage([stripeProduct("prod_BOUNCE", "Bounce SKU", 20, 5)]);
+    stageSupabaseResponse("low_stock_alert_state", "update", {
+      data: [{ product_id: "prod_BOUNCE" }],
+    });
+
+    const recoveredStats = await runLowStockAlerts();
+    expect(recoveredStats.resolved).toBe(1);
+    expect(recoveredStats.newAlerts).toBe(0);
+    expect(sendEmailMock).not.toHaveBeenCalled();
+
+    // Run 2: same SKU dips again; state reflects resolved > alerted,
+    // so it is eligible immediately (no cooldown suppression).
+    stageSingleStripePage([stripeProduct("prod_BOUNCE", "Bounce SKU", 1, 5)]);
+    stageSupabaseResponse("low_stock_alert_state", "update", { data: [] });
+    const tenHoursAgo = new Date(Date.now() - 10 * 60 * 60 * 1000).toISOString();
+    const fiveHoursAgo = new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString();
+    stageSupabaseResponse("low_stock_alert_state", "select", {
+      data: [
+        {
+          product_id: "prod_BOUNCE",
+          last_alerted_at: tenHoursAgo,
+          last_resolved_at: fiveHoursAgo,
+        },
+      ],
+    });
+    stageSupabaseResponse("low_stock_alert_state", "upsert", { data: null });
+
+    const redipStats = await runLowStockAlerts();
+    expect(redipStats.newAlerts).toBe(1);
+    expect(redipStats.cooldownSkipped).toBe(0);
+    expect(redipStats.emailSent).toBe(true);
+    expect(sendEmailMock).toHaveBeenCalledTimes(2);
+  });
+
   it("stamps last_resolved_at when a previously-alerted SKU recovers above threshold", async () => {
     // The SKU is above threshold now — it shouldn't appear in `below`
     // but SHOULD be in `recoveredIds` so the worker can stamp
