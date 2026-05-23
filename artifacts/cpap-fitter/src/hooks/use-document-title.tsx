@@ -47,7 +47,7 @@ function getOrCreateMeta(
  * a 3rd-party helmet provider removes a runtime dependency and one
  * more thing to keep in sync with our tightened CSP.
  */
-type SchemaType = "Article" | "MedicalWebPage" | "FAQPage";
+type SchemaType = "Article" | "MedicalWebPage";
 
 type DocumentTitleOptions = {
   /**
