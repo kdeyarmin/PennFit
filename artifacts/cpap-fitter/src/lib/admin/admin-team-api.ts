@@ -36,6 +36,9 @@ interface InviteResponse {
   member: TeamMember;
   emailSent: boolean;
   inviteLink: string | null;
+  /** True when the admin supplied an initial password and the
+   *  account is immediately sign-in-ready (no email roundtrip). */
+  signInReady?: boolean;
 }
 
 const BASE = "/resupply-api/admin/team";
@@ -54,6 +57,10 @@ export async function inviteMember(body: {
   role: TeamRole;
   displayName?: string | null;
   notes?: string | null;
+  /** Optional. When provided (>= 8 chars), the user is created
+   *  active + email-verified with this password and no invite
+   *  email is sent — admin tells the user out-of-band. */
+  initialPassword?: string | null;
 }): Promise<InviteResponse> {
   const res = await fetch(`${BASE}/invite`, {
     method: "POST",

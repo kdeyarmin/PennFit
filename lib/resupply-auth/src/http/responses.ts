@@ -17,6 +17,13 @@ export type AuthErrorCode =
   | "rate_limited"
   | "account_locked"
   | "email_unverified"
+  // Team-invite "set their password for them" path stamps
+  // set_by_admin_at alongside must_change=true. The sign-in
+  // handler refuses must_change credentials whose owner never
+  // signed in within ADMIN_PASSWORD_TTL_MS and returns this code
+  // so the SPA can render "ask your administrator to re-invite
+  // you" instead of the generic invalid-credentials message.
+  | "invite_expired"
   // MFA (Phase B) — sign-in MFA gate + /sign-in/verify-mfa
   // outcomes. Both `mfa_probe_failed` and `mfa_misconfigured`
   // arise from server-side wiring problems; the SPA renders them

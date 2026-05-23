@@ -59,6 +59,7 @@ describe("createAuthHooks", () => {
       role: "admin",
       displayName: null,
       emailVerified: true,
+      mustChangePassword: false,
     });
     // Simulate the body of useSignOut.onSuccess.
     qc.setQueryData(SESSION_QUERY_KEY, null);
