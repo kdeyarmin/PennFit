@@ -350,7 +350,7 @@ function stagePayerProfile(overrides: {
       required_modifiers_dme: overrides.required_modifiers_dme ?? [],
       requires_referring_provider_npi:
         overrides.requires_referring_provider_npi ?? false,
-      enrollment_status: overrides.enrollment_status,
+      enrollment_status: overrides.enrollment_status ?? "active",
       enrollment_effective_on: overrides.enrollment_effective_on ?? null,
     },
   });
