@@ -214,4 +214,38 @@ describe("createAuthClient", () => {
     expect(err.status).toBe(502);
     expect(err.code).toBe("unknown");
   });
+
+  // ── PR change: mustChangePassword removed from AuthMe ──────────────────
+  // The admin SPA previously used mustChangePassword to gate entry to the
+  // console, redirecting to /admin/change-password when true. That gate has
+  // been removed; AuthMe must not expose the field.
+
+  it("fetchMe returns an AuthMe without mustChangePassword when server omits it", async () => {
+    const me = {
+      id: "u2",
+      email: "admin@example.com",
+      role: "admin",
+      displayName: "Admin User",
+      emailVerified: true,
+    };
+    const { fetch } = makeFetch([{ status: 200, body: me }]);
+    const client = createAuthClient({ basePath: "/api/auth", fetch });
+    const result = await client.fetchMe();
+    expect(result).not.toBeNull();
+    expect(result).not.toHaveProperty("mustChangePassword");
+  });
+
+  it("fetchMe parses the full AuthMe shape (id, email, role, displayName, emailVerified) correctly", async () => {
+    const me = {
+      id: "u3",
+      email: "rep@example.com",
+      role: "agent",
+      displayName: null,
+      emailVerified: false,
+    };
+    const { fetch } = makeFetch([{ status: 200, body: me }]);
+    const client = createAuthClient({ basePath: "/api/auth", fetch });
+    const result = await client.fetchMe();
+    expect(result).toEqual(me);
+  });
 });
