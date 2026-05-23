@@ -53,9 +53,10 @@ describe("admin-shop-inventory-reconcile — formatDate structure", () => {
   });
 
   it("includes year, month, and day in the format options", () => {
-    expect(SRC).toContain('"year"');
-    expect(SRC).toContain('"month"');
-    expect(SRC).toContain('"day"');
+    // Source uses bareword keys (year: "numeric", …), not quoted keys.
+    expect(SRC).toMatch(/\byear:\s*["']/);
+    expect(SRC).toMatch(/\bmonth:\s*["']/);
+    expect(SRC).toMatch(/\bday:\s*["']/);
   });
 
   it("falls back to returning the original string on error (try/catch)", () => {

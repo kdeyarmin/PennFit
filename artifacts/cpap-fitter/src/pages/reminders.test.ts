@@ -53,15 +53,20 @@ describe("reminders — useShopIdentity imported (P5)", () => {
 // ---------------------------------------------------------------------------
 
 describe("reminders — email field pre-filled from identity (P5)", () => {
-  it("initialises the email state from identityEmail (not always empty)", () => {
-    // Before P5: useState(""). After: useState(identityEmail ?? "").
-    expect(SRC).toContain("identityEmail ?? \"\"");
+  it("pre-fills the email state from identityEmail (via setEmail in a useEffect)", () => {
+    // Source uses `useState("")` plus a `useEffect` that calls
+    // `setEmail((prev) => prev || identityEmail)` once identity has
+    // loaded — so the guest path keeps the empty input but a signed-in
+    // visitor sees their session email auto-populated.
+    expect(SRC).toContain('useState("")');
+    expect(SRC).toMatch(/setEmail\(\(prev\)\s*=>\s*prev\s*\|\|\s*identityEmail\)/);
   });
 
-  it("falls back to empty string when identityEmail is null (guest path)", () => {
-    // The ?? "" ensures guests still see an empty input field.
-    const initialiserIdx = SRC.indexOf('identityEmail ?? ""');
-    expect(initialiserIdx).toBeGreaterThan(-1);
+  it("guards the pre-fill on identityLoaded + non-null identityEmail", () => {
+    // The useEffect bails when identity hasn't loaded yet or the
+    // visitor is a guest (identityEmail === null), so the input stays
+    // empty for guests.
+    expect(SRC).toMatch(/if\s*\(\s*!identityLoaded\s*\|\|\s*!identityEmail\s*\)\s*return/);
   });
 });
 
