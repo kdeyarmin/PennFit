@@ -59,6 +59,7 @@ import integrationsSyncEquipmentRouter from "./admin/integrations-sync-equipment
 import bulkCampaignsRouter from "./admin/bulk-campaigns.js";
 import mfaRouter from "./admin/mfa.js";
 import reportsRouter from "./admin/reports.js";
+import reportPresetsRouter from "./admin/report-presets.js";
 import featureFlagsRouter from "./admin/feature-flags.js";
 import npsSummaryRouter from "./admin/nps-summary.js";
 import deliveryFailuresRouter from "./admin/delivery-failures.js";
@@ -658,6 +659,10 @@ router.use(mfaRouter);
 // /admin/reports/* — date-bounded CSV/PDF/QuickBooks exports for ops
 // + finance.
 router.use(reportsRouter);
+// /admin/reports/presets/* — per-user saved report shortcuts
+// (slug + format + date-range preset). Mounted alongside the
+// reports router so the page-level UI only has one base path.
+router.use(reportPresetsRouter);
 // /admin/feature-flags/* — Control Center on/off toggles that gate
 // dispatchers and route handlers in real time.
 router.use(featureFlagsRouter);
