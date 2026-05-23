@@ -234,6 +234,12 @@ export async function logAudit(event: AuditEvent): Promise<void> {
     }
     const chainSeq = prevSeq + 1;
 
+    // Stamp occurred_at on the application side so the signed
+    // value and the DB's default-now() column can't diverge — a
+    // DBA who flips occurred_at later would invalidate the
+    // signature.
+    const occurredAtIso = new Date().toISOString();
+
     const content: AuditChainContent = {
       chain_seq: chainSeq,
       operator_email: event.adminEmail ?? null,
@@ -244,6 +250,7 @@ export async function logAudit(event: AuditEvent): Promise<void> {
       metadata,
       ip: event.ip ?? null,
       user_agent: event.userAgent ?? null,
+      occurred_at: occurredAtIso,
     };
     const signature = signAuditRow(key, prevSignature, content);
 
@@ -262,6 +269,7 @@ export async function logAudit(event: AuditEvent): Promise<void> {
         chain_seq: chainSeq,
         prev_signature: prevSignature,
         signature,
+        occurred_at: occurredAtIso,
       });
     if (!error) return;
     // Retry only on chain_seq unique-violation; any other error
