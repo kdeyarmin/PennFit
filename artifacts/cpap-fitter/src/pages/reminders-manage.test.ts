@@ -163,3 +163,94 @@ describe("reminders-manage — regression: core manage behaviour intact", () => 
   });
 });
 
+// ---------------------------------------------------------------------------
+// hasToken + session-auth mode — structural checks
+// ---------------------------------------------------------------------------
+// The PR updated tests to reflect the dual-auth model: signed-in customers
+// can reach the manage page via session auth (no token required), while
+// email-only subscribers continue to use their magic-link token. The source
+// combines both paths behind hasToken + useShopIdentity.
+
+describe("reminders-manage — hasToken variable and dual-auth gate", () => {
+  it("defines hasToken as a boolean derived from token.length > 0", () => {
+    expect(SRC).toContain("const hasToken = token.length > 0");
+  });
+
+  it("imports useShopIdentity to detect session sign-in state", () => {
+    expect(SRC).toContain('from "@/lib/identity"');
+    expect(SRC).toContain("useShopIdentity");
+  });
+
+  it("destructures isSignedIn and identityLoaded from useShopIdentity", () => {
+    expect(SRC).toContain("isSignedIn");
+    expect(SRC).toContain("identityLoaded");
+  });
+
+  it("enables the query when hasToken is true", () => {
+    expect(SRC).toContain("queryEnabled");
+    expect(SRC).toMatch(/queryEnabled[\s\S]{0,20}hasToken/);
+  });
+
+  it("also enables the query when identityLoaded && isSignedIn (session path)", () => {
+    expect(SRC).toMatch(/identityLoaded\s*&&\s*isSignedIn/);
+  });
+
+  it("shows 'Sign in or use your manage link' when not signed in and no token", () => {
+    // The guard: if (!hasToken && identityLoaded && !isSignedIn)
+    expect(SRC).toContain("Sign in or use your manage link");
+    expect(SRC).toMatch(/!hasToken\s*&&\s*identityLoaded\s*&&\s*!isSignedIn/);
+  });
+
+  it("waits for identityLoaded before showing the 'no access' card to avoid flash", () => {
+    // If we checked !isSignedIn before identity loaded, a signed-in user
+    // would briefly see the error screen.
+    expect(SRC).toContain("identityLoaded");
+    // The guard must include identityLoaded so the early return is deferred.
+    expect(SRC).toMatch(/!hasToken\s*&&\s*identityLoaded\s*&&\s*!isSignedIn/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Token URL stripping — pure-logic re-implementation
+// ---------------------------------------------------------------------------
+// The token is stripped from the URL on mount. Verify the URL-rebuild logic
+// by re-implementing the core of the stripping operation inline.
+
+function stripTokenFromSearch(search: string, pathname: string, hash: string): string {
+  const params = new URLSearchParams(search);
+  if (!params.has("token")) return pathname + (search ? search : "") + hash;
+  params.delete("token");
+  const qs = params.toString();
+  return pathname + (qs ? `?${qs}` : "") + hash;
+}
+
+describe("reminders-manage — token strip URL building logic", () => {
+  it("removes only the token param when it is the only param", () => {
+    const result = stripTokenFromSearch("?token=abc123", "/reminders/manage", "");
+    expect(result).toBe("/reminders/manage");
+  });
+
+  it("removes token param and preserves unrelated params", () => {
+    const result = stripTokenFromSearch("?token=abc&debug=1", "/reminders/manage", "");
+    expect(result).not.toContain("token=");
+    expect(result).toContain("debug=1");
+  });
+
+  it("preserves hash after stripping the token", () => {
+    const result = stripTokenFromSearch("?token=abc123", "/reminders/manage", "#top");
+    expect(result).toBe("/reminders/manage#top");
+  });
+
+  it("does not modify the URL when no token param is present", () => {
+    const result = stripTokenFromSearch("?debug=1", "/reminders/manage", "");
+    // Should return original (no-op when token not present).
+    expect(result).toContain("debug=1");
+    expect(result).not.toContain("token=");
+  });
+
+  it("handles empty search string (no params at all)", () => {
+    const result = stripTokenFromSearch("", "/reminders/manage", "");
+    expect(result).toBe("/reminders/manage");
+  });
+});
+

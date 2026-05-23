@@ -173,3 +173,84 @@ describe("formatUsPhone — boundary: 10-digit truncation", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// PR regression: consentToContact field current state
+// ---------------------------------------------------------------------------
+// The PR removed tests for a temporary "consent checkbox restored" state.
+// These tests document the CURRENT behaviour: consentToContact defaults to
+// true (the patient already cleared the /consent gate), no explicit checkbox
+// is surfaced in the UI, and z.boolean().refine() is used in the schema.
+
+describe("order — consentToContact current state (no explicit checkbox)", () => {
+  it("schema uses z.boolean().refine() for consentToContact, not z.literal(true)", () => {
+    expect(SRC).toContain("z.boolean().refine(");
+    expect(SRC).not.toContain("z.literal(true)");
+  });
+
+  it("defaults consentToContact to true (not false — no checkbox needed)", () => {
+    expect(SRC).toMatch(/consentToContact:\s*true/);
+  });
+
+  it("does not render a checkbox-consent testid (checkbox removed)", () => {
+    expect(SRC).not.toContain('data-testid="checkbox-consent"');
+  });
+
+  it("still enforces the consent requirement via the refine error message", () => {
+    expect(SRC).toContain("You must consent to be contacted to submit an order");
+  });
+
+  it("still includes consentToContact in the API payload", () => {
+    expect(SRC).toContain("consentToContact: values.consentToContact");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// PR regression: prefill from /shop/me still present
+// ---------------------------------------------------------------------------
+// The PR removed tests that (incorrectly) asserted prefill was absent.
+// These tests confirm the /shop/me prefill IS active in the current source.
+
+describe("order — account prefill from /shop/me present", () => {
+  it("imports fetchShopMe from @/lib/account-api", () => {
+    expect(SRC).toContain("fetchShopMe");
+    expect(SRC).toContain('from "@/lib/account-api"');
+  });
+
+  it("imports useShopIdentity to gate the prefill on sign-in state", () => {
+    expect(SRC).toContain("useShopIdentity");
+  });
+
+  it("exports splitDisplayName for splitting a display name into first/last", () => {
+    expect(SRC).toContain("export function splitDisplayName");
+  });
+
+  it("uses prefilledFromAccount state to track whether prefill ran", () => {
+    expect(SRC).toContain("prefilledFromAccount");
+  });
+
+  it("renders the prefill-hint banner when prefilledFromAccount is true", () => {
+    expect(SRC).toContain("prefilledFromAccount &&");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// PR regression: role=alert on generic Field error paragraph
+// ---------------------------------------------------------------------------
+// The PR removed a test asserting role=alert was absent from the consent
+// error specifically. The generic Field component error paragraph still
+// carries role=alert. These tests document that current behaviour.
+
+describe("order — Field error paragraph carries role=alert (generic component)", () => {
+  it("includes role='alert' on the error message paragraph", () => {
+    expect(SRC).toContain('role="alert"');
+  });
+
+  it("pairs role='alert' with text-destructive styling on error messages", () => {
+    const alertIdx = SRC.indexOf('role="alert"');
+    expect(alertIdx).toBeGreaterThan(-1);
+    // Look in the surrounding element context for the destructive class.
+    const context = SRC.slice(alertIdx - 20, alertIdx + 100);
+    expect(context).toContain("text-destructive");
+  });
+});
+

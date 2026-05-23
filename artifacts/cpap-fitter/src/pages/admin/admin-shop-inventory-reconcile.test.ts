@@ -218,3 +218,77 @@ describe("formatDate — edge dates", () => {
     expect(() => formatDate("2026-12-31T23:59:59Z")).not.toThrow();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Static check: formatDate options use bareword keys (not quoted keys)
+// ---------------------------------------------------------------------------
+// This test was updated in the PR to use regex patterns instead of quoted-key
+// string checks. The assertions below reinforce that the source uses JS object
+// shorthand (bareword keys) which the original toContain('"year"') would
+// have incorrectly matched against any key named "year" with quotation marks.
+
+describe("admin-shop-inventory-reconcile — formatDate option key style", () => {
+  it("year option key is written as a bareword identifier (year:), not quoted", () => {
+    // Quoted key: { "year": "numeric" } — old style that the original test checked.
+    // Bareword key: { year: "numeric" } — current style.
+    expect(SRC).toMatch(/\byear:\s*["']/);
+  });
+
+  it("month option key is written as a bareword identifier (month:), not quoted", () => {
+    expect(SRC).toMatch(/\bmonth:\s*["']/);
+  });
+
+  it("day option key is written as a bareword identifier (day:), not quoted", () => {
+    expect(SRC).toMatch(/\bday:\s*["']/);
+  });
+
+  it("all three option keys appear within the same toLocaleDateString call", () => {
+    // Find the toLocaleDateString call and verify all three keys are within
+    // a reasonable character window of it.
+    const callIdx = SRC.indexOf("toLocaleDateString");
+    expect(callIdx).toBeGreaterThan(-1);
+    // The options object follows the call — look 200 chars ahead.
+    const optionsBlock = SRC.slice(callIdx, callIdx + 200);
+    expect(optionsBlock).toMatch(/\byear:/);
+    expect(optionsBlock).toMatch(/\bmonth:/);
+    expect(optionsBlock).toMatch(/\bday:/);
+  });
+
+  it("year value is the string 'numeric'", () => {
+    expect(SRC).toContain('year: "numeric"');
+  });
+
+  it("day value is the string 'numeric'", () => {
+    expect(SRC).toContain('day: "numeric"');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Pure-logic re-implementation — additional formatDate edge cases
+// ---------------------------------------------------------------------------
+
+describe("formatDate — additional edge cases", () => {
+  it("handles date-only strings (no time component)", () => {
+    expect(() => formatDate("2026-03-15")).not.toThrow();
+    expect(typeof formatDate("2026-03-15")).toBe("string");
+  });
+
+  it("handles Unix epoch (1970-01-01T00:00:00Z) without throwing", () => {
+    expect(() => formatDate("1970-01-01T00:00:00Z")).not.toThrow();
+    const result = formatDate("1970-01-01T00:00:00Z");
+    expect(result).toBeTruthy();
+  });
+
+  it("returns a string for a future date (2099)", () => {
+    expect(() => formatDate("2099-12-31T23:59:59Z")).not.toThrow();
+    expect(typeof formatDate("2099-12-31T23:59:59Z")).toBe("string");
+  });
+
+  it("always returns a string — never throws regardless of input", () => {
+    const inputs = ["", "garbage", "null", "undefined", "2026-13-45", "2026-00-00"];
+    for (const input of inputs) {
+      expect(() => formatDate(input)).not.toThrow();
+      expect(typeof formatDate(input)).toBe("string");
+    }
+  });
+});
