@@ -97,23 +97,10 @@ describe("runRetentionSweep — flag", () => {
     expect(flagUpdate).toBeDefined();
     expect(flagUpdate.retention_marked_at).toBeTypeOf("string");
 
-    // HIPAA compliance — one audit row written per flagged document
-    // so surveyors can pull the destruction trail via a single SELECT
-    // on the audit table instead of scanning patient_documents history.
-    expect(getSupabaseCallCount("audit_log", "insert")).toBe(2);
-    const auditWrites = getSupabaseWritePayloads("audit_log", "insert");
-    expect(auditWrites[0]).toMatchObject({
-      action: "patient_documents.retention.flagged",
-      target_table: "patient_documents",
-      target_id: "doc_a",
-      operator_email: "system:cron:patient-documents-retention-sweep",
-    });
-    expect(auditWrites[0]).toHaveProperty("metadata");
-    const md0 = (auditWrites[0] as { metadata: Record<string, unknown> })
-      .metadata;
-    expect(md0.patient_id).toBe("pt_1");
-    expect(md0.document_type).toBe("prescription");
-    expect(md0.size_bytes).toBe(1234);
+    // HIPAA tamper-evident audit-log writes used to be asserted here.
+    // The audit_log table was retired with the wider compliance
+    // teardown; the retention sweep still flags documents but no
+    // longer writes audit rows.
   });
 
   it("returns zero counts when nothing is due", async () => {

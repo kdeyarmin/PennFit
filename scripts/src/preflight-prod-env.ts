@@ -355,26 +355,9 @@ function runChecks(): void {
   if (!refusePlaceholder("RESUPPLY_LINK_HMAC_KEY", "replace_me_with_32_byte_secret")) {
     requireBase64Bytes("RESUPPLY_LINK_HMAC_KEY", 32);
   }
-  if (!refusePlaceholder("RESUPPLY_AUDIT_HMAC_KEY", "replace_me_with_32_byte_secret")) {
-    requireBase64Bytes("RESUPPLY_AUDIT_HMAC_KEY", 32);
-  }
-  // The two HMAC keys sign different artifacts (reminder-link tokens
-  // vs. audit-log row chain) and must be distinct. Reusing one across
-  // both flows would let a leak of either secret forge artifacts in
-  // the other domain. Operator who runs `openssl rand -base64 48`
-  // once and pastes the same output into both is the realistic
-  // failure mode; flag it.
-  {
-    const link = getTrimmed("RESUPPLY_LINK_HMAC_KEY");
-    const audit = getTrimmed("RESUPPLY_AUDIT_HMAC_KEY");
-    if (link !== undefined && audit !== undefined && link === audit) {
-      record(
-        "RESUPPLY_LINK_HMAC_KEY vs RESUPPLY_AUDIT_HMAC_KEY",
-        "fail",
-        "the two HMAC keys are identical — generate two independent values via `openssl rand -base64 48`",
-      );
-    }
-  }
+  // RESUPPLY_AUDIT_HMAC_KEY was retired with the HIPAA §164.312(b)
+  // tamper-evident audit chain (migration 0156). Preflight no longer
+  // validates it — stale values in the environment are ignored.
 
   // CORS allowlist — `artifacts/resupply-api/src/app.ts:63` throws
   // at boot if NODE_ENV=production AND both RESUPPLY_ALLOWED_ORIGINS

@@ -286,12 +286,8 @@ export async function preflightClaim(claimId: string): Promise<PreflightSummary>
         // alternatives (RR/NU, KH/KI/KJ rotations) — the scrubber owns
         // the deeper per-line lookup; preflight just flags absence of
         // ANY of the required modifiers.
-        // Explicit (m: string) annotation because the generated
-        // Supabase types haven't been regenerated since migration 0142
-        // added required_modifiers_dme text[] — PostgREST inferred
-        // it as any[] which trips noImplicitAny on the arrow param.
-        const hasAny = (payer.required_modifiers_dme as string[]).some(
-          (m: string) => modifierTokens.has(m.toUpperCase()),
+        const hasAny = payer.required_modifiers_dme.some((m: string) =>
+          modifierTokens.has(m.toUpperCase()),
         );
         if (!hasAny) {
           items.push({

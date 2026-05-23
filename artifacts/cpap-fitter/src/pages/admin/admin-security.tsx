@@ -10,7 +10,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
   CheckCircle2,
-  FileSignature,
   KeyRound,
   ShieldAlert,
   ShieldCheck,
@@ -32,12 +31,6 @@ import {
   type MfaDevice,
   type MfaStatus,
 } from "@/lib/admin/mfa-api";
-import {
-  attestPolicy,
-  listMyPendingPolicies,
-  type PendingPolicy,
-} from "@/lib/admin/accreditation-api";
-
 const statusKey = ["admin", "mfa", "status"] as const;
 
 export function AdminSecurityPage() {
@@ -64,8 +57,6 @@ export function AdminSecurityPage() {
         </p>
       </header>
 
-      <PendingAttestationsCard />
-
       <Card
         title={
           <span className="flex items-center gap-2">
@@ -84,112 +75,6 @@ export function AdminSecurityPage() {
           <UnenrolledPanel inProgress={data.inProgressEnrollment} />
         )}
       </Card>
-    </div>
-  );
-}
-
-/** Per-staff "policies awaiting your signature" surface. Renders
- *  nothing when there's no work to do — security page stays calm
- *  when the user is current. */
-function PendingAttestationsCard() {
-  const qc = useQueryClient();
-  const queryKey = ["admin", "accreditation", "my-pending"] as const;
-  const { data } = useQuery({
-    queryKey,
-    queryFn: listMyPendingPolicies,
-  });
-  if (!data || data.pending.length === 0) return null;
-  return (
-    <Card
-      title={
-        <span className="flex items-center gap-2">
-          <FileSignature className="h-4 w-4" />
-          Policies awaiting your acknowledgement
-        </span>
-      }
-    >
-      <div className="space-y-3">
-        <p className="text-sm" style={{ color: "hsl(var(--ink-3))" }}>
-          The compliance team has published the following policies. Read each
-          one, then attest below — your signature lands in the accreditation
-          binder.
-        </p>
-        {data.pending.map((p) => (
-          <PendingAttestationRow
-            key={p.id}
-            policy={p}
-            onAttested={() => {
-              void qc.invalidateQueries({ queryKey });
-            }}
-          />
-        ))}
-      </div>
-    </Card>
-  );
-}
-
-function PendingAttestationRow({
-  policy,
-  onAttested,
-}: {
-  policy: PendingPolicy;
-  onAttested: () => void;
-}) {
-  const ackText = `I, the signed-in admin, have read and acknowledge "${policy.title}" v${policy.version} (${policy.policyKey}).`;
-  const [confirmed, setConfirmed] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const attest = useMutation({
-    mutationFn: () => attestPolicy(policy.id, ackText),
-    onSuccess: onAttested,
-    onError: (e: Error) => setError(e.message),
-  });
-  return (
-    <div
-      className="rounded border p-3 space-y-2"
-      style={{ borderColor: "hsl(var(--line-1))" }}
-    >
-      <div className="flex items-baseline justify-between gap-3">
-        <div>
-          <div className="text-sm font-semibold">{policy.title}</div>
-          <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
-            {policy.category} · version {policy.version}
-          </div>
-        </div>
-        {policy.bodyUrl && (
-          <a
-            href={policy.bodyUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-xs hover:underline"
-            style={{ color: "hsl(var(--penn-navy))" }}
-          >
-            Open policy →
-          </a>
-        )}
-      </div>
-      {policy.summary && (
-        <p className="text-xs text-muted-foreground">{policy.summary}</p>
-      )}
-      <label className="flex items-center gap-2 text-xs">
-        <input
-          type="checkbox"
-          checked={confirmed}
-          onChange={(e) => setConfirmed(e.target.checked)}
-        />
-        I have read this policy and acknowledge it.
-      </label>
-      {error && (
-        <div className="rounded border border-rose-200 bg-rose-50 p-2 text-xs text-rose-900">
-          {error}
-        </div>
-      )}
-      <Button
-        disabled={!confirmed || attest.isPending}
-        isLoading={attest.isPending}
-        onClick={() => attest.mutate()}
-      >
-        Attest
-      </Button>
     </div>
   );
 }
