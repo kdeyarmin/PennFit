@@ -2712,6 +2712,29 @@ export interface Database {
         >;
         Relationships: [];
       };
+      report_presets: {
+        Row: {
+          id: string;
+          user_id: string;
+          name: string;
+          slug: string;
+          format: "csv" | "pdf" | "iif" | "qbo.csv";
+          range_kind: "absolute" | "preset";
+          range_preset: string | null;
+          range_from: string | null;
+          range_to: string | null;
+          recipient: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["report_presets"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["report_presets"]["Row"]
+        >;
+        Relationships: [];
+      };
       appointment_requests: {
         Row: {
           id: string;
