@@ -276,6 +276,28 @@ const LearnNasalCongestion = lazy(() =>
   })),
 );
 
+// Utility & marketing additions — patient stories landing, plus three
+// further long-form learn pieces (sleep-report explainer, sleep
+// hygiene companion, CPAP & weight-loss relationship).
+const Stories = lazy(() =>
+  import("@/pages/stories").then((m) => ({ default: m.Stories })),
+);
+const LearnReadingYourSleepReport = lazy(() =>
+  import("@/pages/learn-reading-your-sleep-report").then((m) => ({
+    default: m.LearnReadingYourSleepReport,
+  })),
+);
+const LearnSleepHygiene = lazy(() =>
+  import("@/pages/learn-sleep-hygiene").then((m) => ({
+    default: m.LearnSleepHygiene,
+  })),
+);
+const LearnCpapAndWeightLoss = lazy(() =>
+  import("@/pages/learn-cpap-and-weight-loss").then((m) => ({
+    default: m.LearnCpapAndWeightLoss,
+  })),
+);
+
 // Brand marketing pages — a hub plus per-brand spotlights (React Health
 // is our flagship line, ResMed and Fisher & Paykel round out the catalog).
 // Lazy-loaded because they're SEO landing surfaces, not entry points for
@@ -616,6 +638,16 @@ function PatientRouter() {
           <Route
             path="/learn/nasal-congestion"
             component={LearnNasalCongestion}
+          />
+          <Route path="/stories" component={Stories} />
+          <Route
+            path="/learn/reading-your-sleep-report"
+            component={LearnReadingYourSleepReport}
+          />
+          <Route path="/learn/sleep-hygiene" component={LearnSleepHygiene} />
+          <Route
+            path="/learn/cpap-and-weight-loss"
+            component={LearnCpapAndWeightLoss}
           />
           <Route path="/comfort-guarantee" component={ComfortGuaranteePage} />
           <Route path="/insurance" component={Insurance} />
