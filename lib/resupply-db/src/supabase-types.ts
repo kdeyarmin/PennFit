@@ -1880,6 +1880,49 @@ export interface Database {
         >;
         Relationships: [];
       };
+      prescription_request_packets: {
+        Row: {
+          id: string;
+          patient_id: string;
+          provider_id: string | null;
+          source_prescription_id: string | null;
+          hcpcs_items_json: Json;
+          icd10_codes_json: Json;
+          device_settings_json: Json | null;
+          length_of_need_months: number;
+          return_fax_e164: string | null;
+          return_email: string | null;
+          clinical_notes: string | null;
+          status:
+            | "draft"
+            | "sent_fax"
+            | "delivered"
+            | "signed"
+            | "expired"
+            | "void"
+            | "failed";
+          valid_through: string | null;
+          sent_to_fax_e164: string | null;
+          vendor_ref: string | null;
+          vendor_name: string | null;
+          sent_at: string | null;
+          delivered_at: string | null;
+          failed_at: string | null;
+          failure_reason: string | null;
+          signed_at: string | null;
+          signed_object_key: string | null;
+          created_by_email: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["prescription_request_packets"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["prescription_request_packets"]["Row"]
+        >;
+        Relationships: [];
+      };
       documentation_packets: {
         Row: {
           id: string;
