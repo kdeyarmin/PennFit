@@ -202,7 +202,13 @@ router.get(
       res.status(response.status);
       response.headers.forEach((value, key) => res.setHeader(key, value));
       if (doc.filename) {
-        const safeAscii = doc.filename.replace(/[^\x20-\x7E]/g, "_");
+        // Strip non-printable / non-ASCII AND the quoting chars `"`
+        // and `\` so a filename like `evil"; attachment; filename="
+        // can't break out of the quoted string. encodeURIComponent
+        // handles the RFC 5987 form.
+        const safeAscii = doc.filename
+          .replace(/[^\x20-\x7E]/g, "_")
+          .replace(/["\\]/g, "_");
         const encoded = encodeURIComponent(doc.filename);
         res.setHeader(
           "Content-Disposition",
@@ -263,7 +269,18 @@ router.patch(
     }
 
     if (!updated) {
-      res.status(200).json({ ok: true, alreadyReviewed: true });
+      // The row is already reviewed by an earlier CSR. We deliberately
+      // do NOT silently discard the new note — that produced a 200
+      // response that LOOKED successful while the reviewer's note was
+      // dropped. Surface 409 so the SPA can render an "already
+      // reviewed; add a comment instead" UX. Future change: persist
+      // follow-up notes via a separate notes-history table.
+      res.status(409).json({
+        ok: false,
+        error: "already_reviewed",
+        message:
+          "This document was already reviewed. Add a comment via the notes panel instead.",
+      });
       return;
     }
 

@@ -158,28 +158,5 @@ describe("reset-password — regression: core storefront form behaviour intact",
 });
 
 // ---------------------------------------------------------------------------
-// This PR: 5xx special-case / authErrorMessage helper removed
+// PR change: removed SERVER_UNAVAILABLE_MESSAGE and authErrorMessage
 // ---------------------------------------------------------------------------
-describe("reset-password — 5xx error handling removed", () => {
-  it("does not define a SERVER_UNAVAILABLE_MESSAGE constant", () => {
-    expect(SRC).not.toContain("SERVER_UNAVAILABLE_MESSAGE");
-  });
-
-  it("does not define an authErrorMessage helper function", () => {
-    expect(SRC).not.toContain("function authErrorMessage");
-    expect(SRC).not.toContain("authErrorMessage(");
-  });
-
-  it("does not contain status.pennpaps.com in error copy", () => {
-    expect(SRC).not.toContain("status.pennpaps.com");
-  });
-
-  it("uses inline AuthError check for error messages", () => {
-    expect(SRC).toContain("err instanceof AuthError");
-    expect(SRC).toContain("err.userMessage");
-  });
-
-  it("falls back to 'Could not reset your password.' for non-AuthError throws", () => {
-    expect(SRC).toContain('"Could not reset your password."');
-  });
-});

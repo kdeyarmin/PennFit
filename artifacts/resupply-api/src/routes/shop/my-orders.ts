@@ -67,10 +67,13 @@ import {
 const router: IRouter = Router();
 
 const querySchema = z.object({
-  limit: z
-    .string()
-    .optional()
-    .transform((v) => (v ? Math.min(50, Math.max(1, parseInt(v, 10))) : 20)),
+  // z.coerce.number().int() rejects non-numeric values cleanly with a
+  // 400 instead of the previous `parseInt(v, 10)` smuggling NaN
+  // through `Math.max(1, NaN) === NaN` → `.limit(NaN)` → PostgREST
+  // 500. Customers saw a generic "Something went wrong" on their
+  // orders page whenever ?limit=abc landed in a referrer or a stale
+  // bookmark.
+  limit: z.coerce.number().int().min(1).max(50).default(20),
   cursor: z.string().optional(),
 });
 

@@ -60,8 +60,10 @@ function stubLinkedPatient(email = CUSTOMER_EMAIL) {
   stageSupabaseResponse("shop_customers", "select", {
     data: { customer_id: CUSTOMER_ID, email_lower: email },
   });
+  // resolvePatientForCustomer now uses .limit(2) to detect the
+  // ambiguous email-collision case — stage as a one-element array.
   stageSupabaseResponse("patients", "select", {
-    data: { id: PATIENT_ID, email },
+    data: [{ id: PATIENT_ID, email }],
   });
 }
 

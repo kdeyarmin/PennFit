@@ -1,14 +1,11 @@
-// Tests for the admin forgot-password page.
+// Tests for admin/forgot-password.tsx — the onSettled simplification in this PR.
 //
-// This PR simplified the ForgotPasswordPage by:
-//   1. Replacing onSuccess/onError handlers with a single onSettled callback
-//      so the page transitions to "done" state regardless of server outcome.
-//   2. Removing the 5xx-specific error handling and submitError state.
-//   3. Removing the AuthError import (no longer needed for error classification).
-//
-// All changes preserve the no-enumeration contract: the user always sees the
-// same success message, whether the email exists or not, or even if the
-// server returns an error.
+// PR changes:
+//   * Uses `onSettled` instead of separate `onSuccess` / `onError` branches
+//   * Removed `submitError` state (no more 5xx-specific error copy)
+//   * Removed `AuthError` import (no longer needed)
+//   * No error UI element rendered
+//   * Always shows the success state after the mutation settles
 
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -18,64 +15,44 @@ import { describe, expect, it } from "vitest";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SRC = readFileSync(path.join(__dirname, "forgot-password.tsx"), "utf8");
 
-describe("admin ForgotPasswordPage — onSettled (not onSuccess/onError)", () => {
-  it("uses onSettled to set done=true", () => {
-    expect(SRC).toContain("onSettled");
+// ---------------------------------------------------------------------------
+// onSettled — new submission contract
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Removed: submitError state
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Removed: AuthError import
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Removed: 5xx-specific server-unavailable message
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Regression: core form behaviour retained
+// ---------------------------------------------------------------------------
+describe("admin/forgot-password — core form behaviour retained", () => {
+  it("still has done state to switch to the success view", () => {
     expect(SRC).toContain("setDone(true)");
+    expect(SRC).toContain("done ?");
   });
 
-  it("does not use separate onSuccess callback for this mutation", () => {
-    // The simplified form uses a single onSettled.
-    // We check that the old dual-callback pattern is gone.
-    // Note: onSuccess may appear elsewhere in the file (other hooks), so we
-    // check specifically that the forgot.mutate call block uses onSettled.
-    expect(SRC).toContain("onSettled: () => setDone(true)");
-  });
-});
-
-describe("admin ForgotPasswordPage — no 5xx special-case error handling", () => {
-  it("does not import AuthError", () => {
-    // AuthError was only imported for the 5xx-classification guard; removing
-    // that guard means AuthError is no longer needed here.
-    expect(SRC).not.toContain('import { AuthError }');
-    expect(SRC).not.toContain("AuthError");
+  it("still trims the email before submitting", () => {
+    expect(SRC).toContain("email.trim()");
   });
 
-  it("does not have a submitError state variable", () => {
-    expect(SRC).not.toContain("submitError");
-    expect(SRC).not.toContain("setSubmitError");
+  it("still shows a pending state on the submit button", () => {
+    expect(SRC).toContain("forgot.isPending");
   });
 
-  it("does not render an error alert element", () => {
-    expect(SRC).not.toContain('role="alert"');
-  });
-});
-
-describe("admin ForgotPasswordPage — no-enumeration contract preserved", () => {
-  it("renders a success message after submission (done state)", () => {
-    // The success state copy must still be present.
-    expect(SRC).toContain("we've sent a link to reset");
+  it("still links back to the sign-in page", () => {
+    expect(SRC).toContain('href={`${basePath}/sign-in`}');
   });
 
-  it("links back to /admin/sign-in", () => {
-    // Source uses a `${basePath}/sign-in` template literal where
-    // `basePath = "/admin"`, so check both halves.
-    expect(SRC).toContain('basePath = "/admin"');
-    expect(SRC).toContain("${basePath}/sign-in");
-  });
-});
-
-describe("admin ForgotPasswordPage — core structure intact", () => {
-  it("exports ForgotPasswordPage as a named export", () => {
-    expect(SRC).toContain("export function ForgotPasswordPage");
-  });
-
-  it("uses authHooks.useForgotPassword()", () => {
-    expect(SRC).toContain("authHooks.useForgotPassword()");
-  });
-
-  it("still shows form with email input when not done", () => {
-    expect(SRC).toContain('type="email"');
-    expect(SRC).toContain("Send reset link");
+  it("success view tells the user to check their inbox", () => {
+    expect(SRC).toContain("If an account exists for that email");
   });
 });

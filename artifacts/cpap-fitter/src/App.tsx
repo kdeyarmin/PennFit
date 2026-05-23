@@ -276,6 +276,28 @@ const LearnNasalCongestion = lazy(() =>
   })),
 );
 
+// Utility & marketing additions — patient stories landing, plus three
+// further long-form learn pieces (sleep-report explainer, sleep
+// hygiene companion, CPAP & weight-loss relationship).
+const Stories = lazy(() =>
+  import("@/pages/stories").then((m) => ({ default: m.Stories })),
+);
+const LearnReadingYourSleepReport = lazy(() =>
+  import("@/pages/learn-reading-your-sleep-report").then((m) => ({
+    default: m.LearnReadingYourSleepReport,
+  })),
+);
+const LearnSleepHygiene = lazy(() =>
+  import("@/pages/learn-sleep-hygiene").then((m) => ({
+    default: m.LearnSleepHygiene,
+  })),
+);
+const LearnCpapAndWeightLoss = lazy(() =>
+  import("@/pages/learn-cpap-and-weight-loss").then((m) => ({
+    default: m.LearnCpapAndWeightLoss,
+  })),
+);
+
 // Brand marketing pages — a hub plus per-brand spotlights (React Health
 // is our flagship line, ResMed and Fisher & Paykel round out the catalog).
 // Lazy-loaded because they're SEO landing surfaces, not entry points for
@@ -321,6 +343,11 @@ const AdminResetPasswordPage = lazy(() =>
 const AdminVerifyEmailPage = lazy(() =>
   import("@/pages/admin/verify-email").then((m) => ({
     default: m.VerifyEmailPage,
+  })),
+);
+const AdminChangePasswordPage = lazy(() =>
+  import("@/pages/admin/change-password").then((m) => ({
+    default: m.ChangePasswordPage,
   })),
 );
 
@@ -617,6 +644,16 @@ function PatientRouter() {
             path="/learn/nasal-congestion"
             component={LearnNasalCongestion}
           />
+          <Route path="/stories" component={Stories} />
+          <Route
+            path="/learn/reading-your-sleep-report"
+            component={LearnReadingYourSleepReport}
+          />
+          <Route path="/learn/sleep-hygiene" component={LearnSleepHygiene} />
+          <Route
+            path="/learn/cpap-and-weight-loss"
+            component={LearnCpapAndWeightLoss}
+          />
           <Route path="/comfort-guarantee" component={ComfortGuaranteePage} />
           <Route path="/insurance" component={Insurance} />
           <Route path="/insurance/estimate" component={InsuranceEstimate} />
@@ -719,6 +756,18 @@ function TopRouter() {
           component={AdminResetPasswordPage}
         />
         <Route path="/admin/verify-email" component={AdminVerifyEmailPage} />
+        {/*
+          /admin/change-password is mounted OUTSIDE the AdminConsoleRoute
+          gate. ConsoleRoute redirects forced-rotation users here, and
+          having it ungated by the allowlist check means a freshly
+          invited admin can land here even before /resupply-api/admin/me
+          would let them through — the change-password endpoint itself
+          only needs a valid session.
+        */}
+        <Route
+          path="/admin/change-password"
+          component={AdminChangePasswordPage}
+        />
         <Route path="/admin" component={AdminConsoleRoute} />
         <Route path="/admin/*" component={AdminConsoleRoute} />
 

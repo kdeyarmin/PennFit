@@ -34,17 +34,37 @@ router.get(
       return;
     }
     const supabase = getSupabaseServiceRoleClient();
+    // Escape LIKE metacharacters before .ilike so an email like
+    // `john_doe@x.com` doesn't also match `johnXdoe@x.com` /
+    // `johnAdoe@x.com` etc. The match here returns the patient's
+    // PHI (meeting_url, scheduled_for, topic) — without the
+    // escape a `_` or `%` in the requester's address would
+    // surface other patients' appointments.
+    const escapedEmail = email.replace(/[\\%_]/g, (c) => `\\${c}`);
     const { data, error } = await supabase
       .schema("resupply")
       .from("appointment_requests")
       .select(
         "id, topic, preferred_window, status, scheduled_for, meeting_url, meeting_provider, created_at",
       )
-      .ilike("requester_email", email)
+      .ilike("requester_email", escapedEmail)
       .in("status", ["new", "contacted", "scheduled"])
       .order("created_at", { ascending: false })
       .limit(20);
     if (error) throw error;
+    // Suppress meeting_url after the appointment is 24h past its
+    // scheduled time. Without an explicit expiry column we can't
+    // hard-delete the URL, but a stale Zoom/Meet room link reading
+    // back months later is a real disclosure risk if the row's
+    // status never got flipped to `cancelled`. Surface the URL
+    // only when the appointment is upcoming or freshly past.
+    const stalenessCutoffMs = Date.now() - 24 * 60 * 60 * 1000;
+    function isMeetingUrlStillFresh(scheduledFor: string | null): boolean {
+      if (!scheduledFor) return true; // not-yet-scheduled requests stay visible
+      const sched = Date.parse(scheduledFor);
+      if (!Number.isFinite(sched)) return true;
+      return sched >= stalenessCutoffMs;
+    }
     res.json({
       requests: (data ?? []).map((r) => ({
         id: r.id,
@@ -52,7 +72,7 @@ router.get(
         preferredWindow: r.preferred_window,
         status: r.status,
         scheduledFor: r.scheduled_for,
-        meetingUrl: r.meeting_url,
+        meetingUrl: isMeetingUrlStillFresh(r.scheduled_for) ? r.meeting_url : null,
         meetingProvider: r.meeting_provider,
         createdAt: r.created_at,
       })),

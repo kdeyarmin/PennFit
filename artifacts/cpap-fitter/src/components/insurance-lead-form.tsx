@@ -228,6 +228,7 @@ export function InsuranceLeadForm() {
             onChange={(e) => set("memberId", e.target.value)}
             disabled={submitting}
             data-testid="lead-input-memberId"
+            autoComplete="off"
           />
         </div>
       </div>

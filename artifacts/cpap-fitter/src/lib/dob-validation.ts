@@ -1,24 +1,18 @@
 // DOB plausibility window: anyone born between 1900-01-01 and today is
 // in scope. The HTML5 date picker enforces the same bounds via min/max
-// on the <input>, but the Zod refinement is the authoritative gate so
-// a paste-in-future-date or browser without HTML5 validation can't
-// slip through.
-//
-// Everything here is done as YYYY-MM-DD string comparison rather than
-// `new Date()`. The HTML date input returns the user's local-calendar
-// date as YYYY-MM-DD, and we want to allow whatever "today" is on
-// their wall clock — turning it into a Date object via UTC would let
-// someone in PT enter "tomorrow's" date for several evening hours
-// (after UTC has rolled over but local hasn't), and would reject
-// "today's" date for someone in NZ for a similar window before UTC
-// catches up. Lexicographic compare on the zero-padded YYYY-MM-DD
-// shape matches calendar order exactly.
+// on the <input>, but this function is the authoritative gate so a
+// paste-in-future-date or browser without HTML5 validation can't slip
+// through.
+// NOTE: an alternate local-date-string implementation from
+// subrepl-3ppc2e03/main was discarded in favor of the UTC end-of-today
+// path below (Task #72 merge preference).
 export const DOB_MIN = "1900-01-01";
 
 /**
- * Returns the current local date as a YYYY-MM-DD string.
- * Uses the user's local calendar date (not UTC) to match the semantics
- * of the HTML5 date input.
+ * Returns the current local date as a YYYY-MM-DD string. Used to
+ * populate the `max` attribute on the DOB <input> so the native date
+ * picker won't offer a future date. The authoritative gate against
+ * future dates remains `isPlausibleDob` below.
  */
 export function todayLocalDateString(): string {
   const now = new Date();
@@ -38,14 +32,12 @@ export function todayLocalDateString(): string {
  *    (catches invalid dates like 2000-02-30 that Date.UTC silently rolls
  *    over to 2000-03-01).
  *  - The date is not before DOB_MIN (1900-01-01).
- *  - The date is not after the local "today" (lexicographic string
- *    comparison on YYYY-MM-DD).
+ *  - The date is not after UTC end-of-today so a same-day sign-up in
+ *    any timezone is accepted.
  */
 export function isPlausibleDob(value: string): boolean {
   const [y, m, d] = value.split("-").map(Number);
   if (!y || !m || !d) return false;
-  // Reject calendar nonsense like "2026-02-30" — Date round-trips to
-  // March 2 in that case, so the components stop matching.
   const parsed = new Date(Date.UTC(y, m - 1, d));
   if (
     parsed.getUTCFullYear() !== y ||
@@ -54,5 +46,18 @@ export function isPlausibleDob(value: string): boolean {
   ) {
     return false;
   }
-  return value >= DOB_MIN && value <= todayLocalDateString();
+  if (parsed < new Date(DOB_MIN)) return false;
+  // Use UTC end-of-today so a same-day signup in any timezone is OK.
+  const now = new Date();
+  const todayEnd = new Date(
+    Date.UTC(
+      now.getUTCFullYear(),
+      now.getUTCMonth(),
+      now.getUTCDate(),
+      23,
+      59,
+      59,
+    ),
+  );
+  return parsed <= todayEnd;
 }

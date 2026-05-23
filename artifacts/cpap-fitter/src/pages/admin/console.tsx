@@ -36,7 +36,6 @@ import { ConversationsPage } from "@/pages/admin/conversations";
 import { ConversationDetailPage } from "@/pages/admin/conversation-detail";
 import { EpisodesPage } from "@/pages/admin/episodes";
 import { RulesPage } from "@/pages/admin/rules";
-import { AuditPage } from "@/pages/admin/audit";
 import { AdminShopReviewsPage } from "@/pages/admin/admin-shop-reviews";
 import { AdminProductQuestionsPage } from "@/pages/admin/admin-product-questions";
 import { AdminShopReturnsPage } from "@/pages/admin/admin-shop-returns";
@@ -44,9 +43,10 @@ import { AdminFollowupsPage } from "@/pages/admin/admin-followups";
 import { AdminTodayPage } from "@/pages/admin/admin-today";
 import { AdminProvidersPage } from "@/pages/admin/admin-providers";
 import { AdminInboundFaxesPage } from "@/pages/admin/admin-inbound-faxes";
+import { AdminInboundReferralsPage } from "@/pages/admin/admin-inbound-referrals";
+import { AdminPrescriptionRequestsPage } from "@/pages/admin/admin-prescription-requests";
 import { AdminEquipmentRecallsPage } from "@/pages/admin/admin-equipment-recalls";
 import { AdminAnalyticsPage } from "@/pages/admin/admin-analytics";
-import { AdminCompliancePage } from "@/pages/admin/admin-compliance";
 import { AdminRtOverviewPage } from "@/pages/admin/admin-rt-overview";
 import { AdminBulkCampaignsPage } from "@/pages/admin/admin-bulk-campaigns";
 import { AdminSecurityPage } from "@/pages/admin/admin-security";
@@ -61,7 +61,6 @@ import { AdminProductivityPage } from "@/pages/admin/admin-productivity";
 import { AdminBackordersPage } from "@/pages/admin/admin-backorders";
 import { AdminClosuresPage } from "@/pages/admin/admin-closures";
 import { AdminAppointmentRequestsPage } from "@/pages/admin/admin-appointment-requests";
-import { AdminAccreditationBinderPage } from "@/pages/admin/admin-accreditation-binder";
 import { AdminIntegrationsPage } from "@/pages/admin/admin-integrations";
 import { AdminCoachingPage } from "@/pages/admin/admin-coaching";
 import { AdminDeliveryFailuresPage } from "@/pages/admin/admin-delivery-failures";
@@ -97,7 +96,6 @@ import { AdminCustomerDetailPage } from "@/pages/admin/admin-customer-detail";
 import { AdminShopCustomersPage } from "@/pages/admin/admin-shop-customers";
 import { AdminOrders as PennpapsOrdersPage } from "@/pages/admin/pennpaps-orders";
 import { AdminOrderDetail as PennpapsOrderDetailPage } from "@/pages/admin/pennpaps-order-detail";
-import { AdminAuditLog as PennpapsAuditPage } from "@/pages/admin/pennpaps-audit";
 import { AdminReminders as PennpapsRemindersPage } from "@/pages/admin/pennpaps-reminders";
 import { AdminAnalytics as PennpapsAnalyticsPage } from "@/pages/admin/pennpaps-analytics";
 
@@ -226,7 +224,6 @@ function AdminConsole() {
           </Route>
           <Route path="/admin/episodes" component={EpisodesPage} />
           <Route path="/admin/rules" component={RulesPage} />
-          <Route path="/admin/audit" component={AuditPage} />
           <Route path="/admin/shop/reviews" component={AdminShopReviewsPage} />
           <Route
             path="/admin/shop/product-questions"
@@ -280,11 +277,18 @@ function AdminConsole() {
             component={AdminInboundFaxesPage}
           />
           <Route
+            path="/admin/inbound-referrals"
+            component={AdminInboundReferralsPage}
+          />
+          <Route
+            path="/admin/patients/:patientId/prescription-requests"
+            component={AdminPrescriptionRequestsPage}
+          />
+          <Route
             path="/admin/equipment-recalls"
             component={AdminEquipmentRecallsPage}
           />
           <Route path="/admin/analytics" component={AdminAnalyticsPage} />
-          <Route path="/admin/compliance" component={AdminCompliancePage} />
           <Route path="/admin/rt-overview" component={AdminRtOverviewPage} />
           <Route
             path="/admin/bulk-campaigns"
@@ -325,10 +329,6 @@ function AdminConsole() {
             component={AdminAppointmentRequestsPage}
           />
           <Route
-            path="/admin/accreditation-binder"
-            component={AdminAccreditationBinderPage}
-          />
-          <Route
             path="/admin/integrations"
             component={AdminIntegrationsPage}
           />
@@ -347,7 +347,6 @@ function AdminConsole() {
             path="/admin/pennpaps/orders/:id"
             component={PennpapsOrderDetailPage}
           />
-          <Route path="/admin/pennpaps/audit" component={PennpapsAuditPage} />
           <Route
             path="/admin/pennpaps/reminders"
             component={PennpapsRemindersPage}
@@ -365,9 +364,16 @@ function AdminConsole() {
 
 // Probes /resupply-api/auth/me; redirects to /admin/sign-in when no
 // session is present.
+//
+// Also enforces the "must change password" gate: when /auth/me returns
+// mustChangePassword:true (set by the admin team-invite "set their
+// password for them" flow), the user is bounced to
+// /admin/change-password before any of the admin pages can mount. The
+// flag clears as soon as they pick a new password.
 export function ConsoleRoute() {
   const { data, isPending } = authHooks.useSession();
   if (isPending) return null;
   if (!data) return <Redirect to="/admin/sign-in" />;
+  if (data.mustChangePassword) return <Redirect to="/admin/change-password" />;
   return <AdminConsole />;
 }

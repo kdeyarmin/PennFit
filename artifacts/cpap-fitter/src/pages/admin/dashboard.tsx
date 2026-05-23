@@ -151,15 +151,6 @@ export function DashboardPage() {
               Abandoned shop carts →
             </Link>
           </li>
-          <li>
-            <Link
-              href="/admin/audit"
-              className="underline"
-              style={{ color: "hsl(var(--ink-1))" }}
-            >
-              Recent audit activity →
-            </Link>
-          </li>
         </ul>
       </section>
     </div>

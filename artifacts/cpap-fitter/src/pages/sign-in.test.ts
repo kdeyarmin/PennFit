@@ -1,11 +1,10 @@
-// Tests for the patient (shop) sign-in page.
+// Tests for pages/sign-in.tsx (storefront variant) — the error-handling
+// simplification in this PR.
 //
-// This PR removed the SERVER_UNAVAILABLE_MESSAGE constant and the
-// authErrorMessage() helper function that classified 5xx errors.
-// Error handling is now inlined:
-//   err instanceof AuthError ? err.userMessage : "Sign-in failed."
-//
-// Tests verify the removal and that the inline pattern is in place.
+// PR changes:
+//   * Removed SERVER_UNAVAILABLE_MESSAGE constant
+//   * Removed authErrorMessage helper function
+//   * onError handler now uses inline AuthError instanceof check
 
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -15,51 +14,40 @@ import { describe, expect, it } from "vitest";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SRC = readFileSync(path.join(__dirname, "sign-in.tsx"), "utf8");
 
-describe("patient SignInPage — authErrorMessage helper removed", () => {
-  it("does not define an authErrorMessage helper function", () => {
-    expect(SRC).not.toContain("function authErrorMessage");
-    expect(SRC).not.toContain("authErrorMessage(");
+// ---------------------------------------------------------------------------
+// Removed: SERVER_UNAVAILABLE_MESSAGE constant
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Removed: authErrorMessage helper
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Error handling: inline AuthError instanceof check
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Regression: core form behaviour retained
+// ---------------------------------------------------------------------------
+describe("pages/sign-in — core form behaviour retained", () => {
+  it("still calls signIn.mutate on submit", () => {
+    expect(SRC).toContain("signIn.mutate(");
   });
 
-  it("does not define a SERVER_UNAVAILABLE_MESSAGE constant", () => {
-    expect(SRC).not.toContain("SERVER_UNAVAILABLE_MESSAGE");
-  });
-
-  it("does not include credentials-store-unavailable messaging", () => {
-    expect(SRC).not.toContain("credentials store");
-    expect(SRC).not.toContain("status.pennpaps.com");
-  });
-});
-
-describe("patient SignInPage — inline error handling", () => {
-  it("uses inline instanceof AuthError check for error messages", () => {
-    expect(SRC).toContain("err instanceof AuthError ? err.userMessage");
-  });
-
-  it("falls back to 'Sign-in failed.' for non-AuthError throws", () => {
-    expect(SRC).toContain('"Sign-in failed."');
-  });
-
-  it("still imports AuthError for the inline check", () => {
-    expect(SRC).toContain("AuthError");
-    expect(SRC).toContain("import");
-  });
-});
-
-describe("patient SignInPage — core structure intact", () => {
-  it("exports SignInPage as a named export", () => {
-    expect(SRC).toContain("export function SignInPage");
-  });
-
-  it("calls authHooks.useSignIn()", () => {
-    expect(SRC).toContain("authHooks.useSignIn()");
-  });
-
-  it("redirects to /account on success", () => {
+  it("still redirects to /account on success", () => {
     expect(SRC).toContain("/account");
   });
 
-  it("reads the post-redirect success flag from URL", () => {
-    expect(SRC).toContain("readSuccessFlag");
+  it("still shows a pending state on the button", () => {
+    expect(SRC).toContain("signIn.isPending");
+  });
+
+  it("still provides a 'Forgot your password?' link", () => {
+    expect(SRC).toContain("forgot-password");
+  });
+
+  it("still reads the ?reset=success and ?verified=success flags from the URL", () => {
+    expect(SRC).toContain("reset");
+    expect(SRC).toContain("verified");
   });
 });

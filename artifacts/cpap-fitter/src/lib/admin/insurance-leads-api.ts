@@ -9,6 +9,8 @@
 // Auth: the browser sends the `pf_session` cookie automatically on
 // same-origin requests, so no per-call auth header is needed.
 
+import { csrfHeader } from "../csrf";
+
 export type InsuranceLeadStatus = "new" | "contacted" | "verified" | "closed";
 
 export interface InsuranceLeadRow {
@@ -75,6 +77,7 @@ export async function updateInsuranceLead(
       headers: {
         "Content-Type": "application/json",
         Accept: "application/json",
+        ...csrfHeader(),
       },
       body: JSON.stringify(body),
     },

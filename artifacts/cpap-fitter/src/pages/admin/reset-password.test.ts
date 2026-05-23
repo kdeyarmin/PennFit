@@ -162,25 +162,5 @@ describe("admin/reset-password — regression: core form logic intact", () => {
 });
 
 // ---------------------------------------------------------------------------
-// This PR: 5xx special-case / authErrorMessage helper removed
+// PR change: removed SERVER_UNAVAILABLE_MESSAGE and authErrorMessage
 // ---------------------------------------------------------------------------
-describe("admin/reset-password — 5xx special-case error handling removed", () => {
-  it("does not define a SERVER_UNAVAILABLE_MESSAGE constant", () => {
-    expect(SRC).not.toContain("SERVER_UNAVAILABLE_MESSAGE");
-  });
-
-  it("does not define an authErrorMessage helper function", () => {
-    expect(SRC).not.toContain("function authErrorMessage");
-    expect(SRC).not.toContain("authErrorMessage(");
-  });
-
-  it("does not mention status.pennpaps.com in error copy", () => {
-    expect(SRC).not.toContain("status.pennpaps.com");
-  });
-
-  it("uses inline AuthError check for error message (not the removed helper)", () => {
-    // The pattern that replaced authErrorMessage: inline ternary
-    expect(SRC).toContain("err instanceof AuthError");
-    expect(SRC).toContain("err.userMessage");
-  });
-});

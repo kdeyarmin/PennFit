@@ -23,28 +23,29 @@ Total wall-clock once you have the credentials in hand: ~20 minutes.
 
 ## 1. Generate fresh HMAC keys (2 min)
 
-Two HMAC keys must rotate to production-only values before launch. Both
-are required at boot of `resupply-api`; see `lib/resupply-secrets`
-and `lib/resupply-audit`.
+One HMAC key must rotate to a production-only value before launch.
+It is required at boot of `resupply-api`; see `lib/resupply-secrets`.
 
 ```bash
-# Run on your laptop. Each invocation produces a fresh 48-byte random
-# value (64 chars of base64). Capture BOTH outputs.
+# Run on your laptop. Produces a fresh 48-byte random value
+# (64 chars of base64).
 openssl rand -base64 48   # → RESUPPLY_LINK_HMAC_KEY
-openssl rand -base64 48   # → RESUPPLY_AUDIT_HMAC_KEY
 ```
 
 Notes:
 
-- **Never log, paste in chat, or commit these values.** They go directly
+- **Never log, paste in chat, or commit this value.** It goes directly
   into the secret store in §2.
-- **Single-key only.** Rotating either invalidates in-flight signed
+- **Single-key only.** Rotating it invalidates in-flight signed
   artifacts; this is a non-issue on first launch (nothing in flight) but
   is non-trivial later. The link-key rotation procedure for an
   already-live system is in
   [`docs/runbooks/link-hmac-key-rotation.md`](./link-hmac-key-rotation.md).
-- The audit key MUST decode to ≥ 32 bytes. `openssl rand -base64 48`
+- The link key MUST decode to ≥ 32 bytes. `openssl rand -base64 48`
   produces 48 bytes; comfortably above the minimum.
+- `RESUPPLY_AUDIT_HMAC_KEY` is **no longer required**. The HIPAA
+  §164.312(b) tamper-evident audit chain has been retired and no code
+  path reads the key; any stale value in the secret store is ignored.
 
 ---
 
@@ -63,11 +64,10 @@ the vendor keys called out by name in the launch brief.
 | `DATABASE_URL`               | `postgres://…` pointing at the production Supabase database, NOT a test branch.  |
 | `SUPABASE_URL`               | The production project's API URL from Supabase → Project Settings → API.          |
 | `SUPABASE_SERVICE_ROLE_KEY`  | Service-role JWT from the same page. Bypasses RLS — never expose client-side.    |
-| `RESUPPLY_LINK_HMAC_KEY`     | First `openssl` output from §1.                                                   |
-| `RESUPPLY_AUDIT_HMAC_KEY`    | Second `openssl` output from §1.                                                  |
+| `RESUPPLY_LINK_HMAC_KEY`     | `openssl` output from §1.                                                          |
 | `RESUPPLY_ALLOWED_ORIGINS` **or** `REPLIT_DOMAINS` | Comma-separated hostnames (origin form for the first, bare-host for the second) that the CORS allowlist trusts. On Replit deployments `REPLIT_DOMAINS` is auto-populated; on any other host you must set `RESUPPLY_ALLOWED_ORIGINS`. With both empty in `NODE_ENV=production` the API throws at boot — `artifacts/resupply-api/src/app.ts:85`. |
 
-These six (plus the CORS-allowlist gate) are what
+These five (plus the CORS-allowlist gate) are what
 `assertRequiredEnv()` + the CORS sanity check
 (`artifacts/resupply-api/src/lib/env-check.ts` and
 `artifacts/resupply-api/src/app.ts:63`) enforce at boot; the API

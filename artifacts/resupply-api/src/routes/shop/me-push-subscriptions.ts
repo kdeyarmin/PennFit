@@ -35,11 +35,52 @@ import { requireSignedIn } from "../../middlewares/requireSignedIn";
 
 const router: IRouter = Router();
 
+// Domain allowlist for push subscription endpoints. The Web Push API
+// only ever produces endpoints on these four host families — anything
+// else is either a bug, a stale client, or an SSRF attempt routing
+// our server's encrypted POSTs through an attacker-controlled host.
+// (We DO encrypt the body with the subscriber's public key, but the
+// fact of a POST + headers + timing is still a side-channel we'd
+// rather not lend out for free.)
+const PUSH_ENDPOINT_HOST_ALLOWLIST = [
+  // FCM (Chrome, Edge, Opera, Brave, most Android).
+  /\.googleapis\.com$/,
+  /\.google\.com$/,
+  // Mozilla autopush (Firefox).
+  /\.mozaws\.net$/,
+  /\.mozilla\.com$/,
+  // Microsoft (Edge legacy / WNS).
+  /\.windows\.com$/,
+  /\.notify\.windows\.com$/,
+  // Apple (Safari).
+  /\.push\.apple\.com$/,
+  /\.web\.push\.apple\.com$/,
+];
+
+function isAllowedPushEndpoint(rawUrl: string): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    return false;
+  }
+  if (parsed.protocol !== "https:") return false;
+  const host = parsed.hostname.toLowerCase();
+  return PUSH_ENDPOINT_HOST_ALLOWLIST.some((re) => re.test(host));
+}
+
 // Body shape from PushSubscription.toJSON(). Browsers all converge
 // on this shape. We accept exactly the fields we use.
 const subscribeBody = z
   .object({
-    endpoint: z.string().url().max(2048),
+    endpoint: z
+      .string()
+      .url()
+      .max(2048)
+      .refine(
+        isAllowedPushEndpoint,
+        "endpoint must be a recognised browser push service",
+      ),
     keys: z
       .object({
         auth: z.string().min(1).max(512),
@@ -54,7 +95,14 @@ const subscribeBody = z
 
 const unsubscribeBody = z
   .object({
-    endpoint: z.string().url().max(2048),
+    endpoint: z
+      .string()
+      .url()
+      .max(2048)
+      .refine(
+        isAllowedPushEndpoint,
+        "endpoint must be a recognised browser push service",
+      ),
   })
   .strict();
 

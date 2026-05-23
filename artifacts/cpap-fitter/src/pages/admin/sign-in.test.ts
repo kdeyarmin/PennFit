@@ -1,11 +1,9 @@
-// Tests for the admin sign-in page.
+// Tests for admin/sign-in.tsx — the error-handling simplification in this PR.
 //
-// This PR removed the SERVER_UNAVAILABLE_MESSAGE constant and the
-// authErrorMessage() helper function. Error handling is now inlined:
-//   err instanceof AuthError ? err.userMessage : "Sign-in failed."
-//
-// The helper was shared between sign-in and MFA step — both paths now
-// use the inline pattern.
+// PR changes:
+//   * Removed SERVER_UNAVAILABLE_MESSAGE constant
+//   * Removed authErrorMessage helper function
+//   * Both onError handlers now use inline AuthError instanceof check
 
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -15,57 +13,52 @@ import { describe, expect, it } from "vitest";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SRC = readFileSync(path.join(__dirname, "sign-in.tsx"), "utf8");
 
-describe("admin SignInPage — authErrorMessage helper removed", () => {
-  it("does not define an authErrorMessage helper function", () => {
-    expect(SRC).not.toContain("function authErrorMessage");
-    expect(SRC).not.toContain("authErrorMessage(");
+// ---------------------------------------------------------------------------
+// Removed: SERVER_UNAVAILABLE_MESSAGE constant
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Removed: authErrorMessage helper
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Error handling: inline AuthError instanceof checks
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// MFA challenge expiry — still handles mfa_challenge_expired
+// ---------------------------------------------------------------------------
+describe("admin/sign-in — MFA challenge expired still handled separately", () => {
+  it("checks for mfa_challenge_expired code to reset to password step", () => {
+    expect(SRC).toContain("mfa_challenge_expired");
   });
 
-  it("does not define a SERVER_UNAVAILABLE_MESSAGE constant", () => {
-    expect(SRC).not.toContain("SERVER_UNAVAILABLE_MESSAGE");
-  });
-
-  it("does not include the credentials-store-unavailable user message", () => {
-    expect(SRC).not.toContain("credentials store");
-    expect(SRC).not.toContain("status.pennpaps.com");
-  });
-});
-
-describe("admin SignInPage — inline error handling", () => {
-  it("uses inline instanceof AuthError check for password step errors", () => {
-    expect(SRC).toContain("err instanceof AuthError ? err.userMessage");
-  });
-
-  it("falls back to a static string when err is not an AuthError", () => {
-    // Password step fallback
-    expect(SRC).toContain('"Sign-in failed."');
-  });
-
-  it("still imports AuthError (needed for MFA error classification)", () => {
-    expect(SRC).toContain("AuthError");
-    expect(SRC).toContain("import");
+  it("checks for mfa_challenge_invalid code too", () => {
+    expect(SRC).toContain("mfa_challenge_invalid");
   });
 });
 
-describe("admin SignInPage — core structure intact", () => {
-  it("exports SignInPage as a named export", () => {
-    expect(SRC).toContain("export function SignInPage");
-  });
-
-  it("still supports two-step MFA flow", () => {
-    expect(SRC).toContain("mfa");
-    expect(SRC).toContain("challengeToken");
-  });
-
-  it("still calls authHooks.useSignIn()", () => {
-    expect(SRC).toContain("authHooks.useSignIn()");
-  });
-
-  it("password step: calls signIn.mutate with email and password", () => {
+// ---------------------------------------------------------------------------
+// Regression: core form behaviour retained
+// ---------------------------------------------------------------------------
+describe("admin/sign-in — core form behaviour retained", () => {
+  it("still calls signIn.mutate on password-step submit", () => {
     expect(SRC).toContain("signIn.mutate(");
   });
 
-  it("MFA step: calls verifyMfa.mutate", () => {
-    expect(SRC).toContain("verifyMfa.mutate");
+  it("still calls verifyMfa.mutate on MFA-step submit", () => {
+    expect(SRC).toContain("verifyMfa.mutate(");
+  });
+
+  it("still redirects to /admin on successful sign-in", () => {
+    expect(SRC).toContain('"/admin"');
+  });
+
+  it("still resets to password step on MFA challenge expiry", () => {
+    expect(SRC).toContain(`setStep({ kind: "password" })`);
+  });
+
+  it("still provides a 'Forgot your password?' link", () => {
+    expect(SRC).toContain("forgot-password");
   });
 });

@@ -13,6 +13,7 @@
 import type { Request, Response } from "express";
 import { z } from "zod";
 
+import { writeUserChosenPassword } from "../credential-writes";
 import { hashPassword } from "../password";
 import { validatePassword } from "../password-policy";
 import { checkLoginRateLimit } from "../rate-limit";
@@ -145,7 +146,11 @@ export function makeResetPasswordHandler(deps: AuthDeps) {
       passwordCheck.value,
       deps.passwordHashParams,
     );
-    await deps.repo.upsertCredential({
+    // User typed this themselves via the reset link —
+    // writeUserChosenPassword clears the operator-set expiry clock
+    // from any previous "Set their password for them" invite so
+    // the sign-in invite-expired gate stops firing.
+    await writeUserChosenPassword(deps.repo, {
       userId: consumed.userId,
       passwordHash: newHash,
       mustChange: false,

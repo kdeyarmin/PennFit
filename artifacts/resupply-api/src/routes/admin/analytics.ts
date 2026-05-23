@@ -37,6 +37,7 @@ import {
   findBestAdherenceWindow,
 } from "../../lib/compliance-attestation";
 import { logger } from "../../lib/logger";
+import { safeCsvCell } from "../../lib/safe-csv-cell";
 import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
@@ -456,13 +457,10 @@ router.get(
   },
 );
 
+// Delegates to the shared safe-csv-cell helper for formula-injection
+// neutralisation + RFC 4180 quoting.
 function csvCell(value: unknown): string {
-  if (value == null) return "";
-  const s = String(value);
-  if (/[",\n\r]/.test(s)) {
-    return `"${s.replace(/"/g, '""')}"`;
-  }
-  return s;
+  return safeCsvCell(value);
 }
 
 function isoDaysAgo(days: number): string {

@@ -59,6 +59,7 @@ describe("createAuthHooks", () => {
       role: "admin",
       displayName: null,
       emailVerified: true,
+      mustChangePassword: false,
     });
     // Simulate the body of useSignOut.onSuccess.
     qc.setQueryData(SESSION_QUERY_KEY, null);
@@ -92,38 +93,5 @@ describe("createAuthHooks", () => {
     expect(result).toEqual(me);
     expect(calls).toHaveLength(1);
     expect(calls[0]!.url).toBe("/api/auth/me");
-  });
-
-  // Regression: mustChangePassword was removed from the AuthMe interface and
-  // from the /auth/me server response. The client and hooks must not expose it.
-  it("fetchMe response does not include mustChangePassword", async () => {
-    const me = {
-      id: "u2",
-      email: "admin@example.com",
-      role: "admin",
-      displayName: null,
-      emailVerified: true,
-    };
-    const { client } = buildAuthClient([{ status: 200, body: me }]);
-    const result = await client.fetchMe();
-    expect(result).not.toBeNull();
-    expect(result).not.toHaveProperty("mustChangePassword");
-  });
-
-  it("AuthMe type does not include mustChangePassword — cache round-trip compiles without it", () => {
-    const qc = new QueryClient();
-    // This would be a TypeScript compile error if mustChangePassword were still
-    // required on AuthMe. We verify the runtime shape is accepted without it.
-    const meWithoutFlag: AuthMe = {
-      id: "u3",
-      email: "test@test.com",
-      role: "admin",
-      displayName: null,
-      emailVerified: false,
-    };
-    qc.setQueryData<AuthMe | null>(SESSION_QUERY_KEY, meWithoutFlag);
-    const cached = qc.getQueryData<AuthMe | null>(SESSION_QUERY_KEY);
-    expect(cached).toEqual(meWithoutFlag);
-    expect(cached).not.toHaveProperty("mustChangePassword");
   });
 });
