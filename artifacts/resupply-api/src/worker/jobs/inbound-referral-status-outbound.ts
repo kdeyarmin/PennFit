@@ -35,6 +35,11 @@
 import type PgBoss from "pg-boss";
 
 import {
+  SsrfError,
+  assertSafeOutboundHost,
+  assertSafeOutboundUrlSync,
+} from "../../lib/safe-outbound";
+import {
   type Database,
   getSupabaseServiceRoleClient,
 } from "@workspace/resupply-db";
@@ -216,9 +221,22 @@ async function postWithTimeout(
   body: string,
   signature: string,
 ): Promise<Response> {
-  if (!url.startsWith("https://")) {
-    // Same posture as webhook-dispatcher: refuse non-https outbound.
-    return new Response("non_https_target", { status: 400 });
+  // SSRF defence: validate URL shape AND resolve DNS so a
+  // partner-supplied (DB-stored) callback URL can't be turned
+  // into an internal-network probe. assertSafeOutboundUrlSync
+  // also enforces https-only.
+  let parsedUrl: URL;
+  try {
+    parsedUrl = assertSafeOutboundUrlSync(url);
+  } catch (err) {
+    const reason = err instanceof SsrfError ? err.reason : "unsafe_url";
+    return new Response(reason, { status: 400 });
+  }
+  try {
+    await assertSafeOutboundHost(parsedUrl.hostname);
+  } catch (err) {
+    const reason = err instanceof SsrfError ? err.reason : "dns_failed";
+    return new Response(reason, { status: 400 });
   }
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);

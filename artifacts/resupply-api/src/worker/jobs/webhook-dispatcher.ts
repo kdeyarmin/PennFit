@@ -20,6 +20,11 @@ import type PgBoss from "pg-boss";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
+import {
+  SsrfError,
+  assertSafeOutboundHost,
+  assertSafeOutboundUrlSync,
+} from "../../lib/safe-outbound";
 
 type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
 
@@ -87,13 +92,37 @@ export async function runWebhookDispatcher(
       stats.exhausted += 1;
       continue;
     }
-    if (!sub.target_url.startsWith("https://")) {
+    // SSRF defence: re-validate URL shape AND resolve DNS at
+    // dispatch time. The route already rejects obvious IP-literal
+    // bad cases; this catch is for DNS rebinding (host resolves to
+    // a private IP between validate and fetch) and for legacy
+    // subscriptions persisted before the route guard existed.
+    let parsedUrl: URL;
+    try {
+      parsedUrl = assertSafeOutboundUrlSync(sub.target_url);
+    } catch (err) {
+      const reason = err instanceof SsrfError ? err.reason : "unsafe_url";
       await supabase
         .schema("resupply")
         .from("webhook_deliveries")
         .update({
           status: "exhausted",
-          last_error: "target_url must be https://",
+          last_error: `target_url rejected: ${reason}`,
+        })
+        .eq("id", delivery.id);
+      stats.exhausted += 1;
+      continue;
+    }
+    try {
+      await assertSafeOutboundHost(parsedUrl.hostname);
+    } catch (err) {
+      const reason = err instanceof SsrfError ? err.reason : "dns_failed";
+      await supabase
+        .schema("resupply")
+        .from("webhook_deliveries")
+        .update({
+          status: "exhausted",
+          last_error: `target_url rejected: ${reason}`,
         })
         .eq("id", delivery.id);
       stats.exhausted += 1;
