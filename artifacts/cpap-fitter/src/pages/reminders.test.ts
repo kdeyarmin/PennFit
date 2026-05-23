@@ -54,11 +54,12 @@ describe("reminders — useShopIdentity imported (P5)", () => {
 
 describe("reminders — email field pre-filled from identity (P5)", () => {
   it("pre-fills the email state from identityEmail (via setEmail in a useEffect)", () => {
-    // Source uses `useState("")` plus a `useEffect` that calls
-    // `setEmail((prev) => prev || identityEmail)` once identity has
-    // loaded — so the guest path keeps the empty input but a signed-in
-    // visitor sees their session email auto-populated.
-    expect(SRC).toContain('useState("")');
+    // Source uses `const [email, setEmail] = useState("")` plus a
+    // `useEffect` that calls `setEmail((prev) => prev || identityEmail)`
+    // once identity has loaded — so the guest path keeps the empty
+    // input but a signed-in visitor sees their session email
+    // auto-populated.
+    expect(SRC).toMatch(/const\s*\[\s*email\s*,\s*setEmail\s*\]\s*=\s*useState\(\s*""\s*\)/);
     expect(SRC).toMatch(/setEmail\(\(prev\)\s*=>\s*prev\s*\|\|\s*identityEmail\)/);
   });
 
