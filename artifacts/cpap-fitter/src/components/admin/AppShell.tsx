@@ -662,6 +662,8 @@ function findGroupForActiveHref(
 }
 
 const NAV_EXPANDED_STORAGE_KEY = "pf-admin-nav-expanded-groups";
+const NAV_EXPLICIT_COLLAPSED_STORAGE_KEY =
+  "pf-admin-nav-explicit-collapsed-groups";
 
 function loadInitialExpandedGroups(activeGroup: string | null): Set<string> {
   const fallback = new Set(activeGroup ? [activeGroup] : []);
@@ -688,6 +690,36 @@ function persistExpandedGroups(expanded: Set<string>): void {
     window.localStorage.setItem(
       NAV_EXPANDED_STORAGE_KEY,
       JSON.stringify(Array.from(expanded)),
+    );
+  } catch {
+    /* quota / private-mode — non-fatal */
+  }
+}
+
+function loadExplicitCollapsedGroups(): Set<string> {
+  if (typeof window === "undefined") return new Set();
+  try {
+    const raw = window.localStorage.getItem(NAV_EXPLICIT_COLLAPSED_STORAGE_KEY);
+    if (!raw) return new Set();
+    const parsed: unknown = JSON.parse(raw);
+    if (
+      Array.isArray(parsed) &&
+      parsed.every((s): s is string => typeof s === "string")
+    ) {
+      return new Set(parsed);
+    }
+  } catch {
+    /* localStorage unavailable / corrupt — fall through */
+  }
+  return new Set();
+}
+
+function persistExplicitCollapsedGroups(explicitCollapsed: Set<string>): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(
+      NAV_EXPLICIT_COLLAPSED_STORAGE_KEY,
+      JSON.stringify(Array.from(explicitCollapsed)),
     );
   } catch {
     /* quota / private-mode — non-fatal */
@@ -745,6 +777,9 @@ function SidebarNavBody({
   const [expanded, setExpanded] = useState<Set<string>>(() =>
     loadInitialExpandedGroups(activeGroup),
   );
+  const [explicitCollapsed, setExplicitCollapsed] = useState<Set<string>>(() =>
+    loadExplicitCollapsedGroups(),
+  );
 
   // If a rep deep-links into a collapsed group, open it. We only fire
   // on activeGroup changes (not on `expanded` changes), so a user who
@@ -752,6 +787,7 @@ function SidebarNavBody({
   // collapsed — the toggle should always win over auto-expand.
   useEffect(() => {
     if (!activeGroup) return;
+    if (explicitCollapsed.has(activeGroup)) return;
     setExpanded((prev) => {
       if (prev.has(activeGroup)) return prev;
       const next = new Set(prev);
@@ -759,14 +795,22 @@ function SidebarNavBody({
       persistExpandedGroups(next);
       return next;
     });
-  }, [activeGroup]);
+  }, [activeGroup, explicitCollapsed]);
 
   function toggleGroup(label: string) {
     setExpanded((prev) => {
       const next = new Set(prev);
-      if (next.has(label)) next.delete(label);
+      const wasExpanded = next.has(label);
+      if (wasExpanded) next.delete(label);
       else next.add(label);
       persistExpandedGroups(next);
+      setExplicitCollapsed((prevExplicitCollapsed) => {
+        const nextExplicitCollapsed = new Set(prevExplicitCollapsed);
+        if (wasExpanded) nextExplicitCollapsed.add(label);
+        else nextExplicitCollapsed.delete(label);
+        persistExplicitCollapsedGroups(nextExplicitCollapsed);
+        return nextExplicitCollapsed;
+      });
       return next;
     });
   }
