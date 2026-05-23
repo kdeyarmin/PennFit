@@ -49,12 +49,15 @@ self.addEventListener("push", (event) => {
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  // The server's push payload sets data.url to a path like
-  // "/account/orders/123"; if it's absent we fall back to /account.
-  // We previously parsed and origin-checked the URL here, but the
-  // payload comes from our own backend (signed VAPID), and the SPA
-  // is single-origin, so the validation was defending against a
-  // capability the attacker couldn't exercise.
+  // Defense-in-depth same-origin guard. The push payload is minted by
+  // our own backend behind signed VAPID, so in normal operation
+  // data.url is always a same-origin path like "/account/orders/123".
+  // If the VAPID private key ever leaked an attacker could craft a
+  // payload that pointed at an external URL — clicking the notification
+  // would open the attacker's site through clients.openWindow(), which
+  // is good phishing material. We parse the URL against the SW's own
+  // origin and only navigate when the resulting origin matches;
+  // anything else (cross-origin, malformed) falls back to /account.
   const rawTarget =
     (event.notification.data && event.notification.data.url) || "/account";
   let targetUrl = "/account";

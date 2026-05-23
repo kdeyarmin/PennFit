@@ -31,14 +31,24 @@ const SW_SRC = readFileSync(
 );
 
 // ---------------------------------------------------------------------------
-// notificationclick — simplified URL handling
+// notificationclick — same-origin URL handling
 // ---------------------------------------------------------------------------
-describe("sw-push.js notificationclick — simplified URL handling", () => {
-  it("assigns targetUrl directly from event.notification.data.url (no rawUrl indirection)", () => {
-    // After the simplification the assignment is a single expression:
-    //   const targetUrl = (event.notification.data && event.notification.data.url) || "/account";
-    // No `rawUrl` variable exists at all.
-    expect(SW_SRC).toContain("const targetUrl =");
+//
+// History: an earlier revision of this file simplified the click handler
+// to assign `targetUrl` directly from `event.notification.data.url`,
+// dropping the same-origin guard on the rationale that the push payload
+// is minted by our own backend behind signed VAPID. PR #340 review then
+// re-added the guard as defense-in-depth (CodeRabbit thread on PR #340,
+// commit 0428ac9). The current shape uses `rawTarget` as the
+// pre-validation variable and falls back to `/account` if either the
+// origin check fails or the URL is malformed.
+describe("sw-push.js notificationclick — same-origin URL handling", () => {
+  it("uses rawTarget as the pre-validation variable, not rawUrl", () => {
+    // `rawUrl` was the name of the variable in the original guard the
+    // simplification commit removed; the re-added guard uses `rawTarget`.
+    // The test pins the current name so a future rename re-surfaces
+    // here intentionally.
+    expect(SW_SRC).toContain("const rawTarget =");
     expect(SW_SRC).not.toContain("const rawUrl =");
   });
 
@@ -46,26 +56,18 @@ describe("sw-push.js notificationclick — simplified URL handling", () => {
     expect(SW_SRC).toContain('|| "/account"');
   });
 
-  it("does NOT contain the same-origin URL-validation try/catch block", () => {
-    // The removed block parsed the URL with `new URL(rawUrl, self.location.origin)` and
-    // checked `parsed.origin === self.location.origin`.
-    expect(SW_SRC).not.toContain("new URL(rawUrl");
-    expect(SW_SRC).not.toContain("parsed.origin === self.location.origin");
+  it("parses the candidate URL against self.location.origin", () => {
+    expect(SW_SRC).toContain("new URL(rawTarget, self.location.origin)");
   });
 
-  it("does NOT contain the rawUrl startsWith('/') path-validation branch", () => {
-    expect(SW_SRC).not.toContain("rawUrl.startsWith");
+  it("only navigates to URLs whose origin matches self.location.origin", () => {
+    expect(SW_SRC).toContain("parsed.origin === self.location.origin");
   });
 
-  it("does NOT contain a try/catch wrapping the URL validation", () => {
-    // The removed try/catch had the comment "Malformed URL — keep the /account fallback."
-    expect(SW_SRC).not.toContain("Malformed URL");
-  });
-
-  it("does NOT contain protocol-relative URL guard (startsWith '//')", () => {
-    // The removed guard excluded `//` (protocol-relative) URLs.
-    expect(SW_SRC).not.toContain("startsWith(\"/\\/\\/\")");
-    expect(SW_SRC).not.toContain('startsWith("//")');
+  it("falls back to /account on a malformed URL (try/catch guard)", () => {
+    // The catch arm reassigns targetUrl back to /account so a crafted
+    // payload can't crash the click handler.
+    expect(SW_SRC).toMatch(/catch[\s\S]{0,80}targetUrl\s*=\s*"\/account"/);
   });
 
   it("still uses self.clients.matchAll to re-focus an existing tab", () => {
