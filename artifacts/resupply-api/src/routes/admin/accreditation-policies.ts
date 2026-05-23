@@ -74,13 +74,31 @@ const idParam = z.object({ id: z.string().uuid() });
 const POLICY_KEY = /^[a-z0-9_]{1,64}$/;
 const VERSION = /^[A-Za-z0-9._-]{1,32}$/;
 
+/**
+ * z.string().url() accepts javascript:, data:, file:, vbscript:, and
+ * arbitrary custom protocols — all of which execute in the renderer's
+ * origin when interpolated into <a href={...}>. Restrict to http(s)
+ * so the policy's bodyUrl can't be weaponised as a stored XSS that
+ * fires when other admins click "Open policy".
+ */
+function httpUrl() {
+  return z
+    .string()
+    .trim()
+    .url()
+    .refine(
+      (u) => /^https?:\/\//i.test(u),
+      "URL must use http or https protocol",
+    );
+}
+
 const createBody = z
   .object({
     policyKey: z.string().regex(POLICY_KEY),
     version: z.string().regex(VERSION),
     title: z.string().trim().min(1).max(200),
     summary: z.string().trim().max(4000).nullable().optional(),
-    bodyUrl: z.string().trim().url().max(2048).nullable().optional(),
+    bodyUrl: httpUrl().max(2048).nullable().optional(),
     category: z
       .string()
       .trim()
@@ -97,7 +115,7 @@ const patchBody = z
   .object({
     title: z.string().trim().min(1).max(200).optional(),
     summary: z.string().trim().max(4000).nullable().optional(),
-    bodyUrl: z.string().trim().url().max(2048).nullable().optional(),
+    bodyUrl: httpUrl().max(2048).nullable().optional(),
     category: z
       .string()
       .trim()

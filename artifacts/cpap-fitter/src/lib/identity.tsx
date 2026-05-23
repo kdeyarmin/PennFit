@@ -27,17 +27,66 @@ export function useShopIdentity(): ShopIdentity {
     isSignedIn: Boolean(data),
     isLoaded: !isPending,
     signOut: async () => {
+      // Push subscriptions persist past localStorage clears — the
+      // browser holds them in the SW registration, and the SERVER
+      // keeps the endpoint→customer row bound to User A. Without
+      // explicit unsubscribe, User A's PHI-bearing push notifications
+      // (order delivery, billing reminders, therapy milestones) keep
+      // flowing to the device that User B now uses. Unregister from
+      // the push provider AND tell the server to drop the endpoint
+      // BEFORE we clear local state.
+      if (typeof window !== "undefined" && "serviceWorker" in navigator) {
+        try {
+          const reg = await navigator.serviceWorker.getRegistration("/sw-push.js");
+          const sub = reg ? await reg.pushManager.getSubscription() : null;
+          if (sub) {
+            const endpoint = sub.endpoint;
+            await sub.unsubscribe().catch(() => undefined);
+            try {
+              await fetch("/resupply-api/shop/me/push-subscriptions", {
+                method: "DELETE",
+                credentials: "include",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ endpoint }),
+              });
+            } catch {
+              // Server-side delete is best-effort during sign-out;
+              // the SW unsubscribe above is what stops new pushes
+              // from reaching this device.
+            }
+          }
+        } catch {
+          // SW APIs unavailable (iOS Safari pre-16.4, dev with
+          // service-worker disabled, etc). Falls through to the
+          // localStorage clears below.
+        }
+      }
+
       // Bypass the React Query mutation so the shim is callable
       // from non-component contexts. Components that want the
       // cache-reset side-effect on sign-out should use
       // authHooks.useSignOut() directly.
-      await authClient.signOut().catch(() => undefined);
+      //
+      // DO NOT swallow the auth-server error here. If /api/auth/sign-out
+      // 5xx'd, the server still holds a valid session cookie — the
+      // user appears signed out (the SPA navigates to the signed-out
+      // state), but the next /api/auth/me probe returns 200 and they
+      // (or whoever uses the device next) are silently back in their
+      // account. Re-throw so the caller can surface "sign-out
+      // failed, please retry" and keep the session visible.
+      let serverSignOutError: unknown = null;
+      try {
+        await authClient.signOut();
+      } catch (err) {
+        serverSignOutError = err;
+      }
       // Clear shop-side per-device state so the next sign-in on a
       // shared device (library / clinic kiosk / family iPad) doesn't
       // inherit User A's cart, wishlist, comparator selection, or
       // recently-viewed history. The cart in particular leaks
       // intent — User B signing in shouldn't see User A's items
-      // pre-loaded at checkout.
+      // pre-loaded at checkout. Run this even if the server-side
+      // sign-out failed so the device-shared content doesn't bleed.
       if (typeof window !== "undefined") {
         try {
           window.localStorage.removeItem("pennpaps_cart_v1");
@@ -48,6 +97,7 @@ export function useShopIdentity(): ShopIdentity {
           // Safari private mode etc — best-effort.
         }
       }
+      if (serverSignOutError) throw serverSignOutError;
     },
   };
 }
