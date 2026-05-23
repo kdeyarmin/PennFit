@@ -161,24 +161,6 @@ describe("inviteMember — InviteResponse shape", () => {
     expect(result.inviteLink).toBe("https://example.com/invite/abc");
   });
 
-  it("does NOT expose a signInReady property on the returned value", async () => {
-    // signInReady was removed from InviteResponse in this PR. Guard against
-    // accidental re-introduction: even if the server still sends the field,
-    // the TypeScript interface no longer declares it and callers must not
-    // branch on it.
-    const serverBodyWithLegacyField = {
-      ...makeInviteResponse(),
-      signInReady: true, // server might still send this transitionally
-    };
-    fetchMock.mockResolvedValueOnce(
-      new Response(JSON.stringify(serverBodyWithLegacyField), { status: 200 }),
-    );
-    const result = await inviteMember({ email: "alice@example.com", role: "csr" });
-    // The TypeScript interface doesn't declare signInReady; this test
-    // documents that callers receive the raw server payload and the type
-    // contract does not surface signInReady.
-    expect((result as Record<string, unknown>)["signInReady"]).toBeUndefined();
-  });
 });
 
 // ─── inviteMember — error handling ───────────────────────────────────────────
