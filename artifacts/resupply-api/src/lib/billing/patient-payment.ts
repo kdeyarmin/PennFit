@@ -180,7 +180,7 @@ export async function createPaymentIntent(
   }
 
   // First stamp the PaymentIntent id so the webhook can correlate.
-  await supabase
+  const { error: updateErr } = await supabase
     .schema("resupply")
     .from("patient_payments")
     .update({
@@ -188,6 +188,13 @@ export async function createPaymentIntent(
       status: intent.status === "requires_action" ? "requires_action" : "pending",
     })
     .eq("id", row.id);
+  if (updateErr) {
+    logger.error(
+      { err: updateErr.message, paymentId: row.id, intentId: intent.id },
+      "patient_payment: failed to link PaymentIntent to patient_payments row",
+    );
+    throw new Error(`Database update failed: ${updateErr.message}`);
+  }
 
   // If Stripe returned succeeded synchronously (rare; usually
   // confirm-on-client), route through the same check-and-set

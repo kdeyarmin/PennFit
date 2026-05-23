@@ -24,6 +24,7 @@ import {
   SsrfError,
   assertSafeOutboundHost,
   assertSafeOutboundUrlSync,
+  fetchWithPinnedIp,
 } from "../../lib/safe-outbound";
 
 type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
@@ -163,8 +164,9 @@ export async function runWebhookDispatcher(
       stats.exhausted += 1;
       return;
     }
+    let pinnedIp: string;
     try {
-      await assertSafeOutboundHost(parsedUrl.hostname);
+      pinnedIp = await assertSafeOutboundHost(parsedUrl.hostname);
     } catch (err) {
       const reason = err instanceof SsrfError ? err.reason : "dns_failed";
       await supabase
@@ -183,6 +185,8 @@ export async function runWebhookDispatcher(
     const attempt = await attemptOnce(
       fetchImpl,
       sub.target_url,
+      parsedUrl.hostname,
+      pinnedIp,
       delivery,
       body,
       signature,
@@ -241,12 +245,14 @@ interface AttemptResult {
 async function attemptOnce(
   fetchImpl: typeof fetch,
   url: string,
+  originalHostname: string,
+  pinnedIp: string,
   delivery: { id: string; event_type: string },
   body: string,
   signature: string,
 ): Promise<AttemptResult> {
   try {
-    const res = await fetchImpl(url, {
+    const res = await fetchWithPinnedIp(fetchImpl, url, pinnedIp, originalHostname, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

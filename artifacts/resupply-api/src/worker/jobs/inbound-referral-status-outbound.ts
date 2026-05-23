@@ -38,6 +38,7 @@ import {
   SsrfError,
   assertSafeOutboundHost,
   assertSafeOutboundUrlSync,
+  fetchWithPinnedIp,
 } from "../../lib/safe-outbound";
 import {
   type Database,
@@ -264,8 +265,9 @@ async function postWithTimeout(
     const reason = err instanceof SsrfError ? err.reason : "unsafe_url";
     return new Response(reason, { status: 400 });
   }
+  let pinnedIp: string;
   try {
-    await assertSafeOutboundHost(parsedUrl.hostname);
+    pinnedIp = await assertSafeOutboundHost(parsedUrl.hostname);
   } catch (err) {
     const reason = err instanceof SsrfError ? err.reason : "dns_failed";
     return new Response(reason, { status: 400 });
@@ -273,7 +275,7 @@ async function postWithTimeout(
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   try {
-    return await fetchImpl(url, {
+    return await fetchWithPinnedIp(fetchImpl, url, pinnedIp, parsedUrl.hostname, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

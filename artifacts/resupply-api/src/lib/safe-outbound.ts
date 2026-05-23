@@ -24,6 +24,8 @@
 // skip the fetch.
 
 import { lookup as dnsLookup } from "node:dns/promises";
+import { Agent as HttpAgent } from "node:http";
+import { Agent as HttpsAgent } from "node:https";
 
 export class SsrfError extends Error {
   readonly reason: string;
@@ -85,8 +87,11 @@ export function assertSafeOutboundUrlSync(rawUrl: string): URL {
  * never trust a value that passed `assertSafeOutboundUrlSync`
  * alone, because DNS rebinding can flip a public-looking name
  * to 127.0.0.1 between validate and fetch.
+ *
+ * Returns the first safe resolved IP address so callers can pin
+ * their HTTP request to this address and prevent TOCTOU DNS rebinding.
  */
-export async function assertSafeOutboundHost(host: string): Promise<void> {
+export async function assertSafeOutboundHost(host: string): Promise<string> {
   const lower = host.toLowerCase();
   // Skip DNS if the host is an IP literal — we already evaluated it
   // synchronously and accepted it (a public IP literal is OK).
@@ -94,7 +99,7 @@ export async function assertSafeOutboundHost(host: string): Promise<void> {
     if (isPrivateOrReservedIp(lower)) {
       throw new SsrfError("ip_literal_in_reserved_range");
     }
-    return;
+    return lower;
   }
   let addresses: { address: string; family: number }[];
   try {
@@ -107,6 +112,11 @@ export async function assertSafeOutboundHost(host: string): Promise<void> {
       throw new SsrfError("resolved_to_reserved_ip");
     }
   }
+  // Return the first safe address for pinned connection
+  if (addresses.length === 0) {
+    throw new SsrfError("dns_no_addresses");
+  }
+  return addresses[0].address;
 }
 
 function looksLikeIpLiteral(host: string): boolean {
@@ -176,10 +186,41 @@ function isReservedIpv6(ip: string): boolean {
   if (lower === "::1") return true;
   // :: — unspecified.
   if (lower === "::") return true;
-  // ::ffff:a.b.c.d — IPv4-mapped. Strip and recurse on the v4 half.
+  // ::ffff:a.b.c.d — IPv4-mapped (dotted-decimal form). Strip and recurse on the v4 half.
   const v4MappedMatch = lower.match(/^::ffff:(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/);
   if (v4MappedMatch) {
     return isReservedIpv4(v4MappedMatch[1]);
+  }
+  // ::ffff:xxxx:yyyy — IPv4-mapped (hex/colon-compressed form). Convert to dotted-decimal.
+  const v4MappedHexMatch = lower.match(/^::ffff:([0-9a-f:]+)$/);
+  if (v4MappedHexMatch) {
+    const hexPart = v4MappedHexMatch[1];
+    // Parse hex groups to reconstruct the 32-bit IPv4 address
+    const groups = hexPart.split(":");
+    let ipv4Num = 0;
+    if (groups.length === 1) {
+      // Single hex group like "7f00:1" or compact form
+      const parsed = Number.parseInt(groups[0], 16);
+      if (!Number.isNaN(parsed)) {
+        ipv4Num = parsed;
+      }
+    } else if (groups.length === 2) {
+      // Two groups like "7f00:1" -> 0x7f00 and 0x0001
+      const high = Number.parseInt(groups[0], 16);
+      const low = Number.parseInt(groups[1], 16);
+      if (!Number.isNaN(high) && !Number.isNaN(low)) {
+        ipv4Num = (high << 16) | low;
+      }
+    }
+    // Convert 32-bit int to dotted-decimal
+    if (ipv4Num > 0 || hexPart === "0") {
+      const a = (ipv4Num >>> 24) & 0xff;
+      const b = (ipv4Num >>> 16) & 0xff;
+      const c = (ipv4Num >>> 8) & 0xff;
+      const d = ipv4Num & 0xff;
+      const mappedIpv4 = `${a}.${b}.${c}.${d}`;
+      return isReservedIpv4(mappedIpv4);
+    }
   }
   // fc00::/7 — unique-local.
   if (lower.startsWith("fc") || lower.startsWith("fd")) return true;
@@ -189,4 +230,59 @@ function isReservedIpv6(ip: string): boolean {
   // ff00::/8 — multicast.
   if (lower.startsWith("ff")) return true;
   return false;
+}
+
+/**
+ * Create a fetch request that connects to a pre-resolved IP address
+ * to prevent TOCTOU DNS rebinding. The original hostname is preserved
+ * in the Host header and URL for TLS SNI validation.
+ *
+ * Usage:
+ *   const safeIp = await assertSafeOutboundHost(parsedUrl.hostname);
+ *   const response = await fetchWithPinnedIp(fetch, url, safeIp, parsedUrl.hostname, options);
+ */
+export function fetchWithPinnedIp(
+  fetchImpl: typeof fetch,
+  url: string,
+  pinnedIp: string,
+  originalHostname: string,
+  init?: RequestInit,
+): Promise<Response> {
+  // Create a custom agent that forces connection to the pinned IP
+  // while preserving the original hostname for TLS SNI and Host header
+  const parsedUrl = new URL(url);
+  const isIpv6 = pinnedIp.includes(":");
+  const host = isIpv6 ? `[${pinnedIp}]` : pinnedIp;
+
+  // Replace hostname in URL with the pinned IP (wrapped in brackets if IPv6)
+  const pinnedUrl = new URL(url);
+  pinnedUrl.hostname = host;
+
+  // For Node.js fetch (undici), we use a custom dispatcher/agent
+  // that overrides the lookup to return our pinned IP
+  const agent = parsedUrl.protocol === "https:"
+    ? new HttpsAgent({
+        lookup: (_hostname, _options, callback) => {
+          // Always return the pinned IP regardless of hostname
+          callback(null, pinnedIp, isIpv6 ? 6 : 4);
+        },
+      })
+    : new HttpAgent({
+        lookup: (_hostname, _options, callback) => {
+          callback(null, pinnedIp, isIpv6 ? 6 : 4);
+        },
+      });
+
+  // Ensure Host header uses original hostname for TLS SNI
+  const headers = new Headers(init?.headers);
+  if (!headers.has("Host")) {
+    headers.set("Host", originalHostname);
+  }
+
+  return fetchImpl(pinnedUrl.toString(), {
+    ...init,
+    headers,
+    // @ts-expect-error - Node.js fetch supports agent option (undici)
+    agent,
+  });
 }

@@ -360,7 +360,7 @@ async function resolveRuleContext(
     .select("claim_id, insurance_claims!inner(patient_id, status)")
     .eq("hcpcs_code", "E0601")
     .eq("insurance_claims.patient_id", patientId)
-    .in("insurance_claims.status", ["submitted", "accepted", "paid"]);
+    .in("insurance_claims.status", ["submitted", "accepted", "paid", "closed"]);
   let rentalMonth: number | null = null;
   if (priorCpapLines && priorCpapLines.length > 0) {
     const uniqueClaims = new Set(priorCpapLines.map((l) => l.claim_id));
