@@ -121,6 +121,20 @@ export interface Database {
   };
   resupply: {
     Tables: {
+      stripe_webhook_events: {
+        Row: {
+          event_id: string;
+          event_type: string;
+          received_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["stripe_webhook_events"]["Row"]
+        > & { event_id: string; event_type: string };
+        Update: Partial<
+          Database["resupply"]["Tables"]["stripe_webhook_events"]["Row"]
+        >;
+        Relationships: [];
+      };
       patient_checkin_attempts: {
         Row: {
           id: string;

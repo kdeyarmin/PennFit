@@ -155,6 +155,59 @@ export function extractShippingAddressFromSession(
   };
 }
 
+/**
+ * Try to record this event in stripe_webhook_events. Resolves to one
+ * of three outcomes:
+ *
+ *   - "inserted"  → first time we've seen this event_id. Caller
+ *                   proceeds to dispatch.
+ *   - "duplicate" → INSERT failed with UNIQUE-violation (PostgREST
+ *                   `23505`). Caller short-circuits with 200 +
+ *                   {ok: true, deduped: true} so Stripe stops
+ *                   retrying.
+ *   - "error"     → INSERT failed for some other reason (DB
+ *                   unreachable, etc.). Caller proceeds anyway —
+ *                   downstream per-table UNIQUE guards still catch
+ *                   the most-load-bearing double-writes, and we'd
+ *                   rather risk a duplicate side-effect than
+ *                   permanently drop a real event because the
+ *                   idempotency table is offline.
+ *
+ * This helper NEVER throws — every code path returns a string so the
+ * caller branches without try/catch.
+ */
+export async function tryRecordWebhookEvent(
+  eventId: string,
+  eventType: string,
+  log: { warn?: (...args: unknown[]) => void } | undefined,
+): Promise<"inserted" | "duplicate" | "error"> {
+  try {
+    const supabase = getSupabaseServiceRoleClient();
+    const { error } = await supabase
+      .schema("resupply")
+      .from("stripe_webhook_events")
+      .insert({
+        event_id: eventId,
+        event_type: eventType,
+      });
+    if (!error) return "inserted";
+    if ((error as { code?: string }).code === "23505") {
+      return "duplicate";
+    }
+    log?.warn?.(
+      { code: (error as { code?: string }).code },
+      "stripe webhook: dedup INSERT failed (non-fatal, proceeding)",
+    );
+    return "error";
+  } catch (err) {
+    log?.warn?.(
+      { err: err instanceof Error ? err.message : String(err) },
+      "stripe webhook: dedup INSERT threw (non-fatal, proceeding)",
+    );
+    return "error";
+  }
+}
+
 export const stripeWebhookHandler: RequestHandler = async (
   req: Request,
   res: Response,
@@ -209,6 +262,34 @@ export const stripeWebhookHandler: RequestHandler = async (
   }
 
   const log = req.log?.child?.({ stripeEventId: event.id, type: event.type });
+
+  // Event-level idempotency gate. Stripe redelivers any event we
+  // don't 2xx within their policy window, and that redelivery
+  // carries the SAME event.id. Without this gate, the downstream
+  // switch would re-run side effects (audit rows, refund mirroring,
+  // subscription rotation) for events whose UNIQUE-on-table guards
+  // protect SOME writes but not all. Insert the event_id first; on
+  // duplicate, ack 200 + skip the switch entirely. Subsequent
+  // changes downstream don't have to carry the Stripe-redelivery
+  // story — this layer owns it.
+  const dedupeOutcome = await tryRecordWebhookEvent(event.id, event.type, log);
+  if (dedupeOutcome === "duplicate") {
+    log?.info?.("stripe webhook: event_id already recorded — deduped");
+    res.status(200).json({ ok: true, deduped: true });
+    return;
+  }
+  if (dedupeOutcome === "error") {
+    // The dedup INSERT itself failed for a reason other than UNIQUE
+    // conflict (Supabase unreachable, etc.). Fall through and let
+    // the switch run — better to risk a duplicate side-effect than
+    // permanently drop a real event because the idempotency table
+    // is offline. The downstream per-table UNIQUE constraints still
+    // catch the most-load-bearing double-writes (markPaid's session
+    // guard, items upsert's composite UNIQUE).
+    log?.warn?.(
+      "stripe webhook: dedup insert errored — proceeding without event-level gate",
+    );
+  }
 
   try {
     switch (event.type) {
