@@ -129,7 +129,7 @@ export async function runReferralPreflight(
   }
 
   // Stamp the referral so the queue can show "preflight done".
-  await supabase
+  const { error: stampError } = await supabase
     .schema("resupply")
     .from("inbound_referral_orders")
     .update({
@@ -137,6 +137,16 @@ export async function runReferralPreflight(
       updated_at: new Date().toISOString(),
     })
     .eq("id", referral.id);
+  if (stampError) {
+    logger.warn(
+      {
+        referral_id: referral.id,
+        err_code: stampError.code,
+      },
+      "inbound_referral.preflight.stamp_failed",
+    );
+    throw stampError;
+  }
 
   logger.info(
     {
@@ -397,13 +407,16 @@ async function checkDocsGap(
     ranBy,
   });
 
-  // Try the physician-fax fallback when we have everything we need.
-  const physicianFaxOutcome = await tryEnqueuePhysicianFax(
-    supabase,
-    referral,
-    missing,
-    ranBy,
-  );
+  // Try the physician-fax fallback only when face_to_face is missing.
+  let physicianFaxOutcome: PreflightOutcomeStatus | null = null;
+  if (missing.includes("face_to_face")) {
+    physicianFaxOutcome = await tryEnqueuePhysicianFax(
+      supabase,
+      referral,
+      missing,
+      ranBy,
+    );
+  }
   return { status: "warn", physicianFaxOutcome };
 }
 
@@ -560,6 +573,7 @@ async function recordCheck(
       },
       "inbound_referral.preflight.record_check_failed",
     );
+    throw error;
   }
 }
 

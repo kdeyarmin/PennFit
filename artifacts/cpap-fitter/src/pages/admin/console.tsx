@@ -56,6 +56,7 @@ import { AdminShopSubscriptionsPage } from "@/pages/admin/admin-shop-subscriptio
 import { AdminTeamPage } from "@/pages/admin/admin-team";
 import { AdminOperationsPage } from "@/pages/admin/admin-operations";
 import { AdminReportsPage } from "@/pages/admin/admin-reports";
+import { AdminControlCenterPage } from "@/pages/admin/admin-control-center";
 import { AdminProductivityPage } from "@/pages/admin/admin-productivity";
 import { AdminBackordersPage } from "@/pages/admin/admin-backorders";
 import { AdminClosuresPage } from "@/pages/admin/admin-closures";
@@ -73,6 +74,7 @@ import { AdminShopInventoryReconcileEditPage } from "@/pages/admin/admin-shop-in
 import { AdminShopAbandonedCartsPage } from "@/pages/admin/admin-shop-abandoned-carts";
 import { AdminShopBackInStockPage } from "@/pages/admin/admin-shop-back-in-stock";
 import { AdminInsuranceLeadsPage } from "@/pages/admin/admin-insurance-leads";
+import { AdminFitterLeadsPage } from "@/pages/admin/admin-fitter-leads";
 import { AdminInsuranceClaimsPage } from "@/pages/admin/admin-insurance-claims";
 import { AdminBillingHubPage } from "@/pages/admin/admin-billing-hub";
 import { AdminBillingAiQueuePage } from "@/pages/admin/admin-billing-ai-queue";
@@ -88,6 +90,8 @@ import { AdminBillingConfigModifierRulesPage } from "@/pages/admin/admin-billing
 import { AdminBillingConfigDenialCodesPage } from "@/pages/admin/admin-billing-config-denial-codes";
 import { AdminBillingConfigClaimTemplatesPage } from "@/pages/admin/admin-billing-config-claim-templates";
 import { AdminBillingCappedRentalsPage } from "@/pages/admin/admin-billing-capped-rentals";
+import { AdminBillingOfficeAllyPage } from "@/pages/admin/admin-billing-office-ally";
+import { AdminOfficeAllySubmissionDetailPage } from "@/pages/admin/admin-billing-office-ally-detail";
 import { AdminNpsPage } from "@/pages/admin/admin-nps";
 import { AdminCustomerDetailPage } from "@/pages/admin/admin-customer-detail";
 import { AdminShopCustomersPage } from "@/pages/admin/admin-shop-customers";
@@ -196,6 +200,17 @@ function AdminConsole() {
             path="/admin/billing/capped-rentals"
             component={AdminBillingCappedRentalsPage}
           />
+          <Route
+            path="/admin/billing/office-ally"
+            component={AdminBillingOfficeAllyPage}
+          />
+          <Route path="/admin/billing/office-ally/:submissionId">
+            {(params) => (
+              <AdminOfficeAllySubmissionDetailPage
+                submissionId={params.submissionId}
+              />
+            )}
+          </Route>
           <Route path="/admin/patients" component={PatientsPage} />
           <Route path="/admin/patients/:patientId/insurance-claims">
             {(params) => (
@@ -246,6 +261,10 @@ function AdminConsole() {
             component={AdminInsuranceLeadsPage}
           />
           <Route
+            path="/admin/fitter-leads"
+            component={AdminFitterLeadsPage}
+          />
+          <Route
             path="/admin/shop/customers"
             component={AdminShopCustomersPage}
           />
@@ -284,6 +303,10 @@ function AdminConsole() {
           <Route path="/admin/team" component={AdminTeamPage} />
           <Route path="/admin/operations" component={AdminOperationsPage} />
           <Route path="/admin/reports" component={AdminReportsPage} />
+          <Route
+            path="/admin/control-center"
+            component={AdminControlCenterPage}
+          />
           <Route path="/admin/nps" component={AdminNpsPage} />
           <Route
             path="/admin/productivity"
@@ -342,9 +365,16 @@ function AdminConsole() {
 
 // Probes /resupply-api/auth/me; redirects to /admin/sign-in when no
 // session is present.
+//
+// Also enforces the "must change password" gate: when /auth/me returns
+// mustChangePassword:true (set by the admin team-invite "set their
+// password for them" flow), the user is bounced to
+// /admin/change-password before any of the admin pages can mount. The
+// flag clears as soon as they pick a new password.
 export function ConsoleRoute() {
   const { data, isPending } = authHooks.useSession();
   if (isPending) return null;
   if (!data) return <Redirect to="/admin/sign-in" />;
+  if (data.mustChangePassword) return <Redirect to="/admin/change-password" />;
   return <AdminConsole />;
 }

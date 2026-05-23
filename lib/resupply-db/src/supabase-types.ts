@@ -527,9 +527,85 @@ export interface Database {
           sms_opt_in: boolean;
           source: "consent" | "sleep_apnea_quiz" | "insurance_quote";
           first_day_nudged_at: string | null;
+          // Mig 0151 — fitter completion + supply-campaign journey.
+          completed_at: string | null;
+          recommended_mask_id: string | null;
+          recommended_mask_name: string | null;
+          recommended_mask_type: string | null;
+          journey_stage:
+            | "consent"
+            | "completed"
+            | "campaign_active"
+            | "reorder_active"
+            | "final_call_pending"
+            | "converted"
+            | "unsubscribed"
+            | "expired";
+          campaign_touch_count: number;
+          last_campaign_touch_at: string | null;
+          next_campaign_touch_at: string | null;
+          unsubscribed_at: string | null;
+          first_order_id: string | null;
+          first_order_placed_at: string | null;
+          // Mig 0152 — first-name personalization, captured from
+          // public.orders.patient_name on conversion.
+          first_name: string | null;
+          // Mig 0153 — engagement tracking via tracking-pixel opens.
+          engagement_score: number;
+          hot_lead_at: string | null;
+          // Mig 0154 — click tracking + CSR contact workflow.
+          click_count: number;
+          csr_contacted_at: string | null;
+          csr_contacted_by: string | null;
+          // Mig 0155 — per-lead engagement recency.
+          last_open_at: string | null;
+          last_click_at: string | null;
         };
         Insert: Partial<Database["resupply"]["Tables"]["fitter_leads"]["Row"]>;
         Update: Partial<Database["resupply"]["Tables"]["fitter_leads"]["Row"]>;
+        Relationships: [];
+      };
+      // Mig 0151 — per-send audit log for the multi-touch supply
+      // campaign. One row per (lead, touch_index, channel).
+      fitter_campaign_touches: {
+        Row: {
+          id: string;
+          lead_id: string;
+          touch_index: number;
+          channel: "email" | "sms";
+          template_key: string;
+          status: "sent" | "failed" | "skipped";
+          error_message: string | null;
+          sent_at: string;
+          // Mig 0155 — per-touch open tracking.
+          open_count: number;
+          first_opened_at: string | null;
+          last_opened_at: string | null;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["fitter_campaign_touches"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["fitter_campaign_touches"]["Row"]
+        >;
+        Relationships: [];
+      };
+      // Mig 0154 — per-click audit log. One row per CTA click.
+      fitter_campaign_clicks: {
+        Row: {
+          id: string;
+          lead_id: string;
+          touch_index: number;
+          link_key: string;
+          clicked_at: string;
+          submitter_ip: string | null;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["fitter_campaign_clicks"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["fitter_campaign_clicks"]["Row"]
+        >;
         Relationships: [];
       };
       shop_product_questions: {
@@ -1126,6 +1202,39 @@ export interface Database {
           // Da Vinci PAS endpoint URL (CMS-0057-F). Null when the
           // payer hasn't stood up a FHIR PAS server yet. (Migration 0136)
           davinci_pas_endpoint_url: string | null;
+          // Submission-readiness columns added by migration 0149. See
+          // 0149_pa_payers_phase2.sql for the per-column rationale —
+          // briefly, these are the fields the OA-enrollment CSV
+          // exports and the admin edit drawer surfaces so an op can
+          // submit a clean claim without grepping `notes`.
+          timely_filing_days: number | null;
+          claims_address_line1: string | null;
+          claims_address_line2: string | null;
+          claims_city: string | null;
+          claims_state: string | null;
+          claims_zip: string | null;
+          claims_phone_e164: string | null;
+          claims_fax_e164: string | null;
+          prior_auth_submission_method:
+            | "portal"
+            | "fax"
+            | "phone"
+            | "electronic_278"
+            | "paper"
+            | "none"
+            | null;
+          prior_auth_fax_e164: string | null;
+          prior_auth_turnaround_business_days: number | null;
+          required_claim_modifiers: string[];
+          accepts_electronic_secondary: boolean;
+          edi_enrollment_status:
+            | "enrolled"
+            | "pending"
+            | "not_enrolled"
+            | "not_applicable";
+          member_id_format_hint: string | null;
+          requirements_last_verified_at: string | null;
+          requirements_last_verified_by: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -2273,6 +2382,14 @@ export interface Database {
           submitted_by_email: string;
           submitted_at: string;
           updated_at: string;
+          // ── 0150 columns ──
+          // Claim IDs the batch *tried* to send. Populated regardless of
+          // upload outcome so a failed batch can be resubmitted without
+          // rebuilding the list. Empty array on legacy rows.
+          attempted_claim_ids: string[];
+          // Soft self-FK; non-null on resubmit rows pointing at the
+          // submission this one re-attempts.
+          parent_submission_id: string | null;
         };
         Insert: Partial<
           Database["resupply"]["Tables"]["office_ally_submissions"]["Row"]
@@ -2711,6 +2828,25 @@ export interface Database {
         };
         Insert: Partial<Database["resupply"]["Tables"]["csr_shifts"]["Row"]>;
         Update: Partial<Database["resupply"]["Tables"]["csr_shifts"]["Row"]>;
+        Relationships: [];
+      };
+      feature_flags: {
+        Row: {
+          key: string;
+          enabled: boolean;
+          description: string;
+          category: string;
+          updated_by_user_id: string | null;
+          updated_by_email: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["feature_flags"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["feature_flags"]["Row"]
+        >;
         Relationships: [];
       };
       appointment_requests: {
@@ -3620,8 +3756,31 @@ export interface Database {
         Relationships: [];
       };
     };
-    Views: { [_ in never]: never };
+    Views: {
+      // Mig 0155 — per-touch aggregate metrics for the admin
+      // reporting surface.
+      fitter_campaign_touch_metrics: {
+        Row: {
+          touch_index: number;
+          email_sends: number;
+          email_failures: number;
+          opens: number;
+          sms_sends: number;
+          sms_failures: number;
+          clicks: number;
+        };
+      };
+    };
     Functions: {
+      // Mig 0155 — atomic per-touch open-count bump, called by
+      // the open-tracking pixel endpoint on every pixel load.
+      record_fitter_touch_open: {
+        Args: {
+          p_lead_id: string;
+          p_touch_index: number;
+        };
+        Returns: void;
+      };
       validate_payment_allocations: {
         Args: {
           p_patient_id: string;
@@ -3698,6 +3857,22 @@ export interface Database {
           password_hash: string;
           algo: string;
           must_change: boolean;
+          // Set by the team-invite "set their password for them"
+          // path (lib/resupply-auth/src/team-invite.ts). The
+          // sign-in handler refuses must_change credentials older
+          // than ADMIN_PASSWORD_TTL_MS. Cleared back to NULL on
+          // user-initiated password changes / resets. Added in
+          // migration 0142_password_credential_set_by_admin_at.
+          set_by_admin_at: string | null;
+          // Stamped by the invite-password expiry notifier when it
+          // sends the heads-up reminder around day 5 of the TTL.
+          // Cleared back to NULL on a fresh re-invite (see
+          // invite-password-expiry-notify.ts). Added in migration
+          // 0143_password_credential_expiry_notify_stamps.
+          expiry_reminder_sent_at: string | null;
+          // Stamped by the same notifier when it sends the final
+          // "your invite has expired" email after the TTL elapses.
+          expired_notice_sent_at: string | null;
           updated_at: string;
         };
         Insert: {
@@ -3705,6 +3880,9 @@ export interface Database {
           password_hash: string;
           algo?: string;
           must_change?: boolean;
+          set_by_admin_at?: string | null;
+          expiry_reminder_sent_at?: string | null;
+          expired_notice_sent_at?: string | null;
           updated_at?: string;
         };
         Update: Partial<

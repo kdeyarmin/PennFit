@@ -10,7 +10,7 @@
 
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { Mock } from "vitest";
-import { submitFitterLead } from "./shop-api";
+import { submitFitterLead, submitFitterComplete } from "./shop-api";
 
 const ORIGINAL_FETCH = globalThis.fetch;
 
@@ -144,5 +144,158 @@ describe("submitFitterLead", () => {
     });
 
     await expect(submitFitterLead(VALID_INPUT)).rejects.toThrow("http_429");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────
+// submitFitterComplete
+// ─────────────────────────────────────────────────────────────────
+//
+// Covers:
+//   * happy path with enrolled=true
+//   * enrolled=false when body.enrolled is falsy
+//   * HTTP error with a JSON error code
+//   * HTTP error when JSON body has no error string
+//   * HTTP error when response.json() throws
+//   * correct method, URL, and headers
+
+const VALID_COMPLETE_INPUT = {
+  email: "alice@example.com",
+  recommendedMaskId: "mask-airfit-p30i",
+  recommendedMaskName: "ResMed AirFit P30i",
+  recommendedMaskType: "nasalPillow" as const,
+};
+
+describe("submitFitterComplete", () => {
+  test("returns { ok: true, enrolled: true } when the server responds 200 with enrolled=true", async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ ok: true, enrolled: true }),
+    });
+
+    const result = await submitFitterComplete(VALID_COMPLETE_INPUT);
+    expect(result).toEqual({ ok: true, enrolled: true });
+  });
+
+  test("returns { ok: true, enrolled: false } when body.enrolled is falsy", async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ ok: true, enrolled: false }),
+    });
+
+    const result = await submitFitterComplete(VALID_COMPLETE_INPUT);
+    expect(result).toEqual({ ok: true, enrolled: false });
+  });
+
+  test("treats a missing enrolled field as false", async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ ok: true }),
+    });
+
+    const result = await submitFitterComplete(VALID_COMPLETE_INPUT);
+    expect(result.enrolled).toBe(false);
+  });
+
+  test("POSTs to /resupply-api/shop/fitter-complete", async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ ok: true, enrolled: true }),
+    });
+
+    await submitFitterComplete(VALID_COMPLETE_INPUT);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("/resupply-api/shop/fitter-complete");
+    expect(init.method).toBe("POST");
+  });
+
+  test("sends Content-Type: application/json and Accept: application/json", async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ ok: true, enrolled: true }),
+    });
+
+    await submitFitterComplete(VALID_COMPLETE_INPUT);
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const headers = init.headers as Record<string, string>;
+    expect(headers["Content-Type"]).toBe("application/json");
+    expect(headers["Accept"]).toBe("application/json");
+  });
+
+  test("serialises all four input fields as JSON in the request body", async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ ok: true, enrolled: true }),
+    });
+
+    await submitFitterComplete(VALID_COMPLETE_INPUT);
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const body = JSON.parse(init.body as string) as Record<string, unknown>;
+    expect(body.email).toBe(VALID_COMPLETE_INPUT.email);
+    expect(body.recommendedMaskId).toBe(VALID_COMPLETE_INPUT.recommendedMaskId);
+    expect(body.recommendedMaskName).toBe(VALID_COMPLETE_INPUT.recommendedMaskName);
+    expect(body.recommendedMaskType).toBe(VALID_COMPLETE_INPUT.recommendedMaskType);
+  });
+
+  test("throws an Error with the JSON error code on a non-OK response", async () => {
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 400,
+      json: async () => ({ error: "invalid_body" }),
+    });
+
+    await expect(submitFitterComplete(VALID_COMPLETE_INPUT)).rejects.toThrow(
+      "invalid_body",
+    );
+  });
+
+  test("throws http_<status> when JSON body has no error string field", async () => {
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 422,
+      json: async () => ({ message: "unprocessable" }),
+    });
+
+    await expect(submitFitterComplete(VALID_COMPLETE_INPUT)).rejects.toThrow(
+      "http_422",
+    );
+  });
+
+  test("throws http_<status> when response.json() throws (no JSON body)", async () => {
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 500,
+      json: async () => {
+        throw new SyntaxError("invalid json");
+      },
+    });
+
+    await expect(submitFitterComplete(VALID_COMPLETE_INPUT)).rejects.toThrow(
+      "http_500",
+    );
+  });
+
+  test("throws http_429 on rate-limit with no JSON body", async () => {
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 429,
+      json: async () => {
+        throw new SyntaxError("no body");
+      },
+    });
+
+    await expect(submitFitterComplete(VALID_COMPLETE_INPUT)).rejects.toThrow(
+      "http_429",
+    );
   });
 });

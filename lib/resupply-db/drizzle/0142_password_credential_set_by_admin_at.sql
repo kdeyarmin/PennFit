@@ -1,0 +1,29 @@
+-- 0142_password_credential_set_by_admin_at — track when an
+-- operator typed a password ON BEHALF of another user.
+--
+-- Background. The team-invite "Set their password for them" path
+-- (lib/resupply-auth/src/team-invite.ts, initialPassword branch)
+-- writes a password_credentials row with must_change=true so the
+-- forced-rotation gate (lib/resupply-auth/src/http/me.ts) sends the
+-- user to /admin/change-password the moment they sign in. That gate
+-- only fires AFTER sign-in, so a user who never signs in still has
+-- the operator-typed password sitting on their account forever.
+--
+-- This column captures the moment the operator set the password.
+-- The sign-in handler now refuses must_change=true credentials older
+-- than the configured TTL (7 days, mirroring INVITE_TOKEN_TTL_MS in
+-- team-invite.ts) with a clear "ask your administrator to re-invite
+-- you" message. Successful password changes / resets clear the
+-- column back to NULL.
+--
+-- The column is NULLABLE on purpose:
+--   * Existing user-set passwords (sign-up, reset-password) keep
+--     must_change=false and set_by_admin_at IS NULL — the gate never
+--     fires for them.
+--   * The Stage-4 Clerk-cutover backfill also wrote must_change=true
+--     rows; for those we deliberately leave set_by_admin_at NULL so
+--     the sign-in gate ignores them — they predate this feature and
+--     forcing every legacy user to be re-invited would lock the
+--     entire team out at deploy time.
+ALTER TABLE "resupply_auth"."password_credentials"
+  ADD COLUMN IF NOT EXISTS "set_by_admin_at" timestamp with time zone;

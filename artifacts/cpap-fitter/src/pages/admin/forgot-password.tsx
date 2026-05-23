@@ -1,11 +1,18 @@
 // Forgot-password page. Server contract is "always 200, no
 // enumeration" — we render the success state regardless of whether
-// the email matches an account.
+// the email matches an account. The one exception is a 5xx from
+// /auth/forgot-password: the credentials store is unreachable, the
+// email wasn't queued, and the user would otherwise wait forever
+// for a reset link that never arrives. In that case we show the
+// same server-status copy the rest of the admin auth surface uses
+// (see ./sign-in.tsx, ./reset-password.tsx, ./change-password.tsx).
 
 import "@/admin.css";
 
 import { useState, type FormEvent } from "react";
 import { Link } from "wouter";
+
+import { AuthError } from "@workspace/resupply-auth-react";
 
 import { authHooks } from "@/lib/admin/auth-hooks";
 import { AuthLayout } from "@/components/auth-layout";
@@ -15,17 +22,40 @@ const basePath = "/admin";
 export function ForgotPasswordPage() {
   const [email, setEmail] = useState("");
   const [done, setDone] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const forgot = authHooks.useForgotPassword();
 
   function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    setSubmitError(null);
     forgot.mutate(
       { email: email.trim() },
       {
-        // Server returns 200 even on unknown emails / malformed
-        // input. We always render the success state — the
-        // alternative would leak which addresses have accounts.
-        onSettled: () => setDone(true),
+        // The server's normal contract is "always 200, no
+        // enumeration" — so success and unknown-email both flow
+        // through onSuccess and we render the generic success
+        // state. A 5xx means the credentials store is actually
+        // down, the email wasn't queued, and the user would
+        // otherwise wait forever for a reset link that never
+        // arrives. Surface the same server-status copy used on
+        // sign-in / change-password / reset-password so the
+        // messaging is consistent across the auth surface.
+        onSuccess: () => setDone(true),
+        onError: (err) => {
+          if (err instanceof AuthError && err.status >= 500) {
+            setSubmitError(
+              "We can't reach the credentials store right now, so we" +
+                " couldn't send a reset link. This is a server problem," +
+                " not your email. Please try again in a minute — if it" +
+                " keeps failing, check status.pennpaps.com.",
+            );
+            return;
+          }
+          // Any non-5xx error path still gets folded into the
+          // generic success state to preserve the no-enumeration
+          // contract.
+          setDone(true);
+        },
       },
     );
   }
@@ -80,6 +110,19 @@ export function ForgotPasswordPage() {
                 style={{ borderColor: "hsl(var(--line-1))" }}
               />
             </label>
+
+            {submitError && (
+              <p
+                role="alert"
+                className="text-sm rounded-md px-3 py-2"
+                style={{
+                  backgroundColor: "hsl(0 70% 96%)",
+                  color: "hsl(0 70% 30%)",
+                }}
+              >
+                {submitError}
+              </p>
+            )}
 
             <button
               type="submit"

@@ -754,6 +754,49 @@ export async function submitFitterLead(
   return (await res.json()) as { ok: true };
 }
 
+// ─────────────────────────────────────────── fitter completion ping
+//
+// Posts to /shop/fitter-complete. The /results page calls this once,
+// when the recommendation lands, so the backend can enroll the lead
+// in the multi-touch supply campaign. Body carries email + the top
+// recommended mask (catalog reference, NOT measurements — those stay
+// in-browser per the HIPAA-data-minimization comment on the
+// /recommend route). Like submitFitterLead, the server always 200s
+// — the caller treats every outcome the same way (a failure here
+// just means the campaign won't start; the patient is unaffected).
+export interface FitterCompleteInput {
+  email: string;
+  recommendedMaskId: string;
+  recommendedMaskName: string;
+  recommendedMaskType: "fullFace" | "nasal" | "nasalPillow" | "hybrid";
+}
+
+export async function submitFitterComplete(
+  input: FitterCompleteInput,
+): Promise<{ ok: true; enrolled: boolean }> {
+  const res = await fetch("/resupply-api/shop/fitter-complete", {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      ...csrfHeader(),
+    },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) {
+    let code = `http_${res.status}`;
+    try {
+      const body = (await res.json()) as { error?: string };
+      if (body && typeof body.error === "string") code = body.error;
+    } catch {
+      /* keep http_<status> */
+    }
+    throw new Error(code);
+  }
+  const body = (await res.json()) as { ok: true; enrolled?: boolean };
+  return { ok: true, enrolled: Boolean(body.enrolled) };
+}
+
 // ─────────────────────────────────────────── sleep apnea quiz capture
 //
 // Posts to /shop/quiz-leads. The sleep-apnea quiz on /learn calls this

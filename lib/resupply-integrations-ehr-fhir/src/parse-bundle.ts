@@ -308,7 +308,7 @@ function collectHcpcsLines(sr: FhirServiceRequest): ParachuteOrder["hcpcsLines"]
   }
   for (const detail of sr.orderDetail ?? []) {
     const extra = extractHcpcs(detail);
-    if (extra && !lines.some((l) => l.code === extra.code)) {
+    if (extra && !lines.some((l: ParachuteOrder["hcpcsLines"][number]) => l.code === extra.code)) {
       lines.push({
         code: extra.code,
         modifiers: [],
@@ -345,7 +345,7 @@ function extractIcd10(cc: FhirCodeableConcept | undefined): string | null {
     if (
       typeof c.code === "string" &&
       typeof c.system === "string" &&
-      c.system.includes("icd-10")
+      c.system.toLowerCase().includes("icd-10")
     ) {
       return c.code.toUpperCase();
     }

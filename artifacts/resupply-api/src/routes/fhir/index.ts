@@ -39,6 +39,7 @@ import {
 } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
+import { rateLimit } from "../../middlewares/rate-limit";
 import { requireAdmin } from "../../middlewares/requireAdmin";
 import { requireSmartFhirAccess } from "../../middlewares/requireSmartFhirAccess";
 
@@ -389,8 +390,31 @@ const fhirJson = express.raw({
   limit: "2mb",
 });
 
+// SMART-on-FHIR backend-services intake is JWT-authenticated, but
+// JWT verification + a Bundle insert + a downstream dispatcher job
+// is non-trivial work per request. Without a limiter, a partner
+// with a leaked/rotated client_id (or a misconfigured retry loop)
+// could flood the inbox. Cap to 60 requests / minute / IP — well
+// above any healthy partner POST cadence (Epic / Athena bulk
+// referral exports run at single-digit RPS) but enough headroom for
+// the occasional burst at clinic open. Keyed on req.ip because the
+// limiter runs before requireSmartFhirAccess populates req.fhirTenant.
+const serviceRequestPostLimiter = rateLimit({
+  windowMs: 60_000,
+  max: 60,
+  name: "fhir_service_request_post_ip",
+});
+
+const bundleSchema = z.object({
+  resourceType: z.literal("Bundle"),
+  id: z.string().optional(),
+  type: z.string().optional(),
+  entry: z.array(z.any()).optional(),
+});
+
 router.post(
   "/fhir/r4/ServiceRequest",
+  serviceRequestPostLimiter,
   requireSmartFhirAccess,
   fhirJson,
   async (req, res) => {
@@ -408,9 +432,9 @@ router.post(
         .json(operationOutcome("invalid", "empty_body"));
       return;
     }
-    let payload: unknown;
+    let parsed: unknown;
     try {
-      payload = JSON.parse(buf.toString("utf8"));
+      parsed = JSON.parse(buf.toString("utf8"));
     } catch {
       res
         .status(400)
@@ -418,26 +442,20 @@ router.post(
         .json(operationOutcome("invalid", "invalid_json"));
       return;
     }
-    if (
-      !payload ||
-      typeof payload !== "object" ||
-      Array.isArray(payload) ||
-      (payload as { resourceType?: unknown }).resourceType !== "Bundle"
-    ) {
+    const validation = bundleSchema.safeParse(parsed);
+    if (!validation.success) {
       res
         .status(400)
         .type("application/fhir+json")
         .json(operationOutcome("invalid", "not_a_bundle"));
       return;
     }
+    const payload = validation.data;
     const source = `ehr_fhir_${tenant.slug}`;
 
     // Dedupe key: prefer the bundle.id when present, fall back to a
     // sha256 of the raw bytes.
-    const bundleId =
-      typeof (payload as { id?: unknown }).id === "string"
-        ? ((payload as { id: string }).id as string).slice(0, 120)
-        : null;
+    const bundleId = payload.id ? payload.id.slice(0, 120) : null;
     const dedupeKey =
       bundleId !== null
         ? `bundle_id:${bundleId}`

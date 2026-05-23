@@ -63,6 +63,7 @@ import integrationsSyncEquipmentRouter from "./admin/integrations-sync-equipment
 import bulkCampaignsRouter from "./admin/bulk-campaigns.js";
 import mfaRouter from "./admin/mfa.js";
 import reportsRouter from "./admin/reports.js";
+import featureFlagsRouter from "./admin/feature-flags.js";
 import npsSummaryRouter from "./admin/nps-summary.js";
 import deliveryFailuresRouter from "./admin/delivery-failures.js";
 import lookupRouter from "./admin/lookup.js";
@@ -83,8 +84,10 @@ import physicianFaxOutreachRouter from "./admin/physician-fax-outreach.js";
 import shopBackInStockAdminRouter from "./admin/shop-back-in-stock.js";
 import shopSubsMetricsRouter from "./admin/shop-subscriptions-metrics.js";
 import insuranceLeadsAdminRouter from "./admin/insurance-leads.js";
+import fitterLeadsAdminRouter from "./admin/fitter-leads.js";
 import payerProfilesRouter from "./admin/payer-profiles.js";
 import officeAllySubmissionsRouter from "./admin/office-ally-submissions.js";
+import officeAllyUploadAckRouter from "./admin/office-ally-upload-ack.js";
 import denialCodesRouter from "./admin/denial-codes.js";
 import payerFeeSchedulesRouter from "./admin/payer-fee-schedules.js";
 import eraIngestRouter from "./admin/era-ingest.js";
@@ -261,6 +264,11 @@ router.use(shopBackInStockAdminRouter);
 // for submissions to the public POST /shop/insurance-leads form.
 // requireAdmin gate is on the router itself.
 router.use(insuranceLeadsAdminRouter);
+// /admin/fitter-leads/* — funnel queue + conversion KPIs for the
+// at-home fitter. Powers the "Fitter Prospects" admin page; the
+// dispatchers (fitter-supply-campaign + fitter-conversion-
+// attribution) handle the actual sends and conversion stamps.
+router.use(fitterLeadsAdminRouter);
 // /admin/payer-profiles/* — Pennsylvania payer catalog (migration
 // 0128). Read by every admin; write restricted to requireAdminOnly.
 // Drives 837P NM1*PR loop population on Office Ally submissions.
@@ -270,6 +278,12 @@ router.use(payerProfilesRouter);
 // lives on the patients router so it's co-located with the per-claim
 // state machine.
 router.use(officeAllySubmissionsRouter);
+// /admin/office-ally/upload-ack — manual ack-file ingestion path
+// (admin-only) for when the poller can't reach OA or OA emails an
+// ack out-of-band. Reuses the dispatchers exported from the poll
+// worker so manual + auto paths share parsing + state-machine
+// updates.
+router.use(officeAllyUploadAckRouter);
 // /admin/denial-codes/* — CARC / RARC catalog (Phase 4 of the
 // billing build). Seeded in migration 0129 with the ~50 codes DME
 // suppliers hit most often; admin UI surfaces them on claim denials.
@@ -657,8 +671,12 @@ router.use(bulkCampaignsRouter);
 // enrollment + status + disable only. Sign-in gating ships in Phase B
 // after the enrollment flow has been proven in production.
 router.use(mfaRouter);
-// /admin/reports/*.csv — date-bounded CSV exports for ops + finance.
+// /admin/reports/* — date-bounded CSV/PDF/QuickBooks exports for ops
+// + finance.
 router.use(reportsRouter);
+// /admin/feature-flags/* — Control Center on/off toggles that gate
+// dispatchers and route handlers in real time.
+router.use(featureFlagsRouter);
 // /admin/nps/recent — last-N-days NPS rollup for the post-delivery
 // follow-up. Surfaces band counts + canonical NPS score + a comment
 // tail. Powered by shop_order_nps_responses (migration 0127).

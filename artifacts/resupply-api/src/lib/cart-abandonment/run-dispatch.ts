@@ -37,6 +37,7 @@ import {
 } from "@workspace/resupply-db";
 
 import { isInDndWindow } from "../comm-prefs";
+import { isFeatureEnabled } from "../feature-flags";
 import { sendCartAbandonmentEmail } from "./send-cart-abandonment-email";
 
 /**
@@ -102,6 +103,25 @@ export async function runCartAbandonmentDispatch(opts: {
   now?: Date;
   log?: CartAbandonmentLogger;
 } = {}): Promise<CartAbandonmentStats> {
+  // Control Center feature gate — admins can disable the nudge
+  // dispatcher from /admin/control-center without a deploy. Returns
+  // the same zeroed stats envelope as a no-eligible-rows scan, so
+  // the admin "Run now" button surfaces "0 sent" instead of an error.
+  if (!(await isFeatureEnabled("cart_abandonment.dispatcher"))) {
+    opts.log?.warn?.(
+      { event: "cart_abandonment_dispatch_skipped_feature_disabled" },
+      "cart-abandonment dispatcher skipped — feature flag disabled",
+    );
+    return {
+      scanned: 0,
+      sent: 0,
+      skippedNoConfig: 0,
+      skippedFailed: 0,
+      skippedOptOut: 0,
+      sendgridConfigured: true,
+    };
+  }
+
   const supabase = getSupabaseServiceRoleClient();
   const now = opts.now ?? new Date();
   const cutoffIso = new Date(

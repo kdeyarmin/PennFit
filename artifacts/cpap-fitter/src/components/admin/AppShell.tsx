@@ -55,6 +55,7 @@ import {
   ShieldAlert,
   SlidersHorizontal,
   CalendarRange,
+  ToggleLeft,
 } from "lucide-react";
 import {
   Sheet,
@@ -292,6 +293,13 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         hint: "New benefit-verification requests",
       },
       {
+        href: "/admin/fitter-leads",
+        label: "Fitter Prospects",
+        icon: UsersRound,
+        matchPrefix: "/admin/fitter-leads",
+        hint: "Fitter funnel + supply-campaign conversion",
+      },
+      {
         href: "/admin/shop/reviews",
         label: "Reviews",
         icon: Star,
@@ -419,7 +427,7 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         label: "Reports",
         icon: BarChart3,
         matchPrefix: "/admin/reports",
-        hint: "Operational KPIs and exports",
+        hint: "CSV, PDF, and QuickBooks (IIF / QBO) exports for ops and finance",
       },
       {
         href: "/admin/productivity",
@@ -537,6 +545,13 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         icon: CalendarOff,
         matchPrefix: "/admin/closures",
         hint: "Holidays and weather closures with inbound-SMS auto-reply",
+      },
+      {
+        href: "/admin/control-center",
+        label: "Control Center",
+        icon: ToggleLeft,
+        matchPrefix: "/admin/control-center",
+        hint: "On/off switches for major features (voice, SMS, campaigns, AI billing, …)",
       },
       {
         href: "/admin/settings",

@@ -28,6 +28,7 @@ import {
   DEFAULT_ANTHROPIC_MODEL_CLASSIFY,
   getAnthropicClient,
   getResponseText,
+  selectLlmProvider,
 } from "../llm-provider";
 
 import { logger } from "../logger";
@@ -97,30 +98,45 @@ export async function classifyReferral(
   input: ClassifyInput,
 ): Promise<ReferralClassification | null> {
   const env = input.env ?? process.env;
-  const client = getAnthropicClient(env);
-  if (!client) return null;
+  const selection = selectLlmProvider(env);
+  if (selection.provider === "offline") return null;
 
-  const userMessage = buildPrompt(input);
-  const result = await client.send({
-    model: DEFAULT_ANTHROPIC_MODEL_CLASSIFY,
-    max_tokens: 400,
-    temperature: 0,
-    system: SYSTEM_PROMPT,
-    messages: [{ role: "user", content: userMessage }],
-  });
-  if (!result.ok) {
-    logger.warn(
-      {
-        event: "inbound_referral.classify.anthropic_error",
-        code: result.errorCode,
-        status: result.httpStatus,
-      },
-      "inbound referral classifier: anthropic call failed",
-    );
-    return null;
+  if (selection.provider === "anthropic") {
+    const client = getAnthropicClient(env);
+    if (!client) return null;
+
+    const userMessage = buildPrompt(input);
+    const result = await client.send({
+      model: DEFAULT_ANTHROPIC_MODEL_CLASSIFY,
+      max_tokens: 400,
+      temperature: 0,
+      system: SYSTEM_PROMPT,
+      messages: [{ role: "user", content: userMessage }],
+    });
+    if (!result.ok) {
+      logger.warn(
+        {
+          event: "inbound_referral.classify.anthropic_error",
+          code: result.errorCode,
+          status: result.httpStatus,
+        },
+        "inbound referral classifier: anthropic call failed",
+      );
+      return null;
+    }
+    const text = getResponseText(result.response).trim();
+    return parseClassification(text);
   }
-  const text = getResponseText(result.response).trim();
-  return parseClassification(text);
+
+  // OpenAI provider is not yet implemented for classification
+  logger.warn(
+    {
+      event: "inbound_referral.classify.provider_not_supported",
+      provider: selection.provider,
+    },
+    "inbound referral classifier: provider not supported",
+  );
+  return null;
 }
 
 function buildPrompt(input: ClassifyInput): string {

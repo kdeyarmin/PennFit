@@ -34,6 +34,7 @@ import {
 import { verifyParachuteSignature } from "@workspace/resupply-integrations-parachute";
 
 import { logger } from "../lib/logger";
+import { rateLimit } from "../middlewares/rate-limit";
 
 const router: IRouter = Router();
 
@@ -51,6 +52,7 @@ const sourceParam = z.object({
 });
 
 const SUPPORTED_SOURCE_SET = new Set(["parachute", "itamar_hsat", "test"]);
+const inboundPayloadSchema = z.record(z.string(), z.unknown());
 
 /**
  * Accept a source slug if it's in the hard-coded set OR matches the
@@ -72,7 +74,23 @@ function isSupportedSource(source: string): boolean {
 // largest events (with embedded document metadata) run ~50KB.
 const rawJson = express.raw({ type: "application/json", limit: "1mb" });
 
-router.post("/integrations/inbound/:source", rawJson, async (req, res) => {
+// Defense-in-depth IP rate limit for the partner-callable inbound
+// webhook intake. This route is unauthenticated at the transport
+// layer (partner auth happens via per-source HMAC verification
+// inline below), so without a limiter a single attacker IP could
+// burn database write capacity by POSTing millions of malformed or
+// signature-failing payloads. 120 requests / minute / IP is well
+// above the burstiest partner replay window (Parachute caps its
+// retry storm at ~30/min) but cuts off scripted abuse early.
+// Keyed on req.ip because no authenticated identity is available at
+// this point in the request lifecycle.
+const inboundWebhookLimiter = rateLimit({
+  windowMs: 60_000,
+  max: 120,
+  name: "integrations_inbound_ip",
+});
+
+router.post("/integrations/inbound/:source", inboundWebhookLimiter, rawJson, async (req, res) => {
   const parsed = sourceParam.safeParse(req.params);
   if (!parsed.success) {
     res.status(400).json({ error: "invalid_source" });
@@ -91,19 +109,22 @@ router.post("/integrations/inbound/:source", rawJson, async (req, res) => {
     return;
   }
   const rawBodyString = rawBuffer.toString("utf8");
-  let payload: Record<string, unknown>;
+  let parsedJson: unknown;
   try {
-    const parsed = JSON.parse(rawBodyString);
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-      res.status(400).json({ error: "invalid_payload" });
-      return;
-    }
-    payload = parsed as Record<string, unknown>;
+    parsedJson = JSON.parse(rawBodyString);
   } catch {
     res.status(400).json({ error: "invalid_json" });
     return;
   }
-
+  const payloadResult = inboundPayloadSchema.safeParse(parsedJson);
+  if (!payloadResult.success) {
+    res.status(400).json({
+      error: "invalid_payload",
+      details: payloadResult.error.format(),
+    });
+    return;
+  }
+  const payload: Record<string, unknown> = payloadResult.data;
   // Build a dedupe key — prefer the source's delivery-id header,
   // fall back to a sha256 of the body.
   const headerKeys = [
