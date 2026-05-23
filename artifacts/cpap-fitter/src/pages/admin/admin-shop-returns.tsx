@@ -18,12 +18,14 @@
 // All other states are terminal — only the Add note button remains
 // for posterity.
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import {
   useInfiniteQuery,
   useMutation,
   useQueryClient,
 } from "@tanstack/react-query";
+
+import { useUrlState } from "@/hooks/use-url-state";
 import {
   approveReturn,
   listAdminShopReturns,
@@ -56,41 +58,21 @@ const PAGE_SIZE = 25;
 
 const TAB_IDS: ReadonlySet<Tab> = new Set(TABS.map((t) => t.id));
 
-function readTabFromUrl(): Tab {
-  if (typeof window === "undefined") return "open";
-  const raw = new URLSearchParams(window.location.search).get("tab");
-  return raw && TAB_IDS.has(raw as Tab) ? (raw as Tab) : "open";
-}
+// Type-narrowing guard passed to useUrlState so unknown ?tab= values
+// silently coerce back to the "open" default rather than landing the
+// page in an unrecognised state.
+const isTab = (v: string): v is Tab => TAB_IDS.has(v as Tab);
 
 export function AdminShopReturnsPage() {
   // Persist the active tab in `?tab=<id>` so a refresh, back/forward
   // nav, or bookmarked link lands on the same view. The "open" default
-  // is omitted from the URL.
-  const [tab, setTabState] = useState<Tab>(() => readTabFromUrl());
-
-  function setTab(next: Tab) {
-    setTabState(next);
-    if (typeof window === "undefined") return;
-    const params = new URLSearchParams(window.location.search);
-    if (next === "open") params.delete("tab");
-    else params.set("tab", next);
-    const qs = params.toString();
-    const newUrl =
-      window.location.pathname +
-      (qs ? `?${qs}` : "") +
-      window.location.hash;
-    window.history.replaceState(null, "", newUrl);
-  }
-
-  useEffect(() => {
-    function handlePopstate() {
-      setTabState(readTabFromUrl());
-    }
-    window.addEventListener("popstate", handlePopstate);
-    return () => {
-      window.removeEventListener("popstate", handlePopstate);
-    };
-  }, []);
+  // is omitted from the URL. History management (replaceState +
+  // popstate listener) is owned by useUrlState.
+  const [tab, setTab] = useUrlState<Tab>({
+    key: "tab",
+    defaultValue: "open",
+    isAllowed: isTab,
+  });
 
   return (
     <div className="space-y-6" data-testid="admin-shop-returns-page">

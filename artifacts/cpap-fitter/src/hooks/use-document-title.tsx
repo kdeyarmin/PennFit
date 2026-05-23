@@ -4,11 +4,12 @@ const SITE_TITLE_SUFFIX = " — PennPaps by Penn Home Medical Supply";
 
 /*
  * Production origin used to mint canonical URLs. We deliberately
- * hardcode the prod hostname (rather than read window.location.origin)
- * so preview/staging deploys — which serve the same SPA HTML on a
- * different host — point search engines at the production URL and de-
- * duplicate cleanly. The basePath segment (e.g. `/cpap-fitter`) is NOT
- * included because production serves PennPaps at the apex.
+ * hardcode the prod hostname (rather than reading the live origin
+ * from the browser) so preview/staging deploys — which serve the
+ * same SPA HTML on a different host — point search engines at the
+ * production URL and de-duplicate cleanly. The basePath segment
+ * (e.g. `/cpap-fitter`) is NOT included because production serves
+ * PennPaps at the apex.
  */
 const CANONICAL_ORIGIN = "https://pennpaps.com";
 
