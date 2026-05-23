@@ -229,3 +229,66 @@ describe("App.tsx — pre-existing routes not regressed", () => {
     expect(SRC).toContain('path="/learn/device-setup"');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Sub-tree wildcards — regression for the `:rest*` named-splat bug.
+//
+// Wouter's matcher is regexparam, which does NOT support path-to-regexp's
+// `:name*` named-splat syntax: `/admin/:rest*` compiles to a pattern that
+// only matches a SINGLE segment after `/admin/`, so multi-segment URLs
+// like `/admin/pennpaps/analytics` fall through to the next route (the
+// patient catch-all → patient 404). The fix is the bare `*` wildcard.
+// These assertions guard against re-introducing the broken form.
+// ---------------------------------------------------------------------------
+
+describe("App.tsx — sub-tree wildcards compile to deep matches", () => {
+  it("never uses the broken `:rest*` named-splat syntax in a Route path", () => {
+    expect(SRC).not.toMatch(/path="\/[^"]*:rest\*[^"]*"/);
+  });
+
+  it("uses /sign-in/* (not /sign-in/:rest*)", () => {
+    expect(SRC).toContain('path="/sign-in/*"');
+  });
+
+  it("uses /sign-up/* (not /sign-up/:rest*)", () => {
+    expect(SRC).toContain('path="/sign-up/*"');
+  });
+
+  it("uses /resupply/* (not /resupply/:rest*)", () => {
+    expect(SRC).toContain('path="/resupply/*"');
+  });
+
+  it("uses /admin/* (not /admin/:rest*) for the gated console", () => {
+    expect(SRC).toContain('path="/admin/*"');
+  });
+
+  it("/admin/* compiles to a regex that matches multi-segment admin URLs", () => {
+    // Mirror of what `regexparam` (Wouter's matcher) generates for the
+    // pattern `/admin/*`: ^/admin/(.*)/?$. The bug we're guarding against
+    // was that `/admin/:rest*` compiled to ^/admin/([^/]+?)/?$ — a SINGLE
+    // segment only — so multi-segment URLs like `/admin/pennpaps/analytics`
+    // fell through to the next route. This test asserts the regex shape
+    // we want and checks it against the multi-segment admin paths defined
+    // in console.tsx.
+    const adminWildcard = /^\/admin\/(.*)\/?$/i;
+    for (const url of [
+      "/admin/dashboard",
+      "/admin/billing",
+      "/admin/billing/ai-queue",
+      "/admin/billing/office-ally/abc-123",
+      "/admin/pennpaps/orders",
+      "/admin/pennpaps/orders/xyz",
+      "/admin/pennpaps/analytics",
+      "/admin/shop/customers/user-1",
+      "/admin/patients/foo",
+    ]) {
+      expect(adminWildcard.test(url)).toBe(true);
+    }
+    // And confirm the broken pattern would NOT have matched the
+    // multi-segment cases — documents WHY the fix was needed.
+    const adminBrokenNamedSplat = /^\/admin\/([^/]+?)\/?$/i;
+    expect(adminBrokenNamedSplat.test("/admin/pennpaps/analytics")).toBe(false);
+    expect(adminBrokenNamedSplat.test("/admin/billing/ai-queue")).toBe(false);
+    expect(adminBrokenNamedSplat.test("/admin/dashboard")).toBe(true);
+  });
+});
