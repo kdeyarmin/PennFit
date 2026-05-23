@@ -222,7 +222,7 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         label: "Inbound faxes",
         icon: Inbox,
         matchPrefix: "/admin/inbound-faxes",
-        hint: "Triage queue for faxes Twilio delivered — sleep studies, Rx renewals, chart notes",
+        hint: "Triage queue for inbound faxes — sleep studies, Rx renewals, chart notes",
         badgeKey: "newInboundFaxes",
       },
       {
