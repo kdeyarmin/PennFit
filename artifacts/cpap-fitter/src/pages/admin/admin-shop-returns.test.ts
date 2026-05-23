@@ -121,15 +121,8 @@ describe("admin-shop-returns — pre-existing action buttons not removed", () =>
 });
 
 // ---------------------------------------------------------------------------
-// PR change: manual URL state management (reverted from useUrlState hook)
+// Tab IDs and URL state invariants
 // ---------------------------------------------------------------------------
-//
-// The PR reverts the useUrlState migration and replaces it with:
-//   1. readTabFromUrl() — reads ?tab= from URLSearchParams, validates against
-//      TAB_IDS set, falls back to "open" on SSR or unknown values.
-//   2. setTab(next: Tab) — updates component state AND calls
-//      history.replaceState with the new URL.
-//   3. useEffect popstate listener — rehydrates state on browser back/forward.
 
 describe("admin-shop-returns — TAB_IDS and tabs", () => {
   it("defines TAB_IDS as a ReadonlySet", () => {
