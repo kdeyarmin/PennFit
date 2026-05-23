@@ -69,6 +69,7 @@ import { registerLowStockAlertsJob } from "./jobs/low-stock-alerts.js";
 import { registerInboundWebhookDispatchJob } from "./jobs/inbound-webhook-dispatch.js";
 import { registerInboundReferralPreflightJob } from "./jobs/inbound-referral-preflight.js";
 import { registerReferralStatusOutboundJob } from "./jobs/inbound-referral-status-outbound.js";
+import { registerPrescriptionRequestAutoDraftJob } from "./jobs/prescription-request-auto-draft.js";
 
 let bossInstance: PgBoss | null = null;
 let workerReady = false;
@@ -430,28 +431,12 @@ export async function startWorker(): Promise<void> {
   // backoff per migration 0148.
   await registerReferralStatusOutboundJob(boss);
 
-  // Every 6 hours — shop inventory low-stock alert digest. Reads
-  // Stripe catalog, dedups per-SKU via resupply.low_stock_alert_state,
-  // emails RESUPPLY_ADMIN_EMAILS one rollup per tick.
-  await registerLowStockAlertsJob(boss);
-
-  // Every minute — drain pending inbound_webhooks rows and route
-  // each to its per-source dispatcher (Parachute today; Phase 4
-  // will add ehr_fhir_* sources). Migration 0144 lands the typed
-  // referral inbox the dispatcher writes into.
-  await registerInboundWebhookDispatchJob(boss);
-
-  // Every 5 minutes — run pre-flight checks (PA requirement,
-  // eligibility, docs gap, physician fax fallback) on new
-  // inbound referrals that have a matched patient. Migration 0146
-  // lands the inbound_referral_preflight_checks history table.
-  await registerInboundReferralPreflightJob(boss);
-
-  // Every minute — drain inbound_referral_status_outbox and POST
-  // lifecycle callbacks (accept, ship, PA decision) back to the
-  // originating Parachute / EHR partner. HMAC-SHA256 signed; expo
-  // backoff per migration 0148.
-  await registerReferralStatusOutboundJob(boss);
+  // Daily 13:43 UTC — pre-build draft prescription_request_packets
+  // for active Rxs expiring in the next 30 days so a CSR doesn't
+  // have to hunt for them. Gated by
+  // RESUPPLY_PRESCRIPTION_AUTO_DRAFT_ENABLED=1 (off in dev/preview);
+  // does NOT auto-fax — CSR reviews + sends.
+  await registerPrescriptionRequestAutoDraftJob(boss);
 
   workerReady = true;
   logger.info(
