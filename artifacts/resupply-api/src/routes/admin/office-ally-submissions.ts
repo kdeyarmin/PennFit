@@ -191,11 +191,19 @@ router.post(
       return;
     }
     const supabase = getSupabaseServiceRoleClient();
-    const { data: originals } = await supabase
+    const { data: originals, error: originalsError } = await supabase
       .schema("resupply")
       .from("office_ally_submissions")
       .select("id, status, attempted_claim_ids")
       .in("id", parsed.data.submissionIds);
+    if (originalsError) {
+      logger.error(
+        { err: originalsError, submissionIds: parsed.data.submissionIds },
+        "Failed to load Office Ally submissions for bulk resubmit",
+      );
+      res.status(500).json({ error: "failed_to_load_original_submissions" });
+      return;
+    }
     const originalsById = new Map<
       string,
       { id: string; status: string; attempted_claim_ids: string[] | null }
