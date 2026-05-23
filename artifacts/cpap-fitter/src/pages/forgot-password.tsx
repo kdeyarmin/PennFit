@@ -1,10 +1,18 @@
-// Forgot-password landing for the cpap-fitter shop. Server returns
-// 200 regardless of whether the email matches an account — no
-// enumeration — so we always render the success state on
-// settlement.
+// Forgot-password landing for the cpap-fitter shop. Server contract
+// is "always 200, no enumeration" — success and unknown-email both
+// flow through onSuccess and we render the generic success state.
+// The one exception is a 5xx from /auth/forgot-password: the
+// credentials store is unreachable, the email wasn't queued, and the
+// shopper would otherwise wait forever for a reset link that never
+// arrives. In that case we surface the same server-status copy the
+// admin auth surface uses (see src/pages/admin/forgot-password.tsx).
+// Any non-5xx error path still folds into the generic success state
+// to preserve the no-enumeration contract.
 
 import { useState, type FormEvent } from "react";
 import { Link } from "wouter";
+
+import { AuthError } from "@workspace/resupply-auth-react";
 
 import { authHooks } from "@/lib/auth-hooks";
 import { AuthLayout } from "@/components/auth-layout";
@@ -14,11 +22,32 @@ const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
 export function ForgotPasswordPage() {
   const [email, setEmail] = useState("");
   const [done, setDone] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const forgot = authHooks.useForgotPassword();
 
   function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    forgot.mutate({ email: email.trim() }, { onSettled: () => setDone(true) });
+    setSubmitError(null);
+    forgot.mutate(
+      { email: email.trim() },
+      {
+        onSuccess: () => setDone(true),
+        onError: (err) => {
+          if (err instanceof AuthError && err.status >= 500) {
+            setSubmitError(
+              "We can't reach the credentials store right now, so we" +
+                " couldn't send a reset link. This is a server problem," +
+                " not your email. Please try again in a minute — if it" +
+                " keeps failing, check status.pennpaps.com.",
+            );
+            return;
+          }
+          // Preserve the no-enumeration contract: any non-5xx error
+          // still surfaces the generic success state.
+          setDone(true);
+        },
+      },
+    );
   }
 
   return (
@@ -60,6 +89,15 @@ export function ForgotPasswordPage() {
                 className="mt-1 w-full rounded-md border px-3 py-2 text-sm"
               />
             </label>
+
+            {submitError && (
+              <p
+                role="alert"
+                className="text-sm rounded-md px-3 py-2 bg-red-50 text-red-900"
+              >
+                {submitError}
+              </p>
+            )}
 
             <button
               type="submit"

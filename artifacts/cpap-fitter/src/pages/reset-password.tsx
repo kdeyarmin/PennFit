@@ -14,6 +14,24 @@ import { PasswordInput } from "@/components/password-input";
 
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
 
+// Same copy as the admin auth surface (see src/pages/admin/sign-in.tsx):
+// when the server returns a 5xx, the shopper is staring at a "stuck"
+// form and can't tell whether their reset link is bad or the backend
+// is down. Point them at status so they know it isn't their token.
+const SERVER_UNAVAILABLE_MESSAGE =
+  "We can't reach the credentials store right now, so we couldn't" +
+  " update your password. This is a server problem, not your reset" +
+  " link. Please try again in a minute — if it keeps failing, check" +
+  " status.pennpaps.com.";
+
+function authErrorMessage(err: unknown, fallback: string): string {
+  if (err instanceof AuthError) {
+    if (err.status >= 500) return SERVER_UNAVAILABLE_MESSAGE;
+    return err.userMessage;
+  }
+  return fallback;
+}
+
 function readTokenFromUrl(): string {
   if (typeof window === "undefined") return "";
   const params = new URLSearchParams(window.location.search);
@@ -50,9 +68,7 @@ export function ResetPasswordPage() {
         onSuccess: () => setLocation("/sign-in"),
         onError: (err) => {
           setSubmitError(
-            err instanceof AuthError
-              ? err.userMessage
-              : "Could not reset your password.",
+            authErrorMessage(err, "Could not reset your password."),
           );
         },
       },
