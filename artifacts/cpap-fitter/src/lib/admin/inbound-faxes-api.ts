@@ -34,6 +34,14 @@ export interface PatchInboundFaxRequest {
   notes?: string | null;
 }
 
+/**
+ * Fetch JSON from an endpoint under the `/resupply-api` prefix and return it as `T`.
+ *
+ * @param path - The request path appended to `/resupply-api` (e.g. `/admin/...`).
+ * @param init - Optional Fetch API init overrides (method, headers, body, etc.).
+ * @returns The parsed JSON response as `T`.
+ * @throws ApiError when the response has a non-OK HTTP status; the error includes the Response and any parsed JSON body when available.
+ */
 async function jsonFetch<T>(
   path: string,
   init: RequestInit = {},
