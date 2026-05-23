@@ -1,6 +1,7 @@
 // Hand-rolled fetch wrappers for the per-customer message-template
 // overrides admin endpoints. Sister to message-templates-api.ts.
 
+import { csrfHeader } from "../csrf";
 import { TemplatePatchError } from "./message-templates-api";
 
 export type TemplateChannel = "email" | "sms" | "voice" | "push";
@@ -73,6 +74,7 @@ export async function createOverride(
     headers: {
       "Content-Type": "application/json",
       Accept: "application/json",
+      ...csrfHeader(),
     },
     body: JSON.stringify(body),
   });
@@ -99,6 +101,7 @@ export async function patchOverride(
     headers: {
       "Content-Type": "application/json",
       Accept: "application/json",
+      ...csrfHeader(),
     },
     body: JSON.stringify(body),
   });
@@ -113,7 +116,7 @@ export async function deactivateOverride(
   const res = await fetch(`${base(userId)}/${encodeURIComponent(id)}`, {
     method: "DELETE",
     credentials: "include",
-    headers: { Accept: "application/json" },
+    headers: { Accept: "application/json", ...csrfHeader() },
   });
   if (!res.ok) await readError(res);
   return (await res.json()) as { override: MessageTemplateOverride };

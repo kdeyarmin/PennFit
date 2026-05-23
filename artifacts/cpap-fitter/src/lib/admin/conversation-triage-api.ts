@@ -1,6 +1,8 @@
 // Hand-rolled fetch wrappers for the Wave 1 conversation triage
 // endpoints (snooze / tags / claim) + transcript download URL.
 
+import { csrfHeader } from "../csrf";
+
 export const triageApi = {
   setSnooze: (id: string, snoozedUntil: string | null) =>
     jsonFetch<{ ok: true }>(`/admin/conversations/${id}/snooze`, {
@@ -28,7 +30,7 @@ export const triageApi = {
 async function jsonFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
   const res = await fetch(`/resupply-api${path}`, {
     credentials: "include",
-    headers: { Accept: "application/json", ...(init.headers ?? {}) },
+    headers: { Accept: "application/json", ...csrfHeader(), ...(init.headers ?? {}) },
     ...init,
   });
   if (!res.ok) {

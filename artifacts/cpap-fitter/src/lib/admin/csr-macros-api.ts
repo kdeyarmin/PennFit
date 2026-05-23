@@ -1,6 +1,8 @@
 // Hand-rolled fetch wrappers for the admin csr-macros endpoints.
 // Mirrors the shop-reviews/-returns pattern.
 
+import { csrfHeader } from "../csrf";
+
 export type MacroChannel = "sms" | "email";
 
 export interface CsrMacro {
@@ -49,6 +51,7 @@ export async function createMacro(body: {
     headers: {
       "Content-Type": "application/json",
       Accept: "application/json",
+      ...csrfHeader(),
     },
     body: JSON.stringify(body),
   });
@@ -81,6 +84,7 @@ export async function patchMacro(
     headers: {
       "Content-Type": "application/json",
       Accept: "application/json",
+      ...csrfHeader(),
     },
     body: JSON.stringify(body),
   });
@@ -101,7 +105,7 @@ export async function deleteMacro(id: string, hard = false): Promise<void> {
   const res = await fetch(`${BASE}/${encodeURIComponent(id)}${qs}`, {
     method: "DELETE",
     credentials: "include",
-    headers: { Accept: "application/json" },
+    headers: { Accept: "application/json", ...csrfHeader() },
   });
   if (!res.ok) {
     const json = (await res.json().catch(() => null)) as {

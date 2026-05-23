@@ -1,6 +1,8 @@
 // Hand-rolled fetch wrappers for the equipment registry + recall
 // surface. Same pattern as clinical-tabs-api.ts.
 
+import { csrfHeader } from "../csrf";
+
 export type DeviceClass =
   | "cpap"
   | "auto_cpap"
@@ -112,7 +114,7 @@ export interface RecallScanResult {
 
 async function jsonFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
   const res = await fetch(`/resupply-api${path}`, {
-    headers: { Accept: "application/json", ...(init.headers ?? {}) },
+    headers: { Accept: "application/json", ...csrfHeader(), ...(init.headers ?? {}) },
     ...init,
   });
   if (!res.ok) {

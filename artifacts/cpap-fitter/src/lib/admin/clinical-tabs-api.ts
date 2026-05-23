@@ -3,6 +3,8 @@
 // Bundled in one file because they share the same patient-scoped URL
 // shape and the same project-as-camelCase pattern.
 
+import { csrfHeader } from "../csrf";
+
 export type SleepStudyType = "psg" | "hsat" | "split_night" | "re_titration";
 export type SleepStudySource =
   | "external_lab"
@@ -129,7 +131,7 @@ export interface CreatePriorAuthorizationRequest {
 
 async function jsonFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
   const res = await fetch(`/resupply-api${path}`, {
-    headers: { Accept: "application/json", ...(init.headers ?? {}) },
+    headers: { Accept: "application/json", ...csrfHeader(), ...(init.headers ?? {}) },
     ...init,
   });
   if (!res.ok) {

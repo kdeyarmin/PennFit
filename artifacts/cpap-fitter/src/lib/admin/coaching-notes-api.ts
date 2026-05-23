@@ -1,6 +1,8 @@
 // Hand-rolled fetch wrappers for the supervisor coaching-notes
 // surface.
 
+import { csrfHeader } from "../csrf";
+
 export type CoachingNoteKind = "praise" | "suggestion" | "concern";
 
 export interface CoachingNote {
@@ -17,7 +19,7 @@ export interface CoachingNote {
 async function jsonFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
   const res = await fetch(`/resupply-api${path}`, {
     credentials: "include",
-    headers: { Accept: "application/json", ...(init.headers ?? {}) },
+    headers: { Accept: "application/json", ...csrfHeader(), ...(init.headers ?? {}) },
     ...init,
   });
   if (!res.ok) {

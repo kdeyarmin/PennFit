@@ -1,5 +1,7 @@
 // Hand-rolled fetch wrapper for /admin/mfa/*.
 
+import { csrfHeader } from "../csrf";
+
 export interface MfaDevice {
   id: string;
   label: string | null;
@@ -49,7 +51,7 @@ export interface BeginEnrollResponse {
 
 async function jsonFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
   const res = await fetch(`/resupply-api${path}`, {
-    headers: { Accept: "application/json", ...(init.headers ?? {}) },
+    headers: { Accept: "application/json", ...csrfHeader(), ...(init.headers ?? {}) },
     ...init,
   });
   if (!res.ok) {

@@ -2,6 +2,8 @@
 // Auth rides on the in-house `pf_session` cookie via
 // `credentials: "include"` — no bearer token bridge.
 
+import { csrfHeader } from "../csrf";
+
 // RBAC Phase A: the team API now persists the granular role on
 // `admin_users.role`. The coarse "admin or agent" still drives
 // requireAdmin (staff-or-not); the granular role drives
@@ -61,6 +63,7 @@ export async function inviteMember(body: {
     headers: {
       "Content-Type": "application/json",
       Accept: "application/json",
+      ...csrfHeader(),
     },
     body: JSON.stringify(body),
   });
@@ -81,7 +84,7 @@ export async function resendInvite(id: string): Promise<InviteResponse> {
   const res = await fetch(`${BASE}/${encodeURIComponent(id)}/resend`, {
     method: "POST",
     credentials: "include",
-    headers: { Accept: "application/json" },
+    headers: { Accept: "application/json", ...csrfHeader() },
   });
   if (!res.ok) {
     const json = (await res.json().catch(() => null)) as {
@@ -101,7 +104,7 @@ export async function revokeMember(
   const res = await fetch(`${BASE}/${encodeURIComponent(id)}/revoke`, {
     method: "POST",
     credentials: "include",
-    headers: { Accept: "application/json" },
+    headers: { Accept: "application/json", ...csrfHeader() },
   });
   if (!res.ok) {
     const json = (await res.json().catch(() => null)) as {
@@ -129,6 +132,7 @@ export async function patchMember(
     headers: {
       "Content-Type": "application/json",
       Accept: "application/json",
+      ...csrfHeader(),
     },
     body: JSON.stringify(body),
   });

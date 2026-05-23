@@ -1,6 +1,8 @@
 // Hand-rolled fetch wrapper for /admin/inbound-faxes — the CSR
 // triage surface for faxes Twilio delivers to our fax number.
 
+import { csrfHeader } from "../csrf";
+
 export type InboundFaxStatus = "new" | "triaged" | "attached" | "archived";
 
 export interface InboundFaxListItem {
@@ -37,7 +39,7 @@ async function jsonFetch<T>(
   init: RequestInit = {},
 ): Promise<T> {
   const res = await fetch(`/resupply-api${path}`, {
-    headers: { Accept: "application/json", ...(init.headers ?? {}) },
+    headers: { Accept: "application/json", ...csrfHeader(), ...(init.headers ?? {}) },
     ...init,
   });
   if (!res.ok) {

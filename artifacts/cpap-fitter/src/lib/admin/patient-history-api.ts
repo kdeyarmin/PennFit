@@ -1,6 +1,8 @@
 // Hand-rolled fetch wrappers for the patient timeline + address-
 // history admin endpoints.
 
+import { csrfHeader } from "../csrf";
+
 export interface TimelineEvent {
   kind:
     | "episode_created"
@@ -35,7 +37,7 @@ export interface AddressHistoryEntry {
 async function jsonFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
   const res = await fetch(`/resupply-api${path}`, {
     credentials: "include",
-    headers: { Accept: "application/json", ...(init.headers ?? {}) },
+    headers: { Accept: "application/json", ...csrfHeader(), ...(init.headers ?? {}) },
     ...init,
   });
   if (!res.ok) {

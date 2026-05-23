@@ -1,5 +1,7 @@
 // Hand-rolled fetch wrappers for /admin/patient-documents/retention.
 
+import { csrfHeader } from "../csrf";
+
 export type RetentionBucket =
   | "active"
   | "due_soon"
@@ -31,7 +33,7 @@ export interface RetentionListResponse {
 async function jsonFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
   const res = await fetch(`/resupply-api${path}`, {
     credentials: "include",
-    headers: { Accept: "application/json", ...(init.headers ?? {}) },
+    headers: { Accept: "application/json", ...csrfHeader(), ...(init.headers ?? {}) },
     ...init,
   });
   if (!res.ok) {
