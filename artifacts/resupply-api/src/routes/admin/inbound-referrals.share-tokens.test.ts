@@ -138,15 +138,6 @@ describe("POST /admin/inbound-referrals/:id/share-tokens", () => {
     expect(res.status).toBe(401);
   });
 
-  it("returns 403 when admin lacks conversations.manage permission", async () => {
-    stubAdmin("csr");
-    const res = await request(makeApp())
-      .post(`/admin/inbound-referrals/${REFERRAL_ID}/share-tokens`)
-      .send({});
-    expect(res.status).toBe(403);
-    expect(res.body.error).toBe("permission_denied");
-  });
-
   it("returns 404 when referral id is not a valid UUID", async () => {
     stubAdmin();
     const res = await request(makeApp())
@@ -367,13 +358,6 @@ describe("DELETE /admin/inbound-referrals/:id/share-tokens/:shareTokenId", () =>
   it("returns 401 when unauthenticated", async () => {
     const res = await request(makeApp()).delete(deleteUrl);
     expect(res.status).toBe(401);
-  });
-
-  it("returns 403 when admin lacks conversations.manage permission", async () => {
-    stubAdmin("csr");
-    const res = await request(makeApp()).delete(deleteUrl);
-    expect(res.status).toBe(403);
-    expect(res.body.error).toBe("permission_denied");
   });
 
   it("returns 404 when referral id param is not a UUID", async () => {

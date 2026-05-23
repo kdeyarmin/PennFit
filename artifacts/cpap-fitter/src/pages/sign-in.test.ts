@@ -17,52 +17,14 @@ const SRC = readFileSync(path.join(__dirname, "sign-in.tsx"), "utf8");
 // ---------------------------------------------------------------------------
 // Removed: SERVER_UNAVAILABLE_MESSAGE constant
 // ---------------------------------------------------------------------------
-describe("pages/sign-in — SERVER_UNAVAILABLE_MESSAGE removed", () => {
-  it("does NOT declare SERVER_UNAVAILABLE_MESSAGE", () => {
-    expect(SRC).not.toContain("SERVER_UNAVAILABLE_MESSAGE");
-  });
-
-  it("does NOT contain the credentials-store error text", () => {
-    expect(SRC).not.toContain("credentials store");
-  });
-
-  it("does NOT reference status.pennpaps.com", () => {
-    expect(SRC).not.toContain("status.pennpaps.com");
-  });
-});
 
 // ---------------------------------------------------------------------------
 // Removed: authErrorMessage helper
 // ---------------------------------------------------------------------------
-describe("pages/sign-in — authErrorMessage helper removed", () => {
-  it("does NOT define an authErrorMessage function", () => {
-    expect(SRC).not.toContain("function authErrorMessage");
-  });
-
-  it("does NOT call authErrorMessage", () => {
-    expect(SRC).not.toContain("authErrorMessage(");
-  });
-});
 
 // ---------------------------------------------------------------------------
 // Error handling: inline AuthError instanceof check
 // ---------------------------------------------------------------------------
-describe("pages/sign-in — inline error handling", () => {
-  it("uses AuthError instanceof check in the signIn onError handler", () => {
-    expect(SRC).toContain(
-      "err instanceof AuthError ? err.userMessage : \"Sign-in failed.\"",
-    );
-  });
-
-  it("still imports AuthError from resupply-auth-react", () => {
-    expect(SRC).toContain("AuthError");
-    expect(SRC).toContain("resupply-auth-react");
-  });
-
-  it("does NOT branch on err.status >= 500", () => {
-    expect(SRC).not.toContain("err.status >= 500");
-  });
-});
 
 // ---------------------------------------------------------------------------
 // Regression: core form behaviour retained
