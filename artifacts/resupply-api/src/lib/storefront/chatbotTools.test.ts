@@ -61,6 +61,31 @@ describe("executeChatTool", () => {
       expect(data.recommendations.length).toBeGreaterThan(0);
     });
 
+    it("does not invent a 'breathes through nose' rationale when mouth_breather is omitted", () => {
+      // Regression: previously toQuestionnaireAnswers defaulted
+      // missing booleans to `false`, which the recommendation engine
+      // treats as an affirmative negative — e.g. emitting
+      // "You breathe through your nose during sleep" in the patient-
+      // facing rationale, despite the patient never having said so.
+      // After the fix, missing booleans pass through as `null` and
+      // the rationale stays silent on the question.
+      const result = executeChatTool("recommend_masks", {});
+      if (!result.ok) throw new Error("expected ok");
+      const data = result.data as {
+        recommendations: Array<{ rationale?: string[] }>;
+      };
+      for (const r of data.recommendations) {
+        for (const reason of r.rationale ?? []) {
+          expect(reason.toLowerCase()).not.toContain(
+            "you breathe through your nose during sleep",
+          );
+          expect(reason.toLowerCase()).not.toContain(
+            "ideal since you breathe through your mouth",
+          );
+        }
+      }
+    });
+
     it("rejects unknown extra fields (zod strict)", () => {
       const result = executeChatTool("recommend_masks", {
         mouth_breather: true,

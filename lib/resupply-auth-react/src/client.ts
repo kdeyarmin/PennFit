@@ -36,6 +36,14 @@ export interface AuthMe {
   role: "customer" | "agent" | "admin";
   displayName: string | null;
   emailVerified: boolean;
+  /**
+   * True when the server has flagged the credential as "must change
+   * on next sign-in" — currently set by the admin team-invite flow
+   * when an operator types a password for the user directly. The
+   * SPA gates entry to the admin app on this, redirecting to the
+   * change-password screen until it clears.
+   */
+  mustChangePassword: boolean;
 }
 
 export type AuthErrorCode =

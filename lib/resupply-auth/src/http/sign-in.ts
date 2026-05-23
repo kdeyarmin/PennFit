@@ -35,6 +35,7 @@ import {
   buildSessionCookie,
   appendSetCookie,
 } from "../cookies";
+import { rehashPasswordPreservingProvenance } from "../credential-writes";
 import { checkCsrf } from "../csrf";
 import { normalizeEmail } from "../email";
 import {
@@ -45,6 +46,7 @@ import {
 import { mintMfaChallengeToken } from "../mfa-challenge";
 import { checkLoginRateLimit, DEFAULT_RATE_LIMIT } from "../rate-limit";
 import { issueWindow } from "../session";
+import { ADMIN_PASSWORD_TTL_MS } from "../team-invite";
 import { issueToken } from "../token";
 
 import { authError } from "./responses";
@@ -219,6 +221,51 @@ export function makeSignInHandler(deps: AuthDeps) {
       return;
     }
 
+    // Refuse must_change credentials whose owner never signed in
+    // within ADMIN_PASSWORD_TTL_MS. The team-invite "Set their
+    // password for them" path stamps `set_by_admin_at` alongside
+    // must_change=true; the forced-rotation gate only fires AFTER
+    // sign-in, so without this check an operator-typed password
+    // would live on a never-signed-in account forever. We run this
+    // BEFORE the verify call so the response timing doesn't leak
+    // "the password was right, just expired" vs "the password was
+    // wrong" — both paths return the same generic message after a
+    // dummy verify above (for missing-user) or a real verify (for
+    // wrong-password), and this expired branch returns BEFORE
+    // doing either. That matches the existing posture for locked /
+    // revoked accounts (same generic 401 above), with the one
+    // intentional exception that we use a distinct message here so
+    // the user knows to ask for a re-invite instead of trying to
+    // remember the right password.
+    if (cred.mustChange && cred.setByAdminAt) {
+      const ageMs = now().getTime() - cred.setByAdminAt.getTime();
+      if (ageMs > ADMIN_PASSWORD_TTL_MS) {
+        await deps.repo.recordLoginAttempt({
+          emailLower,
+          ip,
+          success: false,
+        });
+        void deps.audit({
+          action: "auth.sign_in_failed",
+          adminEmail: emailLower,
+          adminUserId: user.id,
+          ip,
+          metadata: {
+            reason: "admin_password_expired",
+            ageMs,
+            ttlMs: ADMIN_PASSWORD_TTL_MS,
+          },
+        });
+        authError(
+          res,
+          403,
+          "invite_expired",
+          "This temporary password has expired. Please ask your administrator to re-invite you.",
+        );
+        return;
+      }
+    }
+
     const verify = await verifyPasswordCredential(parsed.data.password, cred);
     if (!verify.ok) {
       await deps.repo.recordLoginAttempt({
@@ -250,7 +297,11 @@ export function makeSignInHandler(deps: AuthDeps) {
           parsed.data.password,
           deps.passwordHashParams,
         );
-        await deps.repo.upsertCredential({
+        // Algorithm upgrade only — deliberately preserve the
+        // existing set_by_admin_at so a stale operator-typed
+        // credential doesn't get its expiry clock reset just
+        // because we rehashed it.
+        await rehashPasswordPreservingProvenance(deps.repo, {
           userId: user.id,
           passwordHash: upgraded,
           mustChange: cred.mustChange,

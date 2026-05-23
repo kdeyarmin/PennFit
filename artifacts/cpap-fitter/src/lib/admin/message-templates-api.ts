@@ -6,6 +6,8 @@
 // with each renderer migration, so there's no POST or DELETE on
 // purpose. isActive=false is the soft-delete path.
 
+import { csrfHeader } from "../csrf";
+
 export type TemplateChannel = "email" | "sms" | "voice" | "push";
 
 export interface MessageTemplate {
@@ -92,6 +94,7 @@ export async function patchTemplate(
     headers: {
       "Content-Type": "application/json",
       Accept: "application/json",
+      ...csrfHeader(),
     },
     body: JSON.stringify(body),
   });

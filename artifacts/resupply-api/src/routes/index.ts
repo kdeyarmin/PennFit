@@ -63,6 +63,7 @@ import integrationsSyncEquipmentRouter from "./admin/integrations-sync-equipment
 import bulkCampaignsRouter from "./admin/bulk-campaigns.js";
 import mfaRouter from "./admin/mfa.js";
 import reportsRouter from "./admin/reports.js";
+import featureFlagsRouter from "./admin/feature-flags.js";
 import npsSummaryRouter from "./admin/nps-summary.js";
 import deliveryFailuresRouter from "./admin/delivery-failures.js";
 import lookupRouter from "./admin/lookup.js";
@@ -83,8 +84,10 @@ import physicianFaxOutreachRouter from "./admin/physician-fax-outreach.js";
 import shopBackInStockAdminRouter from "./admin/shop-back-in-stock.js";
 import shopSubsMetricsRouter from "./admin/shop-subscriptions-metrics.js";
 import insuranceLeadsAdminRouter from "./admin/insurance-leads.js";
+import fitterLeadsAdminRouter from "./admin/fitter-leads.js";
 import payerProfilesRouter from "./admin/payer-profiles.js";
 import officeAllySubmissionsRouter from "./admin/office-ally-submissions.js";
+import officeAllyUploadAckRouter from "./admin/office-ally-upload-ack.js";
 import denialCodesRouter from "./admin/denial-codes.js";
 import payerFeeSchedulesRouter from "./admin/payer-fee-schedules.js";
 import eraIngestRouter from "./admin/era-ingest.js";
@@ -131,6 +134,7 @@ import oigLeieScreeningsRouter from "./admin/oig-leie-screenings.js";
 import patientRightsRequestsRouter from "./admin/patient-rights-requests.js";
 import complianceRecordsRouter from "./admin/compliance-records.js";
 import complianceOfficerSummaryRouter from "./admin/compliance-officer-summary.js";
+import disclosureAccountingRouter from "./admin/disclosure-accounting.js";
 import auditRouter from "./audit/index.js";
 import conversationsRouter from "./conversations/index.js";
 import dashboardRouter from "./dashboard/index.js";
@@ -143,6 +147,9 @@ import rulesRouter from "./rules/index.js";
 import smsRouter from "./sms/index.js";
 import shopRouter from "./shop/index.js";
 import faxRouter from "./fax/index.js";
+import portalClinicianRouter from "./portal-clinician.js";
+import rxRequestDocumentRouter from "./rx-request-document.js";
+import prescriptionRequestsRouter from "./admin/prescription-requests.js";
 import voiceRouter from "./voice/index.js";
 
 const router: IRouter = Router();
@@ -162,6 +169,14 @@ router.use(smsRouter);
 // /fax/document/:token  — signed cover-letter PDF fetched by Twilio
 // /fax/status-callback  — Twilio fax delivery lifecycle webhook
 router.use(faxRouter);
+// /portal/clinician/:token — public referral status page for EHR
+// partners who don't consume webhook callbacks. Token-gated; no
+// session cookie required.
+router.use(portalClinicianRouter);
+// /rx-request/document/:token — Twilio fetches a fully-rendered
+// pre-populated prescription PDF here when an admin dispatches a
+// prescription-request packet. Token-gated; signed HMAC w/ 24h TTL.
+router.use(rxRequestDocumentRouter);
 router.use(emailRouter);
 // Admin-console READ endpoints. Each handler is gated by
 // requireAdmin and surfaces only PHI the dashboard needs to
@@ -248,6 +263,10 @@ router.use(smartTriggersRouter);
 // TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN / TWILIO_FAX_FROM_NUMBER
 // are set; otherwise the row is created with status='pending'.
 router.use(physicianFaxOutreachRouter);
+// /admin/(patients/:id)/prescription-requests — physician-faxable
+// pre-populated prescriptions. Twilio dispatch, signed-PDF return,
+// CSR-stamped lifecycle. Renders via lib/prescription-request-pdf.ts.
+router.use(prescriptionRequestsRouter);
 // /admin/shop/back-in-stock-queue — visibility into who's waiting
 // for which OOS SKU + manual fanout trigger. requireAdmin gate is
 // on the router itself.
@@ -256,6 +275,11 @@ router.use(shopBackInStockAdminRouter);
 // for submissions to the public POST /shop/insurance-leads form.
 // requireAdmin gate is on the router itself.
 router.use(insuranceLeadsAdminRouter);
+// /admin/fitter-leads/* — funnel queue + conversion KPIs for the
+// at-home fitter. Powers the "Fitter Prospects" admin page; the
+// dispatchers (fitter-supply-campaign + fitter-conversion-
+// attribution) handle the actual sends and conversion stamps.
+router.use(fitterLeadsAdminRouter);
 // /admin/payer-profiles/* — Pennsylvania payer catalog (migration
 // 0128). Read by every admin; write restricted to requireAdminOnly.
 // Drives 837P NM1*PR loop population on Office Ally submissions.
@@ -265,6 +289,12 @@ router.use(payerProfilesRouter);
 // lives on the patients router so it's co-located with the per-claim
 // state machine.
 router.use(officeAllySubmissionsRouter);
+// /admin/office-ally/upload-ack — manual ack-file ingestion path
+// (admin-only) for when the poller can't reach OA or OA emails an
+// ack out-of-band. Reuses the dispatchers exported from the poll
+// worker so manual + auto paths share parsing + state-machine
+// updates.
+router.use(officeAllyUploadAckRouter);
 // /admin/denial-codes/* — CARC / RARC catalog (Phase 4 of the
 // billing build). Seeded in migration 0129 with the ~50 codes DME
 // suppliers hit most often; admin UI surfaces them on claim denials.
@@ -428,6 +458,11 @@ router.use(complianceRecordsRouter);
 // assessments, contingency / drills, QAPI, ownership, training,
 // grievances, and the most recent accreditation readiness run.
 router.use(complianceOfficerSummaryRouter);
+// /admin/compliance/patients/:patientId/disclosure-accounting.pdf —
+// HIPAA §164.528 accounting-of-disclosures PDF generator. Optional
+// ?fromRequestId binds the render to an open patient_rights_requests
+// row and transitions it to granted on success.
+router.use(disclosureAccountingRouter);
 // /admin/shop/products/* — operator tooling for the cash-pay catalog
 // itself. Today: PATCH stock_count metadata on a Stripe Product.
 // requireAdmin gate is on the router itself.
@@ -652,8 +687,12 @@ router.use(bulkCampaignsRouter);
 // enrollment + status + disable only. Sign-in gating ships in Phase B
 // after the enrollment flow has been proven in production.
 router.use(mfaRouter);
-// /admin/reports/*.csv — date-bounded CSV exports for ops + finance.
+// /admin/reports/* — date-bounded CSV/PDF/QuickBooks exports for ops
+// + finance.
 router.use(reportsRouter);
+// /admin/feature-flags/* — Control Center on/off toggles that gate
+// dispatchers and route handlers in real time.
+router.use(featureFlagsRouter);
 // /admin/nps/recent — last-N-days NPS rollup for the post-delivery
 // follow-up. Surfaces band counts + canonical NPS score + a comment
 // tail. Powered by shop_order_nps_responses (migration 0127).

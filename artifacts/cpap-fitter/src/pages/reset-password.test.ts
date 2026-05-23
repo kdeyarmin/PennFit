@@ -156,3 +156,7 @@ describe("reset-password — regression: core storefront form behaviour intact",
     expect(SRC).toContain("passwordsMismatch");
   });
 });
+
+// ---------------------------------------------------------------------------
+// PR change: removed SERVER_UNAVAILABLE_MESSAGE and authErrorMessage
+// ---------------------------------------------------------------------------

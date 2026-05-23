@@ -90,9 +90,22 @@ const VALID_TRANSITIONS: Record<EquipmentStatus, readonly EquipmentStatus[]> =
 const createBody = z
   .object({
     deviceClass: z.enum(DEVICE_CLASS_VALUES),
-    manufacturer: z.string().trim().min(1).max(80),
+    // Normalised so admin-entered and patient-self-registered rows
+    // collide on the (manufacturer, serial_number) unique index
+    // and recall scans match across both entry surfaces.
+    manufacturer: z
+      .string()
+      .trim()
+      .min(1)
+      .max(80)
+      .transform((s) => s.toUpperCase()),
     model: z.string().trim().min(1).max(120),
-    serialNumber: z.string().trim().min(1).max(80),
+    serialNumber: z
+      .string()
+      .trim()
+      .min(1)
+      .max(80)
+      .transform((s) => s.toUpperCase().replace(/\s+/g, "")),
     pressureSetting: z
       .string()
       .trim()
@@ -311,7 +324,7 @@ router.patch(
         res.status(404).json({ error: "not_found" });
         return;
       }
-      const fromStatus = existing.status;
+      const fromStatus = existing.status as EquipmentStatus;
       const toStatus = fields.status;
       if (fromStatus !== toStatus) {
         if (!VALID_TRANSITIONS[fromStatus].includes(toStatus)) {

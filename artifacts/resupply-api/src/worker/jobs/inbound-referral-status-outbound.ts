@@ -35,6 +35,12 @@
 import type PgBoss from "pg-boss";
 
 import {
+  SsrfError,
+  assertSafeOutboundHost,
+  assertSafeOutboundUrlSync,
+  fetchWithPinnedIp,
+} from "../../lib/safe-outbound";
+import {
   type Database,
   getSupabaseServiceRoleClient,
 } from "@workspace/resupply-db";
@@ -49,7 +55,23 @@ type OutboxRow =
 const JOB = "inbound-referral.status-outbound";
 const CRON = "* * * * *"; // every minute
 const BATCH_SIZE = 50;
-const REQUEST_TIMEOUT_MS = 15_000;
+// Per-request timeout. Was 15s; lowered to 5s so a single slow
+// subscriber can't stall the whole batch. 5s is well above the p99
+// of healthy partner callback endpoints (Parachute / Athena both
+// p99 under 1s in production telemetry).
+const REQUEST_TIMEOUT_MS = 5_000;
+// Cap on parallel POSTs per tick. With concurrency=8 and 5s
+// timeout, the worst-case wall time for a 50-row tick is ~32s —
+// well inside the 60s cron cadence AND well inside the lease
+// below, so a tick can never have its rows re-claimed mid-flight.
+const MAX_PARALLEL = 8;
+// Lease horizon for an in-flight row. We bump `next_attempt_at`
+// this far into the future when we claim a row, so an overlapping
+// cron tick filters it out. Comfortably above the worst-case
+// per-tick wall time (BATCH_SIZE/MAX_PARALLEL × REQUEST_TIMEOUT_MS
+// = ~32s) so a crashed worker leaves the row recoverable in
+// minutes rather than the next exponential-backoff window.
+const CLAIM_LEASE_MS = 5 * 60_000;
 
 export interface CallbackStats {
   scanned: number;
@@ -72,20 +94,46 @@ export async function runReferralStatusOutbound(
   };
 
   const nowIso = new Date().toISOString();
-  const { data: rows, error } = await supabase
+
+  // Step 1: find candidates. Racy on its own — two overlapping
+  // cron ticks would both see the same rows. The atomic claim
+  // below filters down to this tick's winners.
+  const { data: candidates, error: candidateErr } = await supabase
     .schema("resupply")
     .from("inbound_referral_status_outbox")
-    .select(
-      "id, referral_id, target_kind, event_type, payload_json, attempt_count, max_retries, status",
-    )
+    .select("id")
     .eq("status", "queued")
     .lte("next_attempt_at", nowIso)
     .order("next_attempt_at", { ascending: true })
     .limit(BATCH_SIZE);
+  if (candidateErr) {
+    logger.error(
+      { err: candidateErr.message },
+      "inbound_referral.status_outbound.select_failed",
+    );
+    throw candidateErr;
+  }
+  if (!candidates || candidates.length === 0) return stats;
+
+  // Step 2: atomic lease. Bump next_attempt_at on these rows IF
+  // still queued. PostgREST runs this as one UPDATE; .eq("status",
+  // "queued") is the atomic guard. RETURNING (.select) gives us the
+  // rows we actually leased; concurrent ticks see their claim fail
+  // and skip these rows.
+  const leaseUntil = new Date(Date.now() + CLAIM_LEASE_MS).toISOString();
+  const { data: rows, error } = await supabase
+    .schema("resupply")
+    .from("inbound_referral_status_outbox")
+    .update({ next_attempt_at: leaseUntil, updated_at: nowIso })
+    .in("id", candidates.map((c) => c.id))
+    .eq("status", "queued")
+    .select(
+      "id, referral_id, target_kind, event_type, payload_json, attempt_count, max_retries, status",
+    );
   if (error) {
     logger.error(
       { err: error.message },
-      "inbound_referral.status_outbound.select_failed",
+      "inbound_referral.status_outbound.claim_failed",
     );
     throw error;
   }
@@ -103,11 +151,18 @@ export async function runReferralStatusOutbound(
     (referrals ?? []).map((r) => [r.id, r.source] as const),
   );
 
-  for (const row of rows) {
+  // Bounded parallelism so a slow / dead partner doesn't serialise
+  // the batch (50 × 5s = 250s sequentially, vs ~32s at concurrency=8).
+  // Stays comfortably inside both the 60s cron cadence and the
+  // CLAIM_LEASE_MS window so rows can't be re-claimed mid-flight.
+  const claimedRows = rows;
+  let cursor = 0;
+  type Row = (typeof claimedRows)[number];
+  async function processOne(row: Row): Promise<void> {
     const source = sourceByReferral.get(row.referral_id);
     if (!source) {
       await markExhausted(supabase, row.id, "referral_missing", null, stats);
-      continue;
+      return;
     }
     const target = await resolveTarget({
       supabase,
@@ -123,7 +178,7 @@ export async function runReferralStatusOutbound(
         null,
         stats,
       );
-      continue;
+      return;
     }
 
     const rawBody = JSON.stringify(row.payload_json);
@@ -168,6 +223,18 @@ export async function runReferralStatusOutbound(
       await scheduleRetry(supabase, row, null, message.slice(0, 500), stats);
     }
   }
+  async function worker(): Promise<void> {
+    while (cursor < claimedRows.length) {
+      const idx = cursor++;
+      await processOne(claimedRows[idx]);
+    }
+  }
+  await Promise.all(
+    Array.from(
+      { length: Math.min(MAX_PARALLEL, claimedRows.length) },
+      () => worker(),
+    ),
+  );
   return stats;
 }
 
@@ -216,14 +283,28 @@ async function postWithTimeout(
   body: string,
   signature: string,
 ): Promise<Response> {
-  if (!url.startsWith("https://")) {
-    // Same posture as webhook-dispatcher: refuse non-https outbound.
-    return new Response("non_https_target", { status: 400 });
+  // SSRF defence: validate URL shape AND resolve DNS so a
+  // partner-supplied (DB-stored) callback URL can't be turned
+  // into an internal-network probe. assertSafeOutboundUrlSync
+  // also enforces https-only.
+  let parsedUrl: URL;
+  try {
+    parsedUrl = assertSafeOutboundUrlSync(url);
+  } catch (err) {
+    const reason = err instanceof SsrfError ? err.reason : "unsafe_url";
+    return new Response(reason, { status: 400 });
+  }
+  let pinnedIp: string;
+  try {
+    pinnedIp = await assertSafeOutboundHost(parsedUrl.hostname);
+  } catch (err) {
+    const reason = err instanceof SsrfError ? err.reason : "dns_failed";
+    return new Response(reason, { status: 400 });
   }
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   try {
-    return await fetchImpl(url, {
+    return await fetchWithPinnedIp(fetchImpl, url, pinnedIp, parsedUrl.hostname, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

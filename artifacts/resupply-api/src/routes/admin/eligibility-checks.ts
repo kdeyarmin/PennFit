@@ -12,7 +12,10 @@ import { z } from "zod";
 import { logAudit } from "@workspace/resupply-audit";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
-import { verifyEligibility } from "../../lib/billing/eligibility-verifier";
+import {
+  CoverageNotForPatientError,
+  verifyEligibility,
+} from "../../lib/billing/eligibility-verifier";
 import { logger } from "../../lib/logger";
 import { requirePermission } from "../../middlewares/requireAdmin";
 
@@ -52,6 +55,7 @@ router.post(
     try {
       const result = await verifyEligibility({
         insuranceCoverageId: parsed.data.coverageId,
+        patientId: parsed.data.id,
         hcpcsCode: bodyParsed.data?.hcpcsCode,
         requestedByEmail: req.adminEmail ?? "unknown",
       });
@@ -75,6 +79,12 @@ router.post(
       });
       res.status(201).json(result);
     } catch (err) {
+      if (err instanceof CoverageNotForPatientError) {
+        // 404 (not 403) so we don't leak that the coverage exists
+        // under a different patient.
+        res.status(404).json({ error: "not_found" });
+        return;
+      }
       const msg = err instanceof Error ? err.message : String(err);
       logger.warn({ err: msg }, "eligibility.verify failed");
       res.status(409).json({ error: "verify_failed", message: msg });

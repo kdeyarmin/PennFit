@@ -40,6 +40,8 @@ import { registerRecallNotificationSendJob } from "./jobs/recall-notifications-s
 import { registerMaintenanceNudgeJob } from "./jobs/maintenance-nudges.js";
 import { registerFitterLeadReengageJob } from "./jobs/fitter-lead-reengage.js";
 import { registerFitterLeadFirstDayNudgeJob } from "./jobs/fitter-lead-first-day-nudge.js";
+import { registerFitterSupplyCampaignJob } from "./jobs/fitter-supply-campaign.js";
+import { registerFitterConversionAttributionJob } from "./jobs/fitter-conversion-attribution.js";
 import { registerCartAbandonmentJob } from "./jobs/cart-abandonment-scan.js";
 import { registerFailedEmailDigestJob } from "./jobs/failed-order-emails-digest.js";
 import { registerAuditLogArchiveSweepJob } from "./jobs/audit-log-archive-sweep.js";
@@ -62,6 +64,7 @@ import { registerDwoExpirySweepJob } from "./jobs/dwo-expiry-sweep.js";
 import { registerWebhookDispatcherJob } from "./jobs/webhook-dispatcher.js";
 import { registerAutoWorkflowJob } from "./jobs/auto-workflow.js";
 import { registerComplianceAutoWorkflowJob } from "./jobs/compliance-auto-workflow.js";
+import { registerInvitePasswordExpiryNotifyJob } from "./jobs/invite-password-expiry-notify.js";
 import { registerLowStockAlertsJob } from "./jobs/low-stock-alerts.js";
 import { registerInboundWebhookDispatchJob } from "./jobs/inbound-webhook-dispatch.js";
 import { registerInboundReferralPreflightJob } from "./jobs/inbound-referral-preflight.js";
@@ -240,6 +243,20 @@ export async function startWorker(): Promise<void> {
   // first_day_nudged_at column so the 3-30d worker above can still
   // fire later if the patient stays cold.
   await registerFitterLeadFirstDayNudgeJob(boss);
+  // Hourly at :29 — attribute newly-placed orders back to the
+  // fitter_leads row whose email matches the order. Stamps
+  // first_order_id + flips journey_stage='converted' so the supply-
+  // campaign dispatcher stops sending to a patient who already
+  // bought. Sequenced before the campaign tick (:43).
+  await registerFitterConversionAttributionJob(boss);
+  // Hourly at :43 — multi-touch supply-campaign nurture for leads
+  // who completed the fitter (reached /results) but haven't ordered
+  // yet. Six touchpoints over 60 days with copy that escalates
+  // from soft recap → social proof → FSA reminder → one-time
+  // discount → educational → final. Gated by both
+  // RESUPPLY_FITTER_SUPPLY_CAMPAIGN_ENABLED (boot) and
+  // fitter_supply_campaign.dispatcher (runtime flag).
+  await registerFitterSupplyCampaignJob(boss);
   // Cart-abandonment sweep — hourly at :13. Runs the same dispatcher
   // that backs POST /admin/shop/abandoned-carts/send-due so abandoned
   // carts get nudged without a human clicking the button. Suppression
@@ -384,6 +401,34 @@ export async function startWorker(): Promise<void> {
   // .oig_screening_overdue / .patient_rights_overdue webhook events
   // with 24-hour cooldown gates.
   await registerComplianceAutoWorkflowJob(boss);
+
+  // Daily — notify admins of upcoming/expired invite-password
+  // expirations so operators can re-invite teammates before they
+  // lose access.
+  await registerInvitePasswordExpiryNotifyJob(boss);
+
+  // Every 6 hours — shop inventory low-stock alert digest. Reads
+  // Stripe catalog, dedups per-SKU via resupply.low_stock_alert_state,
+  // emails RESUPPLY_ADMIN_EMAILS one rollup per tick.
+  await registerLowStockAlertsJob(boss);
+
+  // Every minute — drain pending inbound_webhooks rows and route
+  // each to its per-source dispatcher (Parachute today; Phase 4
+  // will add ehr_fhir_* sources). Migration 0144 lands the typed
+  // referral inbox the dispatcher writes into.
+  await registerInboundWebhookDispatchJob(boss);
+
+  // Every 5 minutes — run pre-flight checks (PA requirement,
+  // eligibility, docs gap, physician fax fallback) on new
+  // inbound referrals that have a matched patient. Migration 0146
+  // lands the inbound_referral_preflight_checks history table.
+  await registerInboundReferralPreflightJob(boss);
+
+  // Every minute — drain inbound_referral_status_outbox and POST
+  // lifecycle callbacks (accept, ship, PA decision) back to the
+  // originating Parachute / EHR partner. HMAC-SHA256 signed; expo
+  // backoff per migration 0148.
+  await registerReferralStatusOutboundJob(boss);
 
   // Every 6 hours — shop inventory low-stock alert digest. Reads
   // Stripe catalog, dedups per-SKU via resupply.low_stock_alert_state,

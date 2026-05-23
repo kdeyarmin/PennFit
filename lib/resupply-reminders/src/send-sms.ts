@@ -151,9 +151,15 @@ export async function sendReminderSms(
   const conversationId = insertedConv?.id;
   if (!conversationId) return { status: "conversation_create_failed" };
 
+  // Default body: kept under the 160-char GSM-7 segment cap AND
+  // free of UCS-2-triggering characters (em-dash, curly quotes,
+  // ellipsis). Twilio silently switches the whole message to
+  // UCS-2 (70-char segments) if it sees a non-GSM-7 character, so
+  // a single em-dash quietly turns every reminder into a 3-segment
+  // charge — at high outreach volume that's real money.
   const messageBody =
     input.body ??
-    `Hi ${patient.legal_first_name ?? "there"}, it's ${cfg.practiceName}. You're due for a CPAP refill — reply YES and we'll ship today to the address on file, EDIT to change it, or STOP if you'd rather not hear from us.`;
+    `Hi ${patient.legal_first_name ?? "there"}, it's ${cfg.practiceName}. You're due for a CPAP refill. Reply YES to ship to the address on file, EDIT to change it, or STOP to opt out.`;
 
   const statusCallbackUrl = `${cfg.publicBaseUrl}/resupply-api/sms/status-callback?conversationId=${encodeURIComponent(
     conversationId,

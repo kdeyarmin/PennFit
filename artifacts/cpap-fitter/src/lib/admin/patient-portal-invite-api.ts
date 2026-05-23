@@ -2,6 +2,8 @@
 // Auth rides on the in-house `pf_session` cookie via
 // `credentials: "include"`.
 
+import { csrfHeader } from "../csrf";
+
 export type PortalStatus = "not_invited" | "pending" | "active";
 
 export interface Address {
@@ -40,6 +42,7 @@ export async function sendPortalInvite(
     headers: {
       "Content-Type": "application/json",
       Accept: "application/json",
+      ...csrfHeader(),
     },
     body: JSON.stringify(body),
   });
@@ -60,7 +63,7 @@ export async function resendPortalInvite(
   const res = await fetch(`${base(patientId)}/resend`, {
     method: "POST",
     credentials: "include",
-    headers: { Accept: "application/json" },
+    headers: { Accept: "application/json", ...csrfHeader() },
   });
   const json = (await res.json()) as
     | InviteResponse
@@ -78,7 +81,7 @@ export async function revokePortalInvite(
   const res = await fetch(base(patientId), {
     method: "DELETE",
     credentials: "include",
-    headers: { Accept: "application/json" },
+    headers: { Accept: "application/json", ...csrfHeader() },
   });
   const json = (await res.json()) as
     | { portalStatus: PortalStatus }

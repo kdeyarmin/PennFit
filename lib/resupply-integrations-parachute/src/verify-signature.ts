@@ -76,7 +76,14 @@ export function verifyParachuteSignature(input: VerifyInput): VerifyOutcome {
   }
   const now = input.nowSeconds ?? Math.floor(Date.now() / 1000);
   const tolerance = input.toleranceSeconds ?? DEFAULT_TOLERANCE_SECONDS;
-  if (Math.abs(now - timestamp) > tolerance) {
+  // Asymmetric staleness check (Stripe's posture, not the absolute-
+  // value form): permit tolerance seconds of PAST staleness, but
+  // only ~60s of FORWARD skew. The forward bound stops a partner
+  // with a forward-skewed clock (or a freshly-leaked secret with
+  // clock control) from minting signatures valid for the next 5
+  // minutes by stamping a future timestamp.
+  const FORWARD_SKEW_SECONDS = 60;
+  if (now - timestamp > tolerance || timestamp - now > FORWARD_SKEW_SECONDS) {
     return { ok: false, reason: "stale_timestamp" };
   }
   const expected = createHmac("sha256", input.signingSecret)

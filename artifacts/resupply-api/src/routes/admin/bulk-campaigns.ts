@@ -22,6 +22,7 @@ import {
 } from "@workspace/resupply-db";
 
 import { fetchAudienceCandidates } from "../../lib/bulk-campaigns/fetch-candidates";
+import { isFeatureEnabled } from "../../lib/feature-flags";
 import {
   resolveAudience,
   type AudienceKind,
@@ -442,6 +443,22 @@ function makeTransitionHandler(
       res.status(409).json({
         error: "invalid_transition",
         message: `Cannot ${action} a campaign in status "${existing.status}".`,
+      });
+      return;
+    }
+
+    // Control Center feature gate — block start / resume when the
+    // global "bulk campaigns send" toggle is off. We let pause and
+    // cancel through regardless so operators can stop a running
+    // campaign even after they've turned the feature off.
+    if (
+      (action === "start" || action === "resume") &&
+      !(await isFeatureEnabled("bulk_campaigns.send"))
+    ) {
+      res.status(503).json({
+        error: "feature_disabled",
+        message:
+          "Bulk-campaign sending is currently disabled in the admin Control Center. Re-enable it before starting or resuming campaigns.",
       });
       return;
     }

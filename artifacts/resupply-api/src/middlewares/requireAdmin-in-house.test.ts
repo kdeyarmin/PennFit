@@ -105,6 +105,7 @@ async function seedSignedInUser(
     passwordHash: hash,
     algo: "argon2id-v1",
     mustChange: false,
+    setByAdminAt: null,
     updatedAt: new Date(),
   });
   const tok = issueToken();

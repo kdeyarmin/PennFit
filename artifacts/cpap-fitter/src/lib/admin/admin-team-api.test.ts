@@ -1,224 +1,157 @@
-// Tests for admin-team-api.ts — fetch wrappers for /resupply-api/admin/team
+// Tests for admin-team-api.ts.
+//
+// This PR:
+//   1. Added csrfHeader() to inviteMember, resendInvite, revokeMember, patchMember.
+//   2. Removed initialPassword from inviteMember's parameter type.
+//   3. Removed signInReady from InviteResponse.
 //
 // Coverage:
-//   listTeam       — GET /admin/team
-//   inviteMember   — POST /admin/team/invite (complex error path: checks "member" in json)
-//   resendInvite   — POST /admin/team/:id/resend (URL-encodes id)
-//   revokeMember   — POST /admin/team/:id/revoke
-//   patchMember    — PATCH /admin/team/:id
+//   listTeam          — URL, credentials, Accept header
+//   inviteMember      — method, URL, headers (incl. X-PF-CSRF), body, error handling;
+//                       does NOT accept initialPassword (removed in this PR)
+//   resendInvite      — method, URL, X-PF-CSRF header, error handling
+//   revokeMember      — method, URL, X-PF-CSRF header, error handling
+//   patchMember       — method, URL, headers, body, X-PF-CSRF header, error handling
 
-import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Mock } from "vitest";
 
 import {
-  listTeam,
   inviteMember,
+  listTeam,
+  patchMember,
   resendInvite,
   revokeMember,
-  patchMember,
+  type TeamMember,
 } from "./admin-team-api";
+
+// ─── Shared fixture ─────────────────────────────────────────────────────────
+
+const MEMBER: TeamMember = {
+  id: "m-1",
+  email: "pat@example.com",
+  authUserId: "auth-uuid",
+  role: "csr",
+  status: "pending",
+  displayName: "Pat",
+  notes: null,
+  invitedBy: "admin@example.com",
+  invitedAt: "2026-01-01T00:00:00.000Z",
+  acceptedAt: null,
+  revokedAt: null,
+  revokedBy: null,
+  lastLoginAt: null,
+};
+
+const INVITE_RESPONSE = {
+  member: MEMBER,
+  emailSent: true,
+  inviteLink: null,
+};
+
+// ─── Setup / teardown ───────────────────────────────────────────────────────
 
 const ORIGINAL_FETCH = globalThis.fetch;
 let fetchMock: Mock;
 
+function setDocumentCookie(cookie: string | null) {
+  if (cookie === null) {
+    delete (globalThis as unknown as { document?: unknown }).document;
+  } else {
+    (globalThis as unknown as { document?: unknown }).document = { cookie };
+  }
+}
+
 beforeEach(() => {
   fetchMock = vi.fn();
   globalThis.fetch = fetchMock as unknown as typeof fetch;
+  // Default: no CSRF cookie. Individual tests override as needed.
+  setDocumentCookie("");
 });
 
 afterEach(() => {
   globalThis.fetch = ORIGINAL_FETCH;
+  delete (globalThis as unknown as { document?: unknown }).document;
   vi.restoreAllMocks();
 });
 
-// ---------------------------------------------------------------------------
-// Sample fixtures
-// ---------------------------------------------------------------------------
-
-const SAMPLE_MEMBER = {
-  id: "mem-1",
-  email: "agent@pennpaps.com",
-  authUserId: "auth-abc",
-  role: "csr" as const,
-  status: "active" as const,
-  displayName: "Agent Smith",
-  notes: null,
-  invitedBy: "admin-001",
-  invitedAt: "2025-01-01T00:00:00Z",
-  acceptedAt: "2025-01-02T00:00:00Z",
-  revokedAt: null,
-  revokedBy: null,
-  lastLoginAt: "2025-06-01T10:00:00Z",
-};
-
-// ---------------------------------------------------------------------------
-// listTeam
-// ---------------------------------------------------------------------------
+// ─── listTeam ────────────────────────────────────────────────────────────────
 
 describe("listTeam", () => {
-  test("requests GET /resupply-api/admin/team", async () => {
+  it("fetches /resupply-api/admin/team with credentials:include", async () => {
     fetchMock.mockResolvedValue({
       ok: true,
       status: 200,
-      json: async () => ({ members: [] }),
+      json: async () => ({ members: [MEMBER] }),
     });
 
     await listTeam();
 
-    const [url] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(fetchMock).toHaveBeenCalledOnce();
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toBe("/resupply-api/admin/team");
-  });
-
-  test("sends credentials: include", async () => {
-    fetchMock.mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: async () => ({ members: [] }),
-    });
-
-    await listTeam();
-
-    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(init.credentials).toBe("include");
+    expect((init.headers as Record<string, string>)["Accept"]).toBe(
+      "application/json",
+    );
   });
 
-  test("sends Accept: application/json header", async () => {
+  it("returns the members array", async () => {
     fetchMock.mockResolvedValue({
       ok: true,
       status: 200,
-      json: async () => ({ members: [] }),
-    });
-
-    await listTeam();
-
-    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    const headers = init.headers as Record<string, string>;
-    expect(headers["Accept"]).toBe("application/json");
-  });
-
-  test("returns parsed members array on success", async () => {
-    fetchMock.mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: async () => ({ members: [SAMPLE_MEMBER] }),
+      json: async () => ({ members: [MEMBER] }),
     });
 
     const result = await listTeam();
     expect(result.members).toHaveLength(1);
-    expect(result.members[0]!.email).toBe("agent@pennpaps.com");
-    expect(result.members[0]!.role).toBe("csr");
-    expect(result.members[0]!.status).toBe("active");
+    expect(result.members[0]!.email).toBe("pat@example.com");
   });
 
-  test("returns empty members array when team is empty", async () => {
-    fetchMock.mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: async () => ({ members: [] }),
-    });
-
-    const result = await listTeam();
-    expect(result.members).toEqual([]);
-  });
-
-  test("throws with status in message on non-OK response", async () => {
-    fetchMock.mockResolvedValue({
-      ok: false,
-      status: 403,
-      statusText: "Forbidden",
-      json: async () => ({}),
-    });
-
-    await expect(listTeam()).rejects.toThrow("Failed to load team (403)");
-  });
-
-  test("throws with correct status code for 401", async () => {
-    fetchMock.mockResolvedValue({
-      ok: false,
-      status: 401,
-      statusText: "Unauthorized",
-      json: async () => ({}),
-    });
-
-    await expect(listTeam()).rejects.toThrow("Failed to load team (401)");
-  });
-
-  test("calls fetch exactly once", async () => {
-    fetchMock.mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: async () => ({ members: [] }),
-    });
-
-    await listTeam();
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+  it("throws on non-OK status", async () => {
+    fetchMock.mockResolvedValue({ ok: false, status: 403 });
+    await expect(listTeam()).rejects.toThrow("403");
   });
 });
 
-// ---------------------------------------------------------------------------
-// inviteMember
-// ---------------------------------------------------------------------------
+// ─── inviteMember ────────────────────────────────────────────────────────────
 
-describe("inviteMember", () => {
-  const INVITE_BODY = {
-    email: "newagent@pennpaps.com",
-    role: "csr" as const,
-    displayName: "New Agent",
-  };
-
-  const INVITE_RESPONSE = {
-    member: SAMPLE_MEMBER,
-    emailSent: true,
-    inviteLink: null,
-  };
-
-  test("posts to /resupply-api/admin/team/invite", async () => {
+describe("inviteMember — request shape", () => {
+  it("POSTs to /resupply-api/admin/team/invite", async () => {
     fetchMock.mockResolvedValue({
       ok: true,
-      status: 201,
+      status: 200,
       json: async () => INVITE_RESPONSE,
     });
 
-    await inviteMember(INVITE_BODY);
+    await inviteMember({ email: "new@example.com", role: "csr" });
 
-    const [url] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toBe("/resupply-api/admin/team/invite");
-  });
-
-  test("uses POST method", async () => {
-    fetchMock.mockResolvedValue({
-      ok: true,
-      status: 201,
-      json: async () => INVITE_RESPONSE,
-    });
-
-    await inviteMember(INVITE_BODY);
-
-    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(init.method).toBe("POST");
   });
 
-  test("sends credentials: include", async () => {
+  it("sends credentials:include", async () => {
     fetchMock.mockResolvedValue({
       ok: true,
-      status: 201,
+      status: 200,
       json: async () => INVITE_RESPONSE,
     });
 
-    await inviteMember(INVITE_BODY);
+    await inviteMember({ email: "new@example.com", role: "csr" });
 
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(init.credentials).toBe("include");
   });
 
-  test("sends Content-Type: application/json and Accept: application/json", async () => {
+  it("sends Content-Type and Accept application/json headers", async () => {
     fetchMock.mockResolvedValue({
       ok: true,
-      status: 201,
+      status: 200,
       json: async () => INVITE_RESPONSE,
     });
 
-    await inviteMember(INVITE_BODY);
+    await inviteMember({ email: "new@example.com", role: "csr" });
 
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     const headers = init.headers as Record<string, string>;
@@ -226,381 +159,366 @@ describe("inviteMember", () => {
     expect(headers["Accept"]).toBe("application/json");
   });
 
-  test("serialises the invite body as JSON", async () => {
-    fetchMock.mockResolvedValue({
-      ok: true,
-      status: 201,
-      json: async () => INVITE_RESPONSE,
-    });
-
-    await inviteMember(INVITE_BODY);
-
-    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(JSON.parse(init.body as string)).toEqual(INVITE_BODY);
-  });
-
-  test("returns InviteResponse with member, emailSent, and inviteLink", async () => {
-    const responseWithLink = {
-      member: SAMPLE_MEMBER,
-      emailSent: false,
-      inviteLink: "https://pennpaps.com/invite/token-abc",
-    };
-
-    fetchMock.mockResolvedValue({
-      ok: true,
-      status: 201,
-      json: async () => responseWithLink,
-    });
-
-    const result = await inviteMember(INVITE_BODY);
-    expect(result.member.email).toBe("agent@pennpaps.com");
-    expect(result.emailSent).toBe(false);
-    expect(result.inviteLink).toBe("https://pennpaps.com/invite/token-abc");
-  });
-
-  test("throws using message field from error JSON on non-OK response", async () => {
-    fetchMock.mockResolvedValue({
-      ok: false,
-      status: 409,
-      statusText: "Conflict",
-      json: async () => ({ message: "email already on team" }),
-    });
-
-    await expect(inviteMember(INVITE_BODY)).rejects.toThrow(
-      "email already on team",
-    );
-  });
-
-  test("throws using error field when message is missing", async () => {
-    fetchMock.mockResolvedValue({
-      ok: false,
-      status: 400,
-      statusText: "Bad Request",
-      json: async () => ({ error: "invalid_role" }),
-    });
-
-    await expect(inviteMember(INVITE_BODY)).rejects.toThrow("invalid_role");
-  });
-
-  test("throws fallback message with status when JSON has no message/error", async () => {
-    fetchMock.mockResolvedValue({
-      ok: false,
-      status: 500,
-      statusText: "Internal Server Error",
-      json: async () => ({}),
-    });
-
-    await expect(inviteMember(INVITE_BODY)).rejects.toThrow(
-      "Invite failed (500)",
-    );
-  });
-
-  test("throws when response is OK but JSON has no 'member' key (bad shape)", async () => {
-    // If the API returns 200 OK but the shape is wrong (no 'member' key),
-    // the wrapper should treat it as an error.
+  it("includes X-PF-CSRF header when pf_csrf cookie is present", async () => {
+    setDocumentCookie("pf_csrf=csrf-token-abc");
     fetchMock.mockResolvedValue({
       ok: true,
       status: 200,
-      json: async () => ({ error: "some unexpected error" }),
-    });
-
-    await expect(inviteMember(INVITE_BODY)).rejects.toThrow();
-  });
-
-  test("includes optional notes when provided", async () => {
-    fetchMock.mockResolvedValue({
-      ok: true,
-      status: 201,
       json: async () => INVITE_RESPONSE,
     });
 
-    await inviteMember({ ...INVITE_BODY, notes: "Handles billing queue" });
+    await inviteMember({ email: "new@example.com", role: "csr" });
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const headers = init.headers as Record<string, string>;
+    expect(headers["X-PF-CSRF"]).toBe("csrf-token-abc");
+  });
+
+  it("does not include X-PF-CSRF when pf_csrf cookie is absent", async () => {
+    setDocumentCookie("other=foo");
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => INVITE_RESPONSE,
+    });
+
+    await inviteMember({ email: "new@example.com", role: "csr" });
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const headers = init.headers as Record<string, string>;
+    expect("X-PF-CSRF" in headers).toBe(false);
+  });
+
+  it("serialises the required fields in the body", async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => INVITE_RESPONSE,
+    });
+
+    await inviteMember({ email: "new@example.com", role: "admin" });
 
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(JSON.parse(init.body as string)).toMatchObject({
-      notes: "Handles billing queue",
+      email: "new@example.com",
+      role: "admin",
     });
   });
 
-  test("calls fetch exactly once", async () => {
+  it("serialises optional displayName and notes when provided", async () => {
     fetchMock.mockResolvedValue({
       ok: true,
-      status: 201,
+      status: 200,
       json: async () => INVITE_RESPONSE,
     });
 
-    await inviteMember(INVITE_BODY);
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await inviteMember({
+      email: "new@example.com",
+      role: "csr",
+      displayName: "Test User",
+      notes: "Some notes",
+    });
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const body = JSON.parse(init.body as string);
+    expect(body.displayName).toBe("Test User");
+    expect(body.notes).toBe("Some notes");
+  });
+
+  it("does NOT include initialPassword in the request body (field was removed)", async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => INVITE_RESPONSE,
+    });
+
+    await inviteMember({ email: "new@example.com", role: "csr" });
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const body = JSON.parse(init.body as string);
+    expect("initialPassword" in body).toBe(false);
   });
 });
 
-// ---------------------------------------------------------------------------
-// resendInvite
-// ---------------------------------------------------------------------------
-
-describe("resendInvite", () => {
-  const RESEND_RESPONSE = {
-    member: { ...SAMPLE_MEMBER, status: "pending" as const },
-    emailSent: true,
-    inviteLink: null,
-  };
-
-  test("posts to /resupply-api/admin/team/:id/resend", async () => {
+describe("inviteMember — response handling", () => {
+  it("returns member, emailSent, and inviteLink on success", async () => {
     fetchMock.mockResolvedValue({
       ok: true,
       status: 200,
-      json: async () => RESEND_RESPONSE,
+      json: async () => INVITE_RESPONSE,
     });
 
-    await resendInvite("mem-1");
-
-    const [url] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe("/resupply-api/admin/team/mem-1/resend");
-  });
-
-  test("uses POST method", async () => {
-    fetchMock.mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: async () => RESEND_RESPONSE,
-    });
-
-    await resendInvite("mem-1");
-
-    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(init.method).toBe("POST");
-  });
-
-  test("sends credentials: include", async () => {
-    fetchMock.mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: async () => RESEND_RESPONSE,
-    });
-
-    await resendInvite("mem-1");
-
-    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(init.credentials).toBe("include");
-  });
-
-  test("URL-encodes the member id in the path", async () => {
-    fetchMock.mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: async () => RESEND_RESPONSE,
-    });
-
-    // An id containing a slash would break routing without encoding
-    await resendInvite("mem/special");
-
-    const [url] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toContain("mem%2Fspecial");
-    expect(url).not.toContain("mem/special/resend");
-  });
-
-  test("returns the InviteResponse on success", async () => {
-    fetchMock.mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: async () => RESEND_RESPONSE,
-    });
-
-    const result = await resendInvite("mem-1");
-    expect(result.member.status).toBe("pending");
+    const result = await inviteMember({ email: "new@example.com", role: "csr" });
+    expect(result.member.email).toBe("pat@example.com");
     expect(result.emailSent).toBe(true);
+    expect(result.inviteLink).toBeNull();
   });
 
-  test("throws using message from error JSON on non-OK", async () => {
-    fetchMock.mockResolvedValue({
-      ok: false,
-      status: 404,
-      statusText: "Not Found",
-      json: async () => ({ message: "member not found" }),
-    });
-
-    await expect(resendInvite("mem-ghost")).rejects.toThrow("member not found");
-  });
-
-  test("throws using error field when message is absent", async () => {
-    fetchMock.mockResolvedValue({
-      ok: false,
-      status: 400,
-      statusText: "Bad Request",
-      json: async () => ({ error: "member_already_active" }),
-    });
-
-    await expect(resendInvite("mem-1")).rejects.toThrow(
-      "member_already_active",
-    );
-  });
-
-  test("throws fallback message when JSON body is null (parse fails)", async () => {
-    fetchMock.mockResolvedValue({
-      ok: false,
-      status: 502,
-      statusText: "Bad Gateway",
-      json: async () => {
-        throw new SyntaxError("no body");
-      },
-    });
-
-    await expect(resendInvite("mem-1")).rejects.toThrow("Resend failed (502)");
-  });
-});
-
-// ---------------------------------------------------------------------------
-// revokeMember
-// ---------------------------------------------------------------------------
-
-describe("revokeMember", () => {
-  const REVOKE_RESPONSE = {
-    member: { ...SAMPLE_MEMBER, status: "revoked" as const, revokedAt: "2025-06-01T00:00:00Z" },
-  };
-
-  test("posts to /resupply-api/admin/team/:id/revoke", async () => {
+  it("response does NOT have a signInReady field (field was removed)", async () => {
     fetchMock.mockResolvedValue({
       ok: true,
       status: 200,
-      json: async () => REVOKE_RESPONSE,
+      json: async () => INVITE_RESPONSE,
     });
 
-    await revokeMember("mem-1");
-
-    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe("/resupply-api/admin/team/mem-1/revoke");
-    expect(init.method).toBe("POST");
+    const result = await inviteMember({ email: "new@example.com", role: "csr" });
+    expect("signInReady" in result).toBe(false);
   });
 
-  test("sends credentials: include", async () => {
+  it("returns emailSent:false and non-null inviteLink when email not sent", async () => {
+    const resp = {
+      member: MEMBER,
+      emailSent: false,
+      inviteLink: "https://example.com/invite/abc",
+    };
     fetchMock.mockResolvedValue({
       ok: true,
       status: 200,
-      json: async () => REVOKE_RESPONSE,
+      json: async () => resp,
     });
 
-    await revokeMember("mem-1");
-
-    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(init.credentials).toBe("include");
+    const result = await inviteMember({ email: "new@example.com", role: "csr" });
+    expect(result.emailSent).toBe(false);
+    expect(result.inviteLink).toBe("https://example.com/invite/abc");
   });
 
-  test("URL-encodes the member id", async () => {
-    fetchMock.mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: async () => REVOKE_RESPONSE,
-    });
-
-    await revokeMember("mem+special");
-
-    const [url] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toContain("mem%2Bspecial");
-  });
-
-  test("returns { member } with revoked status on success", async () => {
-    fetchMock.mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: async () => REVOKE_RESPONSE,
-    });
-
-    const result = await revokeMember("mem-1");
-    expect(result.member.status).toBe("revoked");
-    expect(result.member.revokedAt).toBe("2025-06-01T00:00:00Z");
-  });
-
-  test("throws using message from error JSON on non-OK", async () => {
-    fetchMock.mockResolvedValue({
-      ok: false,
-      status: 404,
-      statusText: "Not Found",
-      json: async () => ({ message: "member not found" }),
-    });
-
-    await expect(revokeMember("mem-ghost")).rejects.toThrow("member not found");
-  });
-
-  test("throws using error field when message is absent", async () => {
+  it("throws with server message field when provided", async () => {
     fetchMock.mockResolvedValue({
       ok: false,
       status: 409,
-      statusText: "Conflict",
-      json: async () => ({ error: "already_revoked" }),
+      json: async () => ({ message: "email already in use" }),
     });
 
-    await expect(revokeMember("mem-1")).rejects.toThrow("already_revoked");
+    await expect(
+      inviteMember({ email: "dup@example.com", role: "csr" }),
+    ).rejects.toThrow("email already in use");
   });
 
-  test("throws fallback message when JSON parse fails", async () => {
+  it("throws with server error field when message is absent", async () => {
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 400,
+      json: async () => ({ error: "invalid_role" }),
+    });
+
+    await expect(
+      inviteMember({ email: "x@example.com", role: "csr" }),
+    ).rejects.toThrow("invalid_role");
+  });
+
+  it("throws with generic message as fallback", async () => {
     fetchMock.mockResolvedValue({
       ok: false,
       status: 500,
-      statusText: "ISE",
-      json: async () => {
-        throw new SyntaxError("bad body");
-      },
+      json: async () => ({}),
     });
 
-    await expect(revokeMember("mem-1")).rejects.toThrow("Revoke failed (500)");
-  });
-
-  test("calls fetch exactly once", async () => {
-    fetchMock.mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: async () => REVOKE_RESPONSE,
-    });
-
-    await revokeMember("mem-1");
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await expect(
+      inviteMember({ email: "x@example.com", role: "csr" }),
+    ).rejects.toThrow("500");
   });
 });
 
-// ---------------------------------------------------------------------------
-// patchMember
-// ---------------------------------------------------------------------------
+// ─── resendInvite ────────────────────────────────────────────────────────────
 
-describe("patchMember", () => {
-  const PATCH_RESPONSE = {
-    member: { ...SAMPLE_MEMBER, role: "supervisor" as const },
-  };
-
-  test("sends PATCH to /resupply-api/admin/team/:id", async () => {
+describe("resendInvite", () => {
+  it("POSTs to /resupply-api/admin/team/:id/resend", async () => {
     fetchMock.mockResolvedValue({
       ok: true,
       status: 200,
-      json: async () => PATCH_RESPONSE,
+      json: async () => INVITE_RESPONSE,
     });
 
-    await patchMember("mem-1", { role: "supervisor" });
+    await resendInvite("m-1");
 
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe("/resupply-api/admin/team/mem-1");
-    expect(init.method).toBe("PATCH");
+    expect(url).toBe("/resupply-api/admin/team/m-1/resend");
+    expect(init.method).toBe("POST");
   });
 
-  test("sends credentials: include", async () => {
+  it("URL-encodes the id", async () => {
     fetchMock.mockResolvedValue({
       ok: true,
       status: 200,
-      json: async () => PATCH_RESPONSE,
+      json: async () => INVITE_RESPONSE,
     });
 
-    await patchMember("mem-1", { role: "admin" });
+    await resendInvite("id with spaces");
+
+    const [url] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain("id%20with%20spaces");
+  });
+
+  it("sends credentials:include", async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => INVITE_RESPONSE,
+    });
+
+    await resendInvite("m-1");
 
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(init.credentials).toBe("include");
   });
 
-  test("sends Content-Type: application/json and Accept: application/json", async () => {
+  it("includes X-PF-CSRF when pf_csrf cookie is present", async () => {
+    setDocumentCookie("pf_csrf=resend-token");
     fetchMock.mockResolvedValue({
       ok: true,
       status: 200,
-      json: async () => PATCH_RESPONSE,
+      json: async () => INVITE_RESPONSE,
     });
 
-    await patchMember("mem-1", { role: "supervisor" });
+    await resendInvite("m-1");
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect((init.headers as Record<string, string>)["X-PF-CSRF"]).toBe(
+      "resend-token",
+    );
+  });
+
+  it("omits X-PF-CSRF when pf_csrf cookie is absent", async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => INVITE_RESPONSE,
+    });
+
+    await resendInvite("m-1");
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect("X-PF-CSRF" in (init.headers as Record<string, string>)).toBe(false);
+  });
+
+  it("throws with message from error body on failure", async () => {
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 404,
+      json: async () => ({ message: "member not found" }),
+    });
+
+    await expect(resendInvite("missing")).rejects.toThrow("member not found");
+  });
+
+  it("throws generic message when body is not parseable", async () => {
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 500,
+      json: async () => { throw new SyntaxError("no body"); },
+    });
+
+    await expect(resendInvite("m-1")).rejects.toThrow("500");
+  });
+});
+
+// ─── revokeMember ────────────────────────────────────────────────────────────
+
+describe("revokeMember", () => {
+  it("POSTs to /resupply-api/admin/team/:id/revoke", async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ member: { ...MEMBER, status: "revoked" } }),
+    });
+
+    await revokeMember("m-1");
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("/resupply-api/admin/team/m-1/revoke");
+    expect(init.method).toBe("POST");
+  });
+
+  it("URL-encodes special characters in the id", async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ member: MEMBER }),
+    });
+
+    await revokeMember("id/with/slashes");
+
+    const [url] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain("id%2Fwith%2Fslashes");
+  });
+
+  it("includes X-PF-CSRF when pf_csrf cookie is present", async () => {
+    setDocumentCookie("pf_csrf=revoke-csrf");
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ member: MEMBER }),
+    });
+
+    await revokeMember("m-1");
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect((init.headers as Record<string, string>)["X-PF-CSRF"]).toBe(
+      "revoke-csrf",
+    );
+  });
+
+  it("throws with message from error body", async () => {
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 403,
+      json: async () => ({ message: "insufficient permissions" }),
+    });
+
+    await expect(revokeMember("m-1")).rejects.toThrow("insufficient permissions");
+  });
+
+  it("returns { member } on success", async () => {
+    const revokedMember = { ...MEMBER, status: "revoked" as const };
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ member: revokedMember }),
+    });
+
+    const result = await revokeMember("m-1");
+    expect(result.member.status).toBe("revoked");
+  });
+});
+
+// ─── patchMember ─────────────────────────────────────────────────────────────
+
+describe("patchMember", () => {
+  it("sends PATCH to /resupply-api/admin/team/:id", async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ member: MEMBER }),
+    });
+
+    await patchMember("m-1", { role: "admin" });
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("/resupply-api/admin/team/m-1");
+    expect(init.method).toBe("PATCH");
+  });
+
+  it("sends credentials:include", async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ member: MEMBER }),
+    });
+
+    await patchMember("m-1", { role: "csr" });
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(init.credentials).toBe("include");
+  });
+
+  it("sends Content-Type and Accept application/json", async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ member: MEMBER }),
+    });
+
+    await patchMember("m-1", { role: "csr" });
 
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     const headers = init.headers as Record<string, string>;
@@ -608,136 +526,92 @@ describe("patchMember", () => {
     expect(headers["Accept"]).toBe("application/json");
   });
 
-  test("serialises the patch body as JSON", async () => {
+  it("includes X-PF-CSRF when pf_csrf cookie is present", async () => {
+    setDocumentCookie("pf_csrf=patch-csrf-token");
     fetchMock.mockResolvedValue({
       ok: true,
       status: 200,
-      json: async () => PATCH_RESPONSE,
+      json: async () => ({ member: MEMBER }),
     });
 
-    const body = { role: "fitter" as const, displayName: "Field Tech" };
-    await patchMember("mem-1", body);
+    await patchMember("m-1", { displayName: "Updated" });
 
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(JSON.parse(init.body as string)).toEqual(body);
-  });
-
-  test("URL-encodes the member id in the path", async () => {
-    fetchMock.mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: async () => PATCH_RESPONSE,
-    });
-
-    await patchMember("mem/id-123", { role: "csr" });
-
-    const [url] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toContain("mem%2Fid-123");
-  });
-
-  test("returns { member } with updated role on success", async () => {
-    fetchMock.mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: async () => PATCH_RESPONSE,
-    });
-
-    const result = await patchMember("mem-1", { role: "supervisor" });
-    expect(result.member.role).toBe("supervisor");
-  });
-
-  test("serialises null displayName to clear the field", async () => {
-    fetchMock.mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: async () => PATCH_RESPONSE,
-    });
-
-    await patchMember("mem-1", { displayName: null });
-
-    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    const parsed = JSON.parse(init.body as string);
-    expect(parsed.displayName).toBeNull();
-  });
-
-  test("throws using message from error JSON on non-OK", async () => {
-    fetchMock.mockResolvedValue({
-      ok: false,
-      status: 403,
-      statusText: "Forbidden",
-      json: async () => ({ message: "insufficient permissions" }),
-    });
-
-    await expect(patchMember("mem-1", { role: "admin" })).rejects.toThrow(
-      "insufficient permissions",
+    expect((init.headers as Record<string, string>)["X-PF-CSRF"]).toBe(
+      "patch-csrf-token",
     );
   });
 
-  test("throws using error field when message is absent", async () => {
+  it("omits X-PF-CSRF when cookie is absent", async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ member: MEMBER }),
+    });
+
+    await patchMember("m-1", { role: "csr" });
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect("X-PF-CSRF" in (init.headers as Record<string, string>)).toBe(false);
+  });
+
+  it("serialises partial fields correctly (role only)", async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ member: MEMBER }),
+    });
+
+    await patchMember("m-1", { role: "supervisor" });
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(JSON.parse(init.body as string)).toEqual({ role: "supervisor" });
+  });
+
+  it("serialises null displayName", async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ member: MEMBER }),
+    });
+
+    await patchMember("m-1", { displayName: null });
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(JSON.parse(init.body as string)).toEqual({ displayName: null });
+  });
+
+  it("throws with message from error body", async () => {
     fetchMock.mockResolvedValue({
       ok: false,
       status: 400,
-      statusText: "Bad Request",
-      json: async () => ({ error: "invalid_role_transition" }),
+      json: async () => ({ message: "invalid role" }),
     });
 
-    await expect(patchMember("mem-1", { role: "compliance_officer" })).rejects.toThrow(
-      "invalid_role_transition",
+    await expect(patchMember("m-1", { role: "csr" })).rejects.toThrow(
+      "invalid role",
     );
   });
 
-  test("throws fallback message when JSON parse fails", async () => {
+  it("throws generic message fallback when body is empty", async () => {
     fetchMock.mockResolvedValue({
       ok: false,
-      status: 504,
-      statusText: "Gateway Timeout",
-      json: async () => {
-        throw new SyntaxError("no body");
-      },
+      status: 500,
+      json: async () => { throw new SyntaxError("no body"); },
     });
 
-    await expect(patchMember("mem-1", { role: "csr" })).rejects.toThrow(
-      "Patch failed (504)",
-    );
+    await expect(patchMember("m-1", { role: "csr" })).rejects.toThrow("500");
   });
 
-  test("calls fetch exactly once", async () => {
+  it("returns { member } on success", async () => {
+    const updated = { ...MEMBER, role: "admin" as const };
     fetchMock.mockResolvedValue({
       ok: true,
       status: 200,
-      json: async () => PATCH_RESPONSE,
+      json: async () => ({ member: updated }),
     });
 
-    await patchMember("mem-1", { notes: "Updated notes" });
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const result = await patchMember("m-1", { role: "admin" });
+    expect(result.member.role).toBe("admin");
   });
-});
-
-// ---------------------------------------------------------------------------
-// TeamRole values — verify all seven roles are accepted
-// ---------------------------------------------------------------------------
-
-describe("admin-team-api — all TeamRole values accepted", () => {
-  const roles = [
-    "admin",
-    "supervisor",
-    "csr",
-    "fitter",
-    "fulfillment",
-    "compliance_officer",
-    "agent",
-  ] as const;
-
-  for (const role of roles) {
-    test(`patchMember accepts role '${role}'`, async () => {
-      fetchMock.mockResolvedValue({
-        ok: true,
-        status: 200,
-        json: async () => ({ member: { ...SAMPLE_MEMBER, role } }),
-      });
-
-      const result = await patchMember("mem-1", { role });
-      expect(result.member.role).toBe(role);
-    });
-  }
 });

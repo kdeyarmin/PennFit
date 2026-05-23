@@ -56,6 +56,7 @@
 
 import { Router, type Response } from "express";
 import { z } from "zod";
+import { isFeatureEnabled } from "../../lib/feature-flags.js";
 import { logger } from "../../lib/logger.js";
 import { rateLimit } from "../../middlewares/rate-limit.js";
 import {
@@ -289,6 +290,30 @@ router.post("/chat", chatRateLimit, async (req, res) => {
   const streaming = wantsStreaming(req.get("Accept"));
   const selection = selectLlmProvider();
   const apiKey = process.env.OPENAI_API_KEY;
+
+  // Control Center feature gate. When admins turn the chatbot off
+  // we surface a single-message "offline" response. The shape
+  // matches the existing unconfigured-LLM branch below so the
+  // widget doesn't have to special-case anything.
+  if (!(await isFeatureEnabled("storefront.chatbot"))) {
+    const offlineMessage =
+      "The PennPaps chat assistant is currently offline. Please reach us by phone or email — we'll respond as soon as we can.";
+    if (streaming) {
+      startSseHeaders(res);
+      writeSseEvent(res, { type: "chunk", text: offlineMessage });
+      writeSseEvent(res, { type: "done", offline: true });
+      res.end();
+    } else {
+      res.json({
+        reply: {
+          role: "assistant",
+          content: offlineMessage,
+        },
+        offline: true,
+      });
+    }
+    return;
+  }
 
   if (selection.provider === "offline") {
     logger.info(
