@@ -96,9 +96,9 @@ const buildSystemPromptInputSchema = z.object({
       // `\W*` between each letter eats common obfuscations without
       // collapsing the surrounding legitimate text.
       const injectionPatterns: ReadonlyArray<RegExp> = [
-        /\bI\W*G\W*N\W*O\W*R\W*E\b/gi,
-        /\bO\W*V\W*E\W*R\W*R\W*I\W*D\W*E\b/gi,
-        /\bS\W*Y\W*S\W*T\W*E\W*M\s*:/gi,
+        /\bI[\W_]*G[\W_]*N[\W_]*O[\W_]*R[\W_]*E\b/gi,
+        /\bO[\W_]*V[\W_]*E[\W_]*R[\W_]*R[\W_]*I[\W_]*D[\W_]*E\b/gi,
+        /\bS[\W_]*Y[\W_]*S[\W_]*T[\W_]*E[\W_]*M\s*:/gi,
         /\bDISREGARD\b/gi,
         /\bFORGET\s+(YOUR|ALL|PREVIOUS|PRIOR)\b/gi,
       ];
