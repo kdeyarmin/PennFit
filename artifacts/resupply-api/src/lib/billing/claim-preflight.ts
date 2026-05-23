@@ -286,7 +286,7 @@ export async function preflightClaim(claimId: string): Promise<PreflightSummary>
         // alternatives (RR/NU, KH/KI/KJ rotations) — the scrubber owns
         // the deeper per-line lookup; preflight just flags absence of
         // ANY of the required modifiers.
-        const hasAny = payer.required_modifiers_dme.some((m) =>
+        const hasAny = payer.required_modifiers_dme.some((m: string) =>
           modifierTokens.has(m.toUpperCase()),
         );
         if (!hasAny) {

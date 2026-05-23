@@ -156,4 +156,3 @@ describe("use-document-title — useEffect dependency array", () => {
     expect(effectWithDeps).toBeTruthy();
   });
 });
-});
