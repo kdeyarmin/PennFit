@@ -222,11 +222,11 @@ async function groupedCount(
     | "resolved_by_user_id"
     | "completed_by_user_id",
   adminIds: string[],
-  refine: (
-    q: ReturnType<
-      ReturnType<SupabaseClient["schema"]>["from"]
-    >["select"],
-  ) => unknown,
+  // The PostgREST filter-builder type chain trips TS2589 if we try to
+  // pin `q` to the actual builder generic; we type it as `any`
+  // internally — callers still get strong typing on `Promise<Map<…>>`.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  refine: (q: any) => unknown,
 ): Promise<Map<string, number>> {
   const counts = new Map<string, number>();
   if (adminIds.length === 0) return counts;

@@ -294,8 +294,15 @@ router.post(
       return;
     }
 
-    const lines = template.lines_json.lines;
-    const lineRows = lines.map((l) => ({
+    type TemplateLine = {
+      hcpcs: string;
+      modifiers?: string | null;
+      description?: string | null;
+      units: number;
+      billed_cents: number;
+    };
+    const lines = template.lines_json.lines as TemplateLine[];
+    const lineRows = lines.map((l: TemplateLine) => ({
       claim_id: claim.id,
       hcpcs_code: l.hcpcs,
       modifier: l.modifiers || null,
