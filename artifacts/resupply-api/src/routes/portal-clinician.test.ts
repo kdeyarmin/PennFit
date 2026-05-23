@@ -45,11 +45,19 @@ vi.mock("@workspace/resupply-audit", () => ({
 
 // ── verifyClinicianShareToken mock ───────────────────────────────────
 // Default: return valid with a known shareRowId. Override per test.
+// The cast is needed because `vi.fn` infers the return type from the
+// initial implementation (the `valid: true` branch), which would then
+// reject `mockReturnValueOnce({ valid: false })` in failure-path tests.
+type VerifyResult =
+  | { valid: true; shareRowId: string }
+  | { valid: false };
 const verifyClinicianShareTokenMock = vi.hoisted(() =>
-  vi.fn(() => ({
-    valid: true as const,
-    shareRowId: "share-row-uuid-1111",
-  })),
+  vi.fn(
+    (): VerifyResult => ({
+      valid: true,
+      shareRowId: "share-row-uuid-1111",
+    }),
+  ),
 );
 vi.mock("../lib/clinician-share-token", () => ({
   verifyClinicianShareToken: verifyClinicianShareTokenMock,
