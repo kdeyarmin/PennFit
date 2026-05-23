@@ -23,7 +23,13 @@
 //     - any free-text clinical note
 //   Same containment posture as the AI claim scrubber.
 
-import { getResponseText } from "@workspace/resupply-ai";
+import {
+  type AnthropicClient,
+  type AnthropicMessage,
+  type AnthropicTool,
+  getResponseText,
+  getResponseToolCalls,
+} from "@workspace/resupply-ai";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import {
@@ -31,6 +37,11 @@ import {
   getAnthropicClient,
 } from "../llm-provider";
 import { logger } from "../logger";
+import {
+  CHAT_TOOLS,
+  executeChatTool,
+  MAX_TOOL_ROUNDS,
+} from "../storefront/chatbotTools";
 
 const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
 const DEFAULT_OPENAI_MODEL = "gpt-4o-mini";
@@ -83,7 +94,36 @@ const SYSTEM_PROMPT = [
   "  but never their name, DOB, address, or member ID.",
   "",
   "LENGTH: maximum 200 words. Most replies are 60-120 words.",
+  "",
+  "TOOLS — use them instead of guessing about products:",
+  "- If the patient asks 'what masks do you carry?', 'show me some",
+  "  nasal masks', 'do you have anything for high-pressure therapy',",
+  "  or similar catalog questions → call find_masks with the criteria",
+  "  they stated and answer from the result rather than inventing",
+  "  product names.",
+  "- If the patient asks 'which mask should I try next?' or describes",
+  "  their preferences and wants a suggestion → call recommend_masks",
+  "  with the preferences they stated.",
+  "- If the patient names two masks and asks how they differ → call",
+  "  compare_masks. Don't speculate about feature differences from",
+  "  the model's pretraining knowledge.",
+  "- After a tool call, answer in your normal coaching voice — don't",
+  "  read the JSON back verbatim. Translate the result into one or",
+  "  two human sentences referencing the masks by name.",
+  "- These tools have no side effects (read-only catalog lookups).",
+  "  Use them freely rather than refusing.",
 ].join("\n");
+
+// Reuse the storefront chatbot's catalog tools. They're pure read-
+// only catalog operations — no PHI surface, no DB writes — so the
+// same set is safe inside the patient-portal sleep coach. Without
+// tools the coach hallucinates mask names when patients ask product
+// questions; with tools every answer is grounded in maskCatalog.ts.
+const ANTHROPIC_TOOLS: AnthropicTool[] = CHAT_TOOLS.map((t) => ({
+  name: t.function.name,
+  description: t.function.description,
+  input_schema: t.function.parameters,
+}));
 
 export interface SleepCoachInput {
   patientId: string;
@@ -93,6 +133,13 @@ export interface SleepCoachInput {
   apiKey?: string;
   fetchImpl?: typeof fetch;
   timeoutMs?: number;
+  /**
+   * Test seam — inject an AnthropicClient stub so unit tests can
+   * drive the tool-call loop without making real API calls. When
+   * unset (the production path) the helper picks the client up from
+   * `getAnthropicClient()`.
+   */
+  anthropicClient?: AnthropicClient;
 }
 
 export interface SleepCoachReply {
@@ -110,44 +157,138 @@ export async function askSleepCoach(input: SleepCoachInput): Promise<SleepCoachR
   // models, and clinical-adjacent reasoning is at least as good.
   // Fall back to OpenAI if only OPENAI_API_KEY is configured (legacy
   // deployments). Fall back to "offline" when neither is set.
-  const anthropic = getAnthropicClient();
+  const anthropic = input.anthropicClient ?? getAnthropicClient();
   if (anthropic) {
     const startedAt = Date.now();
-    const result = await anthropic.send({
-      model: DEFAULT_ANTHROPIC_MODEL_CHAT,
-      max_tokens: 400,
-      temperature: 0.4,
-      // cache_control on the system prompt — same posture as the
-      // chatbot route. The coach system prompt is ~1K tokens, static
-      // across patients; without caching every patient question
-      // re-pays that input cost. Mirrors routes/storefront/chat.ts.
-      system: [
-        { type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } },
-      ],
-      messages: [{ role: "user", content: userMessage }],
-    });
-    const latencyMs = Date.now() - startedAt;
-    if (!result.ok) {
-      logger.warn(
+    // Tool-call loop. The coach can call read-only catalog tools
+    // (find_masks / recommend_masks / compare_masks) to ground
+    // product-related questions. Bounded by MAX_TOOL_ROUNDS so a
+    // model that goes into a tool-spam loop terminates cleanly
+    // (the chatbot uses the same constant for the same reason).
+    const messages: AnthropicMessage[] = [
+      { role: "user", content: userMessage },
+    ];
+    for (let round = 0; round <= MAX_TOOL_ROUNDS; round++) {
+      const result = await anthropic.send({
+        model: DEFAULT_ANTHROPIC_MODEL_CHAT,
+        max_tokens: 400,
+        temperature: 0.4,
+        // cache_control on the system prompt — same posture as the
+        // chatbot route. The coach system prompt is ~1K tokens,
+        // static across patients; without caching every patient
+        // question re-pays that input cost. Mirrors
+        // routes/storefront/chat.ts.
+        system: [
+          { type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } },
+        ],
+        messages,
+        tools: ANTHROPIC_TOOLS,
+      });
+      const latencyMs = Date.now() - startedAt;
+      if (!result.ok) {
+        logger.warn(
+          {
+            event: "sleep_coach_anthropic_error",
+            code: result.errorCode,
+            status: result.httpStatus,
+            round,
+          },
+          "sleep-coach: anthropic call failed",
+        );
+        return {
+          reply: null,
+          errorMessage: `anthropic ${result.errorCode}: ${result.errorMessage.slice(0, 200)}`,
+          latencyMs,
+        };
+      }
+      const text = getResponseText(result.response).trim();
+      const toolCalls = getResponseToolCalls(result.response);
+
+      // Tool-call branch: append the assistant turn (text + tool_use
+      // blocks) and the tool_result user turn, then loop. The
+      // round-cap guards against an exhausted-budget loop; on the
+      // FINAL round we accept whatever text we have (we won't issue
+      // another tool call), so the check is `< MAX_TOOL_ROUNDS`.
+      if (toolCalls.length > 0 && round < MAX_TOOL_ROUNDS) {
+        // Assistant turn: include the text the model spoke (if any)
+        // before the tool calls + every tool_use block.
+        const assistantContent: Array<
+          | { type: "text"; text: string }
+          | { type: "tool_use"; id: string; name: string; input: Record<string, unknown> }
+        > = [];
+        if (text.length > 0) {
+          assistantContent.push({ type: "text", text });
+        }
+        for (const tc of toolCalls) {
+          assistantContent.push({
+            type: "tool_use",
+            id: tc.id,
+            name: tc.name,
+            input: tc.input,
+          });
+        }
+        messages.push({ role: "assistant", content: assistantContent });
+
+        // User turn: one tool_result block per call, in the same
+        // order the model issued them.
+        const userContent: Array<{
+          type: "tool_result";
+          tool_use_id: string;
+          content: string;
+          is_error?: boolean;
+        }> = [];
+        for (const tc of toolCalls) {
+          const dispatch = executeChatTool(tc.name, tc.input);
+          if (dispatch.ok) {
+            userContent.push({
+              type: "tool_result",
+              tool_use_id: tc.id,
+              content: JSON.stringify(dispatch.data),
+            });
+          } else {
+            userContent.push({
+              type: "tool_result",
+              tool_use_id: tc.id,
+              content: dispatch.error,
+              is_error: true,
+            });
+          }
+          logger.info(
+            {
+              event: "sleep_coach_tool_invoked",
+              tool: tc.name,
+              ok: dispatch.ok,
+              round,
+            },
+            "sleep-coach: tool executed",
+          );
+        }
+        messages.push({ role: "user", content: userContent });
+        continue;
+      }
+
+      // Final answer reached (no tool calls, or we've hit the round
+      // cap). Return whatever text the model produced.
+      logger.info(
         {
-          event: "sleep_coach_anthropic_error",
-          code: result.errorCode,
-          status: result.httpStatus,
+          event: "sleep_coach_anthropic_ok",
+          rounds: round + 1,
+          replyChars: text.length,
+          inputTokens: result.response.usage.input_tokens,
+          cachedInputTokens: result.response.usage.cache_read_input_tokens ?? 0,
+          outputTokens: result.response.usage.output_tokens,
         },
-        "sleep-coach: anthropic call failed",
+        "sleep-coach: anthropic reply",
       );
       return {
-        reply: null,
-        errorMessage: `anthropic ${result.errorCode}: ${result.errorMessage.slice(0, 200)}`,
+        reply: text ? text.slice(0, 1500) : null,
+        errorMessage: null,
         latencyMs,
       };
     }
-    const text = getResponseText(result.response).trim();
-    return {
-      reply: text ? text.slice(0, 1500) : null,
-      errorMessage: null,
-      latencyMs,
-    };
+    // Unreachable — the for-loop's last iteration always returns.
+    // The bare return keeps the type checker happy.
+    return { reply: null, errorMessage: null, latencyMs: null };
   }
 
   const apiKey = input.apiKey ?? process.env.OPENAI_API_KEY;
