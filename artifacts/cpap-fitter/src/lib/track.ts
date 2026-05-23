@@ -72,7 +72,8 @@ export type TrackStep =
   | "chat_opened"
   | "chat_sent"
   | "chat_replied"
-  | "chat_feedback";
+  | "chat_feedback"
+  | "fitter_lead_submit_failed";
 
 type MetadataForStep<T extends TrackStep> = T extends "capture_blocked"
   ? {
@@ -100,7 +101,26 @@ type MetadataForStep<T extends TrackStep> = T extends "capture_blocked"
             }
           : T extends "chat_feedback"
             ? { path: string; kind: "up" | "down" }
-            : Record<string, unknown>;
+            : T extends "fitter_lead_submit_failed"
+              ? {
+                  // Low-cardinality bucket for graphing. "http_4xx" /
+                  // "http_5xx" come from the parsed status; "network"
+                  // covers fetch rejections (offline, DNS, connection
+                  // reset); "other" is the catch-all for anything we
+                  // couldn't categorise. Keeps the failure dashboard
+                  // queryable without us storing arbitrary error text.
+                  category: "http_4xx" | "http_5xx" | "network" | "other";
+                  // The raw status when the fetch resolved; null when
+                  // we never reached an HTTP response.
+                  httpStatus: number | null;
+                  // First 64 chars of the thrown Error.message. Used
+                  // for incident drilldown only — the categories above
+                  // are what dashboards group on. Truncated so an
+                  // arbitrarily long server-side error string can't
+                  // blow the 500-char track() payload cap.
+                  errorCode: string;
+                }
+              : Record<string, unknown>;
 
 export function track<T extends TrackStep>(
   step: T,
