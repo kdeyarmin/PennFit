@@ -3,6 +3,8 @@
 // envelope, no implicit retries, throws on non-OK so React Query
 // surfaces failure states naturally.
 
+import { csrfHeader } from "../csrf";
+
 export type IntegrationSource =
   | "resmed_airview"
   | "philips_care"
@@ -135,6 +137,7 @@ export async function refreshPatientIntegration(
       headers: {
         "Content-Type": "application/json",
         Accept: "application/json",
+        ...csrfHeader(),
       },
       body: JSON.stringify({ source }),
     },

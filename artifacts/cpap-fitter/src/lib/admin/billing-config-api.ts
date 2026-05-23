@@ -9,6 +9,8 @@
 // prior-auth details. The other config tables remain read-only here;
 // edits still flow through their dedicated backend routes.
 
+import { csrfHeader } from "../csrf";
+
 const BASE = "/resupply-api";
 
 async function getJSON<T>(
@@ -45,6 +47,7 @@ async function sendJSON<T>(
     headers: {
       Accept: "application/json",
       "Content-Type": "application/json",
+      ...csrfHeader(),
     },
     body: JSON.stringify(body),
   });

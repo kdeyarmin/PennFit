@@ -121,74 +121,19 @@ describe("admin-shop-returns — pre-existing action buttons not removed", () =>
 });
 
 // ---------------------------------------------------------------------------
-// PR change: manual URL state management (reverted from useUrlState hook)
+// URL state: the page wires its ?tab= search param via the shared
+// `useUrlState` hook (history-replacing, popstate-aware) — see
+// src/hooks/use-url-state.ts for the implementation.
 // ---------------------------------------------------------------------------
-//
-// The PR reverts the useUrlState migration and replaces it with:
-//   1. readTabFromUrl() — reads ?tab= from URLSearchParams, validates against
-//      TAB_IDS set, falls back to "open" on SSR or unknown values.
-//   2. setTab(next: Tab) — updates component state AND calls
-//      history.replaceState with the new URL.
-//   3. useEffect popstate listener — rehydrates state on browser back/forward.
 
-describe("admin-shop-returns — URL state: useUrlState removed", () => {
-  it("no longer imports useUrlState", () => {
-    expect(SRC).not.toContain('from "@/hooks/use-url-state"');
+describe("admin-shop-returns — URL state via useUrlState", () => {
+  it("imports useUrlState from the shared hook", () => {
+    expect(SRC).toContain('from "@/hooks/use-url-state"');
   });
 
-  it("no longer calls useUrlState", () => {
-    expect(SRC).not.toContain("useUrlState(");
-  });
-});
-
-describe("admin-shop-returns — readTabFromUrl structure", () => {
-  it("defines readTabFromUrl as a function", () => {
-    expect(SRC).toContain("function readTabFromUrl");
-  });
-
-  it("guards against SSR with typeof window === 'undefined'", () => {
-    expect(SRC).toContain('typeof window === "undefined"');
-  });
-
-  it("reads the 'tab' search param via URLSearchParams", () => {
-    expect(SRC).toMatch(/URLSearchParams\s*\(/);
-    expect(SRC).toMatch(/\.get\(\s*["']tab["']\s*\)/);
-  });
-
-  it("falls back to 'open' for unknown/missing params", () => {
-    expect(SRC).toContain('"open"');
-  });
-});
-
-describe("admin-shop-returns — setTab URL building", () => {
-  it("updates browser history when tab changes", () => {
-    expect(SRC).toMatch(/history\.(replaceState|pushState)\s*\(/);
-  });
-
-  it("deletes the tab param when next equals 'open' (the default)", () => {
-    expect(SRC).toContain('params.delete("tab")');
-  });
-
-  it("sets the tab param for non-default values", () => {
-    expect(SRC).toContain('params.set("tab", next)');
-  });
-
-  it("appends window.location.hash to the rebuilt URL", () => {
-    expect(SRC).toContain("window.location.hash");
-  });
-});
-
-describe("admin-shop-returns — popstate listener", () => {
-  it("adds a popstate event listener", () => {
-    expect(SRC).toContain('addEventListener("popstate"');
-  });
-
-  it("removes the popstate listener on cleanup", () => {
-    expect(SRC).toContain('removeEventListener("popstate"');
-  });
-
-  it("rehydrates state by calling readTabFromUrl in the handler", () => {
-    expect(SRC).toContain("readTabFromUrl()");
+  it("calls useUrlState with the tab key", () => {
+    expect(SRC).toContain("useUrlState");
+    expect(SRC).toMatch(/key:\s*"tab"/);
   });
 });
 

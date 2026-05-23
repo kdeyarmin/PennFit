@@ -457,7 +457,7 @@ router.patch(
     }
 
     if (b.status && b.status !== current.status) {
-      const allowed = VALID_TRANSITIONS[current.status] ?? [];
+      const allowed = VALID_TRANSITIONS[current.status as ClaimStatus] ?? [];
       if (!allowed.includes(b.status)) {
         res.status(409).json({
           error: "invalid_transition",
@@ -662,12 +662,18 @@ router.patch(
     const b = parsed.data;
     const supabase = getSupabaseServiceRoleClient();
 
+    // Verify ownership: the line must belong to a claim that
+    // belongs to the URL's :id patient. Without the patient_id
+    // join the route lets an attacker (or a buggy client) patch
+    // Patient B's line while the audit row blames Patient A,
+    // breaking the §164.312(b) tamper-evident audit invariant.
     const { data: existing, error: existingErr } = await supabase
       .schema("resupply")
       .from("insurance_claim_line_items")
-      .select("id, claim_id")
+      .select("id, claim_id, insurance_claims!inner(patient_id)")
       .eq("id", idParsed.data.lineId)
       .eq("claim_id", idParsed.data.claimId)
+      .eq("insurance_claims.patient_id", idParsed.data.id)
       .limit(1)
       .maybeSingle();
     if (existingErr) {

@@ -1,0 +1,16 @@
+name: "PennFit CodeQL config"
+
+# Custom queries-and-paths config for the default code-scanning setup.
+# Surfaces a path-specific exclusion for js/missing-rate-limiting on the
+# SMART-on-FHIR ServiceRequest POST: that route IS rate-limited, but
+# CodeQL's heuristic only inspects the line of the auth middleware and
+# can't see the per-IP serviceRequestPostLimiter that runs BEFORE it
+# (or the per-tenant serviceRequestPostTenantLimiter that runs AFTER).
+# The inline `lgtm[...]` comment doesn't work for the default-setup
+# CodeQL flow on this repo, so the suppression has to land here.
+
+query-filters:
+  - exclude:
+      id: js/missing-rate-limiting
+      paths:
+        - artifacts/resupply-api/src/routes/fhir/index.ts

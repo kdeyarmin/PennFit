@@ -51,7 +51,9 @@ beforeEach(() => {
   // Pin the clock so the 7-day default window deterministically
   // includes every fixture night (2026-05-15..17). Without this the
   // suite is a midnight-UTC flake: a run before 00:00Z 2026-05-22
-  // sees all 3 nights, after sees only 2.
+  // sees all 3 nights, after sees only 2. 2026-05-17T12:00Z also
+  // keeps the smart-trigger detected_at fixture (2026-05-15T02:00Z)
+  // inside the 7-day alert window.
   vi.useFakeTimers();
   vi.setSystemTime(new Date("2026-05-17T12:00:00Z"));
   logAuditMock.mockClear();
