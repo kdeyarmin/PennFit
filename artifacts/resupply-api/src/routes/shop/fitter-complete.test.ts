@@ -672,7 +672,7 @@ describe("GET /shop/track/c — click tracking redirect", () => {
       .query({ t: "garbage" });
     expect(res.status).toBe(302);
     expect(res.headers.location).toContain("/shop");
-    expect(supabaseMock).not.toHaveBeenCalled();
+    expect(supabaseMockLegacy).not.toHaveBeenCalled();
   });
 
   it("rejects a click token whose link_key was tampered with", async () => {
@@ -723,7 +723,7 @@ describe("GET /shop/track/c — click tracking redirect", () => {
     expect(res.status).toBe(302);
     // Falls back since the prefix is 'o|' not 'c|'.
     expect(res.headers.location).toContain("/shop");
-    expect(supabaseMock).not.toHaveBeenCalled();
+    expect(supabaseMockLegacy).not.toHaveBeenCalled();
   });
 });
 
