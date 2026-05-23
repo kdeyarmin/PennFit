@@ -73,18 +73,26 @@ self.addEventListener("notificationclick", (event) => {
 });
 
 self.addEventListener("pushsubscriptionchange", (event) => {
-  // Browser rotated the subscription. Best-effort: re-subscribe and
-  // post the new credentials back to the server so we don't go silent.
-  // The server upserts on `endpoint` so this stays idempotent.
+  // Browser rotated the subscription. We must re-subscribe and post
+  // the new credentials back, otherwise users with the PWA installed
+  // but rarely open it (typical CPAP-resupply patients) silently lose
+  // push — the SPA's reconcile-on-visit path only fires when they
+  // come back, which may be never. Steps:
+  //
+  //   1. DELETE the old endpoint from the server (best-effort).
+  //   2. Fetch the VAPID public key from /resupply-api so we can
+  //      subscribe again.
+  //   3. Call pushManager.subscribe() with the fresh key.
+  //   4. POST the new subscription back to the server.
+  //
+  // Anything that fails is logged and falls through to the next
+  // visit's reconcile; we never re-throw because the browser won't
+  // surface a useful error from a background event.
   event.waitUntil(
     (async () => {
       const oldEndpoint = event.oldSubscription
         ? event.oldSubscription.endpoint
         : null;
-      const reg = await self.registration;
-      // We can't read VAPID_PUBLIC_KEY from the service worker
-      // without a new fetch; the SPA will re-up-sert on its next
-      // visit. For now, just unsubscribe the old one.
       if (oldEndpoint) {
         try {
           await fetch("/resupply-api/shop/me/push-subscriptions", {
@@ -94,11 +102,45 @@ self.addEventListener("pushsubscriptionchange", (event) => {
             body: JSON.stringify({ endpoint: oldEndpoint }),
           });
         } catch (_err) {
-          // Network blip on a background event — ignore. The next
-          // SPA visit will reconcile.
+          // Network blip on a background event — ignore.
         }
       }
-      void reg;
+      try {
+        const keyResp = await fetch(
+          "/resupply-api/shop/me/push-subscriptions/vapid-public-key",
+          { credentials: "include" },
+        );
+        if (!keyResp.ok) return;
+        const { publicKey } = await keyResp.json();
+        if (!publicKey || typeof publicKey !== "string") return;
+        const applicationServerKey = urlBase64ToUint8Array(publicKey);
+        const reg = await self.registration;
+        const newSub = await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey,
+        });
+        const json = newSub.toJSON();
+        await fetch("/resupply-api/shop/me/push-subscriptions", {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(json),
+        });
+      } catch (_err) {
+        // Re-subscribe failed. Next SPA visit will reconcile via
+        // the on-mount push-prompt-banner flow.
+      }
     })(),
   );
 });
+
+function urlBase64ToUint8Array(base64String) {
+  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const rawData = atob(base64);
+  const out = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; i++) {
+    out[i] = rawData.charCodeAt(i);
+  }
+  return out;
+}
