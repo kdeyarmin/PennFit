@@ -56,8 +56,13 @@ describe("isPrivateOrReservedIp — IPv6", () => {
   it.each([
     ["::1"], // loopback
     ["::"], // unspecified
-    ["::ffff:127.0.0.1"], // v4-mapped loopback
-    ["::ffff:10.0.0.1"], // v4-mapped private
+    ["::ffff:127.0.0.1"], // v4-mapped loopback (dotted)
+    ["::ffff:10.0.0.1"], // v4-mapped private (dotted)
+    ["::ffff:7f00:1"], // v4-mapped loopback (hex two-group)
+    ["::ffff:7f000001"], // v4-mapped loopback (hex one-group)
+    ["::ffff:a00:1"], // v4-mapped 10.0.0.1 (hex two-group)
+    ["::ffff:0:0"], // v4-mapped 0.0.0.0 (hex — previously bypassed)
+    ["0:0:0:0:0:ffff:7f00:1"], // v4-mapped fully expanded
     ["fc00::1"], // unique-local
     ["fd00::1"], // unique-local
     ["fe80::1"], // link-local

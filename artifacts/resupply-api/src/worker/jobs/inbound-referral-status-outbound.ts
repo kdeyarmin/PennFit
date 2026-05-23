@@ -55,12 +55,22 @@ type OutboxRow =
 const JOB = "inbound-referral.status-outbound";
 const CRON = "* * * * *"; // every minute
 const BATCH_SIZE = 50;
-const REQUEST_TIMEOUT_MS = 15_000;
+// Per-request timeout. Was 15s; lowered to 5s so a single slow
+// subscriber can't stall the whole batch. 5s is well above the p99
+// of healthy partner callback endpoints (Parachute / Athena both
+// p99 under 1s in production telemetry).
+const REQUEST_TIMEOUT_MS = 5_000;
+// Cap on parallel POSTs per tick. With concurrency=8 and 5s
+// timeout, the worst-case wall time for a 50-row tick is ~32s —
+// well inside the 60s cron cadence AND well inside the lease
+// below, so a tick can never have its rows re-claimed mid-flight.
+const MAX_PARALLEL = 8;
 // Lease horizon for an in-flight row. We bump `next_attempt_at`
 // this far into the future when we claim a row, so an overlapping
-// cron tick filters it out. Long enough to cover the per-request
-// timeout + buffer; short enough that a crashed worker leaves the
-// row recoverable on the next tick.
+// cron tick filters it out. Comfortably above the worst-case
+// per-tick wall time (BATCH_SIZE/MAX_PARALLEL × REQUEST_TIMEOUT_MS
+// = ~32s) so a crashed worker leaves the row recoverable in
+// minutes rather than the next exponential-backoff window.
 const CLAIM_LEASE_MS = 5 * 60_000;
 
 export interface CallbackStats {
@@ -141,11 +151,18 @@ export async function runReferralStatusOutbound(
     (referrals ?? []).map((r) => [r.id, r.source] as const),
   );
 
-  for (const row of rows) {
+  // Bounded parallelism so a slow / dead partner doesn't serialise
+  // the batch (50 × 5s = 250s sequentially, vs ~32s at concurrency=8).
+  // Stays comfortably inside both the 60s cron cadence and the
+  // CLAIM_LEASE_MS window so rows can't be re-claimed mid-flight.
+  const claimedRows = rows;
+  let cursor = 0;
+  type Row = (typeof claimedRows)[number];
+  async function processOne(row: Row): Promise<void> {
     const source = sourceByReferral.get(row.referral_id);
     if (!source) {
       await markExhausted(supabase, row.id, "referral_missing", null, stats);
-      continue;
+      return;
     }
     const target = await resolveTarget({
       supabase,
@@ -161,7 +178,7 @@ export async function runReferralStatusOutbound(
         null,
         stats,
       );
-      continue;
+      return;
     }
 
     const rawBody = JSON.stringify(row.payload_json);
@@ -206,6 +223,18 @@ export async function runReferralStatusOutbound(
       await scheduleRetry(supabase, row, null, message.slice(0, 500), stats);
     }
   }
+  async function worker(): Promise<void> {
+    while (cursor < claimedRows.length) {
+      const idx = cursor++;
+      await processOne(claimedRows[idx]);
+    }
+  }
+  await Promise.all(
+    Array.from(
+      { length: Math.min(MAX_PARALLEL, claimedRows.length) },
+      () => worker(),
+    ),
+  );
   return stats;
 }
 

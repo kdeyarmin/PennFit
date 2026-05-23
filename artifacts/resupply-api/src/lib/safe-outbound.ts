@@ -26,6 +26,7 @@
 import { lookup as dnsLookup } from "node:dns/promises";
 import { Agent as HttpAgent } from "node:http";
 import { Agent as HttpsAgent } from "node:https";
+import { BlockList, isIP } from "node:net";
 
 export class SsrfError extends Error {
   readonly reason: string;
@@ -180,56 +181,74 @@ function isReservedIpv4(ip: string): boolean {
   return false;
 }
 
+/**
+ * IPv6 reserved-range check built on `net.BlockList`. The block list
+ * canonicalises every IPv6 spelling — `::ffff:127.0.0.1`,
+ * `::ffff:7f00:1`, `::ffff:0:0:7f00:1`, and the fully expanded
+ * `0:0:0:0:0:ffff:7f00:1` all hit the same internal address — so we
+ * cannot accidentally bypass the loopback / unique-local / link-local
+ * filters by spelling the same address differently. The prior
+ * hand-rolled hex parser had a hole on `::ffff:0:0`, and didn't
+ * recognise mappings with 3+ hex groups at all.
+ */
+const RESERVED_V6 = (() => {
+  const bl = new BlockList();
+  bl.addAddress("::", "ipv6"); // unspecified
+  bl.addAddress("::1", "ipv6"); // loopback
+  bl.addSubnet("fc00::", 7, "ipv6"); // unique-local
+  bl.addSubnet("fe80::", 10, "ipv6"); // link-local
+  bl.addSubnet("ff00::", 8, "ipv6"); // multicast
+  bl.addSubnet("::ffff:0.0.0.0", 96, "ipv6"); // IPv4-mapped — recurse on v4 portion below
+  return bl;
+})();
+
 function isReservedIpv6(ip: string): boolean {
+  if (isIP(ip) !== 6) return true; // unparseable → fail-closed
+  if (!RESERVED_V6.check(ip, "ipv6")) return false;
+  // IPv4-mapped is the only "reserved" range we don't refuse outright —
+  // 8.8.8.8 mapped to v6 is still a public address. Recurse on the v4
+  // half to apply the v4 reserved-range table.
   const lower = ip.toLowerCase();
-  // ::1 — loopback.
-  if (lower === "::1") return true;
-  // :: — unspecified.
-  if (lower === "::") return true;
-  // ::ffff:a.b.c.d — IPv4-mapped (dotted-decimal form). Strip and recurse on the v4 half.
-  const v4MappedMatch = lower.match(/^::ffff:(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/);
-  if (v4MappedMatch) {
-    return isReservedIpv4(v4MappedMatch[1]);
+  const dottedMatch = lower.match(
+    /::ffff:(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/,
+  );
+  if (dottedMatch) {
+    return isReservedIpv4(dottedMatch[1]);
   }
-  // ::ffff:xxxx:yyyy — IPv4-mapped (hex/colon-compressed form). Convert to dotted-decimal.
-  const v4MappedHexMatch = lower.match(/^::ffff:([0-9a-f:]+)$/);
-  if (v4MappedHexMatch) {
-    const hexPart = v4MappedHexMatch[1];
-    // Parse hex groups to reconstruct the 32-bit IPv4 address
-    const groups = hexPart.split(":");
-    let ipv4Num = 0;
+  const hexMatch = lower.match(/::ffff:([0-9a-f:]+)$/);
+  if (hexMatch) {
+    const groups = hexMatch[1].split(":").filter((g) => g.length > 0);
+    // The v4-mapped tail is at most 32 bits, i.e. one or two 16-bit
+    // hex groups. Anything else is malformed — fail-closed.
+    if (groups.length > 2) return true;
+    let ipv4Num: number;
     if (groups.length === 1) {
-      // Single hex group like "7f00:1" or compact form
       const parsed = Number.parseInt(groups[0], 16);
-      if (!Number.isNaN(parsed)) {
-        ipv4Num = parsed;
+      if (!Number.isFinite(parsed) || parsed < 0 || parsed > 0xffffffff) {
+        return true;
       }
-    } else if (groups.length === 2) {
-      // Two groups like "7f00:1" -> 0x7f00 and 0x0001
+      ipv4Num = parsed;
+    } else {
       const high = Number.parseInt(groups[0], 16);
       const low = Number.parseInt(groups[1], 16);
-      if (!Number.isNaN(high) && !Number.isNaN(low)) {
-        ipv4Num = (high << 16) | low;
+      if (
+        !Number.isFinite(high) || !Number.isFinite(low) ||
+        high < 0 || high > 0xffff || low < 0 || low > 0xffff
+      ) {
+        return true;
       }
+      ipv4Num = (high << 16) | low;
     }
-    // Convert 32-bit int to dotted-decimal
-    if (ipv4Num > 0 || hexPart === "0") {
-      const a = (ipv4Num >>> 24) & 0xff;
-      const b = (ipv4Num >>> 16) & 0xff;
-      const c = (ipv4Num >>> 8) & 0xff;
-      const d = ipv4Num & 0xff;
-      const mappedIpv4 = `${a}.${b}.${c}.${d}`;
-      return isReservedIpv4(mappedIpv4);
-    }
+    const a = (ipv4Num >>> 24) & 0xff;
+    const b = (ipv4Num >>> 16) & 0xff;
+    const c = (ipv4Num >>> 8) & 0xff;
+    const d = ipv4Num & 0xff;
+    return isReservedIpv4(`${a}.${b}.${c}.${d}`);
   }
-  // fc00::/7 — unique-local.
-  if (lower.startsWith("fc") || lower.startsWith("fd")) return true;
-  // fe80::/10 — link-local.
-  if (lower.startsWith("fe8") || lower.startsWith("fe9") ||
-      lower.startsWith("fea") || lower.startsWith("feb")) return true;
-  // ff00::/8 — multicast.
-  if (lower.startsWith("ff")) return true;
-  return false;
+  // BlockList matched but we couldn't parse out the v4 tail — the
+  // address is inside ::ffff::/96 but in a form we don't recognise.
+  // Fail-closed.
+  return true;
 }
 
 /**

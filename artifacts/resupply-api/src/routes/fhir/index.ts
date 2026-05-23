@@ -90,7 +90,25 @@ router.get("/fhir/r4/metadata", (_req, res) => {
 
 const idParam = z.object({ id: z.string().uuid() });
 
-router.get("/fhir/r4/Patient/:id", requireAdmin, async (req, res) => {
+// Per-admin rate limit for the FHIR Patient read endpoints. Without
+// it an admin (or a script using an admin's session) could enumerate
+// patient ids one-at-a-time. 120/min/admin is far above the
+// console's normal pull cadence.
+const fhirAdminReadLimiter = rateLimit({
+  windowMs: 60_000,
+  max: 120,
+  name: "fhir_admin_patient_read",
+  keyFn: (req) =>
+    (req as unknown as { adminUserId?: string }).adminUserId ??
+    req.ip ??
+    "unknown",
+});
+
+router.get(
+  "/fhir/r4/Patient/:id",
+  requireAdmin,
+  fhirAdminReadLimiter,
+  async (req, res) => {
   const parsed = idParam.safeParse(req.params);
   if (!parsed.success) {
     res.status(404).type("application/fhir+json").json(notFound("Patient"));
@@ -112,11 +130,13 @@ router.get("/fhir/r4/Patient/:id", requireAdmin, async (req, res) => {
     .status(200)
     .type("application/fhir+json")
     .json(patientToFhir(patient));
-});
+  },
+);
 
 router.get(
   "/fhir/r4/Patient/:id/$everything",
   requireAdmin,
+  fhirAdminReadLimiter,
   async (req, res) => {
     const parsed = idParam.safeParse(req.params);
     if (!parsed.success) {
@@ -405,6 +425,23 @@ const serviceRequestPostLimiter = rateLimit({
   name: "fhir_service_request_post_ip",
 });
 
+// Per-tenant rate limit AFTER auth. The IP-keyed limiter above
+// protects against unauthenticated brute-force, but two partners
+// sharing one outbound IP (corporate proxy, cloud egress NAT)
+// would otherwise share its bucket. After requireSmartFhirAccess
+// populates req.fhirTenant we re-limit on the tenant slug so
+// noisy-neighbour partners can't exhaust each other's budget AND
+// CodeQL's "missing rate limiting on authorization" rule sees
+// the per-identity limiter it wants.
+const serviceRequestPostTenantLimiter = rateLimit({
+  windowMs: 60_000,
+  max: 120,
+  name: "fhir_service_request_post_tenant",
+  keyFn: (req) =>
+    (req as unknown as { fhirTenant?: { slug: string } }).fhirTenant?.slug ??
+    "unknown",
+});
+
 const bundleSchema = z.object({
   resourceType: z.literal("Bundle"),
   id: z.string().optional(),
@@ -416,6 +453,7 @@ router.post(
   "/fhir/r4/ServiceRequest",
   serviceRequestPostLimiter,
   requireSmartFhirAccess,
+  serviceRequestPostTenantLimiter,
   fhirJson,
   async (req, res) => {
     const tenant = req.fhirTenant;

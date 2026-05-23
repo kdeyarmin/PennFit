@@ -275,10 +275,18 @@ router.post(
         // with no DB row pointing at them. Best-effort delete the
         // upload before responding so the bucket doesn't leak —
         // same posture as the patient-document finalize handler.
+        // Normalise the path first: the client may have sent the
+        // storage-URL form, which getObjectEntityFile won't accept
+        // (it requires the /objects/ prefix).
         try {
-          const objectFile =
-            await objectStorage.getObjectEntityFile(bodyParse.data.objectPath);
-          await objectFile.delete({ ignoreNotFound: true });
+          const cleanupPath = objectStorage.normalizeObjectEntityPath(
+            bodyParse.data.objectPath,
+          );
+          if (cleanupPath.startsWith("/")) {
+            const objectFile =
+              await objectStorage.getObjectEntityFile(cleanupPath);
+            await objectFile.delete({ ignoreNotFound: true });
+          }
         } catch (cleanupErr) {
           req.log.warn(
             { err: cleanupErr, order_id: order.id },
