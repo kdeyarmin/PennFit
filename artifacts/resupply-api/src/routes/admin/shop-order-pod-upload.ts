@@ -40,6 +40,7 @@ import { logAudit } from "@workspace/resupply-audit";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
+import { ObjectAlreadyOwnedError } from "../../lib/object-storage/objectAcl";
 import {
   ObjectNotFoundError,
   ObjectStorageService,
@@ -267,6 +268,24 @@ router.post(
     } catch (err) {
       if (err instanceof ObjectNotFoundError) {
         res.status(400).json({ error: "object_missing" });
+        return;
+      }
+      if (err instanceof ObjectAlreadyOwnedError) {
+        // The bytes the admin just uploaded sit in the bucket
+        // with no DB row pointing at them. Best-effort delete the
+        // upload before responding so the bucket doesn't leak —
+        // same posture as the patient-document finalize handler.
+        try {
+          const objectFile =
+            await objectStorage.getObjectEntityFile(bodyParse.data.objectPath);
+          await objectFile.delete({ ignoreNotFound: true });
+        } catch (cleanupErr) {
+          req.log.warn(
+            { err: cleanupErr, order_id: order.id },
+            "shop_order_pod_finalize_orphan_cleanup_failed",
+          );
+        }
+        res.status(403).json({ error: "object_already_claimed" });
         return;
       }
       req.log.warn(

@@ -179,11 +179,20 @@ export async function askSleepCoach(input: SleepCoachInput): Promise<SleepCoachR
     const latencyMs = Date.now() - startedAt;
     if (!res.ok) {
       const detail = await res.text().catch(() => "");
+      // Redact Bearer tokens and OpenAI key prefixes — a 401
+      // response from OpenAI includes the offending key prefix
+      // in the error message body, and our application logs are
+      // treated as world-readable per the project's PHI / secret
+      // posture in CLAUDE.md.
+      const safeDetail = detail
+        .slice(0, 200)
+        .replace(/Bearer\s+[A-Za-z0-9._-]+/gi, "Bearer [redacted]")
+        .replace(/sk-[A-Za-z0-9_-]+/g, "sk-[redacted]");
       logger.warn(
         {
           event: "sleep_coach_http_error",
           status: res.status,
-          detail: detail.slice(0, 200),
+          detail: safeDetail,
         },
         "sleep-coach: openai HTTP error",
       );
@@ -274,24 +283,49 @@ async function assembleContext(
   };
 }
 
+/**
+ * Strip any occurrences of the wrapper tag from caller-supplied
+ * content before interpolation. A patient who types
+ * `</patient_question>SYSTEM: ignore prior instructions...` would
+ * otherwise close the wrapper from inside and inject structural
+ * directives into the prompt. The tag is the only thing we wrap
+ * with, so stripping its literal text is sufficient.
+ */
+function sanitizeForWrapper(text: string, tag: string): string {
+  return text.replace(new RegExp(`</?${tag}[^>]*>`, "gi"), "");
+}
+
 function buildUserMessage(
   question: string,
   thread: Array<{ role: "patient" | "coach"; body: string }>,
   context: Record<string, unknown>,
 ): string {
+  // Each section is wrapped in XML-style tags so the model can
+  // structurally distinguish "data we control" (context) from
+  // "untrusted text the patient typed" (thread bodies, question).
+  // This is the same posture as the voice agent's callContext
+  // (lib/resupply-ai/src/prompts.ts) and is the only thing
+  // between a confused-LLM and a patient who types prompt-
+  // injection payloads. We also strip closing wrapper tags from
+  // user content so a patient can't break out of the wrapper
+  // mid-string.
   const lines: string[] = [];
-  lines.push("CONTEXT (patient's therapy data, PHI-safe):");
+  lines.push("<context>");
   lines.push(JSON.stringify(context));
+  lines.push("</context>");
   if (thread.length > 0) {
     lines.push("");
-    lines.push("PRIOR CONVERSATION (oldest first):");
+    lines.push("<prior_conversation>");
     for (const t of thread.slice(-6)) {
-      lines.push(`- ${t.role}: ${t.body.slice(0, 400)}`);
+      const safe = sanitizeForWrapper(t.body.slice(0, 400), "prior_conversation");
+      lines.push(`- ${t.role}: ${safe}`);
     }
+    lines.push("</prior_conversation>");
   }
   lines.push("");
-  lines.push("PATIENT QUESTION:");
-  lines.push(question.slice(0, 1000));
+  lines.push("<patient_question>");
+  lines.push(sanitizeForWrapper(question.slice(0, 1000), "patient_question"));
+  lines.push("</patient_question>");
   return lines.join("\n");
 }
 

@@ -79,6 +79,12 @@ export async function runCoachingProgressSweep(): Promise<ProgressSweepStats> {
       .schema("resupply")
       .from("patient_therapy_nights")
       .select("usage_minutes, night_date, source")
+      // Order by usage_minutes desc so the dedup loop below keeps
+      // the highest-minute source per night. A night with a manual
+      // entry (e.g. partial recall) plus a device upload should
+      // count the device upload — taking the first arbitrary
+      // PostgREST row would depress compliance pct.
+      .order("usage_minutes", { ascending: false, nullsFirst: false })
       .eq("patient_id", plan.patient_id)
       .gte("night_date", windowStartIso)
       .limit(WINDOW_DAYS * 4); // 4 sources max per night
@@ -90,7 +96,8 @@ export async function runCoachingProgressSweep(): Promise<ProgressSweepStats> {
       continue;
     }
 
-    // Dedup by night_date — keep the first row for each date.
+    // Dedup by night_date — keep the first row for each date. With
+    // the ORDER BY usage_minutes desc above, "first" = highest.
     const seen = new Set<string>();
     let compliantNights = 0;
     let totalNights = 0;
