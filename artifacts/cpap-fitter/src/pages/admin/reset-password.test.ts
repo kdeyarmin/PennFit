@@ -160,3 +160,35 @@ describe("admin/reset-password — regression: core form logic intact", () => {
     expect(SRC).toContain("/admin/sign-in");
   });
 });
+
+// ---------------------------------------------------------------------------
+// PR change: 5xx-specific error handling removed
+// ---------------------------------------------------------------------------
+describe("admin/reset-password — 5xx special-case handling removed", () => {
+  it("does not define SERVER_UNAVAILABLE_MESSAGE", () => {
+    expect(SRC).not.toContain("SERVER_UNAVAILABLE_MESSAGE");
+  });
+
+  it("does not contain credentials-store unavailability copy", () => {
+    expect(SRC).not.toContain("credentials store right now");
+  });
+
+  it("does not define an authErrorMessage helper function", () => {
+    expect(SRC).not.toContain("function authErrorMessage");
+    expect(SRC).not.toContain("authErrorMessage(");
+  });
+
+  it("does not contain a 5xx branch (err.status >= 500)", () => {
+    expect(SRC).not.toContain("err.status >= 500");
+    expect(SRC).not.toContain(">= 500");
+  });
+
+  it("does not reference status.pennpaps.com", () => {
+    expect(SRC).not.toContain("status.pennpaps.com");
+  });
+
+  it("uses a direct AuthError instanceof check for the fallback message", () => {
+    expect(SRC).toContain("err instanceof AuthError");
+    expect(SRC).toContain('"Could not reset your password."');
+  });
+});
