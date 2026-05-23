@@ -16,14 +16,17 @@
  * every third-party credential. Those vars are documented as
  * optional / feature-gated in the top-level README.
  *
- * `RESUPPLY_LINK_HMAC_KEY` and `RESUPPLY_AUDIT_HMAC_KEY` are the
- * two resupply-specific secrets validated here. The link key signs
- * patient reminder URLs (migration 0025 stripped the pgcrypto
- * column-level encryption secrets); the audit key signs every
- * row written to `resupply.audit_log` (migration 0116 — required
- * for HIPAA §164.312(b) tamper-evidence). Both are checked at boot
- * so the first signing or verifying request doesn't fail
- * mid-flight on a misconfigured deploy.
+ * `RESUPPLY_LINK_HMAC_KEY` is the only resupply-specific secret
+ * validated here. It signs patient reminder URLs (migration 0025
+ * stripped the pgcrypto column-level encryption secrets) and is
+ * checked at boot so the first signing or verifying request doesn't
+ * fail mid-flight on a misconfigured deploy.
+ *
+ * `RESUPPLY_AUDIT_HMAC_KEY` used to be required here when the HIPAA
+ * §164.312(b) tamper-evident audit chain was in use. That chain has
+ * been retired (`@workspace/resupply-audit` is a no-op stub) and the
+ * key is no longer read by any code path; leaving it set in the
+ * environment is harmless.
  */
 
 import { validateSupabaseEnv } from "@workspace/resupply-db";

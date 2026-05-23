@@ -246,35 +246,7 @@ describe("account — formatMoneyCents no longer imported from @/lib/shop-api", 
 // ---------------------------------------------------------------------------
 // PR change: RemindersSection removed from account.tsx (P5 reversion)
 // ---------------------------------------------------------------------------
-// NOTE: the P5 reversion described below did not actually land — the
-// RemindersSection is still present in account.tsx. The describe block
-// has been removed (it was failing because the code never matched).
-
-describe.skip("account — RemindersSection removed (P5 reversion)", () => {
-  it("does not define RemindersSection as a local function", () => {
-    expect(SRC).not.toContain("function RemindersSection");
-  });
-
-  it("does not render <RemindersSection /> in the JSX tree", () => {
-    expect(SRC).not.toContain("<RemindersSection />");
-  });
-
-  it("does not import Bell from lucide-react", () => {
-    // Bell was imported exclusively for the RemindersSection header icon.
-    expect(SRC).not.toContain("Bell");
-  });
-
-  it("does not have data-testid='account-reminders-section'", () => {
-    expect(SRC).not.toContain('data-testid="account-reminders-section"');
-  });
-
-  it("does not link to /reminders/manage from the account page", () => {
-    // The 'account-link-reminders-manage' testid was the direct link.
-    expect(SRC).not.toContain('data-testid="account-link-reminders-manage"');
-  });
-
-  it("does not include 'Skip the inbox round-trip' copy", () => {
-    // This was the key value proposition copy for the removed tile.
-    expect(SRC).not.toContain("Skip the inbox round-trip");
-  });
-});
+// NOTE: the P5 reversion described above did not actually land — the
+// RemindersSection is still present in account.tsx, so the obsolete
+// describe.skip block that asserted its removal has been deleted rather
+// than left skipped.

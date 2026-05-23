@@ -47,15 +47,15 @@ describe("admin-shop-inventory-reconcile — defaultPeriodLabel structure", () =
   });
 });
 
-describe.skip("admin-shop-inventory-reconcile — formatDate structure", () => {
+describe("admin-shop-inventory-reconcile — formatDate structure", () => {
   it("uses new Date(iso).toLocaleDateString", () => {
     expect(SRC).toContain("toLocaleDateString");
   });
 
   it("includes year, month, and day in the format options", () => {
-    expect(SRC).toContain('"year"');
-    expect(SRC).toContain('"month"');
-    expect(SRC).toContain('"day"');
+    expect(SRC).toMatch(/year:\s*"numeric"/);
+    expect(SRC).toMatch(/month:\s*"short"/);
+    expect(SRC).toMatch(/day:\s*"numeric"/);
   });
 
   it("falls back to returning the original string on error (try/catch)", () => {

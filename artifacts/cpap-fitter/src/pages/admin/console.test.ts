@@ -16,15 +16,10 @@ const SRC = readFileSync(path.join(__dirname, "console.tsx"), "utf8");
 // ---------------------------------------------------------------------------
 // ConsoleRoute — mustChangePassword gate removed
 // ---------------------------------------------------------------------------
-describe.skip("ConsoleRoute — mustChangePassword redirect removed", () => {
-  it("does NOT check mustChangePassword in ConsoleRoute", () => {
-    expect(SRC).not.toContain("mustChangePassword");
-  });
-
-  it("does NOT redirect to /admin/change-password", () => {
-    expect(SRC).not.toContain("/admin/change-password");
-  });
-});
+// The mustChangePassword redirect / change-password page removal described
+// in the original PR did not actually land; the obsolete describe.skip
+// blocks asserting that removal have been deleted rather than left
+// skipped, so the remaining suites continue to provide CI signal.
 
 // ---------------------------------------------------------------------------
 // ConsoleRoute — core authentication gate retained
@@ -45,51 +40,6 @@ describe("ConsoleRoute — session-required gate still present", () => {
 });
 
 // ---------------------------------------------------------------------------
-// App.tsx — change-password route also removed
-// ---------------------------------------------------------------------------
-describe.skip("App.tsx — AdminChangePasswordPage route removed", () => {
-  const APP_SRC = readFileSync(
-    path.join(__dirname, "../../App.tsx"),
-    "utf8",
-  );
-
-  it("does NOT lazy-import AdminChangePasswordPage", () => {
-    expect(APP_SRC).not.toContain("AdminChangePasswordPage");
-  });
-
-  it("does NOT mount a /admin/change-password route", () => {
-    expect(APP_SRC).not.toContain("/admin/change-password");
-  });
-
-  it("still mounts the /admin/sign-in route", () => {
-    expect(APP_SRC).toContain("/admin/sign-in");
-  });
-
-  it("still mounts the /admin/reset-password route", () => {
-    expect(APP_SRC).toContain("/admin/reset-password");
-  });
-
-  it("still mounts the /admin/forgot-password route", () => {
-    expect(APP_SRC).toContain("/admin/forgot-password");
-  });
-});
-
-// ---------------------------------------------------------------------------
-// change-password.tsx — file removed from the codebase
-// ---------------------------------------------------------------------------
-describe.skip("change-password.tsx — file deleted in this PR", () => {
-  it("change-password.tsx no longer exists", () => {
-    let fileExists = true;
-    try {
-      readFileSync(path.join(__dirname, "change-password.tsx"), "utf8");
-    } catch {
-      fileExists = false;
-    }
-    expect(fileExists).toBe(false);
-  });
-});
-
-// ---------------------------------------------------------------------------
 // ConsoleRoute — structural checks
 // ---------------------------------------------------------------------------
 describe("ConsoleRoute — structural checks", () => {
@@ -101,13 +51,7 @@ describe("ConsoleRoute — structural checks", () => {
     expect(SRC).toContain("authHooks.useSession()");
   });
 
-  it("ConsoleRoute body only has two guards (pending + no-data) before rendering", () => {
-    // With the mustChangePassword guard removed, there should be exactly:
-    // 1. if (isPending) return null
-    // 2. if (!data) return <Redirect ...>
-    // 3. return <AdminConsole />
-    // Assert that mustChangePassword is absent (already covered) and
-    // that AdminConsole is the terminal return.
+  it("renders <AdminConsole /> after the session and password-change guards", () => {
     expect(SRC).toContain("return <AdminConsole />");
   });
 });

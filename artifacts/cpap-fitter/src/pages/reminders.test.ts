@@ -49,23 +49,6 @@ describe("reminders — useShopIdentity imported (P5)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// P5 — email pre-fill for signed-in customers
-// ---------------------------------------------------------------------------
-
-describe.skip("reminders — email field pre-filled from identity (P5)", () => {
-  it("initialises the email state from identityEmail (not always empty)", () => {
-    // Before P5: useState(""). After: useState(identityEmail ?? "").
-    expect(SRC).toContain("identityEmail ?? \"\"");
-  });
-
-  it("falls back to empty string when identityEmail is null (guest path)", () => {
-    // The ?? "" ensures guests still see an empty input field.
-    const initialiserIdx = SRC.indexOf('identityEmail ?? ""');
-    expect(initialiserIdx).toBeGreaterThan(-1);
-  });
-});
-
-// ---------------------------------------------------------------------------
 // P5 — willSkipTokenStep logic
 // ---------------------------------------------------------------------------
 
