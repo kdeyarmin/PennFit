@@ -144,7 +144,7 @@ export function evaluateAutoApprovalRules(
   // claim against a device price tag.
   if (
     input.orderValueCents > 0 &&
-    input.orderValueCents > AUTO_APPROVE_ORDER_VALUE_CAP_CENTS
+    input.orderValueCents >= AUTO_APPROVE_ORDER_VALUE_CAP_CENTS
   ) {
     return { autoApprove: false, rule: null };
   }
