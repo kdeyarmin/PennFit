@@ -132,6 +132,8 @@ session cookie (`__session`) and respect SameSite=Lax / Secure.
     on-call channel as the other API health alerts above. Pairs with
     the `auth.me_credential_lookup_failed` audit event written by
     `lib/resupply-auth/src/http/me.ts` for after-the-fact triage.
+    Triage playbook:
+    [`docs/runbooks/auth-credentials-store-outage.md`](./runbooks/auth-credentials-store-outage.md).
   - `event=stripe_refund_failed`
   - `event=sms_status_update_failed`
   - any `level=fatal` line (unhandled exception, boot failure)
