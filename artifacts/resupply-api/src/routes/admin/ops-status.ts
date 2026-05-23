@@ -112,11 +112,19 @@ router.get("/admin/ops-status", requireAdmin, async (_req, res) => {
       .is("sent_at", null)
       .is("dismissed_at", null),
 
+    // `pendingFax.eligibleNow` answers "would the fax dispatcher do
+    // any work right now?". Counting `failed` rows here makes the
+    // tile grow without bound — a fax that the vendor permanently
+    // rejected six months ago still shows up as "eligible now" even
+    // though no dispatcher run will retry it; the operator has to
+    // open the row and manually re-queue. Restrict to `pending`
+    // (truly dispatcher-eligible) so the tile shrinks back to zero
+    // when the queue drains.
     supabase
       .schema("resupply")
       .from("physician_fax_outreach")
       .select("*", { count: "exact", head: true })
-      .in("status", ["pending", "failed"]),
+      .eq("status", "pending"),
 
     supabase
       .schema("resupply")

@@ -186,7 +186,7 @@ router.get(
     const { data: convo } = await supabase
       .schema("resupply")
       .from("conversations")
-      .select("id, channel")
+      .select("id, channel, patient_id, customer_id")
       .eq("id", params.data.id)
       .limit(1)
       .maybeSingle();
@@ -204,6 +204,34 @@ router.get(
       .order("created_at", { ascending: true })
       .limit(10_000);
     if (error) throw error;
+
+    // Audit the export BEFORE streaming bytes so a CSR who hits the
+    // route still has the access logged even if the connection drops
+    // mid-stream. Structural metadata only — no message bodies, no
+    // patient identifiers beyond the foreign-key id (PHI-clean per
+    // CLAUDE.md "treat every log line as world-readable").
+    const messageCount = (messages ?? []).length;
+    await logAudit({
+      action: "messaging.conversation.transcript_exported",
+      adminEmail: req.adminEmail ?? null,
+      adminUserId: req.adminUserId ?? null,
+      targetTable: "conversations",
+      targetId: params.data.id,
+      metadata: {
+        channel: convo.channel,
+        patient_id: convo.patient_id ?? null,
+        customer_id: convo.customer_id ?? null,
+        message_count: messageCount,
+        format: "csv",
+      },
+      ip: req.ip ?? null,
+      userAgent: req.get("user-agent") ?? null,
+    }).catch((err) => {
+      logger.warn(
+        { err, conversation_id: params.data.id },
+        "conversation.transcript_exported audit write failed",
+      );
+    });
 
     const filename = `conversation-${params.data.id.slice(0, 8)}-transcript.csv`;
     res.setHeader("Content-Type", "text/csv; charset=utf-8");
