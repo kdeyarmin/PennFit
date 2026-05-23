@@ -382,6 +382,164 @@ router.get(
   },
 );
 
+// ── PAYER STATS (top payers by submission volume) ──────────────────
+//
+// Aggregates the trailing 30 days of office_ally_submissions by
+// payer (via the first claim in each batch — batches are single-
+// payer by precondition) and returns the top 10. Powers the "By
+// payer" card on the OA Operations page so a billing director can
+// see at a glance which payers are bleeding rejections vs. which
+// are clean.
+//
+// Per-payer fields returned:
+//   * submissionCount     — total OA batches sent in 30d
+//   * claimCount          — total individual claims (sum of
+//                           claim_count across submissions)
+//   * acceptedCount       — accepted_999 + accepted_277ca
+//   * rejectedCount       — rejected_999 + rejected_277ca
+//   * transportFailedCount
+//   * pendingCount        — uploaded / queued (no terminal ack yet)
+//   * acceptanceRatePct   — accepted / (accepted+rejected); null on 0 denom
+router.get(
+  "/admin/office-ally/payer-stats",
+  requirePermission("admin.tools.manage"),
+  async (_req, res) => {
+    const supabase = getSupabaseServiceRoleClient();
+    const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+
+    // 1. Pull recent submissions with their attempted_claim_ids.
+    const { data: submissions, error } = await supabase
+      .schema("resupply")
+      .from("office_ally_submissions")
+      .select("id, status, claim_count, attempted_claim_ids")
+      .gte("submitted_at", since)
+      .limit(5000);
+    if (error) throw error;
+    const rows = submissions ?? [];
+    if (rows.length === 0) {
+      res.json({ window: { sinceIso: since, days: 30 }, payers: [] });
+      return;
+    }
+
+    // 2. Single .in() lookup against the first claim of each batch —
+    //    batches are single-payer by precondition, so the first
+    //    claim's payer is the batch's payer.
+    const firstClaimIds = Array.from(
+      new Set(
+        rows
+          .map((r) => r.attempted_claim_ids?.[0])
+          .filter((id): id is string => typeof id === "string"),
+      ),
+    );
+    const claimToPayer = new Map<string, string>();
+    if (firstClaimIds.length > 0) {
+      const { data: claims } = await supabase
+        .schema("resupply")
+        .from("insurance_claims")
+        .select("id, payer_profile_id")
+        .in("id", firstClaimIds);
+      for (const c of claims ?? []) {
+        if (c.payer_profile_id) {
+          claimToPayer.set(c.id, c.payer_profile_id);
+        }
+      }
+    }
+
+    // 3. Aggregate by payer.
+    interface Bucket {
+      submissionCount: number;
+      claimCount: number;
+      accepted: number;
+      rejected: number;
+      transportFailed: number;
+      pending: number;
+    }
+    const byPayer = new Map<string, Bucket>();
+    for (const r of rows) {
+      const firstClaimId = r.attempted_claim_ids?.[0];
+      const payerId = firstClaimId
+        ? claimToPayer.get(firstClaimId)
+        : undefined;
+      if (!payerId) continue;
+      let b = byPayer.get(payerId);
+      if (!b) {
+        b = {
+          submissionCount: 0,
+          claimCount: 0,
+          accepted: 0,
+          rejected: 0,
+          transportFailed: 0,
+          pending: 0,
+        };
+        byPayer.set(payerId, b);
+      }
+      b.submissionCount += 1;
+      b.claimCount += r.claim_count;
+      if (r.status === "accepted_999" || r.status === "accepted_277ca") {
+        b.accepted += 1;
+      } else if (
+        r.status === "rejected_999" ||
+        r.status === "rejected_277ca"
+      ) {
+        b.rejected += 1;
+      } else if (r.status === "transport_failed") {
+        b.transportFailed += 1;
+      } else {
+        b.pending += 1;
+      }
+    }
+
+    // 4. Top 10 by submission count, then lookup names.
+    const topPayerIds = [...byPayer.entries()]
+      .sort((a, b) => b[1].submissionCount - a[1].submissionCount)
+      .slice(0, 10)
+      .map(([id]) => id);
+    const payerInfo = new Map<
+      string,
+      { display_name: string; slug: string; line_of_business: string }
+    >();
+    if (topPayerIds.length > 0) {
+      const { data: payers } = await supabase
+        .schema("resupply")
+        .from("payer_profiles")
+        .select("id, slug, display_name, line_of_business")
+        .in("id", topPayerIds);
+      for (const p of payers ?? []) {
+        payerInfo.set(p.id, {
+          display_name: p.display_name,
+          slug: p.slug,
+          line_of_business: p.line_of_business,
+        });
+      }
+    }
+
+    res.json({
+      window: { sinceIso: since, days: 30 },
+      payers: topPayerIds.map((id) => {
+        const b = byPayer.get(id)!;
+        const info = payerInfo.get(id);
+        const decided = b.accepted + b.rejected;
+        return {
+          payerProfileId: id,
+          displayName: info?.display_name ?? "(unknown payer)",
+          slug: info?.slug ?? null,
+          lineOfBusiness: info?.line_of_business ?? null,
+          submissionCount: b.submissionCount,
+          claimCount: b.claimCount,
+          acceptedCount: b.accepted,
+          rejectedCount: b.rejected,
+          transportFailedCount: b.transportFailed,
+          pendingCount: b.pending,
+          acceptanceRatePct:
+            decided > 0
+              ? Math.round((b.accepted / decided) * 1000) / 10
+              : null,
+        };
+      }),
+    });
+  },
+);
+
 // ── HEALTH (transport + poll freshness) ─────────────────────────────
 //
 // "Is the OA pipe up?" — a single GET that the SPA renders as a

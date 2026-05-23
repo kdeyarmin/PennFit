@@ -130,6 +130,29 @@ export function fetchOaHealth(): Promise<OaHealth> {
   return getJSON("/admin/office-ally/health");
 }
 
+export interface OaPayerStatsEntry {
+  payerProfileId: string;
+  displayName: string;
+  slug: string | null;
+  lineOfBusiness: string | null;
+  submissionCount: number;
+  claimCount: number;
+  acceptedCount: number;
+  rejectedCount: number;
+  transportFailedCount: number;
+  pendingCount: number;
+  acceptanceRatePct: number | null;
+}
+
+export interface OaPayerStatsResponse {
+  window: { sinceIso: string; days: number };
+  payers: OaPayerStatsEntry[];
+}
+
+export function fetchOaPayerStats(): Promise<OaPayerStatsResponse> {
+  return getJSON("/admin/office-ally/payer-stats");
+}
+
 export interface OaSubmissionLinkedClaim {
   id: string;
   patientId: string;

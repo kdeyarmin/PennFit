@@ -34,6 +34,7 @@ import {
   fetchInboundFiles,
   fetchOaHealth,
   fetchOaOperationsSummary,
+  fetchOaPayerStats,
   fetchOaSubmissions,
   pollNow,
   rawEdiDownloadHref,
@@ -72,11 +73,130 @@ export function AdminBillingOfficeAllyPage() {
       <HealthBanner />
       <KpiRow />
       <EnrollmentWatchlistBanner />
+      <PayerStatsCard />
       <SubmissionsSection />
       <InboundFilesSection />
       <ClearinghousesSection />
     </div>
   );
+}
+
+// ── Top payers by submission volume (last 30 days) ─────────────────
+
+function PayerStatsCard() {
+  const { data, isPending, isError } = useQuery({
+    queryKey: ["admin-oa-payer-stats"],
+    queryFn: fetchOaPayerStats,
+    staleTime: 60_000,
+  });
+  if (isError) return null;
+  if (!isPending && (data?.payers.length ?? 0) === 0) return null;
+  return (
+    <Card title="By payer (last 30 days)">
+      {isPending ? (
+        <Spinner label="Loading payer stats…" />
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr
+                className="text-left text-[11px] uppercase tracking-wider"
+                style={{ color: "hsl(var(--ink-3))" }}
+              >
+                <th className="p-2">Payer</th>
+                <th className="p-2 text-right">Batches</th>
+                <th className="p-2 text-right">Claims</th>
+                <th className="p-2 text-right">Accepted</th>
+                <th className="p-2 text-right">Rejected</th>
+                <th className="p-2 text-right">Failed</th>
+                <th className="p-2 text-right">Pending</th>
+                <th className="p-2 text-right">Acceptance</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(data?.payers ?? []).map((p) => (
+                <tr
+                  key={p.payerProfileId}
+                  className="border-t"
+                  style={{ borderColor: "hsl(var(--line-1))" }}
+                  data-testid={`oa-payer-stats-${p.slug ?? p.payerProfileId}`}
+                >
+                  <td className="p-2">
+                    <p
+                      className="font-medium"
+                      style={{ color: "hsl(var(--ink-1))" }}
+                    >
+                      {p.displayName}
+                    </p>
+                    <p
+                      className="text-[10px]"
+                      style={{ color: "hsl(var(--ink-3))" }}
+                    >
+                      {p.lineOfBusiness ?? "—"}
+                    </p>
+                  </td>
+                  <td
+                    className="p-2 text-right tabular-nums"
+                    style={{ color: "hsl(var(--ink-1))" }}
+                  >
+                    {p.submissionCount}
+                  </td>
+                  <td
+                    className="p-2 text-right tabular-nums"
+                    style={{ color: "hsl(var(--ink-2))" }}
+                  >
+                    {p.claimCount}
+                  </td>
+                  <td
+                    className="p-2 text-right tabular-nums"
+                    style={{ color: "#15803d" }}
+                  >
+                    {p.acceptedCount}
+                  </td>
+                  <td
+                    className="p-2 text-right tabular-nums"
+                    style={{
+                      color: p.rejectedCount > 0 ? "#be123c" : "hsl(var(--ink-3))",
+                    }}
+                  >
+                    {p.rejectedCount}
+                  </td>
+                  <td
+                    className="p-2 text-right tabular-nums"
+                    style={{
+                      color: p.transportFailedCount > 0 ? "#b45309" : "hsl(var(--ink-3))",
+                    }}
+                  >
+                    {p.transportFailedCount}
+                  </td>
+                  <td
+                    className="p-2 text-right tabular-nums"
+                    style={{ color: "hsl(var(--ink-3))" }}
+                  >
+                    {p.pendingCount}
+                  </td>
+                  <td className="p-2 text-right tabular-nums font-semibold">
+                    <AcceptanceCell pct={p.acceptanceRatePct} />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function AcceptanceCell({ pct }: { pct: number | null }) {
+  if (pct == null) {
+    return (
+      <span style={{ color: "hsl(var(--ink-3))" }}>—</span>
+    );
+  }
+  const color =
+    pct >= 95 ? "#15803d" : pct >= 85 ? "#b45309" : "#be123c";
+  return <span style={{ color }}>{pct}%</span>;
 }
 
 // ── Health banner (transport / poll status) ─────────────────────────
