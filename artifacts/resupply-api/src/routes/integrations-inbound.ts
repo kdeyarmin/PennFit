@@ -52,7 +52,6 @@ const sourceParam = z.object({
 });
 
 const SUPPORTED_SOURCE_SET = new Set(["parachute", "itamar_hsat", "test"]);
-const inboundPayloadSchema = z.record(z.string(), z.unknown());
 
 /**
  * Accept a source slug if it's in the hard-coded set OR matches the
@@ -109,22 +108,20 @@ router.post("/integrations/inbound/:source", inboundWebhookLimiter, rawJson, asy
     return;
   }
   const rawBodyString = rawBuffer.toString("utf8");
-  let parsedJson: unknown;
+  let payload: Record<string, unknown>;
   try {
-    parsedJson = JSON.parse(rawBodyString);
+    const parsed = JSON.parse(rawBodyString);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      res.status(400).json({ error: "invalid_payload" });
+      return;
+    }
+    payload = parsed as Record<string, unknown>;
   } catch {
     res.status(400).json({ error: "invalid_json" });
     return;
   }
-  const payloadResult = inboundPayloadSchema.safeParse(parsedJson);
-  if (!payloadResult.success) {
-    res.status(400).json({
-      error: "invalid_payload",
-      details: payloadResult.error.format(),
-    });
-    return;
-  }
-  const payload: Record<string, unknown> = payloadResult.data;
+
+
   // Build a dedupe key — prefer the source's delivery-id header,
   // fall back to a sha256 of the body.
   const headerKeys = [

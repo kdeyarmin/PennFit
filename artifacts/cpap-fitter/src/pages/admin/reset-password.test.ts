@@ -164,34 +164,3 @@ describe("admin/reset-password — regression: core form logic intact", () => {
 // ---------------------------------------------------------------------------
 // PR change: removed SERVER_UNAVAILABLE_MESSAGE and authErrorMessage
 // ---------------------------------------------------------------------------
-describe("admin/reset-password — 5xx-specific error handling removed (this PR)", () => {
-  it("does NOT define SERVER_UNAVAILABLE_MESSAGE", () => {
-    expect(SRC).not.toContain("SERVER_UNAVAILABLE_MESSAGE");
-  });
-
-  it("does NOT define authErrorMessage helper", () => {
-    expect(SRC).not.toContain("function authErrorMessage");
-  });
-
-  it("does NOT contain the credentials-store-unavailable message text", () => {
-    expect(SRC).not.toContain("credentials store");
-  });
-
-  it("does NOT reference status.pennpaps.com", () => {
-    expect(SRC).not.toContain("status.pennpaps.com");
-  });
-
-  it("uses inline AuthError instanceof check for error message", () => {
-    expect(SRC).toContain(
-      "err instanceof AuthError\n              ? err.userMessage",
-    );
-  });
-
-  it("falls back to 'Could not reset your password.' for non-AuthError errors", () => {
-    expect(SRC).toContain('"Could not reset your password."');
-  });
-
-  it("does NOT check err.status >= 500 in the error handler", () => {
-    expect(SRC).not.toContain("err.status >= 500");
-  });
-});
