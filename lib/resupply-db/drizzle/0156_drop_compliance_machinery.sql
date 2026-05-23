@@ -71,7 +71,6 @@ DROP TABLE IF EXISTS "resupply"."business_associate_agreements" CASCADE;
 DROP TABLE IF EXISTS "resupply"."oig_leie_exclusions" CASCADE;
 
 DROP TABLE IF EXISTS "resupply"."staff_training_records" CASCADE;
-DROP TABLE IF EXISTS "resupply"."patient_grievances" CASCADE;
 DROP TABLE IF EXISTS "resupply"."patient_rights_requests" CASCADE;
 DROP TABLE IF EXISTS "resupply"."patient_disclosure_log" CASCADE;
 
@@ -81,10 +80,7 @@ DROP TABLE IF EXISTS "resupply"."contingency_plan_attestations" CASCADE;
 DROP TABLE IF EXISTS "resupply"."disaster_preparedness_drills" CASCADE;
 DROP TABLE IF EXISTS "resupply"."dme_ownership_disclosures" CASCADE;
 
--- Finally, the general audit_log table itself. The HMAC tamper-
--- evidence chain (chain_seq / prev_signature / signature columns
--- added in migration 0116, archived_at + index added in 0101) goes
--- with it — DROP TABLE removes every column, index, and check
--- constraint in one step.
-
-DROP TABLE IF EXISTS "resupply"."audit_log" CASCADE;
+-- NOTE: patient_grievances and audit_log are intentionally retained for
+-- now because live runtime paths still query them (patient timeline and
+-- readiness probe respectively). They must be dropped in a follow-up
+-- migration after those queries are removed.
