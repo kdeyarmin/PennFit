@@ -71,6 +71,67 @@ test("downloadModelWithRetry rejects undersized payload", async () => {
   }
 });
 
+// Additional tests to strengthen confidence in the retry and validation logic.
+
+test("downloadModelWithRetry throws on HTTP non-ok response", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalWarn = console.warn;
+  let calls = 0;
+  console.warn = () => {};
+
+  globalThis.fetch = async () => {
+    calls += 1;
+    return { ok: false, status: 404, arrayBuffer: async () => new ArrayBuffer(0) };
+  };
+
+  try {
+    await assert.rejects(() => downloadModelWithRetry(2), /HTTP 404/);
+    assert.equal(calls, 2, "should have retried once before giving up");
+  } finally {
+    globalThis.fetch = originalFetch;
+    console.warn = originalWarn;
+  }
+});
+
+test("downloadModelWithRetry succeeds with payload exactly at MIN_MODEL_BYTES boundary", async () => {
+  const originalFetch = globalThis.fetch;
+  const MIN_MODEL_BYTES = 1024 * 1024; // 1 MB
+
+  globalThis.fetch = async () => ({
+    ok: true,
+    arrayBuffer: async () => new Uint8Array(MIN_MODEL_BYTES).buffer,
+  });
+
+  try {
+    const buf = await downloadModelWithRetry(1);
+    assert.equal(buf.length, MIN_MODEL_BYTES);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("downloadModelWithRetry rejects payload one byte below MIN_MODEL_BYTES", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalWarn = console.warn;
+  const MIN_MODEL_BYTES = 1024 * 1024;
+  console.warn = () => {};
+
+  globalThis.fetch = async () => ({
+    ok: true,
+    arrayBuffer: async () => new Uint8Array(MIN_MODEL_BYTES - 1).buffer,
+  });
+
+  try {
+    await assert.rejects(
+      () => downloadModelWithRetry(1),
+      /Downloaded file is too small/,
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+    console.warn = originalWarn;
+  }
+});
+
 // Regression: SKIP_MEDIAPIPE_MODEL_DOWNLOAD escape hatch was removed in this
 // PR. Setting the env var must no longer suppress the model download — the
 // fetch should still be attempted (and here it immediately throws because the

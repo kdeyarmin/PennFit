@@ -268,6 +268,128 @@ describe("App.tsx — removed GuardedAccountBilling component is absent", () => 
 });
 
 // ---------------------------------------------------------------------------
+// Removed Learn* and brand-page component variables must NOT be declared
+// ---------------------------------------------------------------------------
+
+describe("App.tsx — removed Learn* component variables are absent", () => {
+  it("does not declare LearnSleepApneaExplained variable", () => {
+    expect(SRC).not.toContain("LearnSleepApneaExplained");
+  });
+
+  it("does not declare LearnHealthRisks variable", () => {
+    expect(SRC).not.toContain("LearnHealthRisks");
+  });
+
+  it("does not declare LearnPapTherapyBenefits variable", () => {
+    expect(SRC).not.toContain("LearnPapTherapyBenefits");
+  });
+
+  it("does not declare LearnHowPapWorks variable", () => {
+    expect(SRC).not.toContain("LearnHowPapWorks");
+  });
+
+  it("does not declare LearnTherapyTypes variable", () => {
+    expect(SRC).not.toContain("LearnTherapyTypes");
+  });
+
+  it("does not declare LearnSleepApneaHeartHealth variable", () => {
+    expect(SRC).not.toContain("LearnSleepApneaHeartHealth");
+  });
+
+  it("does not declare LearnFirstTwoWeeks variable", () => {
+    expect(SRC).not.toContain("LearnFirstTwoWeeks");
+  });
+
+  it("does not declare LearnTravelingWithCpap variable", () => {
+    expect(SRC).not.toContain("LearnTravelingWithCpap");
+  });
+
+  it("does not declare LearnCleaningRoutine variable", () => {
+    expect(SRC).not.toContain("LearnCleaningRoutine");
+  });
+
+  it("does not declare LearnMythsDebunked variable", () => {
+    expect(SRC).not.toContain("LearnMythsDebunked");
+  });
+
+  it("does not declare LearnGlossary variable", () => {
+    expect(SRC).not.toContain("LearnGlossary");
+  });
+
+  it("does not declare LearnInsuranceGuide variable", () => {
+    expect(SRC).not.toContain("LearnInsuranceGuide");
+  });
+
+  it("does not declare SleepApnea101 variable", () => {
+    expect(SRC).not.toContain("SleepApnea101");
+  });
+
+  it("does not declare LearnSleepApneaWomen variable", () => {
+    expect(SRC).not.toContain("LearnSleepApneaWomen");
+  });
+
+  it("does not declare LearnSleepApneaDiabetes variable", () => {
+    expect(SRC).not.toContain("LearnSleepApneaDiabetes");
+  });
+
+  it("does not declare LearnSleepApneaMentalHealth variable", () => {
+    expect(SRC).not.toContain("LearnSleepApneaMentalHealth");
+  });
+
+  it("does not declare LearnPediatricSleepApnea variable", () => {
+    expect(SRC).not.toContain("LearnPediatricSleepApnea");
+  });
+
+  it("does not declare LearnSleepApneaSeniors variable", () => {
+    expect(SRC).not.toContain("LearnSleepApneaSeniors");
+  });
+
+  it("does not declare LearnPartnerGuide variable", () => {
+    expect(SRC).not.toContain("LearnPartnerGuide");
+  });
+
+  it("does not declare LearnTalkingToALovedOne variable", () => {
+    expect(SRC).not.toContain("LearnTalkingToALovedOne");
+  });
+
+  it("does not declare LearnDryMouth variable", () => {
+    expect(SRC).not.toContain("LearnDryMouth");
+  });
+
+  it("does not declare LearnCpapBloating variable", () => {
+    expect(SRC).not.toContain("LearnCpapBloating");
+  });
+
+  it("does not declare LearnMaskLeaks variable", () => {
+    expect(SRC).not.toContain("LearnMaskLeaks");
+  });
+
+  it("does not declare LearnCpapClaustrophobia variable", () => {
+    expect(SRC).not.toContain("LearnCpapClaustrophobia");
+  });
+
+  it("does not declare LearnNasalCongestion variable", () => {
+    expect(SRC).not.toContain("LearnNasalCongestion");
+  });
+
+  it("does not declare CpapMasks variable", () => {
+    expect(SRC).not.toContain("CpapMasks");
+  });
+
+  it("does not declare CpapMasksReactHealth variable", () => {
+    expect(SRC).not.toContain("CpapMasksReactHealth");
+  });
+
+  it("does not declare CpapMasksResmed variable", () => {
+    expect(SRC).not.toContain("CpapMasksResmed");
+  });
+
+  it("does not declare CpapMasksFisherPaykel variable", () => {
+    expect(SRC).not.toContain("CpapMasksFisherPaykel");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Surviving routes must still be present (regression guard)
 // ---------------------------------------------------------------------------
 
