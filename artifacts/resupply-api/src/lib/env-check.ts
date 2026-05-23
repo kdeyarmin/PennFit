@@ -26,11 +26,6 @@
  * mid-flight on a misconfigured deploy.
  */
 
-import {
-  AUDIT_HMAC_KEY_ENV,
-  AuditHmacKeyError,
-  requireAuditHmacKey,
-} from "@workspace/resupply-audit";
 import { validateSupabaseEnv } from "@workspace/resupply-db";
 import { hasLinkHmacKey, LINK_HMAC_KEY_ENV } from "@workspace/resupply-secrets";
 
@@ -56,22 +51,10 @@ export function assertRequiredEnv(): void {
     }
   }
   if (!hasLinkHmacKey()) missing.push(LINK_HMAC_KEY_ENV);
-  // Boot-time decode + length check for the audit HMAC key. Adding
-  // it to REQUIRED_PLAIN_ENV_VARS would only verify the var is
-  // non-empty; a deploy with a malformed base64 string or a key
-  // that decodes to fewer than 32 bytes would pass that check and
-  // then fail on the very first audited write. Re-using the
-  // production decoder makes the boot check and the runtime check
-  // see exactly the same bytes.
-  try {
-    requireAuditHmacKey();
-  } catch (err) {
-    if (err instanceof AuditHmacKeyError) {
-      missing.push(AUDIT_HMAC_KEY_ENV);
-    } else {
-      throw err;
-    }
-  }
+  // RESUPPLY_AUDIT_HMAC_KEY used to be required at boot; the HIPAA
+  // §164.312(b) tamper-evident audit chain has been retired so the
+  // key is no longer read by any code path. Leaving the var in the
+  // environment is harmless.
   missing.push(...validateSupabaseEnv());
 
   if (missing.length === 0) return;
