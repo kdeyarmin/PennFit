@@ -117,7 +117,13 @@ export async function askSleepCoach(input: SleepCoachInput): Promise<SleepCoachR
       model: DEFAULT_ANTHROPIC_MODEL_CHAT,
       max_tokens: 400,
       temperature: 0.4,
-      system: SYSTEM_PROMPT,
+      // cache_control on the system prompt — same posture as the
+      // chatbot route. The coach system prompt is ~1K tokens, static
+      // across patients; without caching every patient question
+      // re-pays that input cost. Mirrors routes/storefront/chat.ts.
+      system: [
+        { type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } },
+      ],
       messages: [{ role: "user", content: userMessage }],
     });
     const latencyMs = Date.now() - startedAt;
