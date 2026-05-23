@@ -229,3 +229,87 @@ describe("App.tsx — pre-existing routes not regressed", () => {
     expect(SRC).toContain('path="/learn/device-setup"');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Sub-tree wildcards — regression for the `:rest*` named-splat bug.
+//
+// Wouter's matcher is regexparam, which does NOT support path-to-regexp's
+// `:name*` named-splat syntax: `/admin/:rest*` compiles to a pattern that
+// only matches a SINGLE segment after `/admin/`, so multi-segment URLs
+// like `/admin/pennpaps/analytics` fall through to the next route (the
+// patient catch-all → patient 404). The fix is the bare `*` wildcard.
+// These assertions guard against re-introducing the broken form.
+// ---------------------------------------------------------------------------
+
+describe("App.tsx — sub-tree wildcards compile to deep matches", () => {
+  it("never uses the broken `:rest*` named-splat syntax in a Route path", () => {
+    expect(SRC).not.toMatch(/path="\/[^"]*:rest\*[^"]*"/);
+  });
+
+  it("uses /sign-in/* (not /sign-in/:rest*)", () => {
+    expect(SRC).toContain('path="/sign-in/*"');
+  });
+
+  it("uses /sign-up/* (not /sign-up/:rest*)", () => {
+    expect(SRC).toContain('path="/sign-up/*"');
+  });
+
+  it("uses /resupply/* (not /resupply/:rest*)", () => {
+    expect(SRC).toContain('path="/resupply/*"');
+  });
+
+  it("uses /admin/* (not /admin/:rest*) for the gated console", () => {
+    expect(SRC).toContain('path="/admin/*"');
+  });
+
+  it("the /admin/* regexparam compilation matches every admin route registered in console.tsx", () => {
+    // Wouter compiles `/admin/*` via regexparam into the regex
+    // /^\/admin\/(.*)\/?$/i  (case-insensitive by regexparam default).
+    // The bug we're guarding against: `/admin/:rest*` instead compiled
+    // to /^\/admin\/([^/]+?)\/?$/i — a SINGLE-segment match — so
+    // multi-segment URLs like `/admin/pennpaps/analytics` fell through
+    // to the next route. This test reads the live console.tsx, extracts
+    // every `path="/admin/..."` registered there, and asserts that the
+    // correct compiled regex matches all of them while the broken one
+    // would miss every multi-segment URL. If console.tsx grows new
+    // admin routes, they're picked up automatically.
+    const consoleTsx = readFileSync(
+      path.join(__dirname, "pages/admin/console.tsx"),
+      "utf8",
+    );
+    const adminUrls = Array.from(
+      consoleTsx.matchAll(/path="(\/admin\/[^"]+)"/g),
+      (m) => m[1]!.replace(/:[A-Za-z_][A-Za-z_0-9]*/g, "sample"),
+    );
+    expect(adminUrls.length).toBeGreaterThan(0); // read/parse sanity
+
+    // Mirrors `regexparam.parse('/admin/*').pattern` exactly — case-
+    // insensitive because that's regexparam's default. We don't import
+    // regexparam here (it isn't a direct dep of cpap-fitter), but the
+    // shape is small and stable. If regexparam ever changes its output,
+    // the "uses /admin/* …" assertion above still pins the on-disk
+    // route, and the wouter version pin in package.json holds the
+    // matcher steady; this test would then need a one-line update.
+    const wouterAdminWildcard = /^\/admin\/(.*)\/?$/i;
+    for (const url of adminUrls) {
+      expect(
+        wouterAdminWildcard.test(url),
+        `wouter's /admin/* should match ${url}`,
+      ).toBe(true);
+    }
+
+    // The broken `/admin/:rest*` (single-segment match) would miss
+    // every multi-segment URL — documents WHY the fix was needed.
+    const brokenNamedSplat = /^\/admin\/([^/]+?)\/?$/i;
+    const multiSegmentUrls = adminUrls.filter(
+      (u) => u.split("/").length > 3,
+    );
+    expect(multiSegmentUrls.length).toBeGreaterThan(0); // sanity
+    for (const url of multiSegmentUrls) {
+      expect(
+        brokenNamedSplat.test(url),
+        `broken pattern should NOT match ${url}`,
+      ).toBe(false);
+    }
+  });
+});

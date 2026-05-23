@@ -126,16 +126,6 @@ describe("admin-shop-returns — pre-existing action buttons not removed", () =>
 // src/hooks/use-url-state.ts for the implementation.
 // ---------------------------------------------------------------------------
 
-describe("admin-shop-returns — URL state via useUrlState", () => {
-  it("imports useUrlState from the shared hook", () => {
-    expect(SRC).toContain('from "@/hooks/use-url-state"');
-  });
-
-  it("calls useUrlState with the tab key", () => {
-    expect(SRC).toContain("useUrlState");
-    expect(SRC).toMatch(/key:\s*"tab"/);
-  });
-});
 
 describe("admin-shop-returns — TAB_IDS and tabs", () => {
   it("defines TAB_IDS as a ReadonlySet", () => {

@@ -2246,6 +2246,9 @@ export interface Database {
           claims_denied_count: number;
           lines_processed_count: number;
           matched_submission_id: string | null;
+          /** Phase 16 (mig 0143): resolved payer_profile FK or NULL when
+           *  the 835's payer ID didn't match any catalog entry. */
+          payer_profile_id: string | null;
           status: "processed" | "parse_failed" | "partial" | "rejected";
           rejection_reason: string | null;
           ingested_by_email: string;

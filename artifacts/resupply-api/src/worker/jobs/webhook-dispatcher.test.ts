@@ -10,6 +10,19 @@ import {
 
 const supabaseMock = installSupabaseMock();
 
+// ── safe-outbound — stub DNS resolution so tests run without network ─
+// assertSafeOutboundHost does a real DNS lookup which fails in sandboxed
+// CI environments. Return a stable public IP for example.com so the
+// fetchWithPinnedIp URL-substitution path is still exercised.
+vi.mock("../../lib/safe-outbound", async (importOriginal) => {
+  const real =
+    await importOriginal<typeof import("../../lib/safe-outbound")>();
+  return {
+    ...real,
+    assertSafeOutboundHost: vi.fn(async () => "93.184.216.34"),
+  };
+});
+
 import { runWebhookDispatcher } from "./webhook-dispatcher";
 
 function stageDispatchableDelivery(opts: {
