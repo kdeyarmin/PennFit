@@ -180,7 +180,7 @@ describe("formatUsPhone — boundary: 10-digit truncation", () => {
 // this PR. We verify the structural change so the attribute doesn't
 // inadvertently creep back in.
 
-describe.skip("order — consentToContact error paragraph does not have role=alert", () => {
+describe("order — consentToContact error paragraph does not have role=alert", () => {
   it("still renders the consentToContact error conditionally", () => {
     // The conditional rendering block must still be present.
     expect(SRC).toContain("errors.consentToContact");
