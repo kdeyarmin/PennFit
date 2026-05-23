@@ -3,10 +3,22 @@
 
 function getCsrfToken(): string | null {
   if (typeof document === "undefined") return null;
+
+  const cookieName = "pf_csrf=";
   const match = document.cookie
-    .split("; ")
-    .find((row) => row.startsWith("pf_csrf="));
-  return match ? decodeURIComponent(match.split("=")[1]) : null;
+    .split(";")
+    .map((row) => row.trim())
+    .find((row) => row.startsWith(cookieName));
+
+  if (!match) return null;
+
+  const encodedValue = match.slice(cookieName.length);
+
+  try {
+    return decodeURIComponent(encodedValue);
+  } catch {
+    return null;
+  }
 }
 
 function csrfHeader(): Record<string, string> {
