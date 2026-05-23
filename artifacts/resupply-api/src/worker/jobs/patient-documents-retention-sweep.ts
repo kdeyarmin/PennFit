@@ -133,6 +133,7 @@ export async function runRetentionSweep(): Promise<SweepStats> {
         "id",
         eligibleList.map((r) => r.id),
       )
+      .lte("retention_until_at", nowIso)
       .is("retention_marked_at", null)
       .is("destroyed_at", null)
       .eq("legal_hold", false)
