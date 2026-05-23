@@ -163,8 +163,8 @@ router.get(
         hcpcsCode: l.hcpcs_code,
         modifiers: (l.modifier ?? "")
           .split(",")
-          .map((m) => m.trim().toUpperCase())
-          .filter((m) => m.length === 2),
+          .map((m: string) => m.trim().toUpperCase())
+          .filter((m: string) => m.length === 2),
         diagnosisPointer: "A",
         chargesCents: l.billed_cents,
         units: l.quantity,

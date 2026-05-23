@@ -214,7 +214,7 @@ export async function scoreClaim(claimId: string): Promise<DenialScore | null> {
       if (!CAPPED_RENTAL_HCPCS.has(line.hcpcs_code)) continue;
       const mods = (line.modifier ?? "")
         .split(",")
-        .map((m) => m.trim().toUpperCase());
+        .map((m: string) => m.trim().toUpperCase());
       if (!mods.includes("KX") && rentalLikelyContinuing(claim.date_of_service)) {
         factors.push({
           key: "missing_kx_continuing_rental",

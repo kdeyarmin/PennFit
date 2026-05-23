@@ -295,6 +295,10 @@ router.patch(
         return;
       }
       prevStatus = existing.status;
+      if (prevStatus === null) {
+        res.status(409).json({ error: "missing_prev_status" });
+        return;
+      }
       if (!isLegalGrievanceTransition(prevStatus, fields.status)) {
         res.status(400).json({
           error: "invalid_transition",
