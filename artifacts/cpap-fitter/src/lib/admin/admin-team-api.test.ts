@@ -222,4 +222,93 @@ describe("inviteMember — error handling", () => {
       inviteMember({ email: "alice@example.com", role: "csr" }),
     ).rejects.toThrow();
   });
+
+  it("throws when fetch itself rejects (network error)", async () => {
+    fetchMock.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    await expect(
+      inviteMember({ email: "alice@example.com", role: "csr" }),
+    ).rejects.toThrow("Failed to fetch");
+  });
+
+  it("throws on 403 forbidden (caller is not an admin)", async () => {
+    fetchMock.mockResolvedValueOnce(
+      makeResponse(403, { error: "forbidden" }),
+    );
+    await expect(
+      inviteMember({ email: "alice@example.com", role: "csr" }),
+    ).rejects.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// inviteMember — request Content-Type header
+// ---------------------------------------------------------------------------
+describe("inviteMember — Content-Type header", () => {
+  it("sends Content-Type: application/json", async () => {
+    fetchMock.mockResolvedValueOnce(
+      makeResponse(201, {
+        member: MEMBER_FIXTURE,
+        emailSent: true,
+        inviteLink: null,
+      }),
+    );
+    await inviteMember({ email: "alice@example.com", role: "csr" });
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const headers = new Headers(init.headers as HeadersInit);
+    expect(headers.get("content-type")).toContain("application/json");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// inviteMember — optional fields handling
+// ---------------------------------------------------------------------------
+describe("inviteMember — optional fields", () => {
+  it("omits displayName from body when not provided", async () => {
+    fetchMock.mockResolvedValueOnce(
+      makeResponse(201, {
+        member: MEMBER_FIXTURE,
+        emailSent: true,
+        inviteLink: null,
+      }),
+    );
+    await inviteMember({ email: "alice@example.com", role: "admin" });
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const body = JSON.parse(init.body as string) as Record<string, unknown>;
+    // When displayName is not passed, the body should not have it or have undefined
+    expect(Object.keys(body)).not.toContain("displayName");
+  });
+
+  it("sends displayName: null when explicitly passed as null", async () => {
+    fetchMock.mockResolvedValueOnce(
+      makeResponse(201, {
+        member: MEMBER_FIXTURE,
+        emailSent: true,
+        inviteLink: null,
+      }),
+    );
+    await inviteMember({
+      email: "alice@example.com",
+      role: "admin",
+      displayName: null,
+    });
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const body = JSON.parse(init.body as string) as Record<string, unknown>;
+    expect(body.displayName).toBeNull();
+  });
+
+  it("handles 201 Created status (new member, not a re-invite)", async () => {
+    fetchMock.mockResolvedValueOnce(
+      makeResponse(201, {
+        member: MEMBER_FIXTURE,
+        emailSent: true,
+        inviteLink: null,
+      }),
+    );
+    const result = await inviteMember({
+      email: "alice@example.com",
+      role: "csr",
+    });
+    expect(result.member).toEqual(MEMBER_FIXTURE);
+    expect(result.emailSent).toBe(true);
+  });
 });

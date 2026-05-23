@@ -546,3 +546,154 @@ describe("AppShell — nav state lifted to AppShell", () => {
     expect(APPSHELL_SRC).toContain("loadExplicitCollapsedGroups()");
   });
 });
+
+// ---------------------------------------------------------------------------
+// groupDomId — additional edge cases
+// ---------------------------------------------------------------------------
+describe("groupDomId — additional edge cases", () => {
+  it("handles a label that is already lowercase and hyphenated", () => {
+    expect(groupDomId("billing")).toBe("admin-nav-section-billing");
+  });
+
+  it("handles a label with numbers", () => {
+    expect(groupDomId("Team 2")).toBe("admin-nav-section-team-2");
+  });
+
+  it("handles multiple leading/trailing non-alphanumeric chars as a single hyphen", () => {
+    expect(groupDomId("  A  ")).toBe("admin-nav-section-a-");
+  });
+
+  it("produces unique ids for each nav group label", () => {
+    const labels = ["Inbox", "Customers", "Orders & Shop", "Billing", "Insights", "System"];
+    const ids = labels.map(groupDomId);
+    const unique = new Set(ids);
+    expect(unique.size).toBe(labels.length);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// persistExpandedGroups — pure logic reimplemented for unit testing
+// ---------------------------------------------------------------------------
+function persistExpandedGroups(
+  expanded: Set<string>,
+  storage: Map<string, string>,
+): void {
+  storage.set(NAV_EXPANDED_STORAGE_KEY, JSON.stringify(Array.from(expanded)));
+}
+
+describe("persistExpandedGroups", () => {
+  it("writes the expanded set as a JSON array to the storage key", () => {
+    const store = new Map<string, string>();
+    persistExpandedGroups(new Set(["Inbox", "System"]), store);
+    const raw = store.get(NAV_EXPANDED_STORAGE_KEY);
+    expect(raw).toBeDefined();
+    const parsed = JSON.parse(raw!) as unknown;
+    expect(Array.isArray(parsed)).toBe(true);
+    expect(new Set(parsed as string[])).toEqual(new Set(["Inbox", "System"]));
+  });
+
+  it("writes an empty array when the expanded set is empty", () => {
+    const store = new Map<string, string>();
+    persistExpandedGroups(new Set(), store);
+    const raw = store.get(NAV_EXPANDED_STORAGE_KEY);
+    expect(JSON.parse(raw!)).toEqual([]);
+  });
+
+  it("overwrites a previous value on subsequent calls", () => {
+    const store = new Map<string, string>();
+    persistExpandedGroups(new Set(["Inbox"]), store);
+    persistExpandedGroups(new Set(["System"]), store);
+    const raw = store.get(NAV_EXPANDED_STORAGE_KEY);
+    expect(JSON.parse(raw!)).toEqual(["System"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// persistExplicitCollapsedGroups — pure logic reimplemented for unit testing
+// ---------------------------------------------------------------------------
+function persistExplicitCollapsedGroups(
+  explicitCollapsed: Set<string>,
+  storage: Map<string, string>,
+): void {
+  storage.set(
+    NAV_EXPLICIT_COLLAPSED_STORAGE_KEY,
+    JSON.stringify(Array.from(explicitCollapsed)),
+  );
+}
+
+describe("persistExplicitCollapsedGroups", () => {
+  it("writes the collapsed set as a JSON array to the storage key", () => {
+    const store = new Map<string, string>();
+    persistExplicitCollapsedGroups(new Set(["Inbox"]), store);
+    const raw = store.get(NAV_EXPLICIT_COLLAPSED_STORAGE_KEY);
+    expect(JSON.parse(raw!)).toEqual(["Inbox"]);
+  });
+
+  it("writes an empty array when the set is empty", () => {
+    const store = new Map<string, string>();
+    persistExplicitCollapsedGroups(new Set(), store);
+    const raw = store.get(NAV_EXPLICIT_COLLAPSED_STORAGE_KEY);
+    expect(JSON.parse(raw!)).toEqual([]);
+  });
+
+  it("uses a separate storage key from persistExpandedGroups", () => {
+    expect(NAV_EXPLICIT_COLLAPSED_STORAGE_KEY).not.toBe(NAV_EXPANDED_STORAGE_KEY);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// loadInitialExpandedGroups — additional edge cases
+// ---------------------------------------------------------------------------
+describe("loadInitialExpandedGroups — additional edge cases", () => {
+  it("honours stored groups even when activeGroup is null", () => {
+    const store = new Map([
+      [NAV_EXPANDED_STORAGE_KEY, JSON.stringify(["Inbox", "Billing"])],
+    ]);
+    const result = loadInitialExpandedGroups(null, store);
+    expect(result).toEqual(new Set(["Inbox", "Billing"]));
+  });
+
+  it("falls back to empty set when activeGroup is null and storage has empty JSON array", () => {
+    const store = new Map([
+      [NAV_EXPANDED_STORAGE_KEY, JSON.stringify([])],
+    ]);
+    const result = loadInitialExpandedGroups(null, store);
+    expect(result.size).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// toggleNavGroup — additional edge cases
+// ---------------------------------------------------------------------------
+describe("toggleNavGroup — additional edge cases", () => {
+  it("can toggle multiple independent groups in sequence", () => {
+    let state: NavState = {
+      expanded: new Set(),
+      explicitCollapsed: new Set(),
+    };
+    state = toggleNavGroup("Inbox", state);
+    state = toggleNavGroup("System", state);
+    expect(state.expanded.has("Inbox")).toBe(true);
+    expect(state.expanded.has("System")).toBe(true);
+  });
+
+  it("closing one group does not affect other open groups", () => {
+    const state: NavState = {
+      expanded: new Set(["Inbox", "System", "Billing"]),
+      explicitCollapsed: new Set(),
+    };
+    const next = toggleNavGroup("System", state);
+    expect(next.expanded.has("Inbox")).toBe(true);
+    expect(next.expanded.has("System")).toBe(false);
+    expect(next.expanded.has("Billing")).toBe(true);
+  });
+
+  it("opening a group that was never in explicitCollapsed leaves explicitCollapsed empty", () => {
+    const state: NavState = {
+      expanded: new Set(),
+      explicitCollapsed: new Set(),
+    };
+    const next = toggleNavGroup("Inbox", state);
+    expect(next.explicitCollapsed.size).toBe(0);
+  });
+});

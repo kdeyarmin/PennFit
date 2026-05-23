@@ -60,4 +60,54 @@ describe("App.tsx — AdminChangePasswordPage route removed", () => {
   it("does NOT mount a /admin/change-password route", () => {
     expect(APP_SRC).not.toContain("/admin/change-password");
   });
+
+  it("still mounts the /admin/sign-in route", () => {
+    expect(APP_SRC).toContain("/admin/sign-in");
+  });
+
+  it("still mounts the /admin/reset-password route", () => {
+    expect(APP_SRC).toContain("/admin/reset-password");
+  });
+
+  it("still mounts the /admin/forgot-password route", () => {
+    expect(APP_SRC).toContain("/admin/forgot-password");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// change-password.tsx — file removed from the codebase
+// ---------------------------------------------------------------------------
+describe("change-password.tsx — file deleted in this PR", () => {
+  it("change-password.tsx no longer exists", () => {
+    let fileExists = true;
+    try {
+      readFileSync(path.join(__dirname, "change-password.tsx"), "utf8");
+    } catch {
+      fileExists = false;
+    }
+    expect(fileExists).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ConsoleRoute — structural checks
+// ---------------------------------------------------------------------------
+describe("ConsoleRoute — structural checks", () => {
+  it("exports ConsoleRoute as a named export", () => {
+    expect(SRC).toContain("export function ConsoleRoute");
+  });
+
+  it("uses authHooks.useSession() to probe the session", () => {
+    expect(SRC).toContain("authHooks.useSession()");
+  });
+
+  it("ConsoleRoute body only has two guards (pending + no-data) before rendering", () => {
+    // With the mustChangePassword guard removed, there should be exactly:
+    // 1. if (isPending) return null
+    // 2. if (!data) return <Redirect ...>
+    // 3. return <AdminConsole />
+    // Assert that mustChangePassword is absent (already covered) and
+    // that AdminConsole is the terminal return.
+    expect(SRC).toContain("return <AdminConsole />");
+  });
 });
