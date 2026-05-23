@@ -83,6 +83,10 @@ args = "build-fitter"
 task = "workflow.run"
 args = "build-api"
 
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "ts-syntax"
+
 [[workflows.workflow]]
 name = "build-fitter"
 author = "agent"
@@ -101,6 +105,17 @@ author = "agent"
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "pnpm --filter @workspace/resupply-api run build"
+
+[workflows.workflow.metadata]
+isValidation = true
+
+[[workflows.workflow]]
+name = "ts-syntax"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "bash scripts/ci-check-ts-syntax.sh"
 
 [workflows.workflow.metadata]
 isValidation = true
