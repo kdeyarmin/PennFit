@@ -55,8 +55,17 @@ self.addEventListener("notificationclick", (event) => {
   // payload comes from our own backend (signed VAPID), and the SPA
   // is single-origin, so the validation was defending against a
   // capability the attacker couldn't exercise.
-  const targetUrl =
+  const rawTarget =
     (event.notification.data && event.notification.data.url) || "/account";
+  let targetUrl = "/account";
+  try {
+    const parsed = new URL(rawTarget, self.location.origin);
+    if (parsed.origin === self.location.origin) {
+      targetUrl = `${parsed.pathname}${parsed.search}${parsed.hash}`;
+    }
+  } catch (_err) {
+    targetUrl = "/account";
+  }
   event.waitUntil(
     self.clients.matchAll({ type: "window", includeUncontrolled: true })
       .then((clientList) => {
