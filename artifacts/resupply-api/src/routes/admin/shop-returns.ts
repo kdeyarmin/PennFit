@@ -120,6 +120,12 @@ const RETURN_COLUMNS =
  * (captured at paid-time for guest checkouts). Returns null when
  * neither is available — caller should skip the email send rather
  * than fail the lifecycle transition.
+ *
+ * Errors THROW rather than degrading to null — a transient DB blip
+ * that quietly turned into "no recipient" would silently drop the
+ * notification AND hide the underlying failure. The caller is the
+ * fire-and-forget IIFE in the route, so a thrown error lands in its
+ * catch and is logged structurally without blocking the response.
  */
 async function resolveCustomerEmailForReturn(
   customerId: string | null,
@@ -127,22 +133,24 @@ async function resolveCustomerEmailForReturn(
 ): Promise<string | null> {
   const supabase = getSupabaseServiceRoleClient();
   if (customerId) {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .schema("resupply")
       .from("shop_customers")
       .select("email_lower")
       .eq("customer_id", customerId)
       .limit(1)
       .maybeSingle();
+    if (error) throw error;
     if (data?.email_lower) return data.email_lower;
   }
-  const { data: order } = await supabase
+  const { data: order, error: orderError } = await supabase
     .schema("resupply")
     .from("shop_orders")
     .select("customer_email")
     .eq("id", orderId)
     .limit(1)
     .maybeSingle();
+  if (orderError) throw orderError;
   return order?.customer_email ?? null;
 }
 
@@ -338,19 +346,34 @@ router.post(
         returnLabelUrl: updated.return_label_url,
       });
       if (!result.delivered) {
+        // `errorCode` is the machine-readable token returned by
+        // sendReturnStatusEmail (e.g. "sendgrid_api_error_500"); we
+        // intentionally don't surface raw vendor text here. Logged
+        // under a non-`err` key so the logger redaction layer
+        // (which targets err.message/.stack) doesn't think this is
+        // an unfiltered exception payload.
         logger.warn(
           {
             returnId: updated.id,
             kind: "approved",
             configured: result.configured,
-            err: result.error,
+            errorCode: result.error,
           },
           "shop-return approved email did not deliver",
         );
       }
     })().catch((err) => {
+      // The fire-and-forget IIFE is supposed to swallow errors via
+      // the sendReturnStatusEmail contract. If anything still escapes,
+      // log the error NAME only — the message may contain DB row
+      // text or partner payloads that we treat as world-readable
+      // hostile.
       logger.warn(
-        { returnId: updated.id, err: err instanceof Error ? err.message : String(err) },
+        {
+          returnId: updated.id,
+          kind: "approved",
+          errorName: err instanceof Error ? err.name : "non_error_thrown",
+        },
         "shop-return approved email threw unexpectedly",
       );
     });
@@ -672,19 +695,28 @@ router.post(
         currency: null,
       });
       if (!result.delivered) {
+        // See approve handler — `errorCode` (not `err`) so the
+        // logger's err-targeted redaction doesn't think this is an
+        // unfiltered exception payload, and the value is the
+        // machine-readable token from sendReturnStatusEmail.
         logger.warn(
           {
             returnId: updated.id,
             kind: "refunded",
             configured: result.configured,
-            err: result.error,
+            errorCode: result.error,
           },
           "shop-return refunded email did not deliver",
         );
       }
     })().catch((err) => {
+      // Error NAME only — see approve handler for the rationale.
       logger.warn(
-        { returnId: updated.id, err: err instanceof Error ? err.message : String(err) },
+        {
+          returnId: updated.id,
+          kind: "refunded",
+          errorName: err instanceof Error ? err.name : "non_error_thrown",
+        },
         "shop-return refunded email threw unexpectedly",
       );
     });

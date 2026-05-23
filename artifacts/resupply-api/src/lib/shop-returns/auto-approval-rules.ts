@@ -141,7 +141,9 @@ export function evaluateAutoApprovalRules(
 
   // High-value-order guard: a $500+ transaction always lands in the
   // human queue. Cheaper to delay than to auto-approve a fraudulent
-  // claim against a device price tag.
+  // claim against a device price tag. Inclusive at the cap so the
+  // policy text "$500+ orders are queued" matches the implementation
+  // (a $500.00 even-amount order routes to manual review).
   if (
     input.orderValueCents > 0 &&
     input.orderValueCents >= AUTO_APPROVE_ORDER_VALUE_CAP_CENTS

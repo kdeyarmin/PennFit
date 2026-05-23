@@ -158,13 +158,27 @@ describe("evaluateAutoApprovalRules — high-value order guard", () => {
     ).toEqual({ autoApprove: false, rule: null });
   });
 
-  it("still auto-approves when orderValueCents is exactly at the cap", () => {
+  it("falls through to manual when orderValueCents is exactly at the cap", () => {
+    // Inclusive: the policy text says "$500+ orders are queued", so a
+    // $500.00 exact order must route to manual review, not auto-approve.
     expect(
       evaluateAutoApprovalRules(
         input({
           reason: "defective",
           ageDays: 1,
           orderValueCents: AUTO_APPROVE_ORDER_VALUE_CAP_CENTS,
+        }),
+      ),
+    ).toEqual({ autoApprove: false, rule: null });
+  });
+
+  it("auto-approves just below the cap", () => {
+    expect(
+      evaluateAutoApprovalRules(
+        input({
+          reason: "defective",
+          ageDays: 1,
+          orderValueCents: AUTO_APPROVE_ORDER_VALUE_CAP_CENTS - 1,
         }),
       ),
     ).toEqual({ autoApprove: true, rule: "defective_within_7d" });

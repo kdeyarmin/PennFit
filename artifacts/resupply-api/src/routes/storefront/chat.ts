@@ -685,8 +685,23 @@ async function handleStreaming(
   let totalChars = 0;
   let degraded = false;
 
+  // Single gate for every write/end on this response — once the
+  // client tab closes the socket is gone and any further write
+  // would throw ERR_STREAM_WRITE_AFTER_END. Centralising the check
+  // means the catch / round-cap / degraded fallback paths can't
+  // accidentally write to a dead socket.
+  const isOpen = () => !clientClosed && !res.destroyed && !res.writableEnded;
+  const safeEvent = (payload: object) => {
+    if (!isOpen()) return;
+    writeSseEvent(res, payload);
+  };
+  const safeEnd = () => {
+    if (!isOpen()) return;
+    res.end();
+  };
+
   const writeChunk = (text: string) => {
-    if (clientClosed || res.destroyed) return;
+    if (!isOpen()) return;
     totalChars += text.length;
     writeSseEvent(res, { type: "chunk", text });
   };
@@ -701,10 +716,10 @@ async function handleStreaming(
       );
       if (result.degraded) {
         if (totalChars === 0) {
-          writeSseEvent(res, { type: "chunk", text: DEGRADED_FALLBACK_REPLY });
+          safeEvent({ type: "chunk", text: DEGRADED_FALLBACK_REPLY });
         }
-        writeSseEvent(res, { type: "done", degraded: true });
-        res.end();
+        safeEvent({ type: "done", degraded: true });
+        safeEnd();
         return;
       }
       if (
@@ -721,7 +736,7 @@ async function handleStreaming(
           { event: "chat_empty_reply", streaming: true, round },
           "chat: openai stream returned no content",
         );
-        writeSseEvent(res, { type: "chunk", text: DEGRADED_FALLBACK_REPLY });
+        safeEvent({ type: "chunk", text: DEGRADED_FALLBACK_REPLY });
         degraded = true;
       }
       logger.info(
@@ -735,11 +750,8 @@ async function handleStreaming(
         },
         "chat: streamed reply",
       );
-      writeSseEvent(
-        res,
-        degraded ? { type: "done", degraded: true } : { type: "done" },
-      );
-      res.end();
+      safeEvent(degraded ? { type: "done", degraded: true } : { type: "done" });
+      safeEnd();
       return;
     }
     // Hit the round cap.
@@ -748,10 +760,10 @@ async function handleStreaming(
       "chat: hit MAX_TOOL_ROUNDS without a final reply",
     );
     if (totalChars === 0) {
-      writeSseEvent(res, { type: "chunk", text: DEGRADED_FALLBACK_REPLY });
+      safeEvent({ type: "chunk", text: DEGRADED_FALLBACK_REPLY });
     }
-    writeSseEvent(res, { type: "done", degraded: true });
-    res.end();
+    safeEvent({ type: "done", degraded: true });
+    safeEnd();
   } catch (err) {
     logger.warn(
       {
@@ -762,10 +774,10 @@ async function handleStreaming(
       "chat: exception during stream (returning degraded fallback)",
     );
     if (totalChars === 0) {
-      writeSseEvent(res, { type: "chunk", text: DEGRADED_FALLBACK_REPLY });
+      safeEvent({ type: "chunk", text: DEGRADED_FALLBACK_REPLY });
     }
-    writeSseEvent(res, { type: "done", degraded: true });
-    res.end();
+    safeEvent({ type: "done", degraded: true });
+    safeEnd();
   } finally {
     clearTimeout(timer);
     res.off("close", onClientClose);
@@ -1008,8 +1020,23 @@ async function handleAnthropicStreaming(
 
   let messages = initialMessages;
   let totalChars = 0;
+
+  // See the OpenAI path's safeEvent/safeEnd above — same shape, same
+  // reason: a write after the socket has closed throws
+  // ERR_STREAM_WRITE_AFTER_END and turns a normal client disconnect
+  // into a noisy stack trace.
+  const isOpen = () => !clientClosed && !res.destroyed && !res.writableEnded;
+  const safeEvent = (payload: object) => {
+    if (!isOpen()) return;
+    writeSseEvent(res, payload);
+  };
+  const safeEnd = () => {
+    if (!isOpen()) return;
+    res.end();
+  };
+
   const writeChunk = (text: string) => {
-    if (clientClosed || res.destroyed) return;
+    if (!isOpen()) return;
     totalChars += text.length;
     writeSseEvent(res, { type: "chunk", text });
   };
@@ -1045,10 +1072,10 @@ async function handleAnthropicStreaming(
           "chat: anthropic stream failed",
         );
         if (totalChars === 0) {
-          writeSseEvent(res, { type: "chunk", text: DEGRADED_FALLBACK_REPLY });
+          safeEvent({ type: "chunk", text: DEGRADED_FALLBACK_REPLY });
         }
-        writeSseEvent(res, { type: "done", degraded: true });
-        res.end();
+        safeEvent({ type: "done", degraded: true });
+        safeEnd();
         return;
       }
       const text = getResponseText(result.response);
@@ -1057,7 +1084,7 @@ async function handleAnthropicStreaming(
       // tool executions are real side effects we shouldn't run for
       // a viewer who's gone.
       if (clientClosed) {
-        try { res.end(); } catch { /* socket already torn down */ }
+        safeEnd();
         return;
       }
       if (toolCalls.length > 0 && round < MAX_TOOL_ROUNDS) {
@@ -1077,9 +1104,9 @@ async function handleAnthropicStreaming(
           { event: "chat_empty_reply", vendor: "anthropic", streaming: true, round },
           "chat: anthropic stream returned no content",
         );
-        writeSseEvent(res, { type: "chunk", text: DEGRADED_FALLBACK_REPLY });
-        writeSseEvent(res, { type: "done", degraded: true });
-        res.end();
+        safeEvent({ type: "chunk", text: DEGRADED_FALLBACK_REPLY });
+        safeEvent({ type: "done", degraded: true });
+        safeEnd();
         return;
       }
       logger.info(
@@ -1096,8 +1123,8 @@ async function handleAnthropicStreaming(
         },
         "chat: anthropic streamed reply",
       );
-      writeSseEvent(res, { type: "done" });
-      res.end();
+      safeEvent({ type: "done" });
+      safeEnd();
       return;
     }
     logger.warn(
@@ -1105,10 +1132,10 @@ async function handleAnthropicStreaming(
       "chat: hit MAX_TOOL_ROUNDS without a final reply",
     );
     if (totalChars === 0) {
-      writeSseEvent(res, { type: "chunk", text: DEGRADED_FALLBACK_REPLY });
+      safeEvent({ type: "chunk", text: DEGRADED_FALLBACK_REPLY });
     }
-    writeSseEvent(res, { type: "done", degraded: true });
-    res.end();
+    safeEvent({ type: "done", degraded: true });
+    safeEnd();
   } catch (err) {
     logger.warn(
       {
@@ -1120,10 +1147,10 @@ async function handleAnthropicStreaming(
       "chat: anthropic exception during stream (returning degraded fallback)",
     );
     if (totalChars === 0) {
-      writeSseEvent(res, { type: "chunk", text: DEGRADED_FALLBACK_REPLY });
+      safeEvent({ type: "chunk", text: DEGRADED_FALLBACK_REPLY });
     }
-    writeSseEvent(res, { type: "done", degraded: true });
-    res.end();
+    safeEvent({ type: "done", degraded: true });
+    safeEnd();
   } finally {
     res.off("close", onClientClose);
   }
