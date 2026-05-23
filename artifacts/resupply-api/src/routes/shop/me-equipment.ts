@@ -89,9 +89,26 @@ const createBody = z
       "oximeter",
       "other",
     ]),
-    manufacturer: z.string().trim().min(1).max(80),
+    // Normalise manufacturer + serial so the
+    // (manufacturer, serial_number) unique index in migration 0078
+    // collides as intended when a patient self-registers a device
+    // an admin has already entered, or vice versa. Without this,
+    // "ResMed" / "resmed " / "RESMED " are distinct rows, and a
+    // recall scan that exact-matches by manufacturer+serial misses
+    // the patient's device.
+    manufacturer: z
+      .string()
+      .trim()
+      .min(1)
+      .max(80)
+      .transform((s) => s.toUpperCase()),
     model: z.string().trim().min(1).max(120),
-    serialNumber: z.string().trim().min(1).max(80),
+    serialNumber: z
+      .string()
+      .trim()
+      .min(1)
+      .max(80)
+      .transform((s) => s.toUpperCase().replace(/\s+/g, "")),
     dispensedAt: z
       .string()
       .regex(/^\d{4}-\d{2}-\d{2}$/, "must be YYYY-MM-DD")

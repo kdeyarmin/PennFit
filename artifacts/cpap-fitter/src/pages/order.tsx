@@ -1,4 +1,4 @@
-import React, { useId, isValidElement, cloneElement, useState } from "react";
+import React, { useId, isValidElement, cloneElement } from "react";
 import { useLocation, Link } from "wouter";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -9,9 +9,8 @@ import {
   useSubmitOrder,
   ApiError,
 } from "@workspace/api-client-react/storefront";
-import { fetchShopMe } from "@/lib/account-api";
-import { useShopIdentity } from "@/lib/identity";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Card,
   CardContent,
@@ -41,7 +40,7 @@ import {
 import { useEffect } from "react";
 import { track } from "@/lib/track";
 import { FacialMeasurementsCard } from "@/components/facial-measurements-card";
-import { DOB_MIN, isPlausibleDob } from "@/lib/dob-validation";
+import { DOB_MIN, isPlausibleDob, todayLocalDateString } from "@/lib/dob-validation";
 
 const US_STATES = [
   "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA",
@@ -51,47 +50,6 @@ const US_STATES = [
   "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY",
   "DC",
 ];
-
-// DOB plausibility window: anyone born between 1900-01-01 and today is
-// in scope. The HTML5 date picker enforces the same bounds via min/max
-// on the <input>, but the Zod refinement is the authoritative gate so
-// a paste-in-future-date or browser without HTML5 validation can't
-// slip through.
-//
-// Everything here is done as YYYY-MM-DD string comparison rather than
-// `new Date()`. The HTML date input returns the user's local-calendar
-// date as YYYY-MM-DD, and we want to allow whatever "today" is on
-// their wall clock — turning it into a Date object via UTC would let
-// someone in PT enter "tomorrow's" date for several evening hours
-// (after UTC has rolled over but local hasn't), and would reject
-// "today's" date for someone in NZ for a similar window before UTC
-// catches up. Lexicographic compare on the zero-padded YYYY-MM-DD
-// shape matches calendar order exactly.
-const DOB_MIN = "1900-01-01";
-
-function todayLocalDateString(): string {
-  const now = new Date();
-  const yyyy = now.getFullYear();
-  const mm = String(now.getMonth() + 1).padStart(2, "0");
-  const dd = String(now.getDate()).padStart(2, "0");
-  return `${yyyy}-${mm}-${dd}`;
-}
-
-function isPlausibleDob(value: string): boolean {
-  const [y, m, d] = value.split("-").map(Number);
-  if (!y || !m || !d) return false;
-  // Reject calendar nonsense like "2026-02-30" — Date round-trips to
-  // March 2 in that case, so the components stop matching.
-  const parsed = new Date(Date.UTC(y, m - 1, d));
-  if (
-    parsed.getUTCFullYear() !== y ||
-    parsed.getUTCMonth() !== m - 1 ||
-    parsed.getUTCDate() !== d
-  ) {
-    return false;
-  }
-  return value >= DOB_MIN && value <= todayLocalDateString();
-}
 
 const formSchema = z.object({
   patient: z.object({
@@ -164,28 +122,6 @@ type FormValues = z.infer<typeof formSchema>;
  * with no parens) so international or unusual formats aren't
  * mangled — only obvious 10-digit US phones get reformatted.
  */
-/**
- * Split a display name into first / last for the order form.
- * `displayName` is a single string on shop_customers (the customer
- * picked it themselves), so we fall back to "everything before the
- * last whitespace token = first name, last token = last name". A
- * single-token name (e.g. "Pat") becomes firstName="Pat", lastName="".
- * The patient can edit either field before submitting.
- */
-export function splitDisplayName(name: string | null | undefined): {
-  firstName: string;
-  lastName: string;
-} {
-  const trimmed = (name ?? "").trim();
-  if (!trimmed) return { firstName: "", lastName: "" };
-  const parts = trimmed.split(/\s+/);
-  if (parts.length === 1) return { firstName: parts[0], lastName: "" };
-  return {
-    firstName: parts.slice(0, -1).join(" "),
-    lastName: parts[parts.length - 1],
-  };
-}
-
 function formatUsPhone(input: string): string {
   if (!input) return "";
   // Skip reformat for international-looking inputs.
@@ -217,7 +153,7 @@ export function Order() {
     handleSubmit,
     setValue,
     watch,
-    formState: { errors },
+    formState: { errors, isSubmitted },
   } = useForm<FormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
@@ -228,14 +164,7 @@ export function Order() {
       patient: fitterEmail ? { email: fitterEmail } : undefined,
       prescription: { hasExistingPrescription: false },
       shippingAddress: { state: "" },
-      // The route-level <GuardedOrder> guarantees the patient cleared
-      // the /consent gate (email + emailConsent) before this page
-      // mounts, so the order-page "consent to contact" is provably
-      // true at form-submit time. Default to true and forward as-is;
-      // the disclosure copy in the Acknowledgement card below keeps
-      // the TCPA / data-storage disclosures in view without making
-      // the patient click the same consent twice.
-      consentToContact: true,
+      consentToContact: false,
       website: "",
     } as Partial<FormValues> as FormValues,
     mode: "onBlur",
@@ -244,69 +173,11 @@ export function Order() {
   const stateValue = watch("shippingAddress.state");
   const relationshipValue = watch("insurance.policyholderRelationship");
   const hasRxValue = watch("prescription.hasExistingPrescription");
+  const consentValue = watch("consentToContact");
 
   useEffect(() => {
     track("order_started");
   }, []);
-
-  // P3 — pre-fill from /shop/me for signed-in customers. Best-effort;
-  // a failure here (401 between identity probe and /shop/me, network
-  // hiccup, etc.) just leaves the form blank and the patient types
-  // from scratch. We use setValue per field rather than reset() so we
-  // never blow away anything the patient already touched between
-  // mount and the /shop/me round-trip. `prefilledFromAccount` flips
-  // once any field was actually populated so the UI can show a small
-  // "pre-filled from your account" hint near the top of the form.
-  const { isSignedIn, isLoaded: identityLoaded } = useShopIdentity();
-  const [prefilledFromAccount, setPrefilledFromAccount] = useState(false);
-  useEffect(() => {
-    if (!identityLoaded || !isSignedIn || prefilledFromAccount) return;
-    let cancelled = false;
-    fetchShopMe()
-      .then((res) => {
-        if (cancelled || !res.signedIn || !res.profile) return;
-        const p = res.profile;
-        let touched = false;
-        const { firstName, lastName } = splitDisplayName(p.displayName);
-        if (firstName) {
-          setValue("patient.firstName", firstName);
-          touched = true;
-        }
-        if (lastName) {
-          setValue("patient.lastName", lastName);
-          touched = true;
-        }
-        // Order page already pre-fills email from the fitter store; if
-        // /shop/me has a more authoritative email (the signed-in
-        // account), let it win — the patient can still edit either.
-        if (p.email) {
-          setValue("patient.email", p.email);
-          touched = true;
-        }
-        const addr = p.shippingAddress;
-        if (addr) {
-          setValue("shippingAddress.street1", addr.line1 ?? "");
-          if (addr.line2) setValue("shippingAddress.street2", addr.line2);
-          setValue("shippingAddress.city", addr.city ?? "");
-          setValue(
-            "shippingAddress.state",
-            (addr.state ?? "").toUpperCase(),
-            { shouldValidate: true },
-          );
-          setValue("shippingAddress.zip", addr.postalCode ?? "");
-          touched = true;
-        }
-        if (touched) setPrefilledFromAccount(true);
-      })
-      .catch((err) => {
-        // Logged so ops can see a spike in /shop/me 5xx rates, but
-        // never surfaced to the patient — the form still works.
-        console.warn("order: prefill from /shop/me failed", err);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [identityLoaded, isSignedIn, prefilledFromAccount, setValue]);
 
   if (!chosenMask) return null;
 
@@ -516,25 +387,6 @@ export function Order() {
               )}
           </AlertDescription>
         </Alert>
-      )}
-
-      {prefilledFromAccount && (
-        <div
-          className="mb-6 glass-card rounded-xl p-4 flex items-start gap-3 border-l-4 border-l-[hsl(var(--penn-gold))]"
-          data-testid="order-prefilled-hint"
-        >
-          <ShieldCheck className="w-5 h-5 mt-0.5 shrink-0 text-[hsl(var(--penn-gold))]" />
-          <div className="text-sm leading-relaxed">
-            <p className="font-semibold text-[hsl(var(--penn-navy))]">
-              Pre-filled from your account
-            </p>
-            <p className="text-muted-foreground mt-0.5">
-              We&apos;ve filled in your name, email, and shipping address
-              from your PennPaps account. Double-check everything below and
-              edit anything that&apos;s out of date before submitting.
-            </p>
-          </div>
-        </div>
       )}
 
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
@@ -980,6 +832,35 @@ export function Order() {
               </div>
             </div>
 
+            <div className="flex items-start gap-3">
+              <Checkbox
+                id="consent-to-contact"
+                data-testid="checkbox-consent"
+                checked={consentValue}
+                onCheckedChange={(checked) =>
+                  setValue("consentToContact", checked === true, {
+                    shouldValidate: isSubmitted,
+                  })
+                }
+                className="mt-0.5"
+              />
+              <div className="flex-1 space-y-1">
+                <Label
+                  htmlFor="consent-to-contact"
+                  className="text-sm leading-snug font-normal cursor-pointer"
+                >
+                  I authorize Penn Home Medical Supply to contact me about this
+                  order and ongoing resupply, and to store the order details
+                  above as described.
+                </Label>
+                {isSubmitted && errors.consentToContact && (
+                  <p className="text-xs text-destructive mt-1">
+                    {errors.consentToContact.message}
+                  </p>
+                )}
+              </div>
+            </div>
+
             <div className="flex items-start gap-3 text-xs text-muted-foreground">
               <ShieldCheck className="w-4 h-4 mt-0.5 text-primary shrink-0" />
               <p>
@@ -999,6 +880,44 @@ export function Order() {
                 </Link>
                 .
               </p>
+            </div>
+
+            <div className="flex items-start gap-3">
+              <Checkbox
+                id="consent-checkbox"
+                data-testid="checkbox-consent"
+                checked={consentValue === true}
+                aria-invalid={errors.consentToContact ? "true" : "false"}
+                aria-describedby={
+                  isSubmitted && errors.consentToContact
+                    ? "consent-checkbox-error"
+                    : undefined
+                }
+                onCheckedChange={(checked) =>
+                  setValue("consentToContact", checked === true, {
+                    shouldValidate: true,
+                  })
+                }
+              />
+              <div className="flex-1">
+                <Label
+                  htmlFor="consent-checkbox"
+                  className="text-sm font-normal cursor-pointer leading-relaxed"
+                >
+                  I consent to be contacted by Penn Home Medical Supply
+                  regarding this order, and agree to the SMS / contact and
+                  data-storage terms above.
+                </Label>
+                {isSubmitted && errors.consentToContact && (
+                  <p
+                    id="consent-checkbox-error"
+                    role="alert"
+                    className="text-xs text-destructive mt-1"
+                  >
+                    {errors.consentToContact.message}
+                  </p>
+                )}
+              </div>
             </div>
           </CardContent>
         </Card>

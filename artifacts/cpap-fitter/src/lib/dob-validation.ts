@@ -3,7 +3,24 @@
 // on the <input>, but this function is the authoritative gate so a
 // paste-in-future-date or browser without HTML5 validation can't slip
 // through.
+// NOTE: an alternate local-date-string implementation from
+// subrepl-3ppc2e03/main was discarded in favor of the UTC end-of-today
+// path below (Task #72 merge preference).
 export const DOB_MIN = "1900-01-01";
+
+/**
+ * Returns the current local date as a YYYY-MM-DD string. Used to
+ * populate the `max` attribute on the DOB <input> so the native date
+ * picker won't offer a future date. The authoritative gate against
+ * future dates remains `isPlausibleDob` below.
+ */
+export function todayLocalDateString(): string {
+  const now = new Date();
+  const yyyy = now.getFullYear();
+  const mm = String(now.getMonth() + 1).padStart(2, "0");
+  const dd = String(now.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
 
 /**
  * Returns true iff `value` is a YYYY-MM-DD string representing a
