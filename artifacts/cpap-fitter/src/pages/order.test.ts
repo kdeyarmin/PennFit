@@ -197,6 +197,12 @@ describe("order — consentToContact error is accessible", () => {
   it("links checkbox validation state to the consent error paragraph", () => {
     expect(SRC).toContain('aria-invalid={errors.consentToContact ? "true" : "false"}');
     expect(SRC).toContain('id="consent-checkbox-error"');
+    // Stronger: prove the Checkbox actually references the error id
+    // via aria-describedby — otherwise a future change that drops
+    // the binding but keeps the error element would silently pass.
+    expect(SRC).toMatch(
+      /aria-describedby=\{[\s\S]*?errors\.consentToContact[\s\S]*?"consent-checkbox-error"/,
+    );
     expect(SRC).toContain('"consent-checkbox-error"');
   });
 });

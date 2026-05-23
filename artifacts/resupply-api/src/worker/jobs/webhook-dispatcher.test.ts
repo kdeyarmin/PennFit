@@ -102,11 +102,16 @@ describe("runWebhookDispatcher", () => {
     const eventType =
       headerEntries["X-PennFit-Event-Type"] ??
       headerEntries["x-pennfit-event-type"];
+    // Host header MUST carry the original hostname (not the
+    // pinned IP) so TLS SNI + virtual-host routing on the
+    // subscriber side still target the right cert / vhost.
+    const host = headerEntries["Host"] ?? headerEntries["host"];
     const expected = createHmac("sha256", "test-secret")
       .update(call.init.body as string)
       .digest("base64");
     expect(sig).toBe(expected);
     expect(eventType).toBe("claim.paid");
+    expect(host).toBe("example.com");
   });
 
   it("marks delivery delivered on a 2xx response", async () => {
