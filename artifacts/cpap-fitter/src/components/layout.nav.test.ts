@@ -58,10 +58,11 @@ describe("layout.tsx — primary navLinks array", () => {
   it("does NOT include /stories in the primary navLinks (footer-only link)", () => {
     // /stories should only be in the footer, not in the primary navLinks array
     // We check the navLinks block specifically (the array before the component)
-    const navLinksBlock = SRC.slice(
-      SRC.indexOf("const navLinks"),
-      SRC.indexOf("const navLinks") + 300,
-    );
+    const navStart = SRC.indexOf("const navLinks");
+    const navEnd = SRC.indexOf("];", navStart);
+    expect(navStart).toBeGreaterThanOrEqual(0);
+    expect(navEnd).toBeGreaterThan(navStart);
+    const navLinksBlock = SRC.slice(navStart, navEnd + 2);
     expect(navLinksBlock).not.toContain('"/stories"');
   });
 });
