@@ -222,7 +222,11 @@ export async function sendReturnStatusEmail(
     if (err instanceof EmailConfigError) {
       return { configured: false, delivered: false, error: err.message };
     }
-    throw err;
+    return {
+      configured: false,
+      delivered: false,
+      error: err instanceof Error ? err.message : "email_client_init_failed",
+    };
   }
 
   const myReturnsUrl = `${publicBaseUrl(input.baseUrlOverride)}/account/returns`;
