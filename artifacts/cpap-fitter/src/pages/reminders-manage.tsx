@@ -96,7 +96,7 @@ export function RemindersManage() {
       enabled: token.length > 0,
       queryKey: getGetReminderSubscriptionQueryKey(params),
     },
-  );
+  });
   const update = useUpdateReminderSubscription();
   const unsub = useUnsubscribeFromReminders();
 
