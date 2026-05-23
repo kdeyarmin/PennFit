@@ -58,7 +58,10 @@ describe("admin ForgotPasswordPage — no-enumeration contract preserved", () =>
   });
 
   it("links back to /admin/sign-in", () => {
-    expect(SRC).toContain("/admin/sign-in");
+    // Source uses a `${basePath}/sign-in` template literal where
+    // `basePath = "/admin"`, so check both halves.
+    expect(SRC).toContain('basePath = "/admin"');
+    expect(SRC).toContain("${basePath}/sign-in");
   });
 });
 
