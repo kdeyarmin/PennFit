@@ -70,3 +70,47 @@ test("downloadModelWithRetry rejects undersized payload", async () => {
     console.warn = originalWarn;
   }
 });
+
+// Regression: SKIP_MEDIAPIPE_MODEL_DOWNLOAD escape hatch was removed in this
+// PR. Setting the env var must no longer suppress the model download — the
+// fetch should still be attempted (and here it immediately throws because the
+// WASM copy step fails first, but the important invariant is that we do NOT
+// return early before reaching the network path).
+test("SKIP_MEDIAPIPE_MODEL_DOWNLOAD=1 is no longer honored — main() does not short-circuit", async () => {
+  const { main } = await import("./setup-mediapipe.mjs");
+
+  const originalSkip = process.env.SKIP_MEDIAPIPE_MODEL_DOWNLOAD;
+  const originalWarn = console.warn;
+  const originalLog = console.log;
+  process.env.SKIP_MEDIAPIPE_MODEL_DOWNLOAD = "1";
+  console.warn = () => {};
+  console.log = () => {};
+
+  try {
+    // main() will throw because the WASM node_modules path doesn't exist in
+    // the test environment. What we're asserting is that the early-return
+    // escape hatch is gone: the function must throw (attempt to proceed) rather
+    // than silently return when SKIP_MEDIAPIPE_MODEL_DOWNLOAD is set.
+    //
+    // Previously, setting the flag caused main() to resolve (return undefined).
+    // After this PR's removal, main() must throw (no silent skip).
+    let threw = false;
+    try {
+      await main();
+    } catch {
+      threw = true;
+    }
+    assert.ok(
+      threw,
+      "main() should throw (attempt to run) when SKIP_MEDIAPIPE_MODEL_DOWNLOAD=1, not silently return",
+    );
+  } finally {
+    if (originalSkip === undefined) {
+      delete process.env.SKIP_MEDIAPIPE_MODEL_DOWNLOAD;
+    } else {
+      process.env.SKIP_MEDIAPIPE_MODEL_DOWNLOAD = originalSkip;
+    }
+    console.warn = originalWarn;
+    console.log = originalLog;
+  }
+});
