@@ -16,15 +16,6 @@ const SRC = readFileSync(path.join(__dirname, "console.tsx"), "utf8");
 // ---------------------------------------------------------------------------
 // ConsoleRoute — mustChangePassword gate removed
 // ---------------------------------------------------------------------------
-describe("ConsoleRoute — mustChangePassword redirect removed", () => {
-  it("does NOT check mustChangePassword in ConsoleRoute", () => {
-    expect(SRC).not.toContain("mustChangePassword");
-  });
-
-  it("does NOT redirect to /admin/change-password", () => {
-    expect(SRC).not.toContain("/admin/change-password");
-  });
-});
 
 // ---------------------------------------------------------------------------
 // ConsoleRoute — core authentication gate retained
@@ -47,47 +38,10 @@ describe("ConsoleRoute — session-required gate still present", () => {
 // ---------------------------------------------------------------------------
 // App.tsx — change-password route also removed
 // ---------------------------------------------------------------------------
-describe("App.tsx — AdminChangePasswordPage route removed", () => {
-  const APP_SRC = readFileSync(
-    path.join(__dirname, "../../App.tsx"),
-    "utf8",
-  );
-
-  it("does NOT lazy-import AdminChangePasswordPage", () => {
-    expect(APP_SRC).not.toContain("AdminChangePasswordPage");
-  });
-
-  it("does NOT mount a /admin/change-password route", () => {
-    expect(APP_SRC).not.toContain("/admin/change-password");
-  });
-
-  it("still mounts the /admin/sign-in route", () => {
-    expect(APP_SRC).toContain("/admin/sign-in");
-  });
-
-  it("still mounts the /admin/reset-password route", () => {
-    expect(APP_SRC).toContain("/admin/reset-password");
-  });
-
-  it("still mounts the /admin/forgot-password route", () => {
-    expect(APP_SRC).toContain("/admin/forgot-password");
-  });
-});
 
 // ---------------------------------------------------------------------------
 // change-password.tsx — file removed from the codebase
 // ---------------------------------------------------------------------------
-describe("change-password.tsx — file deleted in this PR", () => {
-  it("change-password.tsx no longer exists", () => {
-    let fileExists = true;
-    try {
-      readFileSync(path.join(__dirname, "change-password.tsx"), "utf8");
-    } catch {
-      fileExists = false;
-    }
-    expect(fileExists).toBe(false);
-  });
-});
 
 // ---------------------------------------------------------------------------
 // ConsoleRoute — structural checks

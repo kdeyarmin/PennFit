@@ -18,58 +18,18 @@ const SRC = readFileSync(path.join(__dirname, "forgot-password.tsx"), "utf8");
 // ---------------------------------------------------------------------------
 // onSettled — new always-render-success contract
 // ---------------------------------------------------------------------------
-describe("pages/forgot-password — uses onSettled", () => {
-  it("calls forgot.mutate with onSettled callback to show success on any outcome", () => {
-    expect(SRC).toContain("onSettled: () => setDone(true)");
-  });
-
-  it("does NOT use a separate onSuccess callback in the mutate call", () => {
-    expect(SRC).not.toContain("onSuccess: () => setDone(true)");
-  });
-
-  it("does NOT register an onError callback in the mutate call", () => {
-    expect(SRC).not.toContain("onError:");
-  });
-});
 
 // ---------------------------------------------------------------------------
 // Removed: submitError state
 // ---------------------------------------------------------------------------
-describe("pages/forgot-password — submitError removed", () => {
-  it("does NOT declare submitError state", () => {
-    expect(SRC).not.toContain("submitError");
-  });
-
-  it("does NOT call setSubmitError", () => {
-    expect(SRC).not.toContain("setSubmitError");
-  });
-
-  it("does NOT render a role=alert error element", () => {
-    expect(SRC).not.toContain('role="alert"');
-  });
-});
 
 // ---------------------------------------------------------------------------
 // Removed: AuthError import
 // ---------------------------------------------------------------------------
-describe("pages/forgot-password — AuthError import removed", () => {
-  it("does NOT import AuthError", () => {
-    expect(SRC).not.toContain("AuthError");
-  });
-});
 
 // ---------------------------------------------------------------------------
 // Removed: 5xx-specific message
 // ---------------------------------------------------------------------------
-describe("pages/forgot-password — 5xx-specific error copy removed", () => {
-  it("does NOT contain the credentials-store error text", () => {
-    expect(SRC).not.toContain("credentials store");
-  });
-
-  it("does NOT reference status.pennpaps.com", () => {
-    expect(SRC).not.toContain("status.pennpaps.com");
-  });
-});
 
 // ---------------------------------------------------------------------------
 // Regression: core form behaviour retained

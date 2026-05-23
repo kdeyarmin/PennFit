@@ -24,6 +24,7 @@ import {
   installSupabaseMock,
   stageSupabaseResponse,
 } from "../test-helpers/supabase-mock";
+import type { VerifyClinicianShareTokenResult } from "../lib/clinician-share-token";
 
 // ── Supabase mock ────────────────────────────────────────────────────
 const supabaseMock = installSupabaseMock();
@@ -46,7 +47,7 @@ vi.mock("@workspace/resupply-audit", () => ({
 // ── verifyClinicianShareToken mock ───────────────────────────────────
 // Default: return valid with a known shareRowId. Override per test.
 const verifyClinicianShareTokenMock = vi.hoisted(() =>
-  vi.fn(() => ({
+  vi.fn<() => VerifyClinicianShareTokenResult>(() => ({
     valid: true as const,
     shareRowId: "share-row-uuid-1111",
   })),
