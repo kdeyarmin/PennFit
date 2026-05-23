@@ -48,7 +48,11 @@ const listQuery = z
      * default queue (it re-emerges automatically when the timestamp
      * expires — no worker needed).
      */
-    includeSnoozed: z.coerce.boolean().optional().default(false),
+    includeSnoozed: z
+      .enum(["0", "1", "false", "true"])
+      .transform((value) => value === "1" || value === "true")
+      .optional()
+      .default(false),
     limit: z.coerce.number().int().min(1).max(100).default(25),
     offset: z.coerce.number().int().min(0).default(0),
   })
