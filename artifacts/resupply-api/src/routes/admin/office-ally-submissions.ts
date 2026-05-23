@@ -1111,8 +1111,9 @@ router.patch(
 function csvCell(v: unknown): string {
   if (v === null || v === undefined) return "";
   const s = Array.isArray(v) ? v.join("|") : String(v);
-  if (/[",\r\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
-  return s;
+  const safe = /^[=+\-@\t]/.test(s) ? `'${s}` : s;
+  if (/[",\r\n]/.test(safe)) return `"${safe.replace(/"/g, '""')}"`;
+  return safe;
 }
 
 function renderSubmissionsCsv(rows: ReturnType<typeof rowToApi>[]): string {
