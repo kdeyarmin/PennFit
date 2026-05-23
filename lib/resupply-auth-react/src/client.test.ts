@@ -214,4 +214,49 @@ describe("createAuthClient", () => {
     expect(err.status).toBe(502);
     expect(err.code).toBe("unknown");
   });
+
+  // Regression: mustChangePassword was removed from AuthMe in this PR.
+  // The server no longer sends the field and the TypeScript interface
+  // no longer declares it. Verify that fetchMe round-trips correctly
+  // without that field and that the parsed result matches exactly the
+  // fields the interface declares.
+  it("fetchMe response does NOT include mustChangePassword (field removed from AuthMe)", async () => {
+    const serverPayload = {
+      id: "u-99",
+      email: "zoe@example.com",
+      role: "admin" as const,
+      displayName: "Zoe",
+      emailVerified: true,
+      // mustChangePassword deliberately absent — server no longer sends it
+    };
+    const { fetch } = makeFetch([{ status: 200, body: serverPayload }]);
+    const client = createAuthClient({ basePath: "/api/auth", fetch });
+    const result = await client.fetchMe();
+    expect(result).not.toBeNull();
+    expect(result).not.toHaveProperty("mustChangePassword");
+    // Exact shape check — no extra fields
+    expect(Object.keys(result!).sort()).toEqual(
+      ["displayName", "email", "emailVerified", "id", "role"].sort(),
+    );
+  });
+
+  it("fetchMe returns all expected AuthMe fields", async () => {
+    const serverPayload = {
+      id: "u-42",
+      email: "admin@example.com",
+      role: "admin" as const,
+      displayName: null,
+      emailVerified: false,
+    };
+    const { fetch } = makeFetch([{ status: 200, body: serverPayload }]);
+    const client = createAuthClient({ basePath: "/api/auth", fetch });
+    const result = await client.fetchMe();
+    expect(result).toEqual({
+      id: "u-42",
+      email: "admin@example.com",
+      role: "admin",
+      displayName: null,
+      emailVerified: false,
+    });
+  });
 });
