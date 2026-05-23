@@ -330,6 +330,7 @@ function ClaimsTable({ claims }: { claims: OaSubmissionLinkedClaim[] }) {
                 <th className="p-2">DOS</th>
                 <th className="p-2">Claim #</th>
                 <th className="p-2">Status</th>
+                <th className="p-2">277CA outcome</th>
                 <th className="p-2 text-right">Billed</th>
                 <th className="p-2" />
               </tr>
@@ -338,7 +339,7 @@ function ClaimsTable({ claims }: { claims: OaSubmissionLinkedClaim[] }) {
               {claims.map((c) => (
                 <tr
                   key={c.id}
-                  className="border-t"
+                  className="border-t align-top"
                   style={{ borderColor: "hsl(var(--line-1))" }}
                 >
                   <td className="p-2" style={{ color: "hsl(var(--ink-1))" }}>
@@ -355,6 +356,9 @@ function ClaimsTable({ claims }: { claims: OaSubmissionLinkedClaim[] }) {
                   </td>
                   <td className="p-2">
                     <ClaimStatusBadge status={c.status} />
+                  </td>
+                  <td className="p-2">
+                    <Ack277Cell ack={c.ack277ca} />
                   </td>
                   <td className="p-2 text-right font-mono text-[12px]" style={{ color: "hsl(var(--ink-1))" }}>
                     ${(c.totalBilledCents / 100).toFixed(2)}
@@ -399,6 +403,56 @@ function StatusBadge({ status }: { status: OaSubmission["status"] }) {
     >
       {c.label}
     </span>
+  );
+}
+
+function Ack277Cell({
+  ack,
+}: {
+  ack: OaSubmissionLinkedClaim["ack277ca"];
+}) {
+  if (!ack) {
+    return (
+      <span
+        className="text-[11px]"
+        style={{ color: "hsl(var(--ink-3))" }}
+      >
+        —
+      </span>
+    );
+  }
+  const color =
+    ack.outcome === "accepted"
+      ? { bg: "rgba(21,128,61,0.14)", fg: "#15803d", label: "accepted" }
+      : ack.outcome === "rejected"
+        ? { bg: "rgba(190,18,60,0.14)", fg: "#be123c", label: "rejected" }
+        : { bg: "rgba(100,116,139,0.16)", fg: "#475569", label: "noted" };
+  return (
+    <div className="space-y-1">
+      <span
+        className="inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase"
+        style={{ backgroundColor: color.bg, color: color.fg }}
+      >
+        {color.label}
+      </span>
+      {ack.reason && (
+        <p
+          className="text-[10px] max-w-[260px]"
+          style={{ color: "hsl(var(--ink-3))" }}
+          title={ack.reason}
+        >
+          {ack.reason.length > 100
+            ? `${ack.reason.slice(0, 100)}…`
+            : ack.reason}
+        </p>
+      )}
+      <p
+        className="text-[10px]"
+        style={{ color: "hsl(var(--ink-3))" }}
+      >
+        {new Date(ack.receivedAt).toLocaleDateString()}
+      </p>
+    </div>
   );
 }
 
