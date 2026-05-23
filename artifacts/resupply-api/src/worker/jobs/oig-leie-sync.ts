@@ -19,6 +19,8 @@
 // Manual trigger: callable via runOigLeieSync() (export) from the
 // admin-tooling routes; the cron path just wraps it.
 
+import { randomBytes } from "node:crypto";
+
 import type PgBoss from "pg-boss";
 
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
@@ -102,14 +104,17 @@ export async function runOigLeieSync(
   }
 
   const now = new Date();
-  // Add a millisecond suffix so a same-day re-run doesn't collide
-  // with itself — `2026-05` reruns inside one cycle would otherwise
-  // wipe the data they just loaded. The screener doesn't filter on
-  // source_file_version (only on reinstate_date + name/NPI), so a
-  // sub-cycle suffix is fine for the version label.
+  // The version label MUST fit inside source_file_version varchar(20)
+  // (migration 0141). The earlier draft used `${now.getTime()}` as the
+  // disambiguating suffix which is 13 digits — `2026-05-1748000000000`
+  // is 21 chars and every INSERT batch errors with "value too long
+  // for type character varying(20)", silently aborting the entire
+  // monthly OIG refresh. 8 random hex chars keeps us well inside
+  // the cap (`2026-05-ab12cd34` = 16 chars) while still letting
+  // same-day re-runs occupy distinct version slots.
   const version = `${now.getUTCFullYear()}-${String(
     now.getUTCMonth() + 1,
-  ).padStart(2, "0")}-${now.getTime()}`;
+  ).padStart(2, "0")}-${randomBytes(4).toString("hex")}`;
   const supabase = getSupabaseServiceRoleClient();
 
   // Shadow-swap (not delete-then-insert). The OLD behaviour was:

@@ -42,13 +42,18 @@ async function resolvePatientForCustomer(
   // Limit 2 + .length !== 1 guards against the email-collision
   // PHI leak: if two patient records share an email, returning
   // either one would expose the wrong patient's coverage estimate
-  // (a PHI surface) to the shopper. See me-billing.ts for the
-  // shared rationale and the planned shop_customers.patient_id fix.
+  // (a PHI surface) to the shopper. .ilike is case-INsensitive so
+  // legacy mixed-case patient.email rows still resolve. See
+  // me-billing.ts for the planned fix.
+  const escapedEmail = customer.email_lower.replace(
+    /[\\%_]/g,
+    (c: string) => `\\${c}`,
+  );
   const { data: patients, error: patientError } = await supabase
     .schema("resupply")
     .from("patients")
     .select("id")
-    .eq("email", customer.email_lower)
+    .ilike("email", escapedEmail)
     .limit(2);
   if (patientError) {
     throw new Error(

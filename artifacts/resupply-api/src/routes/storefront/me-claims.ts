@@ -38,12 +38,18 @@ async function resolvePatientForCustomer(
   // Refuse to bind when more than one patient row matches the email.
   // The /me/claims list and detail surfaces are PHI; returning
   // either patient's claim history to the wrong shopper is a
-  // cross-patient PHI leak. See me-billing.ts for the planned fix.
+  // cross-patient PHI leak. .ilike is case-INsensitive so legacy
+  // mixed-case patient.email rows still resolve. See me-billing.ts
+  // for the planned fix.
+  const escapedEmail = customer.email_lower.replace(
+    /[\\%_]/g,
+    (c: string) => `\\${c}`,
+  );
   const { data: patients } = await supabase
     .schema("resupply")
     .from("patients")
     .select("id")
-    .eq("email", customer.email_lower)
+    .ilike("email", escapedEmail)
     .limit(2);
   if (!patients || patients.length !== 1) return null;
   return { patientId: patients[0]!.id };

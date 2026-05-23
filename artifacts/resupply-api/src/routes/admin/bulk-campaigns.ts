@@ -479,6 +479,23 @@ function makeTransitionHandler(
       return;
     }
 
+    // Refuse `start` if the pg-boss worker isn't running. Without
+    // this guard, the UPDATE below flips status to `sending` but
+    // the side-effect's enqueueImmediateTick is a no-op (it
+    // log-warns "worker not running"), and the campaign sits in
+    // `sending` forever with no tick ever scheduled — admins see
+    // "Sending..." in the dashboard but recipients are never
+    // contacted. 503 (no rollback needed; UPDATE hasn't happened
+    // yet) lets the admin try again once the worker is up.
+    if (action === "start" && !getBoss()) {
+      res.status(503).json({
+        error: "worker_unavailable",
+        message:
+          "The bulk-campaigns worker isn't running yet. Try again in a few seconds.",
+      });
+      return;
+    }
+
     const nowIso = new Date().toISOString();
     const updates: Database["resupply"]["Tables"]["bulk_campaigns"]["Update"] =
       { status: plan.to };
@@ -764,7 +781,13 @@ router.get(
       ].join(",") + "\n",
     );
     // Page through PostgREST in 1k batches so the response streams
-    // start fast and stay bounded.
+    // start fast and stay bounded. The `id` secondary order is the
+    // tie-breaker: bulk_campaign_recipients are inserted in batches
+    // that frequently share a sub-second `created_at`, and without
+    // a unique secondary sort PostgREST can return the same row on
+    // two consecutive pages (duplicate) or skip a row that straddles
+    // the boundary entirely. `id` is the UUID PK so it's unique +
+    // stable.
     const PAGE = 1000;
     let offset = 0;
     while (true) {
@@ -776,6 +799,7 @@ router.get(
         )
         .eq("campaign_id", idCheck.data)
         .order("created_at", { ascending: true })
+        .order("id", { ascending: true })
         .range(offset, offset + PAGE - 1);
       if (error) throw error;
       const rows = data ?? [];

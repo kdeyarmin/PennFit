@@ -49,11 +49,21 @@ async function resolvePatientForCustomer(
   // balances would leak to the shopper. The right fix is a stable
   // shop_customers.patient_id FK set at registration; this guard
   // prevents the cross-patient PHI leak until that lands.
+  //
+  // .ilike (with escaped meta-chars) is case-INsensitive equality.
+  // patient_create.ts now normalizes new emails to lowercase, but
+  // legacy rows can still be stored mixed-case; the case-insensitive
+  // match keeps them findable until a backfill migration normalizes
+  // historical data.
+  const escapedEmail = customer.email_lower.replace(
+    /[\\%_]/g,
+    (c: string) => `\\${c}`,
+  );
   const { data: patients, error: patientErr } = await supabase
     .schema("resupply")
     .from("patients")
     .select("id")
-    .eq("email", customer.email_lower)
+    .ilike("email", escapedEmail)
     .limit(2);
   if (patientErr) throw patientErr;
   if (!patients || patients.length !== 1) return null;

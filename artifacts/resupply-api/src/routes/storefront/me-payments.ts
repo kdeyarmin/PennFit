@@ -66,12 +66,18 @@ async function resolvePatientForCustomer(
   // Refuse to bind when more than one patient row matches the email.
   // /me/payments serves PaymentIntent creation + history; binding to
   // the wrong patient would charge or expose another patient's
-  // balance to the shopper. See me-billing.ts for the planned fix.
+  // balance to the shopper. .ilike is case-INsensitive so legacy
+  // mixed-case patient.email rows still resolve. See me-billing.ts
+  // for the planned fix.
+  const escapedEmail = customer.email_lower.replace(
+    /[\\%_]/g,
+    (c: string) => `\\${c}`,
+  );
   const { data: patients } = await supabase
     .schema("resupply")
     .from("patients")
     .select("id, email")
-    .eq("email", customer.email_lower)
+    .ilike("email", escapedEmail)
     .limit(2);
   if (!patients || patients.length !== 1) return null;
   return {

@@ -54,13 +54,18 @@ async function resolvePatientForCustomer(
   if (!customer?.email_lower) return null;
   // Refuse to bind when more than one patient row matches the email
   // — otherwise the wrong patient's rights-request history (a PHI
-  // surface) would leak to the shopper. See me-billing.ts for the
-  // full rationale and the planned shop_customers.patient_id fix.
+  // surface) would leak to the shopper. .ilike is case-insensitive
+  // so legacy mixed-case patient.email rows still resolve. See
+  // me-billing.ts for the planned fix.
+  const escapedEmail = customer.email_lower.replace(
+    /[\\%_]/g,
+    (c: string) => `\\${c}`,
+  );
   const { data: patients } = await supabase
     .schema("resupply")
     .from("patients")
     .select("id")
-    .eq("email", customer.email_lower)
+    .ilike("email", escapedEmail)
     .limit(2);
   if (!patients || patients.length !== 1) return null;
   return { patientId: patients[0]!.id };

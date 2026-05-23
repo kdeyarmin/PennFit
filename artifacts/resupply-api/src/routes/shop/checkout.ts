@@ -160,25 +160,6 @@ router.post(
       return;
     }
 
-    // Namespace the client-supplied Idempotency-Key per signed-in
-    // customer (or per IP for guests) before handing it to Stripe.
-    // Stripe scopes idempotency keys across the whole API key, so
-    // two unrelated checkouts that happen to ship the same client
-    // key would otherwise resolve to the SAME Stripe Session —
-    // user B would receive user A's session URL, line items, and
-    // Stripe customer attachment (cross-user PHI / cart leak).
-    // Combining with userCustomerId (or req.ip) makes the
-    // server-side key globally unique even when clients collide.
-    const clientKey =
-      typeof req.headers["idempotency-key"] === "string"
-        ? req.headers["idempotency-key"]
-        : randomUUID();
-    const idempotencyKey = createHash("sha256")
-      .update(
-        `${req.userCustomerId ?? `guest:${req.ip ?? "unknown"}`}|${clientKey}`,
-      )
-      .digest("hex");
-
     const successUrl = `${config.publicBaseUrl}${successPath}?session_id={CHECKOUT_SESSION_ID}`;
     const cancelUrl = `${config.publicBaseUrl}${cancelPath}`;
     // Hash uses priceId+qty+mode so two identical-priced carts with
@@ -190,6 +171,28 @@ router.post(
         mode: it.mode,
       })),
     );
+
+    // Namespace the client-supplied Idempotency-Key per signed-in
+    // customer (or per IP for guests) + cart contents before handing
+    // it to Stripe. Stripe scopes idempotency keys across the whole
+    // API key, so two unrelated checkouts that happen to ship the
+    // same client key would otherwise resolve to the SAME Stripe
+    // Session — user B would receive user A's session URL, line
+    // items, and Stripe customer attachment (cross-user PHI / cart
+    // leak). Including cartHash also handles "same user clicks Buy
+    // twice with different carts and a browser-cached header" —
+    // Stripe rejects mismatched bodies for a reused key, so keying
+    // on cart contents avoids the idempotency_error UX glitch and
+    // ensures a real second checkout creates a fresh Session.
+    const clientKey =
+      typeof req.headers["idempotency-key"] === "string"
+        ? req.headers["idempotency-key"]
+        : randomUUID();
+    const idempotencyKey = createHash("sha256")
+      .update(
+        `${req.userCustomerId ?? `guest:${req.ip ?? "unknown"}`}|${clientKey}|${cartHash}|${isSubscription ? "sub" : "one"}`,
+      )
+      .digest("hex");
 
     const stripe = getStripeClient(config);
 
