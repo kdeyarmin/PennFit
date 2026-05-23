@@ -117,6 +117,7 @@ function rowToApi(r: SubmissionRow) {
 
 const FULL_SELECT =
   "id, file_name, isa_control_number, gs_control_number, status, file_size_bytes, claim_count, office_ally_session_id, ack_999_file_name, ack_999_received_at, ack_277ca_file_name, ack_277ca_received_at, rejection_reason, submitted_by_email, submitted_at, updated_at, attempted_claim_ids, parent_submission_id";
+const SUBMISSIONS_PAGE_SIZE = 1000;
 
 // ── LIST ────────────────────────────────────────────────────────────
 router.get(
@@ -416,16 +417,26 @@ router.get(
     const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
 
     // 1. Pull recent submissions with their attempted_claim_ids.
-    const { data: submissions, error } = await supabase
-      .schema("resupply")
-      .from("office_ally_submissions")
-      .select("id, status, claim_count, attempted_claim_ids")
-      .gte("submitted_at", since)
-      .order("submitted_at", { ascending: false })
-      .order("id", { ascending: false })
-      .limit(5000);
-    if (error) throw error;
-    const rows = submissions ?? [];
+    const rows: Array<{
+      id: string;
+      status: SubmissionStatus;
+      claim_count: number;
+      attempted_claim_ids: string[] | null;
+    }> = [];
+    for (let from = 0; ; from += SUBMISSIONS_PAGE_SIZE) {
+      const { data: page, error } = await supabase
+        .schema("resupply")
+        .from("office_ally_submissions")
+        .select("id, status, claim_count, attempted_claim_ids")
+        .gte("submitted_at", since)
+        .order("submitted_at", { ascending: false })
+        .order("id", { ascending: false })
+        .range(from, from + SUBMISSIONS_PAGE_SIZE - 1);
+      if (error) throw error;
+      const pageRows = page ?? [];
+      rows.push(...pageRows);
+      if (pageRows.length < SUBMISSIONS_PAGE_SIZE) break;
+    }
     if (rows.length === 0) {
       res.json({ window: { sinceIso: since, days: 30 }, payers: [] });
       return;
@@ -681,7 +692,7 @@ router.get(
       .select(FULL_SELECT)
       .gte("submitted_at", since)
       .order("submitted_at", { ascending: false })
-      .limit(5000);
+      .order("id", { ascending: false });
 
     const statusFilter =
       typeof req.query.status === "string" ? req.query.status : undefined;
@@ -695,9 +706,18 @@ router.get(
         `isa_control_number.ilike.%${safe}%,file_name.ilike.%${safe}%`,
       );
     }
-    const { data, error } = await query;
-    if (error) throw error;
-    const rows = (data ?? []).map(rowToApi);
+    const allRows: SubmissionRow[] = [];
+    for (let from = 0; ; from += SUBMISSIONS_PAGE_SIZE) {
+      const { data, error } = await query.range(
+        from,
+        from + SUBMISSIONS_PAGE_SIZE - 1,
+      );
+      if (error) throw error;
+      const pageRows = data ?? [];
+      allRows.push(...pageRows);
+      if (pageRows.length < SUBMISSIONS_PAGE_SIZE) break;
+    }
+    const rows = allRows.map(rowToApi);
     const filename = `oa-submissions-${new Date()
       .toISOString()
       .slice(0, 10)}.csv`;
