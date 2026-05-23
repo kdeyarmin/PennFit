@@ -90,6 +90,89 @@ const ALLOWED_CONTENT_TYPES = new Set<string>([
   "application/pdf",
 ]);
 
+/**
+ * Magic-byte sniff. Returns the inferred content-type, or null when
+ * the bytes don't match any known allow-listed format. Used by
+ * persistInboundAttachment so a caller-declared `Content-Type:
+ * image/jpeg` that's actually an `.exe` polyglot is rejected before
+ * the bytes land in GCS. The MMS download path already re-checks
+ * the HTTP response Content-Type; this is the equivalent guard for
+ * the inbound-email path where the type comes from busboy's
+ * multipart Content-Type field (caller-controlled).
+ */
+function sniffContentType(bytes: Uint8Array): string | null {
+  if (bytes.length < 4) return null;
+  // JPEG: FF D8 FF
+  if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
+    return "image/jpeg";
+  }
+  // PNG: 89 50 4E 47 0D 0A 1A 0A
+  if (
+    bytes[0] === 0x89 &&
+    bytes[1] === 0x50 &&
+    bytes[2] === 0x4e &&
+    bytes[3] === 0x47
+  ) {
+    return "image/png";
+  }
+  // GIF: "GIF87a" or "GIF89a"
+  if (
+    bytes[0] === 0x47 &&
+    bytes[1] === 0x49 &&
+    bytes[2] === 0x46 &&
+    bytes[3] === 0x38
+  ) {
+    return "image/gif";
+  }
+  // WebP: "RIFF" .... "WEBP"
+  if (
+    bytes.length >= 12 &&
+    bytes[0] === 0x52 &&
+    bytes[1] === 0x49 &&
+    bytes[2] === 0x46 &&
+    bytes[3] === 0x46 &&
+    bytes[8] === 0x57 &&
+    bytes[9] === 0x45 &&
+    bytes[10] === 0x42 &&
+    bytes[11] === 0x50
+  ) {
+    return "image/webp";
+  }
+  // HEIC / HEIF: "....ftypheic", "ftypheix", "ftypmif1", "ftypheif"
+  if (
+    bytes.length >= 12 &&
+    bytes[4] === 0x66 && // f
+    bytes[5] === 0x74 && // t
+    bytes[6] === 0x79 && // y
+    bytes[7] === 0x70 // p
+  ) {
+    const brand = String.fromCharCode(
+      bytes[8] ?? 0,
+      bytes[9] ?? 0,
+      bytes[10] ?? 0,
+      bytes[11] ?? 0,
+    );
+    if (
+      brand === "heic" || brand === "heix" || brand === "heim" ||
+      brand === "heis" || brand === "hevc" || brand === "hevx" ||
+      brand === "mif1" || brand === "msf1" || brand === "heif"
+    ) {
+      return "image/heic";
+    }
+  }
+  // PDF: "%PDF-"
+  if (
+    bytes[0] === 0x25 && // %
+    bytes[1] === 0x50 && // P
+    bytes[2] === 0x44 && // D
+    bytes[3] === 0x46 && // F
+    bytes[4] === 0x2d // -
+  ) {
+    return "application/pdf";
+  }
+  return null;
+}
+
 export interface IngestMmsMediaInput {
   /** Message row id we're attaching to (already persisted). */
   messageId: string;
@@ -273,16 +356,83 @@ async function downloadOneMedia(
       return null;
     }
 
-    const buf = new Uint8Array(await resp.arrayBuffer());
-    if (buf.byteLength === 0 || buf.byteLength > MAX_BYTES) {
+    // Pre-check Content-Length when present so we can reject a known-
+    // oversize payload BEFORE downloading any bytes. Hostile or
+    // misrouted media URLs may advertise hundreds of MB and the
+    // arraybuffer path below would buffer it all into process memory.
+    const contentLengthHeader = resp.headers.get("content-length");
+    if (contentLengthHeader) {
+      const declaredLen = Number.parseInt(contentLengthHeader, 10);
+      if (Number.isFinite(declaredLen) && declaredLen > MAX_BYTES) {
+        logger.warn(
+          {
+            twilio_media_sid: twilioMediaSid,
+            declared_length: declaredLen,
+          },
+          "mms_ingest_rejected_size_predownload",
+        );
+        return null;
+      }
+    }
+
+    // Streaming size cap. Read chunks and short-circuit as soon as
+    // we accumulate more than MAX_BYTES, so a server that lies about
+    // (or omits) Content-Length can't OOM us. Falls back to
+    // arrayBuffer() if the body isn't a readable stream (older
+    // runtimes).
+    if (!resp.body) {
       logger.warn(
-        {
-          twilio_media_sid: twilioMediaSid,
-          size: buf.byteLength,
-        },
+        { twilio_media_sid: twilioMediaSid },
+        "mms_ingest_no_body",
+      );
+      return null;
+    }
+    const chunks: Uint8Array[] = [];
+    let total = 0;
+    const reader = resp.body.getReader();
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (value) {
+          total += value.byteLength;
+          if (total > MAX_BYTES) {
+            try {
+              await reader.cancel();
+            } catch {
+              /* ignore */
+            }
+            logger.warn(
+              {
+                twilio_media_sid: twilioMediaSid,
+                size: total,
+              },
+              "mms_ingest_rejected_size_streaming",
+            );
+            return null;
+          }
+          chunks.push(value);
+        }
+      }
+    } finally {
+      try {
+        reader.releaseLock();
+      } catch {
+        /* ignore — already released on cancel */
+      }
+    }
+    if (total === 0) {
+      logger.warn(
+        { twilio_media_sid: twilioMediaSid, size: 0 },
         "mms_ingest_rejected_size",
       );
       return null;
+    }
+    const buf = new Uint8Array(total);
+    let offset = 0;
+    for (const c of chunks) {
+      buf.set(c, offset);
+      offset += c.byteLength;
     }
     return { bytes: buf, contentType: actualContentType, twilioMediaSid };
   } catch (err) {
@@ -371,6 +521,44 @@ export async function persistInboundAttachment(
         size: input.bytes?.byteLength ?? 0,
       },
       "attachment_ingest_rejected_size",
+    );
+    return "rejected";
+  }
+
+  // Magic-byte sniff. The caller-declared `contentType` is trusted
+  // by the HTTP response side (MMS) but caller-controlled by the
+  // multipart side (inbound email). A patient (or anyone who knows
+  // the basic-auth secret) could otherwise send an executable
+  // labelled `image/jpeg` and have it land in private GCS — admins
+  // viewing it from /conversations/.../attachments would receive
+  // the deceptive Content-Type back. Reject any mismatch.
+  const sniffed = sniffContentType(input.bytes);
+  if (!sniffed) {
+    logger.warn(
+      {
+        source: input.source ?? "unknown",
+        declared_content_type: declaredType,
+      },
+      "attachment_ingest_rejected_unrecognised_magic",
+    );
+    return "rejected";
+  }
+  if (
+    sniffed !== declaredType &&
+    // image/heic and image/heif share magic bytes; either side of
+    // that pair is acceptable as a match.
+    !(
+      (sniffed === "image/heic" && declaredType === "image/heif") ||
+      (sniffed === "image/heif" && declaredType === "image/heic")
+    )
+  ) {
+    logger.warn(
+      {
+        source: input.source ?? "unknown",
+        declared_content_type: declaredType,
+        sniffed_content_type: sniffed,
+      },
+      "attachment_ingest_rejected_content_type_mismatch",
     );
     return "rejected";
   }

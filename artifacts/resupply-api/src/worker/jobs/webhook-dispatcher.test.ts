@@ -19,16 +19,20 @@ function stageDispatchableDelivery(opts: {
   targetUrl?: string;
   signingSecret?: string;
 } = {}): void {
+  const delivery = {
+    id: "d-1",
+    subscription_id: "s-1",
+    event_type: "claim.paid",
+    event_payload: { type: "claim.paid", data: { claim_id: "c-1" } },
+    attempt_count: opts.attemptCount ?? 0,
+  };
+  // Two-step claim model: candidate SELECT returns just ids, then
+  // an atomic UPDATE … RETURNING gives the full row. Stage both.
   stageSupabaseResponse("webhook_deliveries", "select", {
-    data: [
-      {
-        id: "d-1",
-        subscription_id: "s-1",
-        event_type: "claim.paid",
-        event_payload: { type: "claim.paid", data: { claim_id: "c-1" } },
-        attempt_count: opts.attemptCount ?? 0,
-      },
-    ],
+    data: [{ id: delivery.id }],
+  });
+  stageSupabaseResponse("webhook_deliveries", "update", {
+    data: [delivery],
   });
   stageSupabaseResponse("webhook_subscriptions", "select", {
     data: [
@@ -41,6 +45,15 @@ function stageDispatchableDelivery(opts: {
       },
     ],
   });
+}
+
+// The first webhook_deliveries.update is the atomic-claim lease
+// (bumps next_attempt_at but doesn't change status). The dispatch
+// outcome is always written in a subsequent update — that's what
+// the existing assertions care about.
+function lastDeliveryUpdate(): Record<string, unknown> {
+  const updates = getSupabaseWritePayloads("webhook_deliveries", "update");
+  return updates[updates.length - 1] as Record<string, unknown>;
 }
 
 describe("runWebhookDispatcher", () => {
@@ -69,13 +82,36 @@ describe("runWebhookDispatcher", () => {
     await runWebhookDispatcher({ fetchImpl: fetchImpl as unknown as typeof fetch });
     expect(calls).toHaveLength(1);
     const call = calls[0]!;
-    expect(call.url).toBe("https://example.com/wh");
-    const headers = call.init.headers as Record<string, string>;
+    // The dispatcher uses fetchWithPinnedIp for SSRF defence — the
+    // URL is rewritten to substitute the resolved IP literal, with
+    // the original hostname preserved in the Host header for TLS
+    // SNI. Assert on the path + Host header rather than the
+    // literal URL, since example.com's IP changes over time.
+    const calledUrl = new URL(call.url);
+    expect(calledUrl.pathname).toBe("/wh");
+    const headersInit = call.init.headers;
+    const headerEntries =
+      headersInit instanceof Headers
+        ? Object.fromEntries(headersInit.entries())
+        : (headersInit as Record<string, string>);
+    // Headers class lowercases names; the literal-object init keeps
+    // the original casing. Look up both shapes.
+    const sig =
+      headerEntries["X-PennFit-Signature"] ??
+      headerEntries["x-pennfit-signature"];
+    const eventType =
+      headerEntries["X-PennFit-Event-Type"] ??
+      headerEntries["x-pennfit-event-type"];
+    // Host header MUST carry the original hostname (not the
+    // pinned IP) so TLS SNI + virtual-host routing on the
+    // subscriber side still target the right cert / vhost.
+    const host = headerEntries["Host"] ?? headerEntries["host"];
     const expected = createHmac("sha256", "test-secret")
       .update(call.init.body as string)
       .digest("base64");
-    expect(headers["X-PennFit-Signature"]).toBe(expected);
-    expect(headers["X-PennFit-Event-Type"]).toBe("claim.paid");
+    expect(sig).toBe(expected);
+    expect(eventType).toBe("claim.paid");
+    expect(host).toBe("example.com");
   });
 
   it("marks delivery delivered on a 2xx response", async () => {
@@ -85,18 +121,13 @@ describe("runWebhookDispatcher", () => {
       .mockResolvedValue(new Response("ok", { status: 200 }));
     const stats = await runWebhookDispatcher({ fetchImpl: fetchImpl as unknown as typeof fetch });
     expect(stats.delivered).toBe(1);
-    const deliveryUpdates = getSupabaseWritePayloads(
-      "webhook_deliveries",
-      "update",
-    );
     const subscriptionUpdates = getSupabaseWritePayloads(
       "webhook_subscriptions",
       "update",
     );
-    expect(deliveryUpdates).toHaveLength(1);
-    expect((deliveryUpdates[0] as Record<string, unknown>).status).toBe(
-      "delivered",
-    );
+    // Two delivery updates now: 1) atomic-claim lease bump, 2) the
+    // delivered-status flip. We assert on the second.
+    expect(lastDeliveryUpdate().status).toBe("delivered");
     expect(subscriptionUpdates).toHaveLength(1);
     expect(
       (subscriptionUpdates[0] as Record<string, unknown>).last_delivery_status,
@@ -111,8 +142,7 @@ describe("runWebhookDispatcher", () => {
     const stats = await runWebhookDispatcher({ fetchImpl: fetchImpl as unknown as typeof fetch });
     expect(stats.retried).toBe(1);
     expect(stats.delivered).toBe(0);
-    const updates = getSupabaseWritePayloads("webhook_deliveries", "update");
-    const update = updates[0] as Record<string, unknown>;
+    const update = lastDeliveryUpdate();
     expect(update.attempt_count).toBe(2);
     expect(update.last_http_status).toBe(503);
     // 2^2 = 4 minute backoff. We accept anything > 60s as proof
@@ -128,8 +158,7 @@ describe("runWebhookDispatcher", () => {
       .mockResolvedValue(new Response("err", { status: 500 }));
     const stats = await runWebhookDispatcher({ fetchImpl: fetchImpl as unknown as typeof fetch });
     expect(stats.exhausted).toBe(1);
-    const updates = getSupabaseWritePayloads("webhook_deliveries", "update");
-    expect((updates[0] as Record<string, unknown>).status).toBe("exhausted");
+    expect(lastDeliveryUpdate().status).toBe("exhausted");
   });
 
   it("rejects non-https target URLs", async () => {
@@ -145,8 +174,7 @@ describe("runWebhookDispatcher", () => {
     const fetchImpl = vi.fn().mockRejectedValue(new Error("ECONNREFUSED"));
     const stats = await runWebhookDispatcher({ fetchImpl: fetchImpl as unknown as typeof fetch });
     expect(stats.retried).toBe(1);
-    const updates = getSupabaseWritePayloads("webhook_deliveries", "update");
-    const update = updates[0] as Record<string, unknown>;
+    const update = lastDeliveryUpdate();
     expect(update.last_http_status).toBeNull();
     expect((update.last_error as string).includes("ECONNREFUSED")).toBe(true);
   });

@@ -267,17 +267,25 @@ const NEUTRAL_MEASUREMENTS: FacialMeasurements = {
 function toQuestionnaireAnswers(
   args: z.infer<typeof recommendArgsSchema>,
 ): QuestionnaireAnswers {
+  // Default missing booleans to NULL, not false. The engine treats
+  // `false` as an affirmative negative — e.g. mouthBreather=false
+  // unlocks "You breathe through your nose during sleep, making a
+  // nasal mask an effective choice" in patient-facing copy. That's
+  // wrong when the LLM tool call simply didn't include the field
+  // (the patient never mentioned it). The engine's QuestionnaireAnswers
+  // type explicitly allows null on every boolean precisely so the
+  // ranker can distinguish "no opinion" from "they said no".
   return {
-    mouthBreather: args.mouth_breather ?? false,
-    claustrophobic: args.claustrophobic ?? false,
-    sideOrStomachSleeper: args.side_or_stomach_sleeper ?? false,
-    heavyFacialHair: args.heavy_facial_hair ?? false,
-    wearsGlasses: args.wears_glasses ?? false,
-    frequentCongestion: args.frequent_congestion ?? false,
+    mouthBreather: args.mouth_breather ?? null,
+    claustrophobic: args.claustrophobic ?? null,
+    sideOrStomachSleeper: args.side_or_stomach_sleeper ?? null,
+    heavyFacialHair: args.heavy_facial_hair ?? null,
+    wearsGlasses: args.wears_glasses ?? null,
+    frequentCongestion: args.frequent_congestion ?? null,
     priorMaskExperience: args.prior_mask_experience ?? "none",
-    mobilityLimitations: args.mobility_limitations ?? false,
-    sensitiveSkin: args.sensitive_skin ?? false,
-    siliconeSensitivity: args.silicone_sensitivity ?? false,
+    mobilityLimitations: args.mobility_limitations ?? null,
+    sensitiveSkin: args.sensitive_skin ?? null,
+    siliconeSensitivity: args.silicone_sensitivity ?? null,
     cpapPressureSetting: args.cpap_pressure_setting ?? "unknown",
   };
 }

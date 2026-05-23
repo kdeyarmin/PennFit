@@ -20,13 +20,35 @@ import type PgBoss from "pg-boss";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
+import {
+  SsrfError,
+  assertSafeOutboundHost,
+  assertSafeOutboundUrlSync,
+  fetchWithPinnedIp,
+} from "../../lib/safe-outbound";
 
 type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
 
 const JOB = "webhook.dispatch";
 const CRON = "* * * * *"; // every minute
 const BATCH_SIZE = 50;
-const REQUEST_TIMEOUT_MS = 15_000;
+// Per-subscriber HTTP timeout. Lowered from 15s so a slow / dead
+// subscriber doesn't stall the whole batch; 5s is well above the
+// p99 we see for healthy webhook endpoints.
+const REQUEST_TIMEOUT_MS = 5_000;
+// Lease horizon for an in-flight delivery. We bump
+// `next_attempt_at` this far into the future when we claim a row,
+// so an overlapping cron tick filters it out. Long enough to cover
+// the per-request timeout + DNS resolve + a generous buffer, short
+// enough that a worker crash mid-flight leaves the row recoverable
+// on the next cron tick rather than the next exponential-backoff
+// window.
+const CLAIM_LEASE_MS = 5 * 60_000;
+// Cap on parallel POSTs per tick so one tick can't fan out 50 × 5s
+// = 250s of wall time. With concurrency=8 the worst-case tick is
+// ~7 × 5s = 35s for a 50-row batch, well inside the 60s cron
+// cadence even when every subscriber is slow.
+const MAX_PARALLEL = 8;
 
 export interface DispatchStats {
   scanned: number;
@@ -47,16 +69,40 @@ export async function runWebhookDispatcher(
     exhausted: 0,
   };
   const nowIso = new Date().toISOString();
-  const { data: deliveries } = await supabase
+
+  // Step 1: find candidates. This SELECT is racy on its own — two
+  // overlapping cron ticks would both see the same rows. The atomic
+  // claim below filters down to the rows THIS tick actually owns.
+  const { data: candidates } = await supabase
     .schema("resupply")
     .from("webhook_deliveries")
-    .select(
-      "id, subscription_id, event_type, event_payload, attempt_count",
-    )
+    .select("id")
     .eq("status", "queued")
     .lte("next_attempt_at", nowIso)
     .order("next_attempt_at", { ascending: true })
     .limit(BATCH_SIZE);
+  if (!candidates || candidates.length === 0) return stats;
+
+  // Step 2: atomic claim. Bump next_attempt_at on these rows IF
+  // they're still queued. PostgREST runs this as a single UPDATE,
+  // and the .eq("status","queued") guard means an overlapping tick
+  // sees its claim fail for any row we won — RETURNING (.select)
+  // gives us only the rows we successfully leased. The lease bumps
+  // next_attempt_at past the cron window so the row is invisible
+  // to other ticks while we work on it; on worker crash, the lease
+  // expires and the next tick picks the row up.
+  const leaseUntil = new Date(Date.now() + CLAIM_LEASE_MS).toISOString();
+  const candidateIds = candidates.map((c) => c.id);
+  const { data: deliveries, error: claimErr } = await supabase
+    .schema("resupply")
+    .from("webhook_deliveries")
+    .update({ next_attempt_at: leaseUntil, updated_at: nowIso })
+    .in("id", candidateIds)
+    .eq("status", "queued")
+    .select(
+      "id, subscription_id, event_type, event_payload, attempt_count",
+    );
+  if (claimErr) throw claimErr;
   if (!deliveries || deliveries.length === 0) return stats;
   stats.scanned = deliveries.length;
 
@@ -72,10 +118,21 @@ export async function runWebhookDispatcher(
     (subs ?? []).map((s) => [s.id, s] as const),
   );
 
-  for (const delivery of deliveries) {
+  // Step 3: process the claimed batch with bounded parallelism so a
+  // slow / dead subscriber doesn't serialise the whole batch. With
+  // MAX_PARALLEL=8 and REQUEST_TIMEOUT_MS=5_000, a 50-row tick
+  // worst-case is ~32s — under the 60s cron cadence.
+  let cursor = 0;
+  async function worker(): Promise<void> {
+    while (cursor < deliveries!.length) {
+      const idx = cursor++;
+      await processOne(deliveries![idx]);
+    }
+  }
+  type Delivery = NonNullable<typeof deliveries>[number];
+  async function processOne(delivery: Delivery): Promise<void> {
     const sub = subById.get(delivery.subscription_id);
     if (!sub || !sub.is_active) {
-      // Subscription paused/deleted between enqueue and dispatch.
       await supabase
         .schema("resupply")
         .from("webhook_deliveries")
@@ -85,25 +142,51 @@ export async function runWebhookDispatcher(
         })
         .eq("id", delivery.id);
       stats.exhausted += 1;
-      continue;
+      return;
     }
-    if (!sub.target_url.startsWith("https://")) {
+    // SSRF defence: re-validate URL shape AND resolve DNS at
+    // dispatch time. The route already rejects obvious IP-literal
+    // bad cases; this catch is for DNS rebinding and for legacy
+    // subscriptions persisted before the route guard existed.
+    let parsedUrl: URL;
+    try {
+      parsedUrl = assertSafeOutboundUrlSync(sub.target_url);
+    } catch (err) {
+      const reason = err instanceof SsrfError ? err.reason : "unsafe_url";
       await supabase
         .schema("resupply")
         .from("webhook_deliveries")
         .update({
           status: "exhausted",
-          last_error: "target_url must be https://",
+          last_error: `target_url rejected: ${reason}`,
         })
         .eq("id", delivery.id);
       stats.exhausted += 1;
-      continue;
+      return;
+    }
+    let pinnedIp: string;
+    try {
+      pinnedIp = await assertSafeOutboundHost(parsedUrl.hostname);
+    } catch (err) {
+      const reason = err instanceof SsrfError ? err.reason : "dns_failed";
+      await supabase
+        .schema("resupply")
+        .from("webhook_deliveries")
+        .update({
+          status: "exhausted",
+          last_error: `target_url rejected: ${reason}`,
+        })
+        .eq("id", delivery.id);
+      stats.exhausted += 1;
+      return;
     }
     const body = JSON.stringify(delivery.event_payload);
     const signature = signBody(sub.signing_secret, body);
     const attempt = await attemptOnce(
       fetchImpl,
       sub.target_url,
+      parsedUrl.hostname,
+      pinnedIp,
       delivery,
       body,
       signature,
@@ -129,19 +212,23 @@ export async function runWebhookDispatcher(
         })
         .eq("id", sub.id);
       stats.delivered += 1;
-      continue;
+      return;
     }
-    const httpStatus = attempt.httpStatus;
-    const errorMessage = attempt.errorMessage;
     await applyRetryOrExhaust(
       supabase,
       delivery,
       sub.max_retries,
-      httpStatus,
-      errorMessage,
+      attempt.httpStatus,
+      attempt.errorMessage,
       stats,
     );
   }
+  await Promise.all(
+    Array.from(
+      { length: Math.min(MAX_PARALLEL, deliveries.length) },
+      () => worker(),
+    ),
+  );
   return stats;
 }
 
@@ -158,12 +245,14 @@ interface AttemptResult {
 async function attemptOnce(
   fetchImpl: typeof fetch,
   url: string,
+  originalHostname: string,
+  pinnedIp: string,
   delivery: { id: string; event_type: string },
   body: string,
   signature: string,
 ): Promise<AttemptResult> {
   try {
-    const res = await fetchImpl(url, {
+    const res = await fetchWithPinnedIp(fetchImpl, url, pinnedIp, originalHostname, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

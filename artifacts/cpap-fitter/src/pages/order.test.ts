@@ -172,5 +172,3 @@ describe("formatUsPhone — boundary: 10-digit truncation", () => {
     expect(formatUsPhone("9991234567890")).toBe("(999) 123-4567");
   });
 });
-
-

@@ -180,6 +180,14 @@ export function canonicalJson(value: unknown): string {
  * included so the signature also commits to the row's position —
  * a row moved to a different slot wouldn't verify even if its
  * payload bytes were identical.
+ *
+ * `occurred_at` is included (Phase 9) so a reader with DB write
+ * access can't silently rewrite WHEN an action happened while
+ * keeping the chain verifiable. Stamped on the application side
+ * at sign time (callers pass it through `logAudit`) so the
+ * DB's `default now()` and the signed value can never diverge.
+ * `occurred_at` is optional in the interface for back-compat with
+ * pre-fix verifier tooling, but `logAudit` always supplies it.
  */
 export interface AuditChainContent {
   chain_seq: number;
@@ -191,6 +199,7 @@ export interface AuditChainContent {
   metadata: unknown;
   ip: string | null;
   user_agent: string | null;
+  occurred_at?: string;
 }
 
 /**

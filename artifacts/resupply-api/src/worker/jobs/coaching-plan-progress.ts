@@ -61,7 +61,7 @@ export async function runCoachingProgressSweep(): Promise<ProgressSweepStats> {
     .schema("resupply")
     .from("patient_coaching_plans")
     .select(
-      "id, patient_id, status, target_compliance_pct, latest_compliance_pct",
+      "id, patient_id, status, target_compliance_pct, latest_compliance_pct, latest_outreach_at, updated_at",
     )
     .is("closed_at", null)
     .limit(500);
@@ -79,6 +79,12 @@ export async function runCoachingProgressSweep(): Promise<ProgressSweepStats> {
       .schema("resupply")
       .from("patient_therapy_nights")
       .select("usage_minutes, night_date, source")
+      // Order by usage_minutes desc so the dedup loop below keeps
+      // the highest-minute source per night. A night with a manual
+      // entry (e.g. partial recall) plus a device upload should
+      // count the device upload — taking the first arbitrary
+      // PostgREST row would depress compliance pct.
+      .order("usage_minutes", { ascending: false, nullsFirst: false })
       .eq("patient_id", plan.patient_id)
       .gte("night_date", windowStartIso)
       .limit(WINDOW_DAYS * 4); // 4 sources max per night
@@ -90,7 +96,8 @@ export async function runCoachingProgressSweep(): Promise<ProgressSweepStats> {
       continue;
     }
 
-    // Dedup by night_date — keep the first row for each date.
+    // Dedup by night_date — keep the first row for each date. With
+    // the ORDER BY usage_minutes desc above, "first" = highest.
     const seen = new Set<string>();
     let compliantNights = 0;
     let totalNights = 0;
@@ -115,9 +122,24 @@ export async function runCoachingProgressSweep(): Promise<ProgressSweepStats> {
     const update: CoachingPlanUpdate = {
       latest_compliance_pct: pct.toString(),
     };
+    // Auto-flip outreach_made → improving only when the
+    // outreach is fresh enough that the compliance bump is
+    // plausibly caused by it. A CSR who manually walked the
+    // plan BACK to outreach_made (e.g. patient regressed
+    // after a temporary spike) shouldn't be immediately
+    // re-flipped to improving by this sweep — that erases
+    // the CSR's intent. 14 days mirrors the WINDOW_DAYS used
+    // for the compliance rollup at the top of this file.
+    const FLIP_FRESHNESS_DAYS = 14;
+    const recencyAnchor = plan.latest_outreach_at ?? plan.updated_at;
+    const recencyMs = recencyAnchor ? Date.parse(recencyAnchor) : NaN;
+    const flipIsRecent =
+      Number.isFinite(recencyMs) &&
+      Date.now() - recencyMs <= FLIP_FRESHNESS_DAYS * 24 * 3600 * 1000;
     if (
       pct >= plan.target_compliance_pct &&
-      plan.status === "outreach_made"
+      plan.status === "outreach_made" &&
+      flipIsRecent
     ) {
       update.status = "improving";
       stats.movedToImproving += 1;

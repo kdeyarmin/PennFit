@@ -345,20 +345,26 @@ async function resolveRuleContext(
   patientId: string,
   hasPriorAuth: boolean,
 ): Promise<ModifierRuleContext> {
-  // Rental month — count of prior insurance_claims for E0601 in
-  // status submitted / accepted / paid for this patient. This is
-  // heuristic; an explicit capped_rental_status on insurance_coverages
-  // would be more authoritative, but the heuristic is close enough
-  // for the rule engine's purpose (and the CSR can override on the UI).
-  const { data: priorCpapClaims } = await supabase
+  // Rental month — count of prior insurance_claims carrying an E0601
+  // line in status submitted / accepted / paid for this patient. This
+  // is heuristic; an explicit capped_rental_status on
+  // insurance_coverages would be more authoritative, but the heuristic
+  // is close enough for the rule engine's purpose (and the CSR can
+  // override on the UI). Filter by HCPCS — counting every claim would
+  // over-count supply (A7030/A7034) and accessory claims, inflating
+  // rentalMonth and tripping the wrong KX/KH/KI/KJ rules on the next
+  // CPAP rental.
+  const { data: priorCpapLines } = await supabase
     .schema("resupply")
-    .from("insurance_claims")
-    .select("id, status, date_of_service")
-    .eq("patient_id", patientId)
-    .in("status", ["submitted", "accepted", "paid"]);
+    .from("insurance_claim_line_items")
+    .select("claim_id, insurance_claims!inner(patient_id, status)")
+    .eq("hcpcs_code", "E0601")
+    .eq("insurance_claims.patient_id", patientId)
+    .in("insurance_claims.status", ["submitted", "accepted", "paid", "closed"]);
   let rentalMonth: number | null = null;
-  if (priorCpapClaims && priorCpapClaims.length > 0) {
-    rentalMonth = Math.min(13, priorCpapClaims.length + 1);
+  if (priorCpapLines && priorCpapLines.length > 0) {
+    const uniqueClaims = new Set(priorCpapLines.map((l) => l.claim_id));
+    rentalMonth = Math.min(13, uniqueClaims.size + 1);
   }
 
   // Compliance — sum of qualifying nights in the last 30 days.
@@ -383,7 +389,7 @@ async function resolveRuleContext(
     rentalMonth,
     isPurchased: false,
     isCompliant,
-    isInitialDispense: !priorCpapClaims || priorCpapClaims.length === 0,
+    isInitialDispense: !priorCpapLines || priorCpapLines.length === 0,
     hasPriorAuth,
   };
 }
