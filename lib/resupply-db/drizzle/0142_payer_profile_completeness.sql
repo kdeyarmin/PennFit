@@ -502,5 +502,19 @@ WHERE slug = 'va_ccn_region1';
 UPDATE "resupply"."payer_profiles" SET
   notes = COALESCE(notes, '')
     || E'\nNEEDS VERIFICATION: timely filing window + mailing addresses + required modifiers were not populated in migration 0142.'
-WHERE timely_filing_days IS NULL;
+WHERE (
+  timely_filing_days IS NULL
+  OR claims_mailing_address IS NULL
+  OR appeals_mailing_address IS NULL
+  OR member_id_pattern IS NULL
+  OR required_modifiers_dme IS NULL
+  OR requires_referring_provider_npi IS NULL
+  OR era_payer_id IS NULL
+  OR era_enrollment_required IS NULL
+  OR enrollment_status IS NULL
+)
+AND POSITION(
+  'NEEDS VERIFICATION: timely filing window + mailing addresses + required modifiers were not populated in migration 0142.'
+  IN COALESCE(notes, '')
+) = 0;
 --> statement-breakpoint
