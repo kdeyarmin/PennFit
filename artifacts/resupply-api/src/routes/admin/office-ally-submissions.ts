@@ -576,18 +576,77 @@ router.get(
         .order("submitted_at", { ascending: false }),
     ]);
 
+    // 277CA per-claim outcomes. The dispatcher in
+    // worker/jobs/office-ally-inbound-poll.ts writes one
+    // insurance_claim_events row per claim whose note begins with
+    // "277CA accepted:" or "277CA rejected:". Fetch the latest such
+    // event per claim so the detail page can render the per-claim
+    // reject reason inline instead of forcing the op to scroll to
+    // the events tab.
+    const claimIds = claims.map((c) => c.id);
+    const ackEvents = new Map<
+      string,
+      {
+        outcome: "accepted" | "rejected" | "note";
+        note: string;
+        occurredAt: string;
+      }
+    >();
+    if (claimIds.length > 0) {
+      const { data: events } = await supabase
+        .schema("resupply")
+        .from("insurance_claim_events")
+        .select("claim_id, event_type, note, occurred_at")
+        .in("claim_id", claimIds)
+        .in("event_type", ["denied", "note"])
+        .like("note", "277CA%")
+        .order("occurred_at", { ascending: false });
+      // Keep only the newest 277CA event per claim. Iteration order
+      // is DESC so the first one we see for a claim is the latest.
+      for (const e of events ?? []) {
+        if (ackEvents.has(e.claim_id)) continue;
+        const note = e.note ?? "";
+        const outcome: "accepted" | "rejected" | "note" = note.startsWith(
+          "277CA rejected:",
+        )
+          ? "rejected"
+          : note.startsWith("277CA accepted:")
+            ? "accepted"
+            : "note";
+        ackEvents.set(e.claim_id, {
+          outcome,
+          note,
+          occurredAt: e.occurred_at,
+        });
+      }
+    }
+
     res.json({
       submission: rowToApi(submission),
-      claims: claims.map((c) => ({
-        id: c.id,
-        patientId: c.patient_id,
-        patientName: patientNames.get(c.patient_id) ?? null,
-        payerName: c.payer_name,
-        claimNumber: c.claim_number,
-        dateOfService: c.date_of_service,
-        status: c.status,
-        totalBilledCents: c.total_billed_cents,
-      })),
+      claims: claims.map((c) => {
+        const ack = ackEvents.get(c.id) ?? null;
+        return {
+          id: c.id,
+          patientId: c.patient_id,
+          patientName: patientNames.get(c.patient_id) ?? null,
+          payerName: c.payer_name,
+          claimNumber: c.claim_number,
+          dateOfService: c.date_of_service,
+          status: c.status,
+          totalBilledCents: c.total_billed_cents,
+          // Per-claim 277CA outcome + reason. Null when no 277CA has
+          // been received yet for this claim. `reason` strips the
+          // "277CA accepted: " / "277CA rejected: " prefix so the UI
+          // can render it raw.
+          ack277ca: ack
+            ? {
+                outcome: ack.outcome,
+                reason: ack.note.replace(/^277CA (accepted|rejected): /, ""),
+                receivedAt: ack.occurredAt,
+              }
+            : null,
+        };
+      }),
       lineage: {
         parent: parentRes.data ? rowToApi(parentRes.data) : null,
         children: (childrenRes.data ?? []).map(rowToApi),

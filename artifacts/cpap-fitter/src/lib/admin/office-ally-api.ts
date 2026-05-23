@@ -139,6 +139,13 @@ export interface OaSubmissionLinkedClaim {
   dateOfService: string;
   status: string;
   totalBilledCents: number;
+  /** Per-claim 277CA outcome + reason. Null when no 277CA has been
+   *  received for this claim yet. */
+  ack277ca: {
+    outcome: "accepted" | "rejected" | "note";
+    reason: string;
+    receivedAt: string;
+  } | null;
 }
 
 export interface OaSubmissionLineage {
