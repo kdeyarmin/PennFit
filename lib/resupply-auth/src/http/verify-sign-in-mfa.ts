@@ -156,6 +156,47 @@ export function makeVerifySignInMfaHandler(deps: AuthDeps) {
       return;
     }
 
+    // Per-user MFA brute-force throttle. Previously the only gate on
+    // wrong-code submissions was the 30/15min per-IP rate limiter at
+    // the edge — a NAT-pooled or rotating-IP attacker who already had
+    // the password could spray a meaningful slice of the 1M TOTP code
+    // space across multiple 5-min challenge tokens. Counting failed
+    // attempts per user (over the challenge-token TTL window) cuts
+    // that off well below the threshold where a 6-digit TOTP becomes
+    // brute-forceable in practice.
+    const MFA_FAILURE_WINDOW_MS = 10 * 60 * 1000;
+    const MFA_FAILURE_MAX = 5;
+    const mfaSentinel = `__mfa_verify:${user.id}`;
+    try {
+      const recentFailures = await deps.repo.countRecentFailures({
+        emailLower: mfaSentinel,
+        ip: null,
+        sinceMs: MFA_FAILURE_WINDOW_MS,
+      });
+      if (recentFailures >= MFA_FAILURE_MAX) {
+        void deps.audit({
+          action: "auth.mfa_verify_failed",
+          adminEmail: user.emailLower,
+          adminUserId: user.id,
+          ip: req.ip ?? null,
+          metadata: { reason: "rate_limited", recentFailures },
+        });
+        const retryAfter = Math.ceil(MFA_FAILURE_WINDOW_MS / 1000);
+        res.setHeader("Retry-After", String(retryAfter));
+        authError(
+          res,
+          429,
+          "rate_limited",
+          "Too many incorrect codes. Please wait and try again.",
+        );
+        return;
+      }
+    } catch {
+      // Probe failure here just means we degrade to the IP edge
+      // limit + 30-sec TOTP step protection. Don't fail-closed —
+      // a flaky DB on this call shouldn't bounce all sign-ins.
+    }
+
     let secret;
     try {
       secret = await deps.mfa.findActiveSecret(userId);
@@ -254,6 +295,13 @@ export function makeVerifySignInMfaHandler(deps: AuthDeps) {
         return;
       }
       if (!match) {
+        // Bump the per-user MFA failure counter so brute-force
+        // spraying across recovery codes also hits the throttle.
+        void deps.repo.recordLoginAttempt({
+          emailLower: `__mfa_verify:${user.id}`,
+          ip: req.ip ?? null,
+          success: false,
+        });
         void deps.audit({
           action: "auth.mfa_verify_failed",
           adminEmail: user.emailLower,
@@ -308,6 +356,15 @@ export function makeVerifySignInMfaHandler(deps: AuthDeps) {
       }
 
       if (!matched) {
+        // Bump the per-user MFA failure counter (see the rate-limit
+        // gate near the top of this handler). A NAT-pooled attacker
+        // can rotate IPs to bypass the edge limiter, but the
+        // per-user counter cuts a brute-force run off in seconds.
+        void deps.repo.recordLoginAttempt({
+          emailLower: `__mfa_verify:${user.id}`,
+          ip: req.ip ?? null,
+          success: false,
+        });
         void deps.audit({
           action: "auth.mfa_verify_failed",
           adminEmail: user.emailLower,

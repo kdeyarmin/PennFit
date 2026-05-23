@@ -869,6 +869,19 @@ function UploadAckModal({
 
   function handleFile(file: File | null) {
     if (!file) return;
+    // Reject before reading the bytes. The backend zod cap is 5MB
+    // and the per-route body-parser is sized to match, but a
+    // multi-MB pasted log would still tie up the tab on `file.text()`
+    // and then 413 server-side with an opaque error. Match the
+    // sibling ERA upload modal's 4MB ceiling so the operator gets a
+    // crisp client-side message.
+    const MAX_FILE_BYTES = 4 * 1024 * 1024;
+    if (file.size > MAX_FILE_BYTES) {
+      setResult({
+        error: `${file.name} is ${(file.size / 1024 / 1024).toFixed(1)} MB. Max is 4 MB.`,
+      });
+      return;
+    }
     setFileName(file.name);
     file.text().then(
       (text) => setContent(text),

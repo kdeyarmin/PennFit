@@ -140,7 +140,7 @@ describe("POST /email/sendgrid-events", () => {
     setBaseEnv(publicKeyBase64);
     stageMessageUpdates(1);
 
-    const ts = "1810000000";
+    const ts = String(Math.floor(Date.now() / 1000));
     const body = JSON.stringify([
       {
         event: "delivered",
@@ -183,7 +183,7 @@ describe("POST /email/sendgrid-events", () => {
       setBaseEnv(publicKeyBase64);
       stageMessageUpdates(1);
 
-      const ts = "1810000001";
+      const ts = String(Math.floor(Date.now() / 1000));
       const body = JSON.stringify([
         {
           event,
@@ -248,7 +248,7 @@ describe("POST /email/sendgrid-events", () => {
     const { publicKeyBase64, privateKeyPem } = freshKeyPair();
     setBaseEnv(publicKeyBase64);
 
-    const ts = "1810000010";
+    const ts = String(Math.floor(Date.now() / 1000));
     // Valid JSON but wrong type — parseSendgridEventBatch expects an array,
     // so an object body causes a Zod parse error → caught as parse_failed.
     const wrongSchemaBody = JSON.stringify({ notAnArray: true });
@@ -271,7 +271,7 @@ describe("POST /email/sendgrid-events", () => {
     const { publicKeyBase64, privateKeyPem } = freshKeyPair();
     setBaseEnv(publicKeyBase64);
 
-    const ts = "1810000002";
+    const ts = String(Math.floor(Date.now() / 1000));
     const originalBody = JSON.stringify([
       { event: "delivered", sg_message_id: "sg.msg.tamper.1" },
     ]);
@@ -294,7 +294,7 @@ describe("POST /email/sendgrid-events", () => {
     const { publicKeyBase64, privateKeyPem } = freshKeyPair();
     setBaseEnv(publicKeyBase64);
 
-    const ts = "1810000003";
+    const ts = String(Math.floor(Date.now() / 1000));
     const body = JSON.stringify([
       { event: "delivered", sg_message_id: "sg.msg.plain.1" },
     ]);
@@ -318,7 +318,7 @@ describe("POST /email/sendgrid-events", () => {
     const { publicKeyBase64, privateKeyPem } = freshKeyPair();
     setBaseEnv(publicKeyBase64);
 
-    const ts = "1810000004";
+    const ts = String(Math.floor(Date.now() / 1000));
     const invalidJsonBody = "{ this is not valid JSON !!!";
     const sig = signBody(privateKeyPem, ts, invalidJsonBody);
 

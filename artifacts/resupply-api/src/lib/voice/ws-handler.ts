@@ -466,24 +466,64 @@ async function finalizeConversation(
 }
 
 /**
- * Persist the Deepgram-side transcript to the audit log as a single
- * `voice.call.deepgram_transcript` row. We log the FULL transcript
- * (the @workspace/resupply-audit metadata sanitizer enforces size
- * caps; if a long call overflows, the sanitizer truncates rather
- * than rejecting). One row per call is the right granularity — the
- * model's per-turn `messages` rows already give us turn-level detail
- * via the OpenAI transcripts; Deepgram is the audit-grade backup.
+ * Persist the Deepgram-side transcript so we keep an audit-grade
+ * backup to the OpenAI Realtime per-turn messages.
  *
- * Always resolves — never throws. A failed audit write here would be
- * a degraded audit trail, not a broken call.
+ * PHI handling: the raw transcript carries patient utterances —
+ * name, DOB, address, complaints — exactly the high-PHI surface
+ * the audit log isn't supposed to hold. So we split the write into
+ * two pieces:
+ *
+ *   1. The raw transcript bytes go into the `messages` table (which
+ *      is RLS-scoped + encrypted at rest), as a single row tagged
+ *      sender_role='deepgram_transcript'. That row holds the PHI.
+ *   2. The audit-log row carries only structural metadata: turn
+ *      count, char count, and the message id. The HMAC-chained
+ *      audit row stays world-readable safe; investigators can join
+ *      back to messages by id under RLS.
+ *
+ * Always resolves — never throws. A failed write here is a degraded
+ * audit trail, not a broken call.
  */
 async function writeDeepgramAuditTranscript(
   conversationId: string,
   twilioCallSid: string | null,
   deepgramTurns: ReadonlyArray<string>,
 ): Promise<void> {
+  const fullTranscript = deepgramTurns.join(" ");
+  let transcriptMessageId: string | null = null;
   try {
-    const fullTranscript = deepgramTurns.join(" ");
+    const supabase = getSupabaseServiceRoleClient();
+    const { data: inserted, error } = await supabase
+      .schema("resupply")
+      .from("messages")
+      .insert({
+        conversation_id: conversationId,
+        direction: "inbound",
+        sender_role: "deepgram_transcript",
+        body: Buffer.from(fullTranscript, "utf8"),
+        vendor_metadata: {
+          twilio_call_sid: twilioCallSid ?? null,
+          prompt_version: PROMPT_VERSION,
+          turn_count: deepgramTurns.length,
+        },
+      })
+      .select("id")
+      .limit(1)
+      .maybeSingle();
+    if (error) throw error;
+    transcriptMessageId = inserted?.id ?? null;
+  } catch (err) {
+    logger.warn(
+      {
+        event: "voice_deepgram_message_insert_failed",
+        err: serializeErr(err),
+        conversationId,
+      },
+      "voice: deepgram transcript message insert failed",
+    );
+  }
+  try {
     await logAudit({
       action: "voice.call.deepgram_transcript",
       targetTable: "conversations",
@@ -491,7 +531,7 @@ async function writeDeepgramAuditTranscript(
       metadata: {
         twilio_call_sid: twilioCallSid ?? null,
         prompt_version: PROMPT_VERSION,
-        transcript: fullTranscript,
+        transcript_message_id: transcriptMessageId,
         turn_count: deepgramTurns.length,
         char_count: fullTranscript.length,
       },
