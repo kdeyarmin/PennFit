@@ -76,7 +76,7 @@ describe("AppShell NAV_GROUPS — integrations entry (Insights group)", () => {
 // ---------------------------------------------------------------------------
 // New nav item: Accreditation binder (System group)
 // ---------------------------------------------------------------------------
-describe.skip("AppShell NAV_GROUPS — accreditation-binder entry (System group)", () => {
+describe("AppShell NAV_GROUPS — accreditation-binder entry (System group)", () => {
   it("registers the /admin/accreditation-binder href", () => {
     expect(APPSHELL_SRC).toContain('href: "/admin/accreditation-binder"');
   });
@@ -144,33 +144,9 @@ describe("AppShell NAV_GROUPS — billing group", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Compliance/audit nav items removed in this PR — negative regression guards
-// ---------------------------------------------------------------------------
-describe("AppShell NAV_GROUPS — compliance/audit nav items removed", () => {
-  it("does NOT register an Audit Log nav entry", () => {
-    expect(APPSHELL_SRC).not.toContain('href: "/admin/audit"');
-    expect(APPSHELL_SRC).not.toContain('label: "Audit Log"');
-  });
-
-  it("does NOT register a Compliance binder nav entry", () => {
-    expect(APPSHELL_SRC).not.toContain('href: "/admin/compliance"');
-    expect(APPSHELL_SRC).not.toContain('label: "Compliance binder"');
-  });
-
-  it("does NOT register an Accreditation binder nav entry", () => {
-    expect(APPSHELL_SRC).not.toContain('href: "/admin/accreditation-binder"');
-    expect(APPSHELL_SRC).not.toContain('label: "Accreditation binder"');
-  });
-
-  it("does NOT import ClipboardList (icon removed with accreditation entry)", () => {
-    expect(APPSHELL_SRC).not.toContain("ClipboardList");
-  });
-});
-
-// ---------------------------------------------------------------------------
 // Regression: pre-existing routes are undisturbed
 // ---------------------------------------------------------------------------
-describe.skip("AppShell NAV_GROUPS — pre-existing routes not removed by this PR", () => {
+describe("AppShell NAV_GROUPS — pre-existing routes not removed by this PR", () => {
   const expectedRoutes = [
     "/admin/followups",
     "/admin/macros",
@@ -188,61 +164,52 @@ describe.skip("AppShell NAV_GROUPS — pre-existing routes not removed by this P
 });
 
 // ---------------------------------------------------------------------------
-// This PR: removed nav entries
+// This PR: Audit Log nav item re-added to System group
 // ---------------------------------------------------------------------------
-
-describe("AppShell NAV_GROUPS — /admin/fitter-leads removed in this PR", () => {
-  it("no longer registers an /admin/fitter-leads href", () => {
-    expect(APPSHELL_SRC).not.toContain('href: "/admin/fitter-leads"');
+describe("AppShell NAV_GROUPS — audit-log entry (System group)", () => {
+  it("registers the /admin/audit href", () => {
+    expect(APPSHELL_SRC).toContain('href: "/admin/audit"');
   });
 
-  it("no longer has a 'Fitter Prospects' label", () => {
-    expect(APPSHELL_SRC).not.toContain('label: "Fitter Prospects"');
+  it("uses 'Audit Log' as the label", () => {
+    expect(APPSHELL_SRC).toContain('label: "Audit Log"');
   });
 
-  it("no longer has a 'Fitter funnel + supply-campaign conversion' hint", () => {
-    expect(APPSHELL_SRC).not.toContain("Fitter funnel + supply-campaign conversion");
-  });
-});
-
-describe("AppShell NAV_GROUPS — /admin/control-center removed in this PR", () => {
-  it("no longer registers an /admin/control-center href", () => {
-    expect(APPSHELL_SRC).not.toContain('href: "/admin/control-center"');
+  it("uses /admin/audit as the matchPrefix", () => {
+    expect(APPSHELL_SRC).toContain('matchPrefix: "/admin/audit"');
   });
 
-  it("no longer has a 'Control Center' label", () => {
-    expect(APPSHELL_SRC).not.toContain('label: "Control Center"');
-  });
-
-  it("no longer has the 'On/off switches for major features' hint", () => {
-    expect(APPSHELL_SRC).not.toContain("On/off switches for major features");
-  });
-
-  it("no longer imports ToggleLeft from lucide-react", () => {
-    expect(APPSHELL_SRC).not.toContain("ToggleLeft");
+  it("includes a descriptive hint for the audit trail", () => {
+    expect(APPSHELL_SRC).toContain("Resupply admin activity trail");
   });
 });
 
 // ---------------------------------------------------------------------------
-// This PR: Reports hint text restored to original
+// This PR: Compliance binder nav item re-added to System group
 // ---------------------------------------------------------------------------
-
-describe("AppShell NAV_GROUPS — reports entry hint text restored", () => {
-  it("uses the original 'Operational KPIs and exports' hint for reports", () => {
-    expect(APPSHELL_SRC).toContain("Operational KPIs and exports");
+describe("AppShell NAV_GROUPS — compliance-binder entry (System group)", () => {
+  it("registers the /admin/compliance href", () => {
+    expect(APPSHELL_SRC).toContain('href: "/admin/compliance"');
   });
 
-  it("no longer uses the CSV/PDF/QuickBooks expanded reports hint", () => {
-    expect(APPSHELL_SRC).not.toContain(
-      "CSV, PDF, and QuickBooks (IIF / QBO) exports for ops and finance",
+  it("uses 'Compliance binder' as the label", () => {
+    expect(APPSHELL_SRC).toContain('label: "Compliance binder"');
+  });
+
+  it("uses /admin/compliance as the matchPrefix", () => {
+    expect(APPSHELL_SRC).toContain('matchPrefix: "/admin/compliance"');
+  });
+
+  it("includes a hint mentioning DMEPOS surveyors", () => {
+    expect(APPSHELL_SRC).toContain(
+      "Staff training records + patient grievances for DMEPOS surveyors",
     );
   });
 });
 
 // ---------------------------------------------------------------------------
-// This PR: collapsible nav infrastructure removed
+// This PR: collapsible nav machinery removed — structural regression guards
 // ---------------------------------------------------------------------------
-
 describe("AppShell — collapsible nav machinery removed in this PR", () => {
   it("no longer imports ChevronRight from lucide-react", () => {
     expect(APPSHELL_SRC).not.toContain("ChevronRight");
@@ -272,7 +239,7 @@ describe("AppShell — collapsible nav machinery removed in this PR", () => {
     expect(APPSHELL_SRC).not.toContain("function persistExplicitCollapsedGroups");
   });
 
-  it("no longer defines the groupDomId helper for aria-controls IDs", () => {
+  it("no longer defines groupDomId for aria-controls IDs", () => {
     expect(APPSHELL_SRC).not.toContain("function groupDomId");
   });
 
@@ -280,28 +247,20 @@ describe("AppShell — collapsible nav machinery removed in this PR", () => {
     expect(APPSHELL_SRC).not.toContain("function toggleNavGroup(label: string)");
   });
 
-  it("no longer uses the NAV_EXPANDED_STORAGE_KEY localStorage key", () => {
+  it("no longer uses NAV_EXPANDED_STORAGE_KEY", () => {
     expect(APPSHELL_SRC).not.toContain("NAV_EXPANDED_STORAGE_KEY");
   });
 
-  it("no longer uses the NAV_EXPLICIT_COLLAPSED_STORAGE_KEY localStorage key", () => {
+  it("no longer uses NAV_EXPLICIT_COLLAPSED_STORAGE_KEY", () => {
     expect(APPSHELL_SRC).not.toContain("NAV_EXPLICIT_COLLAPSED_STORAGE_KEY");
   });
 
-  it("no longer tracks navExpanded state in AppShell", () => {
+  it("no longer tracks navExpanded state", () => {
     expect(APPSHELL_SRC).not.toContain("navExpanded");
   });
 
-  it("no longer tracks navExplicitCollapsed state in AppShell", () => {
+  it("no longer tracks navExplicitCollapsed state", () => {
     expect(APPSHELL_SRC).not.toContain("navExplicitCollapsed");
-  });
-
-  it("no longer renders aria-expanded on group headers", () => {
-    expect(APPSHELL_SRC).not.toContain("aria-expanded={isOpen}");
-  });
-
-  it("no longer renders aria-controls on group headers", () => {
-    expect(APPSHELL_SRC).not.toContain("aria-controls={sectionId}");
   });
 
   it("no longer uses hidden={!isOpen} to toggle group visibility", () => {
@@ -309,29 +268,19 @@ describe("AppShell — collapsible nav machinery removed in this PR", () => {
   });
 
   it("no longer passes expanded prop to SidebarNavBody", () => {
-    expect(APPSHELL_SRC).not.toContain("expanded={navExpanded}");
+    expect(APPSHELL_SRC).not.toContain("expanded: Set<string>");
   });
 
   it("no longer passes onToggleGroup prop to SidebarNavBody", () => {
-    expect(APPSHELL_SRC).not.toContain("onToggleGroup={toggleNavGroup}");
+    expect(APPSHELL_SRC).not.toContain("onToggleGroup: (label: string) => void");
   });
 });
 
 // ---------------------------------------------------------------------------
-// This PR: SidebarNavBody simplified — static non-collapsible groups
+// This PR: SidebarNavBody simplified to static non-collapsible groups
 // ---------------------------------------------------------------------------
-
 describe("AppShell — SidebarNavBody simplified to static groups", () => {
-  it("SidebarNavBody no longer declares an 'expanded' prop in its signature", () => {
-    expect(APPSHELL_SRC).not.toContain("expanded: Set<string>");
-  });
-
-  it("SidebarNavBody no longer declares an 'onToggleGroup' callback prop", () => {
-    expect(APPSHELL_SRC).not.toContain("onToggleGroup: (label: string) => void");
-  });
-
   it("renders each group label as a static <p> element, not a toggle button", () => {
-    // The new rendering uses a plain <p> for the group header.
     expect(APPSHELL_SRC).toContain("tracking-[0.22em] font-semibold mb-1.5 px-3");
   });
 
@@ -342,5 +291,14 @@ describe("AppShell — SidebarNavBody simplified to static groups", () => {
   it("still renders NavItem for each link within a group", () => {
     expect(APPSHELL_SRC).toContain("NavItem");
     expect(APPSHELL_SRC).toContain("group.items.map((link) =>");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// This PR: imports ClipboardList (for accreditation-binder icon)
+// ---------------------------------------------------------------------------
+describe("AppShell — ClipboardList icon imported for accreditation-binder", () => {
+  it("imports ClipboardList from lucide-react", () => {
+    expect(APPSHELL_SRC).toContain("ClipboardList");
   });
 });
