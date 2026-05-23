@@ -237,12 +237,11 @@ async function groupedCount(
     | "resolved_by_user_id"
     | "completed_by_user_id",
   adminIds: string[],
-  // The PostgREST filter builder's generic chain is too deep to spell
-  // out usefully here — every caller chains `.eq` / `.gte` / `.lte` /
-  // `.in` / `.not` against the same select query. The runtime contract
-  // is "any chainable PostgREST filter builder," which we model as the
-  // builder type using a `Parameters` inference trick: the parameter
-  // shape is whatever `base.in(…)` happens to return.
+  // Every caller chains `.eq` / `.gte` / `.lte` / `.in` / `.not`
+  // against the same select query. The PostgREST filter builder's
+  // upstream generic chain is too deep to spell out usefully, so
+  // we use the local structural `PostgrestQuery` type below — it
+  // captures only the chainable methods callers exercise here.
   refine: (q: PostgrestQuery) => PostgrestQuery,
 ): Promise<Map<string, number>> {
   const counts = new Map<string, number>();

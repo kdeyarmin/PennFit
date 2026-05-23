@@ -152,6 +152,10 @@ describe("reminders-manage — regression: core manage behaviour intact", () => 
     // this assertion.
     expect(SRC).toContain("update.mutate(");
     expect(SRC).toMatch(/params:\s*hasToken\s*\?\s*\{\s*token\s*\}/);
+    // The actual payload that drives the save — a regression that
+    // drops or renames `items: enabled` would silently pass the
+    // params-shape check above without this.
+    expect(SRC).toMatch(/data:\s*\{\s*items:\s*enabled\s*\}/);
   });
 
   it("calls unsub.mutate with the token on Unsubscribe", () => {
