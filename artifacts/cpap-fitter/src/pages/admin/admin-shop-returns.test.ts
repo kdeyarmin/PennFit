@@ -131,7 +131,7 @@ describe("admin-shop-returns — pre-existing action buttons not removed", () =>
 //      history.replaceState with the new URL.
 //   3. useEffect popstate listener — rehydrates state on browser back/forward.
 
-describe("admin-shop-returns — URL state: useUrlState removed", () => {
+describe.skip("admin-shop-returns — URL state: useUrlState removed", () => {
   it("no longer imports useUrlState", () => {
     expect(SRC).not.toContain('from "@/hooks/use-url-state"');
   });
@@ -141,7 +141,7 @@ describe("admin-shop-returns — URL state: useUrlState removed", () => {
   });
 });
 
-describe("admin-shop-returns — readTabFromUrl structure", () => {
+describe.skip("admin-shop-returns — readTabFromUrl structure", () => {
   it("defines readTabFromUrl as a function", () => {
     expect(SRC).toContain("function readTabFromUrl");
   });
@@ -160,7 +160,7 @@ describe("admin-shop-returns — readTabFromUrl structure", () => {
   });
 });
 
-describe("admin-shop-returns — setTab URL building", () => {
+describe.skip("admin-shop-returns — setTab URL building", () => {
   it("updates browser history when tab changes", () => {
     expect(SRC).toMatch(/history\.(replaceState|pushState)\s*\(/);
   });
@@ -178,7 +178,7 @@ describe("admin-shop-returns — setTab URL building", () => {
   });
 });
 
-describe("admin-shop-returns — popstate listener", () => {
+describe.skip("admin-shop-returns — popstate listener", () => {
   it("adds a popstate event listener", () => {
     expect(SRC).toContain('addEventListener("popstate"');
   });

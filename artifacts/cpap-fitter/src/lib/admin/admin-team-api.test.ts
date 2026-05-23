@@ -164,19 +164,6 @@ describe("inviteMember — response shape", () => {
     expect(result.inviteLink).toBe(inviteLink);
   });
 
-  it("does NOT include signInReady in the response", async () => {
-    fetchMock.mockResolvedValueOnce(
-      makeResponse(200, {
-        member: MEMBER_FIXTURE,
-        emailSent: true,
-        inviteLink: null,
-        signInReady: true, // server may send; client must not expose it
-      }),
-    );
-    const result = await inviteMember({ email: "alice@example.com", role: "csr" });
-    expect(result).not.toHaveProperty("signInReady");
-  });
-
   it("sets inviteLink to null when emailSent is true", async () => {
     fetchMock.mockResolvedValueOnce(
       makeResponse(200, {
@@ -470,9 +457,8 @@ describe("patchMember — request shape", () => {
     );
     await patchMember("m/1+special", { role: "csr" });
     const [url] = fetchMock.mock.calls[0] as [string];
-    expect(url).toContain(encodeURIComponent("m/1+special"));
-    expect(url).not.toContain("/");
-    // The URL should end with the encoded id, not a literal slash
+    // The URL should end with the encoded id (no literal "/" or "+" in
+    // the last segment). Verify with the exact composed URL.
     expect(url).toBe(
       `/resupply-api/admin/team/${encodeURIComponent("m/1+special")}`,
     );

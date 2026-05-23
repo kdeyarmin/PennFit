@@ -729,13 +729,13 @@ function csvCell(value: unknown): string {
 // Thin helper for the binder summary — runs a head-only count with
 // an optional refiner so each section's "open" sub-count is one
 // expression instead of three.
-type CountRefiner = (
-  q: ReturnType<
-    ReturnType<
-      ReturnType<typeof getSupabaseServiceRoleClient>["schema"]
-    >["from"]
-  >["select"],
-) => unknown;
+// The PostgrestFilterBuilder type is too deeply parameterised across
+// the four tables this helper accepts (TS errors with "type
+// instantiation is excessively deep"). The runtime is uniform — `q`
+// is the result of the Supabase select chain — so we type it loosely
+// and rely on the caller's chain methods being valid for the table.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type CountRefiner = (q: any) => unknown;
 async function countTable(
   supabase: ReturnType<typeof getSupabaseServiceRoleClient>,
   table:

@@ -311,7 +311,7 @@ router.patch(
         res.status(404).json({ error: "not_found" });
         return;
       }
-      const fromStatus = existing.status;
+      const fromStatus = existing.status as EquipmentStatus;
       const toStatus = fields.status;
       if (fromStatus !== toStatus) {
         if (!VALID_TRANSITIONS[fromStatus].includes(toStatus)) {

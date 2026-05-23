@@ -222,11 +222,14 @@ async function groupedCount(
     | "resolved_by_user_id"
     | "completed_by_user_id",
   adminIds: string[],
-  refine: (
-    q: ReturnType<
-      ReturnType<SupabaseClient["schema"]>["from"]
-    >["select"],
-  ) => unknown,
+  // The exact PostgrestFilterBuilder type is too deeply parameterised
+  // to express cleanly across the four table variants this helper
+  // accepts (TS errors with "type instantiation is excessively deep").
+  // The runtime is uniform — `q` is whatever the Supabase chain returns
+  // before refinement — so we type it loosely and rely on the caller's
+  // chain methods being valid at the actual table.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  refine: (q: any) => unknown,
 ): Promise<Map<string, number>> {
   const counts = new Map<string, number>();
   if (adminIds.length === 0) return counts;
