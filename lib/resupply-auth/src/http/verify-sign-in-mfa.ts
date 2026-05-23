@@ -297,11 +297,15 @@ export function makeVerifySignInMfaHandler(deps: AuthDeps) {
       if (!match) {
         // Bump the per-user MFA failure counter so brute-force
         // spraying across recovery codes also hits the throttle.
-        void deps.repo.recordLoginAttempt({
-          emailLower: `__mfa_verify:${user.id}`,
-          ip: req.ip ?? null,
-          success: false,
-        });
+        try {
+          await deps.repo.recordLoginAttempt({
+            emailLower: `__mfa_verify:${user.id}`,
+            ip: req.ip ?? null,
+            success: false,
+          });
+        } catch {
+          // best-effort: keep auth response behavior unchanged
+        }
         void deps.audit({
           action: "auth.mfa_verify_failed",
           adminEmail: user.emailLower,
