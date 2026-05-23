@@ -1,30 +1,9 @@
 // Hand-rolled fetch wrapper for /admin/providers + the NPPES lookup
 // proxy. Same pattern as today-api.ts and followups-list-api.ts.
 
-function getCsrfToken(): string | null {
-  if (typeof document === "undefined") return null;
+import { csrfHeader } from "../csrf";
 
-  const cookieName = "pf_csrf=";
-  const match = document.cookie
-    .split(";")
-    .map((row) => row.trim())
-    .find((row) => row.startsWith(cookieName));
-
-  if (!match) return null;
-
-  const encodedValue = match.slice(cookieName.length);
-
-  try {
-    return decodeURIComponent(encodedValue);
-  } catch {
-    return null;
-  }
-}
-
-function csrfHeader(): Record<string, string> {
-  const token = getCsrfToken();
-  return token ? { "X-PF-CSRF": token } : {};
-}
+export type ProviderSource = "nppes" | "csr_entry" | "backfill";
 
 export type ProviderSource = "nppes" | "csr_entry" | "backfill";
 
