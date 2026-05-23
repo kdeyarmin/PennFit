@@ -149,6 +149,11 @@ export function makeResetPasswordHandler(deps: AuthDeps) {
       userId: consumed.userId,
       passwordHash: newHash,
       mustChange: false,
+      // User typed this themselves via the reset link — clear
+      // the operator-set expiry clock from any previous "Set
+      // their password for them" invite so the sign-in
+      // invite-expired gate stops firing.
+      setByAdminAt: null,
     });
     await deps.repo.markEmailVerified(consumed.userId, t);
     await deps.repo.revokeAllUserSessions(consumed.userId, t);

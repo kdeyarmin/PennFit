@@ -114,6 +114,9 @@ export function makeSignUpHandler(
         userId,
         passwordHash: hash,
         mustChange: false,
+        // Self-service sign-up — clear any operator-set expiry
+        // clock left over from a previous team-invite attempt.
+        setByAdminAt: null,
       });
     } else {
       const inserted = await deps.repo.insertUser({
@@ -131,6 +134,7 @@ export function makeSignUpHandler(
         userId,
         passwordHash: hash,
         mustChange: false,
+        setByAdminAt: null,
       });
     }
 

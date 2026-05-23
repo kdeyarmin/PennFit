@@ -324,6 +324,67 @@ describe("POST /auth/sign-in", () => {
     expect(res.body.error).toBe("invalid_input");
   });
 
+  // Regression: the team-invite "set their password for them" path
+  // writes must_change=true AND set_by_admin_at=now. If the user
+  // never signs in, the credential expires after ADMIN_PASSWORD_TTL_MS
+  // (7 days). Sign-in must refuse the (otherwise-correct) password
+  // with a distinct invite_expired error so the SPA can tell the
+  // user to ask for a re-invite — and must do so BEFORE comparing
+  // the password to avoid leaking "the password was right".
+  it("returns 403 invite_expired when an admin-set password is older than the TTL", async () => {
+    await seedAlice();
+    // Backdate the credential to 8 days ago with must_change=true.
+    const eightDaysAgo = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000);
+    const cred = (await h.repo.findCredentialByUserId("u_alice"))!;
+    h.repo.__putCredential({
+      ...cred,
+      mustChange: true,
+      setByAdminAt: eightDaysAgo,
+    });
+    const csrf = await seedCsrf(h.app);
+
+    const res = await supertest(h.app)
+      .post("/auth/sign-in")
+      .set("Cookie", `${CSRF_COOKIE}=${csrf}`)
+      .set(CSRF_HEADER, csrf)
+      .send({
+        email: "alice@example.com",
+        password: "correct horse battery staple",
+      });
+
+    expect(res.status).toBe(403);
+    expect(res.body.error).toBe("invite_expired");
+    expect(res.headers["set-cookie"]).toBeUndefined();
+    const failedEvent = h.audit.events.find(
+      (e) => e.action === "auth.sign_in_failed",
+    );
+    expect(failedEvent).toBeDefined();
+    expect(failedEvent!.metadata?.reason).toBe("admin_password_expired");
+  });
+
+  it("still admits an admin-set password while inside the TTL window", async () => {
+    await seedAlice();
+    const oneDayAgo = new Date(Date.now() - 1 * 24 * 60 * 60 * 1000);
+    const cred = (await h.repo.findCredentialByUserId("u_alice"))!;
+    h.repo.__putCredential({
+      ...cred,
+      mustChange: true,
+      setByAdminAt: oneDayAgo,
+    });
+    const csrf = await seedCsrf(h.app);
+
+    const res = await supertest(h.app)
+      .post("/auth/sign-in")
+      .set("Cookie", `${CSRF_COOKIE}=${csrf}`)
+      .set(CSRF_HEADER, csrf)
+      .send({
+        email: "alice@example.com",
+        password: "correct horse battery staple",
+      });
+
+    expect(res.status).toBe(200);
+  });
+
   it("returns 429 once the per-email rate limit threshold is hit", async () => {
     await seedAlice();
     h.repo.__forceFailures("alice@example.com", DEFAULT_RATE_LIMIT.maxPerEmail);

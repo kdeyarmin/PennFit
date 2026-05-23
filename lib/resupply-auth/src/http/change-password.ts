@@ -105,6 +105,10 @@ export function makeChangePasswordHandler(deps: AuthDeps) {
       userId: user.id,
       passwordHash: newHash,
       mustChange: false,
+      // User typed this themselves — clear the operator-set
+      // expiry clock so future sign-ins skip the invite-expired
+      // gate in sign-in.ts.
+      setByAdminAt: null,
     });
     // Keep this session alive; revoke every other one belonging
     // to this user. A separate device that was signed in before

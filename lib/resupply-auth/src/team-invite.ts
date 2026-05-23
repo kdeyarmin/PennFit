@@ -32,6 +32,17 @@ import type { ResupplySupabaseClient } from "@workspace/resupply-db";
  *  expect the email. */
 const INVITE_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
+/**
+ * How long an admin-typed password (set via the "Set their password
+ * for them" team-invite path) remains valid before the sign-in
+ * handler refuses it. Mirrors `INVITE_TOKEN_TTL_MS` so the two
+ * operator paths — email invite and out-of-band password — have the
+ * same window. Exported so the sign-in handler and any UI surface
+ * can reference the same number.
+ */
+export const ADMIN_PASSWORD_TTL_MS = INVITE_TOKEN_TTL_MS;
+export const ADMIN_PASSWORD_TTL_DAYS = 7;
+
 export interface InviteResult {
   /** resupply_auth.users.id for the resolved row. */
   authUserId: string;
@@ -214,6 +225,13 @@ export async function inviteTeamMember(
           user_id: authUserId,
           password_hash: passwordHash,
           must_change: true,
+          // Stamp the moment this operator-typed password landed
+          // on the row. The sign-in handler pairs this with
+          // must_change=true to refuse credentials whose owner
+          // never signed in inside ADMIN_PASSWORD_TTL_MS — see
+          // lib/resupply-auth/src/http/sign-in.ts. Cleared back
+          // to NULL on a successful password change / reset.
+          set_by_admin_at: nowIso,
           updated_at: nowIso,
         },
         { onConflict: "user_id" },

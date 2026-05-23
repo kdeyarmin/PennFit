@@ -385,7 +385,7 @@ function InviteCard() {
       setSetPasswordMode(false);
       if (result.signInReady) {
         setSuccess(
-          `${invitedEmail} is ready to sign in now. Share the password you just set with them — we did not email it.`,
+          `${invitedEmail} is ready to sign in now. Share the password you just set with them — we did not email it. The temporary password expires in 7 days if they don't sign in, after which you'll need to re-invite them.`,
         );
         setWarning(null);
       } else if (!result.emailSent) {
@@ -516,6 +516,9 @@ function InviteCard() {
             )}
             <div className="text-[11px] text-slate-500 mt-1">
               They&apos;ll be able to change it after signing in.
+              This temporary password expires in 7 days if they
+              never sign in — you&apos;ll need to re-invite them after
+              that.
             </div>
           </div>
         )}
