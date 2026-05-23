@@ -113,26 +113,28 @@ for f in "${added[@]}"; do
       violations+=("$f")
       continue
     fi
-    # Collision check: is the prefix already present in any other
-    # migration filename? Count occurrences in the existing set,
-    # excluding the file being added itself.
+    # Collision check: is the prefix already present in any tracked
+    # migration filename? Scan tracked files directly and exclude paths
+    # being added in this change so we do not count the new file(s)
+    # themselves.
     count=0
-    for ep in $existing_prefixes; do
-      if [[ "$ep" == "$prefix" ]]; then
-        # Skip the file's own entry — git ls-files would include
-        # it if the file is already tracked.
-        match_self=0
-        for ab in $added_basenames; do
-          if [[ "$ab" == "$base" && "$ep" == "$prefix" ]]; then
-            match_self=1
-            break
-          fi
-        done
-        if (( match_self == 0 )); then
-          count=$((count + 1))
+    while IFS= read -r existing_file; do
+      [[ -z "$existing_file" ]] && continue
+
+      skip_added=0
+      for af in "${added[@]}"; do
+        if [[ "$existing_file" == "$af" ]]; then
+          skip_added=1
+          break
         fi
+      done
+      (( skip_added == 1 )) && continue
+
+      existing_base="${existing_file##*/}"
+      if [[ "$existing_base" =~ ^([0-9]{4})_.+\.sql$ ]] && [[ "${BASH_REMATCH[1]}" == "$prefix" ]]; then
+        count=$((count + 1))
       fi
-    done
+    done < <(git ls-files -- 'lib/resupply-db/drizzle/*.sql')
     if (( count > 0 )); then
       collision_violations+=("$f (prefix ${prefix} already exists)")
     fi
