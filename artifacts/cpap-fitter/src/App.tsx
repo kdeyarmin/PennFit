@@ -345,6 +345,11 @@ const AdminVerifyEmailPage = lazy(() =>
     default: m.VerifyEmailPage,
   })),
 );
+const AdminChangePasswordPage = lazy(() =>
+  import("@/pages/admin/change-password").then((m) => ({
+    default: m.ChangePasswordPage,
+  })),
+);
 
 // Gated admin console — bundles all 28 admin pages, the AppShell
 // chrome, and the generated resupply-api client into a single chunk
@@ -694,9 +699,10 @@ function PatientRouter() {
  * admin sidebar shell). The admin pages mount inside <AdminShell> which
  * does the auth + allowlist gate.
  *
- * Wouter's nested-routing trick: catching `/sign-in/:rest*` lets the auth provider
+ * Wouter's nested-routing trick: catching `/sign-in/*` lets the auth provider
  * own everything below /sign-in (e.g. /sign-in/factor-one) without us
- * pre-defining each step.
+ * pre-defining each step. (regexparam 3.x parses `:rest*` as a single-
+ * segment param literally named `rest*`, not as a wildcard — use `*`.)
  */
 function TopRouter() {
   return (
@@ -709,9 +715,9 @@ function TopRouter() {
     <Suspense fallback={<RouteFallback />}>
       <Switch>
         <Route path="/sign-in" component={SignInPage} />
-        <Route path="/sign-in/:rest*" component={SignInPage} />
+        <Route path="/sign-in/*" component={SignInPage} />
         <Route path="/sign-up" component={SignUpPage} />
-        <Route path="/sign-up/:rest*" component={SignUpPage} />
+        <Route path="/sign-up/*" component={SignUpPage} />
         <Route path="/forgot-password" component={ForgotPasswordPage} />
         <Route path="/reset-password" component={ResetPasswordPage} />
         <Route path="/verify-email" component={VerifyEmailPage} />
@@ -727,8 +733,8 @@ function TopRouter() {
         <Route path="/resupply">
           <LegacyResupplyRedirect rest="" />
         </Route>
-        <Route path="/resupply/:rest*">
-          {(params) => <LegacyResupplyRedirect rest={params["rest*"] ?? ""} />}
+        <Route path="/resupply/*">
+          {(params) => <LegacyResupplyRedirect rest={params["*"] ?? ""} />}
         </Route>
 
         {/*
@@ -750,8 +756,20 @@ function TopRouter() {
           component={AdminResetPasswordPage}
         />
         <Route path="/admin/verify-email" component={AdminVerifyEmailPage} />
+        {/*
+          /admin/change-password is mounted OUTSIDE the AdminConsoleRoute
+          gate. ConsoleRoute redirects forced-rotation users here, and
+          having it ungated by the allowlist check means a freshly
+          invited admin can land here even before /resupply-api/admin/me
+          would let them through — the change-password endpoint itself
+          only needs a valid session.
+        */}
+        <Route
+          path="/admin/change-password"
+          component={AdminChangePasswordPage}
+        />
         <Route path="/admin" component={AdminConsoleRoute} />
-        <Route path="/admin/:rest*" component={AdminConsoleRoute} />
+        <Route path="/admin/*" component={AdminConsoleRoute} />
 
         {/* Everything else falls through to the patient experience. */}
         <Route component={PatientRouter} />
