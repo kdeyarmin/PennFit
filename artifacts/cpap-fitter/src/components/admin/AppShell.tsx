@@ -813,22 +813,21 @@ function SidebarNavBody({
                 </span>
               )}
             </button>
-            {isOpen && (
-              <div
-                id={sectionId}
-                className="flex flex-col gap-0.5 pb-1"
-              >
-                {group.items.map((link) => (
-                  <div key={link.href} onClick={onItemClick}>
-                    <NavItem
-                      {...link}
-                      isActive={activeHref === link.href}
-                      badgeCount={badgeCountFor(link, counts)}
-                    />
-                  </div>
-                ))}
-              </div>
-            )}
+            <div
+              id={sectionId}
+              className="flex flex-col gap-0.5 pb-1"
+              hidden={!isOpen}
+            >
+              {group.items.map((link) => (
+                <div key={link.href} onClick={onItemClick}>
+                  <NavItem
+                    {...link}
+                    isActive={activeHref === link.href}
+                    badgeCount={badgeCountFor(link, counts)}
+                  />
+                </div>
+              ))}
+            </div>
           </div>
         );
       })}
