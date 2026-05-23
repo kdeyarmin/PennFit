@@ -53,15 +53,16 @@ describe("reminders — useShopIdentity imported (P5)", () => {
 // ---------------------------------------------------------------------------
 
 describe("reminders — email field pre-filled from identity (P5)", () => {
-  it("initialises the email state from identityEmail (not always empty)", () => {
-    // Before P5: useState(""). After: useState(identityEmail ?? "").
-    expect(SRC).toContain("identityEmail ?? \"\"");
+  it("reads identityEmail from useShopIdentity", () => {
+    // The source pulls identityEmail off the identity hook and seeds
+    // the email state with it (either as a useState initialiser or via
+    // a deferred setEmail in a useEffect). Either pattern satisfies P5
+    // — what matters is that identityEmail is being consumed.
+    expect(SRC).toContain("identityEmail");
   });
 
-  it("falls back to empty string when identityEmail is null (guest path)", () => {
-    // The ?? "" ensures guests still see an empty input field.
-    const initialiserIdx = SRC.indexOf('identityEmail ?? ""');
-    expect(initialiserIdx).toBeGreaterThan(-1);
+  it("uses useShopIdentity to surface the signed-in customer's email", () => {
+    expect(SRC).toContain("useShopIdentity");
   });
 });
 
@@ -192,5 +193,72 @@ describe("reminders — honeypot field still present", () => {
 
   it("passes honeypot value to the API (bot detector on server side)", () => {
     expect(SRC).toContain("website: website || undefined");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// PR change: email pre-fill — useEffect implementation details
+// ---------------------------------------------------------------------------
+// The PR updated these tests from testing a direct `useState(identityEmail ?? "")`
+// initialiser to testing the `useState("") + useEffect` pattern. The following
+// tests add confidence around the specific useEffect implementation.
+
+describe("reminders — email pre-fill useEffect implementation detail", () => {
+  it("the useEffect includes identityLoaded in its dependency array", () => {
+    // The effect must re-run when identity loads so the email gets filled
+    // after the async auth check resolves.
+    expect(SRC).toMatch(/\[identityLoaded,\s*identityEmail\]/);
+  });
+
+  it("the guard bails early when identityEmail is null (guest stays empty)", () => {
+    // !identityEmail covers both null and empty-string, protecting against
+    // a setEmail call with a null/empty value that would clear a typed email.
+    expect(SRC).toMatch(/if\s*\(\s*!identityLoaded\s*\|\|\s*!identityEmail\s*\)\s*return/);
+  });
+
+  it("setEmail uses a functional update to avoid overwriting user-typed input", () => {
+    // setEmail((prev) => prev || identityEmail) means a user who has already
+    // started typing their email won't have it replaced by the identity value.
+    expect(SRC).toMatch(/setEmail\(\(prev\)\s*=>\s*prev\s*\|\|\s*identityEmail\)/);
+  });
+
+  it("email state is initialised as empty string before the effect runs", () => {
+    // The useState("") ensures the input is empty during SSR and before the
+    // identity probe resolves — no hydration mismatch.
+    expect(SRC).toContain('useState("")');
+  });
+
+  it("wires identityEmail into email state initialization or prefill", () => {
+    expect(SRC).toContain("identityEmail");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// P5 — willSkipTokenStep additional edge-case guards
+// ---------------------------------------------------------------------------
+
+describe("reminders — willSkipTokenStep additional guards", () => {
+  it("extracts email.trim() to submittedEmail to normalise whitespace before comparison", () => {
+    expect(SRC).toContain("const submittedEmail = email.trim()");
+  });
+
+  it("requires isSignedIn check in willSkipTokenStep so guests never skip the inbox", () => {
+    // If isSignedIn is false, willSkipTokenStep must be false regardless of email.
+    expect(SRC).toContain("isSignedIn &&");
+    expect(SRC).toContain("willSkipTokenStep");
+  });
+
+  it("null-checks identityEmail before calling toLowerCase to avoid runtime errors", () => {
+    expect(SRC).toContain("identityEmail !== null");
+  });
+
+  it("wraps the redirect inside the onSuccess callback — not on every render", () => {
+    const onSuccessIdx = SRC.indexOf("onSuccess: (resp) => {");
+    // `willSkipTokenStep` is declared above onSuccess and re-used inside
+    // it; lastIndexOf lands on the use-site (the redirect gate) which
+    // is what the redirect-inside-callback invariant is checking.
+    const skipIdx = SRC.lastIndexOf("willSkipTokenStep");
+    expect(onSuccessIdx).toBeGreaterThan(-1);
+    expect(skipIdx).toBeGreaterThan(onSuccessIdx);
   });
 });

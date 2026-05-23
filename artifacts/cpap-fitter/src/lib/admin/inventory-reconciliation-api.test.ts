@@ -11,7 +11,7 @@
 //
 // Fetch is stubbed with vi.stubGlobal so no real network calls are made.
 
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   getReconciliation,
   listReconciliations,
@@ -486,5 +486,123 @@ describe("submitReconciliation — generic error handling", () => {
       expect(e).toBeInstanceOf(Error);
       expect(e).not.toBeInstanceOf(ReconciliationUnavailableError);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// CSRF header — startReconciliation and submitReconciliation
+// ---------------------------------------------------------------------------
+//
+// The PR added csrfHeader() to the headers of both mutating calls.
+// Read-only calls (listReconciliations, getReconciliation) are unchanged.
+
+describe("CSRF header — startReconciliation", () => {
+  function setDocumentCookie(cookie: string | null) {
+    if (cookie === null) {
+      delete (globalThis as unknown as { document?: unknown }).document;
+    } else {
+      (globalThis as unknown as { document?: unknown }).document = { cookie };
+    }
+  }
+
+  afterEach(() => {
+    delete (globalThis as unknown as { document?: unknown }).document;
+    vi.unstubAllGlobals();
+  });
+
+  it("sends X-PF-CSRF when pf_csrf cookie is present", async () => {
+    setDocumentCookie("pf_csrf=recon-csrf-token");
+    const fetchSpy = makeFetchOk(
+      { id: "rec_1", startedAt: "2026-05-01T00:00:00Z" },
+      201,
+    );
+    vi.stubGlobal("fetch", fetchSpy);
+
+    await startReconciliation({ periodLabel: "2026-05" });
+
+    const [, opts] = (fetchSpy as ReturnType<typeof vi.fn>).mock.calls[0] as [
+      string,
+      RequestInit,
+    ];
+    const headers = opts.headers as Record<string, string>;
+    expect(headers["X-PF-CSRF"]).toBe("recon-csrf-token");
+  });
+
+  it("does not send X-PF-CSRF when pf_csrf cookie is absent", async () => {
+    setDocumentCookie("other=unrelated");
+    const fetchSpy = makeFetchOk(
+      { id: "rec_1", startedAt: "2026-05-01T00:00:00Z" },
+      201,
+    );
+    vi.stubGlobal("fetch", fetchSpy);
+
+    await startReconciliation({ periodLabel: "2026-05" });
+
+    const [, opts] = (fetchSpy as ReturnType<typeof vi.fn>).mock.calls[0] as [
+      string,
+      RequestInit,
+    ];
+    const headers = opts.headers as Record<string, string>;
+    expect("X-PF-CSRF" in headers).toBe(false);
+  });
+});
+
+describe("CSRF header — submitReconciliation", () => {
+  function setDocumentCookie(cookie: string | null) {
+    if (cookie === null) {
+      delete (globalThis as unknown as { document?: unknown }).document;
+    } else {
+      (globalThis as unknown as { document?: unknown }).document = { cookie };
+    }
+  }
+
+  afterEach(() => {
+    delete (globalThis as unknown as { document?: unknown }).document;
+    vi.unstubAllGlobals();
+  });
+
+  it("sends X-PF-CSRF when pf_csrf cookie is present", async () => {
+    setDocumentCookie("pf_csrf=submit-csrf-token");
+    const fetchSpy = makeFetchOk(SUBMIT_SUCCESS);
+    vi.stubGlobal("fetch", fetchSpy);
+
+    await submitReconciliation("rec-123", SUBMIT_INPUT);
+
+    const [, opts] = (fetchSpy as ReturnType<typeof vi.fn>).mock.calls[0] as [
+      string,
+      RequestInit,
+    ];
+    const headers = opts.headers as Record<string, string>;
+    expect(headers["X-PF-CSRF"]).toBe("submit-csrf-token");
+  });
+
+  it("does not send X-PF-CSRF when pf_csrf cookie is absent", async () => {
+    setDocumentCookie("");
+    const fetchSpy = makeFetchOk(SUBMIT_SUCCESS);
+    vi.stubGlobal("fetch", fetchSpy);
+
+    await submitReconciliation("rec-123", SUBMIT_INPUT);
+
+    const [, opts] = (fetchSpy as ReturnType<typeof vi.fn>).mock.calls[0] as [
+      string,
+      RequestInit,
+    ];
+    const headers = opts.headers as Record<string, string>;
+    expect("X-PF-CSRF" in headers).toBe(false);
+  });
+
+  it("read-only GET (listReconciliations) does NOT send X-PF-CSRF regardless of cookie", async () => {
+    setDocumentCookie("pf_csrf=should-not-appear");
+    const fetchSpy = makeFetchOk({ reconciliations: [] });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    await listReconciliations();
+
+    const [, opts] = (fetchSpy as ReturnType<typeof vi.fn>).mock.calls[0] as [
+      string,
+      RequestInit,
+    ];
+    const headers = (opts?.headers ?? {}) as Record<string, string>;
+    expect("X-PF-CSRF" in headers).toBe(false);
   });
 });

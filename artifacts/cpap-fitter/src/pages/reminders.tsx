@@ -71,7 +71,7 @@ export function Reminders() {
   // link to edit a list they just typed.
   const { isSignedIn, isLoaded: identityLoaded, email: identityEmail } =
     useShopIdentity();
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(identityEmail ?? "");
 
   useEffect(() => {
     if (!identityLoaded || !identityEmail) return;

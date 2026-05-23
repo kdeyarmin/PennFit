@@ -9,6 +9,8 @@
 // nothing on this path holds PHI in memory longer than the render
 // cycle.
 
+import { csrfHeader } from "../csrf";
+
 const BASE = "/resupply-api";
 
 async function getJSON<T>(path: string): Promise<T> {
@@ -30,6 +32,7 @@ async function postJSON<T>(
     headers: {
       Accept: "application/json",
       ...(body ? { "Content-Type": "application/json" } : {}),
+      ...csrfHeader(),
     },
     body: body ? JSON.stringify(body) : undefined,
   });
@@ -130,6 +133,29 @@ export function fetchOaHealth(): Promise<OaHealth> {
   return getJSON("/admin/office-ally/health");
 }
 
+export interface OaPayerStatsEntry {
+  payerProfileId: string;
+  displayName: string;
+  slug: string | null;
+  lineOfBusiness: string | null;
+  submissionCount: number;
+  claimCount: number;
+  acceptedCount: number;
+  rejectedCount: number;
+  transportFailedCount: number;
+  pendingCount: number;
+  acceptanceRatePct: number | null;
+}
+
+export interface OaPayerStatsResponse {
+  window: { sinceIso: string; days: number };
+  payers: OaPayerStatsEntry[];
+}
+
+export function fetchOaPayerStats(): Promise<OaPayerStatsResponse> {
+  return getJSON("/admin/office-ally/payer-stats");
+}
+
 export interface OaSubmissionLinkedClaim {
   id: string;
   patientId: string;
@@ -139,6 +165,13 @@ export interface OaSubmissionLinkedClaim {
   dateOfService: string;
   status: string;
   totalBilledCents: number;
+  /** Per-claim 277CA outcome + reason. Null when no 277CA has been
+   *  received for this claim yet. */
+  ack277ca: {
+    outcome: "accepted" | "rejected" | "note";
+    reason: string;
+    receivedAt: string;
+  } | null;
 }
 
 export interface OaSubmissionLineage {
@@ -189,10 +222,57 @@ export function resubmitOaSubmission(id: string): Promise<{
   );
 }
 
+export type BulkResubmitOutcome =
+  | {
+      submissionId: string;
+      ok: true;
+      newSubmissionId: string;
+      claimCount: number;
+      isaControlNumber: string;
+      transport: string;
+      uploadOk: boolean;
+      uploadError: string | null;
+    }
+  | {
+      submissionId: string;
+      ok: false;
+      error: string;
+      message?: string;
+    };
+
+export interface BulkResubmitResponse {
+  total: number;
+  okCount: number;
+  failedCount: number;
+  outcomes: BulkResubmitOutcome[];
+}
+
+export function bulkResubmitOaSubmissions(
+  submissionIds: string[],
+): Promise<BulkResubmitResponse> {
+  return postJSON("/admin/office-ally/bulk-resubmit", { submissionIds });
+}
+
 // Plain <a href> works — cookie auth, no preflight. Browser saves
 // the file directly without us juggling Blob URLs.
 export function rawEdiDownloadHref(submissionId: string): string {
   return `${BASE}/admin/office-ally-submissions/${encodeURIComponent(submissionId)}/raw-837p`;
+}
+
+// CSV export of the submissions list. Honours the same status + q
+// filters as the JSON list so an op can export "exactly what I'm
+// looking at". `days` controls the trailing window (default 90).
+export function submissionsCsvHref(opts?: {
+  status?: OaSubmissionStatus;
+  q?: string;
+  days?: number;
+}): string {
+  const qs = new URLSearchParams();
+  if (opts?.status) qs.set("status", opts.status);
+  if (opts?.q) qs.set("q", opts.q);
+  if (opts?.days != null) qs.set("days", String(opts.days));
+  const tail = qs.toString();
+  return `${BASE}/admin/office-ally-submissions/export.csv${tail ? `?${tail}` : ""}`;
 }
 
 // ─── Clearinghouse credentials + connection self-test ────────────
@@ -239,7 +319,7 @@ export async function testClearinghouseConnection(
     {
       method: "POST",
       credentials: "same-origin",
-      headers: { Accept: "application/json" },
+      headers: { Accept: "application/json", ...csrfHeader() },
     },
   );
   // Both 200 and 502 carry a typed JSON body; surface either as a

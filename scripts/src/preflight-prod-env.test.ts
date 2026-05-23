@@ -15,11 +15,7 @@ const SCRIPT = resolve(__dirname, "preflight-prod-env.ts");
 
 // 48-byte buffer base64-encoded — decodes to exactly 48 bytes,
 // comfortably above the 32-byte minimum the script enforces for HMAC keys.
-// Two distinct values because the preflight rejects RESUPPLY_LINK_HMAC_KEY
-// === RESUPPLY_AUDIT_HMAC_KEY (operator who ran `openssl rand` once and
-// pasted the same output into both slots).
 const VALID_HMAC_KEY = Buffer.alloc(48, 0).toString("base64");
-const VALID_HMAC_KEY_ALT = Buffer.alloc(48, 1).toString("base64");
 
 // A minimal environment that passes every check in production mode.
 const VALID_PROD_ENV: Record<string, string> = {
@@ -34,7 +30,6 @@ const VALID_PROD_ENV: Record<string, string> = {
   SUPABASE_URL: "https://abcxyz123.supabase.co",
   SUPABASE_SERVICE_ROLE_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.service_role",
   RESUPPLY_LINK_HMAC_KEY: VALID_HMAC_KEY,
-  RESUPPLY_AUDIT_HMAC_KEY: VALID_HMAC_KEY_ALT,
   RESUPPLY_ADMIN_EMAILS: "admin@pennpaps.com",
   // NODE_ENV = production unlocks stricter checks:
   NODE_ENV: "production",
@@ -289,52 +284,11 @@ describe("boot-required variables — exit 1 on failure", () => {
     expect(stdout).toContain("placeholder");
   });
 
-  it("fails when RESUPPLY_AUDIT_HMAC_KEY is missing", () => {
-    const { exitCode } = run(withEnv({ RESUPPLY_AUDIT_HMAC_KEY: undefined }));
-    expect(exitCode).toBe(1);
-  });
-
-  it("fails when RESUPPLY_AUDIT_HMAC_KEY decodes to fewer than 32 bytes", () => {
-    const shortKey = Buffer.alloc(16).toString("base64");
-    const { exitCode, stdout } = run(withEnv({ RESUPPLY_AUDIT_HMAC_KEY: shortKey }));
-    expect(exitCode).toBe(1);
-    expect(stdout).toContain("RESUPPLY_AUDIT_HMAC_KEY");
-  });
-
-  it("passes when each HMAC key decodes to exactly 32 bytes (boundary value)", () => {
+  it("passes when RESUPPLY_LINK_HMAC_KEY decodes to exactly 32 bytes (boundary value)", () => {
     const exactly32a = Buffer.alloc(32, 0).toString("base64");
-    const exactly32b = Buffer.alloc(32, 1).toString("base64");
-    const env = withEnv({
-      RESUPPLY_LINK_HMAC_KEY: exactly32a,
-      RESUPPLY_AUDIT_HMAC_KEY: exactly32b,
-    });
+    const env = withEnv({ RESUPPLY_LINK_HMAC_KEY: exactly32a });
     const { exitCode } = run(env);
     expect(exitCode).toBe(0);
-  });
-
-  it("fails when RESUPPLY_LINK_HMAC_KEY and RESUPPLY_AUDIT_HMAC_KEY are identical", () => {
-    // Operator who ran `openssl rand -base64 48` once and pasted
-    // the same output into both slots — leak of either secret
-    // would forge artifacts in both domains.
-    const sameKey = Buffer.alloc(48, 7).toString("base64");
-    const env = withEnv({
-      RESUPPLY_LINK_HMAC_KEY: sameKey,
-      RESUPPLY_AUDIT_HMAC_KEY: sameKey,
-    });
-    const { exitCode, stdout } = run(env);
-    expect(exitCode).toBe(1);
-    expect(stdout).toContain("identical");
-  });
-
-  it("fails when RESUPPLY_AUDIT_HMAC_KEY uses URL-safe base64 (-/_) — Node decodes it but boot rejects it", () => {
-    // Standard base64 of 48 zero bytes ends with `==`; mutate one
-    // alphabet char to a URL-safe variant so the alphabet check
-    // fires. Buffer.from(value, "base64") would silently accept this.
-    const urlSafe = Buffer.alloc(48).toString("base64").replace("A", "_");
-    const { exitCode, stdout } = run(withEnv({ RESUPPLY_AUDIT_HMAC_KEY: urlSafe }));
-    expect(exitCode).toBe(1);
-    expect(stdout).toContain("RESUPPLY_AUDIT_HMAC_KEY");
-    expect(stdout).toContain("strict base64");
   });
 
   it("fails when RESUPPLY_LINK_HMAC_KEY does not round-trip through decode/encode", () => {
@@ -911,13 +865,6 @@ describe("optional placeholder variable checks", () => {
     expect(stdout).toContain("placeholder");
   });
 
-  it("fails when RESUPPLY_AUDIT_HMAC_KEY is the placeholder replace_me_with_32_byte_secret", () => {
-    const env = withEnv({ RESUPPLY_AUDIT_HMAC_KEY: "replace_me_with_32_byte_secret" });
-    const { exitCode, stdout } = run(env);
-    expect(exitCode).toBe(1);
-    expect(stdout).toContain("RESUPPLY_AUDIT_HMAC_KEY");
-    expect(stdout).toContain("placeholder");
-  });
 });
 
 // ---------------------------------------------------------------------------

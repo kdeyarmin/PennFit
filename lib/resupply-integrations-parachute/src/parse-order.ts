@@ -37,13 +37,36 @@ const hcpcsLineSchema = z.object({
   description: stringOrNull.optional(),
 });
 
+// Strict URL protocol validator for partner-supplied document links.
+// A Parachute payload that ships a `javascript:fetch(...+document.cookie)`
+// in `url` would otherwise persist into inbound_referral_documents
+// and render as <a href={d.sourceUrl}> on /admin/inbound-referrals —
+// an admin clicking the link executes JS in the admin-session origin
+// (rel="noopener noreferrer" does NOT block javascript: URLs).
+// Allow only http: / https:; anything else (data:, file:, vbscript:,
+// javascript:, custom protocols) collapses to null.
+const httpUrlOrNull = z
+  .union([z.string(), z.null(), z.undefined()])
+  .transform((v) => {
+    if (typeof v !== "string" || v.length === 0) return null;
+    try {
+      const parsed = new URL(v);
+      if (parsed.protocol === "http:" || parsed.protocol === "https:") {
+        return v;
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  });
+
 const documentSchema = z.object({
   id: z.string().trim().min(1).max(120),
   kind: z.string().trim().min(1).max(40).optional().default("other"),
   filename: stringOrNull.optional(),
   content_type: stringOrNull.optional(),
   size_bytes: numberOrNull.optional(),
-  url: stringOrNull.optional(),
+  url: httpUrlOrNull.optional(),
 });
 
 const patientSchema = z.object({

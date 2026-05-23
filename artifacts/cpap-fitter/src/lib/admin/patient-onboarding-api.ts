@@ -3,6 +3,8 @@
 // "Onboarding" tab to enroll, pause/resume, and read journey
 // state.
 
+import { csrfHeader } from "../csrf";
+
 export type PatientOnboardingStatus = "active" | "completed" | "paused";
 
 export interface PatientOnboardingJourney {
@@ -68,7 +70,7 @@ export async function enrollPatientOnboarding(
     {
       method: "POST",
       credentials: "include",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...csrfHeader() },
       body: JSON.stringify(startedAt ? { startedAt } : {}),
     },
   );
@@ -88,7 +90,7 @@ export async function setPatientOnboardingStatus(
     {
       method: "PATCH",
       credentials: "include",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...csrfHeader() },
       body: JSON.stringify({ status }),
     },
   );

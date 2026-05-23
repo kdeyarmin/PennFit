@@ -72,14 +72,24 @@ router.post("/voice/status-callback", signatureMiddleware, async (req, res) => {
   }
 
   if (TERMINAL_STATUSES.has(callStatus)) {
+    let firstTerminalClose = false;
     try {
       const supabase = getSupabaseServiceRoleClient();
-      const { error } = await supabase
+      // Twilio can re-deliver `completed/failed/busy/...` (retry on
+      // 5xx, or duplicate after our 200 took >response timeout to
+      // ack). The .eq("status","open") guard + .select("id") tells
+      // us whether THIS call flipped the row; only the winner emits
+      // the audit row, so the HMAC-chained audit log doesn't grow
+      // a duplicate `voice.call.completed` entry on every retry.
+      const { data: flipped, error } = await supabase
         .schema("resupply")
         .from("conversations")
         .update({ status: "closed", updated_at: new Date().toISOString() })
-        .eq("id", conversationId);
+        .eq("id", conversationId)
+        .neq("status", "closed")
+        .select("id");
       if (error) throw error;
+      firstTerminalClose = !!flipped && flipped.length > 0;
     } catch (err) {
       logger.warn(
         {
@@ -91,26 +101,28 @@ router.post("/voice/status-callback", signatureMiddleware, async (req, res) => {
       );
     }
 
-    try {
-      await logAudit({
-        action: "voice.call.completed",
-        targetTable: "conversations",
-        targetId: conversationId,
-        metadata: {
-          twilio_call_sid: callSid,
-          twilio_status: callStatus,
-          source: "status_callback",
-        },
-      });
-    } catch (err) {
-      logger.warn(
-        {
-          event: "voice_status_audit_failed",
-          err: serializeErr(err),
-          conversationId,
-        },
-        "status-callback: audit failed",
-      );
+    if (firstTerminalClose) {
+      try {
+        await logAudit({
+          action: "voice.call.completed",
+          targetTable: "conversations",
+          targetId: conversationId,
+          metadata: {
+            twilio_call_sid: callSid,
+            twilio_status: callStatus,
+            source: "status_callback",
+          },
+        });
+      } catch (err) {
+        logger.warn(
+          {
+            event: "voice_status_audit_failed",
+            err: serializeErr(err),
+            conversationId,
+          },
+          "status-callback: audit failed",
+        );
+      }
     }
   }
 

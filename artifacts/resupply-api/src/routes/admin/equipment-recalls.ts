@@ -44,6 +44,24 @@ const router: IRouter = Router();
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 const idParam = z.object({ id: z.string().uuid() });
 
+/**
+ * z.string().url() accepts javascript:, data:, file:, vbscript: and
+ * arbitrary custom protocols — all of which execute in the renderer's
+ * origin when interpolated into <a href={...}>. Restrict to http(s)
+ * so a recall's referenceUrl / evidenceUrl can't be weaponised as a
+ * stored XSS that fires when other admins / patients click the link.
+ */
+function httpUrl() {
+  return z
+    .string()
+    .trim()
+    .url()
+    .refine(
+      (u) => /^https?:\/\//i.test(u),
+      "URL must use http or https protocol",
+    );
+}
+
 const SEVERITY_VALUES = ["urgent", "priority", "advisory"] as const;
 const STATUS_VALUES = ["active", "closed"] as const;
 
@@ -84,7 +102,7 @@ const createBody = z
       .regex(ISO_DATE, "must be YYYY-MM-DD")
       .nullable()
       .optional(),
-    referenceUrl: z.string().trim().url().max(1000).nullable().optional(),
+    referenceUrl: httpUrl().max(1000).nullable().optional(),
     description: z.string().trim().max(5000).nullable().optional(),
   })
   .strict();
@@ -99,7 +117,7 @@ const patchBody = z
       .regex(ISO_DATE, "must be YYYY-MM-DD")
       .nullable()
       .optional(),
-    referenceUrl: z.string().trim().url().max(1000).nullable().optional(),
+    referenceUrl: httpUrl().max(1000).nullable().optional(),
   })
   .strict();
 
@@ -507,7 +525,7 @@ const remediationBody = z
   .object({
     assetId: z.string().uuid(),
     action: z.enum(REMEDIATION_ACTIONS),
-    evidenceUrl: z.string().trim().url().max(2048).nullable().optional(),
+    evidenceUrl: httpUrl().max(2048).nullable().optional(),
     notes: z.string().trim().max(2000).nullable().optional(),
   })
   .strict();

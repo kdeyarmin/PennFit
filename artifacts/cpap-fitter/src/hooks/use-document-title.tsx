@@ -32,22 +32,37 @@ function getOrCreateMeta(
 }
 
 /**
- * Sets the browser tab title (and optionally the meta description) and
- * a route-aware canonical URL for the current page. Restores the
- * previous values when the component unmounts so client-side
- * navigation between routes always shows the right tab title, share
- * preview text, and `<link rel="canonical">`.
- *
  * Pass an empty string for `pageTitle` to use the site's default title
  * from `index.html` (e.g. on the landing page where no page-specific
  * suffix is needed); the canonical update still happens.
  *
- * Why a hook instead of react-helmet-async: every public page only
- * needs to set three tags (title + description + canonical). Avoiding
- * a 3rd-party helmet provider removes a runtime dependency and one
- * more thing to keep in sync with our tightened CSP.
+ * Why a hook instead of react-helmet-async: avoiding a 3rd-party
+ * helmet provider removes a runtime dependency and one more thing to
+ * keep in sync with our tightened CSP.
  */
-export function useDocumentTitle(pageTitle: string, description?: string) {
+type SchemaType = "Article" | "MedicalWebPage";
+
+type DocumentTitleOptions = {
+  /**
+   * If set, the hook injects a JSON-LD `<script type="application/ld+json">`
+   * for the current page so search engines render rich snippets. The hook
+   * removes the script on unmount. Most long-form learn articles should
+   * use "MedicalWebPage"; marketing-style brand pages benefit from
+   * "Article".
+   */
+  schema?: SchemaType;
+};
+
+/**
+ * Sets the browser tab title, meta description, canonical URL, Open
+ * Graph + Twitter Card meta tags, and (optionally) a JSON-LD schema
+ * `<script>` for the current page. All values are restored on unmount.
+ */
+export function useDocumentTitle(
+  pageTitle: string,
+  description?: string,
+  options?: DocumentTitleOptions,
+) {
   useEffect(() => {
     const previousTitle = document.title;
     const metaDesc = document.querySelector<HTMLMetaElement>(
@@ -159,6 +174,44 @@ export function useDocumentTitle(pageTitle: string, description?: string) {
       );
     }
 
+    // JSON-LD schema injection — opt-in via `options.schema`. We give
+    // the script a stable id (`pf-page-schema`) and remove it on
+    // unmount so route changes between schema-using and non-schema
+    // pages don't leave a stale script in the head.
+    let schemaScript: HTMLScriptElement | null = null;
+    if (options?.schema && pageTitle && description) {
+      const schemaPayload = {
+        "@context": "https://schema.org",
+        "@type": options.schema,
+        headline: pageTitle,
+        name: pageTitle,
+        description,
+        url: canonicalHref,
+        publisher: {
+          "@type": "Organization",
+          name: "Penn Home Medical Supply",
+          url: CANONICAL_ORIGIN,
+        },
+        ...(options.schema === "MedicalWebPage"
+          ? {
+              about: {
+                "@type": "MedicalCondition",
+                name: "Sleep apnea",
+              },
+            }
+          : {}),
+      };
+      const existing = document.head.querySelector<HTMLScriptElement>(
+        'script[type="application/ld+json"]#pf-page-schema',
+      );
+      if (existing) existing.remove();
+      schemaScript = document.createElement("script");
+      schemaScript.type = "application/ld+json";
+      schemaScript.id = "pf-page-schema";
+      schemaScript.textContent = JSON.stringify(schemaPayload);
+      document.head.appendChild(schemaScript);
+    }
+
     return () => {
       document.title = previousTitle;
       if (previousDesc !== null && metaDesc) {
@@ -181,6 +234,12 @@ export function useDocumentTitle(pageTitle: string, description?: string) {
           el.setAttribute(attr, previous);
         }
       }
+      // Remove our JSON-LD schema script if we added one. We don't
+      // try to restore a prior one because the SPA shell doesn't ship
+      // a route-specific schema by default.
+      if (schemaScript && schemaScript.parentNode) {
+        schemaScript.parentNode.removeChild(schemaScript);
+      }
     };
-  }, [pageTitle, description]);
+  }, [pageTitle, description, options?.schema]);
 }

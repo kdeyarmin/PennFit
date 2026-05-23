@@ -48,6 +48,7 @@ import {
   type QuickbooksRowInput,
 } from "../../lib/quickbooks-export";
 import { renderTablePdf } from "../../lib/report-pdf";
+import { safeCsvCell } from "../../lib/safe-csv-cell";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
 
@@ -87,13 +88,12 @@ function rangeSlug(from: Date, to: Date): string {
   return `${from.toISOString().slice(0, 10)}-to-${to.toISOString().slice(0, 10)}`;
 }
 
+// Delegates to the shared helper for formula-injection
+// neutralisation + `\r`-line-ending detection. tracking_number,
+// tracking_carrier, and delivery_error flow from carrier APIs and
+// aren't fully system-controlled.
 function escapeCsv(v: unknown): string {
-  if (v === null || v === undefined) return "";
-  const s = String(v);
-  if (s.includes(",") || s.includes('"') || s.includes("\n")) {
-    return `"${s.replace(/"/g, '""')}"`;
-  }
-  return s;
+  return safeCsvCell(v);
 }
 
 function setDownloadHeaders(

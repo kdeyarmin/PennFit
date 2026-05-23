@@ -513,11 +513,12 @@ describe("fetchEraFiles", () => {
 
 // ─── ingestEraFile ───────────────────────────────────────────────────
 
+const INGEST_INPUT = {
+  fileName: "835_test.edi",
+  payload: "ISA*00*...",
+};
+
 describe("ingestEraFile", () => {
-  const INGEST_INPUT = {
-    fileName: "835_test.edi",
-    payload: "ISA*00*...",
-  };
 
   test("posts to /resupply-api/admin/billing/era-ingest", async () => {
     fetchMock.mockResolvedValue({
@@ -698,5 +699,69 @@ describe("ingestEraFile", () => {
 
     await ingestEraFile(INGEST_INPUT);
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ─── CSRF header — postJSON (ingestEraFile) ──────────────────────────────────
+//
+// The PR added csrfHeader() to postJSON; GET wrappers (getJSON) are unchanged.
+
+describe("CSRF header on postJSON (ingestEraFile)", () => {
+  function setDocumentCookie(cookie: string | null) {
+    if (cookie === null) {
+      delete (globalThis as unknown as { document?: unknown }).document;
+    } else {
+      (globalThis as unknown as { document?: unknown }).document = { cookie };
+    }
+  }
+
+  afterEach(() => {
+    delete (globalThis as unknown as { document?: unknown }).document;
+  });
+
+  test("sends X-PF-CSRF when pf_csrf cookie is present", async () => {
+    setDocumentCookie("pf_csrf=billing-csrf-token");
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ eraFileId: "era-1", status: "ok", summary: {} }),
+    });
+
+    await ingestEraFile(INGEST_INPUT);
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const headers = init.headers as Record<string, string>;
+    expect(headers["X-PF-CSRF"]).toBe("billing-csrf-token");
+  });
+
+  test("does not send X-PF-CSRF when pf_csrf cookie is absent", async () => {
+    setDocumentCookie("other=unrelated");
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ eraFileId: "era-1", status: "ok", summary: {} }),
+    });
+
+    await ingestEraFile(INGEST_INPUT);
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const headers = init.headers as Record<string, string>;
+    expect("X-PF-CSRF" in headers).toBe(false);
+  });
+
+  test("GET wrapper (fetchDirectorSummary) does NOT send X-PF-CSRF regardless of cookie", async () => {
+    setDocumentCookie("pf_csrf=should-not-attach");
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({}),
+    });
+
+    await fetchDirectorSummary();
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const headers = init.headers as Record<string, string>;
+    // getJSON never calls csrfHeader — only postJSON does.
+    expect("X-PF-CSRF" in headers).toBe(false);
   });
 });

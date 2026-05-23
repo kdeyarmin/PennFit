@@ -73,6 +73,7 @@ export function LearnHealthRisks() {
   useDocumentTitle(
     "The hidden health costs of untreated sleep apnea",
     "What's at stake when sleep apnea goes untreated — cardiovascular, metabolic, cognitive, and daily-safety risks, with the data behind each.",
+    { schema: "MedicalWebPage" },
   );
   const [, navigate] = useLocation();
 

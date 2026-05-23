@@ -22,6 +22,7 @@ export function LearnSleepApneaExplained() {
   useDocumentTitle(
     "What sleep apnea really is",
     "A plain-English guide to obstructive, central, and mixed sleep apnea — what causes it, who it affects, the warning signs, and how it's diagnosed.",
+    { schema: "MedicalWebPage" },
   );
   const [, navigate] = useLocation();
 

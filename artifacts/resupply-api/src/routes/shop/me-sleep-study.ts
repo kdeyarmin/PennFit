@@ -66,6 +66,29 @@ router.post("/shop/me/sleep-study", requireSignedIn, async (req, res) => {
     return;
   }
   const supabase = getSupabaseServiceRoleClient();
+
+  // If the patient attached a document, verify it belongs to them.
+  // Without this check a signed-in customer could pin any UUID
+  // (including another patient's document) into the sleep_studies
+  // row, where LCD-gating / dispense-readiness reviewers read it.
+  if (parsed.data.documentId) {
+    const { data: doc, error: docErr } = await supabase
+      .schema("resupply")
+      .from("patient_documents")
+      .select("id, patient_id")
+      .eq("id", parsed.data.documentId)
+      .limit(1)
+      .maybeSingle();
+    if (docErr) throw docErr;
+    if (!doc || doc.patient_id !== patientId) {
+      res.status(400).json({
+        error: "invalid_document_id",
+        message: "Document does not exist or does not belong to this patient.",
+      });
+      return;
+    }
+  }
+
   const { data, error } = await supabase
     .schema("resupply")
     .from("sleep_studies")

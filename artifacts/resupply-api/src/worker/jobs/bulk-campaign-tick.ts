@@ -230,9 +230,16 @@ export async function processTick(
   //    because SendGrid's API tolerates parallel calls but the
   //    Phase B priority is correctness over throughput; parallel
   //    fan-out can come later if needed.
+  //
+  //    Iterate `claimed` (the UPDATE-RETURNING set), NOT `pendingRows`
+  //    (the pre-claim snapshot). If an admin edited recipient_email
+  //    between our SELECT and UPDATE, the snapshot carries the stale
+  //    address — the UPDATE re-reads from the row and RETURNING gives
+  //    us the freshest value. Using `pendingRows` here lost that
+  //    update and shipped to the OLD address.
   let sent = 0;
   let failed = 0;
-  for (const row of pendingRows) {
+  for (const row of claimed ?? []) {
     if (!winningIds.has(row.id)) continue;
     const email = row.recipient_email;
     if (!email) {
@@ -284,14 +291,18 @@ export async function processTick(
   //    ticks properly accumulate deltas instead of clobbering each other.
   if (sent > 0 || failed > 0) {
     const pool = await import("@workspace/resupply-db").then((m) => m.getDbPool());
-    const { rows } = await pool.query(
+    // Use pg's `rowCount` instead of `rows.length`. The UPDATE has no
+    // RETURNING, so `rows` is always [] and the prior length check
+    // was dead code — operators got no log when a concurrent cancel
+    // deleted the campaign row mid-tick.
+    const result = await pool.query(
       `UPDATE resupply.bulk_campaigns
        SET sent_count = sent_count + $1,
            failed_count = failed_count + $2
        WHERE id = $3`,
       [sent, failed, campaign.id],
     );
-    if (rows.length === 0) {
+    if (result.rowCount === 0) {
       log.warn(
         { campaignId: campaign.id },
         "bulk_campaigns.tick: counter update affected 0 rows",

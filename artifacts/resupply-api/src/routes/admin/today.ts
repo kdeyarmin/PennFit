@@ -78,6 +78,7 @@ interface ComplianceAlertRow {
   summary: string;
   patient_id: string;
   status: "open" | "snoozed" | "resolved";
+  snoozed_until: string | null;
   created_at: string;
 }
 
@@ -157,16 +158,28 @@ router.get("/admin/today", requireAdmin, async (_req, res) => {
       .in("status", ["requested", "approved", "shipped_back", "received"])
       .order("created_at", { ascending: true })
       .limit(PER_QUEUE_LIMIT),
+    // Pull a wider window than PER_QUEUE_LIMIT, then JS-side sort
+    // by severity ranking + created_at. .order("severity", desc) on
+    // the text column does alphabetical sort, which would push
+    // `critical` to the BOTTOM of `warning|info|critical` — the
+    // exact opposite of what we want. The slice below trims back
+    // to PER_QUEUE_LIMIT after a deterministic priority sort.
+    //
+    // Snoozed-but-expired alerts must surface here too. A CSR can
+    // snooze a `critical` alert for 24h to chase a callback; if the
+    // patient never replies, the alert needs to come BACK on the
+    // CSR worklist the next morning. Without the OR-clause the
+    // alert stayed in `snoozed` status forever and silently dropped
+    // off every dashboard.
     supabase
       .schema("resupply")
       .from("csr_compliance_alerts")
       .select(
-        "id, alert_type, severity, summary, patient_id, status, created_at",
+        "id, alert_type, severity, summary, patient_id, status, snoozed_until, created_at",
       )
-      .eq("status", "open")
-      .order("severity", { ascending: false })
+      .or(`status.eq.open,and(status.eq.snoozed,snoozed_until.lte.${nowIso})`)
       .order("created_at", { ascending: true })
-      .limit(PER_QUEUE_LIMIT),
+      .limit(PER_QUEUE_LIMIT * 3),
     supabase
       .schema("resupply")
       .from("prescriptions")
@@ -242,12 +255,31 @@ router.get("/admin/today", requireAdmin, async (_req, res) => {
     .sort((a, b) => (a.due_at < b.due_at ? -1 : 1))
     .slice(0, PER_QUEUE_LIMIT);
 
+  // Severity sort: critical first, then warning, then info. Matches
+  // csr-compliance-alerts.ts. The DB query pulled more than
+  // PER_QUEUE_LIMIT rows precisely so this re-sort can trim back to
+  // the cap with critical alerts at the top.
+  const SEVERITY_ORDER: Record<string, number> = {
+    critical: 1,
+    warning: 2,
+    info: 3,
+  };
+  const sortedAlerts = ((alertsRes.data ?? []) as ComplianceAlertRow[])
+    .slice()
+    .sort((a, b) => {
+      const sa = SEVERITY_ORDER[a.severity] ?? 99;
+      const sb = SEVERITY_ORDER[b.severity] ?? 99;
+      if (sa !== sb) return sa - sb;
+      return a.created_at < b.created_at ? -1 : 1;
+    })
+    .slice(0, PER_QUEUE_LIMIT);
+
   res.json({
     serverTime: nowIso,
     conversationsAwaitingReply: (convRes.data ?? []) as ConversationRow[],
     overdueFollowups,
     pendingReturns: (returnsRes.data ?? []) as ReturnRow[],
-    complianceAlerts: (alertsRes.data ?? []) as ComplianceAlertRow[],
+    complianceAlerts: sortedAlerts,
     rxRenewalsDue: (rxRes.data ?? []) as RxRenewalRow[],
     documentsToReview: (docsRes.data ?? []) as DocumentRow[],
     inboundFaxes: (faxesRes.data ?? []) as InboundFaxRow[],

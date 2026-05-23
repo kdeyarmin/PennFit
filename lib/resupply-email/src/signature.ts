@@ -52,7 +52,20 @@ export interface ValidateSendgridSignatureInput {
    * shows in the dashboard. Pass the env var contents directly.
    */
   publicKeyBase64: string;
+  /** Override clock for tests; defaults to system time in seconds. */
+  nowSeconds?: number;
+  /**
+   * Allowed clock skew + replay window in seconds. Defaults to 600s
+   * (matches SendGrid's published "valid for 10 minutes" guidance and
+   * is in the same ballpark as Parachute's 300s and Stripe's 300s
+   * defaults). A captured-but-old signed payload outside this window
+   * is rejected as `stale_timestamp` so an attacker can't replay
+   * indefinitely.
+   */
+  toleranceSeconds?: number;
 }
+
+const DEFAULT_TOLERANCE_SECONDS = 600;
 
 /**
  * Returns true iff the signature is a valid SendGrid Event Webhook
@@ -71,6 +84,28 @@ export function validateSendgridSignature(
   }
   if (!input.signatureHeader || !input.timestampHeader) return false;
   if (!input.publicKeyBase64) return false;
+
+  // Freshness / replay window check. The SendGrid header is a
+  // 10-digit unix-seconds string. Reject obviously malformed values
+  // AND values outside the tolerance window so a captured payload
+  // can't be replayed days later.
+  const timestampSeconds = Number.parseInt(input.timestampHeader, 10);
+  if (!Number.isFinite(timestampSeconds) || timestampSeconds <= 0) {
+    return false;
+  }
+  const nowSeconds =
+    input.nowSeconds ?? Math.floor(Date.now() / 1000);
+  const tolerance =
+    input.toleranceSeconds ?? DEFAULT_TOLERANCE_SECONDS;
+  // Asymmetric: tolerate `tolerance` seconds of past staleness AND a
+  // small future skew (clocks slightly ahead). Mirrors the Parachute
+  // verifier's posture.
+  if (
+    timestampSeconds < nowSeconds - tolerance ||
+    timestampSeconds > nowSeconds + tolerance
+  ) {
+    return false;
+  }
 
   let publicKey: KeyObject;
   try {

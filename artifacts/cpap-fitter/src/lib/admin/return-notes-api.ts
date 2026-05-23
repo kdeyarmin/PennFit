@@ -1,6 +1,8 @@
 // Hand-rolled fetch wrappers for the admin shop-return notes
 // endpoints (Phase 15). Mirrors order-notes-api.ts.
 
+import { csrfHeader } from "../csrf";
+
 export interface AdminReturnNote {
   id: string;
   body: string;
@@ -51,6 +53,7 @@ export async function createAdminReturnNote(
       headers: {
         "Content-Type": "application/json",
         Accept: "application/json",
+        ...csrfHeader(),
       },
       body: JSON.stringify({ body }),
     },

@@ -52,7 +52,6 @@ const sourceParam = z.object({
 });
 
 const SUPPORTED_SOURCE_SET = new Set(["parachute", "itamar_hsat", "test"]);
-const inboundPayloadSchema = z.record(z.string(), z.unknown());
 
 /**
  * Accept a source slug if it's in the hard-coded set OR matches the
@@ -109,22 +108,20 @@ router.post("/integrations/inbound/:source", inboundWebhookLimiter, rawJson, asy
     return;
   }
   const rawBodyString = rawBuffer.toString("utf8");
-  let parsedJson: unknown;
+  let payload: Record<string, unknown>;
   try {
-    parsedJson = JSON.parse(rawBodyString);
+    const parsed = JSON.parse(rawBodyString);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      res.status(400).json({ error: "invalid_payload" });
+      return;
+    }
+    payload = parsed as Record<string, unknown>;
   } catch {
     res.status(400).json({ error: "invalid_json" });
     return;
   }
-  const payloadResult = inboundPayloadSchema.safeParse(parsedJson);
-  if (!payloadResult.success) {
-    res.status(400).json({
-      error: "invalid_payload",
-      details: payloadResult.error.format(),
-    });
-    return;
-  }
-  const payload: Record<string, unknown> = payloadResult.data;
+
+
   // Build a dedupe key — prefer the source's delivery-id header,
   // fall back to a sha256 of the body.
   const headerKeys = [
@@ -181,6 +178,20 @@ router.post("/integrations/inbound/:source", inboundWebhookLimiter, rawJson, asy
     return;
   }
   const signatureVerified = sigOutcome.outcome === "configured_ok";
+
+  // Dedupe key safety: when the request is NOT signature-verified
+  // (dev/preview without partner secrets), we must NOT trust the
+  // partner-supplied delivery-id header for dedupe. Otherwise an
+  // unauthenticated attacker can pre-poison the dedupe slot for any
+  // future legitimate delivery id — every real later webhook for
+  // that id would 200-deduplicate without ever being processed.
+  // Force sha256(body) for unverified inserts so the attacker's
+  // poison row sits in a body-content slot that a real partner
+  // payload will never collide with.
+  if (!signatureVerified) {
+    const sha = createHash("sha256").update(rawBuffer).digest("hex");
+    dedupeKey = `sha256:${sha}`;
+  }
 
   const supabase = getSupabaseServiceRoleClient();
   const { error } = await supabase
