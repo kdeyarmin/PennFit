@@ -217,7 +217,8 @@ export function useCart(): {
         if (droppedCount > 0) {
           toast({
             title: "Some cart items were removed",
-            description: "Some cart items were removed because they're no longer available.",
+            description:
+              "Some cart items were removed because they couldn't be added to your cart.",
           });
           track("cart_items_dropped", { count: droppedCount });
         }
