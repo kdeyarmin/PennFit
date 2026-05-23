@@ -229,3 +229,52 @@ describe("App.tsx — pre-existing routes not regressed", () => {
     expect(SRC).toContain('path="/learn/device-setup"');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Wildcard routing: :rest* replaced with * (regexparam 3.x fix)
+// ---------------------------------------------------------------------------
+
+describe("App.tsx — wildcard routes use * not :rest*", () => {
+  it("uses /sign-in/* (not /sign-in/:rest*)", () => {
+    expect(SRC).toContain('path="/sign-in/*"');
+    expect(SRC).not.toContain('path="/sign-in/:rest*"');
+  });
+
+  it("uses /sign-up/* (not /sign-up/:rest*)", () => {
+    expect(SRC).toContain('path="/sign-up/*"');
+    expect(SRC).not.toContain('path="/sign-up/:rest*"');
+  });
+
+  it("uses /admin/* (not /admin/:rest*)", () => {
+    expect(SRC).toContain('path="/admin/*"');
+    expect(SRC).not.toContain('path="/admin/:rest*"');
+  });
+
+  it("uses /resupply/* (not /resupply/:rest*)", () => {
+    expect(SRC).toContain('path="/resupply/*"');
+    expect(SRC).not.toContain('path="/resupply/:rest*"');
+  });
+
+  it("LegacyResupplyRedirect reads params['*'] not params['rest*']", () => {
+    expect(SRC).toContain('params["*"]');
+    expect(SRC).not.toContain('params["rest*"]');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Removed routes/components: /admin/change-password
+// ---------------------------------------------------------------------------
+
+describe("App.tsx — /admin/change-password route and component removed", () => {
+  it("does not register a route for /admin/change-password", () => {
+    expect(SRC).not.toContain('path="/admin/change-password"');
+  });
+
+  it("does not lazy-import AdminChangePasswordPage", () => {
+    expect(SRC).not.toContain("AdminChangePasswordPage");
+  });
+
+  it("does not import from @/pages/admin/change-password", () => {
+    expect(SRC).not.toContain("admin/change-password");
+  });
+});

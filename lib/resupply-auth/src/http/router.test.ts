@@ -427,10 +427,72 @@ describe("GET /auth/me", () => {
       emailVerified: true,
     });
   });
+
+  // Regression: mustChangePassword was removed from the /auth/me response when
+  // the "set their password for them" invite flow was removed. The handler now
+  // does no credential lookup — it just returns session fields. The response
+  // must not include mustChangePassword even when one could theoretically be
+  // derived from the database.
+  it("response does NOT include mustChangePassword", async () => {
+    const h = buildHarness();
+    await seedUserWithPassword(h.repo, {
+      id: "u_dave",
+      emailLower: "dave@example.com",
+      role: "admin",
+      emailVerified: true,
+      password: "davepassword!",
+    });
+    const seed = await seedCsrf(h.app);
+    const signIn = await supertest(h.app)
+      .post("/auth/sign-in")
+      .set("Cookie", `${CSRF_COOKIE}=${seed}`)
+      .set(CSRF_HEADER, seed)
+      .send({ email: "dave@example.com", password: "davepassword!" });
+    const cookies = signIn.headers["set-cookie"] as unknown as string[];
+
+    const me = await supertest(h.app)
+      .get("/auth/me")
+      .set("Cookie", cookies.map((c) => c.split(";")[0]).join("; "));
+
+    expect(me.status).toBe(200);
+    expect(me.body).not.toHaveProperty("mustChangePassword");
+    // The five fields present must be exactly these.
+    expect(Object.keys(me.body).sort()).toEqual(
+      ["displayName", "email", "emailVerified", "id", "role"].sort(),
+    );
+  });
+
+  // Edge case: /auth/me is a synchronous function (no async credential lookup).
+  // Verify it handles an agent role as well.
+  it("returns the correct role for an agent user", async () => {
+    const h = buildHarness();
+    await seedUserWithPassword(h.repo, {
+      id: "u_eve",
+      emailLower: "eve@example.com",
+      role: "agent",
+      emailVerified: true,
+      password: "evepassword!",
+    });
+    const seed = await seedCsrf(h.app);
+    const signIn = await supertest(h.app)
+      .post("/auth/sign-in")
+      .set("Cookie", `${CSRF_COOKIE}=${seed}`)
+      .set(CSRF_HEADER, seed)
+      .send({ email: "eve@example.com", password: "evepassword!" });
+    const cookies = signIn.headers["set-cookie"] as unknown as string[];
+
+    const me = await supertest(h.app)
+      .get("/auth/me")
+      .set("Cookie", cookies.map((c) => c.split(";")[0]).join("; "));
+
+    expect(me.status).toBe(200);
+    expect(me.body.role).toBe("agent");
+    expect(me.body).not.toHaveProperty("mustChangePassword");
+  });
 });
 
 // ── rateLimitOnError propagation ───────────────────────────────────────────────
-//
+
 // PR change: every handler that calls checkLoginRateLimit now plumbs
 // `deps.rateLimitOnError` through. When the rate-limit DB check throws,
 // the gate fails open (the request is allowed) AND the hook is invoked

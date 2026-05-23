@@ -214,4 +214,42 @@ describe("createAuthClient", () => {
     expect(err.status).toBe(502);
     expect(err.code).toBe("unknown");
   });
+
+  // Regression: mustChangePassword was removed from AuthMe. fetchMe must parse
+  // and return payloads without that field.
+  it("fetchMe does not include mustChangePassword in the returned payload", async () => {
+    const serverPayload = {
+      id: "u_admin",
+      email: "admin@test.com",
+      role: "admin",
+      displayName: "Admin User",
+      emailVerified: true,
+      // No mustChangePassword field
+    };
+    const { fetch } = makeFetch([{ status: 200, body: serverPayload }]);
+    const client = createAuthClient({ basePath: "/api/auth", fetch });
+    const result = await client.fetchMe();
+    expect(result).not.toBeNull();
+    expect(result).not.toHaveProperty("mustChangePassword");
+    expect(result).toEqual(serverPayload);
+  });
+
+  // Boundary: fetchMe with a payload that incorrectly includes mustChangePassword
+  // from a stale server — the client passes through whatever the server returns,
+  // so this is a contract verification that we don't ADD it, not that we strip it.
+  it("fetchMe returns exactly the fields the server sends (no field injection)", async () => {
+    const serverPayload = {
+      id: "u99",
+      email: "user@test.com",
+      role: "agent",
+      displayName: null,
+      emailVerified: false,
+    };
+    const { fetch } = makeFetch([{ status: 200, body: serverPayload }]);
+    const client = createAuthClient({ basePath: "/api/auth", fetch });
+    const result = await client.fetchMe();
+    expect(Object.keys(result as object).sort()).toEqual(
+      ["id", "email", "role", "displayName", "emailVerified"].sort(),
+    );
+  });
 });
