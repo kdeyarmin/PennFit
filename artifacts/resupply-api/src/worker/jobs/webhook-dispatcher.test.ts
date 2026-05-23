@@ -82,13 +82,31 @@ describe("runWebhookDispatcher", () => {
     await runWebhookDispatcher({ fetchImpl: fetchImpl as unknown as typeof fetch });
     expect(calls).toHaveLength(1);
     const call = calls[0]!;
-    expect(call.url).toBe("https://example.com/wh");
-    const headers = call.init.headers as Record<string, string>;
+    // The dispatcher uses fetchWithPinnedIp for SSRF defence — the
+    // URL is rewritten to substitute the resolved IP literal, with
+    // the original hostname preserved in the Host header for TLS
+    // SNI. Assert on the path + Host header rather than the
+    // literal URL, since example.com's IP changes over time.
+    const calledUrl = new URL(call.url);
+    expect(calledUrl.pathname).toBe("/wh");
+    const headersInit = call.init.headers;
+    const headerEntries =
+      headersInit instanceof Headers
+        ? Object.fromEntries(headersInit.entries())
+        : (headersInit as Record<string, string>);
+    // Headers class lowercases names; the literal-object init keeps
+    // the original casing. Look up both shapes.
+    const sig =
+      headerEntries["X-PennFit-Signature"] ??
+      headerEntries["x-pennfit-signature"];
+    const eventType =
+      headerEntries["X-PennFit-Event-Type"] ??
+      headerEntries["x-pennfit-event-type"];
     const expected = createHmac("sha256", "test-secret")
       .update(call.init.body as string)
       .digest("base64");
-    expect(headers["X-PennFit-Signature"]).toBe(expected);
-    expect(headers["X-PennFit-Event-Type"]).toBe("claim.paid");
+    expect(sig).toBe(expected);
+    expect(eventType).toBe("claim.paid");
   });
 
   it("marks delivery delivered on a 2xx response", async () => {
