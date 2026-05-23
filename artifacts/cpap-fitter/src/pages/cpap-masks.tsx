@@ -21,7 +21,6 @@ import {
   Star,
   Truck,
   CreditCard,
-  MapPin,
   Stethoscope,
   PackageCheck,
 } from "lucide-react";
@@ -663,12 +662,6 @@ export function CpapMasks() {
 
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {[
-            {
-              Icon: MapPin,
-              title: "Local Penn DME team",
-              body: "Penn Home Medical Supply has fitted CPAP patients in the Greater Philadelphia area for years. The voice on the phone is here, not offshore.",
-              halo: "icon-halo-gold",
-            },
             {
               Icon: Stethoscope,
               title: "Licensed respiratory therapists",
