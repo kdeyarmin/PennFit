@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useRef,
   useState,
   type ComponentType,
   type ReactNode,
@@ -741,13 +742,23 @@ function groupDomId(label: string): string {
  * When a group is collapsed, any badge counts on its items roll up
  * into a single pill on the group header so reps still see pending
  * work without expanding every section.
+ *
+ * `expanded` and `onToggleGroup` are lifted to the parent AppShell so
+ * the desktop sidebar and the mobile drawer share a single state and
+ * never race each other writing to localStorage.
  */
 function SidebarNavBody({
   location,
+  expanded,
+  onToggleGroup,
   onItemClick,
   isAdminConfirmed,
 }: {
   location: string;
+  /** Shared nav-group expansion state, owned by the parent AppShell. */
+  expanded: Set<string>;
+  /** Callback to toggle a group open/closed. */
+  onToggleGroup: (label: string) => void;
   onItemClick?: () => void;
   /** True once /admin/me has confirmed the session is valid admin.
    *  Keeps the inbox-counts query from firing with a 401 during the
@@ -772,48 +783,6 @@ function SidebarNavBody({
   // Resolve "which nav link is active" once per render so a parent
   // and a child of the current location don't both highlight.
   const activeHref = pickActiveHref(location, NAV_GROUPS);
-  const activeGroup = findGroupForActiveHref(NAV_GROUPS, activeHref);
-
-  const [expanded, setExpanded] = useState<Set<string>>(() =>
-    loadInitialExpandedGroups(activeGroup),
-  );
-  const [explicitCollapsed, setExplicitCollapsed] = useState<Set<string>>(() =>
-    loadExplicitCollapsedGroups(),
-  );
-
-  // If a rep deep-links into a collapsed group, open it. We only fire
-  // on activeGroup changes (not on `expanded` changes), so a user who
-  // explicitly collapses the group they're currently viewing keeps it
-  // collapsed — the toggle should always win over auto-expand.
-  useEffect(() => {
-    if (!activeGroup) return;
-    if (explicitCollapsed.has(activeGroup)) return;
-    setExpanded((prev) => {
-      if (prev.has(activeGroup)) return prev;
-      const next = new Set(prev);
-      next.add(activeGroup);
-      persistExpandedGroups(next);
-      return next;
-    });
-  }, [activeGroup, explicitCollapsed]);
-
-  function toggleGroup(label: string) {
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      const wasExpanded = next.has(label);
-      if (wasExpanded) next.delete(label);
-      else next.add(label);
-      persistExpandedGroups(next);
-      setExplicitCollapsed((prevExplicitCollapsed) => {
-        const nextExplicitCollapsed = new Set(prevExplicitCollapsed);
-        if (wasExpanded) nextExplicitCollapsed.add(label);
-        else nextExplicitCollapsed.delete(label);
-        persistExplicitCollapsedGroups(nextExplicitCollapsed);
-        return nextExplicitCollapsed;
-      });
-      return next;
-    });
-  }
 
   return (
     <div className="flex flex-col gap-2">
@@ -833,7 +802,7 @@ function SidebarNavBody({
           <div key={group.label} className="flex flex-col gap-0.5">
             <button
               type="button"
-              onClick={() => toggleGroup(group.label)}
+              onClick={() => onToggleGroup(group.label)}
               aria-expanded={isOpen}
               aria-controls={sectionId}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[10px] uppercase tracking-[0.22em] font-semibold hover:bg-[hsl(var(--surface-3))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--penn-gold))]"
@@ -1024,6 +993,89 @@ export function AppShell({
   const [location] = useLocation();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
+  // ── Shared sidebar nav state ──────────────────────────────────────────────
+  // Both the desktop sidebar and the mobile drawer render SidebarNavBody.
+  // State lives here (not inside SidebarNavBody) so there is only one copy
+  // and only one localStorage writer — preventing the CSS-hidden instance
+  // from clobbering toggle changes made by the visible one.
+
+  const activeGroup = findGroupForActiveHref(
+    NAV_GROUPS,
+    pickActiveHref(location, NAV_GROUPS),
+  );
+
+  const [navExpanded, setNavExpanded] = useState<Set<string>>(() =>
+    loadInitialExpandedGroups(activeGroup),
+  );
+
+  // Tracks groups the user has *explicitly* collapsed so the deep-link
+  // auto-expand never reopens a group the rep deliberately closed.
+  // Opening a group removes it from this set.
+  const [navExplicitCollapsed, setNavExplicitCollapsed] = useState<
+    Set<string>
+  >(() => loadExplicitCollapsedGroups());
+
+  // Keep a ref so the auto-expand effect can read the current value of
+  // navExplicitCollapsed without listing it as a dependency (we only want
+  // to fire when activeGroup changes, not when the user manually toggles).
+  const navExplicitCollapsedRef = useRef(navExplicitCollapsed);
+  navExplicitCollapsedRef.current = navExplicitCollapsed;
+
+  // Persist expanded state after every change; skip the initial mount so
+  // we don't overwrite localStorage before the user has done anything.
+  const skipFirstNavPersist = useRef(true);
+  useEffect(() => {
+    if (skipFirstNavPersist.current) {
+      skipFirstNavPersist.current = false;
+      return;
+    }
+    persistExpandedGroups(navExpanded);
+  }, [navExpanded]);
+
+  // Deep-link auto-expand: when navigation lands in a collapsed group,
+  // open it — but skip both the initial mount (where loadInitialExpandedGroups
+  // is already authoritative) and any group the user has explicitly collapsed.
+  const skipFirstAutoExpand = useRef(true);
+  useEffect(() => {
+    if (skipFirstAutoExpand.current) {
+      skipFirstAutoExpand.current = false;
+      return;
+    }
+    if (!activeGroup) return;
+    if (navExplicitCollapsedRef.current.has(activeGroup)) return;
+    setNavExpanded((prev) => {
+      if (prev.has(activeGroup)) return prev;
+      const next = new Set(prev);
+      next.add(activeGroup);
+      return next;
+    });
+  }, [activeGroup]);
+
+  function toggleNavGroup(label: string) {
+    const isCurrentlyOpen = navExpanded.has(label);
+    setNavExpanded((prev) => {
+      const next = new Set(prev);
+      if (isCurrentlyOpen) next.delete(label);
+      else next.add(label);
+      return next;
+    });
+    setNavExplicitCollapsed((prev) => {
+      const next = new Set(prev);
+      if (isCurrentlyOpen) {
+        // User is collapsing — remember this choice so auto-expand won't
+        // undo it when the rep navigates back to a link in this group.
+        next.add(label);
+      } else {
+        // User is reopening — clear the explicit-collapse flag so future
+        // deep-link auto-expand works normally again.
+        next.delete(label);
+      }
+      persistExplicitCollapsedGroups(next);
+      return next;
+    });
+  }
+  // ── End shared sidebar nav state ──────────────────────────────────────────
+
   // Auto-close the mobile drawer on every route change so reps don't
   // have to tap the X after picking a destination.
   useEffect(() => {
@@ -1090,6 +1142,8 @@ export function AppShell({
                 >
                   <SidebarNavBody
                     location={location}
+                    expanded={navExpanded}
+                    onToggleGroup={toggleNavGroup}
                     onItemClick={() => setMobileNavOpen(false)}
                     isAdminConfirmed={!!adminEmail}
                   />
@@ -1119,7 +1173,12 @@ export function AppShell({
               className="flex-1 overflow-y-auto px-3 py-4 sticky top-0"
               style={{ maxHeight: "calc(100vh - 4rem)" }}
             >
-              <SidebarNavBody location={location} isAdminConfirmed={!!adminEmail} />
+              <SidebarNavBody
+                location={location}
+                expanded={navExpanded}
+                onToggleGroup={toggleNavGroup}
+                isAdminConfirmed={!!adminEmail}
+              />
             </nav>
           </aside>
           <main className="flex-1 p-4 sm:p-6 overflow-x-hidden min-w-0">
