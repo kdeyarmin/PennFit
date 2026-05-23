@@ -99,10 +99,7 @@ export async function runPrescriptionRequestAutoDraft(): Promise<AutoDraftStats>
     .order("valid_until", { ascending: true })
     .limit(BATCH_SIZE);
   if (error) {
-    logger.error(
-      { err: error.message },
-      "prescription-request.auto-draft.select_failed",
-    );
+    logger.error({ err: error }, "prescription-request.auto-draft.select_failed");
     throw error;
   }
   if (!candidates || candidates.length === 0) return stats;
