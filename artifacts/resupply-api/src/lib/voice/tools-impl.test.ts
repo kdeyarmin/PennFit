@@ -489,7 +489,17 @@ describe("VoiceToolDispatcher — place_resupply_order episode status gate (PR c
     const result = await dispatcher.dispatch({
       callId: "o4",
       name: "place_resupply_order",
-      args: { skus: ["A7030"], address_confirmed: false },
+      // The arg schema is z.literal(true), so a runtime caller
+      // SHOULD never reach this branch — the model's JSON args
+      // would fail Zod validation upstream. But the dispatcher
+      // is structurally typed, and a non-conforming caller
+      // (test fixture, future code path) hits the defensive
+      // guard. Cast to bypass the literal-true type so the
+      // dead-code guard stays exercised.
+      args: { skus: ["A7030"], address_confirmed: false } as unknown as {
+        skus: string[];
+        address_confirmed: true;
+      },
     });
     // address_confirmed:false short-circuits before the DB update
     expect(result.result).toEqual({ ok: false, order_id: "", accepted_skus: [] });
