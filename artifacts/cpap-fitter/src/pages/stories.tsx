@@ -168,10 +168,11 @@ export function Stories() {
             <span className="hero-headline-swoosh">In their words.</span>
           </h1>
           <p className="text-base sm:text-lg md:text-xl text-white/85 leading-relaxed max-w-2xl mx-auto">
-            Four PennPaps patients on what therapy actually changed — the
-            cardiology numbers, the mood, the working hours, the bedroom.
-            Names abbreviated for privacy; outcomes and the masks they wear
-            are real.
+            Four composite PennPaps stories, based on real patient
+            experiences, on what therapy actually changed — the cardiology
+            numbers, the mood, the working hours, the bedroom. Identifying
+            details have been changed for privacy, while the outcomes and
+            mask types reflect real therapy experiences.
           </p>
         </div>
       </section>
