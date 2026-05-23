@@ -457,36 +457,70 @@ export async function applySucceededPayment(
   };
   const allocations = (row.applied_claims_json as unknown as Allocation[]) ?? [];
   for (const a of allocations) {
-    const { data: claim } = await supabase
-      .schema("resupply")
-      .from("insurance_claims")
-      .select("id, patient_responsibility_cents")
-      .eq("id", a.claimId)
-      .eq("patient_id", row.patient_id)
-      .limit(1)
-      .maybeSingle();
-    if (!claim) continue;
-    const newBalance = Math.max(
-      0,
-      claim.patient_responsibility_cents - a.amountAppliedCents,
-    );
-    await supabase
-      .schema("resupply")
-      .from("insurance_claims")
-      .update({
-        patient_responsibility_cents: newBalance,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", claim.id);
+    // Compare-and-swap decrement. The previous shape was read-then-
+    // write: read patient_responsibility_cents into JS, subtract,
+    // write back the literal. Two concurrent Stripe
+    // payment_intent.succeeded webhooks for DIFFERENT payments
+    // targeting the SAME claim would both read the same balance and
+    // both overwrite with the same lower value — losing one
+    // allocation's decrement.
+    //
+    // The CAS retry below re-reads the current balance, computes
+    // the next value, and updates ONLY when the row's current
+    // balance still matches what we read. PostgREST drops the
+    // update on mismatch (no rows affected); we detect that via
+    // .select() and loop. A bounded retry budget caps the worst-
+    // case so a thundering herd doesn't pin a worker indefinitely.
+    let appliedAmount = 0;
+    let success = false;
+    for (let attempt = 0; attempt < 5 && !success; attempt++) {
+      const { data: claim } = await supabase
+        .schema("resupply")
+        .from("insurance_claims")
+        .select("id, patient_responsibility_cents")
+        .eq("id", a.claimId)
+        .eq("patient_id", row.patient_id)
+        .limit(1)
+        .maybeSingle();
+      if (!claim) {
+        // Claim went away (deleted between webhook ingest + apply).
+        // Nothing to decrement; bail out of the retry loop.
+        break;
+      }
+      const currentBalance = claim.patient_responsibility_cents;
+      const newBalance = Math.max(0, currentBalance - a.amountAppliedCents);
+      const { data: updated } = await supabase
+        .schema("resupply")
+        .from("insurance_claims")
+        .update({
+          patient_responsibility_cents: newBalance,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", claim.id)
+        .eq("patient_responsibility_cents", currentBalance)
+        .select("id");
+      if (updated && updated.length > 0) {
+        success = true;
+        appliedAmount = a.amountAppliedCents;
+      }
+      // else: another writer beat us. Loop and re-read.
+    }
+    if (!success) {
+      logger.warn(
+        { claim_id: a.claimId, payment_id: paymentId },
+        "applySucceededPayment: gave up after CAS retries; claim balance contended",
+      );
+      continue;
+    }
     await supabase
       .schema("resupply")
       .from("insurance_claim_events")
       .insert({
-        claim_id: claim.id,
+        claim_id: a.claimId,
         event_type: "note",
-        amount_cents: a.amountAppliedCents,
+        amount_cents: appliedAmount,
         payer_ref: paymentId,
-        note: `Patient payment applied: ${a.amountAppliedCents}¢ via payment ${paymentId}`,
+        note: `Patient payment applied: ${appliedAmount}¢ via payment ${paymentId}`,
         actor_email: "system:patient_payment_apply",
       });
   }

@@ -53,6 +53,25 @@ type ShopReturnRow = Database["resupply"]["Tables"]["shop_returns"]["Row"];
 
 const router: IRouter = Router();
 
+/**
+ * z.string().url() accepts javascript:, data:, file:, vbscript: and
+ * arbitrary custom protocols. returnLabelUrl renders on the patient-
+ * facing "My returns" page; a compromised / low-trust admin who
+ * could stage a javascript: URL here would land stored XSS on every
+ * patient who clicks "Print return label" — same-origin, same
+ * session cookie. Restrict to http(s).
+ */
+function httpUrl() {
+  return z
+    .string()
+    .trim()
+    .url()
+    .refine(
+      (u) => /^https?:\/\//i.test(u),
+      "URL must use http or https protocol",
+    );
+}
+
 // Per-admin rate limits on return-lifecycle mutations (B-07). Two
 // buckets keyed by adminUserId:
 //   * adminReturnFinancialLimiter — 10/hour. Refund + replace move
@@ -200,7 +219,7 @@ router.get(
 const approveBody = z
   .object({
     note: z.string().trim().max(2000).optional().nullable(),
-    returnLabelUrl: z.string().url().optional().nullable(),
+    returnLabelUrl: httpUrl().optional().nullable(),
     returnCarrier: z.string().trim().max(40).optional().nullable(),
     returnTrackingNumber: z.string().trim().max(100).optional().nullable(),
   })

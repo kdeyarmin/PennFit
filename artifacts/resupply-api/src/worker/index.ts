@@ -162,17 +162,36 @@ export async function startWorker(): Promise<void> {
   // failure logs once, not every monitoring tick. ops dashboards can
   // alert on `event: "pgboss_jobs_failed"` to page on a stuck queue.
   //
-  // The snapshot lives in this closure and resets on worker restart;
-  // a restart re-baselines counts so historical archived failures
-  // don't trigger a false alert at boot. Tradeoff: a process bounce
-  // immediately after a failure could miss a single alert, which is
-  // acceptable — the failed-state row is still visible in the DB and
-  // the next failure will alert.
+  // The snapshot lives in this closure but the first monitor-states
+  // tick after boot fires a one-time `pgboss_jobs_failed_initial`
+  // line whenever there's a non-zero `failed` count. Without it, a
+  // process bounce immediately after a fresh failure would silently
+  // re-baseline at the post-failure count and never alert — a
+  // crashloop could mask every alert from this surface entirely.
+  // Subsequent ticks delta off `prev` as before so a single permanent
+  // failure only emits one steady-state warning.
   const lastFailedCounts = new Map<string, number>();
   boss.on("monitor-states", (snapshot) => {
     for (const [queueName, state] of Object.entries(snapshot.queues ?? {})) {
-      const prev = lastFailedCounts.get(queueName) ?? state.failed;
-      if (state.failed > prev) {
+      const baselined = lastFailedCounts.has(queueName);
+      const prev = lastFailedCounts.get(queueName) ?? 0;
+      if (!baselined && state.failed > 0) {
+        // First tick after boot AND there's a non-zero failed count
+        // already on the queue — surface it once so a restart
+        // doesn't swallow alerts for failures that landed during
+        // the restart window.
+        logger.warn(
+          {
+            event: "pgboss_jobs_failed_initial",
+            queue: queueName,
+            total_failed: state.failed,
+            queue_size: state.all,
+            retry_pending: state.retry,
+            active: state.active,
+          },
+          `pg-boss queue '${queueName}' booted with ${state.failed} failed job(s) on the books`,
+        );
+      } else if (state.failed > prev) {
         logger.warn(
           {
             event: "pgboss_jobs_failed",
@@ -421,11 +440,17 @@ export async function startWorker(): Promise<void> {
   );
 }
 
-export async function stopWorker(): Promise<void> {
+export async function stopWorker(timeoutMs = 10_000): Promise<void> {
+  // The caller (index.ts shutdown) passes the remaining wall-clock
+  // budget so total HTTP-drain + worker-stop stays inside the
+  // orchestrator's grace window (Replit/K8s ~30s). Hard floor at
+  // 1s — pg-boss needs a non-trivial timeout to avoid throwing
+  // immediately when there are no in-flight jobs.
   workerReady = false;
   if (!bossInstance) return;
+  const budget = Math.max(1_000, timeoutMs);
   try {
-    await bossInstance.stop({ graceful: true, timeout: 10_000 });
+    await bossInstance.stop({ graceful: true, timeout: budget });
   } catch (err) {
     logger.error({ err }, "error stopping pg-boss");
   }

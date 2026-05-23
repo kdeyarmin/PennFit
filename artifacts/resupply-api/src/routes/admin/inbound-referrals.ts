@@ -470,12 +470,18 @@ router.get(
       }
     }
     if (candidates.length === 0 && dob && lastName) {
+      // `lastName` comes from the partner-supplied
+      // raw_parsed_json.patient.lastName — escape `%` and `_` before
+      // passing to .ilike so a partner sending "Smith%" doesn't
+      // wildcard-match every patient whose last name starts with
+      // "Smith" (PHI leak into the suggested-patients picker).
+      const escapedLastName = lastName.replace(/[\\%_]/g, (c) => `\\${c}`);
       const { data } = await supabase
         .schema("resupply")
         .from("patients")
         .select("id, legal_first_name, legal_last_name, email, phone_e164, date_of_birth")
         .eq("date_of_birth", dob)
-        .ilike("legal_last_name", lastName)
+        .ilike("legal_last_name", escapedLastName)
         .limit(5);
       for (const p of data ?? []) {
         candidates.push({

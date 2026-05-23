@@ -179,6 +179,20 @@ router.post("/integrations/inbound/:source", inboundWebhookLimiter, rawJson, asy
   }
   const signatureVerified = sigOutcome.outcome === "configured_ok";
 
+  // Dedupe key safety: when the request is NOT signature-verified
+  // (dev/preview without partner secrets), we must NOT trust the
+  // partner-supplied delivery-id header for dedupe. Otherwise an
+  // unauthenticated attacker can pre-poison the dedupe slot for any
+  // future legitimate delivery id — every real later webhook for
+  // that id would 200-deduplicate without ever being processed.
+  // Force sha256(body) for unverified inserts so the attacker's
+  // poison row sits in a body-content slot that a real partner
+  // payload will never collide with.
+  if (!signatureVerified) {
+    const sha = createHash("sha256").update(rawBuffer).digest("hex");
+    dedupeKey = `sha256:${sha}`;
+  }
+
   const supabase = getSupabaseServiceRoleClient();
   const { error } = await supabase
     .schema("resupply")

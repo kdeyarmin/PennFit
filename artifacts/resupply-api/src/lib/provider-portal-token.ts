@@ -94,11 +94,35 @@ export function verifyProviderPortalToken(
     return { valid: false };
   }
 
-  const p = parsed as ProviderPortalPayload;
-  if (typeof p?.id !== "string" || typeof p?.e !== "number") {
+  // Reject if the payload object carries ANY extra fields beyond
+  // the two we expect. Today nothing reads extra fields, but a
+  // future caller that trusts the parsed payload as authoritative
+  // shouldn't be able to read a smuggled `role:"admin"` or
+  // `scope:"all"` that survived JSON.parse. Also tighten the
+  // typeof checks and enforce UUID-shaped providerId.
+  if (
+    !parsed ||
+    typeof parsed !== "object" ||
+    Array.isArray(parsed)
+  ) {
     return { valid: false };
   }
-  if (Date.now() / 1000 > p.e) return { valid: false };
+  const p = parsed as Record<string, unknown>;
+  const keys = Object.keys(p);
+  if (keys.length !== 2 || !keys.includes("id") || !keys.includes("e")) {
+    return { valid: false };
+  }
+  if (typeof p.id !== "string" || typeof p.e !== "number") {
+    return { valid: false };
+  }
+  if (
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(p.id)
+  ) {
+    return { valid: false };
+  }
+  if (!Number.isFinite(p.e) || Date.now() / 1000 > p.e) {
+    return { valid: false };
+  }
 
   return { valid: true, providerId: p.id };
 }

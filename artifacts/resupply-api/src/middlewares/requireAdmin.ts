@@ -162,6 +162,15 @@ export async function requireAdmin(
   res: Response,
   next: NextFunction,
 ): Promise<void> {
+  // Set Cache-Control: no-store on every admin-gated response so a
+  // cached admin payload can't be re-rendered from the browser
+  // back-button / "Reopen closed tab" after sign-out. Individual
+  // download handlers already set this header on their own
+  // responses; centralising it here covers the JSON surfaces
+  // (/admin/me, list endpoints, etc.) that an attacker with
+  // physical access to the device would otherwise see flash.
+  res.setHeader("Cache-Control", "no-store, private");
+  res.setHeader("Pragma", "no-cache");
   const admin = await resolveAdmin(req);
   if (!admin) {
     res.status(401).json({ error: "Sign in required" });

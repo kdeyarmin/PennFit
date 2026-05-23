@@ -620,9 +620,14 @@ function hasStructuredAddress(raw: unknown): boolean {
 }
 
 function formatCents(cents: number): string {
-  const d = Math.floor(cents / 100);
-  const c = cents % 100;
-  return `$${d}.${c.toString().padStart(2, "0")}`;
+  // Handle negative amounts correctly. Math.floor + % on a negative
+  // number yields a garbage formatted string like "$-2.-50" because
+  // both quotient and remainder go negative. Strip the sign first.
+  const sign = cents < 0 ? "-" : "";
+  const abs = Math.abs(cents);
+  const d = Math.floor(abs / 100);
+  const c = abs % 100;
+  return `${sign}$${d}.${c.toString().padStart(2, "0")}`;
 }
 
 function toUtcDateEpochMs(value: Date): number {

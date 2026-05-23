@@ -488,22 +488,32 @@ function OverviewPane({
         />
         {referral.documents.length > 0 && (
           <ul className="text-xs space-y-1">
-            {referral.documents.map((d) => (
-              <li key={d.id}>
-                <span className="font-mono">{d.kind}</span>{" "}
-                {d.filename && <span>· {d.filename}</span>}
-                {d.sourceUrl && (
-                  <a
-                    href={d.sourceUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="ml-1 inline-flex items-center gap-1 text-[hsl(var(--penn-navy))] hover:underline"
-                  >
-                    <ExternalLink className="h-3 w-3" />
-                  </a>
-                )}
-              </li>
-            ))}
+            {referral.documents.map((d) => {
+              // Defense-in-depth: the partner-API parser already
+              // validates http(s)-only on inbound, but a stale row
+              // from before that fix (or a future regression there)
+              // could still carry a javascript:/data: URL that the
+              // admin's session would execute on click. Re-validate
+              // here and drop the link if the protocol isn't http(s);
+              // rel="noopener noreferrer" does NOT block javascript:.
+              const safeUrl = isSafeExternalUrl(d.sourceUrl);
+              return (
+                <li key={d.id}>
+                  <span className="font-mono">{d.kind}</span>{" "}
+                  {d.filename && <span>· {d.filename}</span>}
+                  {safeUrl && (
+                    <a
+                      href={safeUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="ml-1 inline-flex items-center gap-1 text-[hsl(var(--penn-navy))] hover:underline"
+                    >
+                      <ExternalLink className="h-3 w-3" />
+                    </a>
+                  )}
+                </li>
+              );
+            })}
           </ul>
         )}
       </div>
@@ -520,6 +530,26 @@ function KV({ label, value }: { label: string; value: string }) {
       <span>{value}</span>
     </div>
   );
+}
+
+// Defense-in-depth URL validator. The Parachute parse-order.ts schema
+// already rejects non-http(s) URLs at intake, but we re-check at the
+// render boundary so a future regression in the parser (or a stale
+// row from before that fix landed) can't still smuggle a
+// javascript:/data:/vbscript: URL into an admin's <a href> — those
+// run JS in the admin-session origin on click, and `noopener
+// noreferrer` does not block them.
+function isSafeExternalUrl(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  try {
+    const parsed = new URL(raw);
+    if (parsed.protocol === "http:" || parsed.protocol === "https:") {
+      return raw;
+    }
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 // ────────────────────────────────────────────────────────────────────

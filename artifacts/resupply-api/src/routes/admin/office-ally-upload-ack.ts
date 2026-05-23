@@ -29,7 +29,7 @@
 
 import { createHash } from "node:crypto";
 
-import { Router, type IRouter } from "express";
+import express, { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
@@ -64,8 +64,16 @@ const body = z
   })
   .strict();
 
+// Per-route JSON parser sized to the EDI cap above. The global
+// express.json() at app.ts:200 caps at 100KB, which 413s any real
+// 835 batch (~hundreds of KB to ~1MB) and most 271 batches before
+// the route handler ever sees the request. Override here so the
+// zod-level 5MB cap is the actual size gate.
+const uploadAckJsonParser = express.json({ limit: "5mb" });
+
 router.post(
   "/admin/office-ally/upload-ack",
+  uploadAckJsonParser,
   requireAdminOnly,
   adminRateLimit({
     name: "office_ally.upload_ack",
