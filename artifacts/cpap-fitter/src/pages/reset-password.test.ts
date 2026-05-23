@@ -160,7 +160,7 @@ describe("reset-password — regression: core storefront form behaviour intact",
 // ---------------------------------------------------------------------------
 // PR change: removed SERVER_UNAVAILABLE_MESSAGE and authErrorMessage
 // ---------------------------------------------------------------------------
-describe.skip("reset-password — SERVER_UNAVAILABLE_MESSAGE removed (this PR)", () => {
+describe("reset-password — SERVER_UNAVAILABLE_MESSAGE removed (this PR)", () => {
   it("does NOT define SERVER_UNAVAILABLE_MESSAGE", () => {
     expect(SRC).not.toContain("SERVER_UNAVAILABLE_MESSAGE");
   });
