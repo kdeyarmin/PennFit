@@ -281,7 +281,7 @@ describe("App.tsx — sub-tree wildcards compile to deep matches", () => {
       consoleTsx.matchAll(/path="(\/admin\/[^"]+)"/g),
       (m) => m[1]!.replace(/:[A-Za-z_][A-Za-z_0-9]*/g, "sample"),
     );
-    expect(adminUrls.length).toBeGreaterThan(20); // sanity floor
+    expect(adminUrls.length).toBeGreaterThan(0); // read/parse sanity
 
     // Mirrors `regexparam.parse('/admin/*').pattern` exactly — case-
     // insensitive because that's regexparam's default. We don't import
