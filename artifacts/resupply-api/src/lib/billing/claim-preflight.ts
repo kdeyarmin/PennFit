@@ -170,6 +170,13 @@ export async function preflightClaim(claimId: string): Promise<PreflightSummary>
           label: "Enrollment posture not recorded",
           detail: `${payer.display_name} enrollment_status is "unknown" — set it in the payer profile so the preflight knows.`,
         });
+      } else if (payer.enrollment_status === "not_required") {
+        items.push({
+          key: "payer_enrollment",
+          severity: "ok",
+          label: "Enrollment not required",
+          detail: `${payer.display_name} does not require enrollment for claim submission.`,
+        });
       } else if (
         payer.enrollment_status === "active" &&
         payer.enrollment_effective_on &&
@@ -191,7 +198,7 @@ export async function preflightClaim(claimId: string): Promise<PreflightSummary>
       }
 
       // ── Timely filing window (Phase 12) ───────────────────────
-      if (payer.timely_filing_days && claim.date_of_service) {
+      if (payer.timely_filing_days != null && claim.date_of_service) {
         const dos = new Date(claim.date_of_service).getTime();
         const today = Date.now();
         const ageDays = Math.floor((today - dos) / (24 * 3600 * 1000));
@@ -218,10 +225,31 @@ export async function preflightClaim(claimId: string): Promise<PreflightSummary>
             detail: `${payer.display_name} timely-filing window: ${payer.timely_filing_days} days from DOS.`,
           });
         }
+      } else if (payer.timely_filing_days == null) {
+        items.push({
+          key: "timely_filing",
+          severity: "warning",
+          label: "Timely-filing window not configured",
+          detail: `${payer.display_name} is missing timely_filing_days in the payer profile.`,
+        });
+      } else {
+        items.push({
+          key: "timely_filing",
+          severity: "warning",
+          label: "Date of service missing",
+          detail: "Claim is missing date_of_service, so timely filing cannot be calculated.",
+        });
       }
 
       // ── Required modifiers (Phase 12) ─────────────────────────
-      if (payer.required_modifiers_dme && payer.required_modifiers_dme.length > 0) {
+      if (!payer.required_modifiers_dme || payer.required_modifiers_dme.length === 0) {
+        items.push({
+          key: "payer_modifiers",
+          severity: "warning",
+          label: "Required payer modifiers not configured",
+          detail: `${payer.display_name} has no required_modifiers_dme configured in the payer profile.`,
+        });
+      } else {
         const { data: lines } = await supabase
           .schema("resupply")
           .from("insurance_claim_line_items")
@@ -248,6 +276,13 @@ export async function preflightClaim(claimId: string): Promise<PreflightSummary>
             severity: "warning",
             label: "Required payer modifiers may be missing",
             detail: `${payer.display_name} expects at least one of: ${payer.required_modifiers_dme.join(", ")}. Verify each line.`,
+          });
+        } else {
+          items.push({
+            key: "payer_modifiers",
+            severity: "ok",
+            label: "Required payer modifiers present",
+            detail: `${payer.display_name} requires at least one of ${payer.required_modifiers_dme.join(", ")} and the claim includes them.`,
           });
         }
       }

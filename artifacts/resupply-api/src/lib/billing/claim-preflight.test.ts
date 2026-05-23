@@ -189,8 +189,7 @@ describe("preflightClaim", () => {
     expect(item?.severity).toBe("error");
   });
 
-  it("flags past-timely-filing-window claim as an error", async () => {
-    // DOS is 2026-05-12; 5 day window means it expired 2026-05-17.
+  it("marks enrollment_status=not_required as ok", async () => {
     stageHappyPath(
       {},
       {
@@ -199,13 +198,49 @@ describe("preflightClaim", () => {
           office_ally_payer_id: "54771",
           requires_prior_auth_dme: false,
           is_active: true,
-          timely_filing_days: 5,
+          enrollment_status: "not_required",
+        },
+      },
+    );
+    const out = await preflightClaim(CLAIM_ID);
+    const item = out.items.find((i) => i.key === "payer_enrollment");
+    expect(item?.severity).toBe("ok");
+  });
+
+  it("flags past-timely-filing-window claim as an error", async () => {
+    stageHappyPath(
+      { date_of_service: "2025-01-01" },
+      {
+        payerOverride: {
+          paper_only: false,
+          office_ally_payer_id: "54771",
+          requires_prior_auth_dme: false,
+          is_active: true,
+          timely_filing_days: 30,
         },
       },
     );
     const out = await preflightClaim(CLAIM_ID);
     const item = out.items.find((i) => i.key === "timely_filing");
     expect(item?.severity).toBe("error");
+  });
+
+  it("flags missing timely-filing config as a warning", async () => {
+    stageHappyPath(
+      {},
+      {
+        payerOverride: {
+          paper_only: false,
+          office_ally_payer_id: "54771",
+          requires_prior_auth_dme: false,
+          is_active: true,
+          timely_filing_days: null,
+        },
+      },
+    );
+    const out = await preflightClaim(CLAIM_ID);
+    const item = out.items.find((i) => i.key === "timely_filing");
+    expect(item?.severity).toBe("warning");
   });
 
   it("flags missing required-modifiers as a warning", async () => {
@@ -220,6 +255,24 @@ describe("preflightClaim", () => {
           requires_prior_auth_dme: false,
           is_active: true,
           required_modifiers_dme: ["GA"],
+        },
+      },
+    );
+    const out = await preflightClaim(CLAIM_ID);
+    const item = out.items.find((i) => i.key === "payer_modifiers");
+    expect(item?.severity).toBe("warning");
+  });
+
+  it("flags missing required-modifiers config as a warning", async () => {
+    stageHappyPath(
+      {},
+      {
+        payerOverride: {
+          paper_only: false,
+          office_ally_payer_id: "54771",
+          requires_prior_auth_dme: false,
+          is_active: true,
+          required_modifiers_dme: [],
         },
       },
     );
@@ -257,6 +310,7 @@ interface ClaimOverrides {
   rendering_provider_id?: string | null;
   referring_provider_id?: string | null;
   total_billed_cents?: number;
+  date_of_service?: string;
 }
 
 interface DataOverrides {
@@ -292,9 +346,9 @@ function stageHappyPath(
       patient_id: PATIENT_ID,
       payer_name: "Highmark BCBS",
       payer_profile_id: PAYER_PROFILE_ID,
-      date_of_service: "2026-05-12",
       status: "draft",
       total_billed_cents: claimOver.total_billed_cents ?? 24999,
+      date_of_service: claimOver.date_of_service ?? "2026-05-12",
       insurance_coverage_id: COVERAGE_ID,
       rendering_provider_id:
         claimOver.rendering_provider_id === undefined
@@ -319,6 +373,9 @@ function stageHappyPath(
   stagePatientHappy(data.addressOverride);
   stageDiagnosisHappy(data.diagnosisOverride);
   stageLineItemsHappy(data.linesOverride);
+  if ((data.payerOverride?.required_modifiers_dme?.length ?? 0) > 0) {
+    stageLineItemsHappy(data.linesOverride);
+  }
 }
 
 function stagePayerProfile(overrides: {
@@ -346,7 +403,10 @@ function stagePayerProfile(overrides: {
       office_ally_payer_id: overrides.office_ally_payer_id,
       claim_format: "837p",
       requires_prior_auth_dme: overrides.requires_prior_auth_dme,
-      timely_filing_days: overrides.timely_filing_days ?? null,
+      timely_filing_days:
+        overrides.timely_filing_days === undefined
+          ? 180
+          : overrides.timely_filing_days,
       required_modifiers_dme: overrides.required_modifiers_dme ?? [],
       requires_referring_provider_npi:
         overrides.requires_referring_provider_npi ?? false,
