@@ -9,6 +9,7 @@
 import type { Request, Response } from "express";
 import { z } from "zod";
 
+import { writeUserChosenPassword } from "../credential-writes";
 import { checkCsrf } from "../csrf";
 import { hashPassword, verifyPassword } from "../password";
 import { validatePassword } from "../password-policy";
@@ -101,14 +102,13 @@ export function makeChangePasswordHandler(deps: AuthDeps) {
       newPwCheck.value,
       deps.passwordHashParams,
     );
-    await deps.repo.upsertCredential({
+    // User typed this themselves — writeUserChosenPassword clears
+    // the operator-set expiry clock so future sign-ins skip the
+    // invite-expired gate in sign-in.ts.
+    await writeUserChosenPassword(deps.repo, {
       userId: user.id,
       passwordHash: newHash,
       mustChange: false,
-      // User typed this themselves — clear the operator-set
-      // expiry clock so future sign-ins skip the invite-expired
-      // gate in sign-in.ts.
-      setByAdminAt: null,
     });
     // Keep this session alive; revoke every other one belonging
     // to this user. A separate device that was signed in before

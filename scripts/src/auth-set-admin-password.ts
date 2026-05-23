@@ -33,6 +33,7 @@ import {
   hashPassword,
   normalizeEmail,
   supabaseAuthRepository,
+  writeUserChosenPassword,
 } from "@workspace/resupply-auth";
 
 interface ParsedArgs {
@@ -137,15 +138,15 @@ async function main(): Promise<void> {
   }
 
   const passwordHash = await hashPassword(password);
-  await repo.upsertCredential({
+  // CLI is an out-of-band recovery tool — not the team-invite
+  // "set their password for them" flow — so the operator-set
+  // expiry clock shouldn't fire. writeUserChosenPassword clears
+  // set_by_admin_at explicitly in case this user previously had
+  // an expired admin-typed credential.
+  await writeUserChosenPassword(repo, {
     userId,
     passwordHash,
     mustChange: false,
-    // CLI is an out-of-band recovery tool — not the team-invite
-    // "set their password for them" flow — so the operator-set
-    // expiry clock shouldn't fire. Clear it explicitly in case
-    // this user previously had an expired admin-typed credential.
-    setByAdminAt: null,
   });
 
   process.stdout.write(

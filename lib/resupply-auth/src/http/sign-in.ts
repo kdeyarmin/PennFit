@@ -35,6 +35,7 @@ import {
   buildSessionCookie,
   appendSetCookie,
 } from "../cookies";
+import { rehashPasswordPreservingProvenance } from "../credential-writes";
 import { checkCsrf } from "../csrf";
 import { normalizeEmail } from "../email";
 import {
@@ -275,7 +276,11 @@ export function makeSignInHandler(deps: AuthDeps) {
           parsed.data.password,
           deps.passwordHashParams,
         );
-        await deps.repo.upsertCredential({
+        // Algorithm upgrade only — deliberately preserve the
+        // existing set_by_admin_at so a stale operator-typed
+        // credential doesn't get its expiry clock reset just
+        // because we rehashed it.
+        await rehashPasswordPreservingProvenance(deps.repo, {
           userId: user.id,
           passwordHash: upgraded,
           mustChange: cred.mustChange,
