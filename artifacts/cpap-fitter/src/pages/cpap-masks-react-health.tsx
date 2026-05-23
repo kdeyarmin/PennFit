@@ -116,6 +116,7 @@ export function CpapMasksReactHealth() {
   useDocumentTitle(
     "React Health CPAP Masks",
     "React Health is our flagship CPAP mask line — US-engineered, ultra-quiet, and lighter than every comparable ResMed or Fisher & Paykel system. Featured: Rio II, Viva, Numa.",
+    { schema: "Article" },
   );
   const [, navigate] = useLocation();
 
