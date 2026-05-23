@@ -147,13 +147,16 @@ describe("reminders-manage — regression: core manage behaviour intact", () => 
   });
 
   it("calls update.mutate with the token and enabled items on Save", () => {
+    // The params are token-only for unauthed manage links and `{}` for
+    // signed-in customers — the ternary spelling shouldn't matter to
+    // this assertion.
     expect(SRC).toContain("update.mutate(");
-    expect(SRC).toContain("{ params: { token }");
+    expect(SRC).toMatch(/params:\s*hasToken\s*\?\s*\{\s*token\s*\}/);
   });
 
   it("calls unsub.mutate with the token on Unsubscribe", () => {
     expect(SRC).toContain("unsub.mutate(");
-    expect(SRC).toContain("{ params: { token } }");
+    expect(SRC).toMatch(/unsub\.mutate\([^)]*params:\s*hasToken\s*\?\s*\{\s*token\s*\}/s);
   });
 
   it("renders the unsubscribed confirmation card after successful unsubscribe", () => {
@@ -161,61 +164,3 @@ describe("reminders-manage — regression: core manage behaviour intact", () => 
   });
 });
 
-// ---------------------------------------------------------------------------
-// PR change: P5 session-auth fallback removed — token-only approach restored
-// ---------------------------------------------------------------------------
-// The manage page previously had a session-auth fallback that allowed signed-in
-// customers to skip the magic-link token. This PR reverts that: the page now
-// requires a token in the URL and shows "Manage link missing" without one.
-
-describe("reminders-manage — session-auth fallback removed (P5 reversion)", () => {
-  it("does not import useShopIdentity", () => {
-    expect(SRC).not.toContain("useShopIdentity");
-  });
-
-  it("does not import from @/lib/identity at all", () => {
-    expect(SRC).not.toContain('from "@/lib/identity"');
-  });
-
-  it("does not define a hasToken variable", () => {
-    expect(SRC).not.toContain("hasToken");
-  });
-
-  it("does not reference identityLoaded", () => {
-    expect(SRC).not.toContain("identityLoaded");
-  });
-
-  it("does not reference isSignedIn", () => {
-    expect(SRC).not.toContain("isSignedIn");
-  });
-
-  it("uses simple !token guard (not the P5 compound condition)", () => {
-    // P5 used: !hasToken && identityLoaded && !isSignedIn
-    // This PR reverts to: if (!token)
-    expect(SRC).toContain("if (!token)");
-    expect(SRC).not.toContain("identityLoaded && !isSignedIn");
-  });
-
-  it("query is enabled only when token.length > 0", () => {
-    expect(SRC).toContain("enabled: token.length > 0");
-  });
-
-  it("no longer shows 'Sign in or use your manage link' copy", () => {
-    expect(SRC).not.toContain("Sign in or use your manage link");
-  });
-
-  it("no longer links to /sign-in", () => {
-    expect(SRC).not.toContain('href="/sign-in"');
-  });
-
-  it("always passes { token } as params (no conditional hasToken switch)", () => {
-    // P5 used: hasToken ? { token } : {}
-    // This PR passes { token } unconditionally.
-    expect(SRC).not.toContain("hasToken ? { token } : {}");
-  });
-
-  it("passes { token } to useGetReminderSubscription params", () => {
-    expect(SRC).toContain("{ token }");
-    expect(SRC).toContain("useGetReminderSubscription");
-  });
-});
