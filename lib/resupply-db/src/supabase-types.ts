@@ -1126,6 +1126,34 @@ export interface Database {
           // Da Vinci PAS endpoint URL (CMS-0057-F). Null when the
           // payer hasn't stood up a FHIR PAS server yet. (Migration 0136)
           davinci_pas_endpoint_url: string | null;
+          // ── Phase 12 completeness columns (Migration 0142) ──
+          /** Days from DOS the initial claim must be submitted by. */
+          timely_filing_days: number | null;
+          /** Paper claim drop point (HCFA-1500 fallback). jsonb. */
+          claims_mailing_address: Json | null;
+          /** Appeals letter "To:" block. jsonb. */
+          appeals_mailing_address: Json | null;
+          /** Regex pattern hint for member-ID validation. */
+          member_id_pattern: string | null;
+          /** HCPCS modifiers the payer demands on capped-rental DME. */
+          required_modifiers_dme: string[];
+          /** True when 837P must carry a referring-provider NPI (2310A). */
+          requires_referring_provider_npi: boolean;
+          /** True when payer accepts COB on 837P (loop 2320/2330). */
+          accepts_secondary_electronic: boolean;
+          /** 835 ERA payer ID — sometimes differs from 837 send id. */
+          era_payer_id: string | null;
+          /** True when we must enroll our TIN before ERAs flow. */
+          era_enrollment_required: boolean;
+          /** Our enrollment posture with the payer. */
+          enrollment_status:
+            | "unknown"
+            | "not_required"
+            | "pending"
+            | "active"
+            | "suspended";
+          /** Date our enrollment with the payer became active. */
+          enrollment_effective_on: string | null;
           created_at: string;
           updated_at: string;
         };

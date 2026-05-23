@@ -130,6 +130,125 @@ describe("preflightClaim", () => {
     const item = out.items.find((i) => i.key === "payer_profile");
     expect(item?.severity).toBe("warning");
   });
+
+  // ── Phase 12 (migration 0142) — payer completeness preflight ────
+
+  it("flags pending enrollment_status as a warning", async () => {
+    stageHappyPath(
+      {},
+      {
+        payerOverride: {
+          paper_only: false,
+          office_ally_payer_id: "54771",
+          requires_prior_auth_dme: false,
+          is_active: true,
+          enrollment_status: "pending",
+        },
+      },
+    );
+    const out = await preflightClaim(CLAIM_ID);
+    const item = out.items.find((i) => i.key === "payer_enrollment");
+    expect(item?.severity).toBe("warning");
+  });
+
+  it("flags suspended enrollment_status as an error", async () => {
+    stageHappyPath(
+      {},
+      {
+        payerOverride: {
+          paper_only: false,
+          office_ally_payer_id: "54771",
+          requires_prior_auth_dme: false,
+          is_active: true,
+          enrollment_status: "suspended",
+        },
+      },
+    );
+    const out = await preflightClaim(CLAIM_ID);
+    const item = out.items.find((i) => i.key === "payer_enrollment");
+    expect(item?.severity).toBe("error");
+    expect(out.readyToSubmit).toBe(false);
+  });
+
+  it("flags DOS pre-dating enrollment_effective_on as an error", async () => {
+    stageHappyPath(
+      {},
+      {
+        payerOverride: {
+          paper_only: false,
+          office_ally_payer_id: "54771",
+          requires_prior_auth_dme: false,
+          is_active: true,
+          enrollment_status: "active",
+          enrollment_effective_on: "2026-06-01",
+        },
+      },
+    );
+    const out = await preflightClaim(CLAIM_ID);
+    const item = out.items.find((i) => i.key === "payer_enrollment");
+    expect(item?.severity).toBe("error");
+  });
+
+  it("flags past-timely-filing-window claim as an error", async () => {
+    // DOS is 2026-05-12; 5 day window means it expired 2026-05-17.
+    stageHappyPath(
+      {},
+      {
+        payerOverride: {
+          paper_only: false,
+          office_ally_payer_id: "54771",
+          requires_prior_auth_dme: false,
+          is_active: true,
+          timely_filing_days: 5,
+        },
+      },
+    );
+    const out = await preflightClaim(CLAIM_ID);
+    const item = out.items.find((i) => i.key === "timely_filing");
+    expect(item?.severity).toBe("error");
+  });
+
+  it("flags missing required-modifiers as a warning", async () => {
+    stageHappyPath(
+      {},
+      {
+        // Line items default carry "RR,KX" — set the required modifier
+        // to one not present so the check fires.
+        payerOverride: {
+          paper_only: false,
+          office_ally_payer_id: "54771",
+          requires_prior_auth_dme: false,
+          is_active: true,
+          required_modifiers_dme: ["GA"],
+        },
+      },
+    );
+    const out = await preflightClaim(CLAIM_ID);
+    const item = out.items.find((i) => i.key === "payer_modifiers");
+    expect(item?.severity).toBe("warning");
+  });
+
+  it("flags missing referring provider NPI when payer requires it", async () => {
+    stageHappyPath(
+      { referring_provider_id: null },
+      {
+        payerOverride: {
+          paper_only: false,
+          office_ally_payer_id: "54771",
+          requires_prior_auth_dme: false,
+          is_active: true,
+          requires_referring_provider_npi: true,
+        },
+      },
+    );
+    const out = await preflightClaim(CLAIM_ID);
+    const item = out.items.find((i) => i.key === "payer_referring_provider");
+    expect(item?.severity).toBe("error");
+    expect(item?.fixAction).toEqual({
+      kind: "set_referring_provider",
+      claimId: CLAIM_ID,
+    });
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────
@@ -149,6 +268,17 @@ interface DataOverrides {
     office_ally_payer_id: string | null;
     requires_prior_auth_dme: boolean;
     is_active: boolean;
+    // ── Phase 12 (migration 0142) optional payer fields ──
+    timely_filing_days?: number | null;
+    required_modifiers_dme?: string[];
+    requires_referring_provider_npi?: boolean;
+    enrollment_status?:
+      | "unknown"
+      | "not_required"
+      | "pending"
+      | "active"
+      | "suspended";
+    enrollment_effective_on?: string | null;
   };
 }
 
@@ -196,6 +326,16 @@ function stagePayerProfile(overrides: {
   office_ally_payer_id: string | null;
   requires_prior_auth_dme: boolean;
   is_active: boolean;
+  timely_filing_days?: number | null;
+  required_modifiers_dme?: string[];
+  requires_referring_provider_npi?: boolean;
+  enrollment_status?:
+    | "unknown"
+    | "not_required"
+    | "pending"
+    | "active"
+    | "suspended";
+  enrollment_effective_on?: string | null;
 }): void {
   stageSupabaseResponse("payer_profiles", "select", {
     data: {
@@ -206,6 +346,12 @@ function stagePayerProfile(overrides: {
       office_ally_payer_id: overrides.office_ally_payer_id,
       claim_format: "837p",
       requires_prior_auth_dme: overrides.requires_prior_auth_dme,
+      timely_filing_days: overrides.timely_filing_days ?? null,
+      required_modifiers_dme: overrides.required_modifiers_dme ?? [],
+      requires_referring_provider_npi:
+        overrides.requires_referring_provider_npi ?? false,
+      enrollment_status: overrides.enrollment_status,
+      enrollment_effective_on: overrides.enrollment_effective_on ?? null,
     },
   });
 }

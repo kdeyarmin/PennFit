@@ -21,6 +21,8 @@ import { logAudit } from "@workspace/resupply-audit";
 import {
   type Database,
   getSupabaseServiceRoleClient,
+  type Json,
+  PAYER_ENROLLMENT_STATUS_VALUES,
 } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
@@ -54,6 +56,19 @@ const CLAIM_FORMAT_VALUES = ["837p", "837i", "paper_1500"] as const satisfies re
 
 const SLUG_RE = /^[a-z0-9_]+$/;
 
+const POSTAL_ADDRESS_SCHEMA = z
+  .object({
+    line1: z.string().trim().min(1).max(120),
+    line2: z.string().trim().max(120).nullable().optional(),
+    line3: z.string().trim().max(120).nullable().optional(),
+    city: z.string().trim().min(1).max(60),
+    state: z.string().trim().regex(/^[A-Z]{2}$/),
+    zip: z.string().trim().regex(/^\d{5}(-?\d{4})?$/),
+  })
+  .strict();
+
+const MODIFIER_SCHEMA = z.string().trim().regex(/^[A-Z0-9]{2}$/);
+
 const upsertBody = z
   .object({
     slug: z.string().trim().min(2).max(64).regex(SLUG_RE),
@@ -73,6 +88,28 @@ const upsertBody = z
     feeScheduleSource: z.string().trim().max(240).nullable().optional(),
     notes: z.string().trim().max(2000).nullable().optional(),
     isActive: z.boolean().default(true),
+    // ── Phase 12 completeness (migration 0142) ──
+    timelyFilingDays: z
+      .number()
+      .int()
+      .min(30)
+      .max(1825)
+      .nullable()
+      .optional(),
+    claimsMailingAddress: POSTAL_ADDRESS_SCHEMA.nullable().optional(),
+    appealsMailingAddress: POSTAL_ADDRESS_SCHEMA.nullable().optional(),
+    memberIdPattern: z.string().trim().max(200).nullable().optional(),
+    requiredModifiersDme: z.array(MODIFIER_SCHEMA).max(20).optional(),
+    requiresReferringProviderNpi: z.boolean().optional(),
+    acceptsSecondaryElectronic: z.boolean().optional(),
+    eraPayerId: z.string().trim().max(20).nullable().optional(),
+    eraEnrollmentRequired: z.boolean().optional(),
+    enrollmentStatus: z.enum(PAYER_ENROLLMENT_STATUS_VALUES).optional(),
+    enrollmentEffectiveOn: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/)
+      .nullable()
+      .optional(),
   })
   .strict();
 
@@ -97,6 +134,18 @@ interface PayerRow {
   fee_schedule_source: string | null;
   notes: string | null;
   is_active: boolean;
+  // Phase 12 completeness (migration 0142)
+  timely_filing_days: number | null;
+  claims_mailing_address: Json | null;
+  appeals_mailing_address: Json | null;
+  member_id_pattern: string | null;
+  required_modifiers_dme: string[];
+  requires_referring_provider_npi: boolean;
+  accepts_secondary_electronic: boolean;
+  era_payer_id: string | null;
+  era_enrollment_required: boolean;
+  enrollment_status: string;
+  enrollment_effective_on: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -121,13 +170,80 @@ function rowToApi(r: PayerRow) {
     feeScheduleSource: r.fee_schedule_source,
     notes: r.notes,
     isActive: r.is_active,
+    timelyFilingDays: r.timely_filing_days,
+    claimsMailingAddress: r.claims_mailing_address,
+    appealsMailingAddress: r.appeals_mailing_address,
+    memberIdPattern: r.member_id_pattern,
+    requiredModifiersDme: r.required_modifiers_dme,
+    requiresReferringProviderNpi: r.requires_referring_provider_npi,
+    acceptsSecondaryElectronic: r.accepts_secondary_electronic,
+    eraPayerId: r.era_payer_id,
+    eraEnrollmentRequired: r.era_enrollment_required,
+    enrollmentStatus: r.enrollment_status,
+    enrollmentEffectiveOn: r.enrollment_effective_on,
+    /** Set of payer-profile field gaps that block / risk submission. */
+    completenessGaps: deriveCompletenessGaps(r),
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
 }
 
+/** Return the list of payer-profile fields that need to be filled in
+ *  before this payer is "complete" enough to generate + submit a
+ *  clean claim. Used by the admin UI to surface the per-payer
+ *  completeness chip and by the dashboard's bulk roll-up. */
+function deriveCompletenessGaps(r: PayerRow): string[] {
+  const gaps: string[] = [];
+  if (!r.paper_only && !r.office_ally_payer_id) gaps.push("office_ally_payer_id");
+  if (!r.payer_legal_name) gaps.push("payer_legal_name");
+  if (r.timely_filing_days == null) gaps.push("timely_filing_days");
+  if (!r.claims_mailing_address) gaps.push("claims_mailing_address");
+  if (!r.appeals_mailing_address) gaps.push("appeals_mailing_address");
+  if (!r.member_id_pattern) gaps.push("member_id_pattern");
+  if (r.required_modifiers_dme.length === 0) gaps.push("required_modifiers_dme");
+  if (r.enrollment_status === "unknown") gaps.push("enrollment_status");
+  return gaps;
+}
+
 const FULL_SELECT =
-  "id, slug, display_name, payer_legal_name, parent_org, line_of_business, region, office_ally_payer_id, edi_5010_payer_id, claim_format, paper_only, requires_prior_auth_dme, prior_auth_phone_e164, claim_status_phone_e164, provider_portal_url, fee_schedule_source, notes, is_active, created_at, updated_at";
+  "id, slug, display_name, payer_legal_name, parent_org, line_of_business, region, office_ally_payer_id, edi_5010_payer_id, claim_format, paper_only, requires_prior_auth_dme, prior_auth_phone_e164, claim_status_phone_e164, provider_portal_url, fee_schedule_source, notes, is_active, timely_filing_days, claims_mailing_address, appeals_mailing_address, member_id_pattern, required_modifiers_dme, requires_referring_provider_npi, accepts_secondary_electronic, era_payer_id, era_enrollment_required, enrollment_status, enrollment_effective_on, created_at, updated_at";
+
+// ── COMPLETENESS ROLLUP ────────────────────────────────────────────
+// GET /admin/payer-profiles/completeness — bulk roll-up across every
+// active payer. Returns the count of active payers, the count fully
+// complete, and the per-gap histogram so the dashboard can show
+// "fix the X payers missing timely_filing_days" without N round-trips.
+router.get(
+  "/admin/payer-profiles/completeness",
+  requireAdmin,
+  async (_req, res) => {
+    const supabase = getSupabaseServiceRoleClient();
+    const { data, error } = await supabase
+      .schema("resupply")
+      .from("payer_profiles")
+      .select(FULL_SELECT)
+      .eq("is_active", true);
+    if (error) throw error;
+    const rows = (data ?? []) as PayerRow[];
+    const histogram: Record<string, number> = {};
+    const incomplete: Array<{ id: string; slug: string; gaps: string[] }> = [];
+    for (const r of rows) {
+      const gaps = deriveCompletenessGaps(r);
+      if (gaps.length === 0) continue;
+      incomplete.push({ id: r.id, slug: r.slug, gaps });
+      for (const g of gaps) {
+        histogram[g] = (histogram[g] ?? 0) + 1;
+      }
+    }
+    res.json({
+      activeCount: rows.length,
+      completeCount: rows.length - incomplete.length,
+      incompleteCount: incomplete.length,
+      gapHistogram: histogram,
+      incomplete,
+    });
+  },
+);
 
 // ── LIST ────────────────────────────────────────────────────────────
 router.get("/admin/payer-profiles", requireAdmin, async (req, res) => {
@@ -237,6 +353,20 @@ router.post("/admin/payer-profiles", requireAdminOnly, async (req, res) => {
       fee_schedule_source: b.feeScheduleSource ?? null,
       notes: b.notes ?? null,
       is_active: b.isActive,
+      timely_filing_days: b.timelyFilingDays ?? null,
+      claims_mailing_address:
+        (b.claimsMailingAddress ?? null) as Json | null,
+      appeals_mailing_address:
+        (b.appealsMailingAddress ?? null) as Json | null,
+      member_id_pattern: b.memberIdPattern ?? null,
+      required_modifiers_dme: b.requiredModifiersDme ?? [],
+      requires_referring_provider_npi:
+        b.requiresReferringProviderNpi ?? false,
+      accepts_secondary_electronic: b.acceptsSecondaryElectronic ?? true,
+      era_payer_id: b.eraPayerId ?? null,
+      era_enrollment_required: b.eraEnrollmentRequired ?? false,
+      enrollment_status: b.enrollmentStatus ?? "unknown",
+      enrollment_effective_on: b.enrollmentEffectiveOn ?? null,
     })
     .select("id")
     .single();
@@ -302,6 +432,29 @@ router.patch("/admin/payer-profiles/:id", requireAdminOnly, async (req, res) => 
   if (b.feeScheduleSource !== undefined) update.fee_schedule_source = b.feeScheduleSource;
   if (b.notes !== undefined) update.notes = b.notes;
   if (b.isActive !== undefined) update.is_active = b.isActive;
+  if (b.timelyFilingDays !== undefined)
+    update.timely_filing_days = b.timelyFilingDays;
+  if (b.claimsMailingAddress !== undefined)
+    update.claims_mailing_address =
+      (b.claimsMailingAddress ?? null) as Json | null;
+  if (b.appealsMailingAddress !== undefined)
+    update.appeals_mailing_address =
+      (b.appealsMailingAddress ?? null) as Json | null;
+  if (b.memberIdPattern !== undefined)
+    update.member_id_pattern = b.memberIdPattern;
+  if (b.requiredModifiersDme !== undefined)
+    update.required_modifiers_dme = b.requiredModifiersDme;
+  if (b.requiresReferringProviderNpi !== undefined)
+    update.requires_referring_provider_npi = b.requiresReferringProviderNpi;
+  if (b.acceptsSecondaryElectronic !== undefined)
+    update.accepts_secondary_electronic = b.acceptsSecondaryElectronic;
+  if (b.eraPayerId !== undefined) update.era_payer_id = b.eraPayerId;
+  if (b.eraEnrollmentRequired !== undefined)
+    update.era_enrollment_required = b.eraEnrollmentRequired;
+  if (b.enrollmentStatus !== undefined)
+    update.enrollment_status = b.enrollmentStatus;
+  if (b.enrollmentEffectiveOn !== undefined)
+    update.enrollment_effective_on = b.enrollmentEffectiveOn;
 
   const supabase = getSupabaseServiceRoleClient();
   const { error } = await supabase

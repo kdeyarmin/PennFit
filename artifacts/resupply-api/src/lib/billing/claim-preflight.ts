@@ -109,7 +109,7 @@ export async function preflightClaim(claimId: string): Promise<PreflightSummary>
       .schema("resupply")
       .from("payer_profiles")
       .select(
-        "id, display_name, is_active, paper_only, office_ally_payer_id, claim_format, requires_prior_auth_dme",
+        "id, display_name, is_active, paper_only, office_ally_payer_id, claim_format, requires_prior_auth_dme, timely_filing_days, required_modifiers_dme, requires_referring_provider_npi, enrollment_status, enrollment_effective_on",
       )
       .eq("id", claim.payer_profile_id)
       .limit(1)
@@ -145,6 +145,123 @@ export async function preflightClaim(claimId: string): Promise<PreflightSummary>
         label: "Payer profile linked",
         detail: `${payer.display_name} • OA payer id ${payer.office_ally_payer_id}`,
       });
+    }
+
+    // ── Enrollment posture (Phase 12) ───────────────────────────
+    if (payer) {
+      if (payer.enrollment_status === "suspended") {
+        items.push({
+          key: "payer_enrollment",
+          severity: "error",
+          label: "Our enrollment with this payer is suspended",
+          detail: `${payer.display_name} has us in suspended status — claims will reject. Resolve enrollment before submitting.`,
+        });
+      } else if (payer.enrollment_status === "pending") {
+        items.push({
+          key: "payer_enrollment",
+          severity: "warning",
+          label: "Enrollment with this payer is still pending",
+          detail: `${payer.display_name} hasn't activated our TIN yet; the claim may reject at the clearinghouse.`,
+        });
+      } else if (payer.enrollment_status === "unknown") {
+        items.push({
+          key: "payer_enrollment",
+          severity: "warning",
+          label: "Enrollment posture not recorded",
+          detail: `${payer.display_name} enrollment_status is "unknown" — set it in the payer profile so the preflight knows.`,
+        });
+      } else if (
+        payer.enrollment_status === "active" &&
+        payer.enrollment_effective_on &&
+        payer.enrollment_effective_on > claim.date_of_service
+      ) {
+        items.push({
+          key: "payer_enrollment",
+          severity: "error",
+          label: "Date of service pre-dates our enrollment",
+          detail: `Our enrollment with ${payer.display_name} began on ${payer.enrollment_effective_on}; claims with earlier DOS will deny.`,
+        });
+      } else if (payer.enrollment_status === "active") {
+        items.push({
+          key: "payer_enrollment",
+          severity: "ok",
+          label: "Enrollment active",
+          detail: `Active with ${payer.display_name}${payer.enrollment_effective_on ? ` since ${payer.enrollment_effective_on}` : ""}.`,
+        });
+      }
+
+      // ── Timely filing window (Phase 12) ───────────────────────
+      if (payer.timely_filing_days && claim.date_of_service) {
+        const dos = new Date(claim.date_of_service).getTime();
+        const today = Date.now();
+        const ageDays = Math.floor((today - dos) / (24 * 3600 * 1000));
+        const remaining = payer.timely_filing_days - ageDays;
+        if (remaining < 0) {
+          items.push({
+            key: "timely_filing",
+            severity: "error",
+            label: "Past the timely-filing deadline",
+            detail: `${payer.display_name} requires submission within ${payer.timely_filing_days} days of DOS; this claim is ${-remaining} day(s) past.`,
+          });
+        } else if (remaining <= 14) {
+          items.push({
+            key: "timely_filing",
+            severity: "warning",
+            label: `Only ${remaining} day(s) left on the filing window`,
+            detail: `${payer.display_name} accepts initial claims for ${payer.timely_filing_days} days from DOS; submit soon.`,
+          });
+        } else {
+          items.push({
+            key: "timely_filing",
+            severity: "ok",
+            label: `${remaining} day(s) left on the filing window`,
+            detail: `${payer.display_name} timely-filing window: ${payer.timely_filing_days} days from DOS.`,
+          });
+        }
+      }
+
+      // ── Required modifiers (Phase 12) ─────────────────────────
+      if (payer.required_modifiers_dme && payer.required_modifiers_dme.length > 0) {
+        const { data: lines } = await supabase
+          .schema("resupply")
+          .from("insurance_claim_line_items")
+          .select("hcpcs_code, modifier")
+          .eq("claim_id", claim.id);
+        const modifierTokens = new Set<string>();
+        for (const l of lines ?? []) {
+          for (const m of (l.modifier ?? "").split(",")) {
+            const t = m.trim().toUpperCase();
+            if (t) modifierTokens.add(t);
+          }
+        }
+        // Soft-check: KX is the universally-required medical-necessity
+        // modifier. The other entries in required_modifiers_dme are
+        // alternatives (RR/NU, KH/KI/KJ rotations) — the scrubber owns
+        // the deeper per-line lookup; preflight just flags absence of
+        // ANY of the required modifiers.
+        const hasAny = payer.required_modifiers_dme.some((m) =>
+          modifierTokens.has(m.toUpperCase()),
+        );
+        if (!hasAny) {
+          items.push({
+            key: "payer_modifiers",
+            severity: "warning",
+            label: "Required payer modifiers may be missing",
+            detail: `${payer.display_name} expects at least one of: ${payer.required_modifiers_dme.join(", ")}. Verify each line.`,
+          });
+        }
+      }
+
+      // ── Referring provider NPI (Phase 12) ─────────────────────
+      if (payer.requires_referring_provider_npi && !claim.referring_provider_id) {
+        items.push({
+          key: "payer_referring_provider",
+          severity: "error",
+          label: "Referring provider NPI required",
+          detail: `${payer.display_name} requires loop 2310A; this claim has no referring provider attached.`,
+          fixAction: { kind: "set_referring_provider", claimId: claim.id },
+        });
+      }
     }
   } else {
     items.push(missingPayer(claim.id, "No payer_profile_id on the claim."));
