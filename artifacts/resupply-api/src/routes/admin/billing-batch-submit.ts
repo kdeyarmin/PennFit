@@ -115,7 +115,7 @@ router.post(
       .schema("resupply")
       .from("payer_profiles")
       .select(
-        "id, payer_legal_name, office_ally_payer_id, paper_only, claim_format, is_active",
+        "id, payer_legal_name, office_ally_payer_id, paper_only, claim_format, is_active, enrollment_status, enrollment_effective_on, timely_filing_days",
       )
       .eq("id", payerProfileIds[0])
       .limit(1)
@@ -132,6 +132,49 @@ router.post(
           "payer must be active + electronic + carry an office_ally_payer_id",
       });
       return;
+    }
+    // Phase 13 — refuse to bundle claims whose payer enrollment is
+    // suspended; the clearinghouse will reject the whole batch.
+    if (payer.enrollment_status === "suspended") {
+      res.status(409).json({
+        error: "payer_enrollment_suspended",
+        message:
+          "payer enrollment is suspended — resolve enrollment before submitting any claims",
+      });
+      return;
+    }
+    // Phase 13 — refuse claims whose DOS pre-dates our enrollment.
+    if (payer.enrollment_effective_on) {
+      const tooEarly = claims.filter(
+        (c) =>
+          c.date_of_service && c.date_of_service < payer.enrollment_effective_on!,
+      );
+      if (tooEarly.length > 0) {
+        res.status(409).json({
+          error: "claim_pre_enrollment",
+          message: `${tooEarly.length} claim(s) have a DOS before our enrollment effective date ${payer.enrollment_effective_on}`,
+          claimIds: tooEarly.map((c) => c.id),
+        });
+        return;
+      }
+    }
+    // Phase 13 — refuse claims past the timely-filing window.
+    if (payer.timely_filing_days) {
+      const now = Date.now();
+      const stale = claims.filter((c) => {
+        if (!c.date_of_service) return false;
+        const dos = new Date(c.date_of_service).getTime();
+        const ageDays = Math.floor((now - dos) / (24 * 3600 * 1000));
+        return ageDays > payer.timely_filing_days!;
+      });
+      if (stale.length > 0) {
+        res.status(409).json({
+          error: "claim_past_timely_filing",
+          message: `${stale.length} claim(s) are past the payer's ${payer.timely_filing_days}-day timely-filing window`,
+          claimIds: stale.map((c) => c.id),
+        });
+        return;
+      }
     }
 
     // Build per-claim ClaimDetail entries.
