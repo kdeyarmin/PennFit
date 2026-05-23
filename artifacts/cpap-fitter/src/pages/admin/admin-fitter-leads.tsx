@@ -14,16 +14,20 @@
 // access policy check; this page does not log per-row PHI to the
 // browser console either.
 
-import { useMemo, useState } from "react";
+import { type CSSProperties, Fragment, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
   type FitterLeadJourneyStage,
+  type FitterLeadRow,
   type FitterLeadSource,
+  type FitterTimelineEvent,
+  getFitterLeadTimeline,
   listFitterLeads,
   listFitterTouchMetrics,
-  unsubscribeFitterLead,
   markContactedFitterLead,
+  setFitterLeadNotes,
+  unsubscribeFitterLead,
 } from "@/lib/admin/fitter-leads-api";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
 
@@ -129,6 +133,7 @@ export function AdminFitterLeadsPage() {
   );
   const [source, setSource] = useState<FitterLeadSource | "all">("all");
   const [hotOnly, setHotOnly] = useState(false);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   const queryKey = ["admin", "fitter-leads", stage, source, hotOnly] as const;
   const { data, isPending, isError, error, refetch } = useQuery({
     queryKey,
@@ -528,9 +533,10 @@ export function AdminFitterLeadsPage() {
                 r.journeyStage === "completed" ||
                 r.journeyStage === "consent";
               const isHot = r.hotLeadAt !== null;
+              const isExpanded = expandedId === r.id;
               return (
+                <Fragment key={r.id}>
                 <tr
-                  key={r.id}
                   style={{ borderTop: "1px solid hsl(var(--line-1))" }}
                   data-testid={`lead-row-${r.id}`}
                 >
@@ -700,9 +706,32 @@ export function AdminFitterLeadsPage() {
                             : "Unsubscribe"}
                         </button>
                       )}
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setExpandedId(isExpanded ? null : r.id)
+                        }
+                        className="px-2 py-1 rounded text-xs font-semibold border bg-white"
+                        style={{
+                          color: "#1e3a8a",
+                          borderColor: "#bfdbfe",
+                        }}
+                        data-testid={`lead-toggle-details-${r.id}`}
+                        aria-expanded={isExpanded}
+                      >
+                        {isExpanded ? "Hide" : "Details"}
+                      </button>
                     </div>
                   </td>
                 </tr>
+                {isExpanded && (
+                  <tr style={{ background: "#f8fafc" }}>
+                    <td colSpan={10} className="px-3 py-3">
+                      <LeadDetailsPanel lead={r} />
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
               );
             })}
           </tbody>
@@ -710,4 +739,168 @@ export function AdminFitterLeadsPage() {
       </div>
     </div>
   );
+}
+
+// ---------------------------------------------------------------
+// LeadDetailsPanel — lazy-loads the per-lead activity timeline +
+// hosts the CSR notes editor. Mounted inline under the row when
+// the patient clicks "Details."
+// ---------------------------------------------------------------
+function LeadDetailsPanel({ lead }: { lead: FitterLeadRow }) {
+  const queryClient = useQueryClient();
+  const timelineQuery = useQuery({
+    queryKey: ["admin", "fitter-leads", lead.id, "timeline"] as const,
+    queryFn: () => getFitterLeadTimeline(lead.id),
+  });
+  const [notesDraft, setNotesDraft] = useState(lead.csrNotes ?? "");
+  const [notesPending, setNotesPending] = useState(false);
+  const [notesSaved, setNotesSaved] = useState(false);
+  const notesMut = useMutation({
+    mutationFn: (notes: string | null) => setFitterLeadNotes(lead.id, notes),
+    onMutate: () => {
+      setNotesPending(true);
+      setNotesSaved(false);
+    },
+    onSettled: () => {
+      setNotesPending(false);
+      void queryClient.invalidateQueries({
+        queryKey: ["admin", "fitter-leads"],
+      });
+    },
+    onSuccess: () => setNotesSaved(true),
+  });
+  const nowMs = Date.now();
+  return (
+    <div
+      className="grid grid-cols-1 lg:grid-cols-2 gap-4"
+      data-testid={`lead-details-panel-${lead.id}`}
+    >
+      <div>
+        <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-2">
+          Activity timeline
+        </div>
+        {timelineQuery.isPending && (
+          <div className="text-xs text-slate-500">Loading timeline…</div>
+        )}
+        {timelineQuery.isError && (
+          <div className="text-xs text-rose-700">
+            Couldn&apos;t load timeline. Try refreshing.
+          </div>
+        )}
+        {timelineQuery.data && timelineQuery.data.events.length === 0 && (
+          <div className="text-xs text-slate-500">No events recorded yet.</div>
+        )}
+        {timelineQuery.data && timelineQuery.data.events.length > 0 && (
+          <ol className="space-y-1.5 text-xs">
+            {timelineQuery.data.events.map((e: FitterTimelineEvent, i) => (
+              <li
+                key={`${e.ts}-${i}`}
+                className="flex items-start gap-2"
+                data-testid={`lead-timeline-event-${i}`}
+              >
+                <span
+                  className="tabular-nums text-slate-500 shrink-0"
+                  style={{ minWidth: "5.5rem" }}
+                >
+                  {formatRelative(e.ts, nowMs)}
+                </span>
+                <span
+                  className="inline-block rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider shrink-0"
+                  style={timelineEventStyle(e.kind)}
+                >
+                  {timelineEventBadge(e.kind)}
+                </span>
+                <span className="text-slate-700">
+                  {e.label}
+                  {e.detail && (
+                    <span className="text-slate-500"> · {e.detail}</span>
+                  )}
+                </span>
+              </li>
+            ))}
+          </ol>
+        )}
+      </div>
+      <div>
+        <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-2">
+          CSR notes
+        </div>
+        <textarea
+          value={notesDraft}
+          onChange={(e) => {
+            setNotesDraft(e.target.value);
+            setNotesSaved(false);
+          }}
+          rows={6}
+          maxLength={2000}
+          placeholder="What did the patient say? What's the next step? Operator scratchpad — visible to every CSR who opens this row."
+          className="w-full border rounded p-2 text-xs"
+          style={{ borderColor: "hsl(var(--line-1))" }}
+          data-testid={`lead-notes-textarea-${lead.id}`}
+        />
+        <div className="flex items-center gap-2 mt-2">
+          <button
+            type="button"
+            onClick={() =>
+              notesMut.mutate(notesDraft.trim().length === 0 ? null : notesDraft)
+            }
+            disabled={notesPending || notesDraft === (lead.csrNotes ?? "")}
+            className="px-3 py-1.5 rounded text-xs font-semibold border bg-white disabled:opacity-50"
+            style={{
+              color: "#0f1d3a",
+              borderColor: "#bfdbfe",
+              background: "#eff6ff",
+            }}
+            data-testid={`lead-notes-save-${lead.id}`}
+          >
+            {notesPending ? "Saving…" : "Save notes"}
+          </button>
+          {notesSaved && !notesPending && (
+            <span className="text-xs text-emerald-700">Saved.</span>
+          )}
+          {lead.coldSkippedAt && (
+            <span
+              className="ml-auto text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded"
+              style={{ background: "#e0e7ff", color: "#3730a3" }}
+              title={`Cold-skipped at ${lead.coldSkippedAt} — T5+T6 auto-suppressed because lead showed zero engagement through T4.`}
+            >
+              cold-skipped
+            </span>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Per-kind badge styling for the activity timeline. */
+function timelineEventStyle(kind: string): CSSProperties {
+  if (kind.startsWith("touch_sent")) return { background: "#e0e7ff", color: "#3730a3" };
+  if (kind === "touch_opened") return { background: "#cffafe", color: "#155e75" };
+  if (kind === "click") return { background: "#dbeafe", color: "#1e40af" };
+  if (kind === "hot_flipped") return { background: "#fee2e2", color: "#9f1239" };
+  if (kind === "cold_skipped") return { background: "#e0e7ff", color: "#3730a3" };
+  if (kind === "csr_contacted") return { background: "#dcfce7", color: "#14532d" };
+  if (kind === "order_placed") return { background: "#dcfce7", color: "#14532d" };
+  if (kind === "unsubscribed") return { background: "#fee2e2", color: "#7f1d1d" };
+  if (kind === "fitter_completed") return { background: "#fef3c7", color: "#854d0e" };
+  if (kind === "lead_created") return { background: "#f1f5f9", color: "#475569" };
+  return { background: "#f1f5f9", color: "#475569" };
+}
+
+function timelineEventBadge(kind: string): string {
+  if (kind === "touch_sent_email") return "email";
+  if (kind === "touch_sent_sms") return "sms";
+  if (kind === "touch_opened") return "open";
+  if (kind === "touch_failed_email") return "fail";
+  if (kind === "touch_failed_sms") return "fail";
+  if (kind === "click") return "click";
+  if (kind === "hot_flipped") return "hot";
+  if (kind === "cold_skipped") return "cold";
+  if (kind === "csr_contacted") return "csr";
+  if (kind === "order_placed") return "order";
+  if (kind === "unsubscribed") return "unsub";
+  if (kind === "fitter_completed") return "fit";
+  if (kind === "lead_created") return "start";
+  return kind;
 }

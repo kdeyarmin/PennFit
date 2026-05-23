@@ -112,6 +112,9 @@ export interface SupplyCampaignStats {
   skippedClaimLost: number;
   expired: number;
   errors: number;
+  /** Mig 0156 — leads where the dispatcher short-circuited T5+T6
+   *  because the lead showed zero engagement through T4. */
+  coldSkipped: number;
 }
 
 interface LeadRow {
@@ -129,6 +132,11 @@ interface LeadRow {
   first_name: string | null;
   first_order_placed_at: string | null;
   journey_stage: "campaign_active" | "reorder_active" | "final_call_pending";
+  // Mig 0153/0154 — engagement signals used by the cold-skip
+  // transition. Pre-T5 we check if zero engagement has accrued
+  // across T1-T4; if so, short-circuit T5 + T6 to T11.
+  engagement_score: number;
+  click_count: number;
 }
 
 interface TouchpointCopy {
@@ -813,6 +821,7 @@ export async function runFitterSupplyCampaignSweep(): Promise<SupplyCampaignStat
     skippedClaimLost: 0,
     expired: 0,
     errors: 0,
+    coldSkipped: 0,
   };
 
   // Runtime feature-flag check. The boot-time RESUPPLY_FITTER_*_ENABLED
@@ -839,7 +848,7 @@ export async function runFitterSupplyCampaignSweep(): Promise<SupplyCampaignStat
     .schema("resupply")
     .from("fitter_leads")
     .select(
-      "id, email, phone_e164, sms_opt_in, recommended_mask_id, recommended_mask_name, recommended_mask_type, campaign_touch_count, completed_at, first_name, first_order_placed_at, journey_stage",
+      "id, email, phone_e164, sms_opt_in, recommended_mask_id, recommended_mask_name, recommended_mask_type, campaign_touch_count, completed_at, first_name, first_order_placed_at, journey_stage, engagement_score, click_count",
     )
     .in("journey_stage", [
       "campaign_active",
@@ -869,6 +878,80 @@ export async function runFitterSupplyCampaignSweep(): Promise<SupplyCampaignStat
   for (const lead of candidates) {
     stats.scanned += 1;
     const nextTouchIndex = lead.campaign_touch_count + 1;
+
+    // Cold-lead suppression (mig 0156).
+    // ---------------------------------
+    // About to send T5 from 'campaign_active' AND the lead has
+    // shown ZERO engagement signal through T4 → short-circuit the
+    // remaining pre-purchase touches and jump straight to the T11
+    // final-call holding stage. The patient still gets a strong-
+    // incentive reactivation email 90 days from now; we just
+    // stop pushing the soft-touch educational + sendoff emails
+    // (T5 + T6) that are statistically unlikely to convert this
+    // cohort.
+    //
+    // The 0-engagement threshold is intentionally strict: a SINGLE
+    // open or click signals enough warmth to keep going. Apple
+    // Mail Privacy pre-fetch noise + cached image loads mean even
+    // marginally-interested patients will accumulate at least one
+    // open across 4 touches.
+    //
+    // We do this BEFORE the regular phase-routing block so the
+    // skip transition is atomic + visible from the admin queue.
+    if (
+      lead.journey_stage === "campaign_active" &&
+      nextTouchIndex === 5 &&
+      (lead.engagement_score ?? 0) === 0 &&
+      (lead.click_count ?? 0) === 0
+    ) {
+      const t11DueAt = new Date(
+        Date.now() + FINAL_CALL_OFFSET_MS,
+      ).toISOString();
+      const skipIso = new Date().toISOString();
+      const { data: skipClaimed, error: skipErr } = await supabase
+        .schema("resupply")
+        .from("fitter_leads")
+        .update({
+          // Pin campaign_touch_count to the would-be T6 value so
+          // the T11 dispatcher branch ('final_call_pending')
+          // computes nextTouchIndex=11 correctly. (T11 is
+          // FINAL_CALL_TOUCH_INDEX = TOTAL_ALL_TOUCHPOINTS + 1.)
+          campaign_touch_count: TOTAL_TOUCHPOINTS,
+          last_campaign_touch_at: skipIso,
+          next_campaign_touch_at: t11DueAt,
+          journey_stage: "final_call_pending",
+          cold_skipped_at: skipIso,
+        })
+        .eq("id", lead.id)
+        .eq("campaign_touch_count", lead.campaign_touch_count)
+        .eq("journey_stage", "campaign_active")
+        .select("id");
+      if (skipErr) {
+        stats.errors += 1;
+        logger.warn(
+          { err: skipErr.message, leadId: lead.id },
+          "fitter-lead.supply-campaign: cold-skip claim failed",
+        );
+        continue;
+      }
+      if (!skipClaimed || skipClaimed.length === 0) {
+        // Lost race — another worker / attribution flipped the
+        // row under us. Skip this tick.
+        stats.skippedClaimLost += 1;
+        continue;
+      }
+      stats.coldSkipped += 1;
+      logger.info(
+        {
+          event: "fitter_lead.cold_skipped",
+          leadId: lead.id,
+          touchSkippedFrom: 5,
+          touchSkippedTo: 11,
+        },
+        "fitter-lead.supply-campaign: cold-skipped T5+T6 → T11",
+      );
+      continue;
+    }
 
     // Phase routing:
     //   * 'campaign_active' (T1-T6) — touches anchor on completed_at.

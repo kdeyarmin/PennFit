@@ -51,6 +51,9 @@ export interface FitterLeadRow {
   /** Mig 0155 — per-lead engagement recency. */
   lastOpenAt: string | null;
   lastClickAt: string | null;
+  /** Mig 0156 — CSR free-text notes + dispatcher cold-skip marker. */
+  csrNotes: string | null;
+  coldSkippedAt: string | null;
 }
 
 export interface ListFitterLeadsResponse {
@@ -180,4 +183,30 @@ export async function getFitterLeadTimeline(
     throw new Error(`Failed to load timeline (${res.status})`);
   }
   return (await res.json()) as FitterLeadTimelineResponse;
+}
+
+export interface SetFitterLeadNotesResponse {
+  id: string;
+  csrNotes: string | null;
+}
+
+export async function setFitterLeadNotes(
+  id: string,
+  notes: string | null,
+): Promise<SetFitterLeadNotesResponse> {
+  const res = await fetch(
+    `/resupply-api/admin/fitter-leads/${encodeURIComponent(id)}/notes`,
+    {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ notes }),
+    },
+  );
+  if (!res.ok) {
+    throw new Error(`Failed to set lead notes (${res.status})`);
+  }
+  return (await res.json()) as SetFitterLeadNotesResponse;
 }

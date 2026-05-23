@@ -560,6 +560,9 @@ export interface Database {
           // Mig 0155 — per-lead engagement recency.
           last_open_at: string | null;
           last_click_at: string | null;
+          // Mig 0156 — CSR free-text notes + cold-skip marker.
+          csr_notes: string | null;
+          cold_skipped_at: string | null;
         };
         Insert: Partial<Database["resupply"]["Tables"]["fitter_leads"]["Row"]>;
         Update: Partial<Database["resupply"]["Tables"]["fitter_leads"]["Row"]>;
