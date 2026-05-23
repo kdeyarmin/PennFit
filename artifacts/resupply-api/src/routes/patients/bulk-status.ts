@@ -113,11 +113,12 @@ router.post(
     // per-row audit can record from_status → to_status. Without
     // this, a bulk-mis-click that flips 100 patients to `closed`
     // has no preserved before-state for a clean rollback.
-    const { data: priorRows } = await supabase
+    const { data: priorRows, error: priorRowsError } = await supabase
       .schema("resupply")
       .from("patients")
       .select("id, status")
       .in("id", ids);
+    if (priorRowsError) throw priorRowsError;
     const priorStatusById = new Map<string, string>(
       (priorRows ?? []).map((r) => [r.id, r.status as string]),
     );
