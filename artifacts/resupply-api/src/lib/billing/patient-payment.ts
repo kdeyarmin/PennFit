@@ -179,26 +179,23 @@ export async function createPaymentIntent(
     };
   }
 
+  // First stamp the PaymentIntent id so the webhook can correlate.
   await supabase
     .schema("resupply")
     .from("patient_payments")
     .update({
       stripe_payment_intent_id: intent.id,
-      status:
-        intent.status === "requires_action"
-          ? "requires_action"
-          : intent.status === "succeeded"
-            ? "succeeded"
-            : "pending",
-      succeeded_at:
-        intent.status === "succeeded" ? new Date().toISOString() : null,
+      status: intent.status === "requires_action" ? "requires_action" : "pending",
     })
     .eq("id", row.id);
 
   // If Stripe returned succeeded synchronously (rare; usually
-  // confirm-on-client), apply allocations immediately.
+  // confirm-on-client), route through the same check-and-set
+  // markPaymentStatus that the webhook uses. This guarantees the
+  // allocation walk runs exactly once even if the webhook redelivers
+  // payment_intent.succeeded a moment later.
   if (intent.status === "succeeded") {
-    await applySucceededPayment(supabase, row.id);
+    await markPaymentStatus({ paymentId: row.id, status: "succeeded" });
   }
 
   return {

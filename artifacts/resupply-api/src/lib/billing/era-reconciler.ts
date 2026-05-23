@@ -71,6 +71,7 @@ export interface ReconciliationOutcome {
   paidCents: number;
   patientResponsibilityCents: number;
   denialReason: string | null;
+  linesUpdated: number;
 }
 
 export interface ReconcileEraOptions {
@@ -116,8 +117,8 @@ export async function reconcileEra(
   }
 
   summary.linesUpdated = summary.outcomes.reduce(
-    (s, _o) => s + 0,
-    parsed.claims.reduce((s, c) => s + c.serviceLines.length, 0),
+    (s, o) => s + o.linesUpdated,
+    0,
   );
 
   return summary;
@@ -151,6 +152,7 @@ async function applyClaim(
       paidCents: 0,
       patientResponsibilityCents: 0,
       denialReason: null,
+      linesUpdated: 0,
     };
   }
   if (TERMINAL_STATUSES.includes(claim.status)) {
@@ -163,10 +165,12 @@ async function applyClaim(
       paidCents: 0,
       patientResponsibilityCents: 0,
       denialReason: claim.denial_reason,
+      linesUpdated: 0,
     };
   }
 
   // 2. Apply line-level reconciliation.
+  let linesUpdated = 0;
   if (eraClaim.serviceLines.length > 0) {
     const { data: localLines } = await supabase
       .schema("resupply")
@@ -195,6 +199,7 @@ async function applyClaim(
           updated_at: new Date().toISOString(),
         })
         .eq("id", localLine.id);
+      linesUpdated++;
     }
   }
 
@@ -255,6 +260,7 @@ async function applyClaim(
     paidCents: eraClaim.paidCents,
     patientResponsibilityCents: eraClaim.patientResponsibilityCents,
     denialReason,
+    linesUpdated,
   };
 }
 

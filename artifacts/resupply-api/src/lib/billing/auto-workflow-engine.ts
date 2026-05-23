@@ -261,6 +261,17 @@ async function runStatementPass(
   ];
   if (patientIds.length === 0) return;
 
+  // Sum patient_responsibility_cents per patient so the placeholder
+  // statement row carries an informative total for the watching
+  // worker / CSR queue.
+  const totalByPatient = new Map<string, number>();
+  for (const c of candidates ?? []) {
+    totalByPatient.set(
+      c.patient_id,
+      (totalByPatient.get(c.patient_id) ?? 0) + c.patient_responsibility_cents,
+    );
+  }
+
   // Look up which patients had a statement generated in the cooldown window.
   const { data: recent } = await supabase
     .schema("resupply")
@@ -272,11 +283,28 @@ async function runStatementPass(
 
   for (const patientId of patientIds) {
     if (onCooldown.has(patientId)) continue;
-    // We publish a webhook event so the CSR queue or an external
-    // billing-statement automation can pick it up. We DON'T render
-    // the PDF here because the route owns the PDF + delivery
-    // channel selection. The cooldown is enforced by the watching
-    // worker; this event is purely an availability signal.
+    // Insert a placeholder `patient_billing_statements` row BEFORE
+    // publishing — otherwise the cooldown above (which reads from
+    // this table) is never armed and we'd re-emit
+    // `billing_statement.due` every cron iteration. The placeholder
+    // carries an empty line_items_json and no PDF / delivery method;
+    // the watching worker fills those in when it renders.
+    const { error: insertErr } = await supabase
+      .schema("resupply")
+      .from("patient_billing_statements")
+      .insert({
+        patient_id: patientId,
+        line_items_json: [] as unknown as Json,
+        total_patient_responsibility_cents:
+          totalByPatient.get(patientId) ?? 0,
+        delivery_method: null,
+        generated_by_email: "system:auto_workflow",
+      });
+    if (insertErr) {
+      // Don't publish the event if we couldn't arm the cooldown —
+      // otherwise the next cron iteration would re-publish.
+      continue;
+    }
     void publishEvent({
       eventType: "billing_statement.due",
       payload: { patient_id: patientId },
