@@ -89,10 +89,12 @@ describe("era-reconciler — summary.linesUpdated aggregation (PR fix)", () => {
 
   it("initialises the reduce accumulator at 0 (not at parsed.claims...)", () => {
     // The old implementation seeded the accumulator from parsed.claims'
-    // serviceLines count. The new one starts at 0.
+    // serviceLines count. The new one starts at 0. Window large enough
+    // to span the callback body + seed argument regardless of whether
+    // the reduce call is on one line or split across several.
     const reduceIdx = SRC.indexOf("(s, o) => s + o.linesUpdated");
     expect(reduceIdx).toBeGreaterThan(-1);
-    const reduceBlock = SRC.slice(reduceIdx, reduceIdx + 20);
+    const reduceBlock = SRC.slice(reduceIdx, reduceIdx + 80);
     // The reduce call's seed is the literal `0` appearing right after
     // the callback closing paren.
     expect(reduceBlock).toMatch(/0\s*[,)]/);

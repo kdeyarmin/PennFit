@@ -116,10 +116,7 @@ export async function reconcileEra(
     }
   }
 
-  summary.linesUpdated = summary.outcomes.reduce(
-    (s, o) => s + o.linesUpdated,
-    0,
-  );
+  summary.linesUpdated = summary.outcomes.reduce((s, o) => s + o.linesUpdated, 0);
 
   return summary;
 }
