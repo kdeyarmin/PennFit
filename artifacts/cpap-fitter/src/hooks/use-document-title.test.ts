@@ -150,6 +150,10 @@ describe("use-document-title — JSON-LD script removed on unmount", () => {
 
 describe("use-document-title — useEffect dependency array", () => {
   it('includes "options?.schema" in the useEffect dependency array', () => {
-    expect(SRC).toContain("options?.schema]");
+    const effectWithDeps = SRC.match(
+      /useEffect\([\s\S]*?\[\s*[\s\S]*?options\?\.schema[\s\S]*?\]\s*\)/,
+    );
+    expect(effectWithDeps).toBeTruthy();
   });
+});
 });
