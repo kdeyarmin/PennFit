@@ -404,6 +404,43 @@ export const stripeWebhookHandler: RequestHandler = async (
         log?.info?.({ patientPaymentId, status }, "patient_payment: status updated by webhook");
         break;
       }
+      case "payment_method.detached": {
+        // Customer removed a card from Stripe Customer Portal.
+        // Without this branch our `shop_customers.default_payment_method_*`
+        // columns continue pointing at the detached PM, and the
+        // /account page would render a card that no longer exists +
+        // any off-session charge attempt 4xx's. Clear the pointer
+        // when (and only when) the detached PM id matches our stored
+        // default — a previously-rotated PM that's no longer ours
+        // shouldn't disturb a freshly-set default.
+        const pm = event.data.object as Stripe.PaymentMethod;
+        if (typeof pm.id === "string") {
+          const supabase = getSupabaseServiceRoleClient();
+          const { error: clearErr } = await supabase
+            .schema("resupply")
+            .from("shop_customers")
+            .update({
+              default_payment_method_id: null,
+              default_payment_method_brand: null,
+              default_payment_method_last4: null,
+              default_payment_method_exp_month: null,
+              default_payment_method_exp_year: null,
+            })
+            .eq("default_payment_method_id", pm.id);
+          if (clearErr) {
+            log?.warn?.(
+              { err: clearErr.message, paymentMethodId: pm.id },
+              "shop_customers: default-PM clear on detach failed",
+            );
+          } else {
+            log?.info?.(
+              { paymentMethodId: pm.id },
+              "shop_customers: cleared default PM on detach",
+            );
+          }
+        }
+        break;
+      }
       default: {
         // Ack everything else — Stripe may deliver many event types we
         // don't subscribe to in the dashboard, and we don't want it

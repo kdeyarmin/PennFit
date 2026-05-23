@@ -94,6 +94,16 @@ correctness, not style:
 - **No password pepper.** Task #38 removed `AUTH_PASSWORD_PEPPER`;
   passwords are hashed with plain argon2id. Stale pepper values in the
   environment are silently ignored.
+- **No HIPAA / DMEPOS / ACHC compliance machinery.** Migration 0156
+  retired all 11 in-app compliance domains (audit-log tamper-evidence,
+  BAA inventory, DMEPOS staff policy attestation, staff training
+  records, patient grievances, OIG LEIE screening, patient rights
+  requests, patient disclosure log, contingency drills, ACHC QAPI,
+  DME ownership disclosure). The `@workspace/resupply-audit` package
+  is a no-op stub kept for back-compat with 150+ callsites — don't
+  write new audit logic against it. `RESUPPLY_AUDIT_HMAC_KEY` is no
+  longer read by any code path. Compliance is now handled out of band
+  by the business owner.
 - **One From address.** Every outbound email funnels through
   `lib/resupply-email`'s `createSendgridClient()`; `SENDGRID_FROM_EMAIL`
   is `info@pennpaps.com`. Don't bypass the shared client.
@@ -119,7 +129,6 @@ of these is missing):
 | `DATABASE_URL`                                      | Postgres v14+ (no extensions; only `gen_random_uuid()` is used). Used by the migrator and a small number of legacy worker paths; the runtime data path is Supabase, not raw pg.                                                                       |
 | `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY`        | Runtime data path. Validated by `validateSupabaseEnv()` in `lib/resupply-db/src/supabase-client.ts`. Service-role JWT bypasses RLS; never expose client-side. Both `resupply` and `resupply_auth` schemas must be added to Studio → Project Settings → API → "Exposed schemas" or every query 503s. |
 | `RESUPPLY_LINK_HMAC_KEY`                            | 32+ random bytes. Signs short-lived patient links in SMS/email reminders. Generate with `openssl rand -base64 48`. Rotation invalidates in-flight links.                                                                                              |
-| `RESUPPLY_AUDIT_HMAC_KEY`                           | 32+ bytes (base64). HMAC-chains every row written to `resupply.audit_log` (migration 0116) for HIPAA §164.312(b) tamper-evidence. Generate with `openssl rand -base64 48`. MUST be different from `RESUPPLY_LINK_HMAC_KEY`. Rotation does NOT invalidate prior rows. |
 | `RESUPPLY_ALLOWED_ORIGINS` **or** `REPLIT_DOMAINS`  | CORS allowlist (origin form for the first, bare-host for the second). In `NODE_ENV=production` the API throws at boot if both are empty — `artifacts/resupply-api/src/app.ts:63`. Replit deployments auto-populate `REPLIT_DOMAINS`.                  |
 
 `preflight:prod` (under `scripts/`) validates every row above plus

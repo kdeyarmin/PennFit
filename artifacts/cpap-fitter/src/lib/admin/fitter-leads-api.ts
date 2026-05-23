@@ -5,6 +5,19 @@
 // for every backend tweak. The browser sends `pf_session` automatically
 // on same-origin requests, so no auth header is needed per call.
 
+function getCsrfToken(): string | null {
+  if (typeof document === "undefined") return null;
+  const match = document.cookie
+    .split("; ")
+    .find((row) => row.startsWith("pf_csrf="));
+  return match ? decodeURIComponent(match.split("=")[1]) : null;
+}
+
+function csrfHeader(): Record<string, string> {
+  const token = getCsrfToken();
+  return token ? { "X-PF-CSRF": token } : {};
+}
+
 export type FitterLeadJourneyStage =
   | "consent"
   | "completed"
@@ -103,7 +116,7 @@ export async function unsubscribeFitterLead(
     `/resupply-api/admin/fitter-leads/${encodeURIComponent(id)}/unsubscribe`,
     {
       method: "POST",
-      headers: { Accept: "application/json" },
+      headers: { Accept: "application/json", ...csrfHeader() },
     },
   );
   if (!res.ok) {

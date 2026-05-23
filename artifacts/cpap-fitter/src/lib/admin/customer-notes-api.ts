@@ -5,6 +5,8 @@
 // `pf_session` cookie automatically on same-origin requests, so no
 // per-call auth header is needed.
 
+import { csrfHeader } from "../csrf";
+
 export interface AdminCustomerNote {
   id: string;
   body: string;
@@ -55,6 +57,7 @@ export async function createAdminCustomerNote(
       headers: {
         "Content-Type": "application/json",
         Accept: "application/json",
+        ...csrfHeader(),
       },
       body: JSON.stringify({ body }),
     },

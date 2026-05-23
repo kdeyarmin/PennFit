@@ -93,20 +93,28 @@ const objectStorage = new ObjectStorageService();
  * Resolve the resupply patient row for the signed-in shop customer by
  * email. Returns null when no patient exists for that email — callers
  * return 404 rather than leaking that a patient record exists.
+ *
+ * Refuses to resolve when MORE than one patient row matches the
+ * email (caregivers sharing an address, recycled work email, etc.):
+ * arbitrarily picking the first row would let one patient see /
+ * upload / delete documents on behalf of the other. The caller
+ * surfaces 409 so the patient knows to contact support to
+ * disambiguate; staying silent would invisibly cross-link PHI.
  */
 async function findPatientByEmail(
   email: string,
-): Promise<{ id: string } | null> {
+): Promise<{ id: string } | "ambiguous" | null> {
   const supabase = getSupabaseServiceRoleClient();
   const { data, error } = await supabase
     .schema("resupply")
     .from("patients")
     .select("id")
     .eq("email", email)
-    .limit(1)
-    .maybeSingle();
+    .limit(2);
   if (error) throw error;
-  return data ?? null;
+  if (!data || data.length === 0) return null;
+  if (data.length > 1) return "ambiguous";
+  return data[0] ?? null;
 }
 
 router.post(
@@ -153,6 +161,14 @@ router.post(
     const patient = await findPatientByEmail(customerEmail);
     if (!patient) {
       res.status(404).json({ error: "patient_not_found" });
+      return;
+    }
+    if (patient === "ambiguous") {
+      // Multiple patients share this email (caregiver, recycled work
+      // email, etc.). Refuse rather than arbitrarily picking the
+      // first row — the SPA can surface a "contact support to link
+      // your account" message.
+      res.status(409).json({ error: "patient_ambiguous_email" });
       return;
     }
 
@@ -230,6 +246,14 @@ router.post(
     const patient = await findPatientByEmail(customerEmail);
     if (!patient) {
       res.status(404).json({ error: "patient_not_found" });
+      return;
+    }
+    if (patient === "ambiguous") {
+      // Multiple patients share this email (caregiver, recycled work
+      // email, etc.). Refuse rather than arbitrarily picking the
+      // first row — the SPA can surface a "contact support to link
+      // your account" message.
+      res.status(409).json({ error: "patient_ambiguous_email" });
       return;
     }
 
@@ -351,7 +375,7 @@ router.get(
     }
 
     const patient = await findPatientByEmail(customerEmail);
-    if (!patient) {
+    if (!patient || patient === "ambiguous") {
       res.json({ documents: [] });
       return;
     }
@@ -399,7 +423,7 @@ router.get(
     }
 
     const patient = await findPatientByEmail(customerEmail);
-    if (!patient) {
+    if (!patient || patient === "ambiguous") {
       res.status(404).json({ error: "not_found" });
       return;
     }
@@ -450,7 +474,15 @@ router.get(
       res.status(response.status);
       response.headers.forEach((value, key) => res.setHeader(key, value));
       if (doc.filename) {
-        const safeAscii = doc.filename.replace(/[^\x20-\x7E]/g, "_");
+        // Strip non-printable / non-ASCII for the legacy `filename="..."`
+        // form, AND additionally strip the quoting characters `"` and
+        // `\` so a filename like `evil"; attachment; filename="other.pdf`
+        // can't break out of the quoted string and inject sibling
+        // Content-Disposition fields. The RFC 5987-style
+        // `filename*=UTF-8''...` value is encodeURIComponent-safe.
+        const safeAscii = doc.filename
+          .replace(/[^\x20-\x7E]/g, "_")
+          .replace(/["\\]/g, "_");
         const encoded = encodeURIComponent(doc.filename);
         res.setHeader(
           "Content-Disposition",
@@ -493,7 +525,7 @@ router.delete(
     }
 
     const patient = await findPatientByEmail(customerEmail);
-    if (!patient) {
+    if (!patient || patient === "ambiguous") {
       res.status(404).json({ error: "not_found" });
       return;
     }

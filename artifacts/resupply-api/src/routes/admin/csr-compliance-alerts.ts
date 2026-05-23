@@ -96,19 +96,33 @@ router.get(
         : [q.status]
       : ["open"];
 
+    // When the caller asks for the default "open" view (status filter
+    // omitted), include snoozed-but-expired rows too — the snooze
+    // window has elapsed and the alert should be back on the worklist.
+    // An explicit `?status=snoozed` view bypasses this revive so the
+    // CSR can still inspect the actively-snoozed queue.
+    const reviveSnoozedExpired = !q.status;
+    const nowIso = new Date().toISOString();
+
     let alertsQuery = supabase
       .schema("resupply")
       .from("csr_compliance_alerts")
       .select(
         "id, patient_id, journey_id, alert_type, severity, summary, metric_snapshot, status, snoozed_until, resolved_at, resolved_by_email, resolution_note, created_at",
       )
-      .in("status", statuses)
       // The original SQL ordered by `CASE severity WHEN 'critical' THEN 1
       // WHEN 'warning' THEN 2 ELSE 3 END, created_at DESC`. PostgREST
       // doesn't support CASE in ORDER BY, so we fetch a slightly larger
       // page (limit is bounded at 200) and re-sort JS-side.
       .order("created_at", { ascending: false })
       .limit(q.limit);
+    if (reviveSnoozedExpired) {
+      alertsQuery = alertsQuery.or(
+        `status.eq.open,and(status.eq.snoozed,snoozed_until.lte.${nowIso})`,
+      );
+    } else {
+      alertsQuery = alertsQuery.in("status", statuses);
+    }
     if (q.severity) alertsQuery = alertsQuery.eq("severity", q.severity);
     if (q.alertType) alertsQuery = alertsQuery.eq("alert_type", q.alertType);
     if (q.sinceDays) {

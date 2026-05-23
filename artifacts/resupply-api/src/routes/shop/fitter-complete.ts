@@ -26,6 +26,7 @@
 // journey_stage flips to 'unsubscribed', terminal forever.
 
 import { Router, type IRouter } from "express";
+import rateLimit from "express-rate-limit";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 
@@ -39,6 +40,35 @@ import { logger } from "../../lib/logger";
 type FitterLeadsUpdate = Database["resupply"]["Tables"]["fitter_leads"]["Update"];
 
 const router: IRouter = Router();
+const clickTrackRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // limit each IP to 100 requests per window
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+const unsubscribeRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // limit each IP to 100 requests per window
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+
+const openTrackingRateLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (_req, res) => {
+    res.set({
+      "Content-Type": "image/gif",
+      "Cache-Control": "no-store, no-cache, must-revalidate, private",
+      Pragma: "no-cache",
+      "Content-Length": String(TRANSPARENT_GIF.length),
+    });
+    res.status(200).end(TRANSPARENT_GIF);
+  },
+});
 
 // Pre-purchase cadence — touch_index 1-6, anchored on `completed_at`.
 // Goal: convert "fit but haven't ordered" into a first-time buyer.
@@ -308,7 +338,7 @@ router.post("/shop/fitter-complete", async (req, res) => {
     if (!lead.marketing_opt_in) {
       // Still stamp completed_at so admin reporting knows the
       // patient finished the fitter, but don't schedule a touch.
-      await supabase
+      const { error: updateErr } = await supabase
         .schema("resupply")
         .from("fitter_leads")
         .update({
@@ -319,6 +349,12 @@ router.post("/shop/fitter-complete", async (req, res) => {
           journey_stage: "completed",
         })
         .eq("id", lead.id);
+      if (updateErr) {
+        req.log?.warn?.(
+          { err: updateErr, leadId: lead.id },
+          "fitter-complete: failed to stamp completion for non-opted-in lead",
+        );
+      }
       res.json({ ok: true, enrolled: false, reason: "no_marketing_opt_in" });
       return;
     }
@@ -521,7 +557,7 @@ const TRANSPARENT_GIF = Buffer.from(
   "base64",
 );
 
-router.get("/shop/track/o", async (req, res) => {
+router.get("/shop/track/o", openTrackingRateLimiter, async (req, res) => {
   // Always return the pixel — even on a bad token. NEVER 4xx /
   // 5xx here: an error response would render as a broken-image
   // icon in the patient's inbox.
@@ -796,7 +832,7 @@ function fallbackDestination(): string {
   return `${publicBaseUrl()}/shop`;
 }
 
-router.get("/shop/track/c", async (req, res) => {
+router.get("/shop/track/c", clickTrackRateLimiter, async (req, res) => {
   const token = typeof req.query.t === "string" ? req.query.t : "";
   if (!token) {
     res.redirect(302, fallbackDestination());
@@ -994,7 +1030,7 @@ function verifyUnsubscribeToken(
   return { valid: true, leadId };
 }
 
-router.get("/shop/fitter-leads/unsubscribe", async (req, res) => {
+router.get("/shop/fitter-leads/unsubscribe", unsubscribeRateLimiter, async (req, res) => {
   // Rate limit BEFORE the HMAC verify. The verify is constant-time
   // so it doesn't leak per-attempt info, but capping by IP closes
   // the CodeQL "authorization without rate limiting" finding and

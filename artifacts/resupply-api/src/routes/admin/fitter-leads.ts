@@ -113,6 +113,16 @@ router.get(
     // count-only queries — same shape as the insurance-leads admin
     // route. Each is index-backed by the partial indexes on
     // journey_stage.
+    // Helper to start a count query with the source filter pre-applied
+    // so all KPI tiles reflect the same source predicate the table uses.
+    const countBase = () => {
+      const q = supabase
+        .schema("resupply")
+        .from("fitter_leads")
+        .select("*", { count: "exact", head: true });
+      return source !== "all" ? q.eq("source", source) : q;
+    };
+
     const [
       consentCount,
       completedCount,
@@ -125,53 +135,18 @@ router.get(
       hotLeadCount,
       hotNeedsContactCount,
     ] = await Promise.all([
-      supabase
-        .schema("resupply")
-        .from("fitter_leads")
-        .select("*", { count: "exact", head: true })
-        .eq("journey_stage", "consent"),
-      supabase
-        .schema("resupply")
-        .from("fitter_leads")
-        .select("*", { count: "exact", head: true })
-        .eq("journey_stage", "completed"),
-      supabase
-        .schema("resupply")
-        .from("fitter_leads")
-        .select("*", { count: "exact", head: true })
-        .eq("journey_stage", "campaign_active"),
-      supabase
-        .schema("resupply")
-        .from("fitter_leads")
-        .select("*", { count: "exact", head: true })
-        .eq("journey_stage", "reorder_active"),
-      supabase
-        .schema("resupply")
-        .from("fitter_leads")
-        .select("*", { count: "exact", head: true })
-        .eq("journey_stage", "final_call_pending"),
-      supabase
-        .schema("resupply")
-        .from("fitter_leads")
-        .select("*", { count: "exact", head: true })
-        .eq("journey_stage", "converted"),
-      supabase
-        .schema("resupply")
-        .from("fitter_leads")
-        .select("*", { count: "exact", head: true })
-        .eq("journey_stage", "unsubscribed"),
-      supabase
-        .schema("resupply")
-        .from("fitter_leads")
-        .select("*", { count: "exact", head: true })
-        .eq("journey_stage", "expired"),
+      countBase().eq("journey_stage", "consent"),
+      countBase().eq("journey_stage", "completed"),
+      countBase().eq("journey_stage", "campaign_active"),
+      countBase().eq("journey_stage", "reorder_active"),
+      countBase().eq("journey_stage", "final_call_pending"),
+      countBase().eq("journey_stage", "converted"),
+      countBase().eq("journey_stage", "unsubscribed"),
+      countBase().eq("journey_stage", "expired"),
       // Hot-lead tile: opted-in, in any pre-conversion stage, with
       // hot_lead_at stamped. The "active" count includes leads
       // whether or not a CSR has reached out yet.
-      supabase
-        .schema("resupply")
-        .from("fitter_leads")
-        .select("*", { count: "exact", head: true })
+      countBase()
         .not("hot_lead_at", "is", null)
         .is("first_order_id", null)
         .is("unsubscribed_at", null),
@@ -180,10 +155,7 @@ router.get(
       // covers this exact predicate. THIS is the actionable
       // "call now" number for ops; the broader hotLeadsActive
       // includes leads ops has already worked.
-      supabase
-        .schema("resupply")
-        .from("fitter_leads")
-        .select("*", { count: "exact", head: true })
+      countBase()
         .not("hot_lead_at", "is", null)
         .is("csr_contacted_at", null)
         .is("first_order_id", null)

@@ -141,6 +141,16 @@ export class ObjectStorageService {
     if (parts.length < 2) {
       throw new ObjectNotFoundError();
     }
+    // Reject path-traversal segments. A signed-in customer who
+    // submitted `/objects/../some/private/key` would otherwise have
+    // the joined `entityDir + ../some/private/key` resolve outside
+    // PRIVATE_OBJECT_DIR — GCS does not normalise paths server-side,
+    // so the resulting object reference can land in a foreign
+    // subtree. Reject empty segments too: `/objects//foo` would
+    // collapse to a directory-listing-style path.
+    if (parts.slice(1).some((p) => p === ".." || p === "." || p === "")) {
+      throw new ObjectNotFoundError();
+    }
 
     const entityId = parts.slice(1).join("/");
     let entityDir = this.getPrivateObjectDir();
@@ -176,6 +186,14 @@ export class ObjectStorageService {
     }
 
     const entityId = rawObjectPath.slice(objectEntityDir.length);
+    // Reject path-traversal segments in the user-supplied URL —
+    // same rationale as getObjectEntityFile above. Returning the
+    // raw path (unchanged) here makes the downstream
+    // getObjectEntityFile lookup miss; that's the correct
+    // fail-closed shape.
+    if (entityId.split("/").some((p) => p === ".." || p === ".")) {
+      return rawObjectPath;
+    }
     return `/objects/${entityId}`;
   }
 

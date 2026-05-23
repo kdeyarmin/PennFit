@@ -2,6 +2,8 @@
 // Mirrors shop-reviews-api.ts — the v1 returns surface is not yet in
 // the OpenAPI spec; promote it once the workflow stabilizes.
 
+import { csrfHeader } from "../csrf";
+
 export type ReturnStatus =
   | "requested"
   | "approved"
@@ -131,6 +133,7 @@ async function action(
     headers: {
       "Content-Type": "application/json",
       Accept: "application/json",
+      ...csrfHeader(),
     },
     body: JSON.stringify(body),
   });

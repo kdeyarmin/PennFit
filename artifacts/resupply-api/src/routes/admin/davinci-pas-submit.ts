@@ -251,7 +251,7 @@ router.post(
       accessToken,
     });
 
-    const decision =
+    const parsedDecision =
       outcome.status === "responded"
         ? parseClaimResponse(outcome.responseJson)
         : {
@@ -259,24 +259,53 @@ router.post(
             authNumber: null,
             denialReason: null,
             dispositionText: outcome.errorMessage,
+            requestIdentifier: null,
           };
+
+    // Identifier-binding check: the payer MUST echo back our
+    // claimIdentifier (in ClaimResponse.request.identifier.value or
+    // ClaimResponse.identifier[0].value). If the echo is missing or
+    // doesn't match, treat the response as transport-failed rather
+    // than applying its decision — a misrouted / replayed /
+    // compromised payload could otherwise overwrite the wrong PA.
+    let decision = parsedDecision;
+    let identifierMismatched = false;
+    if (
+      outcome.status === "responded" &&
+      parsedDecision.requestIdentifier !== claimIdentifier
+    ) {
+      identifierMismatched = true;
+      decision = {
+        decision: "pended" as const,
+        authNumber: null,
+        denialReason: null,
+        dispositionText: `payer ClaimResponse identifier mismatch (expected "${claimIdentifier}", got "${parsedDecision.requestIdentifier ?? "<none>"}")`,
+        requestIdentifier: parsedDecision.requestIdentifier,
+      };
+    }
 
     // Map decision → table column values.
     const transportStatus =
-      outcome.status === "responded"
-        ? "responded"
-        : outcome.status === "rejected"
-          ? "rejected"
-          : "transport_failed";
+      identifierMismatched
+        ? "transport_failed"
+        : outcome.status === "responded"
+          ? "responded"
+          : outcome.status === "rejected"
+            ? "rejected"
+            : "transport_failed";
     const update: Database["resupply"]["Tables"]["davinci_pas_submissions"]["Update"] = {
       transport_status: transportStatus,
       decision: decision.decision,
       auth_number: decision.authNumber,
       decision_at:
-        outcome.status === "responded" ? new Date().toISOString() : null,
+        outcome.status === "responded" && !identifierMismatched
+          ? new Date().toISOString()
+          : null,
       denial_reason: decision.denialReason,
       latency_ms: outcome.latencyMs,
-      error_message: outcome.errorMessage,
+      error_message: identifierMismatched
+        ? decision.dispositionText
+        : outcome.errorMessage,
       responded_at:
         outcome.status === "responded" ? new Date().toISOString() : null,
     };
@@ -286,9 +315,12 @@ router.post(
       .update(update)
       .eq("id", subRow.id);
 
-    // When the PAS response carries an in-band approval/denial,
-    // update the parent prior_authorizations row.
-    if (outcome.status === "responded") {
+    // When the PAS response carries an in-band approval/denial AND
+    // its identifier matches what we sent, update the parent
+    // prior_authorizations row. An identifier-mismatched response
+    // never reaches the PA row — see the identifierMismatched
+    // branch above.
+    if (outcome.status === "responded" && !identifierMismatched) {
       const paUpdate: Database["resupply"]["Tables"]["prior_authorizations"]["Update"] = {
         decision_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),

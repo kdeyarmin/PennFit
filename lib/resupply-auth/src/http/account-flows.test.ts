@@ -400,6 +400,70 @@ describe("POST /auth/reset-password", () => {
     expect(h.audit.actions).toContain("auth.password_reset_completed");
   });
 
+  // Regression for the bug task-68 closes: an operator typed the
+  // user's invite password via team-invite (must_change=true,
+  // set_by_admin_at=now), the user reset it from a different
+  // device via /auth/reset-password, then signed in DAYS later.
+  // If reset-password forgets to clear set_by_admin_at, the
+  // sign-in invite-expired gate fires at the 7-day mark and the
+  // user is locked out of an account they just successfully reset.
+  // The wider guard is the writeUserChosenPassword helper — this
+  // test pins the behaviour end-to-end so a future regression in
+  // any caller (reset-password, change-password, sign-up, the
+  // recovery CLI) is caught.
+  it("clears the admin-set timestamp so a reset password keeps working past the invite TTL", async () => {
+    const h = buildHarness();
+    await seedUserWithPassword(h.repo, {
+      id: "u_alice",
+      emailLower: "alice@example.com",
+      emailVerified: true,
+      password: "operator-typed initial",
+    });
+    // Simulate the team-invite "Set their password for them"
+    // path: mark the credential as operator-typed 9 days ago,
+    // BEFORE the user resets it. The reset must wipe both
+    // mustChange and set_by_admin_at.
+    const nineDaysAgo = new Date(Date.now() - 9 * 24 * 60 * 60 * 1000);
+    const seeded = (await h.repo.findCredentialByUserId("u_alice"))!;
+    h.repo.__putCredential({
+      ...seeded,
+      mustChange: true,
+      setByAdminAt: nineDaysAgo,
+    });
+
+    // User clicks "forgot password" from a different device and
+    // resets to a fresh password they typed themselves.
+    await supertest(h.app)
+      .post("/auth/forgot-password")
+      .send({ email: "alice@example.com" });
+    const token = extractEmailToken(h.emails[0]!.text);
+    const reset = await supertest(h.app)
+      .post("/auth/reset-password")
+      .send({ token, password: "brand new user-chosen password" });
+    expect(reset.status).toBe(200);
+
+    // Post-reset the credential row must NOT look operator-typed
+    // anymore — otherwise the invite-expired gate still fires.
+    const post = (await h.repo.findCredentialByUserId("u_alice"))!;
+    expect(post.setByAdminAt).toBeNull();
+    expect(post.mustChange).toBe(false);
+
+    // 10 days later (well past ADMIN_PASSWORD_TTL_MS=7 days)
+    // the user signs in — must succeed, not be expired.
+    const csrf = await seedCsrf(h.app);
+    const signIn = await supertest(h.app)
+      .post("/auth/sign-in")
+      .set("Cookie", `${CSRF_COOKIE}=${csrf}`)
+      .set(CSRF_HEADER, csrf)
+      .send({
+        email: "alice@example.com",
+        password: "brand new user-chosen password",
+      });
+    expect(signIn.status).toBe(200);
+    expect(getCookieValue(signIn.headers["set-cookie"], SESSION_COOKIE))
+      .toBeTruthy();
+  });
+
   it("rejects a too-short new password (400, token NOT consumed)", async () => {
     const h = buildHarness();
     await seedUserWithPassword(h.repo, {

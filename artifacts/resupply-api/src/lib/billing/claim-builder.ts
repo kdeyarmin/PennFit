@@ -144,13 +144,42 @@ export async function buildClaimFromFulfillment(
   }
 
   // 3. Payer profile (override or resolve by display_name match).
+  // Phase 12 (migration 0142): pull the completeness fields alongside
+  // the basics so the modifier auto-attach + enrollment gate below
+  // don't need a second round-trip.
+  let payerCompleteness: {
+    required_modifiers_dme: string[];
+    enrollment_status: string;
+    enrollment_effective_on: string | null;
+    member_id_pattern: string | null;
+  } | null = null;
   if (input.payerProfileIdOverride) {
     proposed.payerProfileId = input.payerProfileIdOverride;
+    const { data: payer } = await supabase
+      .schema("resupply")
+      .from("payer_profiles")
+      .select(
+        "payer_legal_name, required_modifiers_dme, enrollment_status, enrollment_effective_on, member_id_pattern",
+      )
+      .eq("id", input.payerProfileIdOverride)
+      .limit(1)
+      .maybeSingle();
+    if (payer) {
+      proposed.payerName = payer.payer_legal_name;
+      payerCompleteness = {
+        required_modifiers_dme: payer.required_modifiers_dme ?? [],
+        enrollment_status: payer.enrollment_status,
+        enrollment_effective_on: payer.enrollment_effective_on,
+        member_id_pattern: payer.member_id_pattern,
+      };
+    }
   } else if (primary) {
     const { data: payer } = await supabase
       .schema("resupply")
       .from("payer_profiles")
-      .select("id, display_name, payer_legal_name, requires_prior_auth_dme")
+      .select(
+        "id, display_name, payer_legal_name, requires_prior_auth_dme, required_modifiers_dme, enrollment_status, enrollment_effective_on, member_id_pattern",
+      )
       .ilike("display_name", primary.payer_name)
       .eq("is_active", true)
       .limit(1)
@@ -158,9 +187,43 @@ export async function buildClaimFromFulfillment(
     if (payer) {
       proposed.payerProfileId = payer.id;
       proposed.payerName = payer.payer_legal_name;
+      payerCompleteness = {
+        required_modifiers_dme: payer.required_modifiers_dme ?? [],
+        enrollment_status: payer.enrollment_status,
+        enrollment_effective_on: payer.enrollment_effective_on,
+        member_id_pattern: payer.member_id_pattern,
+      };
     } else {
       proposed.builderNotes.push(
         `No payer profile matched "${primary.payer_name}" — pick one from the catalog.`,
+      );
+    }
+  }
+
+  // 3a. Surface enrollment gates as builderNotes — preflight enforces
+  // the actual block, but the builder leaves a breadcrumb so the
+  // proposal UI can color the warning row before save.
+  if (payerCompleteness) {
+    if (payerCompleteness.enrollment_status === "suspended") {
+      proposed.builderNotes.push(
+        `Payer enrollment is suspended — preflight will block submission until resolved.`,
+      );
+    } else if (
+      payerCompleteness.enrollment_status === "active" &&
+      payerCompleteness.enrollment_effective_on &&
+      payerCompleteness.enrollment_effective_on > proposed.dateOfService
+    ) {
+      proposed.builderNotes.push(
+        `Payer enrollment effective on ${payerCompleteness.enrollment_effective_on}; this DOS pre-dates enrollment and will deny.`,
+      );
+    }
+    if (
+      payerCompleteness.member_id_pattern &&
+      primary?.member_id &&
+      !new RegExp(payerCompleteness.member_id_pattern).test(primary.member_id)
+    ) {
+      proposed.builderNotes.push(
+        `Member ID "${primary.member_id}" doesn't match the payer's published format — verify before submit.`,
       );
     }
   }
@@ -256,6 +319,23 @@ export async function buildClaimFromFulfillment(
       }
       lineItem.modifiers = merged.slice(0, 4);
     }
+
+    // 8b. Phase 12 (migration 0142): if the payer publishes a
+    //     required_modifiers_dme baseline (e.g. ["KX"]) and NO line
+    //     carries any modifier from that set, auto-attach the FIRST
+    //     entry. Avoids the "missing KX" denial when nothing else in
+    //     the rules engine put it on.
+    if (
+      payerCompleteness &&
+      payerCompleteness.required_modifiers_dme.length > 0
+    ) {
+      for (const lineItem of proposed.lines) {
+        lineItem.modifiers = applyRequiredModifierBaseline(
+          lineItem.modifiers,
+          payerCompleteness.required_modifiers_dme,
+        );
+      }
+    }
   }
 
   // 9. Replace each line's billed amount with the published fee
@@ -299,10 +379,10 @@ async function buildLineForSku(
   if (mapped) {
     return {
       hcpcsCode: mapped.hcpcs_code,
-      modifiers: (mapped.default_modifiers ?? "")
+      modifiers: ((mapped.default_modifiers ?? "") as string)
         .split(",")
-        .map((m) => m.trim())
-        .filter((m) => m.length === 2),
+        .map((m: string) => m.trim())
+        .filter((m: string) => m.length === 2),
       description: mapped.description,
       quantity: quantity * mapped.units_per_dispense,
       billedCents: mapped.default_billed_cents ?? 0,
@@ -345,20 +425,26 @@ async function resolveRuleContext(
   patientId: string,
   hasPriorAuth: boolean,
 ): Promise<ModifierRuleContext> {
-  // Rental month — count of prior insurance_claims for E0601 in
-  // status submitted / accepted / paid for this patient. This is
-  // heuristic; an explicit capped_rental_status on insurance_coverages
-  // would be more authoritative, but the heuristic is close enough
-  // for the rule engine's purpose (and the CSR can override on the UI).
-  const { data: priorCpapClaims } = await supabase
+  // Rental month — count of prior insurance_claims carrying an E0601
+  // line in status submitted / accepted / paid for this patient. This
+  // is heuristic; an explicit capped_rental_status on
+  // insurance_coverages would be more authoritative, but the heuristic
+  // is close enough for the rule engine's purpose (and the CSR can
+  // override on the UI). Filter by HCPCS — counting every claim would
+  // over-count supply (A7030/A7034) and accessory claims, inflating
+  // rentalMonth and tripping the wrong KX/KH/KI/KJ rules on the next
+  // CPAP rental.
+  const { data: priorCpapLines } = await supabase
     .schema("resupply")
-    .from("insurance_claims")
-    .select("id, status, date_of_service")
-    .eq("patient_id", patientId)
-    .in("status", ["submitted", "accepted", "paid"]);
+    .from("insurance_claim_line_items")
+    .select("claim_id, insurance_claims!inner(patient_id, status)")
+    .eq("hcpcs_code", "E0601")
+    .eq("insurance_claims.patient_id", patientId)
+    .in("insurance_claims.status", ["submitted", "accepted", "paid", "closed"]);
   let rentalMonth: number | null = null;
-  if (priorCpapClaims && priorCpapClaims.length > 0) {
-    rentalMonth = Math.min(13, priorCpapClaims.length + 1);
+  if (priorCpapLines && priorCpapLines.length > 0) {
+    const uniqueClaims = new Set(priorCpapLines.map((l) => l.claim_id));
+    rentalMonth = Math.min(13, uniqueClaims.size + 1);
   }
 
   // Compliance — sum of qualifying nights in the last 30 days.
@@ -383,7 +469,7 @@ async function resolveRuleContext(
     rentalMonth,
     isPurchased: false,
     isCompliant,
-    isInitialDispense: !priorCpapClaims || priorCpapClaims.length === 0,
+    isInitialDispense: !priorCpapLines || priorCpapLines.length === 0,
     hasPriorAuth,
   };
 }
@@ -412,10 +498,10 @@ async function applyPayerModifierRules(
   const mods: string[] = [];
   for (const rule of rules ?? []) {
     if (!ruleApplies(rule.condition, ctx)) continue;
-    const parsed = rule.modifiers_csv
+    const parsed = (rule.modifiers_csv as string)
       .split(",")
-      .map((m) => m.trim().toUpperCase())
-      .filter((m) => m.length === 2);
+      .map((m: string) => m.trim().toUpperCase())
+      .filter((m: string) => m.length === 2);
     for (const m of parsed) if (!mods.includes(m)) mods.push(m);
   }
   return mods;
@@ -480,6 +566,28 @@ async function lookupFeeSchedule(
   }
   const wildcard = candidates.find((r) => r.modifier === null);
   return wildcard ?? candidates[0] ?? null;
+}
+
+/**
+ * Phase 12/13: ensure each claim line carries at least one of the
+ * payer's `required_modifiers_dme` (defaults to ["KX"] for most
+ * DME payers). If none of the required modifiers are already on
+ * the line, prepend the FIRST entry. Existing modifiers are
+ * preserved in their original order. The EDI builder caps at 4
+ * modifiers per line so we slice to 4.
+ *
+ * Pure helper — exported for unit testing.
+ */
+export function applyRequiredModifierBaseline(
+  current: readonly string[],
+  required: readonly string[],
+): string[] {
+  if (required.length === 0) return [...current];
+  const presentUpper = current.map((m) => m.toUpperCase());
+  const hasAny = required.some((m) => presentUpper.includes(m.toUpperCase()));
+  if (hasAny) return [...current];
+  if (current.length >= 4) return [...current];
+  return [required[0]!, ...current].slice(0, 4);
 }
 
 function isoDate(s: string | null | undefined): string | null {

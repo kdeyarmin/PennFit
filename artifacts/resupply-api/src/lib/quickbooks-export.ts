@@ -1,41 +1,8 @@
-// QuickBooks export helpers.
+import { createHash } from "node:crypto";
+
+
 //
 // Two emitter functions, sharing one input shape:
-//   * `renderIif(input)`     — Intuit Interchange Format. Tab-
-//                              separated text used to import
-//                              transactions into QuickBooks Desktop /
-//                              Enterprise (File → Utilities → Import →
-//                              IIF Files). Each `!HDR` line declares a
-//                              record schema; rows follow with the
-//                              same column count.
-//   * `renderQboCsv(input)`  — QuickBooks Online-friendly CSV. QBO's
-//                              "Receive Payments" / "Bank Deposits"
-//                              upload accepts a generic CSV with
-//                              column-mapped fields; we emit columns
-//                              labelled the way QBO's import wizard
-//                              expects so the operator can map with
-//                              one click.
-//
-// What goes in
-// ------------
-// Inputs are aggregated, non-PHI transaction rows produced by the
-// reports route. Patient identifiers are hashed prefixes ("cust-3e29")
-// rather than names — IIF and QBO both want a stable customer key
-// per row but don't need the legal name.
-//
-// What does NOT go in
-// --------------------
-//   * PHI of any kind. Cash-pay storefront orders are not protected
-//     health information, but customer names, emails, and addresses
-//     are still treated as personal data and excluded from the
-//     finance export. Operators who need to reconcile a specific
-//     order pull it from the order-detail page.
-//   * Refunds-applied-to-claim links. QuickBooks doesn't model the
-//     same return-vs-original-order pairing PennPaps does; we emit
-//     refunds as their own credit memo rows referencing the original
-//     order number in the memo column.
-
-import { createHash } from "node:crypto";
 
 export interface QuickbooksRowInput {
   /**

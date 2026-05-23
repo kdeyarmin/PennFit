@@ -24,11 +24,29 @@ describe("parseSmsIntent", () => {
     it("matches STOP even when it appears mid-sentence with punctuation", () => {
       expect(parseSmsIntent("hi. STOP. thanks.").intent).toBe("stop");
     });
+
+    it.each([
+      "DETENER",
+      "detener",
+      "Cancelar",
+      "ALTO",
+      "fin",
+      "parar",
+    ])("classifies Spanish/Portuguese opt-out %j as stop", (body) => {
+      expect(parseSmsIntent(body).intent).toBe("stop");
+    });
   });
 
   describe("HELP family (carrier-mandated, anywhere in body)", () => {
     it.each(["HELP", "help", "Help me", "info", "support please"])(
       "classifies %j as help",
+      (body) => {
+        expect(parseSmsIntent(body).intent).toBe("help");
+      },
+    );
+
+    it.each(["AYUDA", "ayuda", "ajuda"])(
+      "classifies Spanish/Portuguese %j as help",
       (body) => {
         expect(parseSmsIntent(body).intent).toBe("help");
       },
