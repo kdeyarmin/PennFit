@@ -60,6 +60,7 @@ function ScrollToTop() {
 const navLinks = [
   { href: "/how-it-works", label: "Virtual Mask Fitter" },
   { href: "/masks", label: "Mask Catalog" },
+  { href: "/cpap-masks", label: "Brands" },
   { href: "/shop", label: "Shop" },
   { href: "/learn", label: "Learn" },
   { href: "/faq", label: "FAQ" },
@@ -304,7 +305,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
             {/* Top: brand + condensed link columns */}
             <div className="grid grid-cols-2 md:grid-cols-12 gap-x-6 gap-y-5">
               {/* Brand block */}
-              <div className="col-span-2 md:col-span-4 flex items-center gap-3">
+              <div className="col-span-2 md:col-span-3 flex items-center gap-3">
                 <img
                   src={pennLogo}
                   alt="Penn Home Medical Supply"
@@ -321,7 +322,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
               </div>
 
               {/* Patient services */}
-              <div className="md:col-span-3">
+              <div className="md:col-span-2">
                 <div className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground mb-2 font-semibold">
                   Patient Services
                 </div>
@@ -369,6 +370,58 @@ export function Layout({ children }: { children: React.ReactNode }) {
                 </ul>
               </div>
 
+              {/* Learn — surface the long-form education library and
+                  brand pages from every page of the site. Compact list
+                  (5 items) so the footer doesn't bloat; the full
+                  library lives on /learn. */}
+              <div className="md:col-span-3">
+                <div className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground mb-2 font-semibold">
+                  Learn &amp; Resources
+                </div>
+                <ul className="space-y-1 text-sm">
+                  <li>
+                    <Link
+                      href="/sleep-apnea-101"
+                      className="text-muted-foreground hover:text-primary transition-colors"
+                    >
+                      Sleep apnea 101
+                    </Link>
+                  </li>
+                  <li>
+                    <Link
+                      href="/learn"
+                      className="text-muted-foreground hover:text-primary transition-colors"
+                    >
+                      Article library
+                    </Link>
+                  </li>
+                  <li>
+                    <Link
+                      href="/learn/glossary"
+                      className="text-muted-foreground hover:text-primary transition-colors"
+                    >
+                      CPAP glossary
+                    </Link>
+                  </li>
+                  <li>
+                    <Link
+                      href="/cpap-masks"
+                      className="text-muted-foreground hover:text-primary transition-colors"
+                    >
+                      Mask brands
+                    </Link>
+                  </li>
+                  <li>
+                    <Link
+                      href="/learn/sleep-apnea-quiz"
+                      className="text-muted-foreground hover:text-primary transition-colors"
+                    >
+                      Self-screener
+                    </Link>
+                  </li>
+                </ul>
+              </div>
+
               {/* Contact */}
               <div className="md:col-span-2">
                 <div className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground mb-2 font-semibold">
@@ -400,7 +453,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
               </div>
 
               {/* Legal */}
-              <div className="md:col-span-3">
+              <div className="md:col-span-2">
                 <div className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground mb-2 font-semibold">
                   Legal &amp; Privacy
                 </div>

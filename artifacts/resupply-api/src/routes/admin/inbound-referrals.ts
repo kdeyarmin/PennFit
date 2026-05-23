@@ -38,6 +38,7 @@ import {
   getSupabaseServiceRoleClient,
 } from "@workspace/resupply-db";
 
+import { signClinicianShareToken } from "../../lib/clinician-share-token";
 import { runReferralPreflight } from "../../lib/inbound-dispatchers/preflight";
 import { logger } from "../../lib/logger";
 import { enqueueReferralStatusEvent } from "../../lib/referral-callbacks";
@@ -193,6 +194,7 @@ router.get(
       { data: docs },
       { data: preflightChecks },
       { data: outboxRows },
+      { data: shareTokens },
     ] = await Promise.all([
       supabase
         .schema("resupply")
@@ -222,6 +224,14 @@ router.get(
         .from("inbound_referral_status_outbox")
         .select(
           "id, target_kind, event_type, status, attempt_count, last_http_status, last_error, delivered_at, next_attempt_at, created_at",
+        )
+        .eq("referral_id", params.data.id)
+        .order("created_at", { ascending: false }),
+      supabase
+        .schema("resupply")
+        .from("clinician_share_tokens")
+        .select(
+          "id, expires_at, revoked_at, last_viewed_at, view_count, created_by_email, created_at",
         )
         .eq("referral_id", params.data.id)
         .order("created_at", { ascending: false }),
@@ -292,6 +302,15 @@ router.get(
         deliveredAt: o.delivered_at,
         nextAttemptAt: o.next_attempt_at,
         createdAt: o.created_at,
+      })),
+      shareTokens: (shareTokens ?? []).map((s) => ({
+        id: s.id,
+        expiresAt: s.expires_at,
+        revokedAt: s.revoked_at,
+        lastViewedAt: s.last_viewed_at,
+        viewCount: s.view_count,
+        createdByEmail: s.created_by_email,
+        createdAt: s.created_at,
       })),
     });
   },
@@ -591,6 +610,30 @@ router.patch(
       logger.warn({ err }, "inbound_referral.triage audit write failed");
     });
 
+    // When the CSR flipped status to `rejected`, fan out an
+    // order.rejected callback to the originating source. Other
+    // transitions are internal-only.
+    if (
+      fields.status === "rejected" &&
+      existing.triage_status !== "rejected"
+    ) {
+      await enqueueReferralStatusEvent({
+        referralId: params.data.id,
+        eventType: "order.rejected",
+        data: {
+          reason: fields.notes ?? null,
+        },
+      }).catch((err) => {
+        logger.warn(
+          {
+            referral_id: params.data.id,
+            err: err instanceof Error ? err.message : String(err),
+          },
+          "inbound_referral.reject.callback_enqueue_failed",
+        );
+      });
+    }
+
     res.status(200).json({ id: params.data.id, changed: true });
   },
 );
@@ -812,6 +855,174 @@ router.post(
       );
       res.status(500).json({ error: "enqueue_failed" });
     }
+  },
+);
+
+// ────────────────────────────────────────────────────────────────────
+// Clinician share tokens — Phase 6 (clinician share link portion).
+// ────────────────────────────────────────────────────────────────────
+
+const shareMintBody = z
+  .object({
+    ttlSeconds: z
+      .number()
+      .int()
+      .min(60 * 60) // 1 hour minimum so an admin doesn't accidentally
+      // mint a dead-on-arrival link
+      .max(180 * 24 * 60 * 60) // 180 day cap
+      .optional(),
+  })
+  .strict()
+  .optional();
+
+router.post(
+  "/admin/inbound-referrals/:id/share-tokens",
+  requirePermission("conversations.manage"),
+  adminRateLimit({
+    name: "inbound_referrals.share_token_mint",
+    preset: "mutation",
+  }),
+  async (req, res) => {
+    const params = idParam.safeParse(req.params);
+    if (!params.success) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    const parsed = shareMintBody.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      res.status(400).json({ error: "invalid_body" });
+      return;
+    }
+    const supabase = getSupabaseServiceRoleClient();
+    const { data: referral } = await supabase
+      .schema("resupply")
+      .from("inbound_referral_orders")
+      .select("id, triage_status")
+      .eq("id", params.data.id)
+      .limit(1)
+      .maybeSingle();
+    if (!referral) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    if (
+      referral.triage_status === "archived" ||
+      referral.triage_status === "duplicate"
+    ) {
+      res.status(409).json({
+        error: "invalid_status",
+        message: `Cannot mint a share link for a "${referral.triage_status}" referral.`,
+      });
+      return;
+    }
+    const ttlSeconds = parsed.data?.ttlSeconds ?? 30 * 24 * 60 * 60;
+    const expiresAt = new Date(Date.now() + ttlSeconds * 1000).toISOString();
+    const { data: inserted, error: insertErr } = await supabase
+      .schema("resupply")
+      .from("clinician_share_tokens")
+      .insert({
+        referral_id: referral.id,
+        expires_at: expiresAt,
+        created_by_email: req.adminEmail ?? "admin:unknown",
+      })
+      .select("id")
+      .maybeSingle();
+    if (insertErr || !inserted) {
+      logger.warn(
+        {
+          referral_id: referral.id,
+          err_code: insertErr?.code,
+        },
+        "inbound_referral.share_token.insert_failed",
+      );
+      res.status(500).json({ error: "insert_failed" });
+      return;
+    }
+    const signed = signClinicianShareToken(inserted.id, ttlSeconds);
+    await logAudit({
+      action: "inbound_referral.share_token.minted",
+      adminEmail: req.adminEmail ?? null,
+      adminUserId: req.adminUserId ?? null,
+      targetTable: "clinician_share_tokens",
+      targetId: inserted.id,
+      metadata: {
+        referral_id: referral.id,
+        ttl_seconds: ttlSeconds,
+      },
+      ip: req.ip ?? null,
+      userAgent: req.get("user-agent") ?? null,
+    }).catch((err) => {
+      logger.warn(
+        { err },
+        "inbound_referral.share_token.minted audit write failed",
+      );
+    });
+    res.status(201).json({
+      shareTokenId: inserted.id,
+      token: signed.token,
+      expiresAt: signed.expiresAt,
+    });
+  },
+);
+
+router.delete(
+  "/admin/inbound-referrals/:id/share-tokens/:shareTokenId",
+  requirePermission("conversations.manage"),
+  adminRateLimit({
+    name: "inbound_referrals.share_token_revoke",
+    preset: "mutation",
+  }),
+  async (req, res) => {
+    const params = z
+      .object({
+        id: z.string().uuid(),
+        shareTokenId: z.string().uuid(),
+      })
+      .safeParse(req.params);
+    if (!params.success) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    const supabase = getSupabaseServiceRoleClient();
+    const { data: existing } = await supabase
+      .schema("resupply")
+      .from("clinician_share_tokens")
+      .select("id, referral_id, revoked_at")
+      .eq("id", params.data.shareTokenId)
+      .eq("referral_id", params.data.id)
+      .limit(1)
+      .maybeSingle();
+    if (!existing) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    if (existing.revoked_at !== null) {
+      // Idempotent.
+      res.status(200).json({ revoked: true, alreadyRevoked: true });
+      return;
+    }
+    const { error: updErr } = await supabase
+      .schema("resupply")
+      .from("clinician_share_tokens")
+      .update({ revoked_at: new Date().toISOString() })
+      .eq("id", params.data.shareTokenId);
+    if (updErr) throw updErr;
+    await logAudit({
+      action: "inbound_referral.share_token.revoked",
+      adminEmail: req.adminEmail ?? null,
+      adminUserId: req.adminUserId ?? null,
+      targetTable: "clinician_share_tokens",
+      targetId: params.data.shareTokenId,
+      metadata: { referral_id: params.data.id },
+      ip: req.ip ?? null,
+      userAgent: req.get("user-agent") ?? null,
+    }).catch((err) => {
+      logger.warn(
+        { err },
+        "inbound_referral.share_token.revoked audit write failed",
+      );
+    });
+    res.status(200).json({ revoked: true });
   },
 );
 

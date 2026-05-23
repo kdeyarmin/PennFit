@@ -360,6 +360,7 @@ export async function buildEdiPayloadForSubmission(
       interchangeControlNumber: sub.isa_control_number,
       groupControlNumber: sub.gs_control_number,
       transactionSetControlNumber: "0001",
+      builtAt: Date.now(),
     },
     usageIndicator: identity.usageIndicator,
   });
@@ -472,10 +473,10 @@ export async function buildOneDetail(
     },
     serviceLines: lines.map((l) => ({
       hcpcsCode: l.hcpcs_code,
-      modifiers: (l.modifier ?? "")
+      modifiers: ((l.modifier ?? "") as string)
         .split(",")
-        .map((m) => m.trim().toUpperCase())
-        .filter((m) => m.length === 2),
+        .map((m: string) => m.trim().toUpperCase())
+        .filter((m: string) => m.length === 2),
       billedCents: l.billed_cents,
       units: l.quantity,
       serviceDate: claim.date_of_service,

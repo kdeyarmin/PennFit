@@ -2,6 +2,8 @@
 // Auth rides on the in-house `pf_session` cookie via
 // `credentials: "include"` — no bearer token bridge.
 
+import { csrfHeader } from "../csrf";
+
 // RBAC Phase A: the team API now persists the granular role on
 // `admin_users.role`. The coarse "admin or agent" still drives
 // requireAdmin (staff-or-not); the granular role drives
@@ -36,6 +38,9 @@ interface InviteResponse {
   member: TeamMember;
   emailSent: boolean;
   inviteLink: string | null;
+  /** True when the admin supplied an initial password and the
+   *  account is immediately sign-in-ready (no email roundtrip). */
+  signInReady?: boolean;
 }
 
 const BASE = "/resupply-api/admin/team";
@@ -54,6 +59,10 @@ export async function inviteMember(body: {
   role: TeamRole;
   displayName?: string | null;
   notes?: string | null;
+  /** Optional. When provided (>= 8 chars), the user is created
+   *  active + email-verified with this password and no invite
+   *  email is sent — admin tells the user out-of-band. */
+  initialPassword?: string | null;
 }): Promise<InviteResponse> {
   const res = await fetch(`${BASE}/invite`, {
     method: "POST",
@@ -61,6 +70,7 @@ export async function inviteMember(body: {
     headers: {
       "Content-Type": "application/json",
       Accept: "application/json",
+      ...csrfHeader(),
     },
     body: JSON.stringify(body),
   });
@@ -81,7 +91,7 @@ export async function resendInvite(id: string): Promise<InviteResponse> {
   const res = await fetch(`${BASE}/${encodeURIComponent(id)}/resend`, {
     method: "POST",
     credentials: "include",
-    headers: { Accept: "application/json" },
+    headers: { Accept: "application/json", ...csrfHeader() },
   });
   if (!res.ok) {
     const json = (await res.json().catch(() => null)) as {
@@ -101,7 +111,7 @@ export async function revokeMember(
   const res = await fetch(`${BASE}/${encodeURIComponent(id)}/revoke`, {
     method: "POST",
     credentials: "include",
-    headers: { Accept: "application/json" },
+    headers: { Accept: "application/json", ...csrfHeader() },
   });
   if (!res.ok) {
     const json = (await res.json().catch(() => null)) as {
@@ -129,6 +139,7 @@ export async function patchMember(
     headers: {
       "Content-Type": "application/json",
       Accept: "application/json",
+      ...csrfHeader(),
     },
     body: JSON.stringify(body),
   });

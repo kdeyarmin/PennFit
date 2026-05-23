@@ -32,8 +32,17 @@ export interface Parsed271 {
   inNetwork: boolean | null;
   deductibleCents: number | null;
   deductibleMetCents: number | null;
+  /**
+   * Deductible REMAINING (EB06=29 or Y). Populated when the payer
+   * sent a remaining-only segment without a paired total — the
+   * downstream claim builder can still surface "you have $X to go"
+   * even when total is unknown.
+   */
+  deductibleRemainingCents: number | null;
   oopMaxCents: number | null;
   oopMetCents: number | null;
+  /** Same as deductibleRemainingCents but for the out-of-pocket cap. */
+  oopRemainingCents: number | null;
   copayCents: number | null;
   coinsurancePct: number | null;
   requiresPriorAuth: boolean;
@@ -49,13 +58,25 @@ export function parse271(input: string): Parsed271 {
     inNetwork: null,
     deductibleCents: null,
     deductibleMetCents: null,
+    deductibleRemainingCents: null,
     oopMaxCents: null,
     oopMetCents: null,
+    oopRemainingCents: null,
     copayCents: null,
     coinsurancePct: null,
     requiresPriorAuth: false,
     messages: [],
   };
+  // Capture raw totals + remaining values in a first pass so the
+  // "met = total - remaining" math can run regardless of segment
+  // order. Real payer 271s frequently emit the remaining segment
+  // BEFORE the total, which the prior single-pass implementation
+  // silently dropped (it nulled deductibleMetCents and the remaining
+  // amount was lost).
+  let deductibleTotalRaw: number | null = null;
+  let deductibleRemainingRaw: number | null = null;
+  let oopTotalRaw: number | null = null;
+  let oopRemainingRaw: number | null = null;
   for (const seg of segments) {
     if (seg.id === "TRN") {
       // The 271's TRN echoes TRN02 from the 270 — that's our key.
@@ -72,22 +93,17 @@ export function parse271(input: string): Parsed271 {
         const cents = safeMoney(amt);
         // remaining = "29" or "Y"; total = "23" or "30".
         if (timeQual === "29" || timeQual === "Y") {
-          // remaining = deductible - met; we'll compute later if both known
-          out.deductibleMetCents = out.deductibleCents
-            ? Math.max(0, out.deductibleCents - cents)
-            : null;
+          deductibleRemainingRaw = cents;
         } else {
-          out.deductibleCents = cents;
+          deductibleTotalRaw = cents;
         }
       }
       if (code === "G" && amt) {
         const cents = safeMoney(amt);
         if (timeQual === "29" || timeQual === "Y") {
-          out.oopMetCents = out.oopMaxCents
-            ? Math.max(0, out.oopMaxCents - cents)
-            : null;
+          oopRemainingRaw = cents;
         } else {
-          out.oopMaxCents = cents;
+          oopTotalRaw = cents;
         }
       }
       if (code === "B" && amt) out.copayCents = safeMoney(amt);
@@ -122,6 +138,19 @@ export function parse271(input: string): Parsed271 {
         void qualifier;
       }
     }
+  }
+  // Second pass: compute met = total - remaining where both are
+  // known; otherwise expose whichever raw values we got. Order-
+  // independent.
+  out.deductibleCents = deductibleTotalRaw;
+  out.deductibleRemainingCents = deductibleRemainingRaw;
+  if (deductibleTotalRaw !== null && deductibleRemainingRaw !== null) {
+    out.deductibleMetCents = Math.max(0, deductibleTotalRaw - deductibleRemainingRaw);
+  }
+  out.oopMaxCents = oopTotalRaw;
+  out.oopRemainingCents = oopRemainingRaw;
+  if (oopTotalRaw !== null && oopRemainingRaw !== null) {
+    out.oopMetCents = Math.max(0, oopTotalRaw - oopRemainingRaw);
   }
   return out;
 }

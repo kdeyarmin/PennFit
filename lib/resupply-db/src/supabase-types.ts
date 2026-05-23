@@ -527,9 +527,85 @@ export interface Database {
           sms_opt_in: boolean;
           source: "consent" | "sleep_apnea_quiz" | "insurance_quote";
           first_day_nudged_at: string | null;
+          // Mig 0151 — fitter completion + supply-campaign journey.
+          completed_at: string | null;
+          recommended_mask_id: string | null;
+          recommended_mask_name: string | null;
+          recommended_mask_type: string | null;
+          journey_stage:
+            | "consent"
+            | "completed"
+            | "campaign_active"
+            | "reorder_active"
+            | "final_call_pending"
+            | "converted"
+            | "unsubscribed"
+            | "expired";
+          campaign_touch_count: number;
+          last_campaign_touch_at: string | null;
+          next_campaign_touch_at: string | null;
+          unsubscribed_at: string | null;
+          first_order_id: string | null;
+          first_order_placed_at: string | null;
+          // Mig 0152 — first-name personalization, captured from
+          // public.orders.patient_name on conversion.
+          first_name: string | null;
+          // Mig 0153 — engagement tracking via tracking-pixel opens.
+          engagement_score: number;
+          hot_lead_at: string | null;
+          // Mig 0154 — click tracking + CSR contact workflow.
+          click_count: number;
+          csr_contacted_at: string | null;
+          csr_contacted_by: string | null;
+          // Mig 0155 — per-lead engagement recency.
+          last_open_at: string | null;
+          last_click_at: string | null;
         };
         Insert: Partial<Database["resupply"]["Tables"]["fitter_leads"]["Row"]>;
         Update: Partial<Database["resupply"]["Tables"]["fitter_leads"]["Row"]>;
+        Relationships: [];
+      };
+      // Mig 0151 — per-send audit log for the multi-touch supply
+      // campaign. One row per (lead, touch_index, channel).
+      fitter_campaign_touches: {
+        Row: {
+          id: string;
+          lead_id: string;
+          touch_index: number;
+          channel: "email" | "sms";
+          template_key: string;
+          status: "sent" | "failed" | "skipped";
+          error_message: string | null;
+          sent_at: string;
+          // Mig 0155 — per-touch open tracking.
+          open_count: number;
+          first_opened_at: string | null;
+          last_opened_at: string | null;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["fitter_campaign_touches"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["fitter_campaign_touches"]["Row"]
+        >;
+        Relationships: [];
+      };
+      // Mig 0154 — per-click audit log. One row per CTA click.
+      fitter_campaign_clicks: {
+        Row: {
+          id: string;
+          lead_id: string;
+          touch_index: number;
+          link_key: string;
+          clicked_at: string;
+          submitter_ip: string | null;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["fitter_campaign_clicks"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["fitter_campaign_clicks"]["Row"]
+        >;
         Relationships: [];
       };
       shop_product_questions: {
@@ -1784,6 +1860,69 @@ export interface Database {
         >;
         Relationships: [];
       };
+      clinician_share_tokens: {
+        Row: {
+          id: string;
+          referral_id: string;
+          expires_at: string;
+          revoked_at: string | null;
+          last_viewed_at: string | null;
+          last_viewed_ip: string | null;
+          view_count: number;
+          created_by_email: string;
+          created_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["clinician_share_tokens"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["clinician_share_tokens"]["Row"]
+        >;
+        Relationships: [];
+      };
+      prescription_request_packets: {
+        Row: {
+          id: string;
+          patient_id: string;
+          provider_id: string | null;
+          source_prescription_id: string | null;
+          hcpcs_items_json: Json;
+          icd10_codes_json: Json;
+          device_settings_json: Json | null;
+          length_of_need_months: number;
+          return_fax_e164: string | null;
+          return_email: string | null;
+          clinical_notes: string | null;
+          status:
+            | "draft"
+            | "sent_fax"
+            | "delivered"
+            | "signed"
+            | "expired"
+            | "void"
+            | "failed";
+          valid_through: string | null;
+          sent_to_fax_e164: string | null;
+          vendor_ref: string | null;
+          vendor_name: string | null;
+          sent_at: string | null;
+          delivered_at: string | null;
+          failed_at: string | null;
+          failure_reason: string | null;
+          signed_at: string | null;
+          signed_object_key: string | null;
+          created_by_email: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["prescription_request_packets"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["prescription_request_packets"]["Row"]
+        >;
+        Relationships: [];
+      };
       documentation_packets: {
         Row: {
           id: string;
@@ -2107,6 +2246,9 @@ export interface Database {
           claims_denied_count: number;
           lines_processed_count: number;
           matched_submission_id: string | null;
+          /** Phase 16 (mig 0143): resolved payer_profile FK or NULL when
+           *  the 835's payer ID didn't match any catalog entry. */
+          payer_profile_id: string | null;
           status: "processed" | "parse_failed" | "partial" | "rejected";
           rejection_reason: string | null;
           ingested_by_email: string;
@@ -2732,6 +2874,25 @@ export interface Database {
         };
         Insert: Partial<Database["resupply"]["Tables"]["csr_shifts"]["Row"]>;
         Update: Partial<Database["resupply"]["Tables"]["csr_shifts"]["Row"]>;
+        Relationships: [];
+      };
+      feature_flags: {
+        Row: {
+          key: string;
+          enabled: boolean;
+          description: string;
+          category: string;
+          updated_by_user_id: string | null;
+          updated_by_email: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["feature_flags"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["feature_flags"]["Row"]
+        >;
         Relationships: [];
       };
       appointment_requests: {
@@ -3641,8 +3802,31 @@ export interface Database {
         Relationships: [];
       };
     };
-    Views: { [_ in never]: never };
+    Views: {
+      // Mig 0155 — per-touch aggregate metrics for the admin
+      // reporting surface.
+      fitter_campaign_touch_metrics: {
+        Row: {
+          touch_index: number;
+          email_sends: number;
+          email_failures: number;
+          opens: number;
+          sms_sends: number;
+          sms_failures: number;
+          clicks: number;
+        };
+      };
+    };
     Functions: {
+      // Mig 0155 — atomic per-touch open-count bump, called by
+      // the open-tracking pixel endpoint on every pixel load.
+      record_fitter_touch_open: {
+        Args: {
+          p_lead_id: string;
+          p_touch_index: number;
+        };
+        Returns: void;
+      };
       validate_payment_allocations: {
         Args: {
           p_patient_id: string;
@@ -3719,6 +3903,22 @@ export interface Database {
           password_hash: string;
           algo: string;
           must_change: boolean;
+          // Set by the team-invite "set their password for them"
+          // path (lib/resupply-auth/src/team-invite.ts). The
+          // sign-in handler refuses must_change credentials older
+          // than ADMIN_PASSWORD_TTL_MS. Cleared back to NULL on
+          // user-initiated password changes / resets. Added in
+          // migration 0142_password_credential_set_by_admin_at.
+          set_by_admin_at: string | null;
+          // Stamped by the invite-password expiry notifier when it
+          // sends the heads-up reminder around day 5 of the TTL.
+          // Cleared back to NULL on a fresh re-invite (see
+          // invite-password-expiry-notify.ts). Added in migration
+          // 0143_password_credential_expiry_notify_stamps.
+          expiry_reminder_sent_at: string | null;
+          // Stamped by the same notifier when it sends the final
+          // "your invite has expired" email after the TTL elapses.
+          expired_notice_sent_at: string | null;
           updated_at: string;
         };
         Insert: {
@@ -3726,6 +3926,9 @@ export interface Database {
           password_hash: string;
           algo?: string;
           must_change?: boolean;
+          set_by_admin_at?: string | null;
+          expiry_reminder_sent_at?: string | null;
+          expired_notice_sent_at?: string | null;
           updated_at?: string;
         };
         Update: Partial<

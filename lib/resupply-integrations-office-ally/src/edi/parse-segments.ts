@@ -38,17 +38,27 @@ const DEFAULT_DELIMITERS = {
  * to the default delimiter set.
  */
 export function parseX12(input: string): ParsedX12 {
-  const raw = input.replace(/\r/g, "").replace(/\n+/g, "");
+  // Trim leading whitespace / BOM only — DO NOT strip CRLF before
+  // reading the ISA terminator. If a payer's file uses `\n` as the
+  // segment terminator (rare but X12-legal), `.replace(/\n+/g, "")`
+  // on the unstripped input would drop the terminator byte and the
+  // subsequent ISA-offset read would land on data, producing
+  // garbage segments. Read the terminator from the original input
+  // first, then normalise line endings inside element bodies.
+  // Strip leading whitespace and BOM (U+FEFF) using an explicit
+  // escape so the eslint no-irregular-whitespace rule doesn't trip
+  // on a literal zero-width-no-break-space.
+  const trimmed = input.replace(/^[\s\uFEFF]+/, "");
   let delimiters = DEFAULT_DELIMITERS;
-  if (raw.startsWith("ISA")) {
+  if (trimmed.startsWith("ISA")) {
     // ISA is exactly 106 characters in a 5010-conforming envelope:
     // 105 fixed-width elements + a single-character segment terminator.
     // Element separator is at offset 3 (the char right after `ISA`).
     // ISA16 (component separator) is at offset 104. Segment terminator
     // is at offset 105.
-    const elementSep = raw[3];
-    const componentSep = raw[104];
-    const segmentSep = raw[105];
+    const elementSep = trimmed[3];
+    const componentSep = trimmed[104];
+    const segmentSep = trimmed[105];
     if (elementSep && componentSep && segmentSep) {
       delimiters = {
         element: elementSep,
@@ -57,6 +67,12 @@ export function parseX12(input: string): ParsedX12 {
       };
     }
   }
+  // Now that we've captured the segment terminator, strip CR (always
+  // safe — CR is never a legal X12 character outside line endings)
+  // and only collapse LF when it's NOT the segment terminator.
+  const stripCr = trimmed.replace(/\r/g, "");
+  const raw =
+    delimiters.segment === "\n" ? stripCr : stripCr.replace(/\n+/g, "");
   const segments: Segment[] = [];
   for (const rawSeg of raw.split(delimiters.segment)) {
     if (!rawSeg) continue;

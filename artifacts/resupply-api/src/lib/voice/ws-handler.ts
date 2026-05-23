@@ -178,9 +178,14 @@ export async function handleVoiceWsConnection(
         if (!ev.isFinal) return;
         const text = ev.transcript.trim();
         if (text.length === 0) return;
-        if (deepgramTurns.length < MAX_RETAINED_TURNS) {
-          deepgramTurns.push(text);
+        // Ring buffer: keep the most recent turns. The end of a long
+        // call carries more handoff / clinical signal than the open,
+        // so dropping oldest-first preserves what the summariser
+        // cares about.
+        if (deepgramTurns.length >= MAX_RETAINED_TURNS) {
+          deepgramTurns.shift();
         }
+        deepgramTurns.push(text);
       });
       deepgramSession.onError((err) => {
         logger.warn(
@@ -221,9 +226,14 @@ export async function handleVoiceWsConnection(
   });
 
   bridge.on("transcript.turn", (turn) => {
-    if (turnHistory.length < MAX_RETAINED_TURNS) {
-      turnHistory.push({ source: turn.source, text: turn.text });
+    // Ring buffer: keep the most recent turns. The end of a long
+    // call carries more handoff / clinical signal than the open,
+    // so dropping oldest-first preserves what the summariser
+    // cares about.
+    if (turnHistory.length >= MAX_RETAINED_TURNS) {
+      turnHistory.shift();
     }
+    turnHistory.push({ source: turn.source, text: turn.text });
     void persistTranscript(supabase, pending.conversationId, turn).catch((err) => {
       logger.error(
         {

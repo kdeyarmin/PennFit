@@ -513,3 +513,17 @@ export const OWNERSHIP_PERSON_ROLE_VALUES = [
 ] as const;
 export type OwnershipPersonRole =
   (typeof OWNERSHIP_PERSON_ROLE_VALUES)[number];
+
+// ────────────────────────────────────────────────────────────────
+// Phase 12 — payer enrollment status (migration 0142)
+// ────────────────────────────────────────────────────────────────
+
+export const PAYER_ENROLLMENT_STATUS_VALUES = [
+  "unknown",
+  "not_required",
+  "pending",
+  "active",
+  "suspended",
+] as const;
+export type PayerEnrollmentStatus =
+  (typeof PAYER_ENROLLMENT_STATUS_VALUES)[number];
