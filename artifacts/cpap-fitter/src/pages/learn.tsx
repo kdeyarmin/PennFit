@@ -958,6 +958,30 @@ export function Learn() {
               testid: "learn-link-deep-congestion",
               tone: "icon-halo-gold",
             },
+            {
+              href: "/learn/reading-your-sleep-report",
+              Icon: BookOpen,
+              title: "Reading your sleep study report",
+              body: "What AHI, RDI, ODI, T90, and the rest of the acronyms actually mean — and what to ask your sleep doctor about.",
+              testid: "learn-link-deep-sleep-report",
+              tone: "icon-halo-navy",
+            },
+            {
+              href: "/learn/sleep-hygiene",
+              Icon: Moon,
+              title: "Sleep hygiene + CPAP",
+              body: "Six evidence-based habits that compound with PAP therapy. Cool room, constant wake-time, no caffeine after 2pm.",
+              testid: "learn-link-deep-hygiene",
+              tone: "icon-halo-gold",
+            },
+            {
+              href: "/learn/cpap-and-weight-loss",
+              Icon: Activity,
+              title: "CPAP and weight loss",
+              body: "Untreated sleep apnea makes weight loss measurably harder. The four metabolic headwinds CPAP removes.",
+              testid: "learn-link-deep-weight-loss",
+              tone: "icon-halo-navy",
+            },
           ].map(({ href, Icon, title, body, testid, tone }) => (
             <Link
               key={href}
