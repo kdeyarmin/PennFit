@@ -242,7 +242,7 @@ describe("order — account prefill from /shop/me present", () => {
 
 describe("order — Field error paragraph carries role=alert (generic component)", () => {
   it("includes role='alert' on the error message paragraph", () => {
-    expect(SRC).toContain('role="alert"');
+    expect(SRC).toMatch(/<p\b[^>]*\brole="alert"\b[^>]*>/);
   });
 
   it("pairs role='alert' with text-destructive styling on error messages", () => {
