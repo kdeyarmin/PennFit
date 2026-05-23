@@ -37,10 +37,6 @@ const SRC = readFileSync(path.join(__dirname, "App.tsx"), "utf8");
 // Helpers
 // ---------------------------------------------------------------------------
 
-function escapeRegExp(input: string): string {
-  return input.replace(/[\\^$.*+?()[\]{}|/]/g, "\\$&");
-}
-
 function hasRoute(src: string, routePath: string): boolean {
   return src.includes(`path="${routePath}"`);
 }

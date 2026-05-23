@@ -105,15 +105,27 @@ const upsertBody = z
     eraPayerId: z.string().trim().max(20).nullable().optional(),
     eraEnrollmentRequired: z.boolean().optional(),
     enrollmentStatus: z.enum(PAYER_ENROLLMENT_STATUS_VALUES).optional(),
-    enrollmentEffectiveOn: z
-      .string()
-      .regex(/^\d{4}-\d{2}-\d{2}$/)
-      .nullable()
-      .optional(),
+    enrollmentEffectiveOn: z.iso.date().nullable().optional(),
   })
   .strict();
 
-const patchBody = upsertBody.partial();
+const patchBody = upsertBody
+  .omit({
+    region: true,
+    claimFormat: true,
+    paperOnly: true,
+    requiresPriorAuthDme: true,
+    isActive: true,
+  })
+  .extend({
+    region: z.enum(REGION_VALUES).optional(),
+    claimFormat: z.enum(CLAIM_FORMAT_VALUES).optional(),
+    paperOnly: z.boolean().optional(),
+    requiresPriorAuthDme: z.boolean().optional(),
+    isActive: z.boolean().optional(),
+  })
+  .partial()
+  .strict();
 
 interface PayerRow {
   id: string;
@@ -202,8 +214,27 @@ function deriveCompletenessGaps(r: PayerRow): string[] {
   if (!r.member_id_pattern) gaps.push("member_id_pattern");
   if (r.required_modifiers_dme.length === 0) gaps.push("required_modifiers_dme");
   if (r.enrollment_status === "unknown") gaps.push("enrollment_status");
+  if (r.enrollment_status === "active" && !r.enrollment_effective_on) {
+    gaps.push("enrollment_effective_on");
+  }
   return gaps;
 }
+
+const PayerCompletenessResponseSchema = z
+  .object({
+    activeCount: z.number().int().nonnegative(),
+    completeCount: z.number().int().nonnegative(),
+    incompleteCount: z.number().int().nonnegative(),
+    gapHistogram: z.record(z.string(), z.number().int().nonnegative()),
+    incomplete: z.array(
+      z.object({
+        id: z.string().uuid(),
+        slug: z.string(),
+        gaps: z.array(z.string()),
+      }),
+    ),
+  })
+  .strict();
 
 const FULL_SELECT =
   "id, slug, display_name, payer_legal_name, parent_org, line_of_business, region, office_ally_payer_id, edi_5010_payer_id, claim_format, paper_only, requires_prior_auth_dme, prior_auth_phone_e164, claim_status_phone_e164, provider_portal_url, fee_schedule_source, notes, is_active, timely_filing_days, claims_mailing_address, appeals_mailing_address, member_id_pattern, required_modifiers_dme, requires_referring_provider_npi, accepts_secondary_electronic, era_payer_id, era_enrollment_required, enrollment_status, enrollment_effective_on, created_at, updated_at";
@@ -235,13 +266,14 @@ router.get(
         histogram[g] = (histogram[g] ?? 0) + 1;
       }
     }
-    res.json({
+    const payload = {
       activeCount: rows.length,
       completeCount: rows.length - incomplete.length,
       incompleteCount: incomplete.length,
       gapHistogram: histogram,
       incomplete,
-    });
+    };
+    res.json(PayerCompletenessResponseSchema.parse(payload));
   },
 );
 

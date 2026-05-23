@@ -19,6 +19,7 @@
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 export type PreflightSeverity = "ok" | "warning" | "error";
 
@@ -60,6 +61,7 @@ export interface PreflightSummary {
 export async function preflightClaim(claimId: string): Promise<PreflightSummary> {
   const supabase = getSupabaseServiceRoleClient();
   const items: PreflightItem[] = [];
+  let payerRequiresReferringProviderNpi = true;
 
   const { data: claim, error: cErr } = await supabase
     .schema("resupply")
@@ -117,6 +119,7 @@ export async function preflightClaim(claimId: string): Promise<PreflightSummary>
     if (!payer) {
       items.push(missingPayer(claim.id, "Payer profile row missing."));
     } else if (!payer.is_active) {
+      payerRequiresReferringProviderNpi = payer.requires_referring_provider_npi;
       items.push({
         key: "payer_profile",
         severity: "error",
@@ -125,6 +128,7 @@ export async function preflightClaim(claimId: string): Promise<PreflightSummary>
         fixAction: { kind: "pick_payer_profile", claimId: claim.id },
       });
     } else if (payer.paper_only) {
+      payerRequiresReferringProviderNpi = payer.requires_referring_provider_npi;
       items.push({
         key: "payer_profile",
         severity: "warning",
@@ -132,6 +136,7 @@ export async function preflightClaim(claimId: string): Promise<PreflightSummary>
         detail: `${payer.display_name} doesn't accept 837P. Render a HCFA-1500 instead.`,
       });
     } else if (!payer.office_ally_payer_id) {
+      payerRequiresReferringProviderNpi = payer.requires_referring_provider_npi;
       items.push({
         key: "payer_profile",
         severity: "error",
@@ -139,6 +144,7 @@ export async function preflightClaim(claimId: string): Promise<PreflightSummary>
         detail: `${payer.display_name} is missing office_ally_payer_id in the catalog.`,
       });
     } else {
+      payerRequiresReferringProviderNpi = payer.requires_referring_provider_npi;
       items.push({
         key: "payer_profile",
         severity: "ok",
@@ -199,9 +205,9 @@ export async function preflightClaim(claimId: string): Promise<PreflightSummary>
 
       // ── Timely filing window (Phase 12) ───────────────────────
       if (payer.timely_filing_days != null && claim.date_of_service) {
-        const dos = new Date(claim.date_of_service).getTime();
-        const today = Date.now();
-        const ageDays = Math.floor((today - dos) / (24 * 3600 * 1000));
+        const dos = toUtcDateEpochMs(new Date(claim.date_of_service));
+        const today = toUtcDateEpochMs(new Date());
+        const ageDays = Math.floor((today - dos) / MS_PER_DAY);
         const remaining = payer.timely_filing_days - ageDays;
         if (remaining < 0) {
           items.push({
@@ -475,20 +481,27 @@ export async function preflightClaim(claimId: string): Promise<PreflightSummary>
         },
   );
   items.push(
-    claim.referring_provider_id
-      ? {
-          key: "referring_provider",
-          severity: "ok",
-          label: "Referring provider attached",
-          detail: "Will populate 837P loop 2310D (the prescriber).",
-        }
+    payerRequiresReferringProviderNpi
+      ? claim.referring_provider_id
+        ? {
+            key: "referring_provider",
+            severity: "ok",
+            label: "Referring provider attached",
+            detail: "Will populate 837P loop 2310D (the prescriber).",
+          }
+        : {
+            key: "referring_provider",
+            severity: "error",
+            label: "Referring (prescribing) provider missing",
+            detail:
+              "Medicare DME and most commercial DME payers reject claims without the prescribing provider NPI.",
+            fixAction: { kind: "set_referring_provider", claimId: claim.id },
+          }
       : {
           key: "referring_provider",
-          severity: "error",
-          label: "Referring (prescribing) provider missing",
-          detail:
-            "Medicare DME and most commercial DME payers reject claims without the prescribing provider NPI.",
-          fixAction: { kind: "set_referring_provider", claimId: claim.id },
+          severity: "ok",
+          label: "Referring provider not required",
+          detail: "Selected payer does not require a referring provider for this claim.",
         },
   );
 
@@ -597,6 +610,10 @@ function formatCents(cents: number): string {
   const d = Math.floor(cents / 100);
   const c = cents % 100;
   return `$${d}.${c.toString().padStart(2, "0")}`;
+}
+
+function toUtcDateEpochMs(value: Date): number {
+  return Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), value.getUTCDate());
 }
 
 async function isPatientCompliant(

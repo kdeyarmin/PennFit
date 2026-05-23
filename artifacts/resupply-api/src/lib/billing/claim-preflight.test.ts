@@ -19,6 +19,7 @@ const COVERAGE_ID = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
 const PAYER_PROFILE_ID = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
 const PROVIDER_ID = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
 const LINE_ID = "ffffffff-ffff-4fff-8fff-ffffffffffff";
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 const FULL_PATIENT_ADDRESS = {
   line1: "100 Main St",
@@ -74,11 +75,41 @@ describe("preflightClaim", () => {
   });
 
   it("flags missing referring provider as an error", async () => {
-    stageHappyPath({ referring_provider_id: null });
+    stageHappyPath(
+      { referring_provider_id: null },
+      {
+        payerOverride: {
+          paper_only: false,
+          office_ally_payer_id: "54771",
+          requires_prior_auth_dme: false,
+          is_active: true,
+          requires_referring_provider_npi: true,
+        },
+      },
+    );
     const out = await preflightClaim(CLAIM_ID);
     const item = out.items.find((i) => i.key === "referring_provider");
     expect(item?.severity).toBe("error");
     expect(out.readyToSubmit).toBe(false);
+  });
+
+  it("does not block missing referring provider when payer does not require it", async () => {
+    stageHappyPath(
+      { referring_provider_id: null },
+      {
+        payerOverride: {
+          paper_only: false,
+          office_ally_payer_id: "54771",
+          requires_prior_auth_dme: false,
+          is_active: true,
+          requires_referring_provider_npi: false,
+        },
+      },
+    );
+    const out = await preflightClaim(CLAIM_ID);
+    expect(out.items.find((i) => i.key === "referring_provider")?.severity).toBe("ok");
+    expect(out.items.find((i) => i.key === "payer_referring_provider")?.severity).toBe("ok");
+    expect(out.readyToSubmit).toBe(true);
   });
 
   it("flags missing rendering provider as a warning (not blocking)", async () => {
@@ -172,7 +203,7 @@ describe("preflightClaim", () => {
 
   it("flags DOS pre-dating enrollment_effective_on as an error", async () => {
     stageHappyPath(
-      {},
+      { date_of_service: "2026-05-12" },
       {
         payerOverride: {
           paper_only: false,
@@ -348,7 +379,7 @@ function stageHappyPath(
       payer_profile_id: PAYER_PROFILE_ID,
       status: "draft",
       total_billed_cents: claimOver.total_billed_cents ?? 24999,
-      date_of_service: claimOver.date_of_service ?? "2026-05-12",
+      date_of_service: claimOver.date_of_service ?? isoDateDaysAgo(30),
       insurance_coverage_id: COVERAGE_ID,
       rendering_provider_id:
         claimOver.rendering_provider_id === undefined
@@ -375,6 +406,16 @@ function stageHappyPath(
   stageLineItemsHappy(data.linesOverride);
   if ((data.payerOverride?.required_modifiers_dme?.length ?? 0) > 0) {
     stageLineItemsHappy(data.linesOverride);
+  }
+
+  function isoDateDaysAgo(daysAgo: number): string {
+    const now = new Date();
+    const todayUtc = Date.UTC(
+      now.getUTCFullYear(),
+      now.getUTCMonth(),
+      now.getUTCDate(),
+    );
+    return new Date(todayUtc - daysAgo * MS_PER_DAY).toISOString().slice(0, 10);
   }
 }
 
