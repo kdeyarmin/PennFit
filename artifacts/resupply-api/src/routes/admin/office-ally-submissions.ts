@@ -638,6 +638,69 @@ router.get(
   },
 );
 
+// ── CSV EXPORT (submissions) ────────────────────────────────────────
+//
+// MUST be registered before the `/:id` route below; otherwise the
+// :id matcher catches "export.csv" and returns 404.
+//
+// Returns the submissions list as RFC-4180 CSV — one row per OA
+// batch, with the same filterable shape as the JSON list endpoint
+// (status, q) plus an optional `?days=` (default 90, max 365) so
+// accountants can pull a quarter at a time. Used by:
+//   * accounting — reconcile billed vs. accepted batches against
+//     the GL
+//   * OA support tickets — paste the CSV into an attachment
+//   * internal audit — periodic compliance review
+//
+// Filename includes today's date so a sequence of exports doesn't
+// collide on disk.
+router.get(
+  "/admin/office-ally-submissions/export.csv",
+  requirePermission("admin.tools.manage"),
+  async (req, res) => {
+    const supabase = getSupabaseServiceRoleClient();
+    const daysRaw = typeof req.query.days === "string" ? Number(req.query.days) : 90;
+    const days =
+      Number.isFinite(daysRaw) && daysRaw > 0 && daysRaw <= 365
+        ? Math.floor(daysRaw)
+        : 90;
+    const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+    let query = supabase
+      .schema("resupply")
+      .from("office_ally_submissions")
+      .select(FULL_SELECT)
+      .gte("submitted_at", since)
+      .order("submitted_at", { ascending: false })
+      .limit(5000);
+
+    const statusFilter =
+      typeof req.query.status === "string" ? req.query.status : undefined;
+    if (statusFilter && isSubmissionStatus(statusFilter)) {
+      query = query.eq("status", statusFilter);
+    }
+    const qRaw = typeof req.query.q === "string" ? req.query.q.trim() : "";
+    if (qRaw.length > 0 && qRaw.length <= 80) {
+      const safe = qRaw.replace(/[%_]/g, (m) => `\\${m}`);
+      query = query.or(
+        `isa_control_number.ilike.%${safe}%,file_name.ilike.%${safe}%`,
+      );
+    }
+    const { data, error } = await query;
+    if (error) throw error;
+    const rows = (data ?? []).map(rowToApi);
+    const filename = `oa-submissions-${new Date()
+      .toISOString()
+      .slice(0, 10)}.csv`;
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${filename}"`,
+    );
+    res.setHeader("Cache-Control", "no-store");
+    res.send(renderSubmissionsCsv(rows));
+  },
+);
+
 // ── DETAIL incl linked claims, patient names, resubmit chain ──────
 router.get(
   "/admin/office-ally-submissions/:id",
@@ -1012,6 +1075,60 @@ router.patch(
     res.json({ ok: true });
   },
 );
+
+// CSV cell escaper per RFC 4180: wrap in quotes if the value
+// contains a comma, quote, or newline; double any embedded quotes.
+function csvCell(v: unknown): string {
+  if (v === null || v === undefined) return "";
+  const s = Array.isArray(v) ? v.join("|") : String(v);
+  if (/[",\r\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+  return s;
+}
+
+function renderSubmissionsCsv(rows: ReturnType<typeof rowToApi>[]): string {
+  const headers = [
+    "Submitted At",
+    "Status",
+    "File Name",
+    "ISA Control #",
+    "GS Control #",
+    "Claim Count",
+    "File Size Bytes",
+    "Submitted By",
+    "999 Received At",
+    "999 File",
+    "277CA Received At",
+    "277CA File",
+    "Rejection Reason",
+    "Parent Submission Id",
+    "Submission Id",
+  ];
+  const lines: string[] = [headers.map(csvCell).join(",")];
+  for (const r of rows) {
+    lines.push(
+      [
+        r.submittedAt,
+        r.status,
+        r.fileName,
+        r.isaControlNumber,
+        r.gsControlNumber,
+        r.claimCount,
+        r.fileSizeBytes,
+        r.submittedByEmail,
+        r.ack999ReceivedAt,
+        r.ack999FileName,
+        r.ack277caReceivedAt,
+        r.ack277caFileName,
+        r.rejectionReason,
+        r.parentSubmissionId,
+        r.id,
+      ]
+        .map(csvCell)
+        .join(","),
+    );
+  }
+  return `${lines.join("\r\n")}\r\n`;
+}
 
 function isSubmissionStatus(v: string): v is SubmissionStatus {
   return (STATUS_VALUES as readonly string[]).includes(v);

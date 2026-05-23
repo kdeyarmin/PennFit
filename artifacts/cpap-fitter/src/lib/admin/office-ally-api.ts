@@ -256,6 +256,22 @@ export function rawEdiDownloadHref(submissionId: string): string {
   return `${BASE}/admin/office-ally-submissions/${encodeURIComponent(submissionId)}/raw-837p`;
 }
 
+// CSV export of the submissions list. Honours the same status + q
+// filters as the JSON list so an op can export "exactly what I'm
+// looking at". `days` controls the trailing window (default 90).
+export function submissionsCsvHref(opts?: {
+  status?: OaSubmissionStatus;
+  q?: string;
+  days?: number;
+}): string {
+  const qs = new URLSearchParams();
+  if (opts?.status) qs.set("status", opts.status);
+  if (opts?.q) qs.set("q", opts.q);
+  if (opts?.days != null) qs.set("days", String(opts.days));
+  const tail = qs.toString();
+  return `${BASE}/admin/office-ally-submissions/export.csv${tail ? `?${tail}` : ""}`;
+}
+
 // ─── Clearinghouse credentials + connection self-test ────────────
 
 export interface ClearinghouseRow {

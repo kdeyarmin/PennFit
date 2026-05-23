@@ -39,6 +39,7 @@ import {
   pollNow,
   rawEdiDownloadHref,
   resubmitOaSubmission,
+  submissionsCsvHref,
   testClearinghouseConnection,
   uploadOaAck,
   type BulkResubmitResponse,
@@ -608,6 +609,17 @@ function SubmissionsSection() {
         >
           ↻ Refresh
         </button>
+        <a
+          href={submissionsCsvHref({
+            status: statusFilter || undefined,
+            q: search || undefined,
+          })}
+          className="rounded border border-slate-300 px-3 py-1.5 text-sm font-semibold hover:bg-slate-50"
+          style={{ color: "hsl(var(--ink-1))" }}
+          data-testid="oa-submissions-export-csv"
+        >
+          ↓ CSV (90d)
+        </a>
         <p
           className="text-xs ml-auto"
           style={{ color: "hsl(var(--ink-3))" }}
