@@ -151,7 +151,9 @@ export function createOpenAiFallbackAdapter(
           choices?: Array<{ message?: { content?: string } }>;
         };
         const content = json.choices?.[0]?.message?.content ?? "";
-        return parseModelOutput(content);
+        const result = parseModelOutput(content);
+        logClassification("openai", input, result);
+        return result;
       } catch (err) {
         logger.warn(
           {
@@ -208,7 +210,15 @@ export function createAnthropicFallbackAdapter(
           model,
           max_tokens: 250,
           temperature: 0,
-          system: SYSTEM_PROMPT,
+          // cache_control: ephemeral — the system prompt is ~600
+          // tokens and identical across every classify() call. Caching
+          // pays back ~95% of the input cost on every burst (Twilio
+          // typically fires several inbound SMS classifications per
+          // minute during a campaign send window). Mirrors the
+          // chatbot / sleep-coach / post-call-summary pattern.
+          system: [
+            { type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } },
+          ],
           messages: [{ role: "user", content: userPrompt }],
         });
         if (!result.ok) {
@@ -223,7 +233,9 @@ export function createAnthropicFallbackAdapter(
           );
           return { intent: "unknown" };
         }
-        return parseModelOutput(getResponseText(result.response));
+        const parsed = parseModelOutput(getResponseText(result.response));
+        logClassification("anthropic", input, parsed);
+        return parsed;
       } catch (err) {
         logger.warn(
           {
@@ -292,6 +304,51 @@ function parseModelOutput(content: string): AiFallbackResult {
 function isValidIntent(v: unknown): v is Intent {
   return (
     typeof v === "string" && (INTENT_NAMES as readonly string[]).includes(v)
+  );
+}
+
+/**
+ * Emit a single structured line per successful classification so ops
+ * dashboards can aggregate per-intent rates from the log stream.
+ *
+ * Why this exists:
+ *   The AI fallback is the only thing standing between a CSR inbox and
+ *   patient confusion when the keyword router can't parse a reply. If
+ *   the model starts mis-classifying — overweighting `unknown`, or
+ *   collapsing `decline` into `confirm` — the symptom downstream is a
+ *   slow rise in human-handoff volume that's almost impossible to
+ *   trace to the model without per-intent counters. One line per
+ *   classify() with the intent + vendor + a couple of low-cardinality
+ *   booleans lets a Pino-aware dashboard chart the rate without us
+ *   wiring a separate metrics endpoint.
+ *
+ * What this DOES NOT log:
+ *   The patient's text, the recent thread, or the model's reply.
+ *   Those carry potential PHI (a confused patient might paste their
+ *   DOB in plain text). The aggregate counters need no message
+ *   content to be useful — only the intent label and whether thread
+ *   context was supplied.
+ */
+function logClassification(
+  vendor: "anthropic" | "openai",
+  input: AiFallbackInput,
+  result: AiFallbackResult,
+): void {
+  logger.info(
+    {
+      event: "ai_fallback_classified",
+      vendor,
+      intent: result.intent,
+      // Low-cardinality signals that help disambiguate the metric.
+      // `had_thread` separates first-touch classifications (no
+      // context) from follow-up ones; `replied` distinguishes the
+      // adapter handing back a model-written reply vs. deferring to
+      // the route handler's template.
+      had_thread: (input.thread?.length ?? 0) > 0,
+      thread_size: input.thread?.length ?? 0,
+      replied: typeof result.reply === "string" && result.reply.length > 0,
+    },
+    "ai-fallback: classified",
   );
 }
 
