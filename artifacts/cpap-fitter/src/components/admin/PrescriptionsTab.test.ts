@@ -884,9 +884,13 @@ describe("PrescriptionsTab — Rx packets & faxing link removed", () => {
     expect(SRC).toContain("+ Add prescription");
     // The containing div: flex items-center justify-between gap-3
     // should not contain an <a> element pointing at prescription-requests.
+    const headerStart = SRC.indexOf("flex items-center justify-between gap-3");
+    const addBtnIdx = SRC.indexOf("+ Add prescription", headerStart);
+    expect(headerStart).toBeGreaterThanOrEqual(0);
+    expect(addBtnIdx).toBeGreaterThan(headerStart);
     const headerSection = SRC.slice(
-      SRC.indexOf("flex items-center justify-between gap-3"),
-      SRC.indexOf("+ Add prescription") + 20,
+      headerStart,
+      addBtnIdx + "+ Add prescription".length,
     );
     expect(headerSection).not.toContain("prescription-requests");
   });
