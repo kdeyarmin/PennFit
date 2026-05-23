@@ -99,18 +99,47 @@ export async function runRetentionSweep(): Promise<SweepStats> {
   }
 
   // ── 2. Flag rows past their retention horizon ───────────────────
+  //
+  // PostgREST .select() on an UPDATE returns at most ~1000 rows by
+  // default. The previous shape did a single unbounded UPDATE +
+  // .select(); on busy tenants that flipped tens of thousands of
+  // rows, the audit-row loop below only wrote for the first ~1000
+  // returned — leaving the rest with `retention_marked_at` set but
+  // NO HIPAA-mandated audit trail. To keep the UPDATE and the
+  // per-row audit perfectly aligned, we first SELECT the next
+  // bounded batch of eligible ids, then UPDATE-by-id. The next tick
+  // picks up whatever this tick didn't reach.
+  const FLAG_BATCH_SIZE = 500;
   const nowIso = new Date().toISOString();
-  const { data: flaggedRows, error: flagErr } = await supabase
+  const { data: eligible, error: eligibleErr } = await supabase
     .schema("resupply")
     .from("patient_documents")
-    .update({ retention_marked_at: nowIso })
+    .select("id, patient_id, document_type, size_bytes, retention_until_at")
     .lte("retention_until_at", nowIso)
     .is("retention_marked_at", null)
     .is("destroyed_at", null)
     .eq("legal_hold", false)
-    .select("id, patient_id, document_type, size_bytes, retention_until_at");
-  if (flagErr) throw flagErr;
-  const flaggedList = flaggedRows ?? [];
+    .order("retention_until_at", { ascending: true })
+    .limit(FLAG_BATCH_SIZE);
+  if (eligibleErr) throw eligibleErr;
+  const eligibleList = eligible ?? [];
+  let flaggedList: typeof eligibleList = [];
+  if (eligibleList.length > 0) {
+    const { data: flaggedRows, error: flagErr } = await supabase
+      .schema("resupply")
+      .from("patient_documents")
+      .update({ retention_marked_at: nowIso })
+      .in(
+        "id",
+        eligibleList.map((r) => r.id),
+      )
+      .is("retention_marked_at", null)
+      .is("destroyed_at", null)
+      .eq("legal_hold", false)
+      .select("id, patient_id, document_type, size_bytes, retention_until_at");
+    if (flagErr) throw flagErr;
+    flaggedList = flaggedRows ?? [];
+  }
   const flagged = flaggedList.length;
 
   // ── 3. Per-document audit row ───────────────────────────────────

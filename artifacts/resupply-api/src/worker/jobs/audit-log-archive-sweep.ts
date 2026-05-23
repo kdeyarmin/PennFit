@@ -28,15 +28,21 @@ export async function runAuditLogArchiveSweep(): Promise<ArchiveSweepStats> {
   const cutoffIso = cutoff.toISOString();
   const nowIso = new Date().toISOString();
 
-  const { data: flaggedRows, error } = await supabase
+  // .select("id") is paged at ~1000 rows by PostgREST default; on a
+  // first-run-after-retention-cutoff sweep the audit_log can carry
+  // tens of thousands of rows past the horizon and the reported
+  // `flagged` count would silently cap at the page limit. Use
+  // count:"exact" to read the true number flipped by the UPDATE
+  // (the UPDATE itself is unbounded — PostgREST flips every match,
+  // it's only the RETURNING shape that pages).
+  const { count, error } = await supabase
     .schema("resupply")
     .from("audit_log")
-    .update({ archived_at: nowIso })
+    .update({ archived_at: nowIso }, { count: "exact" })
     .lt("occurred_at", cutoffIso)
-    .is("archived_at", null)
-    .select("id");
+    .is("archived_at", null);
   if (error) throw error;
-  return { flagged: (flaggedRows ?? []).length };
+  return { flagged: count ?? 0 };
 }
 
 export async function registerAuditLogArchiveSweepJob(

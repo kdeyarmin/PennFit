@@ -133,7 +133,14 @@ router.get(
     .order("occurred_at", { ascending: false })
     .range(0, MAX_ROWS);
 
-  if (action) query = query.ilike("action", `%${action}%`);
+  if (action) {
+    // Escape SQL LIKE meta-characters so an `action` value like
+    // "patient%" is treated as a literal substring rather than a
+    // wildcard — otherwise admins can construct broader exports than
+    // the UI ever surfaces by typing `%` directly into the field.
+    const escaped = action.replace(/[\\%_]/g, (c) => `\\${c}`);
+    query = query.ilike("action", `%${escaped}%`);
+  }
   if (targetTable) query = query.eq("target_table", targetTable);
   if (since) query = query.gte("occurred_at", new Date(since).toISOString());
 

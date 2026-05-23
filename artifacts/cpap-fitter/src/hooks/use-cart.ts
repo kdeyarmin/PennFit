@@ -176,13 +176,19 @@ export function useCart(): {
   });
 
   // Notify the user if any items were silently filtered on load.
+  // Reset the ref to 0 after firing so React 18 StrictMode's
+  // double-mount doesn't replay the toast twice on every dev page
+  // load — same behavior in production where the mount fires once,
+  // but quieter in dev.
   useEffect(() => {
     if (initialDroppedRef.current > 0) {
+      const count = initialDroppedRef.current;
+      initialDroppedRef.current = 0;
       toast({
         title: "Some cart items were removed",
         description: "Some cart items were removed because they're no longer available.",
       });
-      track("cart_items_dropped", { count: initialDroppedRef.current });
+      track("cart_items_dropped", { count });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

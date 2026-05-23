@@ -62,27 +62,32 @@ describe("runRetentionSweep — flag", () => {
   it("stamps retention_marked_at on the bulk update", async () => {
     // No backfill candidates.
     stageSupabaseResponse("patient_documents", "select", { data: [] });
+    // The sweep now SELECTs the bounded eligible-row batch BEFORE
+    // doing the UPDATE-by-id, so that the .select() return doesn't
+    // page-cap the audit-loop input (HIPAA gap). Stage the same
+    // row shape for the eligible-batch select; the subsequent
+    // UPDATE re-fetches them.
+    const flaggedRows = [
+      {
+        id: "doc_a",
+        patient_id: "pt_1",
+        document_type: "prescription",
+        size_bytes: 1234,
+        retention_until_at: "2026-05-01T00:00:00Z",
+      },
+      {
+        id: "doc_b",
+        patient_id: "pt_2",
+        document_type: "sleep_study",
+        size_bytes: 5678,
+        retention_until_at: "2026-05-02T00:00:00Z",
+      },
+    ];
+    stageSupabaseResponse("patient_documents", "select", { data: flaggedRows });
     // Flag step returns two rows touched. The full row shape mirrors
     // what the production `.select(...)` requests so the audit
     // metadata block can read the fields.
-    stageSupabaseResponse("patient_documents", "update", {
-      data: [
-        {
-          id: "doc_a",
-          patient_id: "pt_1",
-          document_type: "prescription",
-          size_bytes: 1234,
-          retention_until_at: "2026-05-01T00:00:00Z",
-        },
-        {
-          id: "doc_b",
-          patient_id: "pt_2",
-          document_type: "sleep_study",
-          size_bytes: 5678,
-          retention_until_at: "2026-05-02T00:00:00Z",
-        },
-      ],
-    });
+    stageSupabaseResponse("patient_documents", "update", { data: flaggedRows });
 
     const stats = await runRetentionSweep();
     expect(stats.flagged).toBe(2);

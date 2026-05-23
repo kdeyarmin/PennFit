@@ -28,9 +28,9 @@ describe("runAuditLogArchiveSweep", () => {
   beforeEach(() => supabaseMock.reset());
 
   it("flags rows past the retention horizon as archived", async () => {
-    stageSupabaseResponse("audit_log", "update", {
-      data: [{ id: "a-1" }, { id: "a-2" }],
-    });
+    // The sweep now reads `count` (count:"exact") rather than the
+    // paged .select() rows so the metric isn't capped at 1000.
+    stageSupabaseResponse("audit_log", "update", { count: 2 });
     const stats = await runAuditLogArchiveSweep();
     expect(stats.flagged).toBe(2);
     const updates = getSupabaseWritePayloads("audit_log", "update");
@@ -41,7 +41,7 @@ describe("runAuditLogArchiveSweep", () => {
   });
 
   it("returns 0 when no rows are past the retention horizon", async () => {
-    stageSupabaseResponse("audit_log", "update", { data: [] });
+    stageSupabaseResponse("audit_log", "update", { count: 0 });
     const stats = await runAuditLogArchiveSweep();
     expect(stats.flagged).toBe(0);
   });
@@ -51,7 +51,7 @@ describe("runAuditLogArchiveSweep", () => {
     // routes destruction through this sweep, the test would fail
     // immediately. The mock's getSupabaseWritePayloads exposes
     // captured DELETEs the same way it does UPDATEs.
-    stageSupabaseResponse("audit_log", "update", { data: [] });
+    stageSupabaseResponse("audit_log", "update", { count: 0 });
     await runAuditLogArchiveSweep();
     const deletes = getSupabaseWritePayloads("audit_log", "delete");
     expect(deletes).toHaveLength(0);

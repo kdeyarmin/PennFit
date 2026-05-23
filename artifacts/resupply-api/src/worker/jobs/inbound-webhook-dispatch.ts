@@ -43,6 +43,15 @@ import { logger } from "../../lib/logger";
 const JOB = "integrations.inbound-webhook-dispatch";
 const CRON = "* * * * *"; // every minute
 const BATCH_SIZE = 50;
+// A row that's been in 'processing' for longer than this is treated
+// as orphaned (worker crash, OOM, container reschedule) and flipped
+// back to 'processing_failed' so the next tick re-claims it. Chosen
+// at 5 minutes — well above the 60s cron cadence, well above any
+// plausible single-row dispatch latency (FHIR writes round-trip
+// HTTP but cap themselves at ~30s), and inside the SIGTERM drain
+// window so a coordinated shutdown doesn't false-orphan in-flight
+// rows.
+const PROCESSING_LEASE_MS = 5 * 60 * 1000;
 
 export interface DispatchStats {
   scanned: number;
@@ -68,6 +77,31 @@ export async function runInboundWebhookDispatcher(): Promise<DispatchStats> {
     retried: 0,
     skipped_unknown_source: 0,
   };
+
+  // Phase 0 — lease recovery. Any row stuck in 'processing' for
+  // longer than PROCESSING_LEASE_MS is orphaned (crashed worker,
+  // OOM, restart mid-row). Flip it back to 'processing_failed' so
+  // the regular claim path below re-picks it up. We don't error on
+  // this — losing a recovery cycle just delays revive by 60s.
+  const leaseCutoff = new Date(
+    Date.now() - PROCESSING_LEASE_MS,
+  ).toISOString();
+  const { error: leaseErr } = await supabase
+    .schema("resupply")
+    .from("inbound_webhooks")
+    .update({
+      status: "processing_failed",
+      processing_started_at: null,
+      processing_error: "lease_expired",
+    })
+    .eq("status", "processing")
+    .lt("processing_started_at", leaseCutoff);
+  if (leaseErr) {
+    logger.warn(
+      { err: leaseErr.message },
+      "inbound_webhook_lease_recovery_failed",
+    );
+  }
 
   // Phase 1 — candidate scan. Read rows in pending status so we have
   // a bounded list of ids to attempt to claim atomically. We do NOT
@@ -100,7 +134,12 @@ export async function runInboundWebhookDispatcher(): Promise<DispatchStats> {
   const { data: claimedRows, error: claimErr } = await supabase
     .schema("resupply")
     .from("inbound_webhooks")
-    .update({ status: "processing" })
+    .update({
+      status: "processing",
+      // Stamp the claim so the Phase 0 lease-recovery sweep above
+      // can identify rows whose dispatcher never reported back.
+      processing_started_at: new Date().toISOString(),
+    })
     .in("id", candidateIds)
     .in("status", ["received", "processing_failed"])
     .select(

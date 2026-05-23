@@ -444,11 +444,17 @@ export async function startWorker(): Promise<void> {
   );
 }
 
-export async function stopWorker(): Promise<void> {
+export async function stopWorker(timeoutMs = 10_000): Promise<void> {
+  // The caller (index.ts shutdown) passes the remaining wall-clock
+  // budget so total HTTP-drain + worker-stop stays inside the
+  // orchestrator's grace window (Replit/K8s ~30s). Hard floor at
+  // 1s — pg-boss needs a non-trivial timeout to avoid throwing
+  // immediately when there are no in-flight jobs.
   workerReady = false;
   if (!bossInstance) return;
+  const budget = Math.max(1_000, timeoutMs);
   try {
-    await bossInstance.stop({ graceful: true, timeout: 10_000 });
+    await bossInstance.stop({ graceful: true, timeout: budget });
   } catch (err) {
     logger.error({ err }, "error stopping pg-boss");
   }
