@@ -1751,6 +1751,26 @@ export interface Database {
         >;
         Relationships: [];
       };
+      clinician_share_tokens: {
+        Row: {
+          id: string;
+          referral_id: string;
+          expires_at: string;
+          revoked_at: string | null;
+          last_viewed_at: string | null;
+          last_viewed_ip: string | null;
+          view_count: number;
+          created_by_email: string;
+          created_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["clinician_share_tokens"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["clinician_share_tokens"]["Row"]
+        >;
+        Relationships: [];
+      };
       documentation_packets: {
         Row: {
           id: string;

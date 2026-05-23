@@ -143,6 +143,7 @@ import rulesRouter from "./rules/index.js";
 import smsRouter from "./sms/index.js";
 import shopRouter from "./shop/index.js";
 import faxRouter from "./fax/index.js";
+import portalClinicianRouter from "./portal-clinician.js";
 import voiceRouter from "./voice/index.js";
 
 const router: IRouter = Router();
@@ -162,6 +163,10 @@ router.use(smsRouter);
 // /fax/document/:token  — signed cover-letter PDF fetched by Twilio
 // /fax/status-callback  — Twilio fax delivery lifecycle webhook
 router.use(faxRouter);
+// /portal/clinician/:token — public referral status page for EHR
+// partners who don't consume webhook callbacks. Token-gated; no
+// session cookie required.
+router.use(portalClinicianRouter);
 router.use(emailRouter);
 // Admin-console READ endpoints. Each handler is gated by
 // requireAdmin and surfaces only PHI the dashboard needs to
