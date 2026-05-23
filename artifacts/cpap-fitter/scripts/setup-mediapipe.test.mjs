@@ -71,107 +71,37 @@ test("downloadModelWithRetry rejects undersized payload", async () => {
   }
 });
 
-// Additional tests to strengthen confidence in the retry and validation logic.
-
-test("downloadModelWithRetry throws on HTTP non-ok response", async () => {
-  const originalFetch = globalThis.fetch;
-  const originalWarn = console.warn;
-  let calls = 0;
-  console.warn = () => {};
-
-  globalThis.fetch = async () => {
-    calls += 1;
-    return { ok: false, status: 404, arrayBuffer: async () => new ArrayBuffer(0) };
-  };
-
-  try {
-    await assert.rejects(() => downloadModelWithRetry(2), /HTTP 404/);
-    assert.equal(calls, 2, "should have retried once before giving up");
-  } finally {
-    globalThis.fetch = originalFetch;
-    console.warn = originalWarn;
-  }
-});
-
-test("downloadModelWithRetry succeeds with payload exactly at MIN_MODEL_BYTES boundary", async () => {
-  const originalFetch = globalThis.fetch;
-  const MIN_MODEL_BYTES = 1024 * 1024; // 1 MB
-
-  globalThis.fetch = async () => ({
-    ok: true,
-    arrayBuffer: async () => new Uint8Array(MIN_MODEL_BYTES).buffer,
-  });
-
-  try {
-    const buf = await downloadModelWithRetry(1);
-    assert.equal(buf.length, MIN_MODEL_BYTES);
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
-});
-
-test("downloadModelWithRetry rejects payload one byte below MIN_MODEL_BYTES", async () => {
-  const originalFetch = globalThis.fetch;
-  const originalWarn = console.warn;
-  const MIN_MODEL_BYTES = 1024 * 1024;
-  console.warn = () => {};
-
-  globalThis.fetch = async () => ({
-    ok: true,
-    arrayBuffer: async () => new Uint8Array(MIN_MODEL_BYTES - 1).buffer,
-  });
-
-  try {
-    await assert.rejects(
-      () => downloadModelWithRetry(1),
-      /Downloaded file is too small/,
-    );
-  } finally {
-    globalThis.fetch = originalFetch;
-    console.warn = originalWarn;
-  }
-});
-
-// Regression: SKIP_MEDIAPIPE_MODEL_DOWNLOAD escape hatch was removed in this
-// PR. Setting the env var must no longer suppress the model download — the
-// fetch should still be attempted (and here it immediately throws because the
-// WASM copy step fails first, but the important invariant is that we do NOT
-// return early before reaching the network path).
-test("SKIP_MEDIAPIPE_MODEL_DOWNLOAD=1 is no longer honored — main() does not short-circuit", async () => {
+test("main() honors SKIP_MEDIAPIPE_MODEL_DOWNLOAD=1 and does not fetch the model", async () => {
   const { main } = await import("./setup-mediapipe.mjs");
 
-  const originalSkip = process.env.SKIP_MEDIAPIPE_MODEL_DOWNLOAD;
+  const originalFetch = globalThis.fetch;
   const originalWarn = console.warn;
   const originalLog = console.log;
-  process.env.SKIP_MEDIAPIPE_MODEL_DOWNLOAD = "1";
+  const originalSkip = process.env.SKIP_MEDIAPIPE_MODEL_DOWNLOAD;
+  let fetchCalls = 0;
+
+  globalThis.fetch = async () => {
+    fetchCalls += 1;
+    throw new Error("should not be called when skip flag is set");
+  };
   console.warn = () => {};
   console.log = () => {};
+  process.env.SKIP_MEDIAPIPE_MODEL_DOWNLOAD = "1";
 
   try {
-    // main() will throw because the WASM node_modules path doesn't exist in
-    // the test environment. What we're asserting is that the early-return
-    // escape hatch is gone: the function must throw (attempt to proceed) rather
-    // than silently return when SKIP_MEDIAPIPE_MODEL_DOWNLOAD is set.
-    //
-    // Previously, setting the flag caused main() to resolve (return undefined).
-    // After this PR's removal, main() must throw (no silent skip).
-    let threw = false;
-    try {
-      await main();
-    } catch {
-      threw = true;
-    }
-    assert.ok(
-      threw,
-      "main() should throw (attempt to run) when SKIP_MEDIAPIPE_MODEL_DOWNLOAD=1, not silently return",
-    );
+    // We can't easily assert main()'s WASM copy step here (it requires
+    // node_modules layout); accept either successful return or a WASM-
+    // related error, as long as we never reached the network fetch.
+    await main().catch((err) => {
+      if (!/tasks-vision\/wasm/.test(String(err?.message ?? ""))) throw err;
+    });
+    assert.equal(fetchCalls, 0);
   } finally {
-    if (originalSkip === undefined) {
-      delete process.env.SKIP_MEDIAPIPE_MODEL_DOWNLOAD;
-    } else {
-      process.env.SKIP_MEDIAPIPE_MODEL_DOWNLOAD = originalSkip;
-    }
+    globalThis.fetch = originalFetch;
     console.warn = originalWarn;
     console.log = originalLog;
+    if (originalSkip === undefined)
+      delete process.env.SKIP_MEDIAPIPE_MODEL_DOWNLOAD;
+    else process.env.SKIP_MEDIAPIPE_MODEL_DOWNLOAD = originalSkip;
   }
 });

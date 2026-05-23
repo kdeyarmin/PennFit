@@ -444,6 +444,7 @@ function stagePayerProfile(overrides: {
       office_ally_payer_id: overrides.office_ally_payer_id,
       claim_format: "837p",
       requires_prior_auth_dme: overrides.requires_prior_auth_dme,
+      edi_enrollment_status: "enrolled",
       timely_filing_days:
         overrides.timely_filing_days === undefined
           ? 180
