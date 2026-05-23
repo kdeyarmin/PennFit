@@ -19,7 +19,7 @@ import { Router, type IRouter } from "express";
 import { makeChangePasswordHandler } from "./change-password";
 import { makeCsrfSeedHandler } from "./csrf-seed";
 import { makeForgotPasswordHandler } from "./forgot-password";
-import { handleMe } from "./me";
+import { makeMeHandler } from "./me";
 import { makeRequireSession } from "./middleware";
 import { makeAuthRateLimiter } from "./rate-limit-middleware";
 import { makeResetPasswordHandler } from "./reset-password";
@@ -132,7 +132,7 @@ export function makeAuthRouter(
     requireSession,
     makeChangePasswordHandler(deps),
   );
-  router.get("/me", requireSession, handleMe);
+  router.get("/me", requireSession, makeMeHandler(deps));
 
   return router;
 }
