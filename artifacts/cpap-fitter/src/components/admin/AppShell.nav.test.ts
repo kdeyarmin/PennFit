@@ -76,7 +76,7 @@ describe("AppShell NAV_GROUPS — integrations entry (Insights group)", () => {
 // ---------------------------------------------------------------------------
 // New nav item: Accreditation binder (System group)
 // ---------------------------------------------------------------------------
-describe.skip("AppShell NAV_GROUPS — accreditation-binder entry (System group)", () => {
+describe("AppShell NAV_GROUPS — accreditation-binder entry (System group)", () => {
   it("registers the /admin/accreditation-binder href", () => {
     expect(APPSHELL_SRC).toContain('href: "/admin/accreditation-binder"');
   });
