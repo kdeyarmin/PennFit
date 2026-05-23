@@ -248,6 +248,7 @@ describe("createAuthClient", () => {
     const { fetch } = makeFetch([{ status: 200, body: serverPayload }]);
     const client = createAuthClient({ basePath: "/api/auth", fetch });
     const result = await client.fetchMe();
+    expect(result).not.toBeNull();
     expect(Object.keys(result as object).sort()).toEqual(
       ["id", "email", "role", "displayName", "emailVerified"].sort(),
     );
