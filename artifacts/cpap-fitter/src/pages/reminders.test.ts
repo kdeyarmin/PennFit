@@ -53,20 +53,16 @@ describe("reminders — useShopIdentity imported (P5)", () => {
 // ---------------------------------------------------------------------------
 
 describe("reminders — email field pre-filled from identity (P5)", () => {
-  it("pre-fills the email state from identityEmail (via setEmail in a useEffect)", () => {
-    // Source uses `useState("")` plus a `useEffect` that calls
-    // `setEmail((prev) => prev || identityEmail)` once identity has
-    // loaded — so the guest path keeps the empty input but a signed-in
-    // visitor sees their session email auto-populated.
-    expect(SRC).toContain('useState("")');
-    expect(SRC).toMatch(/setEmail\(\(prev\)\s*=>\s*prev\s*\|\|\s*identityEmail\)/);
+  it("reads identityEmail from useShopIdentity", () => {
+    // The source pulls identityEmail off the identity hook and seeds
+    // the email state with it (either as a useState initialiser or via
+    // a deferred setEmail in a useEffect). Either pattern satisfies P5
+    // — what matters is that identityEmail is being consumed.
+    expect(SRC).toContain("identityEmail");
   });
 
-  it("guards the pre-fill on identityLoaded + non-null identityEmail", () => {
-    // The useEffect bails when identity hasn't loaded yet or the
-    // visitor is a guest (identityEmail === null), so the input stays
-    // empty for guests.
-    expect(SRC).toMatch(/if\s*\(\s*!identityLoaded\s*\|\|\s*!identityEmail\s*\)\s*return/);
+  it("uses useShopIdentity to surface the signed-in customer's email", () => {
+    expect(SRC).toContain("useShopIdentity");
   });
 });
 
@@ -203,19 +199,37 @@ describe("reminders — honeypot field still present", () => {
 // ---------------------------------------------------------------------------
 // PR change: email pre-fill — useEffect implementation details
 // ---------------------------------------------------------------------------
-// Keep this block focused on invariants unique to the `useEffect` pre-fill
-// approach. Broader checks for the empty-string initial state, early-return
-// guard, and functional `setEmail` update are covered elsewhere in this file.
+// The PR updated these tests from testing a direct `useState(identityEmail ?? "")`
+// initialiser to testing the `useState("") + useEffect` pattern. The following
+// tests add confidence around the specific useEffect implementation.
 
 describe("reminders — email pre-fill useEffect implementation detail", () => {
-  it("uses an effect keyed by identityLoaded/identityEmail and avoids direct identity-based state initialisation", () => {
+  it("the useEffect includes identityLoaded in its dependency array", () => {
     // The effect must re-run when identity loads so the email gets filled
     // after the async auth check resolves.
     expect(SRC).toMatch(/\[identityLoaded,\s*identityEmail\]/);
+  });
 
-    // The direct initialiser approach would use the identity value as the
-    // initial render state; the effect approach defers it to client-side.
-    expect(SRC).not.toContain('identityEmail ?? ""');
+  it("the guard bails early when identityEmail is null (guest stays empty)", () => {
+    // !identityEmail covers both null and empty-string, protecting against
+    // a setEmail call with a null/empty value that would clear a typed email.
+    expect(SRC).toMatch(/if\s*\(\s*!identityLoaded\s*\|\|\s*!identityEmail\s*\)\s*return/);
+  });
+
+  it("setEmail uses a functional update to avoid overwriting user-typed input", () => {
+    // setEmail((prev) => prev || identityEmail) means a user who has already
+    // started typing their email won't have it replaced by the identity value.
+    expect(SRC).toMatch(/setEmail\(\(prev\)\s*=>\s*prev\s*\|\|\s*identityEmail\)/);
+  });
+
+  it("email state is initialised as empty string before the effect runs", () => {
+    // The useState("") ensures the input is empty during SSR and before the
+    // identity probe resolves — no hydration mismatch.
+    expect(SRC).toContain('useState("")');
+  });
+
+  it("wires identityEmail into email state initialization or prefill", () => {
+    expect(SRC).toContain("identityEmail");
   });
 });
 

@@ -24,6 +24,7 @@ import {
 } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
+import { safeCsvCell } from "../../lib/safe-csv-cell";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import {
   requireAdminOnly,
@@ -541,14 +542,13 @@ function isLineOfBusiness(v: string): v is PayerLineOfBusiness {
   return (LINE_OF_BUSINESS_VALUES as readonly string[]).includes(v);
 }
 
-// Escape one CSV field per RFC 4180: wrap in quotes if the value
-// contains a comma, quote, newline, or carriage return; double any
-// embedded quotes. Null/undefined become an empty cell.
+// Delegate to the shared helper for formula-injection neutralisation
+// + RFC 4180 quoting. Payer config is admin-curated so the attack
+// surface is internal, but naming-equivalent csvCell helpers should
+// behave the same — consistency keeps "is this CSV safe?" from
+// being a per-file judgement call.
 function csvCell(v: unknown): string {
-  if (v === null || v === undefined) return "";
-  const s = Array.isArray(v) ? v.join("|") : String(v);
-  if (/[",\r\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
-  return s;
+  return safeCsvCell(v);
 }
 
 function renderOfficeAllyCsv(

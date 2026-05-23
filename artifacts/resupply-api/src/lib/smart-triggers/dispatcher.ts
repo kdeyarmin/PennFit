@@ -39,11 +39,55 @@ import {
   TwilioConfigError,
 } from "@workspace/resupply-telecom";
 
+import {
+  DEFAULT_COMMUNICATION_PREFERENCES,
+  type CommunicationPreferences,
+} from "@workspace/resupply-db";
+
+import { isInDndWindow } from "../comm-prefs";
 import { isFeatureEnabled } from "../feature-flags";
 import { logger } from "../logger";
 import { sendPushToCustomerByEmail } from "../web-push";
 import { withRetry } from "../with-retry";
 import { PATIENT_DISPATCH_KINDS, type TriggerKind } from "./index";
+
+function readPrefs(raw: unknown): CommunicationPreferences {
+  if (!raw || typeof raw !== "object") {
+    return DEFAULT_COMMUNICATION_PREFERENCES;
+  }
+  return {
+    ...DEFAULT_COMMUNICATION_PREFERENCES,
+    ...(raw as Partial<CommunicationPreferences>),
+  };
+}
+
+/**
+ * Smart-trigger nudges are clinically motivated (e.g. "your AHI
+ * trended up — here are tips") and may not map cleanly onto the
+ * marketing/transactional/resupply taxonomy on
+ * `CommunicationPreferences`. The gating policy is therefore:
+ *
+ *   1. DND ALWAYS applies — even a patient who hasn't expressed
+ *      a channel preference shouldn't be paged at 4am.
+ *   2. Explicit opt-out on the matching marketing channel is
+ *      honoured (a patient who set emailMarketing=false has
+ *      asked for no proactive emails).
+ *   3. A patient with NO shop_customers row (DME-only, never
+ *      engaged with the cash-pay shop) defaults to ALLOWED for
+ *      both channels — they couldn't have opted out yet.
+ */
+function smartTriggerChannelAllowed(
+  prefs: CommunicationPreferences | null,
+  channel: "email" | "sms",
+  now: Date,
+): boolean {
+  const effective = prefs ?? DEFAULT_COMMUNICATION_PREFERENCES;
+  if (isInDndWindow(effective, now)) return false;
+  // If no prefs row exists, default to allowed (patient has not
+  // had a chance to opt out yet).
+  if (!prefs) return true;
+  return channel === "email" ? prefs.emailMarketing : prefs.smsMarketing;
+}
 
 /** Per-dispatcher-run cap. Same value the route uses. */
 const PER_RUN_SEND_CAP = 50;
@@ -186,14 +230,52 @@ export async function runSmartTriggerSendDue(
     ]),
   );
 
+  // Step 2b — bulk-fetch communication_preferences for these
+  // patients via their shop_customers row (joined by lowercased
+  // email). Required so smart-trigger nudges respect the
+  // patient's marketing opt-out and DND window — every other
+  // dispatcher (lifecycle-touchpoints, lapsed-customer-winback,
+  // quarterly-therapy-summary, deductible-reset-push) gates on
+  // these and smart-trigger must too. Without this gating a
+  // patient with DND 22:00-06:00 still gets nudged at 4am
+  // (HIPAA + TCPA exposure).
+  const patientEmails = (patientRows ?? [])
+    .map((p) => p.email)
+    .filter((e): e is string => typeof e === "string" && e.length > 0)
+    .map((e) => e.toLowerCase());
+  const prefsByEmail = new Map<string, CommunicationPreferences>();
+  if (patientEmails.length > 0) {
+    const { data: custRows } = await supabase
+      .schema("resupply")
+      .from("shop_customers")
+      .select("email_lower, communication_preferences")
+      .in("email_lower", patientEmails);
+    for (const c of custRows ?? []) {
+      if (c.email_lower) {
+        prefsByEmail.set(
+          c.email_lower,
+          readPrefs(c.communication_preferences),
+        );
+      }
+    }
+  }
+  const nowForGating = new Date();
+
   // Filter to only events whose patient is active AND has the right
-  // contact channel populated. Then truncate to the per-run cap.
+  // contact channel populated AND has not opted out / is outside
+  // their DND window. Then truncate to the per-run cap.
   const eligible = events
     .filter((e) => {
       const p = patientMap.get(e.patient_id);
       if (!p || p.status !== "active") return false;
       const contact = channel === "email" ? p.email : p.phoneE164;
-      return contact !== null && contact !== "";
+      if (contact === null || contact === "") return false;
+      // Comm-prefs gating. See smartTriggerChannelAllowed for the
+      // policy: DND always blocks, explicit opt-out is honoured,
+      // and DME-only patients without a shop_customers row default
+      // to allowed (they couldn't have opted out yet).
+      const prefs = p.email ? prefsByEmail.get(p.email.toLowerCase()) ?? null : null;
+      return smartTriggerChannelAllowed(prefs, channel, nowForGating);
     })
     .slice(0, PER_RUN_SEND_CAP);
   if (eligible.length === 0) {

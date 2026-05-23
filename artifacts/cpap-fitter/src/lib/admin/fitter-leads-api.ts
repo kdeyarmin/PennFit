@@ -64,6 +64,9 @@ export interface FitterLeadRow {
   /** Mig 0155 — per-lead engagement recency. */
   lastOpenAt: string | null;
   lastClickAt: string | null;
+  /** Mig 0156 — CSR free-text notes + dispatcher cold-skip marker. */
+  csrNotes: string | null;
+  coldSkippedAt: string | null;
 }
 
 export interface ListFitterLeadsResponse {
@@ -170,6 +173,32 @@ export async function listFitterTouchMetrics(): Promise<ListFitterTouchMetricsRe
   return (await res.json()) as ListFitterTouchMetricsResponse;
 }
 
+export interface FitterTouchVariantMetric {
+  touchIndex: number;
+  subjectVariantKey: string;
+  emailSends: number;
+  emailFailures: number;
+  opens: number;
+  clicks: number;
+  openRate: number;
+  clickRate: number;
+}
+
+export interface ListFitterTouchVariantMetricsResponse {
+  variants: FitterTouchVariantMetric[];
+}
+
+export async function listFitterTouchVariantMetrics(): Promise<ListFitterTouchVariantMetricsResponse> {
+  const res = await fetch(
+    "/resupply-api/admin/fitter-leads/metrics/variants",
+    { headers: { Accept: "application/json" } },
+  );
+  if (!res.ok) {
+    throw new Error(`Failed to load fitter variant metrics (${res.status})`);
+  }
+  return (await res.json()) as ListFitterTouchVariantMetricsResponse;
+}
+
 export interface FitterTimelineEvent {
   ts: string;
   kind: string;
@@ -193,4 +222,30 @@ export async function getFitterLeadTimeline(
     throw new Error(`Failed to load timeline (${res.status})`);
   }
   return (await res.json()) as FitterLeadTimelineResponse;
+}
+
+export interface SetFitterLeadNotesResponse {
+  id: string;
+  csrNotes: string | null;
+}
+
+export async function setFitterLeadNotes(
+  id: string,
+  notes: string | null,
+): Promise<SetFitterLeadNotesResponse> {
+  const res = await fetch(
+    `/resupply-api/admin/fitter-leads/${encodeURIComponent(id)}/notes`,
+    {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ notes }),
+    },
+  );
+  if (!res.ok) {
+    throw new Error(`Failed to set lead notes (${res.status})`);
+  }
+  return (await res.json()) as SetFitterLeadNotesResponse;
 }

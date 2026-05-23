@@ -24,6 +24,7 @@ import {
 import { logAudit } from "@workspace/resupply-audit";
 
 import { logger } from "../../lib/logger";
+import { safeAudit } from "../../lib/messaging/safe-audit";
 import { requireAdmin, requireAdminOnly } from "../../middlewares/requireAdmin";
 
 type ConversationUpdate =
@@ -127,6 +128,23 @@ router.post("/conversations/:id/claim", requireAdmin, async (req, res) => {
     .update(updates)
     .eq("id", id);
   if (updateErr) throw updateErr;
+  // Audit envelope — supervisors need to see who self-assigned what
+  // (and who used `force=1` to steal an active claim). Structural
+  // metadata only; no message bodies.
+  await safeAudit({
+    action: "messaging.conversation.claim",
+    adminEmail: req.adminEmail ?? null,
+    adminUserId: adminId,
+    targetTable: "conversations",
+    targetId: id,
+    metadata: {
+      prior_assignee: row.assigned_admin_user_id,
+      new_assignee: adminId,
+      forced: force && !!row.assigned_admin_user_id && row.assigned_admin_user_id !== adminId,
+    },
+    ip: req.ip ?? null,
+    userAgent: req.get("user-agent") ?? null,
+  });
   res.json({
     ok: true,
     assignedTo: adminId,
@@ -177,10 +195,31 @@ router.post("/conversations/:id/release", requireAdmin, async (req, res) => {
     })
     .eq("id", id);
   if (updateErr) throw updateErr;
+  await safeAudit({
+    action: "messaging.conversation.release",
+    adminEmail: req.adminEmail ?? null,
+    adminUserId: adminId,
+    targetTable: "conversations",
+    targetId: id,
+    metadata: {
+      prior_assignee: row.assigned_admin_user_id,
+      // An admin-override release shows up in audits as
+      // released_by_admin_override=true when adminId differs.
+      released_by_admin_override:
+        !!row.assigned_admin_user_id && row.assigned_admin_user_id !== adminId,
+    },
+    ip: req.ip ?? null,
+    userAgent: req.get("user-agent") ?? null,
+  });
   res.json({ ok: true });
 });
 
-const assignBody = z.object({ userId: z.string().min(1) }).strict();
+// userId must be a real admin user id. The old min(1) accepted any
+// non-empty string, which would 500 on the FK constraint at insert
+// time (assigned_admin_user_id REFERENCES admin_users(id)) — worse,
+// a typo in the UI would silently lose the assignment intent without
+// a 400 the client could surface.
+const assignBody = z.object({ userId: z.string().uuid() }).strict();
 
 router.post("/conversations/:id/assign", requireAdminOnly, async (req, res) => {
   const id = parseId(req);
@@ -194,6 +233,34 @@ router.post("/conversations/:id/assign", requireAdminOnly, async (req, res) => {
     return;
   }
   const supabase = getSupabaseServiceRoleClient();
+
+  // Active-admin check: surface a clean 404 for typos or for users
+  // who were suspended. Without this guard the FK violation below
+  // becomes a 500 in the response and the admin sees an opaque
+  // error instead of "no such user".
+  const { data: assignee, error: assigneeErr } = await supabase
+    .schema("resupply")
+    .from("admin_users")
+    .select("id, status")
+    .eq("id", parsed.data.userId)
+    .limit(1)
+    .maybeSingle();
+  if (assigneeErr) throw assigneeErr;
+  if (!assignee || assignee.status !== "active") {
+    res.status(404).json({ error: "assignee_not_found" });
+    return;
+  }
+
+  // Capture the previous assignee for the audit envelope. One extra
+  // round-trip is cheap on this rarely-called admin-only route.
+  const { data: prior } = await supabase
+    .schema("resupply")
+    .from("conversations")
+    .select("assigned_admin_user_id")
+    .eq("id", id)
+    .limit(1)
+    .maybeSingle();
+
   const nowIso = new Date().toISOString();
   const { data: updated, error } = await supabase
     .schema("resupply")
@@ -210,6 +277,19 @@ router.post("/conversations/:id/assign", requireAdminOnly, async (req, res) => {
     res.status(404).json({ error: "conversation_not_found" });
     return;
   }
+  await safeAudit({
+    action: "messaging.conversation.assign",
+    adminEmail: req.adminEmail ?? null,
+    adminUserId: req.adminUserId ?? null,
+    targetTable: "conversations",
+    targetId: id,
+    metadata: {
+      prior_assignee: prior?.assigned_admin_user_id ?? null,
+      new_assignee: parsed.data.userId,
+    },
+    ip: req.ip ?? null,
+    userAgent: req.get("user-agent") ?? null,
+  });
   res.json({ ok: true });
 });
 

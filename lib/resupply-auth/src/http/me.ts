@@ -38,7 +38,12 @@ export function makeMeHandler(deps: AuthDeps) {
     // the console with the operator-typed password still on their
     // account. Returning 5xx instead means the SPA shows its session
     // error state (no console access) until the dependency recovers.
-    let mustChangePassword = false;
+    // No initialiser — the catch branch returns 500 before we reach
+    // the success response, so the only path that reads
+    // `mustChangePassword` is the successful try block which always
+    // assigns it. Initialising to `false` here trips the new
+    // `no-useless-assignment` rule (ESLint 10.4).
+    let mustChangePassword: boolean;
     try {
       const cred = await deps.repo.findCredentialByUserId(user.id);
       mustChangePassword = cred?.mustChange ?? false;

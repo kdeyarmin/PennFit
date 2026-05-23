@@ -32,7 +32,14 @@ export function useDashboardIdentity(): DashboardIdentity {
       // from non-component contexts (e.g. an error boundary).
       // Components that want the cache-reset side effect on
       // sign-out should use authHooks.useSignOut() directly.
-      await authClient.signOut().catch(() => undefined);
+      //
+      // DO NOT swallow the auth-server error. A failed /sign-out
+      // leaves the server-side session cookie valid; the UI flips
+      // to the signed-out state but the next /api/auth/me succeeds
+      // and the admin is silently back in their account (much
+      // worse than the patient case — admin tokens unlock PHI).
+      // Re-throw so the caller surfaces a retry prompt.
+      await authClient.signOut();
     },
   };
 }

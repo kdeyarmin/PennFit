@@ -107,6 +107,51 @@ export default [
       // can't see lib.dom.d.ts and produces false positives. Typecheck
       // is the source of truth for "is this defined".
       "no-undef": "off",
+      // Block accidental direct `repo.upsertCredential(...)` calls.
+      //
+      // `AuthRepository.upsertCredential` treats `setByAdminAt:
+      // undefined` as "preserve the existing column", which silently
+      // inherits a stale operator-typed timestamp onto a fresh
+      // user-chosen password and trips the 7-day invite-expiry gate
+      // on the user's next sign-in (locking them out of an account
+      // they just reset). The three helpers in
+      // `lib/resupply-auth/src/credential-writes.ts` make the
+      // provenance decision impossible to forget — every new caller
+      // MUST go through one of them. Allowed exceptions
+      // (credential-writes.ts itself, plus the test surfaces that
+      // mirror repo semantics) are scoped by the override block
+      // below.
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector:
+            "CallExpression[callee.type='MemberExpression'][callee.property.name='upsertCredential']",
+          message:
+            "Do not call repo.upsertCredential directly — use writeUserChosenPassword, writeAdminSetPassword, or rehashPasswordPreservingProvenance from lib/resupply-auth/src/credential-writes.ts so the set_by_admin_at provenance is set explicitly.",
+        },
+      ],
+    },
+  },
+
+  // Allowed exceptions to the upsertCredential ban above. Keep this
+  // list tight — every entry is a place where calling the repo
+  // method directly is the correct thing to do (the three helpers
+  // themselves; tests that exercise the lower-level repo contract).
+  // New product code must go through credential-writes.ts.
+  {
+    files: [
+      "lib/resupply-auth/src/credential-writes.ts",
+      // Team-invite "set initial password" flow writes the
+      // password_hash / set_by_admin_at columns inline against
+      // Supabase rather than going through the repo, so today it
+      // does not trip this rule. Whitelisted defensively so a future
+      // refactor that switches it to repo.upsertCredential (an
+      // intentional, audited call) does not get blocked.
+      "lib/resupply-auth/src/team-invite.ts",
+      "lib/resupply-auth/src/**/*.test.ts",
+    ],
+    rules: {
+      "no-restricted-syntax": "off",
     },
   },
 ];

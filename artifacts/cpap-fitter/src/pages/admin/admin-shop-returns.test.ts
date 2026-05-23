@@ -123,6 +123,10 @@ describe("admin-shop-returns — pre-existing action buttons not removed", () =>
 // ---------------------------------------------------------------------------
 // Tab IDs and URL state invariants
 // ---------------------------------------------------------------------------
+// URL state: the page wires its ?tab= search param via the shared
+// `useUrlState` hook (history-replacing, popstate-aware) — see
+// src/hooks/use-url-state.ts for the implementation.
+// ---------------------------------------------------------------------------
 
 describe("admin-shop-returns — TAB_IDS and tabs", () => {
   it("defines TAB_IDS as a ReadonlySet", () => {

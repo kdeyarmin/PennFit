@@ -506,3 +506,90 @@ describe("composeTouchpoint — tracking pixel", () => {
     expect(out.email.text).not.toContain("track/o?t=");
   });
 });
+
+describe("composeTouchpoint — subject-line A/B variants (mig 0157)", () => {
+  it("T1 variant A defaults to loss-aversion subject", () => {
+    const out = composeTouchpoint({
+      ...BASE_OPTS,
+      touchIndex: 1,
+      subjectVariantKey: "A",
+    });
+    expect(out.email.subject).toContain("is on hold for you");
+  });
+
+  it("T1 variant B switches to promise-based subject", () => {
+    const out = composeTouchpoint({
+      ...BASE_OPTS,
+      touchIndex: 1,
+      subjectVariantKey: "B",
+    });
+    expect(out.email.subject).toContain("is ready when you are");
+    expect(out.email.subject).not.toContain("is on hold");
+  });
+
+  it("T4 variant A leads with the promo code as the curiosity hook", () => {
+    const out = composeTouchpoint({
+      ...BASE_OPTS,
+      touchIndex: 4,
+      subjectVariantKey: "A",
+    });
+    // Promo-code-first format starts with "WELCOME15:" before "15%".
+    expect(out.email.subject).toMatch(/WELCOME15.*15%/);
+  });
+
+  it("T4 variant B leads with urgency, not the promo code", () => {
+    const out = composeTouchpoint({
+      ...BASE_OPTS,
+      touchIndex: 4,
+      subjectVariantKey: "B",
+    });
+    // Urgency-first format starts with "15% off" — no leading
+    // promo code prefix.
+    expect(out.email.subject).toContain("15% off");
+    expect(out.email.subject).not.toMatch(/^[^,]*WELCOME15/);
+  });
+
+  it("body copy stays constant across variants — only the subject varies", () => {
+    const a = composeTouchpoint({
+      ...BASE_OPTS,
+      touchIndex: 1,
+      subjectVariantKey: "A",
+    });
+    const b = composeTouchpoint({
+      ...BASE_OPTS,
+      touchIndex: 1,
+      subjectVariantKey: "B",
+    });
+    expect(a.email.text).toBe(b.email.text);
+    expect(a.email.html).toBe(b.email.html);
+  });
+
+  it("defaults to variant A when subjectVariantKey is omitted", () => {
+    const a = composeTouchpoint({
+      ...BASE_OPTS,
+      touchIndex: 1,
+      subjectVariantKey: "A",
+    });
+    const omitted = composeTouchpoint({
+      ...BASE_OPTS,
+      touchIndex: 1,
+    });
+    expect(omitted.email.subject).toBe(a.email.subject);
+  });
+
+  it("touches without a registered variant fall back to single subject regardless of key", () => {
+    // T2 doesn't have a variant test configured. Passing 'B' here
+    // is a no-op — the composer renders the default copy.
+    const a = composeTouchpoint({
+      ...BASE_OPTS,
+      touchIndex: 2,
+      subjectVariantKey: "A",
+    });
+    const b = composeTouchpoint({
+      ...BASE_OPTS,
+      touchIndex: 2,
+      subjectVariantKey: "B",
+    });
+    expect(a.email.subject).toBe(b.email.subject);
+  });
+});

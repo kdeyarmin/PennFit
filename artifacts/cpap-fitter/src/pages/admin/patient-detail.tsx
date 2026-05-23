@@ -1471,13 +1471,24 @@ function FaxOutreachTab({
   return (
     <div className="space-y-6">
       <div>
-        <h3 className="text-sm font-semibold text-[hsl(var(--penn-navy))]">
-          Send a fax-outreach
-        </h3>
+        <div className="flex items-start justify-between gap-3">
+          <h3 className="text-sm font-semibold text-[hsl(var(--penn-navy))]">
+            Send a fax-outreach
+          </h3>
+          <a
+            href={`/admin/patients/${encodeURIComponent(patientId)}/prescription-requests`}
+            className="text-xs font-semibold text-[hsl(var(--penn-navy))] hover:underline whitespace-nowrap"
+            title="Send a pre-populated Rx the physician can sign as-is"
+          >
+            Rx packets (sign-and-return) →
+          </a>
+        </div>
         <p className="text-xs text-muted-foreground mt-1">
           Asks the prescribing physician&apos;s office to renew the
           patient&apos;s CPAP prescription. The cover letter is faxed verbatim —
-          keep it professional.
+          keep it professional. For a fully pre-populated, fillable prescription
+          the physician can sign as-is and fax back, use{" "}
+          <strong>Rx packets</strong> instead.
         </p>
         {!providerConfigured && (
           <p

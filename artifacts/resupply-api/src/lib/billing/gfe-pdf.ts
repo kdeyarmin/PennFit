@@ -217,7 +217,12 @@ function drawGfe(doc: PDFKit.PDFDocument, input: GfeInput): void {
 }
 
 function formatMoney(cents: number): string {
-  const d = Math.floor(cents / 100);
-  const c = cents % 100;
-  return `$${d}.${c.toString().padStart(2, "0")}`;
+  // Negative-amount safe — see statement-pdf.ts:money() for the
+  // rationale. A discount line that's typed as negative cents
+  // shouldn't render as "$-2.-50" on a Good Faith Estimate PDF.
+  const sign = cents < 0 ? "-" : "";
+  const abs = Math.abs(cents);
+  const d = Math.floor(abs / 100);
+  const c = abs % 100;
+  return `${sign}$${d}.${c.toString().padStart(2, "0")}`;
 }

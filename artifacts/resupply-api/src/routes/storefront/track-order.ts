@@ -31,6 +31,8 @@
 // the shipping address, physician info, or insurance — those need
 // a real session.
 
+import { timingSafeEqual } from "node:crypto";
+
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
@@ -140,10 +142,26 @@ router.post("/orders/track", async (req, res) => {
   // Treat "found but email doesn't match" the same as "not found"
   // so an attacker who guesses a reference can't infer which email
   // it belongs to.
-  if (
-    !legacyRow ||
-    (legacyRow.patient_email ?? "").toLowerCase() !== parsed.data.email
-  ) {
+  //
+  // Constant-time compare on the email string so the response time
+  // doesn't leak letter-by-letter how close the attacker's guess
+  // got. `!==` short-circuits on the first divergent byte, which
+  // a determined attacker can measure across many tries even with
+  // the IP rate limit (distributed sources). Pad to a fixed buffer
+  // length so timingSafeEqual doesn't itself leak length information
+  // via its length-mismatch fast-path.
+  const storedEmail = (legacyRow?.patient_email ?? "").toLowerCase();
+  const probedEmail = parsed.data.email;
+  let emailMatches = false;
+  if (legacyRow) {
+    const pad = Math.max(storedEmail.length, probedEmail.length, 320);
+    const a = Buffer.alloc(pad);
+    const b = Buffer.alloc(pad);
+    a.write(storedEmail, "utf8");
+    b.write(probedEmail, "utf8");
+    emailMatches = timingSafeEqual(a, b);
+  }
+  if (!legacyRow || !emailMatches) {
     res.status(404).json({ error: "not_found" });
     return;
   }

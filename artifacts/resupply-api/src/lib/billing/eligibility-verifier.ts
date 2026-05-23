@@ -41,9 +41,24 @@ type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
 
 export interface VerifyEligibilityInput {
   insuranceCoverageId: string;
+  /**
+   * Patient id from the route URL. The verifier asserts the coverage
+   * belongs to this patient before touching the clearinghouse — this
+   * is the authorization gate AND the audit-integrity guard (so a
+   * mistyped or attacker-supplied URL can't bill 270 against the
+   * wrong patient and write a misleading audit row).
+   */
+  patientId: string;
   /** Optional HCPCS scope; defaults to general health (STC 30). */
   hcpcsCode?: string | null;
   requestedByEmail: string;
+}
+
+export class CoverageNotForPatientError extends Error {
+  constructor() {
+    super("insurance_coverage does not belong to the given patient");
+    this.name = "CoverageNotForPatientError";
+  }
 }
 
 export interface VerifyEligibilityResult {
@@ -69,6 +84,9 @@ export async function verifyEligibility(
   if (covErr) throw covErr;
   if (!coverage) {
     throw new Error("insurance_coverage not found");
+  }
+  if (coverage.patient_id !== input.patientId) {
+    throw new CoverageNotForPatientError();
   }
   const { data: patient } = await supabase
     .schema("resupply")

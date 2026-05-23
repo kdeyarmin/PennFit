@@ -2,6 +2,8 @@
 // shipped in Phase G.6. Used by the patient-detail page's "Fax outreach"
 // tab to record + list outreach attempts.
 
+import { csrfHeader } from "../csrf";
+
 export type PhysicianFaxOutreachStatus =
   | "pending"
   | "sent"
@@ -57,7 +59,7 @@ export async function createPhysicianFaxOutreach(
   const res = await fetch(`/resupply-api/admin/physician-fax-outreach`, {
     method: "POST",
     credentials: "include",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...csrfHeader() },
     body: JSON.stringify(input),
   });
   if (!res.ok) {

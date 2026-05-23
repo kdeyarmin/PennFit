@@ -160,3 +160,7 @@ describe("admin/reset-password — regression: core form logic intact", () => {
     expect(SRC).toContain("/admin/sign-in");
   });
 });
+
+// ---------------------------------------------------------------------------
+// PR change: removed SERVER_UNAVAILABLE_MESSAGE and authErrorMessage
+// ---------------------------------------------------------------------------
