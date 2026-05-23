@@ -139,7 +139,7 @@ describe("POST /admin/inbound-referrals/:id/share-tokens", () => {
   });
 
   it("returns 403 when admin lacks conversations.manage permission", async () => {
-    stubAdmin("billing_agent");
+    stubAdmin("csr");
     const res = await request(makeApp())
       .post(`/admin/inbound-referrals/${REFERRAL_ID}/share-tokens`)
       .send({});
@@ -370,7 +370,7 @@ describe("DELETE /admin/inbound-referrals/:id/share-tokens/:shareTokenId", () =>
   });
 
   it("returns 403 when admin lacks conversations.manage permission", async () => {
-    stubAdmin("billing_agent");
+    stubAdmin("csr");
     const res = await request(makeApp()).delete(deleteUrl);
     expect(res.status).toBe(403);
     expect(res.body.error).toBe("permission_denied");
