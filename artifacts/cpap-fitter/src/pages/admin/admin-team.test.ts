@@ -22,7 +22,7 @@ const SRC = readFileSync(path.join(__dirname, "admin-team.tsx"), "utf8");
 // ---------------------------------------------------------------------------
 // Removed: initial-password / set-password UI
 // ---------------------------------------------------------------------------
-describe.skip("admin-team InviteCard — set-password mode removed", () => {
+describe("admin-team InviteCard — set-password mode removed", () => {
   it("does NOT contain setPasswordMode state", () => {
     expect(SRC).not.toContain("setPasswordMode");
   });
