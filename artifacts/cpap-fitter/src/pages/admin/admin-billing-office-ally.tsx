@@ -28,6 +28,7 @@ import { Card } from "@/components/admin/Card";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { Spinner } from "@/components/admin/Spinner";
 import {
+  bulkResubmitOaSubmissions,
   fetchClearinghouses,
   fetchEnrollmentWatchlist,
   fetchInboundFiles,
@@ -39,6 +40,7 @@ import {
   resubmitOaSubmission,
   testClearinghouseConnection,
   uploadOaAck,
+  type BulkResubmitResponse,
   type ClearinghouseRow,
   type ConnectionTestResult,
   type EnrollmentWatchlistEntry,
@@ -372,8 +374,16 @@ const SUBMISSION_STATUS_OPTIONS: Array<{
 ];
 
 function SubmissionsSection() {
+  const queryClient = useQueryClient();
   const [statusFilter, setStatusFilter] = useState<"" | OaSubmissionStatus>("");
   const [search, setSearch] = useState("");
+  // Set of submission ids selected for bulk action. Only `transport_failed`
+  // rows can be selected — we surface the checkbox conditionally so a
+  // CSR can't waste clicks on rows that can't be resubmitted.
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkResult, setBulkResult] = useState<BulkResubmitResponse | null>(
+    null,
+  );
 
   const { data, isPending, isError, error, refetch } = useQuery({
     queryKey: ["admin-oa-submissions", { status: statusFilter, q: search }],
@@ -384,6 +394,51 @@ function SubmissionsSection() {
       }),
     staleTime: 15_000,
   });
+
+  // Drop selections that no longer match the current view (filter
+  // changed, refresh evicted, etc) so the bulk bar stays accurate.
+  const visibleIds = new Set(
+    (data?.submissions ?? []).map((s) => s.id),
+  );
+  const activeSelections = new Set(
+    [...selectedIds].filter((id) => visibleIds.has(id)),
+  );
+
+  const bulkResubmitMut = useMutation({
+    mutationFn: (ids: string[]) => bulkResubmitOaSubmissions(ids),
+    onSuccess: async (r) => {
+      setBulkResult(r);
+      setSelectedIds(new Set());
+      await queryClient.invalidateQueries({
+        queryKey: ["admin-oa-submissions"],
+      });
+      await queryClient.invalidateQueries({
+        queryKey: ["admin-oa-operations-summary"],
+      });
+    },
+  });
+
+  function toggleSelect(id: string, on: boolean) {
+    setBulkResult(null);
+    const next = new Set(selectedIds);
+    if (on) next.add(id);
+    else next.delete(id);
+    setSelectedIds(next);
+  }
+  function selectAllFailed() {
+    setBulkResult(null);
+    const failedIds = (data?.submissions ?? [])
+      .filter(
+        (s) =>
+          s.status === "transport_failed" && s.attemptedClaimIds.length > 0,
+      )
+      .map((s) => s.id);
+    setSelectedIds(new Set(failedIds));
+  }
+  function clearSelection() {
+    setBulkResult(null);
+    setSelectedIds(new Set());
+  }
 
   return (
     <Card title="Submissions (outbound 837P)">
@@ -443,6 +498,17 @@ function SubmissionsSection() {
 
       {isError && <ErrorPanel error={error} onRetry={() => void refetch()} />}
 
+      <BulkActionBar
+        selectedCount={activeSelections.size}
+        onSelectAllFailed={selectAllFailed}
+        onClear={clearSelection}
+        onBulkResubmit={() =>
+          bulkResubmitMut.mutate(Array.from(activeSelections))
+        }
+        running={bulkResubmitMut.isPending}
+        bulkResult={bulkResult}
+      />
+
       {isPending ? (
         <Spinner label="Loading submissions…" />
       ) : (data?.submissions.length ?? 0) === 0 ? (
@@ -457,6 +523,7 @@ function SubmissionsSection() {
                 className="text-left text-[11px] uppercase tracking-wider"
                 style={{ color: "hsl(var(--ink-3))" }}
               >
+                <th className="p-2 w-6" />
                 <th className="p-2">Submitted</th>
                 <th className="p-2">File</th>
                 <th className="p-2">Claims</th>
@@ -469,7 +536,12 @@ function SubmissionsSection() {
             </thead>
             <tbody>
               {(data?.submissions ?? []).map((s) => (
-                <SubmissionRow key={s.id} s={s} />
+                <SubmissionRow
+                  key={s.id}
+                  s={s}
+                  selected={activeSelections.has(s.id)}
+                  onToggleSelect={(on) => toggleSelect(s.id, on)}
+                />
               ))}
             </tbody>
           </table>
@@ -479,7 +551,95 @@ function SubmissionsSection() {
   );
 }
 
-function SubmissionRow({ s }: { s: OaSubmission }) {
+function BulkActionBar({
+  selectedCount,
+  onSelectAllFailed,
+  onClear,
+  onBulkResubmit,
+  running,
+  bulkResult,
+}: {
+  selectedCount: number;
+  onSelectAllFailed: () => void;
+  onClear: () => void;
+  onBulkResubmit: () => void;
+  running: boolean;
+  bulkResult: BulkResubmitResponse | null;
+}) {
+  if (selectedCount === 0 && !bulkResult) {
+    return (
+      <div className="mb-3 flex items-center gap-3">
+        <button
+          type="button"
+          onClick={onSelectAllFailed}
+          className="text-[12px] font-semibold hover:underline"
+          style={{ color: "hsl(var(--penn-navy, 215 70% 35%))" }}
+          data-testid="oa-submissions-select-all-failed"
+        >
+          Select all transport-failed
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className="mb-3 flex flex-wrap items-center gap-3 rounded border p-2"
+      style={{
+        backgroundColor: "rgba(2,132,199,0.05)",
+        borderColor: "#0284c7",
+      }}
+      data-testid="oa-submissions-bulk-bar"
+    >
+      <p className="text-sm font-semibold" style={{ color: "hsl(var(--ink-1))" }}>
+        {selectedCount} selected
+      </p>
+      <button
+        type="button"
+        onClick={onBulkResubmit}
+        disabled={selectedCount === 0 || running}
+        className="rounded bg-emerald-700 px-3 py-1 text-sm font-semibold text-white hover:bg-emerald-800 disabled:opacity-60"
+        data-testid="oa-submissions-bulk-resubmit"
+      >
+        {running ? "Resubmitting…" : `↻ Resubmit ${selectedCount}`}
+      </button>
+      <button
+        type="button"
+        onClick={onClear}
+        className="text-[12px] font-semibold hover:underline"
+        style={{ color: "hsl(var(--ink-3))" }}
+      >
+        Clear selection
+      </button>
+      {bulkResult && (
+        <p
+          className="ml-auto text-[12px]"
+          style={{
+            color: bulkResult.failedCount === 0 ? "#15803d" : "#b45309",
+          }}
+        >
+          ✓ {bulkResult.okCount} resubmitted
+          {bulkResult.failedCount > 0 && (
+            <span style={{ color: "#be123c" }}>
+              {" · "}
+              {bulkResult.failedCount} failed
+            </span>
+          )}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function SubmissionRow({
+  s,
+  selected,
+  onToggleSelect,
+}: {
+  s: OaSubmission;
+  selected: boolean;
+  onToggleSelect: (on: boolean) => void;
+}) {
   const queryClient = useQueryClient();
   const [actionMsg, setActionMsg] = useState<string | null>(null);
 
@@ -500,12 +660,36 @@ function SubmissionRow({ s }: { s: OaSubmission }) {
     },
   });
 
+  // Only rows that can actually be resubmitted are selectable —
+  // anything else dims the checkbox so a CSR doesn't pick rows the
+  // bulk endpoint will skip.
+  const selectable =
+    s.status === "transport_failed" && s.attemptedClaimIds.length > 0;
+
   return (
     <tr
       className="border-t align-top"
       style={{ borderColor: "hsl(var(--line-1))" }}
       data-testid={`oa-submission-${s.id}`}
     >
+      <td className="p-2">
+        {selectable ? (
+          <input
+            type="checkbox"
+            checked={selected}
+            onChange={(e) => onToggleSelect(e.target.checked)}
+            className="h-4 w-4 rounded border-slate-300"
+            aria-label={`Select submission ${s.fileName} for bulk resubmit`}
+            data-testid={`oa-submission-checkbox-${s.id}`}
+          />
+        ) : (
+          <span
+            className="inline-block h-4 w-4"
+            aria-hidden
+            title="Only transport_failed submissions can be bulk-resubmitted"
+          />
+        )}
+      </td>
       <td className="p-2 text-[11px]" style={{ color: "hsl(var(--ink-3))" }}>
         {new Date(s.submittedAt).toLocaleString()}
         <br />

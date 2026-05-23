@@ -38,6 +38,15 @@ const router: IRouter = Router();
 
 const idParam = z.object({ id: z.string().uuid() });
 
+const bulkResubmitBody = z
+  .object({
+    // Cap at 20 — each entry does a sequential SFTP upload at ~2-5s
+    // each, so 20 is roughly a 1-2 min worst-case round-trip. Larger
+    // bulks should be split.
+    submissionIds: z.array(z.string().uuid()).min(1).max(20),
+  })
+  .strict();
+
 type SubmissionRowFull = Database["resupply"]["Tables"]["office_ally_submissions"]["Row"];
 type SubmissionStatus = SubmissionRowFull["status"];
 
@@ -140,6 +149,140 @@ router.get(
     const { data, error } = await query;
     if (error) throw error;
     res.json({ submissions: (data ?? []).map(rowToApi) });
+  },
+);
+
+// ── BULK RESUBMIT ───────────────────────────────────────────────────
+//
+// Best-effort "resubmit all of these" for an op cleaning up after a
+// transport outage. Takes 1–20 submission ids; for each it does
+// exactly what `/admin/office-ally-submissions/:id/resubmit` does
+// (delegates to the shared batch core, links parent_submission_id),
+// and returns a per-id outcome array so the UI can render a
+// success/failure tally.
+//
+// Sequential, not parallel: each SFTP upload owns the inbox lock
+// on Office Ally's side for ~2-5s; parallel uploads risk file-
+// name collisions and stress the (single-tenant) SSH session.
+//
+// Idempotency: each individual resubmit is gated on the original
+// row being `transport_failed`; once it succeeds the original row
+// stays as-is and a NEW office_ally_submissions row is created with
+// parent_submission_id pointing at the original. A second call to
+// bulk-resubmit with the same id list will resubmit each ONCE more
+// (creating a chain), so the UI guards against double-clicks.
+router.post(
+  "/admin/office-ally/bulk-resubmit",
+  requirePermission("admin.tools.manage"),
+  adminRateLimit({
+    name: "office_ally.bulk_resubmit",
+    preset: "bulk",
+  }),
+  async (req, res) => {
+    const parsed = bulkResubmitBody.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: "invalid_body",
+        issues: parsed.error.issues.map((i) => ({
+          path: i.path.join("."),
+          message: i.message,
+        })),
+      });
+      return;
+    }
+    const supabase = getSupabaseServiceRoleClient();
+    const { data: originals } = await supabase
+      .schema("resupply")
+      .from("office_ally_submissions")
+      .select("id, status, attempted_claim_ids")
+      .in("id", parsed.data.submissionIds);
+    const originalsById = new Map<
+      string,
+      { id: string; status: string; attempted_claim_ids: string[] | null }
+    >();
+    for (const r of originals ?? []) originalsById.set(r.id, r);
+
+    type OutcomeOk = {
+      submissionId: string;
+      ok: true;
+      newSubmissionId: string;
+      claimCount: number;
+      isaControlNumber: string;
+      transport: string;
+      uploadOk: boolean;
+      uploadError: string | null;
+    };
+    type OutcomeErr = {
+      submissionId: string;
+      ok: false;
+      error: string;
+      message?: string;
+    };
+    const outcomes: Array<OutcomeOk | OutcomeErr> = [];
+
+    for (const id of parsed.data.submissionIds) {
+      const original = originalsById.get(id);
+      if (!original) {
+        outcomes.push({ submissionId: id, ok: false, error: "not_found" });
+        continue;
+      }
+      if (original.status !== "transport_failed") {
+        outcomes.push({
+          submissionId: id,
+          ok: false,
+          error: "not_resubmittable",
+          message: `status is "${original.status}"`,
+        });
+        continue;
+      }
+      const claimIds = original.attempted_claim_ids ?? [];
+      if (claimIds.length === 0) {
+        outcomes.push({
+          submissionId: id,
+          ok: false,
+          error: "no_attempted_claims",
+        });
+        continue;
+      }
+      const result = await executeOfficeAllyBatchSubmit({
+        claimIds,
+        parentSubmissionId: original.id,
+        adminEmail: req.adminEmail ?? null,
+        adminUserId: req.adminUserId ?? null,
+        ip: req.ip ?? null,
+        userAgent: req.get("user-agent") ?? null,
+      });
+      if (!result.ok) {
+        outcomes.push({
+          submissionId: id,
+          ok: false,
+          error: result.kind,
+          message:
+            typeof result.detail.message === "string"
+              ? result.detail.message
+              : undefined,
+        });
+        continue;
+      }
+      outcomes.push({
+        submissionId: id,
+        ok: true,
+        newSubmissionId: result.submissionId,
+        claimCount: result.claimCount,
+        isaControlNumber: result.isaControlNumber,
+        transport: result.transport,
+        uploadOk: result.uploadOk,
+        uploadError: result.uploadError,
+      });
+    }
+
+    const okCount = outcomes.filter((o) => o.ok).length;
+    res.json({
+      total: outcomes.length,
+      okCount,
+      failedCount: outcomes.length - okCount,
+      outcomes,
+    });
   },
 );
 

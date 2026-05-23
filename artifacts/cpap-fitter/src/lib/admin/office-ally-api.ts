@@ -189,6 +189,37 @@ export function resubmitOaSubmission(id: string): Promise<{
   );
 }
 
+export type BulkResubmitOutcome =
+  | {
+      submissionId: string;
+      ok: true;
+      newSubmissionId: string;
+      claimCount: number;
+      isaControlNumber: string;
+      transport: string;
+      uploadOk: boolean;
+      uploadError: string | null;
+    }
+  | {
+      submissionId: string;
+      ok: false;
+      error: string;
+      message?: string;
+    };
+
+export interface BulkResubmitResponse {
+  total: number;
+  okCount: number;
+  failedCount: number;
+  outcomes: BulkResubmitOutcome[];
+}
+
+export function bulkResubmitOaSubmissions(
+  submissionIds: string[],
+): Promise<BulkResubmitResponse> {
+  return postJSON("/admin/office-ally/bulk-resubmit", { submissionIds });
+}
+
 // Plain <a href> works — cookie auth, no preflight. Browser saves
 // the file directly without us juggling Blob URLs.
 export function rawEdiDownloadHref(submissionId: string): string {
