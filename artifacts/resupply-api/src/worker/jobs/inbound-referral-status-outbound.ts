@@ -55,6 +55,12 @@ const JOB = "inbound-referral.status-outbound";
 const CRON = "* * * * *"; // every minute
 const BATCH_SIZE = 50;
 const REQUEST_TIMEOUT_MS = 15_000;
+// Lease horizon for an in-flight row. We bump `next_attempt_at`
+// this far into the future when we claim a row, so an overlapping
+// cron tick filters it out. Long enough to cover the per-request
+// timeout + buffer; short enough that a crashed worker leaves the
+// row recoverable on the next tick.
+const CLAIM_LEASE_MS = 5 * 60_000;
 
 export interface CallbackStats {
   scanned: number;
@@ -77,20 +83,46 @@ export async function runReferralStatusOutbound(
   };
 
   const nowIso = new Date().toISOString();
-  const { data: rows, error } = await supabase
+
+  // Step 1: find candidates. Racy on its own — two overlapping
+  // cron ticks would both see the same rows. The atomic claim
+  // below filters down to this tick's winners.
+  const { data: candidates, error: candidateErr } = await supabase
     .schema("resupply")
     .from("inbound_referral_status_outbox")
-    .select(
-      "id, referral_id, target_kind, event_type, payload_json, attempt_count, max_retries, status",
-    )
+    .select("id")
     .eq("status", "queued")
     .lte("next_attempt_at", nowIso)
     .order("next_attempt_at", { ascending: true })
     .limit(BATCH_SIZE);
+  if (candidateErr) {
+    logger.error(
+      { err: candidateErr.message },
+      "inbound_referral.status_outbound.select_failed",
+    );
+    throw candidateErr;
+  }
+  if (!candidates || candidates.length === 0) return stats;
+
+  // Step 2: atomic lease. Bump next_attempt_at on these rows IF
+  // still queued. PostgREST runs this as one UPDATE; .eq("status",
+  // "queued") is the atomic guard. RETURNING (.select) gives us the
+  // rows we actually leased; concurrent ticks see their claim fail
+  // and skip these rows.
+  const leaseUntil = new Date(Date.now() + CLAIM_LEASE_MS).toISOString();
+  const { data: rows, error } = await supabase
+    .schema("resupply")
+    .from("inbound_referral_status_outbox")
+    .update({ next_attempt_at: leaseUntil, updated_at: nowIso })
+    .in("id", candidates.map((c) => c.id))
+    .eq("status", "queued")
+    .select(
+      "id, referral_id, target_kind, event_type, payload_json, attempt_count, max_retries, status",
+    );
   if (error) {
     logger.error(
       { err: error.message },
-      "inbound_referral.status_outbound.select_failed",
+      "inbound_referral.status_outbound.claim_failed",
     );
     throw error;
   }

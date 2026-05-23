@@ -124,6 +124,45 @@ export function applyVariables(
   );
 }
 
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+/**
+ * Same as `applyVariables` but HTML-escapes every interpolated
+ * value by default. Use for the `bodyHtml` field of an email
+ * template so a patient name like `<script>` or `O'Connor` lands
+ * safely in the rendered HTML.
+ *
+ * Opt-out convention: variable names ending in `_html` are
+ * substituted VERBATIM (the value is already trusted/sanitised
+ * HTML). This matches the existing `image_block_html` /
+ * `product_name_html` callsites that the messaging code uses
+ * deliberately.
+ */
+export function applyVariablesHtmlSafe(
+  template: string,
+  vars: Readonly<Record<string, string>>,
+  allowed: ReadonlyArray<string>,
+): string {
+  if (!template) return template;
+  const allowedSet = new Set(allowed);
+  return template.replace(
+    /\{\{([a-z][a-z0-9_]*)\}\}/g,
+    (match, name: string) => {
+      if (!allowedSet.has(name)) return match;
+      const value = vars[name];
+      if (value === undefined) return match;
+      return name.endsWith("_html") ? value : escapeHtml(value);
+    },
+  );
+}
+
 /**
  * In-process LRU-ish cache. Map preserves insertion order in JS, so
  * "delete + re-set on hit" gives us LRU eviction at no extra cost.
@@ -240,7 +279,7 @@ export async function renderMessage(
           : null,
       bodyHtml:
         template.bodyHtml !== null
-          ? applyVariables(
+          ? applyVariablesHtmlSafe(
               template.bodyHtml,
               req.variables,
               template.allowedVariables,
@@ -265,7 +304,11 @@ export async function renderMessage(
         : null,
     bodyHtml:
       fallback.bodyHtml !== null
-        ? applyVariables(fallback.bodyHtml, req.variables, fallbackAllowlist)
+        ? applyVariablesHtmlSafe(
+            fallback.bodyHtml,
+            req.variables,
+            fallbackAllowlist,
+          )
         : null,
     bodyText: applyVariables(
       fallback.bodyText,
