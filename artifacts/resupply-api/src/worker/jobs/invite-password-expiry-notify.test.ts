@@ -20,7 +20,9 @@ import {
 
 const supabaseMock = installSupabaseMock();
 
-const sendEmailMock = vi.fn(async () => undefined);
+const sendEmailMock = vi.fn(
+  async (..._args: unknown[]) => undefined as unknown,
+);
 vi.mock("@workspace/resupply-email", () => ({
   createSendgridClient: () => ({
     sendEmail: sendEmailMock,
@@ -158,7 +160,7 @@ describe("runInvitePasswordExpiryNotifySweep", () => {
     expect(stats.errors).toBe(0);
     expect(sendEmailMock).toHaveBeenCalledTimes(2);
     const recipients = sendEmailMock.mock.calls.map(
-      ([arg]) => (arg as { to: string }).to,
+      (call) => (call[0] as unknown as { to: string }).to,
     );
     expect(recipients).toContain("pat@example.test");
     expect(recipients).toContain("sam@example.test");
