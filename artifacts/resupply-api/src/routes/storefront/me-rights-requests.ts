@@ -24,6 +24,8 @@ import {
   PATIENT_RIGHTS_KIND_VALUES,
 } from "@workspace/resupply-db";
 
+import { resolveBillingIdentity } from "../../lib/billing/identity-resolver";
+import { renderDisclosureAccountingPdf } from "../../lib/compliance/disclosure-accounting-pdf";
 import { getDisclosureAccounting } from "../../lib/compliance/disclosure-logger";
 
 const router: IRouter = Router();
@@ -198,6 +200,92 @@ router.get("/me/disclosures", async (req, res) => {
       disclosedAt: r.disclosed_at,
     })),
   });
+});
+
+// Phase 15 — patient-facing PDF export of the same accounting. Same
+// auth posture as the JSON list endpoint; the PDF carries PHI by
+// design (patient's own record).
+router.get("/me/disclosures.pdf", async (req, res) => {
+  const customerId =
+    (req as unknown as { shopCustomerId?: string }).shopCustomerId ?? null;
+  if (!customerId) {
+    res.status(401).json({ error: "sign_in_required" });
+    return;
+  }
+  const parsed = accountingQuery.safeParse(req.query);
+  if (!parsed.success) {
+    res.status(400).json({ error: "invalid_query" });
+    return;
+  }
+  const link = await resolvePatientForCustomer(customerId);
+  if (!link) {
+    res.status(409).json({ error: "patient_not_linked" });
+    return;
+  }
+  const supabase = getSupabaseServiceRoleClient();
+  const [{ data: patient }, identity] = await Promise.all([
+    supabase
+      .schema("resupply")
+      .from("patients")
+      .select("legal_first_name, legal_last_name, date_of_birth")
+      .eq("id", link.patientId)
+      .limit(1)
+      .maybeSingle(),
+    resolveBillingIdentity({ supabase }),
+  ]);
+  if (!patient) {
+    res.status(404).json({ error: "patient_not_found" });
+    return;
+  }
+  if (identity.source === "stub") {
+    res.status(409).json({ error: "no_dme_organization" });
+    return;
+  }
+
+  const rows = await getDisclosureAccounting({
+    patientId: link.patientId,
+    fromDate: parsed.data.from ? `${parsed.data.from}T00:00:00.000Z` : undefined,
+    toDate: parsed.data.to ? `${parsed.data.to}T23:59:59.999Z` : undefined,
+  });
+
+  const pdf = await renderDisclosureAccountingPdf({
+    patientName: `${patient.legal_last_name}, ${patient.legal_first_name}`,
+    patientDateOfBirth: patient.date_of_birth,
+    windowStart: parsed.data.from ?? null,
+    windowEnd: parsed.data.to ?? new Date().toISOString().slice(0, 10),
+    entries: rows.map((r) => ({
+      id: r.id,
+      recipientName: r.recipient_name,
+      recipientAddress: r.recipient_address,
+      purpose: r.disclosure_purpose,
+      description: r.description,
+      legalAuthority: r.legal_authority,
+      disclosedAt: r.disclosed_at,
+    })),
+    dmeOrganization: {
+      legalName:
+        identity.organization?.legal_name ??
+        identity.billingProvider.organizationName,
+      addressLine1: identity.billingProvider.address.line1,
+      city: identity.billingProvider.address.city,
+      state: identity.billingProvider.address.state,
+      zip: identity.billingProvider.address.zip,
+      phoneE164: identity.organization?.phone_e164 ?? "+10000000000",
+      billingEmail:
+        identity.organization?.billing_email ?? "privacy@example.com",
+    },
+    signerName:
+      identity.organization?.authorized_signer_name ?? "Privacy Officer",
+    signerTitle:
+      identity.organization?.authorized_signer_title ?? "Privacy Officer",
+  });
+
+  res.setHeader("Content-Type", "application/pdf");
+  res.setHeader(
+    "Content-Disposition",
+    `attachment; filename="hipaa-accounting-of-disclosures.pdf"`,
+  );
+  res.send(pdf);
 });
 
 export default router;

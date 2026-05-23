@@ -53,6 +53,11 @@ export interface Hcfa1500Input {
   policyOrGroupNumber: string;
   /** Box 11c — insurance plan name. */
   payerName: string;
+  /** Phase 14 — payer's published claims_mailing_address from the
+   *  payer profile. Rendered as a small "MAIL TO" block above the
+   *  header so the operator can address the envelope without
+   *  cross-referencing the payer manual. Null when unknown. */
+  payerMailingAddress?: PostalAddress | null;
   /** Box 17 — referring / ordering / prescribing provider. */
   referringProviderName?: string | null;
   /** Box 17b — referring provider NPI. */
@@ -138,6 +143,16 @@ function drawHcfa(doc: PDFKit.PDFDocument, input: Hcfa1500Input): void {
     .font("Helvetica")
     .fontSize(8)
     .text("APPROVED OMB-0938-1197  FORM 1500 (02-12)", 36, 50);
+
+  // ── Phase 14 — operator MAIL TO block (top right) ──
+  // The HCFA-1500 form proper doesn't have a payer-address box; this
+  // is a margin annotation for the CSR who'll envelope this page,
+  // populated from the payer profile's claims_mailing_address.
+  if (input.payerMailingAddress) {
+    doc.font("Helvetica-Bold").fontSize(8).text("MAIL TO:", 440, 36);
+    doc.font("Helvetica").fontSize(8);
+    drawAddress(doc, 440, 48, input.payerMailingAddress);
+  }
 
   // ── Box 1: insurance type ──
   drawLabel(doc, 36, 70, "1. INSURANCE");

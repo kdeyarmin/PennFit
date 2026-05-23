@@ -134,6 +134,7 @@ import oigLeieScreeningsRouter from "./admin/oig-leie-screenings.js";
 import patientRightsRequestsRouter from "./admin/patient-rights-requests.js";
 import complianceRecordsRouter from "./admin/compliance-records.js";
 import complianceOfficerSummaryRouter from "./admin/compliance-officer-summary.js";
+import disclosureAccountingRouter from "./admin/disclosure-accounting.js";
 import auditRouter from "./audit/index.js";
 import conversationsRouter from "./conversations/index.js";
 import dashboardRouter from "./dashboard/index.js";
@@ -457,6 +458,11 @@ router.use(complianceRecordsRouter);
 // assessments, contingency / drills, QAPI, ownership, training,
 // grievances, and the most recent accreditation readiness run.
 router.use(complianceOfficerSummaryRouter);
+// /admin/compliance/patients/:patientId/disclosure-accounting.pdf —
+// HIPAA §164.528 accounting-of-disclosures PDF generator. Optional
+// ?fromRequestId binds the render to an open patient_rights_requests
+// row and transitions it to granted on success.
+router.use(disclosureAccountingRouter);
 // /admin/shop/products/* — operator tooling for the cash-pay catalog
 // itself. Today: PATCH stock_count metadata on a Stripe Product.
 // requireAdmin gate is on the router itself.
