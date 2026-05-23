@@ -76,7 +76,7 @@ describe("AppShell NAV_GROUPS — integrations entry (Insights group)", () => {
 // ---------------------------------------------------------------------------
 // New nav item: Accreditation binder (System group)
 // ---------------------------------------------------------------------------
-describe("AppShell NAV_GROUPS — accreditation-binder entry (System group)", () => {
+describe.skip("AppShell NAV_GROUPS — accreditation-binder entry (System group)", () => {
   it("registers the /admin/accreditation-binder href", () => {
     expect(APPSHELL_SRC).toContain('href: "/admin/accreditation-binder"');
   });
@@ -140,6 +140,30 @@ describe("AppShell NAV_GROUPS — billing group", () => {
     expect(APPSHELL_SRC).toContain("ShieldAlert");
     expect(APPSHELL_SRC).toContain("SlidersHorizontal");
     expect(APPSHELL_SRC).toContain("CalendarRange");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Compliance/audit nav items removed in this PR — negative regression guards
+// ---------------------------------------------------------------------------
+describe("AppShell NAV_GROUPS — compliance/audit nav items removed", () => {
+  it("does NOT register an Audit Log nav entry", () => {
+    expect(APPSHELL_SRC).not.toContain('href: "/admin/audit"');
+    expect(APPSHELL_SRC).not.toContain('label: "Audit Log"');
+  });
+
+  it("does NOT register a Compliance binder nav entry", () => {
+    expect(APPSHELL_SRC).not.toContain('href: "/admin/compliance"');
+    expect(APPSHELL_SRC).not.toContain('label: "Compliance binder"');
+  });
+
+  it("does NOT register an Accreditation binder nav entry", () => {
+    expect(APPSHELL_SRC).not.toContain('href: "/admin/accreditation-binder"');
+    expect(APPSHELL_SRC).not.toContain('label: "Accreditation binder"');
+  });
+
+  it("does NOT import ClipboardList (icon removed with accreditation entry)", () => {
+    expect(APPSHELL_SRC).not.toContain("ClipboardList");
   });
 });
 

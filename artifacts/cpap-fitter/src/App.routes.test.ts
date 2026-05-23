@@ -229,3 +229,40 @@ describe("App.tsx — pre-existing routes not regressed", () => {
     expect(SRC).toContain('path="/learn/device-setup"');
   });
 });
+
+// ---------------------------------------------------------------------------
+// TopRouter wildcard routes — regression for the `/*` → `:rest*` migration.
+//
+// This PR changed sub-tree wildcard routes in TopRouter from the bare `/*`
+// form to the `:rest*` named-splat form. These assertions guard the new
+// syntax so neither form reverts accidentally.
+// ---------------------------------------------------------------------------
+
+describe("App.tsx — TopRouter uses :rest* named-splat syntax (not bare /*)", () => {
+  it("uses /sign-in/:rest* (not /sign-in/*)", () => {
+    expect(SRC).toContain('path="/sign-in/:rest*"');
+    expect(SRC).not.toContain('path="/sign-in/*"');
+  });
+
+  it("uses /sign-up/:rest* (not /sign-up/*)", () => {
+    expect(SRC).toContain('path="/sign-up/:rest*"');
+    expect(SRC).not.toContain('path="/sign-up/*"');
+  });
+
+  it("uses /resupply/:rest* for the legacy redirect (not /resupply/*)", () => {
+    expect(SRC).toContain('path="/resupply/:rest*"');
+    expect(SRC).not.toContain('path="/resupply/*"');
+  });
+
+  it("uses /admin/:rest* for the gated console (not /admin/*)", () => {
+    expect(SRC).toContain('path="/admin/:rest*"');
+    expect(SRC).not.toContain('path="/admin/*"');
+  });
+
+  it("reads the :rest* param as params['rest*'] in the resupply redirect handler", () => {
+    // The render callback for /resupply/:rest* must read `params["rest*"]`
+    // to get the captured suffix; the old code used params["*"].
+    expect(SRC).toContain('params["rest*"]');
+    expect(SRC).not.toContain('params["*"]');
+  });
+});
