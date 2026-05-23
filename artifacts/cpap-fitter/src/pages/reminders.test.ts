@@ -260,7 +260,10 @@ describe("reminders — willSkipTokenStep additional guards", () => {
 
   it("wraps the redirect inside the onSuccess callback — not on every render", () => {
     const onSuccessIdx = SRC.indexOf("onSuccess: (resp) => {");
-    const skipIdx = SRC.indexOf("willSkipTokenStep");
+    // `willSkipTokenStep` is declared above onSuccess and re-used inside
+    // it; lastIndexOf lands on the use-site (the redirect gate) which
+    // is what the redirect-inside-callback invariant is checking.
+    const skipIdx = SRC.lastIndexOf("willSkipTokenStep");
     expect(onSuccessIdx).toBeGreaterThan(-1);
     expect(skipIdx).toBeGreaterThan(onSuccessIdx);
   });

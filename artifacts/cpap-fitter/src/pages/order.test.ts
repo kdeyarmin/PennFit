@@ -246,7 +246,9 @@ describe("order — Field error paragraph carries role=alert (generic component)
   });
 
   it("pairs role='alert' with text-destructive styling on error messages", () => {
-    const alertIdx = SRC.indexOf('role="alert"');
+    // The source mentions `role="alert"` in a comment before the JSX
+    // attribute, so use lastIndexOf to land on the actual element.
+    const alertIdx = SRC.lastIndexOf('role="alert"');
     expect(alertIdx).toBeGreaterThan(-1);
     // Look in the surrounding element context for the destructive class.
     const context = SRC.slice(alertIdx - 20, alertIdx + 100);
