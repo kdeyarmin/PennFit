@@ -32,6 +32,22 @@ export function useShopIdentity(): ShopIdentity {
       // cache-reset side-effect on sign-out should use
       // authHooks.useSignOut() directly.
       await authClient.signOut().catch(() => undefined);
+      // Clear shop-side per-device state so the next sign-in on a
+      // shared device (library / clinic kiosk / family iPad) doesn't
+      // inherit User A's cart, wishlist, comparator selection, or
+      // recently-viewed history. The cart in particular leaks
+      // intent — User B signing in shouldn't see User A's items
+      // pre-loaded at checkout.
+      if (typeof window !== "undefined") {
+        try {
+          window.localStorage.removeItem("pennpaps_cart_v1");
+          window.localStorage.removeItem("pennpaps:wishlist:v1");
+          window.localStorage.removeItem("pennpaps:compare:v1");
+          window.localStorage.removeItem("pennpaps_recently_viewed_v1");
+        } catch {
+          // Safari private mode etc — best-effort.
+        }
+      }
     },
   };
 }
