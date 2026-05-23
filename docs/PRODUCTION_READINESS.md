@@ -124,6 +124,14 @@ session cookie (`__session`) and respect SameSite=Lax / Secure.
 - [ ] Alert on:
   - `event=resupply_admin_in_house_lookup_failed` (in-house auth
     lookup health — see requireAdmin)
+  - `event=auth_me_credential_lookup_failed` (password_credentials
+    read on `GET /auth/me` is throwing — fails the SPA's
+    forced-rotation gate closed, so users see a session error and
+    cannot reach the change-password screen). Threshold: more than
+    5 occurrences in any rolling 5-minute window. Route to the same
+    on-call channel as the other API health alerts above. Pairs with
+    the `auth.me_credential_lookup_failed` audit event written by
+    `lib/resupply-auth/src/http/me.ts` for after-the-fact triage.
   - `event=stripe_refund_failed`
   - `event=sms_status_update_failed`
   - any `level=fatal` line (unhandled exception, boot failure)

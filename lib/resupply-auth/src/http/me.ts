@@ -44,13 +44,16 @@ export function makeMeHandler(deps: AuthDeps) {
       mustChangePassword = cred?.mustChange ?? false;
     } catch (err) {
       // Structured log so ops can alert on the lookup failure even
-      // when the audit sink itself is what's struggling. We deliberately
-      // pass the Error object to pino (which serializes it with stack)
-      // rather than embedding any user fields beyond the user id —
-      // logs are treated as world-readable, so no email/PII.
+      // when the audit sink itself is what's struggling. The
+      // `event` tag is the stable handle log dashboards page on —
+      // see docs/PRODUCTION_READINESS.md ("Logging + alerting") for
+      // the threshold and on-call routing. We deliberately pass the
+      // Error object to pino (which serializes it with stack) rather
+      // than embedding any user fields beyond the user id — logs are
+      // treated as world-readable, so no email/PII.
       const log = (req as Request & { log?: { error?: (...args: unknown[]) => void } }).log;
       log?.error?.(
-        { err, userId: user.id },
+        { event: "auth_me_credential_lookup_failed", err, userId: user.id },
         "auth.me: credential lookup failed; failing closed with 500",
       );
       void deps.audit({
