@@ -501,7 +501,7 @@ async function writeDeepgramAuditTranscript(
         conversation_id: conversationId,
         direction: "inbound",
         sender_role: "deepgram_transcript",
-        body: Buffer.from(fullTranscript, "utf8"),
+        body: fullTranscript,
         vendor_metadata: {
           twilio_call_sid: twilioCallSid ?? null,
           prompt_version: PROMPT_VERSION,
