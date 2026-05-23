@@ -85,6 +85,22 @@ export function ChangePasswordPage() {
           setLocation(basePath);
         },
         onError: (err) => {
+          // Distinguish server-side failures (DB outage, credentials
+          // store unreachable) from user-correctable ones like
+          // "wrong current password". The server's user-facing copy
+          // for the credential-correctness case is already clear;
+          // for 5xx we replace it with copy that points at status
+          // so the user knows the form isn't broken — they're stuck
+          // because something behind the screen is.
+          if (err instanceof AuthError && err.status >= 500) {
+            setSubmitError(
+              "We can't reach the credentials store right now, so your" +
+                " password wasn't changed. This is a server problem, not" +
+                " your password. Please try again in a minute — if it" +
+                " keeps failing, check status.pennpaps.com.",
+            );
+            return;
+          }
           setSubmitError(
             err instanceof AuthError
               ? err.userMessage
