@@ -89,11 +89,21 @@ function getIssuerLabel(): string {
  *  toggle without a code change. "required" means surveyors see a
  *  mandatory MFA story and the SPA forces unenrolled admins to
  *  /admin/security on every nav. "off" preserves the original
- *  Phase A posture where enrollment is optional. */
+ *  Phase A posture where enrollment is optional.
+ *
+ *  Captured ONCE at module load. This is a deploy-time policy, not
+ *  a runtime-mutable flag — flipping the env mid-process previously
+ *  allowed a window where in-flight requests saw the new value
+ *  before any audit/log captured the change. To re-arm the flag,
+ *  redeploy. */
 type EnforcementMode = "off" | "required";
-function getEnforcementMode(): EnforcementMode {
+function readEnforcementModeFromEnv(): EnforcementMode {
   const v = process.env.AUTH_REQUIRE_MFA_FOR_ADMINS?.trim().toLowerCase();
   return v === "true" || v === "1" || v === "yes" ? "required" : "off";
+}
+const ENFORCEMENT_MODE: EnforcementMode = readEnforcementModeFromEnv();
+function getEnforcementMode(): EnforcementMode {
+  return ENFORCEMENT_MODE;
 }
 
 router.get("/admin/mfa/status", requireAdmin, async (req, res) => {

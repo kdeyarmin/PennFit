@@ -69,25 +69,45 @@ const buildSystemPromptInputSchema = z.object({
    * patient names, phone numbers, addresses, or any other identifier.
    * Caller is responsible for filtering.
    *
-   * Capped at 500 characters. Control characters, newlines, backticks,
+   * Capped at 250 characters. Control characters, newlines, backticks,
    * and common prompt-injection trigger words are stripped before the
-   * value is embedded in the system prompt.
+   * value is embedded in the system prompt. The cap is intentionally
+   * tighter than the original 500 — every byte of caller-supplied
+   * context is an injection surface, and 250 chars is enough for a
+   * realistic outreach summary ("90 days since last shipment; mask is
+   * AirFit P10; mentioned mild dryness last call").
    */
   callContext: z
     .string()
     .trim()
     .min(1)
-    .max(500)
-    .transform((s) =>
-      s
+    .max(250)
+    .transform((s) => {
+      // First pass: normalize whitespace and collapse so injection
+      // patterns can't slip through with internal spaces (e.g.
+      // "I G N O R E", "O V E R R I D E").
+      const collapsed = s
         // eslint-disable-next-line no-control-regex -- intentionally strips control chars from user text before embedding in the system prompt
         .replace(/[\r\n\x00-\x1F\x7F]+/g, " ")
-        .replace(/`/g, "'")
-        .replace(/\bIGNORE\b/gi, "[redacted]")
-        .replace(/\bOVERRIDE\b/gi, "[redacted]")
-        .replace(/SYSTEM:/gi, "[redacted]")
-        .trim(),
-    ),
+        .replace(/`/g, "'");
+      // Second pass: scrub injection trigger words on a
+      // letter-spacing-tolerant pattern (matches "IGNORE",
+      // "I G N O R E", "I.G.N.O.R.E", "IG_NORE", "OVER_RIDE", etc.).
+      // `\W*` between each letter eats common obfuscations without
+      // collapsing the surrounding legitimate text.
+      const injectionPatterns: ReadonlyArray<RegExp> = [
+        /\bI\W*G\W*N\W*O\W*R\W*E\b/gi,
+        /\bO\W*V\W*E\W*R\W*R\W*I\W*D\W*E\b/gi,
+        /\bS\W*Y\W*S\W*T\W*E\W*M\s*:/gi,
+        /\bDISREGARD\b/gi,
+        /\bFORGET\s+(YOUR|ALL|PREVIOUS|PRIOR)\b/gi,
+      ];
+      let scrubbed = collapsed;
+      for (const re of injectionPatterns) {
+        scrubbed = scrubbed.replace(re, "[redacted]");
+      }
+      return scrubbed.trim();
+    }),
 });
 
 export type BuildSystemPromptInput = z.input<

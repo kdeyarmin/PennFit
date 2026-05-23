@@ -230,7 +230,15 @@ export async function summarizePostCall(
     model: input.model ?? DEFAULT_ANTHROPIC_MODEL_CHAT,
     max_tokens: 600,
     temperature: 0,
-    system: SYSTEM_PROMPT,
+    // `cache_control: ephemeral` makes Anthropic serve the system
+    // prompt from cache on every post-call summary after the first.
+    // The block is static (~1.5K tokens, identical across calls) and
+    // fires once per voice call — without caching every summary
+    // re-pays the full input cost. Mirrors the pattern already in
+    // routes/storefront/chat.ts:879.
+    system: [
+      { type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } },
+    ],
     messages: [{ role: "user", content: userMessage }],
   });
   if (!result.ok) {

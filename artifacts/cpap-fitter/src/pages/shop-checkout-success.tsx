@@ -51,7 +51,23 @@ export function ShopCheckoutSuccess() {
       return;
     }
     let active = true;
-    fetchOrderSummary(sessionId)
+    // Race the fetch against a hard timeout so a hung network doesn't
+    // strand the patient on "Confirming your order…" indefinitely.
+    // 10s is comfortably above p99 webhook propagation; on timeout
+    // the user gets an actionable error instead of an infinite spinner.
+    const FETCH_TIMEOUT_MS = 10_000;
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      setTimeout(
+        () =>
+          reject(
+            new Error(
+              "Confirmation is taking longer than expected. Refresh in a moment to retry.",
+            ),
+          ),
+        FETCH_TIMEOUT_MS,
+      );
+    });
+    Promise.race([fetchOrderSummary(sessionId), timeoutPromise])
       .then((o) => {
         if (!active) return;
         setOrder(o);

@@ -112,12 +112,34 @@ const chatBodySchema = z
   })
   .strict();
 
+// Cache the chat system prompt with a TTL so admin-side mask catalog
+// or FAQ edits become visible to the chatbot within minutes instead
+// of "next deploy". The original module-init-only cache meant prompt
+// content drifted for hours/days after a catalog update.
+const SYSTEM_PROMPT_TTL_MS = 10 * 60 * 1000;
 let cachedSystemPrompt: string | null = null;
+let cachedSystemPromptAtMs = 0;
 function getSystemPrompt(): string {
-  if (cachedSystemPrompt === null) {
+  const now = Date.now();
+  if (
+    cachedSystemPrompt === null ||
+    now - cachedSystemPromptAtMs > SYSTEM_PROMPT_TTL_MS
+  ) {
     cachedSystemPrompt = buildChatSystemPrompt();
+    cachedSystemPromptAtMs = now;
   }
   return cachedSystemPrompt;
+}
+
+/**
+ * Test helper — invalidate the cached system prompt so a test that
+ * mutates the underlying mask catalog or FAQ data sees the change on
+ * the next request without waiting on the TTL. Not exported from the
+ * package barrel.
+ */
+export function __invalidateChatSystemPromptCacheForTests(): void {
+  cachedSystemPrompt = null;
+  cachedSystemPromptAtMs = 0;
 }
 
 /** OpenAI message shape, including tool roles. */
@@ -648,11 +670,23 @@ async function handleStreaming(
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), DEFAULT_TIMEOUT_MS);
 
+  // Abort the upstream fetch when the client tab closes mid-stream.
+  // Without this the model keeps generating + tool calls keep running
+  // until either the timeout fires (long) or the model finishes —
+  // burning tokens and side-effects the client will never see.
+  let clientClosed = false;
+  const onClientClose = () => {
+    clientClosed = true;
+    ctrl.abort();
+  };
+  res.on("close", onClientClose);
+
   let messages = initialMessages;
   let totalChars = 0;
   let degraded = false;
 
   const writeChunk = (text: string) => {
+    if (clientClosed || res.destroyed) return;
     totalChars += text.length;
     writeSseEvent(res, { type: "chunk", text });
   };
@@ -734,6 +768,7 @@ async function handleStreaming(
     res.end();
   } finally {
     clearTimeout(timer);
+    res.off("close", onClientClose);
   }
 }
 
@@ -960,9 +995,21 @@ async function handleAnthropicStreaming(
 ): Promise<void> {
   startSseHeaders(res);
 
+  // Track client-tab disconnect so writeChunk can short-circuit
+  // mid-stream. The Anthropic client's `stream()` doesn't currently
+  // expose an AbortSignal hook, so we can't cancel the upstream call;
+  // but we CAN stop calling writeSseEvent on a destroyed socket and
+  // stop running more tool rounds, which is the bigger waste.
+  let clientClosed = false;
+  const onClientClose = () => {
+    clientClosed = true;
+  };
+  res.on("close", onClientClose);
+
   let messages = initialMessages;
   let totalChars = 0;
   const writeChunk = (text: string) => {
+    if (clientClosed || res.destroyed) return;
     totalChars += text.length;
     writeSseEvent(res, { type: "chunk", text });
   };
@@ -1006,6 +1053,13 @@ async function handleAnthropicStreaming(
       }
       const text = getResponseText(result.response);
       const toolCalls = getResponseToolCalls(result.response);
+      // If the tab closed mid-round, stop chaining more rounds —
+      // tool executions are real side effects we shouldn't run for
+      // a viewer who's gone.
+      if (clientClosed) {
+        try { res.end(); } catch { /* socket already torn down */ }
+        return;
+      }
       if (toolCalls.length > 0 && round < MAX_TOOL_ROUNDS) {
         messages = appendAnthropicAssistantTurn(messages, text, toolCalls);
         const openAiToolCalls = toolCalls.map((c) => ({
@@ -1070,6 +1124,8 @@ async function handleAnthropicStreaming(
     }
     writeSseEvent(res, { type: "done", degraded: true });
     res.end();
+  } finally {
+    res.off("close", onClientClose);
   }
 }
 

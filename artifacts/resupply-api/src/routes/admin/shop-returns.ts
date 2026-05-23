@@ -48,6 +48,8 @@ import {
   getStripeClient,
   readStripeConfigOrNull,
 } from "../../lib/stripe/config";
+import { sendReturnStatusEmail } from "../../lib/shop-returns/send-return-status-email";
+import { logger } from "../../lib/logger";
 
 type ShopReturnRow = Database["resupply"]["Tables"]["shop_returns"]["Row"];
 
@@ -111,6 +113,38 @@ const PAGE_SIZE_MAX = 100;
 
 const RETURN_COLUMNS =
   "id, customer_id, order_id, stripe_session_id, status, reason, reason_note, resolution, refund_cents, stripe_refund_id, exchange_product_id, exchange_price_id, exchange_order_id, return_label_url, return_carrier, return_tracking_number, admin_note, admin_user_id, created_at, updated_at, approved_at, rejected_at, shipped_back_at, received_at, resolved_at, closed_at";
+
+/**
+ * Best-effort customer-email lookup. Prefer the linked
+ * shop_customers.email_lower; fall back to shop_orders.customer_email
+ * (captured at paid-time for guest checkouts). Returns null when
+ * neither is available — caller should skip the email send rather
+ * than fail the lifecycle transition.
+ */
+async function resolveCustomerEmailForReturn(
+  customerId: string | null,
+  orderId: string,
+): Promise<string | null> {
+  const supabase = getSupabaseServiceRoleClient();
+  if (customerId) {
+    const { data } = await supabase
+      .schema("resupply")
+      .from("shop_customers")
+      .select("email_lower")
+      .eq("customer_id", customerId)
+      .limit(1)
+      .maybeSingle();
+    if (data?.email_lower) return data.email_lower;
+  }
+  const { data: order } = await supabase
+    .schema("resupply")
+    .from("shop_orders")
+    .select("customer_email")
+    .eq("id", orderId)
+    .limit(1)
+    .maybeSingle();
+  return order?.customer_email ?? null;
+}
 
 router.get(
   "/admin/shop/returns",
@@ -277,6 +311,49 @@ router.post(
       res.status(409).json({ error: "not_in_requested_state" });
       return;
     }
+    // Fire-and-forget customer email so the patient learns the return
+    // is approved (with carrier/tracking/label) without having to log
+    // into /account. The send NEVER blocks the response — a SendGrid
+    // failure can't roll back a state transition that already
+    // committed.
+    void (async () => {
+      const toEmail = await resolveCustomerEmailForReturn(
+        updated.customer_id,
+        updated.order_id,
+      );
+      if (!toEmail) {
+        logger.info(
+          { returnId: updated.id, kind: "approved" },
+          "shop-return status email skipped — no recipient",
+        );
+        return;
+      }
+      const result = await sendReturnStatusEmail({
+        kind: "approved",
+        toEmail,
+        returnId: updated.id,
+        stripeSessionId: updated.stripe_session_id ?? "",
+        returnCarrier: updated.return_carrier,
+        returnTrackingNumber: updated.return_tracking_number,
+        returnLabelUrl: updated.return_label_url,
+      });
+      if (!result.delivered) {
+        logger.warn(
+          {
+            returnId: updated.id,
+            kind: "approved",
+            configured: result.configured,
+            err: result.error,
+          },
+          "shop-return approved email did not deliver",
+        );
+      }
+    })().catch((err) => {
+      logger.warn(
+        { returnId: updated.id, err: err instanceof Error ? err.message : String(err) },
+        "shop-return approved email threw unexpectedly",
+      );
+    });
     res.json({ return: serializeReturnRow(updated) });
   },
 );
@@ -569,6 +646,48 @@ router.post(
       res.status(409).json({ error: "not_in_received_state" });
       return;
     }
+    // Fire-and-forget refund-issued email. Same posture as the
+    // approve handler above — never blocks the response.
+    void (async () => {
+      const toEmail = await resolveCustomerEmailForReturn(
+        updated.customer_id,
+        updated.order_id,
+      );
+      if (!toEmail) {
+        logger.info(
+          { returnId: updated.id, kind: "refunded" },
+          "shop-return status email skipped — no recipient",
+        );
+        return;
+      }
+      const result = await sendReturnStatusEmail({
+        kind: "refunded",
+        toEmail,
+        returnId: updated.id,
+        stripeSessionId: updated.stripe_session_id ?? "",
+        refundCents: updated.refund_cents,
+        // currency is not on the return row; pull it from the order
+        // when we need precise rendering. shop_orders carries it; if
+        // unavailable, the helper defaults to "usd" which matches v1.
+        currency: null,
+      });
+      if (!result.delivered) {
+        logger.warn(
+          {
+            returnId: updated.id,
+            kind: "refunded",
+            configured: result.configured,
+            err: result.error,
+          },
+          "shop-return refunded email did not deliver",
+        );
+      }
+    })().catch((err) => {
+      logger.warn(
+        { returnId: updated.id, err: err instanceof Error ? err.message : String(err) },
+        "shop-return refunded email threw unexpectedly",
+      );
+    });
     res.json({ return: serializeReturnRow(updated) });
   },
 );

@@ -26,7 +26,19 @@ const snoozeBody = z
 
 const tagsBody = z
   .object({
-    tags: z.array(z.string().regex(TAG)).max(20),
+    // Per-tag pattern caps each entry at 32 chars; .max(20) caps
+    // the count. The .refine() below caps the SERIALIZED payload at
+    // 4 KB so a payload that passes both per-element checks can't
+    // still blow up the conversations.tags JSONB column when round-
+    // tripped through PostgREST (20 tags * 32 chars + JSON overhead
+    // is comfortably under 1 KB; 4 KB leaves headroom for future
+    // tag length bumps without re-tuning the cap).
+    tags: z
+      .array(z.string().regex(TAG))
+      .max(20)
+      .refine((arr) => JSON.stringify(arr).length <= 4096, {
+        message: "tags payload too large",
+      }),
   })
   .strict();
 
