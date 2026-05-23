@@ -170,3 +170,18 @@ export async function voidPrescriptionRequest(
 export function prescriptionRequestPdfUrl(id: string): string {
   return `/resupply-api/admin/prescription-requests/${encodeURIComponent(id)}/pdf`;
 }
+
+/**
+ * One-click: build a draft packet pre-filled from an existing
+ * prescription + the patient's latest sleep study. Returns the new
+ * packet id so the caller can navigate to the detail page.
+ */
+export async function createPrescriptionRequestFromRx(
+  patientId: string,
+  rxId: string,
+): Promise<{ id: string }> {
+  return jsonFetch(
+    `/admin/patients/${encodeURIComponent(patientId)}/prescription-requests/from-prescription/${encodeURIComponent(rxId)}`,
+    { method: "POST" },
+  );
+}

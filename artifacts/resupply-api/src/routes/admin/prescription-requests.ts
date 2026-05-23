@@ -62,6 +62,7 @@ import {
   renderPrescriptionRequest,
   validatePrescriptionRequestInputs,
 } from "../../lib/prescription-request-pdf";
+import { buildPrescriptionRequestPacketFromRx } from "../../lib/prescription-request-builder";
 import { resolvePrescriptionRequestInputs } from "../../lib/prescription-request-resolver";
 import { signPrescriptionRequestToken } from "../../lib/prescription-request-token";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
@@ -685,5 +686,117 @@ function projectDetail(r: PacketRow) {
     updatedAt: r.updated_at,
   };
 }
+
+// ---------------------------------------------------------------------
+// POST /admin/patients/:id/prescription-requests/from-prescription/:rxId
+// ---------------------------------------------------------------------
+// One-click renewal: build a packet pre-populated from an existing
+// prescription. The CSR opens the patient detail → Prescriptions tab,
+// clicks "Renew as faxable packet" on an expiring row, and lands on
+// the packet detail page with a fully-formed draft ready to send.
+//
+// Pre-fill rules:
+//   * hcpcsLines = single line built from prescription.hcpcs_code +
+//     item_sku description + cadence_days (qty=1).
+//   * icd10Codes = diagnosis_icd10 from the patient's most recent
+//     sleep study (when present); blank otherwise — CSR fills in.
+//   * settings = null (settings live in therapy snapshots, not the
+//     Rx row; pulling from AirView/CareOrch ships as a follow-up).
+//   * providerId = prescription.provider_id (when present).
+//   * returnFaxE164 = provider.fax_e164 (defaulted by the create
+//     handler).
+//   * lengthOfNeedMonths = 99 (lifetime — overrideable in UI).
+//
+// Returns the created packet id; UI redirects to the packet detail
+// page where the CSR previews + sends.
+//
+// PHI posture: response carries packet id only. Logger sees patient +
+// rx ids; no clinical content.
+const fromRxParams = z.object({
+  id: z.string().uuid(),
+  rxId: z.string().uuid(),
+});
+
+router.post(
+  "/admin/patients/:id/prescription-requests/from-prescription/:rxId",
+  requirePermission("patients.update"),
+  adminRateLimit({
+    name: "prescription_requests.from_prescription",
+    preset: "mutation",
+  }),
+  async (req, res) => {
+    const params = fromRxParams.safeParse(req.params);
+    if (!params.success) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    const built = await buildPrescriptionRequestPacketFromRx({
+      patientId: params.data.id,
+      prescriptionId: params.data.rxId,
+      createdByEmail: req.adminEmail ?? "admin:unknown",
+    });
+    if (built.kind === "rx_not_found") {
+      res.status(404).json({ error: "prescription_not_found" });
+      return;
+    }
+    if (built.kind === "rx_missing_provider") {
+      res.status(409).json({
+        error: "rx_missing_provider",
+        message:
+          "Cannot renew via packet: this Rx has no provider link. Set it in /admin/providers first.",
+      });
+      return;
+    }
+    if (built.kind === "rx_missing_hcpcs") {
+      res.status(409).json({
+        error: "rx_missing_hcpcs",
+        message:
+          "Cannot renew via packet: this Rx has no HCPCS code. Edit the Rx first.",
+      });
+      return;
+    }
+
+    const supabase = getSupabaseServiceRoleClient();
+    const { data: inserted, error: insertErr } = await supabase
+      .schema("resupply")
+      .from("prescription_request_packets")
+      .insert(built.insert)
+      .select("id")
+      .maybeSingle();
+    if (insertErr || !inserted) {
+      logger.warn(
+        {
+          err_code: insertErr?.code,
+          patient_id: params.data.id,
+          rx_id: params.data.rxId,
+        },
+        "prescription_request.from_prescription.create_failed",
+      );
+      res.status(500).json({ error: "insert_failed" });
+      return;
+    }
+
+    await logAudit({
+      action: "prescription_request.from_prescription",
+      adminEmail: req.adminEmail ?? null,
+      adminUserId: req.adminUserId ?? null,
+      targetTable: "prescription_request_packets",
+      targetId: inserted.id,
+      metadata: {
+        patient_id: params.data.id,
+        source_prescription_id: params.data.rxId,
+      },
+      ip: req.ip ?? null,
+      userAgent: req.get("user-agent") ?? null,
+    }).catch((err) => {
+      logger.warn(
+        { err },
+        "prescription_request.from_prescription audit write failed",
+      );
+    });
+
+    res.status(201).json({ id: inserted.id });
+  },
+);
 
 export default router;
