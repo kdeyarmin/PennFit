@@ -274,6 +274,17 @@ function scoreFitMatch(
   const { fitRanges } = mask;
 
   function dimensionScore(value: number, min: number, max: number): number {
+    // Defence-in-depth: if any input is NaN / Infinity, return 0 so
+    // NaN doesn't propagate into rawScore. NaN comparisons make the
+    // final scoredMasks.sort() non-deterministic — same payload,
+    // different ranks per call — so fail-closed here.
+    if (
+      !Number.isFinite(value) ||
+      !Number.isFinite(min) ||
+      !Number.isFinite(max)
+    ) {
+      return 0;
+    }
     if (value >= min && value <= max) return 1.0;
     const range = max - min;
     if (range <= 0) return value === min ? 1.0 : 0;

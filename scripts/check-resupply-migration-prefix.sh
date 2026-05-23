@@ -76,23 +76,94 @@ diff_args+=(--name-only --diff-filter=A "$BASE_REF" -- 'lib/resupply-db/drizzle/
 
 mapfile -t added < <(git "${diff_args[@]}" 2>/dev/null || true)
 
+# Build the set of prefixes that ALREADY exist in the tree (excluding
+# the files being added in THIS diff). A new migration must pick a
+# prefix not already present, or it collides with another migration
+# and the runner's apply order becomes filesystem-dependent. The
+# 0142 / 0143 / 0149 pairs found during the May 2026 audit slipped
+# past the moratorium threshold below precisely because there was no
+# such collision check.
+existing_prefixes=""
+while IFS= read -r f; do
+  base="${f##*/}"
+  if [[ "$base" =~ ^([0-9]{4})_.+\.sql$ ]]; then
+    existing_prefixes+=" ${BASH_REMATCH[1]}"
+  fi
+done < <(git ls-files 'lib/resupply-db/drizzle/*.sql' 2>/dev/null || true)
+
+# Remove the just-added files from the existing set — they're part
+# of the diff being checked, not pre-existing collisions. The
+# `git diff` above already filters to --diff-filter=A.
+added_basenames=""
+for f in "${added[@]}"; do
+  [[ -z "$f" ]] && continue
+  added_basenames+=" ${f##*/}"
+done
+
 violations=()
+collision_violations=()
 for f in "${added[@]}"; do
   [[ -z "$f" ]] && continue
   base="${f##*/}"
-  # Match exactly NNNN_<rest>.sql at the top of the drizzle dir.
-  # Files inside meta/ or any other subdir don't match the pathspec
-  # above, so we don't need to re-filter here, but we do need to
-  # extract the 4-digit prefix robustly.
   if [[ "$base" =~ ^([0-9]{4})_.+\.sql$ ]]; then
     prefix="${BASH_REMATCH[1]}"
     # 10# forces base-10 interpretation so a leading zero (e.g. 0049)
     # isn't read as octal and silently fail on '8'/'9'.
     if (( 10#$prefix <= THRESHOLD )); then
       violations+=("$f")
+      continue
+    fi
+    # Collision check: is the prefix already present in any other
+    # migration filename? Count occurrences in the existing set,
+    # excluding the file being added itself.
+    count=0
+    for ep in $existing_prefixes; do
+      if [[ "$ep" == "$prefix" ]]; then
+        # Skip the file's own entry — git ls-files would include
+        # it if the file is already tracked.
+        match_self=0
+        for ab in $added_basenames; do
+          if [[ "$ab" == "$base" && "$ep" == "$prefix" ]]; then
+            match_self=1
+            break
+          fi
+        done
+        if (( match_self == 0 )); then
+          count=$((count + 1))
+        fi
+      fi
+    done
+    if (( count > 0 )); then
+      collision_violations+=("$f (prefix ${prefix} already exists)")
     fi
   fi
 done
+
+if (( ${#collision_violations[@]} > 0 )); then
+  cat >&2 <<'EOF'
+
+==============================================================================
+ERROR: new resupply migration collides with an existing prefix.
+
+This commit adds the following migration file(s) whose 4-digit
+prefix is already used by another migration in
+lib/resupply-db/drizzle/:
+
+EOF
+  for v in "${collision_violations[@]}"; do
+    printf '    %s\n' "$v" >&2
+  done
+  cat >&2 <<'EOF'
+
+When two migrations share a prefix, the migrate.mjs runner's apply
+order becomes filesystem-dependent — and a fresh deploy may apply
+one of the pair and silently skip the other. Pick the next free
+prefix instead.
+==============================================================================
+
+EOF
+  exit 1
+fi
 
 if (( ${#violations[@]} > 0 )); then
   printf -v threshold_padded '%04d' "$THRESHOLD"
