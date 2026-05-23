@@ -451,7 +451,18 @@ const bundleSchema = z.object({
 
 router.post(
   "/fhir/r4/ServiceRequest",
+  // Defence-in-depth rate-limit chain. serviceRequestPostLimiter
+  // is keyed on req.ip and runs BEFORE auth so unauthenticated
+  // brute-force traffic is cut off without ever touching
+  // requireSmartFhirAccess. serviceRequestPostTenantLimiter is
+  // keyed on the resolved tenant slug and runs AFTER auth so
+  // two partners sharing one egress NAT don't share a bucket.
+  // CodeQL's js/missing-rate-limiting heuristic only inspects the
+  // single line of the auth middleware and can't see the limiters
+  // on the lines around it; the suppression below acknowledges
+  // that and points at the actual chain that gates the route.
   serviceRequestPostLimiter,
+  // lgtm[js/missing-rate-limiting]
   requireSmartFhirAccess,
   serviceRequestPostTenantLimiter,
   fhirJson,
