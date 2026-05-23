@@ -44,7 +44,6 @@ import { registerFitterSupplyCampaignJob } from "./jobs/fitter-supply-campaign.j
 import { registerFitterConversionAttributionJob } from "./jobs/fitter-conversion-attribution.js";
 import { registerCartAbandonmentJob } from "./jobs/cart-abandonment-scan.js";
 import { registerFailedEmailDigestJob } from "./jobs/failed-order-emails-digest.js";
-import { registerAuditLogArchiveSweepJob } from "./jobs/audit-log-archive-sweep.js";
 import { registerTherapyNightlySyncJob } from "./jobs/therapy-integrations-nightly-sync.js";
 import { registerCoachingProgressJob } from "./jobs/coaching-plan-progress.js";
 import { registerPriorAuthExpirySweepJob } from "./jobs/prior-auth-expiry-sweep.js";
@@ -56,14 +55,11 @@ import { registerQuarterlyTherapySummaryJob } from "./jobs/quarterly-therapy-sum
 import { registerLifecycleTouchpointsJob } from "./jobs/lifecycle-touchpoints.js";
 import { registerOfficeAllyInboundPollJob } from "./jobs/office-ally-inbound-poll.js";
 import { registerPaMcoSlaSweepJob } from "./jobs/pa-mco-sla-sweep.js";
-import { registerAccreditationReadinessSweepJob } from "./jobs/accreditation-readiness-sweep.js";
 import { registerPecosSyncJob } from "./jobs/pecos-sync.js";
-import { registerOigLeieSyncJob } from "./jobs/oig-leie-sync.js";
 import { registerCappedRentalAdvanceJob } from "./jobs/capped-rental-advance.js";
 import { registerDwoExpirySweepJob } from "./jobs/dwo-expiry-sweep.js";
 import { registerWebhookDispatcherJob } from "./jobs/webhook-dispatcher.js";
 import { registerAutoWorkflowJob } from "./jobs/auto-workflow.js";
-import { registerComplianceAutoWorkflowJob } from "./jobs/compliance-auto-workflow.js";
 import { registerInvitePasswordExpiryNotifyJob } from "./jobs/invite-password-expiry-notify.js";
 import { registerLowStockAlertsJob } from "./jobs/low-stock-alerts.js";
 import { registerInboundWebhookDispatchJob } from "./jobs/inbound-webhook-dispatch.js";
@@ -272,9 +268,6 @@ export async function startWorker(): Promise<void> {
   // + created_at; patient name, email, error text NEVER appear.
   // Off by default — requires the flag AND the recipient env var.
   await registerFailedEmailDigestJob(boss);
-  // HIPAA audit-log retention sweep — nightly flag of rows past
-  // the 6-year floor. Destruction stays human-triggered.
-  await registerAuditLogArchiveSweepJob(boss);
   // Adherence coaching progress sweep — refresh latest_compliance_pct
   // on open plans and auto-flip outreach_made → improving when the
   // patient's recent 30-night adherence crosses target.
@@ -362,21 +355,9 @@ export async function startWorker(): Promise<void> {
   // CSR alerts on at-risk + missed transitions.
   await registerPaMcoSlaSweepJob(boss);
 
-  // Weekly accreditation-survey readiness audit. Runs the rule
-  // engine in lib/accreditation/readiness-engine.ts and persists
-  // structured findings for the CMS annual unannounced surveys
-  // (effective Jan 1, 2026).
-  await registerAccreditationReadinessSweepJob(boss);
-
   // Daily CMS PECOS Order/Referring sync. Powers the preflight
   // "ordering provider not PECOS-enrolled" denial blocker.
   await registerPecosSyncJob(boss);
-
-  // Monthly OIG LEIE refresh. Re-loads the public exclusion list
-  // (4th of each month at 04:07 UTC) so the screening tool answers
-  // against a current dataset. Per-subject screening attempts are
-  // recorded separately in oig_leie_screenings.
-  await registerOigLeieSyncJob(boss);
 
   // Daily capped-rental month advance (mig 0134). For each active
   // cycle past the next anniversary, generates a draft monthly
@@ -395,12 +376,6 @@ export async function startWorker(): Promise<void> {
   // risky drafts, AI-analyze fresh denials, publish
   // billing_statement.due for patients with cooldown-clear balances.
   await registerAutoWorkflowJob(boss);
-
-  // Every 15 minutes — compliance auto-workflow pass: publish
-  // compliance.baa_expiring_soon / .baa_expired /
-  // .oig_screening_overdue / .patient_rights_overdue webhook events
-  // with 24-hour cooldown gates.
-  await registerComplianceAutoWorkflowJob(boss);
 
   // Hourly — warn invited team members whose operator-typed
   // temporary password is approaching ADMIN_PASSWORD_TTL_MS (heads-up
