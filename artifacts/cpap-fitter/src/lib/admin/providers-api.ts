@@ -1,6 +1,19 @@
 // Hand-rolled fetch wrapper for /admin/providers + the NPPES lookup
 // proxy. Same pattern as today-api.ts and followups-list-api.ts.
 
+function getCsrfToken(): string | null {
+  if (typeof document === "undefined") return null;
+  const match = document.cookie
+    .split("; ")
+    .find((row) => row.startsWith("pf_csrf="));
+  return match ? decodeURIComponent(match.split("=")[1]) : null;
+}
+
+function csrfHeader(): Record<string, string> {
+  const token = getCsrfToken();
+  return token ? { "X-PF-CSRF": token } : {};
+}
+
 export type ProviderSource = "nppes" | "csr_entry" | "backfill";
 
 export interface ProviderListItem {
@@ -88,7 +101,7 @@ export async function lookupNppes(npi: string): Promise<{
 }> {
   return jsonFetch(`/admin/providers/nppes-lookup`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...csrfHeader() },
     body: JSON.stringify({ npi }),
   });
 }
@@ -98,7 +111,7 @@ export async function createProvider(
 ): Promise<CreateProviderResponse> {
   return jsonFetch(`/admin/providers`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...csrfHeader() },
     body: JSON.stringify(body),
   });
 }
