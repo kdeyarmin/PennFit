@@ -1,0 +1,151 @@
+#!/usr/bin/env bash
+# Negative-test harness for scripts/check-admin-route-gates.sh.
+#
+# Builds a fixture tree of admin route files, runs the checker
+# against it (via RESUPPLY_GATE_CHECK_ROOT), and asserts each
+# expected gate outcome:
+#
+#   - a clean tree with mixed requirePermission + requireAdmin gates
+#     exits 0
+#   - an ungated mutation exits 1 and names the offender
+#   - a non-admin path in routes/admin/ is ignored (defensive)
+#
+# Mirrors the pattern in check-resupply-architecture.sh.test.
+
+set -euo pipefail
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+CHECKER="$REPO_ROOT/scripts/check-admin-route-gates.sh"
+
+WORK="$(mktemp -d -t admin-gate-check-test.XXXXXX)"
+trap 'rm -rf "$WORK"' EXIT
+
+ADMIN_DIR="$WORK/artifacts/resupply-api/src/routes/admin"
+mkdir -p "$ADMIN_DIR"
+
+run_checker() {
+  RESUPPLY_GATE_CHECK_ROOT="$WORK" bash "$CHECKER" 2>&1
+}
+
+fail=0
+assert_exit() {
+  local want="$1"; local label="$2"
+  set +e
+  run_checker >"$WORK/last.out" 2>&1
+  local got=$?
+  set -e
+  if [[ "$got" -eq "$want" ]]; then
+    echo "  PASS ($label): exit=$got"
+  else
+    echo "  FAIL ($label): want exit=$want, got=$got"
+    echo "  --- output ---"
+    sed 's/^/    /' "$WORK/last.out"
+    echo "  --------------"
+    fail=1
+  fi
+}
+
+assert_contains() {
+  local needle="$1"; local label="$2"
+  if grep -q -- "$needle" "$WORK/last.out"; then
+    echo "  PASS ($label): output contained '$needle'"
+  else
+    echo "  FAIL ($label): output did NOT contain '$needle'"
+    echo "  --- output ---"
+    sed 's/^/    /' "$WORK/last.out"
+    echo "  --------------"
+    fail=1
+  fi
+}
+
+# ──────────────────────────────────────────────────────────────────
+# Case 1: empty admin dir — passes
+# ──────────────────────────────────────────────────────────────────
+echo "Case 1: empty admin dir"
+assert_exit 0 "empty admin dir"
+
+# ──────────────────────────────────────────────────────────────────
+# Case 2: well-formed routes — passes
+# ──────────────────────────────────────────────────────────────────
+echo "Case 2: well-formed routes"
+cat > "$ADMIN_DIR/ok-permission.ts" <<'TS'
+router.post(
+  "/admin/foo",
+  requirePermission("foo.write"),
+  async (req, res) => {
+    res.json({ ok: true });
+  },
+);
+TS
+cat > "$ADMIN_DIR/ok-admin.ts" <<'TS'
+router.patch(
+  "/admin/bar/:id",
+  requireAdmin,
+  async (req, res) => {
+    res.json({ ok: true });
+  },
+);
+TS
+cat > "$ADMIN_DIR/ok-admin-only.ts" <<'TS'
+router.delete(
+  "/admin/baz/:id",
+  requireAdminOnly,
+  async (req, res) => {
+    res.json({ ok: true });
+  },
+);
+TS
+assert_exit 0 "all routes gated"
+assert_contains "with requirePermission:  1" "permission count"
+assert_contains "with requireAdmin only:  2" "admin-only count"
+assert_contains "ungated:                 0" "ungated count"
+
+# ──────────────────────────────────────────────────────────────────
+# Case 3: an ungated mutation slipped in — fails
+# ──────────────────────────────────────────────────────────────────
+echo "Case 3: ungated route"
+cat > "$ADMIN_DIR/bad-ungated.ts" <<'TS'
+router.post(
+  "/admin/ungated-thing",
+  async (req, res) => {
+    res.json({ ok: true });
+  },
+);
+TS
+assert_exit 1 "ungated route triggers exit=1"
+assert_contains "/admin/ungated-thing" "ungated route reported"
+assert_contains "ungated:                 1" "ungated count incremented"
+
+# ──────────────────────────────────────────────────────────────────
+# Case 4: route at non-/admin path is ignored (defensive — files in
+# routes/admin/ sometimes declare /resupply-api/* paths)
+# ──────────────────────────────────────────────────────────────────
+echo "Case 4: non-admin path ignored"
+rm "$ADMIN_DIR/bad-ungated.ts"
+cat > "$ADMIN_DIR/non-admin-path.ts" <<'TS'
+router.post(
+  "/resupply-api/something",
+  async (req, res) => {
+    res.json({ ok: true });
+  },
+);
+TS
+assert_exit 0 "non-admin path ignored"
+rm "$ADMIN_DIR/non-admin-path.ts"
+
+# ──────────────────────────────────────────────────────────────────
+# Case 5: test files in routes/admin/ are ignored
+# ──────────────────────────────────────────────────────────────────
+echo "Case 5: .test.ts files ignored"
+cat > "$ADMIN_DIR/foo.test.ts" <<'TS'
+// Test file — should be skipped.
+router.post("/admin/foo", async (req, res) => {});
+TS
+assert_exit 0 ".test.ts files ignored"
+rm "$ADMIN_DIR/foo.test.ts"
+
+if [[ $fail -ne 0 ]]; then
+  echo "admin-route-gates self-test FAILED"
+  exit 1
+fi
+echo "admin-route-gates self-test PASSED"
