@@ -186,3 +186,161 @@ describe.skip("AppShell NAV_GROUPS — pre-existing routes not removed by this P
     });
   }
 });
+
+// ---------------------------------------------------------------------------
+// This PR: removed nav entries
+// ---------------------------------------------------------------------------
+
+describe("AppShell NAV_GROUPS — /admin/fitter-leads removed in this PR", () => {
+  it("no longer registers an /admin/fitter-leads href", () => {
+    expect(APPSHELL_SRC).not.toContain('href: "/admin/fitter-leads"');
+  });
+
+  it("no longer has a 'Fitter Prospects' label", () => {
+    expect(APPSHELL_SRC).not.toContain('label: "Fitter Prospects"');
+  });
+
+  it("no longer has a 'Fitter funnel + supply-campaign conversion' hint", () => {
+    expect(APPSHELL_SRC).not.toContain("Fitter funnel + supply-campaign conversion");
+  });
+});
+
+describe("AppShell NAV_GROUPS — /admin/control-center removed in this PR", () => {
+  it("no longer registers an /admin/control-center href", () => {
+    expect(APPSHELL_SRC).not.toContain('href: "/admin/control-center"');
+  });
+
+  it("no longer has a 'Control Center' label", () => {
+    expect(APPSHELL_SRC).not.toContain('label: "Control Center"');
+  });
+
+  it("no longer has the 'On/off switches for major features' hint", () => {
+    expect(APPSHELL_SRC).not.toContain("On/off switches for major features");
+  });
+
+  it("no longer imports ToggleLeft from lucide-react", () => {
+    expect(APPSHELL_SRC).not.toContain("ToggleLeft");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// This PR: Reports hint text restored to original
+// ---------------------------------------------------------------------------
+
+describe("AppShell NAV_GROUPS — reports entry hint text restored", () => {
+  it("uses the original 'Operational KPIs and exports' hint for reports", () => {
+    expect(APPSHELL_SRC).toContain("Operational KPIs and exports");
+  });
+
+  it("no longer uses the CSV/PDF/QuickBooks expanded reports hint", () => {
+    expect(APPSHELL_SRC).not.toContain(
+      "CSV, PDF, and QuickBooks (IIF / QBO) exports for ops and finance",
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// This PR: collapsible nav infrastructure removed
+// ---------------------------------------------------------------------------
+
+describe("AppShell — collapsible nav machinery removed in this PR", () => {
+  it("no longer imports ChevronRight from lucide-react", () => {
+    expect(APPSHELL_SRC).not.toContain("ChevronRight");
+  });
+
+  it("no longer imports useRef from react", () => {
+    expect(APPSHELL_SRC).not.toContain("useRef");
+  });
+
+  it("no longer defines findGroupForActiveHref helper", () => {
+    expect(APPSHELL_SRC).not.toContain("function findGroupForActiveHref");
+  });
+
+  it("no longer defines loadInitialExpandedGroups helper", () => {
+    expect(APPSHELL_SRC).not.toContain("function loadInitialExpandedGroups");
+  });
+
+  it("no longer defines persistExpandedGroups helper", () => {
+    expect(APPSHELL_SRC).not.toContain("function persistExpandedGroups");
+  });
+
+  it("no longer defines loadExplicitCollapsedGroups helper", () => {
+    expect(APPSHELL_SRC).not.toContain("function loadExplicitCollapsedGroups");
+  });
+
+  it("no longer defines persistExplicitCollapsedGroups helper", () => {
+    expect(APPSHELL_SRC).not.toContain("function persistExplicitCollapsedGroups");
+  });
+
+  it("no longer defines the groupDomId helper for aria-controls IDs", () => {
+    expect(APPSHELL_SRC).not.toContain("function groupDomId");
+  });
+
+  it("no longer defines toggleNavGroup inside AppShell", () => {
+    expect(APPSHELL_SRC).not.toContain("function toggleNavGroup(label: string)");
+  });
+
+  it("no longer uses the NAV_EXPANDED_STORAGE_KEY localStorage key", () => {
+    expect(APPSHELL_SRC).not.toContain("NAV_EXPANDED_STORAGE_KEY");
+  });
+
+  it("no longer uses the NAV_EXPLICIT_COLLAPSED_STORAGE_KEY localStorage key", () => {
+    expect(APPSHELL_SRC).not.toContain("NAV_EXPLICIT_COLLAPSED_STORAGE_KEY");
+  });
+
+  it("no longer tracks navExpanded state in AppShell", () => {
+    expect(APPSHELL_SRC).not.toContain("navExpanded");
+  });
+
+  it("no longer tracks navExplicitCollapsed state in AppShell", () => {
+    expect(APPSHELL_SRC).not.toContain("navExplicitCollapsed");
+  });
+
+  it("no longer renders aria-expanded on group headers", () => {
+    expect(APPSHELL_SRC).not.toContain("aria-expanded={isOpen}");
+  });
+
+  it("no longer renders aria-controls on group headers", () => {
+    expect(APPSHELL_SRC).not.toContain("aria-controls={sectionId}");
+  });
+
+  it("no longer uses hidden={!isOpen} to toggle group visibility", () => {
+    expect(APPSHELL_SRC).not.toContain("hidden={!isOpen}");
+  });
+
+  it("no longer passes expanded prop to SidebarNavBody", () => {
+    expect(APPSHELL_SRC).not.toContain("expanded={navExpanded}");
+  });
+
+  it("no longer passes onToggleGroup prop to SidebarNavBody", () => {
+    expect(APPSHELL_SRC).not.toContain("onToggleGroup={toggleNavGroup}");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// This PR: SidebarNavBody simplified — static non-collapsible groups
+// ---------------------------------------------------------------------------
+
+describe("AppShell — SidebarNavBody simplified to static groups", () => {
+  it("SidebarNavBody no longer declares an 'expanded' prop in its signature", () => {
+    expect(APPSHELL_SRC).not.toContain("expanded: Set<string>");
+  });
+
+  it("SidebarNavBody no longer declares an 'onToggleGroup' callback prop", () => {
+    expect(APPSHELL_SRC).not.toContain("onToggleGroup: (label: string) => void");
+  });
+
+  it("renders each group label as a static <p> element, not a toggle button", () => {
+    // The new rendering uses a plain <p> for the group header.
+    expect(APPSHELL_SRC).toContain("tracking-[0.22em] font-semibold mb-1.5 px-3");
+  });
+
+  it("still iterates over NAV_GROUPS to render sections", () => {
+    expect(APPSHELL_SRC).toContain("NAV_GROUPS.map((group) =>");
+  });
+
+  it("still renders NavItem for each link within a group", () => {
+    expect(APPSHELL_SRC).toContain("NavItem");
+    expect(APPSHELL_SRC).toContain("group.items.map((link) =>");
+  });
+});

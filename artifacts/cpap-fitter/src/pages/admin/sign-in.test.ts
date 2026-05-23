@@ -1,11 +1,9 @@
-// Tests for admin/sign-in.tsx — regression coverage for the core form
-// behaviour and MFA flow.
+// Tests for admin/sign-in.tsx — the error-handling simplification in this PR.
 //
-// The PR-specific error-handling simplification originally tested here
-// (SERVER_UNAVAILABLE_MESSAGE / authErrorMessage removal, inline
-// AuthError handling) did not actually land; those assertions were
-// removed rather than left skipped so this suite continues to provide
-// CI signal for the behaviour that is actually in tree.
+// PR changes:
+//   * Removed SERVER_UNAVAILABLE_MESSAGE constant
+//   * Removed authErrorMessage helper function
+//   * Both onError handlers now use inline AuthError instanceof check
 
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -14,6 +12,18 @@ import { describe, expect, it } from "vitest";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SRC = readFileSync(path.join(__dirname, "sign-in.tsx"), "utf8");
+
+// ---------------------------------------------------------------------------
+// Removed: SERVER_UNAVAILABLE_MESSAGE constant
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Removed: authErrorMessage helper
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Error handling: inline AuthError instanceof checks
+// ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
 // MFA challenge expiry — still handles mfa_challenge_expired

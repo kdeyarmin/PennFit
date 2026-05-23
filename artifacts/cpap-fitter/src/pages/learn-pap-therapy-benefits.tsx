@@ -116,6 +116,7 @@ export function LearnPapTherapyBenefits() {
   useDocumentTitle(
     "What PAP therapy actually feels like",
     "The benefits of CPAP / BiPAP therapy week by week — energy, blood pressure, mood, cognition, metabolic health, and relationships. What the data and patients both report.",
+    { schema: "MedicalWebPage" },
   );
   const [, navigate] = useLocation();
 

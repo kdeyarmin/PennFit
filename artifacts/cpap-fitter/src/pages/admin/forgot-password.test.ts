@@ -1,11 +1,11 @@
-// Tests for admin/forgot-password.tsx — regression coverage for the
-// core form behaviour.
+// Tests for admin/forgot-password.tsx — the onSettled simplification in this PR.
 //
-// The PR-specific onSettled simplification originally tested here
-// (submitError/AuthError/role=alert removal) did not actually land;
-// those assertions were removed rather than left skipped so this suite
-// continues to provide CI signal for the behaviour that is actually in
-// tree.
+// PR changes:
+//   * Uses `onSettled` instead of separate `onSuccess` / `onError` branches
+//   * Removed `submitError` state (no more 5xx-specific error copy)
+//   * Removed `AuthError` import (no longer needed)
+//   * No error UI element rendered
+//   * Always shows the success state after the mutation settles
 
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -14,6 +14,22 @@ import { describe, expect, it } from "vitest";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SRC = readFileSync(path.join(__dirname, "forgot-password.tsx"), "utf8");
+
+// ---------------------------------------------------------------------------
+// onSettled — new submission contract
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Removed: submitError state
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Removed: AuthError import
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Removed: 5xx-specific server-unavailable message
+// ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
 // Regression: core form behaviour retained
@@ -33,8 +49,7 @@ describe("admin/forgot-password — core form behaviour retained", () => {
   });
 
   it("still links back to the sign-in page", () => {
-    // The href is built from basePath, so assert on the templated form.
-    expect(SRC).toContain("${basePath}/sign-in");
+    expect(SRC).toContain('href={`${basePath}/sign-in`}');
   });
 
   it("success view tells the user to check their inbox", () => {

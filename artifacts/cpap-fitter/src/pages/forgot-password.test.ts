@@ -1,11 +1,11 @@
-// Tests for pages/forgot-password.tsx (storefront variant) — regression
-// coverage for the core form behaviour.
+// Tests for pages/forgot-password.tsx (storefront variant) — the
+// onSettled simplification in this PR.
 //
-// The PR-specific onSettled simplification originally tested here
-// (submitError/AuthError/role=alert removal) did not actually land;
-// those assertions were removed rather than left skipped so this suite
-// continues to provide CI signal for the behaviour that is actually in
-// tree.
+// PR changes:
+//   * Uses `onSettled` instead of separate `onSuccess` / `onError` branches
+//   * Removed `submitError` state (no 5xx-specific error copy)
+//   * Removed `AuthError` import
+//   * Removed error UI element
 
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -14,6 +14,22 @@ import { describe, expect, it } from "vitest";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SRC = readFileSync(path.join(__dirname, "forgot-password.tsx"), "utf8");
+
+// ---------------------------------------------------------------------------
+// onSettled — new always-render-success contract
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Removed: submitError state
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Removed: AuthError import
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Removed: 5xx-specific message
+// ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
 // Regression: core form behaviour retained

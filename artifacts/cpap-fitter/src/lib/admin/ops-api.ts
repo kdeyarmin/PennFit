@@ -3,6 +3,8 @@
 // Auth flows over the `pf_session` cookie, sent automatically by
 // the browser on same-origin requests.
 
+import { csrfHeader } from "../csrf";
+
 export interface OpsStatus {
   vendors: {
     sendgrid: boolean;
@@ -120,7 +122,7 @@ async function postDispatcher(url: string): Promise<DispatcherResult> {
   const res = await fetch(url, {
     method: "POST",
     credentials: "include",
-    headers: { Accept: "application/json" },
+    headers: { Accept: "application/json", ...csrfHeader() },
   });
   if (!res.ok) {
     const json = (await res.json().catch(() => null)) as {

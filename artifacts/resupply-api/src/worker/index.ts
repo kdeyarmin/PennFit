@@ -65,6 +65,7 @@ import { registerLowStockAlertsJob } from "./jobs/low-stock-alerts.js";
 import { registerInboundWebhookDispatchJob } from "./jobs/inbound-webhook-dispatch.js";
 import { registerInboundReferralPreflightJob } from "./jobs/inbound-referral-preflight.js";
 import { registerReferralStatusOutboundJob } from "./jobs/inbound-referral-status-outbound.js";
+import { registerPrescriptionRequestAutoDraftJob } from "./jobs/prescription-request-auto-draft.js";
 
 let bossInstance: PgBoss | null = null;
 let workerReady = false;
@@ -406,6 +407,13 @@ export async function startWorker(): Promise<void> {
   // originating Parachute / EHR partner. HMAC-SHA256 signed; expo
   // backoff per migration 0148.
   await registerReferralStatusOutboundJob(boss);
+
+  // Daily 13:43 UTC — pre-build draft prescription_request_packets
+  // for active Rxs expiring in the next 30 days so a CSR doesn't
+  // have to hunt for them. Gated by
+  // RESUPPLY_PRESCRIPTION_AUTO_DRAFT_ENABLED=1 (off in dev/preview);
+  // does NOT auto-fax — CSR reviews + sends.
+  await registerPrescriptionRequestAutoDraftJob(boss);
 
   workerReady = true;
   logger.info(

@@ -18,6 +18,7 @@ import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 import { parse835 } from "@workspace/resupply-integrations-office-ally";
 
 import { reconcileEra } from "../../lib/billing/era-reconciler";
+import { resolvePayerProfileForEra } from "../../lib/billing/era-payer-resolver";
 import { logger } from "../../lib/logger";
 import { publishEvent } from "../../lib/webhooks/publisher";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
@@ -92,6 +93,27 @@ router.post(
     return;
   }
 
+  // Phase 16 (mig 0143) — resolve the payer profile from the 835's
+  // payer identifier so the ingest dashboard can show "ERA from
+  // Highmark" and the reconciler can later apply payer-specific
+  // denial-code mappings. Resolution failure is non-fatal: we still
+  // ingest with payer_profile_id=NULL and surface it as "unknown
+  // payer — update the catalog".
+  const resolvedPayer = await resolvePayerProfileForEra(
+    { payerId: parsedEra.payerId, payerName: parsedEra.payerName },
+    { supabase },
+  );
+  if (!resolvedPayer) {
+    logger.info(
+      {
+        event: "era_ingest.unknown_payer",
+        payer_id: parsedEra.payerId,
+        payer_name: parsedEra.payerName,
+      },
+      "era_ingest: 835 payer not found in catalog",
+    );
+  }
+
   // Persist the file row up front in 'partial' state; we promote to
   // 'processed' after the reconciler returns.
   const { data: row, error: insertErr } = await supabase
@@ -108,6 +130,7 @@ router.post(
       claims_denied_count: 0,
       lines_processed_count: 0,
       matched_submission_id: matchedSubmissionId ?? null,
+      payer_profile_id: resolvedPayer?.payerProfileId ?? null,
       status: "partial",
       ingested_by_email: req.adminEmail ?? "unknown",
     })
@@ -153,6 +176,8 @@ router.post(
       claims_unmatched: summary.unmatchedClaims,
       lines_updated: summary.linesUpdated,
       status: finalStatus,
+      payer_profile_id: resolvedPayer?.payerProfileId ?? null,
+      payer_match_reason: resolvedPayer?.matchReason ?? "no_match",
     },
     ip: req.ip ?? null,
     userAgent: req.get("user-agent") ?? null,
@@ -185,7 +210,7 @@ router.get("/admin/billing/era-files", requireAdminOnly, async (req, res) => {
     .schema("resupply")
     .from("era_files")
     .select(
-      "id, file_name, file_sha256, file_size_bytes, payer_check_number, payer_paid_date, total_paid_cents, claims_paid_count, claims_denied_count, lines_processed_count, matched_submission_id, status, rejection_reason, ingested_by_email, ingested_at",
+      "id, file_name, file_sha256, file_size_bytes, payer_check_number, payer_paid_date, total_paid_cents, claims_paid_count, claims_denied_count, lines_processed_count, matched_submission_id, payer_profile_id, status, rejection_reason, ingested_by_email, ingested_at",
     )
     .order("ingested_at", { ascending: false })
     .limit(200);
@@ -203,6 +228,7 @@ router.get("/admin/billing/era-files", requireAdminOnly, async (req, res) => {
       claimsDeniedCount: r.claims_denied_count,
       linesProcessedCount: r.lines_processed_count,
       matchedSubmissionId: r.matched_submission_id,
+      payerProfileId: r.payer_profile_id,
       status: r.status,
       rejectionReason: r.rejection_reason,
       ingestedByEmail: r.ingested_by_email,

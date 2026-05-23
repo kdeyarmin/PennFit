@@ -45,11 +45,24 @@ const body = z
 
 router.post(
   "/shop/me/billing-portal",
+  // requireSignedIn FIRST so the rate-limit bucket can key on the
+  // authenticated customer id rather than req.ip. Two patients
+  // sharing a corporate / household NAT must not exhaust each
+  // other's portal budget — and an attacker spoofing X-Forwarded-
+  // For can't dodge their own limit by rotating it.
+  requireSignedIn,
   // 5 portal sessions / 5 minutes / customer is plenty for legitimate
   // "open settings → close → open settings" oscillation. Past that
   // someone is hammering the Stripe API on our dime.
-  rateLimit({ windowMs: 5 * 60_000, max: 5, name: "shop_billing_portal" }),
-  requireSignedIn,
+  rateLimit({
+    windowMs: 5 * 60_000,
+    max: 5,
+    name: "shop_billing_portal",
+    keyFn: (req) =>
+      (req as unknown as { userCustomerId?: string }).userCustomerId ??
+      req.ip ??
+      "unknown",
+  }),
   async (req, res) => {
     const parsed = body.safeParse(req.body ?? {});
     if (!parsed.success) {

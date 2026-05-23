@@ -121,17 +121,11 @@ describe("admin-shop-returns — pre-existing action buttons not removed", () =>
 });
 
 // ---------------------------------------------------------------------------
-// PR change: manual URL state management (reverted from useUrlState hook)
+// URL state: the page wires its ?tab= search param via the shared
+// `useUrlState` hook (history-replacing, popstate-aware) — see
+// src/hooks/use-url-state.ts for the implementation.
 // ---------------------------------------------------------------------------
-//
-// The PR's revert from useUrlState to manual readTabFromUrl / setTab /
-// popstate wiring did not actually land — the component still uses the
-// shared useUrlState hook. The obsolete describe.skip blocks asserting
-// the reverted structure have been deleted (rather than left skipped)
-// so the remaining suites continue to provide CI signal for the
-// behaviour that is actually in tree. The pure helpers below
-// (readTabFromUrl / setTab) remain useful as unit tests for the
-// URL-encoding contract that the hook implements.
+
 
 describe("admin-shop-returns — TAB_IDS and tabs", () => {
   it("defines TAB_IDS as a ReadonlySet", () => {

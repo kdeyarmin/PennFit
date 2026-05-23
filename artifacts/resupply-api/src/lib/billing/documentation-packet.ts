@@ -124,7 +124,7 @@ export async function renderDocumentationPacket(
 ): Promise<PacketResult> {
   const doc = new PDFDocument({
     size: "LETTER",
-    margins: { top: 54, bottom: 54, left: 54, right: 54 },
+    margins: { top: 72, bottom: 54, left: 54, right: 54 },
   });
   // Track page count via the pageAdded event. The constructor adds
   // the first page synchronously before our listener fires, so we
@@ -132,6 +132,7 @@ export async function renderDocumentationPacket(
   let pageCount = 1;
   doc.on("pageAdded", () => {
     pageCount += 1;
+    drawConfidentialBanner(doc);
   });
   const chunks: Buffer[] = [];
   return new Promise((resolve, reject) => {
@@ -144,12 +145,30 @@ export async function renderDocumentationPacket(
     });
     doc.on("error", reject);
     try {
+      drawConfidentialBanner(doc);
       drawPacket(doc, input);
       doc.end();
     } catch (err) {
       reject(err);
     }
   });
+}
+
+function drawConfidentialBanner(doc: PDFKit.PDFDocument): void {
+  const saved = { x: doc.x, y: doc.y };
+  doc
+    .font("Helvetica-Bold")
+    .fontSize(8)
+    .fillColor("#7c2d12")
+    .text(
+      "CONFIDENTIAL — PROTECTED HEALTH INFORMATION — Disclosure restricted under 45 CFR 164.502",
+      54,
+      36,
+      { align: "center", width: 504 },
+    );
+  doc.fillColor("black").font("Helvetica").fontSize(10);
+  doc.x = saved.x;
+  doc.y = saved.y === 36 ? 72 : saved.y;
 }
 
 function drawPacket(doc: PDFKit.PDFDocument, input: PacketInput): void {

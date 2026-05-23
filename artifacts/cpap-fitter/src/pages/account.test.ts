@@ -243,10 +243,3 @@ describe("account — formatMoneyCents no longer imported from @/lib/shop-api", 
   });
 });
 
-// ---------------------------------------------------------------------------
-// PR change: RemindersSection removed from account.tsx (P5 reversion)
-// ---------------------------------------------------------------------------
-// NOTE: the P5 reversion described above did not actually land — the
-// RemindersSection is still present in account.tsx, so the obsolete
-// describe.skip block that asserted its removal has been deleted rather
-// than left skipped.
