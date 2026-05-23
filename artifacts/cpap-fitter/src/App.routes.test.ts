@@ -1,6 +1,12 @@
-// Tests for App.tsx — new routes added in this PR
+// Tests for App.tsx — new routes added across recent PRs
 //
-// This PR registered ten new routes in the PatientRouter:
+// Routes registered in the marketing/stories PR:
+//   - /stories                          → Stories
+//   - /learn/reading-your-sleep-report  → LearnReadingYourSleepReport
+//   - /learn/sleep-hygiene              → LearnSleepHygiene
+//   - /learn/cpap-and-weight-loss       → LearnCpapAndWeightLoss
+//
+// Routes registered in a prior PR (brand pages + educational articles):
 //   - /cpap-masks          → CpapMasks
 //   - /cpap-masks/react-health → CpapMasksReactHealth
 //   - /cpap-masks/resmed   → CpapMasksResmed
@@ -12,8 +18,8 @@
 //   - /learn/therapy-types → LearnTherapyTypes
 //   - /learn/sleep-apnea-heart-health → LearnSleepApneaHeartHealth
 //
-// We also verify the lazy() import declarations for each new module,
-// and that the component names match the named exports from those files.
+// Tests use static source analysis (same pattern as admin.scope.test.ts and
+// AppShell.nav.test.ts) because the node vitest environment has no DOM.
 
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -53,6 +59,54 @@ function hasLazyImport(src: string, modulePath: string, exportName: string): boo
     src.includes(`m.${exportName}`)
   );
 }
+
+// ---------------------------------------------------------------------------
+// New routes from the marketing/stories PR
+// ---------------------------------------------------------------------------
+
+describe("App.tsx — /stories route registered", () => {
+  it("registers <Route path='/stories' component={Stories} />", () => {
+    expect(hasRoute(SRC, "/stories", "Stories")).toBe(true);
+  });
+
+  it("lazy-imports Stories from @/pages/stories", () => {
+    expect(hasLazyImport(SRC, "stories", "Stories")).toBe(true);
+  });
+
+  it("lazy import uses 'm.Stories' named export", () => {
+    expect(SRC).toContain("m.Stories");
+  });
+});
+
+describe("App.tsx — /learn/reading-your-sleep-report route registered", () => {
+  it("registers <Route path='/learn/reading-your-sleep-report' />", () => {
+    expect(hasRoute(SRC, "/learn/reading-your-sleep-report", "LearnReadingYourSleepReport")).toBe(true);
+  });
+
+  it("lazy-imports LearnReadingYourSleepReport from @/pages/learn-reading-your-sleep-report", () => {
+    expect(hasLazyImport(SRC, "learn-reading-your-sleep-report", "LearnReadingYourSleepReport")).toBe(true);
+  });
+});
+
+describe("App.tsx — /learn/sleep-hygiene route registered", () => {
+  it("registers <Route path='/learn/sleep-hygiene' component={LearnSleepHygiene} />", () => {
+    expect(hasRoute(SRC, "/learn/sleep-hygiene", "LearnSleepHygiene")).toBe(true);
+  });
+
+  it("lazy-imports LearnSleepHygiene from @/pages/learn-sleep-hygiene", () => {
+    expect(hasLazyImport(SRC, "learn-sleep-hygiene", "LearnSleepHygiene")).toBe(true);
+  });
+});
+
+describe("App.tsx — /learn/cpap-and-weight-loss route registered", () => {
+  it("registers <Route path='/learn/cpap-and-weight-loss' component={LearnCpapAndWeightLoss} />", () => {
+    expect(hasRoute(SRC, "/learn/cpap-and-weight-loss", "LearnCpapAndWeightLoss")).toBe(true);
+  });
+
+  it("lazy-imports LearnCpapAndWeightLoss from @/pages/learn-cpap-and-weight-loss", () => {
+    expect(hasLazyImport(SRC, "learn-cpap-and-weight-loss", "LearnCpapAndWeightLoss")).toBe(true);
+  });
+});
 
 // ---------------------------------------------------------------------------
 // New brand-page routes
@@ -193,6 +247,10 @@ describe("App.tsx — lazy() imports for educational article pages", () => {
 // ---------------------------------------------------------------------------
 
 describe("App.tsx — explanatory comments are present", () => {
+  it("has a comment explaining the patient stories and learn additions", () => {
+    expect(SRC).toContain("patient stories landing");
+  });
+
   it("has a comment explaining that educational pages are lazy-loaded", () => {
     expect(SRC).toContain("Educational long-form articles");
     expect(SRC).toContain("Lazy-loaded");
@@ -227,6 +285,26 @@ describe("App.tsx — pre-existing routes not regressed", () => {
 
   it("still registers /learn/device-setup route", () => {
     expect(SRC).toContain('path="/learn/device-setup"');
+  });
+
+  it("still registers /cpap-masks route", () => {
+    expect(SRC).toContain('path="/cpap-masks"');
+  });
+
+  it("still registers /admin route", () => {
+    expect(SRC).toContain('path="/admin"');
+  });
+
+  it("still registers /admin/verify-email route", () => {
+    expect(SRC).toContain('path="/admin/verify-email"');
+  });
+
+  it("still registers /admin/sign-in route", () => {
+    expect(SRC).toContain('path="/admin/sign-in"');
+  });
+
+  it("still registers /learn/nasal-congestion route", () => {
+    expect(SRC).toContain('path="/learn/nasal-congestion"');
   });
 });
 

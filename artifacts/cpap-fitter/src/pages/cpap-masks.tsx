@@ -98,6 +98,7 @@ export function CpapMasks() {
   useDocumentTitle(
     "CPAP Mask Brands",
     "Compare CPAP masks from React Health, ResMed, and Fisher & Paykel — the three brands PennPaps carries, with our top picks and a clinically-matched fitter.",
+    { schema: "Article" },
   );
   const [, navigate] = useLocation();
 
