@@ -75,7 +75,7 @@ router.post(
         message:
           channel === "email"
             ? "SendGrid is not configured on this server."
-            : "Twilio Messaging is not configured on this server.",
+            : "SMS messaging is not configured on this server.",
       });
       return;
     }

@@ -68,11 +68,10 @@ export function AdminInboundFaxesPage() {
           className="text-sm mt-1"
           style={{ color: "hsl(var(--ink-3))" }}
         >
-          Faxes that Twilio has delivered to our fax number. Triage
-          each into the right patient + document category, or archive
-          junk. Bytes are mirrored to private storage so the PDF stays
-          available long after Twilio&apos;s 365-day media retention
-          window.
+          Faxes delivered to our fax number. Triage each into the
+          right patient + document category, or archive junk. Bytes
+          are mirrored to private storage so the PDF stays available
+          long after the carrier&apos;s 365-day media retention window.
         </p>
       </header>
 
@@ -341,10 +340,11 @@ function TriageModal({
                 />
               ) : (
                 <div className="h-full flex items-center justify-center text-sm text-muted-foreground p-4 text-center">
-                  Media not persisted for this fax. The Twilio webhook
-                  may have hit the retention window, or the download
-                  failed at receive time. Check the application log
-                  for the audit row with this fax&apos;s ID.
+                  Media not persisted for this fax. The inbound
+                  webhook may have hit the retention window, or the
+                  download failed at receive time. Check the
+                  application log for the audit row with this fax&apos;s
+                  ID.
                 </div>
               )}
             </div>

@@ -194,7 +194,7 @@ export function Privacy() {
               opt-in consent with any third party for their marketing purposes.
               We share your phone number only with the telecommunications
               providers required to deliver the messages you have asked us to
-              send (currently Twilio, our SMS carrier).
+              send (our SMS carrier).
             </p>
           </section>
 
