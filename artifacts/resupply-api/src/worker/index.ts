@@ -402,12 +402,33 @@ export async function startWorker(): Promise<void> {
   // with 24-hour cooldown gates.
   await registerComplianceAutoWorkflowJob(boss);
 
-  // Hourly — warn invited team members whose operator-typed
-  // temporary password is approaching ADMIN_PASSWORD_TTL_MS (heads-up
-  // at ~T-2 days) and again the moment it expires. Idempotency via
-  // stamp columns on resupply_auth.password_credentials added in
-  // migration 0143.
+  // Daily — notify admins of upcoming/expired invite-password
+  // expirations so operators can re-invite teammates before they
+  // lose access.
   await registerInvitePasswordExpiryNotifyJob(boss);
+
+  // Every 6 hours — shop inventory low-stock alert digest. Reads
+  // Stripe catalog, dedups per-SKU via resupply.low_stock_alert_state,
+  // emails RESUPPLY_ADMIN_EMAILS one rollup per tick.
+  await registerLowStockAlertsJob(boss);
+
+  // Every minute — drain pending inbound_webhooks rows and route
+  // each to its per-source dispatcher (Parachute today; Phase 4
+  // will add ehr_fhir_* sources). Migration 0144 lands the typed
+  // referral inbox the dispatcher writes into.
+  await registerInboundWebhookDispatchJob(boss);
+
+  // Every 5 minutes — run pre-flight checks (PA requirement,
+  // eligibility, docs gap, physician fax fallback) on new
+  // inbound referrals that have a matched patient. Migration 0146
+  // lands the inbound_referral_preflight_checks history table.
+  await registerInboundReferralPreflightJob(boss);
+
+  // Every minute — drain inbound_referral_status_outbox and POST
+  // lifecycle callbacks (accept, ship, PA decision) back to the
+  // originating Parachute / EHR partner. HMAC-SHA256 signed; expo
+  // backoff per migration 0148.
+  await registerReferralStatusOutboundJob(boss);
 
   // Every 6 hours — shop inventory low-stock alert digest. Reads
   // Stripe catalog, dedups per-SKU via resupply.low_stock_alert_state,

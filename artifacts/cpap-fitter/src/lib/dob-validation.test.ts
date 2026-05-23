@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { DOB_MIN, isPlausibleDob } from "./dob-validation";
 
 // ---------------------------------------------------------------------------
@@ -149,10 +149,9 @@ describe("isPlausibleDob", () => {
       expect(isPlausibleDob(s)).toBe(true);
     });
 
-    it("uses local date boundary, so today's local date is always accepted", () => {
-      // We verify the function uses local getFullYear/getMonth/getDate,
-      // not UTC. Mock Date to a fixed moment and confirm the local "today"
-      // passes while local "tomorrow" fails.
+    it("uses UTC end-of-today, so a caller in UTC-12 can register a same-day newborn", () => {
+      // We verify todayEnd is UTC 23:59:59, not local midnight. We do this
+      // by mocking Date to a fixed UTC moment and confirming today passes.
       const fixed = new Date("2025-03-15T00:00:00.000Z");
       const realDate = globalThis.Date;
       // Minimal spy: Date() constructor returns fixed; Date.UTC is unchanged.
@@ -172,7 +171,6 @@ describe("isPlausibleDob", () => {
       } as typeof Date;
       globalThis.Date = MockDate;
       try {
-        // fixed is 2025-03-15T00:00:00Z, which is local 2025-03-15 in UTC
         expect(isPlausibleDob("2025-03-15")).toBe(true);
         expect(isPlausibleDob("2025-03-16")).toBe(false);
       } finally {
