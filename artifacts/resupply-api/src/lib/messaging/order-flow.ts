@@ -301,7 +301,7 @@ export async function pausePatient(patientId: string): Promise<void> {
     smsMarketing: false,
     smsTransactional: false,
   };
-  await supabase
+  const { error: prefsUpdateErr } = await supabase
     .schema("resupply")
     .from("shop_customers")
     .update({
@@ -309,4 +309,5 @@ export async function pausePatient(patientId: string): Promise<void> {
       updated_at: nowIso,
     })
     .eq("customer_id", cust.customer_id);
+  if (prefsUpdateErr) throw prefsUpdateErr;
 }
