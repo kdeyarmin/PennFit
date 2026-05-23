@@ -121,11 +121,12 @@ describe("admin-shop-returns — pre-existing action buttons not removed", () =>
 });
 
 // ---------------------------------------------------------------------------
+// Tab IDs and URL state invariants
+// ---------------------------------------------------------------------------
 // URL state: the page wires its ?tab= search param via the shared
 // `useUrlState` hook (history-replacing, popstate-aware) — see
 // src/hooks/use-url-state.ts for the implementation.
 // ---------------------------------------------------------------------------
-
 
 describe("admin-shop-returns — TAB_IDS and tabs", () => {
   it("defines TAB_IDS as a ReadonlySet", () => {
@@ -340,5 +341,59 @@ describe("setTab URL building — non-default values set the param", () => {
     const url = buildTabUrl("requested", "?page=5", "/admin/returns", "");
     expect(url).toContain("tab=requested");
     expect(url).toContain("page=5");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Source-level check: useUrlState integration
+// ---------------------------------------------------------------------------
+// The PR removed the manual readTabFromUrl / popstate implementation and
+// the associated tests. The current source delegates URL-state management to
+// the useUrlState hook. These tests verify the hook is properly integrated.
+
+describe("admin-shop-returns — useUrlState hook integration", () => {
+  it("imports useUrlState from @/hooks/use-url-state", () => {
+    expect(SRC).toContain('from "@/hooks/use-url-state"');
+    expect(SRC).toContain("useUrlState");
+  });
+
+  it("calls useUrlState with key: 'tab'", () => {
+    expect(SRC).toMatch(/useUrlState[\s\S]{0,50}key:\s*["']tab["']/);
+  });
+
+  it("calls useUrlState with defaultValue: 'open'", () => {
+    expect(SRC).toMatch(/useUrlState[\s\S]{0,80}defaultValue:\s*["']open["']/);
+  });
+
+  it("passes isAllowed guard to useUrlState for type safety", () => {
+    expect(SRC).toContain("isAllowed");
+    expect(SRC).toContain("isTab");
+  });
+
+  it("defines isTab as a type-narrowing guard that uses TAB_IDS.has()", () => {
+    expect(SRC).toContain("TAB_IDS.has(");
+    expect(SRC).toMatch(/\bisTab\s*=/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Regression: source no longer contains manual readTabFromUrl / popstate
+// ---------------------------------------------------------------------------
+// These checks confirm the manual URL state was fully replaced by useUrlState.
+
+describe("admin-shop-returns — manual URL state removed (replaced by useUrlState)", () => {
+  it("does not define a standalone readTabFromUrl function", () => {
+    expect(SRC).not.toContain("function readTabFromUrl");
+  });
+
+  it("does not manually call window.history.replaceState or pushState for tab changes", () => {
+    // The useUrlState hook owns history management; the component should not
+    // also call replaceState/pushState directly.
+    expect(SRC).not.toMatch(/history\.(replaceState|pushState)\s*\(/);
+  });
+
+  it("does not manually add or remove a popstate event listener", () => {
+    expect(SRC).not.toContain('addEventListener("popstate"');
+    expect(SRC).not.toContain('removeEventListener("popstate"');
   });
 });

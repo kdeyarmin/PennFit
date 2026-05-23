@@ -242,4 +242,3 @@ describe("account — formatMoneyCents no longer imported from @/lib/shop-api", 
     expect(SRC).not.toContain("formatMoneyCents");
   });
 });
-

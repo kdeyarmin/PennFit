@@ -146,13 +146,13 @@ describe("reminders-manage — regression: core manage behaviour intact", () => 
     expect(SRC).toContain("Pick at least one supply");
   });
 
-  it("calls update.mutate with the token and enabled items on Save", () => {
+  it("calls update.mutate with the token (when present) and enabled items on Save", () => {
     expect(SRC).toContain("update.mutate(");
     expect(SRC).toMatch(/params:\s*\{\s*token\s*\}/);
     expect(SRC).toMatch(/data:\s*\{\s*items:\s*enabled\s*\}/);
   });
 
-  it("calls unsub.mutate with the token on Unsubscribe", () => {
+  it("calls unsub.mutate with the token (when present) on Unsubscribe", () => {
     expect(SRC).toContain("unsub.mutate(");
     expect(SRC).toMatch(/unsub\.mutate\(\s*\{\s*params:\s*\{\s*token\s*\}/s);
   });
@@ -161,4 +161,3 @@ describe("reminders-manage — regression: core manage behaviour intact", () => 
     expect(SRC).toContain("You've been unsubscribed");
   });
 });
-
