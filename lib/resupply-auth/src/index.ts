@@ -9,6 +9,7 @@ export * from "./cookies";
 export * from "./csrf";
 export * from "./rate-limit";
 export * from "./repository";
+export * from "./credential-writes";
 export * from "./supabase-repository";
 export * from "./http";
 export * from "./team-invite";

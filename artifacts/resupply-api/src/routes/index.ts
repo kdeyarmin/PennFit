@@ -146,6 +146,9 @@ import rulesRouter from "./rules/index.js";
 import smsRouter from "./sms/index.js";
 import shopRouter from "./shop/index.js";
 import faxRouter from "./fax/index.js";
+import portalClinicianRouter from "./portal-clinician.js";
+import rxRequestDocumentRouter from "./rx-request-document.js";
+import prescriptionRequestsRouter from "./admin/prescription-requests.js";
 import voiceRouter from "./voice/index.js";
 
 const router: IRouter = Router();
@@ -165,6 +168,14 @@ router.use(smsRouter);
 // /fax/document/:token  — signed cover-letter PDF fetched by Twilio
 // /fax/status-callback  — Twilio fax delivery lifecycle webhook
 router.use(faxRouter);
+// /portal/clinician/:token — public referral status page for EHR
+// partners who don't consume webhook callbacks. Token-gated; no
+// session cookie required.
+router.use(portalClinicianRouter);
+// /rx-request/document/:token — Twilio fetches a fully-rendered
+// pre-populated prescription PDF here when an admin dispatches a
+// prescription-request packet. Token-gated; signed HMAC w/ 24h TTL.
+router.use(rxRequestDocumentRouter);
 router.use(emailRouter);
 // Admin-console READ endpoints. Each handler is gated by
 // requireAdmin and surfaces only PHI the dashboard needs to
@@ -251,6 +262,10 @@ router.use(smartTriggersRouter);
 // TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN / TWILIO_FAX_FROM_NUMBER
 // are set; otherwise the row is created with status='pending'.
 router.use(physicianFaxOutreachRouter);
+// /admin/(patients/:id)/prescription-requests — physician-faxable
+// pre-populated prescriptions. Twilio dispatch, signed-PDF return,
+// CSR-stamped lifecycle. Renders via lib/prescription-request-pdf.ts.
+router.use(prescriptionRequestsRouter);
 // /admin/shop/back-in-stock-queue — visibility into who's waiting
 // for which OOS SKU + manual fanout trigger. requireAdmin gate is
 // on the router itself.

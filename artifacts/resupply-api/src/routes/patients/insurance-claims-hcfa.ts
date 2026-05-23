@@ -161,7 +161,7 @@ router.get(
         toDate: claim.date_of_service,
         placeOfService: "12",
         hcpcsCode: l.hcpcs_code,
-        modifiers: (l.modifier ?? "")
+        modifiers: ((l.modifier ?? "") as string)
           .split(",")
           .map((m: string) => m.trim().toUpperCase())
           .filter((m: string) => m.length === 2),

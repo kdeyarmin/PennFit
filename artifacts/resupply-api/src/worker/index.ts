@@ -64,6 +64,7 @@ import { registerDwoExpirySweepJob } from "./jobs/dwo-expiry-sweep.js";
 import { registerWebhookDispatcherJob } from "./jobs/webhook-dispatcher.js";
 import { registerAutoWorkflowJob } from "./jobs/auto-workflow.js";
 import { registerComplianceAutoWorkflowJob } from "./jobs/compliance-auto-workflow.js";
+import { registerInvitePasswordExpiryNotifyJob } from "./jobs/invite-password-expiry-notify.js";
 import { registerLowStockAlertsJob } from "./jobs/low-stock-alerts.js";
 import { registerInboundWebhookDispatchJob } from "./jobs/inbound-webhook-dispatch.js";
 import { registerInboundReferralPreflightJob } from "./jobs/inbound-referral-preflight.js";
@@ -400,6 +401,13 @@ export async function startWorker(): Promise<void> {
   // .oig_screening_overdue / .patient_rights_overdue webhook events
   // with 24-hour cooldown gates.
   await registerComplianceAutoWorkflowJob(boss);
+
+  // Hourly — warn invited team members whose operator-typed
+  // temporary password is approaching ADMIN_PASSWORD_TTL_MS (heads-up
+  // at ~T-2 days) and again the moment it expires. Idempotency via
+  // stamp columns on resupply_auth.password_credentials added in
+  // migration 0143.
+  await registerInvitePasswordExpiryNotifyJob(boss);
 
   // Every 6 hours — shop inventory low-stock alert digest. Reads
   // Stripe catalog, dedups per-SKU via resupply.low_stock_alert_state,

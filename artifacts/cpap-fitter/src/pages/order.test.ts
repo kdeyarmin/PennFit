@@ -172,11 +172,3 @@ describe("formatUsPhone — boundary: 10-digit truncation", () => {
     expect(formatUsPhone("9991234567890")).toBe("(999) 123-4567");
   });
 });
-
-// ---------------------------------------------------------------------------
-// PR change: role="alert" removed from consent-to-contact error paragraph
-// ---------------------------------------------------------------------------
-// The consentToContact error message element had role="alert" stripped in
-// this PR. We verify the structural change so the attribute doesn't
-// inadvertently creep back in.
-

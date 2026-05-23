@@ -44,6 +44,8 @@ import { AdminFollowupsPage } from "@/pages/admin/admin-followups";
 import { AdminTodayPage } from "@/pages/admin/admin-today";
 import { AdminProvidersPage } from "@/pages/admin/admin-providers";
 import { AdminInboundFaxesPage } from "@/pages/admin/admin-inbound-faxes";
+import { AdminInboundReferralsPage } from "@/pages/admin/admin-inbound-referrals";
+import { AdminPrescriptionRequestsPage } from "@/pages/admin/admin-prescription-requests";
 import { AdminEquipmentRecallsPage } from "@/pages/admin/admin-equipment-recalls";
 import { AdminAnalyticsPage } from "@/pages/admin/admin-analytics";
 import { AdminCompliancePage } from "@/pages/admin/admin-compliance";
@@ -280,6 +282,14 @@ function AdminConsole() {
             component={AdminInboundFaxesPage}
           />
           <Route
+            path="/admin/inbound-referrals"
+            component={AdminInboundReferralsPage}
+          />
+          <Route
+            path="/admin/patients/:patientId/prescription-requests"
+            component={AdminPrescriptionRequestsPage}
+          />
+          <Route
             path="/admin/equipment-recalls"
             component={AdminEquipmentRecallsPage}
           />
@@ -365,9 +375,16 @@ function AdminConsole() {
 
 // Probes /resupply-api/auth/me; redirects to /admin/sign-in when no
 // session is present.
+//
+// Also enforces the "must change password" gate: when /auth/me returns
+// mustChangePassword:true (set by the admin team-invite "set their
+// password for them" flow), the user is bounced to
+// /admin/change-password before any of the admin pages can mount. The
+// flag clears as soon as they pick a new password.
 export function ConsoleRoute() {
   const { data, isPending } = authHooks.useSession();
   if (isPending) return null;
   if (!data) return <Redirect to="/admin/sign-in" />;
+  if (data.mustChangePassword) return <Redirect to="/admin/change-password" />;
   return <AdminConsole />;
 }

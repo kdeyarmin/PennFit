@@ -212,7 +212,7 @@ export async function scoreClaim(claimId: string): Promise<DenialScore | null> {
   if (claim.payer_profile_id) {
     for (const line of lineList) {
       if (!CAPPED_RENTAL_HCPCS.has(line.hcpcs_code)) continue;
-      const mods = (line.modifier ?? "")
+      const mods = ((line.modifier ?? "") as string)
         .split(",")
         .map((m: string) => m.trim().toUpperCase());
       if (!mods.includes("KX") && rentalLikelyContinuing(claim.date_of_service)) {

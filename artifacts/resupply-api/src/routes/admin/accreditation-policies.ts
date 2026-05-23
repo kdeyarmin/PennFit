@@ -728,14 +728,15 @@ function csvCell(value: unknown): string {
 
 // Thin helper for the binder summary — runs a head-only count with
 // an optional refiner so each section's "open" sub-count is one
-// expression instead of three.
-// The PostgREST filter-builder type chain is too deep for TS to
-// resolve without TS2589 (excessively deep instantiation) — and the
-// builder API is uniform across the four tables we count here. We
-// type `q` as `any` internally; callers still get strong typing on
-// the return value of countTable (Promise<number>).
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type CountRefiner = (q: any) => unknown;
+// expression instead of three. The PostgREST filter builder's
+// generic chain is too deep to spell out usefully; the structural
+// type below captures the chain methods the callers actually use.
+type CountQuery = {
+  in(column: string, values: readonly string[]): CountQuery;
+  is(column: string, value: null | boolean): CountQuery;
+  not(column: string, operator: string, value: unknown): CountQuery;
+};
+type CountRefiner = (q: CountQuery) => CountQuery;
 async function countTable(
   supabase: ReturnType<typeof getSupabaseServiceRoleClient>,
   table:
@@ -749,7 +750,7 @@ async function countTable(
     .schema("resupply")
     .from(table)
     .select("id", { count: "exact", head: true });
-  const final = refine ? (refine(q) as typeof q) : q;
+  const final = refine ? (refine(q as unknown as CountQuery) as unknown as typeof q) : q;
   const { count, error } = await final;
   if (error) throw error;
   return count ?? 0;

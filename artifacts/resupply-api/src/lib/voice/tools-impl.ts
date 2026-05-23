@@ -261,7 +261,8 @@ class Impl implements VoiceToolDispatcher {
       .schema("resupply")
       .from("prescriptions")
       .select("item_sku, cadence_days")
-      .eq("patient_id", this.deps.patientId);
+      .eq("patient_id", this.deps.patientId)
+      .eq("status", "active");
     if (error) throw error;
 
     const items = (rows ?? [])
@@ -373,15 +374,27 @@ class Impl implements VoiceToolDispatcher {
     }
     // Mark the episode as `confirmed`. Actual order placement against
     // Pacware is a downstream worker job; the admin dashboard will
-    // pick this episode up in the "ready to fulfil" queue.
+    // pick this episode up in the "ready to fulfil" queue. The .eq on
+    // status gates the transition so a second tool call (or a call
+    // that races a prior cancellation) can't resurrect an already-
+    // terminal episode.
     const orderId = randomUUID();
     const nowIso = new Date().toISOString();
-    const { error } = await this.supabase
+    const { data: updated, error } = await this.supabase
       .schema("resupply")
       .from("episodes")
       .update({ status: "confirmed", updated_at: nowIso })
-      .eq("id", this.deps.episodeId);
+      .eq("id", this.deps.episodeId)
+      .eq("status", "pending")
+      .select("id");
     if (error) throw error;
+    if (!updated || updated.length === 0) {
+      return {
+        callId: call.callId,
+        name: call.name,
+        result: { ok: false, order_id: "", accepted_skus: [] },
+      };
+    }
 
     return {
       callId: call.callId,

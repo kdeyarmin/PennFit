@@ -323,6 +323,11 @@ const AdminVerifyEmailPage = lazy(() =>
     default: m.VerifyEmailPage,
   })),
 );
+const AdminChangePasswordPage = lazy(() =>
+  import("@/pages/admin/change-password").then((m) => ({
+    default: m.ChangePasswordPage,
+  })),
+);
 
 // Gated admin console — bundles all 28 admin pages, the AppShell
 // chrome, and the generated resupply-api client into a single chunk
@@ -664,11 +669,8 @@ function PatientRouter() {
  *
  * Wouter's nested-routing trick: catching `/sign-in/*` lets the auth provider
  * own everything below /sign-in (e.g. /sign-in/factor-one) without us
- * pre-defining each step. Use the bare-`*` wildcard, not the
- * path-to-regexp-style `:name*` named splat — regexparam (Wouter's
- * underlying matcher) does NOT support named splats and silently treats
- * `:rest*` as a single-segment parameter named "rest*", which makes
- * multi-segment URLs fall through to the next route.
+ * pre-defining each step. (regexparam 3.x parses `:rest*` as a single-
+ * segment param literally named `rest*`, not as a wildcard — use `*`.)
  */
 function TopRouter() {
   return (
@@ -722,6 +724,18 @@ function TopRouter() {
           component={AdminResetPasswordPage}
         />
         <Route path="/admin/verify-email" component={AdminVerifyEmailPage} />
+        {/*
+          /admin/change-password is mounted OUTSIDE the AdminConsoleRoute
+          gate. ConsoleRoute redirects forced-rotation users here, and
+          having it ungated by the allowlist check means a freshly
+          invited admin can land here even before /resupply-api/admin/me
+          would let them through — the change-password endpoint itself
+          only needs a valid session.
+        */}
+        <Route
+          path="/admin/change-password"
+          component={AdminChangePasswordPage}
+        />
         <Route path="/admin" component={AdminConsoleRoute} />
         <Route path="/admin/*" component={AdminConsoleRoute} />
 

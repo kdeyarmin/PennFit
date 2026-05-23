@@ -52,6 +52,19 @@ describe("reminders — useShopIdentity imported (P5)", () => {
 // P5 — email pre-fill for signed-in customers
 // ---------------------------------------------------------------------------
 
+describe("reminders — email field pre-filled from identity (P5)", () => {
+  it("reads identityEmail from useShopIdentity", () => {
+    // The source pulls identityEmail off the identity hook and seeds
+    // the email state with it (either as a useState initialiser or via
+    // a deferred setEmail in a useEffect). Either pattern satisfies P5
+    // — what matters is that identityEmail is being consumed.
+    expect(SRC).toContain("identityEmail");
+  });
+
+  it("uses useShopIdentity to surface the signed-in customer's email", () => {
+    expect(SRC).toContain("useShopIdentity");
+  });
+});
 
 // ---------------------------------------------------------------------------
 // P5 — willSkipTokenStep logic

@@ -156,3 +156,34 @@ describe("reset-password — regression: core storefront form behaviour intact",
     expect(SRC).toContain("passwordsMismatch");
   });
 });
+
+// ---------------------------------------------------------------------------
+// PR change: removed SERVER_UNAVAILABLE_MESSAGE and authErrorMessage
+// ---------------------------------------------------------------------------
+describe("reset-password — SERVER_UNAVAILABLE_MESSAGE removed (this PR)", () => {
+  it("does NOT define SERVER_UNAVAILABLE_MESSAGE", () => {
+    expect(SRC).not.toContain("SERVER_UNAVAILABLE_MESSAGE");
+  });
+
+  it("does NOT define an authErrorMessage helper function", () => {
+    expect(SRC).not.toContain("function authErrorMessage");
+  });
+
+  it("does NOT contain the credentials-store-unavailable error text", () => {
+    expect(SRC).not.toContain("credentials store");
+  });
+
+  it("does NOT reference status.pennpaps.com", () => {
+    expect(SRC).not.toContain("status.pennpaps.com");
+  });
+
+  it("uses inline AuthError instanceof check for error handling", () => {
+    // Multi-line ternary: each part on its own line.
+    expect(SRC).toContain("err instanceof AuthError");
+    expect(SRC).toContain('"Could not reset your password."');
+  });
+
+  it("does NOT branch on err.status >= 500 in the error handler", () => {
+    expect(SRC).not.toContain("err.status >= 500");
+  });
+});

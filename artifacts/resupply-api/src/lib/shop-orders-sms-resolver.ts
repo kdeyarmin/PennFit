@@ -91,11 +91,14 @@ export async function resolveSmsRecipientForShopOrder(
   //    DME-registered patients are the cohort where SMS adds real
   //    value (repeat shipments); cash-pay-only shoppers without a
   //    patients row fall through to email-only.
+  // Escape LIKE metacharacters so an email containing `_` or
+  // `%` doesn't cross-match other patients' phone numbers.
+  const escapedEmail = email.replace(/[\\%_]/g, (c) => `\\${c}`);
   const { data: patient } = await supabase
     .schema("resupply")
     .from("patients")
     .select("phone_e164, legal_first_name")
-    .ilike("email", email)
+    .ilike("email", escapedEmail)
     .limit(1)
     .maybeSingle();
   if (!patient?.phone_e164) return null;

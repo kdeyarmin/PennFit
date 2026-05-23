@@ -327,6 +327,7 @@ async function checkEligibility(
   try {
     const result = await verifyEligibility({
       insuranceCoverageId: coverage.id,
+      patientId: referral.patient_match_id,
       hcpcsCode: hcpcs[0],
       requestedByEmail: ranBy,
     });

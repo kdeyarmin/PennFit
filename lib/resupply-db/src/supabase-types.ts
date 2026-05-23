@@ -1860,6 +1860,69 @@ export interface Database {
         >;
         Relationships: [];
       };
+      clinician_share_tokens: {
+        Row: {
+          id: string;
+          referral_id: string;
+          expires_at: string;
+          revoked_at: string | null;
+          last_viewed_at: string | null;
+          last_viewed_ip: string | null;
+          view_count: number;
+          created_by_email: string;
+          created_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["clinician_share_tokens"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["clinician_share_tokens"]["Row"]
+        >;
+        Relationships: [];
+      };
+      prescription_request_packets: {
+        Row: {
+          id: string;
+          patient_id: string;
+          provider_id: string | null;
+          source_prescription_id: string | null;
+          hcpcs_items_json: Json;
+          icd10_codes_json: Json;
+          device_settings_json: Json | null;
+          length_of_need_months: number;
+          return_fax_e164: string | null;
+          return_email: string | null;
+          clinical_notes: string | null;
+          status:
+            | "draft"
+            | "sent_fax"
+            | "delivered"
+            | "signed"
+            | "expired"
+            | "void"
+            | "failed";
+          valid_through: string | null;
+          sent_to_fax_e164: string | null;
+          vendor_ref: string | null;
+          vendor_name: string | null;
+          sent_at: string | null;
+          delivered_at: string | null;
+          failed_at: string | null;
+          failure_reason: string | null;
+          signed_at: string | null;
+          signed_object_key: string | null;
+          created_by_email: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["prescription_request_packets"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["prescription_request_packets"]["Row"]
+        >;
+        Relationships: [];
+      };
       documentation_packets: {
         Row: {
           id: string;
@@ -3837,6 +3900,22 @@ export interface Database {
           password_hash: string;
           algo: string;
           must_change: boolean;
+          // Set by the team-invite "set their password for them"
+          // path (lib/resupply-auth/src/team-invite.ts). The
+          // sign-in handler refuses must_change credentials older
+          // than ADMIN_PASSWORD_TTL_MS. Cleared back to NULL on
+          // user-initiated password changes / resets. Added in
+          // migration 0142_password_credential_set_by_admin_at.
+          set_by_admin_at: string | null;
+          // Stamped by the invite-password expiry notifier when it
+          // sends the heads-up reminder around day 5 of the TTL.
+          // Cleared back to NULL on a fresh re-invite (see
+          // invite-password-expiry-notify.ts). Added in migration
+          // 0143_password_credential_expiry_notify_stamps.
+          expiry_reminder_sent_at: string | null;
+          // Stamped by the same notifier when it sends the final
+          // "your invite has expired" email after the TTL elapses.
+          expired_notice_sent_at: string | null;
           updated_at: string;
         };
         Insert: {
@@ -3844,6 +3923,9 @@ export interface Database {
           password_hash: string;
           algo?: string;
           must_change?: boolean;
+          set_by_admin_at?: string | null;
+          expiry_reminder_sent_at?: string | null;
+          expired_notice_sent_at?: string | null;
           updated_at?: string;
         };
         Update: Partial<

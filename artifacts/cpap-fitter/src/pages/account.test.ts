@@ -243,11 +243,3 @@ describe("account — formatMoneyCents no longer imported from @/lib/shop-api", 
   });
 });
 
-// ---------------------------------------------------------------------------
-// PR change: RemindersSection removed from account.tsx (P5 reversion)
-// ---------------------------------------------------------------------------
-// The RemindersSection tile (linking /account → /reminders/manage) was added
-// in a previous commit and is now removed in this PR as part of the process-
-// simplification revert. Verify the component, its icon, and its usage are
-// all gone.
-
