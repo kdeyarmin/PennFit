@@ -65,6 +65,14 @@ export interface CapturedFilterCall {
 }
 const filterCalls = new Map<string, CapturedFilterCall[]>();
 
+// Separate FIFO queues for `supabase.schema(...).rpc(fnName, args)`
+// calls. Keyed by function name. Counters and arg-payload lists are
+// kept alongside so tests can assert "the route called fn X N times
+// with args { ... }".
+const rpcQueues = new Map<string, StagedSupabaseResponse[]>();
+const rpcCallCounts = new Map<string, number>();
+const rpcCallArgs = new Map<string, unknown[]>();
+
 function key(table: string, op: SupabaseOp): string {
   return `${table}.${op}`;
 }
@@ -260,6 +268,67 @@ function makeTableBuilder(table: string): TableBuilder {
   return builder;
 }
 
+
+// Keep this mock at module scope so Vitest hoists it within this helper
+// module once the helper has been loaded. Tests must still import this file
+// (or configure it in a Vitest setupFile) before importing any route/helper
+// that imports `@workspace/resupply-db`. `installSupabaseMock()` only manages
+// staged responses after the mock has been registered.
+vi.mock("@workspace/resupply-db", async () => {
+  const actual = await vi.importActual<
+    typeof import("@workspace/resupply-db")
+  >("@workspace/resupply-db");
+  return {
+    ...actual,
+    getSupabaseServiceRoleClient: () => ({
+      schema: () => ({
+        from: (table: string) => makeTableBuilder(table),
+        rpc: (fnName: string, args: unknown) => {
+          const prev = rpcCallCounts.get(fnName) ?? 0;
+          rpcCallCounts.set(fnName, prev + 1);
+          const argList = rpcCallArgs.get(fnName) ?? [];
+          argList.push(args);
+          rpcCallArgs.set(fnName, argList);
+          const queue = rpcQueues.get(fnName);
+          if (!queue || queue.length === 0) {
+            return Promise.resolve({ data: null, error: null });
+          }
+          return Promise.resolve(queue.shift()!);
+        },
+      }),
+    }),
+    // Best-effort projection upserts — the route tests don't
+    // exercise projection refresh assertions, so we no-op the
+    // helper rather than route through the mock builder. Tests
+    // that care can override on a per-test basis.
+    tryUpsertPatientLatestMessageSb: vi.fn(async () => true),
+  };
+});
+
+/**
+ * Stage one `{ data, error }` envelope for the next call to
+ * `supabase.schema(...).rpc(fnName, ...)`. FIFO across multiple stages
+ * on the same function name.
+ */
+export function stageSupabaseRpcResponse(
+  fnName: string,
+  result: StagedSupabaseResponse,
+): void {
+  const list = rpcQueues.get(fnName) ?? [];
+  list.push(result);
+  rpcQueues.set(fnName, list);
+}
+
+/** How many times the route invoked `.rpc(fnName, ...)` since the last reset. */
+export function getSupabaseRpcCallCount(fnName: string): number {
+  return rpcCallCounts.get(fnName) ?? 0;
+}
+
+/** Argument payloads passed to each `.rpc(fnName, args)` call since the last reset. */
+export function getSupabaseRpcArgs(fnName: string): unknown[] {
+  return rpcCallArgs.get(fnName) ?? [];
+}
+
 export interface SupabaseMockHandle {
   /** Reset all staged responses + call counts. Call from `beforeEach`. */
   reset(): void;
@@ -296,44 +365,28 @@ export interface SupabaseMockHandle {
 }
 
 /**
- * Wire a `vi.mock("@workspace/resupply-db", ...)` factory that returns
- * a stub `getSupabaseServiceRoleClient()`. Other named exports of
- * resupply-db are passed through unchanged via `vi.importActual`.
+ * Return a control handle for the module-scope
+ * `vi.mock("@workspace/resupply-db", ...)` factory above, which stubs
+ * `getSupabaseServiceRoleClient()`. Other named exports of resupply-db
+ * are passed through unchanged via `vi.importActual`.
  *
  * Returns a handle for resetting staged responses and staging more
- * inline. The returned handle is also installed on the function's
- * own state so tests can call `stageSupabaseResponse(...)` standalone.
+ * inline.
  *
- * IMPORTANT: this must run before any code that imports the route
- * under test. In a vitest file, that means it must be hoisted via
- * `vi.mock`. Call this function from the top level of the test file.
+ * IMPORTANT: because the mock is module-scoped (and hoisted by Vitest),
+ * this function no longer needs to install the mock; call it to reset and
+ * stage per-test responses.
  */
 export function installSupabaseMock(): SupabaseMockHandle {
-  vi.mock("@workspace/resupply-db", async () => {
-    const actual = await vi.importActual<
-      typeof import("@workspace/resupply-db")
-    >("@workspace/resupply-db");
-    return {
-      ...actual,
-      getSupabaseServiceRoleClient: () => ({
-        schema: () => ({
-          from: (table: string) => makeTableBuilder(table),
-        }),
-      }),
-      // Best-effort projection upserts — the route tests don't
-      // exercise projection refresh assertions, so we no-op the
-      // helper rather than route through the mock builder. Tests
-      // that care can override on a per-test basis.
-      tryUpsertPatientLatestMessageSb: vi.fn(async () => true),
-    };
-  });
-
-  return {
+  const handle: SupabaseMockHandle = {
     reset() {
       queues.clear();
       callCounts.clear();
       writePayloads.clear();
       filterCalls.clear();
+      rpcQueues.clear();
+      rpcCallCounts.clear();
+      rpcCallArgs.clear();
     },
     stage(table, op, result) {
       stageSupabaseResponse(table, op, result);
@@ -348,6 +401,12 @@ export function installSupabaseMock(): SupabaseMockHandle {
       return filterCalls.get(key(table, op)) ?? [];
     },
   };
+
+  // Defensive default: every test file that calls `installSupabaseMock()`
+  // starts from a clean staging/call-count state, even before its first
+  // explicit `beforeEach(() => supabaseMock.reset())`.
+  handle.reset();
+  return handle;
 }
 
 /** Standalone alias for `installSupabaseMock().callCount(...)`. */

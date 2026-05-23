@@ -104,7 +104,10 @@ export function SignUpPage() {
             autoComplete="email"
             required
             value={email}
-            onChange={(e) => setEmail(e.target.value)}
+            onChange={(e) => {
+              setEmail(e.target.value);
+              if (submitError) setSubmitError(null);
+            }}
             className="mt-1 w-full rounded-md border px-3 py-2 text-sm"
           />
         </label>
@@ -116,7 +119,10 @@ export function SignUpPage() {
             minLength={12}
             required
             value={password}
-            onChange={(e) => setPassword(e.target.value)}
+            onChange={(e) => {
+              setPassword(e.target.value);
+              if (submitError) setSubmitError(null);
+            }}
             showStrength
             helperText="At least 12 characters. Longer is stronger — passphrases of 4+ random words work great."
             inputTestId="signup-password-input"
@@ -129,7 +135,10 @@ export function SignUpPage() {
             autoComplete="new-password"
             required
             value={confirmPassword}
-            onChange={(e) => setConfirmPassword(e.target.value)}
+            onChange={(e) => {
+              setConfirmPassword(e.target.value);
+              if (submitError) setSubmitError(null);
+            }}
             inputTestId="signup-confirm-password-input"
             aria-invalid={passwordsMismatch || undefined}
           />

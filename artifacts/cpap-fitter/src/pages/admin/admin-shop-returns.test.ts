@@ -1,0 +1,409 @@
+// Static guard for the "Mark shipped back" action added to the admin shop
+// returns queue in this PR.
+//
+// The component uses React + @tanstack/react-query mutations which cannot be
+// rendered in the node vitest environment without jsdom.  We read the source
+// file directly and assert the structural invariants that matter most:
+//
+//  1. markShipped is imported from the API module.
+//  2. The "Mark shipped back" button is present with its expected
+//     data-testid pattern.
+//  3. The "Mark received" button now also carries a data-testid (added in
+//     this PR alongside the new shipped-back step).
+//  4. The button is gated by `item.status === "approved"` so it only appears
+//     when the return is in the right state.
+//  5. The comment block at the top of the file reflects the updated workflow
+//     (approved → Mark shipped back · Mark received).
+
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { describe, expect, it } from "vitest";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const SRC = readFileSync(
+  path.join(__dirname, "admin-shop-returns.tsx"),
+  "utf8",
+);
+
+// ---------------------------------------------------------------------------
+// API import
+// ---------------------------------------------------------------------------
+describe("admin-shop-returns — markShipped API import", () => {
+  it("imports markShipped from the shop-returns-api module", () => {
+    expect(SRC).toContain("markShipped");
+  });
+
+  it("imports markShipped alongside the other action functions", () => {
+    // The import block should include markShipped between markReceived and
+    // the other actions so it follows the alphabetical/logical ordering.
+    expect(SRC).toMatch(/markReceived[\s\S]{0,50}markShipped|markShipped[\s\S]{0,50}markReceived/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// "Mark shipped back" button markup
+// ---------------------------------------------------------------------------
+describe("admin-shop-returns — Mark shipped back button", () => {
+  it("renders the 'Mark shipped back' button label", () => {
+    expect(SRC).toContain("Mark shipped back");
+  });
+
+  it("includes a data-testid with the return-id-mark-shipped pattern", () => {
+    expect(SRC).toContain("return-${item.id}-mark-shipped");
+  });
+
+  it("gates the button on item.status === 'approved'", () => {
+    // The button should only appear when the return is in 'approved' state.
+    expect(SRC).toContain(`item.status === "approved"`);
+  });
+
+  it("calls shippedMut.mutate() on confirmation", () => {
+    expect(SRC).toContain("shippedMut.mutate()");
+  });
+
+  it("disables the button while the mutation is pending", () => {
+    expect(SRC).toContain("shippedMut.isPending");
+  });
+
+  it("shows a confirmation dialog with a human-readable message", () => {
+    expect(SRC).toContain(
+      "Mark this return as shipped back?",
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// "Mark received" button now has a data-testid (added in this PR)
+// ---------------------------------------------------------------------------
+describe("admin-shop-returns — Mark received button data-testid", () => {
+  it("includes a data-testid with the return-id-mark-received pattern", () => {
+    expect(SRC).toContain("return-${item.id}-mark-received");
+  });
+
+  it("Mark received button still renders the expected label", () => {
+    expect(SRC).toContain("Mark received");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Status-workflow comment at top of file reflects the new two-step flow
+// ---------------------------------------------------------------------------
+describe("admin-shop-returns — status workflow documentation", () => {
+  it("documents the approved → Mark shipped back step in the header comment", () => {
+    expect(SRC).toContain("Mark shipped back");
+  });
+
+  it("notes that the in-transit step is optional (skip-to-received still works)", () => {
+    expect(SRC).toContain("optional");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Regression: existing action buttons are still present
+// ---------------------------------------------------------------------------
+describe("admin-shop-returns — pre-existing action buttons not removed", () => {
+  it("still has the Approve button", () => {
+    expect(SRC).toContain("approveMut");
+  });
+
+  it("still has the Reject button", () => {
+    expect(SRC).toContain("rejectMut");
+  });
+
+  it("still has the Refund button", () => {
+    expect(SRC).toContain("refundMut");
+  });
+
+  it("still has the Replace button", () => {
+    expect(SRC).toContain("replaceMut");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// PR change: manual URL state management (reverted from useUrlState hook)
+// ---------------------------------------------------------------------------
+//
+// The PR reverts the useUrlState migration and replaces it with:
+//   1. readTabFromUrl() — reads ?tab= from URLSearchParams, validates against
+//      TAB_IDS set, falls back to "open" on SSR or unknown values.
+//   2. setTab(next: Tab) — updates component state AND calls
+//      history.replaceState with the new URL.
+//   3. useEffect popstate listener — rehydrates state on browser back/forward.
+
+describe("admin-shop-returns — URL state: useUrlState removed", () => {
+  it("no longer imports useUrlState", () => {
+    expect(SRC).not.toContain('from "@/hooks/use-url-state"');
+  });
+
+  it("no longer calls useUrlState", () => {
+    expect(SRC).not.toContain("useUrlState(");
+  });
+});
+
+describe("admin-shop-returns — readTabFromUrl structure", () => {
+  it("defines readTabFromUrl as a function", () => {
+    expect(SRC).toContain("function readTabFromUrl");
+  });
+
+  it("guards against SSR with typeof window === 'undefined'", () => {
+    expect(SRC).toContain('typeof window === "undefined"');
+  });
+
+  it("reads the 'tab' search param via URLSearchParams", () => {
+    expect(SRC).toMatch(/URLSearchParams\s*\(/);
+    expect(SRC).toMatch(/\.get\(\s*["']tab["']\s*\)/);
+  });
+
+  it("falls back to 'open' for unknown/missing params", () => {
+    expect(SRC).toContain('"open"');
+  });
+});
+
+describe("admin-shop-returns — setTab URL building", () => {
+  it("updates browser history when tab changes", () => {
+    expect(SRC).toMatch(/history\.(replaceState|pushState)\s*\(/);
+  });
+
+  it("deletes the tab param when next equals 'open' (the default)", () => {
+    expect(SRC).toContain('params.delete("tab")');
+  });
+
+  it("sets the tab param for non-default values", () => {
+    expect(SRC).toContain('params.set("tab", next)');
+  });
+
+  it("appends window.location.hash to the rebuilt URL", () => {
+    expect(SRC).toContain("window.location.hash");
+  });
+});
+
+describe("admin-shop-returns — popstate listener", () => {
+  it("adds a popstate event listener", () => {
+    expect(SRC).toContain('addEventListener("popstate"');
+  });
+
+  it("removes the popstate listener on cleanup", () => {
+    expect(SRC).toContain('removeEventListener("popstate"');
+  });
+
+  it("rehydrates state by calling readTabFromUrl in the handler", () => {
+    expect(SRC).toContain("readTabFromUrl()");
+  });
+});
+
+describe("admin-shop-returns — TAB_IDS and tabs", () => {
+  it("defines TAB_IDS as a ReadonlySet", () => {
+    expect(SRC).toContain("ReadonlySet");
+    expect(SRC).toContain("TAB_IDS");
+  });
+
+  const expectedTabs = [
+    "open",
+    "requested",
+    "approved",
+    "shipped_back",
+    "received",
+    "refunded",
+    "replaced",
+    "rejected",
+    "all",
+  ];
+  for (const tab of expectedTabs) {
+    it(`TABS includes tab id "${tab}"`, () => {
+      expect(SRC).toContain(`"${tab}"`);
+    });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Pure-logic re-implementation of readTabFromUrl (verbatim from source)
+// ---------------------------------------------------------------------------
+//
+// Source (from admin-shop-returns.tsx):
+//   type Tab = ReturnStatus | "all" | "open";
+//   const TABS = [
+//     { id: "open" }, { id: "requested" }, { id: "approved" },
+//     { id: "shipped_back" }, { id: "received" }, { id: "refunded" },
+//     { id: "replaced" }, { id: "rejected" }, { id: "all" },
+//   ];
+//   const TAB_IDS: ReadonlySet<Tab> = new Set(TABS.map((t) => t.id));
+//
+//   function readTabFromUrl(): Tab {
+//     if (typeof window === "undefined") return "open";
+//     const raw = new URLSearchParams(window.location.search).get("tab");
+//     return raw && TAB_IDS.has(raw as Tab) ? (raw as Tab) : "open";
+//   }
+
+type ReturnTab =
+  | "open"
+  | "requested"
+  | "approved"
+  | "shipped_back"
+  | "received"
+  | "refunded"
+  | "replaced"
+  | "rejected"
+  | "all";
+
+const TABS_RETURNS: ReadonlyArray<{ id: ReturnTab }> = [
+  { id: "open" },
+  { id: "requested" },
+  { id: "approved" },
+  { id: "shipped_back" },
+  { id: "received" },
+  { id: "refunded" },
+  { id: "replaced" },
+  { id: "rejected" },
+  { id: "all" },
+];
+
+const TAB_IDS_RETURNS: ReadonlySet<ReturnTab> = new Set(
+  TABS_RETURNS.map((t) => t.id),
+);
+
+// Parameterised re-implementation that accepts the search string so
+// tests don't need a real window.
+function readTabFromSearch(search: string): ReturnTab {
+  const raw = new URLSearchParams(search).get("tab");
+  return raw && TAB_IDS_RETURNS.has(raw as ReturnTab)
+    ? (raw as ReturnTab)
+    : "open";
+}
+
+describe("readTabFromUrl logic — returns 'open' by default", () => {
+  it("returns 'open' when search string is empty", () => {
+    expect(readTabFromSearch("")).toBe("open");
+  });
+
+  it("returns 'open' when 'tab' param is absent", () => {
+    expect(readTabFromSearch("?page=2")).toBe("open");
+  });
+
+  it("returns 'open' when 'tab' param is empty", () => {
+    expect(readTabFromSearch("?tab=")).toBe("open");
+  });
+
+  it("returns 'open' for an unknown tab value", () => {
+    expect(readTabFromSearch("?tab=unknown")).toBe("open");
+  });
+
+  it("returns 'open' for a value with wrong casing", () => {
+    expect(readTabFromSearch("?tab=Approved")).toBe("open");
+    expect(readTabFromSearch("?tab=OPEN")).toBe("open");
+  });
+});
+
+describe("readTabFromUrl logic — returns valid tab values", () => {
+  const validTabs: ReturnTab[] = [
+    "open",
+    "requested",
+    "approved",
+    "shipped_back",
+    "received",
+    "refunded",
+    "replaced",
+    "rejected",
+    "all",
+  ];
+
+  it.each(validTabs)('returns "%s" when it is in the search string', (tab) => {
+    expect(readTabFromSearch(`?tab=${tab}`)).toBe(tab);
+  });
+
+  it("returns the tab even when there are other params before it", () => {
+    expect(readTabFromSearch("?page=3&tab=received")).toBe("received");
+  });
+
+  it("returns the tab even when there are other params after it", () => {
+    expect(readTabFromSearch("?tab=refunded&sort=asc")).toBe("refunded");
+  });
+});
+
+describe("readTabFromUrl logic — TAB_IDS invariants", () => {
+  it("contains exactly 9 tabs", () => {
+    expect(TAB_IDS_RETURNS.size).toBe(9);
+  });
+
+  it("includes both the synthetic 'open' and 'all' tabs", () => {
+    expect(TAB_IDS_RETURNS.has("open")).toBe(true);
+    expect(TAB_IDS_RETURNS.has("all")).toBe(true);
+  });
+
+  it("includes the 'shipped_back' status (underscore, not hyphen)", () => {
+    expect(TAB_IDS_RETURNS.has("shipped_back")).toBe(true);
+  });
+
+  it("does not include partial matches like 'ship'", () => {
+    expect(readTabFromSearch("?tab=ship")).toBe("open");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Pure-logic re-implementation of setTab URL building (verbatim from source)
+// ---------------------------------------------------------------------------
+//
+// Source:
+//   const params = new URLSearchParams(window.location.search);
+//   if (next === "open") params.delete("tab");
+//   else params.set("tab", next);
+//   const qs = params.toString();
+//   const newUrl = window.location.pathname + (qs ? `?${qs}` : "") + window.location.hash;
+
+function buildTabUrl(
+  next: ReturnTab,
+  currentSearch: string,
+  pathname: string,
+  hash: string,
+): string {
+  const params = new URLSearchParams(currentSearch);
+  if (next === "open") params.delete("tab");
+  else params.set("tab", next);
+  const qs = params.toString();
+  return pathname + (qs ? `?${qs}` : "") + hash;
+}
+
+describe("setTab URL building — 'open' removes the param", () => {
+  it("produces a clean pathname when next is 'open' and no other params", () => {
+    expect(buildTabUrl("open", "", "/admin/returns", "")).toBe("/admin/returns");
+  });
+
+  it("removes only the tab param, preserving other params", () => {
+    const url = buildTabUrl("open", "?tab=approved&page=2", "/admin/returns", "");
+    expect(url).not.toContain("tab=");
+    expect(url).toContain("page=2");
+  });
+
+  it("removes tab param and preserves hash", () => {
+    const url = buildTabUrl("open", "?tab=received", "/admin/returns", "#top");
+    expect(url).toBe("/admin/returns#top");
+  });
+});
+
+describe("setTab URL building — non-default values set the param", () => {
+  it("sets tab=approved in the URL", () => {
+    const url = buildTabUrl("approved", "", "/admin/returns", "");
+    expect(url).toBe("/admin/returns?tab=approved");
+  });
+
+  it("sets tab=shipped_back in the URL", () => {
+    const url = buildTabUrl("shipped_back", "", "/admin/returns", "");
+    expect(url).toContain("tab=shipped_back");
+  });
+
+  it("replaces an existing tab param value", () => {
+    const url = buildTabUrl("rejected", "?tab=approved", "/admin/returns", "");
+    expect(url).toBe("/admin/returns?tab=rejected");
+  });
+
+  it("preserves hash when setting a non-default tab", () => {
+    const url = buildTabUrl("all", "", "/admin/returns", "#section");
+    expect(url).toBe("/admin/returns?tab=all#section");
+  });
+
+  it("preserves unrelated query params", () => {
+    const url = buildTabUrl("requested", "?page=5", "/admin/returns", "");
+    expect(url).toContain("tab=requested");
+    expect(url).toContain("page=5");
+  });
+});

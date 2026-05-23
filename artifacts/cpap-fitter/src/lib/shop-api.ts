@@ -231,6 +231,11 @@ export interface OrderSummaryResponse {
   }>;
   shippingCity: string | null;
   shippingState: string | null;
+  /** Timestamp the delivery driver / CSR uploaded a proof-of-
+   *  delivery photo, or null if no POD on file. When non-null the
+   *  patient-facing pages can render a "View delivery photo" link
+   *  that fetches the image from GET /shop/orders/:sessionId/pod. */
+  podUploadedAt: string | null;
 }
 
 export async function fetchOrderSummary(
@@ -466,6 +471,10 @@ export interface OrderHistoryItem {
   tracking: OrderTracking | null;
   shippedAt: string | null;
   deliveredAt: string | null;
+  /** Truthy when a delivery photo (POD) has been uploaded for
+   *  this order. UI shows a "View delivery photo" link that hits
+   *  GET /shop/orders/:sessionId/pod for the image bytes. */
+  podUploadedAt: string | null;
   /**
    * Server-side hint: customer is allowed to PATCH the shipping
    * address only while the parcel hasn't shipped. The server
@@ -743,6 +752,49 @@ export async function submitFitterLead(
     throw new Error(code);
   }
   return (await res.json()) as { ok: true };
+}
+
+// ─────────────────────────────────────────── fitter completion ping
+//
+// Posts to /shop/fitter-complete. The /results page calls this once,
+// when the recommendation lands, so the backend can enroll the lead
+// in the multi-touch supply campaign. Body carries email + the top
+// recommended mask (catalog reference, NOT measurements — those stay
+// in-browser per the HIPAA-data-minimization comment on the
+// /recommend route). Like submitFitterLead, the server always 200s
+// — the caller treats every outcome the same way (a failure here
+// just means the campaign won't start; the patient is unaffected).
+export interface FitterCompleteInput {
+  email: string;
+  recommendedMaskId: string;
+  recommendedMaskName: string;
+  recommendedMaskType: "fullFace" | "nasal" | "nasalPillow" | "hybrid";
+}
+
+export async function submitFitterComplete(
+  input: FitterCompleteInput,
+): Promise<{ ok: true; enrolled: boolean }> {
+  const res = await fetch("/resupply-api/shop/fitter-complete", {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      ...csrfHeader(),
+    },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) {
+    let code = `http_${res.status}`;
+    try {
+      const body = (await res.json()) as { error?: string };
+      if (body && typeof body.error === "string") code = body.error;
+    } catch {
+      /* keep http_<status> */
+    }
+    throw new Error(code);
+  }
+  const body = (await res.json()) as { ok: true; enrolled?: boolean };
+  return { ok: true, enrolled: Boolean(body.enrolled) };
 }
 
 // ─────────────────────────────────────────── sleep apnea quiz capture

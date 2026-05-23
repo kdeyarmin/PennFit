@@ -70,3 +70,38 @@ test("downloadModelWithRetry rejects undersized payload", async () => {
     console.warn = originalWarn;
   }
 });
+
+test("main() honors SKIP_MEDIAPIPE_MODEL_DOWNLOAD=1 and does not fetch the model", async () => {
+  const { main } = await import("./setup-mediapipe.mjs");
+
+  const originalFetch = globalThis.fetch;
+  const originalWarn = console.warn;
+  const originalLog = console.log;
+  const originalSkip = process.env.SKIP_MEDIAPIPE_MODEL_DOWNLOAD;
+  let fetchCalls = 0;
+
+  globalThis.fetch = async () => {
+    fetchCalls += 1;
+    throw new Error("should not be called when skip flag is set");
+  };
+  console.warn = () => {};
+  console.log = () => {};
+  process.env.SKIP_MEDIAPIPE_MODEL_DOWNLOAD = "1";
+
+  try {
+    // We can't easily assert main()'s WASM copy step here (it requires
+    // node_modules layout); accept either successful return or a WASM-
+    // related error, as long as we never reached the network fetch.
+    await main().catch((err) => {
+      if (!/tasks-vision\/wasm/.test(String(err?.message ?? ""))) throw err;
+    });
+    assert.equal(fetchCalls, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+    console.warn = originalWarn;
+    console.log = originalLog;
+    if (originalSkip === undefined)
+      delete process.env.SKIP_MEDIAPIPE_MODEL_DOWNLOAD;
+    else process.env.SKIP_MEDIAPIPE_MODEL_DOWNLOAD = originalSkip;
+  }
+});

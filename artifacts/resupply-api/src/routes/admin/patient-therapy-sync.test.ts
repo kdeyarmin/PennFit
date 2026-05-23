@@ -6,6 +6,10 @@
 //   * GET returns nights ordered DESC; numeric coercion correct
 //   * POST sync: 503 when adapter unconfigured; 502 on adapter
 //     throw; happy-path imports + audits with non-PHI envelope.
+//
+// PR change (adminRateLimit removal):
+//   * POST /admin/patients/:id/therapy-nights/sync had adminRateLimit
+//     removed. Verify the spy is never called and no 429 is returned.
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import express, { type Express } from "express";
@@ -35,6 +39,21 @@ const logAuditMock = vi.hoisted(() =>
 );
 vi.mock("@workspace/resupply-audit", () => ({
   logAudit: logAuditMock,
+}));
+
+// ── adminRateLimit spy — verifies it is NOT called ───────────────────────────
+// adminRateLimit was removed from this route in this PR. Mock the module so we
+// can assert the factory is never invoked.
+const adminRateLimitSpy = vi.hoisted(() =>
+  vi.fn(
+    (_opts: { name: string; preset?: string }) =>
+      (_req: import("express").Request, _res: import("express").Response, next: import("express").NextFunction) => {
+        next();
+      },
+  ),
+);
+vi.mock("../../middlewares/admin-rate-limit", () => ({
+  adminRateLimit: adminRateLimitSpy,
 }));
 
 type MockNight = {
@@ -83,9 +102,33 @@ function makeApp(): Express {
 beforeEach(() => {
   mockAdmin.current = null;
   supabaseMock.reset();
+  adminRateLimitSpy.mockClear();
   logAuditMock.mockClear();
   adapterState.configured = true;
   adapterState.fetch = async () => ({ nights: [], hasMore: false });
+});
+
+// ── PR change: verify adminRateLimit is NOT invoked ─────────────────────────
+
+describe("POST /admin/patients/:id/therapy-nights/sync — adminRateLimit removed", () => {
+  it("adminRateLimit is NOT called (middleware was removed from this route)", async () => {
+    // Send any request through the router; the spy should remain uncalled
+    // because the route file no longer imports or registers adminRateLimit.
+    await request(makeApp())
+      .post(`/admin/patients/${PATIENT_ID}/therapy-nights/sync`)
+      .send({ source: "resmed_airview", partnerPatientId: "abc" });
+    expect(adminRateLimitSpy).not.toHaveBeenCalled();
+  });
+
+  it("does NOT return 429 when authenticated (no rate limiter present)", async () => {
+    mockAdmin.current = ADMIN;
+    stageSupabaseResponse("patients", "select", { data: { id: PATIENT_ID } });
+    adapterState.fetch = async () => ({ nights: [], hasMore: false });
+    const res = await request(makeApp())
+      .post(`/admin/patients/${PATIENT_ID}/therapy-nights/sync`)
+      .send({ source: "resmed_airview", partnerPatientId: "abc" });
+    expect(res.status).not.toBe(429);
+  });
 });
 
 describe("GET /admin/patients/:id/therapy-nights", () => {

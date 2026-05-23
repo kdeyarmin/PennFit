@@ -23,7 +23,8 @@ import {
 } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
-import { requireAdmin } from "../../middlewares/requireAdmin";
+import { adminRateLimit } from "../../middlewares/admin-rate-limit";
+import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
 
@@ -49,7 +50,7 @@ const body = z
 
 router.get(
   "/admin/patients/:id/same-or-similar",
-  requireAdmin,
+  requirePermission("patients.read"),
   async (req, res) => {
     const parsed = idParam.safeParse(req.params);
     if (!parsed.success) {
@@ -70,7 +71,8 @@ router.get(
 
 router.post(
   "/admin/patients/:id/same-or-similar",
-  requireAdmin,
+  requirePermission("patients.update"),
+  adminRateLimit({ name: "same_or_similar.record", preset: "mutation" }),
   async (req, res) => {
     const idParsed = idParam.safeParse(req.params);
     if (!idParsed.success) {

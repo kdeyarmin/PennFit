@@ -54,6 +54,23 @@ export interface SendEmailInput {
    * strings (SendGrid stringifies; we make it explicit).
    */
   customArgs?: Record<string, string>;
+  /**
+   * Optional file attachments. Each attachment must carry its own
+   * MIME type — SendGrid uses it for the Content-Type header on
+   * the attached part. The `content` field is the raw bytes; the
+   * client base64-encodes them before handing them to the SDK
+   * (the SDK's wire format expects base64).
+   *
+   * PHI posture: attachments ride the same channel as the rest of
+   * the email and the same SENDGRID_FROM_EMAIL gate applies. Don't
+   * attach anything you wouldn't put in a subject line — these are
+   * not encrypted in transit beyond TLS to SendGrid.
+   */
+  attachments?: ReadonlyArray<{
+    content: Buffer;
+    filename: string;
+    contentType: string;
+  }>;
 }
 
 export interface SendEmailResult {
@@ -79,6 +96,12 @@ export interface RawSendgridSdk {
     text: string;
     replyTo?: string;
     customArgs?: Record<string, string>;
+    attachments?: {
+      content: string; // base64-encoded
+      filename: string;
+      type: string;
+      disposition: "attachment";
+    }[];
   }): Promise<
     [
       {
@@ -138,6 +161,12 @@ export function createSendgridClient(
     async sendEmail(input) {
       sg.setApiKey(apiKey);
       try {
+        const attachments = input.attachments?.map((a) => ({
+          content: a.content.toString("base64"),
+          filename: a.filename,
+          type: a.contentType,
+          disposition: "attachment" as const,
+        }));
         const [response] = await sg.send({
           to: input.to,
           from: fromName
@@ -148,6 +177,7 @@ export function createSendgridClient(
           text: input.text,
           replyTo: input.replyTo,
           customArgs: input.customArgs,
+          ...(attachments && attachments.length > 0 ? { attachments } : {}),
         });
         // SendGrid returns the X-Message-Id in response headers; this is
         // the stable id we'll see echoed back on every Event Webhook

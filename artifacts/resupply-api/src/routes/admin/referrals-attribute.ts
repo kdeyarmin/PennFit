@@ -7,6 +7,7 @@ import { z } from "zod";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { attributePendingReferrals } from "../../lib/referrals/attribution";
+import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
@@ -22,6 +23,7 @@ router.post(
   // Manual sweep trigger — admin-tools tier (matches the rest of
   // the dispatcher manual triggers).
   requirePermission("admin.tools.manage"),
+  adminRateLimit({ name: "referrals.attribution_sweep", preset: "bulk" }),
   async (req, res) => {
     const parsed = body.safeParse(req.body ?? {});
     if (!parsed.success) {

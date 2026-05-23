@@ -256,6 +256,7 @@ export function ShopWishlist() {
         <div
           className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
           data-testid="wishlist-error"
+          role="alert"
         >
           We couldn&apos;t load your wishlist: {error}
         </div>

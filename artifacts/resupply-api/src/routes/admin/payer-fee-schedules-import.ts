@@ -11,6 +11,7 @@ import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { parseFeeScheduleCsv } from "../../lib/billing/fee-schedule-csv";
 import { logger } from "../../lib/logger";
+import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requireAdminOnly } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
@@ -25,6 +26,10 @@ const body = z
 router.post(
   "/admin/payer-fee-schedules/import-csv",
   requireAdminOnly,
+  adminRateLimit({
+    name: "payer_fee_schedules.import",
+    preset: "sensitive",
+  }),
   async (req, res) => {
     const parsed = body.safeParse(req.body);
     if (!parsed.success) {

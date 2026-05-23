@@ -22,6 +22,7 @@ import {
 } from "@workspace/resupply-db";
 
 import { fetchAudienceCandidates } from "../../lib/bulk-campaigns/fetch-candidates";
+import { isFeatureEnabled } from "../../lib/feature-flags";
 import {
   resolveAudience,
   type AudienceKind,
@@ -32,6 +33,7 @@ import {
   type CampaignStatus,
 } from "../../lib/bulk-campaigns/dispatch-helpers";
 import { logger } from "../../lib/logger";
+import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
 import { getBoss } from "../../worker/index.js";
 import { enqueueImmediateTick } from "../../worker/jobs/bulk-campaign-tick.js";
@@ -104,6 +106,7 @@ router.post(
   // supervisor / compliance_officer (none of the other roles drive
   // outbound bulk messaging).
   requirePermission("bulk_campaigns.send"),
+  adminRateLimit({ name: "bulk_campaigns.draft", preset: "mutation" }),
   async (req, res) => {
     const parsed = draftBody.safeParse(req.body);
     if (!parsed.success) {
@@ -444,6 +447,22 @@ function makeTransitionHandler(
       return;
     }
 
+    // Control Center feature gate — block start / resume when the
+    // global "bulk campaigns send" toggle is off. We let pause and
+    // cancel through regardless so operators can stop a running
+    // campaign even after they've turned the feature off.
+    if (
+      (action === "start" || action === "resume") &&
+      !(await isFeatureEnabled("bulk_campaigns.send"))
+    ) {
+      res.status(503).json({
+        error: "feature_disabled",
+        message:
+          "Bulk-campaign sending is currently disabled in the admin Control Center. Re-enable it before starting or resuming campaigns.",
+      });
+      return;
+    }
+
     // Defensive: don't start a campaign whose entire audience is
     // suppressed — the worker would immediately mark it sent with
     // zero deliveries, which is misleading. Surface a clear 409
@@ -529,21 +548,25 @@ function makeTransitionHandler(
 router.post(
   "/admin/bulk-campaigns/:id/start",
   requirePermission("bulk_campaigns.send"),
+  adminRateLimit({ name: "bulk_campaigns.start", preset: "bulk" }),
   makeTransitionHandler("start"),
 );
 router.post(
   "/admin/bulk-campaigns/:id/pause",
   requirePermission("bulk_campaigns.send"),
+  adminRateLimit({ name: "bulk_campaigns.pause", preset: "mutation" }),
   makeTransitionHandler("pause"),
 );
 router.post(
   "/admin/bulk-campaigns/:id/resume",
   requirePermission("bulk_campaigns.send"),
+  adminRateLimit({ name: "bulk_campaigns.resume", preset: "mutation" }),
   makeTransitionHandler("resume"),
 );
 router.post(
   "/admin/bulk-campaigns/:id/cancel",
   requirePermission("bulk_campaigns.send"),
+  adminRateLimit({ name: "bulk_campaigns.cancel", preset: "destroy" }),
   makeTransitionHandler("cancel"),
 );
 
@@ -570,6 +593,10 @@ router.post(
 router.post(
   "/admin/bulk-campaigns/:id/regenerate-audience",
   requirePermission("bulk_campaigns.send"),
+  adminRateLimit({
+    name: "bulk_campaigns.regenerate_audience",
+    preset: "mutation",
+  }),
   async (req, res) => {
     const idCheck = z.string().uuid().safeParse(req.params.id);
     if (!idCheck.success) {

@@ -54,7 +54,7 @@ describe("POST /voice/status-callback", () => {
 
   it("acks malformed bodies with empty <Response/>", async () => {
     const res = await request(makeApp())
-      .post("/resupply-api/voice/status-callback?conversationId=c1")
+      .post("/resupply-api/voice/status-callback?conversationId=11111111-1111-4111-8111-111111111111")
       .type("form")
       .send({});
     expect(res.status).toBe(200);
@@ -64,7 +64,7 @@ describe("POST /voice/status-callback", () => {
 
   it("acks non-terminal status without closing or auditing", async () => {
     const res = await request(makeApp())
-      .post("/resupply-api/voice/status-callback?conversationId=c1")
+      .post("/resupply-api/voice/status-callback?conversationId=11111111-1111-4111-8111-111111111111")
       .type("form")
       .send({ CallSid: "CA1", CallStatus: "ringing" });
     expect(res.status).toBe(200);
@@ -75,7 +75,7 @@ describe("POST /voice/status-callback", () => {
   it("closes conversation + audits voice.call.completed on terminal status", async () => {
     stageSupabaseResponse("conversations", "update", { error: null });
     const res = await request(makeApp())
-      .post("/resupply-api/voice/status-callback?conversationId=c1")
+      .post("/resupply-api/voice/status-callback?conversationId=11111111-1111-4111-8111-111111111111")
       .type("form")
       .send({ CallSid: "CA1", CallStatus: "completed" });
     expect(res.status).toBe(200);
@@ -84,7 +84,7 @@ describe("POST /voice/status-callback", () => {
     const audit = logAuditMock.mock.calls[0][0];
     expect(audit.action).toBe("voice.call.completed");
     expect(audit.targetTable).toBe("conversations");
-    expect(audit.targetId).toBe("c1");
+    expect(audit.targetId).toBe("11111111-1111-4111-8111-111111111111");
     expect(audit.metadata).toMatchObject({
       twilio_call_sid: "CA1",
       twilio_status: "completed",
@@ -97,7 +97,7 @@ describe("POST /voice/status-callback", () => {
     async (status) => {
       stageSupabaseResponse("conversations", "update", { error: null });
       const res = await request(makeApp())
-        .post("/resupply-api/voice/status-callback?conversationId=c1")
+        .post("/resupply-api/voice/status-callback?conversationId=11111111-1111-4111-8111-111111111111")
         .type("form")
         .send({ CallSid: "CA1", CallStatus: status });
       expect(res.status).toBe(200);

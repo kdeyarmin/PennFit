@@ -59,7 +59,7 @@ const ingestInboundFaxMock = vi.hoisted(() =>
   vi.fn<(input: Record<string, unknown>) => Promise<IngestOutcome>>(
     async () => ({
       kind: "inserted",
-      id: "00000000-0000-0000-0000-000000000abc",
+      id: "00000000-0000-4000-8000-000000000abc",
       mediaPersisted: true,
     }),
   ),
@@ -90,7 +90,7 @@ beforeEach(() => {
   ingestInboundFaxMock.mockClear();
   ingestInboundFaxMock.mockResolvedValue({
     kind: "inserted",
-    id: "00000000-0000-0000-0000-000000000abc",
+    id: "00000000-0000-4000-8000-000000000abc",
     mediaPersisted: true,
   });
 });
@@ -234,7 +234,7 @@ describe("POST /fax/inbound — terminal received event", () => {
   it("audit metadata records 'already_recorded' on Twilio replay", async () => {
     ingestInboundFaxMock.mockResolvedValueOnce({
       kind: "already_recorded",
-      id: "00000000-0000-0000-0000-000000000abc",
+      id: "00000000-0000-4000-8000-000000000abc",
     });
     await request(makeApp())
       .post("/fax/inbound")

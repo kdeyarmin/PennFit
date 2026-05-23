@@ -235,6 +235,7 @@ export function CaregiverSection() {
             <p
               className="text-sm text-destructive"
               data-testid="account-caregiver-error"
+              role="alert"
             >
               {error}
             </p>

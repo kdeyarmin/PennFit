@@ -18,8 +18,13 @@ import { z } from "zod";
 import { logAudit } from "@workspace/resupply-audit";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
-import { encodeCompositeCursor, parseCompositeCursor } from "../../lib/cursor";
+import {
+  encodeCompositeCursor,
+  isUuidCursorId,
+  parseCompositeCursor,
+} from "../../lib/cursor";
 import { logger } from "../../lib/logger";
+import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
@@ -81,14 +86,21 @@ router.get("/admin/shop/product-questions", requirePermission("conversations.man
     res.status(400).json({ error: "invalid_cursor" });
     return;
   }
+  // shop_product_questions.id is a UUID. Anything else would smuggle
+  // PostgREST structural characters (`,`, `(`, `)`) into the `.or()`
+  // expression below, which could mutate the surrounding filter.
+  if (parsedCursor.id !== null && !isUuidCursorId(parsedCursor.id)) {
+    res.status(400).json({ error: "invalid_cursor" });
+    return;
+  }
 
   const supabase = getSupabaseServiceRoleClient();
 
   // Cursor is composite (created_at, id) so we get strict ordering
   // even when many rows share a created_at. PostgREST `.or()` supports
   // this with `created_at.lt.<iso>,and(created_at.eq.<iso>,id.lt.<id>)`.
-  // The cursor values are already either UUIDs or PostgREST-safe ISO
-  // timestamps, so no metachar smuggling is possible.
+  // The cursor id half is UUID-validated above so PostgREST cannot
+  // mis-parse the embedded filter expression.
   let questionsQuery = supabase
     .schema("resupply")
     .from("shop_product_questions")
@@ -140,6 +152,7 @@ router.patch(
   "/admin/shop/product-questions/:id",
   // Answer / approve / reject — same scope as the read above.
   requirePermission("conversations.manage"),
+  adminRateLimit({ name: "product_questions.moderate", preset: "mutation" }),
   async (req, res) => {
     const idCheck = idParam.safeParse(req.params.id);
     if (!idCheck.success) {

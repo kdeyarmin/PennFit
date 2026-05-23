@@ -46,6 +46,7 @@ import {
   TwilioConfigError,
 } from "@workspace/resupply-telecom";
 
+import { isFeatureEnabled } from "./feature-flags";
 import { logger } from "./logger";
 import { withRetry } from "./with-retry";
 
@@ -102,6 +103,20 @@ const ALL_CHANNELS: CheckinAttemptChannel[] = ["email", "sms", "voice"];
 export async function dispatchDueCheckins(
   opts: DispatchOptions,
 ): Promise<DispatchSummary> {
+  // Control Center feature gate. Returns the same zeroed envelope as
+  // a no-active-journeys scan so the admin "send-due" route and the
+  // cron worker both see "nothing to do" instead of an error.
+  if (!(await isFeatureEnabled("patient_onboarding.dispatcher"))) {
+    return {
+      attempted: 0,
+      delivered: 0,
+      failed: 0,
+      skippedNoContact: 0,
+      completedJourneys: 0,
+      remaining: 0,
+    };
+  }
+
   const now = opts.asOf ?? new Date();
   const cap = opts.cap ?? DEFAULT_CAP;
   const supabase = opts.supabase ?? getSupabaseServiceRoleClient();

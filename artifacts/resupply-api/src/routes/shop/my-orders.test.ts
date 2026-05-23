@@ -255,7 +255,7 @@ describe("GET /shop/me/orders", () => {
 // =====================================================================
 // POST /shop/me/orders/:orderId/shipping-address
 // =====================================================================
-const VALID_ID = "11111111-2222-3333-4444-555555555555";
+const VALID_ID = "11111111-2222-3333-8444-555555555555";
 const validAddress = {
   line1: "456 New Address Ln",
   line2: "Suite 9",

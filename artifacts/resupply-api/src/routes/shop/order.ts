@@ -46,7 +46,7 @@ router.get("/shop/orders/:sessionId", async (req, res) => {
   const { data: local, error: localError } = await supabase
     .schema("resupply")
     .from("shop_orders")
-    .select("status")
+    .select("status, pod_uploaded_at")
     .eq("stripe_session_id", sessionId)
     .limit(1)
     .maybeSingle();
@@ -133,6 +133,10 @@ router.get("/shop/orders/:sessionId", async (req, res) => {
     }),
     shippingCity: shipping?.address?.city ?? null,
     shippingState: shipping?.address?.state ?? null,
+    // Whether a proof-of-delivery photo has been uploaded for
+    // this order. The bytes themselves come back from a separate
+    // /pod endpoint so this summary response stays JSON-only.
+    podUploadedAt: local.pod_uploaded_at,
   });
 });
 

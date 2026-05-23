@@ -60,6 +60,7 @@ function ScrollToTop() {
 const navLinks = [
   { href: "/how-it-works", label: "Virtual Mask Fitter" },
   { href: "/masks", label: "Mask Catalog" },
+  { href: "/cpap-masks", label: "Brands" },
   { href: "/shop", label: "Shop" },
   { href: "/learn", label: "Learn" },
   { href: "/faq", label: "FAQ" },
@@ -129,17 +130,11 @@ export function Layout({ children }: { children: React.ReactNode }) {
               href="/"
               className="flex items-center gap-3 transition-opacity hover:opacity-80"
             >
-              <div className="relative">
-                <div
-                  className="absolute -inset-1 rounded-xl bg-gradient-to-br from-[hsl(var(--penn-cyan)/0.18)] via-[hsl(var(--penn-navy)/0.12)] to-[hsl(var(--penn-gold)/0.22)] blur-md"
-                  aria-hidden="true"
-                />
-                <img
-                  src={pennLogo}
-                  alt="PennPaps"
-                  className="relative h-12 md:h-14 w-auto rounded-md ring-1 ring-[hsl(var(--penn-cyan)/0.18)]"
-                />
-              </div>
+              <img
+                src={pennLogo}
+                alt="PennPaps"
+                className="h-12 md:h-14 w-auto"
+              />
               <div className="hidden sm:flex flex-col leading-tight border-l border-border/60 pl-3">
                 <span className="font-semibold tracking-tight text-base text-primary">
                   PennPaps
@@ -177,7 +172,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
                     data-testid={`nav-${l.href.replace(/\//g, "")}`}
                     className={`relative py-1 transition-colors hover:text-primary focus-visible:text-primary ${
                       isActive
-                        ? "text-primary after:absolute after:left-0 after:right-0 after:-bottom-1 after:h-[2px] after:rounded-full after:bg-gradient-to-r after:from-[hsl(var(--penn-cyan))] after:via-[hsl(var(--penn-gold))] after:to-[hsl(var(--penn-cyan))]"
+                        ? "text-primary after:absolute after:left-0 after:right-0 after:-bottom-1 after:h-[2px] after:rounded-full after:bg-[hsl(var(--penn-gold))]"
                         : "text-foreground/75"
                     }`}
                   >
@@ -310,7 +305,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
             {/* Top: brand + condensed link columns */}
             <div className="grid grid-cols-2 md:grid-cols-12 gap-x-6 gap-y-5">
               {/* Brand block */}
-              <div className="col-span-2 md:col-span-4 flex items-center gap-3">
+              <div className="col-span-2 md:col-span-3 flex items-center gap-3">
                 <img
                   src={pennLogo}
                   alt="Penn Home Medical Supply"
@@ -327,7 +322,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
               </div>
 
               {/* Patient services */}
-              <div className="md:col-span-3">
+              <div className="md:col-span-2">
                 <div className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground mb-2 font-semibold">
                   Patient Services
                 </div>
@@ -358,10 +353,70 @@ export function Layout({ children }: { children: React.ReactNode }) {
                   </li>
                   <li>
                     <Link
+                      href="/track-order"
+                      className="text-muted-foreground hover:text-primary transition-colors"
+                    >
+                      Track an order
+                    </Link>
+                  </li>
+                  <li>
+                    <Link
                       href="/returns"
                       className="text-muted-foreground hover:text-primary transition-colors"
                     >
                       Returns &amp; refunds
+                    </Link>
+                  </li>
+                </ul>
+              </div>
+
+              {/* Learn — surface the long-form education library and
+                  brand pages from every page of the site. Compact list
+                  (5 items) so the footer doesn't bloat; the full
+                  library lives on /learn. */}
+              <div className="md:col-span-3">
+                <div className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground mb-2 font-semibold">
+                  Learn &amp; Resources
+                </div>
+                <ul className="space-y-1 text-sm">
+                  <li>
+                    <Link
+                      href="/sleep-apnea-101"
+                      className="text-muted-foreground hover:text-primary transition-colors"
+                    >
+                      Sleep apnea 101
+                    </Link>
+                  </li>
+                  <li>
+                    <Link
+                      href="/learn"
+                      className="text-muted-foreground hover:text-primary transition-colors"
+                    >
+                      Article library
+                    </Link>
+                  </li>
+                  <li>
+                    <Link
+                      href="/learn/glossary"
+                      className="text-muted-foreground hover:text-primary transition-colors"
+                    >
+                      CPAP glossary
+                    </Link>
+                  </li>
+                  <li>
+                    <Link
+                      href="/cpap-masks"
+                      className="text-muted-foreground hover:text-primary transition-colors"
+                    >
+                      Mask brands
+                    </Link>
+                  </li>
+                  <li>
+                    <Link
+                      href="/learn/sleep-apnea-quiz"
+                      className="text-muted-foreground hover:text-primary transition-colors"
+                    >
+                      Self-screener
                     </Link>
                   </li>
                 </ul>
@@ -398,7 +453,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
               </div>
 
               {/* Legal */}
-              <div className="md:col-span-3">
+              <div className="md:col-span-2">
                 <div className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground mb-2 font-semibold">
                   Legal &amp; Privacy
                 </div>

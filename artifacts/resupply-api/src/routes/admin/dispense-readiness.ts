@@ -28,9 +28,10 @@ import {
   reviewDispenseReadiness,
 } from "../../lib/billing/dispense-readiness-reviewer";
 import { logger } from "../../lib/logger";
+import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import {
-  requireAdmin,
   requireAdminOnly,
+  requirePermission,
 } from "../../middlewares/requireAdmin";
 import { publishEvent } from "../../lib/webhooks/publisher";
 
@@ -78,7 +79,8 @@ const patchBody = z
 
 router.post(
   "/admin/patients/:id/dispense-readiness-reviews",
-  requireAdmin,
+  requirePermission("patients.update"),
+  adminRateLimit({ name: "dispense_readiness.review", preset: "mutation" }),
   async (req, res) => {
     const idParsed = idParam.safeParse(req.params);
     if (!idParsed.success) {
@@ -179,7 +181,7 @@ router.post(
 
 router.get(
   "/admin/patients/:id/dispense-readiness-reviews",
-  requireAdmin,
+  requirePermission("patients.read"),
   async (req, res) => {
     const parsed = idParam.safeParse(req.params);
     if (!parsed.success) {
@@ -200,7 +202,7 @@ router.get(
 
 router.get(
   "/admin/patients/:id/dispense-readiness-reviews/:reviewId",
-  requireAdmin,
+  requirePermission("patients.read"),
   async (req, res) => {
     const parsed = reviewParams.safeParse(req.params);
     if (!parsed.success) {
@@ -227,6 +229,7 @@ router.get(
 router.patch(
   "/admin/patients/:id/dispense-readiness-reviews/:reviewId",
   requireAdminOnly,
+  adminRateLimit({ name: "dispense_readiness.update", preset: "mutation" }),
   async (req, res) => {
     const idParsed = reviewParams.safeParse(req.params);
     if (!idParsed.success) {
@@ -282,7 +285,7 @@ router.patch(
 
 router.get(
   "/admin/dispense-readiness/queue",
-  requireAdmin,
+  requirePermission("patients.read"),
   async (req, res) => {
     const supabase = getSupabaseServiceRoleClient();
     let query = supabase

@@ -125,6 +125,20 @@ export async function main() {
     return;
   }
 
+  // Escape hatch for sandboxed environments (agent runners, offline
+  // builds, network-restricted CI) where storage.googleapis.com is not
+  // reachable. Setting SKIP_MEDIAPIPE_MODEL_DOWNLOAD=1 lets `pnpm build`
+  // complete; the face-capture feature will be unavailable until the
+  // model is provided out-of-band, but every other page builds fine.
+  // Real production CI must leave this unset so strict mode catches a
+  // genuinely missing model.
+  if (process.env.SKIP_MEDIAPIPE_MODEL_DOWNLOAD === "1") {
+    console.warn(
+      "[setup-mediapipe] SKIP_MEDIAPIPE_MODEL_DOWNLOAD=1 set; skipping face_landmarker.task download.",
+    );
+    return;
+  }
+
   console.log("[setup-mediapipe] Downloading face_landmarker.task ...");
   const buf = await downloadModelWithRetry();
   await writeFile(MODEL_DEST, buf);

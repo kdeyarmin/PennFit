@@ -17,6 +17,7 @@ import type { MaskEntry } from "../../data/maskCatalog";
 import {
   recommend,
   recommendSize,
+  scoreAnswers,
   type FacialMeasurements,
   type QuestionnaireAnswers,
 } from "./recommendationEngine";
@@ -238,5 +239,102 @@ describe("recommend — React Health manufacturer boost", () => {
     expect(top).toBeDefined();
     // The #1 mask should be a full-face or hybrid, regardless of brand.
     expect(["fullFace", "hybrid"]).toContain(top.type);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// P4 — null ("I'm not sure") path
+// ---------------------------------------------------------------------------
+// Three pins:
+//   1. scoreAnswers treats null identically to false (no weight delta
+//      from that question) — null is "no opinion", not "implicit no".
+//   2. A patient who answered nothing produces the baseline 0.25 split.
+//   3. The buildReasons / buildExplanation / contraindication paths
+//      only fire on `=== true`, so a null-answering patient never sees
+//      a reasons-string that claims they stated a need.
+
+describe("scoreAnswers — P4 null answers are no-ops", () => {
+  it("all-null answers produce the baseline 0.25 weight split (no question pushed)", () => {
+    const weights = scoreAnswers({
+      mouthBreather: null,
+      claustrophobic: null,
+      sideOrStomachSleeper: null,
+      heavyFacialHair: null,
+      wearsGlasses: null,
+      frequentCongestion: null,
+      priorMaskExperience: "none",
+      mobilityLimitations: null,
+      sensitiveSkin: null,
+      siliconeSensitivity: null,
+      cpapPressureSetting: "unknown",
+    });
+    expect(weights.fullFace).toBeCloseTo(0.25, 5);
+    expect(weights.nasal).toBeCloseTo(0.25, 5);
+    expect(weights.nasalPillow).toBeCloseTo(0.25, 5);
+    expect(weights.hybrid).toBeCloseTo(0.25, 5);
+  });
+
+  it("a null answer yields the same weights as a false answer (no opposite-direction push)", () => {
+    // The engine intentionally does not push the OPPOSITE direction
+    // when the patient says no — there's no negative-weight branch for
+    // false. So null and false must produce identical weights; the
+    // P4 change is about UX honesty, not scoring math.
+    const nullWeights = scoreAnswers(answers({ mouthBreather: null }));
+    const falseWeights = scoreAnswers(answers({ mouthBreather: false }));
+    expect(nullWeights).toEqual(falseWeights);
+  });
+
+  it("a true answer still applies its weight delta (regression)", () => {
+    const trueWeights = scoreAnswers(answers({ mouthBreather: true }));
+    const nullWeights = scoreAnswers(answers({ mouthBreather: null }));
+    // Mouth-breather=true boosts fullFace by +0.3 vs null/false.
+    expect(trueWeights.fullFace).toBeGreaterThan(nullWeights.fullFace);
+  });
+});
+
+describe("recommend — P4 null answers don't fabricate reasons strings", () => {
+  it("a patient who answered nothing gets no patient-stated needs in their explanation", () => {
+    const result = recommend(PROFILE_MEASUREMENTS, {
+      mouthBreather: null,
+      claustrophobic: null,
+      sideOrStomachSleeper: null,
+      heavyFacialHair: null,
+      wearsGlasses: null,
+      frequentCongestion: null,
+      priorMaskExperience: "none",
+      mobilityLimitations: null,
+      sensitiveSkin: null,
+      siliconeSensitivity: null,
+      cpapPressureSetting: "unknown",
+    });
+    const top = result.topRecommendations[0];
+    expect(top).toBeDefined();
+    // The reasoning array MUST NOT contain phrasing that asserts the
+    // patient said anything — those strings are reserved for explicit
+    // `=== true` (or `=== false` for the nasal-vs-mouth-breather case).
+    // Also include the summary sentence (built by buildExplanation),
+    // which is the other place patient-stated-needs land.
+    const blob = [...top.reasoning, top.summary].join(" ").toLowerCase();
+    expect(blob).not.toContain("you breathe through your mouth");
+    expect(blob).not.toContain("you breathe through your nose");
+    expect(blob).not.toContain("nasal congestion");
+    expect(blob).not.toContain("side and stomach");
+    expect(blob).not.toContain("claustrophob");
+    expect(blob).not.toContain("sensitive skin");
+    expect(blob).not.toContain("magnetic clips");
+  });
+
+  it("an explicit no on mouthBreather can still ground the recommendation (regression)", () => {
+    const result = recommend(
+      PROFILE_MEASUREMENTS,
+      answers({
+        mouthBreather: false,
+        // Other answers stay defaulted to false → the existing
+        // engine math should still produce a non-empty result.
+      }),
+    );
+    const top = result.topRecommendations[0];
+    expect(top).toBeDefined();
+    expect(top.reasoning.length).toBeGreaterThan(0);
   });
 });

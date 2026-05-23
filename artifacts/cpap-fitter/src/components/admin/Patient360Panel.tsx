@@ -57,7 +57,7 @@ export function Patient360Panel({ patientId }: { patientId: string }) {
       subtitle={
         <span className="text-xs">
           <Link
-            href={`/patients/${patientId}`}
+            href={`/admin/patients/${patientId}`}
             className="underline decoration-dotted"
             style={{ color: "hsl(var(--ink-1))" }}
           >

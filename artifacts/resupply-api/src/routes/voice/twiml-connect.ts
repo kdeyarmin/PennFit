@@ -22,6 +22,7 @@ import {
   requireTwilioSignature,
 } from "@workspace/resupply-telecom";
 
+import { isFeatureEnabled } from "../../lib/feature-flags";
 import { logger } from "../../lib/logger";
 import { getPendingSessions } from "../../lib/voice/pending-sessions";
 import {
@@ -52,7 +53,7 @@ const signatureMiddleware = requireTwilioSignature({
   },
 });
 
-router.post("/voice/twiml-connect", signatureMiddleware, (req, res) => {
+router.post("/voice/twiml-connect", signatureMiddleware, async (req, res) => {
   const config = readVoiceConfigOrNull();
   if (!config) {
     // Should be unreachable: if voice config were missing, the
@@ -62,6 +63,25 @@ router.post("/voice/twiml-connect", signatureMiddleware, (req, res) => {
       .status(503)
       .type("text/xml")
       .send(buildHangupTwiml("Service unavailable."));
+    return;
+  }
+
+  // Control Center feature gate. When the voice agent is turned off
+  // we hang the caller up cleanly rather than route them to the AI
+  // bridge. The hangup TwiML returns 200 so Twilio doesn't retry.
+  if (!(await isFeatureEnabled("voice.agent"))) {
+    logger.info(
+      { event: "voice_twiml_disabled_by_feature_flag" },
+      "twiml-connect: voice agent disabled via Control Center; hanging up",
+    );
+    res
+      .status(200)
+      .type("text/xml")
+      .send(
+        buildHangupTwiml(
+          "Sorry, our automated assistant is unavailable right now. Please call back during business hours.",
+        ),
+      );
     return;
   }
 

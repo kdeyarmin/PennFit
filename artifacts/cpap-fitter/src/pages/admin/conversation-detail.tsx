@@ -122,7 +122,7 @@ export function ConversationDetailPage({ id }: { id: string }) {
                     </Link>
                   ) : data.patientId ? (
                     <Link
-                      href={`/patients/${data.patientId}`}
+                      href={`/admin/patients/${data.patientId}`}
                       className="underline decoration-dotted"
                       style={{ color: "hsl(var(--ink-1))" }}
                     >

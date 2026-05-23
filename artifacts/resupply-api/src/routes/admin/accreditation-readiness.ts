@@ -13,9 +13,10 @@ import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { runAccreditationReadiness } from "../../lib/accreditation/readiness-engine";
 import { logger } from "../../lib/logger";
+import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import {
-  requireAdmin,
   requireAdminOnly,
+  requirePermission,
 } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
@@ -24,7 +25,7 @@ const idParam = z.object({ id: z.string().uuid() });
 
 router.get(
   "/admin/accreditation/readiness",
-  requireAdmin,
+  requirePermission("compliance.read"),
   async (_req, res) => {
     const supabase = getSupabaseServiceRoleClient();
     const { data: run } = await supabase
@@ -78,7 +79,7 @@ router.get(
 
 router.get(
   "/admin/accreditation/readiness/runs",
-  requireAdmin,
+  requirePermission("compliance.read"),
   async (_req, res) => {
     const supabase = getSupabaseServiceRoleClient();
     const { data } = await supabase
@@ -95,7 +96,7 @@ router.get(
 
 router.get(
   "/admin/accreditation/readiness/runs/:id",
-  requireAdmin,
+  requirePermission("compliance.read"),
   async (req, res) => {
     const parsed = idParam.safeParse(req.params);
     if (!parsed.success) {
@@ -127,6 +128,10 @@ router.get(
 router.post(
   "/admin/accreditation/readiness/run-now",
   requireAdminOnly,
+  adminRateLimit({
+    name: "accreditation.readiness_run_now",
+    preset: "bulk",
+  }),
   async (req, res) => {
     const result = await runAccreditationReadiness();
     if (!result) {

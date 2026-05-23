@@ -14,7 +14,7 @@ import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { verifyEligibility } from "../../lib/billing/eligibility-verifier";
 import { logger } from "../../lib/logger";
-import { requireAdmin } from "../../middlewares/requireAdmin";
+import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
 
@@ -36,7 +36,7 @@ const verifyBody = z
 
 router.post(
   "/admin/patients/:id/insurance-coverages/:coverageId/verify-eligibility",
-  requireAdmin,
+  requirePermission("patients.update"),
   verifyEligibilityRateLimiter,
   async (req, res) => {
     const parsed = verifyParams.safeParse(req.params);
@@ -84,7 +84,7 @@ router.post(
 
 router.get(
   "/admin/patients/:id/eligibility-checks",
-  requireAdmin,
+  requirePermission("patients.read"),
   async (req, res) => {
     const parsed = z.object({ id: z.string().uuid() }).safeParse(req.params);
     if (!parsed.success) {

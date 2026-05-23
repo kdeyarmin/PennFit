@@ -1,5 +1,5 @@
 import React from "react";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { useDocumentTitle } from "@/hooks/use-document-title";
 import {
@@ -16,7 +16,6 @@ import {
 } from "lucide-react";
 import { HomeStatusBanner } from "@/components/home-status-banner";
 import { TrustSignalStrip } from "@/components/trust-signal-strip";
-import { AmbientBackground } from "@/components/ambient-background";
 import { openPennBot } from "@/lib/chat-events";
 
 export function Home() {
@@ -24,73 +23,73 @@ export function Home() {
   // for the landing page); the hook is still called so the canonical
   // gets stamped at https://pennpaps.com/.
   useDocumentTitle("");
+  const [, navigate] = useLocation();
   return (
     <>
-      <AmbientBackground />
-      <div className="relative z-10 flex flex-col items-center max-w-6xl mx-auto w-full px-4 py-10 md:py-24">
+      <div className="relative z-10 flex flex-col items-center max-w-6xl mx-auto w-full px-4 py-8 md:py-14">
         <HomeStatusBanner />
 
-      {/* Hero */}
-      <div className="text-center max-w-4xl mb-12 md:mb-16 animate-shimmer-in">
-        {/* Telemetry pill row — pulsing-dot status pills stand in for
-            the old stat strip; reads as live tech credentials rather
-            than a passive metrics row. */}
-        <div className="flex flex-wrap items-center justify-center gap-2 mb-6 md:mb-8">
-          <span className="status-pill status-pill-gold">
-            Local Penn DME team
-          </span>
-        </div>
+      {/* Hero — Penn-navy gradient card with white display type, a
+          gold swoosh under the second line (echoes the logo), and a
+          gold primary CTA. Sits inside the page container so it reads
+          as a deliberate hero card rather than a full-bleed band. */}
+      <section className="hero-card w-full mb-14 md:mb-20 animate-shimmer-in">
+        <div className="relative z-10 text-center max-w-5xl mx-auto px-6 py-14 md:px-12 md:py-24">
+          <div className="flex flex-wrap items-center justify-center gap-2 mb-7 md:mb-9">
+            <span className="status-pill status-pill-gold status-pill-on-dark">
+              Local Penn DME team
+            </span>
+          </div>
 
-        <h1 className="text-display text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-bold tracking-tight mb-5 md:mb-6 leading-[1.08] sm:leading-[1.05]">
-          <span className="text-gradient-tech">Your CPAP, made simple.</span>
-          <br />
-          <span className="text-foreground/90">Fit. Shop. Resupply.</span>
-        </h1>
+          <h1 className="text-display text-4xl sm:text-5xl md:text-6xl font-bold tracking-tight mb-6 md:mb-7 leading-[1.08] sm:leading-[1.05] text-white">
+            Your CPAP, made simple.
+            <br />
+            <span className="hero-headline-swoosh">Fit. Shop. Resupply.</span>
+          </h1>
 
-        <p className="text-base sm:text-lg md:text-xl text-muted-foreground leading-relaxed mb-8 md:mb-10 max-w-2xl mx-auto">
-          <span className="font-semibold text-foreground">PennPaps.com</span> is
-          the online CPAP storefront from{" "}
-          <span className="font-semibold text-foreground">
-            Penn Home Medical Supply
-          </span>{" "}
-          — your local DME team. Get clinically matched to the right mask, order
-          cushions, filters, and tubing direct, and let us keep your resupply on
-          schedule.
-        </p>
+          <p className="text-base sm:text-lg md:text-xl text-white/80 leading-relaxed mb-9 md:mb-11 max-w-2xl mx-auto">
+            <span className="font-semibold text-white">PennPaps.com</span> is
+            the online CPAP storefront from{" "}
+            <span className="font-semibold text-white">
+              Penn Home Medical Supply
+            </span>{" "}
+            — your local DME team. Get clinically matched to the right mask,
+            order cushions, filters, and tubing direct, and let us keep your
+            resupply on schedule.
+          </p>
 
-        <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
-          <Link href="/consent">
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
             <Button
               size="lg"
-              className="h-14 px-8 text-base font-semibold rounded-full btn-primary-glow group"
+              className="h-14 px-8 text-base font-semibold rounded-full btn-gold-glow group"
               data-testid="home-cta-fit"
+              onClick={() => navigate("/consent")}
             >
               Get fitted for a mask
               <ArrowRight className="w-5 h-5 ml-1 transition-transform group-hover:translate-x-0.5" />
             </Button>
-          </Link>
-          <Link href="/shop">
             <Button
               size="lg"
               variant="outline"
-              className="h-14 px-6 text-base rounded-full glass-panel gap-2 border-border/60 hover:border-primary/40 transition"
+              className="h-14 px-6 text-base rounded-full btn-on-dark-outline gap-2"
               data-testid="home-cta-shop"
+              onClick={() => navigate("/shop")}
             >
               <ShoppingBag className="w-5 h-5" />
               Shop CPAP supplies
             </Button>
-          </Link>
+          </div>
+          <button
+            type="button"
+            onClick={() => openPennBot()}
+            className="mt-5 inline-flex items-center gap-1.5 text-sm text-white/70 hover:text-white transition-colors"
+            data-testid="home-ask-pennbot"
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>Or ask PennBot anything</span>
+          </button>
         </div>
-        <button
-          type="button"
-          onClick={() => openPennBot()}
-          className="mt-4 inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-primary transition-colors"
-          data-testid="home-ask-pennbot"
-        >
-          <Sparkles className="w-3.5 h-3.5" />
-          <span>Or ask PennBot anything</span>
-        </button>
-      </div>
+      </section>
 
       {/* Trust-signal strip — live aggregate review rating + static brand promises */}
       <TrustSignalStrip />

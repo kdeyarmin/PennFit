@@ -18,8 +18,26 @@ function readTokenFromUrl(): string {
   return params.get("token") ?? "";
 }
 
+// Strip ?token=... from the address bar so it doesn't persist in
+// browser history, autocomplete, or shareable URLs.
+function stripTokenFromUrl(): void {
+  if (typeof window === "undefined") return;
+  try {
+    const params = new URLSearchParams(window.location.search);
+    if (!params.has("token")) return;
+    params.delete("token");
+    const qs = params.toString();
+    const next =
+      window.location.pathname + (qs ? `?${qs}` : "") + window.location.hash;
+    window.history.replaceState(null, "", next);
+  } catch {
+    // History API not available: no-op.
+  }
+}
+
 export function VerifyEmailPage() {
   const token = useMemo(readTokenFromUrl, []);
+  useEffect(stripTokenFromUrl, []);
   const [status, setStatus] = useState<"verifying" | "ok" | "error">(
     token ? "verifying" : "error",
   );
@@ -61,7 +79,7 @@ export function VerifyEmailPage() {
           <>
             <p>Your email is verified. You can now sign in.</p>
             <Link
-              href={`${basePath}/sign-in`}
+              href={`${basePath}/sign-in?verified=success`}
               className="block text-center rounded-md bg-[hsl(var(--penn-navy-deep))] text-white font-semibold py-2"
             >
               Continue to sign in

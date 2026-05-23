@@ -65,6 +65,29 @@ function genericFail(res: Response, status = 401) {
   return authError(res, status, "invalid_credentials", GENERIC_FAIL_MESSAGE);
 }
 
+// Dummy hash used to equalize timing on the "no such user" branch
+// with the real "user exists, wrong password" branch. We hash a
+// throwaway value the FIRST time the no-user path fires, using the
+// same default argon2id parameters real credentials are stored
+// with. A prior implementation used a hardcoded hash with weak
+// parameters (m=1024,t=1,p=1) which verified in ~7ms vs ~250ms for
+// real credentials — a measurable side channel for user
+// enumeration. Memoizing the Promise means we pay the ~250ms cost
+// exactly once per process and every subsequent miss verifies in
+// approximately the same time as a hit.
+let dummyHashPromise: Promise<string> | null = null;
+function getDummyHashForTimingEqualization(
+  params: Parameters<typeof hashPassword>[1],
+): Promise<string> {
+  if (!dummyHashPromise) {
+    dummyHashPromise = hashPassword(
+      "timing-equalization-placeholder-not-a-real-credential",
+      params,
+    );
+  }
+  return dummyHashPromise;
+}
+
 /** Hash the User-Agent header (sha256). Stored alongside sessions. */
 function hashUserAgent(req: Request): Buffer | null {
   const ua = req.headers["user-agent"];
@@ -152,9 +175,7 @@ export function makeSignInHandler(deps: AuthDeps) {
     if (!user) {
       await verifyPassword(
         parsed.data.password,
-        // Cheap argon2id placeholder — not a real credential. Verify
-        // will fail and we treat it as "wrong password".
-        "$argon2id$v=19$m=1024,t=1,p=1$YWFhYWFhYWFhYWFhYWFhYQ$xx",
+        await getDummyHashForTimingEqualization(deps.passwordHashParams),
       );
       await deps.repo.recordLoginAttempt({
         emailLower,

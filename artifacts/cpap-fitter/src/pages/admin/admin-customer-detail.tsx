@@ -50,6 +50,7 @@ import { CustomerFollowupsPanel } from "@/components/admin/CustomerFollowupsPane
 import { MessageTemplateOverridesPanel } from "@/components/admin/message-template-overrides-panel";
 import { OrderNotesPanel } from "@/components/admin/OrderNotesPanel";
 import { LossClaimsPanel } from "@/components/admin/LossClaimsPanel";
+import { PodSection } from "@/components/admin/PodSection";
 import {
   AdminCustomerNotFoundError,
   getAdminCustomerDetail,
@@ -700,6 +701,7 @@ function OrderRow({
 }) {
   const [showNotes, setShowNotes] = useState(false);
   const [showClaims, setShowClaims] = useState(false);
+  const [showPod, setShowPod] = useState(false);
   return (
     <li
       style={{
@@ -765,10 +767,35 @@ function OrderRow({
           >
             {showClaims ? "Hide claims" : "Claims"}
           </button>
+          <button
+            type="button"
+            onClick={() => setShowPod((v) => !v)}
+            style={{
+              background: "transparent",
+              border: "1px solid var(--border, #e2e8f0)",
+              borderRadius: 4,
+              padding: "2px 8px",
+              fontSize: 11,
+              cursor: "pointer",
+              color: "var(--text-muted, #475569)",
+            }}
+            data-testid={`admin-customer-order-pod-toggle-${order.id}`}
+            aria-expanded={showPod}
+          >
+            {showPod ? "Hide POD" : "POD"}
+          </button>
         </span>
       </div>
       {showNotes && <OrderNotesPanel orderId={order.id} />}
       {showClaims && <LossClaimsPanel orderId={order.id} />}
+      {showPod && (
+        <div style={{ marginTop: 12 }}>
+          <PodSection
+            orderId={order.id}
+            parentQueryKey={["admin-customer-detail"]}
+          />
+        </div>
+      )}
     </li>
   );
 }
