@@ -860,3 +860,39 @@ describe("PrescriptionsTab — AddPrescriptionModal optional fields", () => {
     expect(SRC).toContain("if (notes.trim()) body.notes");
   });
 });
+
+// ---------------------------------------------------------------------------
+// This PR: Rx packets & faxing link removed from header
+// ---------------------------------------------------------------------------
+
+describe("PrescriptionsTab — Rx packets & faxing link removed", () => {
+  it("no longer renders an 'Rx packets & faxing' link in the header", () => {
+    expect(SRC).not.toContain("Rx packets");
+    expect(SRC).not.toContain("faxing");
+  });
+
+  it("no longer links to /prescription-requests", () => {
+    expect(SRC).not.toContain("prescription-requests");
+  });
+
+  it("no longer has the 'Open the pre-populated faxable Rx packets surface' title attribute", () => {
+    expect(SRC).not.toContain("pre-populated faxable Rx packets surface");
+  });
+
+  it("header section only has the '+ Add prescription' button (no extra link)", () => {
+    // Confirm the header section still renders the button but no anchor link.
+    expect(SRC).toContain("+ Add prescription");
+    // The containing div: flex items-center justify-between gap-3
+    // should not contain an <a> element pointing at prescription-requests.
+    const headerSection = SRC.slice(
+      SRC.indexOf("flex items-center justify-between gap-3"),
+      SRC.indexOf("+ Add prescription") + 20,
+    );
+    expect(headerSection).not.toContain("prescription-requests");
+  });
+
+  it("+ Add prescription button is still present and triggers setShowAdd(true)", () => {
+    expect(SRC).toContain("onClick={() => setShowAdd(true)}");
+    expect(SRC).toContain("+ Add prescription");
+  });
+});
