@@ -160,3 +160,37 @@ describe("admin/reset-password — regression: core form logic intact", () => {
     expect(SRC).toContain("/admin/sign-in");
   });
 });
+
+// ---------------------------------------------------------------------------
+// PR change: authErrorMessage helper and SERVER_UNAVAILABLE_MESSAGE removed
+// ---------------------------------------------------------------------------
+describe("admin/reset-password — authErrorMessage helper removed (PR change)", () => {
+  it("does NOT define the authErrorMessage helper function", () => {
+    // The function was removed; the inline ternary replaces it.
+    expect(SRC).not.toContain("function authErrorMessage");
+  });
+
+  it("does NOT reference authErrorMessage anywhere", () => {
+    expect(SRC).not.toContain("authErrorMessage");
+  });
+
+  it("does NOT declare SERVER_UNAVAILABLE_MESSAGE", () => {
+    // The 5xx credentials-store copy is gone.
+    expect(SRC).not.toContain("SERVER_UNAVAILABLE_MESSAGE");
+  });
+
+  it("does NOT contain the 'status.pennpaps.com' status-page URL", () => {
+    expect(SRC).not.toContain("status.pennpaps.com");
+  });
+
+  it("uses the inline AuthError instanceof check in the onError handler", () => {
+    // The pattern `err instanceof AuthError ? err.userMessage : "<fallback>"`
+    // replaces the extracted helper.
+    expect(SRC).toContain("err instanceof AuthError");
+    expect(SRC).toContain("err.userMessage");
+  });
+
+  it("still imports AuthError (needed for the instanceof check)", () => {
+    expect(SRC).toContain("AuthError");
+  });
+});

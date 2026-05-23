@@ -156,3 +156,35 @@ describe("reset-password — regression: core storefront form behaviour intact",
     expect(SRC).toContain("passwordsMismatch");
   });
 });
+
+// ---------------------------------------------------------------------------
+// PR change: authErrorMessage helper and SERVER_UNAVAILABLE_MESSAGE removed
+// ---------------------------------------------------------------------------
+describe("reset-password — authErrorMessage helper removed (PR change)", () => {
+  it("does NOT define the authErrorMessage helper function", () => {
+    expect(SRC).not.toContain("function authErrorMessage");
+  });
+
+  it("does NOT reference authErrorMessage anywhere", () => {
+    expect(SRC).not.toContain("authErrorMessage");
+  });
+
+  it("does NOT declare SERVER_UNAVAILABLE_MESSAGE", () => {
+    expect(SRC).not.toContain("SERVER_UNAVAILABLE_MESSAGE");
+  });
+
+  it("does NOT contain the 'status.pennpaps.com' status-page URL", () => {
+    expect(SRC).not.toContain("status.pennpaps.com");
+  });
+
+  it("uses the inline AuthError instanceof check in the onError handler", () => {
+    // The ternary `err instanceof AuthError ? err.userMessage : "..."` replaces
+    // the extracted helper function.
+    expect(SRC).toContain("err instanceof AuthError");
+    expect(SRC).toContain("err.userMessage");
+  });
+
+  it("still imports AuthError for the inline instanceof check", () => {
+    expect(SRC).toContain("AuthError");
+  });
+});
