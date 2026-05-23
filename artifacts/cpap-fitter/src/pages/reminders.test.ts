@@ -203,36 +203,16 @@ describe("reminders — honeypot field still present", () => {
 // ---------------------------------------------------------------------------
 // PR change: email pre-fill — useEffect implementation details
 // ---------------------------------------------------------------------------
-// The PR updated these tests from testing a direct `useState(identityEmail ?? "")`
-// initialiser to testing the `useState("") + useEffect` pattern. The following
-// tests add confidence around the specific useEffect implementation.
+// Keep this block focused on invariants unique to the `useEffect` pre-fill
+// approach. Broader checks for the empty-string initial state, early-return
+// guard, and functional `setEmail` update are covered elsewhere in this file.
 
 describe("reminders — email pre-fill useEffect implementation detail", () => {
-  it("the useEffect includes identityLoaded in its dependency array", () => {
+  it("uses an effect keyed by identityLoaded/identityEmail and avoids direct identity-based state initialisation", () => {
     // The effect must re-run when identity loads so the email gets filled
     // after the async auth check resolves.
     expect(SRC).toMatch(/\[identityLoaded,\s*identityEmail\]/);
-  });
 
-  it("the guard bails early when identityEmail is null (guest stays empty)", () => {
-    // !identityEmail covers both null and empty-string, protecting against
-    // a setEmail call with a null/empty value that would clear a typed email.
-    expect(SRC).toMatch(/if\s*\(\s*!identityLoaded\s*\|\|\s*!identityEmail\s*\)\s*return/);
-  });
-
-  it("setEmail uses a functional update to avoid overwriting user-typed input", () => {
-    // setEmail((prev) => prev || identityEmail) means a user who has already
-    // started typing their email won't have it replaced by the identity value.
-    expect(SRC).toMatch(/setEmail\(\(prev\)\s*=>\s*prev\s*\|\|\s*identityEmail\)/);
-  });
-
-  it("email state is initialised as empty string before the effect runs", () => {
-    // The useState("") ensures the input is empty during SSR and before the
-    // identity probe resolves — no hydration mismatch.
-    expect(SRC).toContain('useState("")');
-  });
-
-  it("does not use useState(identityEmail ?? '') — avoids SSR/hydration issues", () => {
     // The direct initialiser approach would use the identity value as the
     // initial render state; the effect approach defers it to client-side.
     expect(SRC).not.toContain('identityEmail ?? ""');
