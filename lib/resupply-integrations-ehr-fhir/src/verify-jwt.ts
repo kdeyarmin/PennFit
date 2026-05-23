@@ -261,7 +261,7 @@ export async function fetchJwks(
       // best-effort
     }
   }
-  const buf = Buffer.concat(chunks.map((c) => Buffer.from(c)));
+  const buf = Buffer.concat(chunks);
   const text = buf.toString("utf8");
   let body: unknown;
   try {
