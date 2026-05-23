@@ -376,7 +376,7 @@ describe("listSubstitutes", () => {
     await listSubstitutes("SKU WITH SPACES");
 
     const [url] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toContain("SKU+WITH+SPACES");
+    expect(url).toContain("SKU%20WITH%20SPACES");
   });
 
   test("returns the parsed substitutes array", async () => {
