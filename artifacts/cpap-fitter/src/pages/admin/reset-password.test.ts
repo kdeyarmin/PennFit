@@ -164,7 +164,7 @@ describe("admin/reset-password — regression: core form logic intact", () => {
 // ---------------------------------------------------------------------------
 // PR change: removed SERVER_UNAVAILABLE_MESSAGE and authErrorMessage
 // ---------------------------------------------------------------------------
-describe.skip("admin/reset-password — 5xx-specific error handling removed (this PR)", () => {
+describe("admin/reset-password — 5xx-specific error handling removed (this PR)", () => {
   it("does NOT define SERVER_UNAVAILABLE_MESSAGE", () => {
     expect(SRC).not.toContain("SERVER_UNAVAILABLE_MESSAGE");
   });
