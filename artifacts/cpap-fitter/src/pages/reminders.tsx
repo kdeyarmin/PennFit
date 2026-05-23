@@ -69,8 +69,14 @@ export function Reminders() {
   // The manage page resolves the row by session email, so the patient
   // never has to leave the SPA, open their inbox, or click a token
   // link to edit a list they just typed.
-  const { isSignedIn, email: identityEmail } = useShopIdentity();
+  const { isSignedIn, isLoaded: identityLoaded, email: identityEmail } =
+    useShopIdentity();
   const [email, setEmail] = useState(identityEmail ?? "");
+
+  useEffect(() => {
+    if (!identityLoaded || !identityEmail) return;
+    setEmail((prev) => prev || identityEmail);
+  }, [identityLoaded, identityEmail]);
   const [website, setWebsite] = useState(""); // honeypot
   const [items, setItems] = useState(buildInitialState);
   const [success, setSuccess] = useState<SuccessState | null>(null);

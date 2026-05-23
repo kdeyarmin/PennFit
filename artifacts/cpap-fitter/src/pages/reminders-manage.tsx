@@ -89,13 +89,12 @@ export function RemindersManage() {
     }
   }, []);
 
-  const { data, isLoading, error } = useGetReminderSubscription(
-    { token },
-    {
-      query: {
-        enabled: token.length > 0,
-        queryKey: getGetReminderSubscriptionQueryKey({ token }),
-      },
+  const params = { token };
+
+  const { data, isLoading, error } = useGetReminderSubscription(params, {
+    query: {
+      enabled: token.length > 0,
+      queryKey: getGetReminderSubscriptionQueryKey(params),
     },
   );
   const update = useUpdateReminderSubscription();
@@ -130,8 +129,8 @@ export function RemindersManage() {
               </div>
               <CardTitle>Manage link missing</CardTitle>
               <CardDescription>
-                Use the manage link from your subscription confirmation email
-                to open this page.
+                Use the manage link from your subscription confirmation
+                email to open this page.
               </CardDescription>
             </CardHeader>
             <CardContent className="text-center">

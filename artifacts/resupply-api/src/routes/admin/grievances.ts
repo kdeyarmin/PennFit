@@ -294,11 +294,7 @@ router.patch(
         res.status(404).json({ error: "not_found" });
         return;
       }
-      prevStatus = existing.status;
-      if (prevStatus === null) {
-        res.status(409).json({ error: "missing_prev_status" });
-        return;
-      }
+      prevStatus = existing.status as GrievanceStatus;
       if (!isLegalGrievanceTransition(prevStatus, fields.status)) {
         res.status(400).json({
           error: "invalid_transition",

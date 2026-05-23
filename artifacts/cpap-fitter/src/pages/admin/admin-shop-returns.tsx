@@ -66,9 +66,9 @@ export function AdminShopReturnsPage() {
   // Persist the active tab in `?tab=<id>` so a refresh, back/forward
   // nav, or bookmarked link lands on the same view. The "open" default
   // is omitted from the URL.
-  const [tab, setTabState] = useState<Tab>(readTabFromUrl);
+  const [tab, setTabState] = useState<Tab>(() => readTabFromUrl());
 
-  const setTab = (next: Tab) => {
+  function setTab(next: Tab) {
     setTabState(next);
     if (typeof window === "undefined") return;
     const params = new URLSearchParams(window.location.search);
@@ -80,13 +80,16 @@ export function AdminShopReturnsPage() {
       (qs ? `?${qs}` : "") +
       window.location.hash;
     window.history.replaceState(null, "", newUrl);
-  };
+  }
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    const onPopState = () => setTabState(readTabFromUrl());
-    window.addEventListener("popstate", onPopState);
-    return () => window.removeEventListener("popstate", onPopState);
+    function handlePopstate() {
+      setTabState(readTabFromUrl());
+    }
+    window.addEventListener("popstate", handlePopstate);
+    return () => {
+      window.removeEventListener("popstate", handlePopstate);
+    };
   }, []);
 
   return (

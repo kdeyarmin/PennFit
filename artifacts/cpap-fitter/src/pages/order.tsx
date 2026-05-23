@@ -881,6 +881,44 @@ export function Order() {
                 .
               </p>
             </div>
+
+            <div className="flex items-start gap-3">
+              <Checkbox
+                id="consent-checkbox"
+                data-testid="checkbox-consent"
+                checked={consentValue === true}
+                aria-invalid={errors.consentToContact ? "true" : "false"}
+                aria-describedby={
+                  isSubmitted && errors.consentToContact
+                    ? "consent-checkbox-error"
+                    : undefined
+                }
+                onCheckedChange={(checked) =>
+                  setValue("consentToContact", checked === true, {
+                    shouldValidate: true,
+                  })
+                }
+              />
+              <div className="flex-1">
+                <Label
+                  htmlFor="consent-checkbox"
+                  className="text-sm font-normal cursor-pointer leading-relaxed"
+                >
+                  I consent to be contacted by Penn Home Medical Supply
+                  regarding this order, and agree to the SMS / contact and
+                  data-storage terms above.
+                </Label>
+                {isSubmitted && errors.consentToContact && (
+                  <p
+                    id="consent-checkbox-error"
+                    role="alert"
+                    className="text-xs text-destructive mt-1"
+                  >
+                    {errors.consentToContact.message}
+                  </p>
+                )}
+              </div>
+            </div>
           </CardContent>
         </Card>
 

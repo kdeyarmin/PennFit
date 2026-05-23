@@ -37,17 +37,24 @@ export function checkCsrf(req: Request): CsrfCheckResult {
   const header = Array.isArray(headerRaw) ? headerRaw[0] : headerRaw;
   if (!header) return { ok: false, reason: "missing_header" };
 
-  // Pad both sides to a fixed width so the comparison always takes
-  // the same time regardless of actual length. The length check is
-  // done with a boolean flag after the constant-time comparison so
-  // timing does not leak whether the two values had equal lengths.
-  const PAD = 128;
+  // Pad both sides to a width that is at least 128 bytes AND big
+  // enough to hold both inputs in full. A fixed 128-byte floor keeps
+  // the comparison cost stable for the normal-sized tokens we issue
+  // today; widening to fit longer inputs prevents a silent
+  // truncation-match if a future code path ever issues a > 128-byte
+  // token (the constant-time equality would otherwise compare only
+  // the first 128 bytes). The length check is done with a boolean
+  // flag after the constant-time comparison so timing does not leak
+  // whether the two values had equal lengths.
+  const cookieBuf = Buffer.from(cookie, "utf8");
+  const headerBuf = Buffer.from(header, "utf8");
+  const PAD = Math.max(128, cookieBuf.length, headerBuf.length);
   const aPad = Buffer.alloc(PAD);
   const bPad = Buffer.alloc(PAD);
-  Buffer.from(cookie, "utf8").copy(aPad);
-  Buffer.from(header, "utf8").copy(bPad);
+  cookieBuf.copy(aPad);
+  headerBuf.copy(bPad);
   const bytesMatch = timingSafeEqual(aPad, bPad);
-  const lengthMatch = cookie.length === header.length;
+  const lengthMatch = cookieBuf.length === headerBuf.length;
   return bytesMatch && lengthMatch
     ? { ok: true }
     : { ok: false, reason: "mismatch" };

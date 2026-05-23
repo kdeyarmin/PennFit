@@ -222,8 +222,8 @@ async function groupedCount(
     | "resolved_by_user_id"
     | "completed_by_user_id",
   adminIds: string[],
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- PostgrestFilterBuilder<...> generics over the table union are too deep to spell out here without a TS2589 "type instantiation is excessively deep" error.
-  refine: (q: any) => unknown,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  refine: (q: any) => any,
 ): Promise<Map<string, number>> {
   const counts = new Map<string, number>();
   if (adminIds.length === 0) return counts;

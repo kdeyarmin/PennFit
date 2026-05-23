@@ -173,25 +173,18 @@ describe("formatUsPhone — boundary: 10-digit truncation", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// PR change: role="alert" removed from consent-to-contact error paragraph
-// ---------------------------------------------------------------------------
-// The consentToContact error message element had role="alert" stripped in
-// this PR. We verify the structural change so the attribute doesn't
-// inadvertently creep back in.
-
-describe("order — consentToContact error paragraph does not have role=alert", () => {
+describe("order — consentToContact error is accessible", () => {
   it("still renders the consentToContact error conditionally", () => {
     // The conditional rendering block must still be present.
     expect(SRC).toContain("errors.consentToContact");
   });
 
-  it("consentToContact error paragraph no longer carries role=alert", () => {
+  it("consentToContact error paragraph carries role=alert", () => {
     const idx = SRC.indexOf("errors.consentToContact.message");
     expect(idx).toBeGreaterThan(-1);
     // Inspect the paragraph element that wraps the error message.
     const elementContext = SRC.slice(idx - 150, idx + 50);
-    expect(elementContext).not.toContain('role="alert"');
+    expect(elementContext).toContain('role="alert"');
   });
 
   it("consentToContact error paragraph still has the destructive text style", () => {
@@ -199,6 +192,18 @@ describe("order — consentToContact error paragraph does not have role=alert", 
     expect(idx).toBeGreaterThan(-1);
     const elementContext = SRC.slice(idx - 150, idx + 50);
     expect(elementContext).toContain("text-destructive");
+  });
+
+  it("links checkbox validation state to the consent error paragraph", () => {
+    expect(SRC).toContain('aria-invalid={errors.consentToContact ? "true" : "false"}');
+    expect(SRC).toContain('id="consent-checkbox-error"');
+    // Stronger: prove the Checkbox actually references the error id
+    // via aria-describedby — otherwise a future change that drops
+    // the binding but keeps the error element would silently pass.
+    expect(SRC).toMatch(
+      /aria-describedby=\{[\s\S]*?errors\.consentToContact[\s\S]*?"consent-checkbox-error"/,
+    );
+    expect(SRC).toContain('"consent-checkbox-error"');
   });
 });
 
