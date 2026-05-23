@@ -158,7 +158,10 @@ describe("buildCanonicalUrl — pure logic", () => {
     const first = buildCanonicalUrl("/learn/nasal-congestion", origin, "/");
     // The result IS the canonical URL — calling again with the path part
     // should not add the origin twice.
-    expect(first.startsWith(origin)).toBe(true);
+    const parsed = new URL(first);
+    expect(parsed.origin).toBe(origin);
+    expect(parsed.hostname).toBe("pennpaps.com");
+    expect(parsed.protocol).toBe("https:");
     expect(first.split(origin).length).toBe(2); // exactly one occurrence
   });
 });
