@@ -35,10 +35,11 @@ export interface AddressHistoryEntry {
 }
 
 async function jsonFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const { headers: initHeaders, ...restInit } = init;
   const res = await fetch(`/resupply-api${path}`, {
+    ...restInit,
     credentials: "include",
-    headers: { Accept: "application/json", ...csrfHeader(), ...(init.headers ?? {}) },
-    ...init,
+    headers: { Accept: "application/json", ...csrfHeader(), ...(initHeaders ?? {}) },
   });
   if (!res.ok) {
     let message = `${res.status} ${res.statusText}`;

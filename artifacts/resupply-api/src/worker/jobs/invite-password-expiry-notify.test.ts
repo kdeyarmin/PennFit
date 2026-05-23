@@ -158,7 +158,7 @@ describe("runInvitePasswordExpiryNotifySweep", () => {
     expect(stats.errors).toBe(0);
     expect(sendEmailMock).toHaveBeenCalledTimes(2);
     const recipients = sendEmailMock.mock.calls.map(
-      ([arg]) => (arg as { to: string }).to,
+      (call) => ((call as unknown[])[0] as { to: string }).to,
     );
     expect(recipients).toContain("pat@example.test");
     expect(recipients).toContain("sam@example.test");

@@ -5,8 +5,6 @@ import { csrfHeader } from "../csrf";
 
 export type ProviderSource = "nppes" | "csr_entry" | "backfill";
 
-export type ProviderSource = "nppes" | "csr_entry" | "backfill";
-
 export interface ProviderListItem {
   id: string;
   npi: string;

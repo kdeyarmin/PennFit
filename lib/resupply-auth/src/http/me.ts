@@ -38,7 +38,7 @@ export function makeMeHandler(deps: AuthDeps) {
     // the console with the operator-typed password still on their
     // account. Returning 5xx instead means the SPA shows its session
     // error state (no console access) until the dependency recovers.
-    let mustChangePassword = false;
+    let mustChangePassword: boolean;
     try {
       const cred = await deps.repo.findCredentialByUserId(user.id);
       mustChangePassword = cred?.mustChange ?? false;
