@@ -1,6 +1,8 @@
 // Hand-rolled fetch wrappers for the admin shop-customer followups
 // endpoints (Phase 17). Mirrors customer-notes-api.ts.
 
+import { csrfHeader } from "../csrf";
+
 export interface AdminCustomerFollowup {
   id: string;
   body: string;
@@ -62,6 +64,7 @@ export async function createAdminCustomerFollowup(
       headers: {
         "Content-Type": "application/json",
         Accept: "application/json",
+        ...csrfHeader(),
       },
       body: JSON.stringify({ body, dueAt: dueAt.toISOString() }),
     },
@@ -84,7 +87,7 @@ export async function completeAdminCustomerFollowup(
     `/resupply-api/admin/shop/customers/${encodeURIComponent(userId)}/followups/${encodeURIComponent(followupId)}/complete`,
     {
       method: "PATCH",
-      headers: { Accept: "application/json" },
+      headers: { Accept: "application/json", ...csrfHeader() },
     },
   );
   if (res.status === 404) {

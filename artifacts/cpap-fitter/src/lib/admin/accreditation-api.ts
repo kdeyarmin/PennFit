@@ -1,5 +1,7 @@
 // Hand-rolled fetch wrappers for /admin/accreditation/* surfaces.
 
+import { csrfHeader } from "../csrf";
+
 export interface AccreditationPolicy {
   id: string;
   policyKey: string;
@@ -61,10 +63,11 @@ export interface BinderSummary {
 }
 
 async function jsonFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const { headers: initHeaders, ...restInit } = init;
   const res = await fetch(`/resupply-api${path}`, {
+    ...restInit,
     credentials: "include",
-    headers: { Accept: "application/json", ...(init.headers ?? {}) },
-    ...init,
+    headers: { Accept: "application/json", ...csrfHeader(), ...(initHeaders ?? {}) },
   });
   if (!res.ok) {
     let message = `${res.status} ${res.statusText}`;
