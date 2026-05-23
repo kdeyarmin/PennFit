@@ -95,9 +95,12 @@ describe("era-reconciler — summary.linesUpdated aggregation (PR fix)", () => {
     const reduceIdx = SRC.indexOf("(s, o) => s + o.linesUpdated");
     expect(reduceIdx).toBeGreaterThan(-1);
     const reduceBlock = SRC.slice(reduceIdx, reduceIdx + 80);
-    // The reduce call's seed is the literal `0` appearing right after
-    // the callback closing paren.
-    expect(reduceBlock).toMatch(/\)\s*,\s*0\s*\)/);
+    // The reduce call's seed is the literal `0` appearing as the second
+    // argument — i.e. directly after the callback expression. The
+    // callback `(s, o) => s + o.linesUpdated` has no explicit `)`
+    // immediately before the `,` so we match `0,` (multi-line form)
+    // or `0)` (single-line form) instead.
+    expect(reduceBlock).toMatch(/0\s*[,)]/);
   });
 
   it("does not use parsed.claims.serviceLines.length as the accumulator seed", () => {
