@@ -85,7 +85,7 @@ const metrics: Metric[] = [
 export function LearnReadingYourSleepReport() {
   useDocumentTitle(
     "Reading your sleep study report",
-    "What AHI, RDI, ODI, T90, and the rest of your sleep study acronyms actually mean — and what numbers to ask your sleep doctor about specifically.",
+    "What AHI, RDI, ODI, and the rest of your sleep study acronyms actually mean — and what numbers to ask your sleep doctor about specifically.",
     { schema: "MedicalWebPage" },
   );
   const [, navigate] = useLocation();
