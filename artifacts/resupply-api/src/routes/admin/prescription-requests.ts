@@ -686,4 +686,170 @@ function projectDetail(r: PacketRow) {
   };
 }
 
+// ---------------------------------------------------------------------
+// POST /admin/patients/:id/prescription-requests/from-prescription/:rxId
+// ---------------------------------------------------------------------
+// One-click renewal: build a packet pre-populated from an existing
+// prescription. The CSR opens the patient detail → Prescriptions tab,
+// clicks "Renew as faxable packet" on an expiring row, and lands on
+// the packet detail page with a fully-formed draft ready to send.
+//
+// Pre-fill rules:
+//   * hcpcsLines = single line built from prescription.hcpcs_code +
+//     item_sku description + cadence_days (qty=1).
+//   * icd10Codes = diagnosis_icd10 from the patient's most recent
+//     sleep study (when present); blank otherwise — CSR fills in.
+//   * settings = null (settings live in therapy snapshots, not the
+//     Rx row; pulling from AirView/CareOrch ships as a follow-up).
+//   * providerId = prescription.provider_id (when present).
+//   * returnFaxE164 = provider.fax_e164 (defaulted by the create
+//     handler).
+//   * lengthOfNeedMonths = 99 (lifetime — overrideable in UI).
+//
+// Returns the created packet id; UI redirects to the packet detail
+// page where the CSR previews + sends.
+//
+// PHI posture: response carries packet id only. Logger sees patient +
+// rx ids; no clinical content.
+const fromRxParams = z.object({
+  id: z.string().uuid(),
+  rxId: z.string().uuid(),
+});
+
+router.post(
+  "/admin/patients/:id/prescription-requests/from-prescription/:rxId",
+  requirePermission("patients.update"),
+  adminRateLimit({
+    name: "prescription_requests.from_prescription",
+    preset: "mutation",
+  }),
+  async (req, res) => {
+    const params = fromRxParams.safeParse(req.params);
+    if (!params.success) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    const supabase = getSupabaseServiceRoleClient();
+
+    const { data: rx } = await supabase
+      .schema("resupply")
+      .from("prescriptions")
+      .select(
+        "id, patient_id, provider_id, hcpcs_code, item_sku, cadence_days, valid_until",
+      )
+      .eq("id", params.data.rxId)
+      .eq("patient_id", params.data.id)
+      .limit(1)
+      .maybeSingle();
+    if (!rx) {
+      res.status(404).json({ error: "prescription_not_found" });
+      return;
+    }
+    if (!rx.provider_id) {
+      res.status(409).json({
+        error: "rx_missing_provider",
+        message:
+          "Cannot renew via packet: this Rx has no provider link. Set it in /admin/providers first.",
+      });
+      return;
+    }
+    if (!rx.hcpcs_code) {
+      res.status(409).json({
+        error: "rx_missing_hcpcs",
+        message:
+          "Cannot renew via packet: this Rx has no HCPCS code. Edit the Rx first.",
+      });
+      return;
+    }
+
+    // Latest sleep study for icd10 prefill (defaults to G47.33 when
+    // the patient has no sleep studies on file — that's the most
+    // common sleep-apnea code and the CSR overrides it in the UI
+    // when it doesn't apply).
+    const { data: study } = await supabase
+      .schema("resupply")
+      .from("sleep_studies")
+      .select("diagnosis_icd10")
+      .eq("patient_id", params.data.id)
+      .order("study_date", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const icd10 =
+      study?.diagnosis_icd10 && /^[A-Z]\d{2}(\.\d{1,4})?$/.test(study.diagnosis_icd10)
+        ? [study.diagnosis_icd10.toUpperCase()]
+        : ["G47.33"];
+
+    const { data: provider } = await supabase
+      .schema("resupply")
+      .from("providers")
+      .select("id, fax_e164")
+      .eq("id", rx.provider_id)
+      .limit(1)
+      .maybeSingle();
+
+    const hcpcsLines = [
+      {
+        hcpcs: rx.hcpcs_code,
+        description: rx.item_sku,
+        quantity: 1,
+        cadenceDays: rx.cadence_days > 0 ? rx.cadence_days : null,
+      },
+    ];
+
+    const { data: inserted, error: insertErr } = await supabase
+      .schema("resupply")
+      .from("prescription_request_packets")
+      .insert({
+        patient_id: params.data.id,
+        provider_id: rx.provider_id,
+        source_prescription_id: rx.id,
+        hcpcs_items_json: hcpcsLines as unknown as Json,
+        icd10_codes_json: icd10 as unknown as Json,
+        device_settings_json: null,
+        length_of_need_months: 99,
+        return_fax_e164: provider?.fax_e164 ?? null,
+        return_email: null,
+        clinical_notes: null,
+        status: "draft",
+        created_by_email: req.adminEmail ?? "admin:unknown",
+      })
+      .select("id")
+      .maybeSingle();
+    if (insertErr || !inserted) {
+      logger.warn(
+        {
+          err_code: insertErr?.code,
+          patient_id: params.data.id,
+          rx_id: rx.id,
+        },
+        "prescription_request.from_prescription.create_failed",
+      );
+      res.status(500).json({ error: "insert_failed" });
+      return;
+    }
+
+    await logAudit({
+      action: "prescription_request.from_prescription",
+      adminEmail: req.adminEmail ?? null,
+      adminUserId: req.adminUserId ?? null,
+      targetTable: "prescription_request_packets",
+      targetId: inserted.id,
+      metadata: {
+        patient_id: params.data.id,
+        source_prescription_id: rx.id,
+        hcpcs_code: rx.hcpcs_code,
+      },
+      ip: req.ip ?? null,
+      userAgent: req.get("user-agent") ?? null,
+    }).catch((err) => {
+      logger.warn(
+        { err },
+        "prescription_request.from_prescription audit write failed",
+      );
+    });
+
+    res.status(201).json({ id: inserted.id });
+  },
+);
+
 export default router;
