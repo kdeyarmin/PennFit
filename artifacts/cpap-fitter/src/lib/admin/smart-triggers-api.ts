@@ -5,6 +5,8 @@
 // events and dismiss false positives without leaving the patient
 // page.
 
+import { csrfHeader } from "../csrf";
+
 export type SmartTriggerKind =
   | "leak_rising"
   | "usage_dropping"
@@ -58,7 +60,7 @@ export async function dismissSmartTrigger(
     {
       method: "POST",
       credentials: "include",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...csrfHeader() },
       body: JSON.stringify(reason ? { reason } : {}),
     },
   );

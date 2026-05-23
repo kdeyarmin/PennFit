@@ -106,12 +106,12 @@ describe("customArgsFor", () => {
   it("produces the SendGrid event-correlation envelope", () => {
     expect(
       customArgsFor(
-        "00000000-0000-0000-0000-0000000000aa",
-        "00000000-0000-0000-0000-0000000000bb",
+        "00000000-0000-4000-8000-0000000000aa",
+        "00000000-0000-4000-8000-0000000000bb",
       ),
     ).toEqual({
-      bulk_campaign_id: "00000000-0000-0000-0000-0000000000aa",
-      bulk_campaign_recipient_id: "00000000-0000-0000-0000-0000000000bb",
+      bulk_campaign_id: "00000000-0000-4000-8000-0000000000aa",
+      bulk_campaign_recipient_id: "00000000-0000-4000-8000-0000000000bb",
     });
   });
 });

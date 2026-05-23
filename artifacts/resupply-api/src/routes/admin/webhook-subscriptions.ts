@@ -18,10 +18,12 @@ import {
 } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
+import { assertSafeOutboundUrlSync } from "../../lib/safe-outbound";
 import { VALID_EVENT_TYPE_SET } from "../../lib/webhooks/event-catalog";
+import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import {
-  requireAdmin,
   requireAdminOnly,
+  requirePermission,
 } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
@@ -33,7 +35,21 @@ const upsertBody = z
       .string()
       .url()
       .max(500)
-      .refine((u) => u.startsWith("https://"), "must be https://"),
+      .refine((u) => u.startsWith("https://"), "must be https://")
+      .refine((u) => {
+        // Block IP literals in private / loopback / metadata
+        // ranges at validate time so a misconfigured (or
+        // malicious) admin can't point a subscription at the
+        // internal network. The dispatcher re-checks via DNS
+        // before each send, but rejecting obvious cases here
+        // gives faster feedback in the admin UI.
+        try {
+          assertSafeOutboundUrlSync(u);
+          return true;
+        } catch {
+          return false;
+        }
+      }, "target_url must be a public https URL"),
     eventTypes: z.array(z.string().trim().min(1).max(80)).min(1).max(40),
     maxRetries: z.number().int().min(0).max(12).default(5),
     isActive: z.boolean().default(true),
@@ -45,7 +61,7 @@ const idParam = z.object({ id: z.string().uuid() });
 
 router.get(
   "/admin/webhook-subscriptions",
-  requireAdmin,
+  requirePermission("admin.tools.manage"),
   async (_req, res) => {
     const supabase = getSupabaseServiceRoleClient();
     const { data } = await supabase
@@ -66,6 +82,7 @@ router.get(
 router.post(
   "/admin/webhook-subscriptions",
   requireAdminOnly,
+  adminRateLimit({ name: "webhook_subscriptions.create", preset: "sensitive" }),
   async (req, res) => {
     const parsed = upsertBody.safeParse(req.body);
     if (!parsed.success) {
@@ -134,6 +151,7 @@ router.post(
 router.patch(
   "/admin/webhook-subscriptions/:id",
   requireAdminOnly,
+  adminRateLimit({ name: "webhook_subscriptions.update", preset: "sensitive" }),
   async (req, res) => {
     const idParsed = idParam.safeParse(req.params);
     if (!idParsed.success) {
@@ -169,6 +187,7 @@ router.patch(
 router.delete(
   "/admin/webhook-subscriptions/:id",
   requireAdminOnly,
+  adminRateLimit({ name: "webhook_subscriptions.delete", preset: "destroy" }),
   async (req, res) => {
     const idParsed = idParam.safeParse(req.params);
     if (!idParsed.success) {
@@ -187,7 +206,7 @@ router.delete(
 
 router.get(
   "/admin/webhook-deliveries",
-  requireAdmin,
+  requirePermission("admin.tools.manage"),
   async (req, res) => {
     const supabase = getSupabaseServiceRoleClient();
     let query = supabase

@@ -45,6 +45,18 @@ export interface VoiceConfig {
    * controls branding for every outbound call.
    */
   practiceName?: string;
+  /**
+   * Optional Deepgram API key. When set, the WS handler opens a
+   * parallel Deepgram Nova-3 transcription session on the caller-
+   * side audio and writes the resulting transcript to the audit log
+   * after hangup. Higher accuracy than gpt-4o-mini-transcribe on
+   * phone audio, especially for elderly speakers and medical
+   * vocabulary. Independent of the conversational STT — when this
+   * is set, the model still uses its built-in transcription for
+   * turn-taking; Deepgram's transcript is used for the audit record
+   * and the post-call summarizer.
+   */
+  deepgramApiKey?: string;
 }
 
 /**
@@ -75,6 +87,7 @@ export function readVoiceConfigOrNull(
     twilioPhoneNumber: env.TWILIO_PHONE_NUMBER,
     publicBaseUrl,
     practiceName: env.RESUPPLY_PRACTICE_NAME,
+    deepgramApiKey: env.DEEPGRAM_API_KEY,
   };
 }
 

@@ -204,7 +204,7 @@ describe("resolveAudience — totals + dedupe", () => {
   });
 
   it("a shop_customer and a patient with the same UUID are kept separately", () => {
-    const SHARED_UUID = "00000000-0000-0000-0000-0000000000aa";
+    const SHARED_UUID = "00000000-0000-4000-8000-0000000000aa";
     const r = resolveAudience({
       audienceKind: "manual_list",
       audiencePayer: null,

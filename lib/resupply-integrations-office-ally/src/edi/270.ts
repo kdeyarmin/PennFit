@@ -14,6 +14,8 @@
 //     EQ*30  (general health benefits) — or service-type-specific code
 //   SE / GE / IEA
 
+import { randomBytes } from "node:crypto";
+
 import {
   centsToMoney as _unused, // keep import alignment with 837p
   digitsOnly,
@@ -82,7 +84,14 @@ export function build270(input: Build270Input): Built270 {
   const isaCtl = leftPadDigits(input.control.interchangeControlNumber, 9);
   const gsCtl = stripLeadingZeros(input.control.groupControlNumber) || "1";
   const stCtl = leftPadDigits(input.control.transactionSetControlNumber, 4);
-  const traceRef = `${input.submitter.etin}-${isaCtl}`;
+  // Trace ref appears in TRN02 and is the only key the 271 parser can
+  // use to match an eligibility response back to the originating
+  // request. ISA13 alone collides under burst (two requests from the
+  // same submitter in the same second share a seconds-bucket — see
+  // control-numbers.ts). Append ST02 + 8 random hex chars so two
+  // round-trips fired back-to-back can never claim the same trace.
+  const traceNonce = randomBytes(4).toString("hex");
+  const traceRef = `${input.submitter.etin}-${isaCtl}-${stCtl}-${traceNonce}`;
 
   segments.push(
     join([

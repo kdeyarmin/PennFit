@@ -1084,7 +1084,7 @@ describe("GET /admin/shop/customers/:userId — happy paths", () => {
 // POST /admin/shop/customers/:userId/reorder
 // =====================================================================
 
-const SOURCE_ORDER_ID = "11111111-2222-3333-4444-555555555555";
+const SOURCE_ORDER_ID = "11111111-2222-3333-8444-555555555555";
 
 interface ReorderStageInput {
   order: Record<string, unknown> | null;

@@ -7,7 +7,7 @@
 
 import "@/admin.css";
 
-import { useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { Link, useLocation } from "wouter";
 
 import { AuthError } from "@workspace/resupply-auth-react";
@@ -23,8 +23,26 @@ function readTokenFromUrl(): string {
   return params.get("token") ?? "";
 }
 
+// Strip ?token=... from the address bar so the single-use secret
+// doesn't linger in browser history, autocomplete, or screenshots.
+function stripTokenFromUrl(): void {
+  if (typeof window === "undefined") return;
+  try {
+    const params = new URLSearchParams(window.location.search);
+    if (!params.has("token")) return;
+    params.delete("token");
+    const qs = params.toString();
+    const next =
+      window.location.pathname + (qs ? `?${qs}` : "") + window.location.hash;
+    window.history.replaceState(null, "", next);
+  } catch {
+    // History API not available: no-op.
+  }
+}
+
 export function ResetPasswordPage() {
   const token = useMemo(readTokenFromUrl, []);
+  useEffect(stripTokenFromUrl, []);
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [submitError, setSubmitError] = useState<string | null>(
@@ -37,6 +55,10 @@ export function ResetPasswordPage() {
 
   function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    // Skip a second submission while the first is still in flight.
+    // The button is also disabled on isPending, but a fast double-
+    // click can fire two onSubmits before React re-renders.
+    if (reset.isPending) return;
     setSubmitError(null);
     if (password !== confirm) {
       setSubmitError("The two passwords don't match.");
@@ -47,6 +69,20 @@ export function ResetPasswordPage() {
       {
         onSuccess: () => setLocation("/admin/sign-in"),
         onError: (err) => {
+          // 5xx means the credentials store is unreachable — the
+          // reset token may still be valid, the user just can't
+          // commit a new password right now. Same copy as
+          // change-password.tsx / sign-in.tsx so users see a
+          // consistent message across the auth surface.
+          if (err instanceof AuthError && err.status >= 500) {
+            setSubmitError(
+              "We can't reach the credentials store right now, so your" +
+                " password wasn't reset. This is a server problem, not" +
+                " your reset link. Please try again in a minute — if it" +
+                " keeps failing, check status.pennpaps.com.",
+            );
+            return;
+          }
           setSubmitError(
             err instanceof AuthError
               ? err.userMessage

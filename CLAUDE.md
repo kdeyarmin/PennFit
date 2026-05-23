@@ -40,7 +40,7 @@ This is a `pnpm` workspaces monorepo (Node v24, TypeScript 5.9, pnpm 10.33).
 | `artifacts/shared`       | Cross-artifact static assets (favicons served at root).                                                                                                                                                                          |
 | `lib/resupply-*`         | Shared workspace packages: `db`, `auth` (+ `auth-react`), `messaging`, `email`, `ai`, `telecom`, `audit`, `domain`, `secrets`, `reminders`.                                                                                      |
 | `lib/api-client-react`   | Generated API client + React hooks.                                                                                                                                                                                              |
-| `scripts/`               | Architecture + migration drift checks (`check-resupply-architecture`, `check-resupply-migration-prefix`). The historical `check-codegen.sh` was retired when Task #37 removed the OpenAPI spec packages.                         |
+| `scripts/`               | Architecture + migration drift checks (`check-resupply-architecture`, `check-resupply-migration-prefix`) plus operator-facing utilities under `src/`: `preflight-prod-env.ts` (env validator), `auth-bootstrap-admin.ts` (seed first admin), `seed-stripe-products.ts`. The historical `check-codegen.sh` was retired when Task #37 removed the OpenAPI spec packages. |
 | `docs/`                  | Architecture notes, post-mortems, production readiness.                                                                                                                                                                          |
 
 There is **one** customer-facing site (`pennfit.replit.app/`). The former
@@ -57,6 +57,19 @@ pnpm lint:resupply                                # ESLint, zero warnings
 pnpm --filter <pkg> test                          # Vitest for one package
 pnpm --filter @workspace/resupply-api dev         # API + in-process worker
 pnpm --filter @workspace/cpap-fitter dev          # storefront + admin SPA
+```
+
+Operator-facing utilities under `scripts/`:
+
+```bash
+pnpm --filter @workspace/scripts preflight:prod        # validate process.env
+                                                       # against production
+                                                       # constraints (see
+                                                       # docs/runbooks/
+                                                       # production-launch.md)
+pnpm --filter @workspace/scripts auth:bootstrap-admin  # seed the first admin
+                                                       # row + email a 1h
+                                                       # password-reset link
 ```
 
 In Replit, prefer the registered workflows (`artifacts/resupply-api: Resupply
@@ -97,18 +110,91 @@ gated variables (Twilio, SendGrid, OpenAI, Stripe, object storage) degrade
 gracefully when unset so dev/preview environments don't need every
 third-party credential.
 
-Required at boot for `resupply-api`:
+Required at boot for `resupply-api` (the API refuses to start if any
+of these is missing):
 
-| Variable                  | Notes                                                                                                                                                                                              |
-| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `PORT`                    | HTTP listen port.                                                                                                                                                                                  |
-| `DATABASE_URL`            | Postgres v14+ (no extensions; only `gen_random_uuid()` is used).                                                                                                                                   |
-| `RESUPPLY_LINK_HMAC_KEY`  | 32+ random bytes. Signs short-lived patient links in SMS/email reminders. Generate with `openssl rand -base64 48`. Rotation invalidates in-flight links.                                           |
-| `RESUPPLY_AUDIT_HMAC_KEY` | 32+ bytes (base64). HMAC-chains every row written to `resupply.audit_log` (migration 0116) for HIPAA §164.312(b) tamper-evidence. Generate with `openssl rand -base64 48`. Rotation does NOT invalidate prior rows. |
+| Variable                                            | Notes                                                                                                                                                                                                                                                  |
+| --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `PORT`                                              | HTTP listen port.                                                                                                                                                                                                                                      |
+| `DATABASE_URL`                                      | Postgres v14+ (no extensions; only `gen_random_uuid()` is used). Used by the migrator and a small number of legacy worker paths; the runtime data path is Supabase, not raw pg.                                                                       |
+| `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY`        | Runtime data path. Validated by `validateSupabaseEnv()` in `lib/resupply-db/src/supabase-client.ts`. Service-role JWT bypasses RLS; never expose client-side. Both `resupply` and `resupply_auth` schemas must be added to Studio → Project Settings → API → "Exposed schemas" or every query 503s. |
+| `RESUPPLY_LINK_HMAC_KEY`                            | 32+ random bytes. Signs short-lived patient links in SMS/email reminders. Generate with `openssl rand -base64 48`. Rotation invalidates in-flight links.                                                                                              |
+| `RESUPPLY_AUDIT_HMAC_KEY`                           | 32+ bytes (base64). HMAC-chains every row written to `resupply.audit_log` (migration 0116) for HIPAA §164.312(b) tamper-evidence. Generate with `openssl rand -base64 48`. MUST be different from `RESUPPLY_LINK_HMAC_KEY`. Rotation does NOT invalidate prior rows. |
+| `RESUPPLY_ALLOWED_ORIGINS` **or** `REPLIT_DOMAINS`  | CORS allowlist (origin form for the first, bare-host for the second). In `NODE_ENV=production` the API throws at boot if both are empty — `artifacts/resupply-api/src/app.ts:63`. Replit deployments auto-populate `REPLIT_DOMAINS`.                  |
+
+`preflight:prod` (under `scripts/`) validates every row above plus
+production-only shape checks (sk_live vs sk_test, strict base64 round-trip
+on HMAC keys, HTTPS-only public URLs, `.env.example` placeholder
+detection, the `STRIPE_WEBHOOK_SECRET` legacy-alias name confusion).
+Exits non-zero on any FAIL so it can gate a deploy. The first-launch
+procedure that walks through generating keys → setting secrets → running
+preflight → applying migrations → bootstrapping the first admin is in
+[`docs/runbooks/production-launch.md`](./docs/runbooks/production-launch.md).
 
 The full env table — including every optional variable and where it's
 read — lives in [`README.md`](./README.md#environment-variables) and
 [`.env.example`](./.env.example).
+
+## AI / communications stack (May 2026)
+
+Three independent AI vendors are wired into the codebase, each used
+where it's strongest. All three are HIPAA-eligible (require a BAA on
+the vendor side) and gracefully degrade when their API key is unset.
+
+| Surface                 | Primary                  | Fallback              | Key                    |
+| ----------------------- | ------------------------ | --------------------- | ---------------------- |
+| Voice agent (LLM brain) | OpenAI `gpt-realtime`    | n/a (offline if down) | `OPENAI_API_KEY`       |
+| Voice agent (STT)       | `gpt-4o-mini-transcribe` | Deepgram Nova-3 (opt) | `OPENAI_API_KEY`, `DEEPGRAM_API_KEY` |
+| Voice agent (TTS)       | OpenAI `cedar` voice     | ElevenLabs (opt)      | `OPENAI_API_KEY`, `ELEVENLABS_API_KEY` |
+| Storefront chatbot      | Claude Sonnet 4.6        | `gpt-4o-mini`         | `ANTHROPIC_API_KEY` (preferred), `OPENAI_API_KEY` |
+| Sleep coach             | Claude Sonnet 4.6        | `gpt-4o-mini`         | `ANTHROPIC_API_KEY` (preferred), `OPENAI_API_KEY` |
+| SMS intent classifier   | Claude Haiku 4.5         | `gpt-4o-mini`         | `ANTHROPIC_API_KEY` (preferred), `OPENAI_API_KEY` |
+
+Provider selection happens in
+`artifacts/resupply-api/src/lib/llm-provider.ts:selectLlmProvider()` —
+when `ANTHROPIC_API_KEY` is set, Claude takes priority for every
+text-only LLM call (Sonnet 4.6 writes noticeably warmer patient-facing
+copy than gpt-4o-mini-class models and is at least as strong on tool
+selection). When only `OPENAI_API_KEY` is configured, OpenAI is used
+end to end. When neither is set, routes return a static "offline"
+reply and stay 200 (deploys must not break because a vendor key is
+missing).
+
+Vendor clients live in `lib/resupply-ai/src/`:
+
+- `anthropic-client.ts` — Claude Messages API (REST + SSE streaming +
+  prompt caching). `createAnthropicClient()`. Used by the chatbot,
+  sleep coach, SMS classifier, and the **post-call summarizer** in
+  `artifacts/resupply-api/src/lib/voice/post-call-summary.ts`.
+- `deepgram-client.ts` — Nova-3 STT (REST batch + WebSocket
+  streaming). `createDeepgramClient()`. Wired into the voice WS
+  handler when `DEEPGRAM_API_KEY` is set: opens a parallel Nova-3
+  session on the caller-side µ-law audio, accumulates final
+  transcripts, and writes a `voice.call.deepgram_transcript` audit
+  row on hangup. The OpenAI Realtime model still drives the
+  conversation — Deepgram is the audit-grade backup transcript.
+- `elevenlabs-client.ts` — TTS (REST + streaming + voice list).
+  `createElevenLabsClient()`. Currently unwired on the live voice path
+  (follow-up); ready for opt-in deployments that want the most natural
+  voice quality available.
+
+**Post-call summarization** (`artifacts/resupply-api/src/lib/voice/post-call-summary.ts`)
+runs Claude Sonnet 4.6 on the accumulated transcript turns after every
+voice call ends. Produces a structured JSON object with the call
+outcome, patient sentiment (`positive | neutral | concerned |
+distressed`), any clinical concerns mentioned, follow-ups the agent
+committed to, and a `recommendsHandoff` flag for the human-review
+queue. Persisted as a `voice.call.summary` audit row. Fires
+fire-and-forget after `voice.call.completed` — a flaky model call
+NEVER delays hangup.
+
+Voice agent prompt: `lib/resupply-ai/src/prompts.ts` (version
+`2026-05-22.v2`). Tuned for natural prosody — contractions,
+backchannels, brief empathy, name-pronunciation guidance. The Realtime
+session uses `semantic_vad` with `eagerness: "low"` and `temperature:
+0.8` for natural turn-taking and phrasing variation (see
+`lib/resupply-ai/src/realtime-client.ts`). Default voice is `cedar`,
+the warmest of the current Realtime voices.
 
 ## Conventions worth knowing
 
@@ -136,9 +222,16 @@ read — lives in [`README.md`](./README.md#environment-variables) and
   (Rule 2). The remaining schema-drift pre-commit guard is
   `scripts/check-resupply-migration-prefix.sh` (the historical
   co-change pair-check was retired with the TS schema directory).
-- **Auth:** in-house, `argon2id` + DB-backed `pf_session` cookies.
-  Admin auth flows live under `/admin/sign-in`, `/admin/forgot-password`,
-  `/admin/reset-password`, `/admin/verify-email`.
+- **Auth:** in-house, `argon2id` + DB-backed `pf_session` cookies
+  (`lib/resupply-auth/src/cookies.ts:7`). Admin auth flows live under
+  `/admin/sign-in`, `/admin/forgot-password`, `/admin/reset-password`,
+  `/admin/verify-email`. The admin role gate (`requireAdmin`) reads
+  `auth.users.role` directly — there is no env-var allowlist anymore
+  (`artifacts/resupply-api/src/middlewares/requireAdmin.ts:21`).
+  `RESUPPLY_ADMIN_EMAILS` / `RESUPPLY_AGENT_EMAILS` are display-only
+  now (populate count tiles on `/admin/operations`); the auth gate
+  ignores them. Bootstrap the first admin via
+  `pnpm --filter @workspace/scripts auth:bootstrap-admin --email=… --role=admin`.
 - **Inbound MMS:** webhook downloads each `MediaUrlN` with HTTP basic auth
   (5s/media timeout, 5MB cap, image/\* + application/pdf allowlist, max 10
   attachments/message), uploads to App Storage, persists as
@@ -155,6 +248,12 @@ read — lives in [`README.md`](./README.md#environment-variables) and
 - For product/architecture questions, read [`replit.md`](./replit.md).
 - For env setup, read [`.env.example`](./.env.example) and
   [`README.md`](./README.md).
+- For first-launch / deploy-side procedure, read
+  [`docs/runbooks/production-launch.md`](./docs/runbooks/production-launch.md)
+  (paired with the broader checklist in
+  [`docs/PRODUCTION_READINESS.md`](./docs/PRODUCTION_READINESS.md)).
+- For env-shape validation before a deploy, run
+  `pnpm --filter @workspace/scripts preflight:prod`.
 - For the Git source-of-truth rule, the post-mortem in
   [`docs/git-state-2026-05-01.md`](./docs/git-state-2026-05-01.md)
   explains _why_; follow the start-of-session checklist above to comply.

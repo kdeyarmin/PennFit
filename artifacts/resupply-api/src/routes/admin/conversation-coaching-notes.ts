@@ -25,6 +25,7 @@ import { logAudit } from "@workspace/resupply-audit";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
+import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
@@ -82,6 +83,10 @@ router.get(
 router.post(
   "/admin/conversations/:id/coaching-notes",
   requirePermission("admin_team.manage"),
+  adminRateLimit({
+    name: "conversation_coaching_notes.create",
+    preset: "mutation",
+  }),
   async (req, res) => {
     const params = idParam.safeParse(req.params);
     if (!params.success) {

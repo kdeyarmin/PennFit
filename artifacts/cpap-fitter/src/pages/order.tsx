@@ -10,6 +10,7 @@ import {
   ApiError,
 } from "@workspace/api-client-react/storefront";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Card,
   CardContent,
@@ -20,7 +21,6 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
   SelectContent,
@@ -40,6 +40,7 @@ import {
 import { useEffect } from "react";
 import { track } from "@/lib/track";
 import { FacialMeasurementsCard } from "@/components/facial-measurements-card";
+import { DOB_MIN, isPlausibleDob, todayLocalDateString } from "@/lib/dob-validation";
 
 const US_STATES = [
   "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA",
@@ -54,7 +55,10 @@ const formSchema = z.object({
   patient: z.object({
     firstName: z.string().min(1, "Required").max(100),
     lastName: z.string().min(1, "Required").max(100),
-    dateOfBirth: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD"),
+    dateOfBirth: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD")
+      .refine(isPlausibleDob, "Enter a valid date of birth"),
     email: z.string().email("Enter a valid email").max(200),
     phone: z.string().min(7, "Enter a valid phone number").max(30),
   }),
@@ -85,10 +89,11 @@ const formSchema = z.object({
     physicianPhone: z.string().max(30).optional().or(z.literal("")),
   }),
   notes: z.string().max(1000).optional().or(z.literal("")),
-  // Use a boolean (typed `boolean`) with a refine() instead of z.literal(true)
-  // so we can write `setValue("consentToContact", false)` without an awful
-  // `false as unknown as true` cast. The refine() still enforces the same
-  // submit-blocking behaviour.
+  // Server (route handler) enforces `consentToContact === true` strictly,
+  // so we keep the field in the payload but no longer surface a UI
+  // checkbox for it — the patient cleared the /consent gate before
+  // <GuardedOrder> would mount this page, and the form defaults this
+  // field to true. See the acknowledgement panel below.
   consentToContact: z.boolean().refine((v) => v === true, {
     message: "You must consent to be contacted to submit an order",
   }),
@@ -177,6 +182,12 @@ export function Order() {
   if (!chosenMask) return null;
 
   const onSubmit = (values: FormValues) => {
+    // Defense against a fast double-click on the submit button:
+    // react-hook-form's handleSubmit doesn't await fire-and-forget
+    // mutate() calls, so the disabled-while-isPending button doesn't
+    // close the race on its own. Skip a second submission while the
+    // first is still in flight.
+    if (isPending) return;
     // Frontend honeypot. Bots tend to fill in every visible input they
     // can find — including ones we hide visually. Silently pretend
     // success without ever hitting the API.
@@ -420,6 +431,8 @@ export function Order() {
               <Input
                 data-testid="input-dob"
                 type="date"
+                min={DOB_MIN}
+                max={todayLocalDateString()}
                 {...register("patient.dateOfBirth")}
                 autoComplete="bday"
               />
@@ -761,32 +774,40 @@ export function Order() {
               />
             </Field>
 
-            <div className="flex items-start gap-3 p-4 rounded-lg border border-border bg-muted/30">
-              <Checkbox
-                id="consent"
-                data-testid="checkbox-consent"
-                checked={!!consentValue}
-                onCheckedChange={(c) =>
-                  setValue("consentToContact", c === true, {
-                    shouldValidate: true,
-                  })
-                }
-              />
-              <div className="flex-1 -mt-0.5 space-y-2">
-                <Label
-                  htmlFor="consent"
-                  className="cursor-pointer font-normal text-sm leading-relaxed block"
-                >
-                  I authorize Penn Home Medical Supply to{" "}
-                  <strong>contact me</strong> by phone, email, and SMS text
-                  message at the number and email above regarding this order,
+            {/*
+              Acknowledgement panel (formerly a second consent
+              checkbox). The patient cleared the /consent gate before
+              this page mounted — see <GuardedOrder> in App.tsx — so
+              the contact / email consent is on file server-side
+              (recorded via submitFitterLead). Re-prompting here for
+              the same consent caused two well-documented problems:
+                * ambiguity in the legal record when the upstream
+                  opt-in said yes but the downstream box was missed,
+                * an extra required click at the highest-abandon-risk
+                  page of the funnel.
+              We keep the TCPA disclosure copy verbatim — TCPA "prior
+              express written consent" for transactional SMS is
+              satisfied by the disclosure plus the act of providing
+              the phone number on this form, not by the checkbox
+              itself. The "data storage" disclosure also stays
+              visible so the patient knows what submitting persists.
+            */}
+            <div
+              className="flex items-start gap-3 p-4 rounded-lg border border-border bg-muted/30"
+              data-testid="order-acknowledgement"
+            >
+              <ShieldCheck className="w-5 h-5 mt-0.5 shrink-0 text-primary" />
+              <div className="flex-1 space-y-2">
+                <p className="text-sm leading-relaxed">
+                  By submitting this order, you authorize Penn Home Medical
+                  Supply to <strong>contact you</strong> by phone, email, and
+                  SMS at the number and email above regarding this order,
                   insurance verification, shipping updates, and ongoing CPAP
                   resupply reminders, and to{" "}
-                  <strong>store the order details I've entered above</strong>{" "}
-                  (including my contact, shipping, insurance, and prescription
-                  information) in Penn Home Medical Supply's secure system for
-                  fulfillment and recordkeeping.
-                </Label>
+                  <strong>store the order details above</strong> in their secure
+                  system for fulfillment and recordkeeping. The camera /
+                  email consent you gave on the previous step also applies.
+                </p>
                 <p className="text-xs text-muted-foreground leading-relaxed">
                   <strong>SMS terms:</strong> By providing your mobile number
                   you consent to receive transactional text messages from Penn
@@ -808,6 +829,30 @@ export function Order() {
                   </Link>{" "}
                   for full SMS program details.
                 </p>
+              </div>
+            </div>
+
+            <div className="flex items-start gap-3">
+              <Checkbox
+                id="consent-to-contact"
+                data-testid="checkbox-consent"
+                checked={consentValue}
+                onCheckedChange={(checked) =>
+                  setValue("consentToContact", checked === true, {
+                    shouldValidate: isSubmitted,
+                  })
+                }
+                className="mt-0.5"
+              />
+              <div className="flex-1 space-y-1">
+                <Label
+                  htmlFor="consent-to-contact"
+                  className="text-sm leading-snug font-normal cursor-pointer"
+                >
+                  I authorize Penn Home Medical Supply to contact me about this
+                  order and ongoing resupply, and to store the order details
+                  above as described.
+                </Label>
                 {isSubmitted && errors.consentToContact && (
                   <p className="text-xs text-destructive mt-1">
                     {errors.consentToContact.message}
@@ -835,6 +880,44 @@ export function Order() {
                 </Link>
                 .
               </p>
+            </div>
+
+            <div className="flex items-start gap-3">
+              <Checkbox
+                id="consent-checkbox"
+                data-testid="checkbox-consent"
+                checked={consentValue === true}
+                aria-invalid={errors.consentToContact ? "true" : "false"}
+                aria-describedby={
+                  isSubmitted && errors.consentToContact
+                    ? "consent-checkbox-error"
+                    : undefined
+                }
+                onCheckedChange={(checked) =>
+                  setValue("consentToContact", checked === true, {
+                    shouldValidate: true,
+                  })
+                }
+              />
+              <div className="flex-1">
+                <Label
+                  htmlFor="consent-checkbox"
+                  className="text-sm font-normal cursor-pointer leading-relaxed"
+                >
+                  I consent to be contacted by Penn Home Medical Supply
+                  regarding this order, and agree to the SMS / contact and
+                  data-storage terms above.
+                </Label>
+                {isSubmitted && errors.consentToContact && (
+                  <p
+                    id="consent-checkbox-error"
+                    role="alert"
+                    className="text-xs text-destructive mt-1"
+                  >
+                    {errors.consentToContact.message}
+                  </p>
+                )}
+              </div>
             </div>
           </CardContent>
         </Card>

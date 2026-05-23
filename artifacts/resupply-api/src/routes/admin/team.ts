@@ -121,6 +121,12 @@ const inviteBody = z
     role: z.enum(ROLE_VALUES as [AdminRole, ...AdminRole[]]),
     displayName: z.string().trim().min(1).max(120).optional().nullable(),
     notes: z.string().trim().max(2000).optional().nullable(),
+    // Optional initial password. When provided, the user is
+    // created as active + email-verified with this password set,
+    // and no invite email is sent. Admin is expected to convey
+    // the password to the user out-of-band (in person, secure
+    // chat, etc.). Min length matches sign-in.ts / change-password.
+    initialPassword: z.string().min(12).max(1024).optional().nullable(),
   })
   .strict();
 
@@ -191,7 +197,9 @@ router.post(
       });
       return;
     }
-    const { email, role, displayName, notes } = parsed.data;
+    const { email, role, displayName, notes, initialPassword } = parsed.data;
+    const useInitialPassword =
+      typeof initialPassword === "string" && initialPassword.length >= 12;
     const inviterId = req.adminUserId ?? null;
     const supabase = getSupabaseServiceRoleClient();
     const deps = getAuthDeps();
@@ -243,16 +251,24 @@ router.post(
       displayName: displayName ?? prior?.display_name ?? null,
       productName: "Resupply",
       uiPathPrefix: "/admin",
+      initialPassword: useInitialPassword
+        ? (initialPassword as string)
+        : undefined,
     });
 
     const nowIso = new Date().toISOString();
+    // When the admin sets an initial password, the user is
+    // sign-in-ready immediately, so mirror that on admin_users:
+    // status='active' and accepted_at=now (instead of pending).
+    const memberStatus = useInitialPassword ? "active" : "pending";
+    const memberAcceptedAt = useInitialPassword ? nowIso : null;
     if (prior) {
       const { data: updated, error: updateErr } = await supabase
         .schema("resupply")
         .from("admin_users")
         .update({
           role,
-          status: "pending",
+          status: memberStatus,
           auth_user_id: invite.authUserId,
           display_name: displayName ?? prior.display_name,
           notes: notes ?? prior.notes,
@@ -260,7 +276,7 @@ router.post(
           invited_at: nowIso,
           revoked_at: null,
           revoked_by: null,
-          accepted_at: null,
+          accepted_at: memberAcceptedAt,
           updated_at: nowIso,
         })
         .eq("id", prior.id)
@@ -275,6 +291,7 @@ router.post(
         member: await serializeWithAuthLookup(supabase, updated),
         emailSent: invite.emailSent,
         inviteLink: invite.emailSent ? null : invite.inviteLink,
+        signInReady: invite.signInReady,
       });
       return;
     }
@@ -285,12 +302,13 @@ router.post(
       .insert({
         email_lower: email,
         role,
-        status: "pending",
+        status: memberStatus,
         auth_user_id: invite.authUserId,
         display_name: displayName ?? null,
         notes: notes ?? null,
         invited_by: inviterId,
         invited_at: nowIso,
+        accepted_at: memberAcceptedAt,
         updated_at: nowIso,
       })
       .select(
@@ -304,6 +322,7 @@ router.post(
       member: await serializeWithAuthLookup(supabase, inserted),
       emailSent: invite.emailSent,
       inviteLink: invite.emailSent ? null : invite.inviteLink,
+      signInReady: invite.signInReady,
     });
   },
 );
@@ -419,6 +438,28 @@ router.post(
       });
       return;
     }
+    // Last-admin lockout: refuse to revoke the only remaining
+    // active admin. The self-revoke guard above protects admin-A
+    // from locking themselves out, but admin-A can revoke admin-B
+    // and strand the org. Count active admin rows and block when
+    // this revoke would zero them out.
+    if (row.role === "admin" && row.status === "active") {
+      const { count, error: countErr } = await supabase
+        .schema("resupply")
+        .from("admin_users")
+        .select("id", { count: "exact", head: true })
+        .eq("role", "admin")
+        .eq("status", "active");
+      if (countErr) throw countErr;
+      if ((count ?? 0) <= 1) {
+        res.status(409).json({
+          error: "cannot_revoke_last_admin",
+          message:
+            "This is the only active admin. Promote another team member to admin before revoking this seat.",
+        });
+        return;
+      }
+    }
 
     if (row.auth_user_id) {
       await revokeTeamMember(supabase, row.auth_user_id);
@@ -488,6 +529,29 @@ router.patch(
             "You can't demote yourself out of the admin role. Have another admin do it.",
         });
         return;
+      }
+      // Last-admin lockout: refuse to demote the only remaining
+      // active admin. The self-demote guard above protects against
+      // admin-A demoting themselves, but admin-A can still demote
+      // admin-B and then strand the org with zero admins (the only
+      // recovery path is the bootstrap CLI). Count active admin rows
+      // and block the demote when this is the last one.
+      if (row && row.role === "admin") {
+        const { count, error: countErr } = await supabase
+          .schema("resupply")
+          .from("admin_users")
+          .select("id", { count: "exact", head: true })
+          .eq("role", "admin")
+          .eq("status", "active");
+        if (countErr) throw countErr;
+        if ((count ?? 0) <= 1) {
+          res.status(409).json({
+            error: "cannot_demote_last_admin",
+            message:
+              "This is the only active admin. Promote another team member to admin before demoting this one.",
+          });
+          return;
+        }
       }
     }
     const updateValues: Database["resupply"]["Tables"]["admin_users"]["Update"] =

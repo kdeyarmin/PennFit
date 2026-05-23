@@ -6,14 +6,15 @@ import { z } from "zod";
 
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
-import { requireAdmin, requirePermission } from "../../middlewares/requireAdmin";
+import { adminRateLimit } from "../../middlewares/admin-rate-limit";
+import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
 const idParam = z.object({ id: z.string().uuid() });
 
 router.get(
   "/admin/appointment-requests",
-  requireAdmin,
+  requirePermission("patients.update"),
   async (req, res) => {
     const supabase = getSupabaseServiceRoleClient();
     const includeClosed = req.query.include === "closed";
@@ -55,6 +56,7 @@ router.get(
 router.patch(
   "/admin/appointment-requests/:id",
   requirePermission("conversations.manage"),
+  adminRateLimit({ name: "appointment_requests.update", preset: "mutation" }),
   async (req, res) => {
     const params = idParam.safeParse(req.params);
     if (!params.success) {
@@ -108,6 +110,26 @@ router.patch(
       }
     }
     if (parsed.data.attachedPatientId !== undefined) {
+      // Verify the patient row actually exists before attaching it
+      // to a request. The GET endpoint on the patient side returns
+      // meeting_url + scheduled_for to the requester_email; a bogus
+      // attached_patient_id would otherwise route a real patient's
+      // telehealth link to whoever filed the request.
+      if (parsed.data.attachedPatientId !== null) {
+        const supabaseCheck = getSupabaseServiceRoleClient();
+        const { data: patientRow, error: lookupErr } = await supabaseCheck
+          .schema("resupply")
+          .from("patients")
+          .select("id")
+          .eq("id", parsed.data.attachedPatientId)
+          .limit(1)
+          .maybeSingle();
+        if (lookupErr) throw lookupErr;
+        if (!patientRow) {
+          res.status(404).json({ error: "patient_not_found" });
+          return;
+        }
+      }
       update.attached_patient_id = parsed.data.attachedPatientId;
     }
     if (parsed.data.assignedAdminUserId !== undefined) {

@@ -3,6 +3,8 @@
 // Bundled in one file because they share the same patient-scoped URL
 // shape and the same project-as-camelCase pattern.
 
+import { csrfHeader } from "../csrf";
+
 export type SleepStudyType = "psg" | "hsat" | "split_night" | "re_titration";
 export type SleepStudySource =
   | "external_lab"
@@ -128,9 +130,10 @@ export interface CreatePriorAuthorizationRequest {
 }
 
 async function jsonFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const { headers: initHeaders, ...restInit } = init;
   const res = await fetch(`/resupply-api${path}`, {
-    headers: { Accept: "application/json", ...(init.headers ?? {}) },
-    ...init,
+    ...restInit,
+    headers: { Accept: "application/json", ...csrfHeader(), ...(initHeaders ?? {}) },
   });
   if (!res.ok) {
     let message = `${res.status} ${res.statusText}`;
@@ -182,6 +185,67 @@ export const createInsuranceCoverage = (
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
+    },
+  );
+
+// ── Eligibility checks (per-patient) ───────────────────────────────
+
+export type EligibilityCheckStatus =
+  | "queued"
+  | "submitted"
+  | "parsed"
+  | "rejected"
+  | "transport_failed";
+
+/** Per-patient eligibility-check row. Mirrors the `*` projection
+ *  returned by GET /admin/patients/:id/eligibility-checks — the
+ *  backend hands back snake_case columns straight from Supabase. */
+export interface EligibilityCheck {
+  id: string;
+  patient_id: string;
+  insurance_coverage_id: string;
+  payer_profile_id: string | null;
+  service_hcpcs: string | null;
+  status: EligibilityCheckStatus;
+  is_active: boolean | null;
+  in_network: boolean | null;
+  deductible_cents: number | null;
+  deductible_met_cents: number | null;
+  oop_max_cents: number | null;
+  oop_met_cents: number | null;
+  copay_cents: number | null;
+  coinsurance_pct: number | null;
+  requires_prior_auth: boolean | null;
+  error_message: string | null;
+  requested_at: string;
+  responded_at: string | null;
+  requested_by_email: string;
+}
+
+export const listEligibilityChecks = (patientId: string) =>
+  jsonFetch<{ checks: EligibilityCheck[] }>(
+    `/admin/patients/${encodeURIComponent(patientId)}/eligibility-checks`,
+  );
+
+export interface VerifyEligibilityResponse {
+  eligibilityCheckId: string;
+  isaControlNumber: string;
+  traceReference: string;
+  uploadOk: boolean;
+  errorMessage: string | null;
+}
+
+export const verifyEligibility = (
+  patientId: string,
+  coverageId: string,
+  body?: { hcpcsCode?: string },
+) =>
+  jsonFetch<VerifyEligibilityResponse>(
+    `/admin/patients/${encodeURIComponent(patientId)}/insurance-coverages/${encodeURIComponent(coverageId)}/verify-eligibility`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body ?? {}),
     },
   );
 
@@ -381,5 +445,55 @@ export const createInsuranceClaimEvent = (
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
+    },
+  );
+
+// ─── Preflight + Submit-to-Office-Ally (per-claim) ────────────────
+
+export type PreflightSeverity = "ok" | "warning" | "error";
+
+export interface PreflightItem {
+  key: string;
+  severity: PreflightSeverity;
+  label: string;
+  detail: string;
+}
+
+export interface PreflightSummary {
+  readyToSubmit: boolean;
+  errorCount: number;
+  warningCount: number;
+  items: PreflightItem[];
+}
+
+export const fetchInsuranceClaimPreflight = (
+  patientId: string,
+  claimId: string,
+) =>
+  jsonFetch<{ preflight: PreflightSummary }>(
+    `/patients/${encodeURIComponent(patientId)}/insurance-claims/${encodeURIComponent(claimId)}/preflight`,
+  );
+
+export interface SubmitClaimToOfficeAllyResponse {
+  ok: true;
+  submissionId: string;
+  isaControlNumber: string;
+  gsControlNumber: string;
+  claimCount: number;
+  fileSizeBytes: number;
+  transport: string;
+}
+
+export const submitInsuranceClaimToOfficeAlly = (
+  patientId: string,
+  claimId: string,
+  body?: { usageIndicator?: "P" | "T"; note?: string },
+) =>
+  jsonFetch<SubmitClaimToOfficeAllyResponse>(
+    `/patients/${encodeURIComponent(patientId)}/insurance-claims/${encodeURIComponent(claimId)}/submit-office-ally`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body ?? {}),
     },
   );

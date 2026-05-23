@@ -55,9 +55,21 @@ const TWILIO_TOKEN = "token-test";
 const MSG_ID = "11111111-1111-4111-8111-111111111111";
 
 function pngBytes(size = 32): Uint8Array {
-  // Doesn't matter what's inside — content-type comes from the
-  // response header in the production code path.
-  return new Uint8Array(size).fill(0xab);
+  // Valid PNG magic header (89 50 4E 47 0D 0A 1A 0A) followed by
+  // filler. persistInboundAttachment now sniffs the magic bytes
+  // against the declared content-type to reject polyglot uploads,
+  // so the fixture bytes must actually parse as a PNG.
+  const buf = new Uint8Array(size);
+  buf[0] = 0x89;
+  buf[1] = 0x50;
+  buf[2] = 0x4e;
+  buf[3] = 0x47;
+  buf[4] = 0x0d;
+  buf[5] = 0x0a;
+  buf[6] = 0x1a;
+  buf[7] = 0x0a;
+  for (let i = 8; i < size; i++) buf[i] = 0xab;
+  return buf;
 }
 
 function mockFetch(impl: (url: string, init?: RequestInit) => Response) {
@@ -397,10 +409,19 @@ describe("ingestInboundMmsMedia", () => {
     it("strips charset from content-type when matching the allowlist", async () => {
       fetchSpy = mockFetch(() => new Response("", { status: 200 }));
 
+      // Use real PDF magic bytes ("%PDF-") because persistInboundAttachment
+      // now sniffs the body and rejects polyglot uploads where the declared
+      // type doesn't match.
+      const pdfBytes = new Uint8Array(8);
+      pdfBytes[0] = 0x25; // %
+      pdfBytes[1] = 0x50; // P
+      pdfBytes[2] = 0x44; // D
+      pdfBytes[3] = 0x46; // F
+      pdfBytes[4] = 0x2d; // -
       const outcome = await persistInboundAttachment(
         {
           messageId: SAMPLE_MSG,
-          bytes: pngBytes(8),
+          bytes: pdfBytes,
           // SendGrid sometimes forwards "application/pdf; name=foo.pdf"
           // — the helper must normalize to the bare type for the allowlist.
           contentType: "application/pdf; name=insurance.pdf",

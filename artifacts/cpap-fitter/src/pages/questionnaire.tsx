@@ -152,15 +152,15 @@ export function Questionnaire() {
   const currentQ = questions[currentIndex];
   const progress = (currentIndex / questions.length) * 100;
 
-  // Answer values are heterogeneous: boolean for `type: "boolean"`
-  // questions and string (an option's `value`) for `type: "select"`.
-  // We can't narrow further at the call site because TS sees
-  // `currentQ.id` as `keyof QuestionnaireAnswers` (a union) and the
-  // value type per key varies — so the computed-key dispatch needs
-  // a cast to the destination shape. The runtime guarantee comes from
-  // the question schema: each question only emits a value compatible
-  // with its declared key.
-  const handleAnswer = (value: boolean | string) => {
+  // Answer values are heterogeneous: boolean | null for `type: "boolean"`
+  // questions (null = "I'm not sure" — P4) and string (an option's
+  // `value`) for `type: "select"`. We can't narrow further at the
+  // call site because TS sees `currentQ.id` as `keyof QuestionnaireAnswers`
+  // (a union) and the value type per key varies — so the computed-key
+  // dispatch needs a cast to the destination shape. The runtime
+  // guarantee comes from the question schema: each question only
+  // emits a value compatible with its declared key.
+  const handleAnswer = (value: boolean | string | null) => {
     updateAnswers({
       [currentQ.id]: value,
     } as Partial<QuestionnaireAnswers>);
@@ -246,10 +246,16 @@ export function Questionnaire() {
               // aria-checked is the canonical pattern for "pick exactly one";
               // aria-labelledby points at the question heading so a screen
               // reader announces the question as the group's accessible name.
+              //
+              // P4 — three options: Yes / No / I'm not sure. The third
+              // tile sends `null` to the fitter store and the recommendation
+              // engine treats null as "no opinion" (skips that question's
+              // weight adjustment + omits the matching reasons string).
+              // Mirrors the `unknown` precedent on cpapPressureSetting.
               <div
                 role="radiogroup"
                 aria-labelledby={`question-${currentQ.id}-label`}
-                className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4"
+                className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-4"
               >
                 <button
                   type="button"
@@ -274,6 +280,18 @@ export function Questionnaire() {
                   data-testid={`button-${currentQ.id}-no`}
                 >
                   No
+                </button>
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={answers[currentQ.id] === null}
+                  className={`option-tile ${
+                    answers[currentQ.id] === null ? "option-tile-selected" : ""
+                  } h-20 text-base font-medium tracking-tight rounded-xl px-4 flex items-center justify-center text-muted-foreground`}
+                  onClick={() => handleAnswer(null)}
+                  data-testid={`button-${currentQ.id}-unsure`}
+                >
+                  I&apos;m not sure
                 </button>
               </div>
             ) : (

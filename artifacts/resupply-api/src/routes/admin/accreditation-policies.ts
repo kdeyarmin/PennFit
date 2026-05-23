@@ -64,6 +64,7 @@ import {
   requireAdminOnly,
   requirePermission,
 } from "../../middlewares/requireAdmin";
+import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 
 const router: IRouter = Router();
 
@@ -182,6 +183,7 @@ router.get(
 router.post(
   "/admin/accreditation/policies",
   requireAdminOnly,
+  adminRateLimit({ name: "accreditation_policies.create", preset: "mutation" }),
   async (req, res) => {
     const parsed = createBody.safeParse(req.body);
     if (!parsed.success) {
@@ -255,6 +257,7 @@ router.post(
 router.patch(
   "/admin/accreditation/policies/:id",
   requireAdminOnly,
+  adminRateLimit({ name: "accreditation_policies.update", preset: "mutation" }),
   async (req, res) => {
     const params = idParam.safeParse(req.params);
     if (!params.success) {
@@ -411,6 +414,7 @@ router.get(
 router.post(
   "/admin/accreditation/policies/:id/attest",
   requireAdmin,
+  adminRateLimit({ name: "accreditation_policies.attest", preset: "mutation" }),
   async (req, res) => {
     const params = idParam.safeParse(req.params);
     if (!params.success) {
@@ -724,14 +728,15 @@ function csvCell(value: unknown): string {
 
 // Thin helper for the binder summary — runs a head-only count with
 // an optional refiner so each section's "open" sub-count is one
-// expression instead of three.
-type CountRefiner = (
-  q: ReturnType<
-    ReturnType<
-      ReturnType<typeof getSupabaseServiceRoleClient>["schema"]
-    >["from"]
-  >["select"],
-) => unknown;
+// expression instead of three. The PostgREST filter builder's
+// generic chain is too deep to spell out usefully; the structural
+// type below captures the chain methods the callers actually use.
+type CountQuery = {
+  in(column: string, values: readonly string[]): CountQuery;
+  is(column: string, value: null | boolean): CountQuery;
+  not(column: string, operator: string, value: unknown): CountQuery;
+};
+type CountRefiner = (q: CountQuery) => CountQuery;
 async function countTable(
   supabase: ReturnType<typeof getSupabaseServiceRoleClient>,
   table:
@@ -745,7 +750,7 @@ async function countTable(
     .schema("resupply")
     .from(table)
     .select("id", { count: "exact", head: true });
-  const final = refine ? (refine(q) as typeof q) : q;
+  const final = refine ? (refine(q as unknown as CountQuery) as unknown as typeof q) : q;
   const { count, error } = await final;
   if (error) throw error;
   return count ?? 0;

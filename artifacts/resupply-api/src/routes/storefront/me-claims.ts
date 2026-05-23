@@ -178,7 +178,7 @@ router.get("/me/billing-balance", async (req, res) => {
   }
   const link = await resolvePatientForCustomer(customerId);
   if (!link) {
-    res.json({ totalOpenCents: 0, claimCount: 0 });
+    res.json({ totalOpenCents: 0, claimCount: 0, claims: [] });
     return;
   }
   const supabase = getSupabaseServiceRoleClient();

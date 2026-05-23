@@ -1,5 +1,7 @@
 // Hand-rolled fetch wrapper for /admin/bulk-campaigns/*.
 
+import { csrfHeader } from "../csrf";
+
 // Tick interval from the backend worker — used in the UI to show
 // pause/cancel latency ("takes effect within N seconds").
 export const TICK_INTERVAL_SECONDS = 10;
@@ -85,9 +87,10 @@ export interface CreateDraftResponse {
 }
 
 async function jsonFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const { headers: initHeaders, ...restInit } = init;
   const res = await fetch(`/resupply-api${path}`, {
-    headers: { Accept: "application/json", ...(init.headers ?? {}) },
-    ...init,
+    ...restInit,
+    headers: { Accept: "application/json", ...csrfHeader(), ...(initHeaders ?? {}) },
   });
   if (!res.ok) {
     let message = `${res.status} ${res.statusText}`;

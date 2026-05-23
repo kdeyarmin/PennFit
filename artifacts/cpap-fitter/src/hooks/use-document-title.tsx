@@ -12,6 +12,25 @@ const SITE_TITLE_SUFFIX = " — PennPaps by Penn Home Medical Supply";
  */
 const CANONICAL_ORIGIN = "https://pennpaps.com";
 
+// Helper — find an existing meta tag by name OR property, or create
+// it. We return both the element and whether we just created it so
+// the cleanup path can remove tags we added (not ones already in the
+// document from index.html).
+function getOrCreateMeta(
+  selector: string,
+  attrs: Record<string, string>,
+): { el: HTMLMetaElement; created: boolean } {
+  let el = document.head.querySelector<HTMLMetaElement>(selector);
+  let created = false;
+  if (!el) {
+    el = document.createElement("meta");
+    for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+    document.head.appendChild(el);
+    created = true;
+  }
+  return { el, created };
+}
+
 /**
  * Sets the browser tab title (and optionally the meta description) and
  * a route-aware canonical URL for the current page. Restores the
@@ -36,9 +55,10 @@ export function useDocumentTitle(pageTitle: string, description?: string) {
     );
     const previousDesc = metaDesc?.getAttribute("content") ?? null;
 
-    document.title = pageTitle
+    const fullTitle = pageTitle
       ? `${pageTitle}${SITE_TITLE_SUFFIX}`
       : previousTitle;
+    document.title = fullTitle;
     if (description && metaDesc) {
       metaDesc.setAttribute("content", description);
     }
@@ -73,6 +93,72 @@ export function useDocumentTitle(pageTitle: string, description?: string) {
     }
     canonicalEl.setAttribute("href", canonicalHref);
 
+    // Open Graph + Twitter Card meta tags. These power the share-link
+    // previews on Slack, Messages, Twitter/X, Facebook, LinkedIn, etc.
+    // We write the four high-impact ones — og:title, og:description,
+    // og:url, twitter:title — on every route. The image fallback comes
+    // from the static og:image already in index.html and isn't
+    // overridden here. Track which tags we set so we can restore the
+    // prior values (or remove the tags entirely) on unmount.
+    const metaUpdates: Array<{
+      el: HTMLMetaElement;
+      attr: string;
+      previous: string | null;
+      created: boolean;
+    }> = [];
+    function setMeta(
+      selector: string,
+      attrs: Record<string, string>,
+      contentAttr: string,
+      contentValue: string,
+    ) {
+      const { el, created } = getOrCreateMeta(selector, attrs);
+      const previous = created ? null : el.getAttribute(contentAttr);
+      el.setAttribute(contentAttr, contentValue);
+      metaUpdates.push({ el, attr: contentAttr, previous, created });
+    }
+
+    if (pageTitle) {
+      setMeta(
+        'meta[property="og:title"]',
+        { property: "og:title" },
+        "content",
+        fullTitle,
+      );
+      setMeta(
+        'meta[name="twitter:title"]',
+        { name: "twitter:title" },
+        "content",
+        fullTitle,
+      );
+    }
+    setMeta(
+      'meta[property="og:url"]',
+      { property: "og:url" },
+      "content",
+      canonicalHref,
+    );
+    setMeta(
+      'meta[property="og:type"]',
+      { property: "og:type" },
+      "content",
+      "website",
+    );
+    if (description) {
+      setMeta(
+        'meta[property="og:description"]',
+        { property: "og:description" },
+        "content",
+        description,
+      );
+      setMeta(
+        'meta[name="twitter:description"]',
+        { name: "twitter:description" },
+        "content",
+        description,
+      );
+    }
+
     return () => {
       document.title = previousTitle;
       if (previousDesc !== null && metaDesc) {
@@ -85,6 +171,15 @@ export function useDocumentTitle(pageTitle: string, description?: string) {
         canonicalEl.remove();
       } else if (canonicalEl && previousCanonicalHref !== null) {
         canonicalEl.setAttribute("href", previousCanonicalHref);
+      }
+      // Restore prior OG / Twitter tags. Remove the ones we created;
+      // restore content on the ones that already existed.
+      for (const { el, attr, previous, created } of metaUpdates) {
+        if (created) {
+          el.remove();
+        } else if (previous !== null) {
+          el.setAttribute(attr, previous);
+        }
       }
     };
   }, [pageTitle, description]);

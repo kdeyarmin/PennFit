@@ -1,0 +1,1002 @@
+~/workspace$ ^[[200~pnpm install~
+pnpm install~bash: pnpm: command not found
+~/workspace$ pnpm install
+Scope: all 22 workspace projects
+Lockfile is up to date, resolution step is skipped
+Already up to date
+. preinstall$ node -e "for(const f of ['package-lock.json','yarn.lock'])if(require('fs').existsSync(f)){process.stderr.write('\n[preinstall] ERROR: '+f+' is in the rep…
+└─ Done in 44ms
+Done in 1.4s using pnpm v10.33.2
+~/workspace$ git add artifacts/resupply-api/package.json
+git commit --no-edit
+git push subrepl-3ppc2e03 main
+pnpm install
+[pre-commit] WARNING: local main is 153 commits behind subrepl-3ppc2e03/main.
+            subrepl-3ppc2e03/main is the canonical source of truth (see
+            replit.md "Git source of truth"). Consider aligning before
+            committing:
+                git fetch subrepl-3ppc2e03
+                git status         # must be clean for the next step
+                git reset --hard subrepl-3ppc2e03/main
+            (Continuing — this warning does not block the commit.)
+On branch main
+Your branch and 'subrepl-3ppc2e03/main' have diverged,
+and have 8 and 153 different commits each, respectively.
+
+nothing to commit, working tree clean
+To https://github.com/kdeyarmin/PennFit
+ ! [rejected]          main -> main (non-fast-forward)
+error: failed to push some refs to 'https://github.com/kdeyarmin/PennFit'
+hint: Updates were rejected because the tip of your current branch is behind
+hint: its remote counterpart. If you want to integrate the remote changes,
+hint: use 'git pull' before pushing again.
+hint: See the 'Note about fast-forwards' in 'git push --help' for details.
+Scope: all 22 workspace projects
+Lockfile is up to date, resolution step is skipped
+Already up to date
+. preinstall$ node -e "for(const f of ['package-lock.json','yarn.lock'])if(require('fs').existsSync(f)){process.stderr.write('\n[preinstall] ERROR: '+f+' is in the rep…
+└─ Done in 45ms
+Done in 2.2s using pnpm v10.33.2
+~/workspace$ ^[[200~git fetch subrepl-3ppc2e03
+git fetch subrepl-3ppc2e03bash: git: command not found
+~/workspace$ git pull --no-rebase subrepl-3ppc2e03 main~
+fatal: invalid refspec 'main~'
+~/workspace$ git fetch subrepl-3ppc2e03
+error: cannot lock ref 'refs/remotes/subrepl-3ppc2e03/HEAD': Unable to create '/home/runner/workspace/.git/refs/remotes/subrepl-3ppc2e03/HEAD.lock': File exists.
+
+Another git process seems to be running in this repository, e.g.
+an editor opened by 'git commit'. Please make sure all processes
+are terminated then try again. If it still fails, a git process
+may have crashed in this repository earlier:
+remove the file manually to continue.
+~/workspace$ git pull --no-rebase subrepl-3ppc2e03 main
+From https://github.com/kdeyarmin/PennFit
+ * branch              main       -> FETCH_HEAD
+Auto-merging artifacts/resupply-api/package.json
+CONFLICT (content): Merge conflict in artifacts/resupply-api/package.json
+Auto-merging pnpm-lock.yaml
+Automatic merge failed; fix conflicts and then commit the result.
+~/workspace$ pnpm install 
+ ERR_PNPM_JSON_PARSE  Expected double-quoted property name in JSON at position 1786 (line 43 column 1) while parsing '{  "name": "@workspace/resupply-api", ' in /home/runner/workspace/artifacts/resupply-api/package.json
+~/workspace$ git push subrepl-3ppc2e03 main
+To https://github.com/kdeyarmin/PennFit
+ ! [rejected]          main -> main (non-fast-forward)
+error: failed to push some refs to 'https://github.com/kdeyarmin/PennFit'
+hint: Updates were rejected because the tip of your current branch is behind
+hint: its remote counterpart. If you want to integrate the remote changes,
+hint: use 'git pull' before pushing again.
+hint: See the 'Note about fast-forwards' in 'git push --help' for details.
+~/workspace$ bash .local/sync-with-github.sh
+==> Pre-flight
+==> Fetch subrepl-3ppc2e03
+    local main is 10 ahead, 153 behind
+==> Merge subrepl-3ppc2e03/main (prefer remote on text conflicts)
+Auto-merging artifacts/resupply-api/package.json
+Auto-merging pnpm-lock.yaml
+Merge made by the 'ort' strategy.
+ .env.example                                                                        |  114 +-
+ .github/workflows/ci.yml                                                            |   23 +-
+ CLAUDE.md                                                                           |   60 +-
+ artifacts/cpap-fitter/package.json                                                  |   12 +-
+ artifacts/cpap-fitter/src/App.tsx                                                   |   62 +-
+ artifacts/cpap-fitter/src/components/admin/AppShell.tsx                             |   14 +
+ artifacts/cpap-fitter/src/components/caregiver-section.tsx                          |  272 +++++
+ artifacts/cpap-fitter/src/components/language-toggle.tsx                            |   42 +
+ artifacts/cpap-fitter/src/components/layout.tsx                                     |   30 +-
+ artifacts/cpap-fitter/src/components/push-prompt-banner.tsx                         |  119 ++
+ artifacts/cpap-fitter/src/components/star-rating.test.ts                            |   61 +
+ artifacts/cpap-fitter/src/components/star-rating.tsx                                |   15 +-
+ artifacts/cpap-fitter/src/components/wallet-pass-section.tsx                        |   92 ++
+ artifacts/cpap-fitter/src/hooks/use-fitter-store.tsx                                |   44 +
+ artifacts/cpap-fitter/src/i18n/locales.ts                                           |  137 +++
+ artifacts/cpap-fitter/src/i18n/provider.tsx                                         |  133 +++
+ artifacts/cpap-fitter/src/lib/account-api.test.ts                                   |  248 +++++
+ artifacts/cpap-fitter/src/lib/account-api.ts                                        |   46 +
+ artifacts/cpap-fitter/src/lib/admin/clinical-tabs-api.test.ts                       |  552 +++++++++
+ artifacts/cpap-fitter/src/lib/admin/clinical-tabs-api.ts                            |  179 +++
+ artifacts/cpap-fitter/src/lib/admin/nps-api.ts                                      |   47 +
+ artifacts/cpap-fitter/src/lib/admin/rt-overview-api.test.ts                         |  537 +++++++++
+ artifacts/cpap-fitter/src/lib/admin/rt-overview-api.ts                              |  257 +++++
+ artifacts/cpap-fitter/src/lib/insurance-estimate-data.ts                            |  155 +++
+ artifacts/cpap-fitter/src/lib/shop-api.test.ts                                      |  148 +++
+ artifacts/cpap-fitter/src/lib/shop-api.ts                                           |  149 +++
+ artifacts/cpap-fitter/src/pages/account.tsx                                         |   83 +-
+ artifacts/cpap-fitter/src/pages/admin/admin-insurance-claims.tsx                    |  928 ++++++++++++++++
+ artifacts/cpap-fitter/src/pages/admin/admin-nps.tsx                                 |  216 ++++
+ artifacts/cpap-fitter/src/pages/admin/admin-rt-overview.tsx                         |  762 +++++++++++++
+ artifacts/cpap-fitter/src/pages/admin/admin-team.tsx                                |   57 +-
+ artifacts/cpap-fitter/src/pages/admin/console.tsx                                   |   20 +
+ artifacts/cpap-fitter/src/pages/admin/patient-detail.tsx                            |   16 +
+ artifacts/cpap-fitter/src/pages/consent.tsx                                         |  206 +++-
+ artifacts/cpap-fitter/src/pages/insurance-estimate.tsx                              |  390 +++++++
+ artifacts/cpap-fitter/src/pages/insurance.tsx                                       |    9 +
+ artifacts/cpap-fitter/src/pages/nps.tsx                                             |  220 ++++
+ artifacts/cpap-fitter/src/pages/order-success.tsx                                   |   12 +
+ artifacts/cpap-fitter/src/pages/order.tsx                                           |    8 +-
+ artifacts/cpap-fitter/src/pages/sleep-apnea-quiz.tsx                                |  154 ++-
+ artifacts/cpap-fitter/src/pages/track-order.tsx                                     |  282 +++++
+ artifacts/resupply-api/package.json                                                 |   33 +-
+ artifacts/resupply-api/src/app.ts                                                   |   80 ++
+ artifacts/resupply-api/src/lib/accreditation/readiness-engine.ts                    |  741 +++++++++++++
+ artifacts/resupply-api/src/lib/apple-wallet/assets.ts                               |   39 +
+ artifacts/resupply-api/src/lib/apple-wallet/pkpass.ts                               |  396 +++++++
+ artifacts/resupply-api/src/lib/auth-deps.ts                                         |   40 +-
+ artifacts/resupply-api/src/lib/billing/ai-claim-scrubber.test.ts                    |  305 +++++
+ artifacts/resupply-api/src/lib/billing/ai-claim-scrubber.ts                         |  486 ++++++++
+ artifacts/resupply-api/src/lib/billing/ai-denial-analyzer.test.ts                   |  267 +++++
+ artifacts/resupply-api/src/lib/billing/ai-denial-analyzer.ts                        |  498 +++++++++
+ artifacts/resupply-api/src/lib/billing/ai-denial-patient-explainer.ts               |  218 ++++
+ artifacts/resupply-api/src/lib/billing/ai-patch.test.ts                             |  136 +++
+ artifacts/resupply-api/src/lib/billing/ai-patch.ts                                  |  433 ++++++++
+ artifacts/resupply-api/src/lib/billing/appeal-pdf.ts                                |  109 ++
+ artifacts/resupply-api/src/lib/billing/auto-workflow-engine.ts                      |  286 +++++
+ artifacts/resupply-api/src/lib/billing/capped-rental-advancer.ts                    |  250 +++++
+ artifacts/resupply-api/src/lib/billing/claim-builder.ts                             |  490 ++++++++
+ artifacts/resupply-api/src/lib/billing/claim-preflight.test.ts                      |  250 +++++
+ artifacts/resupply-api/src/lib/billing/claim-preflight.ts                           |  452 ++++++++
+ artifacts/resupply-api/src/lib/billing/dispense-readiness-reviewer.test.ts          |  373 +++++++
+ artifacts/resupply-api/src/lib/billing/dispense-readiness-reviewer.ts               | 1267 +++++++++++++++++++++
+ artifacts/resupply-api/src/lib/billing/documentation-packet.test.ts                 |   96 ++
+ artifacts/resupply-api/src/lib/billing/documentation-packet.ts                      |  237 ++++
+ artifacts/resupply-api/src/lib/billing/eligibility-verifier.ts                      |  202 ++++
+ artifacts/resupply-api/src/lib/billing/era-reconciler.ts                            |  351 ++++++
+ artifacts/resupply-api/src/lib/billing/fee-schedule-csv.test.ts                     |   92 ++
+ artifacts/resupply-api/src/lib/billing/fee-schedule-csv.ts                          |  191 ++++
+ artifacts/resupply-api/src/lib/billing/gfe-pdf.test.ts                              |   68 ++
+ artifacts/resupply-api/src/lib/billing/gfe-pdf.ts                                   |  223 ++++
+ artifacts/resupply-api/src/lib/billing/hcfa-1500-pdf.ts                             |  305 +++++
+ artifacts/resupply-api/src/lib/billing/heuristic-denial-scorer.test.ts              |  150 +++
+ artifacts/resupply-api/src/lib/billing/heuristic-denial-scorer.ts                   |  349 ++++++
+ artifacts/resupply-api/src/lib/billing/identity-resolver.ts                         |  293 +++++
+ artifacts/resupply-api/src/lib/billing/pa-sla-tracker.test.ts                       |   84 ++
+ artifacts/resupply-api/src/lib/billing/pa-sla-tracker.ts                            |  217 ++++
+ artifacts/resupply-api/src/lib/billing/patient-payment.test.ts                      |  145 +++
+ artifacts/resupply-api/src/lib/billing/patient-payment.ts                           |  281 +++++
+ artifacts/resupply-api/src/lib/billing/statement-pdf.ts                             |  178 +++
+ artifacts/resupply-api/src/lib/clinical/adherence-predictor.test.ts                 |   99 ++
+ artifacts/resupply-api/src/lib/clinical/adherence-predictor.ts                      |  178 +++
+ artifacts/resupply-api/src/lib/clinical/ai-icd10-suggester.ts                       |  234 ++++
+ artifacts/resupply-api/src/lib/clinical/sleep-coach.ts                              |  232 ++++
+ artifacts/resupply-api/src/lib/comm-prefs.ts                                        |   46 +-
+ artifacts/resupply-api/src/lib/compliance/auto-workflow.test.ts                     |  258 +++++
+ artifacts/resupply-api/src/lib/compliance/auto-workflow.ts                          |  243 ++++
+ artifacts/resupply-api/src/lib/compliance/disclosure-logger.ts                      |  118 ++
+ artifacts/resupply-api/src/lib/compliance/oig-leie-screener.parse.test.ts           |   96 ++
+ artifacts/resupply-api/src/lib/compliance/oig-leie-screener.ts                      |  237 ++++
+ artifacts/resupply-api/src/lib/compliance/patient-rights-clock.test.ts              |   99 ++
+ artifacts/resupply-api/src/lib/compliance/patient-rights-clock.ts                   |   71 ++
+ artifacts/resupply-api/src/lib/env-check.ts                                         |   40 +-
+ artifacts/resupply-api/src/lib/fitter-lead-record.test.ts                           |  128 +++
+ artifacts/resupply-api/src/lib/fitter-lead-record.ts                                |   88 ++
+ artifacts/resupply-api/src/lib/insurance-estimates/data.ts                          |  144 +++
+ artifacts/resupply-api/src/lib/messaging/ingest-mms.test.ts                         |   12 +-
+ artifacts/resupply-api/src/lib/nps-token.ts                                         |  128 +++
+ artifacts/resupply-api/src/lib/order-emails/send-caregiver-notification-email.ts    |  190 ++++
+ artifacts/resupply-api/src/lib/order-emails/send-deductible-reset-email.ts          |  155 +++
+ artifacts/resupply-api/src/lib/order-emails/send-delivery-followup-email.ts         |  240 ++++
+ artifacts/resupply-api/src/lib/order-emails/send-eob-explainer-email.ts             |  234 ++++
+ artifacts/resupply-api/src/lib/order-emails/send-fitter-order-confirmation-email.ts |  187 ++++
+ artifacts/resupply-api/src/lib/order-emails/send-insurance-estimate-email.ts        |  179 +++
+ artifacts/resupply-api/src/lib/order-emails/send-lifecycle-touchpoint-email.ts      |  175 +++
+ artifacts/resupply-api/src/lib/order-emails/send-quarterly-summary-email.ts         |  185 ++++
+ artifacts/resupply-api/src/lib/order-emails/send-quiz-results-email.ts              |  226 ++++
+ artifacts/resupply-api/src/lib/order-emails/send-therapy-milestone-email.ts         |  196 ++++
+ artifacts/resupply-api/src/lib/order-emails/send-winback-email.ts                   |  160 +++
+ artifacts/resupply-api/src/lib/readiness.integration.test.ts                        |   33 -
+ artifacts/resupply-api/src/lib/rt-overview/aggregate.test.ts                        |  147 +++
+ artifacts/resupply-api/src/lib/rt-overview/aggregate.ts                             |  193 ++++
+ artifacts/resupply-api/src/lib/shop-orders-sms-resolver.ts                          |  107 ++
+ artifacts/resupply-api/src/lib/smart-triggers/dispatcher.ts                         |    8 +-
+ artifacts/resupply-api/src/lib/smart-triggers/index.test.ts                         |   89 ++
+ artifacts/resupply-api/src/lib/smart-triggers/index.ts                              |  111 +-
+ artifacts/resupply-api/src/lib/smart-triggers/renderers.ts                          |   27 +
+ artifacts/resupply-api/src/lib/stripe/webhook-handler.ts                            |   39 +
+ artifacts/resupply-api/src/lib/web-push/index.test.ts                               |    3 +
+ artifacts/resupply-api/src/lib/webhooks/event-catalog.ts                            |  222 ++++
+ artifacts/resupply-api/src/lib/webhooks/publisher.test.ts                           |   65 ++
+ artifacts/resupply-api/src/lib/webhooks/publisher.ts                                |   80 ++
+ artifacts/resupply-api/src/lib/zip-timezone.ts                                      |  117 ++
+ artifacts/resupply-api/src/middlewares/admin-path.test.ts                           |   93 ++
+ artifacts/resupply-api/src/middlewares/admin-path.ts                                |   61 +
+ artifacts/resupply-api/src/middlewares/csrf.test.ts                                 |  150 ++-
+ artifacts/resupply-api/src/middlewares/csrf.ts                                      |   42 +
+ artifacts/resupply-api/src/middlewares/rate-limit.test.ts                           |  195 ++++
+ artifacts/resupply-api/src/middlewares/rate-limit.ts                                |   58 +
+ artifacts/resupply-api/src/routes/admin/accreditation-policies.test.ts              |    4 +-
+ artifacts/resupply-api/src/routes/admin/accreditation-readiness.ts                  |  162 +++
+ artifacts/resupply-api/src/routes/admin/accreditation-surveys.ts                    |  229 ++++
+ artifacts/resupply-api/src/routes/admin/adherence-predictions.ts                    |   85 ++
+ artifacts/resupply-api/src/routes/admin/ai-billing-queue.ts                         |  118 ++
+ artifacts/resupply-api/src/routes/admin/analytics.test.ts                           |   17 +-
+ artifacts/resupply-api/src/routes/admin/audit-archive.ts                            |    8 +-
+ artifacts/resupply-api/src/routes/admin/billing-batch-submit.ts                     |  408 +++++++
+ artifacts/resupply-api/src/routes/admin/billing-benchmarks.ts                       |  154 +++
+ artifacts/resupply-api/src/routes/admin/billing-dashboard.ts                        |  193 ++++
+ artifacts/resupply-api/src/routes/admin/billing-director.ts                         |  199 ++++
+ artifacts/resupply-api/src/routes/admin/billing-reports.ts                          |  193 ++++
+ artifacts/resupply-api/src/routes/admin/billing-statements.ts                       |  212 ++++
+ artifacts/resupply-api/src/routes/admin/bulk-campaigns.ts                           |   29 +-
+ artifacts/resupply-api/src/routes/admin/business-associate-agreements.ts            |  308 ++++++
+ artifacts/resupply-api/src/routes/admin/capped-rental-cycles.ts                     |  161 +++
+ artifacts/resupply-api/src/routes/admin/carrier-labels.ts                           |    8 +-
+ artifacts/resupply-api/src/routes/admin/claim-appeals.ts                            |  200 ++++
+ artifacts/resupply-api/src/routes/admin/claim-templates.ts                          |  360 ++++++
+ artifacts/resupply-api/src/routes/admin/clearinghouse-credentials.ts                |  423 +++++++
+ artifacts/resupply-api/src/routes/admin/compliance-officer-summary.ts               |  294 +++++
+ artifacts/resupply-api/src/routes/admin/compliance-records.ts                       |  754 +++++++++++++
+ artifacts/resupply-api/src/routes/admin/conversation-coaching-notes.ts              |   15 +-
+ artifacts/resupply-api/src/routes/admin/conversation-routing.ts                     |   17 +-
+ artifacts/resupply-api/src/routes/admin/csr-shifts.ts                               |   10 +-
+ artifacts/resupply-api/src/routes/admin/customer-followups.test.ts                  |   85 +-
+ artifacts/resupply-api/src/routes/admin/customer-followups.ts                       |   13 +-
+ artifacts/resupply-api/src/routes/admin/customer-notes.ts                           |   13 +-
+ artifacts/resupply-api/src/routes/admin/customers.ts                                |   14 +-
+ artifacts/resupply-api/src/routes/admin/davinci-pas-submit.ts                       |  365 ++++++
+ artifacts/resupply-api/src/routes/admin/delivery-failures.ts                        |    8 +-
+ artifacts/resupply-api/src/routes/admin/denial-codes.ts                             |  238 ++++
+ artifacts/resupply-api/src/routes/admin/dispense-readiness.ts                       |  314 ++++++
+ artifacts/resupply-api/src/routes/admin/dme-organization.ts                         |  455 ++++++++
+ artifacts/resupply-api/src/routes/admin/documentation-packets.ts                    |  309 ++++++
+ artifacts/resupply-api/src/routes/admin/dwo-documents.ts                            |  154 +++
+ artifacts/resupply-api/src/routes/admin/eligibility-checks.ts                       |  106 ++
+ artifacts/resupply-api/src/routes/admin/era-ingest.ts                               |  209 ++++
+ artifacts/resupply-api/src/routes/admin/followups-list.ts                           |    7 +-
+ artifacts/resupply-api/src/routes/admin/form-acknowledgements.ts                    |   11 +-
+ artifacts/resupply-api/src/routes/admin/fulfillment-to-claim.ts                     |  189 ++++
+ artifacts/resupply-api/src/routes/admin/good-faith-estimates.ts                     |  219 ++++
+ artifacts/resupply-api/src/routes/admin/grievances.ts                               |   22 +-
+ artifacts/resupply-api/src/routes/admin/hipaa-breach-incidents.ts                   |  305 +++++
+ artifacts/resupply-api/src/routes/admin/inbound-faxes.ts                            |   19 +-
+ artifacts/resupply-api/src/routes/admin/insurance-leads.ts                          |   10 +-
+ artifacts/resupply-api/src/routes/admin/integrations-errors.ts                      |    9 +-
+ artifacts/resupply-api/src/routes/admin/integrations-refresh-supplies.ts            |    9 +-
+ artifacts/resupply-api/src/routes/admin/integrations-status.ts                      |    9 +-
+ artifacts/resupply-api/src/routes/admin/message-template-overrides.ts               |   13 +-
+ artifacts/resupply-api/src/routes/admin/message-templates.ts                        |   13 +-
+ artifacts/resupply-api/src/routes/admin/mfa.ts                                      |   47 +-
+ artifacts/resupply-api/src/routes/admin/nps-summary.ts                              |  116 ++
+ artifacts/resupply-api/src/routes/admin/office-ally-submissions.ts                  |  234 ++++
+ artifacts/resupply-api/src/routes/admin/office-closures.ts                          |   20 +-
+ artifacts/resupply-api/src/routes/admin/oig-leie-screenings.ts                      |  201 ++++
+ artifacts/resupply-api/src/routes/admin/order-notes.ts                              |    9 +-
+ artifacts/resupply-api/src/routes/admin/patient-address-history.ts                  |   17 +-
+ artifacts/resupply-api/src/routes/admin/patient-documents-retention.test.ts         |    2 +-
+ artifacts/resupply-api/src/routes/admin/patient-fit-overrides.ts                    |   15 +-
+ artifacts/resupply-api/src/routes/admin/patient-identity-verifications.ts           |    9 +-
+ artifacts/resupply-api/src/routes/admin/patient-integrations.ts                     |   11 +-
+ artifacts/resupply-api/src/routes/admin/patient-maintenance-log.ts                  |    7 +-
+ artifacts/resupply-api/src/routes/admin/patient-onboarding.ts                       |   16 +-
+ artifacts/resupply-api/src/routes/admin/patient-portal-invite.ts                    |   11 +-
+ artifacts/resupply-api/src/routes/admin/patient-rights-requests.ts                  |  257 +++++
+ artifacts/resupply-api/src/routes/admin/patient-therapy-links.ts                    |   14 +-
+ artifacts/resupply-api/src/routes/admin/patient-therapy-nights-manual.ts            |    8 +-
+ artifacts/resupply-api/src/routes/admin/patient-therapy-sync.ts                     |   11 +-
+ artifacts/resupply-api/src/routes/admin/patient-timeline.ts                         |   10 +-
+ artifacts/resupply-api/src/routes/admin/payer-fee-schedules-import.ts               |   95 ++
+ artifacts/resupply-api/src/routes/admin/payer-fee-schedules.ts                      |  282 +++++
+ artifacts/resupply-api/src/routes/admin/payer-modifier-rules.ts                     |  214 ++++
+ artifacts/resupply-api/src/routes/admin/payer-profiles.ts                           |  339 ++++++
+ artifacts/resupply-api/src/routes/admin/pecos-status.ts                             |   90 ++
+ artifacts/resupply-api/src/routes/admin/physician-fax-outreach.test.ts              |    4 +-
+ artifacts/resupply-api/src/routes/admin/physician-fax-outreach.ts                   |   15 +-
+ artifacts/resupply-api/src/routes/admin/prescription-renewals.ts                    |    9 +-
+ artifacts/resupply-api/src/routes/admin/product-compatibility.ts                    |    9 +-
+ artifacts/resupply-api/src/routes/admin/product-hcpcs-map.ts                        |  212 ++++
+ artifacts/resupply-api/src/routes/admin/product-questions.ts                        |   11 +-
+ artifacts/resupply-api/src/routes/admin/productivity.test.ts                        |   13 +-
+ artifacts/resupply-api/src/routes/admin/providers.ts                                |   23 +-
+ artifacts/resupply-api/src/routes/admin/referrals-attribute.ts                      |    6 +-
+ artifacts/resupply-api/src/routes/admin/reports.ts                                  |   10 +-
+ artifacts/resupply-api/src/routes/admin/resupply-funnel.ts                          |    6 +-
+ artifacts/resupply-api/src/routes/admin/return-notes.ts                             |    8 +-
+ artifacts/resupply-api/src/routes/admin/rt-overview.test.ts                         |  264 +++++
+ artifacts/resupply-api/src/routes/admin/rt-overview.ts                              |  354 ++++++
+ artifacts/resupply-api/src/routes/admin/same-or-similar.ts                          |  123 ++
+ artifacts/resupply-api/src/routes/admin/shop-back-in-stock.ts                       |   10 +-
+ artifacts/resupply-api/src/routes/admin/shop-backorders.ts                          |   24 +-
+ artifacts/resupply-api/src/routes/admin/shop-membership.ts                          |  114 ++
+ artifacts/resupply-api/src/routes/admin/shop-orders.ts                              |  113 +-
+ artifacts/resupply-api/src/routes/admin/shop-products.ts                            |   12 +-
+ artifacts/resupply-api/src/routes/admin/shop-review-requests.ts                     |    8 +-
+ artifacts/resupply-api/src/routes/admin/shop-reviews.ts                             |   15 +-
+ artifacts/resupply-api/src/routes/admin/shop-subscriptions-metrics.ts               |    6 +-
+ artifacts/resupply-api/src/routes/admin/smart-triggers-list.test.ts                 |    2 +-
+ artifacts/resupply-api/src/routes/admin/smart-triggers.ts                           |   18 +-
+ artifacts/resupply-api/src/routes/admin/swo.ts                                      |    7 +-
+ artifacts/resupply-api/src/routes/admin/system-info.ts                              |   13 +-
+ artifacts/resupply-api/src/routes/admin/system-integrations-status.ts               |  100 ++
+ artifacts/resupply-api/src/routes/admin/training-records.ts                         |   12 +-
+ artifacts/resupply-api/src/routes/admin/webhook-delivery-retry.ts                   |   81 ++
+ artifacts/resupply-api/src/routes/admin/webhook-event-catalog.ts                    |   18 +
+ artifacts/resupply-api/src/routes/admin/webhook-subscriptions.ts                    |  225 ++++
+ artifacts/resupply-api/src/routes/admin/webhook-test-send.ts                        |  108 ++
+ artifacts/resupply-api/src/routes/episodes/counts.ts                                |   17 +-
+ artifacts/resupply-api/src/routes/fhir/index.ts                                     |  361 ++++++
+ artifacts/resupply-api/src/routes/index.ts                                          |  220 ++++
+ artifacts/resupply-api/src/routes/integrations-inbound.ts                           |  137 +++
+ artifacts/resupply-api/src/routes/integrations-webhooks.ts                          |   19 +-
+ artifacts/resupply-api/src/routes/patients/index.ts                                 |   51 +
+ artifacts/resupply-api/src/routes/patients/insurance-claims-ai.ts                   |  874 +++++++++++++++
+ artifacts/resupply-api/src/routes/patients/insurance-claims-explain-denial.ts       |   70 ++
+ artifacts/resupply-api/src/routes/patients/insurance-claims-hcfa.ts                 |  226 ++++
+ artifacts/resupply-api/src/routes/patients/insurance-claims-predict-denial.ts       |   66 ++
+ artifacts/resupply-api/src/routes/patients/insurance-claims-preflight.ts            |   35 +
+ artifacts/resupply-api/src/routes/patients/insurance-claims-submit.ts               |  579 ++++++++++
+ artifacts/resupply-api/src/routes/patients/insurance-claims.test.ts                 | 1017 +++++++++++++++++
+ artifacts/resupply-api/src/routes/patients/insurance-claims.ts                      |  882 +++++++++++++++
+ artifacts/resupply-api/src/routes/patients/sleep-studies-suggest-icd10.ts           |  181 +++
+ artifacts/resupply-api/src/routes/provider-portal.ts                                |   22 +-
+ artifacts/resupply-api/src/routes/shop/fitter-lead.test.ts                          |  143 +++
+ artifacts/resupply-api/src/routes/shop/fitter-lead.ts                               |  179 +++
+ artifacts/resupply-api/src/routes/shop/index.ts                                     |   42 +
+ artifacts/resupply-api/src/routes/shop/insurance-estimate.ts                        |  203 ++++
+ artifacts/resupply-api/src/routes/shop/me-billing-portal.test.ts                    |  334 ++++++
+ artifacts/resupply-api/src/routes/shop/me-billing-portal.ts                         |  122 ++
+ artifacts/resupply-api/src/routes/shop/me-caregiver.ts                              |  251 +++++
+ artifacts/resupply-api/src/routes/shop/me-insights.test.ts                          |    4 +-
+ artifacts/resupply-api/src/routes/shop/me-referrals.ts                              |   21 +-
+ artifacts/resupply-api/src/routes/shop/me-wallet-pass.ts                            |  173 +++
+ artifacts/resupply-api/src/routes/shop/my-subscriptions.test.ts                     |   54 +-
+ artifacts/resupply-api/src/routes/shop/my-subscriptions.ts                          |   14 +-
+ artifacts/resupply-api/src/routes/shop/nps-response.ts                              |  148 +++
+ artifacts/resupply-api/src/routes/shop/products.test.ts                             |  172 +++
+ artifacts/resupply-api/src/routes/shop/products.ts                                  |  173 ++-
+ artifacts/resupply-api/src/routes/shop/quiz-lead.ts                                 |  203 ++++
+ artifacts/resupply-api/src/routes/storefront/index.ts                               |   18 +
+ artifacts/resupply-api/src/routes/storefront/me-claims.ts                           |  210 ++++
+ artifacts/resupply-api/src/routes/storefront/me-payments.ts                         |  130 +++
+ artifacts/resupply-api/src/routes/storefront/me-rights-requests.ts                  |  203 ++++
+ artifacts/resupply-api/src/routes/storefront/orders.ts                              |   83 ++
+ artifacts/resupply-api/src/routes/storefront/sleep-coach.ts                         |   99 ++
+ artifacts/resupply-api/src/routes/storefront/track-order.ts                         |  174 +++
+ artifacts/resupply-api/src/routes/voice/inbound-reorder.ts                          |  197 ++++
+ artifacts/resupply-api/src/routes/voice/index.ts                                    |    6 +
+ artifacts/resupply-api/src/shop-smoke.test.ts                                       |  156 +++
+ artifacts/resupply-api/src/test/setup-audit-hmac-key.ts                             |   25 +
+ artifacts/resupply-api/src/worker/index.ts                                          |  145 +++
+ artifacts/resupply-api/src/worker/jobs/accreditation-readiness-sweep.ts             |   81 ++
+ artifacts/resupply-api/src/worker/jobs/auto-workflow.ts                             |   46 +
+ artifacts/resupply-api/src/worker/jobs/capped-rental-advance.ts                     |   37 +
+ artifacts/resupply-api/src/worker/jobs/compliance-auto-workflow.ts                  |   54 +
+ artifacts/resupply-api/src/worker/jobs/deductible-reset-push.ts                     |  261 +++++
+ artifacts/resupply-api/src/worker/jobs/dwo-expiry-sweep.ts                          |  109 ++
+ artifacts/resupply-api/src/worker/jobs/fitter-lead-first-day-nudge.ts               |  395 +++++++
+ artifacts/resupply-api/src/worker/jobs/fitter-lead-reengage.test.ts                 |  371 +++++++
+ artifacts/resupply-api/src/worker/jobs/fitter-lead-reengage.ts                      |  330 ++++++
+ artifacts/resupply-api/src/worker/jobs/lapsed-customer-winback.ts                   |  297 +++++
+ artifacts/resupply-api/src/worker/jobs/lifecycle-touchpoints.ts                     |  340 ++++++
+ artifacts/resupply-api/src/worker/jobs/office-ally-inbound-poll.ts                  |  722 ++++++++++++
+ artifacts/resupply-api/src/worker/jobs/oig-leie-sync.ts                             |  210 ++++
+ artifacts/resupply-api/src/worker/jobs/pa-mco-sla-sweep.ts                          |   41 +
+ artifacts/resupply-api/src/worker/jobs/patient-documents-retention-sweep.test.ts    |    4 +-
+ artifacts/resupply-api/src/worker/jobs/pecos-sync.ts                                |  197 ++++
+ artifacts/resupply-api/src/worker/jobs/prior-auth-expiry-sweep.test.ts              |  470 ++++++++
+ artifacts/resupply-api/src/worker/jobs/prior-auth-expiry-sweep.ts                   |  304 +++++
+ artifacts/resupply-api/src/worker/jobs/quarterly-therapy-summary.ts                 |  307 +++++
+ artifacts/resupply-api/src/worker/jobs/shop-order-delivery-followup.ts              |  380 +++++++
+ artifacts/resupply-api/src/worker/jobs/therapy-milestones.ts                        |  457 ++++++++
+ artifacts/resupply-api/src/worker/jobs/webhook-dispatcher.test.ts                   |  153 +++
+ artifacts/resupply-api/src/worker/jobs/webhook-dispatcher.ts                        |  262 +++++
+ artifacts/resupply-api/vitest.config.ts                                             |    1 +
+ docs/competitive-gap-analysis-2026-05-19.md                                         |  355 ++++++
+ docs/compliance-mapping-2026-05-19.md                                               |  149 +++
+ docs/resupply/ARCHITECTURE.md                                                       |   31 +-
+ docs/resupply/adr/003-drizzle-not-prisma.md                                         |   41 +-
+ lib/resupply-ai/package.json                                                        |    4 +-
+ lib/resupply-audit/package.json                                                     |    2 +-
+ lib/resupply-audit/src/index.integration.test.ts                                    |   11 +-
+ lib/resupply-audit/src/index.ts                                                     |  182 ++-
+ lib/resupply-audit/src/log-audit-best-effort.test.ts                                |  132 ++-
+ lib/resupply-audit/src/sign.test.ts                                                 |  257 +++++
+ lib/resupply-audit/src/sign.ts                                                      |  230 ++++
+ lib/resupply-auth-react/package.json                                                |    4 +-
+ lib/resupply-auth/README.md                                                         |   13 +-
+ lib/resupply-auth/package.json                                                      |   11 +-
+ lib/resupply-auth/src/http/forgot-password.ts                                       |    8 +
+ lib/resupply-auth/src/http/reset-password.ts                                        |   11 +
+ lib/resupply-auth/src/http/router.test.ts                                           |   67 +-
+ lib/resupply-auth/src/http/sign-in.ts                                               |   19 +
+ lib/resupply-auth/src/http/types.ts                                                 |   10 +-
+ lib/resupply-auth/src/http/verify-email.ts                                          |    7 +
+ lib/resupply-auth/src/http/verify-sign-in-mfa.test.ts                               |   12 +-
+ lib/resupply-auth/src/mfa-challenge.ts                                              |   11 +-
+ lib/resupply-auth/src/rate-limit.test.ts                                            |  181 ++-
+ lib/resupply-auth/src/rate-limit.ts                                                 |   57 +-
+ lib/resupply-auth/src/rbac.test.ts                                                  |   73 +-
+ lib/resupply-auth/src/rbac.ts                                                       |  205 ++--
+ lib/resupply-auth/src/repository.ts                                                 |  448 +-------
+ lib/resupply-auth/src/supabase-repository.ts                                        |    8 +-
+ lib/resupply-auth/src/totp.ts                                                       |   10 +-
+ lib/resupply-db/README.md                                                           |  183 +--
+ lib/resupply-db/drizzle.config.ts                                                   |   33 -
+ lib/resupply-db/drizzle/0114_fitter_leads.sql                                       |   45 +
+ lib/resupply-db/drizzle/0115_fitter_leads_nudged_at.sql                             |   27 +
+ lib/resupply-db/drizzle/0116_audit_log_hmac_chain.sql                               |   96 ++
+ lib/resupply-db/drizzle/0117_csr_compliance_alerts_prior_auth.sql                   |   41 +
+ lib/resupply-db/drizzle/0118_insurance_claims.sql                                   |  206 ++++
+ lib/resupply-db/drizzle/0119_shop_orders_delivery_followup.sql                      |   41 +
+ lib/resupply-db/drizzle/0120_patient_therapy_milestones.sql                         |   83 ++
+ lib/resupply-db/drizzle/0121_fitter_leads_phone_and_source.sql                      |   72 ++
+ lib/resupply-db/drizzle/0122_shop_customers_winback_tracking.sql                    |   47 +
+ lib/resupply-db/drizzle/0123_shop_customers_caregiver.sql                           |  103 ++
+ lib/resupply-db/drizzle/0124_fitter_leads_first_day_nudge.sql                       |   45 +
+ lib/resupply-db/drizzle/0125_patients_quarterly_summary.sql                         |   37 +
+ lib/resupply-db/drizzle/0126_patients_lifecycle_touchpoints.sql                     |   39 +
+ lib/resupply-db/drizzle/0127_shop_order_nps_responses.sql                           |   60 +
+ lib/resupply-db/drizzle/0128_pa_payer_profiles.sql                                  |  516 +++++++++
+ lib/resupply-db/drizzle/0129_billing_enhancements.sql                               |  334 ++++++
+ lib/resupply-db/drizzle/0130_billing_automation.sql                                 |  343 ++++++
+ lib/resupply-db/drizzle/0131_ai_claim_intelligence.sql                              |  192 ++++
+ lib/resupply-db/drizzle/0132_dme_org_and_clearinghouse.sql                          |  306 +++++
+ lib/resupply-db/drizzle/0133_billing_wave_1_now_items.sql                           |  312 ++++++
+ lib/resupply-db/drizzle/0134_billing_wave_2_next_items.sql                          |  383 +++++++
+ lib/resupply-db/drizzle/0135_wave_3_inbound_271_plus_ivr.sql                        |   32 +
+ lib/resupply-db/drizzle/0136_phase_4_pas_endpoints.sql                              |   27 +
+ lib/resupply-db/drizzle/0137_phase_5_workflow_automation.sql                        |  159 +++
+ lib/resupply-db/drizzle/0138_phase_6_payments_and_inbound.sql                       |  148 +++
+ lib/resupply-db/drizzle/0139_phase_7_breach_and_packet_columns.sql                  |  163 +++
+ lib/resupply-db/drizzle/0140_phase_8_dispense_readiness.sql                         |  113 ++
+ lib/resupply-db/drizzle/0141_phase_9_compliance_machinery.sql                       |  537 +++++++++
+ lib/resupply-db/drizzle/README.md                                                   |   56 +-
+ lib/resupply-db/package.json                                                        |   12 +-
+ lib/resupply-db/scripts/migrate.mjs                                                 |  258 +++--
+ lib/resupply-db/src/index.ts                                                        |   31 +-
+ lib/resupply-db/src/schema/_schema.ts                                               |   11 -
+ lib/resupply-db/src/schema/accreditation-policies.ts                                |  101 --
+ lib/resupply-db/src/schema/admin-mfa-recovery-codes.ts                              |   91 --
+ lib/resupply-db/src/schema/admin-mfa-secrets.ts                                     |  131 ---
+ lib/resupply-db/src/schema/admin-policy-attestations.ts                             |  111 --
+ lib/resupply-db/src/schema/admin-users.ts                                           |  107 --
+ lib/resupply-db/src/schema/appointment-requests.ts                                  |   65 --
+ lib/resupply-db/src/schema/audit-log.ts                                             |   78 --
+ lib/resupply-db/src/schema/auth/_schema.ts                                          |   14 -
+ lib/resupply-db/src/schema/auth/email-tokens.ts                                     |   52 -
+ lib/resupply-db/src/schema/auth/index.ts                                            |    6 -
+ lib/resupply-db/src/schema/auth/login-attempts.ts                                   |   53 -
+ lib/resupply-db/src/schema/auth/password-credentials.ts                             |   41 -
+ lib/resupply-db/src/schema/auth/sessions.ts                                         |   72 --
+ lib/resupply-db/src/schema/auth/users.ts                                            |   51 -
+ lib/resupply-db/src/schema/back-in-stock.ts                                         |   60 -
+ lib/resupply-db/src/schema/bulk-campaign-recipients.ts                              |  131 ---
+ lib/resupply-db/src/schema/bulk-campaigns.ts                                        |  195 ----
+ lib/resupply-db/src/schema/conversation-coaching-notes.ts                           |   80 --
+ lib/resupply-db/src/schema/conversations.ts                                         |  186 ----
+ lib/resupply-db/src/schema/csr-compliance-alerts.ts                                 |   97 --
+ lib/resupply-db/src/schema/csr-macros.ts                                            |   59 -
+ lib/resupply-db/src/schema/csr-shifts.ts                                            |   64 --
+ lib/resupply-db/src/schema/episodes.ts                                              |   85 --
+ lib/resupply-db/src/schema/equipment-assets.ts                                      |  189 ----
+ lib/resupply-db/src/schema/equipment-recalls.ts                                     |  148 ---
+ lib/resupply-db/src/schema/frequency-rules.ts                                       |  118 --
+ lib/resupply-db/src/schema/fulfillments.ts                                          |   92 --
+ lib/resupply-db/src/schema/idempotency-keys.ts                                      |   84 --
+ lib/resupply-db/src/schema/inbound-faxes.ts                                         |  171 ---
+ lib/resupply-db/src/schema/index.ts                                                 |   80 --
+ lib/resupply-db/src/schema/insurance-coverages.ts                                   |  165 ---
+ lib/resupply-db/src/schema/insurance-leads.ts                                       |  109 --
+ lib/resupply-db/src/schema/message-attachments.ts                                   |   68 --
+ lib/resupply-db/src/schema/message-templates.ts                                     |  116 --
+ lib/resupply-db/src/schema/messages.ts                                              |   83 --
+ lib/resupply-db/src/schema/office-closures.ts                                       |   63 --
+ lib/resupply-db/src/schema/office-recurring-closures.ts                             |   71 --
+ lib/resupply-db/src/schema/patient-address-history.ts                               |   60 -
+ lib/resupply-db/src/schema/patient-checkin-attempts.ts                              |   85 --
+ lib/resupply-db/src/schema/patient-coaching-plans.ts                                |  129 ---
+ lib/resupply-db/src/schema/patient-documents.ts                                     |  140 ---
+ lib/resupply-db/src/schema/patient-fit-overrides.ts                                 |   59 -
+ lib/resupply-db/src/schema/patient-followups.ts                                     |   46 -
+ lib/resupply-db/src/schema/patient-form-acknowledgements.ts                         |  125 ---
+ lib/resupply-db/src/schema/patient-grievances.ts                                    |  167 ---
+ lib/resupply-db/src/schema/patient-identity-verifications.ts                        |   91 --
+ lib/resupply-db/src/schema/patient-integration-snapshots.ts                         |   73 --
+ lib/resupply-db/src/schema/patient-latest-message.ts                                |   58 -
+ lib/resupply-db/src/schema/patient-maintenance-log.ts                               |   93 --
+ lib/resupply-db/src/schema/patient-maintenance-nudges.ts                            |   76 --
+ lib/resupply-db/src/schema/patient-notes.ts                                         |   59 -
+ lib/resupply-db/src/schema/patient-onboarding-journeys.ts                           |   91 --
+ lib/resupply-db/src/schema/patient-referrals.ts                                     |   93 --
+ lib/resupply-db/src/schema/patient-smart-trigger-events.ts                          |   68 --
+ lib/resupply-db/src/schema/patient-therapy-links.ts                                 |   75 --
+ lib/resupply-db/src/schema/patient-therapy-nights.ts                                |   73 --
+ lib/resupply-db/src/schema/patients.ts                                              |  112 --
+ lib/resupply-db/src/schema/physician-fax-outreach.ts                                |   72 --
+ lib/resupply-db/src/schema/prescriptions.ts                                         |  133 ---
+ lib/resupply-db/src/schema/prior-authorizations.ts                                  |  136 ---
+ lib/resupply-db/src/schema/providers.ts                                             |  154 ---
+ lib/resupply-db/src/schema/recall-notifications.ts                                  |  107 --
+ lib/resupply-db/src/schema/recall-remediation-actions.ts                            |  102 --
+ lib/resupply-db/src/schema/shop-abandoned-carts.ts                                  |  144 ---
+ lib/resupply-db/src/schema/shop-backorders.ts                                       |   72 --
+ lib/resupply-db/src/schema/shop-customer-followups.ts                               |   55 -
+ lib/resupply-db/src/schema/shop-customer-message-template-overrides.ts              |  111 --
+ lib/resupply-db/src/schema/shop-customer-notes.ts                                   |   53 -
+ lib/resupply-db/src/schema/shop-customer-push-subscriptions.ts                      |   51 -
+ lib/resupply-db/src/schema/shop-customers.ts                                        |  258 -----
+ lib/resupply-db/src/schema/shop-order-items.ts                                      |  135 ---
+ lib/resupply-db/src/schema/shop-order-loss-claims.ts                                |   93 --
+ lib/resupply-db/src/schema/shop-order-notes.ts                                      |   56 -
+ lib/resupply-db/src/schema/shop-orders.ts                                           |  215 ----
+ lib/resupply-db/src/schema/shop-product-compatibility.ts                            |   45 -
+ lib/resupply-db/src/schema/shop-product-questions.ts                                |   81 --
+ lib/resupply-db/src/schema/shop-return-notes.ts                                     |   52 -
+ lib/resupply-db/src/schema/shop-returns.ts                                          |  113 --
+ lib/resupply-db/src/schema/shop-reviews.ts                                          |  140 ---
+ lib/resupply-db/src/schema/shop-sku-substitutes.ts                                  |   80 --
+ lib/resupply-db/src/schema/shop-subscriptions.ts                                    |  148 ---
+ lib/resupply-db/src/schema/sleep-studies.ts                                         |  183 ---
+ lib/resupply-db/src/schema/staff-training-records.ts                                |  162 ---
+ lib/resupply-db/src/schema/storefront/admin-audit-log.ts                            |   41 -
+ lib/resupply-db/src/schema/storefront/index.ts                                      |   18 -
+ lib/resupply-db/src/schema/storefront/orders.ts                                     |   80 --
+ lib/resupply-db/src/schema/storefront/reminder-subscriptions.ts                     |   91 --
+ lib/resupply-db/src/schema/storefront/usage-events.ts                               |   34 -
+ lib/resupply-db/src/supabase-types.ts                                               | 1996 +++++++++++++++++++++++++++++----
+ lib/resupply-db/src/types.ts                                                        |  515 +++++++++
+ lib/resupply-domain/package.json                                                    |    3 +-
+ lib/resupply-email/package.json                                                     |    2 +-
+ lib/resupply-email/src/client.test.ts                                               |    2 +-
+ lib/resupply-email/src/events.ts                                                    |    2 +-
+ lib/resupply-integrations-airview/package.json                                      |    2 +-
+ lib/resupply-integrations-airview/src/client.test.ts                                |  156 +++
+ lib/resupply-integrations-airview/src/client.ts                                     |   56 +-
+ lib/resupply-integrations-care-orchestrator/package.json                            |    2 +-
+ lib/resupply-integrations-davinci-pas/package.json                                  |   23 +
+ lib/resupply-integrations-davinci-pas/src/build-bundle.test.ts                      |  141 +++
+ lib/resupply-integrations-davinci-pas/src/build-bundle.ts                           |  367 ++++++
+ lib/resupply-integrations-davinci-pas/src/client.ts                                 |  101 ++
+ lib/resupply-integrations-davinci-pas/src/index.ts                                  |   31 +
+ lib/resupply-integrations-davinci-pas/src/parse-claim-response.test.ts              |  128 +++
+ lib/resupply-integrations-davinci-pas/src/parse-claim-response.ts                   |  126 +++
+ lib/resupply-integrations-davinci-pas/tsconfig.json                                 |   12 +
+ lib/resupply-integrations-davinci-pas/vitest.config.ts                              |    5 +
+ lib/resupply-integrations-health-connect/package.json                               |    2 +-
+ lib/resupply-integrations-office-ally/package.json                                  |   23 +
+ lib/resupply-integrations-office-ally/src/adapter.ts                                |  163 +++
+ lib/resupply-integrations-office-ally/src/config.ts                                 |  128 +++
+ lib/resupply-integrations-office-ally/src/edi/270.ts                                |  240 ++++
+ lib/resupply-integrations-office-ally/src/edi/837p.test.ts                          |  410 +++++++
+ lib/resupply-integrations-office-ally/src/edi/837p.ts                               |  785 +++++++++++++
+ lib/resupply-integrations-office-ally/src/edi/control-numbers.ts                    |   73 ++
+ lib/resupply-integrations-office-ally/src/edi/parse-271.ts                          |  135 +++
+ lib/resupply-integrations-office-ally/src/edi/parse-277ca.test.ts                   |   51 +
+ lib/resupply-integrations-office-ally/src/edi/parse-277ca.ts                        |  126 +++
+ lib/resupply-integrations-office-ally/src/edi/parse-835.test.ts                     |  104 ++
+ lib/resupply-integrations-office-ally/src/edi/parse-835.ts                          |  282 +++++
+ lib/resupply-integrations-office-ally/src/edi/parse-999.test.ts                     |   57 +
+ lib/resupply-integrations-office-ally/src/edi/parse-999.ts                          |  141 +++
+ lib/resupply-integrations-office-ally/src/edi/parse-segments.ts                     |   94 ++
+ lib/resupply-integrations-office-ally/src/index.ts                                  |  115 ++
+ lib/resupply-integrations-office-ally/src/transport/file.ts                         |   55 +
+ lib/resupply-integrations-office-ally/src/transport/sftp-inbound.test.ts            |   30 +
+ lib/resupply-integrations-office-ally/src/transport/sftp-inbound.ts                 |  269 +++++
+ lib/resupply-integrations-office-ally/src/transport/sftp.ts                         |  189 ++++
+ lib/resupply-integrations-office-ally/src/transport/types.ts                        |   45 +
+ lib/resupply-integrations-office-ally/tsconfig.json                                 |   12 +
+ lib/resupply-integrations-office-ally/vitest.config.ts                              |    7 +
+ lib/resupply-integrations-react-health/package.json                                 |    2 +-
+ lib/resupply-integrations/package.json                                              |    2 +-
+ lib/resupply-messaging/package.json                                                 |    2 +-
+ lib/resupply-messaging/src/email-templates.test.ts                                  |  127 +++
+ lib/resupply-messaging/src/email-templates.ts                                       |   24 +-
+ lib/resupply-reminders/package.json                                                 |    2 +-
+ lib/resupply-secrets/package.json                                                   |    2 +-
+ lib/resupply-telecom/package.json                                                   |    4 +-
+ lib/resupply-telecom/src/sms.test.ts                                                |    2 +-
+ lib/resupply-templates/package.json                                                 |    3 +-
+ lib/resupply-templates/src/index.ts                                                 |    6 +-
+ package.json                                                                        |   12 +-
+ pnpm-lock.yaml                                                                      | 4677 +++++++++++++++++++++++++++++------------------------------------------------
+ pnpm-workspace.yaml                                                                 |   31 +-
+ replit.md                                                                           |    2 +-
+ scripts/check-codegen.sh                                                            |  282 -----
+ scripts/check-codegen.sh.test                                                       |   48 -
+ scripts/check-drizzle-drift.sh                                                      |  249 -----
+ scripts/check-drizzle-drift.sh.test                                                 |  200 ----
+ scripts/check-resupply-migration-pair.sh                                            |  154 ---
+ scripts/check-resupply-migration-pair.sh.test                                       |  138 ---
+ scripts/check-resupply-migration-prefix.sh                                          |    2 +-
+ scripts/git-hooks/pre-commit                                                        |   73 +-
+ scripts/package.json                                                                |    4 +-
+ scripts/post-merge.sh                                                               |   17 +-
+ tsconfig.json                                                                       |    4 +-
+ 525 files changed, 65075 insertions(+), 14190 deletions(-)
+ create mode 100644 artifacts/cpap-fitter/src/components/caregiver-section.tsx
+ create mode 100644 artifacts/cpap-fitter/src/components/language-toggle.tsx
+ create mode 100644 artifacts/cpap-fitter/src/components/push-prompt-banner.tsx
+ create mode 100644 artifacts/cpap-fitter/src/components/star-rating.test.ts
+ create mode 100644 artifacts/cpap-fitter/src/components/wallet-pass-section.tsx
+ create mode 100644 artifacts/cpap-fitter/src/i18n/locales.ts
+ create mode 100644 artifacts/cpap-fitter/src/i18n/provider.tsx
+ create mode 100644 artifacts/cpap-fitter/src/lib/account-api.test.ts
+ create mode 100644 artifacts/cpap-fitter/src/lib/admin/clinical-tabs-api.test.ts
+ create mode 100644 artifacts/cpap-fitter/src/lib/admin/nps-api.ts
+ create mode 100644 artifacts/cpap-fitter/src/lib/admin/rt-overview-api.test.ts
+ create mode 100644 artifacts/cpap-fitter/src/lib/admin/rt-overview-api.ts
+ create mode 100644 artifacts/cpap-fitter/src/lib/insurance-estimate-data.ts
+ create mode 100644 artifacts/cpap-fitter/src/lib/shop-api.test.ts
+ create mode 100644 artifacts/cpap-fitter/src/pages/admin/admin-insurance-claims.tsx
+ create mode 100644 artifacts/cpap-fitter/src/pages/admin/admin-nps.tsx
+ create mode 100644 artifacts/cpap-fitter/src/pages/admin/admin-rt-overview.tsx
+ create mode 100644 artifacts/cpap-fitter/src/pages/insurance-estimate.tsx
+ create mode 100644 artifacts/cpap-fitter/src/pages/nps.tsx
+ create mode 100644 artifacts/cpap-fitter/src/pages/track-order.tsx
+ create mode 100644 artifacts/resupply-api/src/lib/accreditation/readiness-engine.ts
+ create mode 100644 artifacts/resupply-api/src/lib/apple-wallet/assets.ts
+ create mode 100644 artifacts/resupply-api/src/lib/apple-wallet/pkpass.ts
+ create mode 100644 artifacts/resupply-api/src/lib/billing/ai-claim-scrubber.test.ts
+ create mode 100644 artifacts/resupply-api/src/lib/billing/ai-claim-scrubber.ts
+ create mode 100644 artifacts/resupply-api/src/lib/billing/ai-denial-analyzer.test.ts
+ create mode 100644 artifacts/resupply-api/src/lib/billing/ai-denial-analyzer.ts
+ create mode 100644 artifacts/resupply-api/src/lib/billing/ai-denial-patient-explainer.ts
+ create mode 100644 artifacts/resupply-api/src/lib/billing/ai-patch.test.ts
+ create mode 100644 artifacts/resupply-api/src/lib/billing/ai-patch.ts
+ create mode 100644 artifacts/resupply-api/src/lib/billing/appeal-pdf.ts
+ create mode 100644 artifacts/resupply-api/src/lib/billing/auto-workflow-engine.ts
+ create mode 100644 artifacts/resupply-api/src/lib/billing/capped-rental-advancer.ts
+ create mode 100644 artifacts/resupply-api/src/lib/billing/claim-builder.ts
+ create mode 100644 artifacts/resupply-api/src/lib/billing/claim-preflight.test.ts
+ create mode 100644 artifacts/resupply-api/src/lib/billing/claim-preflight.ts
+ create mode 100644 artifacts/resupply-api/src/lib/billing/dispense-readiness-reviewer.test.ts
+ create mode 100644 artifacts/resupply-api/src/lib/billing/dispense-readiness-reviewer.ts
+ create mode 100644 artifacts/resupply-api/src/lib/billing/documentation-packet.test.ts
+ create mode 100644 artifacts/resupply-api/src/lib/billing/documentation-packet.ts
+ create mode 100644 artifacts/resupply-api/src/lib/billing/eligibility-verifier.ts
+ create mode 100644 artifacts/resupply-api/src/lib/billing/era-reconciler.ts
+ create mode 100644 artifacts/resupply-api/src/lib/billing/fee-schedule-csv.test.ts
+ create mode 100644 artifacts/resupply-api/src/lib/billing/fee-schedule-csv.ts
+ create mode 100644 artifacts/resupply-api/src/lib/billing/gfe-pdf.test.ts
+ create mode 100644 artifacts/resupply-api/src/lib/billing/gfe-pdf.ts
+ create mode 100644 artifacts/resupply-api/src/lib/billing/hcfa-1500-pdf.ts
+ create mode 100644 artifacts/resupply-api/src/lib/billing/heuristic-denial-scorer.test.ts
+ create mode 100644 artifacts/resupply-api/src/lib/billing/heuristic-denial-scorer.ts
+ create mode 100644 artifacts/resupply-api/src/lib/billing/identity-resolver.ts
+ create mode 100644 artifacts/resupply-api/src/lib/billing/pa-sla-tracker.test.ts
+ create mode 100644 artifacts/resupply-api/src/lib/billing/pa-sla-tracker.ts
+ create mode 100644 artifacts/resupply-api/src/lib/billing/patient-payment.test.ts
+ create mode 100644 artifacts/resupply-api/src/lib/billing/patient-payment.ts
+ create mode 100644 artifacts/resupply-api/src/lib/billing/statement-pdf.ts
+ create mode 100644 artifacts/resupply-api/src/lib/clinical/adherence-predictor.test.ts
+ create mode 100644 artifacts/resupply-api/src/lib/clinical/adherence-predictor.ts
+ create mode 100644 artifacts/resupply-api/src/lib/clinical/ai-icd10-suggester.ts
+ create mode 100644 artifacts/resupply-api/src/lib/clinical/sleep-coach.ts
+ create mode 100644 artifacts/resupply-api/src/lib/compliance/auto-workflow.test.ts
+ create mode 100644 artifacts/resupply-api/src/lib/compliance/auto-workflow.ts
+ create mode 100644 artifacts/resupply-api/src/lib/compliance/disclosure-logger.ts
+ create mode 100644 artifacts/resupply-api/src/lib/compliance/oig-leie-screener.parse.test.ts
+ create mode 100644 artifacts/resupply-api/src/lib/compliance/oig-leie-screener.ts
+ create mode 100644 artifacts/resupply-api/src/lib/compliance/patient-rights-clock.test.ts
+ create mode 100644 artifacts/resupply-api/src/lib/compliance/patient-rights-clock.ts
+ create mode 100644 artifacts/resupply-api/src/lib/fitter-lead-record.test.ts
+ create mode 100644 artifacts/resupply-api/src/lib/fitter-lead-record.ts
+ create mode 100644 artifacts/resupply-api/src/lib/insurance-estimates/data.ts
+ create mode 100644 artifacts/resupply-api/src/lib/nps-token.ts
+ create mode 100644 artifacts/resupply-api/src/lib/order-emails/send-caregiver-notification-email.ts
+ create mode 100644 artifacts/resupply-api/src/lib/order-emails/send-deductible-reset-email.ts
+ create mode 100644 artifacts/resupply-api/src/lib/order-emails/send-delivery-followup-email.ts
+ create mode 100644 artifacts/resupply-api/src/lib/order-emails/send-eob-explainer-email.ts
+ create mode 100644 artifacts/resupply-api/src/lib/order-emails/send-fitter-order-confirmation-email.ts
+ create mode 100644 artifacts/resupply-api/src/lib/order-emails/send-insurance-estimate-email.ts
+ create mode 100644 artifacts/resupply-api/src/lib/order-emails/send-lifecycle-touchpoint-email.ts
+ create mode 100644 artifacts/resupply-api/src/lib/order-emails/send-quarterly-summary-email.ts
+ create mode 100644 artifacts/resupply-api/src/lib/order-emails/send-quiz-results-email.ts
+ create mode 100644 artifacts/resupply-api/src/lib/order-emails/send-therapy-milestone-email.ts
+ create mode 100644 artifacts/resupply-api/src/lib/order-emails/send-winback-email.ts
+ delete mode 100644 artifacts/resupply-api/src/lib/readiness.integration.test.ts
+ create mode 100644 artifacts/resupply-api/src/lib/rt-overview/aggregate.test.ts
+ create mode 100644 artifacts/resupply-api/src/lib/rt-overview/aggregate.ts
+ create mode 100644 artifacts/resupply-api/src/lib/shop-orders-sms-resolver.ts
+ create mode 100644 artifacts/resupply-api/src/lib/webhooks/event-catalog.ts
+ create mode 100644 artifacts/resupply-api/src/lib/webhooks/publisher.test.ts
+ create mode 100644 artifacts/resupply-api/src/lib/webhooks/publisher.ts
+ create mode 100644 artifacts/resupply-api/src/lib/zip-timezone.ts
+ create mode 100644 artifacts/resupply-api/src/middlewares/admin-path.test.ts
+ create mode 100644 artifacts/resupply-api/src/middlewares/admin-path.ts
+ create mode 100644 artifacts/resupply-api/src/middlewares/rate-limit.test.ts
+ create mode 100644 artifacts/resupply-api/src/routes/admin/accreditation-readiness.ts
+ create mode 100644 artifacts/resupply-api/src/routes/admin/accreditation-surveys.ts
+ create mode 100644 artifacts/resupply-api/src/routes/admin/adherence-predictions.ts
+ create mode 100644 artifacts/resupply-api/src/routes/admin/ai-billing-queue.ts
+ create mode 100644 artifacts/resupply-api/src/routes/admin/billing-batch-submit.ts
+ create mode 100644 artifacts/resupply-api/src/routes/admin/billing-benchmarks.ts
+ create mode 100644 artifacts/resupply-api/src/routes/admin/billing-dashboard.ts
+ create mode 100644 artifacts/resupply-api/src/routes/admin/billing-director.ts
+ create mode 100644 artifacts/resupply-api/src/routes/admin/billing-reports.ts
+ create mode 100644 artifacts/resupply-api/src/routes/admin/billing-statements.ts
+ create mode 100644 artifacts/resupply-api/src/routes/admin/business-associate-agreements.ts
+ create mode 100644 artifacts/resupply-api/src/routes/admin/capped-rental-cycles.ts
+ create mode 100644 artifacts/resupply-api/src/routes/admin/claim-appeals.ts
+ create mode 100644 artifacts/resupply-api/src/routes/admin/claim-templates.ts
+ create mode 100644 artifacts/resupply-api/src/routes/admin/clearinghouse-credentials.ts
+ create mode 100644 artifacts/resupply-api/src/routes/admin/compliance-officer-summary.ts
+ create mode 100644 artifacts/resupply-api/src/routes/admin/compliance-records.ts
+ create mode 100644 artifacts/resupply-api/src/routes/admin/davinci-pas-submit.ts
+ create mode 100644 artifacts/resupply-api/src/routes/admin/denial-codes.ts
+ create mode 100644 artifacts/resupply-api/src/routes/admin/dispense-readiness.ts
+ create mode 100644 artifacts/resupply-api/src/routes/admin/dme-organization.ts
+ create mode 100644 artifacts/resupply-api/src/routes/admin/documentation-packets.ts
+ create mode 100644 artifacts/resupply-api/src/routes/admin/dwo-documents.ts
+ create mode 100644 artifacts/resupply-api/src/routes/admin/eligibility-checks.ts
+ create mode 100644 artifacts/resupply-api/src/routes/admin/era-ingest.ts
+ create mode 100644 artifacts/resupply-api/src/routes/admin/fulfillment-to-claim.ts
+ create mode 100644 artifacts/resupply-api/src/routes/admin/good-faith-estimates.ts
+ create mode 100644 artifacts/resupply-api/src/routes/admin/hipaa-breach-incidents.ts
+ create mode 100644 artifacts/resupply-api/src/routes/admin/nps-summary.ts
+ create mode 100644 artifacts/resupply-api/src/routes/admin/office-ally-submissions.ts
+ create mode 100644 artifacts/resupply-api/src/routes/admin/oig-leie-screenings.ts
+ create mode 100644 artifacts/resupply-api/src/routes/admin/patient-rights-requests.ts
+ create mode 100644 artifacts/resupply-api/src/routes/admin/payer-fee-schedules-import.ts
+ create mode 100644 artifacts/resupply-api/src/routes/admin/payer-fee-schedules.ts
+ create mode 100644 artifacts/resupply-api/src/routes/admin/payer-modifier-rules.ts
+ create mode 100644 artifacts/resupply-api/src/routes/admin/payer-profiles.ts
+ create mode 100644 artifacts/resupply-api/src/routes/admin/pecos-status.ts
+ create mode 100644 artifacts/resupply-api/src/routes/admin/product-hcpcs-map.ts
+ create mode 100644 artifacts/resupply-api/src/routes/admin/rt-overview.test.ts
+ create mode 100644 artifacts/resupply-api/src/routes/admin/rt-overview.ts
+ create mode 100644 artifacts/resupply-api/src/routes/admin/same-or-similar.ts
+ create mode 100644 artifacts/resupply-api/src/routes/admin/shop-membership.ts
+ create mode 100644 artifacts/resupply-api/src/routes/admin/system-integrations-status.ts
+ create mode 100644 artifacts/resupply-api/src/routes/admin/webhook-delivery-retry.ts
+ create mode 100644 artifacts/resupply-api/src/routes/admin/webhook-event-catalog.ts
+ create mode 100644 artifacts/resupply-api/src/routes/admin/webhook-subscriptions.ts
+ create mode 100644 artifacts/resupply-api/src/routes/admin/webhook-test-send.ts
+ create mode 100644 artifacts/resupply-api/src/routes/fhir/index.ts
+ create mode 100644 artifacts/resupply-api/src/routes/integrations-inbound.ts
+ create mode 100644 artifacts/resupply-api/src/routes/patients/insurance-claims-ai.ts
+ create mode 100644 artifacts/resupply-api/src/routes/patients/insurance-claims-explain-denial.ts
+ create mode 100644 artifacts/resupply-api/src/routes/patients/insurance-claims-hcfa.ts
+ create mode 100644 artifacts/resupply-api/src/routes/patients/insurance-claims-predict-denial.ts
+ create mode 100644 artifacts/resupply-api/src/routes/patients/insurance-claims-preflight.ts
+ create mode 100644 artifacts/resupply-api/src/routes/patients/insurance-claims-submit.ts
+ create mode 100644 artifacts/resupply-api/src/routes/patients/insurance-claims.test.ts
+ create mode 100644 artifacts/resupply-api/src/routes/patients/insurance-claims.ts
+ create mode 100644 artifacts/resupply-api/src/routes/patients/sleep-studies-suggest-icd10.ts
+ create mode 100644 artifacts/resupply-api/src/routes/shop/fitter-lead.test.ts
+ create mode 100644 artifacts/resupply-api/src/routes/shop/fitter-lead.ts
+ create mode 100644 artifacts/resupply-api/src/routes/shop/insurance-estimate.ts
+ create mode 100644 artifacts/resupply-api/src/routes/shop/me-billing-portal.test.ts
+ create mode 100644 artifacts/resupply-api/src/routes/shop/me-billing-portal.ts
+ create mode 100644 artifacts/resupply-api/src/routes/shop/me-caregiver.ts
+ create mode 100644 artifacts/resupply-api/src/routes/shop/me-wallet-pass.ts
+ create mode 100644 artifacts/resupply-api/src/routes/shop/nps-response.ts
+ create mode 100644 artifacts/resupply-api/src/routes/shop/products.test.ts
+ create mode 100644 artifacts/resupply-api/src/routes/shop/quiz-lead.ts
+ create mode 100644 artifacts/resupply-api/src/routes/storefront/me-claims.ts
+ create mode 100644 artifacts/resupply-api/src/routes/storefront/me-payments.ts
+ create mode 100644 artifacts/resupply-api/src/routes/storefront/me-rights-requests.ts
+ create mode 100644 artifacts/resupply-api/src/routes/storefront/sleep-coach.ts
+ create mode 100644 artifacts/resupply-api/src/routes/storefront/track-order.ts
+ create mode 100644 artifacts/resupply-api/src/routes/voice/inbound-reorder.ts
+ create mode 100644 artifacts/resupply-api/src/shop-smoke.test.ts
+ create mode 100644 artifacts/resupply-api/src/test/setup-audit-hmac-key.ts
+ create mode 100644 artifacts/resupply-api/src/worker/jobs/accreditation-readiness-sweep.ts
+ create mode 100644 artifacts/resupply-api/src/worker/jobs/auto-workflow.ts
+ create mode 100644 artifacts/resupply-api/src/worker/jobs/capped-rental-advance.ts
+ create mode 100644 artifacts/resupply-api/src/worker/jobs/compliance-auto-workflow.ts
+ create mode 100644 artifacts/resupply-api/src/worker/jobs/deductible-reset-push.ts
+ create mode 100644 artifacts/resupply-api/src/worker/jobs/dwo-expiry-sweep.ts
+ create mode 100644 artifacts/resupply-api/src/worker/jobs/fitter-lead-first-day-nudge.ts
+ create mode 100644 artifacts/resupply-api/src/worker/jobs/fitter-lead-reengage.test.ts
+ create mode 100644 artifacts/resupply-api/src/worker/jobs/fitter-lead-reengage.ts
+ create mode 100644 artifacts/resupply-api/src/worker/jobs/lapsed-customer-winback.ts
+ create mode 100644 artifacts/resupply-api/src/worker/jobs/lifecycle-touchpoints.ts
+ create mode 100644 artifacts/resupply-api/src/worker/jobs/office-ally-inbound-poll.ts
+ create mode 100644 artifacts/resupply-api/src/worker/jobs/oig-leie-sync.ts
+ create mode 100644 artifacts/resupply-api/src/worker/jobs/pa-mco-sla-sweep.ts
+ create mode 100644 artifacts/resupply-api/src/worker/jobs/pecos-sync.ts
+ create mode 100644 artifacts/resupply-api/src/worker/jobs/prior-auth-expiry-sweep.test.ts
+ create mode 100644 artifacts/resupply-api/src/worker/jobs/prior-auth-expiry-sweep.ts
+ create mode 100644 artifacts/resupply-api/src/worker/jobs/quarterly-therapy-summary.ts
+ create mode 100644 artifacts/resupply-api/src/worker/jobs/shop-order-delivery-followup.ts
+ create mode 100644 artifacts/resupply-api/src/worker/jobs/therapy-milestones.ts
+ create mode 100644 artifacts/resupply-api/src/worker/jobs/webhook-dispatcher.test.ts
+ create mode 100644 artifacts/resupply-api/src/worker/jobs/webhook-dispatcher.ts
+ create mode 100644 docs/competitive-gap-analysis-2026-05-19.md
+ create mode 100644 docs/compliance-mapping-2026-05-19.md
+ create mode 100644 lib/resupply-audit/src/sign.test.ts
+ create mode 100644 lib/resupply-audit/src/sign.ts
+ delete mode 100644 lib/resupply-db/drizzle.config.ts
+ create mode 100644 lib/resupply-db/drizzle/0114_fitter_leads.sql
+ create mode 100644 lib/resupply-db/drizzle/0115_fitter_leads_nudged_at.sql
+ create mode 100644 lib/resupply-db/drizzle/0116_audit_log_hmac_chain.sql
+ create mode 100644 lib/resupply-db/drizzle/0117_csr_compliance_alerts_prior_auth.sql
+ create mode 100644 lib/resupply-db/drizzle/0118_insurance_claims.sql
+ create mode 100644 lib/resupply-db/drizzle/0119_shop_orders_delivery_followup.sql
+ create mode 100644 lib/resupply-db/drizzle/0120_patient_therapy_milestones.sql
+ create mode 100644 lib/resupply-db/drizzle/0121_fitter_leads_phone_and_source.sql
+ create mode 100644 lib/resupply-db/drizzle/0122_shop_customers_winback_tracking.sql
+ create mode 100644 lib/resupply-db/drizzle/0123_shop_customers_caregiver.sql
+ create mode 100644 lib/resupply-db/drizzle/0124_fitter_leads_first_day_nudge.sql
+ create mode 100644 lib/resupply-db/drizzle/0125_patients_quarterly_summary.sql
+ create mode 100644 lib/resupply-db/drizzle/0126_patients_lifecycle_touchpoints.sql
+ create mode 100644 lib/resupply-db/drizzle/0127_shop_order_nps_responses.sql
+ create mode 100644 lib/resupply-db/drizzle/0128_pa_payer_profiles.sql
+ create mode 100644 lib/resupply-db/drizzle/0129_billing_enhancements.sql
+ create mode 100644 lib/resupply-db/drizzle/0130_billing_automation.sql
+ create mode 100644 lib/resupply-db/drizzle/0131_ai_claim_intelligence.sql
+ create mode 100644 lib/resupply-db/drizzle/0132_dme_org_and_clearinghouse.sql
+ create mode 100644 lib/resupply-db/drizzle/0133_billing_wave_1_now_items.sql
+ create mode 100644 lib/resupply-db/drizzle/0134_billing_wave_2_next_items.sql
+ create mode 100644 lib/resupply-db/drizzle/0135_wave_3_inbound_271_plus_ivr.sql
+ create mode 100644 lib/resupply-db/drizzle/0136_phase_4_pas_endpoints.sql
+ create mode 100644 lib/resupply-db/drizzle/0137_phase_5_workflow_automation.sql
+ create mode 100644 lib/resupply-db/drizzle/0138_phase_6_payments_and_inbound.sql
+ create mode 100644 lib/resupply-db/drizzle/0139_phase_7_breach_and_packet_columns.sql
+ create mode 100644 lib/resupply-db/drizzle/0140_phase_8_dispense_readiness.sql
+ create mode 100644 lib/resupply-db/drizzle/0141_phase_9_compliance_machinery.sql
+ delete mode 100644 lib/resupply-db/src/schema/_schema.ts
+ delete mode 100644 lib/resupply-db/src/schema/accreditation-policies.ts
+ delete mode 100644 lib/resupply-db/src/schema/admin-mfa-recovery-codes.ts
+ delete mode 100644 lib/resupply-db/src/schema/admin-mfa-secrets.ts
+ delete mode 100644 lib/resupply-db/src/schema/admin-policy-attestations.ts
+ delete mode 100644 lib/resupply-db/src/schema/admin-users.ts
+ delete mode 100644 lib/resupply-db/src/schema/appointment-requests.ts
+ delete mode 100644 lib/resupply-db/src/schema/audit-log.ts
+ delete mode 100644 lib/resupply-db/src/schema/auth/_schema.ts
+ delete mode 100644 lib/resupply-db/src/schema/auth/email-tokens.ts
+ delete mode 100644 lib/resupply-db/src/schema/auth/index.ts
+ delete mode 100644 lib/resupply-db/src/schema/auth/login-attempts.ts
+ delete mode 100644 lib/resupply-db/src/schema/auth/password-credentials.ts
+ delete mode 100644 lib/resupply-db/src/schema/auth/sessions.ts
+ delete mode 100644 lib/resupply-db/src/schema/auth/users.ts
+ delete mode 100644 lib/resupply-db/src/schema/back-in-stock.ts
+ delete mode 100644 lib/resupply-db/src/schema/bulk-campaign-recipients.ts
+ delete mode 100644 lib/resupply-db/src/schema/bulk-campaigns.ts
+ delete mode 100644 lib/resupply-db/src/schema/conversation-coaching-notes.ts
+ delete mode 100644 lib/resupply-db/src/schema/conversations.ts
+ delete mode 100644 lib/resupply-db/src/schema/csr-compliance-alerts.ts
+ delete mode 100644 lib/resupply-db/src/schema/csr-macros.ts
+ delete mode 100644 lib/resupply-db/src/schema/csr-shifts.ts
+ delete mode 100644 lib/resupply-db/src/schema/episodes.ts
+ delete mode 100644 lib/resupply-db/src/schema/equipment-assets.ts
+ delete mode 100644 lib/resupply-db/src/schema/equipment-recalls.ts
+ delete mode 100644 lib/resupply-db/src/schema/frequency-rules.ts
+ delete mode 100644 lib/resupply-db/src/schema/fulfillments.ts
+ delete mode 100644 lib/resupply-db/src/schema/idempotency-keys.ts
+ delete mode 100644 lib/resupply-db/src/schema/inbound-faxes.ts
+ delete mode 100644 lib/resupply-db/src/schema/index.ts
+ delete mode 100644 lib/resupply-db/src/schema/insurance-coverages.ts
+ delete mode 100644 lib/resupply-db/src/schema/insurance-leads.ts
+ delete mode 100644 lib/resupply-db/src/schema/message-attachments.ts
+ delete mode 100644 lib/resupply-db/src/schema/message-templates.ts
+ delete mode 100644 lib/resupply-db/src/schema/messages.ts
+ delete mode 100644 lib/resupply-db/src/schema/office-closures.ts
+ delete mode 100644 lib/resupply-db/src/schema/office-recurring-closures.ts
+ delete mode 100644 lib/resupply-db/src/schema/patient-address-history.ts
+ delete mode 100644 lib/resupply-db/src/schema/patient-checkin-attempts.ts
+ delete mode 100644 lib/resupply-db/src/schema/patient-coaching-plans.ts
+ delete mode 100644 lib/resupply-db/src/schema/patient-documents.ts
+ delete mode 100644 lib/resupply-db/src/schema/patient-fit-overrides.ts
+ delete mode 100644 lib/resupply-db/src/schema/patient-followups.ts
+ delete mode 100644 lib/resupply-db/src/schema/patient-form-acknowledgements.ts
+ delete mode 100644 lib/resupply-db/src/schema/patient-grievances.ts
+ delete mode 100644 lib/resupply-db/src/schema/patient-identity-verifications.ts
+ delete mode 100644 lib/resupply-db/src/schema/patient-integration-snapshots.ts
+ delete mode 100644 lib/resupply-db/src/schema/patient-latest-message.ts
+ delete mode 100644 lib/resupply-db/src/schema/patient-maintenance-log.ts
+ delete mode 100644 lib/resupply-db/src/schema/patient-maintenance-nudges.ts
+ delete mode 100644 lib/resupply-db/src/schema/patient-notes.ts
+ delete mode 100644 lib/resupply-db/src/schema/patient-onboarding-journeys.ts
+ delete mode 100644 lib/resupply-db/src/schema/patient-referrals.ts
+ delete mode 100644 lib/resupply-db/src/schema/patient-smart-trigger-events.ts
+ delete mode 100644 lib/resupply-db/src/schema/patient-therapy-links.ts
+ delete mode 100644 lib/resupply-db/src/schema/patient-therapy-nights.ts
+ delete mode 100644 lib/resupply-db/src/schema/patients.ts
+ delete mode 100644 lib/resupply-db/src/schema/physician-fax-outreach.ts
+ delete mode 100644 lib/resupply-db/src/schema/prescriptions.ts
+ delete mode 100644 lib/resupply-db/src/schema/prior-authorizations.ts
+ delete mode 100644 lib/resupply-db/src/schema/providers.ts
+ delete mode 100644 lib/resupply-db/src/schema/recall-notifications.ts
+ delete mode 100644 lib/resupply-db/src/schema/recall-remediation-actions.ts
+ delete mode 100644 lib/resupply-db/src/schema/shop-abandoned-carts.ts
+ delete mode 100644 lib/resupply-db/src/schema/shop-backorders.ts
+ delete mode 100644 lib/resupply-db/src/schema/shop-customer-followups.ts
+ delete mode 100644 lib/resupply-db/src/schema/shop-customer-message-template-overrides.ts
+ delete mode 100644 lib/resupply-db/src/schema/shop-customer-notes.ts
+ delete mode 100644 lib/resupply-db/src/schema/shop-customer-push-subscriptions.ts
+ delete mode 100644 lib/resupply-db/src/schema/shop-customers.ts
+ delete mode 100644 lib/resupply-db/src/schema/shop-order-items.ts
+ delete mode 100644 lib/resupply-db/src/schema/shop-order-loss-claims.ts
+ delete mode 100644 lib/resupply-db/src/schema/shop-order-notes.ts
+ delete mode 100644 lib/resupply-db/src/schema/shop-orders.ts
+ delete mode 100644 lib/resupply-db/src/schema/shop-product-compatibility.ts
+ delete mode 100644 lib/resupply-db/src/schema/shop-product-questions.ts
+ delete mode 100644 lib/resupply-db/src/schema/shop-return-notes.ts
+ delete mode 100644 lib/resupply-db/src/schema/shop-returns.ts
+ delete mode 100644 lib/resupply-db/src/schema/shop-reviews.ts
+ delete mode 100644 lib/resupply-db/src/schema/shop-sku-substitutes.ts
+ delete mode 100644 lib/resupply-db/src/schema/shop-subscriptions.ts
+ delete mode 100644 lib/resupply-db/src/schema/sleep-studies.ts
+ delete mode 100644 lib/resupply-db/src/schema/staff-training-records.ts
+ delete mode 100644 lib/resupply-db/src/schema/storefront/admin-audit-log.ts
+ delete mode 100644 lib/resupply-db/src/schema/storefront/index.ts
+ delete mode 100644 lib/resupply-db/src/schema/storefront/orders.ts
+ delete mode 100644 lib/resupply-db/src/schema/storefront/reminder-subscriptions.ts
+ delete mode 100644 lib/resupply-db/src/schema/storefront/usage-events.ts
+ create mode 100644 lib/resupply-db/src/types.ts
+ create mode 100644 lib/resupply-integrations-davinci-pas/package.json
+ create mode 100644 lib/resupply-integrations-davinci-pas/src/build-bundle.test.ts
+ create mode 100644 lib/resupply-integrations-davinci-pas/src/build-bundle.ts
+ create mode 100644 lib/resupply-integrations-davinci-pas/src/client.ts
+ create mode 100644 lib/resupply-integrations-davinci-pas/src/index.ts
+ create mode 100644 lib/resupply-integrations-davinci-pas/src/parse-claim-response.test.ts
+ create mode 100644 lib/resupply-integrations-davinci-pas/src/parse-claim-response.ts
+ create mode 100644 lib/resupply-integrations-davinci-pas/tsconfig.json
+ create mode 100644 lib/resupply-integrations-davinci-pas/vitest.config.ts
+ create mode 100644 lib/resupply-integrations-office-ally/package.json
+ create mode 100644 lib/resupply-integrations-office-ally/src/adapter.ts
+ create mode 100644 lib/resupply-integrations-office-ally/src/config.ts
+ create mode 100644 lib/resupply-integrations-office-ally/src/edi/270.ts
+ create mode 100644 lib/resupply-integrations-office-ally/src/edi/837p.test.ts
+ create mode 100644 lib/resupply-integrations-office-ally/src/edi/837p.ts
+ create mode 100644 lib/resupply-integrations-office-ally/src/edi/control-numbers.ts
+ create mode 100644 lib/resupply-integrations-office-ally/src/edi/parse-271.ts
+ create mode 100644 lib/resupply-integrations-office-ally/src/edi/parse-277ca.test.ts
+ create mode 100644 lib/resupply-integrations-office-ally/src/edi/parse-277ca.ts
+ create mode 100644 lib/resupply-integrations-office-ally/src/edi/parse-835.test.ts
+ create mode 100644 lib/resupply-integrations-office-ally/src/edi/parse-835.ts
+ create mode 100644 lib/resupply-integrations-office-ally/src/edi/parse-999.test.ts
+ create mode 100644 lib/resupply-integrations-office-ally/src/edi/parse-999.ts
+ create mode 100644 lib/resupply-integrations-office-ally/src/edi/parse-segments.ts
+ create mode 100644 lib/resupply-integrations-office-ally/src/index.ts
+ create mode 100644 lib/resupply-integrations-office-ally/src/transport/file.ts
+ create mode 100644 lib/resupply-integrations-office-ally/src/transport/sftp-inbound.test.ts
+ create mode 100644 lib/resupply-integrations-office-ally/src/transport/sftp-inbound.ts
+ create mode 100644 lib/resupply-integrations-office-ally/src/transport/sftp.ts
+ create mode 100644 lib/resupply-integrations-office-ally/src/transport/types.ts
+ create mode 100644 lib/resupply-integrations-office-ally/tsconfig.json
+ create mode 100644 lib/resupply-integrations-office-ally/vitest.config.ts
+ delete mode 100755 scripts/check-codegen.sh
+ delete mode 100755 scripts/check-codegen.sh.test
+ delete mode 100755 scripts/check-drizzle-drift.sh
+ delete mode 100755 scripts/check-drizzle-drift.sh.test
+ delete mode 100755 scripts/check-resupply-migration-pair.sh
+ delete mode 100755 scripts/check-resupply-migration-pair.sh.test
+==> Regenerate pnpm-lock.yaml from package.json
+Scope: all 24 workspace projects
+Lockfile is up to date, resolution step is skipped
+Packages: +234 -305
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++------------------------------------------------------------------------------------------------
+Downloading @rolldown/binding-linux-x64-gnu@1.0.1: 8.69 MB/8.69 MB, done
+Progress: resolved 234, reused 107, downloaded 127, added 213, done
+node_modules/.pnpm/esbuild@0.28.0/node_modules/esbuild: Running postinstall script, done in 91ms
+
+devDependencies:
+- @playwright/test 1.59.1
++ @playwright/test 1.60.0
+- @vitest/coverage-v8 3.2.4
++ @vitest/coverage-v8 4.1.6
+- eslint 10.2.1
++ eslint 10.4.0
+- globals 17.5.0
++ globals 17.6.0
+- typescript 5.9.3
++ typescript 6.0.3
+- typescript-eslint 8.59.2
++ typescript-eslint 8.59.3
+
+. preinstall$ node -e "for(const f of ['package-lock.json','yarn.lock'])if(require('fs').existsSync(f)){process.stderr.write('\n[preinstall] ERROR: '+f+' is in the rep…
+└─ Done in 48ms
+╭ Warning ───────────────────────────────────────────────────────────────────────────────────╮
+│                                                                                            │
+│   Ignored build scripts: argon2@0.44.0.                                                    │
+│   Run "pnpm approve-builds" to pick which dependencies should be allowed to run scripts.   │
+│                                                                                            │
+╰────────────────────────────────────────────────────────────────────────────────────────────╯
+Done in 10s using pnpm v10.33.2
+==> Push to GitHub
+Enumerating objects: 87, done.
+Counting objects: 100% (76/76), done.
+Delta compression using up to 8 threads
+Compressing objects: 100% (51/51), done.
+Writing objects: 100% (53/53), 2.76 MiB | 4.37 MiB/s, done.
+Total 53 (delta 34), reused 0 (delta 0), pack-reused 0 (from 0)
+remote: Resolving deltas: 100% (34/34), completed with 13 local objects.
+To https://github.com/kdeyarmin/PennFit
+   85b1b6c0..9189ba64  main -> main
+==> Done. Final state:
+9189ba64 (HEAD -> main, subrepl-3ppc2e03/main, subrepl-3ppc2e03/HEAD) Merge remote-tracking branch 'subrepl-3ppc2e03/main'
+4d636187 Update project with new image assets for improved visuals
+cd0fbf18 Add a new image asset to the project resources
+2da404a0 Add a promotional image to the asset library
+ab9e0194 Add a promotional image to the project assets
+    divergence (should be '0\t0'): 0    0

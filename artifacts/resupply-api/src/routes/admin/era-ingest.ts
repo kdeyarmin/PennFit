@@ -20,6 +20,7 @@ import { parse835 } from "@workspace/resupply-integrations-office-ally";
 import { reconcileEra } from "../../lib/billing/era-reconciler";
 import { logger } from "../../lib/logger";
 import { publishEvent } from "../../lib/webhooks/publisher";
+import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requireAdminOnly } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
@@ -37,7 +38,11 @@ const body = z
   })
   .strict();
 
-router.post("/admin/billing/era-ingest", requireAdminOnly, async (req, res) => {
+router.post(
+  "/admin/billing/era-ingest",
+  requireAdminOnly,
+  adminRateLimit({ name: "billing.era_ingest", preset: "sensitive" }),
+  async (req, res) => {
   const parsed = body.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({

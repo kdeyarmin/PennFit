@@ -49,26 +49,32 @@ esac
 
 mkdir -p "$HOOKS_DIR"
 
-SOURCE_HOOK="$REPO_ROOT/scripts/git-hooks/pre-commit"
-TARGET_HOOK="$HOOKS_DIR/pre-commit"
-
-if [[ ! -f "$SOURCE_HOOK" ]]; then
-  printf 'install-hooks: source hook missing at %s\n' "$SOURCE_HOOK" >&2
-  exit 1
-fi
-
-# If a non-managed pre-commit already exists (e.g. one a contributor
-# wrote themselves), back it up the first time we install instead of
-# silently overwriting it. We identify our own hook by a marker line
-# baked into scripts/git-hooks/pre-commit.
 MARKER="# managed by scripts/install-hooks.sh"
-if [[ -f "$TARGET_HOOK" ]] && ! grep -qF "$MARKER" "$TARGET_HOOK"; then
-  backup="$TARGET_HOOK.replaced.$(date +%s)"
-  mv "$TARGET_HOOK" "$backup"
-  printf 'install-hooks: existing pre-commit moved to %s\n' "$backup" >&2
-fi
 
-cp "$SOURCE_HOOK" "$TARGET_HOOK"
-chmod +x "$TARGET_HOOK"
+install_one() {
+  local name="$1"
+  local source_hook="$REPO_ROOT/scripts/git-hooks/$name"
+  local target_hook="$HOOKS_DIR/$name"
 
-printf 'install-hooks: pre-commit hook installed at %s\n' "$TARGET_HOOK"
+  if [[ ! -f "$source_hook" ]]; then
+    printf 'install-hooks: source hook missing at %s\n' "$source_hook" >&2
+    return 1
+  fi
+
+  # If a non-managed hook already exists (e.g. one a contributor
+  # wrote themselves), back it up the first time we install instead
+  # of silently overwriting it. Identify our own hook by a marker
+  # line baked into the source.
+  if [[ -f "$target_hook" ]] && ! grep -qF "$MARKER" "$target_hook"; then
+    local backup="$target_hook.replaced.$(date +%s)"
+    mv "$target_hook" "$backup"
+    printf 'install-hooks: existing %s moved to %s\n' "$name" "$backup" >&2
+  fi
+
+  cp "$source_hook" "$target_hook"
+  chmod +x "$target_hook"
+  printf 'install-hooks: %s hook installed at %s\n' "$name" "$target_hook"
+}
+
+install_one pre-commit
+install_one pre-push

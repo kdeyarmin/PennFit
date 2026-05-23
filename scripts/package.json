@@ -7,6 +7,8 @@
     "hello": "tsx ./src/hello.ts",
     "seed:shop": "tsx ./src/seed-stripe-products.ts",
     "auth:bootstrap-admin": "tsx ./src/auth-bootstrap-admin.ts",
+    "auth:set-admin-password": "tsx ./src/auth-set-admin-password.ts",
+    "preflight:prod": "tsx ./src/preflight-prod-env.ts",
     "test": "vitest run --passWithNoTests",
     "test:coverage": "vitest run --passWithNoTests --coverage",
     "typecheck": "tsc -p tsconfig.json --noEmit"

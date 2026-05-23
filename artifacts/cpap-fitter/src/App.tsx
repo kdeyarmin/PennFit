@@ -105,6 +105,11 @@ const ShopWishlist = lazy(() =>
 const AccountPage = lazy(() =>
   import("@/pages/account").then((m) => ({ default: m.AccountPage })),
 );
+const AccountBillingPage = lazy(() =>
+  import("@/pages/account-billing").then((m) => ({
+    default: m.AccountBillingPage,
+  })),
+);
 const SignInPage = lazy(() =>
   import("@/pages/sign-in").then((m) => ({ default: m.SignInPage })),
 );
@@ -130,6 +135,170 @@ const ReturnsPage = lazy(() =>
   import("@/pages/returns").then((m) => ({ default: m.ReturnsPage })),
 );
 
+// Educational long-form articles under /learn/*. Lazy-loaded — these are
+// shareable awareness pages, not entry points for the fitter flow, so
+// they shouldn't bloat the initial bundle. The marketing/contact flows
+// link out to these URLs directly.
+const LearnSleepApneaExplained = lazy(() =>
+  import("@/pages/learn-sleep-apnea-explained").then((m) => ({
+    default: m.LearnSleepApneaExplained,
+  })),
+);
+const LearnHealthRisks = lazy(() =>
+  import("@/pages/learn-health-risks").then((m) => ({
+    default: m.LearnHealthRisks,
+  })),
+);
+const LearnPapTherapyBenefits = lazy(() =>
+  import("@/pages/learn-pap-therapy-benefits").then((m) => ({
+    default: m.LearnPapTherapyBenefits,
+  })),
+);
+const LearnHowPapWorks = lazy(() =>
+  import("@/pages/learn-how-pap-works").then((m) => ({
+    default: m.LearnHowPapWorks,
+  })),
+);
+const LearnTherapyTypes = lazy(() =>
+  import("@/pages/learn-therapy-types").then((m) => ({
+    default: m.LearnTherapyTypes,
+  })),
+);
+const LearnSleepApneaHeartHealth = lazy(() =>
+  import("@/pages/learn-sleep-apnea-heart-health").then((m) => ({
+    default: m.LearnSleepApneaHeartHealth,
+  })),
+);
+const LearnFirstTwoWeeks = lazy(() =>
+  import("@/pages/learn-first-two-weeks").then((m) => ({
+    default: m.LearnFirstTwoWeeks,
+  })),
+);
+const LearnTravelingWithCpap = lazy(() =>
+  import("@/pages/learn-traveling-with-cpap").then((m) => ({
+    default: m.LearnTravelingWithCpap,
+  })),
+);
+const LearnCleaningRoutine = lazy(() =>
+  import("@/pages/learn-cleaning-routine").then((m) => ({
+    default: m.LearnCleaningRoutine,
+  })),
+);
+const LearnMythsDebunked = lazy(() =>
+  import("@/pages/learn-myths-debunked").then((m) => ({
+    default: m.LearnMythsDebunked,
+  })),
+);
+const LearnGlossary = lazy(() =>
+  import("@/pages/learn-glossary").then((m) => ({
+    default: m.LearnGlossary,
+  })),
+);
+const LearnInsuranceGuide = lazy(() =>
+  import("@/pages/learn-insurance-guide").then((m) => ({
+    default: m.LearnInsuranceGuide,
+  })),
+);
+
+// SEO landing — the "front door" mega-page that anchors the whole
+// educational library. Lazy because it's marketing content, not part
+// of any fitter/checkout flow.
+const SleepApnea101 = lazy(() =>
+  import("@/pages/sleep-apnea-101").then((m) => ({
+    default: m.SleepApnea101,
+  })),
+);
+
+// Specialty-audience articles — comorbidity and population-specific
+// long-form resources that round out the library for the people most
+// affected (women, diabetes, mental health, kids, seniors) plus the
+// "for partners & family" pair that drives shareable, conversion-
+// relevant content.
+const LearnSleepApneaWomen = lazy(() =>
+  import("@/pages/learn-sleep-apnea-women").then((m) => ({
+    default: m.LearnSleepApneaWomen,
+  })),
+);
+const LearnSleepApneaDiabetes = lazy(() =>
+  import("@/pages/learn-sleep-apnea-diabetes").then((m) => ({
+    default: m.LearnSleepApneaDiabetes,
+  })),
+);
+const LearnSleepApneaMentalHealth = lazy(() =>
+  import("@/pages/learn-sleep-apnea-mental-health").then((m) => ({
+    default: m.LearnSleepApneaMentalHealth,
+  })),
+);
+const LearnPediatricSleepApnea = lazy(() =>
+  import("@/pages/learn-pediatric-sleep-apnea").then((m) => ({
+    default: m.LearnPediatricSleepApnea,
+  })),
+);
+const LearnSleepApneaSeniors = lazy(() =>
+  import("@/pages/learn-sleep-apnea-seniors").then((m) => ({
+    default: m.LearnSleepApneaSeniors,
+  })),
+);
+const LearnPartnerGuide = lazy(() =>
+  import("@/pages/learn-partner-guide").then((m) => ({
+    default: m.LearnPartnerGuide,
+  })),
+);
+const LearnTalkingToALovedOne = lazy(() =>
+  import("@/pages/learn-talking-to-a-loved-one").then((m) => ({
+    default: m.LearnTalkingToALovedOne,
+  })),
+);
+
+// Troubleshooting cluster — focused, high-search-volume fix-it articles
+// for the issues that drive most first-month adherence drop-off.
+const LearnDryMouth = lazy(() =>
+  import("@/pages/learn-dry-mouth").then((m) => ({ default: m.LearnDryMouth })),
+);
+const LearnCpapBloating = lazy(() =>
+  import("@/pages/learn-cpap-bloating").then((m) => ({
+    default: m.LearnCpapBloating,
+  })),
+);
+const LearnMaskLeaks = lazy(() =>
+  import("@/pages/learn-mask-leaks").then((m) => ({
+    default: m.LearnMaskLeaks,
+  })),
+);
+const LearnCpapClaustrophobia = lazy(() =>
+  import("@/pages/learn-cpap-claustrophobia").then((m) => ({
+    default: m.LearnCpapClaustrophobia,
+  })),
+);
+const LearnNasalCongestion = lazy(() =>
+  import("@/pages/learn-nasal-congestion").then((m) => ({
+    default: m.LearnNasalCongestion,
+  })),
+);
+
+// Brand marketing pages — a hub plus per-brand spotlights (React Health
+// is our flagship line, ResMed and Fisher & Paykel round out the catalog).
+// Lazy-loaded because they're SEO landing surfaces, not entry points for
+// the fitter flow — they shouldn't bloat the initial bundle.
+const CpapMasks = lazy(() =>
+  import("@/pages/cpap-masks").then((m) => ({ default: m.CpapMasks })),
+);
+const CpapMasksReactHealth = lazy(() =>
+  import("@/pages/cpap-masks-react-health").then((m) => ({
+    default: m.CpapMasksReactHealth,
+  })),
+);
+const CpapMasksResmed = lazy(() =>
+  import("@/pages/cpap-masks-resmed").then((m) => ({
+    default: m.CpapMasksResmed,
+  })),
+);
+const CpapMasksFisherPaykel = lazy(() =>
+  import("@/pages/cpap-masks-fisher-paykel").then((m) => ({
+    default: m.CpapMasksFisherPaykel,
+  })),
+);
+
 // Admin auth pages — separate sign-in flow because admins post to
 // /resupply-api/auth/* (allowlist-gated) while customers post to
 // /api/auth/* (open self-signup). The shared `pf_session` cookie is
@@ -152,6 +321,11 @@ const AdminResetPasswordPage = lazy(() =>
 const AdminVerifyEmailPage = lazy(() =>
   import("@/pages/admin/verify-email").then((m) => ({
     default: m.VerifyEmailPage,
+  })),
+);
+const AdminChangePasswordPage = lazy(() =>
+  import("@/pages/admin/change-password").then((m) => ({
+    default: m.ChangePasswordPage,
   })),
 );
 
@@ -301,6 +475,13 @@ function GuardedAccount() {
   return <AccountPage />;
 }
 
+function GuardedAccountBilling() {
+  const { isSignedIn, isLoaded } = useShopIdentity();
+  if (!isLoaded) return <RouteFallback />;
+  if (!isSignedIn) return <Redirect to={`${basePath}/sign-in`} />;
+  return <AccountBillingPage />;
+}
+
 /**
  * Order-success has its own gating: the order confirmation lives in
  * sessionStorage (so a refresh after order doesn't re-submit) rather
@@ -346,6 +527,16 @@ function PatientRouter() {
           <Route path="/consent" component={Consent} />
           <Route path="/capture" component={GuardedCapture} />
           <Route path="/masks" component={Masks} />
+          <Route path="/cpap-masks" component={CpapMasks} />
+          <Route
+            path="/cpap-masks/react-health"
+            component={CpapMasksReactHealth}
+          />
+          <Route path="/cpap-masks/resmed" component={CpapMasksResmed} />
+          <Route
+            path="/cpap-masks/fisher-paykel"
+            component={CpapMasksFisherPaykel}
+          />
           <Route path="/how-it-works" component={HowItWorks} />
           <Route path="/faq" component={Faq} />
           <Route path="/learn" component={Learn} />
@@ -355,6 +546,82 @@ function PatientRouter() {
           />
           <Route path="/learn/device-setup" component={DeviceSetup} />
           <Route path="/learn/sleep-apnea-quiz" component={SleepApneaQuiz} />
+          <Route
+            path="/learn/sleep-apnea-explained"
+            component={LearnSleepApneaExplained}
+          />
+          <Route path="/learn/health-risks" component={LearnHealthRisks} />
+          <Route
+            path="/learn/pap-therapy-benefits"
+            component={LearnPapTherapyBenefits}
+          />
+          <Route path="/learn/how-pap-works" component={LearnHowPapWorks} />
+          <Route path="/learn/therapy-types" component={LearnTherapyTypes} />
+          <Route
+            path="/learn/sleep-apnea-heart-health"
+            component={LearnSleepApneaHeartHealth}
+          />
+          <Route
+            path="/learn/first-two-weeks"
+            component={LearnFirstTwoWeeks}
+          />
+          <Route
+            path="/learn/traveling-with-cpap"
+            component={LearnTravelingWithCpap}
+          />
+          <Route
+            path="/learn/cleaning-routine"
+            component={LearnCleaningRoutine}
+          />
+          <Route
+            path="/learn/myths-debunked"
+            component={LearnMythsDebunked}
+          />
+          <Route path="/learn/glossary" component={LearnGlossary} />
+          <Route
+            path="/learn/insurance-guide"
+            component={LearnInsuranceGuide}
+          />
+          <Route path="/sleep-apnea-101" component={SleepApnea101} />
+          <Route
+            path="/learn/sleep-apnea-women"
+            component={LearnSleepApneaWomen}
+          />
+          <Route
+            path="/learn/sleep-apnea-diabetes"
+            component={LearnSleepApneaDiabetes}
+          />
+          <Route
+            path="/learn/sleep-apnea-mental-health"
+            component={LearnSleepApneaMentalHealth}
+          />
+          <Route
+            path="/learn/pediatric-sleep-apnea"
+            component={LearnPediatricSleepApnea}
+          />
+          <Route
+            path="/learn/sleep-apnea-seniors"
+            component={LearnSleepApneaSeniors}
+          />
+          <Route
+            path="/learn/partner-guide"
+            component={LearnPartnerGuide}
+          />
+          <Route
+            path="/learn/talking-to-a-loved-one"
+            component={LearnTalkingToALovedOne}
+          />
+          <Route path="/learn/dry-mouth" component={LearnDryMouth} />
+          <Route path="/learn/cpap-bloating" component={LearnCpapBloating} />
+          <Route path="/learn/mask-leaks" component={LearnMaskLeaks} />
+          <Route
+            path="/learn/cpap-claustrophobia"
+            component={LearnCpapClaustrophobia}
+          />
+          <Route
+            path="/learn/nasal-congestion"
+            component={LearnNasalCongestion}
+          />
           <Route path="/comfort-guarantee" component={ComfortGuaranteePage} />
           <Route path="/insurance" component={Insurance} />
           <Route path="/insurance/estimate" component={InsuranceEstimate} />
@@ -373,6 +640,7 @@ function PatientRouter() {
           <Route path="/shop/orders" component={GuardedShopOrders} />
           <Route path="/shop/wishlist" component={ShopWishlist} />
           <Route path="/account" component={GuardedAccount} />
+          <Route path="/account/billing" component={GuardedAccountBilling} />
           <Route path="/reminders" component={Reminders} />
           <Route path="/reminders/manage" component={RemindersManage} />
           <Route path="/privacy" component={Privacy} />
@@ -399,9 +667,10 @@ function PatientRouter() {
  * admin sidebar shell). The admin pages mount inside <AdminShell> which
  * does the auth + allowlist gate.
  *
- * Wouter's nested-routing trick: catching `/sign-in/:rest*` lets the auth provider
+ * Wouter's nested-routing trick: catching `/sign-in/*` lets the auth provider
  * own everything below /sign-in (e.g. /sign-in/factor-one) without us
- * pre-defining each step.
+ * pre-defining each step. (regexparam 3.x parses `:rest*` as a single-
+ * segment param literally named `rest*`, not as a wildcard — use `*`.)
  */
 function TopRouter() {
   return (
@@ -414,9 +683,9 @@ function TopRouter() {
     <Suspense fallback={<RouteFallback />}>
       <Switch>
         <Route path="/sign-in" component={SignInPage} />
-        <Route path="/sign-in/:rest*" component={SignInPage} />
+        <Route path="/sign-in/*" component={SignInPage} />
         <Route path="/sign-up" component={SignUpPage} />
-        <Route path="/sign-up/:rest*" component={SignUpPage} />
+        <Route path="/sign-up/*" component={SignUpPage} />
         <Route path="/forgot-password" component={ForgotPasswordPage} />
         <Route path="/reset-password" component={ResetPasswordPage} />
         <Route path="/verify-email" component={VerifyEmailPage} />
@@ -432,8 +701,8 @@ function TopRouter() {
         <Route path="/resupply">
           <LegacyResupplyRedirect rest="" />
         </Route>
-        <Route path="/resupply/:rest*">
-          {(params) => <LegacyResupplyRedirect rest={params["rest*"] ?? ""} />}
+        <Route path="/resupply/*">
+          {(params) => <LegacyResupplyRedirect rest={params["*"] ?? ""} />}
         </Route>
 
         {/*
@@ -455,8 +724,20 @@ function TopRouter() {
           component={AdminResetPasswordPage}
         />
         <Route path="/admin/verify-email" component={AdminVerifyEmailPage} />
+        {/*
+          /admin/change-password is mounted OUTSIDE the AdminConsoleRoute
+          gate. ConsoleRoute redirects forced-rotation users here, and
+          having it ungated by the allowlist check means a freshly
+          invited admin can land here even before /resupply-api/admin/me
+          would let them through — the change-password endpoint itself
+          only needs a valid session.
+        */}
+        <Route
+          path="/admin/change-password"
+          component={AdminChangePasswordPage}
+        />
         <Route path="/admin" component={AdminConsoleRoute} />
-        <Route path="/admin/:rest*" component={AdminConsoleRoute} />
+        <Route path="/admin/*" component={AdminConsoleRoute} />
 
         {/* Everything else falls through to the patient experience. */}
         <Route component={PatientRouter} />

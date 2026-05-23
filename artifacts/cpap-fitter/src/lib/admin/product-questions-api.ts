@@ -1,6 +1,8 @@
 // Hand-rolled fetch wrappers for the admin product-question
 // moderation endpoints (Phase A.5 follow-up).
 
+import { csrfHeader } from "../csrf";
+
 export type AdminProductQuestionStatus = "pending" | "answered" | "rejected";
 
 export interface AdminProductQuestion {
@@ -62,7 +64,7 @@ export async function answerAdminProductQuestion(
     {
       method: "PATCH",
       credentials: "include",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...csrfHeader() },
       body: JSON.stringify({ action: "answer", answerBody }),
     },
   );
@@ -89,7 +91,7 @@ export async function rejectAdminProductQuestion(
     {
       method: "PATCH",
       credentials: "include",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...csrfHeader() },
       body: JSON.stringify({ action: "reject", moderationNote }),
     },
   );

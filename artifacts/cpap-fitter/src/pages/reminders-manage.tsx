@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { Link, useSearch } from "wouter";
+import React, { useEffect, useState } from "react";
+import { Link } from "wouter";
 import {
   useGetReminderSubscription,
   getGetReminderSubscriptionQueryKey,
@@ -64,22 +64,37 @@ function buildState(
 
 export function RemindersManage() {
   useDocumentTitle(PAGE_TITLE);
-  const search = useSearch();
-  const token = useMemo(
-    () => new URLSearchParams(search).get("token") ?? "",
-    [search],
-  );
+  // Read the token ONCE on mount, then strip it from the URL so the
+  // single-use manage secret doesn't persist in browser history,
+  // autocomplete, or shareable URLs. Subsequent updates / unsubscribe
+  // calls reuse the captured token rather than re-reading window.location.
+  const [token] = useState(() => {
+    if (typeof window === "undefined") return "";
+    return new URLSearchParams(window.location.search).get("token") ?? "";
+  });
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const params = new URLSearchParams(window.location.search);
+      if (!params.has("token")) return;
+      params.delete("token");
+      const qs = params.toString();
+      const next =
+        window.location.pathname +
+        (qs ? `?${qs}` : "") +
+        window.location.hash;
+      window.history.replaceState(null, "", next);
+    } catch {
+      // History API not available: no-op.
+    }
+  }, []);
 
-  // The Orval-generated hook's typed `query` option requires `queryKey`
-  // even though the runtime defaults it from the params — pass it
-  // explicitly via the helper so TypeScript is satisfied.
-  const { data, isLoading, error } = useGetReminderSubscription(
-    { token },
-    {
-      query: {
-        enabled: token.length > 0,
-        queryKey: getGetReminderSubscriptionQueryKey({ token }),
-      },
+  const params = { token };
+
+  const { data, isLoading, error } = useGetReminderSubscription(params, {
+    query: {
+      enabled: token.length > 0,
+      queryKey: getGetReminderSubscriptionQueryKey(params),
     },
   );
   const update = useUpdateReminderSubscription();
@@ -114,9 +129,8 @@ export function RemindersManage() {
               </div>
               <CardTitle>Manage link missing</CardTitle>
               <CardDescription>
-                This page needs the link from your subscription confirmation
-                email. If you've lost it, just sign up again with the same email
-                — we'll send a fresh manage link.
+                Use the manage link from your subscription confirmation
+                email to open this page.
               </CardDescription>
             </CardHeader>
             <CardContent className="text-center">
@@ -255,6 +269,17 @@ export function RemindersManage() {
   }
 
   function onUnsubscribe() {
+    // Confirmation guard before the destructive call — a misclick on
+    // "Unsubscribe from all reminders" would otherwise wipe the
+    // user's entire setup with no recovery path other than re-creating
+    // it from /reminders.
+    if (
+      !window.confirm(
+        "Stop all reminders for this email? You'll need to sign up again from /reminders if you change your mind.",
+      )
+    ) {
+      return;
+    }
     unsub.mutate(
       { params: { token } },
       { onSuccess: () => setUnsubscribed(true) },
@@ -394,13 +419,26 @@ export function RemindersManage() {
               </Alert>
             )}
 
+            {unsub.error && (
+              <Alert
+                variant="destructive"
+                className="mt-4"
+                data-testid="reminders-unsubscribe-error"
+              >
+                <AlertDescription>
+                  Could not unsubscribe. Try again in a moment, or contact
+                  support if it keeps failing.
+                </AlertDescription>
+              </Alert>
+            )}
+
             <div className="flex flex-wrap items-center gap-3 mt-6">
               <Button
                 onClick={onSave}
                 disabled={update.isPending}
                 data-testid="button-save-manage"
               >
-                {update.isPending ? "Saving..." : "Save changes"}
+                {update.isPending ? "Saving…" : "Save changes"}
               </Button>
               <Button
                 variant="outline"
@@ -409,7 +447,7 @@ export function RemindersManage() {
                 data-testid="button-unsubscribe"
               >
                 {unsub.isPending
-                  ? "Unsubscribing..."
+                  ? "Unsubscribing…"
                   : "Unsubscribe from all reminders"}
               </Button>
             </div>

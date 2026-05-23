@@ -35,6 +35,7 @@ import {
   buildSessionCookie,
   appendSetCookie,
 } from "../cookies";
+import { rehashPasswordPreservingProvenance } from "../credential-writes";
 import { checkCsrf } from "../csrf";
 import { normalizeEmail } from "../email";
 import {
@@ -45,6 +46,7 @@ import {
 import { mintMfaChallengeToken } from "../mfa-challenge";
 import { checkLoginRateLimit, DEFAULT_RATE_LIMIT } from "../rate-limit";
 import { issueWindow } from "../session";
+import { ADMIN_PASSWORD_TTL_MS } from "../team-invite";
 import { issueToken } from "../token";
 
 import { authError } from "./responses";
@@ -61,6 +63,29 @@ const GENERIC_FAIL_MESSAGE = "Invalid email or password.";
 // password".
 function genericFail(res: Response, status = 401) {
   return authError(res, status, "invalid_credentials", GENERIC_FAIL_MESSAGE);
+}
+
+// Dummy hash used to equalize timing on the "no such user" branch
+// with the real "user exists, wrong password" branch. We hash a
+// throwaway value the FIRST time the no-user path fires, using the
+// same default argon2id parameters real credentials are stored
+// with. A prior implementation used a hardcoded hash with weak
+// parameters (m=1024,t=1,p=1) which verified in ~7ms vs ~250ms for
+// real credentials — a measurable side channel for user
+// enumeration. Memoizing the Promise means we pay the ~250ms cost
+// exactly once per process and every subsequent miss verifies in
+// approximately the same time as a hit.
+let dummyHashPromise: Promise<string> | null = null;
+function getDummyHashForTimingEqualization(
+  params: Parameters<typeof hashPassword>[1],
+): Promise<string> {
+  if (!dummyHashPromise) {
+    dummyHashPromise = hashPassword(
+      "timing-equalization-placeholder-not-a-real-credential",
+      params,
+    );
+  }
+  return dummyHashPromise;
 }
 
 /** Hash the User-Agent header (sha256). Stored alongside sessions. */
@@ -150,9 +175,7 @@ export function makeSignInHandler(deps: AuthDeps) {
     if (!user) {
       await verifyPassword(
         parsed.data.password,
-        // Cheap argon2id placeholder — not a real credential. Verify
-        // will fail and we treat it as "wrong password".
-        "$argon2id$v=19$m=1024,t=1,p=1$YWFhYWFhYWFhYWFhYWFhYQ$xx",
+        await getDummyHashForTimingEqualization(deps.passwordHashParams),
       );
       await deps.repo.recordLoginAttempt({
         emailLower,
@@ -198,6 +221,51 @@ export function makeSignInHandler(deps: AuthDeps) {
       return;
     }
 
+    // Refuse must_change credentials whose owner never signed in
+    // within ADMIN_PASSWORD_TTL_MS. The team-invite "Set their
+    // password for them" path stamps `set_by_admin_at` alongside
+    // must_change=true; the forced-rotation gate only fires AFTER
+    // sign-in, so without this check an operator-typed password
+    // would live on a never-signed-in account forever. We run this
+    // BEFORE the verify call so the response timing doesn't leak
+    // "the password was right, just expired" vs "the password was
+    // wrong" — both paths return the same generic message after a
+    // dummy verify above (for missing-user) or a real verify (for
+    // wrong-password), and this expired branch returns BEFORE
+    // doing either. That matches the existing posture for locked /
+    // revoked accounts (same generic 401 above), with the one
+    // intentional exception that we use a distinct message here so
+    // the user knows to ask for a re-invite instead of trying to
+    // remember the right password.
+    if (cred.mustChange && cred.setByAdminAt) {
+      const ageMs = now().getTime() - cred.setByAdminAt.getTime();
+      if (ageMs > ADMIN_PASSWORD_TTL_MS) {
+        await deps.repo.recordLoginAttempt({
+          emailLower,
+          ip,
+          success: false,
+        });
+        void deps.audit({
+          action: "auth.sign_in_failed",
+          adminEmail: emailLower,
+          adminUserId: user.id,
+          ip,
+          metadata: {
+            reason: "admin_password_expired",
+            ageMs,
+            ttlMs: ADMIN_PASSWORD_TTL_MS,
+          },
+        });
+        authError(
+          res,
+          403,
+          "invite_expired",
+          "This temporary password has expired. Please ask your administrator to re-invite you.",
+        );
+        return;
+      }
+    }
+
     const verify = await verifyPasswordCredential(parsed.data.password, cred);
     if (!verify.ok) {
       await deps.repo.recordLoginAttempt({
@@ -229,7 +297,11 @@ export function makeSignInHandler(deps: AuthDeps) {
           parsed.data.password,
           deps.passwordHashParams,
         );
-        await deps.repo.upsertCredential({
+        // Algorithm upgrade only — deliberately preserve the
+        // existing set_by_admin_at so a stale operator-typed
+        // credential doesn't get its expiry clock reset just
+        // because we rehashed it.
+        await rehashPasswordPreservingProvenance(deps.repo, {
           userId: user.id,
           passwordHash: upgraded,
           mustChange: cred.mustChange,

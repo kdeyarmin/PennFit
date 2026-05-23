@@ -10,9 +10,17 @@
 //      validates the path + claims the pending session, then hands the
 //      socket here.
 //   5. We open the OpenAI Realtime client, build the bridge, wire the
-//      audio sink, and run until either side closes.
-//   6. On close: persist final transcript turns (already streamed),
-//      mark the conversation `closed`, audit `voice.call.completed`.
+//      audio sink, and (optionally) open a parallel Deepgram Nova-3
+//      transcription session that sees the same caller-side audio.
+//   6. On close:
+//      a. persist final transcript turns (already streamed)
+//      b. mark the conversation `closed`, audit `voice.call.completed`
+//      c. write the Deepgram-side transcript as `voice.call.deepgram_transcript`
+//         (when Deepgram was enabled)
+//      d. fire-and-forget Claude post-call summary →
+//         `voice.call.summary` audit row.
+//      Steps (c) and (d) are detached from the WS close so a flaky
+//      vendor call NEVER delays hangup.
 //
 // What this module is NOT responsible for:
 //   - Signature validation (the upgrade handler does it before we get
@@ -31,11 +39,13 @@ import {
 } from "@workspace/resupply-db";
 import {
   buildSystemPrompt,
+  createDeepgramClient,
   OPENAI_TOOL_DESCRIPTORS,
   PROMPT_VERSION,
   RealtimeClient,
   TOOL_NAMES,
   VoiceBridge,
+  type DeepgramLiveSession,
   type MediaStreamSink,
   type TranscriptTurn,
 } from "@workspace/resupply-ai";
@@ -45,8 +55,14 @@ import {
   parseTwilioFrame,
 } from "@workspace/resupply-telecom";
 
+import { getAnthropicClient } from "../llm-provider";
 import { logger } from "../logger";
 import type { PendingSessionEntry } from "./pending-sessions";
+import {
+  summarizePostCall,
+  type PostCallSummary,
+  type TurnForSummary,
+} from "./post-call-summary";
 import { createVoiceToolDispatcher } from "./tools-impl";
 import { readVoiceConfigOrThrow } from "./voice-config";
 
@@ -71,6 +87,14 @@ export async function handleVoiceWsConnection(
   let streamSid: string | null = null;
   let twilioCallSid: string | null = pending.twilioCallSid ?? null;
   let closed = false;
+
+  // Accumulate finalized transcript turns from the bridge so the
+  // post-call summarizer can see the whole arc of the conversation
+  // after hangup. This is in-memory only — it does NOT touch the DB
+  // (those rows are persisted independently in persistTranscript).
+  // Capped so a stuck call can't grow unbounded.
+  const turnHistory: TurnForSummary[] = [];
+  const MAX_RETAINED_TURNS = 200;
 
   // Sink Twilio side. We only know `streamSid` after the `start`
   // frame, so audio deltas before that are silently dropped (the
@@ -124,6 +148,76 @@ export async function handleVoiceWsConnection(
 
   const bridge = new VoiceBridge({ client, sink, dispatcher });
 
+  // Optional Deepgram parallel transcription. When DEEPGRAM_API_KEY
+  // is set, we run Nova-3 on the caller-side audio in parallel with
+  // the OpenAI Realtime model's built-in STT. The model continues to
+  // drive the conversation; Deepgram's higher-accuracy transcript
+  // gets aggregated and written to the audit log on hangup for the
+  // medical record and the post-call summarizer.
+  let deepgramSession: DeepgramLiveSession | null = null;
+  const deepgramTurns: string[] = [];
+  if (config.deepgramApiKey) {
+    try {
+      const dg = createDeepgramClient({ apiKey: config.deepgramApiKey });
+      deepgramSession = dg.createLiveSession({
+        // µ-law @ 8kHz mono is what Twilio Media Streams natively
+        // emits, so we send the audio bytes straight through with no
+        // transcoding.
+        encoding: "mulaw",
+        sampleRate: 8000,
+        channels: 1,
+        interimResults: false,
+        smartFormat: true,
+        punctuate: true,
+        // Generous endpointing window — phones leave a beat of silence
+        // when a caller pauses to think; we don't want to split that
+        // utterance.
+        endpointing: 1200,
+      });
+      deepgramSession.onTranscript((ev) => {
+        if (!ev.isFinal) return;
+        const text = ev.transcript.trim();
+        if (text.length === 0) return;
+        // Ring buffer: keep the most recent turns. The end of a long
+        // call carries more handoff / clinical signal than the open,
+        // so dropping oldest-first preserves what the summariser
+        // cares about.
+        if (deepgramTurns.length >= MAX_RETAINED_TURNS) {
+          deepgramTurns.shift();
+        }
+        deepgramTurns.push(text);
+      });
+      deepgramSession.onError((err) => {
+        logger.warn(
+          {
+            event: "voice_deepgram_error",
+            code: err.code,
+            message: err.message,
+            conversationId: pending.conversationId,
+          },
+          "voice deepgram error (parallel transcription degraded)",
+        );
+      });
+      logger.info(
+        {
+          event: "voice_deepgram_session_opened",
+          conversationId: pending.conversationId,
+        },
+        "voice: deepgram parallel transcription enabled",
+      );
+    } catch (err) {
+      logger.warn(
+        {
+          event: "voice_deepgram_init_failed",
+          err: serializeErr(err),
+          conversationId: pending.conversationId,
+        },
+        "voice deepgram init failed (call continues without parallel transcription)",
+      );
+      deepgramSession = null;
+    }
+  }
+
   bridge.on("session.opened", () => {
     logger.info(
       { event: "voice_session_opened", conversationId: pending.conversationId },
@@ -132,6 +226,14 @@ export async function handleVoiceWsConnection(
   });
 
   bridge.on("transcript.turn", (turn) => {
+    // Ring buffer: keep the most recent turns. The end of a long
+    // call carries more handoff / clinical signal than the open,
+    // so dropping oldest-first preserves what the summariser
+    // cares about.
+    if (turnHistory.length >= MAX_RETAINED_TURNS) {
+      turnHistory.shift();
+    }
+    turnHistory.push({ source: turn.source, text: turn.text });
     void persistTranscript(supabase, pending.conversationId, turn).catch((err) => {
       logger.error(
         {
@@ -204,6 +306,41 @@ export async function handleVoiceWsConnection(
         "voice conversation finalise failed",
       );
     });
+    // Close Deepgram cleanly (sends a CloseStream frame; the
+    // accumulated final transcripts in `deepgramTurns` are already
+    // captured). Failures here are non-fatal — the session would
+    // close anyway when the parent WS closes.
+    if (deepgramSession) {
+      try {
+        deepgramSession.close();
+      } catch {
+        // best-effort
+      }
+    }
+    // Write the Deepgram transcript to the audit log as its own row
+    // when we have one. The post-call summary uses the SAME turn
+    // history below, but the raw Deepgram-side transcript is a
+    // distinct artifact worth keeping for clinician review.
+    if (deepgramTurns.length > 0) {
+      void writeDeepgramAuditTranscript(
+        pending.conversationId,
+        twilioCallSid,
+        deepgramTurns,
+      );
+    }
+    // Fire-and-forget post-call summarization. Runs against Claude
+    // Sonnet 4.6 when ANTHROPIC_API_KEY is set; otherwise no-op (the
+    // helper returns null). A flaky model call must NEVER delay
+    // hangup, so the promise is detached and errors only land in the
+    // log. Result is persisted to the audit log via a
+    // `voice.call.summary` action.
+    void runPostCallSummary({
+      conversationId: pending.conversationId,
+      twilioCallSid,
+      practiceName: config.practiceName ?? "PennPaps",
+      endReason: info.reason,
+      turns: turnHistory,
+    });
     try {
       ws.close(1000, "session-closed");
     } catch {
@@ -226,6 +363,19 @@ export async function handleVoiceWsConnection(
         return;
       case "media":
         bridge.forwardCallerAudio(frame.media.payload);
+        // Tee the same caller audio into Deepgram when configured.
+        // Both consumers see the identical byte stream; the model side
+        // still drives the conversation. Decoding here is the cheap
+        // base64 → bytes step — no audio transcoding.
+        if (deepgramSession) {
+          try {
+            const audioBytes = Buffer.from(frame.media.payload, "base64");
+            deepgramSession.sendAudio(audioBytes);
+          } catch {
+            // best-effort; a parallel transcription drop must not
+            // affect the call itself
+          }
+        }
         return;
       case "stop":
         bridge.close("twilio-stop");
@@ -313,6 +463,125 @@ async function finalizeConversation(
       prompt_version: PROMPT_VERSION,
     },
   });
+}
+
+/**
+ * Persist the Deepgram-side transcript to the audit log as a single
+ * `voice.call.deepgram_transcript` row. We log the FULL transcript
+ * (the @workspace/resupply-audit metadata sanitizer enforces size
+ * caps; if a long call overflows, the sanitizer truncates rather
+ * than rejecting). One row per call is the right granularity — the
+ * model's per-turn `messages` rows already give us turn-level detail
+ * via the OpenAI transcripts; Deepgram is the audit-grade backup.
+ *
+ * Always resolves — never throws. A failed audit write here would be
+ * a degraded audit trail, not a broken call.
+ */
+async function writeDeepgramAuditTranscript(
+  conversationId: string,
+  twilioCallSid: string | null,
+  deepgramTurns: ReadonlyArray<string>,
+): Promise<void> {
+  try {
+    const fullTranscript = deepgramTurns.join(" ");
+    await logAudit({
+      action: "voice.call.deepgram_transcript",
+      targetTable: "conversations",
+      targetId: conversationId,
+      metadata: {
+        twilio_call_sid: twilioCallSid ?? null,
+        prompt_version: PROMPT_VERSION,
+        transcript: fullTranscript,
+        turn_count: deepgramTurns.length,
+        char_count: fullTranscript.length,
+      },
+    });
+  } catch (err) {
+    logger.warn(
+      {
+        event: "voice_deepgram_audit_failed",
+        err: serializeErr(err),
+        conversationId,
+      },
+      "voice: deepgram transcript audit failed",
+    );
+  }
+}
+
+interface RunPostCallSummaryInput {
+  conversationId: string;
+  twilioCallSid: string | null;
+  practiceName: string;
+  endReason: string;
+  turns: ReadonlyArray<TurnForSummary>;
+}
+
+/**
+ * Detached post-call summarization. Always resolves — never throws —
+ * because it runs after the WS is already closed and there's no
+ * caller to surface errors to. Errors land in the application log;
+ * a missing summary is preferable to delaying call cleanup.
+ *
+ * Audit posture: writes ONE row (`voice.call.summary`) per call. The
+ * row's metadata carries the parsed JSON. The audit metadata
+ * sanitizer (PHI denylist + size cap + depth cap in
+ * @workspace/resupply-audit) is the last line of defense against
+ * model-volunteered PHI making it into the audit log; we rely on it
+ * here instead of duplicating the same redaction in this file.
+ */
+async function runPostCallSummary(
+  input: RunPostCallSummaryInput,
+): Promise<void> {
+  const client = getAnthropicClient();
+  if (!client) {
+    // Nothing to do — summary is opt-in on ANTHROPIC_API_KEY.
+    return;
+  }
+  try {
+    const summary: PostCallSummary | null = await summarizePostCall({
+      client,
+      turns: input.turns,
+      practiceName: input.practiceName,
+      endReason: input.endReason,
+      conversationId: input.conversationId,
+    });
+    if (!summary) return;
+    await logAudit({
+      action: "voice.call.summary",
+      targetTable: "conversations",
+      targetId: input.conversationId,
+      metadata: {
+        twilio_call_sid: input.twilioCallSid ?? null,
+        prompt_version: PROMPT_VERSION,
+        outcome: summary.outcome,
+        sentiment: summary.sentiment,
+        concerns_count: summary.concerns.length,
+        concerns: summary.concerns,
+        follow_ups_count: summary.followUps.length,
+        follow_ups: summary.followUps,
+        recommends_handoff: summary.recommendsHandoff,
+        complete: summary.complete,
+      },
+    });
+    logger.info(
+      {
+        event: "voice_call_summary_ok",
+        conversationId: input.conversationId,
+        sentiment: summary.sentiment,
+        recommendsHandoff: summary.recommendsHandoff,
+      },
+      "voice: post-call summary written",
+    );
+  } catch (err) {
+    logger.warn(
+      {
+        event: "voice_call_summary_failed",
+        err: serializeErr(err),
+        conversationId: input.conversationId,
+      },
+      "voice: post-call summary failed",
+    );
+  }
 }
 
 function serializeErr(err: unknown): { name: string; message?: string } {

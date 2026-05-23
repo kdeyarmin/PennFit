@@ -19,6 +19,7 @@ import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { buildClaimFromFulfillment } from "../../lib/billing/claim-builder";
 import { logger } from "../../lib/logger";
+import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
@@ -44,6 +45,7 @@ router.post(
   // CSRs working the billing queue need this; gate behind the same
   // permission as the other claim writes.
   requirePermission("conversations.manage"),
+  adminRateLimit({ name: "fulfillments.create_claim", preset: "mutation" }),
   async (req, res) => {
     const idParsed = params.safeParse(req.params);
     if (!idParsed.success) {

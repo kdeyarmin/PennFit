@@ -29,6 +29,7 @@ import {
   screenSubject,
 } from "../../lib/compliance/oig-leie-screener";
 import { logger } from "../../lib/logger";
+import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
@@ -54,6 +55,7 @@ const runBody = z
 router.post(
   "/admin/compliance/oig-leie-screenings/run",
   requirePermission("compliance.resolve"),
+  adminRateLimit({ name: "oig_leie_screenings.run", preset: "mutation" }),
   async (req, res) => {
     const parsed = runBody.safeParse(req.body);
     if (!parsed.success) {

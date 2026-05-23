@@ -19,9 +19,10 @@ import {
 
 import { logger } from "../../lib/logger";
 import {
-  requireAdmin,
   requireAdminOnly,
+  requirePermission,
 } from "../../middlewares/requireAdmin";
+import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 
 const router: IRouter = Router();
 
@@ -99,7 +100,10 @@ function rowToApi(r: Row) {
   };
 }
 
-router.get("/admin/claim-templates", requireAdmin, async (req, res) => {
+router.get(
+  "/admin/claim-templates",
+  requirePermission("admin.tools.manage"),
+  async (req, res) => {
   const supabase = getSupabaseServiceRoleClient();
   let query = supabase
     .schema("resupply")
@@ -123,7 +127,11 @@ router.get("/admin/claim-templates", requireAdmin, async (req, res) => {
   res.json({ templates: (data ?? []).map(rowToApi) });
 });
 
-router.post("/admin/claim-templates", requireAdminOnly, async (req, res) => {
+router.post(
+  "/admin/claim-templates",
+  requireAdminOnly,
+  adminRateLimit({ name: "claim_templates.create", preset: "sensitive" }),
+  async (req, res) => {
   const parsed = upsertBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({
@@ -176,6 +184,7 @@ router.post("/admin/claim-templates", requireAdminOnly, async (req, res) => {
 router.patch(
   "/admin/claim-templates/:id",
   requireAdminOnly,
+  adminRateLimit({ name: "claim_templates.update", preset: "sensitive" }),
   async (req, res) => {
     const idParsed = idParam.safeParse(req.params);
     if (!idParsed.success) {
@@ -231,8 +240,9 @@ router.patch(
 
 // ── APPLY TEMPLATE TO A DRAFT CLAIM ─────────────────────────────────
 router.post(
-  "/patients/:id/insurance-claims/:claimId/apply-template",
-  requireAdmin,
+  "/admin/patients/:id/insurance-claims/:claimId/apply-template",
+  requirePermission("patients.update"),
+  adminRateLimit({ name: "claim_templates.apply", preset: "mutation" }),
   async (req, res) => {
     const idParsed = applyParams.safeParse(req.params);
     if (!idParsed.success) {
@@ -284,7 +294,7 @@ router.post(
       return;
     }
 
-    const lines = template.lines_json.lines;
+    const lines = template.lines_json.lines as TemplateLine[];
     const lineRows = lines.map((l) => ({
       claim_id: claim.id,
       hcpcs_code: l.hcpcs,

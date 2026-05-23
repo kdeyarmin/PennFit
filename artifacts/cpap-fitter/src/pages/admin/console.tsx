@@ -44,6 +44,8 @@ import { AdminFollowupsPage } from "@/pages/admin/admin-followups";
 import { AdminTodayPage } from "@/pages/admin/admin-today";
 import { AdminProvidersPage } from "@/pages/admin/admin-providers";
 import { AdminInboundFaxesPage } from "@/pages/admin/admin-inbound-faxes";
+import { AdminInboundReferralsPage } from "@/pages/admin/admin-inbound-referrals";
+import { AdminPrescriptionRequestsPage } from "@/pages/admin/admin-prescription-requests";
 import { AdminEquipmentRecallsPage } from "@/pages/admin/admin-equipment-recalls";
 import { AdminAnalyticsPage } from "@/pages/admin/admin-analytics";
 import { AdminCompliancePage } from "@/pages/admin/admin-compliance";
@@ -56,6 +58,7 @@ import { AdminShopSubscriptionsPage } from "@/pages/admin/admin-shop-subscriptio
 import { AdminTeamPage } from "@/pages/admin/admin-team";
 import { AdminOperationsPage } from "@/pages/admin/admin-operations";
 import { AdminReportsPage } from "@/pages/admin/admin-reports";
+import { AdminControlCenterPage } from "@/pages/admin/admin-control-center";
 import { AdminProductivityPage } from "@/pages/admin/admin-productivity";
 import { AdminBackordersPage } from "@/pages/admin/admin-backorders";
 import { AdminClosuresPage } from "@/pages/admin/admin-closures";
@@ -68,10 +71,29 @@ import { AdminRuleTesterPage } from "@/pages/admin/admin-rule-tester";
 import { AdminSettingsPage } from "@/pages/admin/admin-settings";
 import { AdminShopInventoryPage } from "@/pages/admin/admin-shop-inventory";
 import { AdminShopProductNewPage } from "@/pages/admin/admin-shop-product-new";
+import { AdminShopInventoryReconcilePage } from "@/pages/admin/admin-shop-inventory-reconcile";
+import { AdminShopInventoryReconcileEditPage } from "@/pages/admin/admin-shop-inventory-reconcile-edit";
 import { AdminShopAbandonedCartsPage } from "@/pages/admin/admin-shop-abandoned-carts";
 import { AdminShopBackInStockPage } from "@/pages/admin/admin-shop-back-in-stock";
 import { AdminInsuranceLeadsPage } from "@/pages/admin/admin-insurance-leads";
+import { AdminFitterLeadsPage } from "@/pages/admin/admin-fitter-leads";
 import { AdminInsuranceClaimsPage } from "@/pages/admin/admin-insurance-claims";
+import { AdminBillingHubPage } from "@/pages/admin/admin-billing-hub";
+import { AdminBillingAiQueuePage } from "@/pages/admin/admin-billing-ai-queue";
+import { AdminBillingAgingPage } from "@/pages/admin/admin-billing-aging";
+import { AdminBillingDenialsPage } from "@/pages/admin/admin-billing-denials";
+import { AdminBillingEraPage } from "@/pages/admin/admin-billing-era";
+import { AdminBillingEligibilityPage } from "@/pages/admin/admin-billing-eligibility";
+import { AdminBillingPriorAuthsPage } from "@/pages/admin/admin-billing-prior-auths";
+import { AdminBillingConfigHubPage } from "@/pages/admin/admin-billing-config";
+import { AdminBillingConfigPayersPage } from "@/pages/admin/admin-billing-config-payers";
+import { AdminBillingConfigFeeSchedulesPage } from "@/pages/admin/admin-billing-config-fee-schedules";
+import { AdminBillingConfigModifierRulesPage } from "@/pages/admin/admin-billing-config-modifier-rules";
+import { AdminBillingConfigDenialCodesPage } from "@/pages/admin/admin-billing-config-denial-codes";
+import { AdminBillingConfigClaimTemplatesPage } from "@/pages/admin/admin-billing-config-claim-templates";
+import { AdminBillingCappedRentalsPage } from "@/pages/admin/admin-billing-capped-rentals";
+import { AdminBillingOfficeAllyPage } from "@/pages/admin/admin-billing-office-ally";
+import { AdminOfficeAllySubmissionDetailPage } from "@/pages/admin/admin-billing-office-ally-detail";
 import { AdminNpsPage } from "@/pages/admin/admin-nps";
 import { AdminCustomerDetailPage } from "@/pages/admin/admin-customer-detail";
 import { AdminShopCustomersPage } from "@/pages/admin/admin-shop-customers";
@@ -127,6 +149,70 @@ function AdminConsole() {
           <Route path="/admin/dashboard">
             <Redirect to="/admin" replace />
           </Route>
+          <Route path="/admin/billing" component={AdminBillingHubPage} />
+          <Route
+            path="/admin/billing/ai-queue"
+            component={AdminBillingAiQueuePage}
+          />
+          <Route
+            path="/admin/billing/aging"
+            component={AdminBillingAgingPage}
+          />
+          <Route
+            path="/admin/billing/denials"
+            component={AdminBillingDenialsPage}
+          />
+          <Route
+            path="/admin/billing/era"
+            component={AdminBillingEraPage}
+          />
+          <Route
+            path="/admin/billing/eligibility"
+            component={AdminBillingEligibilityPage}
+          />
+          <Route
+            path="/admin/billing/prior-auths"
+            component={AdminBillingPriorAuthsPage}
+          />
+          <Route
+            path="/admin/billing/config"
+            component={AdminBillingConfigHubPage}
+          />
+          <Route
+            path="/admin/billing/config/payers"
+            component={AdminBillingConfigPayersPage}
+          />
+          <Route
+            path="/admin/billing/config/fee-schedules"
+            component={AdminBillingConfigFeeSchedulesPage}
+          />
+          <Route
+            path="/admin/billing/config/modifier-rules"
+            component={AdminBillingConfigModifierRulesPage}
+          />
+          <Route
+            path="/admin/billing/config/denial-codes"
+            component={AdminBillingConfigDenialCodesPage}
+          />
+          <Route
+            path="/admin/billing/config/claim-templates"
+            component={AdminBillingConfigClaimTemplatesPage}
+          />
+          <Route
+            path="/admin/billing/capped-rentals"
+            component={AdminBillingCappedRentalsPage}
+          />
+          <Route
+            path="/admin/billing/office-ally"
+            component={AdminBillingOfficeAllyPage}
+          />
+          <Route path="/admin/billing/office-ally/:submissionId">
+            {(params) => (
+              <AdminOfficeAllySubmissionDetailPage
+                submissionId={params.submissionId}
+              />
+            )}
+          </Route>
           <Route path="/admin/patients" component={PatientsPage} />
           <Route path="/admin/patients/:patientId/insurance-claims">
             {(params) => (
@@ -157,6 +243,14 @@ function AdminConsole() {
             component={AdminShopProductNewPage}
           />
           <Route
+            path="/admin/shop/inventory/reconcile"
+            component={AdminShopInventoryReconcilePage}
+          />
+          <Route
+            path="/admin/shop/inventory/reconcile/:id"
+            component={AdminShopInventoryReconcileEditPage}
+          />
+          <Route
             path="/admin/shop/abandoned-carts"
             component={AdminShopAbandonedCartsPage}
           />
@@ -167,6 +261,10 @@ function AdminConsole() {
           <Route
             path="/admin/shop/insurance-leads"
             component={AdminInsuranceLeadsPage}
+          />
+          <Route
+            path="/admin/fitter-leads"
+            component={AdminFitterLeadsPage}
           />
           <Route
             path="/admin/shop/customers"
@@ -182,6 +280,14 @@ function AdminConsole() {
           <Route
             path="/admin/inbound-faxes"
             component={AdminInboundFaxesPage}
+          />
+          <Route
+            path="/admin/inbound-referrals"
+            component={AdminInboundReferralsPage}
+          />
+          <Route
+            path="/admin/patients/:patientId/prescription-requests"
+            component={AdminPrescriptionRequestsPage}
           />
           <Route
             path="/admin/equipment-recalls"
@@ -207,6 +313,10 @@ function AdminConsole() {
           <Route path="/admin/team" component={AdminTeamPage} />
           <Route path="/admin/operations" component={AdminOperationsPage} />
           <Route path="/admin/reports" component={AdminReportsPage} />
+          <Route
+            path="/admin/control-center"
+            component={AdminControlCenterPage}
+          />
           <Route path="/admin/nps" component={AdminNpsPage} />
           <Route
             path="/admin/productivity"
@@ -265,9 +375,16 @@ function AdminConsole() {
 
 // Probes /resupply-api/auth/me; redirects to /admin/sign-in when no
 // session is present.
+//
+// Also enforces the "must change password" gate: when /auth/me returns
+// mustChangePassword:true (set by the admin team-invite "set their
+// password for them" flow), the user is bounced to
+// /admin/change-password before any of the admin pages can mount. The
+// flag clears as soon as they pick a new password.
 export function ConsoleRoute() {
   const { data, isPending } = authHooks.useSession();
   if (isPending) return null;
   if (!data) return <Redirect to="/admin/sign-in" />;
+  if (data.mustChangePassword) return <Redirect to="/admin/change-password" />;
   return <AdminConsole />;
 }

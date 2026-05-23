@@ -3,7 +3,7 @@
 // active session for the user, so we redirect back to /sign-in
 // instead of auto-signing-in.
 
-import { useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { Link, useLocation } from "wouter";
 
 import { AuthError } from "@workspace/resupply-auth-react";
@@ -14,14 +14,52 @@ import { PasswordInput } from "@/components/password-input";
 
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
 
+// Same copy as the admin auth surface (see src/pages/admin/sign-in.tsx):
+// when the server returns a 5xx, the shopper is staring at a "stuck"
+// form and can't tell whether their reset link is bad or the backend
+// is down. Point them at status so they know it isn't their token.
+const SERVER_UNAVAILABLE_MESSAGE =
+  "We can't reach the credentials store right now, so we couldn't" +
+  " update your password. This is a server problem, not your reset" +
+  " link. Please try again in a minute — if it keeps failing, check" +
+  " status.pennpaps.com.";
+
+function authErrorMessage(err: unknown, fallback: string): string {
+  if (err instanceof AuthError) {
+    if (err.status >= 500) return SERVER_UNAVAILABLE_MESSAGE;
+    return err.userMessage;
+  }
+  return fallback;
+}
+
 function readTokenFromUrl(): string {
   if (typeof window === "undefined") return "";
   const params = new URLSearchParams(window.location.search);
   return params.get("token") ?? "";
 }
 
+// Strip ?token=... from the address bar so it doesn't persist in
+// browser history, autocomplete, shareable URLs, or screenshots.
+// Single-use server tokens are still consumed, but they shouldn't
+// linger as a recoverable secret after the page handles them.
+function stripTokenFromUrl(): void {
+  if (typeof window === "undefined") return;
+  try {
+    const params = new URLSearchParams(window.location.search);
+    if (!params.has("token")) return;
+    params.delete("token");
+    const qs = params.toString();
+    const next =
+      window.location.pathname + (qs ? `?${qs}` : "") + window.location.hash;
+    window.history.replaceState(null, "", next);
+  } catch {
+    // History API not available: no-op.
+  }
+}
+
 export function ResetPasswordPage() {
   const token = useMemo(readTokenFromUrl, []);
+  useEffect(stripTokenFromUrl, []);
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [submitError, setSubmitError] = useState<string | null>(
@@ -39,6 +77,10 @@ export function ResetPasswordPage() {
 
   function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    // Skip a second submission while the first is still in flight —
+    // the button is also disabled on isPending, but a quick double-
+    // click can fire two onSubmits before React re-renders.
+    if (reset.isPending) return;
     setSubmitError(null);
     if (password !== confirm) {
       setSubmitError("The two passwords don't match.");
@@ -47,12 +89,14 @@ export function ResetPasswordPage() {
     reset.mutate(
       { token, password },
       {
-        onSuccess: () => setLocation("/sign-in"),
+        // Land on /sign-in with the ?reset=success flag so the user
+        // gets a confirmation banner — without it, post-redirect they
+        // see a fresh form and wonder if anything happened.
+        onSuccess: () =>
+          setLocation("/sign-in?reset=success", { replace: true }),
         onError: (err) => {
           setSubmitError(
-            err instanceof AuthError
-              ? err.userMessage
-              : "Could not reset your password.",
+            authErrorMessage(err, "Could not reset your password."),
           );
         },
       },

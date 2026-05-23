@@ -98,11 +98,24 @@ export function makeMemoryRepo(now: () => Date = () => new Date()): MemoryRepo {
       return credentials.get(userId) ?? null;
     },
     async upsertCredential(input) {
+      // Mirror the supabase-repository semantics: undefined ⇒
+      // preserve the existing column; null ⇒ clear it; Date ⇒
+      // overwrite. The sign-in algorithm-upgrade path relies on
+      // "preserve" so a stale operator-typed credential keeps its
+      // expiry clock when it gets rehashed.
+      const prior = credentials.get(input.userId) ?? null;
+      let setByAdminAt: Date | null;
+      if (input.setByAdminAt === undefined) {
+        setByAdminAt = prior?.setByAdminAt ?? null;
+      } else {
+        setByAdminAt = input.setByAdminAt;
+      }
       credentials.set(input.userId, {
         userId: input.userId,
         passwordHash: input.passwordHash,
         algo: "argon2id-v1",
         mustChange: input.mustChange ?? false,
+        setByAdminAt,
         updatedAt: now(),
       });
     },
@@ -265,6 +278,7 @@ export async function seedUserWithPassword(
     passwordHash: hash,
     algo: "argon2id-v1",
     mustChange: false,
+    setByAdminAt: null,
     updatedAt: new Date(),
   });
   return user;
