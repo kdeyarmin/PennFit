@@ -599,6 +599,7 @@ export function Order() {
               <Input
                 data-testid="input-member-id"
                 {...register("insurance.memberId")}
+                autoComplete="off"
               />
             </Field>
             <Field
@@ -608,6 +609,7 @@ export function Order() {
               <Input
                 data-testid="input-group-number"
                 {...register("insurance.groupNumber")}
+                autoComplete="off"
               />
             </Field>
             <Field
@@ -617,6 +619,7 @@ export function Order() {
               <Input
                 data-testid="input-plan-name"
                 {...register("insurance.planName")}
+                autoComplete="off"
               />
             </Field>
             <Field

