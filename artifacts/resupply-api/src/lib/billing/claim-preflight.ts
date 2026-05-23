@@ -253,13 +253,29 @@ export async function preflightClaim(claimId: string): Promise<PreflightSummary>
       }
 
       // ── Referring provider NPI (Phase 12) ─────────────────────
-      if (payer.requires_referring_provider_npi && !claim.referring_provider_id) {
+      if (payer.requires_referring_provider_npi) {
+        if (!claim.referring_provider_id) {
+          items.push({
+            key: "payer_referring_provider",
+            severity: "error",
+            label: "Referring provider NPI required",
+            detail: `${payer.display_name} requires loop 2310A; this claim has no referring provider attached.`,
+            fixAction: { kind: "set_referring_provider", claimId: claim.id },
+          });
+        } else {
+          items.push({
+            key: "payer_referring_provider",
+            severity: "ok",
+            label: "Referring provider attached",
+            detail: `${payer.display_name} requires a referring provider and one is attached to this claim.`,
+          });
+        }
+      } else {
         items.push({
           key: "payer_referring_provider",
-          severity: "error",
-          label: "Referring provider NPI required",
-          detail: `${payer.display_name} requires loop 2310A; this claim has no referring provider attached.`,
-          fixAction: { kind: "set_referring_provider", claimId: claim.id },
+          severity: "ok",
+          label: "Referring provider not required",
+          detail: `${payer.display_name} does not require a referring provider for this claim.`,
         });
       }
     }
