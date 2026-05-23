@@ -279,6 +279,24 @@ router.post("/chat", chatRateLimit, async (req, res) => {
   }
 
   const { messages } = parseResult.data;
+
+  // Aggregate content cap. Per-message Zod already enforces
+  // MAX_USER_MESSAGE_CHARS, but with MAX_CHAT_TURNS turns the
+  // multiplicative ceiling lets a spammer fit ~30 kB of text per
+  // request and burn LLM budget even inside the per-IP rate limit.
+  // Cap the total at MAX_USER_MESSAGE_CHARS × 4 so a normal
+  // back-and-forth still fits; longer threads are likely abuse.
+  const aggregateChars = messages.reduce(
+    (sum, m) => sum + m.content.length,
+    0,
+  );
+  if (aggregateChars > MAX_USER_MESSAGE_CHARS * 4) {
+    res.status(400).json({
+      error:
+        "Conversation too long. Please start a new chat with a shorter recent history.",
+    });
+    return;
+  }
   const lastMessage = messages.at(-1);
   if (!lastMessage || lastMessage.role !== "user") {
     res.status(400).json({
@@ -296,14 +314,22 @@ router.post("/chat", chatRateLimit, async (req, res) => {
   // matches the existing unconfigured-LLM branch below so the
   // widget doesn't have to special-case anything.
   if (!(await isFeatureEnabled("storefront.chatbot"))) {
-    res.json({
-      message: {
-        role: "assistant",
-        content:
-          "The PennPaps chat assistant is currently offline. Please reach us by phone or email — we'll respond as soon as we can.",
-      },
-      offline: true,
-    });
+    const offlineMessage =
+      "The PennPaps chat assistant is currently offline. Please reach us by phone or email — we'll respond as soon as we can.";
+    if (streaming) {
+      startSseHeaders(res);
+      writeSseEvent(res, { type: "chunk", text: offlineMessage });
+      writeSseEvent(res, { type: "done", offline: true });
+      res.end();
+    } else {
+      res.json({
+        reply: {
+          role: "assistant",
+          content: offlineMessage,
+        },
+        offline: true,
+      });
+    }
     return;
   }
 

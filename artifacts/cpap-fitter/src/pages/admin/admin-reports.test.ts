@@ -16,6 +16,8 @@
 
 import { describe, expect, it } from "vitest";
 
+import { REPORTS, FORMAT_LABELS, type FormatKey } from "./reports-metadata";
+
 // ─── Inline copies of the module-local helpers ─────────────────────────────
 //
 // These match the implementations in admin-reports.tsx exactly.
@@ -33,7 +35,7 @@ function diffDays(fromIso: string, toIso: string): number {
 
 function reportUrl(
   slug: string,
-  format: "csv" | "pdf" | "iif" | "qbo",
+  format: FormatKey,
   from: string,
   to: string,
 ): string {
@@ -41,53 +43,6 @@ function reportUrl(
   const ext = format === "qbo" ? "qbo.csv" : format;
   return `/resupply-api/admin/reports/${slug}.${ext}?${params}`;
 }
-
-type FormatKey = "csv" | "pdf" | "iif" | "qbo";
-
-const FORMAT_LABELS: Record<FormatKey, string> = {
-  csv: "CSV",
-  pdf: "PDF",
-  iif: "QuickBooks Desktop (.iif)",
-  qbo: "QuickBooks Online (.csv)",
-};
-
-interface ReportDefinition {
-  slug: string;
-  title: string;
-  subtitle: string;
-  formats: ReadonlyArray<FormatKey>;
-}
-
-const REPORTS: ReadonlyArray<ReportDefinition> = [
-  {
-    slug: "orders",
-    title: "Cash-pay orders",
-    subtitle:
-      "Stripe checkout sessions in the date range, including payment and shipping state.",
-    formats: ["csv", "pdf", "iif", "qbo"],
-  },
-  {
-    slug: "returns",
-    title: "Returns & RMAs",
-    subtitle:
-      "Comfort-guarantee returns initiated in the date range, with resolution and refund details.",
-    formats: ["csv", "pdf", "iif", "qbo"],
-  },
-  {
-    slug: "revenue-summary",
-    title: "Revenue summary",
-    subtitle:
-      "Per-day rollup of gross sales, refunds, and net revenue across the storefront.",
-    formats: ["csv", "pdf"],
-  },
-  {
-    slug: "refunds-journal",
-    title: "Refunds journal",
-    subtitle:
-      "Chronological refund ledger — useful for AR reconciliation against Stripe payouts.",
-    formats: ["csv", "pdf"],
-  },
-];
 
 // ─── isoDate ──────────────────────────────────────────────────────────────
 
@@ -218,8 +173,8 @@ describe("FORMAT_LABELS", () => {
 // ─── REPORTS catalog ──────────────────────────────────────────────────────
 
 describe("REPORTS catalog", () => {
-  it("contains exactly four report definitions", () => {
-    expect(REPORTS).toHaveLength(4);
+  it("contains exactly six report definitions", () => {
+    expect(REPORTS).toHaveLength(6);
   });
 
   it("every report has csv and pdf formats", () => {

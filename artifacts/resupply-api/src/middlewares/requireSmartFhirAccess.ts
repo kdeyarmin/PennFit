@@ -32,6 +32,28 @@ import {
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { logger } from "../lib/logger";
+import {
+  assertSafeOutboundHost,
+  assertSafeOutboundUrlSync,
+  fetchWithPinnedIp,
+} from "../lib/safe-outbound";
+
+// SSRF-safe fetch wrapper for JWKS retrieval. `jwks_uri` lives in
+// `ehr_fhir_tenants.jwks_uri` and is set during partner onboarding;
+// a careless or compromised admin could point it at 127.0.0.1 or
+// the AWS metadata endpoint at 169.254.169.254, turning every SMART
+// auth check into an SSRF probe of internal infrastructure. The
+// fetcher (a) refuses non-https URLs, (b) refuses literal IPs in
+// private/reserved ranges, (c) resolves DNS and refuses if any
+// resolved A/AAAA record points at internal space, and (d) pins the
+// connection to the resolved IP so DNS rebinding can't sneak through.
+async function safeJwksFetch(url: string): Promise<globalThis.Response> {
+  // Use the global Response type (not the express.Response that
+  // `Response` would resolve to inside this module).
+  const parsed = assertSafeOutboundUrlSync(url);
+  const safeIp = await assertSafeOutboundHost(parsed.hostname);
+  return fetchWithPinnedIp(fetch, url, safeIp, parsed.hostname);
+}
 
 declare global {
   // eslint-disable-next-line @typescript-eslint/no-namespace
@@ -148,13 +170,44 @@ export const requireSmartFhirAccess: RequestHandler = async (
     return;
   }
 
-  const verifyOutcome = verifySmartJwt({
+  let verifyOutcome = verifySmartJwt({
     token,
     jwks,
     expectedIssuer: tenant.expected_issuer,
     expectedSubject: tenant.expected_subject,
     expectedAudience,
   });
+  // On signature_invalid / key_not_in_jwks the tenant may have
+  // rotated their signing key since we cached the JWKS. Evict and
+  // re-fetch once before giving up — without this, the old JWKS
+  // can be served for up to JWKS_TTL_MS after rotation, which is
+  // the exact window where a compromised pre-rotation private
+  // key could still be accepted.
+  if (
+    !verifyOutcome.ok &&
+    (verifyOutcome.reason === "signature_invalid" ||
+      verifyOutcome.reason === "key_not_in_jwks")
+  ) {
+    JWKS_CACHE.delete(tenant.jwks_uri);
+    try {
+      jwks = await getJwksCached(tenant.jwks_uri);
+      verifyOutcome = verifySmartJwt({
+        token,
+        jwks,
+        expectedIssuer: tenant.expected_issuer,
+        expectedSubject: tenant.expected_subject,
+        expectedAudience,
+      });
+    } catch (err) {
+      logger.warn(
+        {
+          tenant_slug: tenant.slug,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        "requireSmartFhirAccess: jwks re-fetch after signature_invalid failed",
+      );
+    }
+  }
   if (!verifyOutcome.ok) {
     logSmartVerifyFailure(tenant.slug, verifyOutcome.reason);
     res.status(401).json({
@@ -178,7 +231,7 @@ async function getJwksCached(jwksUri: string): Promise<Jwks> {
   if (cached && cached.expiresAt > now) {
     return cached.jwks;
   }
-  const jwks = await fetchJwks(jwksUri);
+  const jwks = await fetchJwks(jwksUri, { fetchImpl: safeJwksFetch });
   JWKS_CACHE.set(jwksUri, { jwks, expiresAt: now + JWKS_TTL_MS });
   return jwks;
 }

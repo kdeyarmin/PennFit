@@ -29,7 +29,8 @@
 
 import { createHash } from "node:crypto";
 
-import express, { Router, type IRouter } from "express";
+import express, { Router, type IRouter, type Request } from "express";
+import expressRateLimit from "express-rate-limit";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
@@ -39,6 +40,7 @@ import {
 } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
+import { rateLimit } from "../../middlewares/rate-limit";
 import { requireAdmin } from "../../middlewares/requireAdmin";
 import { requireSmartFhirAccess } from "../../middlewares/requireSmartFhirAccess";
 
@@ -89,7 +91,25 @@ router.get("/fhir/r4/metadata", (_req, res) => {
 
 const idParam = z.object({ id: z.string().uuid() });
 
-router.get("/fhir/r4/Patient/:id", requireAdmin, async (req, res) => {
+// Per-admin rate limit for the FHIR Patient read endpoints. Without
+// it an admin (or a script using an admin's session) could enumerate
+// patient ids one-at-a-time. 120/min/admin is far above the
+// console's normal pull cadence.
+const fhirAdminReadLimiter = rateLimit({
+  windowMs: 60_000,
+  max: 120,
+  name: "fhir_admin_patient_read",
+  keyFn: (req) =>
+    (req as unknown as { adminUserId?: string }).adminUserId ??
+    req.ip ??
+    "unknown",
+});
+
+router.get(
+  "/fhir/r4/Patient/:id",
+  requireAdmin,
+  fhirAdminReadLimiter,
+  async (req, res) => {
   const parsed = idParam.safeParse(req.params);
   if (!parsed.success) {
     res.status(404).type("application/fhir+json").json(notFound("Patient"));
@@ -111,11 +131,13 @@ router.get("/fhir/r4/Patient/:id", requireAdmin, async (req, res) => {
     .status(200)
     .type("application/fhir+json")
     .json(patientToFhir(patient));
-});
+  },
+);
 
 router.get(
   "/fhir/r4/Patient/:id/$everything",
   requireAdmin,
+  fhirAdminReadLimiter,
   async (req, res) => {
     const parsed = idParam.safeParse(req.params);
     if (!parsed.success) {
@@ -389,6 +411,49 @@ const fhirJson = express.raw({
   limit: "2mb",
 });
 
+// SMART-on-FHIR backend-services intake is JWT-authenticated, but
+// JWT verification + a Bundle insert + a downstream dispatcher job
+// is non-trivial work per request. Without a limiter, a partner
+// with a leaked/rotated client_id (or a misconfigured retry loop)
+// could flood the inbox. Cap to 60 requests / minute / IP — well
+// above any healthy partner POST cadence (Epic / Athena bulk
+// referral exports run at single-digit RPS) but enough headroom for
+// the occasional burst at clinic open. Keyed on req.ip because the
+// limiter runs before requireSmartFhirAccess populates req.fhirTenant.
+// Uses express-rate-limit directly (instead of our middlewares/rate-limit
+// wrapper) so CodeQL's js/missing-rate-limiting heuristic recognises
+// the call signature.
+const serviceRequestPostLimiter = expressRateLimit({
+  windowMs: 60_000,
+  limit: 60,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  message: {
+    error: "too_many_requests",
+    limiter: "fhir_service_request_post_ip",
+  },
+});
+
+// Per-tenant rate limit AFTER auth. The IP-keyed limiter above
+// protects against unauthenticated brute-force, but two partners
+// sharing one outbound IP (corporate proxy, cloud egress NAT)
+// would otherwise share its bucket. After requireSmartFhirAccess
+// populates req.fhirTenant we re-limit on the tenant slug so
+// noisy-neighbour partners can't exhaust each other's budget.
+const serviceRequestPostTenantLimiter = expressRateLimit({
+  windowMs: 60_000,
+  limit: 120,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  keyGenerator: (req: Request) =>
+    (req as unknown as { fhirTenant?: { slug: string } }).fhirTenant?.slug ??
+    "unknown",
+  message: {
+    error: "too_many_requests",
+    limiter: "fhir_service_request_post_tenant",
+  },
+});
+
 const bundleSchema = z.object({
   resourceType: z.literal("Bundle"),
   id: z.string().optional(),
@@ -398,7 +463,20 @@ const bundleSchema = z.object({
 
 router.post(
   "/fhir/r4/ServiceRequest",
+  // Defence-in-depth rate-limit chain. serviceRequestPostLimiter
+  // is keyed on req.ip and runs BEFORE auth so unauthenticated
+  // brute-force traffic is cut off without ever touching
+  // requireSmartFhirAccess. serviceRequestPostTenantLimiter is
+  // keyed on the resolved tenant slug and runs AFTER auth so
+  // two partners sharing one egress NAT don't share a bucket.
+  // CodeQL's js/missing-rate-limiting heuristic only inspects the
+  // single line of the auth middleware and can't see the limiters
+  // on the lines around it; the suppression below acknowledges
+  // that and points at the actual chain that gates the route.
+  serviceRequestPostLimiter,
+  // lgtm[js/missing-rate-limiting]
   requireSmartFhirAccess,
+  serviceRequestPostTenantLimiter,
   fhirJson,
   async (req, res) => {
     const tenant = req.fhirTenant;

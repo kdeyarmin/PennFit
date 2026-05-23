@@ -19,6 +19,7 @@
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 export type PreflightSeverity = "ok" | "warning" | "error";
 
@@ -60,6 +61,7 @@ export interface PreflightSummary {
 export async function preflightClaim(claimId: string): Promise<PreflightSummary> {
   const supabase = getSupabaseServiceRoleClient();
   const items: PreflightItem[] = [];
+  let payerRequiresReferringProviderNpi = true;
 
   const { data: claim, error: cErr } = await supabase
     .schema("resupply")
@@ -109,7 +111,7 @@ export async function preflightClaim(claimId: string): Promise<PreflightSummary>
       .schema("resupply")
       .from("payer_profiles")
       .select(
-        "id, display_name, is_active, paper_only, office_ally_payer_id, claim_format, requires_prior_auth_dme",
+        "id, display_name, is_active, paper_only, office_ally_payer_id, claim_format, requires_prior_auth_dme, edi_enrollment_status, timely_filing_days, required_modifiers_dme, requires_referring_provider_npi, enrollment_status, enrollment_effective_on",
       )
       .eq("id", claim.payer_profile_id)
       .limit(1)
@@ -117,6 +119,7 @@ export async function preflightClaim(claimId: string): Promise<PreflightSummary>
     if (!payer) {
       items.push(missingPayer(claim.id, "Payer profile row missing."));
     } else if (!payer.is_active) {
+      payerRequiresReferringProviderNpi = payer.requires_referring_provider_npi;
       items.push({
         key: "payer_profile",
         severity: "error",
@@ -125,6 +128,7 @@ export async function preflightClaim(claimId: string): Promise<PreflightSummary>
         fixAction: { kind: "pick_payer_profile", claimId: claim.id },
       });
     } else if (payer.paper_only) {
+      payerRequiresReferringProviderNpi = payer.requires_referring_provider_npi;
       items.push({
         key: "payer_profile",
         severity: "warning",
@@ -132,19 +136,202 @@ export async function preflightClaim(claimId: string): Promise<PreflightSummary>
         detail: `${payer.display_name} doesn't accept 837P. Render a HCFA-1500 instead.`,
       });
     } else if (!payer.office_ally_payer_id) {
+      payerRequiresReferringProviderNpi = payer.requires_referring_provider_npi;
       items.push({
         key: "payer_profile",
         severity: "error",
         label: "Payer has no Office Ally id",
         detail: `${payer.display_name} is missing office_ally_payer_id in the catalog.`,
       });
+    } else if (payer.edi_enrollment_status !== "enrolled") {
+      // Migration 0149 wired enrollment status onto every row. A
+      // payer that's set up in the catalog but not enrolled in
+      // Office Ally yet will reject the 837P at the clearinghouse,
+      // so block submit here — the CSR's fix is to chase the
+      // enrollment, not to send and hope.
+      items.push({
+        key: "payer_profile",
+        severity: "error",
+        label: "Payer is not EDI-enrolled with Office Ally",
+        detail: `${payer.display_name} enrollment status is "${payer.edi_enrollment_status}". Office Ally will reject this 837P. Update the enrollment status to "enrolled" once OA confirms.`,
+        fixAction: { kind: "pick_payer_profile", claimId: claim.id },
+      });
     } else {
+      payerRequiresReferringProviderNpi = payer.requires_referring_provider_npi;
       items.push({
         key: "payer_profile",
         severity: "ok",
-        label: "Payer profile linked",
+        label: "Payer profile linked + EDI-enrolled",
         detail: `${payer.display_name} • OA payer id ${payer.office_ally_payer_id}`,
       });
+    }
+
+    // ── Enrollment posture (Phase 12) ───────────────────────────
+    if (payer) {
+      if (payer.enrollment_status === "suspended") {
+        items.push({
+          key: "payer_enrollment",
+          severity: "error",
+          label: "Our enrollment with this payer is suspended",
+          detail: `${payer.display_name} has us in suspended status — claims will reject. Resolve enrollment before submitting.`,
+        });
+      } else if (payer.enrollment_status === "pending") {
+        items.push({
+          key: "payer_enrollment",
+          severity: "warning",
+          label: "Enrollment with this payer is still pending",
+          detail: `${payer.display_name} hasn't activated our TIN yet; the claim may reject at the clearinghouse.`,
+        });
+      } else if (payer.enrollment_status === "unknown") {
+        items.push({
+          key: "payer_enrollment",
+          severity: "warning",
+          label: "Enrollment posture not recorded",
+          detail: `${payer.display_name} enrollment_status is "unknown" — set it in the payer profile so the preflight knows.`,
+        });
+      } else if (payer.enrollment_status === "not_required") {
+        items.push({
+          key: "payer_enrollment",
+          severity: "ok",
+          label: "Enrollment not required",
+          detail: `${payer.display_name} does not require enrollment for claim submission.`,
+        });
+      } else if (
+        payer.enrollment_status === "active" &&
+        payer.enrollment_effective_on &&
+        payer.enrollment_effective_on > claim.date_of_service
+      ) {
+        items.push({
+          key: "payer_enrollment",
+          severity: "error",
+          label: "Date of service pre-dates our enrollment",
+          detail: `Our enrollment with ${payer.display_name} began on ${payer.enrollment_effective_on}; claims with earlier DOS will deny.`,
+        });
+      } else if (payer.enrollment_status === "active") {
+        items.push({
+          key: "payer_enrollment",
+          severity: "ok",
+          label: "Enrollment active",
+          detail: `Active with ${payer.display_name}${payer.enrollment_effective_on ? ` since ${payer.enrollment_effective_on}` : ""}.`,
+        });
+      }
+
+      // ── Timely filing window (Phase 12) ───────────────────────
+      if (payer.timely_filing_days != null && claim.date_of_service) {
+        const dos = toUtcDateEpochMs(new Date(claim.date_of_service));
+        const today = toUtcDateEpochMs(new Date());
+        const ageDays = Math.floor((today - dos) / MS_PER_DAY);
+        const remaining = payer.timely_filing_days - ageDays;
+        if (remaining < 0) {
+          items.push({
+            key: "timely_filing",
+            severity: "error",
+            label: "Past the timely-filing deadline",
+            detail: `${payer.display_name} requires submission within ${payer.timely_filing_days} days of DOS; this claim is ${-remaining} day(s) past.`,
+          });
+        } else if (remaining <= 14) {
+          items.push({
+            key: "timely_filing",
+            severity: "warning",
+            label: `Only ${remaining} day(s) left on the filing window`,
+            detail: `${payer.display_name} accepts initial claims for ${payer.timely_filing_days} days from DOS; submit soon.`,
+          });
+        } else {
+          items.push({
+            key: "timely_filing",
+            severity: "ok",
+            label: `${remaining} day(s) left on the filing window`,
+            detail: `${payer.display_name} timely-filing window: ${payer.timely_filing_days} days from DOS.`,
+          });
+        }
+      } else if (payer.timely_filing_days == null) {
+        items.push({
+          key: "timely_filing",
+          severity: "warning",
+          label: "Timely-filing window not configured",
+          detail: `${payer.display_name} is missing timely_filing_days in the payer profile.`,
+        });
+      } else {
+        items.push({
+          key: "timely_filing",
+          severity: "warning",
+          label: "Date of service missing",
+          detail: "Claim is missing date_of_service, so timely filing cannot be calculated.",
+        });
+      }
+
+      // ── Required modifiers (Phase 12) ─────────────────────────
+      if (!payer.required_modifiers_dme || payer.required_modifiers_dme.length === 0) {
+        items.push({
+          key: "payer_modifiers",
+          severity: "warning",
+          label: "Required payer modifiers not configured",
+          detail: `${payer.display_name} has no required_modifiers_dme configured in the payer profile.`,
+        });
+      } else {
+        const { data: lines } = await supabase
+          .schema("resupply")
+          .from("insurance_claim_line_items")
+          .select("hcpcs_code, modifier")
+          .eq("claim_id", claim.id);
+        const modifierTokens = new Set<string>();
+        for (const l of lines ?? []) {
+          for (const m of (l.modifier ?? "").split(",")) {
+            const t = m.trim().toUpperCase();
+            if (t) modifierTokens.add(t);
+          }
+        }
+        // Soft-check: KX is the universally-required medical-necessity
+        // modifier. The other entries in required_modifiers_dme are
+        // alternatives (RR/NU, KH/KI/KJ rotations) — the scrubber owns
+        // the deeper per-line lookup; preflight just flags absence of
+        // ANY of the required modifiers.
+        const hasAny = payer.required_modifiers_dme.some((m: string) =>
+          modifierTokens.has(m.toUpperCase()),
+        );
+        if (!hasAny) {
+          items.push({
+            key: "payer_modifiers",
+            severity: "warning",
+            label: "Required payer modifiers may be missing",
+            detail: `${payer.display_name} expects at least one of: ${payer.required_modifiers_dme.join(", ")}. Verify each line.`,
+          });
+        } else {
+          items.push({
+            key: "payer_modifiers",
+            severity: "ok",
+            label: "Required payer modifiers present",
+            detail: `${payer.display_name} requires at least one of ${payer.required_modifiers_dme.join(", ")} and the claim includes them.`,
+          });
+        }
+      }
+
+      // ── Referring provider NPI (Phase 12) ─────────────────────
+      if (payer.requires_referring_provider_npi) {
+        if (!claim.referring_provider_id) {
+          items.push({
+            key: "payer_referring_provider",
+            severity: "error",
+            label: "Referring provider NPI required",
+            detail: `${payer.display_name} requires loop 2310A; this claim has no referring provider attached.`,
+            fixAction: { kind: "set_referring_provider", claimId: claim.id },
+          });
+        } else {
+          items.push({
+            key: "payer_referring_provider",
+            severity: "ok",
+            label: "Referring provider attached",
+            detail: `${payer.display_name} requires a referring provider and one is attached to this claim.`,
+          });
+        }
+      } else {
+        items.push({
+          key: "payer_referring_provider",
+          severity: "ok",
+          label: "Referring provider not required",
+          detail: `${payer.display_name} does not require a referring provider for this claim.`,
+        });
+      }
     }
   } else {
     items.push(missingPayer(claim.id, "No payer_profile_id on the claim."));
@@ -307,20 +494,27 @@ export async function preflightClaim(claimId: string): Promise<PreflightSummary>
         },
   );
   items.push(
-    claim.referring_provider_id
-      ? {
-          key: "referring_provider",
-          severity: "ok",
-          label: "Referring provider attached",
-          detail: "Will populate 837P loop 2310D (the prescriber).",
-        }
+    payerRequiresReferringProviderNpi
+      ? claim.referring_provider_id
+        ? {
+            key: "referring_provider",
+            severity: "ok",
+            label: "Referring provider attached",
+            detail: "Will populate 837P loop 2310D (the prescriber).",
+          }
+        : {
+            key: "referring_provider",
+            severity: "error",
+            label: "Referring (prescribing) provider missing",
+            detail:
+              "Medicare DME and most commercial DME payers reject claims without the prescribing provider NPI.",
+            fixAction: { kind: "set_referring_provider", claimId: claim.id },
+          }
       : {
           key: "referring_provider",
-          severity: "error",
-          label: "Referring (prescribing) provider missing",
-          detail:
-            "Medicare DME and most commercial DME payers reject claims without the prescribing provider NPI.",
-          fixAction: { kind: "set_referring_provider", claimId: claim.id },
+          severity: "ok",
+          label: "Referring provider not required",
+          detail: "Selected payer does not require a referring provider for this claim.",
         },
   );
 
@@ -426,9 +620,18 @@ function hasStructuredAddress(raw: unknown): boolean {
 }
 
 function formatCents(cents: number): string {
-  const d = Math.floor(cents / 100);
-  const c = cents % 100;
-  return `$${d}.${c.toString().padStart(2, "0")}`;
+  // Handle negative amounts correctly. Math.floor + % on a negative
+  // number yields a garbage formatted string like "$-2.-50" because
+  // both quotient and remainder go negative. Strip the sign first.
+  const sign = cents < 0 ? "-" : "";
+  const abs = Math.abs(cents);
+  const d = Math.floor(abs / 100);
+  const c = abs % 100;
+  return `${sign}$${d}.${c.toString().padStart(2, "0")}`;
+}
+
+function toUtcDateEpochMs(value: Date): number {
+  return Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), value.getUTCDate());
 }
 
 async function isPatientCompliant(

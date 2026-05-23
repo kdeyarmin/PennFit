@@ -20,7 +20,6 @@
 import {
   parseParachuteOrder,
   readParachuteConfigOrNull,
-  verifyParachuteSignature,
 } from "@workspace/resupply-integrations-parachute";
 
 import {
@@ -71,22 +70,23 @@ export async function dispatchParachute(
     };
   }
 
-  const headers =
-    (input.row.verification_headers_json as Record<string, string> | null) ??
-    {};
-  const sigHeader = headers["x-parachute-signature"];
-  const rawBody = JSON.stringify(input.row.payload_json);
-  const verifyOutcome = verifyParachuteSignature({
-    rawBody,
-    signatureHeader: sigHeader,
-    signingSecret: config.signingSecret,
-  });
-  if (!verifyOutcome.ok) {
-    // Bad signature is permanent — re-running won't fix it.
+  // Trust the inline verification stamped at intake time
+  // (routes/integrations-inbound.ts:171 verifies the raw HTTP bytes
+  // and sets signature_verified=true on success). Re-verifying here
+  // CANNOT work — we'd have to reconstruct the exact raw HTTP body
+  // from the parsed payload_json, but JSON.stringify on the parsed
+  // shape produces different bytes than the partner originally
+  // signed (whitespace, key order, number formatting). That gap
+  // meant every real Parachute order failed signature_bad_signature
+  // on the dispatcher pass and was permanently rejected.
+  //
+  // Same pattern ehr-fhir.ts:45 uses: if the intake middleware
+  // marked the row verified, the dispatcher trusts it.
+  if (input.row.signature_verified !== true) {
     return {
       ok: false,
       permanent: true,
-      reason: `signature_${verifyOutcome.reason}`,
+      reason: "signature_not_verified",
     };
   }
 

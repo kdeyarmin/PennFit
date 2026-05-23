@@ -2,6 +2,7 @@ import React from "react";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { LearnVideoLibrary } from "@/components/learn-video-library";
+import { NewsletterSignup } from "@/components/newsletter-signup";
 import { useDocumentTitle } from "@/hooks/use-document-title";
 import {
   BookOpen,
@@ -23,6 +24,7 @@ import {
   Sunrise,
   LifeBuoy,
   ClipboardList,
+  AlertTriangle,
 } from "lucide-react";
 
 type Category =
@@ -523,6 +525,92 @@ export function Learn() {
         </div>
       </section>
 
+      {/* Journey stages — four entry points that route readers to the
+          right starting article based on where they are. Distinct from
+          the in-page section nav below: this jumps OUT of the hub to
+          deep articles, the section nav stays on the hub. */}
+      <section className="space-y-6">
+        <div className="text-center space-y-2">
+          <span className="text-xs font-semibold uppercase tracking-[0.28em] text-[hsl(var(--penn-gold))]">
+            Find your starting point
+          </span>
+          <h2 className="text-display text-2xl md:text-3xl font-bold tracking-tight text-primary">
+            Where are you in this?
+          </h2>
+          <p className="text-sm md:text-base text-muted-foreground max-w-2xl mx-auto leading-relaxed">
+            Patients arrive at this page in four different places. Jump
+            straight to the article that matches yours.
+          </p>
+        </div>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          {[
+            {
+              href: "/learn/sleep-apnea-quiz",
+              Icon: ClipboardList,
+              stage: "Stage 01",
+              title: "Just curious",
+              body: "Wondering if you might have it",
+              cta: "Take the quiz",
+            },
+            {
+              href: "/learn/sleep-apnea-explained",
+              Icon: Stethoscope,
+              stage: "Stage 02",
+              title: "Just diagnosed",
+              body: "Got your AHI, need to know what's next",
+              cta: "Start here",
+            },
+            {
+              href: "/learn/first-two-weeks",
+              Icon: Sunrise,
+              stage: "Stage 03",
+              title: "First weeks",
+              body: "Adjusting to nightly therapy",
+              cta: "Survive the start",
+            },
+            {
+              href: "/learn/cleaning-routine",
+              Icon: Heart,
+              stage: "Stage 04",
+              title: "Living with it",
+              body: "Long-term care and routine",
+              cta: "Day-to-day care",
+            },
+          ].map(({ href, Icon, stage, title, body, cta }, idx) => (
+            <Link
+              key={title}
+              href={href}
+              className={
+                idx === 0
+                  ? "glass-card-tech lift-on-hover rounded-2xl p-5 relative overflow-hidden flex flex-col text-left group"
+                  : "glass-card lift-on-hover rounded-2xl p-5 flex flex-col text-left group"
+              }
+              data-testid={`learn-stage-${title.toLowerCase().replace(/\s+/g, "-")}`}
+            >
+              {idx === 0 && <span className="scan-line" aria-hidden="true" />}
+              <div className="relative z-10">
+                <div className="relative h-11 w-11 rounded-xl flex items-center justify-center mb-3 icon-halo-gold">
+                  <Icon className="w-5 h-5" strokeWidth={2} />
+                </div>
+                <div className="text-[10px] font-mono uppercase tracking-[0.22em] text-[hsl(var(--penn-gold-deep))] mb-1.5">
+                  {stage}
+                </div>
+                <h3 className="text-base font-bold tracking-tight mb-1.5">
+                  {title}
+                </h3>
+                <p className="text-xs text-muted-foreground leading-relaxed mb-3">
+                  {body}
+                </p>
+                <span className="inline-flex items-center gap-1 text-xs font-semibold text-primary group-hover:gap-1.5 transition-all mt-auto">
+                  {cta}
+                  <ArrowRight className="w-3 h-3 transition-transform group-hover:translate-x-0.5" />
+                </span>
+              </div>
+            </Link>
+          ))}
+        </div>
+      </section>
+
       {/* Section nav — anchors so the page is scannable when long */}
       <nav
         aria-label="Topics on this page"
@@ -626,6 +714,304 @@ export function Learn() {
           </div>
         </div>
       </section>
+
+      {/* Deep-dive guides — long-form, share-friendly articles covering
+          the disease, the therapy, the benefits, and living with it.
+          Built to be passed around to friends and family, not just read
+          once. Twelve articles grouped visually but not categorized to
+          keep the page from feeling like an org chart. */}
+      <section className="space-y-6">
+        <div className="space-y-2 text-center md:text-left">
+          <span className="text-xs font-semibold uppercase tracking-[0.28em] text-[hsl(var(--penn-gold))]">
+            Deep-dive guides
+          </span>
+          <h2 className="text-display text-2xl md:text-3xl font-bold tracking-tight text-primary">
+            Long-form reading you can share.
+          </h2>
+          <p className="text-sm md:text-base text-muted-foreground max-w-2xl leading-relaxed mx-auto md:mx-0">
+            Twelve in-depth articles on what sleep apnea is, what untreated
+            apnea costs your body, what treatment actually feels like, how
+            the therapy works, and real life with a mask. Each has a
+            built-in share button for passing to a partner, parent, or
+            friend.
+          </p>
+        </div>
+        {/* Featured: the 101 mega-landing */}
+        <Link
+          href="/sleep-apnea-101"
+          className="glass-card-tech lift-on-hover rounded-2xl p-6 relative overflow-hidden flex items-start gap-4 group"
+          data-testid="learn-link-deep-101"
+        >
+          <span className="scan-line" aria-hidden="true" />
+          <div className="relative z-10 flex items-start gap-4 w-full">
+            <div className="shrink-0 h-12 w-12 rounded-xl icon-halo-gold flex items-center justify-center">
+              <BookOpen className="w-6 h-6" />
+            </div>
+            <div className="space-y-1 flex-1 min-w-0">
+              <div className="text-[10px] font-mono uppercase tracking-[0.22em] text-[hsl(var(--penn-gold-deep))] mb-1">
+                Start here · the complete primer
+              </div>
+              <h3 className="text-lg md:text-xl font-bold tracking-tight group-hover:text-primary transition-colors">
+                Sleep apnea 101 — everything you need to know
+              </h3>
+              <p className="text-sm text-muted-foreground leading-relaxed">
+                The mega-page that organizes the whole library by topic and
+                journey stage. If you only read one thing on PennPaps, read
+                this.
+              </p>
+            </div>
+            <ArrowRight className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors mt-1 shrink-0" />
+          </div>
+        </Link>
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          {[
+            {
+              href: "/learn/sleep-apnea-explained",
+              Icon: Moon,
+              title: "What sleep apnea really is",
+              body: "OSA, CSA, mixed apnea — what each one actually is, how it happens, and who's most at risk.",
+              testid: "learn-link-deep-sleep-apnea-explained",
+              tone: "icon-halo-navy",
+            },
+            {
+              href: "/learn/health-risks",
+              Icon: AlertTriangle,
+              title: "The hidden cost of leaving it alone",
+              body: "The cardiovascular, metabolic, cognitive, and daily-safety risks of untreated sleep apnea.",
+              testid: "learn-link-deep-health-risks",
+              tone: "icon-halo-gold",
+            },
+            {
+              href: "/learn/pap-therapy-benefits",
+              Icon: Sunrise,
+              title: "What treatment actually feels like",
+              body: "The benefits of PAP therapy on a real timeline — week one, month one, quarter one, year one.",
+              testid: "learn-link-deep-benefits",
+              tone: "icon-halo-gold",
+            },
+            {
+              href: "/learn/how-pap-works",
+              Icon: Wind,
+              title: "How PAP therapy actually works",
+              body: "The pneumatic-splint mechanism, what cmH₂O means, exhalation relief, and the numbers your machine tracks.",
+              testid: "learn-link-deep-how-pap-works",
+              tone: "icon-halo-navy",
+            },
+            {
+              href: "/learn/therapy-types",
+              Icon: Activity,
+              title: "CPAP vs APAP vs BiPAP vs ASV",
+              body: "The four therapy modes explained — what each does, who it's prescribed for, and how your physician picks.",
+              testid: "learn-link-deep-therapy-types",
+              tone: "icon-halo-navy",
+            },
+            {
+              href: "/learn/sleep-apnea-heart-health",
+              Icon: Heart,
+              title: "Sleep apnea is a cardiovascular disease",
+              body: "How sleep apnea drives hypertension, AFib, stroke, and heart failure — and why cardiology now screens for it.",
+              testid: "learn-link-deep-heart-health",
+              tone: "icon-halo-gold",
+            },
+            {
+              href: "/learn/first-two-weeks",
+              Icon: Sunrise,
+              title: "Surviving the first two weeks",
+              body: "The biggest dropout window. A day-by-day, week-by-week guide to the adjustment period.",
+              testid: "learn-link-deep-first-two-weeks",
+              tone: "icon-halo-gold",
+            },
+            {
+              href: "/learn/traveling-with-cpap",
+              Icon: Plane,
+              title: "Traveling with CPAP",
+              body: "TSA, hotels, camping, international power. Practical answers for the manual's blind spots.",
+              testid: "learn-link-deep-traveling",
+              tone: "icon-halo-navy",
+            },
+            {
+              href: "/learn/cleaning-routine",
+              Icon: Droplets,
+              title: "The cleaning routine",
+              body: "Daily, weekly, monthly — what to wipe, soak, and replace. Plus what NOT to use.",
+              testid: "learn-link-deep-cleaning",
+              tone: "icon-halo-navy",
+            },
+            {
+              href: "/learn/myths-debunked",
+              Icon: AlertTriangle,
+              title: "10 myths debunked",
+              body: "Ten things people get wrong about CPAP and sleep apnea — and the honest answer to each.",
+              testid: "learn-link-deep-myths",
+              tone: "icon-halo-gold",
+            },
+            {
+              href: "/learn/insurance-guide",
+              Icon: ShieldCheck,
+              title: "The insurance & coverage guide",
+              body: "Medicare, Medicaid, commercial, HSA/FSA, cash-pay. What's covered, what's required, what's cheaper.",
+              testid: "learn-link-deep-insurance",
+              tone: "icon-halo-navy",
+            },
+            {
+              href: "/learn/glossary",
+              Icon: BookOpen,
+              title: "The CPAP glossary",
+              body: "Every acronym and term you'll meet — AHI, EPR, IPAP/EPAP, RDI, RERA, prior auth. Searchable.",
+              testid: "learn-link-deep-glossary",
+              tone: "icon-halo-navy",
+            },
+            {
+              href: "/learn/sleep-apnea-women",
+              Icon: Moon,
+              title: "Sleep apnea in women",
+              body: "Women present with insomnia, fatigue, and mood symptoms — not the textbook loud-snoring profile. Diagnosed 5–8 years late on average.",
+              testid: "learn-link-deep-women",
+              tone: "icon-halo-gold",
+            },
+            {
+              href: "/learn/sleep-apnea-diabetes",
+              Icon: Activity,
+              title: "Sleep apnea & diabetes",
+              body: "70% of T2D patients have undiagnosed OSA. Treating one moves the other — A1C improves measurably on adherent therapy.",
+              testid: "learn-link-deep-diabetes",
+              tone: "icon-halo-navy",
+            },
+            {
+              href: "/learn/sleep-apnea-mental-health",
+              Icon: AlertTriangle,
+              title: "Sleep apnea & mental health",
+              body: "The dense overlap with depression, anxiety, PTSD, and the brain-fog symptom cluster — and what treatment moves.",
+              testid: "learn-link-deep-mental-health",
+              tone: "icon-halo-gold",
+            },
+            {
+              href: "/learn/pediatric-sleep-apnea",
+              Icon: Users,
+              title: "Pediatric sleep apnea",
+              body: "Children with OSA look hyperactive, not sleepy. Why the symptoms are different, and what parents should flag at the pediatric visit.",
+              testid: "learn-link-deep-pediatric",
+              tone: "icon-halo-navy",
+            },
+            {
+              href: "/learn/sleep-apnea-seniors",
+              Icon: Heart,
+              title: "Sleep apnea in older adults",
+              body: "Prevalence climbs sharply with age — and so do the cognitive, cardiovascular, and falls stakes. Medicare-friendly framing.",
+              testid: "learn-link-deep-seniors",
+              tone: "icon-halo-navy",
+            },
+            {
+              href: "/learn/partner-guide",
+              Icon: Heart,
+              title: "The bed partner's guide",
+              body: "If your partner snores loudly enough you've thought about earplugs — this is the article for you. How to bring it up, what to expect.",
+              testid: "learn-link-deep-partner",
+              tone: "icon-halo-gold",
+            },
+            {
+              href: "/learn/talking-to-a-loved-one",
+              Icon: Users,
+              title: "Talking to a loved one",
+              body: "Five scripts — what works, what backfires — when you need to suggest someone get tested for sleep apnea.",
+              testid: "learn-link-deep-talking",
+              tone: "icon-halo-gold",
+            },
+            {
+              href: "/learn/dry-mouth",
+              Icon: Droplets,
+              title: "Fixing CPAP dry mouth",
+              body: "The #1 comfort complaint. Three causes (humidifier, mouth breathing, heated tubing) and the order to try them.",
+              testid: "learn-link-deep-dry-mouth",
+              tone: "icon-halo-navy",
+            },
+            {
+              href: "/learn/cpap-bloating",
+              Icon: Wind,
+              title: "CPAP bloating & gas",
+              body: "Aerophagia — when CPAP gives you stomach distension. Four fixes from positional changes to pressure setting tweaks.",
+              testid: "learn-link-deep-bloating",
+              tone: "icon-halo-navy",
+            },
+            {
+              href: "/learn/mask-leaks",
+              Icon: Wind,
+              title: "Fixing mask leaks",
+              body: "Where the leak is tells you how to fix it — bridge, side, mouth, or top (where vents are supposed to leak).",
+              testid: "learn-link-deep-leaks",
+              tone: "icon-halo-gold",
+            },
+            {
+              href: "/learn/cpap-claustrophobia",
+              Icon: LifeBuoy,
+              title: "Claustrophobia & anxiety",
+              body: "A structured desensitization protocol that works in 5-7 days for almost everyone. Plus what to do mid-night.",
+              testid: "learn-link-deep-claustro",
+              tone: "icon-halo-navy",
+            },
+            {
+              href: "/learn/nasal-congestion",
+              Icon: Droplets,
+              title: "Nasal congestion on CPAP",
+              body: "Four causes — usually dry air, sometimes allergies, occasionally sleep position. Plus a 5-tip quick-wins list.",
+              testid: "learn-link-deep-congestion",
+              tone: "icon-halo-gold",
+            },
+            {
+              href: "/learn/reading-your-sleep-report",
+              Icon: BookOpen,
+              title: "Reading your sleep study report",
+              body: "What AHI, RDI, ODI, T90, and the rest of the acronyms actually mean — and what to ask your sleep doctor about.",
+              testid: "learn-link-deep-sleep-report",
+              tone: "icon-halo-navy",
+            },
+            {
+              href: "/learn/sleep-hygiene",
+              Icon: Moon,
+              title: "Sleep hygiene + CPAP",
+              body: "Six evidence-based habits that compound with PAP therapy. Cool room, constant wake-time, no caffeine after 2pm.",
+              testid: "learn-link-deep-hygiene",
+              tone: "icon-halo-gold",
+            },
+            {
+              href: "/learn/cpap-and-weight-loss",
+              Icon: Activity,
+              title: "CPAP and weight loss",
+              body: "Untreated sleep apnea makes weight loss measurably harder. The four metabolic headwinds CPAP removes.",
+              testid: "learn-link-deep-weight-loss",
+              tone: "icon-halo-navy",
+            },
+          ].map(({ href, Icon, title, body, testid, tone }) => (
+            <Link
+              key={href}
+              href={href}
+              className="glass-card lift-on-hover rounded-2xl p-6 flex items-start gap-4 group"
+              data-testid={testid}
+            >
+              <div
+                className={`shrink-0 h-11 w-11 rounded-xl ${tone} flex items-center justify-center`}
+              >
+                <Icon className="w-5 h-5" />
+              </div>
+              <div className="space-y-1 flex-1 min-w-0">
+                <h3 className="font-semibold tracking-tight group-hover:text-primary transition-colors">
+                  {title}
+                </h3>
+                <p className="text-sm text-muted-foreground leading-relaxed">
+                  {body}
+                </p>
+              </div>
+              <ArrowRight className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors mt-1 shrink-0" />
+            </Link>
+          ))}
+        </div>
+      </section>
+
+      {/* Newsletter signup — capture readers who finished the library and
+          aren't ready to commit to ordering yet. Gold-trimmed tech card
+          so it doesn't compete with the disclaimer or final CTA below. */}
+      <NewsletterSignup />
 
       {/* Cross-links */}
       <section className="grid sm:grid-cols-2 gap-4">

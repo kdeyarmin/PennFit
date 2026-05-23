@@ -37,6 +37,15 @@ export interface PasswordCredential {
   passwordHash: string;
   algo: string;
   mustChange: boolean;
+  /**
+   * Timestamp captured when an operator typed this password ON
+   * BEHALF of the user via the team-invite "Set their password for
+   * them" flow. NULL for user-set passwords (sign-up / reset /
+   * change-password) and for legacy Clerk-cutover rows. Pairs with
+   * `mustChange=true` to let the sign-in handler expire stale
+   * operator-typed credentials whose owner never signed in.
+   */
+  setByAdminAt: Date | null;
   updatedAt: Date;
 }
 
@@ -77,6 +86,18 @@ export interface AuthRepository {
     userId: string;
     passwordHash: string;
     mustChange?: boolean;
+    /**
+     * Explicit timestamp for `set_by_admin_at`. Pass a Date when an
+     * operator is typing this password on behalf of the user (team
+     * invite "set their password for them"); pass `null` to clear
+     * the column when the user replaces the operator-typed password
+     * themselves (sign-up / reset-password / change-password). Pass
+     * `undefined` (omit) when the caller intends to preserve the
+     * existing value — used by sign-in's transparent algorithm
+     * upgrade path, which must not turn a stale operator credential
+     * back into a fresh one.
+     */
+    setByAdminAt?: Date | null;
   }): Promise<void>;
 
   findSessionByTokenHash(tokenHash: Buffer): Promise<AuthSession | null>;

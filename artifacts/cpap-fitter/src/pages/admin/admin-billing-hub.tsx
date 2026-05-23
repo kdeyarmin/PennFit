@@ -429,6 +429,17 @@ export function AdminBillingHubPage() {
           </li>
           <li>
             <Link
+              href="/admin/billing/office-ally"
+              className="underline inline-flex items-center gap-1.5"
+              style={{ color: "hsl(var(--ink-1))" }}
+              data-testid="billing-hub-link-office-ally"
+            >
+              <Send className="h-3.5 w-3.5" />
+              Office Ally Operations →
+            </Link>
+          </li>
+          <li>
+            <Link
               href="/admin/billing/eligibility"
               className="underline inline-flex items-center gap-1.5"
               style={{ color: "hsl(var(--ink-1))" }}

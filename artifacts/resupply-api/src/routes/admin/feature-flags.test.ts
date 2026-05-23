@@ -95,20 +95,20 @@ describe("GET /admin/feature-flags", () => {
     stageSupabaseResponse("feature_flags", "select", {
       data: [
         {
-          key: "voice.agent",
-          enabled: true,
-          description: "voice agent",
-          category: "Voice & AI",
-          updated_by_email: null,
-          updated_at: "2026-01-01T00:00:00.000Z",
-        },
-        {
           key: "sms.reminders",
           enabled: false,
           description: "sms reminders",
           category: "Messaging",
           updated_by_email: "ops@example.com",
           updated_at: "2026-01-02T00:00:00.000Z",
+        },
+        {
+          key: "voice.agent",
+          enabled: true,
+          description: "voice agent",
+          category: "Voice & AI",
+          updated_by_email: null,
+          updated_at: "2026-01-01T00:00:00.000Z",
         },
       ],
     });
@@ -117,14 +117,15 @@ describe("GET /admin/feature-flags", () => {
     expect(res.status).toBe(200);
     expect(res.body.flags).toHaveLength(2);
     expect(res.body.flags[0]).toMatchObject({
+      key: "sms.reminders",
+      enabled: false,
+      category: "Messaging",
+      updatedByEmail: "ops@example.com",
+    });
+    expect(res.body.flags[1]).toMatchObject({
       key: "voice.agent",
       enabled: true,
       category: "Voice & AI",
-    });
-    expect(res.body.flags[1]).toMatchObject({
-      key: "sms.reminders",
-      enabled: false,
-      updatedByEmail: "ops@example.com",
     });
   });
 });

@@ -277,3 +277,231 @@ describe("VoiceToolDispatcher — identity attempt cap", () => {
     expect(dispatcher.isIdentityVerified()).toBe(true);
   });
 });
+
+// ---------------------------------------------------------------------------
+// PR change: prescriptions query now filters by status = 'active'
+// ---------------------------------------------------------------------------
+// Source structural check: `.eq("status", "active")` must appear in the
+// prescriptions query inside lookupInventory so inactive / expired scripts
+// are excluded from the voice resupply inventory listing.
+
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const __dirname2 = path.dirname(fileURLToPath(import.meta.url));
+const TOOLS_SRC = readFileSync(
+  path.join(__dirname2, "tools-impl.ts"),
+  "utf8",
+);
+
+describe("tools-impl — prescriptions query filters by status='active' (PR change)", () => {
+  it("includes .eq('status', 'active') in the prescriptions select chain", () => {
+    expect(TOOLS_SRC).toContain('.eq("status", "active")');
+  });
+
+  it("applies the active filter to the prescriptions table (not another table)", () => {
+    // The active filter must appear near the prescriptions from() call.
+    const prescIdx = TOOLS_SRC.indexOf('.from("prescriptions")');
+    expect(prescIdx).toBeGreaterThan(-1);
+    // Find the .eq("status", "active") occurrence after the prescriptions from()
+    const activeIdx = TOOLS_SRC.indexOf('.eq("status", "active")', prescIdx);
+    expect(activeIdx).toBeGreaterThan(prescIdx);
+    // And before the next .from() call (so it's scoped to prescriptions)
+    const nextFromIdx = TOOLS_SRC.indexOf(".from(", prescIdx + 1);
+    expect(activeIdx).toBeLessThan(nextFromIdx);
+  });
+
+  it("places the active filter after the patient_id eq filter", () => {
+    const prescIdx = TOOLS_SRC.indexOf('.from("prescriptions")');
+    const patientIdx = TOOLS_SRC.indexOf('.eq("patient_id"', prescIdx);
+    const activeIdx = TOOLS_SRC.indexOf('.eq("status", "active")', prescIdx);
+    expect(patientIdx).toBeGreaterThan(-1);
+    expect(activeIdx).toBeGreaterThan(patientIdx);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// PR change: episode update gated on status='pending'
+// ---------------------------------------------------------------------------
+// The placeResupplyOrder implementation now adds a `.eq("status", "pending")`
+// guard to the episodes update, preventing a second confirm call (or a race
+// with a cancellation) from resurrecting an already-terminal episode.
+// The updated rows are SELECTed so the caller can detect a no-op update.
+
+describe("tools-impl — episode update gated on status='pending' (PR change)", () => {
+  it("adds .eq('status', 'pending') to the episodes update chain", () => {
+    // The guard must be present to prevent double-confirm.
+    const episodesUpdateIdx = TOOLS_SRC.indexOf('.from("episodes")');
+    expect(episodesUpdateIdx).toBeGreaterThan(-1);
+    const pendingIdx = TOOLS_SRC.indexOf(
+      '.eq("status", "pending")',
+      episodesUpdateIdx,
+    );
+    expect(pendingIdx).toBeGreaterThan(episodesUpdateIdx);
+  });
+
+  it("selects the updated rows after the episode update to detect no-ops", () => {
+    // `.select("id")` after the update returns the rows actually changed.
+    // An empty result means the episode was already in a terminal state.
+    const episodesUpdateIdx = TOOLS_SRC.indexOf('.from("episodes")');
+    const selectIdx = TOOLS_SRC.indexOf('.select("id")', episodesUpdateIdx);
+    expect(selectIdx).toBeGreaterThan(episodesUpdateIdx);
+  });
+
+  it("returns ok:false when the updated array is empty (no-op path)", () => {
+    // The guard `if (!updated || updated.length === 0)` must be present
+    // to short-circuit to the no-op return.
+    expect(TOOLS_SRC).toContain("updated.length === 0");
+    // And it must return ok:false.
+    const noopIdx = TOOLS_SRC.indexOf("updated.length === 0");
+    const noopBlock = TOOLS_SRC.slice(noopIdx, noopIdx + 200);
+    expect(noopBlock).toContain("ok: false");
+    expect(noopBlock).toContain('order_id: ""');
+    expect(noopBlock).toContain("accepted_skus: []");
+  });
+
+  it("does NOT return ok:true unless the update confirmed a pending episode", () => {
+    // The ok:true path must be after the empty-array guard, not before it.
+    const noopGuardIdx = TOOLS_SRC.indexOf("updated.length === 0");
+    const okTrueIdx = TOOLS_SRC.indexOf("ok: true", noopGuardIdx);
+    expect(noopGuardIdx).toBeGreaterThan(-1);
+    expect(okTrueIdx).toBeGreaterThan(noopGuardIdx);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Behavioural test: episode status guard via stub supabase
+// ---------------------------------------------------------------------------
+// We exercise the placeResupplyOrder path through the dispatcher using a
+// stub supabase that simulates the two outcomes:
+//   1. Episode is in "pending" — update returns a row → ok:true.
+//   2. Episode is NOT in "pending" (already confirmed / cancelled) — update
+//      returns an empty array → ok:false without mutating state.
+
+/** Build a stub that returns `episodeUpdateResult` for the episodes update. */
+function buildStubSupabaseWithEpisode(
+  patientRow: { date_of_birth: string | null; legal_first_name: string | null },
+  episodeUpdateResult: { data: Array<{ id: string }> | null; error: null },
+) {
+  const builder: Record<string, unknown> = {
+    select: () => builder,
+    update: () => builder,
+    eq: () => builder,
+    limit: () => builder,
+    maybeSingle: () =>
+      Promise.resolve({ data: patientRow, error: null }),
+    single: () =>
+      Promise.resolve({ data: patientRow, error: null }),
+    then: (
+      onfulfilled: (v: unknown) => unknown,
+      onrejected?: (e: unknown) => unknown,
+    ) =>
+      Promise.resolve(episodeUpdateResult).then(onfulfilled, onrejected),
+  };
+  return {
+    schema: () => ({
+      from: () => builder,
+    }),
+  } as unknown as never;
+}
+
+describe("VoiceToolDispatcher — place_resupply_order episode status gate (PR change)", () => {
+  async function verifyIdentity(
+    dispatcher: ReturnType<typeof createVoiceToolDispatcher>,
+  ) {
+    await dispatcher.dispatch({
+      callId: "v1",
+      name: "verify_patient_identity",
+      args: { date_of_birth: "1980-01-01" },
+    });
+  }
+
+  it("returns ok:false when episode update affects 0 rows (already confirmed/cancelled)", async () => {
+    const supabase = buildStubSupabaseWithEpisode(
+      { date_of_birth: "1980-01-01", legal_first_name: "Alex" },
+      { data: [], error: null }, // empty array = no-op update
+    );
+    const dispatcher = createVoiceToolDispatcher({
+      ...baseDeps,
+      supabase,
+    });
+    await verifyIdentity(dispatcher);
+
+    const result = await dispatcher.dispatch({
+      callId: "o1",
+      name: "place_resupply_order",
+      args: { skus: ["A7030"], address_confirmed: true },
+    });
+    expect(result.result).toEqual({ ok: false, order_id: "", accepted_skus: [] });
+  });
+
+  it("returns ok:false when episode update result is null (DB returned no rows)", async () => {
+    const supabase = buildStubSupabaseWithEpisode(
+      { date_of_birth: "1980-01-01", legal_first_name: "Alex" },
+      { data: null, error: null }, // null = no rows updated
+    );
+    const dispatcher = createVoiceToolDispatcher({
+      ...baseDeps,
+      supabase,
+    });
+    await verifyIdentity(dispatcher);
+
+    const result = await dispatcher.dispatch({
+      callId: "o2",
+      name: "place_resupply_order",
+      args: { skus: ["A7030"], address_confirmed: true },
+    });
+    expect(result.result).toEqual({ ok: false, order_id: "", accepted_skus: [] });
+  });
+
+  it("returns ok:true with accepted_skus when episode update confirms a pending episode", async () => {
+    const supabase = buildStubSupabaseWithEpisode(
+      { date_of_birth: "1980-01-01", legal_first_name: "Alex" },
+      { data: [{ id: "epi-1" }], error: null }, // one row updated
+    );
+    const dispatcher = createVoiceToolDispatcher({
+      ...baseDeps,
+      supabase,
+    });
+    await verifyIdentity(dispatcher);
+
+    const result = await dispatcher.dispatch({
+      callId: "o3",
+      name: "place_resupply_order",
+      args: { skus: ["A7030", "A7034"], address_confirmed: true },
+    });
+    expect(result.result.ok).toBe(true);
+    expect((result.result as { ok: boolean; accepted_skus: string[] }).accepted_skus).toEqual(["A7030", "A7034"]);
+  });
+
+  it("returns ok:false when address_confirmed is false (pre-existing guard, unaffected by PR)", async () => {
+    const supabase = buildStubSupabaseWithEpisode(
+      { date_of_birth: "1980-01-01", legal_first_name: "Alex" },
+      { data: [{ id: "epi-1" }], error: null },
+    );
+    const dispatcher = createVoiceToolDispatcher({
+      ...baseDeps,
+      supabase,
+    });
+    await verifyIdentity(dispatcher);
+
+    const result = await dispatcher.dispatch({
+      callId: "o4",
+      name: "place_resupply_order",
+      // The arg schema is z.literal(true), so a runtime caller
+      // SHOULD never reach this branch — the model's JSON args
+      // would fail Zod validation upstream. But the dispatcher
+      // is structurally typed, and a non-conforming caller
+      // (test fixture, future code path) hits the defensive
+      // guard. Cast to bypass the literal-true type so the
+      // dead-code guard stays exercised.
+      args: { skus: ["A7030"], address_confirmed: false } as unknown as {
+        skus: string[];
+        address_confirmed: true;
+      },
+    });
+    // address_confirmed:false short-circuits before the DB update
+    expect(result.result).toEqual({ ok: false, order_id: "", accepted_skus: [] });
+  });
+});

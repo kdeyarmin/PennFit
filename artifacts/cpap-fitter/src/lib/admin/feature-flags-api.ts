@@ -1,6 +1,8 @@
 // Hand-rolled fetch wrappers for /admin/feature-flags — backs the
 // admin Control Center.
 
+import { csrfHeader } from "../csrf";
+
 export interface FeatureFlag {
   key: string;
   enabled: boolean;
@@ -39,10 +41,11 @@ export function isHighRiskFlag(key: string): boolean {
 }
 
 async function jsonFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const { headers, ...rest } = init;
   const res = await fetch(`/resupply-api${path}`, {
     credentials: "include",
-    headers: { Accept: "application/json", ...(init.headers ?? {}) },
-    ...init,
+    headers: { Accept: "application/json", ...csrfHeader(), ...(headers ?? {}) },
+    ...rest,
   });
   if (!res.ok) {
     let message = `${res.status} ${res.statusText}`;

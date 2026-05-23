@@ -73,7 +73,14 @@ describe("POST /voice/status-callback", () => {
   });
 
   it("closes conversation + audits voice.call.completed on terminal status", async () => {
-    stageSupabaseResponse("conversations", "update", { error: null });
+    // The route now .select("id")s the UPDATE return so a duplicate
+    // Twilio retry on an already-closed row doesn't double-audit.
+    // Stage a one-element data payload so the row counts as the
+    // first close + the audit fires.
+    stageSupabaseResponse("conversations", "update", {
+      data: [{ id: "11111111-1111-4111-8111-111111111111" }],
+      error: null,
+    });
     const res = await request(makeApp())
       .post("/resupply-api/voice/status-callback?conversationId=11111111-1111-4111-8111-111111111111")
       .type("form")
@@ -95,7 +102,14 @@ describe("POST /voice/status-callback", () => {
   it.each(["failed", "busy", "no-answer", "canceled"])(
     "treats %s as terminal",
     async (status) => {
-      stageSupabaseResponse("conversations", "update", { error: null });
+      // The route now .select("id")s the UPDATE return so a duplicate
+      // Twilio retry on an already-closed row doesn't double-audit.
+      // Stage a one-element data payload so the row counts as the
+      // first close + the audit fires.
+      stageSupabaseResponse("conversations", "update", {
+        data: [{ id: "11111111-1111-4111-8111-111111111111" }],
+        error: null,
+      });
       const res = await request(makeApp())
         .post("/resupply-api/voice/status-callback?conversationId=11111111-1111-4111-8111-111111111111")
         .type("form")

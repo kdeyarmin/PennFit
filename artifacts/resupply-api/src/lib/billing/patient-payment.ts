@@ -179,26 +179,30 @@ export async function createPaymentIntent(
     };
   }
 
-  await supabase
+  // First stamp the PaymentIntent id so the webhook can correlate.
+  const { error: updateErr } = await supabase
     .schema("resupply")
     .from("patient_payments")
     .update({
       stripe_payment_intent_id: intent.id,
-      status:
-        intent.status === "requires_action"
-          ? "requires_action"
-          : intent.status === "succeeded"
-            ? "succeeded"
-            : "pending",
-      succeeded_at:
-        intent.status === "succeeded" ? new Date().toISOString() : null,
+      status: intent.status === "requires_action" ? "requires_action" : "pending",
     })
     .eq("id", row.id);
+  if (updateErr) {
+    logger.error(
+      { err: updateErr.message, paymentId: row.id, intentId: intent.id },
+      "patient_payment: failed to link PaymentIntent to patient_payments row",
+    );
+    throw new Error(`Database update failed: ${updateErr.message}`);
+  }
 
   // If Stripe returned succeeded synchronously (rare; usually
-  // confirm-on-client), apply allocations immediately.
+  // confirm-on-client), route through the same check-and-set
+  // markPaymentStatus that the webhook uses. This guarantees the
+  // allocation walk runs exactly once even if the webhook redelivers
+  // payment_intent.succeeded a moment later.
   if (intent.status === "succeeded") {
-    await applySucceededPayment(supabase, row.id);
+    await markPaymentStatus({ paymentId: row.id, status: "succeeded" });
   }
 
   return {
@@ -453,36 +457,70 @@ export async function applySucceededPayment(
   };
   const allocations = (row.applied_claims_json as unknown as Allocation[]) ?? [];
   for (const a of allocations) {
-    const { data: claim } = await supabase
-      .schema("resupply")
-      .from("insurance_claims")
-      .select("id, patient_responsibility_cents")
-      .eq("id", a.claimId)
-      .eq("patient_id", row.patient_id)
-      .limit(1)
-      .maybeSingle();
-    if (!claim) continue;
-    const newBalance = Math.max(
-      0,
-      claim.patient_responsibility_cents - a.amountAppliedCents,
-    );
-    await supabase
-      .schema("resupply")
-      .from("insurance_claims")
-      .update({
-        patient_responsibility_cents: newBalance,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", claim.id);
+    // Compare-and-swap decrement. The previous shape was read-then-
+    // write: read patient_responsibility_cents into JS, subtract,
+    // write back the literal. Two concurrent Stripe
+    // payment_intent.succeeded webhooks for DIFFERENT payments
+    // targeting the SAME claim would both read the same balance and
+    // both overwrite with the same lower value — losing one
+    // allocation's decrement.
+    //
+    // The CAS retry below re-reads the current balance, computes
+    // the next value, and updates ONLY when the row's current
+    // balance still matches what we read. PostgREST drops the
+    // update on mismatch (no rows affected); we detect that via
+    // .select() and loop. A bounded retry budget caps the worst-
+    // case so a thundering herd doesn't pin a worker indefinitely.
+    let appliedAmount = 0;
+    let success = false;
+    for (let attempt = 0; attempt < 5 && !success; attempt++) {
+      const { data: claim } = await supabase
+        .schema("resupply")
+        .from("insurance_claims")
+        .select("id, patient_responsibility_cents")
+        .eq("id", a.claimId)
+        .eq("patient_id", row.patient_id)
+        .limit(1)
+        .maybeSingle();
+      if (!claim) {
+        // Claim went away (deleted between webhook ingest + apply).
+        // Nothing to decrement; bail out of the retry loop.
+        break;
+      }
+      const currentBalance = claim.patient_responsibility_cents;
+      const newBalance = Math.max(0, currentBalance - a.amountAppliedCents);
+      const { data: updated } = await supabase
+        .schema("resupply")
+        .from("insurance_claims")
+        .update({
+          patient_responsibility_cents: newBalance,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", claim.id)
+        .eq("patient_responsibility_cents", currentBalance)
+        .select("id");
+      if (updated && updated.length > 0) {
+        success = true;
+        appliedAmount = a.amountAppliedCents;
+      }
+      // else: another writer beat us. Loop and re-read.
+    }
+    if (!success) {
+      logger.warn(
+        { claim_id: a.claimId, payment_id: paymentId },
+        "applySucceededPayment: gave up after CAS retries; claim balance contended",
+      );
+      continue;
+    }
     await supabase
       .schema("resupply")
       .from("insurance_claim_events")
       .insert({
-        claim_id: claim.id,
+        claim_id: a.claimId,
         event_type: "note",
-        amount_cents: a.amountAppliedCents,
+        amount_cents: appliedAmount,
         payer_ref: paymentId,
-        note: `Patient payment applied: ${a.amountAppliedCents}¢ via payment ${paymentId}`,
+        note: `Patient payment applied: ${appliedAmount}¢ via payment ${paymentId}`,
         actor_email: "system:patient_payment_apply",
       });
   }

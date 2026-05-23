@@ -3,6 +3,8 @@
 // Bundled in one file because they share the same patient-scoped URL
 // shape and the same project-as-camelCase pattern.
 
+import { csrfHeader } from "../csrf";
+
 export type SleepStudyType = "psg" | "hsat" | "split_night" | "re_titration";
 export type SleepStudySource =
   | "external_lab"
@@ -128,9 +130,10 @@ export interface CreatePriorAuthorizationRequest {
 }
 
 async function jsonFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const { headers: initHeaders, ...restInit } = init;
   const res = await fetch(`/resupply-api${path}`, {
-    headers: { Accept: "application/json", ...(init.headers ?? {}) },
-    ...init,
+    ...restInit,
+    headers: { Accept: "application/json", ...csrfHeader(), ...(initHeaders ?? {}) },
   });
   if (!res.ok) {
     let message = `${res.status} ${res.statusText}`;
@@ -442,5 +445,55 @@ export const createInsuranceClaimEvent = (
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
+    },
+  );
+
+// ─── Preflight + Submit-to-Office-Ally (per-claim) ────────────────
+
+export type PreflightSeverity = "ok" | "warning" | "error";
+
+export interface PreflightItem {
+  key: string;
+  severity: PreflightSeverity;
+  label: string;
+  detail: string;
+}
+
+export interface PreflightSummary {
+  readyToSubmit: boolean;
+  errorCount: number;
+  warningCount: number;
+  items: PreflightItem[];
+}
+
+export const fetchInsuranceClaimPreflight = (
+  patientId: string,
+  claimId: string,
+) =>
+  jsonFetch<{ preflight: PreflightSummary }>(
+    `/patients/${encodeURIComponent(patientId)}/insurance-claims/${encodeURIComponent(claimId)}/preflight`,
+  );
+
+export interface SubmitClaimToOfficeAllyResponse {
+  ok: true;
+  submissionId: string;
+  isaControlNumber: string;
+  gsControlNumber: string;
+  claimCount: number;
+  fileSizeBytes: number;
+  transport: string;
+}
+
+export const submitInsuranceClaimToOfficeAlly = (
+  patientId: string,
+  claimId: string,
+  body?: { usageIndicator?: "P" | "T"; note?: string },
+) =>
+  jsonFetch<SubmitClaimToOfficeAllyResponse>(
+    `/patients/${encodeURIComponent(patientId)}/insurance-claims/${encodeURIComponent(claimId)}/submit-office-ally`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body ?? {}),
     },
   );

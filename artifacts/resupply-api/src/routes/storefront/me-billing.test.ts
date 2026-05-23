@@ -100,7 +100,10 @@ describe("/api/me/billing-statements", () => {
     stageSupabaseResponse("shop_customers", "select", {
       data: { customer_id: CUSTOMER_ID, email_lower: "jo@example.com" },
     });
-    stageSupabaseResponse("patients", "select", { data: { id: PATIENT } });
+    // resolvePatientForCustomer now uses .limit(2) to detect the
+    // ambiguous email-collision case — stage an array, not a single
+    // object.
+    stageSupabaseResponse("patients", "select", { data: [{ id: PATIENT }] });
     stageSupabaseResponse("patient_billing_statements", "select", {
       data: [
         {
@@ -152,7 +155,10 @@ describe("/api/me/billing-statements/:id/pdf", () => {
     stageSupabaseResponse("shop_customers", "select", {
       data: { customer_id: CUSTOMER_ID, email_lower: "jo@example.com" },
     });
-    stageSupabaseResponse("patients", "select", { data: { id: PATIENT } });
+    // resolvePatientForCustomer now uses .limit(2) to detect the
+    // ambiguous email-collision case — stage an array, not a single
+    // object.
+    stageSupabaseResponse("patients", "select", { data: [{ id: PATIENT }] });
     stageSupabaseResponse("patient_billing_statements", "select", {
       data: null,
     });

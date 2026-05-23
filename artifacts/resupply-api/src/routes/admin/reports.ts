@@ -48,6 +48,7 @@ import {
   type QuickbooksRowInput,
 } from "../../lib/quickbooks-export";
 import { renderTablePdf } from "../../lib/report-pdf";
+import { safeCsvCell } from "../../lib/safe-csv-cell";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
 
@@ -87,13 +88,12 @@ function rangeSlug(from: Date, to: Date): string {
   return `${from.toISOString().slice(0, 10)}-to-${to.toISOString().slice(0, 10)}`;
 }
 
+// Delegates to the shared helper for formula-injection
+// neutralisation + `\r`-line-ending detection. tracking_number,
+// tracking_carrier, and delivery_error flow from carrier APIs and
+// aren't fully system-controlled.
 function escapeCsv(v: unknown): string {
-  if (v === null || v === undefined) return "";
-  const s = String(v);
-  if (s.includes(",") || s.includes('"') || s.includes("\n")) {
-    return `"${s.replace(/"/g, '""')}"`;
-  }
-  return s;
+  return safeCsvCell(v);
 }
 
 function setDownloadHeaders(
@@ -147,6 +147,7 @@ async function fetchOrders(from: Date, to: Date): Promise<OrderRow[]> {
 interface ReturnRow {
   id: string;
   order_id: string | null;
+  customer_id: string | null;
   stripe_session_id: string | null;
   status: string | null;
   reason: string | null;
@@ -166,7 +167,9 @@ async function fetchReturns(from: Date, to: Date): Promise<ReturnRow[]> {
   const { data, error } = await supabase
     .schema("resupply")
     .from("shop_returns")
-    .select("*")
+    .select(
+      "id, order_id, customer_id, stripe_session_id, status, reason, resolution, refund_cents, stripe_refund_id, exchange_product_id, created_at, approved_at, received_at, resolved_at, closed_at",
+    )
     .gte("created_at", from.toISOString())
     .lte("created_at", to.toISOString())
     .order("created_at", { ascending: false });
@@ -411,7 +414,7 @@ function buildQbRowsFromReturns(rows: ReturnRow[]): QuickbooksRowInput[] {
       amountUsd: -centsToDollars(r.refund_cents),
       kind: "REFUND" as const,
       memo: r.stripe_refund_id ?? r.order_id ?? r.id,
-      customerKey: customerKeyForId(r.order_id),
+      customerKey: customerKeyForId(r.customer_id),
     }));
 }
 
@@ -551,19 +554,6 @@ async function fetchCustomerActivity(
 ): Promise<CustomerActivityByDay[]> {
   const supabase = getSupabaseServiceRoleClient();
 
-  // New signups bucketed by day. shop_customers.created_at is the
-  // first time we saw the email — opting in elsewhere (sign-up,
-  // first cash-pay checkout) all funnel through the same row, so
-  // a count by created_at is a clean "new customers per day".
-  const { data: signups, error: signupErr } = await supabase
-    .schema("resupply")
-    .from("shop_customers")
-    .select("customer_id, created_at")
-    .gte("created_at", from.toISOString())
-    .lte("created_at", to.toISOString())
-    .limit(10_000);
-  if (signupErr) throw signupErr;
-
   // Every order in range. We classify "returning vs new" by
   // comparing the order's created_at against the customer's
   // shop_customers.created_at: same-day == first-order, else
@@ -581,10 +571,41 @@ async function fetchCustomerActivity(
     .limit(10_000);
   if (ordersErr) throw ordersErr;
 
-  const firstSeenByCustomer = new Map<string, string>();
-  for (const s of signups ?? []) {
-    if (s.customer_id) firstSeenByCustomer.set(s.customer_id, s.created_at);
+  // Collect unique customer IDs from orders in the range.
+  const relevantCustomerIds = new Set<string>();
+  for (const o of orders ?? []) {
+    if (o.customer_id) relevantCustomerIds.add(o.customer_id);
   }
+
+  // Fetch earliest created_at for all customers relevant to this
+  // report, regardless of whether they were created within [from,to].
+  // This ensures we correctly classify returning customers who signed
+  // up before the report period.
+  const { data: allCustomers, error: customerErr } = await supabase
+    .schema("resupply")
+    .from("shop_customers")
+    .select("customer_id, created_at")
+    .in("customer_id", Array.from(relevantCustomerIds))
+    .limit(10_000);
+  if (customerErr) throw customerErr;
+
+  const firstSeenByCustomer = new Map<string, string>();
+  for (const c of allCustomers ?? []) {
+    if (c.customer_id) firstSeenByCustomer.set(c.customer_id, c.created_at);
+  }
+
+  // New signups bucketed by day. shop_customers.created_at is the
+  // first time we saw the email — opting in elsewhere (sign-up,
+  // first cash-pay checkout) all funnel through the same row, so
+  // a count by created_at is a clean "new customers per day".
+  const { data: signups, error: signupErr } = await supabase
+    .schema("resupply")
+    .from("shop_customers")
+    .select("customer_id, created_at")
+    .gte("created_at", from.toISOString())
+    .lte("created_at", to.toISOString())
+    .limit(10_000);
+  if (signupErr) throw signupErr;
 
   const byDay = new Map<
     string,

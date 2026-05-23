@@ -26,9 +26,6 @@ import inboundReferralsRouter from "./admin/inbound-referrals.js";
 import equipmentRecallsRouter from "./admin/equipment-recalls.js";
 import analyticsRouter from "./admin/analytics.js";
 import rtOverviewRouter from "./admin/rt-overview.js";
-import trainingRecordsRouter from "./admin/training-records.js";
-import grievancesRouter from "./admin/grievances.js";
-import accreditationPoliciesRouter from "./admin/accreditation-policies.js";
 import productivityRouter from "./admin/productivity.js";
 import patientDocumentsRetentionRouter from "./admin/patient-documents-retention.js";
 import shopBackordersRouter from "./admin/shop-backorders.js";
@@ -39,7 +36,6 @@ import conversationCoachingNotesRouter from "./admin/conversation-coaching-notes
 import conversationTriageRouter from "./admin/conversation-triage.js";
 import patientAddressHistoryRouter from "./admin/patient-address-history.js";
 import patientTimelineRouter from "./admin/patient-timeline.js";
-import auditArchiveRouter from "./admin/audit-archive.js";
 import csrShiftsRouter from "./admin/csr-shifts.js";
 import appointmentRequestsRouter from "./admin/appointment-requests.js";
 import shopOrderLossClaimsRouter from "./admin/shop-order-loss-claims.js";
@@ -85,8 +81,10 @@ import physicianFaxOutreachRouter from "./admin/physician-fax-outreach.js";
 import shopBackInStockAdminRouter from "./admin/shop-back-in-stock.js";
 import shopSubsMetricsRouter from "./admin/shop-subscriptions-metrics.js";
 import insuranceLeadsAdminRouter from "./admin/insurance-leads.js";
+import fitterLeadsAdminRouter from "./admin/fitter-leads.js";
 import payerProfilesRouter from "./admin/payer-profiles.js";
 import officeAllySubmissionsRouter from "./admin/office-ally-submissions.js";
+import officeAllyUploadAckRouter from "./admin/office-ally-upload-ack.js";
 import denialCodesRouter from "./admin/denial-codes.js";
 import payerFeeSchedulesRouter from "./admin/payer-fee-schedules.js";
 import eraIngestRouter from "./admin/era-ingest.js";
@@ -99,8 +97,6 @@ import fulfillmentToClaimRouter from "./admin/fulfillment-to-claim.js";
 import aiBillingQueueRouter from "./admin/ai-billing-queue.js";
 import dmeOrganizationRouter from "./admin/dme-organization.js";
 import clearinghouseCredentialsRouter from "./admin/clearinghouse-credentials.js";
-import accreditationReadinessRouter from "./admin/accreditation-readiness.js";
-import accreditationSurveysRouter from "./admin/accreditation-surveys.js";
 import goodFaithEstimatesRouter from "./admin/good-faith-estimates.js";
 import pecosStatusRouter from "./admin/pecos-status.js";
 import eligibilityChecksRouter from "./admin/eligibility-checks.js";
@@ -124,16 +120,9 @@ import webhookTestSendRouter from "./admin/webhook-test-send.js";
 import payerFeeSchedulesImportRouter from "./admin/payer-fee-schedules-import.js";
 import systemIntegrationsStatusRouter from "./admin/system-integrations-status.js";
 import integrationsInboundRouter from "./integrations-inbound.js";
-import hipaaBreachIncidentsRouter from "./admin/hipaa-breach-incidents.js";
 import documentationPacketsRouter from "./admin/documentation-packets.js";
 import webhookDeliveryRetryRouter from "./admin/webhook-delivery-retry.js";
 import dispenseReadinessRouter from "./admin/dispense-readiness.js";
-import baaRouter from "./admin/business-associate-agreements.js";
-import oigLeieScreeningsRouter from "./admin/oig-leie-screenings.js";
-import patientRightsRequestsRouter from "./admin/patient-rights-requests.js";
-import complianceRecordsRouter from "./admin/compliance-records.js";
-import complianceOfficerSummaryRouter from "./admin/compliance-officer-summary.js";
-import auditRouter from "./audit/index.js";
 import conversationsRouter from "./conversations/index.js";
 import dashboardRouter from "./dashboard/index.js";
 import emailRouter from "./email/index.js";
@@ -145,6 +134,9 @@ import rulesRouter from "./rules/index.js";
 import smsRouter from "./sms/index.js";
 import shopRouter from "./shop/index.js";
 import faxRouter from "./fax/index.js";
+import portalClinicianRouter from "./portal-clinician.js";
+import rxRequestDocumentRouter from "./rx-request-document.js";
+import prescriptionRequestsRouter from "./admin/prescription-requests.js";
 import voiceRouter from "./voice/index.js";
 
 const router: IRouter = Router();
@@ -164,6 +156,14 @@ router.use(smsRouter);
 // /fax/document/:token  — signed cover-letter PDF fetched by Twilio
 // /fax/status-callback  — Twilio fax delivery lifecycle webhook
 router.use(faxRouter);
+// /portal/clinician/:token — public referral status page for EHR
+// partners who don't consume webhook callbacks. Token-gated; no
+// session cookie required.
+router.use(portalClinicianRouter);
+// /rx-request/document/:token — Twilio fetches a fully-rendered
+// pre-populated prescription PDF here when an admin dispatches a
+// prescription-request packet. Token-gated; signed HMAC w/ 24h TTL.
+router.use(rxRequestDocumentRouter);
 router.use(emailRouter);
 // Admin-console READ endpoints. Each handler is gated by
 // requireAdmin and surfaces only PHI the dashboard needs to
@@ -174,7 +174,6 @@ router.use(patientsRouter);
 router.use(rulesRouter);
 router.use(conversationsRouter);
 router.use(episodesRouter);
-router.use(auditRouter);
 // /admin/shop/abandoned-carts/* — operator tooling for the cart-
 // abandonment SendGrid nudge (list + manual dispatcher trigger).
 // requireAdmin gate is on the router itself.
@@ -250,6 +249,10 @@ router.use(smartTriggersRouter);
 // TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN / TWILIO_FAX_FROM_NUMBER
 // are set; otherwise the row is created with status='pending'.
 router.use(physicianFaxOutreachRouter);
+// /admin/(patients/:id)/prescription-requests — physician-faxable
+// pre-populated prescriptions. Twilio dispatch, signed-PDF return,
+// CSR-stamped lifecycle. Renders via lib/prescription-request-pdf.ts.
+router.use(prescriptionRequestsRouter);
 // /admin/shop/back-in-stock-queue — visibility into who's waiting
 // for which OOS SKU + manual fanout trigger. requireAdmin gate is
 // on the router itself.
@@ -258,6 +261,11 @@ router.use(shopBackInStockAdminRouter);
 // for submissions to the public POST /shop/insurance-leads form.
 // requireAdmin gate is on the router itself.
 router.use(insuranceLeadsAdminRouter);
+// /admin/fitter-leads/* — funnel queue + conversion KPIs for the
+// at-home fitter. Powers the "Fitter Prospects" admin page; the
+// dispatchers (fitter-supply-campaign + fitter-conversion-
+// attribution) handle the actual sends and conversion stamps.
+router.use(fitterLeadsAdminRouter);
 // /admin/payer-profiles/* — Pennsylvania payer catalog (migration
 // 0128). Read by every admin; write restricted to requireAdminOnly.
 // Drives 837P NM1*PR loop population on Office Ally submissions.
@@ -267,6 +275,12 @@ router.use(payerProfilesRouter);
 // lives on the patients router so it's co-located with the per-claim
 // state machine.
 router.use(officeAllySubmissionsRouter);
+// /admin/office-ally/upload-ack — manual ack-file ingestion path
+// (admin-only) for when the poller can't reach OA or OA emails an
+// ack out-of-band. Reuses the dispatchers exported from the poll
+// worker so manual + auto paths share parsing + state-machine
+// updates.
+router.use(officeAllyUploadAckRouter);
 // /admin/denial-codes/* — CARC / RARC catalog (Phase 4 of the
 // billing build). Seeded in migration 0129 with the ~50 codes DME
 // suppliers hit most often; admin UI surfaces them on claim denials.
@@ -317,8 +331,6 @@ router.use(clearinghouseCredentialsRouter);
 // /admin/accreditation/readiness — survey-readiness audit results +
 // /admin/accreditation/surveys CRUD for scheduled + completed visits.
 // CMS-required annual unannounced surveys land Jan 1, 2026.
-router.use(accreditationReadinessRouter);
-router.use(accreditationSurveysRouter);
 // /admin/good-faith-estimates — No Surprises Act cash-pay GFE
 // generator. PDF stream + persistent audit row (3-year HHS
 // retention requirement).
@@ -392,7 +404,6 @@ router.use(systemIntegrationsStatusRouter);
 // intake for third-party deliveries (Parachute, HSAT vendors, etc).
 router.use(integrationsInboundRouter);
 // /admin/hipaa-breach-incidents — HIPAA §164.404-414 lifecycle.
-router.use(hipaaBreachIncidentsRouter);
 // /admin/patients/:id/documentation-packets — combined PDF
 // support packets (cover letter + sleep study + Rx + DWO summaries).
 router.use(documentationPacketsRouter);
@@ -409,27 +420,22 @@ router.use(dispenseReadinessRouter);
 // ── Phase 10 (compliance machinery, migration 0141) ──────────────
 // /admin/compliance/business-associate-agreements — HIPAA
 // §164.504(e) BAA inventory + expiry buckets.
-router.use(baaRouter);
 // /admin/compliance/oig-leie-screenings — record + list OIG LEIE
 // monthly exclusion-list screens against staff / providers /
 // BAs / contractors. Coverage rollup flags overdue subjects.
-router.use(oigLeieScreeningsRouter);
 // /admin/compliance/patient-rights-requests — HIPAA
 // §164.522/524/526/528 access / amendment / accounting /
 // restriction / confidential-communications workflow with the
 // 30-day response clock (single 30-day extension allowed).
-router.use(patientRightsRequestsRouter);
 // /admin/compliance/risk-assessments + contingency-attestations +
 // disaster-drills + qi-initiatives + qi-measurements +
 // ownership-disclosures + disclosure-log — registers that close
 // out §164.308(a)(1)/(a)(7), ACHC QAPI, and §424.57(c)(17).
-router.use(complianceRecordsRouter);
 // /admin/compliance/officer-summary — single round-trip rollup the
 // compliance officer loads every morning. Aggregate counts across
 // BAA inventory, OIG screening, patient rights, disclosures, risk
 // assessments, contingency / drills, QAPI, ownership, training,
 // grievances, and the most recent accreditation readiness run.
-router.use(complianceOfficerSummaryRouter);
 // /admin/shop/products/* — operator tooling for the cash-pay catalog
 // itself. Today: PATCH stock_count metadata on a Stripe Product.
 // requireAdmin gate is on the router itself.
@@ -541,13 +547,10 @@ router.use(rtOverviewRouter);
 // orientation) and patient grievances (complaints + grievances +
 // adverse events under one typed row). Surveyors (ACHC, BOC, TJC)
 // query these exact artifacts during DMEPOS site visits.
-router.use(trainingRecordsRouter);
-router.use(grievancesRouter);
 // /admin/accreditation/* — the policy catalog + per-staff
 // attestation surface + binder summary that ties the three
 // evidence sections (policies, training, grievances) together
 // for a single hand-off to a surveyor.
-router.use(accreditationPoliciesRouter);
 // /admin/patient-documents/retention/* — HIPAA retention sweep
 // review queue, legal-hold toggle, and (admin-only) destruction.
 router.use(patientDocumentsRetentionRouter);
@@ -576,7 +579,6 @@ router.use(patientAddressHistoryRouter);
 // coaching plans, and recall notifications.
 router.use(patientTimelineRouter);
 // HIPAA audit-log archive — list flagged rows + admin destroy.
-router.use(auditArchiveRouter);
 // CSR shift schedule — who's on now + admin scheduling.
 router.use(csrShiftsRouter);
 // /admin/appointment-requests — CSR queue for patient-initiated

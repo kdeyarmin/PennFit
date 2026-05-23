@@ -109,6 +109,20 @@ router.post(
     // here, so we compute the same shape JS-side as a millisecond-
     // precision ISO string before sending it; the response value
     // matches what a follow-up PATCH would compare against.
+    // Snapshot the prior status per row BEFORE the update so each
+    // per-row audit can record from_status → to_status. Without
+    // this, a bulk-mis-click that flips 100 patients to `closed`
+    // has no preserved before-state for a clean rollback.
+    const { data: priorRows, error: priorRowsError } = await supabase
+      .schema("resupply")
+      .from("patients")
+      .select("id, status")
+      .in("id", ids);
+    if (priorRowsError) throw priorRowsError;
+    const priorStatusById = new Map<string, string>(
+      (priorRows ?? []).map((r) => [r.id, r.status as string]),
+    );
+
     const updatedAtIso = new Date().toISOString();
     const { data: updated, error } = await supabase
       .schema("resupply")
@@ -142,7 +156,12 @@ router.post(
           targetId: row.id,
           ip: req.ip ?? null,
           userAgent: req.get("user-agent") ?? null,
-          metadata: { columns: ["status"], via: "bulk_status_change" },
+          metadata: {
+            columns: ["status"],
+            via: "bulk_status_change",
+            from_status: priorStatusById.get(row.id) ?? null,
+            to_status: status,
+          },
         });
       } catch (err) {
         logger.warn(

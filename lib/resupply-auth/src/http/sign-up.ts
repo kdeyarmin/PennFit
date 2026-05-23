@@ -14,6 +14,7 @@
 import type { Request, Response } from "express";
 import { z } from "zod";
 
+import { writeUserChosenPassword } from "../credential-writes";
 import { checkCsrf } from "../csrf";
 import { normalizeEmail } from "../email";
 import { hashPassword } from "../password";
@@ -110,7 +111,10 @@ export function makeSignUpHandler(
         passwordCheck.value,
         deps.passwordHashParams,
       );
-      await deps.repo.upsertCredential({
+      // Self-service sign-up — writeUserChosenPassword clears any
+      // operator-set expiry clock left over from a previous
+      // team-invite attempt.
+      await writeUserChosenPassword(deps.repo, {
         userId,
         passwordHash: hash,
         mustChange: false,
@@ -127,7 +131,7 @@ export function makeSignUpHandler(
         passwordCheck.value,
         deps.passwordHashParams,
       );
-      await deps.repo.upsertCredential({
+      await writeUserChosenPassword(deps.repo, {
         userId,
         passwordHash: hash,
         mustChange: false,

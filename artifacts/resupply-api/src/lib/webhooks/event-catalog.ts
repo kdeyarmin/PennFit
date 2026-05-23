@@ -29,7 +29,8 @@ export const WEBHOOK_EVENT_CATALOG: readonly WebhookEventDefinition[] = [
   {
     type: "claim.submitted",
     description: "Insurance claim transitioned to submitted (sent to clearinghouse).",
-    publisher: "routes/patients/insurance-claims.ts PATCH + batch-submit",
+    publisher:
+      "routes/patients/insurance-claims.ts PATCH + lib/billing/office-ally-batch.ts",
     payloadFields: {
       claim_id: "uuid",
       patient_id: "uuid",
@@ -46,16 +47,24 @@ export const WEBHOOK_EVENT_CATALOG: readonly WebhookEventDefinition[] = [
     carriesPatientId: true,
   },
   {
+    // The era-reconciler library flips claim status in-place during ERA
+    // ingest but does NOT itself emit `claim.denied`; the surrounding
+    // routes/admin/era-ingest.ts handler emits only `era.ingested`, so
+    // ERA-driven status flips never reach webhook subscribers today.
+    // That's a known follow-up — keep the publisher field truthful here
+    // so the subscribe-validator doesn't lie to integrators about
+    // where the event will originate.
     type: "claim.denied",
     description: "Claim denied by payer (line-level or claim-level).",
-    publisher: "routes/patients/insurance-claims.ts PATCH + era-reconciler",
+    publisher: "routes/patients/insurance-claims.ts PATCH",
     payloadFields: { claim_id: "uuid", patient_id: "uuid" },
     carriesPatientId: true,
   },
   {
+    // Same era-reconciler caveat as claim.denied above.
     type: "claim.paid",
     description: "Claim moved to paid status (full or partial pay).",
-    publisher: "routes/patients/insurance-claims.ts PATCH + era-reconciler",
+    publisher: "routes/patients/insurance-claims.ts PATCH",
     payloadFields: { claim_id: "uuid", patient_id: "uuid" },
     carriesPatientId: true,
   },

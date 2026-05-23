@@ -24,6 +24,7 @@ import {
 } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
+import { safeCsvCell } from "../../lib/safe-csv-cell";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import {
   requireAdminOnly,
@@ -38,6 +39,10 @@ type PayerProfileRow = Database["resupply"]["Tables"]["payer_profiles"]["Row"];
 type PayerLineOfBusiness = PayerProfileRow["line_of_business"];
 type PayerRegion = PayerProfileRow["region"];
 type PayerClaimFormat = PayerProfileRow["claim_format"];
+type PayerPaMethod = NonNullable<
+  PayerProfileRow["prior_auth_submission_method"]
+>;
+type PayerEdiEnrollmentStatus = PayerProfileRow["edi_enrollment_status"];
 
 const LINE_OF_BUSINESS_VALUES = [
   "commercial",
@@ -52,8 +57,26 @@ const LINE_OF_BUSINESS_VALUES = [
 
 const REGION_VALUES = ["pa", "multi_state", "national"] as const satisfies readonly PayerRegion[];
 const CLAIM_FORMAT_VALUES = ["837p", "837i", "paper_1500"] as const satisfies readonly PayerClaimFormat[];
+const PA_METHOD_VALUES = [
+  "portal",
+  "fax",
+  "phone",
+  "electronic_278",
+  "paper",
+  "none",
+] as const satisfies readonly PayerPaMethod[];
+const EDI_ENROLLMENT_VALUES = [
+  "enrolled",
+  "pending",
+  "not_enrolled",
+  "not_applicable",
+] as const satisfies readonly PayerEdiEnrollmentStatus[];
 
 const SLUG_RE = /^[a-z0-9_]+$/;
+// US state two-letter — used for the paper-claims mailing address.
+const US_STATE_RE = /^[A-Z]{2}$/;
+// HCPCS Level-II / CPT modifier — exactly 2 alphanumerics.
+const MODIFIER_RE = /^[A-Z0-9]{2}$/;
 
 const upsertBody = z
   .object({
@@ -74,6 +97,43 @@ const upsertBody = z
     feeScheduleSource: z.string().trim().max(240).nullable().optional(),
     notes: z.string().trim().max(2000).nullable().optional(),
     isActive: z.boolean().default(true),
+    // ── Submission-readiness fields (migration 0149) ──
+    timelyFilingDays: z.number().int().min(30).max(1825).nullable().optional(),
+    claimsAddressLine1: z.string().trim().max(120).nullable().optional(),
+    claimsAddressLine2: z.string().trim().max(120).nullable().optional(),
+    claimsCity: z.string().trim().max(80).nullable().optional(),
+    claimsState: z
+      .string()
+      .trim()
+      .max(2)
+      .regex(US_STATE_RE, "must be a 2-letter US state code")
+      .nullable()
+      .optional(),
+    claimsZip: z.string().trim().max(10).nullable().optional(),
+    claimsPhoneE164: z.string().trim().max(20).nullable().optional(),
+    claimsFaxE164: z.string().trim().max(20).nullable().optional(),
+    priorAuthSubmissionMethod: z.enum(PA_METHOD_VALUES).nullable().optional(),
+    priorAuthFaxE164: z.string().trim().max(20).nullable().optional(),
+    priorAuthTurnaroundBusinessDays: z
+      .number()
+      .int()
+      .min(0)
+      .max(180)
+      .nullable()
+      .optional(),
+    requiredClaimModifiers: z
+      .array(
+        z
+          .string()
+          .trim()
+          .toUpperCase()
+          .regex(MODIFIER_RE, "modifier must be 2 alphanumeric chars"),
+      )
+      .max(20)
+      .optional(),
+    acceptsElectronicSecondary: z.boolean().optional(),
+    ediEnrollmentStatus: z.enum(EDI_ENROLLMENT_VALUES).optional(),
+    memberIdFormatHint: z.string().trim().max(120).nullable().optional(),
   })
   .strict();
 
@@ -98,6 +158,24 @@ interface PayerRow {
   fee_schedule_source: string | null;
   notes: string | null;
   is_active: boolean;
+  // ── 0149 columns ──
+  timely_filing_days: number | null;
+  claims_address_line1: string | null;
+  claims_address_line2: string | null;
+  claims_city: string | null;
+  claims_state: string | null;
+  claims_zip: string | null;
+  claims_phone_e164: string | null;
+  claims_fax_e164: string | null;
+  prior_auth_submission_method: string | null;
+  prior_auth_fax_e164: string | null;
+  prior_auth_turnaround_business_days: number | null;
+  required_claim_modifiers: string[] | null;
+  accepts_electronic_secondary: boolean;
+  edi_enrollment_status: string;
+  member_id_format_hint: string | null;
+  requirements_last_verified_at: string | null;
+  requirements_last_verified_by: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -122,13 +200,30 @@ function rowToApi(r: PayerRow) {
     feeScheduleSource: r.fee_schedule_source,
     notes: r.notes,
     isActive: r.is_active,
+    timelyFilingDays: r.timely_filing_days,
+    claimsAddressLine1: r.claims_address_line1,
+    claimsAddressLine2: r.claims_address_line2,
+    claimsCity: r.claims_city,
+    claimsState: r.claims_state,
+    claimsZip: r.claims_zip,
+    claimsPhoneE164: r.claims_phone_e164,
+    claimsFaxE164: r.claims_fax_e164,
+    priorAuthSubmissionMethod: r.prior_auth_submission_method,
+    priorAuthFaxE164: r.prior_auth_fax_e164,
+    priorAuthTurnaroundBusinessDays: r.prior_auth_turnaround_business_days,
+    requiredClaimModifiers: r.required_claim_modifiers ?? [],
+    acceptsElectronicSecondary: r.accepts_electronic_secondary,
+    ediEnrollmentStatus: r.edi_enrollment_status,
+    memberIdFormatHint: r.member_id_format_hint,
+    requirementsLastVerifiedAt: r.requirements_last_verified_at,
+    requirementsLastVerifiedBy: r.requirements_last_verified_by,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
 }
 
 const FULL_SELECT =
-  "id, slug, display_name, payer_legal_name, parent_org, line_of_business, region, office_ally_payer_id, edi_5010_payer_id, claim_format, paper_only, requires_prior_auth_dme, prior_auth_phone_e164, claim_status_phone_e164, provider_portal_url, fee_schedule_source, notes, is_active, created_at, updated_at";
+  "id, slug, display_name, payer_legal_name, parent_org, line_of_business, region, office_ally_payer_id, edi_5010_payer_id, claim_format, paper_only, requires_prior_auth_dme, prior_auth_phone_e164, claim_status_phone_e164, provider_portal_url, fee_schedule_source, notes, is_active, timely_filing_days, claims_address_line1, claims_address_line2, claims_city, claims_state, claims_zip, claims_phone_e164, claims_fax_e164, prior_auth_submission_method, prior_auth_fax_e164, prior_auth_turnaround_business_days, required_claim_modifiers, accepts_electronic_secondary, edi_enrollment_status, member_id_format_hint, requirements_last_verified_at, requirements_last_verified_by, created_at, updated_at";
 
 // ── LIST ────────────────────────────────────────────────────────────
 router.get(
@@ -169,6 +264,58 @@ router.get(
   if (error) throw error;
   res.json({ payerProfiles: (data ?? []).map(rowToApi) });
 });
+
+// ── EXPORT — Office Ally enrollment CSV ─────────────────────────────
+//
+// MUST be registered before the `/:id` route below; otherwise the
+// :id matcher catches "export.csv" first and returns 404.
+//
+// Returns the catalog formatted as an Office-Ally enrollment-review
+// CSV. The column order matches the layout Office Ally publishes for
+// its Payer Enrollment console so an admin can paste the export
+// directly into OA's intake spreadsheet (or attach it to an OA
+// support ticket when an enrollment is in flight).
+//
+// Rules:
+//   * Only `is_active=true` rows.
+//   * Default scope is electronically billable (Office Ally cannot
+//     enroll payers it doesn't clear). Pass `?includeNonElectronic=true`
+//     to include WC / paper-only rows for an internal audit export.
+//   * Header row is fixed; row order is by display_name ASC.
+//
+// Permission: reports.read (this is metadata, not PHI).
+router.get(
+  "/admin/payer-profiles/export.csv",
+  requirePermission("reports.read"),
+  async (req, res) => {
+    const includeNonElectronic = req.query.includeNonElectronic === "true";
+    const supabase = getSupabaseServiceRoleClient();
+    let query = supabase
+      .schema("resupply")
+      .from("payer_profiles")
+      .select(FULL_SELECT)
+      .eq("is_active", true)
+      .order("display_name", { ascending: true })
+      .limit(2000);
+    if (!includeNonElectronic) {
+      query = query.eq("paper_only", false).not("office_ally_payer_id", "is", null);
+    }
+    const { data, error } = await query;
+    if (error) throw error;
+
+    const rows = (data ?? []).map(rowToApi);
+    const filename = `pa-payer-profiles-${new Date()
+      .toISOString()
+      .slice(0, 10)}.csv`;
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${filename}"`,
+    );
+    res.setHeader("Cache-Control", "no-store");
+    res.send(renderOfficeAllyCsv(rows));
+  },
+);
 
 // ── DETAIL ──────────────────────────────────────────────────────────
 router.get(
@@ -248,6 +395,25 @@ router.post(
       fee_schedule_source: b.feeScheduleSource ?? null,
       notes: b.notes ?? null,
       is_active: b.isActive,
+      timely_filing_days: b.timelyFilingDays ?? null,
+      claims_address_line1: b.claimsAddressLine1 ?? null,
+      claims_address_line2: b.claimsAddressLine2 ?? null,
+      claims_city: b.claimsCity ?? null,
+      claims_state: b.claimsState ?? null,
+      claims_zip: b.claimsZip ?? null,
+      claims_phone_e164: b.claimsPhoneE164 ?? null,
+      claims_fax_e164: b.claimsFaxE164 ?? null,
+      prior_auth_submission_method: b.priorAuthSubmissionMethod ?? null,
+      prior_auth_fax_e164: b.priorAuthFaxE164 ?? null,
+      prior_auth_turnaround_business_days:
+        b.priorAuthTurnaroundBusinessDays ?? null,
+      required_claim_modifiers: b.requiredClaimModifiers ?? [],
+      accepts_electronic_secondary: b.acceptsElectronicSecondary ?? true,
+      edi_enrollment_status: b.ediEnrollmentStatus ?? "not_applicable",
+      member_id_format_hint: b.memberIdFormatHint ?? null,
+      // Creating a new payer = the act of verifying its requirements.
+      requirements_last_verified_at: new Date().toISOString(),
+      requirements_last_verified_by: req.adminEmail ?? null,
     })
     .select("id")
     .single();
@@ -317,6 +483,31 @@ router.patch(
   if (b.feeScheduleSource !== undefined) update.fee_schedule_source = b.feeScheduleSource;
   if (b.notes !== undefined) update.notes = b.notes;
   if (b.isActive !== undefined) update.is_active = b.isActive;
+  if (b.timelyFilingDays !== undefined) update.timely_filing_days = b.timelyFilingDays;
+  if (b.claimsAddressLine1 !== undefined) update.claims_address_line1 = b.claimsAddressLine1;
+  if (b.claimsAddressLine2 !== undefined) update.claims_address_line2 = b.claimsAddressLine2;
+  if (b.claimsCity !== undefined) update.claims_city = b.claimsCity;
+  if (b.claimsState !== undefined) update.claims_state = b.claimsState;
+  if (b.claimsZip !== undefined) update.claims_zip = b.claimsZip;
+  if (b.claimsPhoneE164 !== undefined) update.claims_phone_e164 = b.claimsPhoneE164;
+  if (b.claimsFaxE164 !== undefined) update.claims_fax_e164 = b.claimsFaxE164;
+  if (b.priorAuthSubmissionMethod !== undefined)
+    update.prior_auth_submission_method = b.priorAuthSubmissionMethod;
+  if (b.priorAuthFaxE164 !== undefined) update.prior_auth_fax_e164 = b.priorAuthFaxE164;
+  if (b.priorAuthTurnaroundBusinessDays !== undefined)
+    update.prior_auth_turnaround_business_days = b.priorAuthTurnaroundBusinessDays;
+  if (b.requiredClaimModifiers !== undefined)
+    update.required_claim_modifiers = b.requiredClaimModifiers;
+  if (b.acceptsElectronicSecondary !== undefined)
+    update.accepts_electronic_secondary = b.acceptsElectronicSecondary;
+  if (b.ediEnrollmentStatus !== undefined)
+    update.edi_enrollment_status = b.ediEnrollmentStatus;
+  if (b.memberIdFormatHint !== undefined)
+    update.member_id_format_hint = b.memberIdFormatHint;
+  // Any patch is a verification act — stamp the reviewer + time so
+  // the admin list can show staleness without a separate column.
+  update.requirements_last_verified_at = new Date().toISOString();
+  update.requirements_last_verified_by = req.adminEmail ?? null;
 
   const supabase = getSupabaseServiceRoleClient();
   const { error } = await supabase
@@ -349,6 +540,100 @@ function isRegion(v: string): v is PayerRegion {
 }
 function isLineOfBusiness(v: string): v is PayerLineOfBusiness {
   return (LINE_OF_BUSINESS_VALUES as readonly string[]).includes(v);
+}
+
+// Delegate to the shared helper for formula-injection neutralisation
+// + RFC 4180 quoting. Payer config is admin-curated so the attack
+// surface is internal, but naming-equivalent csvCell helpers should
+// behave the same — consistency keeps "is this CSV safe?" from
+// being a per-file judgement call.
+function csvCell(v: unknown): string {
+  return safeCsvCell(v);
+}
+
+function renderOfficeAllyCsv(
+  rows: ReturnType<typeof rowToApi>[],
+): string {
+  // Column order mirrors Office Ally's published enrollment-review
+  // spreadsheet. The "REVIEW" markers in cells highlight gaps so an
+  // op can spot stale rows at a glance.
+  const headers = [
+    "OA Payer ID",
+    "EDI 5010 ID",
+    "Display Name",
+    "Payer Legal Name",
+    "Parent Org",
+    "Line of Business",
+    "Region",
+    "Claim Format",
+    "EDI Enrollment Status",
+    "Accepts Electronic Secondary",
+    "PA Required (DME)",
+    "PA Submission Method",
+    "PA Phone",
+    "PA Fax",
+    "PA Turnaround (business days)",
+    "Required Modifiers",
+    "Timely Filing (days)",
+    "Claim Status Phone",
+    "Claims Address Line 1",
+    "Claims Address Line 2",
+    "Claims City",
+    "Claims State",
+    "Claims ZIP",
+    "Claims Phone",
+    "Claims Fax",
+    "Provider Portal URL",
+    "Fee Schedule Source",
+    "Member ID Format Hint",
+    "Notes",
+    "Requirements Last Verified At",
+    "Requirements Last Verified By",
+    "Slug",
+  ];
+  const lines: string[] = [headers.map(csvCell).join(",")];
+  for (const r of rows) {
+    lines.push(
+      [
+        r.officeAllyPayerId,
+        r.edi5010PayerId,
+        r.displayName,
+        r.payerLegalName,
+        r.parentOrg,
+        r.lineOfBusiness,
+        r.region,
+        r.claimFormat,
+        r.ediEnrollmentStatus,
+        r.acceptsElectronicSecondary ? "yes" : "no",
+        r.requiresPriorAuthDme ? "yes" : "no",
+        r.priorAuthSubmissionMethod ?? "REVIEW",
+        r.priorAuthPhoneE164,
+        r.priorAuthFaxE164,
+        r.priorAuthTurnaroundBusinessDays,
+        r.requiredClaimModifiers,
+        r.timelyFilingDays ?? "REVIEW",
+        r.claimStatusPhoneE164,
+        r.claimsAddressLine1,
+        r.claimsAddressLine2,
+        r.claimsCity,
+        r.claimsState,
+        r.claimsZip,
+        r.claimsPhoneE164,
+        r.claimsFaxE164,
+        r.providerPortalUrl,
+        r.feeScheduleSource,
+        r.memberIdFormatHint,
+        r.notes,
+        r.requirementsLastVerifiedAt,
+        r.requirementsLastVerifiedBy,
+        r.slug,
+      ]
+        .map(csvCell)
+        .join(","),
+    );
+  }
+  // CRLF newlines per RFC 4180.
+  return `${lines.join("\r\n")}\r\n`;
 }
 
 export default router;

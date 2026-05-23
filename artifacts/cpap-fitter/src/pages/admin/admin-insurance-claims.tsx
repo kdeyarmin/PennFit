@@ -22,7 +22,7 @@
 
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useLocation } from "wouter";
+import { Link, useLocation } from "wouter";
 import {
   ArrowLeft,
   ChevronRight,
@@ -40,9 +40,11 @@ import {
   createInsuranceClaim,
   createInsuranceClaimEvent,
   createInsuranceClaimLine,
+  fetchInsuranceClaimPreflight,
   getInsuranceClaim,
   listInsuranceClaims,
   patchInsuranceClaim,
+  submitInsuranceClaimToOfficeAlly,
   type CreateInsuranceClaimEventRequest,
   type CreateInsuranceClaimLineRequest,
   type CreateInsuranceClaimRequest,
@@ -52,6 +54,9 @@ import {
   type InsuranceClaimLineItem,
   type InsuranceClaimStatus,
   type PatchInsuranceClaimRequest,
+  type PreflightItem,
+  type PreflightSummary,
+  type SubmitClaimToOfficeAllyResponse,
 } from "@/lib/admin/clinical-tabs-api";
 
 /**
@@ -452,6 +457,35 @@ function ClaimDrawer({
     onSuccess: invalidate,
   });
 
+  // Preflight fetch — only meaningful for draft claims. We still
+  // fetch on every drawer open (cheap; the route caches well) and
+  // gate rendering on the claim status inside ClaimDrawerContent.
+  const preflightQ = useQuery({
+    queryKey: ["admin", "insurance-claim-preflight", patientId, claimId],
+    queryFn: () => fetchInsuranceClaimPreflight(patientId, claimId),
+    enabled: data?.claim.status === "draft",
+    staleTime: 15_000,
+  });
+
+  const [submitResult, setSubmitResult] = useState<
+    SubmitClaimToOfficeAllyResponse | { error: string } | null
+  >(null);
+  const submitMut = useMutation({
+    mutationFn: () => submitInsuranceClaimToOfficeAlly(patientId, claimId),
+    onSuccess: (r) => {
+      setSubmitResult(r);
+      invalidate();
+      void queryClient.invalidateQueries({
+        queryKey: ["admin-oa-submissions"],
+      });
+    },
+    onError: (err: unknown) => {
+      setSubmitResult({
+        error: err instanceof Error ? err.message : String(err),
+      });
+    },
+  });
+
   return (
     <div className="fixed inset-0 bg-black/40 z-50 flex items-stretch justify-end">
       <div
@@ -479,6 +513,10 @@ function ClaimDrawer({
             claim={data.claim}
             lineItems={data.lineItems}
             events={data.events}
+            preflight={preflightQ.data?.preflight ?? null}
+            preflightLoading={preflightQ.isPending && preflightQ.isFetching}
+            submitting={submitMut.isPending}
+            submitResult={submitResult}
             onTransition={(to, denialReason) =>
               transitionMut.mutate({
                 status: to,
@@ -487,6 +525,11 @@ function ClaimDrawer({
             }
             onAddLine={(body) => addLineMut.mutate(body)}
             onAddEvent={(body) => addEventMut.mutate(body)}
+            onSubmitToOfficeAlly={() => {
+              setSubmitResult(null);
+              submitMut.mutate();
+            }}
+            onRefreshPreflight={() => void preflightQ.refetch()}
           />
         )}
       </div>
@@ -510,19 +553,31 @@ function ClaimDrawerContent({
   claim,
   lineItems,
   events,
+  preflight,
+  preflightLoading,
+  submitting,
+  submitResult,
   onTransition,
   onAddLine,
   onAddEvent,
+  onSubmitToOfficeAlly,
+  onRefreshPreflight,
 }: {
   claim: InsuranceClaim;
   lineItems: InsuranceClaimLineItem[];
   events: InsuranceClaimEvent[];
+  preflight: PreflightSummary | null;
+  preflightLoading: boolean;
+  submitting: boolean;
+  submitResult: SubmitClaimToOfficeAllyResponse | { error: string } | null;
   onTransition: (
     to: InsuranceClaimStatus,
     denialReason: string | null,
   ) => void;
   onAddLine: (body: CreateInsuranceClaimLineRequest) => void;
   onAddEvent: (body: CreateInsuranceClaimEventRequest) => void;
+  onSubmitToOfficeAlly: () => void;
+  onRefreshPreflight: () => void;
 }) {
   const allowed = VALID_TRANSITIONS[claim.status] ?? [];
   return (
@@ -556,6 +611,17 @@ function ClaimDrawerContent({
           </p>
         )}
       </section>
+
+      {claim.status === "draft" && (
+        <OfficeAllySubmitPanel
+          preflight={preflight}
+          preflightLoading={preflightLoading}
+          submitting={submitting}
+          submitResult={submitResult}
+          onSubmit={onSubmitToOfficeAlly}
+          onRefreshPreflight={onRefreshPreflight}
+        />
+      )}
 
       {allowed.length > 0 && (
         <section className="space-y-2">
@@ -674,6 +740,172 @@ function ClaimDrawerContent({
  *
  * @param onConfirm - Callback invoked to confirm the transition. Receives the trimmed denial reason when required, or `null` otherwise.
  */
+// ── Office Ally submit panel (draft claims only) ───────────────────
+//
+// Surfaces the per-claim preflight checklist + a "Submit to Office
+// Ally" button. The submit button is gated on `preflight.readyToSubmit`
+// so a CSR can't push through obvious blockers — every item flagged
+// "error" explains exactly what to fix. Warnings (e.g. paper-only
+// payer) are surfaced but don't block.
+
+function OfficeAllySubmitPanel({
+  preflight,
+  preflightLoading,
+  submitting,
+  submitResult,
+  onSubmit,
+  onRefreshPreflight,
+}: {
+  preflight: PreflightSummary | null;
+  preflightLoading: boolean;
+  submitting: boolean;
+  submitResult: SubmitClaimToOfficeAllyResponse | { error: string } | null;
+  onSubmit: () => void;
+  onRefreshPreflight: () => void;
+}) {
+  const ready = preflight?.readyToSubmit ?? false;
+  return (
+    <section
+      className="space-y-3 rounded border p-4"
+      style={{ borderColor: "hsl(var(--surface-3))" }}
+      data-testid="claim-office-ally-panel"
+    >
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-semibold">Submit to Office Ally</h3>
+        <button
+          type="button"
+          onClick={onRefreshPreflight}
+          className="text-[11px] font-semibold hover:underline"
+          style={{ color: "hsl(var(--ink-3))" }}
+        >
+          ↻ Re-check
+        </button>
+      </div>
+
+      {preflightLoading && !preflight ? (
+        <Spinner label="Running preflight…" />
+      ) : preflight ? (
+        <PreflightChecklist items={preflight.items} />
+      ) : (
+        <p
+          className="text-[12px]"
+          style={{ color: "hsl(var(--ink-3))" }}
+        >
+          Preflight unavailable.
+        </p>
+      )}
+
+      <div className="flex flex-wrap items-center gap-3">
+        <Button
+          type="button"
+          disabled={!ready || submitting}
+          onClick={onSubmit}
+          data-testid="claim-submit-office-ally"
+        >
+          {submitting ? "Submitting…" : "Submit to Office Ally"}
+        </Button>
+        {preflight && !ready && (
+          <p
+            className="text-[12px]"
+            style={{ color: "#be123c" }}
+          >
+            {preflight.errorCount}{" "}
+            {preflight.errorCount === 1 ? "blocker" : "blockers"} above.
+          </p>
+        )}
+        {preflight && ready && preflight.warningCount > 0 && (
+          <p
+            className="text-[12px]"
+            style={{ color: "#b45309" }}
+          >
+            {preflight.warningCount}{" "}
+            {preflight.warningCount === 1 ? "warning" : "warnings"} — review before submit.
+          </p>
+        )}
+      </div>
+
+      {submitResult && "ok" in submitResult && (
+        <p
+          className="text-[12px] rounded border p-2"
+          style={{
+            backgroundColor: "rgba(21,128,61,0.06)",
+            borderColor: "#15803d",
+            color: "#15803d",
+          }}
+        >
+          ✓ Submitted in batch{" "}
+          <Link
+            href={`/admin/billing/office-ally/${submitResult.submissionId}`}
+            className="font-semibold underline"
+          >
+            {submitResult.submissionId.slice(0, 8)}
+          </Link>{" "}
+          (ISA {submitResult.isaControlNumber} ·{" "}
+          {(submitResult.fileSizeBytes / 1024).toFixed(1)} KB ·{" "}
+          {submitResult.transport})
+        </p>
+      )}
+      {submitResult && "error" in submitResult && (
+        <p
+          className="text-[12px] rounded border p-2"
+          style={{
+            backgroundColor: "rgba(190,18,60,0.06)",
+            borderColor: "#be123c",
+            color: "#9f1239",
+          }}
+        >
+          ✗ Submit failed: {submitResult.error}
+        </p>
+      )}
+    </section>
+  );
+}
+
+function PreflightChecklist({ items }: { items: PreflightItem[] }) {
+  return (
+    <ul className="space-y-1 text-[12px]">
+      {items.map((i) => (
+        <li key={i.key} className="flex items-start gap-2">
+          <PreflightIcon severity={i.severity} />
+          <div className="min-w-0">
+            <p className="font-semibold" style={{ color: "hsl(var(--ink-1))" }}>
+              {i.label}
+            </p>
+            <p className="text-[11px]" style={{ color: "hsl(var(--ink-3))" }}>
+              {i.detail}
+            </p>
+          </div>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function PreflightIcon({
+  severity,
+}: {
+  severity: PreflightItem["severity"];
+}) {
+  const map = {
+    ok: { fg: "#15803d", glyph: "✓" },
+    warning: { fg: "#b45309", glyph: "!" },
+    error: { fg: "#be123c", glyph: "✗" },
+  };
+  const c = map[severity];
+  return (
+    <span
+      aria-hidden
+      className="mt-0.5 inline-flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full text-[10px] font-bold"
+      style={{
+        backgroundColor: `${c.fg}22`,
+        color: c.fg,
+      }}
+    >
+      {c.glyph}
+    </span>
+  );
+}
+
 function TransitionButton({
   from,
   to,

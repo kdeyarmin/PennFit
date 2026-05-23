@@ -47,7 +47,11 @@ export interface KeywordRouterResult {
 }
 
 // Carrier-mandated set. CASE-INSENSITIVE, and we accept variants the
-// CTIA / mobile carriers consider equivalent.
+// CTIA / mobile carriers consider equivalent. Spanish equivalents
+// (DETENER / CANCELAR / AYUDA) are included because T-Mobile and AT&T
+// require carriers to honor Spanish opt-out keywords when the
+// program reaches Spanish-speakers — failing to honor them is a
+// compliance violation even when no Spanish-language sends went out.
 const STOP_ANYWHERE = new Set([
   "stop",
   "stopall",
@@ -58,9 +62,24 @@ const STOP_ANYWHERE = new Set([
   "optout",
   "opt-out",
   "revoke",
+  // Spanish
+  "detener",
+  "cancelar",
+  "alto",
+  "fin",
+  // Portuguese
+  "parar",
 ]);
 
-const HELP_ANYWHERE = new Set(["help", "info", "support"]);
+const HELP_ANYWHERE = new Set([
+  "help",
+  "info",
+  "support",
+  // Spanish
+  "ayuda",
+  // Portuguese
+  "ajuda",
+]);
 
 // Leading-keyword sets. Match only against the first 1–2 tokens so a
 // freeform message that happens to contain "yes" mid-sentence

@@ -104,8 +104,17 @@ export function usePushSubscription(): UsePushSubscription {
       await navigator.serviceWorker.ready;
 
       const permission = await Notification.requestPermission();
-      if (permission !== "granted") {
+      if (permission === "denied") {
+        // Explicit deny — leave the button hidden (the SPA reads
+        // state="denied" to render "open browser settings to enable").
         setState("denied");
+        return;
+      }
+      if (permission !== "granted") {
+        // "default" means the user dismissed the prompt without
+        // choosing (closed the popup, hit Esc). Don't flip to
+        // "denied" or they can never retry inside this session —
+        // leave state="off" so the Enable button stays visible.
         return;
       }
 

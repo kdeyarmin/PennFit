@@ -21,6 +21,8 @@
  * unexpected failures.
  */
 
+import { csrfHeader } from "../csrf";
+
 const BASE = "/api"; // resupply-api artifact.toml mounts the storefront router under /api
 
 export class StorefrontAdminApiError extends Error {
@@ -59,6 +61,7 @@ async function adminPost<T>(
     headers: {
       Accept: "application/json",
       "Content-Type": "application/json",
+      ...csrfHeader(),
     },
     body: body ? JSON.stringify(body) : undefined,
   });
@@ -132,37 +135,6 @@ export const fetchAdminOrder = (id: string) =>
   adminFetch<{ order: AdminOrderDetail }>(
     `/admin/orders/${encodeURIComponent(id)}`,
   );
-
-/* ------------------------------ Audit log -------------------------------- */
-
-export interface AdminAuditEvent {
-  id: string;
-  occurredAt: string;
-  adminEmail: string;
-  action: string;
-  targetOrderId?: string | null;
-  ip?: string | null;
-}
-
-export interface AdminAuditLogResponse {
-  events: AdminAuditEvent[];
-  page: number;
-  pageSize: number;
-  total: number;
-}
-
-export const fetchAdminAuditLog = (params: {
-  page?: number;
-  pageSize?: number;
-}): Promise<AdminAuditLogResponse> => {
-  const search = new URLSearchParams();
-  if (params.page) search.set("page", String(params.page));
-  if (params.pageSize) search.set("pageSize", String(params.pageSize));
-  const qs = search.toString();
-  return adminFetch<AdminAuditLogResponse>(
-    `/admin/audit-log${qs ? `?${qs}` : ""}`,
-  );
-};
 
 /* ------------------------------ Reminders -------------------------------- */
 

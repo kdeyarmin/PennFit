@@ -56,8 +56,14 @@ export async function renderStatementPdf(
 ): Promise<StatementResult> {
   const doc = new PDFDocument({
     size: "LETTER",
-    margins: { top: 54, bottom: 54, left: 54, right: 54 },
+    margins: { top: 72, bottom: 54, left: 54, right: 54 },
   });
+  // Draw the CONFIDENTIAL banner on every page (45 CFR 164.502 -
+  // Protected Health Information requires a visible marking on
+  // patient-record output destined for fax / mail / disk). The
+  // banner is drawn on the first page below, and on every page
+  // added thereafter via this listener.
+  doc.on("pageAdded", () => drawConfidentialBanner(doc));
   const chunks: Buffer[] = [];
   return new Promise((resolve, reject) => {
     doc.on("data", (c: Buffer) => chunks.push(c));
@@ -73,12 +79,30 @@ export async function renderStatementPdf(
     });
     doc.on("error", reject);
     try {
+      drawConfidentialBanner(doc);
       drawStatement(doc, input);
       doc.end();
     } catch (err) {
       reject(err);
     }
   });
+}
+
+function drawConfidentialBanner(doc: PDFKit.PDFDocument): void {
+  const saved = { x: doc.x, y: doc.y };
+  doc
+    .font("Helvetica-Bold")
+    .fontSize(8)
+    .fillColor("#7c2d12")
+    .text(
+      "CONFIDENTIAL — PROTECTED HEALTH INFORMATION — Disclosure restricted under 45 CFR 164.502",
+      54,
+      36,
+      { align: "center", width: 504 },
+    );
+  doc.fillColor("black").font("Helvetica").fontSize(10);
+  doc.x = saved.x;
+  doc.y = saved.y === 36 ? 72 : saved.y;
 }
 
 function drawStatement(
@@ -172,7 +196,14 @@ function drawStatement(
 }
 
 function money(cents: number): string {
-  const d = Math.floor(cents / 100);
-  const c = cents % 100;
-  return `$${d}.${c.toString().padStart(2, "0")}`;
+  // The previous implementation used Math.floor(cents/100) and
+  // cents%100 which broke on negative amounts: -150 cents printed
+  // as "$-2.-50" instead of "-$1.50" (credit balance on a patient
+  // statement renders garbage on the PDF the patient receives).
+  // Compute sign separately, format the absolute value, prepend.
+  const sign = cents < 0 ? "-" : "";
+  const abs = Math.abs(cents);
+  const d = Math.floor(abs / 100);
+  const c = abs % 100;
+  return `${sign}$${d}.${c.toString().padStart(2, "0")}`;
 }
