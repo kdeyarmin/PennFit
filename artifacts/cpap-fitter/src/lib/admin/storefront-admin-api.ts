@@ -136,37 +136,6 @@ export const fetchAdminOrder = (id: string) =>
     `/admin/orders/${encodeURIComponent(id)}`,
   );
 
-/* ------------------------------ Audit log -------------------------------- */
-
-export interface AdminAuditEvent {
-  id: string;
-  occurredAt: string;
-  adminEmail: string;
-  action: string;
-  targetOrderId?: string | null;
-  ip?: string | null;
-}
-
-export interface AdminAuditLogResponse {
-  events: AdminAuditEvent[];
-  page: number;
-  pageSize: number;
-  total: number;
-}
-
-export const fetchAdminAuditLog = (params: {
-  page?: number;
-  pageSize?: number;
-}): Promise<AdminAuditLogResponse> => {
-  const search = new URLSearchParams();
-  if (params.page) search.set("page", String(params.page));
-  if (params.pageSize) search.set("pageSize", String(params.pageSize));
-  const qs = search.toString();
-  return adminFetch<AdminAuditLogResponse>(
-    `/admin/audit-log${qs ? `?${qs}` : ""}`,
-  );
-};
-
 /* ------------------------------ Reminders -------------------------------- */
 
 export interface AdminReminderItem {
