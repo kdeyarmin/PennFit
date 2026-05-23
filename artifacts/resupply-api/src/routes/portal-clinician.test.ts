@@ -46,8 +46,12 @@ vi.mock("@workspace/resupply-audit", () => ({
 // ── verifyClinicianShareToken mock ───────────────────────────────────
 // Default: return valid with a known shareRowId. Override per test.
 const verifyClinicianShareTokenMock = vi.hoisted(() =>
-  vi.fn(() => ({
-    valid: true as const,
+  vi.fn<
+    (token: string) =>
+      | { valid: true; shareRowId: string }
+      | { valid: false }
+  >(() => ({
+    valid: true,
     shareRowId: "share-row-uuid-1111",
   })),
 );
