@@ -846,7 +846,7 @@ router.get(
       }
     >();
     if (claimIds.length > 0) {
-      const { data: events } = await supabase
+      const { data: events, error } = await supabase
         .schema("resupply")
         .from("insurance_claim_events")
         .select("claim_id, event_type, note, occurred_at")
@@ -854,6 +854,7 @@ router.get(
         .in("event_type", ["denied", "note"])
         .like("note", "277CA%")
         .order("occurred_at", { ascending: false });
+      if (error) throw error;
       // Keep only the newest 277CA event per claim. Iteration order
       // is DESC so the first one we see for a claim is the latest.
       for (const e of events ?? []) {
