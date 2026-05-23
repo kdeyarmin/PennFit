@@ -160,6 +160,32 @@ export async function listFitterTouchMetrics(): Promise<ListFitterTouchMetricsRe
   return (await res.json()) as ListFitterTouchMetricsResponse;
 }
 
+export interface FitterTouchVariantMetric {
+  touchIndex: number;
+  subjectVariantKey: string;
+  emailSends: number;
+  emailFailures: number;
+  opens: number;
+  clicks: number;
+  openRate: number;
+  clickRate: number;
+}
+
+export interface ListFitterTouchVariantMetricsResponse {
+  variants: FitterTouchVariantMetric[];
+}
+
+export async function listFitterTouchVariantMetrics(): Promise<ListFitterTouchVariantMetricsResponse> {
+  const res = await fetch(
+    "/resupply-api/admin/fitter-leads/metrics/variants",
+    { headers: { Accept: "application/json" } },
+  );
+  if (!res.ok) {
+    throw new Error(`Failed to load fitter variant metrics (${res.status})`);
+  }
+  return (await res.json()) as ListFitterTouchVariantMetricsResponse;
+}
+
 export interface FitterTimelineEvent {
   ts: string;
   kind: string;

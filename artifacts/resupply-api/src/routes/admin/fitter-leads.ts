@@ -506,6 +506,53 @@ router.get(
   },
 );
 
+// GET /admin/fitter-leads/metrics/variants — per-(touch, subject
+// variant) breakdown. Sibling of the touch-rollup endpoint above;
+// used by the admin UI's "expand for variants" affordance on
+// touches that are running an A/B test. Returns rows only for
+// (touch, variant) combinations that have actually shipped — the
+// composer-side SUBJECT_VARIANTS registry is the source of truth
+// for "which touches are testing what."
+router.get(
+  "/admin/fitter-leads/metrics/variants",
+  requirePermission("conversations.manage"),
+  async (req, res) => {
+    const supabase = getSupabaseServiceRoleClient();
+    const { data: rows, error } = await supabase
+      .schema("resupply")
+      .from("fitter_campaign_touch_variant_metrics")
+      .select(
+        "touch_index, subject_variant_key, email_sends, email_failures, opens, clicks",
+      )
+      .order("touch_index", { ascending: true })
+      .order("subject_variant_key", { ascending: true });
+    if (error) throw error;
+
+    req.log?.info?.(
+      { rowCount: rows?.length ?? 0 },
+      "admin/fitter-leads/metrics/variants: list",
+    );
+
+    res.json({
+      variants: (rows ?? []).map((r) => {
+        const sends = r.email_sends ?? 0;
+        const opens = r.opens ?? 0;
+        const clicks = r.clicks ?? 0;
+        return {
+          touchIndex: r.touch_index,
+          subjectVariantKey: r.subject_variant_key,
+          emailSends: sends,
+          emailFailures: r.email_failures ?? 0,
+          opens,
+          clicks,
+          openRate: sends > 0 ? opens / sends : 0,
+          clickRate: sends > 0 ? clicks / sends : 0,
+        };
+      }),
+    });
+  },
+);
+
 // GET /admin/fitter-leads/:id/timeline — chronological event log
 // for CSR call-prep. Pulls from fitter_campaign_touches +
 // fitter_campaign_clicks + the lead row's lifecycle columns, then

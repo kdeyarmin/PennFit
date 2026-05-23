@@ -103,6 +103,58 @@ export const TOTAL_WITH_FINAL_CALL = TOTAL_ALL_TOUCHPOINTS + 1;
  *  ordering get flipped into the hot-lead queue for CSR outreach. */
 export const HOT_LEAD_THRESHOLD = 3;
 
+// ---------------------------------------------------------------
+// Subject-line A/B variants (mig 0157).
+// ---------------------------------------------------------------
+//
+// Per-touch registry: touchIndex → list of variant keys offered
+// for that touch. The composer module knows what subject string
+// to render for each key; this module is the single source of
+// truth for "which touches are currently running an A/B test."
+//
+// To add a variant: bump the array for the relevant touch_index
+// AND add the corresponding case in the composer's variant map.
+// Variants ship at the next worker tick — no migration needed.
+//
+// Holding a variant constant per (lead, touch) means a patient
+// who got T1-A doesn't get T1-B if they happen to re-open the
+// email — the deterministic hash below guarantees same input →
+// same variant. Bucket assignment is uniform across the cohort
+// because SHA-256 + mod gives ~equal-sized buckets at any non-
+// pathological cohort size.
+export const SUBJECT_VARIANTS: Record<number, readonly string[]> = {
+  // T1: warm recap. Loss-aversion ("on hold") vs. promise-based
+  // ("ready when you are"). Both target the day-1 cold-warm
+  // mindset; A is the current default.
+  1: ["A", "B"],
+  // T4: discount touch. Promo-code-first ("WELCOME15: 15% off
+  // ...") vs. urgency-first ("15% off ends in 7 days"). The
+  // dispatcher's strongest-converting touch — A/B'ing it has the
+  // biggest expected revenue impact.
+  4: ["A", "B"],
+  // Other touches default to single-variant ('A') via the
+  // pickVariant fallback.
+};
+
+/** Hash-bucket assignment for the A/B variant. Same lead always
+ *  gets the same variant for the same touch_index, evenly
+ *  distributed across the available variants for that touch.
+ *  Exported for tests. */
+export function pickSubjectVariant(
+  leadId: string,
+  touchIndex: number,
+): string {
+  const variants = SUBJECT_VARIANTS[touchIndex] ?? ["A"];
+  if (variants.length === 1) return variants[0];
+  // Deterministic hash. SHA-256 → mod variants.length. Using the
+  // first 4 bytes is plenty of entropy for bucket count <= 8.
+  const hash = createHmac("sha256", "fitter-supply-variant-bucket")
+    .update(`${leadId}|${touchIndex}`, "utf8")
+    .digest();
+  const bucket = hash.readUInt32BE(0) % variants.length;
+  return variants[bucket];
+}
+
 const MASK_TYPES = ["fullFace", "nasal", "nasalPillow", "hybrid"] as const;
 
 // ---------------------------------------------------------------
@@ -633,11 +685,18 @@ const CTA_DESTINATIONS: Record<string, (baseUrl: string) => string> = {
 const CLICK_TOKEN_TTL_MS = 180 * 86_400_000;
 
 /** Mint a per-CTA click token. Exported so the dispatcher worker
- *  can wrap every outbound HTML CTA. */
+ *  can wrap every outbound HTML CTA.
+ *
+ *  Mig 0157 adds `variantKey` — carries the subject-line A/B
+ *  variant forward into the click endpoint so per-variant CTR can
+ *  be attributed without a DB lookup against the touches row.
+ *  Default 'A' for callers (incl. tests) that don't run A/B
+ *  experiments. */
 export function signClickTrackingToken(
   leadId: string,
   touchIndex: number,
   linkKey: string,
+  variantKey: string = "A",
   now: Date = new Date(),
 ): string {
   const issuedSec = Math.floor(now.getTime() / 1000);
@@ -645,7 +704,10 @@ export function signClickTrackingToken(
   // cross-replayed against the open-tracking or unsubscribe
   // endpoints (and vice versa). Pipe-separated shape stays
   // grep-able and matches signOpenTrackingToken's convention.
-  const payload = `c|${leadId}|${touchIndex}|${linkKey}|${issuedSec}`;
+  // Variant key sits at the end so legacy 5-segment tokens
+  // minted before mig 0157 still verify (we treat them as
+  // variant 'A' for back-compat).
+  const payload = `c|${leadId}|${touchIndex}|${linkKey}|${issuedSec}|${variantKey}`;
   const payloadEncoded = base64urlEncode(Buffer.from(payload, "utf8"));
   const sig = createHmac("sha256", getLinkHmacKey())
     .update(payloadEncoded, "utf8")
@@ -654,7 +716,13 @@ export function signClickTrackingToken(
 }
 
 type ClickVerifyResult =
-  | { valid: true; leadId: string; touchIndex: number; linkKey: string }
+  | {
+      valid: true;
+      leadId: string;
+      touchIndex: number;
+      linkKey: string;
+      variantKey: string;
+    }
   | { valid: false; reason: "malformed" | "bad_signature" | "expired" };
 
 function verifyClickTrackingToken(
@@ -681,13 +749,16 @@ function verifyClickTrackingToken(
   const payloadBuf = base64urlDecode(payloadEncoded);
   if (!payloadBuf) return { valid: false, reason: "malformed" };
   const parts = payloadBuf.toString("utf8").split("|");
-  if (parts.length !== 5 || parts[0] !== "c") {
+  // 5-segment legacy + 6-segment with variant_key both accepted.
+  // Back-compat: tokens signed before mig 0157 default to 'A'.
+  if ((parts.length !== 5 && parts.length !== 6) || parts[0] !== "c") {
     return { valid: false, reason: "malformed" };
   }
   const leadId = parts[1];
   const touchIndex = Number.parseInt(parts[2], 10);
   const linkKey = parts[3];
   const issuedSec = Number.parseInt(parts[4], 10);
+  const variantKey = parts.length === 6 ? parts[5] : "A";
   if (
     !leadId ||
     !Number.isFinite(touchIndex) ||
@@ -695,14 +766,16 @@ function verifyClickTrackingToken(
     !linkKey ||
     !(linkKey in CTA_DESTINATIONS) ||
     touchIndex < 1 ||
-    touchIndex > 50
+    touchIndex > 50 ||
+    !variantKey ||
+    variantKey.length > 8
   ) {
     return { valid: false, reason: "malformed" };
   }
   if (issuedSec * 1000 + CLICK_TOKEN_TTL_MS <= now.getTime()) {
     return { valid: false, reason: "expired" };
   }
-  return { valid: true, leadId, touchIndex, linkKey };
+  return { valid: true, leadId, touchIndex, linkKey, variantKey };
 }
 
 function publicBaseUrl(): string {
@@ -763,6 +836,7 @@ router.get("/shop/track/c", async (req, res) => {
     verify.leadId,
     verify.touchIndex,
     verify.linkKey,
+    verify.variantKey,
     submitterIp,
   ).catch((err) => {
     logger.warn(
@@ -784,6 +858,7 @@ async function recordClickEvent(
   leadId: string,
   touchIndex: number,
   linkKey: string,
+  variantKey: string,
   submitterIp: string | null,
 ): Promise<void> {
   const supabase = getSupabaseServiceRoleClient();
@@ -821,6 +896,10 @@ async function recordClickEvent(
         touch_index: touchIndex,
         link_key: linkKey,
         submitter_ip: submitterIp,
+        // Mig 0157 — carries the subject-line variant through
+        // from the click token. Default 'A' for back-compat with
+        // legacy 5-segment tokens.
+        subject_variant_key: variantKey,
       });
     if (clickInsertErr) {
       logger.warn(

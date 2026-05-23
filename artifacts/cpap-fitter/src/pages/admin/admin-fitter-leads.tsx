@@ -22,9 +22,11 @@ import {
   type FitterLeadRow,
   type FitterLeadSource,
   type FitterTimelineEvent,
+  type FitterTouchVariantMetric,
   getFitterLeadTimeline,
   listFitterLeads,
   listFitterTouchMetrics,
+  listFitterTouchVariantMetrics,
   markContactedFitterLead,
   setFitterLeadNotes,
   unsubscribeFitterLead,
@@ -149,6 +151,30 @@ export function AdminFitterLeadsPage() {
     // fresh refetch on every interaction would be wasted bandwidth.
     staleTime: 60_000,
   });
+  // Per-(touch, subject-variant) breakdown for the A/B-testing
+  // expand-row affordance (mig 0157). Only the touches with > 1
+  // variant render a child row; the metrics card hides the
+  // affordance otherwise.
+  const variantMetricsQuery = useQuery({
+    queryKey: ["admin", "fitter-leads", "metrics", "variants"] as const,
+    queryFn: listFitterTouchVariantMetrics,
+    staleTime: 60_000,
+  });
+  // Group variant rows by touch_index for the inline expand. A
+  // touch with only the default 'A' variant isn't worth the extra
+  // row — same numbers as the rollup.
+  const variantsByTouch = useMemo(() => {
+    const map = new Map<number, FitterTouchVariantMetric[]>();
+    for (const v of variantMetricsQuery.data?.variants ?? []) {
+      const existing = map.get(v.touchIndex);
+      if (existing) {
+        existing.push(v);
+      } else {
+        map.set(v.touchIndex, [v]);
+      }
+    }
+    return map;
+  }, [variantMetricsQuery.data]);
 
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<
@@ -335,61 +361,113 @@ export function AdminFitterLeadsPage() {
                 </td>
               </tr>
             )}
-            {!metricsQuery.isPending && (metricsQuery.data?.touches ?? []).map((m) => (
-              <tr
-                key={m.touchIndex}
-                style={{ borderTop: "1px solid hsl(var(--line-1))" }}
-                data-testid={`touch-metric-T${m.touchIndex}`}
-              >
-                <td className="px-3 py-1.5 font-medium">T{m.touchIndex}</td>
-                <td className="px-3 py-1.5 text-right tabular-nums">
-                  {m.emailSends}
-                </td>
-                <td className="px-3 py-1.5 text-right tabular-nums">
-                  {m.opens}
-                </td>
-                <td
-                  className="px-3 py-1.5 text-right tabular-nums"
-                  style={{
-                    color:
-                      m.openRate >= 0.5
-                        ? "#14532d"
-                        : m.openRate >= 0.25
-                          ? "#854d0e"
-                          : "#475569",
-                  }}
-                >
-                  {m.emailSends > 0 ? `${(m.openRate * 100).toFixed(0)}%` : "—"}
-                </td>
-                <td className="px-3 py-1.5 text-right tabular-nums">
-                  {m.clicks}
-                </td>
-                <td
-                  className="px-3 py-1.5 text-right tabular-nums"
-                  style={{
-                    color:
-                      m.clickRate >= 0.1
-                        ? "#14532d"
-                        : m.clickRate >= 0.05
-                          ? "#854d0e"
-                          : "#475569",
-                  }}
-                >
-                  {m.emailSends > 0 ? `${(m.clickRate * 100).toFixed(1)}%` : "—"}
-                </td>
-                <td className="px-3 py-1.5 text-right tabular-nums text-slate-500">
-                  {m.smsSends}
-                </td>
-                <td
-                  className="px-3 py-1.5 text-right tabular-nums"
-                  style={{
-                    color: m.emailFailures + m.smsFailures > 0 ? "#9f1239" : "#9ca3af",
-                  }}
-                >
-                  {m.emailFailures + m.smsFailures}
-                </td>
-              </tr>
-            ))}
+            {!metricsQuery.isPending && (metricsQuery.data?.touches ?? []).map((m) => {
+              const variants = variantsByTouch.get(m.touchIndex) ?? [];
+              const showVariants = variants.length > 1;
+              return (
+                <Fragment key={m.touchIndex}>
+                  <tr
+                    style={{ borderTop: "1px solid hsl(var(--line-1))" }}
+                    data-testid={`touch-metric-T${m.touchIndex}`}
+                  >
+                    <td className="px-3 py-1.5 font-medium">
+                      T{m.touchIndex}
+                      {showVariants && (
+                        <span
+                          className="ml-2 inline-block px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider"
+                          style={{ background: "#ede9fe", color: "#6b21a8" }}
+                          title={`Running A/B test across ${variants.length} subject variants`}
+                        >
+                          A/B
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-3 py-1.5 text-right tabular-nums">
+                      {m.emailSends}
+                    </td>
+                    <td className="px-3 py-1.5 text-right tabular-nums">
+                      {m.opens}
+                    </td>
+                    <td
+                      className="px-3 py-1.5 text-right tabular-nums"
+                      style={{
+                        color:
+                          m.openRate >= 0.5
+                            ? "#14532d"
+                            : m.openRate >= 0.25
+                              ? "#854d0e"
+                              : "#475569",
+                      }}
+                    >
+                      {m.emailSends > 0 ? `${(m.openRate * 100).toFixed(0)}%` : "—"}
+                    </td>
+                    <td className="px-3 py-1.5 text-right tabular-nums">
+                      {m.clicks}
+                    </td>
+                    <td
+                      className="px-3 py-1.5 text-right tabular-nums"
+                      style={{
+                        color:
+                          m.clickRate >= 0.1
+                            ? "#14532d"
+                            : m.clickRate >= 0.05
+                              ? "#854d0e"
+                              : "#475569",
+                      }}
+                    >
+                      {m.emailSends > 0 ? `${(m.clickRate * 100).toFixed(1)}%` : "—"}
+                    </td>
+                    <td className="px-3 py-1.5 text-right tabular-nums text-slate-500">
+                      {m.smsSends}
+                    </td>
+                    <td
+                      className="px-3 py-1.5 text-right tabular-nums"
+                      style={{
+                        color: m.emailFailures + m.smsFailures > 0 ? "#9f1239" : "#9ca3af",
+                      }}
+                    >
+                      {m.emailFailures + m.smsFailures}
+                    </td>
+                  </tr>
+                  {showVariants && variants.map((v) => (
+                    <tr
+                      key={`${m.touchIndex}-${v.subjectVariantKey}`}
+                      style={{ background: "#faf5ff", color: "#475569" }}
+                      data-testid={`touch-metric-variant-T${m.touchIndex}-${v.subjectVariantKey}`}
+                    >
+                      <td className="px-3 py-1 pl-8 text-[11px]">
+                        variant {v.subjectVariantKey}
+                      </td>
+                      <td className="px-3 py-1 text-right tabular-nums text-[11px]">
+                        {v.emailSends}
+                      </td>
+                      <td className="px-3 py-1 text-right tabular-nums text-[11px]">
+                        {v.opens}
+                      </td>
+                      <td className="px-3 py-1 text-right tabular-nums text-[11px]">
+                        {v.emailSends > 0
+                          ? `${(v.openRate * 100).toFixed(0)}%`
+                          : "—"}
+                      </td>
+                      <td className="px-3 py-1 text-right tabular-nums text-[11px]">
+                        {v.clicks}
+                      </td>
+                      <td className="px-3 py-1 text-right tabular-nums text-[11px]">
+                        {v.emailSends > 0
+                          ? `${(v.clickRate * 100).toFixed(1)}%`
+                          : "—"}
+                      </td>
+                      <td className="px-3 py-1 text-right tabular-nums text-[11px] text-slate-400">
+                        —
+                      </td>
+                      <td className="px-3 py-1 text-right tabular-nums text-[11px] text-slate-400">
+                        {v.emailFailures}
+                      </td>
+                    </tr>
+                  ))}
+                </Fragment>
+              );
+            })}
           </tbody>
         </table>
       </div>
