@@ -402,3 +402,125 @@ describe("createPaymentCheckoutSession — idempotency key", () => {
     );
   });
 });
+
+// ============================================================================
+// PR change: stamp PaymentIntent id before status — sync-succeeded path
+// ============================================================================
+// The PR separates the initial patient_payments update into two steps:
+//   1. Stamp stripe_payment_intent_id + set status to "requires_action" or
+//      "pending" (never "succeeded" — even when Stripe returns succeeded
+//      synchronously). This is so the webhook can always correlate by PI id.
+//   2. If Stripe returned succeeded synchronously, route through the SAME
+//      markPaymentStatus check-and-set used by the webhook, not directly
+//      through applySucceededPayment.
+//
+// These tests verify:
+//   a. The first update payload never contains status="succeeded" or
+//      succeeded_at, regardless of the Stripe intent status.
+//   b. When Stripe returns succeeded, the first update sets status="pending"
+//      (not succeeded), and markPaymentStatus is invoked to handle the
+//      allocation walk with idempotency protection.
+
+const SYNC_PATIENT = "aaaaaaaa-1111-4aaa-8aaa-aaaaaaaaaaaa";
+const SYNC_CLAIM = "bbbbbbbb-2222-4bbb-8bbb-bbbbbbbbbbbb";
+const SYNC_PAYMENT_ID = "cccccccc-3333-4ccc-8ccc-cccccccccccc";
+
+describe("createPaymentIntent — PI id stamp (PR change)", () => {
+  beforeEach(() => {
+    supabaseMock.reset();
+    stripeConfiguredFlag.value = true;
+    stripeIntentCreateMock.mockReset();
+  });
+
+  function stageSyncClaim() {
+    stageSupabaseResponse("insurance_claims", "select", {
+      data: [
+        {
+          id: SYNC_CLAIM,
+          patient_id: SYNC_PATIENT,
+          patient_responsibility_cents: 10000,
+        },
+      ],
+    });
+  }
+
+  function stageSyncPaymentInsert() {
+    stageSupabaseResponse("patient_payments", "insert", {
+      data: { id: SYNC_PAYMENT_ID },
+    });
+  }
+
+  it("does not include status='succeeded' in the first PI-stamp update when Stripe returns pending", async () => {
+    stageSyncClaim();
+    stageSyncPaymentInsert();
+    stripeIntentCreateMock.mockResolvedValue({
+      id: "pi_pending_001",
+      status: "requires_payment_method",
+      client_secret: "pi_pending_001_secret",
+    });
+    // Stage the first update (stamp) and any subsequent updates.
+    stageSupabaseResponse("patient_payments", "update", { data: null });
+    stageSupabaseResponse("patient_payments", "update", { data: null });
+
+    await createPaymentIntent({
+      patientId: SYNC_PATIENT,
+      allocations: [{ claimId: SYNC_CLAIM, amountAppliedCents: 5000 }],
+      source: "portal",
+      initiatorEmail: "test@example.com",
+    });
+
+    const updates = getSupabaseWritePayloads("patient_payments", "update");
+    // The first update is the PI-stamp; it must not contain status="succeeded".
+    const firstUpdate = updates[0] as Record<string, unknown>;
+    expect(firstUpdate).toBeDefined();
+    expect(firstUpdate.stripe_payment_intent_id).toBe("pi_pending_001");
+    expect(firstUpdate.status).not.toBe("succeeded");
+    expect(firstUpdate.succeeded_at).toBeUndefined();
+  });
+
+  it("does not include succeeded_at in the PI-stamp update when Stripe returns requires_action", async () => {
+    stageSyncClaim();
+    stageSyncPaymentInsert();
+    stripeIntentCreateMock.mockResolvedValue({
+      id: "pi_3dSecure_001",
+      status: "requires_action",
+      client_secret: "pi_3dSecure_001_secret",
+    });
+    stageSupabaseResponse("patient_payments", "update", { data: null });
+
+    await createPaymentIntent({
+      patientId: SYNC_PATIENT,
+      allocations: [{ claimId: SYNC_CLAIM, amountAppliedCents: 5000 }],
+      source: "portal",
+      initiatorEmail: "test@example.com",
+    });
+
+    const updates = getSupabaseWritePayloads("patient_payments", "update");
+    const firstUpdate = updates[0] as Record<string, unknown>;
+    expect(firstUpdate.status).toBe("requires_action");
+    expect(firstUpdate.succeeded_at).toBeUndefined();
+  });
+
+  it("stamps stripe_payment_intent_id in the first update (before any succeeded handling)", async () => {
+    stageSyncClaim();
+    stageSyncPaymentInsert();
+    const PI_ID = "pi_stamp_test_xyz";
+    stripeIntentCreateMock.mockResolvedValue({
+      id: PI_ID,
+      status: "requires_payment_method",
+      client_secret: `${PI_ID}_secret`,
+    });
+    stageSupabaseResponse("patient_payments", "update", { data: null });
+
+    await createPaymentIntent({
+      patientId: SYNC_PATIENT,
+      allocations: [{ claimId: SYNC_CLAIM, amountAppliedCents: 3000 }],
+      source: "csr",
+      initiatorEmail: "csr@example.com",
+    });
+
+    const updates = getSupabaseWritePayloads("patient_payments", "update");
+    const firstUpdate = updates[0] as Record<string, unknown>;
+    expect(firstUpdate.stripe_payment_intent_id).toBe(PI_ID);
+  });
+});
