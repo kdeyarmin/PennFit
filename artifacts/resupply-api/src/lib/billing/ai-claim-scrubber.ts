@@ -307,7 +307,10 @@ async function assembleClaimContext(
           .schema("resupply")
           .from("payer_profiles")
           .select(
-            "display_name, line_of_business, region, requires_prior_auth_dme, claim_format",
+            // Phase 13 additions: timely-filing window + required
+            // modifier set + referring-provider requirement let the
+            // scrubber reason about denials before they happen.
+            "display_name, line_of_business, region, requires_prior_auth_dme, claim_format, timely_filing_days, required_modifiers_dme, requires_referring_provider_npi, member_id_pattern, enrollment_status, enrollment_effective_on",
           )
           .eq("id", claim.payer_profile_id)
           .limit(1)

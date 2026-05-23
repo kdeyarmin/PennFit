@@ -413,6 +413,14 @@ export function Layout({ children }: { children: React.ReactNode }) {
                   </li>
                   <li>
                     <Link
+                      href="/stories"
+                      className="text-muted-foreground hover:text-primary transition-colors"
+                    >
+                      Patient stories
+                    </Link>
+                  </li>
+                  <li>
+                    <Link
                       href="/learn/sleep-apnea-quiz"
                       className="text-muted-foreground hover:text-primary transition-colors"
                     >

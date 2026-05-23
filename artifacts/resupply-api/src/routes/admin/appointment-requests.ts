@@ -110,6 +110,26 @@ router.patch(
       }
     }
     if (parsed.data.attachedPatientId !== undefined) {
+      // Verify the patient row actually exists before attaching it
+      // to a request. The GET endpoint on the patient side returns
+      // meeting_url + scheduled_for to the requester_email; a bogus
+      // attached_patient_id would otherwise route a real patient's
+      // telehealth link to whoever filed the request.
+      if (parsed.data.attachedPatientId !== null) {
+        const supabaseCheck = getSupabaseServiceRoleClient();
+        const { data: patientRow, error: lookupErr } = await supabaseCheck
+          .schema("resupply")
+          .from("patients")
+          .select("id")
+          .eq("id", parsed.data.attachedPatientId)
+          .limit(1)
+          .maybeSingle();
+        if (lookupErr) throw lookupErr;
+        if (!patientRow) {
+          res.status(404).json({ error: "patient_not_found" });
+          return;
+        }
+      }
       update.attached_patient_id = parsed.data.attachedPatientId;
     }
     if (parsed.data.assignedAdminUserId !== undefined) {

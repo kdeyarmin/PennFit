@@ -212,7 +212,7 @@ export async function scoreClaim(claimId: string): Promise<DenialScore | null> {
   if (claim.payer_profile_id) {
     for (const line of lineList) {
       if (!CAPPED_RENTAL_HCPCS.has(line.hcpcs_code)) continue;
-      const mods = (line.modifier ?? "")
+      const mods = ((line.modifier ?? "") as string)
         .split(",")
         .map((m: string) => m.trim().toUpperCase());
       if (!mods.includes("KX") && rentalLikelyContinuing(claim.date_of_service)) {
@@ -339,9 +339,13 @@ function rentalLikelyContinuing(dateOfService: string): boolean {
 }
 
 function centsToDollars(cents: number): string {
-  const d = Math.floor(cents / 100);
-  const c = cents % 100;
-  return `$${d}.${c.toString().padStart(2, "0")}`;
+  // Sign-correct so negative line amounts (refunds, adjustments)
+  // don't render as "$-2.-50" in the scorer's audit-row metadata.
+  const sign = cents < 0 ? "-" : "";
+  const abs = Math.abs(cents);
+  const d = Math.floor(abs / 100);
+  const c = abs % 100;
+  return `${sign}$${d}.${c.toString().padStart(2, "0")}`;
 }
 
 // Suppress the no-unused-vars lint on the SupabaseClient alias; it's

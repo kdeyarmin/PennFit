@@ -18,6 +18,7 @@ import {
 } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
+import { assertSafeOutboundUrlSync } from "../../lib/safe-outbound";
 import { VALID_EVENT_TYPE_SET } from "../../lib/webhooks/event-catalog";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import {
@@ -34,7 +35,21 @@ const upsertBody = z
       .string()
       .url()
       .max(500)
-      .refine((u) => u.startsWith("https://"), "must be https://"),
+      .refine((u) => u.startsWith("https://"), "must be https://")
+      .refine((u) => {
+        // Block IP literals in private / loopback / metadata
+        // ranges at validate time so a misconfigured (or
+        // malicious) admin can't point a subscription at the
+        // internal network. The dispatcher re-checks via DNS
+        // before each send, but rejecting obvious cases here
+        // gives faster feedback in the admin UI.
+        try {
+          assertSafeOutboundUrlSync(u);
+          return true;
+        } catch {
+          return false;
+        }
+      }, "target_url must be a public https URL"),
     eventTypes: z.array(z.string().trim().min(1).max(80)).min(1).max(40),
     maxRetries: z.number().int().min(0).max(12).default(5),
     isActive: z.boolean().default(true),

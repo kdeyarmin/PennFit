@@ -110,6 +110,22 @@ export function makeVerifyEmailHandler(deps: AuthDeps) {
       return;
     }
 
+    // Don't honour the token if the user has been revoked between
+    // issuance and verification. A token issued before an admin
+    // revoke would otherwise still flip email_verified_at on a
+    // revoked user — breaking the "revoked = inert" invariant the
+    // rest of the auth layer assumes.
+    const targetUser = await deps.repo.findUserById(consumed.userId);
+    if (!targetUser || targetUser.status === "revoked") {
+      authError(
+        res,
+        410,
+        "invalid_input",
+        "This verification link is invalid or has expired.",
+      );
+      return;
+    }
+
     await deps.repo.markEmailVerified(consumed.userId, t);
 
     void deps.audit({

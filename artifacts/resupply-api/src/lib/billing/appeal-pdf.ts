@@ -39,20 +39,40 @@ export interface AppealInput {
 export async function renderAppealPdf(input: AppealInput): Promise<Buffer> {
   const doc = new PDFDocument({
     size: "LETTER",
-    margins: { top: 72, bottom: 72, left: 72, right: 72 },
+    margins: { top: 90, bottom: 72, left: 72, right: 72 },
   });
+  // CONFIDENTIAL banner on every page (45 CFR 164.502).
+  doc.on("pageAdded", () => drawConfidentialBanner(doc));
   const chunks: Buffer[] = [];
   return new Promise((resolve, reject) => {
     doc.on("data", (c: Buffer) => chunks.push(c));
     doc.on("end", () => resolve(Buffer.concat(chunks)));
     doc.on("error", reject);
     try {
+      drawConfidentialBanner(doc);
       drawAppeal(doc, input);
       doc.end();
     } catch (err) {
       reject(err);
     }
   });
+}
+
+function drawConfidentialBanner(doc: PDFKit.PDFDocument): void {
+  const saved = { x: doc.x, y: doc.y };
+  doc
+    .font("Helvetica-Bold")
+    .fontSize(8)
+    .fillColor("#7c2d12")
+    .text(
+      "CONFIDENTIAL — PROTECTED HEALTH INFORMATION — Disclosure restricted under 45 CFR 164.502",
+      54,
+      36,
+      { align: "center", width: 504 },
+    );
+  doc.fillColor("black").font("Helvetica").fontSize(10);
+  doc.x = saved.x;
+  doc.y = saved.y === 36 ? 90 : saved.y;
 }
 
 function drawAppeal(doc: PDFKit.PDFDocument, input: AppealInput): void {

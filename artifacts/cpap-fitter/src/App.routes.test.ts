@@ -1,6 +1,12 @@
-// Tests for App.tsx — new routes added in this PR
+// Tests for App.tsx — new routes added across recent PRs
 //
-// This PR registered ten new routes in the PatientRouter:
+// Routes registered in the marketing/stories PR:
+//   - /stories                          → Stories
+//   - /learn/reading-your-sleep-report  → LearnReadingYourSleepReport
+//   - /learn/sleep-hygiene              → LearnSleepHygiene
+//   - /learn/cpap-and-weight-loss       → LearnCpapAndWeightLoss
+//
+// Routes registered in a prior PR (brand pages + educational articles):
 //   - /cpap-masks          → CpapMasks
 //   - /cpap-masks/react-health → CpapMasksReactHealth
 //   - /cpap-masks/resmed   → CpapMasksResmed
@@ -12,8 +18,8 @@
 //   - /learn/therapy-types → LearnTherapyTypes
 //   - /learn/sleep-apnea-heart-health → LearnSleepApneaHeartHealth
 //
-// We also verify the lazy() import declarations for each new module,
-// and that the component names match the named exports from those files.
+// Tests use static source analysis (same pattern as admin.scope.test.ts and
+// AppShell.nav.test.ts) because the node vitest environment has no DOM.
 
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -53,6 +59,54 @@ function hasLazyImport(src: string, modulePath: string, exportName: string): boo
     src.includes(`m.${exportName}`)
   );
 }
+
+// ---------------------------------------------------------------------------
+// New routes from the marketing/stories PR
+// ---------------------------------------------------------------------------
+
+describe("App.tsx — /stories route registered", () => {
+  it("registers <Route path='/stories' component={Stories} />", () => {
+    expect(hasRoute(SRC, "/stories", "Stories")).toBe(true);
+  });
+
+  it("lazy-imports Stories from @/pages/stories", () => {
+    expect(hasLazyImport(SRC, "stories", "Stories")).toBe(true);
+  });
+
+  it("lazy import uses 'm.Stories' named export", () => {
+    expect(SRC).toContain("m.Stories");
+  });
+});
+
+describe("App.tsx — /learn/reading-your-sleep-report route registered", () => {
+  it("registers <Route path='/learn/reading-your-sleep-report' />", () => {
+    expect(hasRoute(SRC, "/learn/reading-your-sleep-report", "LearnReadingYourSleepReport")).toBe(true);
+  });
+
+  it("lazy-imports LearnReadingYourSleepReport from @/pages/learn-reading-your-sleep-report", () => {
+    expect(hasLazyImport(SRC, "learn-reading-your-sleep-report", "LearnReadingYourSleepReport")).toBe(true);
+  });
+});
+
+describe("App.tsx — /learn/sleep-hygiene route registered", () => {
+  it("registers <Route path='/learn/sleep-hygiene' component={LearnSleepHygiene} />", () => {
+    expect(hasRoute(SRC, "/learn/sleep-hygiene", "LearnSleepHygiene")).toBe(true);
+  });
+
+  it("lazy-imports LearnSleepHygiene from @/pages/learn-sleep-hygiene", () => {
+    expect(hasLazyImport(SRC, "learn-sleep-hygiene", "LearnSleepHygiene")).toBe(true);
+  });
+});
+
+describe("App.tsx — /learn/cpap-and-weight-loss route registered", () => {
+  it("registers <Route path='/learn/cpap-and-weight-loss' component={LearnCpapAndWeightLoss} />", () => {
+    expect(hasRoute(SRC, "/learn/cpap-and-weight-loss", "LearnCpapAndWeightLoss")).toBe(true);
+  });
+
+  it("lazy-imports LearnCpapAndWeightLoss from @/pages/learn-cpap-and-weight-loss", () => {
+    expect(hasLazyImport(SRC, "learn-cpap-and-weight-loss", "LearnCpapAndWeightLoss")).toBe(true);
+  });
+});
 
 // ---------------------------------------------------------------------------
 // New brand-page routes
@@ -193,6 +247,10 @@ describe("App.tsx — lazy() imports for educational article pages", () => {
 // ---------------------------------------------------------------------------
 
 describe("App.tsx — explanatory comments are present", () => {
+  it("has a comment explaining the patient stories and learn additions", () => {
+    expect(SRC).toContain("patient stories landing");
+  });
+
   it("has a comment explaining that educational pages are lazy-loaded", () => {
     expect(SRC).toContain("Educational long-form articles");
     expect(SRC).toContain("Lazy-loaded");
@@ -227,5 +285,109 @@ describe("App.tsx — pre-existing routes not regressed", () => {
 
   it("still registers /learn/device-setup route", () => {
     expect(SRC).toContain('path="/learn/device-setup"');
+  });
+
+  it("still registers /cpap-masks route", () => {
+    expect(SRC).toContain('path="/cpap-masks"');
+  });
+
+  it("still registers /admin route", () => {
+    expect(SRC).toContain('path="/admin"');
+  });
+
+  it("still registers /admin/verify-email route", () => {
+    expect(SRC).toContain('path="/admin/verify-email"');
+  });
+
+  it("still registers /admin/sign-in route", () => {
+    expect(SRC).toContain('path="/admin/sign-in"');
+  });
+
+  it("still registers /learn/nasal-congestion route", () => {
+    expect(SRC).toContain('path="/learn/nasal-congestion"');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Sub-tree wildcards — regression for the `:rest*` named-splat bug.
+//
+// Wouter's matcher is regexparam, which does NOT support path-to-regexp's
+// `:name*` named-splat syntax: `/admin/:rest*` compiles to a pattern that
+// only matches a SINGLE segment after `/admin/`, so multi-segment URLs
+// like `/admin/pennpaps/analytics` fall through to the next route (the
+// patient catch-all → patient 404). The fix is the bare `*` wildcard.
+// These assertions guard against re-introducing the broken form.
+// ---------------------------------------------------------------------------
+
+describe("App.tsx — sub-tree wildcards compile to deep matches", () => {
+  it("never uses the broken `:rest*` named-splat syntax in a Route path", () => {
+    expect(SRC).not.toMatch(/path="\/[^"]*:rest\*[^"]*"/);
+  });
+
+  it("uses /sign-in/* (not /sign-in/:rest*)", () => {
+    expect(SRC).toContain('path="/sign-in/*"');
+  });
+
+  it("uses /sign-up/* (not /sign-up/:rest*)", () => {
+    expect(SRC).toContain('path="/sign-up/*"');
+  });
+
+  it("uses /resupply/* (not /resupply/:rest*)", () => {
+    expect(SRC).toContain('path="/resupply/*"');
+  });
+
+  it("uses /admin/* (not /admin/:rest*) for the gated console", () => {
+    expect(SRC).toContain('path="/admin/*"');
+  });
+
+  it("the /admin/* regexparam compilation matches every admin route registered in console.tsx", () => {
+    // Wouter compiles `/admin/*` via regexparam into the regex
+    // /^\/admin\/(.*)\/?$/i  (case-insensitive by regexparam default).
+    // The bug we're guarding against: `/admin/:rest*` instead compiled
+    // to /^\/admin\/([^/]+?)\/?$/i — a SINGLE-segment match — so
+    // multi-segment URLs like `/admin/pennpaps/analytics` fell through
+    // to the next route. This test reads the live console.tsx, extracts
+    // every `path="/admin/..."` registered there, and asserts that the
+    // correct compiled regex matches all of them while the broken one
+    // would miss every multi-segment URL. If console.tsx grows new
+    // admin routes, they're picked up automatically.
+    const consoleTsx = readFileSync(
+      path.join(__dirname, "pages/admin/console.tsx"),
+      "utf8",
+    );
+    const adminUrls = Array.from(
+      consoleTsx.matchAll(/path="(\/admin\/[^"]+)"/g),
+      (m) => m[1]!.replace(/:[A-Za-z_][A-Za-z_0-9]*/g, "sample"),
+    );
+    expect(adminUrls.length).toBeGreaterThan(0); // read/parse sanity
+
+    // Mirrors `regexparam.parse('/admin/*').pattern` exactly — case-
+    // insensitive because that's regexparam's default. We don't import
+    // regexparam here (it isn't a direct dep of cpap-fitter), but the
+    // shape is small and stable. If regexparam ever changes its output,
+    // the "uses /admin/* …" assertion above still pins the on-disk
+    // route, and the wouter version pin in package.json holds the
+    // matcher steady; this test would then need a one-line update.
+    const wouterAdminWildcard = /^\/admin\/(.*)\/?$/i;
+    for (const url of adminUrls) {
+      expect(
+        wouterAdminWildcard.test(url),
+        `wouter's /admin/* should match ${url}`,
+      ).toBe(true);
+    }
+
+    // The broken `/admin/:rest*` (single-segment match) would miss
+    // every multi-segment URL — documents WHY the fix was needed.
+    const brokenNamedSplat = /^\/admin\/([^/]+?)\/?$/i;
+    const multiSegmentUrls = adminUrls.filter(
+      (u) => u.split("/").length > 3,
+    );
+    expect(multiSegmentUrls.length).toBeGreaterThan(0); // sanity
+    for (const url of multiSegmentUrls) {
+      expect(
+        brokenNamedSplat.test(url),
+        `broken pattern should NOT match ${url}`,
+      ).toBe(false);
+    }
   });
 });

@@ -155,7 +155,9 @@ export function useCart(): {
   addItem: (
     item: Omit<CartItem, "quantity">,
     quantity?: number,
-  ) => { ok: true } | { ok: false; reason: "out_of_stock" };
+  ) =>
+    | { ok: true }
+    | { ok: false; reason: "out_of_stock" | "currency_mismatch" };
   setQuantity: (priceId: string, quantity: number) => void;
   setItemMode: (priceId: string, mode: "one_time" | "subscription") => void;
   removeItem: (priceId: string) => void;
@@ -174,13 +176,19 @@ export function useCart(): {
   });
 
   // Notify the user if any items were silently filtered on load.
+  // Reset the ref to 0 after firing so React 18 StrictMode's
+  // double-mount doesn't replay the toast twice on every dev page
+  // load — same behavior in production where the mount fires once,
+  // but quieter in dev.
   useEffect(() => {
     if (initialDroppedRef.current > 0) {
+      const count = initialDroppedRef.current;
+      initialDroppedRef.current = 0;
       toast({
         title: "Some cart items were removed",
         description: "Some cart items were removed because they're no longer available.",
       });
-      track("cart_items_dropped", { count: initialDroppedRef.current });
+      track("cart_items_dropped", { count });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -223,7 +231,22 @@ export function useCart(): {
       ) {
         return { ok: false as const, reason: "out_of_stock" as const };
       }
+      // Refuse to mix currencies inside one cart. totalCents sums
+      // unitAmountCents across all items regardless of currency, so a
+      // single non-USD price slipping into the catalog would silently
+      // produce a wrong checkout total. v1 is USD-only by policy;
+      // surface a typed reason instead of silently letting the bug
+      // through if a future price lands on a different currency.
+      // Mismatch check uses the freshest items via the setter below.
+      let currencyMismatch = false;
       setItems((current) => {
+        // Currency check uses the freshest `current` from React
+        // rather than a closure-captured snapshot. Refuse to add an
+        // item whose currency differs from any existing item.
+        if (current.some((i) => i.currency !== item.currency)) {
+          currencyMismatch = true;
+          return current;
+        }
         const idx = current.findIndex((i) => i.priceId === item.priceId);
         let next: CartItem[];
         if (idx === -1) {
@@ -238,6 +261,9 @@ export function useCart(): {
         writeStorage(next);
         return next;
       });
+      if (currencyMismatch) {
+        return { ok: false as const, reason: "currency_mismatch" as const };
+      }
       return { ok: true as const };
     },
     [],

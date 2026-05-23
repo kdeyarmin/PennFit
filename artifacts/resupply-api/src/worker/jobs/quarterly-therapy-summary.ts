@@ -138,11 +138,14 @@ export async function runQuarterlyTherapySummary(): Promise<QuarterlySummaryStat
     // "marketing OFF by default" stance — we skip them. Engaged
     // customers (the target cohort for this email) all have a row
     // via /account.
+    // .eq is exact; .ilike would let `_` / `%` in the patient's
+    // email cross-match other rows and resolve opt-in against the
+    // wrong customer.
     const { data: cust } = await supabase
       .schema("resupply")
       .from("shop_customers")
       .select("communication_preferences")
-      .ilike("email_lower", patient.email.toLowerCase())
+      .eq("email_lower", patient.email.toLowerCase())
       .limit(1)
       .maybeSingle();
     if (!cust) {

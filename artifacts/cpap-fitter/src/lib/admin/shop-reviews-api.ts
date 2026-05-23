@@ -10,6 +10,8 @@
 // Auth: the browser sends the `pf_session` cookie automatically on
 // same-origin requests, so no per-call auth header is needed.
 
+import { csrfHeader } from "../csrf";
+
 export type ReviewStatus = "pending" | "approved" | "rejected";
 
 export interface AdminReview {
@@ -60,7 +62,7 @@ export async function approveAdminShopReview(id: string): Promise<AdminReview> {
     `/resupply-api/admin/shop/reviews/${encodeURIComponent(id)}/approve`,
     {
       method: "POST",
-      headers: { Accept: "application/json" },
+      headers: { Accept: "application/json", ...csrfHeader() },
     },
   );
   if (!res.ok) {
@@ -80,6 +82,7 @@ export async function rejectAdminShopReview(
       headers: {
         Accept: "application/json",
         "Content-Type": "application/json",
+        ...csrfHeader(),
       },
       body: JSON.stringify(note ? { note } : {}),
     },
@@ -109,7 +112,7 @@ export async function unrejectAdminShopReview(
     `/resupply-api/admin/shop/reviews/${encodeURIComponent(id)}/unreject`,
     {
       method: "POST",
-      headers: { Accept: "application/json" },
+      headers: { Accept: "application/json", ...csrfHeader() },
     },
   );
   if (!res.ok) {
@@ -139,6 +142,7 @@ export async function updateAdminShopReviewNote(
       headers: {
         Accept: "application/json",
         "Content-Type": "application/json",
+        ...csrfHeader(),
       },
       body: JSON.stringify({ note: note && note.trim() !== "" ? note : null }),
     },

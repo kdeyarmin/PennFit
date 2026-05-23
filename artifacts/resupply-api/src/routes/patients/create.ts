@@ -80,7 +80,15 @@ const bodySchema = z
       .max(254)
       .nullable()
       .optional()
-      .transform((v) => (v === "" ? null : v)),
+      // Normalize to lowercase so cross-table joins against
+      // shop_customers.email_lower match. Storefront /me/* resolvers
+      // do `.eq("email", customer.email_lower)` to bind a shop
+      // customer to a patient record; without this normalization a
+      // patient created with "Alice@Example.com" was invisible to
+      // their own claims / billing pages.
+      .transform((v) =>
+        v === "" || v == null ? null : v.toLowerCase(),
+      ),
     address: addressSchema.nullable().optional(),
     status: z.enum(["active", "paused", "closed"]).optional(),
     insurancePayer: z

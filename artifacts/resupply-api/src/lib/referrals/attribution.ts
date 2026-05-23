@@ -51,11 +51,14 @@ export async function attributePendingReferrals(
     scanned += 1;
     const email = (order.customer_email ?? "").trim();
     if (!email) continue;
+    // Escape LIKE metacharacters so an email with `_` or `%`
+    // doesn't fan out to other patients' referral rows.
+    const escapedEmail = email.replace(/[\\%_]/g, (c: string) => `\\${c}`);
     const { data: candidates, error: rErr } = await supabase
       .schema("resupply")
       .from("patient_referrals")
       .select("id, referee_email, status")
-      .ilike("referee_email", email)
+      .ilike("referee_email", escapedEmail)
       .eq("status", "pending")
       .limit(5);
     if (rErr) throw rErr;

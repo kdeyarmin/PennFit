@@ -43,7 +43,7 @@ export async function publishEvent(input: PublishEventInput): Promise<void> {
       .select("id, event_types")
       .eq("is_active", true);
     const matching = (subs ?? []).filter((s) =>
-      (s.event_types ?? []).some(
+      ((s.event_types ?? []) as string[]).some(
         (t: string) => t === "*" || t === input.eventType,
       ),
     );

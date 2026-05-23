@@ -36,49 +36,57 @@ function signBody(privateKeyPem: string, timestamp: string, body: string) {
   return signer.sign(privateKeyPem).toString("base64");
 }
 
+// Anchor every test on the same fixed unix-seconds timestamp by
+// passing it as BOTH the header value AND `nowSeconds` to
+// validateSendgridSignature. Without nowSeconds the validator would
+// compare against real Date.now() and the freshness window check
+// would reject the (now-stale) 2024 fixture.
+const FIXED_TS = "1719000000";
+const FIXED_TS_NUM = Number.parseInt(FIXED_TS, 10);
+
 describe("validateSendgridSignature", () => {
   it("returns true for a freshly-signed body", () => {
     const { publicKeyBase64, privateKeyPem } = freshKeyPair();
-    const ts = "1719000000";
     const body = JSON.stringify([{ event: "delivered", email: "p@e.com" }]);
-    const sig = signBody(privateKeyPem, ts, body);
+    const sig = signBody(privateKeyPem, FIXED_TS, body);
 
     const ok = validateSendgridSignature({
       rawBody: body,
       signatureHeader: sig,
-      timestampHeader: ts,
+      timestampHeader: FIXED_TS,
       publicKeyBase64,
+      nowSeconds: FIXED_TS_NUM,
     });
     expect(ok).toBe(true);
   });
 
   it("returns true when rawBody is a Buffer", () => {
     const { publicKeyBase64, privateKeyPem } = freshKeyPair();
-    const ts = "1719000000";
     const body = JSON.stringify([{ event: "delivered" }]);
-    const sig = signBody(privateKeyPem, ts, body);
+    const sig = signBody(privateKeyPem, FIXED_TS, body);
 
     const ok = validateSendgridSignature({
       rawBody: Buffer.from(body, "utf8"),
       signatureHeader: sig,
-      timestampHeader: ts,
+      timestampHeader: FIXED_TS,
       publicKeyBase64,
+      nowSeconds: FIXED_TS_NUM,
     });
     expect(ok).toBe(true);
   });
 
   it("returns false when the body has been tampered", () => {
     const { publicKeyBase64, privateKeyPem } = freshKeyPair();
-    const ts = "1719000000";
     const body = JSON.stringify([{ event: "delivered", email: "p@e.com" }]);
-    const sig = signBody(privateKeyPem, ts, body);
+    const sig = signBody(privateKeyPem, FIXED_TS, body);
 
     const tamperedBody = body.replace("delivered", "bounce");
     const ok = validateSendgridSignature({
       rawBody: tamperedBody,
       signatureHeader: sig,
-      timestampHeader: ts,
+      timestampHeader: FIXED_TS,
       publicKeyBase64,
+      nowSeconds: FIXED_TS_NUM,
     });
     expect(ok).toBe(false);
   });
@@ -86,13 +94,14 @@ describe("validateSendgridSignature", () => {
   it("returns false when the timestamp has been tampered", () => {
     const { publicKeyBase64, privateKeyPem } = freshKeyPair();
     const body = "[]";
-    const sig = signBody(privateKeyPem, "1719000000", body);
+    const sig = signBody(privateKeyPem, FIXED_TS, body);
 
     const ok = validateSendgridSignature({
       rawBody: body,
       signatureHeader: sig,
       timestampHeader: "1719000001",
       publicKeyBase64,
+      nowSeconds: FIXED_TS_NUM,
     });
     expect(ok).toBe(false);
   });
@@ -100,15 +109,15 @@ describe("validateSendgridSignature", () => {
   it("returns false when signed with a different key", () => {
     const { publicKeyBase64 } = freshKeyPair();
     const { privateKeyPem: attackerKey } = freshKeyPair();
-    const ts = "1719000000";
     const body = "[]";
-    const badSig = signBody(attackerKey, ts, body);
+    const badSig = signBody(attackerKey, FIXED_TS, body);
 
     const ok = validateSendgridSignature({
       rawBody: body,
       signatureHeader: badSig,
-      timestampHeader: ts,
+      timestampHeader: FIXED_TS,
       publicKeyBase64,
+      nowSeconds: FIXED_TS_NUM,
     });
     expect(ok).toBe(false);
   });
@@ -118,33 +127,35 @@ describe("validateSendgridSignature", () => {
     const ok = validateSendgridSignature({
       rawBody: "[]",
       signatureHeader: undefined,
-      timestampHeader: "1719000000",
+      timestampHeader: FIXED_TS,
       publicKeyBase64,
+      nowSeconds: FIXED_TS_NUM,
     });
     expect(ok).toBe(false);
   });
 
   it("returns false when the timestamp header is missing", () => {
     const { publicKeyBase64, privateKeyPem } = freshKeyPair();
-    const sig = signBody(privateKeyPem, "1719000000", "[]");
+    const sig = signBody(privateKeyPem, FIXED_TS, "[]");
     const ok = validateSendgridSignature({
       rawBody: "[]",
       signatureHeader: sig,
       timestampHeader: undefined,
       publicKeyBase64,
+      nowSeconds: FIXED_TS_NUM,
     });
     expect(ok).toBe(false);
   });
 
   it("returns false when public key is junk", () => {
     const { privateKeyPem } = freshKeyPair();
-    const ts = "1719000000";
-    const sig = signBody(privateKeyPem, ts, "[]");
+    const sig = signBody(privateKeyPem, FIXED_TS, "[]");
     const ok = validateSendgridSignature({
       rawBody: "[]",
       signatureHeader: sig,
-      timestampHeader: ts,
+      timestampHeader: FIXED_TS,
       publicKeyBase64: "not-a-real-key",
+      nowSeconds: FIXED_TS_NUM,
     });
     expect(ok).toBe(false);
   });
@@ -154,8 +165,28 @@ describe("validateSendgridSignature", () => {
     const ok = validateSendgridSignature({
       rawBody: "[]",
       signatureHeader: "!!!not-base64!!!",
-      timestampHeader: "1719000000",
+      timestampHeader: FIXED_TS,
       publicKeyBase64,
+      nowSeconds: FIXED_TS_NUM,
+    });
+    expect(ok).toBe(false);
+  });
+
+  it("returns false when the timestamp is outside the freshness window", () => {
+    // Pins the new replay-protection check: a payload signed 1 hour
+    // before `nowSeconds` should be rejected even with a valid
+    // signature, defending against indefinite replay of captured
+    // event payloads.
+    const { publicKeyBase64, privateKeyPem } = freshKeyPair();
+    const oldTs = String(FIXED_TS_NUM - 3700);
+    const body = "[]";
+    const sig = signBody(privateKeyPem, oldTs, body);
+    const ok = validateSendgridSignature({
+      rawBody: body,
+      signatureHeader: sig,
+      timestampHeader: oldTs,
+      publicKeyBase64,
+      nowSeconds: FIXED_TS_NUM,
     });
     expect(ok).toBe(false);
   });
@@ -253,7 +284,9 @@ describe("requireSendgridSignature middleware", () => {
 
   it("calls next() on a valid signature", () => {
     const { publicKeyBase64, privateKeyPem } = freshKeyPair();
-    const ts = "1719000000";
+    // Use a fresh timestamp inside the new replay-protection
+    // freshness window — the middleware doesn't expose nowSeconds.
+    const ts = String(Math.floor(Date.now() / 1000));
     const body = "[]";
     const sig = signBody(privateKeyPem, ts, body);
 

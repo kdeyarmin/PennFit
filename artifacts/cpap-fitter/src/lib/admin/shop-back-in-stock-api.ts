@@ -6,6 +6,8 @@
 // Auth: the browser sends the `pf_session` cookie automatically on
 // same-origin requests, so no per-call auth header is needed.
 
+import { csrfHeader } from "../csrf";
+
 export interface BackInStockQueueRow {
   productId: string;
   productName: string;
@@ -55,7 +57,7 @@ export async function dispatchBackInStockNow(
     `/resupply-api/admin/shop/back-in-stock-queue/${encodeURIComponent(productId)}/dispatch`,
     {
       method: "POST",
-      headers: { Accept: "application/json" },
+      headers: { Accept: "application/json", ...csrfHeader() },
     },
   );
   if (!res.ok) {
