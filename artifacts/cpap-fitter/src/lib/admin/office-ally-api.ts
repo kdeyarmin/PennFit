@@ -9,6 +9,8 @@
 // nothing on this path holds PHI in memory longer than the render
 // cycle.
 
+import { csrfHeader } from "../csrf";
+
 const BASE = "/resupply-api";
 
 async function getJSON<T>(path: string): Promise<T> {
@@ -30,6 +32,7 @@ async function postJSON<T>(
     headers: {
       Accept: "application/json",
       ...(body ? { "Content-Type": "application/json" } : {}),
+      ...csrfHeader(),
     },
     body: body ? JSON.stringify(body) : undefined,
   });
@@ -239,7 +242,7 @@ export async function testClearinghouseConnection(
     {
       method: "POST",
       credentials: "same-origin",
-      headers: { Accept: "application/json" },
+      headers: { Accept: "application/json", ...csrfHeader() },
     },
   );
   // Both 200 and 502 carry a typed JSON body; surface either as a

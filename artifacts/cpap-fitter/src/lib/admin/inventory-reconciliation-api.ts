@@ -3,6 +3,8 @@
 // hand-typed contracts (no OpenAPI generation in this repo since
 // Task #37) and same on-same-origin cookie auth.
 
+import { csrfHeader } from "../csrf";
+
 export interface ReconciliationHeader {
   id: string;
   periodLabel: string;
@@ -77,6 +79,7 @@ export async function startReconciliation(input: {
     headers: {
       Accept: "application/json",
       "Content-Type": "application/json",
+      ...csrfHeader(),
     },
     body: JSON.stringify(input),
   });
@@ -143,6 +146,7 @@ export async function submitReconciliation(
     headers: {
       Accept: "application/json",
       "Content-Type": "application/json",
+      ...csrfHeader(),
     },
     body: JSON.stringify(input),
   });

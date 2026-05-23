@@ -8,6 +8,8 @@
 // boundaries; per-patient drill-in still goes through the existing
 // /admin/patients/:id/insurance-claims surface.
 
+import { csrfHeader } from "../csrf";
+
 const BASE = "/resupply-api";
 
 async function getJSON<T>(path: string): Promise<T> {
@@ -27,6 +29,7 @@ async function postJSON<T>(path: string, body: unknown): Promise<T> {
     headers: {
       Accept: "application/json",
       "Content-Type": "application/json",
+      ...csrfHeader(),
     },
     credentials: "same-origin",
     body: JSON.stringify(body),

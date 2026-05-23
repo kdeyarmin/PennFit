@@ -2,6 +2,7 @@
 // triage surface for faxes Twilio delivers to our fax number.
 
 import { ApiError } from "@workspace/api-client-react/admin";
+import { csrfHeader } from "../csrf";
 
 export type InboundFaxStatus = "new" | "triaged" | "attached" | "archived";
 
@@ -48,9 +49,10 @@ async function jsonFetch<T>(
 ): Promise<T> {
   const method = (init.method ?? "GET").toUpperCase();
   const url = `/resupply-api${path}`;
+  const { headers: initHeaders, ...restInit } = init;
   const res = await fetch(url, {
-    headers: { Accept: "application/json", ...(init.headers ?? {}) },
-    ...init,
+    ...restInit,
+    headers: { Accept: "application/json", ...csrfHeader(), ...(initHeaders ?? {}) },
   });
   if (!res.ok) {
     // Throw ApiError (not plain Error) so <ErrorPanel> can decode the
