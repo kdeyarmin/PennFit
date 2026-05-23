@@ -314,7 +314,12 @@ function formatHcfaDate(iso: string): string {
 }
 
 function centsToDollars(cents: number): string {
-  const d = Math.floor(cents / 100);
-  const c = cents % 100;
-  return `${d}.${c.toString().padStart(2, "0")}`;
+  // No `$` prefix here — HCFA-1500 box format is bare numeric.
+  // Still need sign-correct handling for adjustments / take-backs
+  // (otherwise -150 cents prints as "-2.-50" inside the box).
+  const sign = cents < 0 ? "-" : "";
+  const abs = Math.abs(cents);
+  const d = Math.floor(abs / 100);
+  const c = abs % 100;
+  return `${sign}${d}.${c.toString().padStart(2, "0")}`;
 }

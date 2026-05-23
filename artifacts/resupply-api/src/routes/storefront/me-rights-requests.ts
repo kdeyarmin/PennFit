@@ -52,15 +52,18 @@ async function resolvePatientForCustomer(
     .limit(1)
     .maybeSingle();
   if (!customer?.email_lower) return null;
-  const { data: patient } = await supabase
+  // Refuse to bind when more than one patient row matches the email
+  // — otherwise the wrong patient's rights-request history (a PHI
+  // surface) would leak to the shopper. See me-billing.ts for the
+  // full rationale and the planned shop_customers.patient_id fix.
+  const { data: patients } = await supabase
     .schema("resupply")
     .from("patients")
     .select("id")
     .eq("email", customer.email_lower)
-    .limit(1)
-    .maybeSingle();
-  if (!patient) return null;
-  return { patientId: patient.id };
+    .limit(2);
+  if (!patients || patients.length !== 1) return null;
+  return { patientId: patients[0]!.id };
 }
 
 const submitBody = z

@@ -14,7 +14,7 @@
 
 import type PgBoss from "pg-boss";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { logAuditBestEffort } from "@workspace/resupply-audit";
 
 import { runAccreditationReadiness } from "../../lib/accreditation/readiness-engine";
 import { logger } from "../../lib/logger";
@@ -41,27 +41,35 @@ export async function registerAccreditationReadinessSweepJob(
         "accreditation-readiness.sweep: completed",
       );
       if (result.overallStatus === "blocking") {
-        // Find any open patient to attach a synthetic alert to —
-        // actually, the alerts table requires a patient_id. Instead
-        // we log a structured WARN that the ops-status dashboard
-        // can pick up; per-patient alerts are out of place here.
-        const supabase = getSupabaseServiceRoleClient();
-        void supabase
-          .schema("resupply")
-          .from("audit_log")
-          .insert({
-            operator_email: "system:cron:accreditation-readiness-sweep",
-            operator_user_id: null,
+        // Surface the blocking state via the audit log. The previous
+        // implementation `void`-prefixed a raw `audit_log` insert,
+        // which (a) bypassed the HMAC chain that migration 0116 put
+        // around every audit row — every direct insert breaks the
+        // chain — and (b) left the promise unhandled, so an insert
+        // failure was silently lost AND would crash Node under
+        // --unhandled-rejections=strict. logAuditBestEffort handles
+        // chain signing, schema selection, and error logging.
+        await logAuditBestEffort(
+          {
             action: "accreditation_readiness.blocking",
-            target_table: "accreditation_readiness_runs",
-            target_id: result.runId,
+            adminEmail: "system:cron:accreditation-readiness-sweep",
+            adminUserId: null,
+            targetTable: "accreditation_readiness_runs",
+            targetId: result.runId,
             metadata: {
               checks_failed: result.checksFailed,
               checks_warning: result.checksWarning,
             },
             ip: null,
-            user_agent: null,
-          });
+            userAgent: null,
+          },
+          {
+            contextLabel: "accreditation_readiness_blocking_audit",
+            onWriteFailure: (failure) => {
+              logger.error(failure, "accreditation_readiness.audit_failed");
+            },
+          },
+        );
       }
     } catch (err) {
       logger.error(

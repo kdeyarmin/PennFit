@@ -230,9 +230,16 @@ export async function processTick(
   //    because SendGrid's API tolerates parallel calls but the
   //    Phase B priority is correctness over throughput; parallel
   //    fan-out can come later if needed.
+  //
+  //    Iterate `claimed` (the UPDATE-RETURNING set), NOT `pendingRows`
+  //    (the pre-claim snapshot). If an admin edited recipient_email
+  //    between our SELECT and UPDATE, the snapshot carries the stale
+  //    address — the UPDATE re-reads from the row and RETURNING gives
+  //    us the freshest value. Using `pendingRows` here lost that
+  //    update and shipped to the OLD address.
   let sent = 0;
   let failed = 0;
-  for (const row of pendingRows) {
+  for (const row of claimed ?? []) {
     if (!winningIds.has(row.id)) continue;
     const email = row.recipient_email;
     if (!email) {

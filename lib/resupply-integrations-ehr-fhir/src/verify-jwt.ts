@@ -187,6 +187,13 @@ export function verifySmartJwt(input: VerifyJwtInput): VerifyJwtOutcome {
   };
 }
 
+/** Hard cap on the JWKS response body. A real JWKS for an EHR is
+ *  typically 1-5 KB (one or two RS256 keys); 256 KB is a comfortable
+ *  ceiling that still defends against an upstream returning gigabytes
+ *  to OOM the API. Defense-in-depth alongside the caller's SSRF
+ *  wrapper. */
+const MAX_JWKS_BODY_BYTES = 256 * 1024;
+
 /**
  * Fetch a JWKS document from a partner's URL. Returns the parsed
  * Jwks shape; throws on network / shape errors so the caller can
@@ -195,6 +202,14 @@ export function verifySmartJwt(input: VerifyJwtInput): VerifyJwtOutcome {
  * Times out at 5 seconds — JWKS endpoints are CDN-fronted and fast;
  * a slow upstream is more likely a misconfigured tenant than a real
  * latency problem.
+ *
+ * SSRF: this function enforces only the `https://` scheme check.
+ * The caller is responsible for passing a `fetchImpl` that performs
+ * DNS-resolved host validation (see artifacts/resupply-api/src/lib/
+ * safe-outbound.ts) so a tenant's `jwks_uri` cannot be repointed at
+ * internal services via DNS rebinding. We also cap the response
+ * body so a malicious upstream returning multi-GB cannot exhaust
+ * memory inside the API process.
  */
 export async function fetchJwks(
   jwksUri: string,
@@ -216,7 +231,47 @@ export async function fetchJwks(
   if (!res.ok) {
     throw new Error(`jwks fetch failed (HTTP ${res.status})`);
   }
-  const body = (await res.json()) as unknown;
+  // Stream-read with a hard byte cap so a hostile upstream can't OOM
+  // us via a multi-GB body. `res.json()` would buffer the whole thing
+  // first — we re-implement the parse on a bounded buffer instead.
+  const reader = res.body?.getReader();
+  if (!reader) {
+    throw new Error("jwks response had no body stream");
+  }
+  let received = 0;
+  const chunks: Uint8Array[] = [];
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (value) {
+        received += value.byteLength;
+        if (received > MAX_JWKS_BODY_BYTES) {
+          throw new Error(
+            `jwks response exceeded size cap (${MAX_JWKS_BODY_BYTES} bytes)`,
+          );
+        }
+        chunks.push(value);
+      }
+    }
+  } finally {
+    try {
+      await reader.cancel();
+    } catch {
+      // best-effort
+    }
+  }
+  const buf = Buffer.concat(chunks.map((c) => Buffer.from(c)));
+  const text = buf.toString("utf8");
+  let body: unknown;
+  try {
+    body = JSON.parse(text);
+  } catch (err) {
+    throw new Error(
+      `jwks response was not valid JSON: ${err instanceof Error ? err.message : String(err)}`,
+      { cause: err },
+    );
+  }
   if (
     !body ||
     typeof body !== "object" ||

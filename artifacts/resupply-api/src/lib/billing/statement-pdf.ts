@@ -196,7 +196,14 @@ function drawStatement(
 }
 
 function money(cents: number): string {
-  const d = Math.floor(cents / 100);
-  const c = cents % 100;
-  return `$${d}.${c.toString().padStart(2, "0")}`;
+  // The previous implementation used Math.floor(cents/100) and
+  // cents%100 which broke on negative amounts: -150 cents printed
+  // as "$-2.-50" instead of "-$1.50" (credit balance on a patient
+  // statement renders garbage on the PDF the patient receives).
+  // Compute sign separately, format the absolute value, prepend.
+  const sign = cents < 0 ? "-" : "";
+  const abs = Math.abs(cents);
+  const d = Math.floor(abs / 100);
+  const c = abs % 100;
+  return `${sign}$${d}.${c.toString().padStart(2, "0")}`;
 }

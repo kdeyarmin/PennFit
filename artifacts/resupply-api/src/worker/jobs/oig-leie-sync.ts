@@ -102,19 +102,34 @@ export async function runOigLeieSync(
   }
 
   const now = new Date();
+  // Add a millisecond suffix so a same-day re-run doesn't collide
+  // with itself — `2026-05` reruns inside one cycle would otherwise
+  // wipe the data they just loaded. The screener doesn't filter on
+  // source_file_version (only on reinstate_date + name/NPI), so a
+  // sub-cycle suffix is fine for the version label.
   const version = `${now.getUTCFullYear()}-${String(
     now.getUTCMonth() + 1,
-  ).padStart(2, "0")}`;
+  ).padStart(2, "0")}-${now.getTime()}`;
   const supabase = getSupabaseServiceRoleClient();
-  // Empty the table via a PostgREST-friendly delete-all; no truncate
-  // permission needed on service role.
-  const { error: clearErr } = await supabase
-    .schema("resupply")
-    .from("oig_leie_exclusions")
-    .delete()
-    .neq("id", "00000000-0000-4000-8000-000000000000");
-  if (clearErr) throw clearErr;
 
+  // Shadow-swap (not delete-then-insert). The OLD behaviour was:
+  //   1. DELETE every existing row.
+  //   2. Bulk-INSERT the new rows in 500-row batches.
+  // If any INSERT batch failed (network blip, single bad row,
+  // PostgREST 502), the table sat partial OR empty for an entire
+  // cycle — and every screenSubject() call during that window
+  // silently returned `match: null` for providers who are actually
+  // on the LEIE list. That's a HIPAA / FWA control failure: we'd
+  // dispense to (and bill Medicare for) excluded providers and
+  // have an audit row proving "we checked, nobody home".
+  //
+  // The shadow swap inserts the NEW version's rows FIRST. Both old
+  // and new rows coexist briefly — the screener sees both, which
+  // is safe because it doesn't filter on source_file_version. Only
+  // after every batch has landed do we DELETE the prior version's
+  // rows, so a partial-insert crash leaves the OLD version intact
+  // (false-positive risk on freshly reinstated providers, never
+  // false-negative).
   for (let i = 0; i < rows.length; i += INSERT_BATCH_SIZE) {
     const slice = rows.slice(i, i + INSERT_BATCH_SIZE).map((r) => ({
       npi: r.npi,
@@ -137,6 +152,19 @@ export async function runOigLeieSync(
     if (error) throw error;
     stats.inserted += slice.length;
   }
+
+  // All NEW rows landed. Now retire every row tagged with a prior
+  // version. SQL `<>` is NULL-unsafe (NULL <> anything is NULL, not
+  // true), so legacy rows whose source_file_version was never set
+  // would otherwise survive forever. The OR clause picks up both
+  // mismatched values AND NULLs.
+  const { error: pruneErr } = await supabase
+    .schema("resupply")
+    .from("oig_leie_exclusions")
+    .delete()
+    .or(`source_file_version.is.null,source_file_version.neq.${version}`);
+  if (pruneErr) throw pruneErr;
+
   return stats;
 }
 

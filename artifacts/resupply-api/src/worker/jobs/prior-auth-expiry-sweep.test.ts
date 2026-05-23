@@ -85,7 +85,13 @@ describe("runPriorAuthExpirySweep — expire step", () => {
       data: [makeExpiredPaRow()],
     });
     // UPDATE prior_authorizations
-    stageSupabaseResponse("prior_authorizations", "update", { error: null });
+    // The expire UPDATE now `.select("id")`s the affected row so the
+    // sweep can tell winner from loser of a concurrent-tick race.
+    // Stage a one-element data payload so the row counts as claimed.
+    stageSupabaseResponse("prior_authorizations", "update", {
+      data: [{ id: "claimed" }],
+      error: null,
+    });
     // Insert CSR alert
     stageSupabaseResponse("csr_compliance_alerts", "insert", { error: null });
     // Heads-up windows 30/14/7 → nothing
@@ -104,7 +110,13 @@ describe("runPriorAuthExpirySweep — expire step", () => {
     stageSupabaseResponse("prior_authorizations", "select", {
       data: [makeExpiredPaRow()],
     });
-    stageSupabaseResponse("prior_authorizations", "update", { error: null });
+    // The expire UPDATE now `.select("id")`s the affected row so the
+    // sweep can tell winner from loser of a concurrent-tick race.
+    // Stage a one-element data payload so the row counts as claimed.
+    stageSupabaseResponse("prior_authorizations", "update", {
+      data: [{ id: "claimed" }],
+      error: null,
+    });
     stageSupabaseResponse("csr_compliance_alerts", "insert", { error: null });
     for (let i = 0; i < 3; i++) {
       stageSupabaseResponse("prior_authorizations", "select", { data: [] });
@@ -121,7 +133,13 @@ describe("runPriorAuthExpirySweep — expire step", () => {
     stageSupabaseResponse("prior_authorizations", "select", {
       data: [makeExpiredPaRow()],
     });
-    stageSupabaseResponse("prior_authorizations", "update", { error: null });
+    // The expire UPDATE now `.select("id")`s the affected row so the
+    // sweep can tell winner from loser of a concurrent-tick race.
+    // Stage a one-element data payload so the row counts as claimed.
+    stageSupabaseResponse("prior_authorizations", "update", {
+      data: [{ id: "claimed" }],
+      error: null,
+    });
     stageSupabaseResponse("csr_compliance_alerts", "insert", { error: null });
     for (let i = 0; i < 3; i++) {
       stageSupabaseResponse("prior_authorizations", "select", { data: [] });
@@ -143,7 +161,13 @@ describe("runPriorAuthExpirySweep — expire step", () => {
     stageSupabaseResponse("prior_authorizations", "select", {
       data: [makeExpiredPaRow()],
     });
-    stageSupabaseResponse("prior_authorizations", "update", { error: null });
+    // The expire UPDATE now `.select("id")`s the affected row so the
+    // sweep can tell winner from loser of a concurrent-tick race.
+    // Stage a one-element data payload so the row counts as claimed.
+    stageSupabaseResponse("prior_authorizations", "update", {
+      data: [{ id: "claimed" }],
+      error: null,
+    });
     stageSupabaseResponse("csr_compliance_alerts", "insert", { error: null });
     for (let i = 0; i < 3; i++) {
       stageSupabaseResponse("prior_authorizations", "select", { data: [] });
@@ -170,9 +194,21 @@ describe("runPriorAuthExpirySweep — expire step", () => {
       ],
     });
     // Two updates
-    stageSupabaseResponse("prior_authorizations", "update", { error: null });
+    // The expire UPDATE now `.select("id")`s the affected row so the
+    // sweep can tell winner from loser of a concurrent-tick race.
+    // Stage a one-element data payload so the row counts as claimed.
+    stageSupabaseResponse("prior_authorizations", "update", {
+      data: [{ id: "claimed" }],
+      error: null,
+    });
     stageSupabaseResponse("csr_compliance_alerts", "insert", { error: null });
-    stageSupabaseResponse("prior_authorizations", "update", { error: null });
+    // The expire UPDATE now `.select("id")`s the affected row so the
+    // sweep can tell winner from loser of a concurrent-tick race.
+    // Stage a one-element data payload so the row counts as claimed.
+    stageSupabaseResponse("prior_authorizations", "update", {
+      data: [{ id: "claimed" }],
+      error: null,
+    });
     stageSupabaseResponse("csr_compliance_alerts", "insert", { error: null });
     for (let i = 0; i < 3; i++) {
       stageSupabaseResponse("prior_authorizations", "select", { data: [] });
@@ -195,7 +231,13 @@ describe("runPriorAuthExpirySweep — expire step", () => {
       error: { message: "DB constraint violation" },
     });
     // Second update succeeds
-    stageSupabaseResponse("prior_authorizations", "update", { error: null });
+    // The expire UPDATE now `.select("id")`s the affected row so the
+    // sweep can tell winner from loser of a concurrent-tick race.
+    // Stage a one-element data payload so the row counts as claimed.
+    stageSupabaseResponse("prior_authorizations", "update", {
+      data: [{ id: "claimed" }],
+      error: null,
+    });
     stageSupabaseResponse("csr_compliance_alerts", "insert", { error: null });
     for (let i = 0; i < 3; i++) {
       stageSupabaseResponse("prior_authorizations", "select", { data: [] });
@@ -446,7 +488,13 @@ describe("runPriorAuthExpirySweep — combined expired + heads-up", () => {
     stageSupabaseResponse("prior_authorizations", "select", {
       data: [makeExpiredPaRow({ id: PA_ID_1 })],
     });
-    stageSupabaseResponse("prior_authorizations", "update", { error: null });
+    // The expire UPDATE now `.select("id")`s the affected row so the
+    // sweep can tell winner from loser of a concurrent-tick race.
+    // Stage a one-element data payload so the row counts as claimed.
+    stageSupabaseResponse("prior_authorizations", "update", {
+      data: [{ id: "claimed" }],
+      error: null,
+    });
     stageSupabaseResponse("csr_compliance_alerts", "insert", { error: null });
     // 30-day: 1 PA
     stageSupabaseResponse("prior_authorizations", "select", {

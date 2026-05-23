@@ -69,36 +69,83 @@ export async function runInboundWebhookDispatcher(): Promise<DispatchStats> {
     skipped_unknown_source: 0,
   };
 
-  const { data: rows, error } = await supabase
+  // Phase 1 — candidate scan. Read rows in pending status so we have
+  // a bounded list of ids to attempt to claim atomically. We do NOT
+  // process from this snapshot directly — see Phase 2.
+  const { data: candidates, error: scanErr } = await supabase
     .schema("resupply")
     .from("inbound_webhooks")
-    .select(
-      "id, source, payload_json, verification_headers_json, signature_verified",
-    )
+    .select("id")
     .in("status", ["received", "processing_failed"])
     .order("received_at", { ascending: true })
     .limit(BATCH_SIZE);
-  if (error) {
+  if (scanErr) {
     logger.error(
-      { err: error.message },
+      { err: scanErr.message },
       "inbound_webhook_dispatch_select_failed",
     );
-    throw error;
+    throw scanErr;
   }
-  if (!rows || rows.length === 0) return stats;
+  if (!candidates || candidates.length === 0) return stats;
+
+  // Phase 2 — atomic claim. UPDATE the candidate ids back to status
+  // 'processing' with the still-pending guard; the returned rows are
+  // the ones THIS tick exclusively owns. A second tick that races
+  // overlaps with us will see the same candidate ids but the UPDATE
+  // will exclude rows already flipped to 'processing' — so it gets
+  // a strictly disjoint winner set. Without this, a >60s dispatcher
+  // run lets the next minute's tick re-process the same row,
+  // materialising duplicate patient_referral or ServiceRequest rows.
+  const candidateIds = candidates.map((c) => c.id);
+  const { data: claimedRows, error: claimErr } = await supabase
+    .schema("resupply")
+    .from("inbound_webhooks")
+    .update({ status: "processing" })
+    .in("id", candidateIds)
+    .in("status", ["received", "processing_failed"])
+    .select(
+      "id, source, payload_json, verification_headers_json, signature_verified",
+    );
+  if (claimErr) {
+    logger.error(
+      { err: claimErr.message },
+      "inbound_webhook_dispatch_claim_failed",
+    );
+    throw claimErr;
+  }
+  const rows = claimedRows ?? [];
+  if (rows.length === 0) return stats;
   stats.scanned = rows.length;
 
   for (const row of rows) {
     let outcome: Awaited<ReturnType<typeof dispatchParachute>> | null = null;
-    if (row.source === "parachute") {
-      outcome = await dispatchParachute({ row });
-    } else if (row.source.startsWith("ehr_fhir_")) {
-      outcome = await dispatchEhrFhir({ row });
+    try {
+      if (row.source === "parachute") {
+        outcome = await dispatchParachute({ row });
+      } else if (row.source.startsWith("ehr_fhir_")) {
+        outcome = await dispatchEhrFhir({ row });
+      }
+    } catch (err) {
+      // Treat an uncaught dispatcher throw as a retryable failure
+      // rather than leaving the row stuck in 'processing' forever
+      // (the partial pending index excludes 'processing' so a stuck
+      // row never re-emerges on the next tick).
+      const reason = err instanceof Error ? err.message : String(err);
+      logger.warn(
+        { row_id: row.id, source: row.source, err: reason },
+        "inbound_webhook_dispatcher_threw",
+      );
+      await markRetry(supabase, row.id, reason);
+      stats.retried += 1;
+      continue;
     }
 
     if (outcome === null) {
-      // No dispatcher for this source. Leave the row in its current
-      // status so the admin dashboard can flag it.
+      // No dispatcher for this source. Move the row back out of
+      // 'processing' so the admin dashboard surfaces it via the
+      // pending partial index — leaving it stuck in 'processing'
+      // would silently hide unknown-source rows from triage.
+      await markRetry(supabase, row.id, `no_dispatcher_for_source:${row.source}`);
       stats.skipped_unknown_source += 1;
       continue;
     }

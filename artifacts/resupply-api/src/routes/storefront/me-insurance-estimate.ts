@@ -39,19 +39,24 @@ async function resolvePatientForCustomer(
     );
   }
   if (!customer?.email_lower) return null;
-  const { data: patient, error: patientError } = await supabase
+  // Limit 2 + .length !== 1 guards against the email-collision
+  // PHI leak: if two patient records share an email, returning
+  // either one would expose the wrong patient's coverage estimate
+  // (a PHI surface) to the shopper. See me-billing.ts for the
+  // shared rationale and the planned shop_customers.patient_id fix.
+  const { data: patients, error: patientError } = await supabase
     .schema("resupply")
     .from("patients")
     .select("id")
     .eq("email", customer.email_lower)
-    .limit(1)
-    .maybeSingle();
+    .limit(2);
   if (patientError) {
     throw new Error(
       `Failed to fetch patient for email ${customer.email_lower}: ${patientError.message}`,
     );
   }
-  return patient ? { patientId: patient.id } : null;
+  if (!patients || patients.length !== 1) return null;
+  return { patientId: patients[0]!.id };
 }
 
 router.get("/me/insurance-estimate", async (req, res) => {

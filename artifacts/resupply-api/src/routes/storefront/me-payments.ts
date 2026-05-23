@@ -63,16 +63,21 @@ async function resolvePatientForCustomer(
     .limit(1)
     .maybeSingle();
   if (!customer?.email_lower) return null;
-  const { data: patient } = await supabase
+  // Refuse to bind when more than one patient row matches the email.
+  // /me/payments serves PaymentIntent creation + history; binding to
+  // the wrong patient would charge or expose another patient's
+  // balance to the shopper. See me-billing.ts for the planned fix.
+  const { data: patients } = await supabase
     .schema("resupply")
     .from("patients")
     .select("id, email")
     .eq("email", customer.email_lower)
-    .limit(1)
-    .maybeSingle();
-  return patient
-    ? { patientId: patient.id, customerEmail: customer.email_lower }
-    : null;
+    .limit(2);
+  if (!patients || patients.length !== 1) return null;
+  return {
+    patientId: patients[0]!.id,
+    customerEmail: customer.email_lower,
+  };
 }
 
 router.post("/me/payments/intent", async (req, res) => {

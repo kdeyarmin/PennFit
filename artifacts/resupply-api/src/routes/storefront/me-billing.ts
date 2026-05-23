@@ -42,15 +42,22 @@ async function resolvePatientForCustomer(
     .maybeSingle();
   if (customerErr) throw customerErr;
   if (!customer?.email_lower) return null;
-  const { data: patient, error: patientErr } = await supabase
+  // Fetch up to 2 rows so we can detect the ambiguous case. If more
+  // than one patient record carries the customer's email (household
+  // share, transcription mistake, admin catch-all), refuse to bind
+  // — otherwise the wrong patient's billing statements / claim
+  // balances would leak to the shopper. The right fix is a stable
+  // shop_customers.patient_id FK set at registration; this guard
+  // prevents the cross-patient PHI leak until that lands.
+  const { data: patients, error: patientErr } = await supabase
     .schema("resupply")
     .from("patients")
     .select("id")
     .eq("email", customer.email_lower)
-    .limit(1)
-    .maybeSingle();
+    .limit(2);
   if (patientErr) throw patientErr;
-  return patient ? { patientId: patient.id } : null;
+  if (!patients || patients.length !== 1) return null;
+  return { patientId: patients[0]!.id };
 }
 
 router.get("/me/billing-statements", async (req, res) => {

@@ -51,8 +51,17 @@ export function useBiometricSignIn(): UseBiometricSignIn {
   // Tracks mount state so async callbacks in `prompt()` don't call
   // setState after the component has unmounted (e.g. the user
   // navigates away while the biometric prompt is still open).
+  //
+  // MUST set `mountedRef.current = true` on every mount inside the
+  // effect body, not only the cleanup. In React 18 StrictMode the
+  // effect double-invokes: first mount → cleanup → second mount.
+  // Without the re-set, the second mount inherits `false` from
+  // the cleanup and every subsequent `prompt()` call skips
+  // `setBusy(false)` in the finally — the button stays disabled
+  // with a spinner forever after the user's first attempt.
   const mountedRef = useRef(true);
   useEffect(() => {
+    mountedRef.current = true;
     return () => {
       mountedRef.current = false;
     };
