@@ -421,6 +421,8 @@ router.get(
       .from("office_ally_submissions")
       .select("id, status, claim_count, attempted_claim_ids")
       .gte("submitted_at", since)
+      .order("submitted_at", { ascending: false })
+      .order("id", { ascending: false })
       .limit(5000);
     if (error) throw error;
     const rows = submissions ?? [];
