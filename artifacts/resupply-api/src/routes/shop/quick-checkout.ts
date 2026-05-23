@@ -387,12 +387,17 @@ router.post(
       return;
     }
 
-    // Mirror to shop_orders with customer_id pre-stamped. INSERT …
-    // ON CONFLICT (stripe_session_id) DO UPDATE SET updated_at =
-    // now() → `.upsert(row, { onConflict: "stripe_session_id" })`
-    // with explicit JS-side timestamp.
+    // Mirror to shop_orders. We split the upsert into INSERT-or-
+    // ignore + guarded UPDATE so a guest-checkout webhook that
+    // already wrote a row keyed by this session ID with NULL
+    // customer_id can't have its ownership silently rebound by a
+    // later signed-in caller. The UPDATE only proceeds when
+    // customer_id is still unset OR already equals this caller —
+    // i.e. either we're claiming an unowned row OR we're idempotently
+    // re-stamping our own.
     const supabase = getSupabaseServiceRoleClient();
-    const { error: upsertErr } = await supabase
+    const nowIso = new Date().toISOString();
+    const { error: insertErr } = await supabase
       .schema("resupply")
       .from("shop_orders")
       .upsert(
@@ -400,14 +405,32 @@ router.post(
           stripe_session_id: session.id,
           status: "pending",
           customer_id: customerId,
-          updated_at: new Date().toISOString(),
+          updated_at: nowIso,
         },
-        { onConflict: "stripe_session_id" },
+        { onConflict: "stripe_session_id", ignoreDuplicates: true },
       );
-    if (upsertErr) {
+    if (insertErr) {
       req.log?.error(
-        { err: upsertErr, sessionId: session.id },
-        "shop quick-checkout: shop_orders upsert failed",
+        { err: insertErr, sessionId: session.id },
+        "shop quick-checkout: shop_orders insert failed",
+      );
+      res.status(500).json({ error: "shop_order_persist_failed" });
+      return;
+    }
+    // Refresh customer_id + updated_at on the existing row — but
+    // only when ownership is unclaimed or already ours. Filtering on
+    // `customer_id` here is the race guard: a concurrent caller's
+    // upsert wins for its own session, ours is a no-op.
+    const { error: stampErr } = await supabase
+      .schema("resupply")
+      .from("shop_orders")
+      .update({ customer_id: customerId, updated_at: nowIso })
+      .eq("stripe_session_id", session.id)
+      .or(`customer_id.is.null,customer_id.eq.${customerId}`);
+    if (stampErr) {
+      req.log?.error(
+        { err: stampErr, sessionId: session.id },
+        "shop quick-checkout: shop_orders ownership stamp failed",
       );
       res.status(500).json({ error: "shop_order_persist_failed" });
       return;

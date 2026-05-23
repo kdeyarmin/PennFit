@@ -222,11 +222,8 @@ async function groupedCount(
     | "resolved_by_user_id"
     | "completed_by_user_id",
   adminIds: string[],
-  refine: (
-    q: ReturnType<
-      ReturnType<SupabaseClient["schema"]>["from"]
-    >["select"],
-  ) => unknown,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  refine: (q: any) => any,
 ): Promise<Map<string, number>> {
   const counts = new Map<string, number>();
   if (adminIds.length === 0) return counts;

@@ -34,13 +34,20 @@ router.get(
       return;
     }
     const supabase = getSupabaseServiceRoleClient();
+    // Escape LIKE metacharacters before .ilike so an email like
+    // `john_doe@x.com` doesn't also match `johnXdoe@x.com` /
+    // `johnAdoe@x.com` etc. The match here returns the patient's
+    // PHI (meeting_url, scheduled_for, topic) — without the
+    // escape a `_` or `%` in the requester's address would
+    // surface other patients' appointments.
+    const escapedEmail = email.replace(/[\\%_]/g, (c) => `\\${c}`);
     const { data, error } = await supabase
       .schema("resupply")
       .from("appointment_requests")
       .select(
         "id, topic, preferred_window, status, scheduled_for, meeting_url, meeting_provider, created_at",
       )
-      .ilike("requester_email", email)
+      .ilike("requester_email", escapedEmail)
       .in("status", ["new", "contacted", "scheduled"])
       .order("created_at", { ascending: false })
       .limit(20);
