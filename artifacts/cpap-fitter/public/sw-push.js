@@ -49,8 +49,36 @@ self.addEventListener("push", (event) => {
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const targetUrl =
+  // Defensive: refuse any URL that isn't strictly same-origin. The
+  // server's push payload sets data.url, so under normal operation
+  // it'll be a path like "/account/orders/123". But if the API key
+  // or webhook signing key were ever leaked, an attacker who could
+  // mint a push payload could otherwise have clients.openWindow()
+  // navigate the patient to an attacker-controlled URL (clickjacking
+  // / phishing). Restrict to:
+  //   - absolute paths starting with "/" (relative to our origin)
+  //   - absolute URLs with origin === self.location.origin
+  // and fall back to /account on anything that doesn't pass.
+  const rawUrl =
     (event.notification.data && event.notification.data.url) || "/account";
+  let targetUrl = "/account";
+  try {
+    if (typeof rawUrl === "string") {
+      if (rawUrl.startsWith("/") && !rawUrl.startsWith("//")) {
+        // Relative path — same origin by construction. Reject "//"
+        // (protocol-relative) which the browser would resolve as a
+        // different origin.
+        targetUrl = rawUrl;
+      } else {
+        const parsed = new URL(rawUrl, self.location.origin);
+        if (parsed.origin === self.location.origin) {
+          targetUrl = parsed.pathname + parsed.search + parsed.hash;
+        }
+      }
+    }
+  } catch (_err) {
+    // Malformed URL — keep the /account fallback.
+  }
   event.waitUntil(
     self.clients
       .matchAll({ type: "window", includeUncontrolled: true })
