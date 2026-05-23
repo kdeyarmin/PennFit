@@ -237,11 +237,15 @@ async function downloadOneMedia(
   try {
     // Twilio media URL responds with a 307 redirect to a temporary
     // signed URL on Twilio's CDN that does NOT require auth. Fetch
-    // follows redirects by default; we just need to send the basic
-    // auth on the first hop.
+    // follows redirects by default and (per the Fetch spec, as
+    // implemented by undici) strips Authorization on cross-origin
+    // redirects, so the Basic auth stays on the first hop and the
+    // CDN URL fetches anonymously. Without follow we'd get a 307
+    // response back and the resp.ok check below would drop every
+    // inbound MMS attachment silently.
     const resp = await fetch(mediaUrl, {
       headers: { Authorization: `Basic ${auth}` },
-      redirect: "manual",
+      redirect: "follow",
       signal: controller.signal,
     });
     if (!resp.ok) {

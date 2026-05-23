@@ -30,17 +30,28 @@ export interface FacialMeasurements {
   calibrationMethod: "creditCard" | "iris" | "manual";
 }
 
+/**
+ * P4 — every boolean field is `boolean | null`. `null` means "the
+ * patient declined to answer / said 'I'm not sure'." Each branch in
+ * `scoreAnswers()` and downstream contraindication checks must
+ * explicitly compare against `=== true` (the existing `if (answers.x)`
+ * pattern already treats null as a no-op, but the explicit comparison
+ * pins the contract so a future refactor can't accidentally reverse
+ * a null-vs-false confusion). `priorMaskExperience` and
+ * `cpapPressureSetting` already carry "none" / "unknown" as their
+ * third-option sentinels.
+ */
 export interface QuestionnaireAnswers {
-  mouthBreather: boolean;
-  claustrophobic: boolean;
-  sideOrStomachSleeper: boolean;
-  heavyFacialHair: boolean;
-  wearsGlasses: boolean;
-  frequentCongestion: boolean;
+  mouthBreather: boolean | null;
+  claustrophobic: boolean | null;
+  sideOrStomachSleeper: boolean | null;
+  heavyFacialHair: boolean | null;
+  wearsGlasses: boolean | null;
+  frequentCongestion: boolean | null;
   priorMaskExperience: "none" | "nasal" | "nasalPillow" | "fullFace" | "hybrid";
-  mobilityLimitations: boolean;
-  sensitiveSkin: boolean;
-  siliconeSensitivity: boolean;
+  mobilityLimitations: boolean | null;
+  sensitiveSkin: boolean | null;
+  siliconeSensitivity: boolean | null;
   cpapPressureSetting: "unknown" | "low" | "medium" | "high";
 }
 
@@ -129,9 +140,19 @@ export function scoreAnswers(answers: QuestionnaireAnswers): MaskTypeWeights {
     hybrid: 0.25,
   };
 
+  // P4 — every boolean branch below uses `=== true` so a `null` answer
+  // ("I'm not sure") is an explicit no-op. The old `if (answers.x)`
+  // pattern coincidentally produced the same result for null (falsy),
+  // but the explicit comparison pins the contract: only an affirmative
+  // yes from the patient applies a weight adjustment. A `false` answer
+  // is also a no-op; the engine does not push the OPPOSITE direction
+  // when the patient says no (intentional — a "no, I don't mouth-
+  // breathe" doesn't add evidence for nasal masks the way the absence
+  // of a yes does).
+
   // Mouth breather — strongly indicates full face or hybrid
   // Source: AASM guidelines — full face recommended when patient cannot maintain oral closure
-  if (answers.mouthBreather) {
+  if (answers.mouthBreather === true) {
     weights.fullFace += 0.3;
     weights.hybrid += 0.15;
     weights.nasal -= 0.2;
@@ -140,7 +161,7 @@ export function scoreAnswers(answers: QuestionnaireAnswers): MaskTypeWeights {
 
   // Claustrophobia — strongly contra-indicates full face
   // Nasal pillow is the lowest-contact option; best for claustrophobic patients
-  if (answers.claustrophobic) {
+  if (answers.claustrophobic === true) {
     weights.nasalPillow += 0.3;
     weights.fullFace -= 0.3;
     weights.nasal += 0.05;
@@ -149,7 +170,7 @@ export function scoreAnswers(answers: QuestionnaireAnswers): MaskTypeWeights {
 
   // Side/stomach sleeper — nasal pillow and minimal-contact masks fit better
   // Full face masks are more likely to dislodge with lateral head position
-  if (answers.sideOrStomachSleeper) {
+  if (answers.sideOrStomachSleeper === true) {
     weights.nasalPillow += 0.15;
     weights.nasal += 0.05;
     weights.fullFace -= 0.15;
@@ -159,7 +180,7 @@ export function scoreAnswers(answers: QuestionnaireAnswers): MaskTypeWeights {
   // Heavy facial hair — prevents seal on silicone cushions touching face
   // Full face is worst (largest cushion contact area); nasal pillow still risky
   // Minimally-contacting nasal masks are best option; hybrid okay if under-nose
-  if (answers.heavyFacialHair) {
+  if (answers.heavyFacialHair === true) {
     weights.fullFace -= 0.25;
     weights.nasal += 0.1;
     weights.hybrid -= 0.1;
@@ -167,7 +188,7 @@ export function scoreAnswers(answers: QuestionnaireAnswers): MaskTypeWeights {
   }
 
   // Glasses — full face with nose bridge obstructs; under-nose or top-tube designs better
-  if (answers.wearsGlasses) {
+  if (answers.wearsGlasses === true) {
     weights.nasal += 0.1;
     weights.nasalPillow += 0.1;
     weights.hybrid += 0.05;
@@ -176,7 +197,7 @@ export function scoreAnswers(answers: QuestionnaireAnswers): MaskTypeWeights {
 
   // Frequent congestion — nasal and nasal pillow become problematic
   // Full face allows breathing through mouth when nose is blocked
-  if (answers.frequentCongestion) {
+  if (answers.frequentCongestion === true) {
     weights.fullFace += 0.2;
     weights.hybrid += 0.1;
     weights.nasal -= 0.15;
@@ -194,20 +215,20 @@ export function scoreAnswers(answers: QuestionnaireAnswers): MaskTypeWeights {
   // Mobility limitations — prefer easy clip-on / low-headgear designs
   // Magnetic clips and minimal adjustments help; this doesn't strongly favor a type
   // but slight preference for simpler masks (nasal/nasalPillow)
-  if (answers.mobilityLimitations) {
+  if (answers.mobilityLimitations === true) {
     weights.nasalPillow += 0.05;
     weights.nasal += 0.05;
   }
 
   // Sensitive skin — memory foam or gel cushions preferred over standard silicone
   // All types can have sensitive-skin variants; slight preference for pillow (less surface area)
-  if (answers.sensitiveSkin) {
+  if (answers.sensitiveSkin === true) {
     weights.nasalPillow += 0.05;
   }
 
   // Silicone sensitivity — most cushions are silicone; gel or foam alternatives available
   // Does not eliminate a mask type but reduces nasal pillow slightly (pillows are mostly silicone)
-  if (answers.siliconeSensitivity) {
+  if (answers.siliconeSensitivity === true) {
     weights.nasalPillow -= 0.1;
     weights.hybrid += 0.05;
   }
@@ -396,14 +417,23 @@ function generateReasoning(
   const reasons: string[] = [];
   const typeWeight = typeWeights[mask.type];
 
-  // Type-based reasons from questionnaire
+  // Type-based reasons from questionnaire.
+  //
+  // P4 — every boolean read here is an explicit `=== true` or
+  // `=== false`. The reasons strings show up verbatim on /results
+  // ("Recommended because you breathe through your nose at night"),
+  // so a patient who clicked "I'm not sure" must NOT see a sentence
+  // claiming they answered. The old `if (!answers.mouthBreather)`
+  // pattern treated null and false identically; we now reserve the
+  // "you breathe through your nose" copy for patients who explicitly
+  // said no.
   if (mask.type === "fullFace") {
-    if (answers.mouthBreather) {
+    if (answers.mouthBreather === true) {
       reasons.push(
         "Covers both nose and mouth — ideal since you breathe through your mouth during sleep.",
       );
     }
-    if (answers.frequentCongestion) {
+    if (answers.frequentCongestion === true) {
       reasons.push(
         "When nasal congestion occurs, you can continue therapy breathing through your mouth.",
       );
@@ -416,18 +446,18 @@ function generateReasoning(
   }
 
   if (mask.type === "nasal") {
-    if (!answers.mouthBreather) {
+    if (answers.mouthBreather === false) {
       reasons.push(
         "You breathe through your nose during sleep, making a nasal mask an effective choice.",
       );
     }
-    if (answers.sideOrStomachSleeper) {
+    if (answers.sideOrStomachSleeper === true) {
       reasons.push(
         "Nasal masks have a lower profile than full-face masks, which helps with side sleeping.",
       );
     }
     if (
-      answers.wearsGlasses &&
+      answers.wearsGlasses === true &&
       mask.features.some((f) => f.toLowerCase().includes("glass"))
     ) {
       reasons.push(
@@ -437,17 +467,17 @@ function generateReasoning(
   }
 
   if (mask.type === "nasalPillow") {
-    if (answers.claustrophobic) {
+    if (answers.claustrophobic === true) {
       reasons.push(
         "Minimal contact design — nasal pillows only contact the nostril entrance, reducing the enclosed feeling.",
       );
     }
-    if (answers.sideOrStomachSleeper) {
+    if (answers.sideOrStomachSleeper === true) {
       reasons.push(
         "Low-profile and flexible — stays in place for side and stomach sleepers.",
       );
     }
-    if (!answers.mouthBreather) {
+    if (answers.mouthBreather === false) {
       reasons.push("Works well since you breathe through your nose at night.");
     }
     if (typeWeight > 0.35) {
@@ -458,12 +488,12 @@ function generateReasoning(
   }
 
   if (mask.type === "hybrid") {
-    if (answers.mouthBreather && answers.claustrophobic) {
+    if (answers.mouthBreather === true && answers.claustrophobic === true) {
       reasons.push(
         "Hybrid design bridges the gap — covers both nose and mouth while minimizing the enclosed feeling of a full-face mask.",
       );
     }
-    if (answers.sideOrStomachSleeper) {
+    if (answers.sideOrStomachSleeper === true) {
       reasons.push(
         "Top-of-head hose connection reduces tugging and works well with side sleeping.",
       );
@@ -498,7 +528,7 @@ function generateReasoning(
 
   // Feature highlights relevant to answers
   if (
-    answers.sensitiveSkin &&
+    answers.sensitiveSkin === true &&
     mask.features.some(
       (f) =>
         f.toLowerCase().includes("foam") ||
@@ -509,7 +539,7 @@ function generateReasoning(
     reasons.push("Features a soft cushion that is gentler on sensitive skin.");
   }
   if (
-    answers.mobilityLimitations &&
+    answers.mobilityLimitations === true &&
     mask.features.some(
       (f) =>
         f.toLowerCase().includes("magnetic") ||
@@ -521,7 +551,7 @@ function generateReasoning(
     );
   }
   if (
-    answers.siliconeSensitivity &&
+    answers.siliconeSensitivity === true &&
     mask.features.some(
       (f) =>
         f.toLowerCase().includes("gel") ||
@@ -556,41 +586,46 @@ function generateSummary(
   // Build a profile of the patient's most relevant needs, but only include
   // needs that are CONGRUENT with the recommended mask type — never claim a
   // user "prefers minimal coverage" while we're handing them a full-face mask.
+  // P4 — explicit `=== true`. The needs sentence ("Recommended because
+  // you wear glasses and sleep on your side") is patient-facing copy
+  // on /results; a "I'm not sure" answer must NOT generate a claim
+  // that the patient has that need.
   const needs: string[] = [];
   if (
-    answers.mouthBreather &&
+    answers.mouthBreather === true &&
     (mask.type === "fullFace" || mask.type === "hybrid")
   ) {
     needs.push("breathe through your mouth at night");
   }
   if (
-    answers.claustrophobic &&
+    answers.claustrophobic === true &&
     (mask.type === "nasalPillow" || mask.type === "nasal")
   ) {
     needs.push("prefer minimal facial coverage");
   }
-  if (answers.sideOrStomachSleeper) needs.push("sleep on your side or stomach");
+  if (answers.sideOrStomachSleeper === true)
+    needs.push("sleep on your side or stomach");
   if (
-    answers.heavyFacialHair &&
+    answers.heavyFacialHair === true &&
     (mask.type === "nasalPillow" || mask.type === "hybrid")
   ) {
     needs.push("have facial hair");
   }
-  if (answers.wearsGlasses) needs.push("wear glasses");
+  if (answers.wearsGlasses === true) needs.push("wear glasses");
   if (
-    answers.frequentCongestion &&
+    answers.frequentCongestion === true &&
     (mask.type === "fullFace" || mask.type === "hybrid")
   ) {
     needs.push("often have nasal congestion");
   }
-  if (answers.sensitiveSkin) needs.push("have sensitive skin");
+  if (answers.sensitiveSkin === true) needs.push("have sensitive skin");
   if (
-    answers.siliconeSensitivity &&
+    answers.siliconeSensitivity === true &&
     !mask.cushionMaterial.toLowerCase().includes("silicone")
   ) {
     needs.push("are sensitive to silicone");
   }
-  if (answers.mobilityLimitations) needs.push("need easy on/off");
+  if (answers.mobilityLimitations === true) needs.push("need easy on/off");
 
   const needsClause =
     needs.length === 0
@@ -616,16 +651,17 @@ function generateSummary(
       "combines a top-of-head hose with under-nose coverage for freedom of movement";
   }
 
-  // Add ONE feature-specific tie-in that actually addresses a stated need
+  // P4 — explicit `=== true` so a "I'm not sure" patient doesn't
+  // get a tie-in claiming they stated the need.
   const featureLower = mask.features.map((f) => f.toLowerCase());
   if (
-    answers.mobilityLimitations &&
+    answers.mobilityLimitations === true &&
     featureLower.some((f) => f.includes("magnetic"))
   ) {
     matchClause +=
       ", and the magnetic clips make it easy to put on and take off";
   } else if (
-    answers.wearsGlasses &&
+    answers.wearsGlasses === true &&
     featureLower.some(
       (f) =>
         f.includes("glass") || f.includes("top-of-head") || f.includes("open"),
@@ -634,13 +670,13 @@ function generateSummary(
     matchClause +=
       ", and it stays clear of your line of sight so glasses fit comfortably";
   } else if (
-    answers.sensitiveSkin &&
+    answers.sensitiveSkin === true &&
     (mask.cushionMaterial.toLowerCase().includes("foam") ||
       mask.cushionMaterial.toLowerCase().includes("gel"))
   ) {
     matchClause += `, and the ${mask.cushionMaterial.toLowerCase()} cushion is gentler on sensitive skin`;
   } else if (
-    answers.sideOrStomachSleeper &&
+    answers.sideOrStomachSleeper === true &&
     (mask.hoseConnection === "top" ||
       featureLower.some(
         (f) =>
@@ -683,24 +719,30 @@ function getActiveContraindications(
 ): string[] {
   const triggered: string[] = [];
 
+  // P4 — explicit `=== true` so a "I'm not sure" answer does NOT
+  // trigger a contraindication. Over-flagging an unknown answer
+  // would shrink the candidate set for patients who skipped a
+  // question; we'd rather let a downstream fitter check the
+  // contraindication in person than auto-exclude a mask the patient
+  // never said anything against.
   for (const contra of mask.contraindications) {
     const lower = contra.toLowerCase();
-    if (lower.includes("mouth breath") && answers.mouthBreather) {
+    if (lower.includes("mouth breath") && answers.mouthBreather === true) {
       triggered.push(contra);
     }
-    if (lower.includes("claustrophob") && answers.claustrophobic) {
+    if (lower.includes("claustrophob") && answers.claustrophobic === true) {
       triggered.push(contra);
     }
     if (
       (lower.includes("facial hair") || lower.includes("beard")) &&
-      answers.heavyFacialHair
+      answers.heavyFacialHair === true
     ) {
       triggered.push(contra);
     }
     if (
       lower.includes("silicone") &&
       lower.includes("allergy") &&
-      answers.siliconeSensitivity
+      answers.siliconeSensitivity === true
     ) {
       triggered.push(contra);
     }
@@ -708,7 +750,7 @@ function getActiveContraindications(
       (lower.includes("congestion") ||
         lower.includes("sinusitis") ||
         lower.includes("congested")) &&
-      answers.frequentCongestion
+      answers.frequentCongestion === true
     ) {
       triggered.push(contra);
     }

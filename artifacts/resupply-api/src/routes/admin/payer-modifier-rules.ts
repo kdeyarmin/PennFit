@@ -14,9 +14,10 @@ import {
 } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
+import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import {
-  requireAdmin,
   requireAdminOnly,
+  requirePermission,
 } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
@@ -79,7 +80,10 @@ function rowToApi(r: Row) {
   };
 }
 
-router.get("/admin/payer-modifier-rules", requireAdmin, async (req, res) => {
+router.get(
+  "/admin/payer-modifier-rules",
+  requirePermission("reports.read"),
+  async (req, res) => {
   const supabase = getSupabaseServiceRoleClient();
   let query = supabase
     .schema("resupply")
@@ -105,6 +109,7 @@ router.get("/admin/payer-modifier-rules", requireAdmin, async (req, res) => {
 router.post(
   "/admin/payer-modifier-rules",
   requireAdminOnly,
+  adminRateLimit({ name: "payer_modifier_rules.create", preset: "sensitive" }),
   async (req, res) => {
     const parsed = upsertBody.safeParse(req.body);
     if (!parsed.success) {
@@ -158,6 +163,7 @@ router.post(
 router.patch(
   "/admin/payer-modifier-rules/:id",
   requireAdminOnly,
+  adminRateLimit({ name: "payer_modifier_rules.update", preset: "sensitive" }),
   async (req, res) => {
     const idParsed = idParam.safeParse(req.params);
     if (!idParsed.success) {

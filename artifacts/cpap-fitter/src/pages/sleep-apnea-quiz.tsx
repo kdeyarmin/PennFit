@@ -816,6 +816,7 @@ function EmailMyResultsBlock({
         <p
           className="text-xs text-destructive"
           data-testid="quiz-email-error"
+          role="alert"
         >
           {errMsg}
         </p>

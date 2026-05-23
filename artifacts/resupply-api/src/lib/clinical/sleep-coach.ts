@@ -5,6 +5,13 @@
 // The patient asks "why is my mask leaking?" / "what's a normal AHI?"
 // and we ground the reply in their last 7-day therapy snapshot.
 //
+// Provider selection (May 2026 update):
+//   When ANTHROPIC_API_KEY is set, we use Claude Sonnet 4.6 — its
+//   writing voice for empathetic, evidence-grounded patient guidance
+//   is noticeably warmer than gpt-4o-class models. When only
+//   OPENAI_API_KEY is set, we fall back to gpt-4o-mini. When neither
+//   is set, the route returns a degraded "coach offline" reply.
+//
 // PHI posture:
 //   The model gets:
 //     - patient initials + DOB year only
@@ -16,39 +23,66 @@
 //     - any free-text clinical note
 //   Same containment posture as the AI claim scrubber.
 
+import { getResponseText } from "@workspace/resupply-ai";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
+import {
+  DEFAULT_ANTHROPIC_MODEL_CHAT,
+  getAnthropicClient,
+} from "../llm-provider";
 import { logger } from "../logger";
 
 const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
-const DEFAULT_MODEL = "gpt-4o-mini";
+const DEFAULT_OPENAI_MODEL = "gpt-4o-mini";
 const DEFAULT_TIMEOUT_MS = 15_000;
 
-export const SLEEP_COACH_PROMPT_VERSION = "coach-1.0";
+export const SLEEP_COACH_PROMPT_VERSION = "coach-2.0";
 
 const SYSTEM_PROMPT = [
-  "You are a HIPAA-compliant CPAP sleep-therapy coach. The patient is",
-  "logged into a Pennsylvania DME's patient portal. They ask a question",
-  "about their CPAP therapy; you reply with practical, friendly,",
-  "evidence-aligned guidance grounded in their last 7 days of therapy",
-  "data (provided in the context payload).",
+  "You are the PennPaps sleep coach — a warm, calm, evidence-grounded",
+  "guide for a CPAP patient logged into their patient portal. The",
+  "patient is tired (often literally — many message you at 3am after a",
+  "bad night). Your replies should feel like a thoughtful friend who",
+  "happens to be a sleep tech, not a clinical chatbot.",
   "",
-  "RULES:",
-  "- Be conversational. Address the patient as 'you'.",
-  "- Quote specific numbers from their data when relevant.",
-  "- Recommend concrete, non-medical actions (mask refit, headgear",
-  "  check, humidifier setting). Do NOT give clinical advice like",
-  "  changing pressure settings or stopping therapy — defer to their",
-  "  physician for those.",
+  "You will be given their last 7 days of therapy data. Reference",
+  "specific numbers when they help (\"your average is 5.2 hours — that's",
+  "right at the line\"); skip the numbers when emotional acknowledgement",
+  "is what they need.",
+  "",
+  "HOW TO WRITE:",
+  "- Open with the answer, or with a single short empathy line if",
+  "  they're frustrated. Never with \"Great question!\" or \"I understand",
+  "  your concern.\"",
+  "- Use contractions (\"you're\", \"we'll\", \"don't\"). Avoid medical",
+  "  jargon — say \"how much you used it\" not \"compliance metric.\"",
+  "- One to three short paragraphs. No markdown, no headings, no",
+  "  bullet points (the app renders plain text).",
+  "- Address them as \"you.\" Use \"I\" sparingly — only when offering a",
+  "  suggestion (\"I'd try loosening the top straps first\").",
+  "- End with one concrete next step they can try tonight, or one",
+  "  question that helps you give a better answer.",
+  "",
+  "WHAT TO SAY:",
+  "- Recommend concrete, non-medical actions: mask refit, headgear",
+  "  check, humidifier setting, cleaning, environment changes.",
+  "- Validate that CPAP is hard at first and that small adjustments",
+  "  usually fix big problems.",
+  "",
+  "WHAT NOT TO SAY:",
+  "- Do NOT give clinical advice like changing pressure settings,",
+  "  stopping therapy, or interpreting AHI as a diagnosis. Defer to",
+  "  the patient's sleep physician for those.",
   "- If they describe a symptom you cannot address (chest pain,",
-  "  severe daytime sleepiness, suspected infection), recommend they",
-  "  contact their physician or 911 as appropriate.",
-  "- Maximum 200 words. Plain text only — no markdown, no headings,",
-  "  no bullet points (the patient app renders plain text).",
+  "  severe daytime sleepiness, suspected infection, signs of stroke,",
+  "  suicidal ideation), gently but firmly recommend they contact",
+  "  their physician — or 911 for anything emergent — and stop the",
+  "  coaching there.",
   "- NEVER reveal patient PHI even though some context is provided.",
   "  You may reference their data (\"your average usage is 5.2 hours\")",
-  "  but never their name, DOB, address, or member ID — those are",
-  "  not in the context anyway.",
+  "  but never their name, DOB, address, or member ID.",
+  "",
+  "LENGTH: maximum 200 words. Most replies are 60-120 words.",
 ].join("\n");
 
 export interface SleepCoachInput {
@@ -68,16 +102,57 @@ export interface SleepCoachReply {
 }
 
 export async function askSleepCoach(input: SleepCoachInput): Promise<SleepCoachReply> {
+  const context = await assembleContext(input.patientId);
+  const userMessage = buildUserMessage(input.question, input.thread ?? [], context);
+
+  // Prefer Claude (Sonnet 4.6) — its writing voice for empathetic
+  // patient-facing copy is consistently warmer than gpt-4o-class
+  // models, and clinical-adjacent reasoning is at least as good.
+  // Fall back to OpenAI if only OPENAI_API_KEY is configured (legacy
+  // deployments). Fall back to "offline" when neither is set.
+  const anthropic = getAnthropicClient();
+  if (anthropic) {
+    const startedAt = Date.now();
+    const result = await anthropic.send({
+      model: DEFAULT_ANTHROPIC_MODEL_CHAT,
+      max_tokens: 400,
+      temperature: 0.4,
+      system: SYSTEM_PROMPT,
+      messages: [{ role: "user", content: userMessage }],
+    });
+    const latencyMs = Date.now() - startedAt;
+    if (!result.ok) {
+      logger.warn(
+        {
+          event: "sleep_coach_anthropic_error",
+          code: result.errorCode,
+          status: result.httpStatus,
+        },
+        "sleep-coach: anthropic call failed",
+      );
+      return {
+        reply: null,
+        errorMessage: `anthropic ${result.errorCode}: ${result.errorMessage.slice(0, 200)}`,
+        latencyMs,
+      };
+    }
+    const text = getResponseText(result.response).trim();
+    return {
+      reply: text ? text.slice(0, 1500) : null,
+      errorMessage: null,
+      latencyMs,
+    };
+  }
+
   const apiKey = input.apiKey ?? process.env.OPENAI_API_KEY;
   if (!apiKey) {
     return {
       reply: null,
-      errorMessage: "OPENAI_API_KEY not configured",
+      errorMessage:
+        "neither ANTHROPIC_API_KEY nor OPENAI_API_KEY configured",
       latencyMs: null,
     };
   }
-  const context = await assembleContext(input.patientId);
-  const userMessage = buildUserMessage(input.question, input.thread ?? [], context);
   const fetchImpl = input.fetchImpl ?? fetch;
   const timeoutMs = input.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const ctrl = new AbortController();
@@ -92,9 +167,9 @@ export async function askSleepCoach(input: SleepCoachInput): Promise<SleepCoachR
         Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: input.apiKey ? DEFAULT_MODEL : DEFAULT_MODEL,
-        temperature: 0.3,
-        max_tokens: 350,
+        model: DEFAULT_OPENAI_MODEL,
+        temperature: 0.4,
+        max_tokens: 400,
         messages: [
           { role: "system", content: SYSTEM_PROMPT },
           { role: "user", content: userMessage },

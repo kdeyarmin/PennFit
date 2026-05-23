@@ -16,6 +16,7 @@ import {
   type SendgridClient,
 } from "@workspace/resupply-email";
 
+import { isFeatureEnabled } from "../feature-flags";
 import { readPracticeName } from "./messaging-config";
 
 export type ReviewRequestEmailResult =
@@ -46,6 +47,13 @@ export async function sendReviewRequestEmail(
   input: ReviewRequestEmailInput,
   deps: SendReviewRequestEmailDeps = {},
 ): Promise<ReviewRequestEmailResult> {
+  // Control Center feature gate. Returns the same shape as the
+  // SendGrid-not-configured branch so the dispatcher's counters
+  // (sent / skipped) flow uninterrupted.
+  if (!(await isFeatureEnabled("storefront.reviews_collection"))) {
+    return { sent: false, reason: "feature_disabled" };
+  }
+
   const factory = deps.clientFactory ?? defaultClientFactory;
   const client = factory();
   if (!client) return { sent: false, reason: "email_not_configured" };

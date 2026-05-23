@@ -14,9 +14,10 @@ import {
 
 import { runCappedRentalAdvance } from "../../lib/billing/capped-rental-advancer";
 import { logger } from "../../lib/logger";
+import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import {
-  requireAdmin,
   requireAdminOnly,
+  requirePermission,
 } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
@@ -51,7 +52,10 @@ const patchBody = z
 
 const idParam = z.object({ id: z.string().uuid() });
 
-router.get("/admin/capped-rental-cycles", requireAdmin, async (req, res) => {
+router.get(
+  "/admin/capped-rental-cycles",
+  requirePermission("patients.read"),
+  async (req, res) => {
   const supabase = getSupabaseServiceRoleClient();
   let query = supabase
     .schema("resupply")
@@ -69,7 +73,8 @@ router.get("/admin/capped-rental-cycles", requireAdmin, async (req, res) => {
 
 router.post(
   "/admin/capped-rental-cycles",
-  requireAdmin,
+  requirePermission("patients.update"),
+  adminRateLimit({ name: "capped_rental_cycles.create", preset: "mutation" }),
   async (req, res) => {
     const parsed = createBody.safeParse(req.body);
     if (!parsed.success) {
@@ -118,7 +123,8 @@ router.post(
 
 router.patch(
   "/admin/capped-rental-cycles/:id",
-  requireAdmin,
+  requirePermission("patients.update"),
+  adminRateLimit({ name: "capped_rental_cycles.update", preset: "mutation" }),
   async (req, res) => {
     const idParsed = idParam.safeParse(req.params);
     if (!idParsed.success) {
@@ -152,6 +158,10 @@ router.patch(
 router.post(
   "/admin/capped-rental-cycles/advance-now",
   requireAdminOnly,
+  adminRateLimit({
+    name: "capped_rental_cycles.advance_now",
+    preset: "bulk",
+  }),
   async (_req, res) => {
     const stats = await runCappedRentalAdvance();
     res.json({ ok: true, stats });

@@ -64,6 +64,7 @@ import {
   requireAdminOnly,
   requirePermission,
 } from "../../middlewares/requireAdmin";
+import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 
 const router: IRouter = Router();
 
@@ -182,6 +183,7 @@ router.get(
 router.post(
   "/admin/accreditation/policies",
   requireAdminOnly,
+  adminRateLimit({ name: "accreditation_policies.create", preset: "mutation" }),
   async (req, res) => {
     const parsed = createBody.safeParse(req.body);
     if (!parsed.success) {
@@ -255,6 +257,7 @@ router.post(
 router.patch(
   "/admin/accreditation/policies/:id",
   requireAdminOnly,
+  adminRateLimit({ name: "accreditation_policies.update", preset: "mutation" }),
   async (req, res) => {
     const params = idParam.safeParse(req.params);
     if (!params.success) {
@@ -411,6 +414,7 @@ router.get(
 router.post(
   "/admin/accreditation/policies/:id/attest",
   requireAdmin,
+  adminRateLimit({ name: "accreditation_policies.attest", preset: "mutation" }),
   async (req, res) => {
     const params = idParam.safeParse(req.params);
     if (!params.success) {

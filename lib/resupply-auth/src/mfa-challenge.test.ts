@@ -78,10 +78,21 @@ describe("mintMfaChallengeToken + verifyMfaChallengeToken", () => {
 
   it("rejects when signature is tampered", () => {
     const tok = mintMfaChallengeToken({ uid: "u", hmacKey: KEY });
-    // Flip one char of the signature (last char) — the verifier
-    // should reject with bad_signature, not pass.
+    // Flip a char in the MIDDLE of the signature. Don't pick the
+    // last char: a base64url-encoded 32-byte buffer is exactly 43
+    // chars, of which the last carries only 4 meaningful bits (the
+    // trailing 2 bits are encoder-padding zeros). Node's lenient
+    // base64 decoder discards those bits, so flipping the last
+    // char yields the same 32-byte buffer ~1/16 of runs (when the
+    // original char happens to encode 0 in its low 2 bits, e.g.
+    // 'A'). Middle chars carry all 6 bits — flipping one always
+    // changes the decoded buffer.
+    const dot = tok.indexOf(".");
+    const flipIdx = dot + 5;
+    const ch = tok.charAt(flipIdx);
+    const replacement = ch === "A" ? "B" : "A";
     const flipped =
-      tok.slice(0, -1) + (tok.slice(-1) === "A" ? "B" : "A");
+      tok.slice(0, flipIdx) + replacement + tok.slice(flipIdx + 1);
     const r = verifyMfaChallengeToken(flipped, { hmacKey: KEY });
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.reason).toBe("bad_signature");

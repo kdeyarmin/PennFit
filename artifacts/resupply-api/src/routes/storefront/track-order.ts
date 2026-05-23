@@ -76,8 +76,12 @@ const body = z
       .trim()
       .toUpperCase()
       // Reference is "PENN-" + 6 alphanumerics; allow either the
-      // full thing or just the 6-char tail.
-      .regex(/^(PENN-)?[A-Z0-9]{4,12}$/, "must be a PennPaps order reference"),
+      // full thing or just the 6-char tail. The regex was previously
+      // {4,12} which accepted shorter references — a 4-char tail
+      // is brute-forceable in tens of thousands of guesses, where
+      // 6 alphanumerics is ~36^6 ≈ 2B (combined with rate limiting
+      // + the email guard, that's the deterrent we want).
+      .regex(/^(PENN-)?[A-Z0-9]{6}$/, "must be a PennPaps order reference"),
     email: z.string().trim().toLowerCase().email().max(200),
   })
   .strict();

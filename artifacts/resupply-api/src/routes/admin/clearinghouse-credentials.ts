@@ -30,9 +30,10 @@ import {
 } from "../../worker/jobs/office-ally-inbound-poll";
 import { resolveClearinghouse } from "../../lib/billing/identity-resolver";
 import { logger } from "../../lib/logger";
+import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import {
-  requireAdmin,
   requireAdminOnly,
+  requirePermission,
 } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
@@ -93,7 +94,7 @@ function rowToApi(r: Row) {
 
 router.get(
   "/admin/clearinghouse-credentials",
-  requireAdmin,
+  requirePermission("admin.tools.manage"),
   async (_req, res) => {
     const supabase = getSupabaseServiceRoleClient();
     const { data, error } = await supabase
@@ -108,7 +109,7 @@ router.get(
 
 router.get(
   "/admin/clearinghouse-credentials/:id",
-  requireAdmin,
+  requirePermission("admin.tools.manage"),
   async (req, res) => {
     const parsed = idParam.safeParse(req.params);
     if (!parsed.success) {
@@ -134,6 +135,10 @@ router.get(
 router.post(
   "/admin/clearinghouse-credentials",
   requireAdminOnly,
+  adminRateLimit({
+    name: "clearinghouse_credentials.create",
+    preset: "sensitive",
+  }),
   async (req, res) => {
     const parsed = upsertBody.safeParse(req.body);
     if (!parsed.success) {
@@ -198,6 +203,10 @@ router.post(
 router.patch(
   "/admin/clearinghouse-credentials/:id",
   requireAdminOnly,
+  adminRateLimit({
+    name: "clearinghouse_credentials.update",
+    preset: "sensitive",
+  }),
   async (req, res) => {
     const idParsed = idParam.safeParse(req.params);
     if (!idParsed.success) {
@@ -265,6 +274,10 @@ router.patch(
 router.post(
   "/admin/clearinghouse-credentials/:id/test",
   requireAdminOnly,
+  adminRateLimit({
+    name: "clearinghouse_credentials.test",
+    preset: "mutation",
+  }),
   async (req, res) => {
     const idParsed = idParam.safeParse(req.params);
     if (!idParsed.success) {
@@ -325,6 +338,7 @@ router.post(
 router.post(
   "/admin/office-ally/poll-now",
   requireAdminOnly,
+  adminRateLimit({ name: "office_ally.poll_now", preset: "bulk" }),
   async (req, res) => {
     // Resolve to make sure we have a target; bail clearly if not.
     const resolved = await resolveClearinghouse();
@@ -356,7 +370,7 @@ router.post(
 // ── INBOUND FILE AUDIT LIST ────────────────────────────────────────
 router.get(
   "/admin/clearinghouse-inbound-files",
-  requireAdmin,
+  requirePermission("admin.tools.manage"),
   async (req, res) => {
     const supabase = getSupabaseServiceRoleClient();
     let query = supabase

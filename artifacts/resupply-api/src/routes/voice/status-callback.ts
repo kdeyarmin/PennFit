@@ -15,6 +15,7 @@
 //     sides asynchronously).
 
 import { Router, type IRouter } from "express";
+import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
@@ -53,10 +54,16 @@ router.post("/voice/status-callback", signatureMiddleware, async (req, res) => {
   const callStatus =
     typeof body.CallStatus === "string" ? body.CallStatus : null;
   const callSid = typeof body.CallSid === "string" ? body.CallSid : null;
-  const conversationId =
-    typeof req.query.conversationId === "string"
-      ? req.query.conversationId
-      : null;
+  // Validate UUID shape on the URL param before using it as a row
+  // lookup key. Twilio's signature middleware (registered above)
+  // covers the URL query string + body, so a forged value can only
+  // appear if the auth token leaked — but a malformed value would
+  // still flow into our DB query as a no-op; matching SMS callback's
+  // validation here keeps audit metadata consistently UUID-shaped.
+  const conversationIdParse = z.string().uuid().safeParse(req.query.conversationId);
+  const conversationId = conversationIdParse.success
+    ? conversationIdParse.data
+    : null;
 
   if (!callStatus || !callSid || !conversationId) {
     // ack so Twilio doesn't retry, but don't audit a malformed event

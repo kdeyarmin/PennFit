@@ -56,6 +56,7 @@
 
 import { Router, type Response } from "express";
 import { z } from "zod";
+import { isFeatureEnabled } from "../../lib/feature-flags.js";
 import { logger } from "../../lib/logger.js";
 import { rateLimit } from "../../middlewares/rate-limit.js";
 import {
@@ -71,6 +72,17 @@ import {
   serializeToolResult,
 } from "../../lib/storefront/chatbotTools.js";
 import { redactPiiForOutbound } from "../../lib/storefront/chatbotPii.js";
+import {
+  DEFAULT_ANTHROPIC_MODEL_CHAT,
+  getAnthropicClient,
+  getResponseText,
+  getResponseToolCalls,
+  selectLlmProvider,
+  type AnthropicClient,
+  type AnthropicContentBlock,
+  type AnthropicMessage,
+  type AnthropicTool,
+} from "../../lib/llm-provider.js";
 
 const router = Router();
 
@@ -276,12 +288,41 @@ router.post("/chat", chatRateLimit, async (req, res) => {
   }
 
   const streaming = wantsStreaming(req.get("Accept"));
+  const selection = selectLlmProvider();
   const apiKey = process.env.OPENAI_API_KEY;
 
-  if (!apiKey || apiKey.trim() === "") {
+  // Control Center feature gate. When admins turn the chatbot off
+  // we surface a single-message "offline" response. The shape
+  // matches the existing unconfigured-LLM branch below so the
+  // widget doesn't have to special-case anything.
+  if (!(await isFeatureEnabled("storefront.chatbot"))) {
+    const offlineMessage =
+      "The PennPaps chat assistant is currently offline. Please reach us by phone or email — we'll respond as soon as we can.";
+    if (streaming) {
+      startSseHeaders(res);
+      writeSseEvent(res, { type: "chunk", text: offlineMessage });
+      writeSseEvent(res, { type: "done", offline: true });
+      res.end();
+    } else {
+      res.json({
+        reply: {
+          role: "assistant",
+          content: offlineMessage,
+        },
+        offline: true,
+      });
+    }
+    return;
+  }
+
+  if (selection.provider === "offline") {
     logger.info(
-      { event: "chat_openai_unconfigured", turns: messages.length, streaming },
-      "chat: OPENAI_API_KEY not set, returning offline fallback",
+      {
+        event: "chat_llm_unconfigured",
+        turns: messages.length,
+        streaming,
+      },
+      "chat: neither ANTHROPIC_API_KEY nor OPENAI_API_KEY set, returning offline fallback",
     );
     if (streaming) {
       startSseHeaders(res);
@@ -304,6 +345,30 @@ router.post("/chat", chatRateLimit, async (req, res) => {
       },
       "chat: scrubbed PII patterns from outbound user message(s)",
     );
+  }
+
+  // Claude path — preferred when Anthropic is configured. Sonnet 4.6
+  // writes noticeably warmer patient-facing copy than gpt-4o-mini and
+  // is at least as strong on tool selection.
+  if (selection.provider === "anthropic") {
+    const client = getAnthropicClient();
+    if (client) {
+      return streaming
+        ? handleAnthropicStreaming(res, initial, client, messages.length)
+        : handleAnthropicJson(res, initial, client, messages.length);
+    }
+  }
+
+  if (!apiKey || apiKey.trim() === "") {
+    if (streaming) {
+      startSseHeaders(res);
+      writeSseEvent(res, { type: "chunk", text: OFFLINE_FALLBACK_REPLY });
+      writeSseEvent(res, { type: "done", offline: true });
+      res.end();
+    } else {
+      res.json({ reply: OFFLINE_FALLBACK_REPLY, offline: true });
+    }
+    return;
   }
   return streaming
     ? handleStreaming(res, initial, apiKey, messages.length)
@@ -651,6 +716,342 @@ async function handleStreaming(
     res.end();
   } finally {
     clearTimeout(timer);
+  }
+}
+
+// ─── Anthropic (Claude) path ─────────────────────────────────────────────
+//
+// Same tool-calling semantics as the OpenAI path above, but uses
+// Claude Sonnet 4.6 + Anthropic's tool_use shape. The system prompt
+// is wrapped in a cache_control block so subsequent turns of the
+// same conversation cost ~10% of normal input tokens (the chatbot
+// knowledge base is ~17k tokens — that's the bulk of every request).
+//
+// Tool conversion: we translate the existing CHAT_TOOLS (OpenAI
+// shape) into Anthropic's `{ name, description, input_schema }`
+// shape at module load. Tool execution is unchanged — same
+// `executeChatTool()` dispatcher, same JSON results.
+
+const ANTHROPIC_TOOLS: AnthropicTool[] = CHAT_TOOLS.map((t) => ({
+  name: t.function.name,
+  description: t.function.description,
+  input_schema: t.function.parameters,
+}));
+
+/**
+ * Convert our internal OpenAI-shaped message log into the
+ * Anthropic Messages API shape. The chat route currently keeps a
+ * union over assistant content (string | null with tool_calls) plus
+ * tool result messages — Anthropic models all of this through user/
+ * assistant messages whose `content` is an array of typed blocks.
+ *
+ * Rules:
+ *   - The system prompt is extracted separately and passed via the
+ *     `system` field (with cache_control on the long, stable block).
+ *   - An assistant turn that called tools becomes one assistant
+ *     message whose content is the text (if any) followed by one
+ *     `tool_use` block per call.
+ *   - Each tool result becomes a USER message containing a
+ *     `tool_result` block (Anthropic's convention — tool results
+ *     are framed as the "user" returning data to the assistant).
+ */
+function convertOpenAiToAnthropicMessages(
+  openai: OpenAiMessage[],
+): { system: string; messages: AnthropicMessage[] } {
+  const systemMsg = openai.find((m) => m.role === "system");
+  const system =
+    systemMsg && systemMsg.role === "system" ? systemMsg.content : "";
+  const out: AnthropicMessage[] = [];
+  for (const m of openai) {
+    if (m.role === "system") continue;
+    if (m.role === "user") {
+      out.push({ role: "user", content: m.content });
+      continue;
+    }
+    if (m.role === "assistant") {
+      const blocks: AnthropicContentBlock[] = [];
+      if (typeof m.content === "string" && m.content.length > 0) {
+        blocks.push({ type: "text", text: m.content });
+      }
+      if (m.tool_calls && m.tool_calls.length > 0) {
+        for (const tc of m.tool_calls) {
+          let input: Record<string, unknown>;
+          try {
+            input = tc.function.arguments
+              ? (JSON.parse(tc.function.arguments) as Record<string, unknown>)
+              : {};
+          } catch {
+            input = {};
+          }
+          blocks.push({
+            type: "tool_use",
+            id: tc.id,
+            name: tc.function.name,
+            input,
+          });
+        }
+      }
+      if (blocks.length > 0) {
+        out.push({ role: "assistant", content: blocks });
+      }
+      continue;
+    }
+    if (m.role === "tool") {
+      out.push({
+        role: "user",
+        content: [
+          {
+            type: "tool_result",
+            tool_use_id: m.tool_call_id,
+            content: m.content,
+          },
+        ],
+      });
+    }
+  }
+  return { system, messages: out };
+}
+
+/**
+ * Append a finished assistant turn (text + tool_use blocks) to the
+ * OpenAI-typed message log so subsequent rounds can be re-converted
+ * for Claude AND the tool-result framing stays consistent across
+ * both providers. We keep the canonical log in OpenAI shape because
+ * the existing applyToolCalls / serializeToolResult helpers operate
+ * on it, and we want exactly one tool-execution code path.
+ */
+function appendAnthropicAssistantTurn(
+  messages: OpenAiMessage[],
+  text: string,
+  toolCalls: Array<{ id: string; name: string; input: Record<string, unknown> }>,
+): OpenAiMessage[] {
+  const openAiToolCalls = toolCalls.map((c) => ({
+    id: c.id,
+    type: "function" as const,
+    function: { name: c.name, arguments: JSON.stringify(c.input) },
+  }));
+  return [
+    ...messages,
+    {
+      role: "assistant",
+      content: text.length > 0 ? text : null,
+      tool_calls: openAiToolCalls.length > 0 ? openAiToolCalls : undefined,
+    },
+  ];
+}
+
+async function handleAnthropicJson(
+  res: Response,
+  initialMessages: OpenAiMessage[],
+  client: AnthropicClient,
+  turns: number,
+): Promise<void> {
+  let messages = initialMessages;
+  try {
+    for (let round = 0; round <= MAX_TOOL_ROUNDS; round++) {
+      const { system, messages: anthMessages } =
+        convertOpenAiToAnthropicMessages(messages);
+      const result = await client.send({
+        model: DEFAULT_ANTHROPIC_MODEL_CHAT,
+        max_tokens: 600,
+        temperature: 0.4,
+        // cache_control on the system prompt — saves ~90% of input
+        // token cost on the second and subsequent turns of any
+        // conversation that uses the same system prompt prefix.
+        system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
+        messages: anthMessages,
+        tools: ANTHROPIC_TOOLS,
+      });
+      if (!result.ok) {
+        logger.warn(
+          {
+            event: "chat_anthropic_error",
+            code: result.errorCode,
+            status: result.httpStatus,
+          },
+          "chat: anthropic call failed",
+        );
+        res.json({ reply: DEGRADED_FALLBACK_REPLY, degraded: true });
+        return;
+      }
+      const text = getResponseText(result.response).trim();
+      const toolCalls = getResponseToolCalls(result.response);
+      if (toolCalls.length > 0 && round < MAX_TOOL_ROUNDS) {
+        messages = appendAnthropicAssistantTurn(messages, text, toolCalls);
+        // Re-use the OpenAI tool-execution path by wrapping each call
+        // back into the OpenAi tool_calls shape applyToolCalls expects.
+        const openAiToolCalls = toolCalls.map((c) => ({
+          id: c.id,
+          type: "function" as const,
+          function: { name: c.name, arguments: JSON.stringify(c.input) },
+        }));
+        // applyToolCalls also appends an assistant tool_calls message,
+        // which we just appended above — so drop the last entry and
+        // let applyToolCalls re-add it for consistency.
+        messages = messages.slice(0, -1);
+        messages = applyToolCalls(messages, openAiToolCalls);
+        continue;
+      }
+      if (text.length === 0) {
+        logger.warn(
+          { event: "chat_empty_reply", vendor: "anthropic", round },
+          "chat: anthropic returned empty content",
+        );
+        res.json({ reply: DEGRADED_FALLBACK_REPLY, degraded: true });
+        return;
+      }
+      logger.info(
+        {
+          event: "chat_ok",
+          vendor: "anthropic",
+          turns,
+          replyChars: text.length,
+          rounds: round,
+          inputTokens: result.response.usage.input_tokens,
+          cachedInputTokens: result.response.usage.cache_read_input_tokens ?? 0,
+          outputTokens: result.response.usage.output_tokens,
+        },
+        "chat: anthropic replied",
+      );
+      res.json({ reply: text });
+      return;
+    }
+    logger.warn(
+      { event: "chat_tool_cap_hit", vendor: "anthropic" },
+      "chat: hit MAX_TOOL_ROUNDS without a final reply",
+    );
+    res.json({ reply: DEGRADED_FALLBACK_REPLY, degraded: true });
+  } catch (err) {
+    logger.warn(
+      {
+        event: "chat_exception",
+        vendor: "anthropic",
+        err: err instanceof Error ? { name: err.name } : { name: "unknown" },
+      },
+      "chat: anthropic exception (returning degraded fallback)",
+    );
+    res.json({ reply: DEGRADED_FALLBACK_REPLY, degraded: true });
+  }
+}
+
+async function handleAnthropicStreaming(
+  res: Response,
+  initialMessages: OpenAiMessage[],
+  client: AnthropicClient,
+  turns: number,
+): Promise<void> {
+  startSseHeaders(res);
+
+  let messages = initialMessages;
+  let totalChars = 0;
+  const writeChunk = (text: string) => {
+    totalChars += text.length;
+    writeSseEvent(res, { type: "chunk", text });
+  };
+
+  try {
+    for (let round = 0; round <= MAX_TOOL_ROUNDS; round++) {
+      const { system, messages: anthMessages } =
+        convertOpenAiToAnthropicMessages(messages);
+      // Track per-round char count so we can detect a tool-only round
+      // (no text deltas) vs. a final answer round.
+      const startCharCount = totalChars;
+      const result = await client.stream(
+        {
+          model: DEFAULT_ANTHROPIC_MODEL_CHAT,
+          max_tokens: 600,
+          temperature: 0.4,
+          system: [
+            { type: "text", text: system, cache_control: { type: "ephemeral" } },
+          ],
+          messages: anthMessages,
+          tools: ANTHROPIC_TOOLS,
+        },
+        writeChunk,
+      );
+      if (!result.ok) {
+        logger.warn(
+          {
+            event: "chat_anthropic_error",
+            code: result.errorCode,
+            status: result.httpStatus,
+            streaming: true,
+          },
+          "chat: anthropic stream failed",
+        );
+        if (totalChars === 0) {
+          writeSseEvent(res, { type: "chunk", text: DEGRADED_FALLBACK_REPLY });
+        }
+        writeSseEvent(res, { type: "done", degraded: true });
+        res.end();
+        return;
+      }
+      const text = getResponseText(result.response);
+      const toolCalls = getResponseToolCalls(result.response);
+      if (toolCalls.length > 0 && round < MAX_TOOL_ROUNDS) {
+        messages = appendAnthropicAssistantTurn(messages, text, toolCalls);
+        const openAiToolCalls = toolCalls.map((c) => ({
+          id: c.id,
+          type: "function" as const,
+          function: { name: c.name, arguments: JSON.stringify(c.input) },
+        }));
+        messages = messages.slice(0, -1);
+        messages = applyToolCalls(messages, openAiToolCalls);
+        continue;
+      }
+      // No more tool calls — round produced the final content.
+      if (totalChars - startCharCount === 0) {
+        logger.warn(
+          { event: "chat_empty_reply", vendor: "anthropic", streaming: true, round },
+          "chat: anthropic stream returned no content",
+        );
+        writeSseEvent(res, { type: "chunk", text: DEGRADED_FALLBACK_REPLY });
+        writeSseEvent(res, { type: "done", degraded: true });
+        res.end();
+        return;
+      }
+      logger.info(
+        {
+          event: "chat_ok",
+          vendor: "anthropic",
+          streaming: true,
+          turns,
+          replyChars: totalChars,
+          rounds: round + 1,
+          inputTokens: result.response.usage.input_tokens,
+          cachedInputTokens: result.response.usage.cache_read_input_tokens ?? 0,
+          outputTokens: result.response.usage.output_tokens,
+        },
+        "chat: anthropic streamed reply",
+      );
+      writeSseEvent(res, { type: "done" });
+      res.end();
+      return;
+    }
+    logger.warn(
+      { event: "chat_tool_cap_hit", vendor: "anthropic", streaming: true },
+      "chat: hit MAX_TOOL_ROUNDS without a final reply",
+    );
+    if (totalChars === 0) {
+      writeSseEvent(res, { type: "chunk", text: DEGRADED_FALLBACK_REPLY });
+    }
+    writeSseEvent(res, { type: "done", degraded: true });
+    res.end();
+  } catch (err) {
+    logger.warn(
+      {
+        event: "chat_exception",
+        vendor: "anthropic",
+        streaming: true,
+        err: err instanceof Error ? { name: err.name } : { name: "unknown" },
+      },
+      "chat: anthropic exception during stream (returning degraded fallback)",
+    );
+    if (totalChars === 0) {
+      writeSseEvent(res, { type: "chunk", text: DEGRADED_FALLBACK_REPLY });
+    }
+    writeSseEvent(res, { type: "done", degraded: true });
+    res.end();
   }
 }
 

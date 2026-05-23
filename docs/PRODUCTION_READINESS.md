@@ -9,6 +9,12 @@ classes of misconfiguration (the `assertRequiredEnv` boot check,
 `requireAdmin` failure modes). What's left is the human-in-the-loop
 work an operator has to confirm once per environment.
 
+For the first-launch procedure (the ordered run-once sequence:
+generate keys → set secrets → preflight → migrate → bootstrap admin →
+smoke-test), see [`runbooks/production-launch.md`](./runbooks/production-launch.md).
+The `pnpm --filter @workspace/scripts preflight:prod` script validates
+every required variable below in one pass.
+
 ---
 
 ## 1. Required environment variables
@@ -37,6 +43,14 @@ need to be **correct**, not just present.
       extensions are required: the active resupply schema only
       uses `gen_random_uuid()`, which has been built into Postgres
       core since v13.
+- [ ] `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` set — these
+      are the runtime data path (`@workspace/resupply-db`'s
+      service-role client). `DATABASE_URL` is still used by the
+      migrator and a small number of legacy worker code paths.
+- [ ] In **Supabase Studio → Project Settings → API → "Exposed
+      schemas"**, confirm both `resupply` and `resupply_auth` are
+      listed. Without this, every PostgREST query fails at boot
+      with `schema must be one of: public`.
 - [ ] All migrations applied in order:
       `pnpm --filter @workspace/resupply-db run migrate`
 - [ ] Migrations 0016–0021 applied if rolling forward from before
@@ -57,19 +71,34 @@ crypto. The only remaining application-layer secret in this family is:
 
 ### Admin allowlist
 
-- [ ] `RESUPPLY_ADMIN_EMAILS` — comma-separated allowlist. At least
-      ONE entry is required; `requireAdmin` 503s on every request
-      when this is empty in `NODE_ENV=production`.
-- [ ] `RESUPPLY_AGENT_EMAILS` — optional allowlist for CSRs.
-- [ ] DB-backed members (added via `/admin/team`) layer on top once
-      migration 0020 is applied.
+The role gate is DB-driven now — `requireAdmin` reads
+`auth.users.role` directly (see
+`artifacts/resupply-api/src/middlewares/requireAdmin.ts:21`,
+"there is no env-var allowlist anymore"). The env vars listed below
+are display-only and do NOT influence authorization.
+
+- [ ] At least one row in `resupply_auth.users` with
+      `role = 'admin'`. Bootstrap via
+      `pnpm --filter @workspace/scripts auth:bootstrap-admin --email=<addr> --role=admin`.
+- [ ] `RESUPPLY_ADMIN_EMAILS` (optional) — populates the
+      "admin allowlist count" tile on `/admin/operations`. Safe to
+      leave empty; auth is unaffected.
+- [ ] `RESUPPLY_AGENT_EMAILS` (optional) — same posture for the CSR
+      allowlist count tile.
+- [ ] Subsequent admins are invited via `/admin/team` from inside the
+      console once the first row exists.
 
 ### Vendors (graceful-degrade if missing — dashboard `/admin/operations`
 
 shows green/red dots per vendor)
 
-- [ ] `STRIPE_SECRET_KEY` + `STRIPE_WEBHOOK_SECRET` — cash-pay shop
-      checkout, refunds, subscription mirror.
+- [ ] `STRIPE_SECRET_KEY` + `STRIPE_WEBHOOK_SIGNING_SECRET` — cash-pay
+      shop checkout, refunds, subscription mirror. The webhook secret
+      env is `STRIPE_WEBHOOK_SIGNING_SECRET` (see
+      `artifacts/resupply-api/src/lib/stripe/config.ts:66`); the
+      `STRIPE_WEBHOOK_SECRET` name used by an older
+      `admin/system-integrations-status` field is a stale alias and
+      will be removed in a follow-up.
 - [ ] `SENDGRID_API_KEY` + `SENDGRID_FROM_EMAIL` + `SENDGRID_FROM_NAME` —
       order receipts, reminder emails, cart-abandonment, review
       requests.
@@ -93,17 +122,21 @@ shows green/red dots per vendor)
 
 ## 2. CORS / proxy
 
-The API has no `credentials: include` CORS policy — it requires
-Bearer tokens, deliberately. For the customer-facing `/account` page
-to talk to `/resupply-api/shop/me`, both must be served from the
-**same origin** OR the proxy in front must forward the auth-provider
-session cookie (`__session`) and respect SameSite=Lax / Secure.
+The API uses the in-house session cookie `pf_session` (set by
+`lib/resupply-auth`, see
+`lib/resupply-auth/src/cookies.ts:7`). For the customer-facing
+`/account` page to talk to `/resupply-api/shop/me`, both must be
+served from the **same origin** OR the proxy in front must forward
+the `pf_session` cookie and respect `SameSite=Lax` / `Secure`.
 
 - [ ] Verify the deployed proxy strips no headers between the
       cpap-fitter and the resupply-api.
 - [ ] Verify the dashboard SPA and the resupply-api are co-located
-      under the same hostname (or set `PENN_ALLOWED_ORIGINS` for
-      explicit cross-origin allowlists).
+      under the same hostname (or set `RESUPPLY_ALLOWED_ORIGINS` to
+      a comma-separated list of allowed origins, in scheme+host form
+      — see `artifacts/resupply-api/src/app.ts:44`). On Replit
+      deployments, `REPLIT_DOMAINS` is auto-populated and serves
+      as the fallback when `RESUPPLY_ALLOWED_ORIGINS` is unset.
 
 ---
 

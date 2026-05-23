@@ -20,9 +20,10 @@ import {
 } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
+import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import {
-  requireAdmin,
   requireAdminOnly,
+  requirePermission,
 } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
@@ -132,7 +133,7 @@ function rowToApi(r: Row) {
 
 router.get(
   "/admin/hipaa-breach-incidents",
-  requireAdmin,
+  requirePermission("compliance.read"),
   async (req, res) => {
     const supabase = getSupabaseServiceRoleClient();
     let query = supabase
@@ -154,7 +155,7 @@ router.get(
 
 router.get(
   "/admin/hipaa-breach-incidents/:id",
-  requireAdmin,
+  requirePermission("compliance.read"),
   async (req, res) => {
     const parsed = idParam.safeParse(req.params);
     if (!parsed.success) {
@@ -180,6 +181,10 @@ router.get(
 router.post(
   "/admin/hipaa-breach-incidents",
   requireAdminOnly,
+  adminRateLimit({
+    name: "hipaa_breach_incidents.create",
+    preset: "sensitive",
+  }),
   async (req, res) => {
     const parsed = upsertBody.safeParse(req.body);
     if (!parsed.success) {
@@ -240,6 +245,10 @@ router.post(
 router.patch(
   "/admin/hipaa-breach-incidents/:id",
   requireAdminOnly,
+  adminRateLimit({
+    name: "hipaa_breach_incidents.update",
+    preset: "sensitive",
+  }),
   async (req, res) => {
     const idParsed = idParam.safeParse(req.params);
     if (!idParsed.success) {

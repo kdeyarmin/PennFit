@@ -12,16 +12,22 @@ import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { runPecosSync } from "../../worker/jobs/pecos-sync";
 import { logger } from "../../lib/logger";
+import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import {
-  requireAdmin,
   requireAdminOnly,
+  requirePermission,
 } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
 
 const npiParam = z.object({ npi: z.string().regex(/^\d{10}$/) });
 
-router.get("/admin/providers-pecos", requireAdmin, async (req, res) => {
+router.get(
+  "/admin/providers-pecos",
+  // Provider enrollment lookup — same scope as the rest of the
+  // patient-facing read tier.
+  requirePermission("patients.read"),
+  async (req, res) => {
   const supabase = getSupabaseServiceRoleClient();
   const stale = req.query.stale === "true";
   let query = supabase
@@ -43,7 +49,7 @@ router.get("/admin/providers-pecos", requireAdmin, async (req, res) => {
 
 router.get(
   "/admin/providers-pecos/:npi",
-  requireAdmin,
+  requirePermission("patients.read"),
   async (req, res) => {
     const parsed = npiParam.safeParse(req.params);
     if (!parsed.success) {
@@ -69,6 +75,7 @@ router.get(
 router.post(
   "/admin/providers-pecos/sync-now",
   requireAdminOnly,
+  adminRateLimit({ name: "providers_pecos.manual_sync", preset: "bulk" }),
   async (req, res) => {
     const stats = await runPecosSync();
     await logAudit({

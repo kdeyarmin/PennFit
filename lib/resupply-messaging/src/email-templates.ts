@@ -83,18 +83,19 @@ export function renderResupplyReminder(
   const text = [
     `Hi ${input.firstName},`,
     "",
-    `${input.practiceName} is ready to ship your next CPAP resupply order:`,
+    `Quick note from ${input.practiceName} — you're due for a CPAP refill, and your next order is ready whenever you are:`,
     "",
     itemsTextLines || "  (your supplies, per your prescription)",
     "",
-    "Reply with one of these links:",
-    `  Confirm and ship: ${input.confirmUrl}`,
-    `  Change address:   ${input.editUrl}`,
-    `  Stop reminders:   ${input.stopUrl}`,
+    "Pick one:",
+    `  Yes, ship it: ${input.confirmUrl}`,
+    `  Change my address: ${input.editUrl}`,
+    `  Stop these reminders: ${input.stopUrl}`,
     "",
-    "If a link does not work, reply to this email and we will help.",
+    "If a link doesn't work, just reply to this email — a real person reads it.",
     "",
-    "— " + input.practiceName,
+    "Talk soon,",
+    `the ${input.practiceName} team`,
   ].join("\n");
 
   // Inline-styled responsive HTML. No external CSS, no <style> block —
@@ -113,14 +114,14 @@ export function renderResupplyReminder(
       Time to refill your CPAP supplies
     </h1>
     <p style="margin:0 0 16px;font-size:15px;line-height:22px;">
-      Hi ${safeFirstName}, ${safePractice} is ready to ship your next resupply order:
+      Hi ${safeFirstName} — quick note from ${safePractice}. You're due for a CPAP refill, and your next order is ready whenever you are:
     </p>
     <ul style="margin:0 0 24px;padding-left:18px;font-size:15px;line-height:22px;color:#1e293b;">
       ${itemsHtmlLines || `<li style="margin:4px 0;">Your supplies, per your prescription.</li>`}
     </ul>
     <div style="margin:0 0 24px;">
       <a href="${escapeHtml(input.confirmUrl)}" style="display:inline-block;padding:12px 20px;border-radius:6px;background:#0f766e;color:#ffffff;text-decoration:none;font-weight:600;font-size:15px;">
-        Confirm and ship
+        Yes, ship it
       </a>
     </div>
     <p style="margin:0 0 8px;font-size:14px;line-height:20px;color:#475569;">
@@ -131,8 +132,9 @@ export function renderResupplyReminder(
     </p>
     <hr style="border:none;border-top:1px solid #e2e8f0;margin:24px 0;" />
     <p style="margin:0;font-size:12px;line-height:18px;color:#64748b;">
-      If a link does not work, reply to this email and we will help.<br />
-      — ${safePractice}
+      If a link doesn't work, just reply to this email — a real person reads it.<br />
+      Talk soon,<br />
+      the ${safePractice} team
     </p>
   </div>
 </body>
@@ -238,10 +240,10 @@ export function renderClickConfirmation(
   const safePractice = escapeHtml(input.practiceName);
   const message =
     input.action === "confirm"
-      ? "Thanks — your refill is on its way. We'll text or email tracking when it ships."
+      ? "You're all set — your refill is on the way. We'll text or email tracking the moment it ships."
       : input.action === "edit"
-        ? "Got it — a member of our team will reach out about the address change."
-        : "You're unsubscribed from CPAP refill reminders. We've paused future outreach. Reply to this email if you change your mind.";
+        ? "Got it — someone from our team will be in touch about the address change shortly."
+        : "You're unsubscribed from CPAP refill reminders for now — no more emails from us on this. Reply to a past email any time and we'll turn them back on.";
   const heading =
     input.action === "confirm"
       ? "Order confirmed"

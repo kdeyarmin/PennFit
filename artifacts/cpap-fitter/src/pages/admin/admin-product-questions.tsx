@@ -23,6 +23,7 @@ import {
   type AdminProductQuestion,
   type AdminProductQuestionStatus,
 } from "@/lib/admin/product-questions-api";
+import { useUrlState } from "@/hooks/use-url-state";
 
 const TABS: ReadonlyArray<{ id: AdminProductQuestionStatus; label: string }> = [
   { id: "pending", label: "Pending" },
@@ -32,8 +33,15 @@ const TABS: ReadonlyArray<{ id: AdminProductQuestionStatus; label: string }> = [
 
 const PAGE_SIZE = 25;
 
+const TAB_IDS: ReadonlySet<string> = new Set(TABS.map((t) => t.id));
+const isTab = (v: string): v is AdminProductQuestionStatus => TAB_IDS.has(v);
+
 export function AdminProductQuestionsPage() {
-  const [tab, setTab] = useState<AdminProductQuestionStatus>("pending");
+  const [tab, setTab] = useUrlState<AdminProductQuestionStatus>({
+    key: "tab",
+    defaultValue: "pending",
+    isAllowed: isTab,
+  });
 
   return (
     <div className="space-y-6" data-testid="admin-product-questions-page">

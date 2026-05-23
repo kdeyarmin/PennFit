@@ -8,7 +8,8 @@ import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { scoreAndPersistAdherence } from "../../lib/clinical/adherence-predictor";
 import { logger } from "../../lib/logger";
-import { requireAdmin } from "../../middlewares/requireAdmin";
+import { adminRateLimit } from "../../middlewares/admin-rate-limit";
+import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
 
@@ -16,7 +17,8 @@ const idParam = z.object({ id: z.string().uuid() });
 
 router.post(
   "/admin/patients/:id/adherence/score",
-  requireAdmin,
+  requirePermission("patients.read"),
+  adminRateLimit({ name: "adherence_predictions.score", preset: "mutation" }),
   async (req, res) => {
     const parsed = idParam.safeParse(req.params);
     if (!parsed.success) {
@@ -50,7 +52,7 @@ router.post(
 
 router.get(
   "/admin/patients/:id/adherence/history",
-  requireAdmin,
+  requirePermission("patients.read"),
   async (req, res) => {
     const parsed = idParam.safeParse(req.params);
     if (!parsed.success) {
@@ -69,7 +71,10 @@ router.get(
   },
 );
 
-router.get("/admin/adherence/at-risk", requireAdmin, async (_req, res) => {
+router.get(
+  "/admin/adherence/at-risk",
+  requirePermission("patients.read"),
+  async (_req, res) => {
   // Latest score per patient where probability < 0.5.
   const supabase = getSupabaseServiceRoleClient();
   const { data } = await supabase

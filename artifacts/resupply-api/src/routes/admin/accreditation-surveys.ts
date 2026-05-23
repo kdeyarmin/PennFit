@@ -14,9 +14,10 @@ import {
 } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
+import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import {
-  requireAdmin,
   requireAdminOnly,
+  requirePermission,
 } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
@@ -81,7 +82,7 @@ function rowToApi(r: Row) {
 
 router.get(
   "/admin/accreditation/surveys",
-  requireAdmin,
+  requirePermission("compliance.read"),
   async (_req, res) => {
     const supabase = getSupabaseServiceRoleClient();
     const { data, error } = await supabase
@@ -98,6 +99,7 @@ router.get(
 router.post(
   "/admin/accreditation/surveys",
   requireAdminOnly,
+  adminRateLimit({ name: "accreditation_surveys.create", preset: "mutation" }),
   async (req, res) => {
     const parsed = upsertBody.safeParse(req.body);
     if (!parsed.success) {
@@ -165,6 +167,7 @@ router.post(
 router.patch(
   "/admin/accreditation/surveys/:id",
   requireAdminOnly,
+  adminRateLimit({ name: "accreditation_surveys.update", preset: "mutation" }),
   async (req, res) => {
     const idParsed = idParam.safeParse(req.params);
     if (!idParsed.success) {

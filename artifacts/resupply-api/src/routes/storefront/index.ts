@@ -10,6 +10,8 @@ import chatRouter from "./chat.js";
 import sleepCoachRouter from "./sleep-coach.js";
 import meClaimsRouter from "./me-claims.js";
 import mePaymentsRouter from "./me-payments.js";
+import meBillingRouter from "./me-billing.js";
+import meInsuranceEstimateRouter from "./me-insurance-estimate.js";
 import meRightsRequestsRouter from "./me-rights-requests.js";
 
 const router: IRouter = Router();
@@ -30,6 +32,15 @@ router.use(meClaimsRouter);
 // list. The intent's success is processed via the existing
 // /resupply-api/stripe/webhook handler (payment_intent.* cases).
 router.use(mePaymentsRouter);
+// /api/me/billing-statements — the patient's own statement history
+// + on-demand PDF re-render (no PDF persistence — the line_items_json
+// snapshot is the source of truth).
+router.use(meBillingRouter);
+// /api/me/insurance-estimate — personalized estimator backing the
+// /insurance/estimate page when the signed-in patient has a
+// recent parsed 270/271 on file. Falls back to the static
+// payer-average table when unavailable.
+router.use(meInsuranceEstimateRouter);
 // /api/me/rights-requests + /api/me/disclosures — HIPAA
 // §164.522/524/526/528 rights submission + the §164.528 accounting
 // of disclosures (non-TPO entries from patient_disclosure_log).

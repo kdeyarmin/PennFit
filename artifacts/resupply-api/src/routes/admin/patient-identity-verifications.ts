@@ -16,6 +16,7 @@ import { logAudit } from "@workspace/resupply-audit";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
+import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
@@ -72,6 +73,10 @@ router.post(
   "/admin/patients/:id/identity-verifications",
   // Records a new verification outcome. `patients.update` scope.
   requirePermission("patients.update"),
+  adminRateLimit({
+    name: "patient_identity_verifications.record",
+    preset: "mutation",
+  }),
   async (req, res) => {
     const idParse = z.string().uuid().safeParse(req.params.id);
     if (!idParse.success) {

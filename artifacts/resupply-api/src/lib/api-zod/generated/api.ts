@@ -458,14 +458,20 @@ export const GetRecommendationBody = zod.object({
     .describe(
       "Numeric measurements in millimeters derived from on-device face mesh. No image data.",
     ),
+  // P4 — every boolean field is `boolean | null`. `null` means "the
+  // patient declined to answer / said 'I'm not sure'." The recommendation
+  // engine treats null as "no opinion" and skips that question's weight
+  // adjustment entirely (see lib/storefront/recommendationEngine.ts) —
+  // rather than coercing to `false`, which silently lied about the
+  // patient's intent.
   answers: zod
     .object({
-      mouthBreather: zod.boolean(),
-      claustrophobic: zod.boolean(),
-      sideOrStomachSleeper: zod.boolean(),
-      heavyFacialHair: zod.boolean(),
-      wearsGlasses: zod.boolean(),
-      frequentCongestion: zod.boolean(),
+      mouthBreather: zod.boolean().nullable(),
+      claustrophobic: zod.boolean().nullable(),
+      sideOrStomachSleeper: zod.boolean().nullable(),
+      heavyFacialHair: zod.boolean().nullable(),
+      wearsGlasses: zod.boolean().nullable(),
+      frequentCongestion: zod.boolean().nullable(),
       priorMaskExperience: zod.enum([
         "none",
         "nasal",
@@ -473,9 +479,9 @@ export const GetRecommendationBody = zod.object({
         "fullFace",
         "hybrid",
       ]),
-      mobilityLimitations: zod.boolean(),
-      sensitiveSkin: zod.boolean(),
-      siliconeSensitivity: zod.boolean(),
+      mobilityLimitations: zod.boolean().nullable(),
+      sensitiveSkin: zod.boolean().nullable(),
+      siliconeSensitivity: zod.boolean().nullable(),
       cpapPressureSetting: zod
         .enum(["unknown", "low", "medium", "high"])
         .describe(

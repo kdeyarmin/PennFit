@@ -10,7 +10,8 @@ import {
 } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
-import { requireAdmin } from "../../middlewares/requireAdmin";
+import { adminRateLimit } from "../../middlewares/admin-rate-limit";
+import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
 
@@ -39,7 +40,7 @@ const idParam = z.object({ id: z.string().uuid() });
 
 router.get(
   "/admin/patients/:patientId/dwo-documents",
-  requireAdmin,
+  requirePermission("patients.read"),
   async (req, res) => {
     const parsed = z
       .object({ patientId: z.string().uuid() })
@@ -59,7 +60,10 @@ router.get(
   },
 );
 
-router.get("/admin/dwo-documents/expiring", requireAdmin, async (req, res) => {
+router.get(
+  "/admin/dwo-documents/expiring",
+  requirePermission("patients.read"),
+  async (req, res) => {
   const supabase = getSupabaseServiceRoleClient();
   const days = Number.parseInt(
     typeof req.query.days === "string" ? req.query.days : "60",
@@ -82,7 +86,11 @@ router.get("/admin/dwo-documents/expiring", requireAdmin, async (req, res) => {
   res.json({ documents: data ?? [] });
 });
 
-router.post("/admin/dwo-documents", requireAdmin, async (req, res) => {
+router.post(
+  "/admin/dwo-documents",
+  requirePermission("patients.update"),
+  adminRateLimit({ name: "dwo_documents.create", preset: "mutation" }),
+  async (req, res) => {
   const parsed = createBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({
@@ -134,7 +142,8 @@ router.post("/admin/dwo-documents", requireAdmin, async (req, res) => {
 
 router.delete(
   "/admin/dwo-documents/:id",
-  requireAdmin,
+  requirePermission("patients.update"),
+  adminRateLimit({ name: "dwo_documents.delete", preset: "destroy" }),
   async (req, res) => {
     const idParsed = idParam.safeParse(req.params);
     if (!idParsed.success) {

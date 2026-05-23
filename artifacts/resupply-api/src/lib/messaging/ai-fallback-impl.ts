@@ -1,21 +1,19 @@
-// AI fallback adapter — concrete OpenAI Chat Completions implementation.
+// AI fallback adapter — Claude Haiku 4.5 with OpenAI as fallback.
 //
 // Why this lives in the API process (and NOT in `lib/resupply-messaging`):
 //   resupply-messaging is the pure semantic layer (Rule 11). It must
 //   not import any vendor SDK. The interface (`AiFallbackAdapter`) is
 //   defined there; concrete impls live wherever they need their SDK.
-//   For now, only the API process needs an LLM call site.
 //
-// Why hand-rolled `fetch` and not the `openai` package:
-//   We use exactly one endpoint (POST /v1/chat/completions) with
-//   strict JSON mode. The SDK adds a tree of dependencies and exposes
-//   surface area (Threads, Assistants, Files) we never want to call.
-//   Keeping this to `fetch` means the API process has zero new
-//   transitive deps, the request shape is auditable in 30 lines, and
-//   the timeout/abort model is the standard `AbortController` one.
+// Provider selection (May 2026 update):
+//   When ANTHROPIC_API_KEY is set, we use Claude Haiku 4.5 — same
+//   class of cost/latency as gpt-4o-mini, but the auto-generated SMS
+//   reply text reads noticeably more like a human ("got it" vs
+//   "I have received your message"). When only OPENAI_API_KEY is
+//   configured, we fall back to gpt-4o-mini.
 //
 // PHI containment:
-//   We send THREE strings to OpenAI per call:
+//   We send THREE strings to the model per call:
 //     1. The system prompt (no PHI — just the intent menu).
 //     2. The patient's most recent inbound text.
 //     3. Optional thread snippets (last N messages) to disambiguate
@@ -31,6 +29,12 @@
 //   to a human admin. We never throw out of `classify()`: a runtime
 //   crash in the LLM path must NOT 500 a successful Twilio webhook.
 
+import {
+  DEFAULT_ANTHROPIC_MODEL_CLASSIFY,
+  createAnthropicClient,
+  getResponseText,
+  type AnthropicClient,
+} from "@workspace/resupply-ai";
 import type {
   AiFallbackAdapter,
   AiFallbackInput,
@@ -46,25 +50,43 @@ const DEFAULT_MODEL = "gpt-4o-mini";
 const DEFAULT_TIMEOUT_MS = 5_000;
 
 const SYSTEM_PROMPT = [
-  "You are a HIPAA-compliant intent classifier for a CPAP resupply service.",
-  "Your ONLY job is to read the patient's most recent SMS reply and classify",
-  "it into exactly one of the following intents:",
+  "You are an SMS reply assistant for a CPAP resupply service. The patient",
+  "just texted us back after we sent them a refill reminder. Your job is",
+  "two things:",
   "",
-  "- confirm: patient agrees to ship the resupply order as proposed.",
-  "- decline: patient does NOT want the resupply order.",
-  "- edit_address: patient says their shipping address has changed or is wrong.",
-  "- stop: patient asks to stop / unsubscribe / opt out of all messages.",
-  "- help: patient asks what this is, how it works, or wants to talk to a human.",
-  "- unknown: anything else, including ambiguous replies.",
+  "1) CLASSIFY the message into exactly one of these intents:",
+  "   - confirm: patient agrees to ship the resupply order as proposed.",
+  "   - decline: patient does NOT want the resupply order.",
+  "   - edit_address: patient says their shipping address has changed",
+  "     or is wrong.",
+  "   - stop: patient asks to stop / unsubscribe / opt out of all messages.",
+  "   - help: patient asks what this is, how it works, or wants a human.",
+  "   - unknown: anything else, including ambiguous replies.",
   "",
-  'Output STRICT JSON: { "intent": "confirm"|"decline"|"edit_address"|"stop"|"help"|"unknown", "reply": "..." }',
+  "2) WRITE A SHORT, HUMAN-SOUNDING REPLY (max 160 chars so it fits in",
+  "   one SMS segment). Match the patient's energy. Use contractions.",
+  "   No corporate boilerplate.",
   "",
-  "The `reply` field is a short SMS-safe message we will send back to the",
-  "patient (max 200 characters). NEVER include the patient's name, address,",
-  "date of birth, or any other identifying detail in `reply` even if they",
-  "appeared in the inbound text. Do NOT make up clinical information.",
-  "If unsure, return intent=unknown and a polite reply that a human will",
-  "follow up.",
+  "EXAMPLES (intent → reply):",
+  "   confirm → \"Got it! We'll ship today. You'll get tracking by text.\"",
+  "   decline → \"No problem — we'll hold off. Reply YES anytime if you",
+  "             change your mind.\"",
+  "   edit_address → \"Sounds good — we'll text you a quick link to",
+  "                   update it.\"",
+  "   stop → \"You're unsubscribed. Reply START to opt back in anytime.\"",
+  "   help → \"Sure! A teammate will reach out shortly. Or call us at",
+  "           (814) 471-0627 Mon-Fri 9-5 ET.\"",
+  "   unknown → \"Thanks for writing — a teammate will follow up shortly.\"",
+  "",
+  'OUTPUT STRICT JSON: { "intent": "confirm"|"decline"|"edit_address"|"stop"|"help"|"unknown", "reply": "..." }',
+  "",
+  "RULES:",
+  "- NEVER include the patient's name, address, date of birth, phone, or",
+  "  any other identifying detail in `reply` even if it appeared in the",
+  "  inbound text.",
+  "- NEVER make up clinical or medical information.",
+  "- When unsure, intent=unknown with a polite handoff reply.",
+  "- Output JSON ONLY. No prose, no markdown fences.",
 ].join("\n");
 
 export interface OpenAiFallbackOptions {
@@ -144,6 +166,97 @@ export function createOpenAiFallbackAdapter(
       }
     },
   };
+}
+
+export interface AnthropicFallbackOptions {
+  apiKey: string;
+  model?: string;
+  timeoutMs?: number;
+  /** Test seam — overrides global fetch. */
+  fetchImpl?: typeof fetch;
+}
+
+/**
+ * Claude Haiku 4.5 implementation of the same intent-classifier
+ * contract. Same JSON output shape, same `{intent: 'unknown'}`
+ * fail-soft posture, but the reply text reads noticeably more like
+ * a human ("got it" vs "I have received your message"). Use this
+ * when ANTHROPIC_API_KEY is set; the route handler should pick
+ * between the two adapters.
+ */
+export function createAnthropicFallbackAdapter(
+  opts: AnthropicFallbackOptions,
+): AiFallbackAdapter {
+  const apiKey = opts.apiKey;
+  if (!apiKey) {
+    throw new Error(
+      "createAnthropicFallbackAdapter: apiKey is required (set ANTHROPIC_API_KEY).",
+    );
+  }
+  const client: AnthropicClient = createAnthropicClient({
+    apiKey,
+    fetchImpl: opts.fetchImpl,
+    timeoutMs: opts.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+  });
+  const model = opts.model ?? DEFAULT_ANTHROPIC_MODEL_CLASSIFY;
+
+  return {
+    async classify(input: AiFallbackInput): Promise<AiFallbackResult> {
+      try {
+        const userPrompt = buildUserPrompt(input);
+        const result = await client.send({
+          model,
+          max_tokens: 250,
+          temperature: 0,
+          system: SYSTEM_PROMPT,
+          messages: [{ role: "user", content: userPrompt }],
+        });
+        if (!result.ok) {
+          logger.warn(
+            {
+              event: "ai_fallback_http_error",
+              vendor: "anthropic",
+              code: result.errorCode,
+              status: result.httpStatus,
+            },
+            "ai-fallback: anthropic call failed",
+          );
+          return { intent: "unknown" };
+        }
+        return parseModelOutput(getResponseText(result.response));
+      } catch (err) {
+        logger.warn(
+          {
+            event: "ai_fallback_exception",
+            vendor: "anthropic",
+            err: serializeErr(err),
+          },
+          "ai-fallback: anthropic exception (returning unknown)",
+        );
+        return { intent: "unknown" };
+      }
+    },
+  };
+}
+
+/**
+ * Factory that picks an adapter based on env. Prefers Anthropic
+ * (Claude Haiku 4.5) when ANTHROPIC_API_KEY is set, otherwise uses
+ * OpenAI (gpt-4o-mini). Returns null when neither is configured —
+ * callers should route to a human-handoff path in that case.
+ */
+export function createAiFallbackAdapter(
+  env: NodeJS.ProcessEnv = process.env,
+): AiFallbackAdapter | null {
+  const anthropicKey = env.ANTHROPIC_API_KEY?.trim();
+  if (anthropicKey) {
+    return createAnthropicFallbackAdapter({ apiKey: anthropicKey });
+  }
+  const openaiKey = env.OPENAI_API_KEY?.trim();
+  if (openaiKey) {
+    return createOpenAiFallbackAdapter({ apiKey: openaiKey });
+  }
+  return null;
 }
 
 function buildUserPrompt(input: AiFallbackInput): string {

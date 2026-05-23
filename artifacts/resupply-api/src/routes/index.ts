@@ -7,6 +7,7 @@ import followupsListRouter from "./admin/followups-list.js";
 import shopOrderNotesRouter from "./admin/order-notes.js";
 import shopOrdersAdminRouter from "./admin/shop-orders.js";
 import shopProductsAdminRouter from "./admin/shop-products.js";
+import inventoryReconciliationRouter from "./admin/inventory-reconciliation.js";
 import csrMacrosRouter from "./admin/csr-macros.js";
 import messageTemplatesRouter from "./admin/message-templates.js";
 import messageTemplateOverridesRouter from "./admin/message-template-overrides.js";
@@ -21,6 +22,7 @@ import providersRouter from "./admin/providers.js";
 import swoRouter from "./admin/swo.js";
 import complianceAttestationRouter from "./admin/compliance-attestation.js";
 import inboundFaxesRouter from "./admin/inbound-faxes.js";
+import inboundReferralsRouter from "./admin/inbound-referrals.js";
 import equipmentRecallsRouter from "./admin/equipment-recalls.js";
 import analyticsRouter from "./admin/analytics.js";
 import rtOverviewRouter from "./admin/rt-overview.js";
@@ -51,14 +53,17 @@ import patientTherapyNightsManualRouter from "./admin/patient-therapy-nights-man
 import patientIdentityVerificationsRouter from "./admin/patient-identity-verifications.js";
 import providerPortalRouter from "./provider-portal.js";
 import shopOrderPodRouter from "./admin/shop-order-pod.js";
+import shopOrderPodUploadRouter from "./admin/shop-order-pod-upload.js";
 import integrationsStatusRouter from "./admin/integrations-status.js";
 import integrationsNightlySyncRouter from "./admin/integrations-nightly-sync.js";
 import integrationsWebhooksRouter from "./integrations-webhooks.js";
 import integrationsErrorsRouter from "./admin/integrations-errors.js";
 import integrationsRefreshSuppliesRouter from "./admin/integrations-refresh-supplies.js";
+import integrationsSyncEquipmentRouter from "./admin/integrations-sync-equipment.js";
 import bulkCampaignsRouter from "./admin/bulk-campaigns.js";
 import mfaRouter from "./admin/mfa.js";
 import reportsRouter from "./admin/reports.js";
+import featureFlagsRouter from "./admin/feature-flags.js";
 import npsSummaryRouter from "./admin/nps-summary.js";
 import deliveryFailuresRouter from "./admin/delivery-failures.js";
 import lookupRouter from "./admin/lookup.js";
@@ -71,6 +76,7 @@ import patientPortalInviteRouter from "./admin/patient-portal-invite.js";
 import prescriptionRenewalsRouter from "./admin/prescription-renewals.js";
 import shopProductCompatibilityAdminRouter from "./admin/product-compatibility.js";
 import patientTherapySyncRouter from "./admin/patient-therapy-sync.js";
+import patientResupplySummaryRouter from "./admin/patient-resupply-summary.js";
 import patientTherapyLinksRouter from "./admin/patient-therapy-links.js";
 import patientIntegrationsRouter from "./admin/patient-integrations.js";
 import smartTriggersRouter from "./admin/smart-triggers.js";
@@ -78,8 +84,10 @@ import physicianFaxOutreachRouter from "./admin/physician-fax-outreach.js";
 import shopBackInStockAdminRouter from "./admin/shop-back-in-stock.js";
 import shopSubsMetricsRouter from "./admin/shop-subscriptions-metrics.js";
 import insuranceLeadsAdminRouter from "./admin/insurance-leads.js";
+import fitterLeadsAdminRouter from "./admin/fitter-leads.js";
 import payerProfilesRouter from "./admin/payer-profiles.js";
 import officeAllySubmissionsRouter from "./admin/office-ally-submissions.js";
+import officeAllyUploadAckRouter from "./admin/office-ally-upload-ack.js";
 import denialCodesRouter from "./admin/denial-codes.js";
 import payerFeeSchedulesRouter from "./admin/payer-fee-schedules.js";
 import eraIngestRouter from "./admin/era-ingest.js";
@@ -111,6 +119,8 @@ import claimAppealsRouter from "./admin/claim-appeals.js";
 import webhookSubscriptionsRouter from "./admin/webhook-subscriptions.js";
 import webhookEventCatalogRouter from "./admin/webhook-event-catalog.js";
 import billingDirectorRouter from "./admin/billing-director.js";
+import eligibilityRecentRouter from "./admin/eligibility-recent.js";
+import priorAuthQueueRouter from "./admin/prior-auth-queue.js";
 import webhookTestSendRouter from "./admin/webhook-test-send.js";
 import payerFeeSchedulesImportRouter from "./admin/payer-fee-schedules-import.js";
 import systemIntegrationsStatusRouter from "./admin/system-integrations-status.js";
@@ -204,12 +214,23 @@ router.use(prescriptionRenewalsRouter);
 // the product-to-machine compatibility map (Phase B.3 / feature
 // #11). Public reads live alongside the catalog router.
 router.use(shopProductCompatibilityAdminRouter);
+// /admin/shop/inventory/reconciliations/* — monthly physical-count
+// workflow. Admin enters counted quantities per SKU, server records
+// variance against the live Stripe stock_count, optionally pushes
+// the new counts back to Stripe. requireAdmin gate via
+// requirePermission("admin.tools.manage") on the router.
+router.use(inventoryReconciliationRouter);
 // /admin/patients/:id/therapy-nights/* — therapy-cloud sync
 // (Phase E.1 / feature #18). Adapter stubs for ResMed AirView +
 // Philips Care; the actual partner integration lands once a BAA
 // + API access is in place. Sync endpoint 503s until the chosen
 // adapter's env var is set.
 router.use(patientTherapySyncRouter);
+// /admin/patients/:id/resupply-summary — single round-trip
+// aggregate of the last 60 therapy nights + open smart-trigger
+// events + open compliance alerts + 30-day Medicare adherence
+// math. Source for the Resupply tab on patient detail.
+router.use(patientResupplySummaryRouter);
 // /admin/patients/:id/therapy-links/* — durable per-patient mapping
 // to a therapy-cloud account so the nightly sync worker doesn't
 // need a human re-typing the partner id. See patient-therapy-sync
@@ -238,6 +259,11 @@ router.use(shopBackInStockAdminRouter);
 // for submissions to the public POST /shop/insurance-leads form.
 // requireAdmin gate is on the router itself.
 router.use(insuranceLeadsAdminRouter);
+// /admin/fitter-leads/* — funnel queue + conversion KPIs for the
+// at-home fitter. Powers the "Fitter Prospects" admin page; the
+// dispatchers (fitter-supply-campaign + fitter-conversion-
+// attribution) handle the actual sends and conversion stamps.
+router.use(fitterLeadsAdminRouter);
 // /admin/payer-profiles/* — Pennsylvania payer catalog (migration
 // 0128). Read by every admin; write restricted to requireAdminOnly.
 // Drives 837P NM1*PR loop population on Office Ally submissions.
@@ -247,6 +273,12 @@ router.use(payerProfilesRouter);
 // lives on the patients router so it's co-located with the per-claim
 // state machine.
 router.use(officeAllySubmissionsRouter);
+// /admin/office-ally/upload-ack — manual ack-file ingestion path
+// (admin-only) for when the poller can't reach OA or OA emails an
+// ack out-of-band. Reuses the dispatchers exported from the poll
+// worker so manual + auto paths share parsing + state-machine
+// updates.
+router.use(officeAllyUploadAckRouter);
 // /admin/denial-codes/* — CARC / RARC catalog (Phase 4 of the
 // billing build). Seeded in migration 0129 with the ~50 codes DME
 // suppliers hit most often; admin UI surfaces them on claim denials.
@@ -352,6 +384,14 @@ router.use(webhookEventCatalogRouter);
 // director loads every morning. Consolidates counts + dollar
 // rollups + denial-rate trend + top payers + webhook health.
 router.use(billingDirectorRouter);
+// /admin/billing/eligibility-recent — system-wide recent
+// eligibility checks (last 30 days by default), feeding the
+// verification team's daily worklist.
+router.use(eligibilityRecentRouter);
+// /admin/billing/prior-auth-queue — system-wide PA queue grouped
+// by at-risk / missed SLA / awaiting decision / expiring soon /
+// drafts. Source for the admin PA director page.
+router.use(priorAuthQueueRouter);
 // /admin/webhook-subscriptions/:id/test-send — fire a synthetic
 // webhook delivery to validate the subscriber endpoint end-to-end.
 router.use(webhookTestSendRouter);
@@ -489,6 +529,11 @@ router.use(complianceAttestationRouter);
 // the CSR-facing surface for listing, attaching to patient/Rx/
 // provider, and archiving.
 router.use(inboundFaxesRouter);
+// /admin/inbound-referrals/* — triage queue for electronic
+// referral orders that landed via /integrations/inbound/parachute
+// (and, in Phase 4, EHR FHIR sources). Mirror of the inbound-faxes
+// surface for the typed-referral schema in migration 0144.
+router.use(inboundReferralsRouter);
 // /admin/equipment-recalls/* — manufacturer recall registry + the
 // scan endpoint that surfaces affected patients. Required for
 // Philips-DreamStation-style workflows where every DME needs to
@@ -585,6 +630,11 @@ router.use(providerPortalRouter);
 // /admin/shop/orders/:orderId/pod — proof-of-delivery photo upload
 // stamp for accreditation + dispute resolution.
 router.use(shopOrderPodRouter);
+// /admin/shop/orders/:orderId/pod/* — 3-step upload (presigned PUT
+// → finalize-verifies-bucket → admin-only GET stream + DELETE) for
+// the proof-of-delivery photo. Co-exists with the legacy PATCH
+// above; pattern mirrors prescription-attachment for consistency.
+router.use(shopOrderPodUploadRouter);
 // /admin/integrations/status — vendor-adapter health dashboard.
 router.use(integrationsStatusRouter);
 // /admin/integrations/nightly-sync — manual trigger for the nightly
@@ -600,6 +650,11 @@ router.use(integrationsErrorsRouter);
 // hook that re-fetches just the vendor supply roster (preserves
 // prior nights + settings).
 router.use(integrationsRefreshSuppliesRouter);
+// /admin/patients/:id/integrations/sync-equipment — replay the
+// snapshot→equipment_assets auto-link + recall scan over every
+// cached snapshot for this patient. Useful after a recall lands
+// for a device class some patients already have on file.
+router.use(integrationsSyncEquipmentRouter);
 // /admin/productivity — per-agent throughput dashboard for
 // supervisors. reports.read-gated; CSRs see their own row too.
 router.use(productivityRouter);
@@ -611,8 +666,12 @@ router.use(bulkCampaignsRouter);
 // enrollment + status + disable only. Sign-in gating ships in Phase B
 // after the enrollment flow has been proven in production.
 router.use(mfaRouter);
-// /admin/reports/*.csv — date-bounded CSV exports for ops + finance.
+// /admin/reports/* — date-bounded CSV/PDF/QuickBooks exports for ops
+// + finance.
 router.use(reportsRouter);
+// /admin/feature-flags/* — Control Center on/off toggles that gate
+// dispatchers and route handlers in real time.
+router.use(featureFlagsRouter);
 // /admin/nps/recent — last-N-days NPS rollup for the post-delivery
 // follow-up. Surfaces band counts + canonical NPS score + a comment
 // tail. Powered by shop_order_nps_responses (migration 0127).

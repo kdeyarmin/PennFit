@@ -102,7 +102,7 @@ export function ForgotPasswordPage() {
             <button
               type="submit"
               disabled={forgot.isPending}
-              className="w-full rounded-md bg-[hsl(var(--penn-navy-deep))] text-white font-semibold py-2 text-sm"
+              className="w-full rounded-md bg-[hsl(var(--penn-navy-deep))] text-white font-semibold py-2 text-sm disabled:opacity-60"
             >
               {forgot.isPending ? "Sending…" : "Send reset link"}
             </button>

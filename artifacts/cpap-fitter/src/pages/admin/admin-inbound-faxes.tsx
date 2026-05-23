@@ -30,13 +30,27 @@ import {
   type InboundFaxListItem,
   type InboundFaxStatus,
 } from "@/lib/admin/inbound-faxes-api";
+import { useUrlState } from "@/hooks/use-url-state";
 
 type Filter = "open" | "new" | "triaged" | "attached" | "archived";
+
+const FILTER_IDS: ReadonlySet<string> = new Set<Filter>([
+  "open",
+  "new",
+  "triaged",
+  "attached",
+  "archived",
+]);
+const isFilter = (v: string): v is Filter => FILTER_IDS.has(v);
 
 const queryKey = (f: Filter) => ["admin", "inbound-faxes", f] as const;
 
 export function AdminInboundFaxesPage() {
-  const [filter, setFilter] = useState<Filter>("open");
+  const [filter, setFilter] = useUrlState<Filter>({
+    key: "filter",
+    defaultValue: "open",
+    isAllowed: isFilter,
+  });
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const { data, isPending, isError, error, refetch } = useQuery({
     queryKey: queryKey(filter),

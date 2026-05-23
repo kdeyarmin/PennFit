@@ -4,6 +4,7 @@ import { Link } from "wouter";
 import { Card, CardContent } from "@/components/admin/ui-shims";
 import { Skeleton } from "@/components/admin/ui-shims";
 import { Button } from "@/components/admin/ui-shims";
+import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { fetchAdminAuditLog } from "@/lib/admin/storefront-admin-api";
 import { auditActionLabel } from "@/lib/admin/storefront-admin-labels";
 import { ChevronLeft, ChevronRight } from "lucide-react";
@@ -14,7 +15,7 @@ export function AdminAuditLog() {
   const [page, setPage] = useState(1);
   const pageSize = 50;
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ["admin-audit", { page, pageSize }],
     queryFn: () => fetchAdminAuditLog({ page, pageSize }),
   });
@@ -60,7 +61,18 @@ export function AdminAuditLog() {
                       </td>
                     </tr>
                   ))}
-                {!isLoading && data && data.events.length === 0 && (
+                {!isLoading && isError && (
+                  <tr>
+                    <td colSpan={5} className="py-6 px-4">
+                      <ErrorPanel
+                        error={error}
+                        onRetry={() => void refetch()}
+                        title="Couldn't load the activity history"
+                      />
+                    </td>
+                  </tr>
+                )}
+                {!isLoading && !isError && data && data.events.length === 0 && (
                   <tr>
                     <td
                       colSpan={5}

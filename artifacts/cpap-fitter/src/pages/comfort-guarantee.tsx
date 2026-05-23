@@ -14,6 +14,11 @@ import {
 import { Button } from "@/components/ui/button";
 import { useDocumentTitle } from "@/hooks/use-document-title";
 import { openPennBot } from "@/lib/chat-events";
+import {
+  SUPPORT_EMAIL,
+  SUPPORT_PHONE_DISPLAY,
+  SUPPORT_PHONE_E164,
+} from "@/lib/contact";
 
 /**
  * Public policy page for the 60-day comfort/fit guarantee. Linked
@@ -180,27 +185,27 @@ export function ComfortGuaranteePage() {
           Email{" "}
           <a
             className="font-medium text-[hsl(var(--penn-navy))] underline-offset-2 hover:underline"
-            href="mailto:support@pennpaps.com"
+            href={`mailto:${SUPPORT_EMAIL}`}
           >
-            support@pennpaps.com
+            {SUPPORT_EMAIL}
           </a>{" "}
           with your order number, or call{" "}
           <a
             className="font-medium text-[hsl(var(--penn-navy))] underline-offset-2 hover:underline"
-            href="tel:+18005551234"
+            href={`tel:${SUPPORT_PHONE_E164}`}
           >
-            (800) 555-1234
+            {SUPPORT_PHONE_DISPLAY}
           </a>{" "}
           Monday–Friday, 8am–6pm ET. If you&apos;re signed in, you can also
           start it directly from your order history.
         </p>
         <div className="flex flex-wrap gap-3">
-          <a href="mailto:support@pennpaps.com">
+          <a href={`mailto:${SUPPORT_EMAIL}`}>
             <Button variant="outline">
               <Mail className="w-4 h-4 mr-2" /> Email support
             </Button>
           </a>
-          <a href="tel:+18005551234">
+          <a href={`tel:${SUPPORT_PHONE_E164}`}>
             <Button variant="outline">
               <Phone className="w-4 h-4 mr-2" /> Call us
             </Button>
