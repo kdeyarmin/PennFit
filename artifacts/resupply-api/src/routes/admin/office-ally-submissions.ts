@@ -20,6 +20,7 @@ import { z } from "zod";
 import { logAudit } from "@workspace/resupply-audit";
 import {
   type Database,
+  escapePostgRESTFilterValue,
   getSupabaseServiceRoleClient,
 } from "@workspace/resupply-db";
 
@@ -701,9 +702,10 @@ router.get(
     }
     const qRaw = typeof req.query.q === "string" ? req.query.q.trim() : "";
     if (qRaw.length > 0 && qRaw.length <= 80) {
-      const safe = qRaw.replace(/[%_]/g, (m) => `\\${m}`);
+      const escaped = escapePostgRESTFilterValue(qRaw);
+      const pattern = `*${escaped}*`;
       query = query.or(
-        `isa_control_number.ilike.%${safe}%,file_name.ilike.%${safe}%`,
+        `isa_control_number.ilike.${pattern},file_name.ilike.${pattern}`,
       );
     }
     const allRows: SubmissionRow[] = [];
