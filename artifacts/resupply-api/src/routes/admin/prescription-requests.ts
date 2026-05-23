@@ -62,6 +62,7 @@ import {
   renderPrescriptionRequest,
   validatePrescriptionRequestInputs,
 } from "../../lib/prescription-request-pdf";
+import { buildPrescriptionRequestPacketFromRx } from "../../lib/prescription-request-builder";
 import { resolvePrescriptionRequestInputs } from "../../lib/prescription-request-resolver";
 import { signPrescriptionRequestToken } from "../../lib/prescription-request-token";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
@@ -729,23 +730,16 @@ router.post(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
-
-    const { data: rx } = await supabase
-      .schema("resupply")
-      .from("prescriptions")
-      .select(
-        "id, patient_id, provider_id, hcpcs_code, item_sku, cadence_days, valid_until",
-      )
-      .eq("id", params.data.rxId)
-      .eq("patient_id", params.data.id)
-      .limit(1)
-      .maybeSingle();
-    if (!rx) {
+    const built = await buildPrescriptionRequestPacketFromRx({
+      patientId: params.data.id,
+      prescriptionId: params.data.rxId,
+      createdByEmail: req.adminEmail ?? "admin:unknown",
+    });
+    if (built.kind === "rx_not_found") {
       res.status(404).json({ error: "prescription_not_found" });
       return;
     }
-    if (!rx.provider_id) {
+    if (built.kind === "rx_missing_provider") {
       res.status(409).json({
         error: "rx_missing_provider",
         message:
@@ -753,7 +747,7 @@ router.post(
       });
       return;
     }
-    if (!rx.hcpcs_code) {
+    if (built.kind === "rx_missing_hcpcs") {
       res.status(409).json({
         error: "rx_missing_hcpcs",
         message:
@@ -762,57 +756,11 @@ router.post(
       return;
     }
 
-    // Latest sleep study for icd10 prefill (defaults to G47.33 when
-    // the patient has no sleep studies on file — that's the most
-    // common sleep-apnea code and the CSR overrides it in the UI
-    // when it doesn't apply).
-    const { data: study } = await supabase
-      .schema("resupply")
-      .from("sleep_studies")
-      .select("diagnosis_icd10")
-      .eq("patient_id", params.data.id)
-      .order("study_date", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    const icd10 =
-      study?.diagnosis_icd10 && /^[A-Z]\d{2}(\.\d{1,4})?$/.test(study.diagnosis_icd10)
-        ? [study.diagnosis_icd10.toUpperCase()]
-        : ["G47.33"];
-
-    const { data: provider } = await supabase
-      .schema("resupply")
-      .from("providers")
-      .select("id, fax_e164")
-      .eq("id", rx.provider_id)
-      .limit(1)
-      .maybeSingle();
-
-    const hcpcsLines = [
-      {
-        hcpcs: rx.hcpcs_code,
-        description: rx.item_sku,
-        quantity: 1,
-        cadenceDays: rx.cadence_days > 0 ? rx.cadence_days : null,
-      },
-    ];
-
+    const supabase = getSupabaseServiceRoleClient();
     const { data: inserted, error: insertErr } = await supabase
       .schema("resupply")
       .from("prescription_request_packets")
-      .insert({
-        patient_id: params.data.id,
-        provider_id: rx.provider_id,
-        source_prescription_id: rx.id,
-        hcpcs_items_json: hcpcsLines as unknown as Json,
-        icd10_codes_json: icd10 as unknown as Json,
-        device_settings_json: null,
-        length_of_need_months: 99,
-        return_fax_e164: provider?.fax_e164 ?? null,
-        return_email: null,
-        clinical_notes: null,
-        status: "draft",
-        created_by_email: req.adminEmail ?? "admin:unknown",
-      })
+      .insert(built.insert)
       .select("id")
       .maybeSingle();
     if (insertErr || !inserted) {
@@ -820,7 +768,7 @@ router.post(
         {
           err_code: insertErr?.code,
           patient_id: params.data.id,
-          rx_id: rx.id,
+          rx_id: params.data.rxId,
         },
         "prescription_request.from_prescription.create_failed",
       );
@@ -836,8 +784,7 @@ router.post(
       targetId: inserted.id,
       metadata: {
         patient_id: params.data.id,
-        source_prescription_id: rx.id,
-        hcpcs_code: rx.hcpcs_code,
+        source_prescription_id: params.data.rxId,
       },
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
