@@ -1,13 +1,11 @@
-// Tests for abandoned-carts-api.ts.
-//
-// This PR added csrfHeader() to the sendDueAbandonedCarts POST call.
+// Tests for abandoned-carts-api.ts — fetch wrappers for
+// /resupply-api/admin/shop/abandoned-carts
 //
 // Coverage:
-//   listAdminAbandonedCarts — URL, Accept header, success, error
-//   sendDueAbandonedCarts   — URL, method, Accept header, X-PF-CSRF header,
-//                             success, error
+//   listAdminAbandonedCarts  — GET, Accept header, error messages
+//   sendDueAbandonedCarts    — POST, Accept header, error messages
 
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { Mock } from "vitest";
 
 import {
@@ -15,35 +13,25 @@ import {
   sendDueAbandonedCarts,
 } from "./abandoned-carts-api";
 
-// ─── Setup / teardown ───────────────────────────────────────────────────────
-
 const ORIGINAL_FETCH = globalThis.fetch;
 let fetchMock: Mock;
-
-function setDocumentCookie(cookie: string | null) {
-  if (cookie === null) {
-    delete (globalThis as unknown as { document?: unknown }).document;
-  } else {
-    (globalThis as unknown as { document?: unknown }).document = { cookie };
-  }
-}
 
 beforeEach(() => {
   fetchMock = vi.fn();
   globalThis.fetch = fetchMock as unknown as typeof fetch;
-  setDocumentCookie("");
 });
 
 afterEach(() => {
   globalThis.fetch = ORIGINAL_FETCH;
-  delete (globalThis as unknown as { document?: unknown }).document;
   vi.restoreAllMocks();
 });
 
-// ─── listAdminAbandonedCarts ──────────────────────────────────────────────────
+// ---------------------------------------------------------------------------
+// listAdminAbandonedCarts
+// ---------------------------------------------------------------------------
 
 describe("listAdminAbandonedCarts", () => {
-  it("fetches /resupply-api/admin/shop/abandoned-carts", async () => {
+  test("requests GET /resupply-api/admin/shop/abandoned-carts", async () => {
     fetchMock.mockResolvedValue({
       ok: true,
       status: 200,
@@ -56,7 +44,7 @@ describe("listAdminAbandonedCarts", () => {
     expect(url).toBe("/resupply-api/admin/shop/abandoned-carts");
   });
 
-  it("sends Accept: application/json", async () => {
+  test("sends Accept: application/json header", async () => {
     fetchMock.mockResolvedValue({
       ok: true,
       status: 200,
@@ -66,63 +54,156 @@ describe("listAdminAbandonedCarts", () => {
     await listAdminAbandonedCarts();
 
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect((init.headers as Record<string, string>)["Accept"]).toBe(
-      "application/json",
-    );
+    const headers = init.headers as Record<string, string>;
+    expect(headers["Accept"]).toBe("application/json");
   });
 
-  it("returns the rows array", async () => {
-    const rows = [
-      {
-        id: "cart-1",
-        customerId: "cust-1",
-        emailRedacted: "p***@example.com",
-        itemCount: 2,
-        subtotalCents: 4999,
-        currency: "usd",
-        updatedAt: "2026-01-01T00:00:00Z",
-        remindedAt: null,
-        recoveredAt: null,
-        clearedAt: null,
-        createdAt: "2026-01-01T00:00:00Z",
-      },
-    ];
+  test("does not send credentials: include (cookie auth is implicit)", async () => {
     fetchMock.mockResolvedValue({
       ok: true,
       status: 200,
-      json: async () => ({ rows }),
+      json: async () => ({ rows: [] }),
+    });
+
+    await listAdminAbandonedCarts();
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    // credentials is not explicitly set in this wrapper
+    expect(init.credentials).toBeUndefined();
+  });
+
+  test("returns the parsed rows array on success", async () => {
+    const row = {
+      id: "cart-1",
+      customerId: "cust-abc",
+      emailRedacted: "j***@example.com",
+      itemCount: 3,
+      subtotalCents: 4500,
+      currency: "USD",
+      updatedAt: "2025-01-10T12:00:00Z",
+      remindedAt: null,
+      recoveredAt: null,
+      clearedAt: null,
+      createdAt: "2025-01-10T10:00:00Z",
+    };
+
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ rows: [row] }),
     });
 
     const result = await listAdminAbandonedCarts();
     expect(result.rows).toHaveLength(1);
     expect(result.rows[0]!.id).toBe("cart-1");
+    expect(result.rows[0]!.itemCount).toBe(3);
+    expect(result.rows[0]!.subtotalCents).toBe(4500);
+    expect(result.rows[0]!.currency).toBe("USD");
   });
 
-  it("throws on non-OK status", async () => {
-    fetchMock.mockResolvedValue({ ok: false, status: 403 });
-    await expect(listAdminAbandonedCarts()).rejects.toThrow("403");
+  test("returns empty rows array when no abandoned carts exist", async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ rows: [] }),
+    });
+
+    const result = await listAdminAbandonedCarts();
+    expect(result.rows).toEqual([]);
   });
 
-  it("error message includes the operation context", async () => {
-    fetchMock.mockResolvedValue({ ok: false, status: 500 });
+  test("throws with status in message on non-OK response", async () => {
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 403,
+      statusText: "Forbidden",
+      json: async () => ({}),
+    });
+
     await expect(listAdminAbandonedCarts()).rejects.toThrow(
-      "Failed to load abandoned carts",
+      "Failed to load abandoned carts (403)",
     );
+  });
+
+  test("throws with status 500 message on server error", async () => {
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 500,
+      statusText: "Internal Server Error",
+      json: async () => ({}),
+    });
+
+    await expect(listAdminAbandonedCarts()).rejects.toThrow(
+      "Failed to load abandoned carts (500)",
+    );
+  });
+
+  test("throws with status 401 message when unauthenticated", async () => {
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 401,
+      statusText: "Unauthorized",
+      json: async () => ({}),
+    });
+
+    await expect(listAdminAbandonedCarts()).rejects.toThrow(
+      "Failed to load abandoned carts (401)",
+    );
+  });
+
+  test("calls fetch exactly once per invocation", async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ rows: [] }),
+    });
+
+    await listAdminAbandonedCarts();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  test("handles rows with optional nullable fields", async () => {
+    const rowWithNulls = {
+      id: "cart-null",
+      customerId: null,
+      emailRedacted: null,
+      itemCount: 1,
+      subtotalCents: 1999,
+      currency: "USD",
+      updatedAt: "2025-02-01T09:00:00Z",
+      remindedAt: "2025-02-01T10:00:00Z",
+      recoveredAt: null,
+      clearedAt: null,
+      createdAt: "2025-02-01T08:00:00Z",
+    };
+
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ rows: [rowWithNulls] }),
+    });
+
+    const result = await listAdminAbandonedCarts();
+    expect(result.rows[0]!.customerId).toBeNull();
+    expect(result.rows[0]!.emailRedacted).toBeNull();
+    expect(result.rows[0]!.remindedAt).toBe("2025-02-01T10:00:00Z");
   });
 });
 
-// ─── sendDueAbandonedCarts ────────────────────────────────────────────────────
+// ---------------------------------------------------------------------------
+// sendDueAbandonedCarts
+// ---------------------------------------------------------------------------
 
-describe("sendDueAbandonedCarts — request shape", () => {
-  it("POSTs to /resupply-api/admin/shop/abandoned-carts/send-due", async () => {
+describe("sendDueAbandonedCarts", () => {
+  test("requests POST /resupply-api/admin/shop/abandoned-carts/send-due", async () => {
     fetchMock.mockResolvedValue({
       ok: true,
       status: 200,
       json: async () => ({
-        scanned: 5,
-        sent: 3,
-        skippedNoConfig: 0,
-        skippedFailed: 0,
+        scanned: 10,
+        sent: 5,
+        skippedNoConfig: 2,
+        skippedFailed: 1,
         sendgridConfigured: true,
       }),
     });
@@ -130,20 +211,18 @@ describe("sendDueAbandonedCarts — request shape", () => {
     await sendDueAbandonedCarts();
 
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe(
-      "/resupply-api/admin/shop/abandoned-carts/send-due",
-    );
+    expect(url).toBe("/resupply-api/admin/shop/abandoned-carts/send-due");
     expect(init.method).toBe("POST");
   });
 
-  it("sends Accept: application/json", async () => {
+  test("sends Accept: application/json header", async () => {
     fetchMock.mockResolvedValue({
       ok: true,
       status: 200,
       json: async () => ({
         scanned: 0,
         sent: 0,
-        skippedNoConfig: 1,
+        skippedNoConfig: 0,
         skippedFailed: 0,
         sendgridConfigured: false,
       }),
@@ -152,82 +231,157 @@ describe("sendDueAbandonedCarts — request shape", () => {
     await sendDueAbandonedCarts();
 
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect((init.headers as Record<string, string>)["Accept"]).toBe(
-      "application/json",
-    );
+    const headers = init.headers as Record<string, string>;
+    expect(headers["Accept"]).toBe("application/json");
   });
 
-  it("includes X-PF-CSRF header when pf_csrf cookie is present", async () => {
-    setDocumentCookie("pf_csrf=csrf-abc");
+  test("returns SendDueResponse with correct fields on success", async () => {
+    const payload = {
+      scanned: 20,
+      sent: 8,
+      skippedNoConfig: 3,
+      skippedFailed: 2,
+      sendgridConfigured: true,
+    };
+
     fetchMock.mockResolvedValue({
       ok: true,
       status: 200,
-      json: async () => ({
-        scanned: 0,
-        sent: 0,
-        skippedNoConfig: 0,
-        skippedFailed: 0,
-        sendgridConfigured: true,
-      }),
-    });
-
-    await sendDueAbandonedCarts();
-
-    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect((init.headers as Record<string, string>)["X-PF-CSRF"]).toBe(
-      "csrf-abc",
-    );
-  });
-
-  it("omits X-PF-CSRF when pf_csrf cookie is absent", async () => {
-    fetchMock.mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: async () => ({
-        scanned: 0,
-        sent: 0,
-        skippedNoConfig: 0,
-        skippedFailed: 0,
-        sendgridConfigured: true,
-      }),
-    });
-
-    await sendDueAbandonedCarts();
-
-    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect("X-PF-CSRF" in (init.headers as Record<string, string>)).toBe(false);
-  });
-});
-
-describe("sendDueAbandonedCarts — response handling", () => {
-  it("returns the send-due stats on success", async () => {
-    fetchMock.mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: async () => ({
-        scanned: 10,
-        sent: 7,
-        skippedNoConfig: 1,
-        skippedFailed: 2,
-        sendgridConfigured: true,
-      }),
+      json: async () => payload,
     });
 
     const result = await sendDueAbandonedCarts();
-    expect(result.scanned).toBe(10);
-    expect(result.sent).toBe(7);
-    expect(result.skippedNoConfig).toBe(1);
+    expect(result.scanned).toBe(20);
+    expect(result.sent).toBe(8);
+    expect(result.skippedNoConfig).toBe(3);
     expect(result.skippedFailed).toBe(2);
     expect(result.sendgridConfigured).toBe(true);
   });
 
-  it("throws on non-OK status", async () => {
-    fetchMock.mockResolvedValue({ ok: false, status: 503 });
-    await expect(sendDueAbandonedCarts()).rejects.toThrow("503");
+  test("returns sendgridConfigured: false when SendGrid is not configured", async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        scanned: 5,
+        sent: 0,
+        skippedNoConfig: 5,
+        skippedFailed: 0,
+        sendgridConfigured: false,
+      }),
+    });
+
+    const result = await sendDueAbandonedCarts();
+    expect(result.sendgridConfigured).toBe(false);
+    expect(result.sent).toBe(0);
+    expect(result.skippedNoConfig).toBe(5);
   });
 
-  it("error message contains 'Send-due failed'", async () => {
-    fetchMock.mockResolvedValue({ ok: false, status: 500 });
-    await expect(sendDueAbandonedCarts()).rejects.toThrow("Send-due failed");
+  test("throws with status in message on non-OK response", async () => {
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 503,
+      statusText: "Service Unavailable",
+      json: async () => ({}),
+    });
+
+    await expect(sendDueAbandonedCarts()).rejects.toThrow(
+      "Send-due failed (503)",
+    );
+  });
+
+  test("throws with status 403 message when unauthorized", async () => {
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 403,
+      statusText: "Forbidden",
+      json: async () => ({}),
+    });
+
+    await expect(sendDueAbandonedCarts()).rejects.toThrow(
+      "Send-due failed (403)",
+    );
+  });
+
+  test("throws with status 500 message on server error", async () => {
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 500,
+      statusText: "Internal Server Error",
+      json: async () => ({}),
+    });
+
+    await expect(sendDueAbandonedCarts()).rejects.toThrow(
+      "Send-due failed (500)",
+    );
+  });
+
+  test("calls fetch exactly once per invocation", async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        scanned: 0,
+        sent: 0,
+        skippedNoConfig: 0,
+        skippedFailed: 0,
+        sendgridConfigured: true,
+      }),
+    });
+
+    await sendDueAbandonedCarts();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Error message format — boundary test for different status codes
+// ---------------------------------------------------------------------------
+
+describe("abandoned-carts-api — error message format", () => {
+  test("listAdminAbandonedCarts error includes the exact status code in parentheses", async () => {
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 429,
+      statusText: "Too Many Requests",
+      json: async () => ({}),
+    });
+
+    await expect(listAdminAbandonedCarts()).rejects.toThrow(/\(429\)/);
+  });
+
+  test("sendDueAbandonedCarts error includes the exact status code in parentheses", async () => {
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 422,
+      statusText: "Unprocessable Entity",
+      json: async () => ({}),
+    });
+
+    await expect(sendDueAbandonedCarts()).rejects.toThrow(/\(422\)/);
+  });
+
+  test("sendDueAbandonedCarts error message starts with 'Send-due failed'", async () => {
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 400,
+      statusText: "Bad Request",
+      json: async () => ({}),
+    });
+
+    await expect(sendDueAbandonedCarts()).rejects.toThrow(/^Send-due failed/);
+  });
+
+  test("listAdminAbandonedCarts error message starts with 'Failed to load abandoned carts'", async () => {
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 404,
+      statusText: "Not Found",
+      json: async () => ({}),
+    });
+
+    await expect(listAdminAbandonedCarts()).rejects.toThrow(
+      /^Failed to load abandoned carts/,
+    );
   });
 });

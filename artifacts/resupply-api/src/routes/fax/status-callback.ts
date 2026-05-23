@@ -31,6 +31,8 @@ import { requireTwilioSignature } from "@workspace/resupply-telecom";
 import { logger } from "../../lib/logger.js";
 
 type FaxOutreachUpdate = Database["resupply"]["Tables"]["physician_fax_outreach"]["Update"];
+type RxPacketUpdate =
+  Database["resupply"]["Tables"]["prescription_request_packets"]["Update"];
 
 const router: IRouter = Router();
 
@@ -152,6 +154,41 @@ router.post("/fax/status-callback", signatureMiddleware, async (req, res) => {
       { event: "fax_status_db_failed", faxSid, err },
       "fax status-callback: DB update failed",
     );
+  }
+
+  // Same Twilio FaxSid may match a prescription_request_packets row
+  // (the faxable Rx packet feature). Twilio SIDs are globally unique
+  // so at most one of the two tables ever resolves. We update both
+  // unconditionally rather than checking which one to keep the
+  // callback handler simple — the UPDATE is a no-op on the table
+  // that didn't dispatch this SID.
+  const packetUpdates: RxPacketUpdate = { updated_at: nowIso };
+  if (dbStatus === "delivered") {
+    packetUpdates.status = "delivered";
+    packetUpdates.delivered_at = nowIso;
+  } else if (dbStatus === "failed") {
+    packetUpdates.status = "failed";
+    packetUpdates.failed_at = nowIso;
+    if (errorCode) packetUpdates.failure_reason = `Twilio error ${errorCode}`;
+  }
+  // "in transit" Twilio statuses leave packet.status alone — we
+  // already stamped sent_fax at dispatch time and intermediate
+  // queued/processing transitions don't add information.
+  if (dbStatus === "delivered" || dbStatus === "failed") {
+    try {
+      const { error } = await supabase
+        .schema("resupply")
+        .from("prescription_request_packets")
+        .update(packetUpdates)
+        .eq("vendor_ref", faxSid)
+        .eq("vendor_name", "twilio");
+      if (error) throw error;
+    } catch (err) {
+      logger.warn(
+        { event: "rx_packet_status_db_failed", faxSid, err },
+        "fax status-callback: prescription_request_packets update failed",
+      );
+    }
   }
 
   try {
