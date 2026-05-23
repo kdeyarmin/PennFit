@@ -45,6 +45,7 @@ import { AdminTodayPage } from "@/pages/admin/admin-today";
 import { AdminProvidersPage } from "@/pages/admin/admin-providers";
 import { AdminInboundFaxesPage } from "@/pages/admin/admin-inbound-faxes";
 import { AdminInboundReferralsPage } from "@/pages/admin/admin-inbound-referrals";
+import { AdminPrescriptionRequestsPage } from "@/pages/admin/admin-prescription-requests";
 import { AdminEquipmentRecallsPage } from "@/pages/admin/admin-equipment-recalls";
 import { AdminAnalyticsPage } from "@/pages/admin/admin-analytics";
 import { AdminCompliancePage } from "@/pages/admin/admin-compliance";
@@ -283,6 +284,10 @@ function AdminConsole() {
           <Route
             path="/admin/inbound-referrals"
             component={AdminInboundReferralsPage}
+          />
+          <Route
+            path="/admin/patients/:patientId/prescription-requests"
+            component={AdminPrescriptionRequestsPage}
           />
           <Route
             path="/admin/equipment-recalls"
