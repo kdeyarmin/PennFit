@@ -18,6 +18,7 @@ import {
 
 import { renderAppealPdf } from "../../lib/billing/appeal-pdf";
 import { resolveBillingIdentity } from "../../lib/billing/identity-resolver";
+import { parsePayerAddressLines } from "../../lib/billing/payer-address";
 import { logger } from "../../lib/logger";
 import { publishEvent } from "../../lib/webhooks/publisher";
 import { requireAdmin } from "../../middlewares/requireAdmin";
@@ -79,7 +80,7 @@ router.post(
       .schema("resupply")
       .from("insurance_claims")
       .select(
-        "id, patient_id, payer_name, claim_number, date_of_service, denial_reason, insurance_coverage_id",
+        "id, patient_id, payer_name, payer_profile_id, claim_number, date_of_service, denial_reason, insurance_coverage_id",
       )
       .eq("id", idParsed.data.claimId)
       .eq("patient_id", idParsed.data.id)
@@ -92,6 +93,7 @@ router.post(
     const [
       { data: patient },
       { data: coverage },
+      { data: payerProfile },
     ] = await Promise.all([
       supabase
         .schema("resupply")
@@ -109,6 +111,18 @@ router.post(
             .limit(1)
             .maybeSingle()
         : Promise.resolve({ data: null }),
+      // Phase 14 — pull the payer's appeals_mailing_address so the
+      // letter's "To:" block prints the actual destination instead
+      // of relying on the operator to look it up.
+      claim.payer_profile_id
+        ? supabase
+            .schema("resupply")
+            .from("payer_profiles")
+            .select("appeals_mailing_address")
+            .eq("id", claim.payer_profile_id)
+            .limit(1)
+            .maybeSingle()
+        : Promise.resolve({ data: null }),
     ]);
     if (!patient) {
       res.status(404).json({ error: "patient_not_found" });
@@ -119,8 +133,12 @@ router.post(
       res.status(409).json({ error: "no_dme_organization" });
       return;
     }
+    const payerAddressLines = parsePayerAddressLines(
+      payerProfile?.appeals_mailing_address,
+    );
     const pdf = await renderAppealPdf({
       payerName: claim.payer_name,
+      payerAddressLines: payerAddressLines ?? undefined,
       claimNumber: claim.claim_number,
       patientName: `${patient.legal_first_name} ${patient.legal_last_name}`,
       patientMemberId: coverage?.member_id ?? "(see attached EOB)",

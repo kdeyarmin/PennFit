@@ -20,6 +20,10 @@ import {
   renderHcfa1500Pdf,
   type Hcfa1500Input,
 } from "../../lib/billing/hcfa-1500-pdf";
+import {
+  parsePostalAddress,
+  type PostalAddress as PayerPostalAddress,
+} from "../../lib/billing/payer-address";
 import { logger } from "../../lib/logger";
 import { requirePermission } from "../../middlewares/requireAdmin";
 
@@ -62,6 +66,7 @@ router.get(
       { data: lines },
       { data: payerProfile },
       { data: referringProvider },
+      { data: sleep },
     ] = await Promise.all([
       supabase
         .schema("resupply")
@@ -89,7 +94,7 @@ router.get(
         ? supabase
             .schema("resupply")
             .from("payer_profiles")
-            .select("payer_legal_name")
+            .select("payer_legal_name, claims_mailing_address")
             .eq("id", claim.payer_profile_id)
             .limit(1)
             .maybeSingle()
@@ -103,6 +108,18 @@ router.get(
             .limit(1)
             .maybeSingle()
         : Promise.resolve({ data: null }),
+      // Phase 14 — pull the patient's most recent sleep-study diagnosis
+      // so the HCFA carries the real ICD-10 instead of the previously-
+      // hardcoded G47.33 fallback.
+      supabase
+        .schema("resupply")
+        .from("sleep_studies")
+        .select("diagnosis_icd10")
+        .eq("patient_id", claim.patient_id)
+        .not("diagnosis_icd10", "is", null)
+        .order("study_date", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
     ]);
 
     if (!patient) {
@@ -136,6 +153,25 @@ router.get(
       zip: process.env.OFFICE_ALLY_BILLING_ZIP ?? "00000",
     };
 
+    const payerMailingParsed: PayerPostalAddress | null = parsePostalAddress(
+      payerProfile?.claims_mailing_address,
+    );
+    // Coerce to the HCFA-renderer's PostalAddress shape (line2 is
+    // `string | undefined` there, not `string | null`).
+    const payerMailingAddress: Hcfa1500Input["payerMailingAddress"] =
+      payerMailingParsed
+        ? {
+            line1: payerMailingParsed.line1,
+            line2: payerMailingParsed.line2 ?? undefined,
+            city: payerMailingParsed.city,
+            state: payerMailingParsed.state,
+            zip: payerMailingParsed.zip,
+          }
+        : null;
+    const diagnosisCodes = sleep?.diagnosis_icd10
+      ? [sleep.diagnosis_icd10]
+      : ["G47.33"];
+
     const input: Hcfa1500Input = {
       insuranceType: "group_health",
       insuredIdNumber: coverage.member_id,
@@ -152,9 +188,10 @@ router.get(
       insuredAddress: patientAddress,
       policyOrGroupNumber: coverage.group_number ?? coverage.member_id,
       payerName: payerProfile?.payer_legal_name ?? claim.payer_name,
+      payerMailingAddress,
       referringProviderName: referringProvider?.legal_name ?? null,
       referringProviderNpi: referringProvider?.npi ?? null,
-      diagnosisCodes: ["G47.33"],
+      diagnosisCodes,
       priorAuthNumber: null,
       serviceLines: (lines ?? []).map((l) => ({
         fromDate: claim.date_of_service,
