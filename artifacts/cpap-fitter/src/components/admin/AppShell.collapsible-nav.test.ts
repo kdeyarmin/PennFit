@@ -13,7 +13,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const APPSHELL_SRC = readFileSync(
@@ -60,7 +60,7 @@ function groupDomId(label: string): string {
 
 describe("groupDomId", () => {
   it("prefixes the result with 'admin-nav-section-'", () => {
-    expect(groupDomId("Inbox")).toStartsWith("admin-nav-section-");
+    expect(groupDomId("Inbox")).toMatch(/^admin-nav-section-/);
   });
 
   it("lowercases the label", () => {
