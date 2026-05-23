@@ -31,10 +31,7 @@ import {
 } from "@workspace/resupply-telecom";
 
 import { logger } from "../../lib/logger";
-import {
-  publicWsOriginFromBaseUrl,
-  readVoiceConfigOrNull,
-} from "../../lib/voice/voice-config";
+import { readVoiceConfigOrNull } from "../../lib/voice/voice-config";
 
 const router: IRouter = Router();
 
@@ -142,12 +139,27 @@ router.post(
       return;
     }
 
-    // 3b. Identified caller → connect to the Realtime bridge.
-    // The bridge endpoint expects ?conversationId=<id>; for the
-    // reorder flow we pass the voice_reorder_sessions.id and the
-    // bridge looks up patient context from the matching session row.
-    const wsOrigin = publicWsOriginFromBaseUrl(config.publicBaseUrl);
-    const streamUrl = `${wsOrigin}/voice/stream?reorderSessionId=${session.id}`;
+    // 3b. Identified caller. The Realtime reorder bridge is not yet
+    // wired (the WS upgrade handler in index.ts only accepts the
+    // /resupply-api/voice/stream path with a pending-session
+    // conversationId; the reorder shape uses voice_reorder_sessions.id
+    // and there is no WS handler that consumes it yet). Until the
+    // bridge ships, transfer the identified caller to the human team
+    // — that's strictly better than greeting them and then dropping
+    // the call when the WS handshake fails.
+    //
+    // Once the reorder WS handler lands, swap this back to a Connect
+    // / Stream TwiML pointing at /resupply-api/voice/stream with the
+    // reorderSessionId param (and register the session via
+    // getPendingSessions() so the upgrade handler can claim it).
+    logger.info(
+      {
+        event: "voice.inbound-reorder.identified",
+        callSid: CallSid,
+        sessionId: session.id,
+      },
+      "voice.inbound-reorder: caller identified, transferring (reorder bridge not yet wired)",
+    );
     res
       .status(200)
       .type("text/xml")
@@ -156,8 +168,8 @@ router.post(
           '<?xml version="1.0" encoding="UTF-8"?>',
           "<Response>",
           "<Say>Hi! Welcome to your PennPaps reorder line. ",
-          "One moment while I pull up your account.</Say>",
-          `<Connect><Stream url="${streamUrl}"/></Connect>`,
+          "Connecting you to our team now.</Say>",
+          "<Dial timeout=\"20\">+18144710627</Dial>",
           "</Response>",
         ].join(""),
       );
