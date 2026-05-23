@@ -10,6 +10,8 @@
 // Auth: the browser sends the `pf_session` cookie automatically on
 // same-origin requests, so no per-call auth header is needed.
 
+import { csrfHeader } from "../csrf";
+
 export interface AbandonedCartRow {
   id: string;
   customerId: string | null;
@@ -49,7 +51,7 @@ export async function listAdminAbandonedCarts(): Promise<ListAbandonedCartsRespo
 export async function sendDueAbandonedCarts(): Promise<SendDueResponse> {
   const res = await fetch(`/resupply-api/admin/shop/abandoned-carts/send-due`, {
     method: "POST",
-    headers: { Accept: "application/json" },
+    headers: { Accept: "application/json", ...csrfHeader() },
   });
   if (!res.ok) {
     throw new Error(`Send-due failed (${res.status})`);

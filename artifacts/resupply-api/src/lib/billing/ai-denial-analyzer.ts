@@ -283,7 +283,9 @@ async function assembleDenialContext(
           .schema("resupply")
           .from("payer_profiles")
           .select(
-            "display_name, line_of_business, region, requires_prior_auth_dme",
+            // Phase 13: timely-filing + modifier + referring-NPI fields
+            // help the analyzer pick the right "fix" recommendation.
+            "display_name, line_of_business, region, requires_prior_auth_dme, timely_filing_days, required_modifiers_dme, requires_referring_provider_npi",
           )
           .eq("id", claim.payer_profile_id)
           .limit(1)

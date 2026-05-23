@@ -148,13 +148,44 @@ export const requireSmartFhirAccess: RequestHandler = async (
     return;
   }
 
-  const verifyOutcome = verifySmartJwt({
+  let verifyOutcome = verifySmartJwt({
     token,
     jwks,
     expectedIssuer: tenant.expected_issuer,
     expectedSubject: tenant.expected_subject,
     expectedAudience,
   });
+  // On signature_invalid / key_not_in_jwks the tenant may have
+  // rotated their signing key since we cached the JWKS. Evict and
+  // re-fetch once before giving up — without this, the old JWKS
+  // can be served for up to JWKS_TTL_MS after rotation, which is
+  // the exact window where a compromised pre-rotation private
+  // key could still be accepted.
+  if (
+    !verifyOutcome.ok &&
+    (verifyOutcome.reason === "signature_invalid" ||
+      verifyOutcome.reason === "key_not_in_jwks")
+  ) {
+    JWKS_CACHE.delete(tenant.jwks_uri);
+    try {
+      jwks = await getJwksCached(tenant.jwks_uri);
+      verifyOutcome = verifySmartJwt({
+        token,
+        jwks,
+        expectedIssuer: tenant.expected_issuer,
+        expectedSubject: tenant.expected_subject,
+        expectedAudience,
+      });
+    } catch (err) {
+      logger.warn(
+        {
+          tenant_slug: tenant.slug,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        "requireSmartFhirAccess: jwks re-fetch after signature_invalid failed",
+      );
+    }
+  }
   if (!verifyOutcome.ok) {
     logSmartVerifyFailure(tenant.slug, verifyOutcome.reason);
     res.status(401).json({

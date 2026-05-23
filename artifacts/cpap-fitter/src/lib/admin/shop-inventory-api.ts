@@ -12,6 +12,8 @@
 // Auth: the browser sends the `pf_session` cookie automatically on
 // same-origin requests, so no per-call auth header is needed.
 
+import { csrfHeader } from "../csrf";
+
 // Subset of `ShopProductView` from products-meta.ts that the
 // inventory editor actually renders. Kept hand-typed (vs imported
 // from the api package) because the API isn't exposing a TS type
@@ -93,6 +95,7 @@ export async function patchShopProductStock(
       headers: {
         Accept: "application/json",
         "Content-Type": "application/json",
+        ...csrfHeader(),
       },
       body: JSON.stringify({ stockCount }),
     },
@@ -153,6 +156,7 @@ export async function patchShopProductThreshold(
       headers: {
         Accept: "application/json",
         "Content-Type": "application/json",
+        ...csrfHeader(),
       },
       body: JSON.stringify({ lowStockThreshold }),
     },
@@ -308,6 +312,7 @@ export async function createShopProduct(
     headers: {
       Accept: "application/json",
       "Content-Type": "application/json",
+      ...csrfHeader(),
     },
     body: JSON.stringify(input),
   });

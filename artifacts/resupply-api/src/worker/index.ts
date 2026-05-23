@@ -403,11 +403,9 @@ export async function startWorker(): Promise<void> {
   // with 24-hour cooldown gates.
   await registerComplianceAutoWorkflowJob(boss);
 
-  // Hourly — warn invited team members whose operator-typed
-  // temporary password is approaching ADMIN_PASSWORD_TTL_MS (heads-up
-  // at ~T-2 days) and again the moment it expires. Idempotency via
-  // stamp columns on resupply_auth.password_credentials added in
-  // migration 0143.
+  // Daily — notify admins of upcoming/expired invite-password
+  // expirations so operators can re-invite teammates before they
+  // lose access.
   await registerInvitePasswordExpiryNotifyJob(boss);
 
   // Every 6 hours — shop inventory low-stock alert digest. Reads

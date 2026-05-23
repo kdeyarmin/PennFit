@@ -21,6 +21,8 @@
  * unexpected failures.
  */
 
+import { csrfHeader } from "../csrf";
+
 const BASE = "/api"; // resupply-api artifact.toml mounts the storefront router under /api
 
 export class StorefrontAdminApiError extends Error {
@@ -59,6 +61,7 @@ async function adminPost<T>(
     headers: {
       Accept: "application/json",
       "Content-Type": "application/json",
+      ...csrfHeader(),
     },
     body: body ? JSON.stringify(body) : undefined,
   });

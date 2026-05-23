@@ -133,6 +133,7 @@ export function SleepApnea101() {
   useDocumentTitle(
     "Sleep apnea 101 — everything you need to know",
     "Your one-stop primer on sleep apnea and PAP therapy. What it is, why it matters, how treatment works, what daily life looks like, and how to pay for it.",
+    { schema: "MedicalWebPage" },
   );
   const [, navigate] = useLocation();
 

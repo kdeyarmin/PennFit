@@ -80,6 +80,12 @@ export function TrackOrder() {
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<TrackResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Synchronous in-flight guard. setState is async — a rapid
+  // double Enter would fire handleSubmit twice with both calls
+  // still seeing the old `submitting=false` until React commits
+  // the next render. A ref flips synchronously so the second
+  // call short-circuits.
+  const inFlightRef = React.useRef(false);
 
   const refValid = REF_RE.test(reference.trim());
   const emailValid = EMAIL_RE.test(email.trim());
@@ -88,6 +94,8 @@ export function TrackOrder() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!canSubmit) return;
+    if (inFlightRef.current) return;
+    inFlightRef.current = true;
     setSubmitting(true);
     setError(null);
     try {
@@ -120,6 +128,7 @@ export function TrackOrder() {
       setError(t("track.errorGeneric"));
     } finally {
       setSubmitting(false);
+      inFlightRef.current = false;
     }
   }
 
