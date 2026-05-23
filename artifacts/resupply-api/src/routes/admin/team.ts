@@ -121,6 +121,12 @@ const inviteBody = z
     role: z.enum(ROLE_VALUES as [AdminRole, ...AdminRole[]]),
     displayName: z.string().trim().min(1).max(120).optional().nullable(),
     notes: z.string().trim().max(2000).optional().nullable(),
+    // Optional initial password. When provided, the user is
+    // created as active + email-verified with this password set,
+    // and no invite email is sent. Admin is expected to convey
+    // the password to the user out-of-band (in person, secure
+    // chat, etc.). Min length matches sign-in.ts / change-password.
+    initialPassword: z.string().min(12).max(1024).optional().nullable(),
   })
   .strict();
 
@@ -191,7 +197,9 @@ router.post(
       });
       return;
     }
-    const { email, role, displayName, notes } = parsed.data;
+    const { email, role, displayName, notes, initialPassword } = parsed.data;
+    const useInitialPassword =
+      typeof initialPassword === "string" && initialPassword.length >= 12;
     const inviterId = req.adminUserId ?? null;
     const supabase = getSupabaseServiceRoleClient();
     const deps = getAuthDeps();
@@ -243,16 +251,24 @@ router.post(
       displayName: displayName ?? prior?.display_name ?? null,
       productName: "Resupply",
       uiPathPrefix: "/admin",
+      initialPassword: useInitialPassword
+        ? (initialPassword as string)
+        : undefined,
     });
 
     const nowIso = new Date().toISOString();
+    // When the admin sets an initial password, the user is
+    // sign-in-ready immediately, so mirror that on admin_users:
+    // status='active' and accepted_at=now (instead of pending).
+    const memberStatus = useInitialPassword ? "active" : "pending";
+    const memberAcceptedAt = useInitialPassword ? nowIso : null;
     if (prior) {
       const { data: updated, error: updateErr } = await supabase
         .schema("resupply")
         .from("admin_users")
         .update({
           role,
-          status: "pending",
+          status: memberStatus,
           auth_user_id: invite.authUserId,
           display_name: displayName ?? prior.display_name,
           notes: notes ?? prior.notes,
@@ -260,7 +276,7 @@ router.post(
           invited_at: nowIso,
           revoked_at: null,
           revoked_by: null,
-          accepted_at: null,
+          accepted_at: memberAcceptedAt,
           updated_at: nowIso,
         })
         .eq("id", prior.id)
@@ -275,6 +291,7 @@ router.post(
         member: await serializeWithAuthLookup(supabase, updated),
         emailSent: invite.emailSent,
         inviteLink: invite.emailSent ? null : invite.inviteLink,
+        signInReady: invite.signInReady,
       });
       return;
     }
@@ -285,12 +302,13 @@ router.post(
       .insert({
         email_lower: email,
         role,
-        status: "pending",
+        status: memberStatus,
         auth_user_id: invite.authUserId,
         display_name: displayName ?? null,
         notes: notes ?? null,
         invited_by: inviterId,
         invited_at: nowIso,
+        accepted_at: memberAcceptedAt,
         updated_at: nowIso,
       })
       .select(
@@ -304,6 +322,7 @@ router.post(
       member: await serializeWithAuthLookup(supabase, inserted),
       emailSent: invite.emailSent,
       inviteLink: invite.emailSent ? null : invite.inviteLink,
+      signInReady: invite.signInReady,
     });
   },
 );

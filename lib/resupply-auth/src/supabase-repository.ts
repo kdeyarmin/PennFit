@@ -115,7 +115,8 @@ function rowToEmailToken(row: EmailTokenRow): AuthEmailTokenRow {
 
 const USER_COLS =
   "id, email_lower, display_name, role, status, email_verified_at, created_at, updated_at";
-const CRED_COLS = "user_id, password_hash, algo, must_change, updated_at";
+const CRED_COLS =
+  "user_id, password_hash, algo, must_change, set_by_admin_at, updated_at";
 const SESSION_COLS =
   "id, user_id, issued_at, expires_at, last_seen_at, revoked_at, ip, user_agent_hash";
 const EMAIL_TOKEN_COLS =
@@ -218,6 +219,7 @@ export function supabaseAuthRepository(
           password_hash: string;
           algo: string;
           must_change: boolean;
+          set_by_admin_at: string | null;
           updated_at: string;
         }>();
       if (error) throw error;
@@ -227,23 +229,52 @@ export function supabaseAuthRepository(
         passwordHash: data.password_hash,
         algo: data.algo,
         mustChange: data.must_change,
+        setByAdminAt: data.set_by_admin_at
+          ? new Date(data.set_by_admin_at)
+          : null,
         updatedAt: new Date(data.updated_at),
       };
     },
 
     async upsertCredential(input) {
+      // `setByAdminAt: undefined` means "preserve the existing
+      // value" — used by sign-in's transparent algorithm-upgrade
+      // path so a stale operator-typed credential doesn't get its
+      // expiry clock reset just because we rehashed it. PostgREST's
+      // upsert overwrites every column in the payload, so when the
+      // caller passes undefined we have to read-then-write to keep
+      // whatever value is already on the row.
+      const updatePayload: {
+        user_id: string;
+        password_hash: string;
+        must_change: boolean;
+        updated_at: string;
+        set_by_admin_at?: string | null;
+      } = {
+        user_id: input.userId,
+        password_hash: input.passwordHash,
+        must_change: input.mustChange ?? false,
+        updated_at: new Date().toISOString(),
+      };
+      if (input.setByAdminAt === undefined) {
+        const { data: existing, error: readErr } = await supabase
+          .schema("resupply_auth")
+          .from("password_credentials")
+          .select("set_by_admin_at")
+          .eq("user_id", input.userId)
+          .limit(1)
+          .maybeSingle<{ set_by_admin_at: string | null }>();
+        if (readErr) throw readErr;
+        updatePayload.set_by_admin_at = existing?.set_by_admin_at ?? null;
+      } else if (input.setByAdminAt === null) {
+        updatePayload.set_by_admin_at = null;
+      } else {
+        updatePayload.set_by_admin_at = input.setByAdminAt.toISOString();
+      }
       const { error } = await supabase
         .schema("resupply_auth")
         .from("password_credentials")
-        .upsert(
-          {
-            user_id: input.userId,
-            password_hash: input.passwordHash,
-            must_change: input.mustChange ?? false,
-            updated_at: new Date().toISOString(),
-          },
-          { onConflict: "user_id" },
-        );
+        .upsert(updatePayload, { onConflict: "user_id" });
       if (error) throw error;
     },
 
