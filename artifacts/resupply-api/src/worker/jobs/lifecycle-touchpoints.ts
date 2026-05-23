@@ -158,7 +158,7 @@ export async function runLifecycleTouchpoints(
   // instead of skipping three years out of four.
   const bdayPatterns = birthdayPatternsForToday(now);
   const bdayPatternExpr = bdayPatterns
-    .map((p) => `date_of_birth.ilike.%-${p}`)
+    .map((p) => `date_of_birth.ilike.*-${p}`)
     .join(",");
   const { data: bdayRows, error: bdayErr } = await supabase
     .schema("resupply")
