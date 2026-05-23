@@ -32,20 +32,13 @@ function getOrCreateMeta(
 }
 
 /**
- * Sets the browser tab title (and optionally the meta description) and
- * a route-aware canonical URL for the current page. Restores the
- * previous values when the component unmounts so client-side
- * navigation between routes always shows the right tab title, share
- * preview text, and `<link rel="canonical">`.
- *
  * Pass an empty string for `pageTitle` to use the site's default title
  * from `index.html` (e.g. on the landing page where no page-specific
  * suffix is needed); the canonical update still happens.
  *
- * Why a hook instead of react-helmet-async: every public page only
- * needs to set three tags (title + description + canonical). Avoiding
- * a 3rd-party helmet provider removes a runtime dependency and one
- * more thing to keep in sync with our tightened CSP.
+ * Why a hook instead of react-helmet-async: avoiding a 3rd-party
+ * helmet provider removes a runtime dependency and one more thing to
+ * keep in sync with our tightened CSP.
  */
 type SchemaType = "Article" | "MedicalWebPage";
 
