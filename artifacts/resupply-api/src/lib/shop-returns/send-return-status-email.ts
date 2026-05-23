@@ -255,13 +255,13 @@ export async function sendReturnStatusEmail(
       return {
         configured: true,
         delivered: false,
-        error: `SendGrid ${err.status ?? "?"}: ${err.message}`,
+        error: `sendgrid_api_error_${err.status ?? "unknown"}`,
       };
     }
     return {
       configured: true,
       delivered: false,
-      error: err instanceof Error ? err.message : String(err),
+      error: "sendgrid_unexpected_error",
     };
   }
 }
