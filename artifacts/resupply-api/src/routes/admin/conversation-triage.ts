@@ -8,6 +8,7 @@ import { logAudit } from "@workspace/resupply-audit";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
+import { safeCsvCell } from "../../lib/safe-csv-cell";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
 
@@ -242,11 +243,12 @@ router.get(
   },
 );
 
+// Delegate to the shared safe-csv-cell helper so the transcript
+// export gets formula-injection neutralisation along with the
+// RFC 4180 quoting. The body column is raw patient text — a reply
+// like `=HYPERLINK(...)` would otherwise run in a CSR's Excel.
 function transcriptCsvCell(value: unknown): string {
-  if (value == null) return "";
-  const s = String(value);
-  if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
-  return s;
+  return safeCsvCell(value);
 }
 
 export default router;

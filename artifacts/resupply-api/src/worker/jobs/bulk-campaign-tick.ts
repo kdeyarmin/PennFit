@@ -284,14 +284,18 @@ export async function processTick(
   //    ticks properly accumulate deltas instead of clobbering each other.
   if (sent > 0 || failed > 0) {
     const pool = await import("@workspace/resupply-db").then((m) => m.getDbPool());
-    const { rows } = await pool.query(
+    // Use pg's `rowCount` instead of `rows.length`. The UPDATE has no
+    // RETURNING, so `rows` is always [] and the prior length check
+    // was dead code — operators got no log when a concurrent cancel
+    // deleted the campaign row mid-tick.
+    const result = await pool.query(
       `UPDATE resupply.bulk_campaigns
        SET sent_count = sent_count + $1,
            failed_count = failed_count + $2
        WHERE id = $3`,
       [sent, failed, campaign.id],
     );
-    if (rows.length === 0) {
+    if (result.rowCount === 0) {
       log.warn(
         { campaignId: campaign.id },
         "bulk_campaigns.tick: counter update affected 0 rows",

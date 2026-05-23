@@ -38,6 +38,7 @@ import { z } from "zod";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 import { logAudit } from "@workspace/resupply-audit";
 
+import { safeCsvCell } from "../../lib/safe-csv-cell";
 import { requirePermission } from "../../middlewares/requireAdmin";
 
 const MAX_ROWS = 50_000;
@@ -69,26 +70,14 @@ const exportQuery = z
   })
   .strict();
 
-// RFC4180-ish CSV field escape. Quote when the field contains
-// comma, double-quote, CR, or LF. Doubled internal quotes.
+// Delegate to the shared safe-csv-cell helper. The audit export
+// is the highest-value target for formula injection — user_agent
+// is fully attacker-controlled via the request header, and the
+// JSON-stringified metadata can carry attacker emails / patient
+// ids. The shared helper applies both RFC 4180 quoting and the
+// `=+-@\t\r` formula-injection prefix neutralisation.
 function csvField(v: unknown): string {
-  if (v === null || v === undefined) return "";
-  let s: string;
-  if (v instanceof Date) {
-    s = v.toISOString();
-  } else if (typeof v === "object") {
-    try {
-      s = JSON.stringify(v);
-    } catch {
-      s = "";
-    }
-  } else {
-    s = String(v);
-  }
-  if (/[",\r\n]/.test(s)) {
-    return `"${s.replace(/"/g, '""')}"`;
-  }
-  return s;
+  return safeCsvCell(v);
 }
 
 function csvRow(fields: ReadonlyArray<unknown>): string {

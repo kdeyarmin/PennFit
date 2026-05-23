@@ -149,5 +149,12 @@ export function useDocumentMeta(opts: UseDocumentMetaOptions): void {
         }
       }
     };
-  }, [ogKey, jsonLdKey, openGraph, jsonLd]);
+    // Deps: the stringified keys (ogKey, jsonLdKey) ARE the meaningful
+    // identity of the meta state — they were computed precisely to
+    // make this effect cheap to re-run only when content changes.
+    // Including the raw `openGraph` / `jsonLd` object refs forced a
+    // re-run on every render that produced a new object literal
+    // upstream (which most PDPs do), thrashing the <head> nodes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ogKey, jsonLdKey]);
 }

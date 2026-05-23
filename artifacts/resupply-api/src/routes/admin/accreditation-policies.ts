@@ -59,6 +59,7 @@ type AccreditationPolicyUpdate =
   Database["resupply"]["Tables"]["accreditation_policies"]["Update"];
 
 import { logger } from "../../lib/logger";
+import { safeCsvCell } from "../../lib/safe-csv-cell";
 import {
   requireAdmin,
   requireAdminOnly,
@@ -715,15 +716,10 @@ router.get(
 );
 
 // Escape a CSV cell — quote on any character that would otherwise
-// confuse a parser (comma, quote, newline). Mirrors the helper
-// used in audit/export.ts.
+// Delegates to the shared safe-csv-cell helper for RFC 4180 quoting
+// + formula-injection neutralisation (Excel `=`/`+`/`-`/`@`).
 function csvCell(value: unknown): string {
-  if (value == null) return "";
-  const s = String(value);
-  if (/[",\n\r]/.test(s)) {
-    return `"${s.replace(/"/g, '""')}"`;
-  }
-  return s;
+  return safeCsvCell(value);
 }
 
 // Thin helper for the binder summary — runs a head-only count with
