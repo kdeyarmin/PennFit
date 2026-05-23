@@ -58,6 +58,7 @@ import {
 import { getAnthropicClient } from "../llm-provider";
 import { logger } from "../logger";
 import type { PendingSessionEntry } from "./pending-sessions";
+import { routeVoiceHandoffToCsrQueue } from "./post-call-handoff";
 import {
   summarizePostCall,
   type PostCallSummary,
@@ -612,6 +613,18 @@ async function runPostCallSummary(
       },
       "voice: post-call summary written",
     );
+
+    // Route the conversation into the CSR escalated-queue when the
+    // model flagged a handoff. The audit row above is the durable
+    // record; this is the routing — without it the flag sits in
+    // the audit log and no supervisor sees it in time.
+    if (summary.recommendsHandoff) {
+      await routeVoiceHandoffToCsrQueue({
+        conversationId: input.conversationId,
+        outcome: summary.outcome,
+        sentiment: summary.sentiment,
+      });
+    }
   } catch (err) {
     logger.warn(
       {
