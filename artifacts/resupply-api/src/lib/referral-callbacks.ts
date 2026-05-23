@@ -182,6 +182,37 @@ export function resolveTargetKind(source: string): ReferralTargetKind | null {
 }
 
 /**
+ * Find the inbound referral (if any) that materialised into `shopOrderId`
+ * via the accept route and enqueue a lifecycle callback. No-op when
+ * the order didn't originate from a referral.
+ *
+ * Used by the shop-orders ship + deliver mutators to fan out
+ * lifecycle events back to the EHR / Parachute partner that
+ * submitted the original DME order.
+ */
+export async function enqueueShopOrderLifecycleCallback(
+  shopOrderId: string,
+  eventType: ReferralLifecycleEvent,
+  extra?: Record<string, unknown>,
+): Promise<EnqueueOutcome | null> {
+  const supabase = getSupabaseServiceRoleClient();
+  const { data: referral } = await supabase
+    .schema("resupply")
+    .from("inbound_referral_orders")
+    .select("id")
+    .eq("accepted_order_id", shopOrderId)
+    .eq("accepted_order_kind", "shop_order")
+    .limit(1)
+    .maybeSingle();
+  if (!referral) return null;
+  return enqueueReferralStatusEvent({
+    referralId: referral.id,
+    eventType,
+    data: extra,
+  });
+}
+
+/**
  * Pure payload builder. Exposed for unit tests + so the worker can
  * regenerate a canonical payload if needed for a manual replay.
  */

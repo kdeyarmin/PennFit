@@ -610,6 +610,30 @@ router.patch(
       logger.warn({ err }, "inbound_referral.triage audit write failed");
     });
 
+    // When the CSR flipped status to `rejected`, fan out an
+    // order.rejected callback to the originating source. Other
+    // transitions are internal-only.
+    if (
+      fields.status === "rejected" &&
+      existing.triage_status !== "rejected"
+    ) {
+      await enqueueReferralStatusEvent({
+        referralId: params.data.id,
+        eventType: "order.rejected",
+        data: {
+          reason: fields.notes ?? null,
+        },
+      }).catch((err) => {
+        logger.warn(
+          {
+            referral_id: params.data.id,
+            err: err instanceof Error ? err.message : String(err),
+          },
+          "inbound_referral.reject.callback_enqueue_failed",
+        );
+      });
+    }
+
     res.status(200).json({ id: params.data.id, changed: true });
   },
 );
