@@ -513,11 +513,12 @@ describe("fetchEraFiles", () => {
 
 // ─── ingestEraFile ───────────────────────────────────────────────────
 
+const INGEST_INPUT = {
+  fileName: "835_test.edi",
+  payload: "ISA*00*...",
+};
+
 describe("ingestEraFile", () => {
-  const INGEST_INPUT = {
-    fileName: "835_test.edi",
-    payload: "ISA*00*...",
-  };
 
   test("posts to /resupply-api/admin/billing/era-ingest", async () => {
     fetchMock.mockResolvedValue({
