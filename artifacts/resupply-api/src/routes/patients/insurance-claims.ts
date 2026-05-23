@@ -457,7 +457,7 @@ router.patch(
     }
 
     if (b.status && b.status !== current.status) {
-      const allowed = VALID_TRANSITIONS[current.status] ?? [];
+      const allowed = VALID_TRANSITIONS[current.status as ClaimStatus] ?? [];
       if (!allowed.includes(b.status)) {
         res.status(409).json({
           error: "invalid_transition",

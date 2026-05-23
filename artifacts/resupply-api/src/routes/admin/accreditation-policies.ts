@@ -729,13 +729,12 @@ function csvCell(value: unknown): string {
 // Thin helper for the binder summary — runs a head-only count with
 // an optional refiner so each section's "open" sub-count is one
 // expression instead of three.
-type CountRefiner = (
-  q: ReturnType<
-    ReturnType<
-      ReturnType<typeof getSupabaseServiceRoleClient>["schema"]
-    >["from"]
-  >["select"],
-) => unknown;
+// PostgrestFilterBuilder is invariant in its Row generics so a narrow
+// per-table builder can't be assigned to a parameter typed as the
+// generic union. We accept `any` here; the call site casts the refined
+// builder back to `typeof q`.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type CountRefiner = (q: any) => any;
 async function countTable(
   supabase: ReturnType<typeof getSupabaseServiceRoleClient>,
   table:
