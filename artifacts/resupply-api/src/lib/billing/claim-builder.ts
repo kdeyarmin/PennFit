@@ -299,10 +299,10 @@ async function buildLineForSku(
   if (mapped) {
     return {
       hcpcsCode: mapped.hcpcs_code,
-      modifiers: (mapped.default_modifiers ?? "")
+      modifiers: ((mapped.default_modifiers ?? "") as string)
         .split(",")
-        .map((m) => m.trim())
-        .filter((m) => m.length === 2),
+        .map((m: string) => m.trim())
+        .filter((m: string) => m.length === 2),
       description: mapped.description,
       quantity: quantity * mapped.units_per_dispense,
       billedCents: mapped.default_billed_cents ?? 0,
@@ -412,10 +412,10 @@ async function applyPayerModifierRules(
   const mods: string[] = [];
   for (const rule of rules ?? []) {
     if (!ruleApplies(rule.condition, ctx)) continue;
-    const parsed = rule.modifiers_csv
+    const parsed = (rule.modifiers_csv as string)
       .split(",")
-      .map((m) => m.trim().toUpperCase())
-      .filter((m) => m.length === 2);
+      .map((m: string) => m.trim().toUpperCase())
+      .filter((m: string) => m.length === 2);
     for (const m of parsed) if (!mods.includes(m)) mods.push(m);
   }
   return mods;

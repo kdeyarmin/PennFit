@@ -200,6 +200,21 @@ router.get(
 
 type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
 
+// Structural model of the chainable PostgREST filter builder that
+// callers of `groupedCount` build up. Spelling out the upstream
+// generic chain from `@supabase/postgrest-js` doesn't survive the
+// per-table union types and ends up costing more readability than
+// it buys safety — the methods used here all collapse to the same
+// runtime contract regardless of generics.
+type PostgrestQuery = {
+  eq(column: string, value: string): PostgrestQuery;
+  gte(column: string, value: string): PostgrestQuery;
+  lte(column: string, value: string): PostgrestQuery;
+  in(column: string, values: readonly string[]): PostgrestQuery;
+  not(column: string, operator: string, value: unknown): PostgrestQuery;
+  limit(count: number): Promise<{ data: unknown; error: unknown }>;
+};
+
 /**
  * Count rows per attribution column across a set of admin ids.
  *
@@ -222,17 +237,22 @@ async function groupedCount(
     | "resolved_by_user_id"
     | "completed_by_user_id",
   adminIds: string[],
-  refine: (
-    q: ReturnType<
-      ReturnType<SupabaseClient["schema"]>["from"]
-    >["select"],
-  ) => unknown,
+  // The PostgREST filter builder's generic chain is too deep to spell
+  // out usefully here — every caller chains `.eq` / `.gte` / `.lte` /
+  // `.in` / `.not` against the same select query. The runtime contract
+  // is "any chainable PostgREST filter builder," which we model as the
+  // builder type using a `Parameters` inference trick: the parameter
+  // shape is whatever `base.in(…)` happens to return.
+  refine: (q: PostgrestQuery) => PostgrestQuery,
 ): Promise<Map<string, number>> {
   const counts = new Map<string, number>();
   if (adminIds.length === 0) return counts;
 
-  const base = supabase.schema("resupply").from(table).select(attributionCol);
-  const refined = refine(base.in(attributionCol, adminIds)) as typeof base;
+  const base = supabase
+    .schema("resupply")
+    .from(table)
+    .select(attributionCol) as unknown as PostgrestQuery;
+  const refined = refine(base.in(attributionCol, adminIds));
   // Cap defensively. The signals we count are events, not the full
   // tables — even a busy CSR's 30-day window of follow-ups is in the
   // low hundreds.
