@@ -93,7 +93,7 @@ router.get(
       .schema("resupply")
       .from("fitter_leads")
       .select(
-        "id, email, phone_e164, sms_opt_in, marketing_opt_in, source, journey_stage, recommended_mask_id, recommended_mask_name, recommended_mask_type, first_name, campaign_touch_count, last_campaign_touch_at, next_campaign_touch_at, first_order_id, first_order_placed_at, unsubscribed_at, completed_at, created_at, engagement_score, hot_lead_at, click_count, csr_contacted_at, csr_contacted_by, last_open_at, last_click_at",
+        "id, email, phone_e164, sms_opt_in, marketing_opt_in, source, journey_stage, recommended_mask_id, recommended_mask_name, recommended_mask_type, first_name, campaign_touch_count, last_campaign_touch_at, next_campaign_touch_at, first_order_id, first_order_placed_at, unsubscribed_at, completed_at, created_at, engagement_score, hot_lead_at, click_count, csr_contacted_at, csr_contacted_by, last_open_at, last_click_at, csr_notes, cold_skipped_at",
       )
       // Hot leads sort to the top when present (CSR outreach queue);
       // otherwise most-recently-completed first; falls back to
@@ -248,6 +248,8 @@ router.get(
         csrContactedBy: r.csr_contacted_by,
         lastOpenAt: r.last_open_at,
         lastClickAt: r.last_click_at,
+        csrNotes: r.csr_notes,
+        coldSkippedAt: r.cold_skipped_at,
       })),
       counts,
       conversionRate,
@@ -357,6 +359,76 @@ router.post(
   },
 );
 
+// POST /admin/fitter-leads/:id/notes — set / replace the CSR
+// free-text notes on a lead. Mig 0156.
+//
+// One field, one shape: the full note replaces whatever was there
+// before. No edit history (intentional — this is operator
+// scratchpad, not an audit log). Cleared by posting "" (empty
+// string) or null.
+const notesBody = z
+  .object({
+    notes: z
+      .string()
+      .trim()
+      .max(2000)
+      .nullish()
+      .transform((v) => (v === undefined || v === null || v === "" ? null : v)),
+  })
+  .strict();
+
+router.post(
+  "/admin/fitter-leads/:id/notes",
+  requirePermission("conversations.manage"),
+  adminRateLimit({ name: "fitter_leads.notes", preset: "mutation" }),
+  async (req, res) => {
+    const idParam = req.params.id;
+    if (typeof idParam !== "string" || !ID_RE.test(idParam)) {
+      res.status(400).json({ error: "invalid_id" });
+      return;
+    }
+    const parse = notesBody.safeParse(req.body);
+    if (!parse.success) {
+      res.status(400).json({
+        error: "invalid_body",
+        issues: parse.error.issues.map((i) => ({
+          path: i.path.join("."),
+          message: i.message,
+        })),
+      });
+      return;
+    }
+
+    const supabase = getSupabaseServiceRoleClient();
+    const { data: row, error } = await supabase
+      .schema("resupply")
+      .from("fitter_leads")
+      .update({ csr_notes: parse.data.notes })
+      .eq("id", idParam)
+      .select("id, csr_notes")
+      .maybeSingle();
+    if (error) throw error;
+    if (!row) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+
+    req.log?.info?.(
+      {
+        leadId: row.id,
+        actor: req.adminEmail ?? null,
+        cleared: parse.data.notes === null,
+      },
+      "admin/fitter-leads: notes updated",
+    );
+
+    res.json({
+      id: row.id,
+      csrNotes: row.csr_notes,
+    });
+  },
+);
+
 // GET /admin/fitter-leads/metrics — per-touch send/open/click
 // aggregates pulled from the fitter_campaign_touch_metrics view
 // (mig 0155). One row per touch_index 1..11 even when the touch
@@ -406,6 +478,53 @@ router.get(
   },
 );
 
+// GET /admin/fitter-leads/metrics/variants — per-(touch, subject
+// variant) breakdown. Sibling of the touch-rollup endpoint above;
+// used by the admin UI's "expand for variants" affordance on
+// touches that are running an A/B test. Returns rows only for
+// (touch, variant) combinations that have actually shipped — the
+// composer-side SUBJECT_VARIANTS registry is the source of truth
+// for "which touches are testing what."
+router.get(
+  "/admin/fitter-leads/metrics/variants",
+  requirePermission("conversations.manage"),
+  async (req, res) => {
+    const supabase = getSupabaseServiceRoleClient();
+    const { data: rows, error } = await supabase
+      .schema("resupply")
+      .from("fitter_campaign_touch_variant_metrics")
+      .select(
+        "touch_index, subject_variant_key, email_sends, email_failures, opens, clicks",
+      )
+      .order("touch_index", { ascending: true })
+      .order("subject_variant_key", { ascending: true });
+    if (error) throw error;
+
+    req.log?.info?.(
+      { rowCount: rows?.length ?? 0 },
+      "admin/fitter-leads/metrics/variants: list",
+    );
+
+    res.json({
+      variants: (rows ?? []).map((r) => {
+        const sends = r.email_sends ?? 0;
+        const opens = r.opens ?? 0;
+        const clicks = r.clicks ?? 0;
+        return {
+          touchIndex: r.touch_index,
+          subjectVariantKey: r.subject_variant_key,
+          emailSends: sends,
+          emailFailures: r.email_failures ?? 0,
+          opens,
+          clicks,
+          openRate: sends > 0 ? opens / sends : 0,
+          clickRate: sends > 0 ? clicks / sends : 0,
+        };
+      }),
+    });
+  },
+);
+
 // GET /admin/fitter-leads/:id/timeline — chronological event log
 // for CSR call-prep. Pulls from fitter_campaign_touches +
 // fitter_campaign_clicks + the lead row's lifecycle columns, then
@@ -432,7 +551,7 @@ router.get(
         .schema("resupply")
         .from("fitter_leads")
         .select(
-          "id, email, first_name, journey_stage, created_at, completed_at, unsubscribed_at, csr_contacted_at, csr_contacted_by, hot_lead_at, first_order_placed_at, last_open_at, last_click_at, recommended_mask_name",
+          "id, email, first_name, journey_stage, created_at, completed_at, unsubscribed_at, csr_contacted_at, csr_contacted_by, hot_lead_at, first_order_placed_at, last_open_at, last_click_at, recommended_mask_name, cold_skipped_at",
         )
         .eq("id", idParam)
         .maybeSingle(),
@@ -524,6 +643,13 @@ router.get(
         ts: lead.hot_lead_at,
         kind: "hot_flipped",
         label: "Flipped to hot lead",
+      });
+    }
+    if (lead.cold_skipped_at) {
+      events.push({
+        ts: lead.cold_skipped_at,
+        kind: "cold_skipped",
+        label: "T5+T6 cold-skipped — fast-forwarded to T11",
       });
     }
     if (lead.csr_contacted_at) {

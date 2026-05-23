@@ -560,6 +560,9 @@ export interface Database {
           // Mig 0155 — per-lead engagement recency.
           last_open_at: string | null;
           last_click_at: string | null;
+          // Mig 0156 — CSR free-text notes + cold-skip marker.
+          csr_notes: string | null;
+          cold_skipped_at: string | null;
         };
         Insert: Partial<Database["resupply"]["Tables"]["fitter_leads"]["Row"]>;
         Update: Partial<Database["resupply"]["Tables"]["fitter_leads"]["Row"]>;
@@ -581,6 +584,9 @@ export interface Database {
           open_count: number;
           first_opened_at: string | null;
           last_opened_at: string | null;
+          // Mig 0157 — A/B subject-line variant key assigned at
+          // send time. Default 'A' covers single-variant touches.
+          subject_variant_key: string;
         };
         Insert: Partial<
           Database["resupply"]["Tables"]["fitter_campaign_touches"]["Row"]
@@ -599,6 +605,10 @@ export interface Database {
           link_key: string;
           clicked_at: string;
           submitter_ip: string | null;
+          // Mig 0157 — A/B subject-line variant assigned at the
+          // email send that originated this click. Carried through
+          // the signed click token so attribution is automatic.
+          subject_variant_key: string;
         };
         Insert: Partial<
           Database["resupply"]["Tables"]["fitter_campaign_clicks"]["Row"]
@@ -3813,6 +3823,19 @@ export interface Database {
           opens: number;
           sms_sends: number;
           sms_failures: number;
+          clicks: number;
+        };
+      };
+      // Mig 0157 — same shape but broken out per subject-line
+      // variant. One row per (touch_index, subject_variant_key)
+      // actually-shipped combination.
+      fitter_campaign_touch_variant_metrics: {
+        Row: {
+          touch_index: number;
+          subject_variant_key: string;
+          email_sends: number;
+          email_failures: number;
+          opens: number;
           clicks: number;
         };
       };
