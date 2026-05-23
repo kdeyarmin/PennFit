@@ -43,6 +43,20 @@ import {
 // ── Supabase mock ────────────────────────────────────────────────────
 const supabaseMock = installSupabaseMock();
 
+// ── roleHasPermission spy ─────────────────────────────────────────────
+// Every current AdminRole maps to an effective bucket that already
+// holds `conversations.manage`, so the requirePermission gate can't
+// produce a 403 with a real role. The spy lets individual tests force
+// false for one call to exercise the 403 path without inventing a
+// non-existent role.
+const roleHasPermissionMock = vi.hoisted(() => vi.fn());
+vi.mock("@workspace/resupply-auth", async (importOriginal) => {
+  const original =
+    await importOriginal<typeof import("@workspace/resupply-auth")>();
+  roleHasPermissionMock.mockImplementation(original.roleHasPermission);
+  return { ...original, roleHasPermission: roleHasPermissionMock };
+});
+
 // ── requireAdmin / requirePermission mock ────────────────────────────
 const { mockAdmin } = vi.hoisted(() => ({
   mockAdmin: { current: null as MockAdminCtx | null },
@@ -124,6 +138,7 @@ beforeEach(() => {
   supabaseMock.reset();
   logAuditMock.mockClear();
   signClinicianShareTokenMock.mockClear();
+  roleHasPermissionMock.mockClear();
 });
 
 // ────────────────────────────────────────────────────────────────────
@@ -136,6 +151,18 @@ describe("POST /admin/inbound-referrals/:id/share-tokens", () => {
       `/admin/inbound-referrals/${REFERRAL_ID}/share-tokens`,
     );
     expect(res.status).toBe(401);
+  });
+
+  it("returns 403 when admin lacks conversations.manage permission", async () => {
+    // All current roles have conversations.manage; use the spy to
+    // simulate a role that lacks it so the gate can actually fire.
+    roleHasPermissionMock.mockReturnValueOnce(false);
+    stubAdmin("csr");
+    const res = await request(makeApp())
+      .post(`/admin/inbound-referrals/${REFERRAL_ID}/share-tokens`)
+      .send({});
+    expect(res.status).toBe(403);
+    expect(res.body.error).toBe("permission_denied");
   });
 
   it("returns 404 when referral id is not a valid UUID", async () => {
@@ -358,6 +385,14 @@ describe("DELETE /admin/inbound-referrals/:id/share-tokens/:shareTokenId", () =>
   it("returns 401 when unauthenticated", async () => {
     const res = await request(makeApp()).delete(deleteUrl);
     expect(res.status).toBe(401);
+  });
+
+  it("returns 403 when admin lacks conversations.manage permission", async () => {
+    roleHasPermissionMock.mockReturnValueOnce(false);
+    stubAdmin("csr");
+    const res = await request(makeApp()).delete(deleteUrl);
+    expect(res.status).toBe(403);
+    expect(res.body.error).toBe("permission_denied");
   });
 
   it("returns 404 when referral id param is not a UUID", async () => {
