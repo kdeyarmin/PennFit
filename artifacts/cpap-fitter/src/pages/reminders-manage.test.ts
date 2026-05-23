@@ -137,7 +137,7 @@ describe("reminders-manage — buildState helper structure", () => {
 // ---------------------------------------------------------------------------
 // Regression: core page behaviour still present
 // ---------------------------------------------------------------------------
-describe.skip("reminders-manage — regression: core manage behaviour intact", () => {
+describe("reminders-manage — regression: core manage behaviour intact", () => {
   it("shows a 'Manage link missing' card when no token is present", () => {
     expect(SRC).toContain("Manage link missing");
   });
