@@ -222,36 +222,21 @@ describe("formatDate — edge dates", () => {
 // ---------------------------------------------------------------------------
 // Static check: formatDate options use bareword keys (not quoted keys)
 // ---------------------------------------------------------------------------
-// This test was updated in the PR to use regex patterns instead of quoted-key
-// string checks. The assertions below reinforce that the source uses JS object
-// shorthand (bareword keys) which the original toContain('"year"') would
-// have incorrectly matched against any key named "year" with quotation marks.
+// Keep structure/key-presence assertions in the earlier formatDate structure
+// describe. This section is only for the style-specific invariant: the
+// toLocaleDateString options object should not use quoted property keys.
 
 describe("admin-shop-inventory-reconcile — formatDate option key style", () => {
-  it("year option key is written as a bareword identifier (year:), not quoted", () => {
-    // Quoted key: { "year": "numeric" } — old style that the original test checked.
-    // Bareword key: { year: "numeric" } — current style.
-    expect(SRC).toMatch(/\byear:\s*["']/);
-  });
-
-  it("month option key is written as a bareword identifier (month:), not quoted", () => {
-    expect(SRC).toMatch(/\bmonth:\s*["']/);
-  });
-
-  it("day option key is written as a bareword identifier (day:), not quoted", () => {
-    expect(SRC).toMatch(/\bday:\s*["']/);
-  });
-
-  it("all three option keys appear within the same toLocaleDateString call", () => {
-    // Find the toLocaleDateString call and verify all three keys are within
-    // a reasonable character window of it.
+  it("uses bareword option keys instead of quoted keys in the toLocaleDateString options object", () => {
     const callIdx = SRC.indexOf("toLocaleDateString");
     expect(callIdx).toBeGreaterThan(-1);
-    // The options object follows the call — look 200 chars ahead.
+
+    // The options object follows the call — inspect a small window around it
+    // for quoted-key spellings that should not appear.
     const optionsBlock = SRC.slice(callIdx, callIdx + 200);
-    expect(optionsBlock).toMatch(/\byear:/);
-    expect(optionsBlock).toMatch(/\bmonth:/);
-    expect(optionsBlock).toMatch(/\bday:/);
+    expect(optionsBlock).not.toMatch(/["']year["']\s*:/);
+    expect(optionsBlock).not.toMatch(/["']month["']\s*:/);
+    expect(optionsBlock).not.toMatch(/["']day["']\s*:/);
   });
 
   it("year value is the string 'numeric'", () => {
