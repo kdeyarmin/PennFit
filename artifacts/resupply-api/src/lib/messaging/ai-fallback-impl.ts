@@ -84,14 +84,24 @@ const SYSTEM_PROMPT = [
   "           (814) 471-0627 Mon-Fri 9-5 ET.\"",
   "   unknown → \"Thanks for writing — a teammate will follow up shortly.\"",
   "",
-  'OUTPUT STRICT JSON: { "intent": "confirm"|"decline"|"edit_address"|"stop"|"help"|"unknown", "reply": "..." }',
+  "3) REPORT YOUR CONFIDENCE in the classification as a number between",
+  "   0 and 1. Use ~0.95+ when the patient's reply is unambiguous (\"yes",
+  "   ship it\", \"STOP\", a clean address). Use ~0.6 when the reply is",
+  "   plausible but ambiguous (\"sure I guess\", a one-word reply that",
+  "   could mean two things). Use ~0.3 when you're guessing. The action-",
+  "   taking intents (confirm/decline/edit_address) are only honored when",
+  "   confidence is high; low-confidence classifications get routed to a",
+  "   human, so it is safer to report your honest doubt than to inflate.",
+  "",
+  'OUTPUT STRICT JSON: { "intent": "confirm"|"decline"|"edit_address"|"stop"|"help"|"unknown", "reply": "...", "confidence": 0.0..1.0 }',
   "",
   "RULES:",
   "- NEVER include the patient's name, address, date of birth, phone, or",
   "  any other identifying detail in `reply` even if it appeared in the",
   "  inbound text.",
   "- NEVER make up clinical or medical information.",
-  "- When unsure, intent=unknown with a polite handoff reply.",
+  "- When unsure, intent=unknown with a polite handoff reply and",
+  "  confidence near 0.3.",
   "- Output JSON ONLY. No prose, no markdown fences.",
 ].join("\n");
 
@@ -344,13 +354,29 @@ function buildUserPrompt(input: AiFallbackInput): string {
 
 function parseModelOutput(content: string): AiFallbackResult {
   try {
-    const parsed = JSON.parse(content) as { intent?: unknown; reply?: unknown };
+    const parsed = JSON.parse(content) as {
+      intent?: unknown;
+      reply?: unknown;
+      confidence?: unknown;
+    };
     const intent = isValidIntent(parsed.intent) ? parsed.intent : "unknown";
     const reply =
       typeof parsed.reply === "string" && parsed.reply.length > 0
         ? truncate(parsed.reply, 200)
         : undefined;
-    return reply ? { intent, reply } : { intent };
+    // Confidence is optional on the wire — a model that omits the field
+    // (older fine-tune, malformed output) should not poison the result.
+    // The route handler treats `undefined` as "no signal" and uses the
+    // strictest interpretation (= dispatch only on the non-action
+    // intents). Clamp to [0,1] in case the model overshoots.
+    const confidence =
+      typeof parsed.confidence === "number" && Number.isFinite(parsed.confidence)
+        ? Math.max(0, Math.min(1, parsed.confidence))
+        : undefined;
+    const base: AiFallbackResult = { intent };
+    if (reply) base.reply = reply;
+    if (confidence !== undefined) base.confidence = confidence;
+    return base;
   } catch {
     return { intent: "unknown" };
   }
@@ -402,6 +428,7 @@ function logClassification(
       had_thread: (input.thread?.length ?? 0) > 0,
       thread_size: input.thread?.length ?? 0,
       replied: typeof result.reply === "string" && result.reply.length > 0,
+      confidence: result.confidence ?? null,
     },
     "ai-fallback: classified",
   );
