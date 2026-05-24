@@ -29,6 +29,7 @@ import type PgBoss from "pg-boss";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
+import { buildQueueConfig, CRON_SCAN_QUEUE_OPTS } from "../lib/queue-options";
 
 const PRUNE_JOB = "idempotency-keys.prune";
 const PRUNE_CRON = "7 2 * * *";
@@ -36,7 +37,7 @@ const PRUNE_CRON = "7 2 * * *";
 export async function registerIdempotencyKeysPruneJob(
   boss: PgBoss,
 ): Promise<void> {
-  await boss.createQueue(PRUNE_JOB);
+  await boss.createQueue(PRUNE_JOB, buildQueueConfig(PRUNE_JOB, CRON_SCAN_QUEUE_OPTS));
 
   await boss.work(PRUNE_JOB, async () => {
     const supabase = getSupabaseServiceRoleClient();

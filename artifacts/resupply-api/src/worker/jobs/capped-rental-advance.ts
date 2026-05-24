@@ -4,6 +4,7 @@ import type PgBoss from "pg-boss";
 
 import { runCappedRentalAdvance } from "../../lib/billing/capped-rental-advancer";
 import { logger } from "../../lib/logger";
+import { buildQueueConfig, CRON_SCAN_QUEUE_OPTS } from "../lib/queue-options";
 
 const JOB = "capped-rental.advance";
 const CRON = "29 5 * * *"; // 05:29 UTC daily
@@ -11,7 +12,7 @@ const CRON = "29 5 * * *"; // 05:29 UTC daily
 export async function registerCappedRentalAdvanceJob(
   boss: PgBoss,
 ): Promise<void> {
-  await boss.createQueue(JOB);
+  await boss.createQueue(JOB, buildQueueConfig(JOB, CRON_SCAN_QUEUE_OPTS));
   await boss.work(JOB, async () => {
     try {
       const stats = await runCappedRentalAdvance();

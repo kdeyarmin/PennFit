@@ -8,12 +8,13 @@ import type PgBoss from "pg-boss";
 
 import { runAutoWorkflowPass } from "../../lib/billing/auto-workflow-engine";
 import { logger } from "../../lib/logger";
+import { buildQueueConfig, CRON_SCAN_QUEUE_OPTS } from "../lib/queue-options";
 
 const JOB = "billing.auto-workflow";
 const CRON = "*/5 * * * *";
 
 export async function registerAutoWorkflowJob(boss: PgBoss): Promise<void> {
-  await boss.createQueue(JOB);
+  await boss.createQueue(JOB, buildQueueConfig(JOB, CRON_SCAN_QUEUE_OPTS));
   await boss.work(JOB, async () => {
     try {
       const stats = await runAutoWorkflowPass();

@@ -44,6 +44,7 @@ import {
 type FitterLeadsUpdate = Database["resupply"]["Tables"]["fitter_leads"]["Update"];
 
 import { logger } from "../../lib/logger";
+import { buildQueueConfig, CRON_SCAN_QUEUE_OPTS } from "../lib/queue-options";
 
 const JOB_NAME = "fitter-lead.attribution";
 /** Hourly at :29 — clear of the campaign dispatcher (:43). */
@@ -264,7 +265,7 @@ export async function registerFitterConversionAttributionJob(
     );
     return;
   }
-  await boss.createQueue(JOB_NAME);
+  await boss.createQueue(JOB_NAME, buildQueueConfig(JOB_NAME, CRON_SCAN_QUEUE_OPTS));
   await boss.work(JOB_NAME, async () => {
     try {
       const stats = await runFitterConversionAttribution();

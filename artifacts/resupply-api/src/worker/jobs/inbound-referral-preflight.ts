@@ -40,6 +40,7 @@ import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { runReferralPreflight } from "../../lib/inbound-dispatchers/preflight";
 import { logger } from "../../lib/logger";
+import { buildQueueConfig, VENDOR_SEND_QUEUE_OPTS } from "../lib/queue-options";
 
 const JOB = "inbound-referral.preflight";
 const CRON = "*/5 * * * *"; // every 5 minutes
@@ -109,7 +110,7 @@ export async function runInboundReferralPreflightTick(): Promise<PreflightTickSt
 export async function registerInboundReferralPreflightJob(
   boss: PgBoss,
 ): Promise<void> {
-  await boss.createQueue(JOB);
+  await boss.createQueue(JOB, buildQueueConfig(JOB, VENDOR_SEND_QUEUE_OPTS));
   await boss.work(JOB, async () => {
     try {
       const stats = await runInboundReferralPreflightTick();
