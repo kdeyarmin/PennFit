@@ -8,8 +8,9 @@
 > `.from("audit_log")` call as a bug. The four historical readers
 > (delivery-failures system-events, feature-flag activity, CSR
 > productivity, PHI-sweep status) have been short-circuited to return
-> empty payloads with `unavailable: true` so the SPA can render a
-> "no longer tracked" notice instead of failing silently.
+> their existing endpoint-specific "unavailable"/"no longer tracked"
+> stub shapes (for example, not every reader uses `{ unavailable: true }`)
+> so the SPA can render a notice instead of failing silently.
 
 ## Historical reference
 
