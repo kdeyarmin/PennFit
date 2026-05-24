@@ -56,7 +56,7 @@ export function buildQueueConfig(
   preset: Omit<PgBossQueue, "name">,
   overrides?: Partial<Omit<PgBossQueue, "name">>,
 ): PgBossQueue {
-  return { name, ...preset, ...overrides, deadLetter: `${name}.dlq` };
+  return { name, ...preset, deadLetter: `${name}.dlq`, ...overrides };
 }
 
 /**
