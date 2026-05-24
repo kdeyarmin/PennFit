@@ -261,4 +261,203 @@ describe("summarizePostCall", () => {
     expect(capturedBody).toContain("patient:");
     expect(capturedBody).toContain("agent:");
   });
+
+  // -------------------------------------------------------------------------
+  // PR change: per-item char cap (DEFAULT_LIST_ITEM_CHAR_CAP = 300)
+  // -------------------------------------------------------------------------
+
+  it("truncates individual concerns/followUps items that exceed 300 chars and appends '…'", async () => {
+    const longItem = "x".repeat(400); // 400 chars — exceeds the 300-char cap
+    const client = makeClient(
+      JSON.stringify({
+        outcome: "Routine call.",
+        sentiment: "neutral",
+        concerns: [longItem],
+        followUps: [longItem],
+        recommendsHandoff: false,
+      }),
+    );
+    const result = await summarizePostCall({
+      client,
+      turns: SAMPLE_TURNS,
+      practiceName: "PennPaps",
+      endReason: "twilio-stop",
+    });
+    expect(result).not.toBeNull();
+    // Each item should be capped at 300 chars + the "…" ellipsis.
+    expect(result!.concerns[0]).toHaveLength(301); // 300 chars + 1 for "…"
+    expect(result!.concerns[0]).toMatch(/…$/);
+    expect(result!.followUps[0]).toHaveLength(301);
+    expect(result!.followUps[0]).toMatch(/…$/);
+  });
+
+  it("does NOT truncate items that are exactly 300 chars (boundary)", async () => {
+    const exactItem = "a".repeat(300);
+    const client = makeClient(
+      JSON.stringify({
+        outcome: "Boundary check.",
+        sentiment: "neutral",
+        concerns: [exactItem],
+        followUps: [],
+        recommendsHandoff: false,
+      }),
+    );
+    const result = await summarizePostCall({
+      client,
+      turns: SAMPLE_TURNS,
+      practiceName: "PennPaps",
+      endReason: "twilio-stop",
+    });
+    // Exactly 300 chars — no truncation, no "…".
+    expect(result!.concerns[0]).toBe(exactItem);
+    expect(result!.concerns[0]).not.toMatch(/…$/);
+  });
+
+  it("does NOT truncate items that are 299 chars (one under boundary)", async () => {
+    const shortItem = "b".repeat(299);
+    const client = makeClient(
+      JSON.stringify({
+        outcome: "Sub-boundary check.",
+        sentiment: "neutral",
+        concerns: [shortItem],
+        followUps: [],
+        recommendsHandoff: false,
+      }),
+    );
+    const result = await summarizePostCall({
+      client,
+      turns: SAMPLE_TURNS,
+      practiceName: "PennPaps",
+      endReason: "twilio-stop",
+    });
+    expect(result!.concerns[0]).toBe(shortItem);
+  });
+
+  it("applies the char cap before the 20-item array cap (not after)", async () => {
+    // Both caps must coexist: 21 items, each 400 chars. After applying
+    // the char cap we should have exactly 20 items, each truncated to 301.
+    const longArr = Array.from({ length: 21 }, () => "c".repeat(400));
+    const client = makeClient(
+      JSON.stringify({
+        outcome: "Both caps applied.",
+        sentiment: "neutral",
+        concerns: longArr,
+        followUps: [],
+        recommendsHandoff: false,
+      }),
+    );
+    const result = await summarizePostCall({
+      client,
+      turns: SAMPLE_TURNS,
+      practiceName: "PennPaps",
+      endReason: "twilio-stop",
+    });
+    expect(result!.concerns).toHaveLength(20);
+    expect(result!.concerns[0]).toHaveLength(301);
+  });
+
+  // -------------------------------------------------------------------------
+  // PR change: turn truncation logging (>80 turns drops oldest turns)
+  // -------------------------------------------------------------------------
+
+  it("handles more than 80 turns by keeping only the most recent 80", async () => {
+    // Generate 100 turns, alternating input/output. The summary must
+    // succeed (not crash or return null) even with >80 turns.
+    const manyTurns: TurnForSummary[] = Array.from({ length: 100 }, (_, i) => ({
+      source: i % 2 === 0 ? "output" : "input",
+      text: `Turn ${i}`,
+    }));
+    let capturedBody = "";
+    const client = createAnthropicClient({
+      apiKey: VALID_KEY,
+      fetchImpl: async (_url, init) => {
+        capturedBody =
+          typeof init?.body === "string" ? init.body : String(init?.body ?? "");
+        return new Response(
+          JSON.stringify({
+            id: "msg_truncation",
+            type: "message",
+            role: "assistant",
+            model: "claude-sonnet-4-6",
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify({
+                  outcome: "Truncation test passed.",
+                  sentiment: "neutral",
+                  concerns: [],
+                  followUps: [],
+                  recommendsHandoff: false,
+                }),
+              },
+            ],
+            stop_reason: "end_turn",
+            usage: { input_tokens: 10, output_tokens: 5 },
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      },
+    });
+    const result = await summarizePostCall({
+      client,
+      turns: manyTurns,
+      practiceName: "PennPaps",
+      endReason: "twilio-stop",
+      conversationId: "conv_truncation_test",
+    });
+    expect(result).not.toBeNull();
+    expect(result!.outcome).toBe("Truncation test passed.");
+    // The last turn ("Turn 99") must be in the prompt; the first turn
+    // ("Turn 0") must NOT be (it was among the 20 oldest that were dropped).
+    expect(capturedBody).toContain("Turn 99");
+    expect(capturedBody).not.toContain("Turn 0");
+  });
+
+  it("does not truncate when turn count is exactly 80 (boundary)", async () => {
+    const exactTurns: TurnForSummary[] = Array.from({ length: 80 }, (_, i) => ({
+      source: i % 2 === 0 ? "output" : "input",
+      text: `Exact turn ${i}`,
+    }));
+    let capturedBody = "";
+    const client = createAnthropicClient({
+      apiKey: VALID_KEY,
+      fetchImpl: async (_url, init) => {
+        capturedBody =
+          typeof init?.body === "string" ? init.body : String(init?.body ?? "");
+        return new Response(
+          JSON.stringify({
+            id: "msg_exact",
+            type: "message",
+            role: "assistant",
+            model: "claude-sonnet-4-6",
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify({
+                  outcome: "Exact-80 boundary.",
+                  sentiment: "neutral",
+                  concerns: [],
+                  followUps: [],
+                  recommendsHandoff: false,
+                }),
+              },
+            ],
+            stop_reason: "end_turn",
+            usage: { input_tokens: 10, output_tokens: 5 },
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      },
+    });
+    const result = await summarizePostCall({
+      client,
+      turns: exactTurns,
+      practiceName: "PennPaps",
+      endReason: "twilio-stop",
+    });
+    expect(result).not.toBeNull();
+    // All 80 turns are within the cap — the first turn must appear.
+    expect(capturedBody).toContain("Exact turn 0");
+    expect(capturedBody).toContain("Exact turn 79");
+  });
 });

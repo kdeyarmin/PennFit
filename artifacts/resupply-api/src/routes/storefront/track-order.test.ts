@@ -351,3 +351,106 @@ describe("POST /orders/track — rate limiting", () => {
     expect(res.body.error).toBe("rate_limited");
   });
 });
+
+// ===========================================================================
+// PR change: mask_model_number included in response (previously omitted)
+// ===========================================================================
+describe("POST /orders/track — mask.modelNumber (PR change)", () => {
+  it("returns mask.modelNumber when the row carries a model number", async () => {
+    stageSupabaseResponse("orders", "select", {
+      data: {
+        order_reference: "PENN-AB1234",
+        patient_email: "alice@example.com",
+        mask_name: "AirFit P10",
+        mask_manufacturer: "ResMed",
+        mask_model_number: "63600",
+        email_status: "delivered",
+        email_delivered_at: "2026-04-01T12:00:00Z",
+        created_at: "2026-04-01T10:00:00Z",
+      },
+    });
+
+    const res = await request(makeApp())
+      .post("/resupply-api/orders/track")
+      .send({ orderReference: "AB1234", email: "alice@example.com" });
+
+    expect(res.status).toBe(200);
+    expect(res.body.mask.modelNumber).toBe("63600");
+  });
+
+  it("returns mask.modelNumber as null when the DB column is null", async () => {
+    stageSupabaseResponse("orders", "select", {
+      data: {
+        order_reference: "PENN-AB1234",
+        patient_email: "alice@example.com",
+        mask_name: "AirFit P10",
+        mask_manufacturer: "ResMed",
+        mask_model_number: null,
+        email_status: "sent",
+        email_delivered_at: null,
+        created_at: "2026-04-01T10:00:00Z",
+      },
+    });
+
+    const res = await request(makeApp())
+      .post("/resupply-api/orders/track")
+      .send({ orderReference: "AB1234", email: "alice@example.com" });
+
+    expect(res.status).toBe(200);
+    // The field should be present (not omitted) so callers can distinguish
+    // null (no model number stored) from missing (field not returned at all).
+    expect(res.body.mask).toHaveProperty("modelNumber");
+    expect(res.body.mask.modelNumber).toBeNull();
+  });
+
+  it("includes modelNumber alongside the existing mask.name and mask.manufacturer fields", async () => {
+    stageSupabaseResponse("orders", "select", {
+      data: {
+        order_reference: "PENN-XY9876",
+        patient_email: "bob@example.com",
+        mask_name: "DreamWear",
+        mask_manufacturer: "Philips",
+        mask_model_number: "DWF-M",
+        email_status: "delivered",
+        email_delivered_at: "2026-04-10T08:00:00Z",
+        created_at: "2026-04-10T07:00:00Z",
+      },
+    });
+
+    const res = await request(makeApp())
+      .post("/resupply-api/orders/track")
+      .send({ orderReference: "XY9876", email: "bob@example.com" });
+
+    expect(res.status).toBe(200);
+    expect(res.body.mask).toMatchObject({
+      name: "DreamWear",
+      manufacturer: "Philips",
+      modelNumber: "DWF-M",
+    });
+  });
+
+  it("does not expose mask_model_number as a raw DB column key (proper casing)", async () => {
+    stageSupabaseResponse("orders", "select", {
+      data: {
+        order_reference: "PENN-AB1234",
+        patient_email: "alice@example.com",
+        mask_name: "AirFit P10",
+        mask_manufacturer: "ResMed",
+        mask_model_number: "63600",
+        email_status: "delivered",
+        email_delivered_at: null,
+        created_at: "2026-04-01T10:00:00Z",
+      },
+    });
+
+    const res = await request(makeApp())
+      .post("/resupply-api/orders/track")
+      .send({ orderReference: "AB1234", email: "alice@example.com" });
+
+    expect(res.status).toBe(200);
+    // Response uses camelCase (modelNumber), never the raw DB snake_case.
+    const body = JSON.stringify(res.body);
+    expect(body).not.toContain("mask_model_number");
+    expect(body).toContain("modelNumber");
+  });
+});

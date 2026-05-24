@@ -35,6 +35,7 @@ import { verifyParachuteSignature } from "@workspace/resupply-integrations-parac
 
 import { logger } from "../lib/logger";
 import { rateLimit } from "../middlewares/rate-limit";
+import { RATE_LIMITS } from "../lib/rate-limits-config";
 
 const router: IRouter = Router();
 
@@ -84,8 +85,8 @@ const rawJson = express.raw({ type: "application/json", limit: "1mb" });
 // Keyed on req.ip because no authenticated identity is available at
 // this point in the request lifecycle.
 const inboundWebhookLimiter = rateLimit({
-  windowMs: 60_000,
-  max: 120,
+  windowMs: RATE_LIMITS.integrations_inbound_dispatch.windowMs,
+  max: RATE_LIMITS.integrations_inbound_dispatch.limit,
   name: "integrations_inbound_ip",
 });
 

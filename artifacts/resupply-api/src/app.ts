@@ -10,6 +10,7 @@ import router from "./routes";
 import storefrontRouter from "./routes/storefront";
 import { getAuthDeps } from "./lib/auth-deps";
 import { logger } from "./lib/logger";
+import { RATE_LIMITS } from "./lib/rate-limits-config";
 import {
   getRequestId,
   requestContextMiddleware,
@@ -247,8 +248,8 @@ logger.info(
 // for IPv6-safe normalisation. `app.set("trust proxy", 1)` above is
 // what makes the IP key honest behind Replit's reverse proxy.
 const storefrontOrderLimiter = expressRateLimit({
-  windowMs: 10 * 60 * 1000,
-  limit: 5,
+  windowMs: RATE_LIMITS.storefront_orders.windowMs,
+  limit: RATE_LIMITS.storefront_orders.limit,
   standardHeaders: "draft-7",
   legacyHeaders: false,
   keyGenerator: (req: Request) => ipKeyGenerator(req.ip ?? "0.0.0.0"),
@@ -260,8 +261,8 @@ const storefrontOrderLimiter = expressRateLimit({
 app.use("/api/orders", storefrontOrderLimiter);
 
 const storefrontUsageEventLimiter = expressRateLimit({
-  windowMs: 60 * 1000,
-  limit: 30,
+  windowMs: RATE_LIMITS.storefront_usage_events.windowMs,
+  limit: RATE_LIMITS.storefront_usage_events.limit,
   standardHeaders: "draft-7",
   legacyHeaders: false,
   keyGenerator: (req: Request) => ipKeyGenerator(req.ip ?? "0.0.0.0"),
@@ -273,8 +274,8 @@ app.use("/api/usage-events", storefrontUsageEventLimiter);
 // request burns OpenAI tokens. Throttle hard per IP so a buggy client
 // or an abusive visitor can't run up the bill or starve other users.
 const storefrontChatLimiter = expressRateLimit({
-  windowMs: 5 * 60 * 1000,
-  limit: 30,
+  windowMs: RATE_LIMITS.storefront_chat.windowMs,
+  limit: RATE_LIMITS.storefront_chat.limit,
   standardHeaders: "draft-7",
   legacyHeaders: false,
   keyGenerator: (req: Request) => ipKeyGenerator(req.ip ?? "0.0.0.0"),
@@ -303,8 +304,8 @@ app.use("/api/chat", storefrontChatLimiter);
 //    a bypass attempt can't disable the limiter entirely.
 const TOKEN_RE = /^[0-9a-f]{64}$/;
 const reminderManageLimiter = expressRateLimit({
-  windowMs: 15 * 60 * 1000,
-  limit: 60,
+  windowMs: RATE_LIMITS.reminder_manage.windowMs,
+  limit: RATE_LIMITS.reminder_manage.limit,
   standardHeaders: "draft-7",
   legacyHeaders: false,
   keyGenerator: (req: Request) => {
@@ -320,8 +321,8 @@ const reminderManageLimiter = expressRateLimit({
   },
 });
 const reminderSignupLimiter = expressRateLimit({
-  windowMs: 15 * 60 * 1000,
-  limit: 5,
+  windowMs: RATE_LIMITS.reminder_signup.windowMs,
+  limit: RATE_LIMITS.reminder_signup.limit,
   standardHeaders: "draft-7",
   legacyHeaders: false,
   keyGenerator: (req: Request) => ipKeyGenerator(req.ip ?? "0.0.0.0"),

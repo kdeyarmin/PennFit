@@ -35,6 +35,7 @@ import { logAudit } from "@workspace/resupply-audit";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { logger } from "../lib/logger";
+import { RATE_LIMITS } from "../lib/rate-limits-config";
 
 const router: IRouter = Router();
 
@@ -48,8 +49,8 @@ const rawJson = express.raw({ type: "application/json", limit: "1mb" });
 // audit-log writes for invalid signatures. 300/min/IP is well above
 // vendor push volume.
 const webhookRateLimiter = expressRateLimit({
-  windowMs: 60 * 1000,
-  limit: 300,
+  windowMs: RATE_LIMITS.integrations_inbound_webhooks.windowMs,
+  limit: RATE_LIMITS.integrations_inbound_webhooks.limit,
   standardHeaders: "draft-7",
   legacyHeaders: false,
   keyGenerator: (req: Request) => ipKeyGenerator(req.ip ?? "0.0.0.0"),

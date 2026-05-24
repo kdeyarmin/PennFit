@@ -221,6 +221,16 @@ export type AnthropicCallResult =
       ok: true;
       response: AnthropicResponse;
       latencyMs: number;
+      /**
+       * Convenience surface for `response.usage.cache_read_input_tokens`.
+       * Pulled to the top level so callers can log cache effectiveness
+       * without reaching into the nested usage object — and so the type
+       * documents that this signal exists at all (every caller that
+       * sets `cache_control: ephemeral` should be checking it).
+       * 0 when the request hit the cache miss path or the model
+       * didn't report any cached tokens.
+       */
+      cacheHitTokens: number;
     }
   | {
       ok: false;
@@ -298,7 +308,12 @@ export function createAnthropicClient(
             latencyMs,
           };
         }
-        return { ok: true, response: json, latencyMs };
+        return {
+          ok: true,
+          response: json,
+          latencyMs,
+          cacheHitTokens: json.usage.cache_read_input_tokens ?? 0,
+        };
       } catch (err) {
         const latencyMs = Date.now() - startedAt;
         const isAbort = err instanceof Error && err.name === "AbortError";
@@ -353,7 +368,12 @@ export function createAnthropicClient(
             latencyMs,
           };
         }
-        return { ok: true, response: accumulated, latencyMs };
+        return {
+          ok: true,
+          response: accumulated,
+          latencyMs,
+          cacheHitTokens: accumulated.usage.cache_read_input_tokens ?? 0,
+        };
       } catch (err) {
         const latencyMs = Date.now() - startedAt;
         const isAbort = err instanceof Error && err.name === "AbortError";
@@ -542,4 +562,88 @@ export function getResponseToolCalls(
     }
   }
   return calls;
+}
+
+/**
+ * Returns true when an unsuccessful AnthropicCallResult is worth a
+ * retry. Use to decide whether to call send() again before falling
+ * through to a degraded reply.
+ *
+ * Retryable:
+ *   - `timeout`   — upstream took too long; Anthropic's per-region
+ *                   capacity shifts second-to-second so a fresh
+ *                   attempt often succeeds.
+ *   - `transport` — network blip / DNS hiccup / socket reset. Almost
+ *                   always recovers on the next attempt.
+ *   - `http` + 429 — explicit rate-limit signal from Anthropic.
+ *   - `http` + 5xx — upstream server error.
+ *
+ * NOT retryable:
+ *   - `http` + 4xx (except 429) — bad request, bad key, missing
+ *                                 model, etc. Retrying won't help.
+ *   - `empty` — model returned zero content blocks; a retry usually
+ *               returns the same thing.
+ *   - `parse`, `config` — programming/wiring errors.
+ */
+export function isRetryableAnthropicError(
+  result: Extract<AnthropicCallResult, { ok: false }>,
+): boolean {
+  if (result.errorCode === "timeout" || result.errorCode === "transport") {
+    return true;
+  }
+  if (result.errorCode === "http") {
+    const status = result.httpStatus;
+    if (status === 429) return true;
+    if (typeof status === "number" && status >= 500 && status < 600) return true;
+  }
+  return false;
+}
+
+export interface AnthropicRetryOptions {
+  /**
+   * Max retries after the initial attempt. Default 1 (so up to 2
+   * calls total). Kept low because all callers already have a
+   * graceful-degradation fallback (offline reply, intent=unknown,
+   * etc.) and we'd rather fail fast than hold a request open
+   * through a sustained outage.
+   */
+  maxRetries?: number;
+  /**
+   * Base backoff in ms. Actual delay is base * 2^attempt plus a
+   * small jitter, so default 200ms produces 200ms then 400ms (+
+   * up to 50ms jitter each).
+   */
+  baseDelayMs?: number;
+  /** Test seam — replaces real sleep so unit tests don't wait. */
+  sleep?: (ms: number) => Promise<void>;
+}
+
+/**
+ * Wraps `client.send()` with retries on retryable errors.
+ *
+ * Why not also `stream()`: streaming partially writes bytes to the
+ * caller's response before failure could occur, so a transparent
+ * retry would duplicate already-emitted text. Callers that stream
+ * handle their own fallback (SSE error event → client reconnect).
+ */
+export async function sendWithRetry(
+  client: AnthropicClient,
+  req: AnthropicRequest,
+  opts: AnthropicRetryOptions = {},
+): Promise<AnthropicCallResult> {
+  const maxRetries = opts.maxRetries ?? 1;
+  const baseDelayMs = opts.baseDelayMs ?? 200;
+  const sleep =
+    opts.sleep ??
+    ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+  let attempt = 0;
+  for (;;) {
+    const result = await client.send(req);
+    if (result.ok) return result;
+    if (attempt >= maxRetries) return result;
+    if (!isRetryableAnthropicError(result)) return result;
+    const jitter = Math.floor(Math.random() * 50);
+    await sleep(baseDelayMs * Math.pow(2, attempt) + jitter);
+    attempt++;
+  }
 }
