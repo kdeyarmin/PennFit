@@ -107,10 +107,12 @@ correctness, not style:
   (`/admin/delivery-failures` system-events stream,
   `/admin/feature-flags/activity`, `/admin/analytics/csr-productivity`,
   and the dashboard's PHI-sweep status helper) now short-circuit to
-  empty + `unavailable: true` responses so the SPA can render an
-  explicit "no longer tracked" notice; new readers must NOT add
-  `.from("audit_log")` calls. The `/readyz` DB probe was moved off
-  `audit_log` onto `feature_flags`.
+  route-specific degraded responses (for example, delivery failures
+  returns `auditEventsUnavailable: true`, while the PHI-sweep status
+  helper returns `null`) so the SPA can render an explicit "no longer
+  tracked" notice; new readers must NOT add `.from("audit_log")`
+  calls. The `/readyz` DB probe was moved off `audit_log` onto
+  `feature_flags`.
 - **One From address.** Every outbound email funnels through
   `lib/resupply-email`'s `createSendgridClient()`; `SENDGRID_FROM_EMAIL`
   is `info@pennpaps.com`. Don't bypass the shared client.
