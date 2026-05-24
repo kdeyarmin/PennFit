@@ -547,6 +547,104 @@ export const stripeWebhookHandler: RequestHandler = async (
         }
         break;
       }
+      case "invoice.payment_failed": {
+        // Subscribe & Save renewal payment failed. The companion
+        // `customer.subscription.updated` event (delivered alongside)
+        // already moves shop_subscriptions.status to `past_due`, so
+        // the patient-facing /account page reflects this without our
+        // intervention. What's NOT mirrored anywhere is the failure
+        // reason (card_declined, insufficient_funds, expired_card,
+        // etc.) — without it, a CSR seeing "past_due" on the dashboard
+        // has to log into Stripe to find out why. Surface it as a
+        // structured WARN so log alerting (Sentry / pino dashboards)
+        // can route it to the billing queue without a Stripe round-trip.
+        const invoice = event.data.object as Stripe.Invoice;
+        const lastError = invoice.last_finalization_error ?? null;
+        // Stripe SDK 22+ moved the subscription reference from
+        // `invoice.subscription` (legacy) into
+        // `invoice.parent.subscription_details.subscription`. Read it
+        // through the new path; null-safely so non-subscription
+        // invoices (one-off charges) still log cleanly.
+        const subRef = invoice.parent?.subscription_details?.subscription;
+        const subscriptionId =
+          typeof subRef === "string" ? subRef : (subRef?.id ?? null);
+        log?.warn?.(
+          {
+            event: "stripe_invoice_payment_failed",
+            invoice_id: invoice.id,
+            subscription_id: subscriptionId,
+            customer_id:
+              typeof invoice.customer === "string"
+                ? invoice.customer
+                : (invoice.customer?.id ?? null),
+            amount_due_cents: invoice.amount_due,
+            currency: invoice.currency,
+            attempt_count: invoice.attempt_count,
+            next_payment_attempt: invoice.next_payment_attempt,
+            failure_code: lastError?.code ?? null,
+            // last_finalization_error.message can include card brand +
+            // last4 but never PAN — Stripe redacts before sending. Safe
+            // to log.
+            failure_message: lastError?.message ?? null,
+          },
+          "stripe: subscription renewal payment failed",
+        );
+        break;
+      }
+      case "charge.dispute.created": {
+        // Chargeback filed by the cardholder. This is a hard-deadline
+        // event (typically 7-21 days to respond depending on card
+        // network) and silently ACK'ing it means losing disputes by
+        // default. We don't have a dedicated disputes table yet, so
+        // surface as a loud structured log line — operators with
+        // alerting on `event=stripe_dispute_created` get paged
+        // immediately. (A follow-up task to mirror disputes onto
+        // shop_orders is tracked separately.)
+        const dispute = event.data.object as Stripe.Dispute;
+        const chargeId =
+          typeof dispute.charge === "string"
+            ? dispute.charge
+            : (dispute.charge?.id ?? null);
+        log?.warn?.(
+          {
+            event: "stripe_dispute_created",
+            dispute_id: dispute.id,
+            charge_id: chargeId,
+            amount_cents: dispute.amount,
+            currency: dispute.currency,
+            reason: dispute.reason,
+            status: dispute.status,
+            evidence_due_by: dispute.evidence_details?.due_by ?? null,
+            is_charge_refundable: dispute.is_charge_refundable,
+          },
+          "stripe: chargeback dispute opened — CSR action required",
+        );
+        break;
+      }
+      case "charge.dispute.closed": {
+        // Dispute outcome. Stripe sets `dispute.status` to one of
+        // `won` / `lost` / `warning_closed`. The amount we lose (lost
+        // disputes deduct from balance) is in dispute.amount; the
+        // outcome drives ops accounting reconciliation.
+        const dispute = event.data.object as Stripe.Dispute;
+        const chargeId =
+          typeof dispute.charge === "string"
+            ? dispute.charge
+            : (dispute.charge?.id ?? null);
+        log?.warn?.(
+          {
+            event: "stripe_dispute_closed",
+            dispute_id: dispute.id,
+            charge_id: chargeId,
+            amount_cents: dispute.amount,
+            currency: dispute.currency,
+            outcome: dispute.status,
+            reason: dispute.reason,
+          },
+          "stripe: chargeback dispute closed",
+        );
+        break;
+      }
       default: {
         // Ack everything else — Stripe may deliver many event types we
         // don't subscribe to in the dashboard, and we don't want it

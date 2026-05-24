@@ -628,6 +628,7 @@ router.post("/sms/inbound", signatureMiddleware, smsPhoneLimiter, async (req, re
   let intent: Intent = earlyRouted.intent;
   let agentReply: string | null = null;
   let resolvedBy: "keyword" | "ai" | "none" = "keyword";
+  let lowConfidenceOverride = false;
   if (intent === "unknown") {
     const adapter = getAiAdapter();
     if (adapter) {
@@ -655,6 +656,49 @@ router.post("/sms/inbound", signatureMiddleware, smsPhoneLimiter, async (req, re
       intent = result.intent;
       agentReply = result.reply ?? null;
       resolvedBy = "ai";
+
+      // Confidence gate. The action-taking intents (confirm, decline,
+      // edit_address) trigger irreversible real-world side effects:
+      // confirm ships a CPAP order, decline closes the episode for the
+      // cycle, edit_address takes the patient out of auto-fulfillment.
+      // A low-confidence classification ("sure I guess", a one-word
+      // reply that could mean two things) must never auto-dispatch
+      // those — route to a human instead. The reporting / pass-through
+      // intents (stop, help, unknown) are safe at any confidence.
+      // Threshold is intentionally conservative: a precision drop here
+      // is invisible (patient gets a polite "we'll follow up" instead
+      // of the action), but a precision miss on `confirm` ships an
+      // unwanted order. Adapters that don't report a confidence at all
+      // (older fine-tunes, malformed output) are treated as "no signal"
+      // and also gated.
+      const MIN_AI_DISPATCH_CONFIDENCE = 0.7;
+      const isActionIntent =
+        intent === "confirm" ||
+        intent === "decline" ||
+        intent === "edit_address";
+      if (
+        isActionIntent &&
+        (result.confidence === undefined ||
+          result.confidence < MIN_AI_DISPATCH_CONFIDENCE)
+      ) {
+        logger.info(
+          {
+            event: "ai_fallback_dispatch_gated_low_confidence",
+            conversation_id: conversationId,
+            patient_id: patientId,
+            proposed_intent: intent,
+            confidence: result.confidence ?? null,
+            threshold: MIN_AI_DISPATCH_CONFIDENCE,
+          },
+          "sms.inbound: gating low-confidence AI classification — routing to human",
+        );
+        intent = "unknown";
+        // Drop the AI's reply too — its text was crafted for the
+        // confident action; the route's `unknown` handler will render
+        // a neutral "passing to a teammate" line.
+        agentReply = null;
+        lowConfidenceOverride = true;
+      }
     } else {
       resolvedBy = "none";
     }
@@ -672,6 +716,7 @@ router.post("/sms/inbound", signatureMiddleware, smsPhoneLimiter, async (req, re
       patient_id: patientId,
       intent,
       resolved_by: resolvedBy,
+      low_confidence_override: lowConfidenceOverride || undefined,
     },
     ip: req.ip ?? null,
     userAgent: req.get("user-agent") ?? null,

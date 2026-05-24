@@ -1,0 +1,24 @@
+-- patients.timezone — IANA tz name used to gate outbound automated
+-- messages into the recipient's local business-hours window.
+--
+-- Background: the hourly reminder scan (artifacts/resupply-api/src/
+-- worker/jobs/reminders.ts) historically dispatched in UTC, so a
+-- patient on the West Coast could receive a refill text at 4am local
+-- and an East Coast patient at 7am. TCPA defines automated text/calls
+-- outside 8am–9pm local as a violation; our internal policy is the
+-- narrower 9am–8pm local window.
+--
+-- Default: 'America/New_York'. PennPaps is Pennsylvania-based, so
+-- patients without an explicit tz on file are treated as Eastern Time.
+-- For a CA patient incorrectly defaulted to ET this means reminders
+-- arrive at 12pm–11pm local — wider than ideal but always inside the
+-- TCPA window. As patient onboarding captures zip code we can backfill
+-- a derived tz; that's a separate task.
+--
+-- Why text (not an enum): IANA adds tz names periodically (post-2026
+-- ones don't exist in any Postgres enum), and the worker uses
+-- Intl.DateTimeFormat to interpret the value at scan time. Postgres
+-- doesn't need to validate the string — a bad tz falls back to the
+-- ET default in the worker.
+ALTER TABLE "resupply"."patients"
+  ADD COLUMN IF NOT EXISTS "timezone" text NOT NULL DEFAULT 'America/New_York';

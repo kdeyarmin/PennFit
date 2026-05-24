@@ -289,9 +289,17 @@ describe("POST /sms/inbound", () => {
       fulfillmentIds: ["f1"],
     });
 
+    // High-confidence confirm — the dispatch gate (see inbound.ts)
+    // requires confidence >= 0.7 before an action intent (confirm /
+    // decline / edit_address) is honoured. 0.95 reflects the model
+    // being very sure.
     const classifyMock = vi
       .fn()
-      .mockResolvedValue({ intent: "confirm", reply: "Got it!" });
+      .mockResolvedValue({
+        intent: "confirm",
+        reply: "Got it!",
+        confidence: 0.95,
+      });
     __setAiFallbackAdapterForTests({ classify: classifyMock });
 
     const res = await request(makeApp())
@@ -312,6 +320,98 @@ describe("POST /sms/inbound", () => {
       .find((a) => a.action === "messaging.intent.parsed");
     expect(intentAudit?.metadata.intent).toBe("confirm");
     expect(intentAudit?.metadata.resolved_by).toBe("ai");
+    expect(intentAudit?.metadata.low_confidence_override).toBeUndefined();
+  });
+
+  it("gates low-confidence AI action intents and routes to human", async () => {
+    setMessagingEnv();
+    stageKnownPatientFlow();
+    stageSupabaseResponse("messages", "select", { data: [] });
+
+    // Model returns `confirm` but only at 0.4 confidence — below the
+    // 0.7 dispatch threshold. The route must NOT call
+    // placeResupplyOrderForConversation; it must reroute to the
+    // unknown-handler "team member will follow up" copy and audit the
+    // low-confidence override so investigators can spot it.
+    const classifyMock = vi
+      .fn()
+      .mockResolvedValue({
+        intent: "confirm",
+        reply: "Got it!",
+        confidence: 0.4,
+      });
+    __setAiFallbackAdapterForTests({ classify: classifyMock });
+
+    // Body intentionally ambiguous + free-form so the keyword router
+    // returns `unknown` and falls through to the AI adapter. Anything
+    // starting with "sure" / "yes" / "ok" would short-circuit at the
+    // keyword stage and never exercise the gate.
+    const res = await request(makeApp())
+      .post("/resupply-api/sms/inbound")
+      .type("form")
+      .send({
+        From: FROM_PHONE,
+        To: "+12158675309",
+        Body: "well I dunno maybe later or whatever",
+        MessageSid: "SM_lowconf",
+        NumMedia: "0",
+      });
+    expect(res.status).toBe(200);
+    expect(classifyMock).toHaveBeenCalledTimes(1);
+    // No order placed even though the model said `confirm`.
+    expect(placeOrderMock).not.toHaveBeenCalled();
+    // Patient-facing copy is the neutral handoff, not the model's
+    // (now-discarded) confident reply.
+    expect(res.text).not.toContain("Got it!");
+    expect(res.text).toMatch(/team member|follow up/i);
+    const intentAudit = logAuditMock.mock.calls
+      .map((c) => c[0])
+      .find((a) => a.action === "messaging.intent.parsed");
+    // Audit reflects the post-override intent, not the model's
+    // self-reported one — that's deliberate: the audit row is the
+    // record of what we DID, not what we ALMOST did.
+    expect(intentAudit?.metadata.intent).toBe("unknown");
+    expect(intentAudit?.metadata.resolved_by).toBe("ai");
+    expect(intentAudit?.metadata.low_confidence_override).toBe(true);
+  });
+
+  it("honours high-confidence non-action AI intents without gating", async () => {
+    setMessagingEnv();
+    stageKnownPatientFlow();
+    stageSupabaseResponse("messages", "select", { data: [] });
+
+    // STOP-class intents (stop/help/unknown) do not trigger
+    // side-effects on the order pipeline, so they are NOT gated even
+    // at low confidence. This ensures the safety gate doesn't hide
+    // legitimate handoff signals from a slightly-uncertain model.
+    const classifyMock = vi
+      .fn()
+      .mockResolvedValue({
+        intent: "unknown",
+        reply: "Thanks — a teammate will reach out.",
+        confidence: 0.5,
+      });
+    __setAiFallbackAdapterForTests({ classify: classifyMock });
+
+    // "what is this" is two tokens — confirm `parseSmsIntent` returns
+    // unknown here. (HELP would match "help"; STOP would match "stop".)
+    const res = await request(makeApp())
+      .post("/resupply-api/sms/inbound")
+      .type("form")
+      .send({
+        From: FROM_PHONE,
+        To: "+12158675309",
+        Body: "wait who is this",
+        MessageSid: "SM_unkn_lowconf",
+        NumMedia: "0",
+      });
+    expect(res.status).toBe(200);
+    expect(placeOrderMock).not.toHaveBeenCalled();
+    const intentAudit = logAuditMock.mock.calls
+      .map((c) => c[0])
+      .find((a) => a.action === "messaging.intent.parsed");
+    expect(intentAudit?.metadata.intent).toBe("unknown");
+    expect(intentAudit?.metadata.low_confidence_override).toBeUndefined();
   });
 
   it("HELP returns boilerplate without dispatching anywhere", async () => {
