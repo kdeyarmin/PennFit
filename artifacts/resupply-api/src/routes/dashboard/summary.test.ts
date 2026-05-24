@@ -120,7 +120,7 @@ describe("GET /dashboard/summary", () => {
     });
     // Sweep-status helper fetches from audit_log via .maybeSingle();
     // empty data → null sweep status.
-    stageSupabaseResponse("audit_log", "select", { data: null });
+    stageSupabaseResponse("worker_run_summary", "select", { data: null });
 
     const res = await request(makeApp()).get("/resupply-api/dashboard/summary");
     expect(res.status).toBe(200);
@@ -158,7 +158,7 @@ describe("GET /dashboard/summary", () => {
       data: null,
       count: null,
     });
-    stageSupabaseResponse("audit_log", "select", { data: null });
+    stageSupabaseResponse("worker_run_summary", "select", { data: null });
 
     const res = await request(makeApp()).get("/resupply-api/dashboard/summary");
     expect(res.status).toBe(200);
@@ -199,10 +199,10 @@ describe("GET /dashboard/summary", () => {
     it("surfaces the latest sweep row with snake→camel mapping", async () => {
       stubVerifiedAdmin();
       stageZeroCounts();
-      stageSupabaseResponse("audit_log", "select", {
+      stageSupabaseResponse("worker_run_summary", "select", {
         data: {
-          occurred_at: "2026-04-26T03:13:42.000Z",
-          metadata: {
+          completed_at: "2026-04-26T03:13:42.000Z",
+          counters: {
             objects_scanned: 1234,
             references_loaded: 1100,
             orphans_deleted: 7,
@@ -243,10 +243,10 @@ describe("GET /dashboard/summary", () => {
       // schema must reject and the route must NOT 500.
       stubVerifiedAdmin();
       stageZeroCounts();
-      stageSupabaseResponse("audit_log", "select", {
+      stageSupabaseResponse("worker_run_summary", "select", {
         data: {
-          occurred_at: "2026-04-26T03:13:42.000Z",
-          metadata: { objects_scanned: -1, garbage: "yes" },
+          completed_at: "2026-04-26T03:13:42.000Z",
+          counters: { objects_scanned: -1, garbage: "yes" },
         },
       });
 
@@ -263,8 +263,8 @@ describe("GET /dashboard/summary", () => {
       // into the response.
       stubVerifiedAdmin();
       stageZeroCounts();
-      stageSupabaseResponse("audit_log", "select", {
-        data: { occurred_at: null, metadata: ALL_ZERO_METADATA },
+      stageSupabaseResponse("worker_run_summary", "select", {
+        data: { completed_at: null, counters: ALL_ZERO_METADATA },
       });
 
       const res = await request(makeApp()).get(
@@ -279,10 +279,10 @@ describe("GET /dashboard/summary", () => {
       // round-trips through Date to normalise the format.
       stubVerifiedAdmin();
       stageZeroCounts();
-      stageSupabaseResponse("audit_log", "select", {
+      stageSupabaseResponse("worker_run_summary", "select", {
         data: {
-          occurred_at: "2026-04-26T03:13:42.000Z",
-          metadata: ALL_ZERO_METADATA,
+          completed_at: "2026-04-26T03:13:42.000Z",
+          counters: ALL_ZERO_METADATA,
         },
       });
 

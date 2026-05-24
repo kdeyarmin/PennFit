@@ -1,17 +1,26 @@
 // /admin/delivery-failures — webhook delivery error triage queue.
 //
-// Surfaces recent message-send failures across all three channels
-// (SMS, email, voice) plus delivery-failure-shaped audit events. Ops
-// uses this to spot phone numbers that are bouncing, email addresses
-// that are landing in spam, etc. Sorted newest first.
+// Surfaces recent message-send failures across SMS / email / voice.
+// Ops uses this to spot phone numbers that are bouncing, email
+// addresses that are landing in spam, etc. Sorted newest first.
 //
-// Two source streams unioned in the response:
-//   1. messages.delivery_status IN ('failed','undelivered','bounced',
-//      'dropped') — per-message terminal failures from the SMS / email
-//      status webhooks.
-//   2. audit_log rows where action LIKE '%.delivery.%' OR action LIKE
-//      '%.failed' — system-level errors (e.g. webhook signature
-//      verification failures, bulk-send aborts).
+// Source: `messages.delivery_status IN ('failed','undelivered',
+// 'bounced','dropped','rejected','spam_report')` — per-message
+// terminal failures from the SMS / email status webhooks.
+//
+// What changed (migration 0156 / 0163 cleanup): this endpoint
+// previously also UNION'd a second stream from `resupply.audit_log`
+// where `action LIKE '%.delivery.%' OR '%.failed'` to surface
+// system-level errors (webhook signature failures, bulk-send aborts).
+// `@workspace/resupply-audit` became a no-op stub when the HIPAA
+// tamper-evident chain was retired, so that source has been
+// silently empty for months. The audit array is preserved in the
+// response (`auditEvents: []`) for client compatibility — admin SPA
+// consumers expect the field — but the query is gone. Operators
+// triaging system-level delivery failures should look at the
+// application logger (Pino events `event=*_failed`,
+// `event=webhook_signature_*`) instead. A dedicated table for
+// system delivery events is tracked as a follow-up.
 //
 // PHI: message bodies are NOT surfaced on this view — operators
 // triaging deliverability don't need the content; they need WHERE it
@@ -123,20 +132,11 @@ router.get("/admin/delivery-failures", requirePermission("reports.read"), async 
     }
   }
 
-  // System-level failure events from the audit log. PostgREST `.or()`
-  // supports `like` patterns; the LIKE wildcards (%) need to use
-  // PostgREST's `*` syntax instead.
-  const { data: auditRowsData, error: auditErr } = await supabase
-    .schema("resupply")
-    .from("audit_log")
-    .select("id, occurred_at, action, target_table, target_id, operator_email, metadata")
-    .gte("occurred_at", since)
-    .or(
-      "action.like.*.delivery.*,action.like.*.failed,action.like.*.bounced,action.like.*.error",
-    )
-    .order("occurred_at", { ascending: false })
-    .limit(MAX_ROWS);
-  if (auditErr) throw auditErr;
+  // System-level failure events used to be queried from `audit_log`
+  // here; see the header comment for why that source is now silently
+  // empty. The endpoint returns `auditEvents: []` (see below) so SPA
+  // consumers don't have to special-case the missing field while a
+  // dedicated replacement table is designed.
 
   const messageEvents = (messageRows ?? []).map((r) => {
     const conv = conversationsById.get(r.conversation_id);
@@ -159,16 +159,17 @@ router.get("/admin/delivery-failures", requirePermission("reports.read"), async 
     };
   });
 
-  const auditEvents = (auditRowsData ?? []).map((r) => ({
-    kind: "audit" as const,
-    id: r.id,
-    occurredAt: r.occurred_at,
-    action: r.action,
-    targetTable: r.target_table,
-    targetId: r.target_id,
-    actorEmail: r.operator_email,
-    metadata: r.metadata ?? null,
-  }));
+  // Preserved for response-shape compatibility — see header comment.
+  const auditEvents: Array<{
+    kind: "audit";
+    id: string;
+    occurredAt: string;
+    action: string;
+    targetTable: string | null;
+    targetId: string | null;
+    actorEmail: string | null;
+    metadata: unknown;
+  }> = [];
 
   res.json({
     sinceDays,

@@ -108,21 +108,34 @@ export interface PhiSweepStatus {
   counters: PhiSweepCounters;
 }
 
+/** Worker-kind key written to `worker_run_summary` by the sweep job.
+ *  Must stay in lockstep with the INSERT in
+ *  `artifacts/resupply-api/src/worker/jobs/prescription-attachment-sweep.ts`. */
+const SWEEP_WORKER_KIND = "prescription_attachment_sweep";
+
 /**
- * Fetch + project the most recent sweep audit row. Returns null when
- * no row exists OR when the row's metadata fails validation.
+ * Fetch + project the most recent sweep run. Returns null when no
+ * row exists OR when the counters payload fails validation.
  *
- * Implementation note: read goes through the Supabase JS client
- * (Drizzle → Supabase migration). Mirrors `routes/audit/list.ts`.
+ * Source changed in migration 0162: the read used to hit
+ * `resupply.audit_log` filtered by `action='prescription.attachment.sweep'`,
+ * but `@workspace/resupply-audit` became a no-op stub when the HIPAA
+ * tamper-evident chain was retired in migration 0156, so new runs
+ * stopped landing rows and the dashboard tile went stale. The sweep
+ * worker now also writes to `resupply.worker_run_summary` — the
+ * dedicated durable record of "did the worker run, and what counters
+ * did it produce?" — which is what this reader hits.
+ *
+ * Implementation note: read goes through the Supabase JS client.
  */
 export async function getLatestPhiSweepStatus(): Promise<PhiSweepStatus | null> {
   const supabase = getSupabaseServiceRoleClient();
   const { data: row, error } = await supabase
     .schema("resupply")
-    .from("audit_log")
-    .select("occurred_at, metadata")
-    .eq("action", SWEEP_AUDIT_ACTION)
-    .order("occurred_at", { ascending: false })
+    .from("worker_run_summary")
+    .select("completed_at, counters")
+    .eq("worker_kind", SWEEP_WORKER_KIND)
+    .order("completed_at", { ascending: false })
     .limit(1)
     .maybeSingle();
 
@@ -132,27 +145,27 @@ export async function getLatestPhiSweepStatus(): Promise<PhiSweepStatus | null> 
   }
   if (!row) return null;
 
-  const parsed = sweepMetadataSchema.safeParse(row.metadata);
+  const parsed = sweepMetadataSchema.safeParse(row.counters);
   if (!parsed.success) {
-    // Don't log the metadata content — it's counter-only by design,
+    // Don't log the counters content — it's counter-only by design,
     // but a corrupted row could contain anything. Keep the log line
     // diagnostic but content-free; SOC can pull the row by id from
-    // the audit-log viewer if they need to see what's wrong.
+    // worker_run_summary if they need to see what's wrong.
     logger.warn(
-      { occurredAt: row.occurred_at },
-      "phi-sweep-status: latest audit row metadata failed schema check; surfacing null",
+      { completedAt: row.completed_at },
+      "phi-sweep-status: latest worker_run_summary counters failed schema check; surfacing null",
     );
     return null;
   }
   const m = parsed.data;
-  // occurred_at comes back from PostgREST as an ISO string. If the
+  // completed_at comes back from PostgREST as an ISO string. If the
   // value is missing or unparseable we degrade to null — same
-  // defensive posture as a malformed metadata payload (don't 500 the
+  // defensive posture as a malformed counters payload (don't 500 the
   // whole dashboard on a single corrupted row).
-  const dateCandidate = new Date(row.occurred_at ?? "");
+  const dateCandidate = new Date(row.completed_at ?? "");
   if (Number.isNaN(dateCandidate.getTime())) {
     logger.warn(
-      "phi-sweep-status: latest audit row has missing/invalid occurred_at; surfacing null",
+      "phi-sweep-status: latest row has missing/invalid completed_at; surfacing null",
     );
     return null;
   }

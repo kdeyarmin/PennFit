@@ -211,7 +211,24 @@ router.get(
       occurredAt: r.occurred_at,
     }));
     const result = aggregateCsrProductivity(rows, days);
-    res.json(result);
+
+    // KNOWN GAP — see header comment on aggregateCsrProductivity in
+    // lib/analytics/aggregate.ts. The audit_log table stopped
+    // accumulating new rows when migration 0156 retired the audit
+    // chain (the @workspace/resupply-audit lib is a no-op stub).
+    // This report increasingly returns zero-rows as the historical
+    // tail slides outside the requested date window. Surfacing a
+    // `degraded: true` flag lets the SPA render an "this report is
+    // currently broken" banner instead of presenting empty data as
+    // truth. The real fix re-sources each productive action from
+    // its own table (e.g. shop_returns.approved_at), tracked as a
+    // separate epic.
+    res.json({
+      ...result,
+      degraded: true,
+      degradedReason:
+        "audit_log no longer accumulates new rows (migration 0156); productivity counts represent only the pre-stub historical tail",
+    });
   },
 );
 
