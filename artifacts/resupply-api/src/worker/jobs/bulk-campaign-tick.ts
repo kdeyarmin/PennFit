@@ -281,7 +281,7 @@ export async function processTick(
         campaign.category,
       );
       if (optedOut) {
-        await supabase
+        const { error: supErr } = await supabase
           .schema("resupply")
           .from("bulk_campaign_recipients")
           .update({
@@ -289,6 +289,19 @@ export async function processTick(
             suppression_reason: "opted_out_at_send_time",
           })
           .eq("id", row.id);
+        if (supErr) {
+          log.error(
+            { err: supErr.message, recipientId: row.id, campaignId: campaign.id },
+            "bulk_campaigns.tick: suppression update failed — marking recipient failed",
+          );
+          await supabase
+            .schema("resupply")
+            .from("bulk_campaign_recipients")
+            .update({ status: "failed", error: supErr.message.slice(0, 500) })
+            .eq("id", row.id);
+          failed += 1;
+          continue;
+        }
         suppressedAtSend += 1;
         continue;
       }
