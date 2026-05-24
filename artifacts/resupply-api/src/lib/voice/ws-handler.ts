@@ -157,6 +157,14 @@ export async function handleVoiceWsConnection(
   // medical record and the post-call summarizer.
   let deepgramSession: DeepgramLiveSession | null = null;
   const deepgramTurns: string[] = [];
+  // Track Deepgram error count + whether we've already WARN'd this
+  // call. The first error of the call is loud (we want to know about
+  // a vendor outage); subsequent errors during the same call drop to
+  // DEBUG so a sustained outage doesn't flood the log with thousands
+  // of identical WARN lines. Total count is logged on session close
+  // so a Deepgram dropout still leaves a single summary signal.
+  let deepgramErrorCount = 0;
+  let deepgramWarnEmitted = false;
   if (config.deepgramApiKey) {
     try {
       const dg = createDeepgramClient({ apiKey: config.deepgramApiKey });
@@ -189,6 +197,22 @@ export async function handleVoiceWsConnection(
         deepgramTurns.push(text);
       });
       deepgramSession.onError((err) => {
+        deepgramErrorCount += 1;
+        if (deepgramWarnEmitted) {
+          // De-spam: subsequent errors in the same call are recorded
+          // for the close-time summary but don't re-fire the WARN.
+          logger.debug(
+            {
+              event: "voice_deepgram_error_subsequent",
+              code: err.code,
+              count: deepgramErrorCount,
+              conversationId: pending.conversationId,
+            },
+            "voice deepgram subsequent error (suppressed from WARN)",
+          );
+          return;
+        }
+        deepgramWarnEmitted = true;
         logger.warn(
           {
             event: "voice_deepgram_error",
@@ -316,6 +340,20 @@ export async function handleVoiceWsConnection(
         deepgramSession.close();
       } catch {
         // best-effort
+      }
+      // Single end-of-call summary if Deepgram had any errors. The
+      // WARN already fired at first error; this gives ops a count
+      // signal so dashboards can rank "calls with N Deepgram errors"
+      // even though the per-error noise was suppressed.
+      if (deepgramErrorCount > 0) {
+        logger.warn(
+          {
+            event: "voice_deepgram_errors_summary",
+            count: deepgramErrorCount,
+            conversationId: pending.conversationId,
+          },
+          "voice deepgram: parallel transcription error count for this call",
+        );
       }
     }
     // Write the Deepgram transcript to the audit log as its own row

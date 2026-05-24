@@ -105,6 +105,43 @@ describe("createAnthropicClient", () => {
       }
     });
 
+    it("surfaces cache_read_input_tokens as cacheHitTokens", async () => {
+      const cachedResponse: AnthropicResponse = {
+        ...SAMPLE_RESPONSE,
+        usage: {
+          input_tokens: 12,
+          output_tokens: 8,
+          cache_read_input_tokens: 1234,
+          cache_creation_input_tokens: 0,
+        },
+      };
+      const client = createAnthropicClient({
+        apiKey: VALID_KEY,
+        fetchImpl: async () => jsonResponse(cachedResponse),
+      });
+      const result = await client.send({
+        model: DEFAULT_ANTHROPIC_MODEL_CHAT,
+        max_tokens: 100,
+        messages: [{ role: "user", content: "hi" }],
+      });
+      expect(result.ok).toBe(true);
+      if (result.ok) expect(result.cacheHitTokens).toBe(1234);
+    });
+
+    it("defaults cacheHitTokens to 0 when usage omits the field", async () => {
+      const client = createAnthropicClient({
+        apiKey: VALID_KEY,
+        fetchImpl: async () => jsonResponse(SAMPLE_RESPONSE),
+      });
+      const result = await client.send({
+        model: DEFAULT_ANTHROPIC_MODEL_CHAT,
+        max_tokens: 100,
+        messages: [{ role: "user", content: "hi" }],
+      });
+      expect(result.ok).toBe(true);
+      if (result.ok) expect(result.cacheHitTokens).toBe(0);
+    });
+
     it("returns transport error on fetch rejection", async () => {
       const client = createAnthropicClient({
         apiKey: VALID_KEY,
@@ -409,6 +446,7 @@ describe("sendWithRetry", () => {
           ok: true,
           response: SAMPLE_RESPONSE,
           latencyMs: 10,
+          cacheHitTokens: 0,
         },
       ],
       () => calls++,
@@ -433,6 +471,7 @@ describe("sendWithRetry", () => {
           ok: true,
           response: SAMPLE_RESPONSE,
           latencyMs: 12,
+          cacheHitTokens: 0,
         },
       ],
       () => calls++,
@@ -499,6 +538,7 @@ describe("sendWithRetry", () => {
           ok: true,
           response: SAMPLE_RESPONSE,
           latencyMs: 12,
+          cacheHitTokens: 0,
         },
       ],
       () => calls++,
@@ -548,6 +588,7 @@ describe("sendWithRetry", () => {
         ok: true,
         response: SAMPLE_RESPONSE,
         latencyMs: 12,
+        cacheHitTokens: 0,
       },
     ]);
     await sendWithRetry(client, baseReq, {

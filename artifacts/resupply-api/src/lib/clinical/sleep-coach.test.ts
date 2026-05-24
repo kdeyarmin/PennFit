@@ -91,7 +91,7 @@ function makeClient(
       if (inspect) inspect(req, i);
       const r = responses[i] ?? responses[responses.length - 1]!;
       i += 1;
-      return { ok: true, response: r, latencyMs: 1 };
+      return { ok: true, response: r, latencyMs: 1, cacheHitTokens: 0 };
     },
     async stream(): Promise<AnthropicCallResult> {
       throw new Error("stream() not used by sleep-coach tests");
@@ -206,6 +206,7 @@ describe("askSleepCoach — Anthropic path, retry", () => {
           ok: true,
           response: textResponse("Loosen the top strap one click tonight."),
           latencyMs: 8,
+          cacheHitTokens: 0,
         };
       },
       async stream(): Promise<AnthropicCallResult> {

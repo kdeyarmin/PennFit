@@ -221,6 +221,16 @@ export type AnthropicCallResult =
       ok: true;
       response: AnthropicResponse;
       latencyMs: number;
+      /**
+       * Convenience surface for `response.usage.cache_read_input_tokens`.
+       * Pulled to the top level so callers can log cache effectiveness
+       * without reaching into the nested usage object — and so the type
+       * documents that this signal exists at all (every caller that
+       * sets `cache_control: ephemeral` should be checking it).
+       * 0 when the request hit the cache miss path or the model
+       * didn't report any cached tokens.
+       */
+      cacheHitTokens: number;
     }
   | {
       ok: false;
@@ -298,7 +308,12 @@ export function createAnthropicClient(
             latencyMs,
           };
         }
-        return { ok: true, response: json, latencyMs };
+        return {
+          ok: true,
+          response: json,
+          latencyMs,
+          cacheHitTokens: json.usage.cache_read_input_tokens ?? 0,
+        };
       } catch (err) {
         const latencyMs = Date.now() - startedAt;
         const isAbort = err instanceof Error && err.name === "AbortError";
@@ -353,7 +368,12 @@ export function createAnthropicClient(
             latencyMs,
           };
         }
-        return { ok: true, response: accumulated, latencyMs };
+        return {
+          ok: true,
+          response: accumulated,
+          latencyMs,
+          cacheHitTokens: accumulated.usage.cache_read_input_tokens ?? 0,
+        };
       } catch (err) {
         const latencyMs = Date.now() - startedAt;
         const isAbort = err instanceof Error && err.name === "AbortError";

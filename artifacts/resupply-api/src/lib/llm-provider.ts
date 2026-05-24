@@ -41,10 +41,32 @@ import {
   type AnthropicToolUseBlock,
 } from "@workspace/resupply-ai";
 
+import { logger } from "./logger";
+
 export type LlmProvider = "anthropic" | "openai" | "offline";
 
 export interface LlmSelection {
   provider: LlmProvider;
+}
+
+// Deployment visibility: log the selected provider the first time it's
+// resolved (and again on any change — e.g., key rotation mid-process
+// during a soft restart). Without this, switching ANTHROPIC_API_KEY on
+// or off leaves no log breadcrumb that the swap took effect.
+let lastLoggedProvider: LlmProvider | null = null;
+
+function maybeLogProviderSelection(provider: LlmProvider): void {
+  if (lastLoggedProvider === provider) return;
+  const previous = lastLoggedProvider;
+  lastLoggedProvider = provider;
+  logger.info(
+    {
+      event: "llm_provider_selected",
+      provider,
+      previous,
+    },
+    `llm provider selected: ${provider}${previous ? ` (was ${previous})` : ""}`,
+  );
 }
 
 /**
@@ -52,13 +74,16 @@ export interface LlmSelection {
  * provider X" before dispatching the actual call.
  */
 export function selectLlmProvider(env: NodeJS.ProcessEnv = process.env): LlmSelection {
+  let provider: LlmProvider;
   if (typeof env.ANTHROPIC_API_KEY === "string" && env.ANTHROPIC_API_KEY.trim() !== "") {
-    return { provider: "anthropic" };
+    provider = "anthropic";
+  } else if (typeof env.OPENAI_API_KEY === "string" && env.OPENAI_API_KEY.trim() !== "") {
+    provider = "openai";
+  } else {
+    provider = "offline";
   }
-  if (typeof env.OPENAI_API_KEY === "string" && env.OPENAI_API_KEY.trim() !== "") {
-    return { provider: "openai" };
-  }
-  return { provider: "offline" };
+  maybeLogProviderSelection(provider);
+  return { provider };
 }
 
 let cachedAnthropic: AnthropicClient | null = null;
@@ -92,6 +117,7 @@ export function getAnthropicClient(
 export function __resetLlmProviderCacheForTests(): void {
   cachedAnthropic = null;
   cachedAnthropicApiKey = null;
+  lastLoggedProvider = null;
 }
 
 /**

@@ -163,6 +163,18 @@ interface OpenAiChatResponse {
     };
     finish_reason?: string;
   }>;
+  /**
+   * Per-request token accounting. Present on every non-streaming
+   * response since the public API was launched; only optional in this
+   * type so a partial JSON parse doesn't crash. `cached_tokens` is the
+   * prompt-cache hit metric (Aug 2024+).
+   */
+  usage?: {
+    prompt_tokens?: number;
+    completion_tokens?: number;
+    total_tokens?: number;
+    prompt_tokens_details?: { cached_tokens?: number };
+  };
 }
 
 interface OpenAiStreamDelta {
@@ -475,12 +487,24 @@ async function handleJson(
         return;
       }
 
+      // Token usage on the OpenAI path — the Anthropic branch logs the
+      // equivalent so cost dashboards aggregate across vendors. OpenAI
+      // includes `usage` on every non-streaming response; on a missing
+      // field we just emit zeros rather than skip the log line.
       logger.info(
         {
           event: "chat_ok",
+          vendor: "openai",
           turns,
           replyChars: reply.length,
           rounds: round,
+          inputTokens: json.usage?.prompt_tokens ?? 0,
+          outputTokens: json.usage?.completion_tokens ?? 0,
+          // OpenAI surfaces cached prompt-token reads under
+          // prompt_tokens_details.cached_tokens (Aug 2024+). When
+          // absent the model didn't hit a cached prefix on this call.
+          cachedInputTokens:
+            json.usage?.prompt_tokens_details?.cached_tokens ?? 0,
         },
         "chat: replied",
       );
