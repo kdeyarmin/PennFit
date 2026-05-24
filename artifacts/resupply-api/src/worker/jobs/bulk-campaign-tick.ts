@@ -437,13 +437,21 @@ async function isRecipientOptedOut(
         : null;
   if (!prefKey) return false;
 
+  // At send time, only shop customers can be re-checked from the
+  // generated schema source used here. Patients do not expose a
+  // `communication_preferences` column in the generated Database
+  // types, so querying `patients` here is both invalid and wasted
+  // work. Preserve the existing fail-open posture by skipping the
+  // re-check for patient recipients until preferences are resolved
+  // from the correct source.
+  if (kind !== "shop_customer") return false;
+
   try {
-    const table = kind === "shop_customer" ? "shop_customers" : "patients";
     const { data } = await supabase
       .schema("resupply")
-      .from(table)
+      .from("shop_customers")
       .select("communication_preferences")
-      .eq("id", id)
+      .eq("customer_id", id)
       .limit(1)
       .maybeSingle();
     const prefs =
