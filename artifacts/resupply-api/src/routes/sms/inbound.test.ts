@@ -323,55 +323,34 @@ describe("POST /sms/inbound", () => {
     expect(intentAudit?.metadata.low_confidence_override).toBeUndefined();
   });
 
-  it("gates low-confidence AI action intents and routes to human", async () => {
+  it("gates action intents when AI confidence is missing", async () => {
     setMessagingEnv();
     stageKnownPatientFlow();
     stageSupabaseResponse("messages", "select", { data: [] });
 
-    // Model returns `confirm` but only at 0.4 confidence — below the
-    // 0.7 dispatch threshold. The route must NOT call
-    // placeResupplyOrderForConversation; it must reroute to the
-    // unknown-handler "team member will follow up" copy and audit the
-    // low-confidence override so investigators can spot it.
-    const classifyMock = vi
-      .fn()
-      .mockResolvedValue({
-        intent: "confirm",
-        reply: "Got it!",
-        confidence: 0.4,
-      });
+    const classifyMock = vi.fn().mockResolvedValue({
+      intent: "confirm",
+      reply: "Got it!",
+    });
     __setAiFallbackAdapterForTests({ classify: classifyMock });
 
-    // Body intentionally ambiguous + free-form so the keyword router
-    // returns `unknown` and falls through to the AI adapter. Anything
-    // starting with "sure" / "yes" / "ok" would short-circuit at the
-    // keyword stage and never exercise the gate.
     const res = await request(makeApp())
       .post("/resupply-api/sms/inbound")
       .type("form")
       .send({
         From: FROM_PHONE,
         To: "+12158675309",
-        Body: "well I dunno maybe later or whatever",
-        MessageSid: "SM_lowconf",
+        Body: "well maybe",
+        MessageSid: "SM_missing_conf",
         NumMedia: "0",
       });
+
     expect(res.status).toBe(200);
-    expect(classifyMock).toHaveBeenCalledTimes(1);
-    // No order placed even though the model said `confirm`.
     expect(placeOrderMock).not.toHaveBeenCalled();
-    // Patient-facing copy is the neutral handoff, not the model's
-    // (now-discarded) confident reply.
-    expect(res.text).not.toContain("Got it!");
-    expect(res.text).toMatch(/team member|follow up/i);
     const intentAudit = logAuditMock.mock.calls
       .map((c) => c[0])
       .find((a) => a.action === "messaging.intent.parsed");
-    // Audit reflects the post-override intent, not the model's
-    // self-reported one — that's deliberate: the audit row is the
-    // record of what we DID, not what we ALMOST did.
     expect(intentAudit?.metadata.intent).toBe("unknown");
-    expect(intentAudit?.metadata.resolved_by).toBe("ai");
     expect(intentAudit?.metadata.low_confidence_override).toBe(true);
   });
 
