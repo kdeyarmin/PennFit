@@ -15,13 +15,29 @@
 // PHI posture: same as the AI scrubber — initials + DOB year only.
 // The clinical numerics aren't directly PHI but are protected via
 // the same prompt + transport.
+//
+// Provider selection (May 2026):
+//   Dispatches through `selectLlmProvider()` — Anthropic-first when
+//   `ANTHROPIC_API_KEY` is set, OpenAI fallback when only
+//   `OPENAI_API_KEY` is configured. Previously the suggester
+//   hard-coded the OpenAI path, which made it dead-on-arrival on
+//   Anthropic-only deployments (the chatbot / sleep coach / SMS
+//   classifier work fine but this route would `errored("OPENAI_API_KEY
+//   not configured")`).
 
+import {
+  getResponseText,
+  sendWithRetry,
+  type AnthropicClient,
+} from "@workspace/resupply-ai";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
+import { getAnthropicClient, selectLlmProvider } from "../llm-provider";
 import { logger } from "../logger";
 
 export const ICD10_PROMPT_VERSION = "icd10-1.0";
 const DEFAULT_MODEL = "gpt-4o-mini";
+const DEFAULT_ANTHROPIC_MODEL = "claude-haiku-4-5-20251001";
 const DEFAULT_TIMEOUT_MS = 15_000;
 const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
 
@@ -96,10 +112,9 @@ export interface SuggestOutput {
 export async function suggestIcd10(
   input: SuggestInput,
 ): Promise<SuggestOutput> {
-  const apiKey = input.apiKey ?? process.env.OPENAI_API_KEY;
-  if (!apiKey) {
-    return errored("OPENAI_API_KEY not configured");
-  }
+  // Resolve the study row up front — both providers need the same
+  // structured context, and a missing row should fail-fast before we
+  // pay for an LLM round trip.
   const supabase = getSupabaseServiceRoleClient();
   const { data: study } = await supabase
     .schema("resupply")
@@ -121,6 +136,36 @@ export async function suggestIcd10(
     sleepEfficiencyPct: study.sleep_efficiency_pct,
     source: study.source,
   };
+  const userPrompt = JSON.stringify(context);
+
+  // An explicit `input.apiKey` short-circuits provider selection and
+  // forces the OpenAI path (preserves the historical contract for
+  // callers that pass their own key, including tests). When absent,
+  // dispatch through the shared `selectLlmProvider` so this surface
+  // honors the Anthropic-first policy.
+  if (input.apiKey) {
+    return runOpenAi(input, userPrompt, input.apiKey);
+  }
+  const selection = selectLlmProvider();
+  if (selection.provider === "anthropic") {
+    const client = getAnthropicClient();
+    if (client) return runAnthropic(input, userPrompt, client);
+    // Defensive: provider selection said anthropic but the cached
+    // client came back null (key blanked between calls). Fall through
+    // to OpenAI rather than failing.
+  }
+  if (selection.provider === "openai" || selection.provider === "anthropic") {
+    const openAiKey = process.env.OPENAI_API_KEY;
+    if (openAiKey) return runOpenAi(input, userPrompt, openAiKey);
+  }
+  return errored("no LLM provider configured (set ANTHROPIC_API_KEY or OPENAI_API_KEY)");
+}
+
+async function runOpenAi(
+  input: SuggestInput,
+  userPrompt: string,
+  apiKey: string,
+): Promise<SuggestOutput> {
   const fetchImpl = input.fetchImpl ?? fetch;
   const timeoutMs = input.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const ctrl = new AbortController();
@@ -141,7 +186,7 @@ export async function suggestIcd10(
         max_tokens: 300,
         messages: [
           { role: "system", content: SYSTEM_PROMPT },
-          { role: "user", content: JSON.stringify(context) },
+          { role: "user", content: userPrompt },
         ],
       }),
     });
@@ -172,6 +217,50 @@ export async function suggestIcd10(
   } finally {
     clearTimeout(timer);
   }
+}
+
+async function runAnthropic(
+  input: SuggestInput,
+  userPrompt: string,
+  client: AnthropicClient,
+): Promise<SuggestOutput> {
+  const startedAt = Date.now();
+  // Reuses sendWithRetry's posture (429 / 5xx / timeout) — same one
+  // the SMS classifier and post-call summarizer use. The clinical
+  // numerics in `context` are not PHI but the prompt is uniform with
+  // the rest of the AI surface for ops simplicity.
+  const result = await sendWithRetry(client, {
+    model: input.model ?? DEFAULT_ANTHROPIC_MODEL,
+    max_tokens: 300,
+    temperature: 0,
+    system: [
+      // cache_control: ephemeral — the system prompt is identical on
+      // every classify(); caching trims the input cost ~95% on bursts
+      // (e.g. when a CSR batches several unscored sleep studies).
+      { type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } },
+    ],
+    messages: [{ role: "user", content: userPrompt }],
+  });
+  const latencyMs = Date.now() - startedAt;
+  if (!result.ok) {
+    logger.warn(
+      {
+        event: "ai_icd10_anthropic_error",
+        code: result.errorCode,
+        status: result.httpStatus,
+      },
+      "ai-icd10: anthropic call failed",
+    );
+    return errored(`anthropic ${result.errorCode}`);
+  }
+  const parsed = parseOutput(getResponseText(result.response));
+  return {
+    ...parsed,
+    latencyMs,
+    promptTokens: result.response.usage?.input_tokens ?? null,
+    completionTokens: result.response.usage?.output_tokens ?? null,
+    errorMessage: null,
+  };
 }
 
 function errored(message: string): SuggestOutput {
