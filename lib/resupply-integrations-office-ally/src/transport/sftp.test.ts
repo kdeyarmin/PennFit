@@ -67,25 +67,38 @@ function makeRequest(
   };
 }
 
-/** Simulate execFile calling its callback with an error bearing the given fields. */
-function failExecFile(err: {
+/** Build an exec callback that fires with the given error fields. */
+function buildFailImpl(err: {
   message?: string;
   code?: string | number;
   killed?: boolean;
   signal?: string;
   stderr?: string;
-}): void {
-  execFileMock.mockImplementationOnce(
-    (
-      _file: string,
-      _args: string[],
-      _opts: object,
-      cb: (err: Error | null, stdout: string, stderr: string) => void,
-    ) => {
-      const e = Object.assign(new Error(err.message ?? "sftp error"), err);
-      cb(e, "", err.stderr ?? "");
-    },
-  );
+}) {
+  return (
+    _file: string,
+    _args: string[],
+    _opts: object,
+    cb: (err: Error | null, stdout: string, stderr: string) => void,
+  ): void => {
+    const e = Object.assign(new Error(err.message ?? "sftp error"), err);
+    cb(e, "", err.stderr ?? "");
+  };
+}
+
+/** Simulate execFile calling its callback with an error ONCE; the
+ *  next call hits the default-success shim. Use for retry-success
+ *  scenarios where the first attempt fails and the second succeeds. */
+function failExecFile(err: Parameters<typeof buildFailImpl>[0]): void {
+  execFileMock.mockImplementationOnce(buildFailImpl(err));
+}
+
+/** Make execFile fail the same way on EVERY call (sticky). The SFTP
+ *  transport retries connect_failed / transfer_failed up to 3 times;
+ *  error-classification tests need the failure to persist across all
+ *  attempts so the final outcome reflects the failure kind under test. */
+function failExecFileSticky(err: Parameters<typeof buildFailImpl>[0]): void {
+  execFileMock.mockImplementation(buildFailImpl(err));
 }
 
 // ── tests ─────────────────────────────────────────────────────────────────────
@@ -157,7 +170,14 @@ describe("createSftpTransport — happy path", () => {
     const transport = createSftpTransport(cfg);
     await transport.upload(makeRequest());
 
-    const [binary, args] = execFileMock.mock.calls[0] as [string, string[]];
+    // execFile's full signature is (file, args, opts, cb) — a 4-tuple
+    // — so cast through `unknown` to peel just the first two we care
+    // about. TypeScript otherwise complains about the tuple-length
+    // mismatch under strict mode.
+    const [binary, args] = execFileMock.mock.calls[0] as unknown as [
+      string,
+      string[],
+    ];
     expect(binary).toBe("sftp");
     expect(args).toContain("-i");
     expect(args).toContain("/home/alice/.ssh/id_ed25519");
@@ -175,8 +195,12 @@ describe("createSftpTransport — happy path", () => {
 
     // The second writeFile call is the batch file. Find it by examining
     // calls that passed a string containing 'put' and 'rename'.
-    const batchWriteCall = writeFileMock.mock.calls.find(
-      ([, content]) => typeof content === "string" && (content as string).includes("put "),
+    // `mock.calls` is loosely typed; the destructure-cast pattern below
+    // satisfies TS strict tuple-element-count without changing runtime
+    // behavior.
+    type WriteFileCall = readonly [unknown, unknown, ...unknown[]];
+    const batchWriteCall = (writeFileMock.mock.calls as unknown as WriteFileCall[]).find(
+      (call) => typeof call[1] === "string" && (call[1] as string).includes("put "),
     );
     expect(batchWriteCall).toBeDefined();
     const batchContent = batchWriteCall![1] as string;
@@ -195,14 +219,22 @@ describe("createSftpTransport — happy path", () => {
   it("uses the configured timeoutMs for the execFile call", async () => {
     const transport = createSftpTransport(makeConfig({ timeoutMs: 5000 }));
     await transport.upload(makeRequest());
-    const [, , opts] = execFileMock.mock.calls[0] as [unknown, unknown, { timeout: number }];
+    const [, , opts] = execFileMock.mock.calls[0] as unknown as [
+      unknown,
+      unknown,
+      { timeout: number },
+    ];
     expect(opts.timeout).toBe(5000);
   });
 
   it("defaults to 60_000 ms timeout when timeoutMs is not set", async () => {
     const transport = createSftpTransport(makeConfig());
     await transport.upload(makeRequest());
-    const [, , opts] = execFileMock.mock.calls[0] as [unknown, unknown, { timeout: number }];
+    const [, , opts] = execFileMock.mock.calls[0] as unknown as [
+      unknown,
+      unknown,
+      { timeout: number },
+    ];
     expect(opts.timeout).toBe(60_000);
   });
 });
@@ -276,7 +308,7 @@ describe("createSftpTransport — error classification", () => {
   });
 
   it("returns connect_failed on 'Connection refused' in stderr", async () => {
-    failExecFile({ stderr: "ssh: connect to host sftp10.officeally.com port 22: Connection refused", code: 255 });
+    failExecFileSticky({ stderr: "ssh: connect to host sftp10.officeally.com port 22: Connection refused", code: 255 });
     const transport = createSftpTransport(makeConfig());
     const p = transport.upload(makeRequest());
     await vi.runAllTimersAsync();
@@ -288,7 +320,7 @@ describe("createSftpTransport — error classification", () => {
   });
 
   it("returns connect_failed on 'No route to host' in stderr", async () => {
-    failExecFile({ stderr: "No route to host", code: 255 });
+    failExecFileSticky({ stderr: "No route to host", code: 255 });
     const transport = createSftpTransport(makeConfig());
     const p = transport.upload(makeRequest());
     await vi.runAllTimersAsync();
@@ -300,7 +332,7 @@ describe("createSftpTransport — error classification", () => {
   });
 
   it("returns connect_failed on 'Connection timed out' in stderr", async () => {
-    failExecFile({ stderr: "ssh: connect to host sftp10.officeally.com port 22: Connection timed out", code: 255 });
+    failExecFileSticky({ stderr: "ssh: connect to host sftp10.officeally.com port 22: Connection timed out", code: 255 });
     const transport = createSftpTransport(makeConfig());
     const p = transport.upload(makeRequest());
     await vi.runAllTimersAsync();
@@ -312,7 +344,7 @@ describe("createSftpTransport — error classification", () => {
   });
 
   it("returns transfer_failed as the default for unrecognised exit codes", async () => {
-    failExecFile({ code: 1 });
+    failExecFileSticky({ code: 1 });
     const transport = createSftpTransport(makeConfig());
     const p = transport.upload(makeRequest());
     await vi.runAllTimersAsync();
@@ -325,7 +357,7 @@ describe("createSftpTransport — error classification", () => {
   });
 
   it("returns transfer_failed with 'unknown' when the error has no numeric code", async () => {
-    failExecFile({ message: "some random error" });
+    failExecFileSticky({ message: "some random error" });
     const transport = createSftpTransport(makeConfig());
     const p = transport.upload(makeRequest());
     await vi.runAllTimersAsync();
@@ -338,12 +370,15 @@ describe("createSftpTransport — error classification", () => {
   });
 
   it("cleans up temp files even when execFile fails", async () => {
-    failExecFile({ code: 1 });
+    // Sticky failure → retry loop exhausts all 3 attempts. Each
+    // attempt's finally{} clause runs the two-file cleanup (localPath
+    // + batchPath), so we expect rm to be called 2 × 3 = 6 times.
+    failExecFileSticky({ code: 1 });
     const transport = createSftpTransport(makeConfig());
     const p = transport.upload(makeRequest());
     await vi.runAllTimersAsync();
     await p;
-    expect(rmMock).toHaveBeenCalledTimes(2);
+    expect(rmMock).toHaveBeenCalledTimes(6);
   });
 });
 
