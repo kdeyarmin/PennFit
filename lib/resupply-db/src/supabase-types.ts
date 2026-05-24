@@ -3896,6 +3896,31 @@ export interface Database {
       };
     };
     Functions: {
+      // Mig 0164 — server-side per-payer denial-rate aggregation for
+      // the /admin/billing/denial-rate endpoint (replaces a 10k-row
+      // JS reduce). bigint columns serialize as string over PostgREST.
+      billing_denial_rate: {
+        Args: { p_cutoff: string };
+        Returns: Array<{
+          payer_name: string;
+          decisions: number | string;
+          denials: number | string;
+        }>;
+      };
+      // Mig 0164 — per-product back-in-stock queue rollup for the
+      // /admin/shop/back-in-stock-queue endpoint (top 200, replaces a
+      // 10k-row JS group+sort). bigint counts serialize as string.
+      shop_back_in_stock_queue: {
+        Args: Record<string, never>;
+        Returns: Array<{
+          product_id: string;
+          pending_count: number | string;
+          notified_count: number | string;
+          delivered_count: number | string;
+          oldest_pending_at: string | null;
+          last_notified_at: string | null;
+        }>;
+      };
       // Mig 0155 — atomic per-touch open-count bump, called by
       // the open-tracking pixel endpoint on every pixel load.
       record_fitter_touch_open: {
