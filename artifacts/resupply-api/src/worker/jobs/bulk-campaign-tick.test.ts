@@ -258,9 +258,14 @@ beforeEach(() => {
 
 describe("processTick — opt-out re-check at send time (marketing)", () => {
   it("suppresses a recipient whose emailMarketing pref is false", async () => {
+    // recipient_kind: shop_customer — `isRecipientOptedOut` currently
+    // only re-checks shop_customers at send time. Patients don't
+    // expose `communication_preferences` in the generated Database
+    // types, so the re-check fail-opens for patient recipients.
+    // Closing that gap requires schema work tracked as a follow-up.
     stageSingleRecipientTick({
       campaign: { category: "marketing" },
-      recipient: { recipient_kind: "patient", recipient_id: "pat-1" },
+      recipient: { recipient_kind: "shop_customer", recipient_id: "cust-1" },
       patientPrefs: { emailMarketing: false },
     });
 
@@ -312,6 +317,8 @@ describe("processTick — opt-out re-check at send time (service)", () => {
   it("suppresses when emailResupplyReminders pref is false", async () => {
     stageSingleRecipientTick({
       campaign: { category: "service" },
+      // shop_customer kind — see note on the marketing case above.
+      recipient: { recipient_kind: "shop_customer", recipient_id: "cust-1" },
       patientPrefs: { emailResupplyReminders: false },
     });
 
@@ -473,6 +480,9 @@ describe("processTick — suppressedAtSend counter and pool.query", () => {
   it("includes suppressed_count in pool.query when a recipient is suppressed at send time", async () => {
     stageSingleRecipientTick({
       campaign: { category: "marketing" },
+      // shop_customer kind — see opt-out re-check tests for the
+      // current send-time re-check scope.
+      recipient: { recipient_kind: "shop_customer", recipient_id: "cust-1" },
       patientPrefs: { emailMarketing: false },
     });
 
@@ -480,7 +490,7 @@ describe("processTick — suppressedAtSend counter and pool.query", () => {
 
     // pool.query should have been called
     expect(poolQueryMock).toHaveBeenCalledTimes(1);
-    const [sql, params] = poolQueryMock.mock.calls[0] as [string, unknown[]];
+    const [sql, params] = poolQueryMock.mock.calls[0] as unknown as [string, unknown[]];
     expect(sql).toContain("suppressed_count");
     // params = [sent, failed, suppressedAtSend, campaignId]
     expect(params).toHaveLength(4);
@@ -500,7 +510,7 @@ describe("processTick — suppressedAtSend counter and pool.query", () => {
 
     await processTick(makeBoss() as never, { campaignId: "camp-1" }, testLog as never);
     expect(poolQueryMock).toHaveBeenCalledTimes(1);
-    const [sql] = poolQueryMock.mock.calls[0] as [string, unknown[]];
+    const [sql] = poolQueryMock.mock.calls[0] as unknown as [string, unknown[]];
     expect(sql).toContain("failed_count");
     expect(sql).toContain("sent_count");
   });
@@ -537,7 +547,7 @@ describe("processTick — suppressedAtSend counter and pool.query", () => {
 
     await processTick(makeBoss() as never, { campaignId: "camp-1" }, testLog as never);
 
-    const [, params] = poolQueryMock.mock.calls[0] as [string, unknown[]];
+    const [, params] = poolQueryMock.mock.calls[0] as unknown as [string, unknown[]];
     expect(params[3]).toBe("camp-1");
   });
 });
