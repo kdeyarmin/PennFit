@@ -33,12 +33,15 @@ import {
 } from "@workspace/resupply-ai";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
-import { getAnthropicClient, selectLlmProvider } from "../llm-provider";
+import {
+  DEFAULT_ANTHROPIC_MODEL as DEFAULT_ANTHROPIC_MODEL,
+  getAnthropicClient,
+  selectLlmProvider,
+} from "../llm-provider";
 import { logger } from "../logger";
 
 export const ICD10_PROMPT_VERSION = "icd10-1.0";
 const DEFAULT_MODEL = "gpt-4o-mini";
-const DEFAULT_ANTHROPIC_MODEL = "claude-haiku-4-5-20251001";
 const DEFAULT_TIMEOUT_MS = 15_000;
 const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
 
