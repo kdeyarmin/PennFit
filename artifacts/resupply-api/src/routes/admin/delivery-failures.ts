@@ -1,17 +1,20 @@
 // /admin/delivery-failures — webhook delivery error triage queue.
 //
 // Surfaces recent message-send failures across all three channels
-// (SMS, email, voice) plus delivery-failure-shaped audit events. Ops
-// uses this to spot phone numbers that are bouncing, email addresses
-// that are landing in spam, etc. Sorted newest first.
+// (SMS, email, voice). Ops uses this to spot phone numbers that are
+// bouncing, email addresses that are landing in spam, etc. Sorted
+// newest first.
 //
-// Two source streams unioned in the response:
-//   1. messages.delivery_status IN ('failed','undelivered','bounced',
-//      'dropped') — per-message terminal failures from the SMS / email
-//      status webhooks.
-//   2. audit_log rows where action LIKE '%.delivery.%' OR action LIKE
-//      '%.failed' — system-level errors (e.g. webhook signature
-//      verification failures, bulk-send aborts).
+// Source: messages.delivery_status IN ('failed','undelivered',
+// 'bounced','dropped') — per-message terminal failures from the SMS /
+// email status webhooks.
+//
+// The historical second stream — `audit_log` rows where action LIKE
+// '%.delivery.%' OR action LIKE '%.failed' — was retired when the
+// `resupply.audit_log` table was dropped. We still return an empty
+// `auditEvents` array for wire compatibility, paired with
+// `auditEventsUnavailable: true` so the SPA can render a clear
+// "no longer tracked" notice instead of an empty table.
 //
 // PHI: message bodies are NOT surfaced on this view — operators
 // triaging deliverability don't need the content; they need WHERE it
@@ -123,20 +126,13 @@ router.get("/admin/delivery-failures", requirePermission("reports.read"), async 
     }
   }
 
-  // System-level failure events from the audit log. PostgREST `.or()`
-  // supports `like` patterns; the LIKE wildcards (%) need to use
-  // PostgREST's `*` syntax instead.
-  const { data: auditRowsData, error: auditErr } = await supabase
-    .schema("resupply")
-    .from("audit_log")
-    .select("id, occurred_at, action, target_table, target_id, operator_email, metadata")
-    .gte("occurred_at", since)
-    .or(
-      "action.like.*.delivery.*,action.like.*.failed,action.like.*.bounced,action.like.*.error",
-    )
-    .order("occurred_at", { ascending: false })
-    .limit(MAX_ROWS);
-  if (auditErr) throw auditErr;
+  // System-level failure events used to live in `resupply.audit_log`
+  // under actions like '*.delivery.*' / '*.failed'. That table was
+  // retired with the wider audit-chain cleanup; we now return an
+  // empty stream + an explicit unavailable flag so the SPA can
+  // surface "no longer tracked" rather than silently render empty.
+  const auditEvents: Array<never> = [];
+  const auditEventsUnavailable = true;
 
   const messageEvents = (messageRows ?? []).map((r) => {
     const conv = conversationsById.get(r.conversation_id);
@@ -159,17 +155,6 @@ router.get("/admin/delivery-failures", requirePermission("reports.read"), async 
     };
   });
 
-  const auditEvents = (auditRowsData ?? []).map((r) => ({
-    kind: "audit" as const,
-    id: r.id,
-    occurredAt: r.occurred_at,
-    action: r.action,
-    targetTable: r.target_table,
-    targetId: r.target_id,
-    actorEmail: r.operator_email,
-    metadata: r.metadata ?? null,
-  }));
-
   res.json({
     sinceDays,
     counts: {
@@ -179,6 +164,7 @@ router.get("/admin/delivery-failures", requirePermission("reports.read"), async 
     failureStatuses: FAILURE_STATUSES,
     messageEvents,
     auditEvents,
+    auditEventsUnavailable,
   });
 });
 

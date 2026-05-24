@@ -571,6 +571,19 @@ function ProductivityPanel({
 }
 
 function ProductivityBody({ data }: { data: CsrProductivityResponse }) {
+  if (data.unavailable) {
+    return (
+      <p
+        className="text-sm py-2"
+        style={{ color: "hsl(var(--ink-3))" }}
+        data-testid="csr-productivity-unavailable"
+      >
+        Per-operator productivity is no longer tracked. The underlying
+        audit log was retired; this panel will return when a replacement
+        event source is wired up.
+      </p>
+    );
+  }
   if (data.rows.length === 0) {
     return (
       <p className="text-sm py-2" style={{ color: "hsl(var(--ink-3))" }}>

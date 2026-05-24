@@ -103,7 +103,14 @@ correctness, not style:
   is a no-op stub kept for back-compat with 150+ callsites — don't
   write new audit logic against it. `RESUPPLY_AUDIT_HMAC_KEY` is no
   longer read by any code path. Compliance is now handled out of band
-  by the business owner.
+  by the business owner. The four historical `audit_log` readers
+  (`/admin/delivery-failures` system-events stream,
+  `/admin/feature-flags/activity`, `/admin/analytics/csr-productivity`,
+  and the dashboard's PHI-sweep status helper) now short-circuit to
+  empty + `unavailable: true` responses so the SPA can render an
+  explicit "no longer tracked" notice; new readers must NOT add
+  `.from("audit_log")` calls. The `/readyz` DB probe was moved off
+  `audit_log` onto `feature_flags`.
 - **One From address.** Every outbound email funnels through
   `lib/resupply-email`'s `createSendgridClient()`; `SENDGRID_FROM_EMAIL`
   is `info@pennpaps.com`. Don't bypass the shared client.

@@ -1,11 +1,22 @@
 # @workspace/resupply-audit
 
-Single, sanctioned writer for `resupply.audit_log`. Every audit row in the
-Resupply slice goes through `logAudit()` from this package — direct
-`db.insert(auditLog)` and raw `INSERT INTO ... audit_log` calls are banned by
-Architecture Rule 8 in `scripts/check-resupply-architecture.sh`.
+> **Status: no-op stub.** The `resupply.audit_log` table was dropped
+> with the wider compliance-domain cleanup (see CLAUDE.md "Hard rules").
+> `logAudit()` is retained as a no-op so the ~150 callsites do not need
+> to be rewritten, but no rows are written and no audit data is read.
+> Don't author new audit logic against this package; treat any new
+> `.from("audit_log")` call as a bug. The four historical readers
+> (delivery-failures system-events, feature-flag activity, CSR
+> productivity, PHI-sweep status) have been short-circuited to return
+> empty payloads with `unavailable: true` so the SPA can render a
+> "no longer tracked" notice instead of failing silently.
 
-## Why a dedicated package
+## Historical reference
+
+Below is the original public API for posterity — none of it is wired
+to a real table any more.
+
+## Why a dedicated package (historical)
 
 Audit-row PHI is a HIPAA-reportable event. Centralizing the write path means
 the metadata sanitizer (PHI-key denylist + 8 KiB cap + depth 6 cap +

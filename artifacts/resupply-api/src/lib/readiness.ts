@@ -8,12 +8,14 @@ import { isWorkerReady } from "../worker/index.js";
 //   db    — Supabase PostgREST is reachable AND accepting queries from
 //           this process. Anything admin-facing fails if the DB is
 //           down, so this is a hard requirement. We probe by issuing a
-//           HEAD request against `resupply.audit_log` through the
-//           service-role client (`select("id", { head: true })`, no
-//           count) — that exercises the same PostgREST path every
-//           other request travels through without paying for a row
-//           scan, so a network/auth/schema regression surfaces here
-//           before it hits a route handler.
+//           HEAD request against `resupply.feature_flags` through the
+//           service-role client (`select("key", { head: true })`, no
+//           count) — `feature_flags` is small and seeded by the
+//           feature-flags migration, so the row scan is trivial and
+//           a network / auth / schema regression surfaces here before
+//           it hits a route handler. (We previously probed
+//           `audit_log`; that table was retired with the audit-chain
+//           cleanup and is no longer a valid target.)
 //
 //   queue — pg-boss has bootstrapped its schema. pg-boss boots
 //           in-process at startup (see src/worker/index.ts; the
@@ -86,13 +88,13 @@ function categorize(err: unknown): string {
 }
 
 async function checkDb(): Promise<void> {
-  // `head: true` makes PostgREST emit a HEAD with no row payload. We
-  // don't ask for `count: "exact"` — that would force PostgREST to
-  // run a `COUNT(*)` over `resupply.audit_log` regardless of the
-  // limit clause, and audit_log is append-only (it grows unbounded
-  // for the lifetime of the deploy). The bare `head + limit(1)` is
-  // enough to confirm the database is responding and the
-  // service-role JWT still validates against it.
+  // `head: true` makes PostgREST emit a HEAD with no row payload.
+  // We probe `feature_flags` (a small, seeded reference table) so
+  // the request exercises the same PostgREST + service-role-JWT
+  // path every other query travels through without paying for a
+  // row scan. We avoid `count: "exact"` for the same reason — a
+  // bare `head + limit(1)` is enough to confirm the DB is responding
+  // and the JWT still validates.
   // The supabase-js PostgrestBuilder is a PromiseLike, so we lift it
   // into a real Promise via Promise.resolve before composing with the
   // withTimeout race wrapper.
@@ -101,8 +103,8 @@ async function checkDb(): Promise<void> {
     Promise.resolve(
       supabase
         .schema("resupply")
-        .from("audit_log")
-        .select("id", { head: true })
+        .from("feature_flags")
+        .select("key", { head: true })
         .limit(1),
     ),
     "db check",
