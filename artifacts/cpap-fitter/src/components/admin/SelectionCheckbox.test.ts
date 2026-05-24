@@ -103,8 +103,14 @@ describe("RowSelectionCheckbox — checked and ariaLabel", () => {
     expect(SRC).toContain(
       "Required — screen readers need a per-row label to disambiguate",
     );
-    // The prop must NOT have a default value (it is mandatory).
-    expect(SRC).not.toMatch(/ariaLabel\s*=\s*"Select all/);
+    // The prop must NOT have a default value (it is mandatory). Scope
+    // the regex to the RowSelectionCheckbox function body only — the
+    // sibling HeaderSelectionCheckbox legitimately defaults its
+    // ariaLabel because "Select all on this page" is the right
+    // header copy with no per-row ambiguity.
+    const rowFnStart = SRC.indexOf("export function RowSelectionCheckbox");
+    const rowSrc = SRC.slice(rowFnStart);
+    expect(rowSrc).not.toMatch(/ariaLabel\s*=\s*"/);
   });
 
   it("applies the ariaLabel prop as aria-label", () => {
