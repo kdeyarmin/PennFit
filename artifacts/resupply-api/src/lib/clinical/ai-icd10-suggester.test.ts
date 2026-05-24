@@ -277,7 +277,12 @@ describe("suggestIcd10 — Anthropic provider path", () => {
     await suggestIcd10({ sleepStudyId: STUDY_ID });
 
     const callArg = mockSendWithRetry.mock.calls[0][1] as { model: string };
-    expect(callArg.model).toBe("claude-haiku-4-5-20251001");
+    // Must match the DEFAULT_ANTHROPIC_MODEL_CLASSIFY value stubbed on
+    // the ../llm-provider mock above. (A Copilot autofix changed the
+    // mock to the marketing alias `claude-haiku-4-5` but left this
+    // assertion on the old dated snapshot, breaking the test — the two
+    // must stay in lockstep.)
+    expect(callArg.model).toBe("claude-haiku-4-5");
   });
 
   it("respects an explicit input.model override on the Anthropic path", async () => {
