@@ -31,6 +31,10 @@ export interface DeliveryFailuresResponse {
   failureStatuses: readonly string[];
   messageEvents: MessageFailureEvent[];
   auditEvents: AuditFailureEvent[];
+  /** When true, the system-events stream is no longer tracked (the
+   *  audit_log source was retired). UI surfaces this as a clear
+   *  "no longer tracked" notice on the System events tab. */
+  auditEventsUnavailable?: boolean;
 }
 
 export async function fetchDeliveryFailures(

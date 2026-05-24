@@ -233,6 +233,11 @@ describe("PATCH /admin/feature-flags/:key", () => {
 });
 
 // ─── GET /admin/feature-flags/activity ──────────────────────────────────
+//
+// The endpoint used to read from `resupply.audit_log`; that table was
+// dropped, so the endpoint now short-circuits to `{ activity: [],
+// unavailable: true }`. Tests cover the new contract and confirm we
+// never touch Supabase from the activity handler.
 
 describe("GET /admin/feature-flags/activity", () => {
   it("returns 401 when not signed in", async () => {
@@ -242,92 +247,25 @@ describe("GET /admin/feature-flags/activity", () => {
     expect(res.status).toBe(401);
   });
 
-  it("returns the audit rows transformed into ToggleActivityRow shape", async () => {
+  it("returns an empty activity list with unavailable: true", async () => {
     stubAdmin();
-    stageSupabaseResponse("audit_log", "select", {
-      data: [
-        {
-          occurred_at: "2026-05-15T10:00:00.000Z",
-          operator_email: "ops@example.com",
-          metadata: {
-            key: "sms.reminders",
-            from: true,
-            to: false,
-          },
-        },
-        {
-          occurred_at: "2026-05-15T09:00:00.000Z",
-          operator_email: "ops2@example.com",
-          metadata: {
-            key: "voice.agent",
-            from: false,
-            to: true,
-          },
-        },
-      ],
-    });
 
     const res = await request(makeApp()).get(
       "/admin/feature-flags/activity",
     );
 
     expect(res.status).toBe(200);
-    expect(res.body.activity).toHaveLength(2);
-    expect(res.body.activity[0]).toEqual({
-      occurredAt: "2026-05-15T10:00:00.000Z",
-      operatorEmail: "ops@example.com",
-      key: "sms.reminders",
-      from: true,
-      to: false,
-    });
+    expect(res.body).toEqual({ activity: [], unavailable: true });
   });
 
-  it("skips audit rows with malformed metadata (defensive)", async () => {
+  it("ignores the limit query param (no underlying query to bound)", async () => {
     stubAdmin();
-    stageSupabaseResponse("audit_log", "select", {
-      data: [
-        // Good row.
-        {
-          occurred_at: "2026-05-15T10:00:00.000Z",
-          operator_email: "ops@example.com",
-          metadata: { key: "sms.reminders", from: true, to: false },
-        },
-        // Bad row: missing `to` boolean.
-        {
-          occurred_at: "2026-05-15T09:00:00.000Z",
-          operator_email: "x@example.com",
-          metadata: { key: "voice.agent", from: false },
-        },
-        // Bad row: metadata is null.
-        {
-          occurred_at: "2026-05-15T08:00:00.000Z",
-          operator_email: "x@example.com",
-          metadata: null,
-        },
-      ],
-    });
-
-    const res = await request(makeApp()).get(
-      "/admin/feature-flags/activity",
-    );
-
-    expect(res.status).toBe(200);
-    expect(res.body.activity).toHaveLength(1);
-    expect(res.body.activity[0].key).toBe("sms.reminders");
-  });
-
-  it("clamps the limit to ACTIVITY_MAX_LIMIT (100)", async () => {
-    stubAdmin();
-    stageSupabaseResponse("audit_log", "select", { data: [] });
 
     const res = await request(makeApp()).get(
       "/admin/feature-flags/activity?limit=9999",
     );
 
     expect(res.status).toBe(200);
-    // We can't directly assert the clamp without filterCalls
-    // capture, but a 200 + empty body confirms no parse error and
-    // the route accepted the over-large param.
-    expect(res.body.activity).toEqual([]);
+    expect(res.body).toEqual({ activity: [], unavailable: true });
   });
 });
