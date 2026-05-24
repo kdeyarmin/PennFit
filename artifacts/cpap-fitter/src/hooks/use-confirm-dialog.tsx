@@ -81,6 +81,16 @@ const INITIAL_STATE: InternalState = {
 
 export type ConfirmFn = (opts: ConfirmDialogOptions) => Promise<boolean>;
 
+/**
+ * Provide a confirm function and a memoized dialog element for prompting the user.
+ *
+ * The returned `confirm` function opens an accessible, styleable confirmation dialog using
+ * the supplied options; the dialog resolves the confirmation result when the user confirms,
+ * cancels, or dismisses the dialog. The dialog element is memoized to avoid identity churn
+ * when rendered by callers.
+ *
+ * @returns A tuple where the first element is a `ConfirmFn` that opens the dialog and resolves to `true` when the user confirms and `false` when the user cancels or dismisses; the second element is a memoized `React.ReactNode` containing the dialog element to render.
+ */
 export function useConfirmDialog(): [ConfirmFn, React.ReactNode] {
   const [state, setState] = React.useState<InternalState>(INITIAL_STATE);
 

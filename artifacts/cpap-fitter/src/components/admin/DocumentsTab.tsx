@@ -24,12 +24,32 @@ import {
   type AdminPatientDocument,
 } from "@/lib/admin/patient-documents-api";
 
+/**
+ * Format a byte count into a human-readable string.
+ *
+ * @param bytes - The number of bytes to format
+ * @returns A string using bytes, kilobytes, or megabytes:
+ *  - `< 1024` → `X B`
+ *  - `< 1,048,576` → `X KB` (rounded)
+ *  - otherwise → `Y.Y MB` (one decimal)
+ */
 function formatDocBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+/**
+ * Renders a UI for listing and managing a patient's uploaded documents.
+ *
+ * The tab shows document metadata, download links, and badges for unreviewed items.
+ * It supports marking individual documents reviewed (optionally with a review note),
+ * a best-effort bulk "mark all reviewed" action, and deleting documents via a confirm dialog.
+ * Loading and error states are displayed for initial load and delete failures.
+ *
+ * @param patientId - The ID of the patient whose documents are displayed and managed
+ * @returns The component's UI for listing and managing a patient's uploaded documents
+ */
 export function DocumentsTab({ patientId }: { patientId: string }) {
   const [confirm, ConfirmDialogEl] = useConfirmDialog();
   const [docs, setDocs] = useState<AdminPatientDocument[] | null>(null);

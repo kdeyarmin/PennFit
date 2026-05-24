@@ -1188,6 +1188,18 @@ function ReviewList({ items }: { items: ReviewItem[] }) {
   );
 }
 
+/**
+ * Renders the signed-in user's review panel, showing their review and providing edit and delete actions.
+ *
+ * The panel displays rating, status, title, body, and any moderator note. Editing opens the review form with the
+ * current review as initial values; successful edits call `onChange` with the updated review. Deleting opens a
+ * confirmation dialog and, on success, calls `onChange(null)`. On deletion failure a destructive toast is shown.
+ *
+ * @param productId - The product identifier for actions (edit/delete) performed from this panel
+ * @param review - The current user's review for the product
+ * @param onChange - Invoked when the user's review changes; receives the updated `MyReview` or `null` if the review was deleted
+ * @returns The UI element for the user's review panel
+ */
 function MyReviewPanel({
   productId,
   review,

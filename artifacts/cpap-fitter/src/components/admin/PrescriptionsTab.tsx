@@ -53,6 +53,16 @@ function formatBytes(n: number | null | undefined): string {
   return `${(n / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+/**
+ * Render the prescriptions management tab including a table of prescriptions, attachment upload/remove controls, status change actions, SWO generation, and an "Add prescription" modal.
+ *
+ * The component shows per-row busy state for status and attachment operations, displays action-level errors, and uses a confirm dialog for destructive actions.
+ *
+ * @param patientId - ID of the patient whose prescriptions are shown
+ * @param prescriptions - List of prescriptions to display in the table
+ * @param onChanged - Callback invoked after a successful change (create, status update, attachment add/remove) to refresh data
+ * @returns The React element for the prescriptions management tab
+ */
 export function PrescriptionsTab({
   patientId,
   prescriptions,
