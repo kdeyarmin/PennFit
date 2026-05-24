@@ -92,18 +92,23 @@ describe("use-confirm-dialog — ConfirmDialogOptions fields", () => {
 // ---------------------------------------------------------------------------
 
 describe("use-confirm-dialog — InternalState", () => {
-  it("defines InternalState with open, options, and resolve fields", () => {
+  it("defines InternalState with open and options fields", () => {
+    // The resolver previously lived on InternalState too, but the
+    // hook was refactored to keep it on a React.useRef only (the
+    // state copy was redundant — the ref is what `settle()` reads).
     expect(SRC).toContain("open: boolean");
     expect(SRC).toContain("options: ConfirmDialogOptions | null");
-    expect(SRC).toContain(
-      "resolve: ((value: boolean) => void) | null",
-    );
   });
 
-  it("defines INITIAL_STATE with open: false, options: null, resolve: null", () => {
+  it("defines INITIAL_STATE with open: false, options: null", () => {
     expect(SRC).toContain("open: false");
     expect(SRC).toContain("options: null");
-    expect(SRC).toContain("resolve: null");
+  });
+
+  it("keeps the resolver in a ref, not on InternalState", () => {
+    // Negative assertion guards against accidentally re-introducing
+    // the redundant state field on a future refactor.
+    expect(SRC).not.toContain("resolve: ((value: boolean) => void) | null");
   });
 });
 
@@ -148,7 +153,9 @@ describe("use-confirm-dialog — confirm() promise resolver", () => {
   });
 
   it("sets state to open:true with the provided options", () => {
-    expect(SRC).toContain("setState({ open: true, options, resolve });");
+    // setState carries only { open, options } — the resolver lives
+    // on resolverRef (see InternalState block above).
+    expect(SRC).toContain("setState({ open: true, options });");
   });
 
   it("guard: resolves prior pending promise as false before opening a new one", () => {
@@ -216,15 +223,19 @@ describe("use-confirm-dialog — default labels", () => {
 
 describe("use-confirm-dialog — destructive button styling", () => {
   it("applies buttonVariants destructive when opts.destructive is true", () => {
-    expect(SRC).toContain('buttonVariants({ variant: "destructive" })');
+    // The ternary inside buttonVariants() resolves to "destructive"
+    // for destructive: true, "default" otherwise — the variant
+    // string is built inline.
+    expect(SRC).toMatch(
+      /buttonVariants\(\{\s*variant:\s*opts\?\.destructive\s*\?\s*"destructive"\s*:\s*"default"/,
+    );
   });
 
   it("gates the destructive className on opts.destructive being truthy", () => {
-    expect(SRC).toContain("opts?.destructive &&");
-  });
-
-  it("uses cn() to conditionally apply the destructive class", () => {
-    expect(SRC).toContain("className={cn(");
+    // The hook switched from `cn(opts?.destructive && ...)` to a
+    // ternary inside buttonVariants(). The gate is now expressed as
+    // `variant: opts?.destructive ? "destructive" : "default"`.
+    expect(SRC).toContain('opts?.destructive ? "destructive" : "default"');
   });
 });
 
@@ -267,8 +278,13 @@ describe("use-confirm-dialog — Radix AlertDialog components", () => {
     );
   });
 
-  it("imports AlertDialogAction", () => {
-    expect(SRC).toContain("AlertDialogAction");
+  it("imports the Radix Action primitive (or shadcn re-export) for the confirm button", () => {
+    // The hook may render either `<AlertDialogAction>` from the
+    // shadcn wrapper or `<AlertDialogPrimitive.Action>` directly —
+    // the latter avoids the wrapper's default styling so the
+    // destructive variant ternary in buttonVariants() takes effect
+    // without being shadowed.
+    expect(SRC).toMatch(/AlertDialogAction|AlertDialogPrimitive\.Action/);
   });
 
   it("imports AlertDialogCancel", () => {
