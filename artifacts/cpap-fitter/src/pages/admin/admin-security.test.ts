@@ -69,8 +69,11 @@ describe("admin-security EnrolledPanel — regenerate recovery codes", () => {
   });
 
   it("marks the regenerate action as destructive:true", () => {
-    // Covered by the two destructive:true occurrences (one per component).
-    expect(SRC).toContain("destructive: true");
+    // Extract the regenerate block and verify destructive flag is present
+    const regenerateBlock = SRC.match(
+      /title: "Regenerate recovery codes\?"[\s\S]{0,300}destructive: true/
+    );
+    expect(regenerateBlock).not.toBeNull();
   });
 
   it("still calls regenerate.mutate() on confirmation", () => {
