@@ -16,6 +16,7 @@ import {
   stageSupabaseResponse,
   getSupabaseWritePayloads,
   getSupabaseCallCount,
+  getSupabaseFilterCalls,
 } from "../../test-helpers/supabase-mock";
 
 const supabaseMock = installSupabaseMock();
@@ -143,14 +144,23 @@ describe("runOrphanAssigneeSweep — empty-set behavior", () => {
 });
 
 describe("runOrphanAssigneeSweep — pagination", () => {
-  it("paginates until the page returns fewer than the page size", async () => {
-    // Page 1: full page of 1 row (we don't fill to 200 in tests for
-    // brevity; the worker's "advance by rows.length" logic still
-    // breaks once a short page comes back). A revoked assignee.
+  it("uses keyset pagination so in-loop unassignments do not skip later rows", async () => {
+    const firstPage = Array.from({ length: 200 }, (_, i) => ({
+      id: `conv_${String(i + 1).padStart(3, "0")}`,
+      assigned_admin_user_id: "admin_active",
+      assigned_at: "2026-04-01T12:00:00Z",
+      status: "open",
+    }));
+    stageSupabaseResponse("conversations", "select", {
+      data: firstPage,
+    });
+    stageSupabaseResponse("admin_users", "select", { data: [] });
+
+    // Page 2: one revoked assignment after the first page's cursor.
     stageSupabaseResponse("conversations", "select", {
       data: [
         {
-          id: "conv_p1",
+          id: "conv_201",
           assigned_admin_user_id: "admin_revoked",
           assigned_at: "2026-04-01T12:00:00Z",
           status: "open",
@@ -161,15 +171,14 @@ describe("runOrphanAssigneeSweep — pagination", () => {
       data: [{ id: "admin_revoked" }],
     });
     stageSupabaseResponse("conversations", "update", { data: null });
-    // Page 2 (still partial, but a different row this time): an
-    // active assignee, so no update.
-    // NOTE: the worker breaks the loop when rows.length <
-    // SWEEP_PAGE_SIZE, and our test pages are size 1 < 200, so the
-    // loop exits after the first iteration. We assert the single
-    // unassignment landed.
 
     const stats = await runOrphanAssigneeSweep();
-    expect(stats.scanned).toBe(1);
+    expect(stats.scanned).toBe(201);
     expect(stats.unassigned).toBe(1);
+    const filters = getSupabaseFilterCalls("conversations", "select");
+    const gtCursor = filters.filter(
+      (call) => call.verb === "gt" && call.args[0] === "id",
+    );
+    expect(gtCursor).toContainEqual({ verb: "gt", args: ["id", "conv_200"] });
   });
 });

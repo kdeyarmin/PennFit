@@ -16,7 +16,10 @@ import {
 
 const supabaseMock = installSupabaseMock();
 
-import { tryRecordWebhookEvent } from "./webhook-handler";
+import {
+  tryDeleteWebhookEventRecord,
+  tryRecordWebhookEvent,
+} from "./webhook-handler";
 
 beforeEach(() => {
   supabaseMock.reset();
@@ -77,13 +80,10 @@ describe("tryRecordWebhookEvent — non-fatal failures", () => {
 
 describe("tryRecordWebhookEvent — never throws", () => {
   it("returns 'error' (does not propagate) when the supabase client itself throws", async () => {
-    // Make the mock throw by staging an Error in the response queue
-    // — the supabase-mock surfaces this as a synthesized error
-    // shape, but the helper's try/catch guards both paths so a
-    // genuine SDK throw also resolves to "error".
+    // Stage a real throw from the Supabase mock so this test
+    // exercises the helper's catch path directly.
     stageSupabaseResponse("stripe_webhook_events", "insert", {
-      data: null,
-      error: { code: "08006", message: "connection refused" },
+      throws: new Error("connection refused"),
     });
     const outcome = await tryRecordWebhookEvent(
       "evt_thrown",
@@ -91,5 +91,16 @@ describe("tryRecordWebhookEvent — never throws", () => {
       undefined,
     );
     expect(outcome).toBe("error");
+  });
+});
+
+describe("tryDeleteWebhookEventRecord — never throws", () => {
+  it("swallows delete exceptions and resolves", async () => {
+    stageSupabaseResponse("stripe_webhook_events", "delete", {
+      throws: new Error("delete failed"),
+    });
+    await expect(
+      tryDeleteWebhookEventRecord("evt_cleanup_throw", undefined),
+    ).resolves.toBeUndefined();
   });
 });

@@ -71,31 +71,43 @@ interface SweepStats {
   unassigned: number;
 }
 
+interface ConversationSweepRow {
+  id: string;
+  assigned_admin_user_id: string | null;
+  assigned_at: string | null;
+  status: string;
+}
+
 /** Exported for test injection. Runs one sweep cycle and returns
  *  the counts so a test can assert behavior without scheduling. */
 export async function runOrphanAssigneeSweep(): Promise<SweepStats> {
   const supabase = getSupabaseServiceRoleClient();
   let scanned = 0;
   let unassigned = 0;
-  let offset = 0;
+  let lastConversationId: string | null = null;
 
   while (unassigned < MAX_PER_TICK) {
     // 1. Fetch the next page of assigned conversations in active
-    //    statuses. Ordered by `assigned_at ASC NULLS LAST` so we
-    //    surface the OLDEST orphans first — those are the ones
-    //    closest to an SLA breach.
-    const { data: page, error: pageErr } = await supabase
+    //    statuses via keyset pagination on id. Offset pagination can
+    //    skip rows because this job unassigns conversations in-loop,
+    //    which shrinks the filtered set between pages.
+    const pageQuery = supabase
       .schema("resupply")
       .from("conversations")
       .select("id, assigned_admin_user_id, assigned_at, status")
       .not("assigned_admin_user_id", "is", null)
       .in("status", ACTIVE_STATUSES as unknown as string[])
-      .order("assigned_at", { ascending: true, nullsFirst: false })
-      .range(offset, offset + SWEEP_PAGE_SIZE - 1);
+      .order("id", { ascending: true })
+      .limit(SWEEP_PAGE_SIZE);
+    const pageResult = await (lastConversationId
+      ? pageQuery.gt("id", lastConversationId)
+      : pageQuery);
+    const pageErr = pageResult.error;
     if (pageErr) throw pageErr;
-    const rows = page ?? [];
+    const rows = (pageResult.data ?? []) as ConversationSweepRow[];
     if (rows.length === 0) break;
     scanned += rows.length;
+    lastConversationId = rows[rows.length - 1]?.id ?? lastConversationId;
 
     // 2. Distinct assignee ids on this page. Look them up once
     //    against admin_users and keep only the revoked ones.
@@ -107,7 +119,6 @@ export async function runOrphanAssigneeSweep(): Promise<SweepStats> {
       ),
     );
     if (assigneeIds.length === 0) {
-      offset += rows.length;
       continue;
     }
     const { data: revokedAssignees, error: assigneeErr } = await supabase
@@ -177,12 +188,10 @@ export async function runOrphanAssigneeSweep(): Promise<SweepStats> {
       if (unassigned >= MAX_PER_TICK) break;
     }
 
-    // Advance the offset by the page size — NOT by the
-    // unassigned-on-this-page count. Rows whose assignee is still
-    // active are intentionally left in place and we don't want to
-    // re-visit them on the next iteration.
+    // Keyset pagination advances by the last seen conversation id,
+    // so rows that were unassigned in-loop don't shrink the next page
+    // out from under us.
     if (rows.length < SWEEP_PAGE_SIZE) break;
-    offset += rows.length;
   }
 
   return { scanned, unassigned };

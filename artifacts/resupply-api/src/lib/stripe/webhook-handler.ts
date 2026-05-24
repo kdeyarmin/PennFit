@@ -208,6 +208,30 @@ export async function tryRecordWebhookEvent(
   }
 }
 
+export async function tryDeleteWebhookEventRecord(
+  eventId: string,
+  log: { warn?: (...args: unknown[]) => void } | undefined,
+): Promise<void> {
+  try {
+    const supabase = getSupabaseServiceRoleClient();
+    const { error } = await supabase
+      .schema("resupply")
+      .from("stripe_webhook_events")
+      .delete()
+      .eq("event_id", eventId);
+    if (!error) return;
+    log?.warn?.(
+      { code: (error as { code?: string }).code, eventId },
+      "stripe webhook: failed to release dedup record after handler error",
+    );
+  } catch {
+    log?.warn?.(
+      { eventId },
+      "stripe webhook: dedup record cleanup threw",
+    );
+  }
+}
+
 export const stripeWebhookHandler: RequestHandler = async (
   req: Request,
   res: Response,
@@ -273,6 +297,7 @@ export const stripeWebhookHandler: RequestHandler = async (
   // changes downstream don't have to carry the Stripe-redelivery
   // story — this layer owns it.
   const dedupeOutcome = await tryRecordWebhookEvent(event.id, event.type, log);
+  const dedupeInserted = dedupeOutcome === "inserted";
   if (dedupeOutcome === "duplicate") {
     log?.info?.("stripe webhook: event_id already recorded — deduped");
     res.status(200).json({ ok: true, deduped: true });
@@ -531,6 +556,9 @@ export const stripeWebhookHandler: RequestHandler = async (
       }
     }
   } catch (err) {
+    if (dedupeInserted) {
+      await tryDeleteWebhookEventRecord(event.id, log);
+    }
     // Capture full structured error context so a 500 here is debuggable
     // without re-running the failing event. `err` itself goes through
     // pino's default serializer (stack + cause). Stripe SDK errors
