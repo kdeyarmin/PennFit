@@ -51,6 +51,8 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { useDocumentTitle } from "@/hooks/use-document-title";
+import { useConfirmDialog } from "@/hooks/use-confirm-dialog";
+import { toast } from "@/hooks/use-toast";
 import { useDocumentMeta } from "@/hooks/use-document-meta";
 import { useCart } from "@/hooks/use-cart";
 import { useRecentlyViewed } from "@/hooks/use-recently-viewed";
@@ -1186,6 +1188,18 @@ function ReviewList({ items }: { items: ReviewItem[] }) {
   );
 }
 
+/**
+ * Renders the signed-in user's review panel, showing their review and providing edit and delete actions.
+ *
+ * The panel displays rating, status, title, body, and any moderator note. Editing opens the review form with the
+ * current review as initial values; successful edits call `onChange` with the updated review. Deleting opens a
+ * confirmation dialog and, on success, calls `onChange(null)`. On deletion failure a destructive toast is shown.
+ *
+ * @param productId - The product identifier for actions (edit/delete) performed from this panel
+ * @param review - The current user's review for the product
+ * @param onChange - Invoked when the user's review changes; receives the updated `MyReview` or `null` if the review was deleted
+ * @returns The UI element for the user's review panel
+ */
 function MyReviewPanel({
   productId,
   review,
@@ -1197,6 +1211,7 @@ function MyReviewPanel({
 }) {
   const [editing, setEditing] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [confirm, ConfirmDialogEl] = useConfirmDialog();
 
   if (editing) {
     return (
@@ -1213,14 +1228,26 @@ function MyReviewPanel({
   }
 
   const handleDelete = async () => {
-    if (!window.confirm("Delete your review? This can't be undone.")) return;
+    if (
+      !(await confirm({
+        title: "Delete your review?",
+        description: "This can't be undone.",
+        confirmLabel: "Delete",
+        destructive: true,
+      }))
+    )
+      return;
     setDeleting(true);
     try {
       await deleteMyReview(productId);
       onChange(null);
     } catch {
       setDeleting(false);
-      window.alert("Couldn't delete your review. Please try again.");
+      toast({
+        variant: "destructive",
+        title: "Couldn't delete your review",
+        description: "Please try again.",
+      });
     }
   };
 
@@ -1288,6 +1315,7 @@ function MyReviewPanel({
           </Button>
         </div>
       </div>
+      {ConfirmDialogEl}
     </div>
   );
 }

@@ -67,8 +67,13 @@ describe("admin-shop-returns — Mark shipped back button", () => {
   });
 
   it("shows a confirmation dialog with a human-readable message", () => {
+    // The confirmation moved from window.confirm("...?") to a
+    // useConfirmDialog title/description split. Look for the title
+    // (which carries the question form) and the description (the
+    // clarifying body that used to follow the "?").
+    expect(SRC).toContain("Mark return as shipped back?");
     expect(SRC).toContain(
-      "Mark this return as shipped back?",
+      "Use this when the customer confirms they've handed off the parcel",
     );
   });
 });

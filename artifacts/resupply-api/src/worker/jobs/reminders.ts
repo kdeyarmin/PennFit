@@ -90,6 +90,103 @@ export const SEND_SMS_JOB = "reminders.send-sms";
 export const SEND_EMAIL_JOB = "reminders.send-email";
 
 /**
+ * Pre-vendor idempotency guard. Returns true if this is the first
+ * attempt to send a reminder for the (patient, episode, channel)
+ * within the TTL window; returns false if a prior attempt already
+ * holds the lock (caller MUST short-circuit before calling Twilio /
+ * SendGrid).
+ *
+ * Why this exists:
+ *   - pg-boss retries a job that fails AFTER the vendor call (e.g.
+ *     Twilio accepts the SMS but our follow-up DB write throws). The
+ *     retry would re-call Twilio, and Twilio happily bills + delivers
+ *     the SMS a second time.
+ *   - Two scan runs (8am, 9am) may race to enqueue the same patient
+ *     if the 8am send hasn't finished by 9am. Without this guard the
+ *     patient gets two reminders within an hour.
+ *
+ * Posture: the dedup table failing to insert (Supabase down, table
+ * missing, permission error) does NOT block the send. A degraded
+ * dedup table is preferable to a degraded reminder pipeline; the
+ * worst case becomes "Twilio receives two API calls" not "patient
+ * gets zero reminders". The failure is logged so ops can investigate.
+ *
+ * TTL = 22h (intentionally less than 24h so the next-day scan can
+ * resend cleanly when a patient's cadence is daily).
+ */
+async function tryClaimReminderDedupKey(
+  supabase: ReturnType<typeof getSupabaseServiceRoleClient>,
+  channel: "sms" | "email",
+  patientId: string,
+  episodeId: string,
+  jobId: string,
+): Promise<{ proceed: boolean; key: string }> {
+  const todayUtc = new Date().toISOString().slice(0, 10);
+  const key = `reminder-${channel}:${patientId}:${episodeId}:${todayUtc}`;
+  const expiresAt = new Date(Date.now() + 22 * 60 * 60 * 1000).toISOString();
+  const { error } = await supabase
+    .schema("resupply")
+    .from("worker_dedup_keys")
+    .insert({ key, expires_at: expiresAt });
+  if (!error) {
+    return { proceed: true, key }; // won the race — caller may proceed
+  }
+  // Postgres UNIQUE violation = 23505 on the PK ("key"). Surfaces
+  // through PostgREST as code '23505' on the PostgrestError.
+  if (error.code === "23505") {
+    logger.info(
+      {
+        event: "reminder_dedup_skip",
+        channel,
+        patient_id: patientId,
+        episode_id: episodeId,
+        job_id: jobId,
+        dedup_key: key,
+      },
+      "reminders: dedup key already claimed — skipping (prior attempt won)",
+    );
+    return { proceed: false, key };
+  }
+  // Any other error: log and proceed (fail-open). Better one duplicate
+  // SMS than a silently broken reminder pipeline.
+  logger.warn(
+    {
+      event: "reminder_dedup_insert_failed",
+      err: { code: error.code, message: error.message },
+      channel,
+      patient_id: patientId,
+      episode_id: episodeId,
+      job_id: jobId,
+    },
+    "reminders: dedup insert failed — proceeding without idempotency protection",
+  );
+  return { proceed: true, key };
+}
+
+async function releaseReminderDedupKey(
+  supabase: ReturnType<typeof getSupabaseServiceRoleClient>,
+  key: string,
+  jobId: string,
+): Promise<void> {
+  const { error } = await supabase
+    .schema("resupply")
+    .from("worker_dedup_keys")
+    .delete()
+    .eq("key", key);
+  if (error) {
+    logger.warn(
+      {
+        event: "reminder_dedup_release_failed",
+        err: { code: error.code, message: error.message },
+        dedup_key: key,
+        job_id: jobId,
+      },
+      "reminders: failed to release dedup key before retry",
+    );
+  }
+}
+
+/**
  * Quiet-period: do not enqueue a reminder for a patient/episode that
  * already had a conversation opened within the last N ms.
  */
@@ -124,6 +221,62 @@ interface ScanRow {
 const DAY_MS = 24 * 60 * 60 * 1000;
 function daysBetween(earlier: Date, later: Date): number {
   return Math.floor((later.getTime() - earlier.getTime()) / DAY_MS);
+}
+
+/**
+ * Local-business-hours gate for outbound automated messages. TCPA
+ * defines the legal window for automated SMS/voice as 8am–9pm local
+ * to the recipient; our internal policy is the narrower 9am–8pm.
+ * Hour boundaries are half-open: 9 <= hour < 20 → allowed.
+ *
+ * `timezone` is an IANA tz name (e.g. "America/New_York"); a value
+ * the runtime doesn't recognize falls back to ET, which is wider for
+ * West-Coast patients than they probably want but still safely inside
+ * the TCPA window. We log the fallback so a bad tz value shows up in
+ * the logs rather than silently degrading.
+ */
+const QUIET_HOURS_START = 9; // 09:00 local — earliest send
+const QUIET_HOURS_END = 20; // 20:00 local — latest send (exclusive)
+function isWithinQuietHours(now: Date, timezone: string): boolean {
+  let hour: number;
+  try {
+    const fmt = new Intl.DateTimeFormat("en-US", {
+      timeZone: timezone,
+      hour: "numeric",
+      hour12: false,
+    });
+    const parts = fmt.formatToParts(now);
+    const hourPart = parts.find((p) => p.type === "hour")?.value;
+    hour = hourPart ? Number.parseInt(hourPart, 10) : Number.NaN;
+    if (!Number.isFinite(hour)) {
+      throw new Error("formatToParts returned non-numeric hour");
+    }
+  } catch (err) {
+    // Bad IANA tz string. Fall back to ET — the practice's local TZ
+    // and the conservative default the schema applies for new patients.
+    logger.warn(
+      {
+        event: "reminder_tz_fallback",
+        bad_timezone: timezone,
+        err: err instanceof Error ? err.message : String(err),
+      },
+      "reminders: unrecognized patient timezone — falling back to America/New_York",
+    );
+    const fmt = new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/New_York",
+      hour: "numeric",
+      hour12: false,
+    });
+    const parts = fmt.formatToParts(now);
+    hour = Number.parseInt(
+      parts.find((p) => p.type === "hour")?.value ?? "0",
+      10,
+    );
+  }
+  // Note: Intl.DateTimeFormat with hour12:false returns "0" for
+  // midnight (not "24"), so 0 < QUIET_HOURS_START correctly rejects
+  // midnight sends.
+  return hour < QUIET_HOURS_START || hour >= QUIET_HOURS_END;
 }
 
 /**
@@ -318,6 +471,7 @@ export async function scanForDueReminders(
       channel_preference: string | null;
       phone_e164: string | null;
       email: string | null;
+      timezone: string;
     }
   >();
   for (let i = 0; i < patientIds.length; i += 200) {
@@ -326,7 +480,7 @@ export async function scanForDueReminders(
       .schema("resupply")
       .from("patients")
       .select(
-        "id, created_at, insurance_payer, cadence_override_days, channel_preference, phone_e164, email",
+        "id, created_at, insurance_payer, cadence_override_days, channel_preference, phone_e164, email, timezone",
       )
       .eq("status", "active")
       .in("id", batch);
@@ -384,6 +538,7 @@ export async function scanForDueReminders(
     channelPreference: string | null;
     phone: string | null;
     email: string | null;
+    timezone: string;
     prescriptionItemSku: string;
     prescriptionCadenceDays: number;
     prescriptionCreatedAt: string;
@@ -407,6 +562,7 @@ export async function scanForDueReminders(
       channelPreference: patient.channel_preference,
       phone: patient.phone_e164,
       email: patient.email,
+      timezone: patient.timezone,
       prescriptionItemSku: presc.item_sku,
       prescriptionCadenceDays: presc.cadence_days,
       prescriptionCreatedAt: presc.created_at,
@@ -470,6 +626,26 @@ export async function scanForDueReminders(
     if (daysBetween(baseline, asOf) < plan.cadenceDays) {
       // Not due yet — skip silently. Common case for the bulk of
       // active patients on every scan.
+      continue;
+    }
+
+    // Quiet hours: defer sends outside the recipient's 9am–8pm local
+    // window. The patient stays "due" — the next hourly scan that
+    // catches them inside business hours will pick them up. This is
+    // intentional: we'd rather a patient who became due overnight
+    // receive their reminder at 9am local than at 3am local. The
+    // 48h conversation quiet-period is independent of this and
+    // continues to apply.
+    if (isWithinQuietHours(asOf, row.timezone)) {
+      logger.debug(
+        {
+          event: "reminder_deferred_quiet_hours",
+          patient_id: row.patientId,
+          episode_id: row.episodeId,
+          timezone: row.timezone,
+        },
+        "reminders.scan: outside patient local business hours — deferring",
+      );
       continue;
     }
 
@@ -635,9 +811,21 @@ export async function registerReminderJobs(boss: PgBoss): Promise<void> {
       );
       return;
     }
+    const supabase = getSupabaseServiceRoleClient();
+    // Idempotency: short-circuit if another attempt already sent (or
+    // is sending) for this (patient, episode, channel, day). See
+    // tryClaimReminderDedupKey for posture.
+    const { proceed, key: dedupKey } = await tryClaimReminderDedupKey(
+      supabase,
+      "sms",
+      j.data.patientId,
+      j.data.episodeId,
+      j.id,
+    );
+    if (!proceed) return;
     const actor: SendActor = { kind: "system", jobId: j.id };
     const outcome = await sendReminderSms({
-      supabase: getSupabaseServiceRoleClient(),
+      supabase,
       cfg: cfg.sms,
       patientId: j.data.patientId,
       episodeId: j.data.episodeId,
@@ -659,6 +847,7 @@ export async function registerReminderJobs(boss: PgBoss): Promise<void> {
         outcome.status === "vendor_api_error" ||
         outcome.status === "conversation_create_failed"
       ) {
+        await releaseReminderDedupKey(supabase, dedupKey, j.id);
         throw new Error(`reminders.send-sms: retryable failure: ${outcome.status}`);
       }
     }
@@ -675,9 +864,20 @@ export async function registerReminderJobs(boss: PgBoss): Promise<void> {
       );
       return;
     }
+    const supabase = getSupabaseServiceRoleClient();
+    // Idempotency: short-circuit if another attempt already sent (or
+    // is sending) for this (patient, episode, channel, day).
+    const { proceed, key: dedupKey } = await tryClaimReminderDedupKey(
+      supabase,
+      "email",
+      j.data.patientId,
+      j.data.episodeId,
+      j.id,
+    );
+    if (!proceed) return;
     const actor: SendActor = { kind: "system", jobId: j.id };
     const outcome = await sendReminderEmail({
-      supabase: getSupabaseServiceRoleClient(),
+      supabase,
       cfg: cfg.email,
       patientId: j.data.patientId,
       episodeId: j.data.episodeId,
@@ -698,6 +898,7 @@ export async function registerReminderJobs(boss: PgBoss): Promise<void> {
         outcome.status === "vendor_api_error" ||
         outcome.status === "conversation_create_failed"
       ) {
+        await releaseReminderDedupKey(supabase, dedupKey, j.id);
         throw new Error(`reminders.send-email: retryable failure: ${outcome.status}`);
       }
     }

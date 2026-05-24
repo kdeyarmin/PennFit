@@ -12,6 +12,7 @@ import { Spinner } from "@/components/admin/Spinner";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { Button } from "@/components/admin/Button";
 import { Input } from "@/components/admin/Input";
+import { useConfirmDialog } from "@/hooks/use-confirm-dialog";
 import {
   clearBackorder,
   createSubstitute,
@@ -194,8 +195,18 @@ function BackorderRow({
   );
 }
 
+/**
+ * Render the substitution catalog panel with UI to list, add, toggle, and delete SKU substitution rules.
+ *
+ * Renders a form for creating new substitutes (primary SKU, alternative SKU, priority), a table of existing
+ * substitution rules with controls to toggle active/paused state and delete entries (deletion requires confirmation),
+ * and handles loading, empty, and error states for the substitutes query.
+ *
+ * @returns A React element containing the substitution catalog UI, including the add form, substitutes table, and confirmation dialog.
+ */
 function SubstitutesPanel() {
   const qc = useQueryClient();
+  const [confirm, ConfirmDialogEl] = useConfirmDialog();
   const queryKey = ["admin", "shop", "substitutes"] as const;
   const { data, isPending, isError, error, refetch } = useQuery({
     queryKey,
@@ -316,19 +327,24 @@ function SubstitutesPanel() {
                 onToggle={() =>
                   toggle.mutate({ id: s.id, active: !s.active })
                 }
-                onDelete={() => {
+                onDelete={async () => {
                   if (
-                    window.confirm(
-                      `Delete substitute ${s.primarySku} → ${s.alternativeSku}?`,
-                    )
+                    !(await confirm({
+                      title: "Delete substitute?",
+                      description: `Delete substitute ${s.primarySku} → ${s.alternativeSku}?`,
+                      confirmLabel: "Delete",
+                      destructive: true,
+                    }))
                   )
-                    remove.mutate(s.id);
+                    return;
+                  remove.mutate(s.id);
                 }}
               />
             ))}
           </tbody>
         </table>
       )}
+      {ConfirmDialogEl}
     </Card>
   );
 }
