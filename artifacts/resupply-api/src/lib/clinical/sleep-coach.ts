@@ -29,6 +29,7 @@ import {
   type AnthropicTool,
   getResponseText,
   getResponseToolCalls,
+  sendWithRetry,
 } from "@workspace/resupply-ai";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
@@ -169,7 +170,14 @@ export async function askSleepCoach(input: SleepCoachInput): Promise<SleepCoachR
       { role: "user", content: userMessage },
     ];
     for (let round = 0; round <= MAX_TOOL_ROUNDS; round++) {
-      const result = await anthropic.send({
+      // Retry once on transient errors (429, 5xx, timeout, transport).
+      // The patient-portal sleep coach is a latency-sensitive surface
+      // but a 200ms backoff masks the most common Anthropic blip
+      // (single-region capacity hiccup) without holding the request
+      // open through a sustained outage. Tool-round retries are
+      // independent so a flake on round 2 doesn't waste the round-1
+      // token budget.
+      const result = await sendWithRetry(anthropic, {
         model: DEFAULT_ANTHROPIC_MODEL_CHAT,
         max_tokens: 400,
         temperature: 0.4,
@@ -302,70 +310,110 @@ export async function askSleepCoach(input: SleepCoachInput): Promise<SleepCoachR
   }
   const fetchImpl = input.fetchImpl ?? fetch;
   const timeoutMs = input.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
-  const startedAt = Date.now();
-  try {
-    const res = await fetchImpl(OPENAI_API_URL, {
-      method: "POST",
-      signal: ctrl.signal,
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: DEFAULT_OPENAI_MODEL,
-        temperature: 0.4,
-        max_tokens: 400,
-        messages: [
-          { role: "system", content: SYSTEM_PROMPT },
-          { role: "user", content: userMessage },
-        ],
-      }),
-    });
-    const latencyMs = Date.now() - startedAt;
-    if (!res.ok) {
-      const detail = await res.text().catch(() => "");
-      // Redact Bearer tokens and OpenAI key prefixes — a 401
-      // response from OpenAI includes the offending key prefix
-      // in the error message body, and our application logs are
-      // treated as world-readable per the project's PHI / secret
-      // posture in CLAUDE.md.
-      const safeDetail = detail
-        .slice(0, 200)
-        .replace(/Bearer\s+[A-Za-z0-9._-]+/gi, "Bearer [redacted]")
-        .replace(/sk-[A-Za-z0-9_-]+/g, "sk-[redacted]");
-      logger.warn(
-        {
-          event: "sleep_coach_http_error",
-          status: res.status,
-          detail: safeDetail,
+
+  // Mirror the Anthropic path: retry once on transient errors so a
+  // single OpenAI capacity blip doesn't surface as "coach offline"
+  // to a patient. Backoff is identical to sendWithRetry()'s default
+  // (200ms then 400ms with small jitter) so the legacy OpenAI path
+  // behaves like the modern Anthropic one. Non-retryable errors
+  // (4xx other than 429, programming bugs) fall through immediately.
+  const MAX_RETRIES = 1;
+  for (let attempt = 0; ; attempt++) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+    const startedAt = Date.now();
+    try {
+      const res = await fetchImpl(OPENAI_API_URL, {
+        method: "POST",
+        signal: ctrl.signal,
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`,
         },
-        "sleep-coach: openai HTTP error",
-      );
+        body: JSON.stringify({
+          model: DEFAULT_OPENAI_MODEL,
+          temperature: 0.4,
+          max_tokens: 400,
+          messages: [
+            { role: "system", content: SYSTEM_PROMPT },
+            { role: "user", content: userMessage },
+          ],
+        }),
+      });
+      const latencyMs = Date.now() - startedAt;
+      if (!res.ok) {
+        const detail = await res.text().catch(() => "");
+        // Redact Bearer tokens and OpenAI key prefixes — a 401
+        // response from OpenAI includes the offending key prefix
+        // in the error message body, and our application logs are
+        // treated as world-readable per the project's PHI / secret
+        // posture in CLAUDE.md.
+        const safeDetail = detail
+          .slice(0, 200)
+          .replace(/Bearer\s+[A-Za-z0-9._-]+/gi, "Bearer [redacted]")
+          .replace(/sk-[A-Za-z0-9_-]+/g, "sk-[redacted]");
+        const retryable = res.status === 429 || res.status >= 500;
+        logger.warn(
+          {
+            event: "sleep_coach_http_error",
+            status: res.status,
+            detail: safeDetail,
+            attempt,
+            retryable,
+          },
+          "sleep-coach: openai HTTP error",
+        );
+        if (retryable && attempt < MAX_RETRIES) {
+          await new Promise((r) =>
+            setTimeout(r, 200 * Math.pow(2, attempt) + Math.floor(Math.random() * 50)),
+          );
+          continue;
+        }
+        return {
+          reply: null,
+          errorMessage: `openai http ${res.status}`,
+          latencyMs,
+        };
+      }
+      const json = (await res.json()) as {
+        choices?: Array<{ message?: { content?: string } }>;
+      };
+      const content = json.choices?.[0]?.message?.content?.trim() ?? "";
       return {
-        reply: null,
-        errorMessage: `openai http ${res.status}`,
+        reply: content ? content.slice(0, 1500) : null,
+        errorMessage: null,
         latencyMs,
       };
+    } catch (err) {
+      const isAbort = err instanceof Error && err.name === "AbortError";
+      const message = err instanceof Error ? err.message : String(err);
+      const latencyMs = Date.now() - startedAt;
+      // Timeout (AbortError) and generic network errors are retryable;
+      // TypeError typically indicates a programming bug (missing
+      // fetch impl, malformed URL) and is NOT retryable.
+      const retryable = isAbort || !(err instanceof TypeError);
+      if (retryable && attempt < MAX_RETRIES) {
+        logger.warn(
+          {
+            event: "sleep_coach_transport_error",
+            attempt,
+            kind: isAbort ? "timeout" : "transport",
+          },
+          "sleep-coach: openai transport error (retrying)",
+        );
+        await new Promise((r) =>
+          setTimeout(r, 200 * Math.pow(2, attempt) + Math.floor(Math.random() * 50)),
+        );
+        continue;
+      }
+      return {
+        reply: null,
+        errorMessage: message,
+        latencyMs,
+      };
+    } finally {
+      clearTimeout(timer);
     }
-    const json = (await res.json()) as {
-      choices?: Array<{ message?: { content?: string } }>;
-    };
-    const content = json.choices?.[0]?.message?.content?.trim() ?? "";
-    return {
-      reply: content ? content.slice(0, 1500) : null,
-      errorMessage: null,
-      latencyMs,
-    };
-  } catch (err) {
-    return {
-      reply: null,
-      errorMessage: err instanceof Error ? err.message : String(err),
-      latencyMs: null,
-    };
-  } finally {
-    clearTimeout(timer);
   }
 }
 

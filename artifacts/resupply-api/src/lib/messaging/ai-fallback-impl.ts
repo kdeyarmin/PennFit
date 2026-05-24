@@ -33,6 +33,7 @@ import {
   DEFAULT_ANTHROPIC_MODEL_CLASSIFY,
   createAnthropicClient,
   getResponseText,
+  sendWithRetry,
   type AnthropicClient,
 } from "@workspace/resupply-ai";
 import type {
@@ -47,7 +48,12 @@ import { logger } from "../logger";
 
 const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
 const DEFAULT_MODEL = "gpt-4o-mini";
-const DEFAULT_TIMEOUT_MS = 5_000;
+// 10s timeout (was 5s). SMS classification runs after the patient has
+// already taken hours to reply — the model has no latency pressure
+// from the patient's side. The previous 5s ceiling was tight enough
+// to flake on a routine OpenAI/Anthropic capacity blip even when the
+// retry pass would have recovered.
+const DEFAULT_TIMEOUT_MS = 10_000;
 
 const SYSTEM_PROMPT = [
   "You are an SMS reply assistant for a CPAP resupply service. The patient",
@@ -113,58 +119,90 @@ export function createOpenAiFallbackAdapter(
 
   return {
     async classify(input: AiFallbackInput): Promise<AiFallbackResult> {
-      const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), timeoutMs);
-      try {
-        const userPrompt = buildUserPrompt(input);
-        const res = await fetchImpl(OPENAI_API_URL, {
-          method: "POST",
-          signal: ctrl.signal,
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${apiKey}`,
-          },
-          body: JSON.stringify({
-            model,
-            response_format: { type: "json_object" },
-            temperature: 0,
-            max_tokens: 200,
-            messages: [
-              { role: "system", content: SYSTEM_PROMPT },
-              { role: "user", content: userPrompt },
-            ],
-          }),
-        });
-        if (!res.ok) {
-          const detail = await res.text().catch(() => "");
+      const userPrompt = buildUserPrompt(input);
+      // Retry once on transient errors. Same posture as the
+      // Anthropic path so the OpenAI fallback isn't a less-reliable
+      // citizen — particularly during burst classification windows
+      // where a 429 storm would otherwise dump every reply on CSR.
+      const MAX_RETRIES = 1;
+      for (let attempt = 0; ; attempt++) {
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+        try {
+          const res = await fetchImpl(OPENAI_API_URL, {
+            method: "POST",
+            signal: ctrl.signal,
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${apiKey}`,
+            },
+            body: JSON.stringify({
+              model,
+              response_format: { type: "json_object" },
+              temperature: 0,
+              max_tokens: 200,
+              messages: [
+                { role: "system", content: SYSTEM_PROMPT },
+                { role: "user", content: userPrompt },
+              ],
+            }),
+          });
+          if (!res.ok) {
+            const detail = await res.text().catch(() => "");
+            const retryable = res.status === 429 || res.status >= 500;
+            logger.warn(
+              {
+                event: "ai_fallback_http_error",
+                vendor: "openai",
+                status: res.status,
+                detail: detail.slice(0, 200),
+                attempt,
+                retryable,
+              },
+              "ai-fallback: openai HTTP error",
+            );
+            if (retryable && attempt < MAX_RETRIES) {
+              await new Promise((r) =>
+                setTimeout(r, 200 * Math.pow(2, attempt) + Math.floor(Math.random() * 50)),
+              );
+              continue;
+            }
+            return { intent: "unknown" };
+          }
+          const json = (await res.json()) as {
+            choices?: Array<{ message?: { content?: string } }>;
+          };
+          const content = json.choices?.[0]?.message?.content ?? "";
+          const result = parseModelOutput(content);
+          logClassification("openai", input, result);
+          return result;
+        } catch (err) {
+          const isAbort = err instanceof Error && err.name === "AbortError";
+          // AbortError (timeout) and generic network errors retry;
+          // TypeError typically signals a programming bug and does not.
+          const retryable = isAbort || !(err instanceof TypeError);
           logger.warn(
             {
-              event: "ai_fallback_http_error",
-              status: res.status,
-              detail: detail.slice(0, 200),
+              event: "ai_fallback_exception",
+              vendor: "openai",
+              attempt,
+              kind: isAbort ? "timeout" : "transport",
+              err: serializeErr(err),
             },
-            "ai-fallback: openai HTTP error",
+            retryable && attempt < MAX_RETRIES
+              ? "ai-fallback: openai exception (retrying)"
+              : "ai-fallback: openai exception (returning unknown)",
           );
+          if (retryable && attempt < MAX_RETRIES) {
+            await new Promise((r) =>
+              setTimeout(r, 200 * Math.pow(2, attempt) + Math.floor(Math.random() * 50)),
+            );
+            continue;
+          }
           return { intent: "unknown" };
+        } finally {
+          clearTimeout(timer);
         }
-        const json = (await res.json()) as {
-          choices?: Array<{ message?: { content?: string } }>;
-        };
-        const content = json.choices?.[0]?.message?.content ?? "";
-        const result = parseModelOutput(content);
-        logClassification("openai", input, result);
-        return result;
-      } catch (err) {
-        logger.warn(
-          {
-            event: "ai_fallback_exception",
-            err: serializeErr(err),
-          },
-          "ai-fallback: exception (returning unknown)",
-        );
-        return { intent: "unknown" };
-      } finally {
-        clearTimeout(timer);
       }
     },
   };
@@ -206,7 +244,12 @@ export function createAnthropicFallbackAdapter(
     async classify(input: AiFallbackInput): Promise<AiFallbackResult> {
       try {
         const userPrompt = buildUserPrompt(input);
-        const result = await client.send({
+        // Retry once on transient errors (429, 5xx, timeout,
+        // transport blip). Burst classification windows during a
+        // bulk-reminder send are the most common failure mode and
+        // benefit most from a small backoff before falling back to
+        // intent=unknown (which sends the patient to CSR).
+        const result = await sendWithRetry(client, {
           model,
           max_tokens: 250,
           temperature: 0,

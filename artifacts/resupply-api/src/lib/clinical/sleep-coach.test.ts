@@ -184,6 +184,73 @@ describe("askSleepCoach — Anthropic path, error", () => {
   });
 });
 
+describe("askSleepCoach — Anthropic path, retry", () => {
+  it("retries a 429 once and surfaces the eventual success", async () => {
+    stageEmptyContext();
+    let calls = 0;
+    const client: AnthropicClient = {
+      async send(): Promise<AnthropicCallResult> {
+        calls++;
+        if (calls === 1) {
+          // First attempt: explicit 429 (retryable).
+          return {
+            ok: false,
+            errorCode: "http",
+            errorMessage: "rate_limit_exceeded",
+            httpStatus: 429,
+            latencyMs: 5,
+          };
+        }
+        // Second attempt: success.
+        return {
+          ok: true,
+          response: textResponse("Loosen the top strap one click tonight."),
+          latencyMs: 8,
+        };
+      },
+      async stream(): Promise<AnthropicCallResult> {
+        throw new Error("stream() not used");
+      },
+    };
+    const result = await askSleepCoach({
+      patientId: "pt_retry_ok",
+      question: "Quick check-in",
+      anthropicClient: client,
+    });
+    expect(calls).toBe(2);
+    expect(result.errorMessage).toBeNull();
+    expect(result.reply).toBe("Loosen the top strap one click tonight.");
+  });
+
+  it("does NOT retry on 400 (non-retryable) — surfaces the failure on the first call", async () => {
+    stageEmptyContext();
+    let calls = 0;
+    const client: AnthropicClient = {
+      async send(): Promise<AnthropicCallResult> {
+        calls++;
+        return {
+          ok: false,
+          errorCode: "http",
+          errorMessage: "invalid_request_error",
+          httpStatus: 400,
+          latencyMs: 5,
+        };
+      },
+      async stream(): Promise<AnthropicCallResult> {
+        throw new Error("stream() not used");
+      },
+    };
+    const result = await askSleepCoach({
+      patientId: "pt_retry_400",
+      question: "Quick check-in",
+      anthropicClient: client,
+    });
+    expect(calls).toBe(1);
+    expect(result.reply).toBeNull();
+    expect(result.errorMessage).toContain("anthropic http");
+  });
+});
+
 describe("askSleepCoach — round cap", () => {
   it("terminates after MAX_TOOL_ROUNDS even when the model keeps requesting tools", async () => {
     stageEmptyContext();
