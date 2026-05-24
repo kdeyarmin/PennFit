@@ -3,10 +3,20 @@
 # Resupply DB migration-prefix moratorium check.
 #
 # Background:
-#   The lib/resupply-db/drizzle/ tree is mid-drift. There are 73 SQL
-#   files but only 52 entries in meta/_journal.json (last journaled
-#   tag: 0049_physician_fax_outreach_status_pending_idx), and six
-#   prefixes are duplicated: 0016, 0017, 0049, 0050, 0052, 0065.
+#   The lib/resupply-db/drizzle/ tree is mid-drift. The original
+#   moratorium documented six duplicated prefixes in the journaled
+#   range — 0016, 0017, 0049, 0050, 0052, 0065 — and forbade any new
+#   migration with prefix <= 0066. Since then, six MORE prefixes have
+#   collided in the higher range — 0142 (3 files), 0143 (3), 0149 (3),
+#   0150 (2), 0156 (4), 0157 (2). Each of those landed as a clean
+#   single-file PR that didn't conflict on its own; the collision
+#   appeared at MERGE time, after a sibling PR already used the same
+#   prefix. The collision-detection branch below catches that case
+#   for any new commit (including merge-conflict resolutions) — but
+#   for fully separate PRs racing main, the check only fires when the
+#   loser rebases. A CI job that fails on any duplicated prefix in
+#   the tree (not just adds) would close that remaining hole; tracked
+#   as a follow-up so this script can stay drop-in.
 #   See lib/resupply-db/drizzle/README.md and
 #   docs/migration-state-investigation-2026-05-08.md for the full
 #   story and why a code-only fix is unsafe.
