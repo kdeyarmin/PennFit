@@ -34,7 +34,7 @@ import {
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import {
-  DEFAULT_ANTHROPIC_MODEL as DEFAULT_ANTHROPIC_MODEL,
+  DEFAULT_ANTHROPIC_MODEL_CLASSIFY,
   getAnthropicClient,
   selectLlmProvider,
 } from "../llm-provider";
@@ -153,7 +153,17 @@ export async function suggestIcd10(
   const selection = selectLlmProvider();
   if (selection.provider === "anthropic") {
     const client = getAnthropicClient();
-    if (client) return runAnthropic(input, userPrompt, client);
+    if (client) {
+      const result = await runAnthropic(input, userPrompt, client);
+      if (!result.errorMessage) return result;
+      // Anthropic call failed (e.g., 401/429/5xx after retries) — fall
+      // through to the OpenAI branch so dual-provider deployments stay
+      // available even when Anthropic is degraded or misconfigured.
+      logger.warn(
+        { event: "ai_icd10_anthropic_fallback", errorMessage: result.errorMessage },
+        "ai-icd10: anthropic failed; falling back to openai",
+      );
+    }
     // Defensive: provider selection said anthropic but the cached
     // client came back null (key blanked between calls). Fall through
     // to OpenAI rather than failing.
@@ -234,7 +244,7 @@ async function runAnthropic(
   // numerics in `context` are not PHI but the prompt is uniform with
   // the rest of the AI surface for ops simplicity.
   const result = await sendWithRetry(client, {
-    model: input.model ?? DEFAULT_ANTHROPIC_MODEL,
+    model: input.model ?? DEFAULT_ANTHROPIC_MODEL_CLASSIFY,
     max_tokens: 300,
     temperature: 0,
     system: [
