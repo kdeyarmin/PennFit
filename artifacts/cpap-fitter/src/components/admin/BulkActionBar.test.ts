@@ -196,3 +196,24 @@ describe("BulkActionBar — accessibility", () => {
     expect(SRC).toContain('ariaLabel = "Bulk actions"');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Comment: confirmation dialogs delegated to useConfirmDialog hook
+// (PR change: updated the file-level doc comment)
+// ---------------------------------------------------------------------------
+
+describe("BulkActionBar — confirmation dialog delegation comment", () => {
+  it("documents that callers use the useConfirmDialog hook (not window.confirm)", () => {
+    // The top-of-file ownership comment was updated from
+    // "window.confirm or modal" to "useConfirmDialog hook".
+    // This test ensures the documentation stays in sync with the
+    // hook migration throughout the codebase.
+    expect(SRC).toContain("useConfirmDialog hook");
+  });
+
+  it("does NOT mention window.confirm in the component ownership comment", () => {
+    // Regression: the old comment said callers wrap with window.confirm;
+    // after the migration the comment should only reference the hook.
+    expect(SRC).not.toContain("window.confirm or modal");
+  });
+});
