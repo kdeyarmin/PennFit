@@ -36,8 +36,13 @@
 //     worker slot for the full default.
 //
 // All three presets enable dead-letter routing to a per-queue DLQ
-// named "<queue>.dlq" so ops dashboards can rank
-// `select count(*) from pg-boss.<dlq> group by name`.
+// named "<queue>.dlq". In this repo's pg-boss schema, operators
+// should inspect DLQs via the shared `pgboss_resupply.job` /
+// `pgboss_resupply.archive` tables filtered by
+// `name = '<queue>.dlq'`, e.g.
+// `select count(*) from pgboss_resupply.job where name = '<queue>.dlq'`
+// or
+// `select count(*) from pgboss_resupply.archive where name = '<queue>.dlq'`.
 //
 // Per-queue overrides are still possible at the call site by
 // spreading the preset and overwriting individual fields.
