@@ -161,3 +161,59 @@ describe("reminders-manage — regression: core manage behaviour intact", () => 
     expect(SRC).toContain("You've been unsubscribed");
   });
 });
+
+// ---------------------------------------------------------------------------
+// useConfirmDialog — onUnsubscribe guard
+// (PR change: replaced window.confirm with useConfirmDialog hook)
+// ---------------------------------------------------------------------------
+
+describe("reminders-manage — useConfirmDialog import", () => {
+  it("imports useConfirmDialog from @/hooks/use-confirm-dialog", () => {
+    expect(SRC).toContain('from "@/hooks/use-confirm-dialog"');
+    expect(SRC).toContain("useConfirmDialog");
+  });
+
+  it("initialises [confirm, ConfirmDialogEl] inside RemindersManage", () => {
+    expect(SRC).toContain(
+      "const [confirm, ConfirmDialogEl] = useConfirmDialog();",
+    );
+  });
+});
+
+describe("reminders-manage — onUnsubscribe confirm options", () => {
+  it("onUnsubscribe is async after the migration", () => {
+    expect(SRC).toContain("async function onUnsubscribe()");
+  });
+
+  it("awaits confirm() before unsubscribing (async guard pattern)", () => {
+    expect(SRC).toMatch(/!\(await confirm\(\{[\s\S]{0,400}return;/);
+  });
+
+  it('uses title "Stop all reminders?"', () => {
+    expect(SRC).toContain('title: "Stop all reminders?"');
+  });
+
+  it("description warns the user they must re-sign-up from /reminders", () => {
+    expect(SRC).toContain(
+      "You'll need to sign up again from /reminders if you change your mind.",
+    );
+  });
+
+  it('uses confirmLabel "Unsubscribe"', () => {
+    expect(SRC).toContain('confirmLabel: "Unsubscribe"');
+  });
+
+  it("marks the action as destructive:true", () => {
+    expect(SRC).toContain("destructive: true");
+  });
+
+  it("no longer uses window.confirm for the unsubscribe guard", () => {
+    expect(SRC).not.toContain("window.confirm");
+  });
+});
+
+describe("reminders-manage — ConfirmDialogEl in JSX", () => {
+  it("renders {ConfirmDialogEl} inside the page return", () => {
+    expect(SRC).toContain("{ConfirmDialogEl}");
+  });
+});
