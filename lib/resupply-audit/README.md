@@ -25,7 +25,7 @@ plain-object enforcement) cannot be bypassed by a stray `.insert()` somewhere
 in API or worker code. Rule 8 enforces "logAudit is the only path"; this
 package implements the path.
 
-## Public API
+## Public API (historical)
 
 ```ts
 import { logAudit } from "@workspace/resupply-audit";
@@ -42,7 +42,7 @@ await logAudit({
 });
 ```
 
-Returns `Promise<void>`. Throws on:
+Historical behavior returned `Promise<void>`. It could throw on:
 
 - `AuditMetadataPhiError` — a key matched the PHI denylist
 - `AuditMetadataShapeError` — non-plain object, custom `toJSON`, symbol keys, or non-object root
@@ -50,11 +50,11 @@ Returns `Promise<void>`. Throws on:
 - `AuditMetadataSizeError` — serialized JSON > 8 KiB
 - any underlying `pg` error — connection / constraint / etc.
 
-**Failure semantics: do NOT swallow these.** A thrown sanitizer error
+**Historical failure semantics: do NOT swallow these.** A thrown sanitizer error
 indicates a programmer error (PHI shape leaked into metadata). Surface as 500.
 A swallowed error here defeats the entire point of the gate.
 
-## Metadata contract
+## Metadata contract (historical)
 
 Metadata is for routing/debugging context — `requestId`, filter shapes,
 non-PHI before/after deltas. **Never** put a patient identifier or free-form
@@ -87,7 +87,7 @@ The sanitizer also refuses any non-plain-JSON shape: class instances, `Map` /
 silently rewrite the row from a custom serializer), and objects with
 symbol-keyed properties.
 
-## Tests
+## Tests (historical)
 
 ```bash
 pnpm --filter @workspace/resupply-audit test
@@ -100,7 +100,7 @@ pnpm --filter @workspace/resupply-audit test
   live DB, asserts the sanitized metadata is what gets stored, and
   cleans up via `DELETE FROM resupply.audit_log WHERE metadata->>'_runTag' = $1`.
 
-## Architecture
+## Architecture (historical)
 
 See `docs/resupply/adr/006-*.md`. The package depends on `@workspace/resupply-db`
 for `getDbPool()` and the `auditLog` schema reference; nothing else in the
