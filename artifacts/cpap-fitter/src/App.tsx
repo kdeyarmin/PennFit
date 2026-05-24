@@ -545,6 +545,12 @@ function GuardedOrderSuccess() {
       setState("deny");
       return;
     }
+    try {
+      const scrubbedUrl = `${window.location.pathname}${window.location.hash}`;
+      window.history.replaceState(window.history.state, "", scrubbedUrl);
+    } catch {
+      /* ignore — best-effort URL scrub */
+    }
     void (async () => {
       try {
         const res = await fetch("/api/orders/track", {
