@@ -149,13 +149,17 @@ export function createOpenAiFallbackAdapter(
           });
           if (!res.ok) {
             const detail = await res.text().catch(() => "");
+            const safeDetail = detail
+              .slice(0, 200)
+              .replace(/Bearer\s+[A-Za-z0-9._-]+/gi, "Bearer [redacted]")
+              .replace(/sk-[A-Za-z0-9_-]+/g, "sk-[redacted]");
             const retryable = res.status === 429 || res.status >= 500;
             logger.warn(
               {
                 event: "ai_fallback_http_error",
                 vendor: "openai",
                 status: res.status,
-                detail: detail.slice(0, 200),
+                detail: safeDetail,
                 attempt,
                 retryable,
               },
