@@ -268,6 +268,7 @@ function NewCampaignModal({
             onChange={(e) => setName(e.target.value)}
             placeholder="May resupply reminder push"
             maxLength={200}
+            aria-label="Campaign name"
           />
         </div>
 
@@ -278,6 +279,7 @@ function NewCampaignModal({
             onChange={(e) =>
               setAudienceKind(e.target.value as AudienceKind)
             }
+            aria-label="Audience"
             className="w-full rounded border px-2 py-1.5 text-sm"
             style={{ borderColor: "hsl(var(--line-1))" }}
           >
@@ -302,6 +304,7 @@ function NewCampaignModal({
               onChange={(e) => setAudiencePayer(e.target.value)}
               placeholder="Medicare, Aetna, …"
               maxLength={120}
+              aria-label="Payer"
             />
           </div>
         )}
@@ -311,6 +314,7 @@ function NewCampaignModal({
           <select
             value={category}
             onChange={(e) => setCategory(e.target.value as Category)}
+            aria-label="Category"
             className="w-full rounded border px-2 py-1.5 text-sm"
             style={{ borderColor: "hsl(var(--line-1))" }}
           >
@@ -328,6 +332,7 @@ function NewCampaignModal({
             onChange={(e) => setThrottle(Number(e.target.value) || 0)}
             min={1}
             max={3600}
+            aria-label="Throttle per minute"
           />
         </div>
 
@@ -338,6 +343,7 @@ function NewCampaignModal({
             onChange={(e) => setTemplateKey(e.target.value)}
             placeholder="bulk_marketing_may_2026"
             maxLength={120}
+            aria-label="Template key"
           />
           <p className="text-[10px] text-muted-foreground mt-1">
             From the Message Templates library — must already exist and
@@ -356,6 +362,7 @@ function NewCampaignModal({
               className="w-full rounded border px-2 py-1.5 text-sm"
               style={{ borderColor: "hsl(var(--line-1))" }}
               placeholder="FDA Class II recall — Philips DreamStation foam degradation. Recipients are notified per 21 CFR 806; marketing opt-out does not apply."
+              aria-label="Compliance attestation"
             />
             <p className="text-[10px] text-rose-700 mt-1">
               Compliance-category campaigns bypass marketing opt-out.

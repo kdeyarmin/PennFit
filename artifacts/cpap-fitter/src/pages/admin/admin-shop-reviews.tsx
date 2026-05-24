@@ -387,6 +387,7 @@ function ReviewRow({
             onChange={(e) => setNoteDraft(e.target.value)}
             maxLength={500}
             rows={3}
+            aria-label="Customer-visible note"
             className="w-full text-sm rounded-lg border border-slate-300 p-2 focus:outline-none focus:ring-2 focus:ring-slate-400"
             data-testid={`shop-review-edit-note-input-${review.id}`}
           />
@@ -460,6 +461,7 @@ function ReviewRow({
             maxLength={500}
             rows={3}
             placeholder="e.g. Please remove personally identifying details and resubmit."
+            aria-label="Rejection reason"
             className="w-full text-sm rounded-lg border border-slate-300 p-2 focus:outline-none focus:ring-2 focus:ring-slate-400"
             data-testid={`shop-review-reject-note-${review.id}`}
           />

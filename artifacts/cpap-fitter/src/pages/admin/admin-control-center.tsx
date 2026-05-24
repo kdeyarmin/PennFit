@@ -462,6 +462,7 @@ function ConfirmDisableModal({
             type="text"
             value={typed}
             onChange={(e) => setTyped(e.target.value)}
+            aria-label="Type the flag key to confirm"
             className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm font-mono"
             data-testid={`confirm-disable-${flag.key}-input`}
             autoComplete="off"

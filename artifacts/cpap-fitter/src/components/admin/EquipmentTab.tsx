@@ -283,6 +283,7 @@ function AddEquipmentModal({
                 onChange={(e) =>
                   setDeviceClass(e.target.value as DeviceClass)
                 }
+                aria-label="Device class"
                 className="w-full rounded border px-2 py-1.5 text-sm"
                 style={{ borderColor: "hsl(var(--line-1))" }}
               >
@@ -394,6 +395,7 @@ function LabeledInput({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
+        aria-label={label}
       />
     </div>
   );

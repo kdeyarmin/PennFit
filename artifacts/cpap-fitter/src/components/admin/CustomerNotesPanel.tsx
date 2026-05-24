@@ -88,6 +88,7 @@ export function CustomerNotesPanel({ userId }: Props) {
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             placeholder="Add a note for the team. Visible only to admins."
+            aria-label="Customer note"
             rows={3}
             maxLength={MAX_BODY + 200}
             disabled={mutation.isPending}

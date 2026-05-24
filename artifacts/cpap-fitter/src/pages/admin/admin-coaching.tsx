@@ -118,6 +118,7 @@ function NewPlanCard() {
             value={patientId}
             onChange={(e) => setPatientId(e.target.value)}
             placeholder="00000000-0000-0000-0000-000000000000"
+            aria-label="Patient ID (UUID)"
             style={{ fontFamily: "monospace" }}
           />
         </div>
@@ -131,6 +132,7 @@ function NewPlanCard() {
               setTarget(e.target.value.replace(/\D/g, "").slice(0, 3))
             }
             inputMode="numeric"
+            aria-label="Target %"
             style={{ width: "5rem", fontFamily: "monospace" }}
           />
         </div>

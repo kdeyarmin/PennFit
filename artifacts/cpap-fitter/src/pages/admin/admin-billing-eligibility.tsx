@@ -147,6 +147,7 @@ export function AdminBillingEligibilityPage() {
               onChange={(e) =>
                 setStatusFilter(e.target.value as "" | EligibilityStatus)
               }
+              aria-label="Status"
               className="rounded-md border px-2 py-1.5 text-sm"
               data-testid="eligibility-status-filter"
             >

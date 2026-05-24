@@ -912,6 +912,7 @@ function LeadDetailsPanel({ lead }: { lead: FitterLeadRow }) {
           rows={6}
           maxLength={2000}
           placeholder="What did the patient say? What's the next step? Operator scratchpad — visible to every CSR who opens this row."
+          aria-label="CSR notes"
           className="w-full border rounded p-2 text-xs"
           style={{ borderColor: "hsl(var(--line-1))" }}
           data-testid={`lead-notes-textarea-${lead.id}`}

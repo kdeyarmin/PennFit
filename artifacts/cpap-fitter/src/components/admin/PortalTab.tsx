@@ -413,6 +413,7 @@ export function PortalTab({
                 id="portal-addr-line2"
                 type="text"
                 placeholder="Apt, suite, unit (optional)"
+                aria-label="Apt, suite, unit"
                 value={addrLine2}
                 onChange={(e) => setAddrLine2(e.target.value)}
               />
@@ -421,6 +422,7 @@ export function PortalTab({
                   id="portal-addr-city"
                   type="text"
                   placeholder="City"
+                  aria-label="City"
                   value={addrCity}
                   onChange={(e) => setAddrCity(e.target.value)}
                   className="col-span-1"
@@ -429,6 +431,7 @@ export function PortalTab({
                   id="portal-addr-state"
                   type="text"
                   placeholder="State"
+                  aria-label="State"
                   value={addrState}
                   onChange={(e) => setAddrState(e.target.value)}
                   className="col-span-1"
@@ -438,6 +441,7 @@ export function PortalTab({
                   id="portal-addr-zip"
                   type="text"
                   placeholder="ZIP"
+                  aria-label="ZIP"
                   value={addrZip}
                   onChange={(e) => setAddrZip(e.target.value)}
                   className="col-span-1"

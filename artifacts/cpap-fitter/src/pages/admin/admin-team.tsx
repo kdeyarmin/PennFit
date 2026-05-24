@@ -453,6 +453,7 @@ function InviteCard() {
             type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
+            aria-label="Email"
             className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
             placeholder="csr@pennpaps.com"
             autoComplete="off"
@@ -465,6 +466,7 @@ function InviteCard() {
           <select
             value={role}
             onChange={(e) => setRole(e.target.value as TeamRole)}
+            aria-label="Role"
             className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
           >
             {ROLE_OPTIONS.map((r) => (
@@ -483,6 +485,7 @@ function InviteCard() {
             type="text"
             value={displayName}
             onChange={(e) => setDisplayName(e.target.value)}
+            aria-label="Display name"
             className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
             placeholder="Jordan Smith"
           />
@@ -495,6 +498,7 @@ function InviteCard() {
             type="text"
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
+            aria-label="Notes"
             className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
             placeholder="Shift, team, internal note…"
           />
@@ -529,6 +533,7 @@ function InviteCard() {
               type="password"
               value={initialPassword}
               onChange={(e) => setInitialPassword(e.target.value)}
+              aria-label="Initial password"
               className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm font-mono"
               placeholder="At least 12 characters"
               autoComplete="new-password"

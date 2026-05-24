@@ -126,6 +126,7 @@ export function AdminReportsPage() {
               value={from}
               onChange={(e) => setFrom(e.target.value)}
               max={to}
+              aria-label="From date"
               className="rounded border border-slate-300 px-2 py-1.5 text-sm"
               data-testid="reports-from"
             />
@@ -140,6 +141,7 @@ export function AdminReportsPage() {
               onChange={(e) => setTo(e.target.value)}
               min={from}
               max={isoDate(today)}
+              aria-label="To date"
               className="rounded border border-slate-300 px-2 py-1.5 text-sm"
               data-testid="reports-to"
             />
@@ -410,6 +412,7 @@ function EmailReportModal({
             onChange={(e) =>
               setFormat(e.target.value as typeof format)
             }
+            aria-label="Format"
             className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
             data-testid={`email-report-${report.slug}-format`}
           >
@@ -429,6 +432,7 @@ function EmailReportModal({
             type="email"
             value={recipient}
             onChange={(e) => setRecipient(e.target.value)}
+            aria-label="Recipient email"
             className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
             placeholder="accounting@example.com"
             data-testid={`email-report-${report.slug}-recipient`}
@@ -445,6 +449,7 @@ function EmailReportModal({
             onChange={(e) => setNote(e.target.value)}
             rows={2}
             maxLength={500}
+            aria-label="Note"
             className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
             placeholder="For the April close — please file with this month's receipts."
             data-testid={`email-report-${report.slug}-note`}
@@ -769,6 +774,7 @@ function NewPresetModal({
             value={name}
             onChange={(e) => setName(e.target.value)}
             maxLength={120}
+            aria-label="Preset name"
             className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
             placeholder="Monthly close — last month IIF"
             data-testid="reports-presets-new-name"
@@ -795,6 +801,7 @@ function NewPresetModal({
                   setFormat(allowed[0]!);
                 }
               }}
+              aria-label="Report"
               className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
               data-testid="reports-presets-new-slug"
             >
@@ -812,6 +819,7 @@ function NewPresetModal({
             <select
               value={format}
               onChange={(e) => setFormat(e.target.value as typeof format)}
+              aria-label="Format"
               className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
               data-testid="reports-presets-new-format"
             >
@@ -853,6 +861,7 @@ function NewPresetModal({
             <select
               value={rangePreset}
               onChange={(e) => setRangePreset(e.target.value)}
+              aria-label="Relative range preset"
               className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
               data-testid="reports-presets-new-range-preset-select"
             >
@@ -872,6 +881,7 @@ function NewPresetModal({
             value={recipient}
             onChange={(e) => setRecipient(e.target.value)}
             placeholder="accounting@example.com"
+            aria-label="Default email recipient"
             className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
             data-testid="reports-presets-new-recipient"
           />
