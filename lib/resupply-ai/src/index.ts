@@ -5,13 +5,18 @@
 //   - `VoiceBridge`    — wires the client to the audio sink + tools.
 //   - `ToolDispatcher` — interface the API implements to run side effects.
 //
-// Plus three vendor clients used by routes elsewhere in the monorepo:
+// Plus two vendor clients used by routes elsewhere in the monorepo:
 //   - `createAnthropicClient` — Claude Messages API (chatbot, sleep coach,
 //     SMS classifier — anywhere we want warmer, smarter text replies).
 //   - `createDeepgramClient`  — Nova-3 STT (post-call audit transcripts,
 //     optional parallel transcription on live calls for higher accuracy).
-//   - `createElevenLabsClient` — TTS (when we want the most natural
-//     voice; opt-in alternative to the Realtime model's built-in TTS).
+//
+// (An ElevenLabs TTS client exists at `./elevenlabs-client` for the
+// eventual opt-in TTS path but is intentionally NOT re-exported here
+// — zero call sites today, and shipping it on the public surface
+// invites accidental imports that would degrade the "vendor selection
+// happens in one place" posture. Re-add the export when the live
+// voice path is wired to it.)
 //
 // All PHI handling (database reads, encryption, audit) lives in the API.
 // The architecture rules forbid this package from importing
@@ -92,22 +97,9 @@ export {
   type DeepgramWebSocketLike,
 } from "./deepgram-client";
 
-export {
-  createElevenLabsClient,
-  DEFAULT_ELEVENLABS_MODEL,
-  DEFAULT_ELEVENLABS_VOICE_ID,
-  type ElevenLabsClient,
-  type ElevenLabsClientOptions,
-  type ElevenLabsCallResult,
-  type ElevenLabsStreamCallResult,
-  type ElevenLabsTtsInput,
-  type ElevenLabsTtsResult,
-  type ElevenLabsStreamResult,
-  type ElevenLabsVoiceSettings,
-  type ElevenLabsVoiceSummary,
-  type ElevenLabsListVoicesResult,
-  type ElevenLabsOutputFormat,
-} from "./elevenlabs-client";
+// ElevenLabs TTS client lives at ./elevenlabs-client; intentionally
+// NOT re-exported until the live voice path is wired to it. See file
+// header above for rationale.
 
 export {
   TOOL_NAMES,
