@@ -68,6 +68,15 @@ type PatientRow = {
   lastMessagePreview?: string | null;
 };
 
+/**
+ * Render the Patients administration page with list, filtering, bulk actions, CSV import/export, and create patient modal.
+ *
+ * The component manages filter and pagination state, debounced search input, row selection for bulk operations,
+ * CSV export/import flows, and displays modals for creating a new patient and importing CSVs. It also renders
+ * a confirmation dialog element used by bulk actions.
+ *
+ * @returns The Patients administration page as a React element.
+ */
 export function PatientsPage() {
   const [, setLocation] = useLocation();
   const queryClient = useQueryClient();

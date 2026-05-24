@@ -29,6 +29,15 @@ function portalStatusBadge(status: PortalStatus) {
   return <Badge variant="muted">Not invited</Badge>;
 }
 
+/**
+ * Renders a patient portal invitation and onboarding panel with controls to send, resend, and revoke invites.
+ *
+ * The component displays one of three UI states based on the patient's portal status: "not_invited" (full invite/onboarding form), "pending" (resend and revoke actions), or "active" (revoke action). It shows success/error feedback, an invite link when available, and a confirmation dialog for destructive actions.
+ *
+ * @param patient - The patient record used to initialize form fields and determine the current portal status.
+ * @param onChanged - Callback invoked after an operation that changes the patient's portal state (send, resend, revoke).
+ * @returns A React element containing the portal management UI.
+ */
 export function PortalTab({
   patient,
   onChanged,

@@ -59,6 +59,18 @@ import { useConfirmDialog } from "@/hooks/use-confirm-dialog";
 
 type PendingAction = "cancel" | "pause" | "resume";
 
+/**
+ * Render the "Auto-ship subscriptions" management section with per-row controls
+ * (pause, resume, cancel, change cadence) and bulk travel-mode actions.
+ *
+ * The section self-loads the current user's subscriptions on mount and hides
+ * itself when no subscriptions are available or while initially loading.
+ *
+ * @param previewMode - When `true`, interactive actions are disabled (used when Stripe
+ *   is not connected or the UI is in preview state).
+ * @returns The subscriptions management section element, or `null` when loading or when
+ *   the user has no subscriptions.
+ */
 export function SubscriptionsSection({
   previewMode,
 }: {

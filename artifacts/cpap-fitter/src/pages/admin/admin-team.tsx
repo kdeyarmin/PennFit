@@ -165,6 +165,18 @@ function Section({
   );
 }
 
+/**
+ * Render a team member row showing status, metadata, and management controls.
+ *
+ * Renders the member's status chip, display name/email, role label, invite/audit timestamps, and optional notes.
+ * Provides action controls appropriate to the member's state: resend invite (pending), role selection and promote (active, non-admin),
+ * demote (active admin), and revoke access (active or pending). Actions that change server state show confirmation dialogs
+ * where applicable and surface any mutation error messages. Successful mutations invalidate the ["admin-team"] query.
+ *
+ * @param member - The team member to render.
+ * @param subtle - When true, use subdued styling for the row.
+ * @returns A list item JSX element representing the member row with interactive controls.
+ */
 function MemberRow({
   member,
   subtle,

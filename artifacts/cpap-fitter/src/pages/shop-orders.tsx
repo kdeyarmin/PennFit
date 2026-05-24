@@ -123,6 +123,18 @@ function SignedOutPrompt() {
   );
 }
 
+/**
+ * Render the signed-in user's order history UI, including loading, error,
+ * empty, list and pagination states, and in-place updates after single-order edits.
+ *
+ * Handles the initial fetch of the first page of orders, a "Show more" flow
+ * that appends additional pages (showing a destructive toast on failure), and
+ * provides a `replaceOrder` callback used to update a single order without
+ * reloading the list.
+ *
+ * @returns The component's JSX: either a loading skeleton, an error card, an
+ * empty-state card, or the orders list with an optional "Show more orders" button.
+ */
 function SignedInOrders() {
   const [orders, setOrders] = useState<OrderHistoryItem[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);

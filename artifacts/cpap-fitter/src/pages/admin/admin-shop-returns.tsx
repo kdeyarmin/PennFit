@@ -212,6 +212,16 @@ const STATUS_TONE: Record<ReturnStatus, string> = {
   closed: "bg-slate-200 text-slate-700 border-slate-300",
 };
 
+/**
+ * Render a single admin return card showing status, metadata, notes, and status-gated actions.
+ *
+ * Renders an <li> containing the return's status badge, reason, order/customer identifiers,
+ * optional customer/admin notes, an internal notes log, inline mutation-driven actions
+ * (approve, reject, mark shipped/received, refund, replace, add note), and the confirm dialog element.
+ *
+ * @param item - The `AdminReturn` record to display and operate on
+ * @returns A list item (<li>) element containing the return card UI
+ */
 function ReturnCard({ item }: { item: AdminReturn }) {
   const qc = useQueryClient();
   const { toast } = useToast();

@@ -63,6 +63,13 @@ function buildState(
   return out;
 }
 
+/**
+ * Render the "Manage reminders" page which lets a user view and edit their reminder subscription using a single-use token from the URL.
+ *
+ * The component reads the token once from the query string (then removes it from the browser URL), fetches the subscription, and renders one of several states: missing token, loading, fetch error, unsubscribed confirmation, or the editable list of reminder items. Users can toggle items, update last-replaced dates and intervals, save changes (with validation requiring at least one enabled item), or perform a confirmed unsubscribe that disables all reminders.
+ *
+ * @returns The React element for the Manage reminders UI.
+ */
 export function RemindersManage() {
   useDocumentTitle(PAGE_TITLE);
   const [confirm, ConfirmDialogEl] = useConfirmDialog();

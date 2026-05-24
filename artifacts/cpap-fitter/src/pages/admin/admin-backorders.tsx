@@ -195,6 +195,15 @@ function BackorderRow({
   );
 }
 
+/**
+ * Render the substitution catalog panel with UI to list, add, toggle, and delete SKU substitution rules.
+ *
+ * Renders a form for creating new substitutes (primary SKU, alternative SKU, priority), a table of existing
+ * substitution rules with controls to toggle active/paused state and delete entries (deletion requires confirmation),
+ * and handles loading, empty, and error states for the substitutes query.
+ *
+ * @returns A React element containing the substitution catalog UI, including the add form, substitutes table, and confirmation dialog.
+ */
 function SubstitutesPanel() {
   const qc = useQueryClient();
   const [confirm, ConfirmDialogEl] = useConfirmDialog();

@@ -80,6 +80,14 @@ export function AdminSecurityPage() {
   );
 }
 
+/**
+ * Render the enrolled-MFA management panel for an admin account.
+ *
+ * Displays enrollment metadata (enrolled date, last used, recovery codes remaining), the list of enrolled devices, warnings when recovery codes are low or absent, and controls to regenerate recovery codes, disable MFA, or add another device. Handles inline display of newly regenerated one-time recovery codes and delegates destructive confirmations to the provided confirm dialog hook.
+ *
+ * @param data - The current MFA status used to populate device lists, timestamps, and recovery code counts
+ * @returns The React element representing the enrolled MFA management UI
+ */
 function EnrolledPanel({ data }: { data: MfaStatus }) {
   const qc = useQueryClient();
   const [confirm, ConfirmDialogEl] = useConfirmDialog();
@@ -509,11 +517,17 @@ function RecoveryCodesPanel({
   );
 }
 
-/** Multi-device list — one row per enrolled authenticator. The
- *  per-device "Remove" button requires the current TOTP code from
- *  the global code field (same field used for Disable / Regenerate).
- *  Refuses to remove the LAST device — the server enforces this too
- *  and we mirror it in the UI for a friendlier error path.
+/**
+ * Render a list of enrolled MFA devices with per-device removal controls.
+ *
+ * Each device shows its label, added date, and last-used date. The "Remove"
+ * button is shown only when more than one device is enrolled and requires the
+ * current 6-digit TOTP `code` to be present; removal opens a confirmation
+ * dialog and invalidates the MFA status query on success. Returns null when
+ * `devices` is empty.
+ *
+ * @param devices - The enrolled MFA devices to display
+ * @param code - The current global 6-digit TOTP code used to authorize removals
  */
 function DeviceList({
   devices,
