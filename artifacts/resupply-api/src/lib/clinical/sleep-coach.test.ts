@@ -53,7 +53,6 @@ function textResponse(text: string): AnthropicResponse {
     role: "assistant",
     type: "message",
     stop_reason: "end_turn",
-    stop_sequence: null,
     content: [{ type: "text", text }],
     usage: makeUsage(),
   };
@@ -70,7 +69,6 @@ function toolUseResponse(
     role: "assistant",
     type: "message",
     stop_reason: "tool_use",
-    stop_sequence: null,
     content: [
       {
         type: "tool_use",
@@ -93,7 +91,7 @@ function makeClient(
       if (inspect) inspect(req, i);
       const r = responses[i] ?? responses[responses.length - 1]!;
       i += 1;
-      return { ok: true, response: r };
+      return { ok: true, response: r, latencyMs: 1 };
     },
     async stream(): Promise<AnthropicCallResult> {
       throw new Error("stream() not used by sleep-coach tests");
@@ -164,9 +162,10 @@ describe("askSleepCoach — Anthropic path, error", () => {
       async send(): Promise<AnthropicCallResult> {
         return {
           ok: false,
-          errorCode: "rate_limit_exceeded",
-          errorMessage: "too many requests",
+          errorCode: "http",
+          errorMessage: "rate_limit_exceeded: too many requests",
           httpStatus: 429,
+          latencyMs: 1,
         };
       },
       async stream(): Promise<AnthropicCallResult> {
@@ -179,7 +178,9 @@ describe("askSleepCoach — Anthropic path, error", () => {
       anthropicClient: erroringClient,
     });
     expect(result.reply).toBeNull();
-    expect(result.errorMessage).toContain("rate_limit_exceeded");
+    // The helper renders "anthropic <code>: <message>" so both
+    // bits are surfaced; pin on the structured prefix.
+    expect(result.errorMessage).toContain("anthropic http");
   });
 });
 

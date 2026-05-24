@@ -426,6 +426,9 @@ export interface Database {
           return_tracking_number: string | null;
           admin_note: string | null;
           admin_user_id: string | null;
+          refund_failure_count: number;
+          refund_last_failure_at: string | null;
+          refund_last_failure_reason: string | null;
           created_at: string;
           updated_at: string;
           approved_at: string | null;

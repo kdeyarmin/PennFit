@@ -112,7 +112,44 @@ const PAGE_SIZE_DEFAULT = 25;
 const PAGE_SIZE_MAX = 100;
 
 const RETURN_COLUMNS =
-  "id, customer_id, order_id, stripe_session_id, status, reason, reason_note, resolution, refund_cents, stripe_refund_id, exchange_product_id, exchange_price_id, exchange_order_id, return_label_url, return_carrier, return_tracking_number, admin_note, admin_user_id, created_at, updated_at, approved_at, rejected_at, shipped_back_at, received_at, resolved_at, closed_at";
+  "id, customer_id, order_id, stripe_session_id, status, reason, reason_note, resolution, refund_cents, stripe_refund_id, exchange_product_id, exchange_price_id, exchange_order_id, return_label_url, return_carrier, return_tracking_number, admin_note, admin_user_id, refund_failure_count, refund_last_failure_at, refund_last_failure_reason, created_at, updated_at, approved_at, rejected_at, shipped_back_at, received_at, resolved_at, closed_at";
+
+/**
+ * Stripe-error tracking on the /refund endpoint.
+ *
+ * The refund handler returns 502 + leaves the row at `received` so
+ * an admin can retry, but without per-row tracking nothing surfaced
+ * the fact that the SAME row had failed N times. Three columns
+ * (migration 0159) record:
+ *   - refund_failure_count        — increments on each Stripe error
+ *   - refund_last_failure_at      — timestamp of last failure
+ *   - refund_last_failure_reason  — sanitized short error tag
+ *
+ * `REFUND_FAILURE_ESCALATION_THRESHOLD` is the count at which the
+ * handler emits a structured `WARN event=shop_return_refund_stuck`
+ * line so ops can be paged. Set to 3 — single transient failures
+ * are routine (Stripe occasionally 503s); two-in-a-row is bad luck;
+ * three is "something is genuinely wrong with this row, stop
+ * retrying and look at it."
+ */
+const REFUND_FAILURE_ESCALATION_THRESHOLD = 3;
+const REFUND_LAST_FAILURE_REASON_MAX = 240;
+
+function sanitizeStripeFailureReason(err: unknown): string {
+  // Stripe SDK errors carry a `code` (machine-readable, e.g.
+  // "card_declined", "charge_already_refunded") and a `message`.
+  // The `code` is the queryable signal; we lead with it. The
+  // message is appended for context but capped so a long body
+  // can't bloat the row.
+  const errObj =
+    err && typeof err === "object" ? (err as Record<string, unknown>) : null;
+  const code = typeof errObj?.code === "string" ? errObj.code : null;
+  const message = err instanceof Error ? err.message : String(err);
+  const composed = code ? `${code}: ${message}` : message;
+  return composed.length > REFUND_LAST_FAILURE_REASON_MAX
+    ? composed.slice(0, REFUND_LAST_FAILURE_REASON_MAX - 1) + "…"
+    : composed;
+}
 
 /**
  * Best-effort customer-email lookup. Prefer the linked
@@ -623,15 +660,65 @@ router.post(
       } catch (err) {
         // Don't block the workflow on a Stripe-side error — log it and
         // let the admin retry. We keep status at `received` so the
-        // operator can re-issue.
-        const refundError = err instanceof Error ? err.message : String(err);
+        // operator can re-issue. Increment the per-row failure
+        // counter (migration 0159) so the admin UI can show
+        // "Refund failed N times" without a separate query, and so
+        // a stuck row can be escalated past the human queue.
+        const reason = sanitizeStripeFailureReason(err);
+        const nowIso = new Date().toISOString();
+        const nextCount = (ret.refund_failure_count ?? 0) + 1;
+        const { error: stampErr } = await supabase
+          .schema("resupply")
+          .from("shop_returns")
+          .update({
+            refund_failure_count: nextCount,
+            refund_last_failure_at: nowIso,
+            refund_last_failure_reason: reason,
+            updated_at: nowIso,
+          })
+          .eq("id", ret.id);
+        if (stampErr) {
+          // Best-effort — the lifecycle decision is unchanged
+          // either way. Log so ops can spot a tracking-table
+          // outage if it ever happens.
+          req.log?.warn(
+            { returnId: ret.id, code: stampErr.code },
+            "shop-return refund: failure-counter update failed",
+          );
+        }
+        if (nextCount >= REFUND_FAILURE_ESCALATION_THRESHOLD) {
+          req.log?.warn(
+            {
+              event: "shop_return_refund_stuck",
+              returnId: ret.id,
+              orderId: ret.order_id,
+              failureCount: nextCount,
+              reasonCode: reason.split(":")[0]?.trim() ?? "unknown",
+            },
+            "shop-return refund has failed repeatedly — investigate",
+          );
+        }
         req.log?.warn(
-          { returnId: ret.id, err: refundError },
+          {
+            returnId: ret.id,
+            failureCount: nextCount,
+            reasonCode: reason.split(":")[0]?.trim() ?? "unknown",
+          },
           "stripe refund failed",
         );
         res.status(502).json({
           error: "stripe_refund_failed",
-          message: refundError,
+          // Surface the count so the admin UI can render
+          // "Refund failed N times — escalate?" without
+          // refetching the row.
+          failureCount: nextCount,
+          // Caller-facing message uses the sanitised reason
+          // (the same value persisted on the row); the verbose
+          // Stripe stack stays out of the response body so we
+          // don't accidentally surface a payment-intent id or
+          // similar identifier the customer shouldn't see when
+          // a screenshot lands in a support ticket.
+          message: reason,
         });
         return;
       }
