@@ -25,7 +25,20 @@ import {
 import { humanizeStatus } from "@/components/admin/Badge";
 import { Button } from "@/components/admin/Button";
 import { Card } from "@/components/admin/Card";
+import { useConfirmDialog } from "@/hooks/use-confirm-dialog";
 
+/**
+ * Renders the "Quick actions" card for a patient page with controls for sending SMS/email/voice reminders,
+ * changing lifecycle status (resume/pause/close/reopen), and an inline 8-second "Undo" for closes.
+ *
+ * The component displays buttons for sending reminders against a selected episode, a single lifecycle action
+ * button appropriate to the patient's current status, an undo-close banner while the undo window is active,
+ * and a feedback message area. After any successful server mutation, it invokes `onAfterAction`.
+ *
+ * @param patient - The patient detail object the actions operate on.
+ * @param onAfterAction - Called after a successful action to allow the parent to refresh or refetch state.
+ * @returns The rendered PatientActionBar React element.
+ */
 export function PatientActionBar({
   patient,
   onAfterAction,
@@ -33,6 +46,7 @@ export function PatientActionBar({
   patient: PatientDetail;
   onAfterAction: () => void;
 }) {
+  const [confirm, ConfirmDialogEl] = useConfirmDialog();
   const sms = useSendSmsReminder();
   const email = useSendEmailReminder();
   const voice = usePlaceVoiceCall();
@@ -105,9 +119,13 @@ export function PatientActionBar({
     if (next === patient.status) return;
     if (next === "closed") {
       if (
-        !window.confirm(
-          "Close this patient? Closed patients are removed from outreach permanently. Proceed?",
-        )
+        !(await confirm({
+          title: "Close patient?",
+          description:
+            "Closed patients are removed from outreach permanently. Proceed?",
+          confirmLabel: "Close patient",
+          destructive: true,
+        }))
       ) {
         return;
       }
@@ -374,6 +392,7 @@ export function PatientActionBar({
           {feedback.text}
         </p>
       )}
+      {ConfirmDialogEl}
     </Card>
   );
 }

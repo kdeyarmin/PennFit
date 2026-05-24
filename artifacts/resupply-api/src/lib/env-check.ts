@@ -21,12 +21,6 @@
  * stripped the pgcrypto column-level encryption secrets) and is
  * checked at boot so the first signing or verifying request doesn't
  * fail mid-flight on a misconfigured deploy.
- *
- * `RESUPPLY_AUDIT_HMAC_KEY` used to be required here when the HIPAA
- * §164.312(b) tamper-evident audit chain was in use. That chain has
- * been retired (`@workspace/resupply-audit` is a no-op stub) and the
- * key is no longer read by any code path; leaving it set in the
- * environment is harmless.
  */
 
 import { validateSupabaseEnv } from "@workspace/resupply-db";
@@ -54,10 +48,6 @@ export function assertRequiredEnv(): void {
     }
   }
   if (!hasLinkHmacKey()) missing.push(LINK_HMAC_KEY_ENV);
-  // RESUPPLY_AUDIT_HMAC_KEY used to be required at boot; the HIPAA
-  // §164.312(b) tamper-evident audit chain has been retired so the
-  // key is no longer read by any code path. Leaving the var in the
-  // environment is harmless.
   missing.push(...validateSupabaseEnv());
 
   if (missing.length === 0) return;

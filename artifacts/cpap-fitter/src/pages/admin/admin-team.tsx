@@ -24,6 +24,8 @@
 
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+
+import { useConfirmDialog } from "@/hooks/use-confirm-dialog";
 import {
   inviteMember,
   listTeam,
@@ -163,6 +165,18 @@ function Section({
   );
 }
 
+/**
+ * Render a team member row showing status, metadata, and management controls.
+ *
+ * Renders the member's status chip, display name/email, role label, invite/audit timestamps, and optional notes.
+ * Provides action controls appropriate to the member's state: resend invite (pending), role selection and promote (active, non-admin),
+ * demote (active admin), and revoke access (active or pending). Actions that change server state show confirmation dialogs
+ * where applicable and surface any mutation error messages. Successful mutations invalidate the ["admin-team"] query.
+ *
+ * @param member - The team member to render.
+ * @param subtle - When true, use subdued styling for the row.
+ * @returns A list item JSX element representing the member row with interactive controls.
+ */
 function MemberRow({
   member,
   subtle,
@@ -171,6 +185,7 @@ function MemberRow({
   subtle?: boolean;
 }) {
   const qc = useQueryClient();
+  const [confirm, ConfirmDialogEl] = useConfirmDialog();
   const invalidate = () => qc.invalidateQueries({ queryKey: ["admin-team"] });
 
   const resend = useMutation({
@@ -297,13 +312,16 @@ function MemberRow({
               </select>
               <button
                 type="button"
-                onClick={() => {
+                onClick={async () => {
                   if (
-                    window.confirm(
-                      `Grant admin privileges to ${member.displayName ?? member.email}? They will be able to manage team members and access all admin features.`,
-                    )
+                    !(await confirm({
+                      title: "Promote to admin?",
+                      description: `Grant admin privileges to ${member.displayName ?? member.email}? They will be able to manage team members and access all admin features.`,
+                      confirmLabel: "Promote",
+                    }))
                   )
-                    promote.mutate();
+                    return;
+                  promote.mutate();
                 }}
                 disabled={promote.isPending}
                 className="rounded border border-blue-300 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-50 disabled:opacity-60"
@@ -315,13 +333,16 @@ function MemberRow({
           {member.status === "active" && member.role === "admin" && (
             <button
               type="button"
-              onClick={() => {
+              onClick={async () => {
                 if (
-                  window.confirm(
-                    `Demote ${member.displayName ?? member.email} to the Customer service role? They will lose admin privileges.`,
-                  )
+                  !(await confirm({
+                    title: "Demote to CSR?",
+                    description: `Demote ${member.displayName ?? member.email} to the Customer service role? They will lose admin privileges.`,
+                    confirmLabel: "Demote",
+                  }))
                 )
-                  demote.mutate();
+                  return;
+                demote.mutate();
               }}
               disabled={demote.isPending}
               className="rounded border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
@@ -332,13 +353,17 @@ function MemberRow({
           {(member.status === "active" || member.status === "pending") && (
             <button
               type="button"
-              onClick={() => {
+              onClick={async () => {
                 if (
-                  window.confirm(
-                    `Revoke access for ${member.displayName ?? member.email}? This will immediately end their session and prevent future sign-in.`,
-                  )
+                  !(await confirm({
+                    title: "Revoke access?",
+                    description: `Revoke access for ${member.displayName ?? member.email}? This will immediately end their session and prevent future sign-in.`,
+                    confirmLabel: "Revoke access",
+                    destructive: true,
+                  }))
                 )
-                  revoke.mutate();
+                  return;
+                revoke.mutate();
               }}
               disabled={revoke.isPending}
               className="rounded border border-rose-300 px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-60"
@@ -354,6 +379,7 @@ function MemberRow({
           {errorMessage}
         </div>
       )}
+      {ConfirmDialogEl}
     </li>
   );
 }
