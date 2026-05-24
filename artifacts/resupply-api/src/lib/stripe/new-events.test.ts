@@ -468,7 +468,7 @@ describe("charge.dispute.created — log payload shape simulation", () => {
       currency: "usd",
       reason: "general",
       status: "under_review",
-      evidence_details: undefined as { due_by?: number | null } | undefined,
+      evidence_details: undefined,
       is_charge_refundable: false,
     };
 
