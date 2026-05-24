@@ -13,8 +13,15 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+import { existsSync } from "node:fs";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const srcPath = path.join(__dirname, "SubscriptionsSection.tsx");
+if (!existsSync(srcPath)) {
+  throw new Error(`Source file not found: ${srcPath}`);
+}
 const SRC = readFileSync(
-  path.join(__dirname, "SubscriptionsSection.tsx"),
+  srcPath,
   "utf8",
 );
 
