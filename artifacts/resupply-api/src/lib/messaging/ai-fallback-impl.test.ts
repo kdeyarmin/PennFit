@@ -428,6 +428,191 @@ describe("createAiFallbackAdapter — factory selector", () => {
 });
 
 // ---------------------------------------------------------------------------
+// parseModelOutput — confidence field (PR change)
+//
+// The PR adds an optional `confidence` field to the model output and
+// AiFallbackResult. These tests exercise the parsing contract through
+// the public `classify()` API: we can't call parseModelOutput directly
+// (it's module-private) but every code path runs through classify().
+// ---------------------------------------------------------------------------
+
+function openAiSuccessBodyWithConfidence(
+  intent: string,
+  confidence: unknown,
+  reply = "Got it!",
+): unknown {
+  return {
+    choices: [
+      {
+        message: {
+          content: JSON.stringify({ intent, reply, confidence }),
+        },
+      },
+    ],
+  };
+}
+
+describe("parseModelOutput — confidence field (PR change)", () => {
+  it("parses a confidence value within [0,1] and returns it on the result", async () => {
+    const adapter = createOpenAiFallbackAdapter({
+      apiKey: "sk-test",
+      fetchImpl: async () =>
+        jsonResponse(openAiSuccessBodyWithConfidence("confirm", 0.95)),
+      timeoutMs: 30_000,
+    });
+    const result = await adapter.classify({ body: "Yes please" });
+    expect(result.intent).toBe("confirm");
+    expect(result.confidence).toBe(0.95);
+  });
+
+  it("returns confidence = 0 when the model reports exactly 0", async () => {
+    const adapter = createOpenAiFallbackAdapter({
+      apiKey: "sk-test",
+      fetchImpl: async () =>
+        jsonResponse(openAiSuccessBodyWithConfidence("unknown", 0)),
+      timeoutMs: 30_000,
+    });
+    const result = await adapter.classify({ body: "???" });
+    expect(result.confidence).toBe(0);
+  });
+
+  it("returns confidence = 1 when the model reports exactly 1", async () => {
+    const adapter = createOpenAiFallbackAdapter({
+      apiKey: "sk-test",
+      fetchImpl: async () =>
+        jsonResponse(openAiSuccessBodyWithConfidence("stop", 1)),
+      timeoutMs: 30_000,
+    });
+    const result = await adapter.classify({ body: "STOP" });
+    expect(result.confidence).toBe(1);
+  });
+
+  it("clamps confidence to 1 when the model overshoots (e.g. 1.5)", async () => {
+    const adapter = createOpenAiFallbackAdapter({
+      apiKey: "sk-test",
+      fetchImpl: async () =>
+        jsonResponse(openAiSuccessBodyWithConfidence("confirm", 1.5)),
+      timeoutMs: 30_000,
+    });
+    const result = await adapter.classify({ body: "yes" });
+    expect(result.confidence).toBe(1);
+  });
+
+  it("clamps confidence to 0 when the model goes below zero (e.g. -0.1)", async () => {
+    const adapter = createOpenAiFallbackAdapter({
+      apiKey: "sk-test",
+      fetchImpl: async () =>
+        jsonResponse(openAiSuccessBodyWithConfidence("unknown", -0.1)),
+      timeoutMs: 30_000,
+    });
+    const result = await adapter.classify({ body: "idk" });
+    expect(result.confidence).toBe(0);
+  });
+
+  it("omits confidence from the result when the model does not include the field", async () => {
+    // openAiSuccessBody does not include confidence — mirrors the existing
+    // helper so we verify the legacy (pre-PR) model output is still handled.
+    const adapter = createOpenAiFallbackAdapter({
+      apiKey: "sk-test",
+      fetchImpl: async () => jsonResponse(openAiSuccessBody("help")),
+      timeoutMs: 30_000,
+    });
+    const result = await adapter.classify({ body: "what is this?" });
+    expect(result.confidence).toBeUndefined();
+  });
+
+  it("omits confidence when the model sends a string instead of a number", async () => {
+    const adapter = createOpenAiFallbackAdapter({
+      apiKey: "sk-test",
+      fetchImpl: async () =>
+        jsonResponse(openAiSuccessBodyWithConfidence("confirm", "0.9")),
+      timeoutMs: 30_000,
+    });
+    const result = await adapter.classify({ body: "yes" });
+    expect(result.confidence).toBeUndefined();
+  });
+
+  it("omits confidence when the model sends NaN", async () => {
+    // NaN serializes as `null` in JSON.stringify, so the wire value is null.
+    // parseModelOutput must treat null as non-finite → undefined.
+    const adapter = createOpenAiFallbackAdapter({
+      apiKey: "sk-test",
+      fetchImpl: async () =>
+        jsonResponse(openAiSuccessBodyWithConfidence("confirm", null)),
+      timeoutMs: 30_000,
+    });
+    const result = await adapter.classify({ body: "yes" });
+    expect(result.confidence).toBeUndefined();
+  });
+
+  it("omits confidence when the model sends a boolean", async () => {
+    const adapter = createOpenAiFallbackAdapter({
+      apiKey: "sk-test",
+      fetchImpl: async () =>
+        jsonResponse(openAiSuccessBodyWithConfidence("confirm", true)),
+      timeoutMs: 30_000,
+    });
+    const result = await adapter.classify({ body: "yes" });
+    expect(result.confidence).toBeUndefined();
+  });
+
+  it("Anthropic adapter also returns confidence from model output", async () => {
+    const body = {
+      id: "msg_test",
+      type: "message",
+      role: "assistant",
+      model: "claude-haiku-4-5",
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({ intent: "decline", reply: "No worries!", confidence: 0.88 }),
+        },
+      ],
+      stop_reason: "end_turn",
+      usage: { input_tokens: 50, output_tokens: 30 },
+    };
+    const adapter = createAnthropicFallbackAdapter({
+      apiKey: "sk-ant-test-key",
+      fetchImpl: async () =>
+        new Response(JSON.stringify(body), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+    });
+    const result = await adapter.classify({ body: "No thanks" });
+    expect(result.intent).toBe("decline");
+    expect(result.confidence).toBe(0.88);
+  });
+
+  it("Anthropic adapter omits confidence when field is absent from model output", async () => {
+    const body = {
+      id: "msg_test",
+      type: "message",
+      role: "assistant",
+      model: "claude-haiku-4-5",
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({ intent: "stop", reply: "Unsubscribed." }),
+        },
+      ],
+      stop_reason: "end_turn",
+      usage: { input_tokens: 50, output_tokens: 20 },
+    };
+    const adapter = createAnthropicFallbackAdapter({
+      apiKey: "sk-ant-test-key",
+      fetchImpl: async () =>
+        new Response(JSON.stringify(body), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+    });
+    const result = await adapter.classify({ body: "STOP" });
+    expect(result.confidence).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // createOpenAiFallbackAdapter — timeout was raised to 10s (PR change)
 // Source-analysis to guard the constant didn't regress.
 // ---------------------------------------------------------------------------
