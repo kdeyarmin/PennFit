@@ -14,6 +14,7 @@ import { z } from "zod";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { verifyProviderPortalToken } from "../lib/provider-portal-token";
+import { RATE_LIMITS } from "../lib/rate-limits-config";
 
 const router: IRouter = Router();
 
@@ -23,8 +24,8 @@ const router: IRouter = Router();
 // above any honest physician browsing pattern but well below what a
 // scraper guessing tokens would need.
 const providerPortalRateLimiter = expressRateLimit({
-  windowMs: 60 * 1000,
-  limit: 60,
+  windowMs: RATE_LIMITS.provider_portal.windowMs,
+  limit: RATE_LIMITS.provider_portal.limit,
   standardHeaders: "draft-7",
   legacyHeaders: false,
   keyGenerator: (req: Request) => ipKeyGenerator(req.ip ?? "0.0.0.0"),

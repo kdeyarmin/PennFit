@@ -33,6 +33,7 @@ import rateLimit, { ipKeyGenerator } from "express-rate-limit";
 
 import { verifyClinicianShareToken } from "../lib/clinician-share-token";
 import { logger } from "../lib/logger";
+import { RATE_LIMITS } from "../lib/rate-limits-config";
 
 const router: IRouter = Router();
 
@@ -44,8 +45,8 @@ const tokenParam = z.object({
 // because legitimate clinicians may re-load the page while talking
 // to a patient.
 const portalRateLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  limit: 60,
+  windowMs: RATE_LIMITS.portal_clinician.windowMs,
+  limit: RATE_LIMITS.portal_clinician.limit,
   standardHeaders: "draft-7",
   legacyHeaders: false,
   keyGenerator: (req) => ipKeyGenerator(req.ip ?? "0.0.0.0"),
