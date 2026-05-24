@@ -12,9 +12,10 @@
 //   (b) auto-accept when confidence >= 0.9 and code is in the
 //       LCD L33718 allowlist.
 //
-// PHI posture: same as the AI scrubber — initials + DOB year only.
-// The clinical numerics aren't directly PHI but are protected via
-// the same prompt + transport.
+// Prompt payload posture: structured study numerics + study/source
+// context only; no patient identifiers are included in the LLM
+// request. The clinical numerics aren't directly identifying but are
+// still protected via the same prompt + transport controls.
 //
 // Provider selection (May 2026):
 //   Dispatches through `selectLlmProvider()` — Anthropic-first when
