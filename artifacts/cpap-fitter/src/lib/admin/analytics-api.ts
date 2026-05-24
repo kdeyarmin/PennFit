@@ -47,6 +47,10 @@ export interface CsrProductivityResponse {
   windowDays: number;
   rows: CsrProductivityRow[];
   totalActions: number;
+  /** When true, per-operator productivity is no longer tracked (the
+   *  audit_log source was retired). UI surfaces this as a clear
+   *  "no longer tracked" notice instead of an empty table. */
+  unavailable?: boolean;
 }
 
 async function jsonFetch<T>(path: string): Promise<T> {
