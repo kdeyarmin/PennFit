@@ -388,10 +388,15 @@ export async function askSleepCoach(input: SleepCoachInput): Promise<SleepCoachR
       const isAbort = err instanceof Error && err.name === "AbortError";
       const message = err instanceof Error ? err.message : String(err);
       const latencyMs = Date.now() - startedAt;
-      // Timeout (AbortError) and generic network errors are retryable;
-      // TypeError typically indicates a programming bug (missing
-      // fetch impl, malformed URL) and is NOT retryable.
-      const retryable = isAbort || !(err instanceof TypeError);
+      // AbortError (timeout) and fetch transport failures are
+      // retryable. In Node's undici fetch, transient transport
+      // failures (DNS, socket reset, ECONNREFUSED) are surfaced as
+      // TypeError with messages like "fetch failed" — those are
+      // exactly the case retry was added for. Programming bugs
+      // (missing fetch impl, malformed URL) also throw as TypeError
+      // but those reproduce immediately, so a single retry is cheap
+      // and isn't worth a more elaborate classifier.
+      const retryable = isAbort || err instanceof TypeError;
       if (retryable && attempt < MAX_RETRIES) {
         logger.warn(
           {

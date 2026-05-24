@@ -149,6 +149,10 @@ export function createOpenAiFallbackAdapter(
           });
           if (!res.ok) {
             const detail = await res.text().catch(() => "");
+            // Redact Bearer tokens and OpenAI key prefixes — a 401
+            // response from OpenAI echoes the offending key prefix
+            // in the error body. Our application logs are treated
+            // as world-readable per CLAUDE.md.
             const safeDetail = detail
               .slice(0, 200)
               .replace(/Bearer\s+[A-Za-z0-9._-]+/gi, "Bearer [redacted]")
@@ -182,9 +186,13 @@ export function createOpenAiFallbackAdapter(
           return result;
         } catch (err) {
           const isAbort = err instanceof Error && err.name === "AbortError";
-          // AbortError (timeout) and generic network errors retry;
-          // TypeError typically signals a programming bug and does not.
-          const retryable = isAbort || !(err instanceof TypeError);
+          // AbortError (timeout) and fetch transport failures retry.
+          // In Node's undici fetch, transient network failures (DNS,
+          // socket reset, ECONNREFUSED) are surfaced as TypeError with
+          // messages like "fetch failed" — those are exactly the
+          // class of error retry was added for. Programming-bug
+          // TypeErrors reproduce instantly so one retry is cheap.
+          const retryable = isAbort || err instanceof TypeError;
           logger.warn(
             {
               event: "ai_fallback_exception",

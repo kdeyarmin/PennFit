@@ -545,12 +545,6 @@ function GuardedOrderSuccess() {
       setState("deny");
       return;
     }
-    try {
-      const scrubbedUrl = `${window.location.pathname}${window.location.hash}`;
-      window.history.replaceState(window.history.state, "", scrubbedUrl);
-    } catch {
-      /* ignore — best-effort URL scrub */
-    }
     void (async () => {
       try {
         const res = await fetch("/api/orders/track", {
@@ -598,7 +592,24 @@ function GuardedOrderSuccess() {
           );
           setState("ok");
         } catch {
+          // sessionStorage write failed (e.g. private browsing /
+          // storage disabled). Without it, OrderSuccess hydrates to
+          // null and the page is blank — better to deny+redirect so
+          // the patient at least sees the home page than to leave
+          // them staring at an empty "Order confirmed" frame.
           setState("deny");
+          return;
+        }
+        // URL scrub runs ONLY after successful recovery so that a
+        // transient fetch failure leaves the ?ref + ?email intact —
+        // the patient can refresh and retry from the same URL.
+        // Scrubbing earlier would burn the recovery inputs on the
+        // first attempt and bounce them to "/" with no way back.
+        try {
+          const scrubbedUrl = `${window.location.pathname}${window.location.hash}`;
+          window.history.replaceState(window.history.state, "", scrubbedUrl);
+        } catch {
+          /* ignore — best-effort URL scrub */
         }
       } catch {
         if (!cancelled) setState("deny");
