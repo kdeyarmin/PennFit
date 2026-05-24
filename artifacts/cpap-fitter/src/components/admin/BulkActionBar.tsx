@@ -9,8 +9,8 @@
 // What this component does NOT own:
 //   - Selection state itself (use hooks/use-bulk-selection.ts).
 //   - The actual mutation call (callers pass an onClick per action).
-//   - Confirmation dialogs (callers wrap actions with their own
-//     window.confirm or modal before invoking the mutation).
+//   - Confirmation dialogs (callers wrap actions with the
+//     useConfirmDialog hook before invoking the mutation).
 //
 // Visibility rule: the bar renders nothing when there's no selection
 // AND no feedback. It pops in when either becomes truthy and stays

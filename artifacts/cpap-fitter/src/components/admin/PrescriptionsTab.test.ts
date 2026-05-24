@@ -419,9 +419,13 @@ describe("PrescriptionsTab — handleUpload size guard", () => {
 // PrescriptionsTab — handleRemoveAttachment
 // ---------------------------------------------------------------------------
 describe("PrescriptionsTab — handleRemoveAttachment", () => {
-  it("confirms removal with window.confirm before proceeding", () => {
+  it("confirms removal via useConfirmDialog before proceeding", () => {
+    // Migrated from window.confirm to the accessible useConfirmDialog
+    // hook (which wraps Radix AlertDialog). The prompt text moved
+    // into structured `title`/`description` fields.
+    expect(SRC).toContain("title: \"Remove attached document?\"");
     expect(SRC).toContain(
-      "Remove the attached document? The patient's record will no longer link to it.",
+      "The patient's record will no longer link to it.",
     );
   });
 
@@ -467,9 +471,17 @@ describe("PrescriptionsTab — changeStatus (mark expired / revoke)", () => {
   });
 
   it("does not proceed when user cancels the confirm dialog (early return)", () => {
-    // window.confirm returns falsy → the function returns immediately.
-    // The guard pattern: if (!window.confirm(...)) { return; }
-    expect(SRC).toMatch(/!window\.confirm[\s\S]{0,200}return;/);
+    // Migrated from window.confirm → useConfirmDialog. The hook
+    // returns false on cancel/dismiss, so the guard now reads:
+    // `if (!(await confirm({...}))) { return; }`
+    expect(SRC).toMatch(/!\(await confirm\(\{[\s\S]{0,400}return;/);
+  });
+
+  it("flags the destructive variant only on revoke (not on mark-expired)", () => {
+    // Revoking an active Rx is permanent and visible to clinicians,
+    // so it should render the destructive (red) confirm button.
+    // Mark-expired is reversible-by-Rx-renewal and rendered neutral.
+    expect(SRC).toContain('destructive: nextStatus === "revoked"');
   });
 });
 
