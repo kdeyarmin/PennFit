@@ -59,7 +59,7 @@ function openAiSuccessBody(intent: string, reply = "Got it!"): unknown {
 // the resulting fetch hands out `r1` on the first call, `r2` on the
 // second, and so on; once exhausted it sticks on the last response so
 // over-call doesn't crash. Underscored because no test currently
-// imports it — kept around so the upcoming retry-cascade test suite
+// uses it — kept around so the upcoming retry-cascade test suite
 // can drive ordered failure → success cascades against the adapters.
 function _makeMultiFetch(responses: Response[]): typeof fetch {
   let i = 0;
