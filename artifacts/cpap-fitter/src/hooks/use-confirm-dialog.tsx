@@ -73,14 +73,11 @@ export interface ConfirmDialogOptions {
 interface InternalState {
   open: boolean;
   options: ConfirmDialogOptions | null;
-  /** Resolver for the in-flight confirm() promise. Cleared on close. */
-  resolve: ((value: boolean) => void) | null;
 }
 
 const INITIAL_STATE: InternalState = {
   open: false,
   options: null,
-  resolve: null,
 };
 
 export type ConfirmFn = (opts: ConfirmDialogOptions) => Promise<boolean>;
