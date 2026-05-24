@@ -39,6 +39,10 @@ import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 import { dispatchEhrFhir } from "../../lib/inbound-dispatchers/ehr-fhir";
 import { dispatchParachute } from "../../lib/inbound-dispatchers/parachute";
 import { logger } from "../../lib/logger";
+import {
+  buildQueueConfig,
+  WEBHOOK_DISPATCH_QUEUE_OPTS,
+} from "../lib/queue-options";
 
 const JOB = "integrations.inbound-webhook-dispatch";
 const CRON = "* * * * *"; // every minute
@@ -307,7 +311,11 @@ async function markRetry(
 export async function registerInboundWebhookDispatchJob(
   boss: PgBoss,
 ): Promise<void> {
-  await boss.createQueue(JOB);
+  // Inbound webhook dispatching mirrors outbound delivery's posture
+  // (generous retries, tight expiry, DLQ on exhaustion) since the
+  // failure modes are the same shape — a downstream consumer briefly
+  // 5xx'ing.
+  await boss.createQueue(JOB, buildQueueConfig(JOB, WEBHOOK_DISPATCH_QUEUE_OPTS));
   await boss.work(JOB, async () => {
     try {
       const stats = await runInboundWebhookDispatcher();

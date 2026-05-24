@@ -97,6 +97,18 @@ export async function handleVoiceWsConnection(
   const turnHistory: TurnForSummary[] = [];
   const MAX_RETAINED_TURNS = 200;
 
+  // Hard ceiling on call duration — wired AFTER bridge is built (see
+  // below). A patient resupply check-in has never historically run
+  // beyond ~8 minutes; 15 minutes is well past the long tail. Without
+  // this, a wedged bridge (Twilio dropped the hang-up frame, OpenAI
+  // Realtime stalled mid-stream, the patient walked away with the
+  // line open) burns Realtime + Deepgram + Twilio minutes
+  // indefinitely. The cutoff fires a clean close — same path a normal
+  // hangup takes — so the post-call summary, Deepgram audit transcript,
+  // and conversation finalize all run.
+  const MAX_CALL_DURATION_MS = 15 * 60 * 1000;
+  let maxDurationTimer: ReturnType<typeof setTimeout> | null = null;
+
   // Sink Twilio side. We only know `streamSid` after the `start`
   // frame, so audio deltas before that are silently dropped (the
   // model can't realistically produce audio before we've sent it the
@@ -148,6 +160,24 @@ export async function handleVoiceWsConnection(
   });
 
   const bridge = new VoiceBridge({ client, sink, dispatcher });
+
+  // Arm the max-duration timer now that `bridge` exists. See declaration
+  // above for rationale.
+  maxDurationTimer = setTimeout(() => {
+    if (closed) return;
+    logger.warn(
+      {
+        event: "voice_max_duration_exceeded",
+        conversationId: pending.conversationId,
+        max_duration_ms: MAX_CALL_DURATION_MS,
+      },
+      "voice ws: max call duration reached — closing bridge",
+    );
+    bridge.close("max-duration-exceeded");
+  }, MAX_CALL_DURATION_MS);
+  // Don't keep the Node event loop alive for the timer; if the process
+  // is shutting down for unrelated reasons we want it to exit cleanly.
+  maxDurationTimer.unref?.();
 
   // Optional Deepgram parallel transcription. When DEEPGRAM_API_KEY
   // is set, we run Nova-3 on the caller-side audio in parallel with
@@ -308,6 +338,10 @@ export async function handleVoiceWsConnection(
   bridge.on("session.closed", (info) => {
     if (closed) return;
     closed = true;
+    if (maxDurationTimer !== null) {
+      clearTimeout(maxDurationTimer);
+      maxDurationTimer = null;
+    }
     logger.info(
       {
         event: "voice_session_closed",
