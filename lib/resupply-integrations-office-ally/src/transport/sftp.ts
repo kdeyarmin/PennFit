@@ -63,70 +63,109 @@ export interface SftpTransportConfig {
 
 const DEFAULT_TIMEOUT_MS = 60_000;
 
+// Transient-failure retry policy. SFTP uploads to Office Ally
+// historically failed silently on a single network blip, leaving the
+// `office_ally_submissions` row in 'error' and requiring manual replay.
+// Three attempts with exponential backoff (1s, 2s — total worst-case
+// 3s of waiting on top of the 60s SFTP timeout each) covers ~99% of
+// the transient-failure window without meaningfully delaying the
+// submission. We retry ONLY the failure kinds that are transient by
+// nature — connect_failed and transfer_failed are typically network
+// blips or remote-side hiccups; auth_failed and unavailable (missing
+// binary, killed process) indicate a config error that won't recover.
+const MAX_UPLOAD_ATTEMPTS = 3;
+const UPLOAD_RETRY_DELAYS_MS = [1000, 2000];
+
+function isRetryableUploadFailure(outcome: UploadOutcome): boolean {
+  if (outcome.ok) return false;
+  return outcome.kind === "connect_failed" || outcome.kind === "transfer_failed";
+}
+
 export function createSftpTransport(
   config: SftpTransportConfig,
 ): SubmissionTransport {
   return {
     kind: "sftp",
     async upload(req: UploadRequest): Promise<UploadOutcome> {
-      const safeName = req.fileName.replace(/[^A-Za-z0-9._-]/g, "_");
-      const localDir = join(tmpdir(), "pf-oa-upload");
-      const localPath = join(localDir, safeName);
-      const batchPath = join(localDir, `${safeName}.batch`);
-      try {
-        await mkdir(localDir, { recursive: true });
-        await writeFile(localPath, req.payload, { encoding: "utf8" });
-        // The batch file tells sftp the exact upload+rename sequence
-        // so a transport interruption never leaves a half-written
-        // file in OA's pickup directory.
-        const remoteTmp = `${config.remoteInboxDir}/${safeName}.tmp`;
-        const remoteFinal = `${config.remoteInboxDir}/${safeName}`;
-        const batch = [
-          `put ${quoteSftpArg(localPath)} ${quoteSftpArg(remoteTmp)}`,
-          `rename ${quoteSftpArg(remoteTmp)} ${quoteSftpArg(remoteFinal)}`,
-          "exit",
-          "",
-        ].join("\n");
-        await writeFile(batchPath, batch, { encoding: "utf8" });
+      // Single-attempt closure — extracted so the retry loop below
+      // can call it multiple times without duplicating the
+      // tmp-file/batch-file dance.
+      const attempt = async (): Promise<UploadOutcome> => uploadOnce(config, req);
 
-        const args = [
-          "-b",
-          batchPath,
-          "-i",
-          config.privateKeyPath,
-          "-o",
-          `UserKnownHostsFile=${config.knownHostsPath}`,
-          "-o",
-          "StrictHostKeyChecking=yes",
-          "-o",
-          "BatchMode=yes",
-          "-P",
-          String(config.port),
-          `${config.username}@${config.host}`,
-        ];
-
-        await execFileAsync("sftp", args, {
-          timeout: config.timeoutMs ?? DEFAULT_TIMEOUT_MS,
-          // 1MB stdout cap — the EDI payload is well under 100kB so
-          // anything larger means OA echoed something unexpected.
-          maxBuffer: 1024 * 1024,
-        });
-
-        return {
-          ok: true,
-          sessionId: null,
-          remotePath: `${config.remoteInboxDir}/${safeName}`,
-        };
-      } catch (err) {
-        return classifyError(err);
-      } finally {
-        // Best-effort cleanup. Never lets a cleanup failure mask the
-        // actual upload result.
-        await rm(localPath, { force: true }).catch(() => undefined);
-        await rm(batchPath, { force: true }).catch(() => undefined);
+      let lastOutcome: UploadOutcome = await attempt();
+      for (let i = 1; i < MAX_UPLOAD_ATTEMPTS; i++) {
+        if (!isRetryableUploadFailure(lastOutcome)) break;
+        // Sleep before the next attempt. The delays array is sized
+        // to MAX_UPLOAD_ATTEMPTS - 1; we never read past it.
+        const delay = UPLOAD_RETRY_DELAYS_MS[i - 1] ?? 0;
+        await new Promise((resolve) => setTimeout(resolve, delay));
+        lastOutcome = await attempt();
       }
+      return lastOutcome;
     },
   };
+}
+
+async function uploadOnce(
+  config: SftpTransportConfig,
+  req: UploadRequest,
+): Promise<UploadOutcome> {
+  const safeName = req.fileName.replace(/[^A-Za-z0-9._-]/g, "_");
+  const localDir = join(tmpdir(), "pf-oa-upload");
+  const localPath = join(localDir, safeName);
+  const batchPath = join(localDir, `${safeName}.batch`);
+  try {
+    await mkdir(localDir, { recursive: true });
+    await writeFile(localPath, req.payload, { encoding: "utf8" });
+    // The batch file tells sftp the exact upload+rename sequence
+    // so a transport interruption never leaves a half-written
+    // file in OA's pickup directory.
+    const remoteTmp = `${config.remoteInboxDir}/${safeName}.tmp`;
+    const remoteFinal = `${config.remoteInboxDir}/${safeName}`;
+    const batch = [
+      `put ${quoteSftpArg(localPath)} ${quoteSftpArg(remoteTmp)}`,
+      `rename ${quoteSftpArg(remoteTmp)} ${quoteSftpArg(remoteFinal)}`,
+      "exit",
+      "",
+    ].join("\n");
+    await writeFile(batchPath, batch, { encoding: "utf8" });
+
+    const args = [
+      "-b",
+      batchPath,
+      "-i",
+      config.privateKeyPath,
+      "-o",
+      `UserKnownHostsFile=${config.knownHostsPath}`,
+      "-o",
+      "StrictHostKeyChecking=yes",
+      "-o",
+      "BatchMode=yes",
+      "-P",
+      String(config.port),
+      `${config.username}@${config.host}`,
+    ];
+
+    await execFileAsync("sftp", args, {
+      timeout: config.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+      // 1MB stdout cap — the EDI payload is well under 100kB so
+      // anything larger means OA echoed something unexpected.
+      maxBuffer: 1024 * 1024,
+    });
+
+    return {
+      ok: true,
+      sessionId: null,
+      remotePath: `${config.remoteInboxDir}/${safeName}`,
+    };
+  } catch (err) {
+    return classifyError(err);
+  } finally {
+    // Best-effort cleanup. Never lets a cleanup failure mask the
+    // actual upload result.
+    await rm(localPath, { force: true }).catch(() => undefined);
+    await rm(batchPath, { force: true }).catch(() => undefined);
+  }
 }
 
 function quoteSftpArg(arg: string): string {

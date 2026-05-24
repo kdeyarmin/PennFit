@@ -79,6 +79,11 @@ import {
 import { hasLinkHmacKey } from "@workspace/resupply-secrets";
 
 import { logger } from "../../lib/logger.js";
+import {
+  buildQueueConfig,
+  CRON_SCAN_QUEUE_OPTS,
+  VENDOR_SEND_QUEUE_OPTS,
+} from "../lib/queue-options.js";
 
 export const SCAN_JOB = "reminders.scan";
 export const SEND_SMS_JOB = "reminders.send-sms";
@@ -577,9 +582,21 @@ export async function registerReminderJobs(boss: PgBoss): Promise<void> {
   // idempotent (it's an upsert), so calling it on every boot is safe.
   // We create all three queues up front so the order of `work()` /
   // `schedule()` calls below doesn't matter.
-  await boss.createQueue(SCAN_JOB);
-  await boss.createQueue(SEND_SMS_JOB);
-  await boss.createQueue(SEND_EMAIL_JOB);
+  // Queue defaults: the SCAN job is cron-driven (the next tick rebuilds
+  // candidates from scratch, so retrying a failed scan adds nothing).
+  // The two SEND jobs call Twilio / SendGrid — those benefit from a
+  // higher retry budget with exponential backoff so a vendor blip
+  // doesn't lose the reminder. All three route exhausted retries to a
+  // dead-letter queue (`<name>.dlq`) so ops can review what got stuck.
+  await boss.createQueue(SCAN_JOB, buildQueueConfig(SCAN_JOB, CRON_SCAN_QUEUE_OPTS));
+  await boss.createQueue(
+    SEND_SMS_JOB,
+    buildQueueConfig(SEND_SMS_JOB, VENDOR_SEND_QUEUE_OPTS),
+  );
+  await boss.createQueue(
+    SEND_EMAIL_JOB,
+    buildQueueConfig(SEND_EMAIL_JOB, VENDOR_SEND_QUEUE_OPTS),
+  );
 
   await boss.work<ScanJobData>(SCAN_JOB, async (jobs) => {
     try {
