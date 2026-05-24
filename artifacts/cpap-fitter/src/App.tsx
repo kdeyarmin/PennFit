@@ -596,10 +596,10 @@ function GuardedOrderSuccess() {
               },
             }),
           );
+          setState("ok");
         } catch {
-          /* sessionStorage write failed (private mode) — render anyway */
+          setState("deny");
         }
-        setState("ok");
       } catch {
         if (!cancelled) setState("deny");
       }
