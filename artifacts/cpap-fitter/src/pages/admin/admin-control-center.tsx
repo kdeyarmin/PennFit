@@ -554,7 +554,7 @@ function ActivityPanel() {
   const query = useQuery({
     queryKey: ACTIVITY_QUERY_KEY,
     queryFn: () => listFeatureFlagActivity(20),
-    refetchInterval: 60_000,
+    refetchInterval: (query) => (query.state.data?.unavailable ? false : 60_000),
   });
 
   return (
