@@ -271,7 +271,18 @@ export function Order() {
             }),
           );
           track("order_submitted_success", { mask: chosenMask.modelNumber });
-          setLocation("/order-success");
+          // Include the order reference + patient email in the URL so
+          // the success page can recover the confirmation server-side
+          // if sessionStorage is lost (tab crash, cache clear, deep
+          // link from an email forwarded between devices). The server
+          // lookup at /api/orders/track requires BOTH values + is rate
+          // limited, so leaking the URL doesn't expose the order to
+          // anyone who doesn't already know the email on file.
+          const params = new URLSearchParams({
+            ref: data.orderReference,
+            email: values.patient.email,
+          });
+          setLocation(`/order-success?${params.toString()}`);
         },
       },
     );

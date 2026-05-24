@@ -125,7 +125,12 @@ router.post("/orders/track", async (req, res) => {
     .schema("public")
     .from("orders")
     .select(
-      "order_reference, patient_email, mask_name, mask_manufacturer, email_status, email_delivered_at, created_at",
+      // mask_model_number is included so that a session-storage-loss
+      // recovery on /order-success can render the same confirmation
+      // card the patient saw the first time (which references the
+      // model number). Not PHI; the patient already chose the mask
+      // by model number on /results.
+      "order_reference, patient_email, mask_name, mask_manufacturer, mask_model_number, email_status, email_delivered_at, created_at",
     )
     .eq("order_reference", normalizedRef)
     .limit(1)
@@ -177,6 +182,7 @@ router.post("/orders/track", async (req, res) => {
     mask: {
       name: legacyRow.mask_name,
       manufacturer: legacyRow.mask_manufacturer,
+      modelNumber: legacyRow.mask_model_number,
     },
     createdAt: legacyRow.created_at,
     emailStatus: legacyRow.email_status,

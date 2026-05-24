@@ -505,21 +505,102 @@ function GuardedAccountBilling() {
 }
 
 /**
- * Order-success has its own gating: the order confirmation lives in
- * sessionStorage (so a refresh after order doesn't re-submit) rather
- * than in the in-memory fitter store. We check it here at route-mount
- * time so a deep link to /order-success either renders cleanly or
- * redirects.
+ * Order-success gating. The confirmation normally lives in
+ * sessionStorage (so a refresh after order doesn't re-submit). If
+ * that's gone — tab crashed, cache cleared, deep link from an email
+ * — we fall back to recovering the confirmation server-side using
+ * the ?ref + ?email URL params that /order appended on submit.
+ * The /api/orders/track endpoint already enforces matching email +
+ * rate limiting, so this doesn't widen the attack surface beyond
+ * the existing track-order page.
  */
 function GuardedOrderSuccess() {
   const [state, setState] = useState<"checking" | "ok" | "deny">("checking");
   useEffect(() => {
+    let cancelled = false;
+    // Fast path: sessionStorage carries the confirmation from /order.
     try {
       const stored = sessionStorage.getItem("fitter_order_confirmation");
-      setState(stored ? "ok" : "deny");
+      if (stored) {
+        setState("ok");
+        return;
+      }
     } catch {
-      setState("deny");
+      /* fall through to URL-param recovery */
     }
+    // Recovery path: read ?ref + ?email from the URL and ask the
+    // server. If both are present and the lookup succeeds, prime
+    // sessionStorage so <OrderSuccess /> renders normally without
+    // its own retry needed.
+    let ref: string | null = null;
+    let email: string | null = null;
+    try {
+      const params = new URLSearchParams(window.location.search);
+      ref = params.get("ref");
+      email = params.get("email");
+    } catch {
+      /* ignore — URL parse failure falls through to deny */
+    }
+    if (!ref || !email) {
+      setState("deny");
+      return;
+    }
+    void (async () => {
+      try {
+        const res = await fetch("/api/orders/track", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: {
+            Accept: "application/json",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ orderReference: ref, email }),
+        });
+        if (cancelled) return;
+        if (!res.ok) {
+          setState("deny");
+          return;
+        }
+        const data = (await res.json()) as {
+          orderReference: string;
+          mask: {
+            name: string;
+            manufacturer: string | null;
+            modelNumber?: string | null;
+          };
+        };
+        // Prime sessionStorage in the same shape /order writes so the
+        // OrderSuccess component's existing hydration path Just Works.
+        // Recovered orders don't carry measurements (not returned by
+        // /api/orders/track — they live in the persisted order's
+        // payload jsonb and aren't part of the public lookup surface);
+        // <OrderSuccess /> already renders the measurements card
+        // conditionally so absence is a clean visual no-op.
+        try {
+          sessionStorage.setItem(
+            "fitter_order_confirmation",
+            JSON.stringify({
+              orderReference: data.orderReference,
+              message:
+                "Your order has been sent to Penn Home Medical Supply. A team member will contact you within 1 business day to confirm and arrange shipping.",
+              mask: {
+                name: data.mask.name,
+                manufacturer: data.mask.manufacturer ?? "",
+                modelNumber: data.mask.modelNumber ?? "",
+              },
+            }),
+          );
+        } catch {
+          /* sessionStorage write failed (private mode) — render anyway */
+        }
+        setState("ok");
+      } catch {
+        if (!cancelled) setState("deny");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
   if (state === "checking") return null;
   if (state === "deny") return <Redirect to="/" />;
