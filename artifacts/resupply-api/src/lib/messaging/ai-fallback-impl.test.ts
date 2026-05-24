@@ -55,7 +55,15 @@ function openAiSuccessBody(intent: string, reply = "Got it!"): unknown {
   };
 }
 
-function makeMultiFetch(responses: Response[]): typeof fetch {
+// Multi-response fetch stub. Returned from `_makeMultiFetch([r1, r2, ...])`,
+// the resulting fetch hands out `r1` on the first call, `r2` on the
+// second, and so on; once exhausted it sticks on the last response so
+// over-call doesn't crash. Underscored because no test currently
+// imports it — kept around so the upcoming retry-cascade test suite
+// (P1 review item: "OpenAI chat path has zero retry on 429/5xx" — the
+// fallback adapters already retry, so once chat.ts catches up we'll
+// drive the tests against this helper).
+function _makeMultiFetch(responses: Response[]): typeof fetch {
   let i = 0;
   return async () => {
     const r = responses[Math.min(i, responses.length - 1)]!;

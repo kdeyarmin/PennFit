@@ -26,6 +26,7 @@ import {
   patientStatusVariant,
 } from "@/components/admin/Badge";
 import { Spinner } from "@/components/admin/Spinner";
+import { useConfirmDialog } from "@/hooks/use-confirm-dialog";
 import { EmptyState } from "@/components/admin/EmptyState";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { Pagination } from "@/components/admin/Pagination";
@@ -70,6 +71,7 @@ type PatientRow = {
 export function PatientsPage() {
   const [, setLocation] = useLocation();
   const queryClient = useQueryClient();
+  const [confirm, ConfirmDialogEl] = useConfirmDialog();
 
   // Filter + offset state. useFilteredList owns the "reset offset to
   // 0 on any filter change" invariant — pagination state still lives
@@ -159,11 +161,20 @@ export function PatientsPage() {
         : targetStatus === "paused"
           ? "Pause"
           : "Close";
-    const confirmMsg =
-      targetStatus === "closed"
-        ? `Close ${ids.length} patient${ids.length === 1 ? "" : "s"}? Closed patients are removed from outreach permanently.`
-        : `${verb} ${ids.length} patient${ids.length === 1 ? "" : "s"}?`;
-    if (!window.confirm(confirmMsg)) return;
+    const isClosing = targetStatus === "closed";
+    if (
+      !(await confirm({
+        title: isClosing
+          ? `Close ${ids.length} patient${ids.length === 1 ? "" : "s"}?`
+          : `${verb} ${ids.length} patient${ids.length === 1 ? "" : "s"}?`,
+        description: isClosing
+          ? "Closed patients are removed from outreach permanently."
+          : undefined,
+        confirmLabel: verb,
+        destructive: isClosing,
+      }))
+    )
+      return;
     setBulkFeedback(null);
     try {
       const res = await bulkMut.mutateAsync({
@@ -538,6 +549,7 @@ export function PatientsPage() {
           }}
         />
       )}
+      {ConfirmDialogEl}
     </div>
   );
 }

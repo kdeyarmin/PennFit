@@ -55,6 +55,7 @@ import {
   type ShopSubscriptionView,
 } from "@/lib/account-api";
 import { formatMoneyCents } from "@/lib/shop-api";
+import { useConfirmDialog } from "@/hooks/use-confirm-dialog";
 
 type PendingAction = "cancel" | "pause" | "resume";
 
@@ -63,6 +64,7 @@ export function SubscriptionsSection({
 }: {
   previewMode: boolean;
 }) {
+  const [confirm, ConfirmDialogEl] = useConfirmDialog();
   const [subs, setSubs] = useState<ShopSubscriptionView[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [pending, setPending] = useState<{
@@ -173,10 +175,12 @@ export function SubscriptionsSection({
   async function handlePause(sub: ShopSubscriptionView) {
     if (pending || travelModeBusy) return;
     if (
-      !window.confirm(
-        "Pause auto-ship? We'll stop charging your card and shipping until you " +
-          "resume. Your subscription stays active so you can pick up where you left off.",
-      )
+      !(await confirm({
+        title: "Pause auto-ship?",
+        description:
+          "We'll stop charging your card and shipping until you resume. Your subscription stays active so you can pick up where you left off.",
+        confirmLabel: "Pause",
+      }))
     ) {
       return;
     }
@@ -793,6 +797,7 @@ export function SubscriptionsSection({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      {ConfirmDialogEl}
     </section>
   );
 }

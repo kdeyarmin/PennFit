@@ -25,6 +25,7 @@ import {
 import { humanizeStatus } from "@/components/admin/Badge";
 import { Button } from "@/components/admin/Button";
 import { Card } from "@/components/admin/Card";
+import { useConfirmDialog } from "@/hooks/use-confirm-dialog";
 
 export function PatientActionBar({
   patient,
@@ -33,6 +34,7 @@ export function PatientActionBar({
   patient: PatientDetail;
   onAfterAction: () => void;
 }) {
+  const [confirm, ConfirmDialogEl] = useConfirmDialog();
   const sms = useSendSmsReminder();
   const email = useSendEmailReminder();
   const voice = usePlaceVoiceCall();
@@ -105,9 +107,13 @@ export function PatientActionBar({
     if (next === patient.status) return;
     if (next === "closed") {
       if (
-        !window.confirm(
-          "Close this patient? Closed patients are removed from outreach permanently. Proceed?",
-        )
+        !(await confirm({
+          title: "Close patient?",
+          description:
+            "Closed patients are removed from outreach permanently. Proceed?",
+          confirmLabel: "Close patient",
+          destructive: true,
+        }))
       ) {
         return;
       }
@@ -374,6 +380,7 @@ export function PatientActionBar({
           {feedback.text}
         </p>
       )}
+      {ConfirmDialogEl}
     </Card>
   );
 }

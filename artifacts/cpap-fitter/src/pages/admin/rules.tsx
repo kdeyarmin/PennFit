@@ -21,6 +21,7 @@ import { Button } from "@/components/admin/Button";
 import { Input, Label, Select } from "@/components/admin/Input";
 import { formatDateTime } from "@/lib/admin/format";
 import { useAdminRole } from "@/lib/admin/role-context";
+import { useConfirmDialog } from "@/hooks/use-confirm-dialog";
 
 // PennPaps — Global frequency rules.
 //
@@ -341,6 +342,7 @@ function RuleFormModal({
   onSaved: () => void;
 }) {
   const queryClient = useQueryClient();
+  const [confirm, ConfirmDialogEl] = useConfirmDialog();
   const [form, setForm] = useState<FormState>(
     initial ? ruleToForm(initial) : EMPTY_FORM,
   );
@@ -474,7 +476,12 @@ function RuleFormModal({
   async function onDelete() {
     if (!initial) return;
     if (
-      !window.confirm(`Delete rule "${initial.name}"? This cannot be undone.`)
+      !(await confirm({
+        title: "Delete rule?",
+        description: `Delete rule "${initial.name}"? This cannot be undone.`,
+        confirmLabel: "Delete",
+        destructive: true,
+      }))
     ) {
       return;
     }
@@ -712,6 +719,7 @@ function RuleFormModal({
           </div>
         </form>
       </div>
+      {ConfirmDialogEl}
     </div>
   );
 }

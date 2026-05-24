@@ -14,6 +14,7 @@ import { Spinner } from "@/components/admin/Spinner";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { Button } from "@/components/admin/Button";
 import { Input } from "@/components/admin/Input";
+import { useConfirmDialog } from "@/hooks/use-confirm-dialog";
 import {
   createClosure,
   endClosureNow,
@@ -173,6 +174,7 @@ function NewClosureCard() {
 
 function ClosureListCard() {
   const qc = useQueryClient();
+  const [confirm, ConfirmDialogEl] = useConfirmDialog();
   const queryKey = ["admin", "closures", "list"] as const;
   const { data, isPending, isError, error, refetch } = useQuery({
     queryKey,
@@ -234,13 +236,16 @@ function ClosureListCard() {
               <ClosureRow
                 key={c.id}
                 row={c}
-                onEndNow={() => {
+                onEndNow={async () => {
                   if (
-                    window.confirm(
-                      `End "${c.label}" right now? Auto-reply stops immediately.`,
-                    )
+                    !(await confirm({
+                      title: "End closure now?",
+                      description: `End "${c.label}" right now? Auto-reply stops immediately.`,
+                      confirmLabel: "End now",
+                    }))
                   )
-                    endNow.mutate(c.id);
+                    return;
+                  endNow.mutate(c.id);
                 }}
                 endPending={endNow.isPending}
               />
@@ -248,6 +253,7 @@ function ClosureListCard() {
           </tbody>
         </table>
       )}
+      {ConfirmDialogEl}
     </Card>
   );
 }

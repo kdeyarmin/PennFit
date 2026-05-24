@@ -20,6 +20,7 @@ import { Spinner } from "@/components/admin/Spinner";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { Button } from "@/components/admin/Button";
 import { Input } from "@/components/admin/Input";
+import { useConfirmDialog } from "@/hooks/use-confirm-dialog";
 import {
   beginEnrollMfa,
   disableMfa,
@@ -81,6 +82,7 @@ export function AdminSecurityPage() {
 
 function EnrolledPanel({ data }: { data: MfaStatus }) {
   const qc = useQueryClient();
+  const [confirm, ConfirmDialogEl] = useConfirmDialog();
   const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
   // After regenerate succeeds we render the one-time codes panel
@@ -218,13 +220,18 @@ function EnrolledPanel({ data }: { data: MfaStatus }) {
               disable.isPending
             }
             isLoading={regenerate.isPending}
-            onClick={() => {
+            onClick={async () => {
               if (
-                window.confirm(
-                  "Generate a fresh batch of 10 recovery codes? Your existing codes will stop working.",
-                )
+                !(await confirm({
+                  title: "Regenerate recovery codes?",
+                  description:
+                    "Generate a fresh batch of 10 recovery codes? Your existing codes will stop working.",
+                  confirmLabel: "Regenerate",
+                  destructive: true,
+                }))
               )
-                regenerate.mutate();
+                return;
+              regenerate.mutate();
             }}
           >
             Regenerate recovery codes
@@ -257,6 +264,7 @@ function EnrolledPanel({ data }: { data: MfaStatus }) {
           + Add another device
         </Button>
       </div>
+      {ConfirmDialogEl}
     </div>
   );
 }
@@ -515,6 +523,7 @@ function DeviceList({
   code: string;
 }) {
   const qc = useQueryClient();
+  const [confirm, ConfirmDialogEl] = useConfirmDialog();
   const remove = useMutation({
     mutationFn: (id: string) => disableMfaDevice(id, code.trim()),
     onSuccess: () => void qc.invalidateQueries({ queryKey: statusKey }),
@@ -549,13 +558,17 @@ function DeviceList({
                 intent="ghost"
                 size="sm"
                 disabled={code.length !== 6 || remove.isPending}
-                onClick={() => {
+                onClick={async () => {
                   if (
-                    window.confirm(
-                      `Remove "${d.label ?? "this device"}"? Other devices and recovery codes stay active.`,
-                    )
+                    !(await confirm({
+                      title: "Remove device?",
+                      description: `Remove "${d.label ?? "this device"}"? Other devices and recovery codes stay active.`,
+                      confirmLabel: "Remove",
+                      destructive: true,
+                    }))
                   )
-                    remove.mutate(d.id);
+                    return;
+                  remove.mutate(d.id);
                 }}
               >
                 Remove
@@ -569,6 +582,7 @@ function DeviceList({
           {remove.error.message}
         </p>
       )}
+      {ConfirmDialogEl}
     </div>
   );
 }

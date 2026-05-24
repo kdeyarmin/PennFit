@@ -50,6 +50,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useDocumentTitle } from "@/hooks/use-document-title";
+import { toast } from "@/hooks/use-toast";
 import {
   fetchMyOrders,
   formatMoneyCents,
@@ -171,9 +172,11 @@ function SignedInOrders() {
       setOrders((prev) => [...prev, ...page.orders]);
       setCursor(page.nextCursor);
     } catch (err) {
-      window.alert(
-        err instanceof Error ? err.message : "Couldn't load more orders.",
-      );
+      toast({
+        variant: "destructive",
+        title: "Couldn't load more orders",
+        description: err instanceof Error ? err.message : undefined,
+      });
     } finally {
       setLoadingMore(false);
     }

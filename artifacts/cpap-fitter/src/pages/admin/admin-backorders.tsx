@@ -12,6 +12,7 @@ import { Spinner } from "@/components/admin/Spinner";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { Button } from "@/components/admin/Button";
 import { Input } from "@/components/admin/Input";
+import { useConfirmDialog } from "@/hooks/use-confirm-dialog";
 import {
   clearBackorder,
   createSubstitute,
@@ -196,6 +197,7 @@ function BackorderRow({
 
 function SubstitutesPanel() {
   const qc = useQueryClient();
+  const [confirm, ConfirmDialogEl] = useConfirmDialog();
   const queryKey = ["admin", "shop", "substitutes"] as const;
   const { data, isPending, isError, error, refetch } = useQuery({
     queryKey,
@@ -316,19 +318,24 @@ function SubstitutesPanel() {
                 onToggle={() =>
                   toggle.mutate({ id: s.id, active: !s.active })
                 }
-                onDelete={() => {
+                onDelete={async () => {
                   if (
-                    window.confirm(
-                      `Delete substitute ${s.primarySku} → ${s.alternativeSku}?`,
-                    )
+                    !(await confirm({
+                      title: "Delete substitute?",
+                      description: `Delete substitute ${s.primarySku} → ${s.alternativeSku}?`,
+                      confirmLabel: "Delete",
+                      destructive: true,
+                    }))
                   )
-                    remove.mutate(s.id);
+                    return;
+                  remove.mutate(s.id);
                 }}
               />
             ))}
           </tbody>
         </table>
       )}
+      {ConfirmDialogEl}
     </Card>
   );
 }

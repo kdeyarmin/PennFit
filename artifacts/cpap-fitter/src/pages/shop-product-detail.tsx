@@ -51,6 +51,8 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { useDocumentTitle } from "@/hooks/use-document-title";
+import { useConfirmDialog } from "@/hooks/use-confirm-dialog";
+import { toast } from "@/hooks/use-toast";
 import { useDocumentMeta } from "@/hooks/use-document-meta";
 import { useCart } from "@/hooks/use-cart";
 import { useRecentlyViewed } from "@/hooks/use-recently-viewed";
@@ -1197,6 +1199,7 @@ function MyReviewPanel({
 }) {
   const [editing, setEditing] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [confirm, ConfirmDialogEl] = useConfirmDialog();
 
   if (editing) {
     return (
@@ -1213,14 +1216,26 @@ function MyReviewPanel({
   }
 
   const handleDelete = async () => {
-    if (!window.confirm("Delete your review? This can't be undone.")) return;
+    if (
+      !(await confirm({
+        title: "Delete your review?",
+        description: "This can't be undone.",
+        confirmLabel: "Delete",
+        destructive: true,
+      }))
+    )
+      return;
     setDeleting(true);
     try {
       await deleteMyReview(productId);
       onChange(null);
     } catch {
       setDeleting(false);
-      window.alert("Couldn't delete your review. Please try again.");
+      toast({
+        variant: "destructive",
+        title: "Couldn't delete your review",
+        description: "Please try again.",
+      });
     }
   };
 
@@ -1288,6 +1303,7 @@ function MyReviewPanel({
           </Button>
         </div>
       </div>
+      {ConfirmDialogEl}
     </div>
   );
 }

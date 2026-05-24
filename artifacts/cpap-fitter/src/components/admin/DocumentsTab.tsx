@@ -14,6 +14,7 @@ import { useCallback, useEffect, useState } from "react";
 import { EmptyState } from "@/components/admin/EmptyState";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { Spinner } from "@/components/admin/Spinner";
+import { useConfirmDialog } from "@/hooks/use-confirm-dialog";
 import {
   DOCUMENT_TYPE_LABELS,
   deletePatientDocument,
@@ -30,6 +31,7 @@ function formatDocBytes(bytes: number): string {
 }
 
 export function DocumentsTab({ patientId }: { patientId: string }) {
+  const [confirm, ConfirmDialogEl] = useConfirmDialog();
   const [docs, setDocs] = useState<AdminPatientDocument[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -111,9 +113,12 @@ export function DocumentsTab({ patientId }: { patientId: string }) {
 
   async function handleDelete(doc: AdminPatientDocument) {
     if (
-      !window.confirm(
-        `Delete "${doc.filename ?? "this document"}"? This cannot be undone.`,
-      )
+      !(await confirm({
+        title: "Delete document?",
+        description: `Delete "${doc.filename ?? "this document"}"? This cannot be undone.`,
+        confirmLabel: "Delete",
+        destructive: true,
+      }))
     ) {
       return;
     }
@@ -349,6 +354,7 @@ export function DocumentsTab({ patientId }: { patientId: string }) {
           })}
         </ul>
       )}
+      {ConfirmDialogEl}
     </div>
   );
 }

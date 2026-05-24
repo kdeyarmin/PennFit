@@ -26,6 +26,7 @@ import { Input, Label } from "@/components/admin/Input";
 import { Table, type Column } from "@/components/admin/Table";
 import { openPdfInNewTab, summarizePdfError } from "@/lib/admin/pdf-download";
 import { formatDate } from "@/lib/admin/format";
+import { useConfirmDialog } from "@/hooks/use-confirm-dialog";
 import {
   prescriptionAttachmentDownloadUrl,
   removePrescriptionAttachment,
@@ -64,6 +65,7 @@ export function PrescriptionsTab({
   const [showAdd, setShowAdd] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const updateStatus = useUpdatePrescriptionStatus();
+  const [confirm, ConfirmDialogEl] = useConfirmDialog();
 
   // Single shared mutation for all rows. Tracking which row is busy
   // prevents the "every button spins at once" UX bug.
@@ -100,9 +102,13 @@ export function PrescriptionsTab({
 
   async function handleRemoveAttachment(rxId: string) {
     if (
-      !window.confirm(
-        "Remove the attached document? The patient's record will no longer link to it.",
-      )
+      !(await confirm({
+        title: "Remove attached document?",
+        description:
+          "The patient's record will no longer link to it.",
+        confirmLabel: "Remove",
+        destructive: true,
+      }))
     ) {
       return;
     }
@@ -123,7 +129,12 @@ export function PrescriptionsTab({
   async function changeStatus(rxId: string, nextStatus: "expired" | "revoked") {
     const verb = nextStatus === "revoked" ? "revoke" : "mark expired";
     if (
-      !window.confirm(`Are you sure you want to ${verb} this prescription?`)
+      !(await confirm({
+        title: `${verb.charAt(0).toUpperCase() + verb.slice(1)} prescription?`,
+        description: `Are you sure you want to ${verb} this prescription?`,
+        confirmLabel: verb,
+        destructive: nextStatus === "revoked",
+      }))
     ) {
       return;
     }
@@ -262,6 +273,7 @@ export function PrescriptionsTab({
           }}
         />
       )}
+      {ConfirmDialogEl}
     </div>
   );
 }

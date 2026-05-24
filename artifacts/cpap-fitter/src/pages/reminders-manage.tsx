@@ -20,6 +20,7 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { useConfirmDialog } from "@/hooks/use-confirm-dialog";
 import { useDocumentTitle } from "@/hooks/use-document-title";
 import { CheckCircle2, ShieldOff, BellOff } from "lucide-react";
 import {
@@ -64,6 +65,7 @@ function buildState(
 
 export function RemindersManage() {
   useDocumentTitle(PAGE_TITLE);
+  const [confirm, ConfirmDialogEl] = useConfirmDialog();
   // Read the token ONCE on mount, then strip it from the URL so the
   // single-use manage secret doesn't persist in browser history,
   // autocomplete, or shareable URLs. Subsequent updates / unsubscribe
@@ -268,15 +270,19 @@ export function RemindersManage() {
     );
   }
 
-  function onUnsubscribe() {
+  async function onUnsubscribe() {
     // Confirmation guard before the destructive call — a misclick on
     // "Unsubscribe from all reminders" would otherwise wipe the
     // user's entire setup with no recovery path other than re-creating
     // it from /reminders.
     if (
-      !window.confirm(
-        "Stop all reminders for this email? You'll need to sign up again from /reminders if you change your mind.",
-      )
+      !(await confirm({
+        title: "Stop all reminders?",
+        description:
+          "Stop all reminders for this email? You'll need to sign up again from /reminders if you change your mind.",
+        confirmLabel: "Unsubscribe",
+        destructive: true,
+      }))
     ) {
       return;
     }
@@ -453,6 +459,7 @@ export function RemindersManage() {
             </div>
           </CardContent>
         </Card>
+        {ConfirmDialogEl}
       </main>
   );
 }
