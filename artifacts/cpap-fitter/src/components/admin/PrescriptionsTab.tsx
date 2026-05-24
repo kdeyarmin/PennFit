@@ -31,8 +31,6 @@ import {
   removePrescriptionAttachment,
   uploadPrescriptionAttachment,
 } from "@/lib/admin/prescription-attachment";
-import { createPrescriptionRequestFromRx } from "@/lib/admin/prescription-requests-api";
-
 // Single-source the prescription row shape from the generated
 // OpenAPI client so the dashboard cannot drift from the contract.
 // Attachment metadata fields are part of the schema; the underlying
@@ -70,32 +68,6 @@ export function PrescriptionsTab({
   // Single shared mutation for all rows. Tracking which row is busy
   // prevents the "every button spins at once" UX bug.
   const [busyRxId, setBusyRxId] = useState<string | null>(null);
-  // Busy state for the "Renew as faxable packet" one-click. Distinct
-  // from busyRxId so the row's status-mutation buttons don't spin
-  // while the packet is being minted.
-  const [renewingRxId, setRenewingRxId] = useState<string | null>(null);
-
-  async function renewAsFaxablePacket(rxId: string) {
-    setActionError(null);
-    setRenewingRxId(rxId);
-    try {
-      const created = await createPrescriptionRequestFromRx(patientId, rxId);
-      // Navigate to the packet detail page; the URL pattern matches
-      // the route registered in console.tsx + the modal opens the
-      // packet by its id via ?packet=... query state on a follow-up.
-      // For now we land on the list page — CSR clicks the row to
-      // preview + send.
-      window.location.href = `/admin/patients/${encodeURIComponent(patientId)}/prescription-requests?packet=${encodeURIComponent(created.id)}`;
-    } catch (err) {
-      setActionError(
-        err instanceof ApiError || err instanceof Error
-          ? err.message
-          : String(err),
-      );
-    } finally {
-      setRenewingRxId(null);
-    }
-  }
   // Separate busy state for attachment uploads/removes so the
   // "Mark expired" button doesn't spin while a document is being
   // attached to the same row, and vice versa. We never let the same
@@ -235,15 +207,6 @@ export function PrescriptionsTab({
                 onError={(msg) => setActionError(msg)}
               />
             )}
-            <Button
-              intent="secondary"
-              title="Build a pre-populated, fillable Rx the physician can sign and fax back"
-              isLoading={renewingRxId === r.id}
-              disabled={renewingRxId !== null && renewingRxId !== r.id}
-              onClick={() => void renewAsFaxablePacket(r.id)}
-            >
-              Renew via fax packet
-            </Button>
             {r.status === "active" && (
               <>
                 <Button
@@ -274,18 +237,9 @@ export function PrescriptionsTab({
       <div className="flex items-center justify-between gap-3">
         <p className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
           Clinical fields are immutable after creation — to edit, add a new
-          prescription and mark the old one expired.
+          one and mark the old one expired.
         </p>
-        <div className="flex items-center gap-2">
-          <a
-            href={`/admin/patients/${encodeURIComponent(patientId)}/prescription-requests`}
-            className="inline-flex items-center text-xs font-semibold text-[hsl(var(--penn-navy))] hover:underline"
-            title="Open the pre-populated faxable Rx packets surface"
-          >
-            Rx packets &amp; faxing →
-          </a>
-          <Button onClick={() => setShowAdd(true)}>+ Add prescription</Button>
-        </div>
+        <Button onClick={() => setShowAdd(true)}>+ Add prescription</Button>
       </div>
       {actionError && (
         <p className="text-sm" style={{ color: "#b91c1c" }} role="alert">

@@ -121,6 +121,20 @@ export interface Database {
   };
   resupply: {
     Tables: {
+      stripe_webhook_events: {
+        Row: {
+          event_id: string;
+          event_type: string;
+          received_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["stripe_webhook_events"]["Row"]
+        > & { event_id: string; event_type: string };
+        Update: Partial<
+          Database["resupply"]["Tables"]["stripe_webhook_events"]["Row"]
+        >;
+        Relationships: [];
+      };
       patient_checkin_attempts: {
         Row: {
           id: string;
@@ -412,6 +426,9 @@ export interface Database {
           return_tracking_number: string | null;
           admin_note: string | null;
           admin_user_id: string | null;
+          refund_failure_count: number;
+          refund_last_failure_at: string | null;
+          refund_last_failure_reason: string | null;
           created_at: string;
           updated_at: string;
           approved_at: string | null;

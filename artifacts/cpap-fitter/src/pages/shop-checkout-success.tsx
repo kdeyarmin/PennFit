@@ -51,7 +51,28 @@ export function ShopCheckoutSuccess() {
       return;
     }
     let active = true;
-    fetchOrderSummary(sessionId)
+    // Race the fetch against a hard timeout so a hung network doesn't
+    // strand the patient on "Confirming your order…" indefinitely.
+    // 10s is comfortably above p99 webhook propagation; on timeout
+    // the user gets an actionable error instead of an infinite spinner.
+    // We hold the timer id so we can cancel it when the fetch
+    // resolves first (or on unmount); otherwise it would fire after
+    // the success path and uselessly reject a Promise nobody is
+    // awaiting anymore.
+    const FETCH_TIMEOUT_MS = 10_000;
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timeoutId = setTimeout(
+        () =>
+          reject(
+            new Error(
+              "Confirmation is taking longer than expected. Refresh in a moment to retry.",
+            ),
+          ),
+        FETCH_TIMEOUT_MS,
+      );
+    });
+    Promise.race([fetchOrderSummary(sessionId), timeoutPromise])
       .then((o) => {
         if (!active) return;
         setOrder(o);
@@ -75,10 +96,12 @@ export function ShopCheckoutSuccess() {
         setError(err instanceof Error ? err.message : String(err));
       })
       .finally(() => {
+        if (timeoutId !== null) clearTimeout(timeoutId);
         if (active) setLoading(false);
       });
     return () => {
       active = false;
+      if (timeoutId !== null) clearTimeout(timeoutId);
     };
     // We only want this to run on mount with the captured sessionId.
     // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -80,6 +80,17 @@ jobs:
       - name: Architecture drift
         run: scripts/check-resupply-architecture.sh
 
+      # Admin route gate audit — every admin mutation must carry
+      # requirePermission / requireAdmin / requireAdminOnly. The
+      # script's --self-test exercises the detector logic against a
+      # fixture tree of known-good and known-bad routes; the bare
+      # invocation scans the real artifacts/resupply-api admin tree
+      # and exits non-zero only when a mutation is truly ungated.
+      - name: Admin route gate audit
+        run: |
+          scripts/check-admin-route-gates.sh --self-test
+          scripts/check-admin-route-gates.sh
+
   test:
     name: Tests
     runs-on: ubuntu-latest

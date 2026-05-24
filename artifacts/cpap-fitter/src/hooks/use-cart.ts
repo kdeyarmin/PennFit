@@ -94,10 +94,25 @@ function readStorage(): { items: CartItem[]; droppedCount: number } {
         typeof it.quantity === "number" &&
         it.quantity > 0,
     );
-    const droppedCount = parsed.length - valid.length;
+    // Currency uniqueness: addItem enforces a single currency per cart
+    // (totalCents sums unitAmountCents regardless of currency, so a
+    // mixed-currency cart silently mis-totals at checkout). Apply the
+    // same invariant on READ so a corrupted localStorage row, a manual
+    // edit, or a cross-tab race can't reintroduce a mismatch. Keep the
+    // first-seen currency; drop everything else.
+    let firstCurrency: string | null = null;
+    const currencyFiltered = valid.filter((it) => {
+      const c = typeof it.currency === "string" ? it.currency : "usd";
+      if (firstCurrency === null) {
+        firstCurrency = c;
+        return true;
+      }
+      return c === firstCurrency;
+    });
+    const droppedCount = parsed.length - currencyFiltered.length;
     return {
       droppedCount,
-      items: valid.map(
+      items: currencyFiltered.map(
         (it): CartItem => ({
           productId: it.productId,
           priceId: it.priceId,
@@ -186,7 +201,7 @@ export function useCart(): {
       initialDroppedRef.current = 0;
       toast({
         title: "Some cart items were removed",
-        description: "Some cart items were removed because they're no longer available.",
+        description: "Some cart items were removed because they couldn't be added to your cart.",
       });
       track("cart_items_dropped", { count });
     }
@@ -202,7 +217,8 @@ export function useCart(): {
         if (droppedCount > 0) {
           toast({
             title: "Some cart items were removed",
-            description: "Some cart items were removed because they're no longer available.",
+            description:
+              "Some cart items were removed because they couldn't be added to your cart.",
           });
           track("cart_items_dropped", { count: droppedCount });
         }

@@ -45,6 +45,7 @@ export interface StagedSupabaseResponse {
   count?: number | null;
   status?: number;
   statusText?: string;
+  throws?: unknown;
 }
 
 const queues = new Map<string, StagedSupabaseResponse[]>();
@@ -183,7 +184,11 @@ function makeTableBuilder(table: string): TableBuilder {
   };
 
   const finalize = (): Promise<StagedSupabaseResponse> => {
-    return Promise.resolve(popResponse(table, op ?? "select"));
+    const response = popResponse(table, op ?? "select");
+    if (response.throws !== undefined) {
+      return Promise.reject(response.throws);
+    }
+    return Promise.resolve(response);
   };
 
   const recordPayload = (writeOp: SupabaseOp, payload: unknown): void => {

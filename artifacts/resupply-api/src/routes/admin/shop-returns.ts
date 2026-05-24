@@ -48,6 +48,8 @@ import {
   getStripeClient,
   readStripeConfigOrNull,
 } from "../../lib/stripe/config";
+import { sendReturnStatusEmail } from "../../lib/shop-returns/send-return-status-email";
+import { logger } from "../../lib/logger";
 
 type ShopReturnRow = Database["resupply"]["Tables"]["shop_returns"]["Row"];
 
@@ -110,7 +112,84 @@ const PAGE_SIZE_DEFAULT = 25;
 const PAGE_SIZE_MAX = 100;
 
 const RETURN_COLUMNS =
-  "id, customer_id, order_id, stripe_session_id, status, reason, reason_note, resolution, refund_cents, stripe_refund_id, exchange_product_id, exchange_price_id, exchange_order_id, return_label_url, return_carrier, return_tracking_number, admin_note, admin_user_id, created_at, updated_at, approved_at, rejected_at, shipped_back_at, received_at, resolved_at, closed_at";
+  "id, customer_id, order_id, stripe_session_id, status, reason, reason_note, resolution, refund_cents, stripe_refund_id, exchange_product_id, exchange_price_id, exchange_order_id, return_label_url, return_carrier, return_tracking_number, admin_note, admin_user_id, refund_failure_count, refund_last_failure_at, refund_last_failure_reason, created_at, updated_at, approved_at, rejected_at, shipped_back_at, received_at, resolved_at, closed_at";
+
+/**
+ * Stripe-error tracking on the /refund endpoint.
+ *
+ * The refund handler returns 502 + leaves the row at `received` so
+ * an admin can retry, but without per-row tracking nothing surfaced
+ * the fact that the SAME row had failed N times. Three columns
+ * (migration 0159) record:
+ *   - refund_failure_count        — increments on each Stripe error
+ *   - refund_last_failure_at      — timestamp of last failure
+ *   - refund_last_failure_reason  — sanitized short error tag
+ *
+ * `REFUND_FAILURE_ESCALATION_THRESHOLD` is the count at which the
+ * handler emits a structured `WARN event=shop_return_refund_stuck`
+ * line so ops can be paged. Set to 3 — single transient failures
+ * are routine (Stripe occasionally 503s); two-in-a-row is bad luck;
+ * three is "something is genuinely wrong with this row, stop
+ * retrying and look at it."
+ */
+const REFUND_FAILURE_ESCALATION_THRESHOLD = 3;
+const REFUND_LAST_FAILURE_REASON_MAX = 240;
+
+function sanitizeStripeFailureReason(err: unknown): string {
+  // Stripe SDK errors carry a `code` (machine-readable, e.g.
+  // "card_declined", "charge_already_refunded") and a `message`.
+  // The `code` is the queryable signal; we lead with it. The
+  // message is appended for context but capped so a long body
+  // can't bloat the row.
+  const errObj =
+    err && typeof err === "object" ? (err as Record<string, unknown>) : null;
+  const code = typeof errObj?.code === "string" ? errObj.code : null;
+  const message = err instanceof Error ? err.message : String(err);
+  const composed = code ? `${code}: ${message}` : message;
+  return composed.length > REFUND_LAST_FAILURE_REASON_MAX
+    ? composed.slice(0, REFUND_LAST_FAILURE_REASON_MAX - 1) + "…"
+    : composed;
+}
+
+/**
+ * Best-effort customer-email lookup. Prefer the linked
+ * shop_customers.email_lower; fall back to shop_orders.customer_email
+ * (captured at paid-time for guest checkouts). Returns null when
+ * neither is available — caller should skip the email send rather
+ * than fail the lifecycle transition.
+ *
+ * Errors THROW rather than degrading to null — a transient DB blip
+ * that quietly turned into "no recipient" would silently drop the
+ * notification AND hide the underlying failure. The caller is the
+ * fire-and-forget IIFE in the route, so a thrown error lands in its
+ * catch and is logged structurally without blocking the response.
+ */
+async function resolveCustomerEmailForReturn(
+  customerId: string | null,
+  orderId: string,
+): Promise<string | null> {
+  const supabase = getSupabaseServiceRoleClient();
+  if (customerId) {
+    const { data, error } = await supabase
+      .schema("resupply")
+      .from("shop_customers")
+      .select("email_lower")
+      .eq("customer_id", customerId)
+      .limit(1)
+      .maybeSingle();
+    if (error) throw error;
+    if (data?.email_lower) return data.email_lower;
+  }
+  const { data: order, error: orderError } = await supabase
+    .schema("resupply")
+    .from("shop_orders")
+    .select("customer_email")
+    .eq("id", orderId)
+    .limit(1)
+    .maybeSingle();
+  if (orderError) throw orderError;
+  return order?.customer_email ?? null;
+}
 
 router.get(
   "/admin/shop/returns",
@@ -277,6 +356,64 @@ router.post(
       res.status(409).json({ error: "not_in_requested_state" });
       return;
     }
+    // Fire-and-forget customer email so the patient learns the return
+    // is approved (with carrier/tracking/label) without having to log
+    // into /account. The send NEVER blocks the response — a SendGrid
+    // failure can't roll back a state transition that already
+    // committed.
+    void (async () => {
+      const toEmail = await resolveCustomerEmailForReturn(
+        updated.customer_id,
+        updated.order_id,
+      );
+      if (!toEmail) {
+        logger.info(
+          { returnId: updated.id, kind: "approved" },
+          "shop-return status email skipped — no recipient",
+        );
+        return;
+      }
+      const result = await sendReturnStatusEmail({
+        kind: "approved",
+        toEmail,
+        returnId: updated.id,
+        stripeSessionId: updated.stripe_session_id ?? "",
+        returnCarrier: updated.return_carrier,
+        returnTrackingNumber: updated.return_tracking_number,
+        returnLabelUrl: updated.return_label_url,
+      });
+      if (!result.delivered) {
+        // `errorCode` is the machine-readable token returned by
+        // sendReturnStatusEmail (e.g. "sendgrid_api_error_500"); we
+        // intentionally don't surface raw vendor text here. Logged
+        // under a non-`err` key so the logger redaction layer
+        // (which targets err.message/.stack) doesn't think this is
+        // an unfiltered exception payload.
+        logger.warn(
+          {
+            returnId: updated.id,
+            kind: "approved",
+            configured: result.configured,
+            errorCode: result.error,
+          },
+          "shop-return approved email did not deliver",
+        );
+      }
+    })().catch((err) => {
+      // The fire-and-forget IIFE is supposed to swallow errors via
+      // the sendReturnStatusEmail contract. If anything still escapes,
+      // log the error NAME only — the message may contain DB row
+      // text or partner payloads that we treat as world-readable
+      // hostile.
+      logger.warn(
+        {
+          returnId: updated.id,
+          kind: "approved",
+          errorName: err instanceof Error ? err.name : "non_error_thrown",
+        },
+        "shop-return approved email threw unexpectedly",
+      );
+    });
     res.json({ return: serializeReturnRow(updated) });
   },
 );
@@ -523,15 +660,65 @@ router.post(
       } catch (err) {
         // Don't block the workflow on a Stripe-side error — log it and
         // let the admin retry. We keep status at `received` so the
-        // operator can re-issue.
-        const refundError = err instanceof Error ? err.message : String(err);
+        // operator can re-issue. Increment the per-row failure
+        // counter (migration 0159) so the admin UI can show
+        // "Refund failed N times" without a separate query, and so
+        // a stuck row can be escalated past the human queue.
+        const reason = sanitizeStripeFailureReason(err);
+        const nowIso = new Date().toISOString();
+        const nextCount = (ret.refund_failure_count ?? 0) + 1;
+        const { error: stampErr } = await supabase
+          .schema("resupply")
+          .from("shop_returns")
+          .update({
+            refund_failure_count: nextCount,
+            refund_last_failure_at: nowIso,
+            refund_last_failure_reason: reason,
+            updated_at: nowIso,
+          })
+          .eq("id", ret.id);
+        if (stampErr) {
+          // Best-effort — the lifecycle decision is unchanged
+          // either way. Log so ops can spot a tracking-table
+          // outage if it ever happens.
+          req.log?.warn(
+            { returnId: ret.id, code: stampErr.code },
+            "shop-return refund: failure-counter update failed",
+          );
+        }
+        if (nextCount >= REFUND_FAILURE_ESCALATION_THRESHOLD) {
+          req.log?.warn(
+            {
+              event: "shop_return_refund_stuck",
+              returnId: ret.id,
+              orderId: ret.order_id,
+              failureCount: nextCount,
+              reasonCode: reason.split(":")[0]?.trim() ?? "unknown",
+            },
+            "shop-return refund has failed repeatedly — investigate",
+          );
+        }
         req.log?.warn(
-          { returnId: ret.id, err: refundError },
+          {
+            returnId: ret.id,
+            failureCount: nextCount,
+            reasonCode: reason.split(":")[0]?.trim() ?? "unknown",
+          },
           "stripe refund failed",
         );
         res.status(502).json({
           error: "stripe_refund_failed",
-          message: refundError,
+          // Surface the count so the admin UI can render
+          // "Refund failed N times — escalate?" without
+          // refetching the row.
+          failureCount: nextCount,
+          // Caller-facing message uses the sanitised reason
+          // (the same value persisted on the row); the verbose
+          // Stripe stack stays out of the response body so we
+          // don't accidentally surface a payment-intent id or
+          // similar identifier the customer shouldn't see when
+          // a screenshot lands in a support ticket.
+          message: reason,
         });
         return;
       }
@@ -569,6 +756,57 @@ router.post(
       res.status(409).json({ error: "not_in_received_state" });
       return;
     }
+    // Fire-and-forget refund-issued email. Same posture as the
+    // approve handler above — never blocks the response.
+    void (async () => {
+      const toEmail = await resolveCustomerEmailForReturn(
+        updated.customer_id,
+        updated.order_id,
+      );
+      if (!toEmail) {
+        logger.info(
+          { returnId: updated.id, kind: "refunded" },
+          "shop-return status email skipped — no recipient",
+        );
+        return;
+      }
+      const result = await sendReturnStatusEmail({
+        kind: "refunded",
+        toEmail,
+        returnId: updated.id,
+        stripeSessionId: updated.stripe_session_id ?? "",
+        refundCents: updated.refund_cents,
+        // currency is not on the return row; pull it from the order
+        // when we need precise rendering. shop_orders carries it; if
+        // unavailable, the helper defaults to "usd" which matches v1.
+        currency: null,
+      });
+      if (!result.delivered) {
+        // See approve handler — `errorCode` (not `err`) so the
+        // logger's err-targeted redaction doesn't think this is an
+        // unfiltered exception payload, and the value is the
+        // machine-readable token from sendReturnStatusEmail.
+        logger.warn(
+          {
+            returnId: updated.id,
+            kind: "refunded",
+            configured: result.configured,
+            errorCode: result.error,
+          },
+          "shop-return refunded email did not deliver",
+        );
+      }
+    })().catch((err) => {
+      // Error NAME only — see approve handler for the rationale.
+      logger.warn(
+        {
+          returnId: updated.id,
+          kind: "refunded",
+          errorName: err instanceof Error ? err.name : "non_error_thrown",
+        },
+        "shop-return refunded email threw unexpectedly",
+      );
+    });
     res.json({ return: serializeReturnRow(updated) });
   },
 );

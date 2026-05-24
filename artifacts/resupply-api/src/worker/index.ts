@@ -66,6 +66,7 @@ import { registerInboundWebhookDispatchJob } from "./jobs/inbound-webhook-dispat
 import { registerInboundReferralPreflightJob } from "./jobs/inbound-referral-preflight.js";
 import { registerReferralStatusOutboundJob } from "./jobs/inbound-referral-status-outbound.js";
 import { registerPrescriptionRequestAutoDraftJob } from "./jobs/prescription-request-auto-draft.js";
+import { registerConversationOrphanAssigneeSweepJob } from "./jobs/conversation-orphan-assignee-sweep.js";
 
 let bossInstance: PgBoss | null = null;
 let workerReady = false;
@@ -433,6 +434,13 @@ export async function startWorker(): Promise<void> {
   // RESUPPLY_PRESCRIPTION_AUTO_DRAFT_ENABLED=1 (off in dev/preview);
   // does NOT auto-fax — CSR reviews + sends.
   await registerPrescriptionRequestAutoDraftJob(boss);
+
+  // Sunday 04:13 UTC — weekly orphan-assignee sweep. Unpins
+  // conversations whose assignee was revoked (Team admin UI flipped
+  // admin_users.status='revoked'); the conversations would otherwise
+  // sit pinned to the ghost admin forever, hidden from the
+  // unassigned queue.
+  await registerConversationOrphanAssigneeSweepJob(boss);
 
   workerReady = true;
   logger.info(
