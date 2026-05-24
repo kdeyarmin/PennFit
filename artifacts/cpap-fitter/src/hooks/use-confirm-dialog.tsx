@@ -39,10 +39,10 @@
 //   acts, without manual state choreography in the caller.
 
 import * as React from "react";
+import * as AlertDialogPrimitive from "@radix-ui/react-alert-dialog";
 
 import {
   AlertDialog,
-  AlertDialogAction,
   AlertDialogCancel,
   AlertDialogContent,
   AlertDialogDescription,
@@ -51,7 +51,6 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { buttonVariants } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
 
 export interface ConfirmDialogOptions {
   /** Required short title — the question the user is answering. */
@@ -112,7 +111,7 @@ export function useConfirmDialog(): [ConfirmFn, React.ReactNode] {
           resolverRef.current(false);
         }
         resolverRef.current = resolve;
-        setState({ open: true, options, resolve });
+        setState({ open: true, options });
       }),
     [],
   );
@@ -157,15 +156,14 @@ export function useConfirmDialog(): [ConfirmFn, React.ReactNode] {
             <AlertDialogCancel onClick={() => settle(false)}>
               {opts?.cancelLabel ?? "Cancel"}
             </AlertDialogCancel>
-            <AlertDialogAction
-              className={cn(
-                opts?.destructive &&
-                  buttonVariants({ variant: "destructive" }),
-              )}
+            <AlertDialogPrimitive.Action
+              className={buttonVariants({
+                variant: opts?.destructive ? "destructive" : "default",
+              })}
               onClick={() => settle(true)}
             >
               {opts?.confirmLabel ?? "Continue"}
-            </AlertDialogAction>
+            </AlertDialogPrimitive.Action>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
