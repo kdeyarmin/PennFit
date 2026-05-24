@@ -15,7 +15,9 @@
 ## Historical reference
 
 Below is the original public API for posterity — none of it is wired
-to a real table any more.
+to a real table any more. **Everything in the remainder of this README
+is historical reference only** and does not describe current runtime
+behavior of the no-op stub.
 
 ## Why a dedicated package (historical)
 
