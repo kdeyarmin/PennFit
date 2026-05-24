@@ -60,9 +60,7 @@ function openAiSuccessBody(intent: string, reply = "Got it!"): unknown {
 // second, and so on; once exhausted it sticks on the last response so
 // over-call doesn't crash. Underscored because no test currently
 // imports it — kept around so the upcoming retry-cascade test suite
-// (P1 review item: "OpenAI chat path has zero retry on 429/5xx" — the
-// fallback adapters already retry, so once chat.ts catches up we'll
-// drive the tests against this helper).
+// can drive ordered failure → success cascades against the adapters.
 function _makeMultiFetch(responses: Response[]): typeof fetch {
   let i = 0;
   return async () => {
@@ -428,6 +426,191 @@ describe("createAiFallbackAdapter — factory selector", () => {
 });
 
 // ---------------------------------------------------------------------------
+// parseModelOutput — confidence field (PR change)
+//
+// The PR adds an optional `confidence` field to the model output and
+// AiFallbackResult. These tests exercise the parsing contract through
+// the public `classify()` API: we can't call parseModelOutput directly
+// (it's module-private) but every code path runs through classify().
+// ---------------------------------------------------------------------------
+
+function openAiSuccessBodyWithConfidence(
+  intent: string,
+  confidence: unknown,
+  reply = "Got it!",
+): unknown {
+  return {
+    choices: [
+      {
+        message: {
+          content: JSON.stringify({ intent, reply, confidence }),
+        },
+      },
+    ],
+  };
+}
+
+describe("parseModelOutput — confidence field (PR change)", () => {
+  it("parses a confidence value within [0,1] and returns it on the result", async () => {
+    const adapter = createOpenAiFallbackAdapter({
+      apiKey: "sk-test",
+      fetchImpl: async () =>
+        jsonResponse(openAiSuccessBodyWithConfidence("confirm", 0.95)),
+      timeoutMs: 30_000,
+    });
+    const result = await adapter.classify({ body: "Yes please" });
+    expect(result.intent).toBe("confirm");
+    expect(result.confidence).toBe(0.95);
+  });
+
+  it("returns confidence = 0 when the model reports exactly 0", async () => {
+    const adapter = createOpenAiFallbackAdapter({
+      apiKey: "sk-test",
+      fetchImpl: async () =>
+        jsonResponse(openAiSuccessBodyWithConfidence("unknown", 0)),
+      timeoutMs: 30_000,
+    });
+    const result = await adapter.classify({ body: "???" });
+    expect(result.confidence).toBe(0);
+  });
+
+  it("returns confidence = 1 when the model reports exactly 1", async () => {
+    const adapter = createOpenAiFallbackAdapter({
+      apiKey: "sk-test",
+      fetchImpl: async () =>
+        jsonResponse(openAiSuccessBodyWithConfidence("stop", 1)),
+      timeoutMs: 30_000,
+    });
+    const result = await adapter.classify({ body: "STOP" });
+    expect(result.confidence).toBe(1);
+  });
+
+  it("clamps confidence to 1 when the model overshoots (e.g. 1.5)", async () => {
+    const adapter = createOpenAiFallbackAdapter({
+      apiKey: "sk-test",
+      fetchImpl: async () =>
+        jsonResponse(openAiSuccessBodyWithConfidence("confirm", 1.5)),
+      timeoutMs: 30_000,
+    });
+    const result = await adapter.classify({ body: "yes" });
+    expect(result.confidence).toBe(1);
+  });
+
+  it("clamps confidence to 0 when the model goes below zero (e.g. -0.1)", async () => {
+    const adapter = createOpenAiFallbackAdapter({
+      apiKey: "sk-test",
+      fetchImpl: async () =>
+        jsonResponse(openAiSuccessBodyWithConfidence("unknown", -0.1)),
+      timeoutMs: 30_000,
+    });
+    const result = await adapter.classify({ body: "idk" });
+    expect(result.confidence).toBe(0);
+  });
+
+  it("omits confidence from the result when the model does not include the field", async () => {
+    // openAiSuccessBody does not include confidence — mirrors the existing
+    // helper so we verify the legacy (pre-PR) model output is still handled.
+    const adapter = createOpenAiFallbackAdapter({
+      apiKey: "sk-test",
+      fetchImpl: async () => jsonResponse(openAiSuccessBody("help")),
+      timeoutMs: 30_000,
+    });
+    const result = await adapter.classify({ body: "what is this?" });
+    expect(result.confidence).toBeUndefined();
+  });
+
+  it("omits confidence when the model sends a string instead of a number", async () => {
+    const adapter = createOpenAiFallbackAdapter({
+      apiKey: "sk-test",
+      fetchImpl: async () =>
+        jsonResponse(openAiSuccessBodyWithConfidence("confirm", "0.9")),
+      timeoutMs: 30_000,
+    });
+    const result = await adapter.classify({ body: "yes" });
+    expect(result.confidence).toBeUndefined();
+  });
+
+  it("omits confidence when the model sends NaN", async () => {
+    // NaN serializes as `null` in JSON.stringify, so the wire value is null.
+    // parseModelOutput must treat null as non-finite → undefined.
+    const adapter = createOpenAiFallbackAdapter({
+      apiKey: "sk-test",
+      fetchImpl: async () =>
+        jsonResponse(openAiSuccessBodyWithConfidence("confirm", null)),
+      timeoutMs: 30_000,
+    });
+    const result = await adapter.classify({ body: "yes" });
+    expect(result.confidence).toBeUndefined();
+  });
+
+  it("omits confidence when the model sends a boolean", async () => {
+    const adapter = createOpenAiFallbackAdapter({
+      apiKey: "sk-test",
+      fetchImpl: async () =>
+        jsonResponse(openAiSuccessBodyWithConfidence("confirm", true)),
+      timeoutMs: 30_000,
+    });
+    const result = await adapter.classify({ body: "yes" });
+    expect(result.confidence).toBeUndefined();
+  });
+
+  it("Anthropic adapter also returns confidence from model output", async () => {
+    const body = {
+      id: "msg_test",
+      type: "message",
+      role: "assistant",
+      model: "claude-haiku-4-5",
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({ intent: "decline", reply: "No worries!", confidence: 0.88 }),
+        },
+      ],
+      stop_reason: "end_turn",
+      usage: { input_tokens: 50, output_tokens: 30 },
+    };
+    const adapter = createAnthropicFallbackAdapter({
+      apiKey: "sk-ant-test-key",
+      fetchImpl: async () =>
+        new Response(JSON.stringify(body), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+    });
+    const result = await adapter.classify({ body: "No thanks" });
+    expect(result.intent).toBe("decline");
+    expect(result.confidence).toBe(0.88);
+  });
+
+  it("Anthropic adapter omits confidence when field is absent from model output", async () => {
+    const body = {
+      id: "msg_test",
+      type: "message",
+      role: "assistant",
+      model: "claude-haiku-4-5",
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({ intent: "stop", reply: "Unsubscribed." }),
+        },
+      ],
+      stop_reason: "end_turn",
+      usage: { input_tokens: 50, output_tokens: 20 },
+    };
+    const adapter = createAnthropicFallbackAdapter({
+      apiKey: "sk-ant-test-key",
+      fetchImpl: async () =>
+        new Response(JSON.stringify(body), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+    });
+    const result = await adapter.classify({ body: "STOP" });
+    expect(result.confidence).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // createOpenAiFallbackAdapter — timeout was raised to 10s (PR change)
 // Source-analysis to guard the constant didn't regress.
 // ---------------------------------------------------------------------------
@@ -442,5 +625,58 @@ describe("ai-fallback-impl — DEFAULT_TIMEOUT_MS raised to 10s (PR change)", ()
     expect(src).toContain("DEFAULT_TIMEOUT_MS = 10_000");
     // Verify the comment explaining the rationale is also present.
     expect(src).toContain("10s timeout (was 5s)");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// _makeMultiFetch — renamed from makeMultiFetch (PR change)
+// The underscore prefix signals "kept for future retry-cascade tests;
+// not currently consumed by any test". We exercise the helper here to
+// guard its contract and prevent silent breakage when the retry-cascade
+// suite eventually uses it.
+// ---------------------------------------------------------------------------
+
+describe("_makeMultiFetch — renamed stub helper (PR change)", () => {
+  it("returns the first response on the first call", async () => {
+    const r1 = new Response("one", { status: 200 });
+    const r2 = new Response("two", { status: 201 });
+    const fetchFn = _makeMultiFetch([r1, r2]);
+    const result = await fetchFn("https://example.com", {});
+    expect(result.status).toBe(200);
+    expect(await result.text()).toBe("one");
+  });
+
+  it("returns responses in FIFO order across multiple calls", async () => {
+    const responses = [
+      new Response("first", { status: 200 }),
+      new Response("second", { status: 429 }),
+      new Response("third", { status: 200 }),
+    ];
+    const fetchFn = _makeMultiFetch(responses);
+    const r1 = await fetchFn("https://example.com", {});
+    const r2 = await fetchFn("https://example.com", {});
+    const r3 = await fetchFn("https://example.com", {});
+    expect(r1.status).toBe(200);
+    expect(r2.status).toBe(429);
+    expect(r3.status).toBe(200);
+  });
+
+  it("sticks on the last response when the list is exhausted (over-call does not crash)", async () => {
+    const last = new Response("last", { status: 503 });
+    const fetchFn = _makeMultiFetch([new Response("first", { status: 200 }), last]);
+    await fetchFn("https://example.com", {}); // first
+    const r2 = await fetchFn("https://example.com", {}); // last
+    const r3 = await fetchFn("https://example.com", {}); // still last (exhausted)
+    expect(r2.status).toBe(503);
+    expect(r3.status).toBe(503);
+  });
+
+  it("works with a single-element array", async () => {
+    const only = new Response("only", { status: 200 });
+    const fetchFn = _makeMultiFetch([only]);
+    const r1 = await fetchFn("https://example.com", {});
+    const r2 = await fetchFn("https://example.com", {}); // over-call → same
+    expect(r1.status).toBe(200);
+    expect(r2.status).toBe(200);
   });
 });

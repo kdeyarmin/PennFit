@@ -171,6 +171,20 @@ export interface Database {
         Update: Partial<Database["resupply"]["Tables"]["idempotency_keys"]["Row"]>;
         Relationships: [];
       };
+      worker_dedup_keys: {
+        Row: {
+          key: string;
+          created_at: string;
+          expires_at: string;
+        };
+        Insert: {
+          key: string;
+          created_at?: string;
+          expires_at: string;
+        };
+        Update: Partial<Database["resupply"]["Tables"]["worker_dedup_keys"]["Row"]>;
+        Relationships: [];
+      };
       admin_users: {
         Row: {
           id: string;
@@ -377,6 +391,7 @@ export interface Database {
           quarterly_summary_last_sent_at: string | null;
           birthday_email_year_sent: number | null;
           sleep_anniversary_year_sent: number | null;
+          timezone: string;
           created_at: string;
           updated_at: string;
         };

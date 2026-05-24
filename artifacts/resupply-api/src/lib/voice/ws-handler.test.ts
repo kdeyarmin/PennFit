@@ -288,6 +288,156 @@ function makeDeepgramErrorTracker() {
   return { onError, onClose, getWarnLog: () => warnLog, getDebugLog: () => debugLog, getErrorCount: () => errorCount };
 }
 
+// ---------------------------------------------------------------------------
+// PR change: MAX_CALL_DURATION_MS hard ceiling — source structural checks
+//
+// The PR introduces a 15-minute hard ceiling on call duration. A timer
+// fires `bridge.close("max-duration-exceeded")` when the call runs past
+// the limit. The timer is armed AFTER the bridge is constructed and
+// cleared in the `session.closed` handler so a normal hangup doesn't
+// leave a dangling timer. `unref()` is called so the process can exit
+// cleanly if shutdown races the timer.
+// ---------------------------------------------------------------------------
+
+describe("ws-handler — MAX_CALL_DURATION_MS hard ceiling (PR change)", () => {
+  it("declares MAX_CALL_DURATION_MS as a constant set to 15 minutes in ms", () => {
+    // 15 * 60 * 1000 = 900_000 ms
+    expect(SRC).toMatch(/MAX_CALL_DURATION_MS\s*=\s*15\s*\*\s*60\s*\*\s*1000/);
+  });
+
+  it("declares maxDurationTimer variable initialised to null", () => {
+    expect(SRC).toMatch(/let maxDurationTimer\s*[=:][^;]*null/);
+  });
+
+  it("arms the timer with setTimeout after the bridge is built", () => {
+    const bridgeIdx = SRC.indexOf("new VoiceBridge(");
+    const timerArmIdx = SRC.indexOf("maxDurationTimer = setTimeout(");
+    expect(bridgeIdx).toBeGreaterThan(-1);
+    expect(timerArmIdx).toBeGreaterThan(bridgeIdx);
+  });
+
+  it("fires bridge.close with 'max-duration-exceeded' when the timer elapses", () => {
+    expect(SRC).toContain('bridge.close("max-duration-exceeded")');
+  });
+
+  it("logs the voice_max_duration_exceeded event when the timer fires", () => {
+    expect(SRC).toContain('"voice_max_duration_exceeded"');
+  });
+
+  it("logs max_duration_ms in the timer-fired log entry", () => {
+    expect(SRC).toContain("max_duration_ms: MAX_CALL_DURATION_MS");
+  });
+
+  it("calls unref() on the timer so the process can exit cleanly", () => {
+    expect(SRC).toContain("maxDurationTimer.unref?.()");
+  });
+
+  it("clears the timer in the session.closed handler", () => {
+    const sessionClosedIdx = SRC.indexOf('"session.closed"');
+    const clearTimeoutIdx = SRC.indexOf("clearTimeout(maxDurationTimer)", sessionClosedIdx);
+    expect(sessionClosedIdx).toBeGreaterThan(-1);
+    expect(clearTimeoutIdx).toBeGreaterThan(sessionClosedIdx);
+  });
+
+  it("nulls out maxDurationTimer after clearing it in session.closed", () => {
+    const clearTimeoutIdx = SRC.indexOf("clearTimeout(maxDurationTimer)");
+    const nullifyIdx = SRC.indexOf("maxDurationTimer = null", clearTimeoutIdx);
+    expect(clearTimeoutIdx).toBeGreaterThan(-1);
+    expect(nullifyIdx).toBeGreaterThan(clearTimeoutIdx);
+  });
+
+  it("guards the timer clear with a null-check before clearing", () => {
+    // The guard ensures we don't call clearTimeout(null).
+    expect(SRC).toMatch(/if\s*\(\s*maxDurationTimer\s*!==\s*null\s*\)/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// MAX_CALL_DURATION_MS timer logic — pure algorithm test
+//
+// Replicate the timer guard pattern (arm / fire / clear) to verify the
+// state-machine logic without WebSocket wiring.
+// ---------------------------------------------------------------------------
+
+function makeCallDurationGuard(maxMs: number, onExpire: () => void) {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+
+  function arm() {
+    timer = setTimeout(() => {
+      onExpire();
+    }, maxMs);
+  }
+
+  function clear() {
+    if (timer !== null) {
+      clearTimeout(timer);
+      timer = null;
+    }
+  }
+
+  function isArmed() {
+    return timer !== null;
+  }
+
+  return { arm, clear, isArmed };
+}
+
+describe("max-call-duration guard algorithm (replicated from PR change)", () => {
+  it("timer is null before arming", () => {
+    const guard = makeCallDurationGuard(1000, () => {});
+    expect(guard.isArmed()).toBe(false);
+  });
+
+  it("timer is armed after arm()", () => {
+    const guard = makeCallDurationGuard(1000, () => {});
+    guard.arm();
+    expect(guard.isArmed()).toBe(true);
+    guard.clear(); // clean up
+  });
+
+  it("timer is null after clear()", () => {
+    const guard = makeCallDurationGuard(1000, () => {});
+    guard.arm();
+    guard.clear();
+    expect(guard.isArmed()).toBe(false);
+  });
+
+  it("clear() is idempotent — calling twice does not throw", () => {
+    const guard = makeCallDurationGuard(1000, () => {});
+    guard.arm();
+    guard.clear();
+    expect(() => guard.clear()).not.toThrow();
+    expect(guard.isArmed()).toBe(false);
+  });
+
+  it("clear() before arm() is a no-op (timer was null)", () => {
+    const guard = makeCallDurationGuard(1000, () => {});
+    expect(() => guard.clear()).not.toThrow();
+    expect(guard.isArmed()).toBe(false);
+  });
+
+  it("onExpire callback fires when the timer elapses", async () => {
+    let fired = false;
+    const guard = makeCallDurationGuard(5, () => {
+      fired = true;
+    });
+    guard.arm();
+    await new Promise((r) => setTimeout(r, 20));
+    expect(fired).toBe(true);
+  });
+
+  it("onExpire callback does NOT fire when clear() is called before timeout", async () => {
+    let fired = false;
+    const guard = makeCallDurationGuard(50, () => {
+      fired = true;
+    });
+    guard.arm();
+    guard.clear(); // cancel immediately
+    await new Promise((r) => setTimeout(r, 80));
+    expect(fired).toBe(false);
+  });
+});
+
 describe("Deepgram error de-spam algorithm (replicated from PR change)", () => {
   it("emits exactly one WARN for the first error", () => {
     const tracker = makeDeepgramErrorTracker();

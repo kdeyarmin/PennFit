@@ -18,7 +18,6 @@
 
 export const AUDIT_METADATA_MAX_BYTES = 4096;
 export const AUDIT_METADATA_MAX_DEPTH = 6;
-export const AUDIT_HMAC_KEY_ENV = "RESUPPLY_AUDIT_HMAC_KEY";
 
 export class AuditMetadataPhiError extends Error {}
 export class AuditMetadataSizeError extends Error {}
