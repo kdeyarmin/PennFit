@@ -239,8 +239,8 @@ async function runAnthropic(
     temperature: 0,
     system: [
       // cache_control: ephemeral — the system prompt is identical on
-      // every classify(); caching trims the input cost ~95% on bursts
-      // (e.g. when a CSR batches several unscored sleep studies).
+      // every suggestIcd10() call; caching trims the input cost ~95%
+      // on bursts (e.g. when a CSR batches several unscored sleep studies).
       { type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } },
     ],
     messages: [{ role: "user", content: userPrompt }],
