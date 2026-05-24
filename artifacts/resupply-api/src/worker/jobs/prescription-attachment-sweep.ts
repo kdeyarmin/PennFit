@@ -448,7 +448,7 @@ export function buildProductionSweepDeps(
         }
       } catch (err) {
         logger.warn(
-          { err: err instanceof Error ? err.message : String(err) },
+          { err },
           "attachment-sweep: worker_run_summary insert crashed",
         );
       }
