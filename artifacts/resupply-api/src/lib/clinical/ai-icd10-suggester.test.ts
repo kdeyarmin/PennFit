@@ -46,6 +46,13 @@ vi.mock("../logger", () => ({
 vi.mock("../llm-provider", () => ({
   selectLlmProvider: mockSelectLlmProvider,
   getAnthropicClient: mockGetAnthropicClient,
+  // The source-under-test imports DEFAULT_ANTHROPIC_MODEL_CLASSIFY
+  // from this module (it's re-exported from @workspace/resupply-ai
+  // via lib/llm-provider.ts so route handlers have one import site).
+  // The mock has to provide it or the module-load test crashes with
+  // "No DEFAULT_ANTHROPIC_MODEL_CLASSIFY export is defined on the
+  // ../llm-provider mock". Value matches the real constant.
+  DEFAULT_ANTHROPIC_MODEL_CLASSIFY: "claude-haiku-4-5",
 }));
 
 vi.mock("@workspace/resupply-ai", () => ({
@@ -303,10 +310,26 @@ describe("suggestIcd10 — Anthropic provider path", () => {
       httpStatus: 429,
     });
 
-    const result = await suggestIcd10({ sleepStudyId: STUDY_ID });
-
-    expect(result.icd10).toBeNull();
-    expect(result.errorMessage).toMatch(/anthropic rate_limit/);
+    // Make sure no OpenAI key is set — otherwise the post-failure
+    // fallback path (added after this test was first written) would
+    // attempt OpenAI and the assertion below would fire on a
+    // different error string.
+    const prevOpenAi = process.env.OPENAI_API_KEY;
+    delete process.env.OPENAI_API_KEY;
+    try {
+      const result = await suggestIcd10({ sleepStudyId: STUDY_ID });
+      expect(result.icd10).toBeNull();
+      // Anthropic failed AND there's no OpenAI fallback configured,
+      // so the final error reports the no-provider-configured state.
+      // (The Anthropic-specific cause is preserved in the
+      // `ai_icd10_anthropic_fallback` warn log line that the dispatcher
+      // emits before falling through — outside the scope of this test.)
+      expect(result.errorMessage).toMatch(
+        /no LLM provider configured/,
+      );
+    } finally {
+      if (prevOpenAi !== undefined) process.env.OPENAI_API_KEY = prevOpenAi;
+    }
   });
 
   it("returns icd10=null when Anthropic suggests a non-allowlist code", async () => {
