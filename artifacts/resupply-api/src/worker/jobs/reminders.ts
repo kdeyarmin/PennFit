@@ -115,7 +115,7 @@ async function tryClaimReminderDedupKey(
   patientId: string,
   episodeId: string,
   jobId: string,
-): Promise<boolean> {
+): Promise<{ proceed: boolean; key: string }> {
   const todayUtc = new Date().toISOString().slice(0, 10);
   const key = `reminder-${channel}:${patientId}:${episodeId}:${todayUtc}`;
   const expiresAt = new Date(Date.now() + 22 * 60 * 60 * 1000).toISOString();
@@ -124,7 +124,7 @@ async function tryClaimReminderDedupKey(
     .from("worker_dedup_keys")
     .insert({ key, expires_at: expiresAt });
   if (!error) {
-    return true; // won the race — caller may proceed
+    return { proceed: true, key }; // won the race — caller may proceed
   }
   // Postgres UNIQUE violation = 23505 on the PK ("key"). Surfaces
   // through PostgREST as code '23505' on the PostgrestError.
@@ -140,7 +140,7 @@ async function tryClaimReminderDedupKey(
       },
       "reminders: dedup key already claimed — skipping (prior attempt won)",
     );
-    return false;
+    return { proceed: false, key };
   }
   // Any other error: log and proceed (fail-open). Better one duplicate
   // SMS than a silently broken reminder pipeline.
@@ -155,7 +155,30 @@ async function tryClaimReminderDedupKey(
     },
     "reminders: dedup insert failed — proceeding without idempotency protection",
   );
-  return true;
+  return { proceed: true, key };
+}
+
+async function releaseReminderDedupKey(
+  supabase: ReturnType<typeof getSupabaseServiceRoleClient>,
+  key: string,
+  jobId: string,
+): Promise<void> {
+  const { error } = await supabase
+    .schema("resupply")
+    .from("worker_dedup_keys")
+    .delete()
+    .eq("key", key);
+  if (error) {
+    logger.warn(
+      {
+        event: "reminder_dedup_release_failed",
+        err: { code: error.code, message: error.message },
+        dedup_key: key,
+        job_id: jobId,
+      },
+      "reminders: failed to release dedup key before retry",
+    );
+  }
 }
 
 /**
@@ -775,7 +798,7 @@ export async function registerReminderJobs(boss: PgBoss): Promise<void> {
     // Idempotency: short-circuit if another attempt already sent (or
     // is sending) for this (patient, episode, channel, day). See
     // tryClaimReminderDedupKey for posture.
-    const proceed = await tryClaimReminderDedupKey(
+    const { proceed, key: dedupKey } = await tryClaimReminderDedupKey(
       supabase,
       "sms",
       j.data.patientId,
@@ -807,6 +830,7 @@ export async function registerReminderJobs(boss: PgBoss): Promise<void> {
         outcome.status === "vendor_api_error" ||
         outcome.status === "conversation_create_failed"
       ) {
+        await releaseReminderDedupKey(supabase, dedupKey, j.id);
         throw new Error(`reminders.send-sms: retryable failure: ${outcome.status}`);
       }
     }
@@ -826,7 +850,7 @@ export async function registerReminderJobs(boss: PgBoss): Promise<void> {
     const supabase = getSupabaseServiceRoleClient();
     // Idempotency: short-circuit if another attempt already sent (or
     // is sending) for this (patient, episode, channel, day).
-    const proceed = await tryClaimReminderDedupKey(
+    const { proceed, key: dedupKey } = await tryClaimReminderDedupKey(
       supabase,
       "email",
       j.data.patientId,
@@ -857,6 +881,7 @@ export async function registerReminderJobs(boss: PgBoss): Promise<void> {
         outcome.status === "vendor_api_error" ||
         outcome.status === "conversation_create_failed"
       ) {
+        await releaseReminderDedupKey(supabase, dedupKey, j.id);
         throw new Error(`reminders.send-email: retryable failure: ${outcome.status}`);
       }
     }

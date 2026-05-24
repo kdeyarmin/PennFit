@@ -28,6 +28,14 @@ import { describe, expect, it } from "vitest";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SRC = readFileSync(path.join(__dirname, "webhook-handler.ts"), "utf8");
 
+function sliceBetween(source: string, startToken: string, endToken: string): string {
+  const start = source.indexOf(startToken);
+  expect(start).toBeGreaterThanOrEqual(0);
+  const end = source.indexOf(endToken, start + startToken.length);
+  expect(end).toBeGreaterThan(start);
+  return source.slice(start, end);
+}
+
 // ---------------------------------------------------------------------------
 // invoice.payment_failed — source structural checks
 // ---------------------------------------------------------------------------
@@ -42,32 +50,47 @@ describe("webhook-handler — invoice.payment_failed (PR change)", () => {
   });
 
   it("includes invoice_id in the payment-failed log payload", () => {
-    const eventIdx = SRC.indexOf('"stripe_invoice_payment_failed"');
-    const block = SRC.slice(eventIdx, eventIdx + 600);
+    const block = sliceBetween(
+      SRC,
+      '"stripe_invoice_payment_failed"',
+      'case "charge.dispute.created"',
+    );
     expect(block).toContain("invoice_id");
   });
 
   it("includes subscription_id in the payment-failed log payload", () => {
-    const eventIdx = SRC.indexOf('"stripe_invoice_payment_failed"');
-    const block = SRC.slice(eventIdx, eventIdx + 600);
+    const block = sliceBetween(
+      SRC,
+      '"stripe_invoice_payment_failed"',
+      'case "charge.dispute.created"',
+    );
     expect(block).toContain("subscription_id");
   });
 
   it("includes failure_code in the payment-failed log payload", () => {
-    const eventIdx = SRC.indexOf('"stripe_invoice_payment_failed"');
-    const block = SRC.slice(eventIdx, eventIdx + 600);
+    const block = sliceBetween(
+      SRC,
+      '"stripe_invoice_payment_failed"',
+      'case "charge.dispute.created"',
+    );
     expect(block).toContain("failure_code");
   });
 
   it("includes failure_message in the payment-failed log payload", () => {
-    const eventIdx = SRC.indexOf('"stripe_invoice_payment_failed"');
-    const block = SRC.slice(eventIdx, eventIdx + 600);
+    const block = sliceBetween(
+      SRC,
+      '"stripe_invoice_payment_failed"',
+      'case "charge.dispute.created"',
+    );
     expect(block).toContain("failure_message");
   });
 
   it("includes attempt_count in the payment-failed log payload", () => {
-    const eventIdx = SRC.indexOf('"stripe_invoice_payment_failed"');
-    const block = SRC.slice(eventIdx, eventIdx + 600);
+    const block = sliceBetween(
+      SRC,
+      '"stripe_invoice_payment_failed"',
+      'case "charge.dispute.created"',
+    );
     expect(block).toContain("attempt_count");
   });
 
@@ -90,32 +113,47 @@ describe("webhook-handler — charge.dispute.created (PR change)", () => {
   });
 
   it("includes dispute_id in the dispute-created log payload", () => {
-    const eventIdx = SRC.indexOf('"stripe_dispute_created"');
-    const block = SRC.slice(eventIdx, eventIdx + 500);
+    const block = sliceBetween(
+      SRC,
+      '"stripe_dispute_created"',
+      'case "charge.dispute.closed"',
+    );
     expect(block).toContain("dispute_id");
   });
 
   it("includes charge_id in the dispute-created log payload", () => {
-    const eventIdx = SRC.indexOf('"stripe_dispute_created"');
-    const block = SRC.slice(eventIdx, eventIdx + 500);
+    const block = sliceBetween(
+      SRC,
+      '"stripe_dispute_created"',
+      'case "charge.dispute.closed"',
+    );
     expect(block).toContain("charge_id");
   });
 
   it("includes reason in the dispute-created log payload", () => {
-    const eventIdx = SRC.indexOf('"stripe_dispute_created"');
-    const block = SRC.slice(eventIdx, eventIdx + 500);
+    const block = sliceBetween(
+      SRC,
+      '"stripe_dispute_created"',
+      'case "charge.dispute.closed"',
+    );
     expect(block).toContain("reason");
   });
 
   it("includes evidence_due_by in the dispute-created log payload", () => {
-    const eventIdx = SRC.indexOf('"stripe_dispute_created"');
-    const block = SRC.slice(eventIdx, eventIdx + 500);
+    const block = sliceBetween(
+      SRC,
+      '"stripe_dispute_created"',
+      'case "charge.dispute.closed"',
+    );
     expect(block).toContain("evidence_due_by");
   });
 
   it("includes is_charge_refundable in the dispute-created log payload", () => {
-    const eventIdx = SRC.indexOf('"stripe_dispute_created"');
-    const block = SRC.slice(eventIdx, eventIdx + 500);
+    const block = sliceBetween(
+      SRC,
+      '"stripe_dispute_created"',
+      'case "charge.dispute.closed"',
+    );
     expect(block).toContain("is_charge_refundable");
   });
 });
@@ -134,27 +172,39 @@ describe("webhook-handler — charge.dispute.closed (PR change)", () => {
   });
 
   it("includes dispute_id in the dispute-closed log payload", () => {
-    const eventIdx = SRC.indexOf('"stripe_dispute_closed"');
-    const block = SRC.slice(eventIdx, eventIdx + 400);
+    const block = sliceBetween(
+      SRC,
+      '"stripe_dispute_closed"',
+      "default: {",
+    );
     expect(block).toContain("dispute_id");
   });
 
   it("includes outcome in the dispute-closed log payload", () => {
     // outcome maps to dispute.status (won/lost/warning_closed)
-    const eventIdx = SRC.indexOf('"stripe_dispute_closed"');
-    const block = SRC.slice(eventIdx, eventIdx + 400);
+    const block = sliceBetween(
+      SRC,
+      '"stripe_dispute_closed"',
+      "default: {",
+    );
     expect(block).toContain("outcome");
   });
 
   it("includes amount_cents in the dispute-closed log payload", () => {
-    const eventIdx = SRC.indexOf('"stripe_dispute_closed"');
-    const block = SRC.slice(eventIdx, eventIdx + 400);
+    const block = sliceBetween(
+      SRC,
+      '"stripe_dispute_closed"',
+      "default: {",
+    );
     expect(block).toContain("amount_cents");
   });
 
   it("includes reason in the dispute-closed log payload", () => {
-    const eventIdx = SRC.indexOf('"stripe_dispute_closed"');
-    const block = SRC.slice(eventIdx, eventIdx + 400);
+    const block = sliceBetween(
+      SRC,
+      '"stripe_dispute_closed"',
+      "default: {",
+    );
     expect(block).toContain("reason");
   });
 });
@@ -236,9 +286,14 @@ describe("invoice.payment_failed — failure detail extraction", () => {
   });
 
   it("falls back to null when last_finalization_error is null", () => {
-    const lastError = null as { code?: string; message?: string } | null;
-    expect(lastError?.code ?? null).toBeNull();
-    expect(lastError?.message ?? null).toBeNull();
+    const getFailureCode = (error: { code?: string; message?: string } | null) =>
+      error?.code ?? null;
+    const getFailureMessage = (
+      error: { code?: string; message?: string } | null,
+    ) => error?.message ?? null;
+    const lastError = null;
+    expect(getFailureCode(lastError)).toBeNull();
+    expect(getFailureMessage(lastError)).toBeNull();
   });
 });
 
@@ -265,8 +320,7 @@ describe("invoice.payment_failed — log payload shape simulation", () => {
     };
 
     const lastError = invoice.last_finalization_error ?? null;
-    const subRef = invoice.parent?.subscription_details?.subscription;
-    const subscriptionId = typeof subRef === "string" ? subRef : (subRef?.id ?? null);
+    const subscriptionId = extractSubscriptionId(invoice.parent);
 
     log.warn(
       {
@@ -315,7 +369,8 @@ describe("invoice.payment_failed — log payload shape simulation", () => {
       parent: null,
     };
 
-    const lastError = invoice.last_finalization_error ?? null;
+    const failureCode: string | null = null;
+    const failureMessage: string | null = null;
     const subRef = (invoice.parent as { subscription_details?: { subscription?: string | { id: string } | null } | null } | null)?.subscription_details?.subscription;
     const subscriptionId = typeof subRef === "string" ? subRef : (subRef?.id ?? null);
 
@@ -329,8 +384,8 @@ describe("invoice.payment_failed — log payload shape simulation", () => {
         currency: invoice.currency,
         attempt_count: invoice.attempt_count,
         next_payment_attempt: invoice.next_payment_attempt,
-        failure_code: lastError?.code ?? null,
-        failure_message: lastError?.message ?? null,
+        failure_code: failureCode,
+        failure_message: failureMessage,
       },
       "stripe: subscription renewal payment failed",
     );
@@ -397,7 +452,16 @@ describe("charge.dispute.created — log payload shape simulation", () => {
   });
 
   it("sets evidence_due_by to null when evidence_details is absent", () => {
-    const dispute = {
+    const dispute: {
+      id: string;
+      charge: string;
+      amount: number;
+      currency: string;
+      reason: string;
+      status: string;
+      evidence_details?: { due_by?: number };
+      is_charge_refundable: boolean;
+    } = {
       id: "dp_noevidence",
       charge: "ch_xyz",
       amount: 1000,

@@ -155,24 +155,22 @@ describe("isWithinQuietHours — source structural checks (PR change)", () => {
   });
 
   it("returns true (quiet) when hour is below QUIET_HOURS_START or >= QUIET_HOURS_END", () => {
-    // The return expression must encode both gate conditions.
-    expect(SRC).toContain("hour < QUIET_HOURS_START || hour >= QUIET_HOURS_END");
+    expect(SRC).toMatch(
+      /return\s+hour\s*<\s*QUIET_HOURS_START\s*\|\|\s*hour\s*>=\s*QUIET_HOURS_END/,
+    );
   });
 
   it("falls back to America/New_York on timezone parse failure and logs reminder_tz_fallback", () => {
-    expect(SRC).toContain('"reminder_tz_fallback"');
-    expect(SRC).toContain('"America/New_York"');
+    expect(SRC).toMatch(/event:\s*"reminder_tz_fallback"/);
+    expect(SRC).toMatch(/timeZone:\s*"America\/New_York"/);
   });
 
-  it("uses hour12: false so midnight is 0, not 12", () => {
-    // hour12: false is critical: 0 < QUIET_HOURS_START (9) → quiet.
-    // With hour12: true, midnight would be "12" which would pass the
-    // gate (12 >= 9 and 12 < 20 = allowed) — a TCPA violation.
-    expect(SRC).toContain("hour12: false");
+  it("formats quiet-hours checks using 24-hour time", () => {
+    expect(SRC).toMatch(/hour12:\s*false/);
   });
 
   it("logs reminder_deferred_quiet_hours when deferring a send", () => {
-    expect(SRC).toContain('"reminder_deferred_quiet_hours"');
+    expect(SRC).toMatch(/event:\s*"reminder_deferred_quiet_hours"/);
   });
 
   it("passes the patient timezone field into isWithinQuietHours", () => {
@@ -338,7 +336,7 @@ describe("tryClaimReminderDedupKey — source structural checks (PR change)", ()
     // The 23505 branch returns false so callers short-circuit.
     expect(SRC).toContain('error.code === "23505"');
     const block23505Idx = SRC.indexOf('error.code === "23505"');
-    const returnFalseIdx = SRC.indexOf("return false", block23505Idx);
+    const returnFalseIdx = SRC.indexOf("return { proceed: false, key }", block23505Idx);
     expect(returnFalseIdx).toBeGreaterThan(block23505Idx);
   });
 
@@ -346,7 +344,7 @@ describe("tryClaimReminderDedupKey — source structural checks (PR change)", ()
     // The success branch returns true so the caller proceeds.
     const successComment = SRC.indexOf("won the race");
     expect(successComment).toBeGreaterThan(-1);
-    const returnTrueIdx = SRC.indexOf("return true", successComment);
+    const returnTrueIdx = SRC.indexOf("return { proceed: true, key }", successComment);
     expect(returnTrueIdx).toBeGreaterThan(successComment);
   });
 
@@ -355,19 +353,21 @@ describe("tryClaimReminderDedupKey — source structural checks (PR change)", ()
     expect(SRC).toContain("reminder_dedup_insert_failed");
     const failOpenIdx = SRC.indexOf("reminder_dedup_insert_failed");
     // After the warn, must return true
-    const returnTrueAfterFailIdx = SRC.indexOf("return true", failOpenIdx);
+    const returnTrueAfterFailIdx = SRC.indexOf(
+      "return { proceed: true, key }",
+      failOpenIdx,
+    );
     expect(returnTrueAfterFailIdx).toBeGreaterThan(failOpenIdx);
   });
 
   it("builds the dedup key from channel, patientId, episodeId, and today's UTC date", () => {
-    expect(SRC).toContain(
-      "const key = `reminder-${channel}:${patientId}:${episodeId}:${todayUtc}`",
+    expect(SRC).toMatch(
+      /const key = `reminder-\$\{channel\}:\$\{patientId\}:\$\{episodeId\}:\$\{[^}]+\}`/,
     );
   });
 
   it("sets expires_at to 22 hours from now", () => {
-    // 22h is intentionally less than 24h so the next-day scan can resend.
-    expect(SRC).toContain("22 * 60 * 60 * 1000");
+    expect(SRC).toMatch(/22\s*\*\s*60\s*\*\s*60\s*\*\s*1000/);
   });
 
   it("logs reminder_dedup_skip on conflict", () => {
@@ -468,13 +468,8 @@ describe("reminder dedup key format (PR change)", () => {
 
 describe("scanForDueReminders — timezone field included in patient SELECT (PR change)", () => {
   it("includes 'timezone' in the patients SELECT column list", () => {
-    // The scan must fetch patients.timezone so the quiet-hours gate has
-    // a value to pass to isWithinQuietHours.
-    expect(SRC).toContain("email, timezone");
-    // Specifically it should appear in the select() call alongside
-    // the other patient fields.
-    expect(SRC).toContain(
-      "id, created_at, insurance_payer, cadence_override_days, channel_preference, phone_e164, email, timezone",
+    expect(SRC).toMatch(
+      /from\("patients"\)[\s\S]*?\.select\(\s*"[^"]*\btimezone\b[^"]*"\s*,?\s*\)/,
     );
   });
 

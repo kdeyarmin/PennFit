@@ -672,14 +672,17 @@ router.post("/sms/inbound", signatureMiddleware, smsPhoneLimiter, async (req, re
       // (older fine-tunes, malformed output) are treated as "no signal"
       // and also gated.
       const MIN_AI_DISPATCH_CONFIDENCE = 0.7;
+      const confidence =
+        typeof result.confidence === "number" && Number.isFinite(result.confidence)
+          ? result.confidence
+          : undefined;
       const isActionIntent =
         intent === "confirm" ||
         intent === "decline" ||
         intent === "edit_address";
       if (
         isActionIntent &&
-        (result.confidence === undefined ||
-          result.confidence < MIN_AI_DISPATCH_CONFIDENCE)
+        (confidence === undefined || confidence < MIN_AI_DISPATCH_CONFIDENCE)
       ) {
         logger.info(
           {
@@ -687,7 +690,7 @@ router.post("/sms/inbound", signatureMiddleware, smsPhoneLimiter, async (req, re
             conversation_id: conversationId,
             patient_id: patientId,
             proposed_intent: intent,
-            confidence: result.confidence ?? null,
+            confidence: confidence ?? null,
             threshold: MIN_AI_DISPATCH_CONFIDENCE,
           },
           "sms.inbound: gating low-confidence AI classification — routing to human",
