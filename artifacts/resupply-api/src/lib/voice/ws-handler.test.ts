@@ -188,3 +188,160 @@ describe("ring-buffer algorithm (replicated from PR change)", () => {
     expect(rb.toArray()).not.toEqual(oldStyleBuf);
   });
 });
+
+// ---------------------------------------------------------------------------
+// PR change: Deepgram error de-spam — source structural checks
+//
+// The PR introduces two new variables around the Deepgram error handler:
+//   - deepgramErrorCount: incremented on every Deepgram error.
+//   - deepgramWarnEmitted: flipped to true after the first WARN so
+//     subsequent errors during the same call drop to DEBUG instead of
+//     re-firing the WARN (de-spamming a sustained outage).
+// A single end-of-call WARN emits the total count so dashboards can rank
+// calls by Deepgram error severity without drowning in per-error noise.
+// ---------------------------------------------------------------------------
+
+describe("ws-handler — Deepgram error de-spam (PR change)", () => {
+  it("declares deepgramErrorCount as a let variable initialised to 0", () => {
+    expect(SRC).toMatch(/let deepgramErrorCount\s*=\s*0/);
+  });
+
+  it("declares deepgramWarnEmitted as a let variable initialised to false", () => {
+    expect(SRC).toMatch(/let deepgramWarnEmitted\s*=\s*false/);
+  });
+
+  it("increments deepgramErrorCount on every error", () => {
+    expect(SRC).toContain("deepgramErrorCount += 1");
+  });
+
+  it("emits subsequent errors at DEBUG level (not WARN) when deepgramWarnEmitted is true", () => {
+    // The de-spam guard must check deepgramWarnEmitted before deciding
+    // whether to call logger.warn or logger.debug.
+    expect(SRC).toContain("if (deepgramWarnEmitted)");
+    expect(SRC).toContain('"voice_deepgram_error_subsequent"');
+  });
+
+  it("sets deepgramWarnEmitted = true before the first WARN fires", () => {
+    // The flag must be set before the WARN so a crash-on-log doesn't
+    // leave the flag false (which would re-fire the WARN on the next
+    // error in the same call).
+    const warnEmittedSetIdx = SRC.indexOf("deepgramWarnEmitted = true");
+    const firstWarnIdx = SRC.indexOf('"voice_deepgram_error"');
+    expect(warnEmittedSetIdx).toBeGreaterThan(-1);
+    expect(firstWarnIdx).toBeGreaterThan(-1);
+    // The assignment must come before the event string in the source.
+    expect(warnEmittedSetIdx).toBeLessThan(firstWarnIdx);
+  });
+
+  it("emits a single end-of-call summary WARN with the error count", () => {
+    expect(SRC).toContain('"voice_deepgram_errors_summary"');
+    expect(SRC).toContain("count: deepgramErrorCount");
+  });
+
+  it("guards the end-of-call summary log with deepgramErrorCount > 0", () => {
+    // The summary should only fire when there was at least one error —
+    // a zero-error call must not emit the WARN at all.
+    expect(SRC).toContain("if (deepgramErrorCount > 0)");
+  });
+
+  it("includes the conversationId in both the per-error debug log and the summary", () => {
+    expect(SRC).toContain('"voice_deepgram_error_subsequent"');
+    expect(SRC).toContain('"voice_deepgram_errors_summary"');
+    // Both events include conversationId for log correlation.
+    const subsequentIdx = SRC.indexOf('"voice_deepgram_error_subsequent"');
+    const summaryIdx = SRC.indexOf('"voice_deepgram_errors_summary"');
+    // Each block around the event contains conversationId.
+    expect(SRC.slice(subsequentIdx, subsequentIdx + 300)).toContain("conversationId");
+    expect(SRC.slice(summaryIdx, summaryIdx + 300)).toContain("conversationId");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// De-spam algorithm — pure logic tests
+//
+// Re-implement the de-spam state machine so we can test the branching
+// logic without needing the full WebSocket wiring.
+// ---------------------------------------------------------------------------
+
+function makeDeepgramErrorTracker() {
+  let errorCount = 0;
+  let warnEmitted = false;
+  const warnLog: unknown[] = [];
+  const debugLog: unknown[] = [];
+
+  function onError(code: string) {
+    errorCount += 1;
+    if (warnEmitted) {
+      debugLog.push({ event: "voice_deepgram_error_subsequent", code, count: errorCount });
+      return;
+    }
+    warnEmitted = true;
+    warnLog.push({ event: "voice_deepgram_error", code });
+  }
+
+  function onClose() {
+    if (errorCount > 0) {
+      warnLog.push({ event: "voice_deepgram_errors_summary", count: errorCount });
+    }
+  }
+
+  return { onError, onClose, getWarnLog: () => warnLog, getDebugLog: () => debugLog, getErrorCount: () => errorCount };
+}
+
+describe("Deepgram error de-spam algorithm (replicated from PR change)", () => {
+  it("emits exactly one WARN for the first error", () => {
+    const tracker = makeDeepgramErrorTracker();
+    tracker.onError("1011");
+    expect(tracker.getWarnLog()).toHaveLength(1);
+    expect(tracker.getWarnLog()[0]).toMatchObject({ event: "voice_deepgram_error" });
+    expect(tracker.getDebugLog()).toHaveLength(0);
+  });
+
+  it("emits DEBUG (not WARN) for subsequent errors in the same call", () => {
+    const tracker = makeDeepgramErrorTracker();
+    tracker.onError("1011"); // first — WARN
+    tracker.onError("1011"); // second — DEBUG
+    tracker.onError("1011"); // third — DEBUG
+    expect(tracker.getWarnLog()).toHaveLength(1); // still just 1 WARN
+    expect(tracker.getDebugLog()).toHaveLength(2);
+  });
+
+  it("increments the error count for every error regardless of de-spam", () => {
+    const tracker = makeDeepgramErrorTracker();
+    tracker.onError("1011");
+    tracker.onError("1011");
+    tracker.onError("1011");
+    expect(tracker.getErrorCount()).toBe(3);
+  });
+
+  it("emits the summary WARN on close when there were errors", () => {
+    const tracker = makeDeepgramErrorTracker();
+    tracker.onError("1011");
+    tracker.onError("1011");
+    tracker.onClose();
+    const summaryLog = tracker.getWarnLog().find(
+      (l) => (l as { event: string }).event === "voice_deepgram_errors_summary",
+    );
+    expect(summaryLog).toBeDefined();
+    expect((summaryLog as { count: number }).count).toBe(2);
+  });
+
+  it("does NOT emit the summary WARN on clean close (zero errors)", () => {
+    const tracker = makeDeepgramErrorTracker();
+    tracker.onClose(); // no errors before this
+    const summaryLog = tracker.getWarnLog().find(
+      (l) => (l as { event: string }).event === "voice_deepgram_errors_summary",
+    );
+    expect(summaryLog).toBeUndefined();
+  });
+
+  it("summary count matches the total number of errors (including de-spammed ones)", () => {
+    const tracker = makeDeepgramErrorTracker();
+    for (let i = 0; i < 10; i++) tracker.onError("1011");
+    tracker.onClose();
+    const summary = tracker.getWarnLog().find(
+      (l) => (l as { event: string }).event === "voice_deepgram_errors_summary",
+    ) as { count: number } | undefined;
+    expect(summary?.count).toBe(10);
+  });
+});
