@@ -470,7 +470,7 @@ describe("scanForDueReminders — timezone field included in patient SELECT (PR 
   it("includes 'timezone' in the patients SELECT column list", () => {
     // The scan must fetch patients.timezone so the quiet-hours gate has
     // a value to pass to isWithinQuietHours.
-    expect(SRC).toContain('"timezone"');
+    expect(SRC).toContain("email, timezone");
     // Specifically it should appear in the select() call alongside
     // the other patient fields.
     expect(SRC).toContain(

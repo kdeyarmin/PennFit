@@ -236,7 +236,7 @@ describe("invoice.payment_failed — failure detail extraction", () => {
   });
 
   it("falls back to null when last_finalization_error is null", () => {
-    const lastError: { code?: string; message?: string } | null = null;
+    const lastError = null as { code?: string; message?: string } | null;
     expect(lastError?.code ?? null).toBeNull();
     expect(lastError?.message ?? null).toBeNull();
   });
@@ -260,7 +260,7 @@ describe("invoice.payment_failed — log payload shape simulation", () => {
         message: "insufficient funds",
       },
       parent: {
-        subscription_details: { subscription: "sub_xyz" },
+        subscription_details: { subscription: "sub_xyz" as string | { id: string } },
       },
     };
 
@@ -311,7 +311,7 @@ describe("invoice.payment_failed — log payload shape simulation", () => {
       currency: "usd",
       attempt_count: 1,
       next_payment_attempt: null,
-      last_finalization_error: null,
+      last_finalization_error: null as { code?: string; message?: string } | null,
       parent: null,
     };
 
@@ -404,7 +404,7 @@ describe("charge.dispute.created — log payload shape simulation", () => {
       currency: "usd",
       reason: "general",
       status: "under_review",
-      evidence_details: undefined,
+      evidence_details: undefined as { due_by?: number | null } | undefined,
       is_charge_refundable: false,
     };
 

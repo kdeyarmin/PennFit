@@ -582,9 +582,6 @@ export const stripeWebhookHandler: RequestHandler = async (
             attempt_count: invoice.attempt_count,
             next_payment_attempt: invoice.next_payment_attempt,
             failure_code: lastError?.code ?? null,
-            // last_finalization_error.message can include card brand +
-            // last4 but never PAN — Stripe redacts before sending. Safe
-            // to log.
             failure_message: lastError?.message ?? null,
           },
           "stripe: subscription renewal payment failed",
