@@ -46,6 +46,13 @@ vi.mock("../logger", () => ({
 vi.mock("../llm-provider", () => ({
   selectLlmProvider: mockSelectLlmProvider,
   getAnthropicClient: mockGetAnthropicClient,
+  // The source-under-test imports DEFAULT_ANTHROPIC_MODEL_CLASSIFY
+  // from this module (it's re-exported from @workspace/resupply-ai
+  // via lib/llm-provider.ts so route handlers have one import site).
+  // The mock has to provide it or the module-load test crashes with
+  // "No DEFAULT_ANTHROPIC_MODEL_CLASSIFY export is defined on the
+  // ../llm-provider mock". Value matches the real constant.
+  DEFAULT_ANTHROPIC_MODEL_CLASSIFY: "claude-haiku-4-5-20251001",
 }));
 
 vi.mock("@workspace/resupply-ai", () => ({
@@ -303,10 +310,26 @@ describe("suggestIcd10 — Anthropic provider path", () => {
       httpStatus: 429,
     });
 
-    const result = await suggestIcd10({ sleepStudyId: STUDY_ID });
-
-    expect(result.icd10).toBeNull();
-    expect(result.errorMessage).toMatch(/anthropic rate_limit/);
+    // Make sure no OpenAI key is set — otherwise the post-failure
+    // fallback path (added after this test was first written) would
+    // attempt OpenAI and the assertion below would fire on a
+    // different error string.
+    const prevOpenAi = process.env.OPENAI_API_KEY;
+    delete process.env.OPENAI_API_KEY;
+    try {
+      const result = await suggestIcd10({ sleepStudyId: STUDY_ID });
+      expect(result.icd10).toBeNull();
+      // Anthropic failed AND there's no OpenAI fallback configured,
+      // so the final error reports the no-provider-configured state.
+      // (The Anthropic-specific cause is preserved in the
+      // `ai_icd10_anthropic_fallback` warn log line that the dispatcher
+      // emits before falling through — outside the scope of this test.)
+      expect(result.errorMessage).toMatch(
+        /no LLM provider configured/,
+      );
+    } finally {
+      if (prevOpenAi !== undefined) process.env.OPENAI_API_KEY = prevOpenAi;
+    }
   });
 
   it("returns icd10=null when Anthropic suggests a non-allowlist code", async () => {
@@ -540,6 +563,123 @@ describe("suggestIcd10 — SuggestOutput shape", () => {
       fetchImpl: async () => openAiIcd10Response("Z99.89", 0.4, "Not in allowlist."),
     });
     expect(result.rationale).toBe("Not in allowlist.");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// DEFAULT_ANTHROPIC_MODEL_CLASSIFY constant — mock contract (regression)
+// ---------------------------------------------------------------------------
+//
+// PR change: the llm-provider mock was updated to export
+// DEFAULT_ANTHROPIC_MODEL_CLASSIFY so module load doesn't crash.
+// These tests pin the value and the usage contract.
+
+describe("suggestIcd10 — DEFAULT_ANTHROPIC_MODEL_CLASSIFY mock constant", () => {
+  it("uses the DEFAULT_ANTHROPIC_MODEL_CLASSIFY value as the default model on the Anthropic path", async () => {
+    stageSleepStudy();
+
+    const mockClient = { send: vi.fn(), stream: vi.fn() };
+    mockSelectLlmProvider.mockReturnValue({ provider: "anthropic" });
+    mockGetAnthropicClient.mockReturnValue(mockClient);
+
+    const anthropicText = JSON.stringify({ icd10: "G47.33", confidence: 0.9, rationale: "OSA." });
+    mockSendWithRetry.mockResolvedValue(anthropicOkResult(anthropicText));
+    mockGetResponseText.mockReturnValue(anthropicText);
+
+    // Call without an explicit model override — the default constant should
+    // be forwarded to sendWithRetry.
+    await suggestIcd10({ sleepStudyId: STUDY_ID });
+
+    const callArg = mockSendWithRetry.mock.calls[0][1] as { model: string };
+    // The mock constant is "claude-haiku-4-5-20251001" — the same value
+    // the real DEFAULT_ANTHROPIC_MODEL_CLASSIFY exports.
+    expect(callArg.model).toBe("claude-haiku-4-5-20251001");
+  });
+
+  it("overrides the default model when input.model is provided", async () => {
+    stageSleepStudy();
+
+    const mockClient = { send: vi.fn(), stream: vi.fn() };
+    mockSelectLlmProvider.mockReturnValue({ provider: "anthropic" });
+    mockGetAnthropicClient.mockReturnValue(mockClient);
+
+    const anthropicText = JSON.stringify({ icd10: "G47.33", confidence: 0.85, rationale: "Override model." });
+    mockSendWithRetry.mockResolvedValue(anthropicOkResult(anthropicText));
+    mockGetResponseText.mockReturnValue(anthropicText);
+
+    await suggestIcd10({ sleepStudyId: STUDY_ID, model: "claude-opus-4-5" });
+
+    const callArg = mockSendWithRetry.mock.calls[0][1] as { model: string };
+    expect(callArg.model).toBe("claude-opus-4-5");
+    // Confirm the default was NOT used
+    expect(callArg.model).not.toBe("claude-haiku-4-5-20251001");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Anthropic rate-limit: env isolation — OPENAI_API_KEY present vs absent
+// ---------------------------------------------------------------------------
+//
+// PR change: the 429 test was updated to delete OPENAI_API_KEY to prevent
+// the OpenAI fallback from firing. The tests below pin the two branches:
+// (1) no OPENAI_API_KEY → error message says "no LLM provider configured"
+// (2) OPENAI_API_KEY present → fallback to OpenAI; result is ok:true if
+//     OpenAI succeeds.
+
+describe("suggestIcd10 — Anthropic 429 + OPENAI_API_KEY environment isolation", () => {
+  it("reports 'no LLM provider configured' when Anthropic rate-limits and OPENAI_API_KEY is absent", async () => {
+    stageSleepStudy();
+
+    const mockClient = { send: vi.fn(), stream: vi.fn() };
+    mockSelectLlmProvider.mockReturnValue({ provider: "anthropic" });
+    mockGetAnthropicClient.mockReturnValue(mockClient);
+    mockSendWithRetry.mockResolvedValue({
+      ok: false,
+      errorCode: "rate_limit",
+      httpStatus: 429,
+    });
+
+    const prevKey = process.env.OPENAI_API_KEY;
+    delete process.env.OPENAI_API_KEY;
+    try {
+      const result = await suggestIcd10({ sleepStudyId: STUDY_ID });
+      expect(result.icd10).toBeNull();
+      expect(result.errorMessage).toMatch(/no LLM provider configured/);
+    } finally {
+      if (prevKey !== undefined) process.env.OPENAI_API_KEY = prevKey;
+    }
+  });
+
+  it("falls back to OpenAI successfully when Anthropic rate-limits and OPENAI_API_KEY is set", async () => {
+    stageSleepStudy();
+
+    const mockClient = { send: vi.fn(), stream: vi.fn() };
+    mockSelectLlmProvider.mockReturnValue({ provider: "anthropic" });
+    mockGetAnthropicClient.mockReturnValue(mockClient);
+    mockSendWithRetry.mockResolvedValue({
+      ok: false,
+      errorCode: "rate_limit",
+      httpStatus: 429,
+    });
+
+    const prevKey = process.env.OPENAI_API_KEY;
+    process.env.OPENAI_API_KEY = "sk-openai-fallback-key";
+    try {
+      const result = await suggestIcd10({
+        sleepStudyId: STUDY_ID,
+        fetchImpl: async () => openAiIcd10Response("G47.33", 0.88, "OpenAI fallback after Anthropic 429."),
+      });
+      // OpenAI fallback succeeded → result should be ok
+      expect(result.icd10).toBe("G47.33");
+      expect(result.errorMessage).toBeNull();
+      expect(result.inAllowlist).toBe(true);
+    } finally {
+      if (prevKey === undefined) {
+        delete process.env.OPENAI_API_KEY;
+      } else {
+        process.env.OPENAI_API_KEY = prevKey;
+      }
+    }
   });
 });
 
