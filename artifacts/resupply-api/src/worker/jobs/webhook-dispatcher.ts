@@ -21,6 +21,10 @@ import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import {
+  buildQueueConfig,
+  WEBHOOK_DISPATCH_QUEUE_OPTS,
+} from "../lib/queue-options";
+import {
   SsrfError,
   assertSafeOutboundHost,
   assertSafeOutboundUrlSync,
@@ -323,7 +327,10 @@ async function applyRetryOrExhaust(
 export async function registerWebhookDispatcherJob(
   boss: PgBoss,
 ): Promise<void> {
-  await boss.createQueue(JOB);
+  // Outbound webhook delivery — generous retries (subscriber 5xx
+  // during their own deploys is common) + tighter expiry guard
+  // against wedged HTTP sockets, with DLQ for exhausted retries.
+  await boss.createQueue(JOB, buildQueueConfig(JOB, WEBHOOK_DISPATCH_QUEUE_OPTS));
   await boss.work(JOB, async () => {
     try {
       const stats = await runWebhookDispatcher();
