@@ -56,7 +56,14 @@ export function buildQueueConfig(
   preset: Omit<PgBossQueue, "name">,
   overrides?: Partial<Omit<PgBossQueue, "name">>,
 ): PgBossQueue {
-  return { name, ...preset, deadLetter: `${name}.dlq`, ...overrides };
+  // `deadLetter` is intentionally placed AFTER `...overrides` so that
+  // it always wins. The design contract — asserted by the unit test
+  // "deadLetter is always the DLQ name even when overrides provide a
+  // different value" — is that callers can tune retry/expiry knobs
+  // but cannot redirect dead-letter routing. The per-queue DLQ name
+  // is what ops dashboards group by; letting one queue silently
+  // re-route to a foreign DLQ would break that grouping invariant.
+  return { name, ...preset, ...overrides, deadLetter: `${name}.dlq` };
 }
 
 /**
