@@ -204,7 +204,7 @@ export function aggregateComplianceCohorts(
  *   inferred history, shop_returns.approve → shop_returns.approved_at,
  *   etc.) — different per action, ~30 individual surface migrations.
  *   That's a separate epic, not a single PR. Until then the route
- *   handler (see admin/csr-productivity.ts) returns a `degraded: true`
+ *   handler (see routes/admin/analytics.ts) returns a `degraded: true`
  *   flag in the response so the SPA can render a banner.
  */
 export interface AuditRow {
