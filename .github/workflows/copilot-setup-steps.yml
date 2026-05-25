@@ -54,3 +54,13 @@ jobs:
       - name: Install dependencies
         working-directory: ${{ github.workspace }}
         run: pnpm install --frozen-lockfile
+
+      - name: Pre-download MediaPipe assets
+        # The cpap-fitter `predev`/`prebuild` hooks run scripts/setup-mediapipe.mjs,
+        # which fetches face_landmarker.task from storage.googleapis.com. The
+        # Copilot agent's firewall blocks that host once the agent starts, so we
+        # download it here (before the firewall is enabled) and cache it under
+        # public/mediapipe/models/. The setup script skips the download on
+        # subsequent runs when the cached file is present.
+        working-directory: ${{ github.workspace }}
+        run: node artifacts/cpap-fitter/scripts/setup-mediapipe.mjs

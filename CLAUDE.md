@@ -29,6 +29,29 @@ canonical; bypass with `SKIP_HOOKS=1` only for genuine emergencies.
 
 Post-mortem of the drift event: [`docs/git-state-2026-05-01.md`](./docs/git-state-2026-05-01.md).
 
+## Merge conflicts in generated files
+
+Two files in this repo are auto-generated and conflict on nearly every
+multi-PR merge train. `.gitattributes` marks them `-diff merge=binary`
+so Git surfaces a single "pick one side" decision instead of producing
+garbled line-merged output. When you hit one:
+
+```bash
+# pnpm-lock.yaml — take either side, then regenerate from package.json
+git checkout --ours pnpm-lock.yaml   # or --theirs, whichever is closer
+pnpm install                         # regenerates the lockfile
+git add pnpm-lock.yaml
+
+# lib/resupply-db/drizzle/meta/_journal.json — splice manually; both
+# branches' new entries (keyed by `idx` and `tag`) must end up in the
+# final `entries` array with unique `tag`/`when` values. `migrate.mjs`
+# only gates by `when`/`created_at` (no de-dupe), so duplicates/backdating can break or skip migrations.
+```
+
+Do NOT add `merge=union` or `merge=ours` for source files in
+`artifacts/`, `lib/`, or `replit.md` — those are real edits and silently
+dropping a side is worse than a visible conflict.
+
 ## Repository map
 
 This is a `pnpm` workspaces monorepo (Node v24, TypeScript 5.9, pnpm 10.33).
@@ -103,7 +126,16 @@ correctness, not style:
   is a no-op stub kept for back-compat with 150+ callsites — don't
   write new audit logic against it. `RESUPPLY_AUDIT_HMAC_KEY` is no
   longer read by any code path. Compliance is now handled out of band
-  by the business owner.
+  by the business owner. The four historical `audit_log` readers
+  (`/admin/delivery-failures` system-events stream,
+  `/admin/feature-flags/activity`, `/admin/analytics/csr-productivity`,
+  and the dashboard's PHI-sweep status helper) now short-circuit to
+  route-specific degraded responses (for example, delivery failures
+  returns `auditEventsUnavailable: true`, while the PHI-sweep status
+  helper returns `null`) so the SPA can render an explicit "no longer
+  tracked" notice; new readers must NOT add `.from("audit_log")`
+  calls. The `/readyz` DB probe was moved off `audit_log` onto
+  `feature_flags`.
 - **One From address.** Every outbound email funnels through
   `lib/resupply-email`'s `createSendgridClient()`; `SENDGRID_FROM_EMAIL`
   is `info@pennpaps.com`. Don't bypass the shared client.

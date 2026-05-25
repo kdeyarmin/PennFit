@@ -20,35 +20,64 @@ const CONSOLE_SRC = readFileSync(path.join(__dirname, "console.tsx"), "utf8");
 // ---------------------------------------------------------------------------
 // Import declarations
 // ---------------------------------------------------------------------------
+//
+// Admin pages were lazy-loaded per-route in the perf-scale pass so
+// each one is its own chunk. The static guard now matches the
+// dynamic-import shape:
+//
+//   import("@/pages/admin/admin-billing-hub").then((m) => ({
+//     default: m.AdminBillingHubPage,
+//   }))
+//
+// instead of the original eager `import { X } from "@/pages/admin/Y"`.
+// The regex below tolerates either shape so a future refactor that
+// flips a page back to eager doesn't break the guard, and so this
+// test can also catch typos in the page-source-path or symbol name.
+
+function expectPageWired(symbolName: string, modulePath: string): void {
+  // Eager import shape, kept here to cover any page that's deliberately
+  // not lazy-loaded (DashboardPage today; possibly others later).
+  const eagerPattern = new RegExp(
+    `import \\{ ${symbolName} \\} from "${modulePath}"`,
+  );
+  // Lazy factory shape:
+  //   import("…/admin-billing-hub").then((m) => ({ default: m.X }))
+  const lazyPattern = new RegExp(
+    `import\\("${modulePath}"\\)[\\s\\S]{0,100}default: m\\.${symbolName}`,
+  );
+  expect(
+    eagerPattern.test(CONSOLE_SRC) || lazyPattern.test(CONSOLE_SRC),
+  ).toBe(true);
+}
+
 describe("console.tsx — billing page imports", () => {
-  it("imports AdminBillingHubPage from admin-billing-hub", () => {
-    expect(CONSOLE_SRC).toContain(
-      'import { AdminBillingHubPage } from "@/pages/admin/admin-billing-hub"',
+  it("wires AdminBillingHubPage from admin-billing-hub", () => {
+    expectPageWired("AdminBillingHubPage", "@/pages/admin/admin-billing-hub");
+  });
+
+  it("wires AdminBillingAiQueuePage from admin-billing-ai-queue", () => {
+    expectPageWired(
+      "AdminBillingAiQueuePage",
+      "@/pages/admin/admin-billing-ai-queue",
     );
   });
 
-  it("imports AdminBillingAiQueuePage from admin-billing-ai-queue", () => {
-    expect(CONSOLE_SRC).toContain(
-      'import { AdminBillingAiQueuePage } from "@/pages/admin/admin-billing-ai-queue"',
+  it("wires AdminBillingAgingPage from admin-billing-aging", () => {
+    expectPageWired(
+      "AdminBillingAgingPage",
+      "@/pages/admin/admin-billing-aging",
     );
   });
 
-  it("imports AdminBillingAgingPage from admin-billing-aging", () => {
-    expect(CONSOLE_SRC).toContain(
-      'import { AdminBillingAgingPage } from "@/pages/admin/admin-billing-aging"',
+  it("wires AdminBillingDenialsPage from admin-billing-denials", () => {
+    expectPageWired(
+      "AdminBillingDenialsPage",
+      "@/pages/admin/admin-billing-denials",
     );
   });
 
-  it("imports AdminBillingDenialsPage from admin-billing-denials", () => {
-    expect(CONSOLE_SRC).toContain(
-      'import { AdminBillingDenialsPage } from "@/pages/admin/admin-billing-denials"',
-    );
-  });
-
-  it("imports AdminBillingEraPage from admin-billing-era", () => {
-    expect(CONSOLE_SRC).toContain(
-      'import { AdminBillingEraPage } from "@/pages/admin/admin-billing-era"',
-    );
+  it("wires AdminBillingEraPage from admin-billing-era", () => {
+    expectPageWired("AdminBillingEraPage", "@/pages/admin/admin-billing-era");
   });
 });
 

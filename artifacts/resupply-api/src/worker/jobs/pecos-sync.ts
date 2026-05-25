@@ -33,6 +33,7 @@ import {
 } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
+import { buildQueueConfig, VENDOR_SEND_QUEUE_OPTS } from "../lib/queue-options";
 
 type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
 type EnrollmentStatus =
@@ -171,7 +172,7 @@ function sleep(ms: number): Promise<void> {
 }
 
 export async function registerPecosSyncJob(boss: PgBoss): Promise<void> {
-  await boss.createQueue(JOB);
+  await boss.createQueue(JOB, buildQueueConfig(JOB, VENDOR_SEND_QUEUE_OPTS));
   await boss.work(JOB, async () => {
     try {
       const stats = await runPecosSync();

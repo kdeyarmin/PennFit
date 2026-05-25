@@ -10,12 +10,13 @@ import type PgBoss from "pg-boss";
 
 import { runPaMcoSlaSweep } from "../../lib/billing/pa-sla-tracker";
 import { logger } from "../../lib/logger";
+import { buildQueueConfig, CRON_SCAN_QUEUE_OPTS } from "../lib/queue-options";
 
 const JOB = "pa-mco-sla.sweep";
 const CRON = "17 */6 * * *";
 
 export async function registerPaMcoSlaSweepJob(boss: PgBoss): Promise<void> {
-  await boss.createQueue(JOB);
+  await boss.createQueue(JOB, buildQueueConfig(JOB, CRON_SCAN_QUEUE_OPTS));
   await boss.work(JOB, async () => {
     try {
       const stats = await runPaMcoSlaSweep();

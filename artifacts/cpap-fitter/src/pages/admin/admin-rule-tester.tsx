@@ -75,6 +75,7 @@ export function AdminRuleTesterPage() {
               min={0}
               value={tenureDays}
               onChange={(e) => setTenureDays(Number(e.target.value) || 0)}
+              aria-label="Tenure (days)"
               className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
             />
           </Field>
@@ -86,6 +87,7 @@ export function AdminRuleTesterPage() {
               type="text"
               value={insurancePayer}
               onChange={(e) => setInsurancePayer(e.target.value)}
+              aria-label="Insurance payer"
               className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
               placeholder="(blank)"
             />
@@ -99,6 +101,7 @@ export function AdminRuleTesterPage() {
               min={0}
               value={cadenceOverrideDays}
               onChange={(e) => setCadenceOverrideDays(e.target.value)}
+              aria-label="Cadence override (days)"
               className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
               placeholder="(none)"
             />
@@ -114,6 +117,7 @@ export function AdminRuleTesterPage() {
                   (e.target.value as Channel) || ("" as never),
                 )
               }
+              aria-label="Channel preference"
               className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
             >
               <option value="">(none)</option>
@@ -139,6 +143,7 @@ export function AdminRuleTesterPage() {
               type="text"
               value={itemSku}
               onChange={(e) => setItemSku(e.target.value)}
+              aria-label="Item SKU"
               className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm font-mono"
             />
           </Field>
@@ -151,6 +156,7 @@ export function AdminRuleTesterPage() {
               min={1}
               value={cadenceDays}
               onChange={(e) => setCadenceDays(Number(e.target.value) || 1)}
+              aria-label="Prescription cadence days"
               className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
             />
           </Field>

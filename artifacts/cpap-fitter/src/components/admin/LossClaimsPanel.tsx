@@ -104,6 +104,7 @@ export function LossClaimsPanel({ orderId }: { orderId: string }) {
           value={newNote}
           onChange={(e) => setNewNote(e.target.value)}
           placeholder="Optional note"
+          aria-label="Optional note"
           style={{
             flex: 1,
             padding: "4px 8px",

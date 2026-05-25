@@ -491,12 +491,14 @@ function CreateModal({
                 value={l.hcpcs}
                 onChange={(e) => updateLine(idx, { hcpcs: e.target.value })}
                 placeholder="E0601"
+                aria-label="HCPCS code"
               />
               <Input
                 className="col-span-6"
                 value={l.description}
                 onChange={(e) => updateLine(idx, { description: e.target.value })}
                 placeholder="Description"
+                aria-label="Line description"
               />
               <Input
                 className="col-span-1"
@@ -507,6 +509,7 @@ function CreateModal({
                 onChange={(e) =>
                   updateLine(idx, { quantity: Number(e.target.value) || 1 })
                 }
+                aria-label="Quantity"
               />
               <Input
                 className="col-span-2"
@@ -521,6 +524,7 @@ function CreateModal({
                   })
                 }
                 placeholder="days"
+                aria-label="Cadence days"
               />
               <button
                 type="button"
@@ -559,6 +563,7 @@ function CreateModal({
             onChange={(e) =>
               setDeviceClass(e.target.value as PrescriptionDeviceClass | "none")
             }
+            aria-label="Therapy mode"
           >
             <option value="none">No settings (mask-only refill)</option>
             <option value="cpap">CPAP (fixed pressure)</option>
@@ -657,6 +662,7 @@ function CreateModal({
             maxLength={2000}
             value={clinicalNotes}
             onChange={(e) => setClinicalNotes(e.target.value)}
+            aria-label="Clinical notes"
           />
         </div>
 
@@ -922,6 +928,7 @@ function LifecycleActions({
             value={signedKey}
             onChange={(e) => onSignedKeyChange(e.target.value)}
             placeholder="signed scan object key (optional)"
+            aria-label="Signed scan object key"
             style={{ minWidth: 220 }}
           />
           <Button
@@ -1021,6 +1028,7 @@ function Field({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
+        aria-label={label}
       />
     </div>
   );

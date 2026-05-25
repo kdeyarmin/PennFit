@@ -75,6 +75,7 @@ export function AdminProvidersPage() {
           <Search className="h-4 w-4 text-muted-foreground" />
           <Input
             placeholder="Search by name or NPI"
+            aria-label="Search by name or NPI"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
@@ -412,6 +413,7 @@ function AddProviderModal({
                 value={npi}
                 onChange={(e) => setNpi(e.target.value)}
                 placeholder="1234567893"
+                aria-label="NPI (10 digits)"
                 maxLength={10}
               />
             </div>
@@ -436,6 +438,7 @@ function AddProviderModal({
                 <Input
                   value={legalName}
                   onChange={(e) => setLegalName(e.target.value)}
+                  aria-label="Legal name"
                   maxLength={200}
                 />
               </div>
@@ -451,6 +454,7 @@ function AddProviderModal({
                     value={phone}
                     onChange={(e) => setPhone(e.target.value)}
                     placeholder="+12155551234"
+                    aria-label="Phone (E.164)"
                   />
                 </div>
                 <div>
@@ -464,6 +468,7 @@ function AddProviderModal({
                     value={fax}
                     onChange={(e) => setFax(e.target.value)}
                     placeholder="+12155551235"
+                    aria-label="Fax (E.164)"
                   />
                 </div>
               </div>

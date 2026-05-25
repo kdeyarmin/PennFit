@@ -50,6 +50,7 @@ import {
 } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
+import { buildQueueConfig, VENDOR_SEND_QUEUE_OPTS } from "../lib/queue-options";
 import {
   sendTherapyMilestoneEmail,
   type MilestoneKind,
@@ -429,7 +430,7 @@ export async function runTherapyMilestones(): Promise<MilestoneStats> {
 }
 
 export async function registerTherapyMilestonesJob(boss: PgBoss): Promise<void> {
-  await boss.createQueue(JOB_NAME);
+  await boss.createQueue(JOB_NAME, buildQueueConfig(JOB_NAME, VENDOR_SEND_QUEUE_OPTS));
 
   await boss.work(JOB_NAME, async () => {
     try {

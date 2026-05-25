@@ -281,7 +281,7 @@ export async function processTick(
         campaign.category,
       );
       if (optedOut) {
-        await supabase
+        const { error: supErr } = await supabase
           .schema("resupply")
           .from("bulk_campaign_recipients")
           .update({
@@ -289,6 +289,19 @@ export async function processTick(
             suppression_reason: "opted_out_at_send_time",
           })
           .eq("id", row.id);
+        if (supErr) {
+          log.error(
+            { err: supErr.message, recipientId: row.id, campaignId: campaign.id },
+            "bulk_campaigns.tick: suppression update failed — marking recipient failed",
+          );
+          await supabase
+            .schema("resupply")
+            .from("bulk_campaign_recipients")
+            .update({ status: "failed", error: supErr.message.slice(0, 500) })
+            .eq("id", row.id);
+          failed += 1;
+          continue;
+        }
         suppressedAtSend += 1;
         continue;
       }
@@ -437,13 +450,21 @@ async function isRecipientOptedOut(
         : null;
   if (!prefKey) return false;
 
+  // At send time, only shop customers can be re-checked from the
+  // generated schema source used here. Patients do not expose a
+  // `communication_preferences` column in the generated Database
+  // types, so querying `patients` here is both invalid and wasted
+  // work. Preserve the existing fail-open posture by skipping the
+  // re-check for patient recipients until preferences are resolved
+  // from the correct source.
+  if (kind !== "shop_customer") return false;
+
   try {
-    const table = kind === "shop_customer" ? "shop_customers" : "patients";
     const { data } = await supabase
       .schema("resupply")
-      .from(table)
+      .from("shop_customers")
       .select("communication_preferences")
-      .eq("id", id)
+      .eq("customer_id", id)
       .limit(1)
       .maybeSingle();
     const prefs =

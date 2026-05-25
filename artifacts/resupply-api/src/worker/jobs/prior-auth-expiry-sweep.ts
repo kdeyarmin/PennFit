@@ -58,6 +58,7 @@ import { logAuditBestEffort } from "@workspace/resupply-audit";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
+import { buildQueueConfig, CRON_SCAN_QUEUE_OPTS } from "../lib/queue-options";
 
 const SWEEP_JOB = "prior-auth.expiry-sweep";
 const SWEEP_CRON = "47 3 * * *";
@@ -285,7 +286,7 @@ export async function runPriorAuthExpirySweep(
 export async function registerPriorAuthExpirySweepJob(
   boss: PgBoss,
 ): Promise<void> {
-  await boss.createQueue(SWEEP_JOB);
+  await boss.createQueue(SWEEP_JOB, buildQueueConfig(SWEEP_JOB, CRON_SCAN_QUEUE_OPTS));
 
   await boss.work(SWEEP_JOB, async () => {
     try {

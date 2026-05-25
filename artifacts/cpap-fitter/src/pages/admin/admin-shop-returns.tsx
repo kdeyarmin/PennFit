@@ -421,6 +421,7 @@ function ReturnCard({ item }: { item: AdminReturn }) {
                   value={rejectNote}
                   onChange={(e) => setRejectNote(e.target.value.slice(0, 500))}
                   placeholder="Reason for rejection (optional)"
+                  aria-label="Reason for rejection"
                   className="rounded border border-slate-300 px-2 py-1.5 text-xs"
                 />
                 <button
@@ -524,6 +525,7 @@ function ReturnCard({ item }: { item: AdminReturn }) {
                   value={replaceProductId}
                   onChange={(e) => setReplaceProductId(e.target.value)}
                   placeholder="prod_xxx"
+                  aria-label="Replacement Stripe product ID"
                   className="rounded border border-slate-300 px-2 py-1.5 text-xs font-mono"
                 />
                 <input
@@ -531,6 +533,7 @@ function ReturnCard({ item }: { item: AdminReturn }) {
                   value={replacePriceId}
                   onChange={(e) => setReplacePriceId(e.target.value)}
                   placeholder="price_xxx"
+                  aria-label="Replacement Stripe price ID"
                   className="rounded border border-slate-300 px-2 py-1.5 text-xs font-mono"
                 />
                 <button
@@ -594,6 +597,7 @@ function ReturnCard({ item }: { item: AdminReturn }) {
               value={extraNote}
               onChange={(e) => setExtraNote(e.target.value.slice(0, 2000))}
               placeholder="Internal note (≤2000 chars)"
+              aria-label="Internal note"
               className="flex-1 min-w-[16rem] rounded border border-slate-300 px-2 py-1.5 text-xs"
             />
             <button

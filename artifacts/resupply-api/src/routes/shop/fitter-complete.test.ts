@@ -244,10 +244,21 @@ describe("signUnsubscribeToken → route verify round-trip", () => {
 
   it("a tampered signature returns 400 'Link no longer valid'", async () => {
     const token = signUnsubscribeToken(SAMPLE_LEAD_ID);
-    // Flip a character in the signature (after the '.')
     const [payload, sig] = token.split(".");
-    const badSig = sig!.slice(0, -1) + (sig!.slice(-1) === "a" ? "b" : "a");
-    const badToken = `${payload}.${badSig}`;
+    // Flip the FIRST signature character, not the last. The signature
+    // is base64url-encoded HMAC-SHA256 (32 bytes). base64url drops the
+    // trailing '=' padding, so the LAST encoded char of a 32-byte
+    // value carries only 2 significant bits + 4 padding bits that the
+    // decoder ignores — flipping it between 'a' and 'b' changes only
+    // those ignored pad bits, leaving the decoded signature
+    // byte-identical and verification PASSING (a flaky 200 instead of
+    // the expected 400, ~3% of runs since the token embeds a live
+    // timestamp). The first char encodes the top 6 bits of byte 0,
+    // which are always significant, so flipping it reliably changes
+    // the decoded bytes.
+    const firstChar = sig!.slice(0, 1);
+    const flippedFirst = firstChar === "a" ? "b" : "a";
+    const badToken = `${payload}.${flippedFirst}${sig!.slice(1)}`;
 
     const res = await request(makeApp()).get(
       `/resupply-api/shop/fitter-leads/unsubscribe?t=${encodeURIComponent(badToken)}`,

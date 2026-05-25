@@ -227,6 +227,7 @@ export function ConversationAssignmentBar({
             value={escalateReason}
             onChange={(e) => setEscalateReason(e.target.value.slice(0, 500))}
             placeholder="Reason (required)"
+            aria-label="Escalation reason"
             className="flex-1 min-w-[16rem] rounded border border-slate-300 px-2 py-1.5 text-xs"
             data-testid="conv-escalate-reason"
           />

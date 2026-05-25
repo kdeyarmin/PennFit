@@ -384,6 +384,7 @@ function TriageModal({
                   value={docType}
                   onChange={(e) => setDocType(e.target.value)}
                   placeholder="sleep_study, prescription, chart_note…"
+                  aria-label="Document category"
                 />
                 <datalist id="fax-doc-types">
                   {DOCUMENT_TYPE_SUGGESTIONS.map((s) => (
@@ -405,6 +406,7 @@ function TriageModal({
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
                   maxLength={2000}
+                  aria-label="Notes"
                 />
               </div>
 
@@ -491,6 +493,7 @@ function FormField({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
+        aria-label={label}
         style={{
           borderColor: invalid ? "#dc2626" : undefined,
         }}

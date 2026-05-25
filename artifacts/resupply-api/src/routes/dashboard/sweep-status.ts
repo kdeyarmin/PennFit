@@ -1,54 +1,41 @@
-// Read helper: surface the most recent PHI attachment sweep audit row
-// to the dashboard summary endpoint.
+// Read helper: surface the most recent PHI attachment sweep run to
+// the dashboard summary endpoint.
 //
 // Why a separate module
 // ---------------------
 // `summary.ts` is a flat handler that runs five COUNT(*) queries for
 // the existing KPI tiles. The sweep-status query is a different
-// shape: SELECT against `resupply.audit_log` filtered by `action`,
-// then a Zod parse over the jsonb metadata. Inlining it would muddy
-// the otherwise-uniform handler.
+// shape: SELECT against `resupply.worker_run_summary` filtered by
+// `worker_kind`, then a Zod parse over the jsonb counters. Inlining
+// it would muddy the otherwise-uniform handler.
 //
-// Architecture rules
-// ------------------
-// Rule 7 (resupply-architecture): use `getDbPool()` from
-// `@workspace/resupply-db`, never raw `pg`.
-//
-// Rule 8: `audit_log` writes must go through
-// `@workspace/resupply-audit`. The check script enforces this by
-// banning ANY bare `import { auditLog }` from `@workspace/resupply-db`
-// outside the helper — even read-only ones — to close two-step alias
-// bypasses (`const al = auditLog; .insert(al)`). Read-only callers
-// therefore use raw SQL via `pool.query()` instead, exactly as
-// `routes/audit/list.ts` does for the audit viewer endpoint. The
-// READ itself is allowed; the import is what's banned. See
-// `scripts/check-resupply-architecture.sh` Rule 8 + the comment in
-// `routes/audit/list.ts` for the full rationale.
-//
-// Why not a generic "get latest audit row by action" helper in
-// `lib/resupply-audit`
-// ---------------------------------------------------------------
-// One caller today (this dashboard surface). The shape of "latest
-// audit row + a typed metadata projection" is also caller-specific
-// — every action has a different metadata schema. If a second
-// caller appears we'll factor a small `getLatestAuditByAction(action,
-// metadataSchema)` helper into the lib then.
+// Source history
+// --------------
+// This read used to hit `resupply.audit_log` filtered by
+// `action='prescription.attachment.sweep'`. Migration 0156 retired
+// the HIPAA tamper-evident chain and `@workspace/resupply-audit`
+// became a no-op stub, so new sweep runs stopped landing audit rows
+// and the dashboard tile went stale (then was disabled to a hard
+// `null` to avoid a false signal). Migration 0162 introduced
+// `resupply.worker_run_summary` as the durable replacement: the
+// sweep worker writes one row per run, and this reader hits the
+// newest row for `worker_kind='prescription_attachment_sweep'`.
 //
 // PHI hygiene
 // -----------
-// The sweep audit row by design contains NO object names — only
-// counters. We never project metadata fields the worker doesn't
+// The sweep summary row by design contains NO object names — only
+// counters. We never project counter fields the worker doesn't
 // emit, and the Zod schema is `.strict()` (no passthrough), so even
 // a historical row with extra fields gets rejected and we degrade
 // to null.
 //
 // Defensive parse
 // ---------------
-// If the latest audit row's metadata fails the Zod check (corrupted
+// If the latest row's counters fail the Zod check (corrupted
 // historical row, schema drift, etc.) we degrade to `null` — same
 // as "no sweep has ever run". A malformed row should never 500 the
 // whole dashboard. The route logs the parse failure at WARN so it's
-// visible in operator logs without leaking metadata content.
+// visible in operator logs without leaking counter content.
 
 import { z } from "zod";
 
@@ -56,26 +43,33 @@ import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 
-/** Action string the worker writes for a sweep summary row. Must
- *  stay in lockstep with the `logAudit({ action: ... })` call in
- *  `artifacts/resupply-api/src/worker/jobs/prescription-attachment-sweep.ts`
- *  (note: distinct from `SWEEP_JOB` in that file, which is the
- *  pg-boss queue name and uses the plural `prescriptions.`). */
+/** Action string the worker writes for the legacy (no-op) audit row.
+ *  Kept exported so historical SOC tooling / tests can still
+ *  reference the canonical action name even though the live read
+ *  path now hits `worker_run_summary` (see `SWEEP_WORKER_KIND`). */
 export const SWEEP_AUDIT_ACTION = "prescription.attachment.sweep";
+
+/** Worker-kind key written to `worker_run_summary` by the sweep job.
+ *  Must stay in lockstep with the INSERT in
+ *  `artifacts/resupply-api/src/worker/jobs/prescription-attachment-sweep.ts`. */
+export const SWEEP_WORKER_KIND = "prescription_attachment_sweep";
 
 /**
  * Snake_case worker counters → camelCase API field names. Source-of-
  * truth for field meanings is the `Counters semantics` block in the
  * worker file.
+ *
+ * Kept exported so callers (and historical tests) can still reference
+ * the canonical schema shape.
  */
-const sweepMetadataSchema = z
+export const sweepMetadataSchema = z
   .object({
     objects_scanned: z.number().int().nonnegative(),
     references_loaded: z.number().int().nonnegative(),
     orphans_deleted: z.number().int().nonnegative(),
-    // Optional + defaulted to 0 so historical pre-Task#50 audit rows
-    // (which predate this counter) still parse cleanly and surface
-    // on the dashboard instead of degrading to "no run yet".
+    // Optional + defaulted to 0 so historical rows that predate this
+    // counter still parse cleanly and surface on the dashboard
+    // instead of degrading to "no run yet".
     bytes_reclaimed: z.number().int().nonnegative().optional().default(0),
     orphans_too_young: z.number().int().nonnegative(),
     orphans_no_time_created: z.number().int().nonnegative(),
@@ -103,26 +97,27 @@ export interface PhiSweepCounters {
 }
 
 export interface PhiSweepStatus {
-  /** ISO timestamp of `audit_log.occurred_at` for the most recent row. */
+  /** ISO timestamp of the most recent sweep summary. */
   lastRunAt: string;
   counters: PhiSweepCounters;
 }
 
 /**
- * Fetch + project the most recent sweep audit row. Returns null when
- * no row exists OR when the row's metadata fails validation.
+ * Retrieve the most recent PHI attachment sweep run and map it to the API status shape.
  *
- * Implementation note: read goes through the Supabase JS client
- * (Drizzle → Supabase migration). Mirrors `routes/audit/list.ts`.
+ * Returns `null` when no sweep row exists, the database query fails, the `counters` payload
+ * does not match the expected schema, or the `completed_at` timestamp is missing or invalid.
+ *
+ * @returns A `PhiSweepStatus` object containing `lastRunAt` (ISO timestamp) and camelCase `counters`, or `null` if unavailable or invalid.
  */
 export async function getLatestPhiSweepStatus(): Promise<PhiSweepStatus | null> {
   const supabase = getSupabaseServiceRoleClient();
   const { data: row, error } = await supabase
     .schema("resupply")
-    .from("audit_log")
-    .select("occurred_at, metadata")
-    .eq("action", SWEEP_AUDIT_ACTION)
-    .order("occurred_at", { ascending: false })
+    .from("worker_run_summary")
+    .select("completed_at, counters")
+    .eq("worker_kind", SWEEP_WORKER_KIND)
+    .order("completed_at", { ascending: false })
     .limit(1)
     .maybeSingle();
 
@@ -132,27 +127,27 @@ export async function getLatestPhiSweepStatus(): Promise<PhiSweepStatus | null> 
   }
   if (!row) return null;
 
-  const parsed = sweepMetadataSchema.safeParse(row.metadata);
+  const parsed = sweepMetadataSchema.safeParse(row.counters);
   if (!parsed.success) {
-    // Don't log the metadata content — it's counter-only by design,
+    // Don't log the counters content — it's counter-only by design,
     // but a corrupted row could contain anything. Keep the log line
     // diagnostic but content-free; SOC can pull the row by id from
-    // the audit-log viewer if they need to see what's wrong.
+    // worker_run_summary if they need to see what's wrong.
     logger.warn(
-      { occurredAt: row.occurred_at },
-      "phi-sweep-status: latest audit row metadata failed schema check; surfacing null",
+      { completedAt: row.completed_at },
+      "phi-sweep-status: latest worker_run_summary counters failed schema check; surfacing null",
     );
     return null;
   }
   const m = parsed.data;
-  // occurred_at comes back from PostgREST as an ISO string. If the
+  // completed_at comes back from PostgREST as an ISO string. If the
   // value is missing or unparseable we degrade to null — same
-  // defensive posture as a malformed metadata payload (don't 500 the
+  // defensive posture as a malformed counters payload (don't 500 the
   // whole dashboard on a single corrupted row).
-  const dateCandidate = new Date(row.occurred_at ?? "");
+  const dateCandidate = new Date(row.completed_at ?? "");
   if (Number.isNaN(dateCandidate.getTime())) {
     logger.warn(
-      "phi-sweep-status: latest audit row has missing/invalid occurred_at; surfacing null",
+      "phi-sweep-status: latest row has missing/invalid completed_at; surfacing null",
     );
     return null;
   }
