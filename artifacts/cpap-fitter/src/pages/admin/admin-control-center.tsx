@@ -46,8 +46,9 @@ export function AdminControlCenterPage() {
           campaign without canceling it.
         </p>
         <p className="text-xs text-slate-500">
-          Changes are audited in <code>resupply.audit_log</code> with
-          the action <code>feature_flag.toggle</code>.
+          Flag-change history is currently not tracked (the audit log
+          backing it was retired). The toggle action itself takes effect
+          immediately.
         </p>
       </header>
       <SummaryTiles />
@@ -553,7 +554,7 @@ function ActivityPanel() {
   const query = useQuery({
     queryKey: ACTIVITY_QUERY_KEY,
     queryFn: () => listFeatureFlagActivity(20),
-    refetchInterval: 60_000,
+    refetchInterval: (query) => (query.state.data?.unavailable ? false : 60_000),
   });
 
   return (
@@ -575,6 +576,15 @@ function ActivityPanel() {
           >
             Couldn&apos;t load activity:{" "}
             {query.error instanceof Error ? query.error.message : "unknown"}
+          </p>
+        ) : query.data?.unavailable ? (
+          <p
+            className="px-4 py-3 text-sm text-slate-600"
+            data-testid="control-center-activity-unavailable"
+          >
+            Toggle activity is no longer tracked. The underlying audit log
+            was retired; flag state changes are no longer recorded for
+            playback.
           </p>
         ) : (query.data?.activity ?? []).length === 0 ? (
           <p className="px-4 py-3 text-sm text-slate-500">
