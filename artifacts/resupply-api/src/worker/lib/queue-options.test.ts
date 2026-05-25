@@ -163,3 +163,62 @@ describe("WEBHOOK_DISPATCH_QUEUE_OPTS", () => {
     );
   });
 });
+
+// ──────────────────────────────────────────────────────────────────────────────
+// buildQueueConfig — override + deadLetter ordering invariant (regression)
+// ──────────────────────────────────────────────────────────────────────────────
+//
+// The PR change that introduced these tests moved `deadLetter` AFTER
+// `...overrides` in buildQueueConfig's return expression. This block adds
+// further coverage to pin that contract against future re-ordering.
+
+describe("buildQueueConfig — deadLetter ordering invariant (regression)", () => {
+  it("override retryLimit wins, but deadLetter still resolves to <name>.dlq", () => {
+    // An override of both retryLimit (tuneable knob) and deadLetter
+    // (non-tuneable): the knob takes effect, the DLQ is still forced.
+    const cfg = buildQueueConfig("my.queue", VENDOR_SEND_QUEUE_OPTS, {
+      retryLimit: 1,
+      deadLetter: "some.other.dlq",
+    } as never);
+    expect(cfg.retryLimit).toBe(1);           // override applied
+    expect(cfg.deadLetter).toBe("my.queue.dlq"); // DLQ name wins
+  });
+
+  it("override expireInMinutes wins, deadLetter is still forced", () => {
+    const cfg = buildQueueConfig("expiry.test", CRON_SCAN_QUEUE_OPTS, {
+      expireInMinutes: 60,
+      deadLetter: "wrong.dlq",
+    } as never);
+    expect(cfg.expireInMinutes).toBe(60);
+    expect(cfg.deadLetter).toBe("expiry.test.dlq");
+  });
+
+  it("empty overrides object: deadLetter is still set and preset fields survive", () => {
+    const cfg = buildQueueConfig("empty.overrides", VENDOR_SEND_QUEUE_OPTS, {});
+    expect(cfg.deadLetter).toBe("empty.overrides.dlq");
+    expect(cfg.retryLimit).toBe(VENDOR_SEND_QUEUE_OPTS.retryLimit);
+    expect(cfg.retryBackoff).toBe(VENDOR_SEND_QUEUE_OPTS.retryBackoff);
+  });
+
+  it("omitted overrides (undefined): deadLetter is still set", () => {
+    // Callers that omit the third argument get the same DLQ contract.
+    const cfg = buildQueueConfig("no.overrides", WEBHOOK_DISPATCH_QUEUE_OPTS);
+    expect(cfg.deadLetter).toBe("no.overrides.dlq");
+    expect(cfg.retryLimit).toBe(WEBHOOK_DISPATCH_QUEUE_OPTS.retryLimit);
+  });
+
+  it("queue name with dots produces the correct <name>.dlq", () => {
+    // Verify the template literal `${name}.dlq` handles names that
+    // already contain dots (common in the repo: 'reminders.scan', etc.).
+    const cfg = buildQueueConfig("a.b.c.job", CRON_SCAN_QUEUE_OPTS);
+    expect(cfg.deadLetter).toBe("a.b.c.job.dlq");
+  });
+
+  it("preset retryBackoff:false is NOT overwritten by the DLQ placement", () => {
+    // Regression: the old code placed deadLetter BEFORE ...overrides.
+    // Verifying the new order does not accidentally clobber boolean falsy
+    // values from either preset or overrides.
+    const cfg = buildQueueConfig("scan.job", CRON_SCAN_QUEUE_OPTS);
+    expect(cfg.retryBackoff).toBe(false); // CRON preset: no backoff
+  });
+});

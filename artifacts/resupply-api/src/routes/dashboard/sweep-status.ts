@@ -18,6 +18,10 @@
 
 import { z } from "zod";
 
+import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+
+import { logger } from "../../lib/logger";
+
 /** Action string the worker writes for a sweep summary row. Must
  *  stay in lockstep with the `logAudit({ action: ... })` call in
  *  `artifacts/resupply-api/src/worker/jobs/prescription-attachment-sweep.ts`
@@ -70,16 +74,81 @@ export interface PhiSweepStatus {
   counters: PhiSweepCounters;
 }
 
+/** Worker-kind key written to `worker_run_summary` by the sweep job.
+ *  Must stay in lockstep with the INSERT in
+ *  `artifacts/resupply-api/src/worker/jobs/prescription-attachment-sweep.ts`. */
+const SWEEP_WORKER_KIND = "prescription_attachment_sweep";
+
 /**
- * Returns the latest sweep status, or `null` when no status is
- * available.
+ * Fetch + project the most recent sweep run. Returns null when no
+ * row exists OR when the counters payload fails validation.
  *
- * Current implementation: always returns `null`. The historical
- * source (`resupply.audit_log`) was dropped; until a replacement
- * event log is wired in, callers must treat `null` as "no longer
- * tracked". The dashboard already renders the `null` case as a
- * neutral "no recent sweep" state, so no UI change is required.
+ * Source changed in migration 0162: the read used to hit
+ * `resupply.audit_log` filtered by `action='prescription.attachment.sweep'`,
+ * but `@workspace/resupply-audit` became a no-op stub when the HIPAA
+ * tamper-evident chain was retired in migration 0156, so new runs
+ * stopped landing rows and the dashboard tile went stale. The sweep
+ * worker now also writes to `resupply.worker_run_summary` — the
+ * dedicated durable record of "did the worker run, and what counters
+ * did it produce?" — which is what this reader hits.
+ *
+ * Implementation note: read goes through the Supabase JS client.
  */
 export async function getLatestPhiSweepStatus(): Promise<PhiSweepStatus | null> {
-  return null;
+  const supabase = getSupabaseServiceRoleClient();
+  const { data: row, error } = await supabase
+    .schema("resupply")
+    .from("worker_run_summary")
+    .select("completed_at, counters")
+    .eq("worker_kind", SWEEP_WORKER_KIND)
+    .order("completed_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    logger.warn({ err: error }, "phi-sweep-status: query failed; surfacing null");
+    return null;
+  }
+  if (!row) return null;
+
+  const parsed = sweepMetadataSchema.safeParse(row.counters);
+  if (!parsed.success) {
+    // Don't log the counters content — it's counter-only by design,
+    // but a corrupted row could contain anything. Keep the log line
+    // diagnostic but content-free; SOC can pull the row by id from
+    // worker_run_summary if they need to see what's wrong.
+    logger.warn(
+      { completedAt: row.completed_at },
+      "phi-sweep-status: latest worker_run_summary counters failed schema check; surfacing null",
+    );
+    return null;
+  }
+  const m = parsed.data;
+  // completed_at comes back from PostgREST as an ISO string. If the
+  // value is missing or unparseable we degrade to null — same
+  // defensive posture as a malformed counters payload (don't 500 the
+  // whole dashboard on a single corrupted row).
+  const dateCandidate = new Date(row.completed_at ?? "");
+  if (Number.isNaN(dateCandidate.getTime())) {
+    logger.warn(
+      "phi-sweep-status: latest row has missing/invalid completed_at; surfacing null",
+    );
+    return null;
+  }
+  const lastRunAt = dateCandidate.toISOString();
+  return {
+    lastRunAt,
+    counters: {
+      objectsScanned: m.objects_scanned,
+      referencesLoaded: m.references_loaded,
+      orphansDeleted: m.orphans_deleted,
+      bytesReclaimed: m.bytes_reclaimed,
+      orphansTooYoung: m.orphans_too_young,
+      orphansNoTimeCreated: m.orphans_no_time_created,
+      deleteErrors: m.delete_errors,
+      delete404Idempotent: m.delete_404_idempotent,
+      recheckSaved: m.recheck_saved,
+      nonAttachmentSkipped: m.non_attachment_skipped,
+    },
+  };
 }

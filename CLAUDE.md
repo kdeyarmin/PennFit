@@ -29,6 +29,29 @@ canonical; bypass with `SKIP_HOOKS=1` only for genuine emergencies.
 
 Post-mortem of the drift event: [`docs/git-state-2026-05-01.md`](./docs/git-state-2026-05-01.md).
 
+## Merge conflicts in generated files
+
+Two files in this repo are auto-generated and conflict on nearly every
+multi-PR merge train. `.gitattributes` marks them `-diff merge=binary`
+so Git surfaces a single "pick one side" decision instead of producing
+garbled line-merged output. When you hit one:
+
+```bash
+# pnpm-lock.yaml — take either side, then regenerate from package.json
+git checkout --ours pnpm-lock.yaml   # or --theirs, whichever is closer
+pnpm install                         # regenerates the lockfile
+git add pnpm-lock.yaml
+
+# lib/resupply-db/drizzle/meta/_journal.json — splice manually; both
+# branches' new entries (keyed by `idx` and `tag`) must end up in the
+# final `entries` array with unique `tag`/`when` values. `migrate.mjs`
+# only gates by `when`/`created_at` (no de-dupe), so duplicates/backdating can break or skip migrations.
+```
+
+Do NOT add `merge=union` or `merge=ours` for source files in
+`artifacts/`, `lib/`, or `replit.md` — those are real edits and silently
+dropping a side is worse than a visible conflict.
+
 ## Repository map
 
 This is a `pnpm` workspaces monorepo (Node v24, TypeScript 5.9, pnpm 10.33).
