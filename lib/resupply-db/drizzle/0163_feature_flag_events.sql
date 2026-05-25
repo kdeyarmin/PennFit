@@ -34,6 +34,8 @@ CREATE TABLE IF NOT EXISTS "resupply"."feature_flag_events" (
   "key" text NOT NULL,
   "previous_enabled" boolean NOT NULL,
   "next_enabled" boolean NOT NULL,
+  CONSTRAINT "feature_flag_events_state_change_chk"
+    CHECK ("previous_enabled" IS DISTINCT FROM "next_enabled"),
   "operator_email" text,
   "occurred_at" timestamp with time zone NOT NULL DEFAULT now()
 );
