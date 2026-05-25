@@ -52,7 +52,7 @@ vi.mock("../llm-provider", () => ({
   // The mock has to provide it or the module-load test crashes with
   // "No DEFAULT_ANTHROPIC_MODEL_CLASSIFY export is defined on the
   // ../llm-provider mock". Value matches the real constant.
-  DEFAULT_ANTHROPIC_MODEL_CLASSIFY: "claude-haiku-4-5-20251001",
+  DEFAULT_ANTHROPIC_MODEL_CLASSIFY: "claude-haiku-4-5",
 }));
 
 vi.mock("@workspace/resupply-ai", () => ({
@@ -277,7 +277,7 @@ describe("suggestIcd10 — Anthropic provider path", () => {
     await suggestIcd10({ sleepStudyId: STUDY_ID });
 
     const callArg = mockSendWithRetry.mock.calls[0][1] as { model: string };
-    expect(callArg.model).toBe("claude-haiku-4-5-20251001");
+    expect(callArg.model).toBe("claude-haiku-4-5");
   });
 
   it("respects an explicit input.model override on the Anthropic path", async () => {
@@ -591,9 +591,9 @@ describe("suggestIcd10 — DEFAULT_ANTHROPIC_MODEL_CLASSIFY mock constant", () =
     await suggestIcd10({ sleepStudyId: STUDY_ID });
 
     const callArg = mockSendWithRetry.mock.calls[0][1] as { model: string };
-    // The mock constant is "claude-haiku-4-5-20251001" — the same value
+    // The mock constant is "claude-haiku-4-5" — the same value
     // the real DEFAULT_ANTHROPIC_MODEL_CLASSIFY exports.
-    expect(callArg.model).toBe("claude-haiku-4-5-20251001");
+    expect(callArg.model).toBe("claude-haiku-4-5");
   });
 
   it("overrides the default model when input.model is provided", async () => {
@@ -612,7 +612,7 @@ describe("suggestIcd10 — DEFAULT_ANTHROPIC_MODEL_CLASSIFY mock constant", () =
     const callArg = mockSendWithRetry.mock.calls[0][1] as { model: string };
     expect(callArg.model).toBe("claude-opus-4-5");
     // Confirm the default was NOT used
-    expect(callArg.model).not.toBe("claude-haiku-4-5-20251001");
+    expect(callArg.model).not.toBe("claude-haiku-4-5");
   });
 });
 

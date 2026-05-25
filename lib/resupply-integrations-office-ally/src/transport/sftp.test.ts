@@ -646,6 +646,7 @@ describe("test helpers — failExecFile (once) vs failExecFileSticky (all)", () 
 describe("createSftpTransport — filename sanitisation", () => {
   it("preserves alphanumerics, dots, underscores, and dashes", async () => {
     const transport = createSftpTransport(makeConfig());
+    const outcome = await transport.upload(makeRequest({ fileName: "claim-2026.A1_v2.837p" }));
 
     expect(outcome.ok).toBe(true);
     if (outcome.ok) {
