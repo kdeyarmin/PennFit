@@ -1,20 +1,26 @@
 // /admin/delivery-failures — webhook delivery error triage queue.
 //
-// Surfaces recent message-send failures across all three channels
-// (SMS, email, voice). Ops uses this to spot phone numbers that are
-// bouncing, email addresses that are landing in spam, etc. Sorted
-// newest first.
+// Surfaces recent message-send failures across SMS / email / voice.
+// Ops uses this to spot phone numbers that are bouncing, email
+// addresses that are landing in spam, etc. Sorted newest first.
 //
-// Source: messages.delivery_status IN ('failed','undelivered',
-// 'bounced','dropped') — per-message terminal failures from the SMS /
-// email status webhooks.
+// Source: `messages.delivery_status IN ('failed','undelivered',
+// 'bounced','dropped','rejected','spam_report')` — per-message
+// terminal failures from the SMS / email status webhooks.
 //
-// The historical second stream — `audit_log` rows where action LIKE
-// '%.delivery.%' OR action LIKE '%.failed' — was retired when the
-// `resupply.audit_log` table was dropped. We still return an empty
-// `auditEvents` array for wire compatibility, paired with
-// `auditEventsUnavailable: true` so the SPA can render a clear
-// "no longer tracked" notice instead of an empty table.
+// What changed (migration 0156 / 0163 cleanup): this endpoint
+// previously also UNION'd a second stream from `resupply.audit_log`
+// where `action LIKE '%.delivery.%' OR '%.failed'` to surface
+// system-level errors (webhook signature failures, bulk-send aborts).
+// `@workspace/resupply-audit` became a no-op stub when the HIPAA
+// tamper-evident chain was retired, so that source has been
+// silently empty for months. The audit array is preserved in the
+// response (`auditEvents: []`) for client compatibility — admin SPA
+// consumers expect the field — but the query is gone. Operators
+// triaging system-level delivery failures should look at the
+// application logger (Pino events `event=*_failed`,
+// `event=webhook_signature_*`) instead. A dedicated table for
+// system delivery events is tracked as a follow-up.
 //
 // PHI: message bodies are NOT surfaced on this view — operators
 // triaging deliverability don't need the content; they need WHERE it
@@ -126,13 +132,11 @@ router.get("/admin/delivery-failures", requirePermission("reports.read"), async 
     }
   }
 
-  // System-level failure events used to live in `resupply.audit_log`
-  // under actions like '*.delivery.*' / '*.failed'. That table was
-  // retired with the wider audit-chain cleanup; we now return an
-  // empty stream + an explicit unavailable flag so the SPA can
-  // surface "no longer tracked" rather than silently render empty.
-  const auditEvents: Array<never> = [];
-  const auditEventsUnavailable = true;
+  // System-level failure events used to be queried from `audit_log`
+  // here; see the header comment for why that source is now silently
+  // empty. The endpoint returns `auditEvents: []` (see below) so SPA
+  // consumers don't have to special-case the missing field while a
+  // dedicated replacement table is designed.
 
   const messageEvents = (messageRows ?? []).map((r) => {
     const conv = conversationsById.get(r.conversation_id);
@@ -155,11 +159,26 @@ router.get("/admin/delivery-failures", requirePermission("reports.read"), async 
     };
   });
 
+  // Preserved for response-shape compatibility — see header comment.
+  const auditEvents: Array<{
+    kind: "audit";
+    id: string;
+    occurredAt: string;
+    action: string;
+    targetTable: string | null;
+    targetId: string | null;
+    actorEmail: string | null;
+    metadata: unknown;
+  }> = [];
+  const auditEventsUnavailable = true;
+
   res.json({
     sinceDays,
     counts: {
       messageFailures: messageEvents.length,
-      auditFailures: auditEvents.length,
+      // null (not 0) when the audit stream is retired so the SPA can
+      // distinguish "no incidents in window" from "data source gone".
+      auditFailures: auditEventsUnavailable ? null : auditEvents.length,
     },
     failureStatuses: FAILURE_STATUSES,
     messageEvents,

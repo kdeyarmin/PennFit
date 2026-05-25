@@ -170,14 +170,11 @@ describe("createSftpTransport — happy path", () => {
     const transport = createSftpTransport(cfg);
     await transport.upload(makeRequest());
 
-    // execFile's full signature is (file, args, opts, cb) — a 4-tuple
-    // — so cast through `unknown` to peel just the first two we care
-    // about. TypeScript otherwise complains about the tuple-length
-    // mismatch under strict mode.
-    const [binary, args] = execFileMock.mock.calls[0] as unknown as [
-      string,
-      string[],
-    ];
+    // execFile's full signature is (file, args, opts, cb) — a 4-tuple.
+    // Use the mock's own Parameters<> so TypeScript catches tuple-
+    // signature drift instead of getting masked by `unknown`.
+    const [binary, args] =
+      execFileMock.mock.calls[0] as Parameters<typeof execFileMock>;
     expect(binary).toBe("sftp");
     expect(args).toContain("-i");
     expect(args).toContain("/home/alice/.ssh/id_ed25519");
