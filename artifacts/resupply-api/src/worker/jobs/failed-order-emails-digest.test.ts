@@ -327,7 +327,13 @@ describe("registerFailedEmailDigestJob — gating", () => {
     process.env.RESUPPLY_ADMIN_ALERTS_EMAIL = "ops@example.com";
     const boss = makeBoss();
     await registerFailedEmailDigestJob(boss as never);
-    expect(boss.createQueue).toHaveBeenCalledWith(FAILED_EMAIL_DIGEST_JOB);
+    // createQueue now takes a second arg (the buildQueueConfig output
+    // with retry/backoff/DLQ presets). Assert the queue name is the
+    // first arg without pinning the exact config object.
+    expect(boss.createQueue).toHaveBeenCalledWith(
+      FAILED_EMAIL_DIGEST_JOB,
+      expect.objectContaining({ name: FAILED_EMAIL_DIGEST_JOB }),
+    );
     expect(boss.work).toHaveBeenCalledWith(
       FAILED_EMAIL_DIGEST_JOB,
       expect.any(Function),

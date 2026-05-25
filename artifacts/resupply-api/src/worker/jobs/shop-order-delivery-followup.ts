@@ -58,6 +58,7 @@ import {
   TwilioConfigError,
 } from "@workspace/resupply-telecom";
 import { logger } from "../../lib/logger";
+import { buildQueueConfig, VENDOR_SEND_QUEUE_OPTS } from "../lib/queue-options";
 
 const FOLLOWUP_JOB = "shop-order.delivery-followup";
 const FOLLOWUP_CRON = "23 14 * * *";
@@ -352,7 +353,7 @@ export async function runDeliveryFollowupSweep(): Promise<FollowupSweepStats> {
 export async function registerShopOrderDeliveryFollowupJob(
   boss: PgBoss,
 ): Promise<void> {
-  await boss.createQueue(FOLLOWUP_JOB);
+  await boss.createQueue(FOLLOWUP_JOB, buildQueueConfig(FOLLOWUP_JOB, VENDOR_SEND_QUEUE_OPTS));
 
   await boss.work(FOLLOWUP_JOB, async () => {
     try {

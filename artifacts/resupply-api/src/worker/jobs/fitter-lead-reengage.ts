@@ -37,6 +37,7 @@ import {
 } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
+import { buildQueueConfig, VENDOR_SEND_QUEUE_OPTS } from "../lib/queue-options";
 
 const NUDGE_JOB = "fitter-lead.reengage";
 const NUDGE_CRON = "37 9 * * *"; // 09:37 UTC daily
@@ -304,7 +305,7 @@ export async function registerFitterLeadReengageJob(
     );
     return;
   }
-  await boss.createQueue(NUDGE_JOB);
+  await boss.createQueue(NUDGE_JOB, buildQueueConfig(NUDGE_JOB, VENDOR_SEND_QUEUE_OPTS));
   await boss.work(NUDGE_JOB, async () => {
     try {
       const stats = await runFitterLeadReengageSweep();
