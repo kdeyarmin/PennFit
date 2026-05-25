@@ -107,3 +107,29 @@ describe("admin-backorders — regression: core behaviour retained", () => {
     expect(SRC).toContain("createSubstitute");
   });
 });
+
+// ---------------------------------------------------------------------------
+// a11y: aria-label additions (PR change)
+// ---------------------------------------------------------------------------
+
+describe("admin-backorders — a11y: form controls have aria-labels", () => {
+  it("BackordersPanel SKU input has aria-label='SKU'", () => {
+    expect(SRC).toContain('aria-label="SKU"');
+  });
+
+  it("BackordersPanel Notes input has aria-label='Notes'", () => {
+    expect(SRC).toContain('aria-label="Notes"');
+  });
+
+  it("SubstitutesPanel Primary SKU input has aria-label='Primary SKU'", () => {
+    expect(SRC).toContain('aria-label="Primary SKU"');
+  });
+
+  it("SubstitutesPanel Alternative SKU input has aria-label='Alternative SKU'", () => {
+    expect(SRC).toContain('aria-label="Alternative SKU"');
+  });
+
+  it("SubstitutesPanel Priority input has aria-label='Priority'", () => {
+    expect(SRC).toContain('aria-label="Priority"');
+  });
+});

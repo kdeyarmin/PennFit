@@ -110,3 +110,25 @@ describe("admin-closures — regression: core behaviour retained", () => {
     expect(SRC).toContain("endClosureNow");
   });
 });
+
+// ---------------------------------------------------------------------------
+// a11y: aria-label additions (PR change)
+// ---------------------------------------------------------------------------
+
+describe("admin-closures — a11y: form controls have aria-labels", () => {
+  it("NewClosureCard Label input has aria-label='Label'", () => {
+    expect(SRC).toContain('aria-label="Label"');
+  });
+
+  it("NewClosureCard Starts-at datetime input has aria-label='Starts at'", () => {
+    expect(SRC).toContain('aria-label="Starts at"');
+  });
+
+  it("NewClosureCard Ends-at datetime input has aria-label='Ends at'", () => {
+    expect(SRC).toContain('aria-label="Ends at"');
+  });
+
+  it("NewClosureCard Auto-reply message textarea has aria-label='Auto-reply message'", () => {
+    expect(SRC).toContain('aria-label="Auto-reply message"');
+  });
+});
