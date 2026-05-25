@@ -20,6 +20,7 @@
 -- Schema notes:
 --   * `worker_kind` is free-text rather than an enum so a new worker
 --     can adopt the table without a schema migration. Convention:
+--     dot-separated, lowercase, plural-aware
 --     underscore-separated, lowercase, plural-aware
 --     (e.g. 'prescription_attachment_sweep').
 --   * `counters` is jsonb; each worker defines its own counter shape

@@ -1,20 +1,41 @@
-// Read helper: surface the most recent PHI attachment sweep audit row
-// to the dashboard summary endpoint.
+// Read helper: surface the most recent PHI attachment sweep run to
+// the dashboard summary endpoint.
 //
-// Status: dead reader. The `resupply.audit_log` table was dropped
-// with the wider audit-chain cleanup, so there is no longer any
-// "latest sweep audit row" to fetch. The worker's
-// `prescription-attachment-sweep` job still runs, but its summary
-// no longer lands anywhere queryable. The helper still exists for
-// wire compatibility (the dashboard summary response keeps the
-// `prescriptionAttachmentSweep` field), but it now short-circuits
-// to `null` without issuing a query. If/when a replacement event
-// log is introduced for sweep summaries, swap the read path back
-// in here.
+// Why a separate module
+// ---------------------
+// `summary.ts` is a flat handler that runs five COUNT(*) queries for
+// the existing KPI tiles. The sweep-status query is a different
+// shape: SELECT against `resupply.worker_run_summary` filtered by
+// `worker_kind`, then a Zod parse over the jsonb counters. Inlining
+// it would muddy the otherwise-uniform handler.
 //
-// PHI hygiene: by design, sweep audit rows only ever held
-// counters — no object names or patient identifiers — so removing
-// the read path does not change the PHI posture of the dashboard.
+// Source history
+// --------------
+// This read used to hit `resupply.audit_log` filtered by
+// `action='prescription.attachment.sweep'`. Migration 0156 retired
+// the HIPAA tamper-evident chain and `@workspace/resupply-audit`
+// became a no-op stub, so new sweep runs stopped landing audit rows
+// and the dashboard tile went stale (then was disabled to a hard
+// `null` to avoid a false signal). Migration 0162 introduced
+// `resupply.worker_run_summary` as the durable replacement: the
+// sweep worker writes one row per run, and this reader hits the
+// newest row for `worker_kind='prescription_attachment_sweep'`.
+//
+// PHI hygiene
+// -----------
+// The sweep summary row by design contains NO object names — only
+// counters. We never project counter fields the worker doesn't
+// emit, and the Zod schema is `.strict()` (no passthrough), so even
+// a historical row with extra fields gets rejected and we degrade
+// to null.
+//
+// Defensive parse
+// ---------------
+// If the latest row's counters fail the Zod check (corrupted
+// historical row, schema drift, etc.) we degrade to `null` — same
+// as "no sweep has ever run". A malformed row should never 500 the
+// whole dashboard. The route logs the parse failure at WARN so it's
+// visible in operator logs without leaking counter content.
 
 import { z } from "zod";
 
@@ -22,12 +43,16 @@ import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 
-/** Action string the worker writes for a sweep summary row. Must
- *  stay in lockstep with the `logAudit({ action: ... })` call in
- *  `artifacts/resupply-api/src/worker/jobs/prescription-attachment-sweep.ts`
- *  (note: distinct from `SWEEP_JOB` in that file, which is the
- *  pg-boss queue name and uses the plural `prescriptions.`). */
+/** Action string the worker writes for the legacy (no-op) audit row.
+ *  Kept exported so historical SOC tooling / tests can still
+ *  reference the canonical action name even though the live read
+ *  path now hits `worker_run_summary` (see `SWEEP_WORKER_KIND`). */
 export const SWEEP_AUDIT_ACTION = "prescription.attachment.sweep";
+
+/** Worker-kind key written to `worker_run_summary` by the sweep job.
+ *  Must stay in lockstep with the INSERT in
+ *  `artifacts/resupply-api/src/worker/jobs/prescription-attachment-sweep.ts`. */
+export const SWEEP_WORKER_KIND = "prescription_attachment_sweep";
 
 /**
  * Snake_case worker counters → camelCase API field names. Source-of-
@@ -35,13 +60,16 @@ export const SWEEP_AUDIT_ACTION = "prescription.attachment.sweep";
  * worker file.
  *
  * Kept exported so callers (and historical tests) can still reference
- * the canonical schema shape even though the read path is dormant.
+ * the canonical schema shape.
  */
 export const sweepMetadataSchema = z
   .object({
     objects_scanned: z.number().int().nonnegative(),
     references_loaded: z.number().int().nonnegative(),
     orphans_deleted: z.number().int().nonnegative(),
+    // Optional + defaulted to 0 so historical rows that predate this
+    // counter still parse cleanly and surface on the dashboard
+    // instead of degrading to "no run yet".
     bytes_reclaimed: z.number().int().nonnegative().optional().default(0),
     orphans_too_young: z.number().int().nonnegative(),
     orphans_no_time_created: z.number().int().nonnegative(),
@@ -74,25 +102,13 @@ export interface PhiSweepStatus {
   counters: PhiSweepCounters;
 }
 
-/** Worker-kind key written to `worker_run_summary` by the sweep job.
- *  Must stay in lockstep with the INSERT in
- *  `artifacts/resupply-api/src/worker/jobs/prescription-attachment-sweep.ts`. */
-const SWEEP_WORKER_KIND = "prescription_attachment_sweep";
-
 /**
- * Fetch + project the most recent sweep run. Returns null when no
- * row exists OR when the counters payload fails validation.
+ * Retrieve the most recent PHI attachment sweep run and map it to the API status shape.
  *
- * Source changed in migration 0162: the read used to hit
- * `resupply.audit_log` filtered by `action='prescription.attachment.sweep'`,
- * but `@workspace/resupply-audit` became a no-op stub when the HIPAA
- * tamper-evident chain was retired in migration 0156, so new runs
- * stopped landing rows and the dashboard tile went stale. The sweep
- * worker now also writes to `resupply.worker_run_summary` — the
- * dedicated durable record of "did the worker run, and what counters
- * did it produce?" — which is what this reader hits.
+ * Returns `null` when no sweep row exists, the database query fails, the `counters` payload
+ * does not match the expected schema, or the `completed_at` timestamp is missing or invalid.
  *
- * Implementation note: read goes through the Supabase JS client.
+ * @returns A `PhiSweepStatus` object containing `lastRunAt` (ISO timestamp) and camelCase `counters`, or `null` if unavailable or invalid.
  */
 export async function getLatestPhiSweepStatus(): Promise<PhiSweepStatus | null> {
   const supabase = getSupabaseServiceRoleClient();

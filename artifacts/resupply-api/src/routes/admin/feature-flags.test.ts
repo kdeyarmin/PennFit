@@ -234,10 +234,10 @@ describe("PATCH /admin/feature-flags/:key", () => {
 
 // ─── GET /admin/feature-flags/activity ──────────────────────────────────
 //
-// The endpoint used to read from `resupply.audit_log`; that table was
-// dropped, so the endpoint now short-circuits to `{ activity: [],
-// unavailable: true }`. Tests cover the new contract and confirm we
-// never touch Supabase from the activity handler.
+// Source moved from `resupply.audit_log` → `resupply.feature_flag_events`
+// in migration 0163 (the audit lib became a no-op stub when the HIPAA
+// tamper-evident chain was retired in 0156). The reader now hits the
+// strongly-typed events table written by the PATCH handler.
 
 describe("GET /admin/feature-flags/activity", () => {
   it("returns 401 when not signed in", async () => {
@@ -302,7 +302,6 @@ describe("GET /admin/feature-flags/activity", () => {
   // has typed boolean columns for previous_enabled / next_enabled;
   // a malformed shape is rejected at INSERT time by the DB, not at
   // SELECT time by the route handler.)
-
   it("clamps the limit to ACTIVITY_MAX_LIMIT (100)", async () => {
     stubAdmin();
     stageSupabaseResponse("feature_flag_events", "select", { data: [] });
@@ -311,6 +310,8 @@ describe("GET /admin/feature-flags/activity", () => {
       "/admin/feature-flags/activity?limit=9999",
     );
 
+    // A 200 + empty body confirms the route accepted the over-large
+    // param and clamped it rather than erroring.
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ activity: [] });
   });

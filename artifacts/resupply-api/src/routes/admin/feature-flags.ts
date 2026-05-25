@@ -241,6 +241,9 @@ router.patch(
 // surface in the admin UI as-is.
 // ─────────────────────────────────────────────────────────────────
 
+const ACTIVITY_DEFAULT_LIMIT = 20;
+const ACTIVITY_MAX_LIMIT = 100;
+
 interface ToggleActivityRow {
   occurredAt: string;
   operatorEmail: string | null;
@@ -249,21 +252,23 @@ interface ToggleActivityRow {
   to: boolean;
 }
 
-const ACTIVITY_DEFAULT_LIMIT = 20;
-const ACTIVITY_MAX_LIMIT = 100;
+const activityQuerySchema = z.object({
+  limit: z
+    .string()
+    .optional()
+    .transform((v) => {
+      if (!v) return ACTIVITY_DEFAULT_LIMIT;
+      const n = Number.parseInt(v, 10);
+      if (!Number.isFinite(n) || n <= 0) return ACTIVITY_DEFAULT_LIMIT;
+      return Math.min(n, ACTIVITY_MAX_LIMIT);
+    }),
+});
 
 router.get(
   "/admin/feature-flags/activity",
   requirePermission("reports.read"),
   async (req, res) => {
-    const limitRaw = Number.parseInt(
-      typeof req.query.limit === "string" ? req.query.limit : "",
-      10,
-    );
-    const limit =
-      Number.isFinite(limitRaw) && limitRaw > 0
-        ? Math.min(limitRaw, ACTIVITY_MAX_LIMIT)
-        : ACTIVITY_DEFAULT_LIMIT;
+    const limit = activityQuerySchema.parse(req.query).limit;
 
     const supabase = getSupabaseServiceRoleClient();
     const { data, error } = await supabase

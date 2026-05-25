@@ -1,9 +1,9 @@
 // Route tests for GET /dashboard/summary.
 //
 // Five `head: true` count probes (conversations × 2, episodes,
-// fulfillments, patients) plus the sweep-status helper, which now
-// short-circuits to `null` because its `resupply.audit_log` source
-// was retired.
+// fulfillments, patients) plus the sweep-status helper which reads
+// the latest `prescription_attachment_sweep` run from
+// resupply.worker_run_summary via the Supabase service-role client.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import express, { type Express } from "express";
@@ -87,19 +87,6 @@ function stageCounts(counts: {
   });
 }
 
-const ALL_ZERO_METADATA = {
-  objects_scanned: 0,
-  references_loaded: 0,
-  orphans_deleted: 0,
-  bytes_reclaimed: 0,
-  orphans_too_young: 0,
-  orphans_no_time_created: 0,
-  delete_errors: 0,
-  delete_404_idempotent: 0,
-  recheck_saved: 0,
-  non_attachment_skipped: 0,
-};
-
 describe("GET /dashboard/summary", () => {
   beforeEach(() => {
     for (const k of ENV_KEYS) originalEnv[k] = process.env[k];
@@ -131,8 +118,8 @@ describe("GET /dashboard/summary", () => {
       fulfillmentsThisWeek: 41,
       pausedPatients: 2,
     });
-    // Sweep-status helper fetches from audit_log via .maybeSingle();
-    // empty data → null sweep status.
+    // Sweep-status helper fetches from worker_run_summary via
+    // .maybeSingle(); empty data → null sweep status.
     stageSupabaseResponse("worker_run_summary", "select", { data: null });
 
     const res = await request(makeApp()).get("/resupply-api/dashboard/summary");
@@ -186,6 +173,19 @@ describe("GET /dashboard/summary", () => {
   });
 
   describe("prescriptionAttachmentSweep field", () => {
+    const ALL_ZERO_METADATA = {
+      objects_scanned: 0,
+      references_loaded: 0,
+      orphans_deleted: 0,
+      bytes_reclaimed: 0,
+      orphans_too_young: 0,
+      orphans_no_time_created: 0,
+      delete_errors: 0,
+      delete_404_idempotent: 0,
+      recheck_saved: 0,
+      non_attachment_skipped: 0,
+    } as const;
+
     function stageZeroCounts(): void {
       stageCounts({
         activeConversations: 0,
@@ -196,7 +196,7 @@ describe("GET /dashboard/summary", () => {
       });
     }
 
-    it("is always null (sweep-status audit_log source was retired)", async () => {
+    it("surfaces the latest sweep row with snake→camel mapping", async () => {
       stubVerifiedAdmin();
       stageZeroCounts();
       stageSupabaseResponse("worker_run_summary", "select", {
@@ -238,7 +238,7 @@ describe("GET /dashboard/summary", () => {
       });
     });
 
-    it("degrades to null when metadata fails Zod validation", async () => {
+    it("degrades to null when counters fail Zod validation", async () => {
       // Missing several required fields + one negative — strict
       // schema must reject and the route must NOT 500.
       stubVerifiedAdmin();
@@ -257,10 +257,10 @@ describe("GET /dashboard/summary", () => {
       expect(res.body.prescriptionAttachmentSweep).toBeNull();
     });
 
-    it("degrades to null when occurred_at is missing/invalid", async () => {
-      // Belt-and-suspenders: even if metadata parses, an
-      // unparseable occurred_at must not let "Invalid Date" leak
-      // into the response.
+    it("degrades to null when completed_at is missing/invalid", async () => {
+      // Belt-and-suspenders: even if counters parse, an unparseable
+      // completed_at must not let "Invalid Date" leak into the
+      // response.
       stubVerifiedAdmin();
       stageZeroCounts();
       stageSupabaseResponse("worker_run_summary", "select", {
@@ -274,7 +274,7 @@ describe("GET /dashboard/summary", () => {
       expect(res.body.prescriptionAttachmentSweep).toBeNull();
     });
 
-    it("normalises occurred_at to a stable ISO string", async () => {
+    it("normalises completed_at to a stable ISO string", async () => {
       // PostgREST returns timestamptz as an ISO string; the helper
       // round-trips through Date to normalise the format.
       stubVerifiedAdmin();
