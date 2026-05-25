@@ -176,7 +176,9 @@ router.get("/admin/delivery-failures", requirePermission("reports.read"), async 
     sinceDays,
     counts: {
       messageFailures: messageEvents.length,
-      auditFailures: auditEvents.length,
+      // null (not 0) when the audit stream is retired so the SPA can
+      // distinguish "no incidents in window" from "data source gone".
+      auditFailures: auditEventsUnavailable ? null : auditEvents.length,
     },
     failureStatuses: FAILURE_STATUSES,
     messageEvents,
