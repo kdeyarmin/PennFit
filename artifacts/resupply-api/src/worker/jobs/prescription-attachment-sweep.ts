@@ -442,7 +442,7 @@ export function buildProductionSweepDeps(
           });
         if (error) {
           logger.warn(
-            { err: error.message },
+            { err: error },
             "attachment-sweep: worker_run_summary insert failed (dashboard liveness will lag)",
           );
         }
