@@ -52,7 +52,7 @@ vi.mock("../llm-provider", () => ({
   // The mock has to provide it or the module-load test crashes with
   // "No DEFAULT_ANTHROPIC_MODEL_CLASSIFY export is defined on the
   // ../llm-provider mock". Value matches the real constant.
-  DEFAULT_ANTHROPIC_MODEL_CLASSIFY: "claude-haiku-4-5-20251001",
+  DEFAULT_ANTHROPIC_MODEL_CLASSIFY: "claude-haiku-4-5",
 }));
 
 vi.mock("@workspace/resupply-ai", () => ({
