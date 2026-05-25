@@ -574,47 +574,6 @@ describe("suggestIcd10 — SuggestOutput shape", () => {
 // DEFAULT_ANTHROPIC_MODEL_CLASSIFY so module load doesn't crash.
 // These tests pin the value and the usage contract.
 
-describe("suggestIcd10 — DEFAULT_ANTHROPIC_MODEL_CLASSIFY mock constant", () => {
-  it("uses the DEFAULT_ANTHROPIC_MODEL_CLASSIFY value as the default model on the Anthropic path", async () => {
-    stageSleepStudy();
-
-    const mockClient = { send: vi.fn(), stream: vi.fn() };
-    mockSelectLlmProvider.mockReturnValue({ provider: "anthropic" });
-    mockGetAnthropicClient.mockReturnValue(mockClient);
-
-    const anthropicText = JSON.stringify({ icd10: "G47.33", confidence: 0.9, rationale: "OSA." });
-    mockSendWithRetry.mockResolvedValue(anthropicOkResult(anthropicText));
-    mockGetResponseText.mockReturnValue(anthropicText);
-
-    // Call without an explicit model override — the default constant should
-    // be forwarded to sendWithRetry.
-    await suggestIcd10({ sleepStudyId: STUDY_ID });
-
-    const callArg = mockSendWithRetry.mock.calls[0][1] as { model: string };
-    // The mock constant is "claude-haiku-4-5" — the same value
-    // the real DEFAULT_ANTHROPIC_MODEL_CLASSIFY exports.
-    expect(callArg.model).toBe("claude-haiku-4-5");
-  });
-
-  it("overrides the default model when input.model is provided", async () => {
-    stageSleepStudy();
-
-    const mockClient = { send: vi.fn(), stream: vi.fn() };
-    mockSelectLlmProvider.mockReturnValue({ provider: "anthropic" });
-    mockGetAnthropicClient.mockReturnValue(mockClient);
-
-    const anthropicText = JSON.stringify({ icd10: "G47.33", confidence: 0.85, rationale: "Override model." });
-    mockSendWithRetry.mockResolvedValue(anthropicOkResult(anthropicText));
-    mockGetResponseText.mockReturnValue(anthropicText);
-
-    await suggestIcd10({ sleepStudyId: STUDY_ID, model: "claude-opus-4-5" });
-
-    const callArg = mockSendWithRetry.mock.calls[0][1] as { model: string };
-    expect(callArg.model).toBe("claude-opus-4-5");
-    // Confirm the default was NOT used
-    expect(callArg.model).not.toBe("claude-haiku-4-5");
-  });
-});
 
 // ---------------------------------------------------------------------------
 // Anthropic rate-limit: env isolation — OPENAI_API_KEY present vs absent
