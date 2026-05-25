@@ -103,11 +103,12 @@ export interface PhiSweepStatus {
 }
 
 /**
- * Fetch + project the most recent sweep run. Returns null when no
- * row exists OR when the counters payload fails validation.
+ * Retrieve the most recent PHI attachment sweep run and map it to the API status shape.
  *
- * Implementation note: read goes through the Supabase JS client
- * against `resupply.worker_run_summary` (see Source history above).
+ * Returns `null` when no sweep row exists, the database query fails, the `counters` payload
+ * does not match the expected schema, or the `completed_at` timestamp is missing or invalid.
+ *
+ * @returns A `PhiSweepStatus` object containing `lastRunAt` (ISO timestamp) and camelCase `counters`, or `null` if unavailable or invalid.
  */
 export async function getLatestPhiSweepStatus(): Promise<PhiSweepStatus | null> {
   const supabase = getSupabaseServiceRoleClient();

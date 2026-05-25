@@ -26,6 +26,13 @@ import {
 const QUERY_KEY = ["admin-feature-flags"] as const;
 const ACTIVITY_QUERY_KEY = ["admin-feature-flags-activity"] as const;
 
+/**
+ * Renders the admin Control Center page with a header and three main sections: summary tiles, feature flags list, and recent activity panel.
+ *
+ * This component is purely presentational; child components handle data fetching and interactions.
+ *
+ * @returns The Control Center page React element.
+ */
 export function AdminControlCenterPage() {
   return (
     <div
@@ -543,7 +550,13 @@ function ToggleSwitch({
 // change while this tab was open. Toggling a switch on this page
 // also invalidates the cache (see the mutation's onSettled) so
 // the feed reflects the operator's own action immediately.
-// ─────────────────────────────────────────────────────────────────
+/**
+ * Render the Recent toggle activity panel showing recent feature-flag toggle events.
+ *
+ * Polls the server every 60 seconds and requests up to 20 recent activity events; renders a loading state while pending, an error message on failure, an empty-state message when no events exist, or a list of ActivityRow entries when data is available.
+ *
+ * @returns A section element containing the recent activity list or an appropriate loading/error/empty-state message.
+ */
 
 function ActivityPanel() {
   const query = useQuery({
