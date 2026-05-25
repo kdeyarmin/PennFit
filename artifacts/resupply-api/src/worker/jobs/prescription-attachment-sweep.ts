@@ -448,9 +448,13 @@ export function buildProductionSweepDeps(
         }
       } catch (err) {
         logger.warn(
-          { err: err instanceof Error ? err.message : String(err) },
+          {
+            err: err instanceof Error ? err : undefined,
+            errType: err instanceof Error ? undefined : typeof err,
+          },
           "attachment-sweep: worker_run_summary insert crashed",
         );
+      }
       }
     },
   };
