@@ -227,6 +227,18 @@ function MessageRow({ row }: { row: MessageFailureEvent }) {
 }
 
 function AuditFailuresTable({ data }: { data: DeliveryFailuresResponse }) {
+  if (data.auditEventsUnavailable) {
+    return (
+      <div
+        className="rounded-md border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600"
+        role="status"
+        data-testid="audit-events-unavailable"
+      >
+        System events are no longer tracked. The underlying audit log was
+        retired; only per-message failures (above) remain.
+      </div>
+    );
+  }
   const rows = data.auditEvents;
   if (rows.length === 0) {
     return (

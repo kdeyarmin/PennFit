@@ -1,9 +1,9 @@
 // Route tests for GET /dashboard/summary.
 //
 // Five `head: true` count probes (conversations × 2, episodes,
-// fulfillments, patients) plus the sweep-status helper which reads
-// the latest `prescription.attachment.sweep` audit row from
-// resupply.audit_log via the Supabase service-role client.
+// fulfillments, patients) plus the sweep-status helper, which now
+// short-circuits to `null` because its `resupply.audit_log` source
+// was retired.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import express, { type Express } from "express";
@@ -86,6 +86,19 @@ function stageCounts(counts: {
     count: counts.pausedPatients,
   });
 }
+
+const ALL_ZERO_METADATA = {
+  objects_scanned: 0,
+  references_loaded: 0,
+  orphans_deleted: 0,
+  bytes_reclaimed: 0,
+  orphans_too_young: 0,
+  orphans_no_time_created: 0,
+  delete_errors: 0,
+  delete_404_idempotent: 0,
+  recheck_saved: 0,
+  non_attachment_skipped: 0,
+};
 
 describe("GET /dashboard/summary", () => {
   beforeEach(() => {
@@ -173,19 +186,6 @@ describe("GET /dashboard/summary", () => {
   });
 
   describe("prescriptionAttachmentSweep field", () => {
-    const ALL_ZERO_METADATA = {
-      objects_scanned: 0,
-      references_loaded: 0,
-      orphans_deleted: 0,
-      bytes_reclaimed: 0,
-      orphans_too_young: 0,
-      orphans_no_time_created: 0,
-      delete_errors: 0,
-      delete_404_idempotent: 0,
-      recheck_saved: 0,
-      non_attachment_skipped: 0,
-    } as const;
-
     function stageZeroCounts(): void {
       stageCounts({
         activeConversations: 0,
@@ -196,7 +196,7 @@ describe("GET /dashboard/summary", () => {
       });
     }
 
-    it("surfaces the latest sweep row with snake→camel mapping", async () => {
+    it("is always null (sweep-status audit_log source was retired)", async () => {
       stubVerifiedAdmin();
       stageZeroCounts();
       stageSupabaseResponse("worker_run_summary", "select", {

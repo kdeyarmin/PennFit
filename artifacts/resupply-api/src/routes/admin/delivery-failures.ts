@@ -170,6 +170,7 @@ router.get("/admin/delivery-failures", requirePermission("reports.read"), async 
     actorEmail: string | null;
     metadata: unknown;
   }> = [];
+  const auditEventsUnavailable = true;
 
   res.json({
     sinceDays,
@@ -180,6 +181,7 @@ router.get("/admin/delivery-failures", requirePermission("reports.read"), async 
     failureStatuses: FAILURE_STATUSES,
     messageEvents,
     auditEvents,
+    auditEventsUnavailable,
   });
 });
 

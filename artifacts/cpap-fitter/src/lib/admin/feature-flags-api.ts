@@ -72,7 +72,7 @@ export const listFeatureFlags = () =>
   jsonFetch<{ flags: FeatureFlag[] }>("/admin/feature-flags");
 
 export const listFeatureFlagActivity = (limit = 20) =>
-  jsonFetch<{ activity: FeatureFlagActivity[] }>(
+  jsonFetch<{ activity: FeatureFlagActivity[]; unavailable?: boolean }>(
     `/admin/feature-flags/activity?limit=${encodeURIComponent(String(limit))}`,
   );
 

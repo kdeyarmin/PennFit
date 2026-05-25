@@ -1,54 +1,20 @@
 // Read helper: surface the most recent PHI attachment sweep audit row
 // to the dashboard summary endpoint.
 //
-// Why a separate module
-// ---------------------
-// `summary.ts` is a flat handler that runs five COUNT(*) queries for
-// the existing KPI tiles. The sweep-status query is a different
-// shape: SELECT against `resupply.audit_log` filtered by `action`,
-// then a Zod parse over the jsonb metadata. Inlining it would muddy
-// the otherwise-uniform handler.
+// Status: dead reader. The `resupply.audit_log` table was dropped
+// with the wider audit-chain cleanup, so there is no longer any
+// "latest sweep audit row" to fetch. The worker's
+// `prescription-attachment-sweep` job still runs, but its summary
+// no longer lands anywhere queryable. The helper still exists for
+// wire compatibility (the dashboard summary response keeps the
+// `prescriptionAttachmentSweep` field), but it now short-circuits
+// to `null` without issuing a query. If/when a replacement event
+// log is introduced for sweep summaries, swap the read path back
+// in here.
 //
-// Architecture rules
-// ------------------
-// Rule 7 (resupply-architecture): use `getDbPool()` from
-// `@workspace/resupply-db`, never raw `pg`.
-//
-// Rule 8: `audit_log` writes must go through
-// `@workspace/resupply-audit`. The check script enforces this by
-// banning ANY bare `import { auditLog }` from `@workspace/resupply-db`
-// outside the helper — even read-only ones — to close two-step alias
-// bypasses (`const al = auditLog; .insert(al)`). Read-only callers
-// therefore use raw SQL via `pool.query()` instead, exactly as
-// `routes/audit/list.ts` does for the audit viewer endpoint. The
-// READ itself is allowed; the import is what's banned. See
-// `scripts/check-resupply-architecture.sh` Rule 8 + the comment in
-// `routes/audit/list.ts` for the full rationale.
-//
-// Why not a generic "get latest audit row by action" helper in
-// `lib/resupply-audit`
-// ---------------------------------------------------------------
-// One caller today (this dashboard surface). The shape of "latest
-// audit row + a typed metadata projection" is also caller-specific
-// — every action has a different metadata schema. If a second
-// caller appears we'll factor a small `getLatestAuditByAction(action,
-// metadataSchema)` helper into the lib then.
-//
-// PHI hygiene
-// -----------
-// The sweep audit row by design contains NO object names — only
-// counters. We never project metadata fields the worker doesn't
-// emit, and the Zod schema is `.strict()` (no passthrough), so even
-// a historical row with extra fields gets rejected and we degrade
-// to null.
-//
-// Defensive parse
-// ---------------
-// If the latest audit row's metadata fails the Zod check (corrupted
-// historical row, schema drift, etc.) we degrade to `null` — same
-// as "no sweep has ever run". A malformed row should never 500 the
-// whole dashboard. The route logs the parse failure at WARN so it's
-// visible in operator logs without leaking metadata content.
+// PHI hygiene: by design, sweep audit rows only ever held
+// counters — no object names or patient identifiers — so removing
+// the read path does not change the PHI posture of the dashboard.
 
 import { z } from "zod";
 
@@ -67,15 +33,15 @@ export const SWEEP_AUDIT_ACTION = "prescription.attachment.sweep";
  * Snake_case worker counters → camelCase API field names. Source-of-
  * truth for field meanings is the `Counters semantics` block in the
  * worker file.
+ *
+ * Kept exported so callers (and historical tests) can still reference
+ * the canonical schema shape even though the read path is dormant.
  */
-const sweepMetadataSchema = z
+export const sweepMetadataSchema = z
   .object({
     objects_scanned: z.number().int().nonnegative(),
     references_loaded: z.number().int().nonnegative(),
     orphans_deleted: z.number().int().nonnegative(),
-    // Optional + defaulted to 0 so historical pre-Task#50 audit rows
-    // (which predate this counter) still parse cleanly and surface
-    // on the dashboard instead of degrading to "no run yet".
     bytes_reclaimed: z.number().int().nonnegative().optional().default(0),
     orphans_too_young: z.number().int().nonnegative(),
     orphans_no_time_created: z.number().int().nonnegative(),
@@ -103,7 +69,7 @@ export interface PhiSweepCounters {
 }
 
 export interface PhiSweepStatus {
-  /** ISO timestamp of `audit_log.occurred_at` for the most recent row. */
+  /** ISO timestamp of the most recent sweep summary. */
   lastRunAt: string;
   counters: PhiSweepCounters;
 }

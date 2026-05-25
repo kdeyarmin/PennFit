@@ -241,9 +241,6 @@ router.patch(
 // surface in the admin UI as-is.
 // ─────────────────────────────────────────────────────────────────
 
-const ACTIVITY_DEFAULT_LIMIT = 20;
-const ACTIVITY_MAX_LIMIT = 100;
-
 interface ToggleActivityRow {
   occurredAt: string;
   operatorEmail: string | null;
@@ -251,6 +248,9 @@ interface ToggleActivityRow {
   from: boolean;
   to: boolean;
 }
+
+const ACTIVITY_DEFAULT_LIMIT = 20;
+const ACTIVITY_MAX_LIMIT = 100;
 
 router.get(
   "/admin/feature-flags/activity",
