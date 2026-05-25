@@ -247,25 +247,71 @@ describe("GET /admin/feature-flags/activity", () => {
     expect(res.status).toBe(401);
   });
 
-  it("returns an empty activity list with unavailable: true", async () => {
+  it("returns feature_flag_events rows transformed into ToggleActivityRow shape", async () => {
+    // Source moved from audit_log → feature_flag_events in migration
+    // 0163. The new table is strongly-typed (key, previous_enabled,
+    // next_enabled columns), so the route no longer needs to parse a
+    // jsonb metadata blob.
     stubAdmin();
+    stageSupabaseResponse("feature_flag_events", "select", {
+      data: [
+        {
+          occurred_at: "2026-05-15T10:00:00.000Z",
+          operator_email: "ops@example.com",
+          key: "sms.reminders",
+          previous_enabled: true,
+          next_enabled: false,
+        },
+        {
+          occurred_at: "2026-05-15T09:00:00.000Z",
+          operator_email: "ops2@example.com",
+          key: "voice.agent",
+          previous_enabled: false,
+          next_enabled: true,
+        },
+      ],
+    });
 
     const res = await request(makeApp()).get(
       "/admin/feature-flags/activity",
     );
 
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ activity: [], unavailable: true });
+    expect(res.body).toEqual({
+      activity: [
+        {
+          occurredAt: "2026-05-15T10:00:00.000Z",
+          operatorEmail: "ops@example.com",
+          key: "sms.reminders",
+          from: true,
+          to: false,
+        },
+        {
+          occurredAt: "2026-05-15T09:00:00.000Z",
+          operatorEmail: "ops2@example.com",
+          key: "voice.agent",
+          from: false,
+          to: true,
+        },
+      ],
+    });
   });
 
-  it("ignores the limit query param (no underlying query to bound)", async () => {
+  // (Removed: the legacy "skips audit rows with malformed metadata"
+  // defensive test no longer applies. The feature_flag_events table
+  // has typed boolean columns for previous_enabled / next_enabled;
+  // a malformed shape is rejected at INSERT time by the DB, not at
+  // SELECT time by the route handler.)
+
+  it("clamps the limit to ACTIVITY_MAX_LIMIT (100)", async () => {
     stubAdmin();
+    stageSupabaseResponse("feature_flag_events", "select", { data: [] });
 
     const res = await request(makeApp()).get(
       "/admin/feature-flags/activity?limit=9999",
     );
 
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ activity: [], unavailable: true });
+    expect(res.body).toEqual({ activity: [] });
   });
 });
