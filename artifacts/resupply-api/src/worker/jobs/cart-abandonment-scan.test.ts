@@ -115,7 +115,13 @@ describe("cart-abandonment.scan — feature-flag gating", () => {
     process.env.RESUPPLY_CART_ABANDONMENT_CRON_ENABLED = "1";
     const boss = makeBoss();
     await registerCartAbandonmentJob(boss as never);
-    expect(boss.createQueue).toHaveBeenCalledWith(CART_ABANDONMENT_JOB);
+    // createQueue now takes a second arg (the buildQueueConfig output
+    // with retry/backoff/DLQ presets). Assert the queue name is the
+    // first arg without pinning the exact config object.
+    expect(boss.createQueue).toHaveBeenCalledWith(
+      CART_ABANDONMENT_JOB,
+      expect.objectContaining({ name: CART_ABANDONMENT_JOB }),
+    );
     expect(boss.work).toHaveBeenCalledWith(
       CART_ABANDONMENT_JOB,
       expect.any(Function),

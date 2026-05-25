@@ -51,71 +51,38 @@ router.get(
   async (req, res) => {
     const supabase = getSupabaseServiceRoleClient();
 
-    // The original SQL used `COUNT(*) FILTER (WHERE …)` per product,
-    // ordered by pending desc + oldest pending asc, limited to 200
-    // distinct SKUs. PostgREST has no FILTER aggregate, so we fetch
-    // the underlying rows (capped at 10000 — well above the
-    // catastrophe-tier "ops paging anyway" threshold) and group in
-    // JS. Each row carries created_at + notified_at + delivered, all
-    // we need for the per-product aggregates.
-    const { data: notifications, error: notifErr } = await supabase
+    // Per-product aggregation (pending / notified / delivered counts +
+    // oldest-pending + last-notified), top 200 by pending desc then
+    // oldest-pending asc, is computed server-side by the
+    // resupply.shop_back_in_stock_queue RPC (migration 0164). Postgres
+    // runs the COUNT(*) FILTER aggregates over the indexed table and
+    // returns ≤200 grouped rows instead of streaming up to 10k
+    // notification rows into Node for a JS reduce + sort.
+    const { data: aggRows, error: notifErr } = await supabase
       .schema("resupply")
-      .from("shop_back_in_stock_notifications")
-      .select("product_id, notified_at, delivered, created_at")
-      .limit(10000);
+      .rpc("shop_back_in_stock_queue");
     if (notifErr) throw notifErr;
 
-    interface Agg {
-      productId: string;
-      pendingCount: number;
-      notifiedCount: number;
-      deliveredCount: number;
-      oldestPendingAt: string | null;
-      lastNotifiedAt: string | null;
-    }
-    const byProduct = new Map<string, Agg>();
-    for (const n of notifications ?? []) {
-      let agg = byProduct.get(n.product_id);
-      if (!agg) {
-        agg = {
-          productId: n.product_id,
-          pendingCount: 0,
-          notifiedCount: 0,
-          deliveredCount: 0,
-          oldestPendingAt: null,
-          lastNotifiedAt: null,
-        };
-        byProduct.set(n.product_id, agg);
-      }
-      if (n.notified_at) {
-        agg.notifiedCount += 1;
-        if (
-          agg.lastNotifiedAt === null ||
-          n.notified_at > agg.lastNotifiedAt
-        ) {
-          agg.lastNotifiedAt = n.notified_at;
-        }
-      } else {
-        agg.pendingCount += 1;
-        if (
-          agg.oldestPendingAt === null ||
-          n.created_at < agg.oldestPendingAt
-        ) {
-          agg.oldestPendingAt = n.created_at;
-        }
-      }
-      if (n.delivered) agg.deliveredCount += 1;
-    }
-    const rows = Array.from(byProduct.values())
-      .sort((a, b) => {
-        if (a.pendingCount !== b.pendingCount) {
-          return b.pendingCount - a.pendingCount;
-        }
-        if (a.oldestPendingAt === null) return 1;
-        if (b.oldestPendingAt === null) return -1;
-        return a.oldestPendingAt.localeCompare(b.oldestPendingAt);
-      })
-      .slice(0, 200);
+    // PostgREST serializes bigint as string; coerce the counts. The
+    // RPC already sorted + limited, so the route just maps the shape.
+    // Type the rows explicitly — the rpc() data generic doesn't always
+    // resolve through the schema-scoped client.
+    type QueueAggRow = {
+      product_id: string;
+      pending_count: number | string;
+      notified_count: number | string;
+      delivered_count: number | string;
+      oldest_pending_at: string | null;
+      last_notified_at: string | null;
+    };
+    const rows = ((aggRows ?? []) as QueueAggRow[]).map((r) => ({
+      productId: r.product_id,
+      pendingCount: Number(r.pending_count),
+      notifiedCount: Number(r.notified_count),
+      deliveredCount: Number(r.delivered_count),
+      oldestPendingAt: r.oldest_pending_at,
+      lastNotifiedAt: r.last_notified_at,
+    }));
 
     // Enrich with product name + image. We do ONE Stripe list call
     // (the catalog is small and shared with the storefront's 60s

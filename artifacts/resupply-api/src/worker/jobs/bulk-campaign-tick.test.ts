@@ -553,6 +553,63 @@ describe("processTick — suppressedAtSend counter and pool.query", () => {
 });
 
 // ──────────────────────────────────────────────────────────────────────────────
+// opt-out re-check scope — shop_customer vs patient (regression)
+// ──────────────────────────────────────────────────────────────────────────────
+//
+// PR note: `isRecipientOptedOut` only re-checks shop_customers at send time.
+// Patient recipients fall through to the default (not opted-out) because
+// Database.public.Tables.patients doesn't expose communication_preferences
+// in the generated types. Closing that gap requires a schema migration that
+// is tracked separately.
+//
+// These tests pin the current *scope* of the send-time opt-out re-check so
+// that the failure mode is visible in code history.
+
+describe("processTick — opt-out re-check scope: patient kind fails open", () => {
+  it("does NOT suppress a patient recipient even when emailMarketing pref is false", async () => {
+    // Default makeRecipient() is recipient_kind: "patient". The test
+    // demonstrates the fail-open behavior: patients are sent to regardless
+    // of their stored communication_preferences.
+    stageSingleRecipientTick({
+      campaign: { category: "marketing" },
+      // No explicit recipient override → defaults to kind: "patient"
+      patientPrefs: { emailMarketing: false },
+    });
+
+    await processTick(makeBoss() as never, { campaignId: "camp-1" }, testLog as never);
+
+    // Patient is NOT suppressed — send proceeds despite the pref being false.
+    // (The shop_customer path would suppress here; see the marketing tests above.)
+    expect(sendEmailMock).toHaveBeenCalledTimes(1);
+    const updates = getWrites("bulk_campaign_recipients", "update");
+    const suppressionUpdate = updates.find(
+      (u) =>
+        (u as Record<string, unknown>).status === "suppressed" &&
+        (u as Record<string, unknown>).suppression_reason === "opted_out_at_send_time",
+    );
+    expect(suppressionUpdate).toBeUndefined();
+  });
+
+  it("does NOT suppress a patient recipient for service category emailResupplyReminders=false", async () => {
+    stageSingleRecipientTick({
+      campaign: { category: "service" },
+      // kind: "patient" (default)
+      patientPrefs: { emailResupplyReminders: false },
+    });
+
+    await processTick(makeBoss() as never, { campaignId: "camp-1" }, testLog as never);
+
+    // Patient recipient is still sent to — fail-open scope.
+    expect(sendEmailMock).toHaveBeenCalledTimes(1);
+    const updates = getWrites("bulk_campaign_recipients", "update");
+    const suppressionUpdate = updates.find(
+      (u) => (u as Record<string, unknown>).status === "suppressed",
+    );
+    expect(suppressionUpdate).toBeUndefined();
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────────────────
 // registerBulkCampaignTickJob — queue creation uses buildQueueConfig
 // ──────────────────────────────────────────────────────────────────────────────
 

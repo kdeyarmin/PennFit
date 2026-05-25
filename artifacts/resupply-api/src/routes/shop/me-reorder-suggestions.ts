@@ -52,17 +52,24 @@ router.get(
     // PostgREST has no GROUP BY / aggregate, so we fetch the line
     // items + their parent order statuses and aggregate in JS. The
     // original SQL also INNER JOINed on shop_orders.status='paid';
-    // we replicate that with a bulk-fetch + Map filter. Cap the
-    // line-item scan at 1000 rows (heavy customers will still get
-    // the most-recent activity reflected since we group on product
-    // and take MAX paid_at).
+    // we replicate that with a bulk-fetch + Map filter.
+    //
+    // Cap the line-item scan at 200 rows (was 1000). This is a
+    // per-customer hot-path query on every /shop/me dashboard load.
+    // Rows are ordered paid_at DESC, and the output is "reorder
+    // suggestions" — recently-purchased products. The 200 most-recent
+    // line items capture every product a customer has bought recently;
+    // the long tail (their 201st-oldest+ line item) is stale purchase
+    // history that's not a reorder candidate, so trimming it doesn't
+    // change the surfaced suggestions while cutting the worst-case
+    // transfer 5×.
     const { data: items, error: itemsErr } = await supabase
       .schema("resupply")
       .from("shop_order_items")
       .select("order_id, product_id, paid_at, quantity")
       .eq("customer_id", customerId)
       .order("paid_at", { ascending: false })
-      .limit(1000);
+      .limit(200);
     if (itemsErr) throw itemsErr;
 
     const orderIds = Array.from(
