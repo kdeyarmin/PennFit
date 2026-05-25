@@ -44,8 +44,8 @@ git add pnpm-lock.yaml
 
 # lib/resupply-db/drizzle/meta/_journal.json — splice manually; both
 # branches' new entries (keyed by `idx` and `tag`) must end up in the
-# final `entries` array. The migrator (lib/resupply-db/scripts/migrate.mjs)
-# is idempotent so duplicate entries are caught at apply time.
+# final `entries` array with unique `tag`/`when` values. `migrate.mjs`
+# only gates by `when`/`created_at` (no de-dupe), so duplicates/backdating can break or skip migrations.
 ```
 
 Do NOT add `merge=union` or `merge=ours` for source files in
