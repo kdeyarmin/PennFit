@@ -170,14 +170,11 @@ describe("createSftpTransport — happy path", () => {
     const transport = createSftpTransport(cfg);
     await transport.upload(makeRequest());
 
-    // execFile's full signature is (file, args, opts, cb) — a 4-tuple
-    // — so cast through `unknown` to peel just the first two we care
-    // about. TypeScript otherwise complains about the tuple-length
-    // mismatch under strict mode.
-    const [binary, args] = execFileMock.mock.calls[0] as unknown as [
-      string,
-      string[],
-    ];
+    // execFile's full signature is (file, args, opts, cb) — a 4-tuple.
+    // Use the mock's own Parameters<> so TypeScript catches tuple-
+    // signature drift instead of getting masked by `unknown`.
+    const [binary, args] =
+      execFileMock.mock.calls[0] as Parameters<typeof execFileMock>;
     expect(binary).toBe("sftp");
     expect(args).toContain("-i");
     expect(args).toContain("/home/alice/.ssh/id_ed25519");
@@ -559,10 +556,95 @@ describe("createSftpTransport — retry loop", () => {
 // Filename sanitisation (regression: unsafe chars must not reach sftp args)
 // ──────────────────────────────────────────────────────────────────────────────
 
+// ──────────────────────────────────────────────────────────────────────────────
+// failExecFileSticky vs failExecFile — helper behavioral contracts
+// ──────────────────────────────────────────────────────────────────────────────
+//
+// The PR introduced failExecFileSticky so that error-classification tests
+// can verify the final outcome even when the transport's internal retry
+// loop makes multiple execFile calls. These tests document and pin the
+// behavioral contract of the two helpers.
+
+describe("test helpers — failExecFile (once) vs failExecFileSticky (all)", () => {
+  it("failExecFile only fails the FIRST call; subsequent calls use the default success mock", async () => {
+    failExecFile({ code: 1 }); // first call → transfer_failed
+    // default mock (set in beforeEach) is success for all subsequent calls
+
+    const transport = createSftpTransport(makeConfig());
+    const p = transport.upload(makeRequest());
+    await vi.runAllTimersAsync();
+    const outcome = await p;
+
+    // The transport retries after transfer_failed; the second attempt hits
+    // the default success mock, so the final outcome is ok:true.
+    expect(outcome.ok).toBe(true);
+    // execFile called twice: once for the failure, once for the retry success
+    expect(execFileMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("failExecFileSticky causes ALL execFile calls to fail with the same error", async () => {
+    failExecFileSticky({ code: 1 }); // every call → transfer_failed
+
+    const transport = createSftpTransport(makeConfig());
+    const p = transport.upload(makeRequest());
+    await vi.runAllTimersAsync();
+    const outcome = await p;
+
+    // Sticky failure → all 3 retry attempts fail → final outcome is not ok
+    expect(outcome.ok).toBe(false);
+    if (!outcome.ok) {
+      expect(outcome.kind).toBe("transfer_failed");
+    }
+    expect(execFileMock).toHaveBeenCalledTimes(3); // all 3 attempts consumed
+  });
+
+  it("failExecFileSticky failure persists even after the first call has returned", async () => {
+    failExecFileSticky({ stderr: "Connection refused", code: 255 });
+
+    const transport = createSftpTransport(makeConfig());
+    const p = transport.upload(makeRequest());
+    await vi.runAllTimersAsync();
+    const outcome = await p;
+
+    // All three retry attempts returned connect_failed — the sticky impl
+    // was NOT one-shot, so the third attempt still failed.
+    expect(outcome.ok).toBe(false);
+    if (!outcome.ok) {
+      expect(outcome.kind).toBe("connect_failed");
+    }
+    expect(execFileMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("two sequential uploads after failExecFile: second upload succeeds without any failure", async () => {
+    // failExecFile is one-shot: it injects a failure for the NEXT call only.
+    // After that one-shot fires on the first upload's first attempt, the
+    // retry succeeds, and a second upload is entirely unaffected.
+    failExecFile({ code: 1 });
+
+    const transport = createSftpTransport(makeConfig());
+
+    // First upload: fails on attempt 1, succeeds on attempt 2
+    const p1 = transport.upload(makeRequest({ fileName: "a.837p" }));
+    await vi.runAllTimersAsync();
+    const outcome1 = await p1;
+    expect(outcome1.ok).toBe(true);
+
+    execFileMock.mockClear();
+
+    // Second upload: no injected failure, should succeed on first attempt
+    const p2 = transport.upload(makeRequest({ fileName: "b.837p" }));
+    await vi.runAllTimersAsync();
+    const outcome2 = await p2;
+    expect(outcome2.ok).toBe(true);
+    expect(execFileMock).toHaveBeenCalledTimes(1); // only one call needed
+  });
+});
+
 describe("createSftpTransport — filename sanitisation", () => {
   it("preserves alphanumerics, dots, underscores, and dashes", async () => {
     const transport = createSftpTransport(makeConfig());
     const outcome = await transport.upload(makeRequest({ fileName: "claim-2026.A1_v2.837p" }));
+
     expect(outcome.ok).toBe(true);
     if (outcome.ok) {
       expect(outcome.remotePath).toBe("inbound/claim-2026.A1_v2.837p");
