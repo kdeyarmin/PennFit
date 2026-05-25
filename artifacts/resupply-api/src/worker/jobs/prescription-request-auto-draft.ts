@@ -44,6 +44,7 @@ import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { buildPrescriptionRequestPacketFromRx } from "../../lib/prescription-request-builder";
 import { logger } from "../../lib/logger";
+import { buildQueueConfig, VENDOR_SEND_QUEUE_OPTS } from "../lib/queue-options";
 
 const JOB = "prescription-request.auto-draft";
 const CRON = "43 13 * * *"; // 13:43 UTC daily
@@ -197,7 +198,7 @@ export async function runPrescriptionRequestAutoDraft(): Promise<AutoDraftStats>
 export async function registerPrescriptionRequestAutoDraftJob(
   boss: PgBoss,
 ): Promise<void> {
-  await boss.createQueue(JOB);
+  await boss.createQueue(JOB, buildQueueConfig(JOB, VENDOR_SEND_QUEUE_OPTS));
   await boss.work(JOB, async () => {
     try {
       const stats = await runPrescriptionRequestAutoDraft();

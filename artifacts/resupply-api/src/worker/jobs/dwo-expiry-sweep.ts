@@ -12,6 +12,7 @@ import type PgBoss from "pg-boss";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
+import { buildQueueConfig, CRON_SCAN_QUEUE_OPTS } from "../lib/queue-options";
 
 const JOB = "dwo.expiry-sweep";
 // Daily — Mondays-only + exact-day match on expires_on meant a DWO
@@ -26,7 +27,7 @@ const CRON = "37 4 * * *"; // Daily 04:37 UTC
 const HEADS_UP_DAYS = [60, 30, 7];
 
 export async function registerDwoExpirySweepJob(boss: PgBoss): Promise<void> {
-  await boss.createQueue(JOB);
+  await boss.createQueue(JOB, buildQueueConfig(JOB, CRON_SCAN_QUEUE_OPTS));
   await boss.work(JOB, async () => {
     try {
       const stats = await runDwoExpirySweep();
