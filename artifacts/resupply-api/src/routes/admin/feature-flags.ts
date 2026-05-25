@@ -125,7 +125,7 @@ router.patch(
     const { data: priorRow, error: priorErr } = await supabase
       .schema("resupply")
       .from("feature_flags")
-      .select("enabled")
+      .select("key, enabled, description, category, updated_by_email, updated_at")
       .eq("key", key)
       .maybeSingle();
     if (priorErr) throw priorErr;
@@ -134,6 +134,13 @@ router.patch(
       // seed didn't run on this environment. Refuse rather than
       // upsert blindly so we don't paper over a deploy bug.
       res.status(404).json({ error: "flag_not_seeded", key });
+      return;
+    }
+    if (priorRow.enabled === bodyParsed.data.enabled) {
+      const response = patchResponseSchema.parse({
+        flag: rowToApi(priorRow as Row),
+      });
+      res.json(response);
       return;
     }
 
@@ -245,9 +252,6 @@ interface ToggleActivityRow {
   to: boolean;
 }
 
-router.get(
-  "/admin/feature-flags/activity",
-  requirePermission("reports.read"),
 const activityQuerySchema = z.object({
   limit: z
     .string()

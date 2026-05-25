@@ -455,7 +455,6 @@ export function buildProductionSweepDeps(
           "attachment-sweep: worker_run_summary insert crashed",
         );
       }
-      }
     },
   };
 }

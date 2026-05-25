@@ -248,7 +248,8 @@ describe("GET /admin/feature-flags/activity", () => {
   });
 
   it("returns feature_flag_events rows transformed into ToggleActivityRow shape", async () => {
-    // The events table is strongly-typed (key, previous_enabled,
+    // Source moved from audit_log → feature_flag_events in migration
+    // 0163. The new table is strongly-typed (key, previous_enabled,
     // next_enabled columns), so the route no longer needs to parse a
     // jsonb metadata blob.
     stubAdmin();
@@ -276,16 +277,31 @@ describe("GET /admin/feature-flags/activity", () => {
     );
 
     expect(res.status).toBe(200);
-    expect(res.body.activity).toHaveLength(2);
-    expect(res.body.activity[0]).toEqual({
-      occurredAt: "2026-05-15T10:00:00.000Z",
-      operatorEmail: "ops@example.com",
-      key: "sms.reminders",
-      from: true,
-      to: false,
+    expect(res.body).toEqual({
+      activity: [
+        {
+          occurredAt: "2026-05-15T10:00:00.000Z",
+          operatorEmail: "ops@example.com",
+          key: "sms.reminders",
+          from: true,
+          to: false,
+        },
+        {
+          occurredAt: "2026-05-15T09:00:00.000Z",
+          operatorEmail: "ops2@example.com",
+          key: "voice.agent",
+          from: false,
+          to: true,
+        },
+      ],
     });
   });
 
+  // (Removed: the legacy "skips audit rows with malformed metadata"
+  // defensive test no longer applies. The feature_flag_events table
+  // has typed boolean columns for previous_enabled / next_enabled;
+  // a malformed shape is rejected at INSERT time by the DB, not at
+  // SELECT time by the route handler.)
   it("clamps the limit to ACTIVITY_MAX_LIMIT (100)", async () => {
     stubAdmin();
     stageSupabaseResponse("feature_flag_events", "select", { data: [] });
@@ -297,6 +313,6 @@ describe("GET /admin/feature-flags/activity", () => {
     // A 200 + empty body confirms the route accepted the over-large
     // param and clamped it rather than erroring.
     expect(res.status).toBe(200);
-    expect(res.body.activity).toEqual([]);
+    expect(res.body).toEqual({ activity: [] });
   });
 });

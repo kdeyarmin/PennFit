@@ -27,7 +27,7 @@ export interface AuditFailureEvent {
 
 export interface DeliveryFailuresResponse {
   sinceDays: number;
-  counts: { messageFailures: number; auditFailures: number };
+  counts: { messageFailures: number; auditFailures: number | null };
   failureStatuses: readonly string[];
   messageEvents: MessageFailureEvent[];
   auditEvents: AuditFailureEvent[];
