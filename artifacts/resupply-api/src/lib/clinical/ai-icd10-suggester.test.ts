@@ -277,7 +277,7 @@ describe("suggestIcd10 — Anthropic provider path", () => {
     await suggestIcd10({ sleepStudyId: STUDY_ID });
 
     const callArg = mockSendWithRetry.mock.calls[0][1] as { model: string };
-    expect(callArg.model).toBe("claude-haiku-4-5-20251001");
+    expect(callArg.model).toBe("claude-haiku-4-5");
   });
 
   it("respects an explicit input.model override on the Anthropic path", async () => {

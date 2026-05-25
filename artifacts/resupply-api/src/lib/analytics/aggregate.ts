@@ -185,6 +185,27 @@ export function aggregateComplianceCohorts(
  * counted. Read-only actions (`patient.view`, `audit.export`) are
  * filtered out so the "I sent 0 messages today but I'm clearly
  * working" feedback loop doesn't punish browsing.
+ *
+ * ⚠️ KNOWN GAP — see also delivery-failures.ts header comment.
+ *
+ *   @workspace/resupply-audit became a no-op stub when migration
+ *   0156 retired the HIPAA tamper-evident audit chain, so no NEW
+ *   rows are landing in resupply.audit_log. This rollup runs against
+ *   whatever PRE-stub rows still exist in the table. As those rows
+ *   slide outside the requested date window, the report increasingly
+ *   shows zero activity for every CSR — a false "the team isn't
+ *   working" signal.
+ *
+ *   Why not just delete the report: the action enumeration here
+ *   ({{PRODUCTIVE_ACTIONS}}) is the operational source-of-truth for
+ *   what counts as "CSR work" across ~30 admin surfaces. Re-sourcing
+ *   each action requires inspecting that surface's actual write site
+ *   (conversations.assignment → conversations.assigned_to + updated_at
+ *   inferred history, shop_returns.approve → shop_returns.approved_at,
+ *   etc.) — different per action, ~30 individual surface migrations.
+ *   That's a separate epic, not a single PR. Until then the route
+ *   handler (see routes/admin/analytics.ts) returns a `degraded: true`
+ *   flag in the response so the SPA can render a banner.
  */
 export interface AuditRow {
   /** Email of the admin who performed the action, when known.
