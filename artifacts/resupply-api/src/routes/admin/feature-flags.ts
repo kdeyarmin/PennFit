@@ -200,7 +200,7 @@ router.patch(
       });
     if (eventErr) {
       logger.warn(
-        { err: eventErr.message, key },
+        { err: eventErr, key },
         "feature_flag_events insert failed (activity panel will miss this toggle)",
       );
     }
