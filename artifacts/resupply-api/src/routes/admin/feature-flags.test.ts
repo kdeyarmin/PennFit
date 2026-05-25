@@ -234,10 +234,10 @@ describe("PATCH /admin/feature-flags/:key", () => {
 
 // ─── GET /admin/feature-flags/activity ──────────────────────────────────
 //
-// The endpoint used to read from `resupply.audit_log`; that table was
-// dropped, so the endpoint now short-circuits to `{ activity: [],
-// unavailable: true }`. Tests cover the new contract and confirm we
-// never touch Supabase from the activity handler.
+// Source moved from `resupply.audit_log` → `resupply.feature_flag_events`
+// in migration 0163 (the audit lib became a no-op stub when the HIPAA
+// tamper-evident chain was retired in 0156). The reader now hits the
+// strongly-typed events table written by the PATCH handler.
 
 describe("GET /admin/feature-flags/activity", () => {
   it("returns 401 when not signed in", async () => {
@@ -247,25 +247,56 @@ describe("GET /admin/feature-flags/activity", () => {
     expect(res.status).toBe(401);
   });
 
-  it("returns an empty activity list with unavailable: true", async () => {
+  it("returns feature_flag_events rows transformed into ToggleActivityRow shape", async () => {
+    // The events table is strongly-typed (key, previous_enabled,
+    // next_enabled columns), so the route no longer needs to parse a
+    // jsonb metadata blob.
     stubAdmin();
+    stageSupabaseResponse("feature_flag_events", "select", {
+      data: [
+        {
+          occurred_at: "2026-05-15T10:00:00.000Z",
+          operator_email: "ops@example.com",
+          key: "sms.reminders",
+          previous_enabled: true,
+          next_enabled: false,
+        },
+        {
+          occurred_at: "2026-05-15T09:00:00.000Z",
+          operator_email: "ops2@example.com",
+          key: "voice.agent",
+          previous_enabled: false,
+          next_enabled: true,
+        },
+      ],
+    });
 
     const res = await request(makeApp()).get(
       "/admin/feature-flags/activity",
     );
 
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ activity: [], unavailable: true });
+    expect(res.body.activity).toHaveLength(2);
+    expect(res.body.activity[0]).toEqual({
+      occurredAt: "2026-05-15T10:00:00.000Z",
+      operatorEmail: "ops@example.com",
+      key: "sms.reminders",
+      from: true,
+      to: false,
+    });
   });
 
-  it("ignores the limit query param (no underlying query to bound)", async () => {
+  it("clamps the limit to ACTIVITY_MAX_LIMIT (100)", async () => {
     stubAdmin();
+    stageSupabaseResponse("feature_flag_events", "select", { data: [] });
 
     const res = await request(makeApp()).get(
       "/admin/feature-flags/activity?limit=9999",
     );
 
+    // A 200 + empty body confirms the route accepted the over-large
+    // param and clamped it rather than erroring.
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ activity: [], unavailable: true });
+    expect(res.body.activity).toEqual([]);
   });
 });

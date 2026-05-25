@@ -155,6 +155,23 @@ router.patch(
 
     invalidateFeatureFlagCache(key);
 
+    // Two writes for two distinct consumers (kept side by side, NOT a
+    // try-then-catch chain, so neither one's failure masks the other):
+    //
+    //   1. logAudit — historical compatibility. The audit lib is a
+    //      no-op stub now (CLAUDE.md / migration 0156); this call is
+    //      retained so any SOC tooling still scanning audit_log for
+    //      pre-stub rows keeps seeing consistent shape.
+    //
+    //   2. feature_flag_events INSERT — the durable record that drives
+    //      the Control Center's "Recent toggle activity" panel. The
+    //      GET /admin/feature-flags/activity handler reads from here
+    //      now (previously it read from audit_log, which is silently
+    //      empty since the stub).
+    //
+    // Both are fire-and-forget on failure: a flag toggle that
+    // mutated successfully must NOT 5xx because a history row
+    // couldn't be written. Failures land in the application log.
     await logAudit({
       action: "feature_flag.toggle",
       adminEmail: req.adminEmail ?? null,
@@ -172,6 +189,22 @@ router.patch(
       logger.warn({ err }, "feature_flag.toggle audit write failed");
     });
 
+    const { error: eventErr } = await supabase
+      .schema("resupply")
+      .from("feature_flag_events")
+      .insert({
+        key,
+        previous_enabled: priorRow.enabled,
+        next_enabled: bodyParsed.data.enabled,
+        operator_email: req.adminEmail ?? null,
+      });
+    if (eventErr) {
+      logger.warn(
+        { err: eventErr.message, key },
+        "feature_flag_events insert failed (activity panel will miss this toggle)",
+      );
+    }
+
     const response = patchResponseSchema.parse({
       flag: rowToApi(updated as Row),
     });
@@ -182,16 +215,27 @@ router.patch(
 // ─────────────────────────────────────────────────────────────────
 // GET /admin/feature-flags/activity — recent toggle events.
 //
-// Historically this read the last N `feature_flag.toggle` rows from
-// `resupply.audit_log`. That table was dropped with the wider
-// audit-chain cleanup, and there is no replacement event log for
-// flag toggles yet. The endpoint stays for wire compatibility
-// (URL + response shape) but now returns `unavailable: true` with
-// an empty activity list so the SPA renders an explicit
-// "no longer tracked" notice instead of an empty panel.
+// Read-only feed of the last `limit` (default 20, max 100) toggle
+// events from `resupply.feature_flag_events`. Drives the "Recent
+// toggle activity" panel on the Control Center.
+//
+// Source changed in migration 0163: previously SELECTed from
+// `resupply.audit_log` filtered by `action='feature_flag.toggle'`.
+// The audit lib became a no-op stub when the HIPAA tamper-evident
+// chain was retired (migration 0156), so new toggles stopped
+// landing rows there and this panel went stale. The PATCH handler
+// above now also writes a row to feature_flag_events; that's the
+// table this reader hits.
 //
 // Permission: reports.read (same as the list endpoint above).
+//
+// PHI posture: feature-flag toggle records never contain PHI
+// (the keys are static constants), so the response is safe to
+// surface in the admin UI as-is.
 // ─────────────────────────────────────────────────────────────────
+
+const ACTIVITY_DEFAULT_LIMIT = 20;
+const ACTIVITY_MAX_LIMIT = 100;
 
 interface ToggleActivityRow {
   occurredAt: string;
@@ -204,9 +248,33 @@ interface ToggleActivityRow {
 router.get(
   "/admin/feature-flags/activity",
   requirePermission("reports.read"),
-  async (_req, res) => {
-    const activity: ToggleActivityRow[] = [];
-    res.json({ activity, unavailable: true });
+  async (req, res) => {
+    const limitRaw = Number.parseInt(
+      typeof req.query.limit === "string" ? req.query.limit : "",
+      10,
+    );
+    const limit =
+      Number.isFinite(limitRaw) && limitRaw > 0
+        ? Math.min(limitRaw, ACTIVITY_MAX_LIMIT)
+        : ACTIVITY_DEFAULT_LIMIT;
+
+    const supabase = getSupabaseServiceRoleClient();
+    const { data, error } = await supabase
+      .schema("resupply")
+      .from("feature_flag_events")
+      .select("occurred_at, operator_email, key, previous_enabled, next_enabled")
+      .order("occurred_at", { ascending: false })
+      .limit(limit);
+    if (error) throw error;
+
+    const activity: ToggleActivityRow[] = (data ?? []).map((r) => ({
+      occurredAt: r.occurred_at,
+      operatorEmail: r.operator_email ?? null,
+      key: r.key,
+      from: r.previous_enabled,
+      to: r.next_enabled,
+    }));
+    res.json({ activity });
   },
 );
 

@@ -185,6 +185,46 @@ export interface Database {
         Update: Partial<Database["resupply"]["Tables"]["worker_dedup_keys"]["Row"]>;
         Relationships: [];
       };
+      worker_run_summary: {
+        Row: {
+          id: string;
+          worker_kind: string;
+          started_at: string;
+          completed_at: string;
+          counters: Json;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          worker_kind: string;
+          started_at?: string;
+          completed_at?: string;
+          counters?: Json;
+          created_at?: string;
+        };
+        Update: Partial<Database["resupply"]["Tables"]["worker_run_summary"]["Row"]>;
+        Relationships: [];
+      };
+      feature_flag_events: {
+        Row: {
+          id: string;
+          key: string;
+          previous_enabled: boolean;
+          next_enabled: boolean;
+          operator_email: string | null;
+          occurred_at: string;
+        };
+        Insert: {
+          id?: string;
+          key: string;
+          previous_enabled: boolean;
+          next_enabled: boolean;
+          operator_email?: string | null;
+          occurred_at?: string;
+        };
+        Update: Partial<Database["resupply"]["Tables"]["feature_flag_events"]["Row"]>;
+        Relationships: [];
+      };
       admin_users: {
         Row: {
           id: string;

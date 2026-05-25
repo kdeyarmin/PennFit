@@ -45,11 +45,6 @@ export function AdminControlCenterPage() {
           during incidents, vendor outages, or when you need to pause a
           campaign without canceling it.
         </p>
-        <p className="text-xs text-slate-500">
-          Flag-change history is currently not tracked (the audit log
-          backing it was retired). The toggle action itself takes effect
-          immediately.
-        </p>
       </header>
       <SummaryTiles />
       <FlagsList />
@@ -538,8 +533,8 @@ function ToggleSwitch({
 // ─────────────────────────────────────────────────────────────────
 // Recent toggle activity panel.
 //
-// Last N feature-flag toggle events from the audit log, newest
-// first. Each line shows operator email, the flag, and the
+// Last N feature-flag toggle events from feature_flag_events,
+// newest first. Each line shows operator email, the flag, and the
 // direction (on → off or off → on). Useful during incidents
 // ("did anyone flip checkout off in the last hour?") and for
 // multi-admin coordination.
@@ -554,7 +549,7 @@ function ActivityPanel() {
   const query = useQuery({
     queryKey: ACTIVITY_QUERY_KEY,
     queryFn: () => listFeatureFlagActivity(20),
-    refetchInterval: (query) => (query.state.data?.unavailable ? false : 60_000),
+    refetchInterval: 60_000,
   });
 
   return (
@@ -576,15 +571,6 @@ function ActivityPanel() {
           >
             Couldn&apos;t load activity:{" "}
             {query.error instanceof Error ? query.error.message : "unknown"}
-          </p>
-        ) : query.data?.unavailable ? (
-          <p
-            className="px-4 py-3 text-sm text-slate-600"
-            data-testid="control-center-activity-unavailable"
-          >
-            Toggle activity is no longer tracked. The underlying audit log
-            was retired; flag state changes are no longer recorded for
-            playback.
           </p>
         ) : (query.data?.activity ?? []).length === 0 ? (
           <p className="px-4 py-3 text-sm text-slate-500">
