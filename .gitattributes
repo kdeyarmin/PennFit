@@ -1,0 +1,51 @@
+# Normalize line endings: keep text files as LF in the repo regardless of
+# the contributor's platform. Prevents phantom whole-file conflicts when
+# Windows or Replit checkouts re-introduce CRLF.
+* text=auto eol=lf
+
+# ---------------------------------------------------------------------------
+# Auto-generated files — DO NOT line-merge.
+#
+# Git's default three-way merge on these produces either garbled output
+# (lockfiles) or syntactically-broken JSON (the drizzle journal). Marking
+# them `-diff merge=binary` makes Git treat each side as opaque, so a
+# conflict surfaces as a single "pick one side" decision instead of
+# hundreds of inline `<<<<<<<` hunks scattered through generated text.
+#
+# Recovery recipe when one of these conflicts (also documented in CLAUDE.md):
+#
+#   # take whichever side is closer to what you want, then regenerate:
+#   git checkout --ours pnpm-lock.yaml      # or --theirs
+#   pnpm install                            # regenerates pnpm-lock.yaml
+#   git add pnpm-lock.yaml
+#
+# For the drizzle journal, manually splice the new entries from the other
+# side (each entry is keyed by `idx` and `tag`); both branches' new
+# migrations must end up in the final `entries` array.
+# ---------------------------------------------------------------------------
+
+pnpm-lock.yaml                                  -diff merge=binary
+lib/resupply-db/drizzle/meta/_journal.json      -diff merge=binary
+
+# ---------------------------------------------------------------------------
+# Binary assets — never diff, never line-merge.
+# ---------------------------------------------------------------------------
+
+*.png       binary
+*.jpg       binary
+*.jpeg      binary
+*.gif       binary
+*.ico       binary
+*.webp      binary
+*.pdf       binary
+*.woff      binary
+*.woff2     binary
+*.ttf       binary
+*.otf       binary
+*.eot       binary
+*.mp4       binary
+*.webm      binary
+*.mov       binary
+*.zip       binary
+*.gz        binary
+*.tgz       binary
