@@ -11,13 +11,20 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Mock } from "vitest";
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 import {
   HIGH_RISK_FLAG_KEYS,
   isHighRiskFlag,
   listFeatureFlags,
+  listFeatureFlagActivity,
   toggleFeatureFlag,
 } from "./feature-flags-api";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const SRC = readFileSync(path.join(__dirname, "feature-flags-api.ts"), "utf8");
 
 const ORIGINAL_FETCH = globalThis.fetch;
 
@@ -235,5 +242,103 @@ describe("isHighRiskFlag", () => {
     expect([...HIGH_RISK_FLAG_KEYS].sort()).toEqual(
       ["storefront.checkout", "voice.agent"].sort(),
     );
+  });
+});
+
+// ─── listFeatureFlagActivity — type shape ─────────────────────────────────
+//
+// PR change: `unavailable?` was removed from the return type of
+// listFeatureFlagActivity. The function now always resolves to
+// `{ activity: FeatureFlagActivity[] }` with no optional retirement
+// notice flag.
+
+describe("listFeatureFlagActivity — return type has no `unavailable` field", () => {
+  it("source does not declare `unavailable` in the listFeatureFlagActivity generic", () => {
+    // Find the function declaration and inspect only that line / region.
+    const fnLine = SRC.match(/listFeatureFlagActivity[^\n]*/)?.[0] ?? "";
+    expect(fnLine).not.toContain("unavailable");
+  });
+
+  it("listFeatureFlagActivity generic is typed as { activity: FeatureFlagActivity[] }", () => {
+    const fnLine = SRC.match(/listFeatureFlagActivity[^\n]*/)?.[0] ?? "";
+    expect(fnLine).toContain("{ activity: FeatureFlagActivity[] }");
+  });
+});
+
+// ─── listFeatureFlagActivity — network behaviour ──────────────────────────
+
+describe("listFeatureFlagActivity", () => {
+  it("fetches the activity endpoint with the default limit of 20", async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ activity: [] }),
+    });
+
+    await listFeatureFlagActivity();
+
+    expect(fetchMock).toHaveBeenCalledOnce();
+    const [url] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain("/admin/feature-flags/activity");
+    expect(url).toContain("limit=20");
+  });
+
+  it("URL-encodes the limit parameter", async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ activity: [] }),
+    });
+
+    await listFeatureFlagActivity(50);
+
+    const [url] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain("limit=50");
+  });
+
+  it("returns the activity array on success", async () => {
+    const activity = [
+      {
+        occurredAt: "2026-05-22T10:00:00Z",
+        operatorEmail: "ops@example.com",
+        key: "sms.reminders",
+        from: false,
+        to: true,
+      },
+    ];
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ activity }),
+    });
+
+    const result = await listFeatureFlagActivity(20);
+    expect(result.activity).toEqual(activity);
+  });
+
+  it("throws on a non-ok response", async () => {
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 401,
+      statusText: "Unauthorized",
+      json: async () => ({ message: "not authenticated" }),
+    });
+
+    await expect(listFeatureFlagActivity()).rejects.toThrow("not authenticated");
+  });
+
+  // Boundary: an empty activity list (common on fresh environments)
+  // is a valid success response — not an "unavailable" state.
+  it("treats an empty activity array as a valid (not unavailable) response", async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ activity: [] }),
+    });
+
+    const result = await listFeatureFlagActivity();
+    expect(result.activity).toEqual([]);
+    // The result should not have an `unavailable` property.
+    expect("unavailable" in result).toBe(false);
   });
 });

@@ -115,7 +115,7 @@ function anthropicOkResult(text: string) {
       id: "msg_test",
       type: "message",
       role: "assistant",
-      model: "claude-haiku-4-5-20251001",
+      model: "claude-haiku-4-5",
       content: [{ type: "text", text }],
       stop_reason: "end_turn",
       usage: { input_tokens: 50, output_tokens: 30 },

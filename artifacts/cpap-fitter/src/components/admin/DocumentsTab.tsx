@@ -331,6 +331,7 @@ export function DocumentsTab({ patientId }: { patientId: string }) {
                       value={noteText}
                       onChange={(e) => setNoteText(e.target.value)}
                       placeholder="Optional note (e.g. &quot;Insurance card verified — expires 12/2026&quot;)"
+                      aria-label="Review note"
                       maxLength={500}
                       rows={2}
                       disabled={isReviewing}

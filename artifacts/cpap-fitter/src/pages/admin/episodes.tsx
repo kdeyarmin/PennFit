@@ -583,6 +583,7 @@ function BulkSendToolbar({
           </span>
           <Select
             id="episodes-bulk-channel"
+            aria-label="Channel"
             value={channel}
             options={[
               { value: "sms", label: "SMS" },

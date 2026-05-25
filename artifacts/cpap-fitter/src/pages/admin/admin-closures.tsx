@@ -113,6 +113,7 @@ function NewClosureCard() {
             value={label}
             onChange={(e) => setLabel(e.target.value.slice(0, 200))}
             placeholder="Thanksgiving Day"
+            aria-label="Label"
           />
         </div>
         <div>
@@ -123,6 +124,7 @@ function NewClosureCard() {
             type="datetime-local"
             value={startsAt}
             onChange={(e) => setStartsAt(e.target.value)}
+            aria-label="Starts at"
           />
         </div>
         <div>
@@ -133,6 +135,7 @@ function NewClosureCard() {
             type="datetime-local"
             value={endsAt}
             onChange={(e) => setEndsAt(e.target.value)}
+            aria-label="Ends at"
           />
         </div>
         <div className="sm:col-span-2">
@@ -147,6 +150,7 @@ function NewClosureCard() {
             rows={3}
             className="w-full rounded border px-2 py-1.5 text-sm"
             style={{ borderColor: "hsl(var(--line-1))" }}
+            aria-label="Auto-reply message"
           />
           <div className="text-[10px] text-muted-foreground mt-1">
             {autoReplyMessage.length} / 320

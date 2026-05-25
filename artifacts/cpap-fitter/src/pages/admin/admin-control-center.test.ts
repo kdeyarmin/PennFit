@@ -1,4 +1,11 @@
-// Static guards for admin-control-center.tsx summary tiles.
+// Static guards for admin-control-center.tsx summary tiles and ActivityPanel.
+//
+// PR change (a11y + audit-log retirement cleanup):
+//   - ActivityPanel no longer checks `query.data?.unavailable` — the
+//     "Toggle activity is no longer tracked" notice was removed.
+//   - refetchInterval is now a static 60_000 ms (previously conditional
+//     on `query.state.data?.unavailable`).
+//   - ConfirmDisableModal text input gains aria-label="Type the flag key to confirm".
 //
 // The page renders a row of summary tiles (enabled count, disabled
 // count, last toggle) above the per-flag list. The component itself
@@ -123,5 +130,83 @@ describe("admin-control-center — high-risk confirmation modal", () => {
     // routes through the modal instead of firing immediately.
     expect(SRC).toContain("High-risk");
     expect(SRC).toContain("flag-row-${flag.key}-high-risk-badge");
+  });
+
+  it("ConfirmDisableModal text input has aria-label='Type the flag key to confirm'", () => {
+    // a11y guard: the PR added aria-label to the typed-confirm input so
+    // screen-reader users know what text is expected.
+    expect(SRC).toContain('aria-label="Type the flag key to confirm"');
+  });
+});
+
+// ─── ActivityPanel — unavailable branch removed ───────────────────────────
+//
+// PR change: the `query.data?.unavailable` conditional was removed from
+// ActivityPanel. The "Toggle activity is no longer tracked" notice is
+// gone; the panel now renders loading → error → empty → activity list
+// without an intermediate "unavailable" state.
+
+describe("admin-control-center ActivityPanel — unavailable branch removed", () => {
+  it("does not render data-testid='control-center-activity-unavailable'", () => {
+    expect(SRC).not.toContain("control-center-activity-unavailable");
+  });
+
+  it("does not check query.data?.unavailable in ActivityPanel", () => {
+    const fnStart = SRC.indexOf("function ActivityPanel(");
+    expect(fnStart).toBeGreaterThan(-1);
+    const fnEnd = SRC.indexOf("\nfunction ", fnStart + 1);
+    const fnBody = SRC.slice(fnStart, fnEnd > 0 ? fnEnd : undefined);
+    expect(fnBody).not.toContain(".unavailable");
+    expect(fnBody).not.toContain("unavailable");
+  });
+
+  it("does not render the 'no longer tracked' retirement notice", () => {
+    expect(SRC).not.toContain(
+      "Toggle activity is no longer tracked",
+    );
+  });
+});
+
+// ─── ActivityPanel — static refetchInterval ───────────────────────────────
+
+describe("admin-control-center ActivityPanel — static refetchInterval", () => {
+  it("uses a static refetchInterval of 60_000 (not conditional on unavailable)", () => {
+    // Before this PR the expression was:
+    //   refetchInterval: (query) => (query.state.data?.unavailable ? false : 60_000)
+    // After the PR it is simply:
+    //   refetchInterval: 60_000
+    const fnStart = SRC.indexOf("function ActivityPanel(");
+    expect(fnStart).toBeGreaterThan(-1);
+    const fnEnd = SRC.indexOf("\nfunction ", fnStart + 1);
+    const fnBody = SRC.slice(fnStart, fnEnd > 0 ? fnEnd : undefined);
+    expect(fnBody).toContain("refetchInterval: 60_000");
+  });
+
+  it("refetchInterval is not a function (no conditional on unavailable)", () => {
+    const fnStart = SRC.indexOf("function ActivityPanel(");
+    const fnEnd = SRC.indexOf("\nfunction ", fnStart + 1);
+    const fnBody = SRC.slice(fnStart, fnEnd > 0 ? fnEnd : undefined);
+    // The old pattern used a callback: `refetchInterval: (query) =>`
+    expect(fnBody).not.toMatch(/refetchInterval:\s*\(query\)\s*=>/);
+  });
+});
+
+// ─── ActivityPanel — retained behaviour ──────────────────────────────────
+
+describe("admin-control-center ActivityPanel — retained behaviour", () => {
+  it("still calls listFeatureFlagActivity(20)", () => {
+    expect(SRC).toContain("listFeatureFlagActivity(20)");
+  });
+
+  it("still uses ACTIVITY_QUERY_KEY as the query key", () => {
+    expect(SRC).toContain("ACTIVITY_QUERY_KEY");
+  });
+
+  it("still renders an empty-state message when no activity exists", () => {
+    expect(SRC).toContain("No toggle events recorded yet");
+  });
+
+  it("still defines an ActivityRow component", () => {
+    expect(SRC).toContain("function ActivityRow(");
   });
 });

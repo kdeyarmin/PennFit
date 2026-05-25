@@ -333,6 +333,7 @@ function MacroForm({
             value={key}
             onChange={(e) => setKey(e.target.value)}
             disabled={!isNew}
+            aria-label="Key (slug)"
             className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm font-mono disabled:bg-slate-50"
             placeholder="confirm-order"
           />
@@ -345,6 +346,7 @@ function MacroForm({
             type="text"
             value={label}
             onChange={(e) => setLabel(e.target.value)}
+            aria-label="Label"
             className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
             placeholder="Confirm — order placed"
           />
@@ -357,6 +359,7 @@ function MacroForm({
             type="text"
             value={category}
             onChange={(e) => setCategory(e.target.value)}
+            aria-label="Category"
             className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
             placeholder="Shipping"
           />
@@ -369,6 +372,7 @@ function MacroForm({
             type="number"
             value={sortOrder}
             onChange={(e) => setSortOrder(Number(e.target.value) || 0)}
+            aria-label="Sort order"
             className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
           />
         </div>
@@ -404,6 +408,7 @@ function MacroForm({
           value={body}
           onChange={(e) => setBody(e.target.value.slice(0, 4000))}
           rows={5}
+          aria-label="Body"
           className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm font-mono"
           placeholder="Hi {{patient.firstName}}, …"
         />

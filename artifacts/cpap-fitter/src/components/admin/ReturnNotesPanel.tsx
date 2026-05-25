@@ -80,6 +80,7 @@ export function ReturnNotesPanel({ returnId }: Props) {
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           placeholder="Add an internal note about this return. Visible only to admins."
+          aria-label="Return note"
           rows={2}
           maxLength={MAX_BODY + 200}
           disabled={mutation.isPending}

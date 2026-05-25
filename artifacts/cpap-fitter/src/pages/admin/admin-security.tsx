@@ -218,6 +218,7 @@ function EnrolledPanel({ data }: { data: MfaStatus }) {
             maxLength={6}
             inputMode="numeric"
             autoComplete="one-time-code"
+            aria-label="Authenticator code"
             style={{ width: "8rem", fontFamily: "monospace" }}
           />
           <Button
@@ -358,6 +359,7 @@ function UnenrolledPanel({ inProgress }: { inProgress: boolean }) {
             value={deviceLabel}
             onChange={(e) => setDeviceLabel(e.target.value.slice(0, 64))}
             placeholder="iPhone, Yubikey, Desktop authy…"
+            aria-label="Device label"
             style={{ width: "16rem" }}
           />
         </div>
@@ -420,6 +422,7 @@ function UnenrolledPanel({ inProgress }: { inProgress: boolean }) {
           maxLength={6}
           inputMode="numeric"
           autoComplete="one-time-code"
+          aria-label="Authenticator code"
           style={{ width: "8rem", fontFamily: "monospace" }}
         />
         <Button

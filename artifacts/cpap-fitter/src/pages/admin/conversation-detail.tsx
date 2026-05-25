@@ -543,6 +543,7 @@ function ReplyComposer({
         }
         rows={3}
         maxLength={1700}
+        aria-label="Reply message"
         // Keyboard shortcut — Cmd/Ctrl+Enter to send. Mirrors Slack /
         // Linear / GitHub conventions. Plain Enter still inserts a
         // newline so the admin can keep formatting multi-paragraph
@@ -1156,6 +1157,7 @@ function NewCoachingNoteForm({
           <input
             value={targetUserId}
             onChange={(e) => setTargetUserId(e.target.value)}
+            aria-label="Target CSR (admin_user id)"
             className="w-full rounded border px-2 py-1.5 text-sm font-mono"
             style={{ borderColor: "hsl(var(--line-1))" }}
           />
@@ -1167,6 +1169,7 @@ function NewCoachingNoteForm({
           <select
             value={kind}
             onChange={(e) => setKind(e.target.value as CoachingNoteKind)}
+            aria-label="Kind"
             className="rounded border px-2 py-1.5 text-sm"
             style={{ borderColor: "hsl(var(--line-1))" }}
           >
@@ -1183,6 +1186,7 @@ function NewCoachingNoteForm({
         className="w-full rounded border px-2 py-1.5 text-sm"
         style={{ borderColor: "hsl(var(--line-1))" }}
         placeholder="Concrete, behavior-focused. Stays in employment record."
+        aria-label="Coaching note"
       />
       {create.error instanceof Error && (
         <div className="rounded border border-rose-200 bg-rose-50 p-2 text-xs text-rose-900">
@@ -1361,6 +1365,7 @@ function TriagePanel({
               }}
               placeholder="add tag…"
               maxLength={32}
+              aria-label="Add tag"
               className="rounded border px-2 py-0.5 text-xs"
               style={{ borderColor: "hsl(var(--line-1))" }}
             />

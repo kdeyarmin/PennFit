@@ -599,6 +599,7 @@ function PatientMatchPane({
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             placeholder="copy from /admin/patients"
+            aria-label="Patient ID (UUID)"
             style={{ borderColor: valid ? undefined : "#dc2626" }}
           />
           {!valid && (
@@ -754,6 +755,7 @@ function CallbacksPane({
           style={{ borderColor: "hsl(var(--line-1))" }}
           value={eventType}
           onChange={(e) => setEventType(e.target.value as ReferralLifecycleEvent)}
+          aria-label="Status event type"
         >
           <option value="order.accepted">order.accepted</option>
           <option value="order.rejected">order.rejected</option>
@@ -1045,6 +1047,7 @@ function Field({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
+        aria-label={label}
         style={{ borderColor: invalid ? "#dc2626" : undefined }}
       />
     </div>

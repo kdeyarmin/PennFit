@@ -328,6 +328,7 @@ function LeadRow({
             className="text-xs border rounded px-1 py-0.5 mt-1"
             style={{ borderColor: "hsl(var(--line-1))" }}
             data-testid={`lead-status-${row.id}`}
+            aria-label="Lead status"
           >
             {STATUS_ORDER.map((s) => (
               <option key={s} value={s}>
@@ -352,6 +353,7 @@ function LeadRow({
           className="w-full text-xs border rounded p-1 resize-y"
           style={{ borderColor: "hsl(var(--line-1))", minWidth: "180px" }}
           data-testid={`lead-note-${row.id}`}
+          aria-label="Note"
         />
         <button
           type="button"

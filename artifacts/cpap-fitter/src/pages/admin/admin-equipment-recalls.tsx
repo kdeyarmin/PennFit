@@ -510,6 +510,7 @@ function AddRecallModal({
                 onChange={(e) =>
                   setSerialKind(e.target.value as "none" | "range" | "list")
                 }
+                aria-label="Serial criteria"
                 className="w-full rounded border px-2 py-1.5 text-sm"
                 style={{ borderColor: "hsl(var(--line-1))" }}
               >
@@ -547,6 +548,7 @@ function AddRecallModal({
                   value={serialList}
                   onChange={(e) => setSerialList(e.target.value)}
                   placeholder="SN001, SN002, SN003"
+                  aria-label="Serial list"
                 />
               </div>
             )}
@@ -564,6 +566,7 @@ function AddRecallModal({
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 maxLength={5000}
+                aria-label="Description"
               />
             </div>
           </div>
@@ -621,6 +624,7 @@ function Field({
         <select
           value={value}
           onChange={(e) => onChange(e.target.value)}
+          aria-label={label}
           className="w-full rounded border px-2 py-1.5 text-sm"
           style={{ borderColor: "hsl(var(--line-1))" }}
         >
@@ -636,6 +640,7 @@ function Field({
           value={value}
           onChange={(e) => onChange(e.target.value)}
           placeholder={placeholder}
+          aria-label={label}
         />
       )}
     </div>
@@ -937,6 +942,7 @@ function LogActionForm({
         <select
           value={action}
           onChange={(e) => setAction(e.target.value as RemediationAction)}
+          aria-label="Action"
           className="w-full rounded border px-2 py-1.5 text-sm"
           style={{ borderColor: "hsl(var(--line-1))" }}
         >
@@ -955,6 +961,7 @@ function LogActionForm({
           value={evidenceUrl}
           onChange={(e) => setEvidenceUrl(e.target.value)}
           placeholder="https://…/destruction-cert.pdf"
+          aria-label="Evidence URL"
         />
       </div>
       <div className="sm:col-span-2">
@@ -967,6 +974,7 @@ function LogActionForm({
           rows={2}
           className="w-full rounded border px-2 py-1.5 text-sm"
           style={{ borderColor: "hsl(var(--line-1))" }}
+          aria-label="Notes"
         />
       </div>
       {log.error instanceof Error && (
