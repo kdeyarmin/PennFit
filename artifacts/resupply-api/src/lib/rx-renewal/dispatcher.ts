@@ -71,7 +71,7 @@ export async function runRxRenewalSendDue(
     .toISOString()
     .slice(0, 10);
 
-  // Original Drizzle path INNER-JOINed prescriptions → patients to
+  // Original SQL path INNER-JOINed prescriptions → patients to
   // pull contact info in one round-trip. PostgREST has no JOIN, so
   // we fetch eligible prescription ids first then bulk-resolve
   // their patients via .in().

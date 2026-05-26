@@ -3,7 +3,7 @@
 // Why this exists
 // ---------------
 // pino-http sets `req.id` and `req.log` on every incoming request, but
-// helpers called from deep inside a route handler (a Drizzle query, a
+// helpers called from deep inside a route handler (a Supabase query, a
 // Stripe SDK call, a logAudit() write) don't receive `req` and so can
 // only emit log lines without the request-id correlator. That's the
 // gap P3.7 closes.

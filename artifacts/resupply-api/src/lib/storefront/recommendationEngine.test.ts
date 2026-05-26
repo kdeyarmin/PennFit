@@ -152,7 +152,8 @@ describe("recommendSize", () => {
 // React Health mask should out-rank an otherwise-equivalent mask from
 // another manufacturer. The boost is applied AFTER contra/pressure
 // penalties so a contraindicated React mask still loses to a viable
-// non-React one. These tests pin that behavior.
+// non-React one. It affects RANKING only — it is excluded from the
+// patient-facing `confidence`. These tests pin that behavior.
 
 const PROFILE_MEASUREMENTS: FacialMeasurements = {
   noseWidth: 28,
@@ -183,10 +184,11 @@ function answers(
 }
 
 describe("recommend — React Health manufacturer boost", () => {
-  it("ranks the React Health iVolve P2 above the ResMed AirFit P10 for a claustrophobic side-sleeper on low pressure", () => {
-    // Both masks are nasal pillows and are viable for this low-pressure
-    // profile. Without the boost they score very close. With the 1.15×
-    // boost on the React Health entry, iVolve P2 should win.
+  it("gives the React Health iVolve P2 the SAME confidence as the equivalent ResMed AirFit P10 (boost excluded from confidence)", () => {
+    // Both masks are nasal pillows with identical fit ranges and are
+    // viable for this low-pressure profile, so their clinical scores are
+    // equal. The manufacturer boost must NOT inflate the patient-facing
+    // confidence — it only affects ranking (see the next test).
     const result = recommend(
       PROFILE_MEASUREMENTS,
       answers({
@@ -200,7 +202,7 @@ describe("recommend — React Health manufacturer boost", () => {
     const airfitP10 = all.find((m) => m.maskId === "resmed-airfit-p10");
     expect(ivolveP2).toBeDefined();
     expect(airfitP10).toBeDefined();
-    expect(ivolveP2!.confidence).toBeGreaterThan(airfitP10!.confidence);
+    expect(ivolveP2!.confidence).toBeCloseTo(airfitP10!.confidence, 10);
   });
 
   it("keeps iVolve P2 ranked ahead of AirFit P10 by list order when both are viable", () => {
@@ -336,5 +338,72 @@ describe("recommend — P4 null answers don't fabricate reasons strings", () => 
     const top = result.topRecommendations[0];
     expect(top).toBeDefined();
     expect(top.reasoning.length).toBeGreaterThan(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Confidence clamping invariant
+// ---------------------------------------------------------------------------
+// confidence is computed from clinicalScore only (no brand boost) and is
+// clamped to [0, 1]. These tests verify the invariant holds across results.
+
+describe("recommend — confidence clamping invariant", () => {
+  it("every mask in topRecommendations has confidence in [0, 1]", () => {
+    const result = recommend(
+      PROFILE_MEASUREMENTS,
+      answers({
+        claustrophobic: true,
+        sideOrStomachSleeper: true,
+        cpapPressureSetting: "low",
+      }),
+    );
+    for (const rec of result.topRecommendations) {
+      expect(rec.confidence).toBeGreaterThanOrEqual(0);
+      expect(rec.confidence).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it("every mask in alternatives has confidence in [0, 1]", () => {
+    const result = recommend(PROFILE_MEASUREMENTS, answers());
+    for (const rec of result.alternatives) {
+      expect(rec.confidence).toBeGreaterThanOrEqual(0);
+      expect(rec.confidence).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it("a React Health mask that ranks #1 still has confidence <= 1 even though its sortScore may exceed 1", () => {
+    // For the high-fit nasal-pillow profile the iVolve P2's clinical
+    // score is near the top, and the 1.15x boost raises sortScore
+    // beyond 1.0. The confidence field must remain <= 1.0.
+    const result = recommend(
+      PROFILE_MEASUREMENTS,
+      answers({
+        claustrophobic: true,
+        sideOrStomachSleeper: true,
+        cpapPressureSetting: "low",
+      }),
+    );
+    const all = [...result.topRecommendations, ...result.alternatives];
+    const ivolveP2 = all.find((m) => m.maskId === "react-health-ivolve-p2");
+    expect(ivolveP2).toBeDefined();
+    expect(ivolveP2!.confidence).toBeLessThanOrEqual(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Result shape
+// ---------------------------------------------------------------------------
+// (sortScore/confidence independence — that the brand boost moves ranking
+// but not the patient-facing confidence — is already pinned by the two
+// "manufacturer boost" tests above: equal confidence for equivalent masks
+// plus iVolve ranked first.)
+
+describe("recommend — result shape", () => {
+  it("always contains at least one mask for a reasonable measurement set", () => {
+    // Belt-and-suspenders: the engine should never return empty lists.
+    const result = recommend(PROFILE_MEASUREMENTS, answers());
+    const total =
+      result.topRecommendations.length + result.alternatives.length;
+    expect(total).toBeGreaterThan(0);
   });
 });

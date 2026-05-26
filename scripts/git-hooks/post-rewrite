@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# managed by scripts/install-hooks.sh
+#
+# post-rewrite git hook. Fires after `git rebase` (and `git commit
+# --amend`). Reconciles pnpm-lock.yaml when the rewrite changed it — e.g.
+# the pnpm-lock merge driver took one side while replaying commits over a
+# diverged lockfile during a rebase. Best-effort; never blocks.
+#
+# git feeds this hook the list of rewritten commits on stdin and the
+# triggering command ("rebase" / "amend") as $1; the reconcile helper
+# needs neither, so we just hand off.
+set -uo pipefail
+
+root="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
+exec bash "$root/scripts/git-hooks/reconcile-pnpm-lock.sh"

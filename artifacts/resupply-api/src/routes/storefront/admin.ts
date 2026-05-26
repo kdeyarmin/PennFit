@@ -144,7 +144,7 @@ router.get("/admin/orders", async (req, res) => {
   }
 
   // Map snake_case row shape back to the camelCase contract the SPA
-  // expects (matches the prior Drizzle alias-set output).
+  // expects (matches the prior alias-set output).
   res.json({
     orders: rows.map((r) => ({
       id: r.id,

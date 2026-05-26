@@ -51,7 +51,7 @@
 //   intuitively means by "how much has this customer spent with us".
 //
 // PostgREST-specific notes:
-//   The original Drizzle path used a single SQL CTE per endpoint
+//   The original SQL path used a single CTE per endpoint
 //   (CTEs + LEFT JOINs + GROUP BY + FILTER aggregates). PostgREST
 //   exposes none of those, so each call site does a few small
 //   parallel reads and aggregates JS-side. Datasets are bounded —

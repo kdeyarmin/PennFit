@@ -26,10 +26,12 @@
 import { validateSupabaseEnv } from "@workspace/resupply-db";
 import { hasLinkHmacKey, LINK_HMAC_KEY_ENV } from "@workspace/resupply-secrets";
 
-// `DATABASE_URL` is still required during the Drizzle → Supabase
-// migration: most query sites haven't been ported yet and continue
-// to use the shared pg pool. Once every site is on the Supabase JS
-// client, drop DATABASE_URL from this list and from .env.example.
+// `DATABASE_URL` is still required at boot: the migrator
+// (`scripts/migrate.mjs`) and a small number of legacy worker paths
+// (e.g. `worker/jobs/bulk-campaign-tick.ts`) still use the shared
+// `pg` pool. The runtime data path is the Supabase JS client; if
+// those last `pg` callers are ported, drop DATABASE_URL from this
+// list and from .env.example.
 const REQUIRED_PLAIN_ENV_VARS = ["PORT", "DATABASE_URL"] as const;
 
 /**

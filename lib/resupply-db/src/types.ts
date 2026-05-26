@@ -1,8 +1,8 @@
 // Pure TypeScript types and constants re-exported by the
 // `@workspace/resupply-db` package barrel.
 //
-// History: these types used to live inside individual Drizzle schema
-// files under `./schema/**`. The Drizzle tooling was retired and the
+// History: these types used to be generated into individual schema
+// files under `./schema/**`. That codegen was retired and the
 // schema directory was deleted; this module is now the only home
 // for the public DB-level types.
 //
