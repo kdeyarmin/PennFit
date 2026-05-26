@@ -21,7 +21,7 @@ const SRC = readFileSync(
 );
 
 // ---------------------------------------------------------------------------
-// ProductivityBody — `unavailable` branch removed
+// ProductivityBody — `unavailable` branch present
 // ---------------------------------------------------------------------------
 
 describe("admin-analytics ProductivityBody — unavailable branch present", () => {
