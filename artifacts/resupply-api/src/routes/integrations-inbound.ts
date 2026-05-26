@@ -21,7 +21,8 @@
 
 import { createHash } from "node:crypto";
 
-import express, { Router, type IRouter } from "express";
+import express, { Router, type IRouter, type Request } from "express";
+import expressRateLimit, { ipKeyGenerator } from "express-rate-limit";
 import type { IncomingHttpHeaders } from "node:http";
 import { z } from "zod";
 
@@ -34,7 +35,6 @@ import {
 import { verifyParachuteSignature } from "@workspace/resupply-integrations-parachute";
 
 import { logger } from "../lib/logger";
-import { rateLimit } from "../middlewares/rate-limit";
 import { RATE_LIMITS } from "../lib/rate-limits-config";
 
 const router: IRouter = Router();
@@ -83,11 +83,16 @@ const rawJson = express.raw({ type: "application/json", limit: "1mb" });
 // above the burstiest partner replay window (Parachute caps its
 // retry storm at ~30/min) but cuts off scripted abuse early.
 // Keyed on req.ip because no authenticated identity is available at
-// this point in the request lifecycle.
-const inboundWebhookLimiter = rateLimit({
+// this point in the request lifecycle. Uses `express-rate-limit`
+// directly (rather than the in-house `rateLimit` helper) so static
+// analyzers recognize the gate on this unauthenticated endpoint.
+const inboundWebhookLimiter = expressRateLimit({
   windowMs: RATE_LIMITS.integrations_inbound_dispatch.windowMs,
-  max: RATE_LIMITS.integrations_inbound_dispatch.limit,
-  name: "integrations_inbound_ip",
+  limit: RATE_LIMITS.integrations_inbound_dispatch.limit,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  keyGenerator: (req: Request) => ipKeyGenerator(req.ip ?? "0.0.0.0"),
+  message: { error: "too_many_requests", limiter: "integrations_inbound_ip" },
 });
 
 router.post("/integrations/inbound/:source", inboundWebhookLimiter, rawJson, async (req, res) => {
