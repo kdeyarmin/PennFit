@@ -1,13 +1,13 @@
 // Tests for lib/admin/analytics-api.ts
 //
-// PR change: the `unavailable?` field was removed from
-// CsrProductivityResponse. The audit-log retirement notice is no
-// longer modelled as a typed flag on the response shape; the
-// per-operator productivity table is expected to be available at all
-// times.
+// Per-operator (CSR) productivity is derived from the retired `audit_log`
+// table, so the route short-circuits to a degraded response (CLAUDE.md
+// hard rule: no new `audit_log` readers). CsrProductivityResponse models
+// that with an optional `unavailable?` flag the UI surfaces as a "no
+// longer tracked" notice.
 //
 // Coverage:
-//   1. CsrProductivityResponse type does NOT carry `unavailable`.
+//   1. CsrProductivityResponse type carries the optional `unavailable` flag.
 //   2. CsrProductivityResponse carries the required fields.
 //   3. fetchCsrProductivity() calls the correct URL.
 //   4. fetchCsrProductivity() propagates server errors correctly.
@@ -41,32 +41,22 @@ afterEach(() => {
 // ---------------------------------------------------------------------------
 
 describe("analytics-api — CsrProductivityResponse type shape", () => {
-  it("CsrProductivityResponse interface does NOT declare `unavailable`", () => {
-    // Locate the interface block in source and assert the field is absent.
+  it("CsrProductivityResponse interface declares the optional `unavailable` flag", () => {
     const ifaceStart = SRC.indexOf("interface CsrProductivityResponse {");
     expect(ifaceStart).toBeGreaterThan(-1);
-    const ifaceEnd = SRC.indexOf("}", ifaceStart);
+    // Closing brace sits at column 0 (`\n}`).
+    const ifaceEnd = SRC.indexOf("\n}", ifaceStart);
     const ifaceBody = SRC.slice(ifaceStart, ifaceEnd);
-    expect(ifaceBody).not.toContain("unavailable");
+    expect(ifaceBody).toContain("unavailable?: boolean");
   });
 
   it("CsrProductivityResponse interface declares the required fields", () => {
     const ifaceStart = SRC.indexOf("interface CsrProductivityResponse {");
-    const ifaceEnd = SRC.indexOf("}", ifaceStart);
+    const ifaceEnd = SRC.indexOf("\n}", ifaceStart);
     const ifaceBody = SRC.slice(ifaceStart, ifaceEnd);
     expect(ifaceBody).toContain("windowDays");
     expect(ifaceBody).toContain("rows");
     expect(ifaceBody).toContain("totalActions");
-  });
-
-  // Boundary/regression: the field must be completely absent — not just
-  // commented out or renamed — so a future refactor that re-adds it
-  // requires an explicit PR conversation.
-  it("source file does not mention `unavailable` anywhere in the productivity section", () => {
-    const ifaceStart = SRC.indexOf("interface CsrProductivityResponse {");
-    // Slice forward 200 chars to cover the full interface body safely.
-    const ifaceRegion = SRC.slice(ifaceStart, ifaceStart + 300);
-    expect(ifaceRegion).not.toContain("unavailable");
   });
 });
 

@@ -1,9 +1,10 @@
 // Tests for pages/admin/admin-delivery-failures.tsx
 //
-// PR change: the `if (data.auditEventsUnavailable)` branch was removed
-// from AuditFailuresTable. The system-events "no longer tracked"
-// notice is gone; the component now always renders either the
-// empty-state message or the audit-events table.
+// The system-events stream reads the retired `audit_log` table, so
+// AuditFailuresTable short-circuits on `data.auditEventsUnavailable` and
+// renders a "no longer tracked" notice (CLAUDE.md hard rule: the four
+// audit_log readers surface a degraded contract instead of fabricating
+// data). These tests pin that notice so it isn't accidentally dropped.
 //
 // The vitest environment is "node" (no DOM). We read the source as a
 // string and assert the structural invariants.
@@ -23,32 +24,34 @@ const SRC = readFileSync(
 // AuditFailuresTable — `auditEventsUnavailable` branch removed
 // ---------------------------------------------------------------------------
 
-describe("admin-delivery-failures AuditFailuresTable — unavailable branch removed", () => {
-  it("does not render a data-testid='audit-events-unavailable' element", () => {
-    expect(SRC).not.toContain("audit-events-unavailable");
+describe("admin-delivery-failures AuditFailuresTable — unavailable branch present", () => {
+  it("renders a data-testid='audit-events-unavailable' element", () => {
+    expect(SRC).toContain("audit-events-unavailable");
   });
 
-  it("does not check data.auditEventsUnavailable in AuditFailuresTable", () => {
+  it("checks data.auditEventsUnavailable in AuditFailuresTable", () => {
     const fnStart = SRC.indexOf("function AuditFailuresTable(");
     expect(fnStart).toBeGreaterThan(-1);
     const fnEnd = SRC.indexOf("\nfunction ", fnStart + 1);
     const fnBody = SRC.slice(fnStart, fnEnd > 0 ? fnEnd : undefined);
-    expect(fnBody).not.toContain("auditEventsUnavailable");
-    expect(fnBody).not.toContain(".auditEventsUnavailable");
+    expect(fnBody).toContain("auditEventsUnavailable");
   });
 
-  it("does not render the 'no longer tracked' retirement notice in audit context", () => {
+  it("renders the 'no longer tracked' retirement notice in audit context", () => {
     // Narrow the check to the AuditFailuresTable region so we don't
     // accidentally match unrelated text elsewhere in the file.
     const fnStart = SRC.indexOf("function AuditFailuresTable(");
     const fnEnd = SRC.indexOf("\nfunction ", fnStart + 1);
     const fnBody = SRC.slice(fnStart, fnEnd > 0 ? fnEnd : undefined);
-    expect(fnBody).not.toContain("System events are no longer tracked");
-    expect(fnBody).not.toContain("audit log was retired");
+    expect(fnBody).toContain("System events are no longer tracked");
+    // The phrase wraps across a JSX line break in source ("audit log was\n
+    // retired"), so assert on the contiguous lead-in rather than the full
+    // sentence.
+    expect(fnBody).toContain("The underlying audit log was");
   });
 
-  it("source file does not reference auditEventsUnavailable anywhere", () => {
-    expect(SRC).not.toContain("auditEventsUnavailable");
+  it("references auditEventsUnavailable in the source", () => {
+    expect(SRC).toContain("auditEventsUnavailable");
   });
 });
 
