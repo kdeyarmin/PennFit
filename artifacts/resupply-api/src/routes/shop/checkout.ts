@@ -37,6 +37,7 @@ import {
 } from "../../lib/stripe/config";
 import { isFeatureEnabled } from "../../lib/feature-flags";
 import { getOrCreateStripeCustomer } from "../../lib/stripe/customer";
+import { validateCartItems } from "../../lib/stripe/validate-cart";
 import { readCustomerProfile } from "../../lib/customer-profile";
 import { rateLimit } from "../../middlewares/rate-limit";
 import { attachSignedIn } from "../../middlewares/requireSignedIn";
@@ -195,6 +196,28 @@ router.post(
       .digest("hex");
 
     const stripe = getStripeClient(config);
+
+    // Catalog guard: every price in the cart must belong to the approved
+    // shop catalog and respect stock/type constraints. The sibling
+    // /shop/me/quick-checkout route applies the same guard; without it a
+    // tampered cart could check out stale/legacy prices, out-of-stock
+    // items, or SKUs intentionally excluded from /shop/products.
+    const cartValidation = await validateCartItems(stripe, items);
+    if (!cartValidation.ok) {
+      req.log?.warn(
+        { errors: cartValidation.errors },
+        "shop checkout: cart validation failed",
+      );
+      res.status(400).json({
+        error: "cart_invalid",
+        issues: cartValidation.errors.map((e) => ({
+          priceId: e.priceId,
+          reason: e.reason,
+          message: e.message,
+        })),
+      });
+      return;
+    }
 
     // If the user is signed in, attach (or create) their Stripe Customer
     // so the saved card + address pre-fill on the Stripe page AND so the
