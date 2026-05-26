@@ -36,7 +36,20 @@
  */
 export function normalizeE164(raw: string | null | undefined): string | null {
   if (raw == null) return null;
-  const trimmed = String(raw).trim();
+  let trimmed = String(raw).trim();
+  if (!trimmed) return null;
+
+  // Strip a clearly-marked trailing extension (e.g. "x99", "ext. 99",
+  // "extension 99", "#99") BEFORE extracting digits. Otherwise the
+  // extension digits get folded into the subscriber number: the
+  // +-prefixed path accepted 8–15 digits and silently produced a
+  // corrupted E.164, while the no-+ path rejected the same input
+  // (asymmetric). SMS/voice can't reach an extension, so we normalize
+  // to the base line. Requires a separator before the marker so an
+  // infix "x" used as a plain separator ("800x5551212") is untouched.
+  trimmed = trimmed
+    .replace(/[\s,;]\s*(?:ext\.?|extension|x|#)\s*\.?\s*\d+\s*$/i, "")
+    .trim();
   if (!trimmed) return null;
 
   const hasPlus = trimmed.startsWith("+");
