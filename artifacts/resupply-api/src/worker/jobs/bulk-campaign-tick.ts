@@ -273,7 +273,24 @@ export async function processTick(
     // would otherwise still receive the message. Compliance categories
     // (recall / HIPAA notice) intentionally bypass this gate — the
     // resolver makes the same exception at enqueue time.
-    if (campaign.category !== "compliance") {
+    const optedOut = await isRecipientOptedOut(
+      supabase,
+      row.recipient_kind,
+      row.recipient_id,
+      campaign.category,
+    );
+    if (optedOut) {
+      await supabase
+        .schema("resupply")
+        .from("bulk_campaign_recipients")
+        .update({
+          status: "suppressed",
+          suppression_reason: "opted_out_at_send_time",
+        })
+        .eq("id", row.id);
+      suppressedAtSend += 1;
+      continue;
+    }
       const optedOut = await isRecipientOptedOut(
         supabase,
         row.recipient_kind,
