@@ -35,9 +35,11 @@ vi.mock("@workspace/resupply-audit", () => ({
 
 const placeOrderMock = vi.fn();
 const pausePatientMock = vi.fn();
+const reactivatePatientMock = vi.fn();
 vi.mock("../../lib/messaging/order-flow", () => ({
   placeResupplyOrderForConversation: (...a: unknown[]) => placeOrderMock(...a),
   pausePatient: (...a: unknown[]) => pausePatientMock(...a),
+  reactivatePatient: (...a: unknown[]) => reactivatePatientMock(...a),
 }));
 
 // MMS ingestion — mocked at the module boundary so the route test
@@ -123,6 +125,7 @@ describe("POST /sms/inbound", () => {
     logAuditMock.mockReset().mockResolvedValue(undefined);
     placeOrderMock.mockReset();
     pausePatientMock.mockReset().mockResolvedValue(undefined);
+    reactivatePatientMock.mockReset().mockResolvedValue(undefined);
     ingestMmsMock.mockReset().mockResolvedValue({
       attempted: 0,
       succeeded: 0,
@@ -275,6 +278,35 @@ describe("POST /sms/inbound", () => {
       );
     expect(handoffAudit).toBeDefined();
     expect(handoffAudit?.metadata.patient_status).toBe("paused");
+  });
+
+  it("START keyword reactivates the patient + closes the conversation", async () => {
+    setMessagingEnv();
+    stageKnownPatientFlow();
+
+    const res = await request(makeApp())
+      .post("/resupply-api/sms/inbound")
+      .type("form")
+      .send({
+        From: FROM_PHONE,
+        To: "+12158675309",
+        Body: "START",
+        MessageSid: "SM_start",
+        NumMedia: "0",
+      });
+    expect(res.status).toBe(200);
+    expect(res.text).toContain("resubscribed");
+    expect(reactivatePatientMock).toHaveBeenCalledWith(PATIENT_ID);
+    expect(pausePatientMock).not.toHaveBeenCalled();
+    const startAudit = logAuditMock.mock.calls
+      .map((c) => c[0])
+      .find(
+        (a) =>
+          a.action === "messaging.handoff.escalated" &&
+          a.metadata.reason === "start_keyword",
+      );
+    expect(startAudit).toBeDefined();
+    expect(startAudit?.metadata.patient_status).toBe("active");
   });
 
   it("AI fallback fires on unknown intent and steers dispatch", async () => {

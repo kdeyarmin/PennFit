@@ -311,3 +311,56 @@ export async function pausePatient(patientId: string): Promise<void> {
     .eq("customer_id", cust.customer_id);
   if (prefsUpdateErr) throw prefsUpdateErr;
 }
+
+/**
+ * Re-activate a patient who previously texted STOP (CTIA START / UNSTOP
+ * opt-in). The exact inverse of `pausePatient`: flips a `paused` patient
+ * back to `active` and re-enables the shop_customers SMS flags.
+ *
+ * The status update is guarded to `paused` rows only so a START reply
+ * can never resurrect an `archived` (or otherwise non-paused) patient —
+ * it only undoes a STOP-induced pause. A no-op (already active, or never
+ * paused) returns cleanly so the caller can still send the canonical
+ * opt-in confirmation reply.
+ */
+export async function reactivatePatient(patientId: string): Promise<void> {
+  const supabase = getSupabaseServiceRoleClient();
+  const nowIso = new Date().toISOString();
+  const { data: patient, error } = await supabase
+    .schema("resupply")
+    .from("patients")
+    .update({ status: "active", updated_at: nowIso })
+    .eq("id", patientId)
+    .eq("status", "paused")
+    .select("id, email")
+    .maybeSingle();
+  if (error) throw error;
+  if (!patient?.email) return;
+  const emailLower = patient.email.toLowerCase();
+  const { data: cust } = await supabase
+    .schema("resupply")
+    .from("shop_customers")
+    .select("customer_id, communication_preferences")
+    .eq("email_lower", emailLower)
+    .limit(1)
+    .maybeSingle();
+  if (!cust) return;
+  const prefs = (cust.communication_preferences ?? {}) as Record<
+    string,
+    unknown
+  >;
+  const nextPrefs = {
+    ...prefs,
+    smsMarketing: true,
+    smsTransactional: true,
+  };
+  const { error: prefsUpdateErr } = await supabase
+    .schema("resupply")
+    .from("shop_customers")
+    .update({
+      communication_preferences: nextPrefs as unknown as Json,
+      updated_at: nowIso,
+    })
+    .eq("customer_id", cust.customer_id);
+  if (prefsUpdateErr) throw prefsUpdateErr;
+}

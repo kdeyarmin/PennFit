@@ -71,6 +71,7 @@ import {
 } from "../../lib/messaging/messaging-config";
 import {
   pausePatient,
+  reactivatePatient,
   placeResupplyOrderForConversation,
 } from "../../lib/messaging/order-flow";
 import { findActiveClosure } from "../../lib/office-closure/active";
@@ -274,12 +275,18 @@ router.post("/sms/inbound", signatureMiddleware, smsPhoneLimiter, async (req, re
   const patientId = lookupMatches[0]?.id;
 
   // Office closure auto-reply — STOP/HELP are already handled above
-  // and never reach here. Any other inbound during an active closure
-  // gets the configured auto-reply and short-circuits the normal
-  // dispatch (no conversation row created, no patient-side reply
-  // beyond the closure message). Surveyors and operations folks
-  // both expect a "we're closed today" voice on inbound messages.
-  if (earlyRouted.intent !== "stop" && earlyRouted.intent !== "help") {
+  // and never reach here. START (carrier opt-in) also bypasses the
+  // closure so a re-subscribe is honored immediately. Any other inbound
+  // during an active closure gets the configured auto-reply and
+  // short-circuits the normal dispatch (no conversation row created, no
+  // patient-side reply beyond the closure message). Surveyors and
+  // operations folks both expect a "we're closed today" voice on
+  // inbound messages.
+  if (
+    earlyRouted.intent !== "stop" &&
+    earlyRouted.intent !== "help" &&
+    earlyRouted.intent !== "start"
+  ) {
     try {
       const activeClosure = await findActiveClosure(supabase);
       if (activeClosure) {
@@ -905,6 +912,35 @@ async function dispatchIntent(input: DispatchInput): Promise<string> {
         userAgent: input.userAgent,
       });
       return "You've been unsubscribed and won't get further messages from us. Reply START to resume.";
+    }
+    case "start": {
+      // Carrier-mandated opt-in. Reverse a STOP-induced pause so the
+      // patient resumes receiving reminders, then close the
+      // conversation (a keyword reply, not a dialog turn).
+      await reactivatePatient(input.patientId);
+      const { error: startErr } = await supabase
+        .schema("resupply")
+        .from("conversations")
+        .update({ status: "closed", updated_at: nowIso })
+        .eq("id", input.conversationId);
+      if (startErr) throw startErr;
+      await safeAudit({
+        action: "messaging.handoff.escalated",
+        adminEmail: null,
+        adminUserId: null,
+        targetTable: "patients",
+        targetId: input.patientId,
+        metadata: {
+          channel: "sms",
+          conversation_id: input.conversationId,
+          patient_id: input.patientId,
+          reason: "start_keyword",
+          patient_status: "active",
+        },
+        ip: input.ip,
+        userAgent: input.userAgent,
+      });
+      return `You're resubscribed and will start receiving messages from ${input.practiceName} again. Reply STOP to opt out at any time.`;
     }
     case "help": {
       return (

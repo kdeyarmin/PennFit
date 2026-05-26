@@ -60,6 +60,8 @@ const CANONICAL_INPUT = {
 const PROMPT_VERSION_HASHES: Readonly<Record<string, string>> = {
   "2026-05-22.v2":
     "92ccc9744b4fa0354054ad636116d2cc2ae30b593fe20932421e9591d4f9b975",
+  "2026-05-26.v3":
+    "0391e79380bd79dc9455392f3e2dd3cd848d6869703d4b40031b3ea81136df27",
 };
 
 function renderCanonicalPrompt(): string {
