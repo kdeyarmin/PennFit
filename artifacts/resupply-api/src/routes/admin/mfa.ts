@@ -668,7 +668,6 @@ router.post(
       .delete()
       .eq("id", target.id);
     if (delErr) throw delErr;
-    }
 
     await logAudit({
       action: "auth.mfa.device_removed",

@@ -13,10 +13,6 @@ import { describe, expect, it, beforeEach } from "vitest";
 
 import {
   aiPatchSchema,
-import {
-  aiPatchSchema,
-  applyAiPatches,
-} from "./ai-patch";
   applyAiPatches,
 } from "./ai-patch";
 import {
