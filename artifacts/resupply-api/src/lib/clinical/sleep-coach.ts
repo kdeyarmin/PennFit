@@ -455,15 +455,16 @@ export async function askSleepCoach(input: SleepCoachInput): Promise<SleepCoachR
         tool_calls: toolCalls,
       });
       for (const call of toolCalls) {
-        let parsedArgs: unknown;
-        try {
-          parsedArgs = call.function.arguments
-            ? JSON.parse(call.function.arguments)
-            : {};
-        } catch {
-          parsedArgs = {};
-        }
-        const toolResult = executeChatTool(call.function.name, parsedArgs);
+        const toolResult = (() => {
+          try {
+            const parsedArgs = call.function.arguments
+              ? JSON.parse(call.function.arguments)
+              : {};
+            return executeChatTool(call.function.name, parsedArgs);
+          } catch {
+            return { ok: false as const, error: "Invalid tool arguments JSON" };
+          }
+        })();
         messages.push({
           role: "tool",
           tool_call_id: call.id,
