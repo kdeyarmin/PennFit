@@ -385,12 +385,20 @@ class Impl implements VoiceToolDispatcher {
       .eq("patient_id", this.deps.patientId)
       .eq("status", "active");
     if (rxErr) throw rxErr;
+    const normalizeSku = (sku: string): string => sku.trim().toUpperCase();
     const eligibleSkus = new Set(
       (rxRows ?? [])
         .map((r) => r.item_sku)
-        .filter((s): s is string => Boolean(s)),
+        .filter((s): s is string => Boolean(s))
+        .map(normalizeSku),
     );
-    const acceptedSkus = args.skus.filter((s) => eligibleSkus.has(s));
+    const acceptedSkus = Array.from(
+      new Set(
+        args.skus
+          .map(normalizeSku)
+          .filter((s) => eligibleSkus.has(s)),
+      ),
+    );
 
     // Mark the episode as `confirmed`. Actual order placement against
     // Pacware is a downstream worker job; the admin dashboard will

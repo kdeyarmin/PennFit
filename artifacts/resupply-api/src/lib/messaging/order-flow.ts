@@ -337,13 +337,14 @@ export async function reactivatePatient(patientId: string): Promise<void> {
   if (error) throw error;
   if (!patient?.email) return;
   const emailLower = patient.email.toLowerCase();
-  const { data: cust } = await supabase
+  const { data: cust, error: custErr } = await supabase
     .schema("resupply")
     .from("shop_customers")
     .select("customer_id, communication_preferences")
     .eq("email_lower", emailLower)
     .limit(1)
     .maybeSingle();
+  if (custErr) throw custErr;
   if (!cust) return;
   const prefs = (cust.communication_preferences ?? {}) as Record<
     string,
