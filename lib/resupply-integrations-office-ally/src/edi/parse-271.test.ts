@@ -26,6 +26,16 @@ describe("parse271 — coverage status (EB01)", () => {
     expect(parse271(x).isActive).toBe(true);
   });
 
+  it("treats mix of EB01=6 (inactive) and EB01=1 (active) as active when EB01=1 is present — EB01=6 first", () => {
+    const x = ["TRN*2*TRACE-MIX-001~", "EB*6~", "EB*1~"].join("");
+    expect(parse271(x).isActive).toBe(true);
+  });
+
+  it("treats mix of EB01=6 (inactive) and EB01=1 (active) as active when EB01=1 is present — EB01=1 first", () => {
+    const x = ["TRN*2*TRACE-MIX-002~", "EB*1~", "EB*6~"].join("");
+    expect(parse271(x).isActive).toBe(true);
+  });
+
   it("defaults to not-active when no coverage-status EB segment is present", () => {
     const x = ["TRN*2*TRACE-005~", "EB*I~"].join("");
     expect(parse271(x).isActive).toBe(false);

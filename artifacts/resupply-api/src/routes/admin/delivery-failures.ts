@@ -28,6 +28,7 @@
 // permitted in the rest of the admin console).
 
 import { Router, type IRouter } from "express";
+import { z } from "zod";
 
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
@@ -47,23 +48,23 @@ const FAILURE_STATUSES = [
 const DEFAULT_DAYS_BACK = 14;
 const MAX_ROWS = 200;
 
+const querySchema = z.object({
+  sinceDays: z.coerce.number().int().min(1).max(90).optional(),
+});
+
 // Webhook-delivery error triage queue. `reports.read` matches the
 // CSV exports + analytics — admin / supervisor / csr /
 // compliance_officer / agent. Fitter + fulfillment have no
 // delivery-failure workflow.
 router.get("/admin/delivery-failures", requirePermission("reports.read"), async (req, res) => {
-  // Treat a missing, empty/blank, or array-valued ?sinceDays as "use
-  // the default" (Number("") is 0, which would otherwise clamp to 1).
-  // A non-numeric value (NaN/Infinity) also falls back to the default
-  // rather than 500ing on `new Date(NaN)`.
-  const sinceParam = req.query.sinceDays;
-  const rawSinceDays =
-    typeof sinceParam === "string" && sinceParam.trim() !== ""
-      ? Number(sinceParam)
-      : NaN;
-  const sinceDays = Number.isFinite(rawSinceDays)
-    ? Math.min(Math.max(1, rawSinceDays), 90)
-    : DEFAULT_DAYS_BACK;
+  const parseResult = querySchema.safeParse(req.query);
+  if (!parseResult.success) {
+    return res.status(400).json({
+      error: "Invalid query parameters",
+      details: parseResult.error.format(),
+    });
+  }
+  const sinceDays = parseResult.data.sinceDays ?? DEFAULT_DAYS_BACK;
   const since = new Date(Date.now() - sinceDays * 86400_000).toISOString();
 
   const supabase = getSupabaseServiceRoleClient();
@@ -180,7 +181,7 @@ router.get("/admin/delivery-failures", requirePermission("reports.read"), async 
   }> = [];
   const auditEventsUnavailable = true;
 
-  res.json({
+  return res.json({
     sinceDays,
     counts: {
       messageFailures: messageEvents.length,
