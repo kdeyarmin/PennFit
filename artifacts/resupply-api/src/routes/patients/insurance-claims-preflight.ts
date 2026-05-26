@@ -8,6 +8,8 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
+import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+
 import { preflightClaim } from "../../lib/billing/claim-preflight";
 import { requirePermission } from "../../middlewares/requireAdmin";
 
@@ -25,6 +27,23 @@ router.get(
     const parsed = params.safeParse(req.params);
     if (!parsed.success) {
       res.status(404).json({ error: "not_found" });
+      return;
+    }
+    // Scope the claim to the patient in the path. Without this, a
+    // mismatched :id / :claimId pairing would return another patient's
+    // claim preflight (ICD-10 diagnosis, payer, HCPCS lines) — an IDOR.
+    // preflightClaim() looks the claim up by id only, so we gate here.
+    const supabase = getSupabaseServiceRoleClient();
+    const { data: owned, error: ownErr } = await supabase
+      .schema("resupply")
+      .from("insurance_claims")
+      .select("id")
+      .eq("id", parsed.data.claimId)
+      .eq("patient_id", parsed.data.id)
+      .maybeSingle();
+    if (ownErr) throw ownErr;
+    if (!owned) {
+      res.status(404).json({ error: "claim_not_found" });
       return;
     }
     const summary = await preflightClaim(parsed.data.claimId);

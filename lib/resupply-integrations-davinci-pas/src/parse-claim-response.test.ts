@@ -125,4 +125,38 @@ describe("parseClaimResponse", () => {
     });
     expect(r.decision).toBe("pended");
   });
+
+  it("does NOT treat a `submitted` financial adjudication line as approval", () => {
+    // `submitted` is the FHIR financial category for the billed amount;
+    // it rides along on denied claims too. A denial whose first
+    // adjudication line is `submitted` must still resolve to denied.
+    const r = parseClaimResponse({
+      resourceType: "ClaimResponse",
+      outcome: "complete",
+      item: [
+        {
+          adjudication: [
+            { category: { coding: [{ code: "submitted" }] }, amount: { value: 249.99 } },
+            { category: { coding: [{ code: "denied" }] } },
+          ],
+        },
+      ],
+    });
+    expect(r.decision).toBe("denied");
+  });
+
+  it("stays pended when the only adjudication code is `submitted`/`complete` (no real decision)", () => {
+    const submittedOnly = parseClaimResponse({
+      resourceType: "ClaimResponse",
+      outcome: "complete",
+      item: [
+        {
+          adjudication: [
+            { category: { coding: [{ code: "submitted" }] }, amount: { value: 100 } },
+          ],
+        },
+      ],
+    });
+    expect(submittedOnly.decision).toBe("pended");
+  });
 });

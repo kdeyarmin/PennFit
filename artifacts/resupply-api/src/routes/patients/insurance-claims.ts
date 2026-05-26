@@ -219,12 +219,15 @@ async function recomputeTotals(
   const { data: lines, error } = await supabase
     .schema("resupply")
     .from("insurance_claim_line_items")
-    .select("billed_cents, allowed_cents, paid_cents")
+    .select("billed_cents, quantity, allowed_cents, paid_cents")
     .eq("claim_id", claimId);
   if (error) throw error;
   const totals = (lines ?? []).reduce(
     (acc, l) => ({
-      billed: acc.billed + (l.billed_cents ?? 0),
+      // billed_cents is the PER-UNIT charge; the extended line charge
+      // (and HCFA Box 24F / 837P SV102) is billed_cents * quantity.
+      // allowed/paid come from the payer's 835 as line totals already.
+      billed: acc.billed + (l.billed_cents ?? 0) * (l.quantity ?? 1),
       allowed: acc.allowed + (l.allowed_cents ?? 0),
       paid: acc.paid + (l.paid_cents ?? 0),
     }),

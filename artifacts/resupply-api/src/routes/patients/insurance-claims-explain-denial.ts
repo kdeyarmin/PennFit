@@ -8,6 +8,8 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
+import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+
 import { logAudit } from "@workspace/resupply-audit";
 
 import {
@@ -31,6 +33,22 @@ router.post(
     const parsed = params.safeParse(req.params);
     if (!parsed.success) {
       res.status(404).json({ error: "not_found" });
+      return;
+    }
+    // Scope the claim to the patient in the path. explainDenialToPatient()
+    // looks the claim up by id only, so a mismatched :id / :claimId would
+    // otherwise generate an explanation for another patient's claim (IDOR).
+    const supabase = getSupabaseServiceRoleClient();
+    const { data: owned, error: ownErr } = await supabase
+      .schema("resupply")
+      .from("insurance_claims")
+      .select("id")
+      .eq("id", parsed.data.claimId)
+      .eq("patient_id", parsed.data.id)
+      .maybeSingle();
+    if (ownErr) throw ownErr;
+    if (!owned) {
+      res.status(404).json({ error: "claim_not_found" });
       return;
     }
     const result = await explainDenialToPatient({

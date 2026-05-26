@@ -136,11 +136,13 @@ function extractAdjudicationCode(
   if (!coding) return null;
   for (const c of coding) {
     const code = typeof c.code === "string" ? c.code.toLowerCase() : "";
-    if (
-      code === "approved" ||
-      code === "submitted" ||
-      code === "complete"
-    ) {
+    // Only an explicit `approved` adjudication code is an approval.
+    // `submitted` is the FHIR financial category for the billed amount
+    // (it rides along on essentially every adjudicated item, including
+    // denials), and `complete` is a `ClaimResponse.outcome` value
+    // ("processing finished", not "authorized"). Treating either as
+    // approved would auto-approve a denied/pended prior auth.
+    if (code === "approved") {
       return "approved";
     }
     if (code === "denied" || code === "rejected") return "denied";

@@ -28,6 +28,7 @@
 // permitted in the rest of the admin console).
 
 import { Router, type IRouter } from "express";
+import { z } from "zod";
 
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
@@ -47,15 +48,26 @@ const FAILURE_STATUSES = [
 const DEFAULT_DAYS_BACK = 14;
 const MAX_ROWS = 200;
 
+const querySchema = z.object({
+  sinceDays: z.coerce.number().int().min(1).max(90).optional(),
+});
+
 // Webhook-delivery error triage queue. `reports.read` matches the
 // CSV exports + analytics — admin / supervisor / csr /
 // compliance_officer / agent. Fitter + fulfillment have no
 // delivery-failure workflow.
 router.get("/admin/delivery-failures", requirePermission("reports.read"), async (req, res) => {
-  const sinceDays = Math.min(
-    Math.max(1, Number(req.query.sinceDays ?? DEFAULT_DAYS_BACK)),
-    90,
-  );
+  const parseResult = querySchema.safeParse(req.query);
+  if (!parseResult.success) {
+    return res.status(400).json({
+      error: "invalid_query",
+      issues: parseResult.error.issues.map((i) => ({
+        path: i.path.join("."),
+        message: i.message,
+      })),
+    });
+  }
+  const sinceDays = parseResult.data.sinceDays ?? DEFAULT_DAYS_BACK;
   const since = new Date(Date.now() - sinceDays * 86400_000).toISOString();
 
   const supabase = getSupabaseServiceRoleClient();
@@ -172,7 +184,7 @@ router.get("/admin/delivery-failures", requirePermission("reports.read"), async 
   }> = [];
   const auditEventsUnavailable = true;
 
-  res.json({
+  return res.json({
     sinceDays,
     counts: {
       messageFailures: messageEvents.length,

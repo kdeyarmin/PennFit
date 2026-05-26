@@ -61,23 +61,29 @@ export async function runInboundReferralPreflightTick(): Promise<PreflightTickSt
     failed: 0,
   };
 
-  // Atomically claim a batch of rows by setting updated_at to a marker value.
-  // This prevents race conditions when multiple workers run simultaneously.
-  const claimMarker = new Date().toISOString();
+  // Select a batch of referrals still needing preflight. We intentionally
+  // do NOT take a DB-level claim: pg-boss runs this scheduled job as a
+  // singleton (ticks don't overlap), and runReferralPreflight is
+  // idempotent — it clears prior checks before re-recording and the
+  // physician-fax side effect is cool-down-guarded — so a re-run (manual
+  // /run-preflight route, a retry, or a future overlap) converges to one
+  // correct result instead of duplicating rows. The previous
+  // `UPDATE ... SET updated_at` looked like a claim but changed no
+  // WHERE-predicate column, so it never actually excluded a concurrent
+  // tick's rows — it only churned updated_at. Dropped.
   const { data: rows, error } = await supabase
     .schema("resupply")
     .from("inbound_referral_orders")
-    .update({ updated_at: claimMarker })
+    .select("id")
     .is("preflight_completed_at", null)
     .in("triage_status", ["new", "triaged"])
     .not("patient_match_id", "is", null)
     .order("received_at", { ascending: true })
-    .limit(BATCH_SIZE)
-    .select("id");
+    .limit(BATCH_SIZE);
   if (error) {
     logger.error(
       { err: error.message },
-      "inbound_referral.preflight.claim_failed",
+      "inbound_referral.preflight.select_failed",
     );
     throw error;
   }

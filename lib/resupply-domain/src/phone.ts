@@ -36,7 +36,55 @@
  */
 export function normalizeE164(raw: string | null | undefined): string | null {
   if (raw == null) return null;
-  const trimmed = String(raw).trim();
+  let trimmed = String(raw).trim();
+  if (!trimmed) return null;
+
+  // Strip a clearly-marked trailing extension (e.g. "x99", "ext. 99",
+  // "extension 99", "#99") BEFORE extracting digits. Otherwise the
+  // extension digits get folded into the subscriber number: the
+  // +-prefixed path accepted 8–15 digits and silently produced a
+  // corrupted E.164, while the no-+ path rejected the same input
+  // (asymmetric). SMS/voice can't reach an extension, so we normalize
+  // to the base line. Requires a separator before the marker so an
+  // infix "x" used as a plain separator ("800x5551212") is untouched.
+  const isWhitespace = (ch: string): boolean =>
+    ch === " " ||
+    ch === "\t" ||
+    ch === "\n" ||
+    ch === "\r" ||
+    ch === "\f" ||
+    ch === "\v";
+  const isDigit = (ch: string): boolean => ch >= "0" && ch <= "9";
+  const stripTrailingExtension = (value: string): string => {
+    let end = value.length;
+    while (end > 0 && isWhitespace(value[end - 1]!)) end--;
+
+    let i = end;
+    while (i > 0 && isDigit(value[i - 1]!)) i--;
+    if (i === end) return value;
+
+    while (i > 0 && isWhitespace(value[i - 1]!)) i--;
+    if (i > 0 && value[i - 1] === ".") i--;
+    while (i > 0 && isWhitespace(value[i - 1]!)) i--;
+
+    let markerStart = -1;
+    if (i > 0 && value[i - 1] === "#") markerStart = i - 1;
+    else if (i > 0 && (value[i - 1] === "x" || value[i - 1] === "X"))
+      markerStart = i - 1;
+    else {
+      const prefix = value.slice(0, i).toLowerCase();
+      if (prefix.endsWith("extension")) markerStart = i - "extension".length;
+      else if (prefix.endsWith("ext.")) markerStart = i - "ext.".length;
+      else if (prefix.endsWith("ext")) markerStart = i - "ext".length;
+    }
+    if (markerStart <= 0) return value;
+    const before = value[markerStart - 1]!;
+    if (!(before === "," || before === ";" || isWhitespace(before)))
+      return value;
+    return value.slice(0, markerStart).trim();
+  };
+
+  trimmed = stripTrailingExtension(trimmed);
   if (!trimmed) return null;
 
   const hasPlus = trimmed.startsWith("+");

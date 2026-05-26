@@ -155,6 +155,38 @@ describe("preflightClaim", () => {
     expect(item?.severity).toBe("warning");
   });
 
+  it("balances a multi-unit line on the EXTENDED charge (billed_cents * quantity)", async () => {
+    // 2 units @ $15.99 each → header must be the extended $31.98, not
+    // the per-unit $15.99 (billed_cents is per-unit).
+    stageHappyPath(
+      { total_billed_cents: 3198 },
+      {
+        linesOverride: [
+          { id: LINE_ID, hcpcs_code: "A7038", modifier: "NU", billed_cents: 1599, quantity: 2 },
+        ],
+      },
+    );
+    const out = await preflightClaim(CLAIM_ID);
+    const item = out.items.find((i) => i.key === "totals");
+    expect(item?.severity).toBe("ok");
+  });
+
+  it("flags a header that sums only per-unit billed_cents (ignores quantity)", async () => {
+    // The old (buggy) header for a 2-unit line would be $15.99; the
+    // extended sum is $31.98, so the preflight must now flag it.
+    stageHappyPath(
+      { total_billed_cents: 1599 },
+      {
+        linesOverride: [
+          { id: LINE_ID, hcpcs_code: "A7038", modifier: "NU", billed_cents: 1599, quantity: 2 },
+        ],
+      },
+    );
+    const out = await preflightClaim(CLAIM_ID);
+    const item = out.items.find((i) => i.key === "totals");
+    expect(item?.severity).toBe("warning");
+  });
+
   it("flags paper-only payer as a warning", async () => {
     stageHappyPath({}, { payerOverride: { paper_only: true, office_ally_payer_id: null, requires_prior_auth_dme: false, is_active: true } });
     const out = await preflightClaim(CLAIM_ID);

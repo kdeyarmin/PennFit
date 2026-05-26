@@ -136,7 +136,7 @@ async function applyClaim(
     .schema("resupply")
     .from("insurance_claims")
     .select(
-      "id, patient_id, status, total_billed_cents, total_allowed_cents, total_paid_cents, patient_responsibility_cents, denial_reason",
+      "id, patient_id, status, total_billed_cents, total_allowed_cents, total_paid_cents, patient_responsibility_cents, denial_reason, decision_at",
     )
     .eq("id", eraClaim.patientControlNumber)
     .limit(1)
@@ -224,7 +224,16 @@ async function applyClaim(
       total_paid_cents: newTotalPaid,
       patient_responsibility_cents: newPatientResp,
       status: newStatus,
-      decision_at: claim.status === "submitted" ? nowIso : undefined,
+      // Stamp the decision timestamp the first time the claim lands on
+      // a paid/denied decision. The prior `status === "submitted"` gate
+      // missed the common submitted → accepted (277CA) → paid/denied
+      // path, leaving decision_at NULL and hiding the claim from every
+      // decision-window report (denial rate, aging, DSO). `undefined`
+      // leaves an already-stamped value untouched.
+      decision_at:
+        !claim.decision_at && (newStatus === "paid" || newStatus === "denied")
+          ? nowIso
+          : undefined,
       paid_at: newStatus === "paid" ? nowIso : undefined,
       denial_reason: denialReason ?? claim.denial_reason,
       updated_at: nowIso,
@@ -232,10 +241,16 @@ async function applyClaim(
     .eq("id", claim.id);
 
   // 4. Append the event row.
+  // The event label drives the patient EOB email: "paid" = the patient
+  // owes nothing (insurance covered it), "partial_pay" = the patient
+  // still owes a balance (deductible/coinsurance) the email explains.
+  // Key off the patient's residual responsibility — NOT paid-vs-billed,
+  // which tagged nearly every claim "partial_pay" because payers
+  // reimburse the (lower) allowed amount, never the full billed charge.
   const eventType: Database["resupply"]["Tables"]["insurance_claim_events"]["Row"]["event_type"] =
     eraClaim.isDenied
       ? "denied"
-      : newTotalPaid >= claim.total_billed_cents
+      : newPatientResp <= 0
         ? "paid"
         : "partial_pay";
   await supabase

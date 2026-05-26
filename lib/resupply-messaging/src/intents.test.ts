@@ -3,12 +3,13 @@ import { describe, expect, it } from "vitest";
 import { INTENT_NAMES, assertNeverIntent, type Intent } from "./intents";
 
 describe("INTENT_NAMES", () => {
-  it("covers exactly the six known intents in stable order", () => {
+  it("covers exactly the seven known intents in stable order", () => {
     expect(INTENT_NAMES).toEqual([
       "confirm",
       "decline",
       "edit_address",
       "stop",
+      "start",
       "help",
       "unknown",
     ]);
@@ -29,6 +30,7 @@ describe("assertNeverIntent", () => {
       "decline",
       "edit_address",
       "stop",
+      "start",
       "help",
       "unknown",
     ];
@@ -39,6 +41,7 @@ describe("assertNeverIntent", () => {
           case "decline":
           case "edit_address":
           case "stop":
+          case "start":
           case "help":
           case "unknown":
             return true;

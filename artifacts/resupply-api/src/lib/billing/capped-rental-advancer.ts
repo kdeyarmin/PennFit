@@ -128,12 +128,13 @@ async function advanceCycle(
         .maybeSingle()
     : { data: null };
 
+  const dos = new Date(nextDueMs).toISOString().slice(0, 10);
   const billedCents = await defaultBilledForHcpcs(
     supabase,
     cycle.payer_profile_id,
     cycle.hcpcs_code,
+    dos,
   );
-  const dos = new Date(nextDueMs).toISOString().slice(0, 10);
 
   const { data: claimRow, error: claimErr } = await supabase
     .schema("resupply")
@@ -225,6 +226,7 @@ async function defaultBilledForHcpcs(
   supabase: SupabaseClient,
   payerProfileId: string | null,
   hcpcs: string,
+  onDate: string,
 ): Promise<number> {
   if (payerProfileId) {
     const { data: fee } = await supabase
@@ -233,6 +235,12 @@ async function defaultBilledForHcpcs(
       .select("allowed_cents")
       .eq("payer_profile_id", payerProfileId)
       .eq("hcpcs_code", hcpcs)
+      // Only a fee row effective on the date of service — mirrors
+      // claim-builder's lookupFeeSchedule. The prior "newest
+      // effective_from" pick could bill a future-dated or already-
+      // expired rate onto the generated rental claim.
+      .lte("effective_from", onDate)
+      .or(`effective_through.is.null,effective_through.gte.${onDate}`)
       .order("effective_from", { ascending: false })
       .limit(1)
       .maybeSingle();

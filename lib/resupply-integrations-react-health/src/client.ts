@@ -211,6 +211,15 @@ function summariseCompliance(
 ): ComplianceSummary {
   const withData = nights.filter((n) => n.usageMinutes !== null);
   const overFour = withData.filter((n) => (n.usageMinutes ?? 0) >= 240);
+  // CMS adherence is measured over ONE 30-consecutive-day window
+  // (>=4h on >=21 days), not the whole fetched window. Restrict the
+  // compliance flag to the most recent 30 days of data so a >30-day
+  // lookback can't over-report. nightDate is an ISO YYYY-MM-DD string
+  // (sorts lexically). Mirrors adherence-predictor.ts's slice(-30).
+  const recentOverFour = [...withData]
+    .sort((a, b) => a.nightDate.localeCompare(b.nightDate))
+    .slice(-30)
+    .filter((n) => (n.usageMinutes ?? 0) >= 240);
   const totalMins = withData.reduce(
     (s, n) => s + (n.usageMinutes ?? 0),
     0,
@@ -229,7 +238,7 @@ function summariseCompliance(
     averageUsageMinutes:
       withData.length > 0 ? totalMins / withData.length : null,
     averageAhi: avgAhi,
-    meetsCmsCompliance: overFour.length >= 21,
+    meetsCmsCompliance: recentOverFour.length >= 21,
   };
 }
 
