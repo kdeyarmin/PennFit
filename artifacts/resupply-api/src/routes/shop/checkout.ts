@@ -370,12 +370,12 @@ router.post(
       return;
     }
 
-    // Mirror the session into shop_orders. The original Drizzle path
+    // Mirror the session into shop_orders. The original SQL path
     // used INSERT … ON CONFLICT (stripe_session_id) DO UPDATE SET
     // updated_at = now() — supabase-js's `.upsert()` with
     // `onConflict: "stripe_session_id"` is the equivalent. We pass an
     // explicit JS-side `updated_at` because PostgREST won't run the
-    // Drizzle $onUpdateFn for us.
+    // prior ORM's $onUpdateFn for us.
     const supabase = getSupabaseServiceRoleClient();
     const { error: upsertErr } = await supabase
       .schema("resupply")

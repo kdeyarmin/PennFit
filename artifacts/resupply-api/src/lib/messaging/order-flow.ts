@@ -26,7 +26,7 @@
 //   accidentally typed NO can still ship.
 //
 // Concurrency posture:
-//   The original Drizzle path opened a transaction and locked the
+//   The original SQL path opened a transaction and locked the
 //   episode row with `SELECT … FOR UPDATE` so two concurrent confirms
 //   (e.g. patient clicks email AND replies YES via SMS within the
 //   same second) couldn't both insert fulfillment rows.

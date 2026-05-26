@@ -2,7 +2,7 @@
 // subscription-health dashboard.
 //
 // One-shot endpoint that returns every counter the dashboard needs
-// in a single round-trip. The original Drizzle path leaned on
+// in a single round-trip. The original SQL path leaned on
 // `count(*) filter (where …)` aggregates and a `generate_series` +
 // LEFT JOIN cohort table — neither of which PostgREST exposes.
 //

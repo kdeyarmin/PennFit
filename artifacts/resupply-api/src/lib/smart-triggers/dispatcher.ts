@@ -11,7 +11,7 @@
 //
 // Concurrency / double-send prevention
 // -------------------------------------
-// The original Drizzle path used a single `WITH … FOR UPDATE SKIP
+// The original SQL path used a single `WITH … FOR UPDATE SKIP
 // LOCKED` CTE so two concurrent dispatchers picked up disjoint
 // slices of the queue. PostgREST has no SKIP LOCKED, so we
 // approximate with the SELECT-then-UPDATE-with-null-guard pattern

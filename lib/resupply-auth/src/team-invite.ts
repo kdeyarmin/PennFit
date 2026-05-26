@@ -8,7 +8,7 @@
 // product-level roster row (e.g. `resupply.admin_users.auth_user_id`).
 //
 // Ported from raw `pg.Pool.query` to the Supabase JS service-role
-// client (Drizzle → Supabase migration). The original three-statement
+// client. The original three-statement
 // upsert (INSERT … ON CONFLICT (email_lower) DO UPDATE …) becomes a
 // read-then-write pair: read the existing row, compute the merged
 // values, then `.upsert(..., { onConflict: 'email_lower' })`. The

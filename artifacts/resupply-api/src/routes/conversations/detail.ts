@@ -67,7 +67,7 @@ router.get("/conversations/:id", requireAdmin, async (req, res) => {
   const messageRows = messagesRes.data ?? [];
 
   // Bulk-fetch the joined identity rows + message attachments in
-  // parallel. The original Drizzle path LEFT JOINed patients +
+  // parallel. The original SQL path LEFT JOINed patients +
   // shop_customers; PostgREST has no JOIN, so we do `.eq().maybeSingle()`
   // (or `.in()` for one-to-many) keyed on the relevant id.
   const messageIds = messageRows.map((m) => m.id);
