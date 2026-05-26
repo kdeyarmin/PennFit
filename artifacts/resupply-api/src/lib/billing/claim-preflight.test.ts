@@ -168,7 +168,7 @@ describe("preflightClaim", () => {
     );
     const out = await preflightClaim(CLAIM_ID);
     const item = out.items.find((i) => i.key === "totals");
-    expect(item?.severity).not.toBe("warning");
+    expect(item?.severity).toBe("ok");
   });
 
   it("flags a header that sums only per-unit billed_cents (ignores quantity)", async () => {
