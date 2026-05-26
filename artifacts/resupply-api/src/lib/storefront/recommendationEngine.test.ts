@@ -391,44 +391,16 @@ describe("recommend — confidence clamping invariant", () => {
 });
 
 // ---------------------------------------------------------------------------
-// sortScore vs confidence independence
+// Result shape
 // ---------------------------------------------------------------------------
-// The manufacturer boost raises sortScore (determines list order) but must
-// leave confidence (the number patients see) unchanged. These tests verify
-// that the two signals are genuinely independent.
+// (sortScore/confidence independence — that the brand boost moves ranking
+// but not the patient-facing confidence — is already pinned by the two
+// "manufacturer boost" tests above: equal confidence for equivalent masks
+// plus iVolve ranked first.)
 
-describe("recommend — sortScore/confidence independence", () => {
-  it("ResMed AirFit P10 confidence equals clinical score unaffected by any brand boost", () => {
-    // ResMed is NOT in MANUFACTURER_BOOST, so its sortScore === its
-    // clinicalScore. If confidence == clinicalScore and sortScore ==
-    // clinicalScore for a non-boosted mask, confidence and sortScore
-    // should be equal for that mask.
-    const result = recommend(
-      PROFILE_MEASUREMENTS,
-      answers({
-        claustrophobic: true,
-        sideOrStomachSleeper: true,
-        cpapPressureSetting: "low",
-      }),
-    );
-    const all = [...result.topRecommendations, ...result.alternatives];
-    const airfitP10 = all.find((m) => m.maskId === "resmed-airfit-p10");
-    const ivolveP2 = all.find((m) => m.maskId === "react-health-ivolve-p2");
-    expect(airfitP10).toBeDefined();
-    expect(ivolveP2).toBeDefined();
-    // Both have identical clinical scores in this profile; iVolve P2
-    // must be ranked BEFORE AirFit P10 in the combined list (boost
-    // only, not confidence).
-    const ivolveIdx = all.findIndex((m) => m.maskId === "react-health-ivolve-p2");
-    const airfitIdx = all.findIndex((m) => m.maskId === "resmed-airfit-p10");
-    expect(ivolveIdx).toBeLessThan(airfitIdx);
-    // Yet their confidence values must be indistinguishable.
-    expect(ivolveP2!.confidence).toBeCloseTo(airfitP10!.confidence, 10);
-  });
-
-  it("recommendation result always contains at least one mask", () => {
-    // Belt-and-suspenders: the engine should never return empty lists
-    // for a reasonable measurement set.
+describe("recommend — result shape", () => {
+  it("always contains at least one mask for a reasonable measurement set", () => {
+    // Belt-and-suspenders: the engine should never return empty lists.
     const result = recommend(PROFILE_MEASUREMENTS, answers());
     const total =
       result.topRecommendations.length + result.alternatives.length;
