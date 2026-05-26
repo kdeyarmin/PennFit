@@ -26,13 +26,20 @@ import { maskCatalog } from "../../data/maskCatalog.js";
 // Generous enough to cover ~99% of adult faces while rejecting
 // negative / zero / absurd values that would otherwise feed garbage into
 // the recommender. Keep in sync with the client copy.
-const PLAUSIBILITY_BOUNDS: Record<string, [number, number]> = {
+type BoundedMeasurement =
+  | "noseWidth"
+  | "noseHeight"
+  | "noseToChin"
+  | "mouthWidth"
+  | "faceWidthAtCheekbones";
+
+const PLAUSIBILITY_BOUNDS = {
   noseWidth: [20, 60],
   noseHeight: [25, 70],
   noseToChin: [40, 90],
   mouthWidth: [30, 80],
   faceWidthAtCheekbones: [110, 180],
-};
+} as const satisfies Record<BoundedMeasurement, readonly [number, number]>;
 
 const router = Router();
 
@@ -78,9 +85,9 @@ router.post("/recommend", (req, res) => {
   // bypass the on-device measurement window. Zod enforces the shape;
   // this rejects numerically out-of-range values before they reach the
   // recommender.
-  const measurementValues = measurements as unknown as Record<string, number>;
-  for (const [field, [min, max]] of Object.entries(PLAUSIBILITY_BOUNDS)) {
-    const value = measurementValues[field];
+  for (const field of Object.keys(PLAUSIBILITY_BOUNDS) as BoundedMeasurement[]) {
+    const [min, max] = PLAUSIBILITY_BOUNDS[field];
+    const value = measurements[field];
     if (!Number.isFinite(value) || value < min || value > max) {
       res.status(400).json({
         error: "Invalid input",
