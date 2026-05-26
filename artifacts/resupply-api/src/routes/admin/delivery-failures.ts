@@ -52,7 +52,15 @@ const MAX_ROWS = 200;
 // compliance_officer / agent. Fitter + fulfillment have no
 // delivery-failure workflow.
 router.get("/admin/delivery-failures", requirePermission("reports.read"), async (req, res) => {
-  const rawSinceDays = Number(req.query.sinceDays ?? DEFAULT_DAYS_BACK);
+  // Treat a missing, empty/blank, or array-valued ?sinceDays as "use
+  // the default" (Number("") is 0, which would otherwise clamp to 1).
+  // A non-numeric value (NaN/Infinity) also falls back to the default
+  // rather than 500ing on `new Date(NaN)`.
+  const sinceParam = req.query.sinceDays;
+  const rawSinceDays =
+    typeof sinceParam === "string" && sinceParam.trim() !== ""
+      ? Number(sinceParam)
+      : NaN;
   const sinceDays = Number.isFinite(rawSinceDays)
     ? Math.min(Math.max(1, rawSinceDays), 90)
     : DEFAULT_DAYS_BACK;

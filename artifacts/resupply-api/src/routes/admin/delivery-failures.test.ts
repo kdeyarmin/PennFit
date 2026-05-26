@@ -111,7 +111,12 @@ describe("delivery-failures.ts — sinceDays NaN guard (source check)", () => {
 const DEFAULT_DAYS_BACK = 14;
 
 function computeSinceDays(queryValue: string | undefined): number {
-  const rawSinceDays = Number(queryValue ?? DEFAULT_DAYS_BACK);
+  // Mirrors the route: a missing, empty, or blank value uses the
+  // default (Number("") is 0, which would otherwise clamp to 1).
+  const rawSinceDays =
+    typeof queryValue === "string" && queryValue.trim() !== ""
+      ? Number(queryValue)
+      : NaN;
   return Number.isFinite(rawSinceDays)
     ? Math.min(Math.max(1, rawSinceDays), 90)
     : DEFAULT_DAYS_BACK;
