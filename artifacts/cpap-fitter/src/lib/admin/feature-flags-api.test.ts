@@ -253,15 +253,24 @@ describe("isHighRiskFlag", () => {
 // notice flag.
 
 describe("listFeatureFlagActivity — return type has no `unavailable` field", () => {
+  // The declaration wraps across lines (the `jsonFetch<…>` generic sits
+  // on the line after `export const listFeatureFlagActivity = …`), so
+  // capture from the declaration up to the call's opening paren rather
+  // than a single line.
+  function activityDeclRegion(): string {
+    const declStart = SRC.indexOf("export const listFeatureFlagActivity");
+    expect(declStart).toBeGreaterThan(-1);
+    // Each `export const …` declaration is separated by a blank line.
+    const declEnd = SRC.indexOf("\n\n", declStart);
+    return SRC.slice(declStart, declEnd === -1 ? undefined : declEnd);
+  }
+
   it("source does not declare `unavailable` in the listFeatureFlagActivity generic", () => {
-    // Find the function declaration and inspect only that line / region.
-    const fnLine = SRC.match(/listFeatureFlagActivity[^\n]*/)?.[0] ?? "";
-    expect(fnLine).not.toContain("unavailable");
+    expect(activityDeclRegion()).not.toContain("unavailable");
   });
 
   it("listFeatureFlagActivity generic is typed as { activity: FeatureFlagActivity[] }", () => {
-    const fnLine = SRC.match(/listFeatureFlagActivity[^\n]*/)?.[0] ?? "";
-    expect(fnLine).toContain("{ activity: FeatureFlagActivity[] }");
+    expect(activityDeclRegion()).toContain("{ activity: FeatureFlagActivity[] }");
   });
 });
 

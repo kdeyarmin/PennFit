@@ -3,9 +3,9 @@
 //
 // Public surface:
 //   - createReactHealthAdapter(env?) returns an IntegrationAdapter
-//     that either calls the partner API (when REACT_HEALTH_* env is
-//     fully set and REACT_HEALTH_STUB!=1) or returns deterministic
-//     stub data.
+//     that calls the partner API when REACT_HEALTH_* env is fully
+//     set. When the credentials are absent it reports "unavailable"
+//     and serves no data — it never fabricates a snapshot.
 //
 // MUST NOT IMPORT: pg, @workspace/resupply-db.
 
@@ -15,46 +15,30 @@ import type {
   IntegrationAdapter,
 } from "@workspace/resupply-integrations";
 
-import {
-  isReactHealthStubMode,
-  readReactHealthConfigOrNull,
-} from "./config";
-import { buildReactHealthStubSnapshot } from "./stub";
+import { readReactHealthConfigOrNull } from "./config";
 import { fetchReactHealthSnapshot } from "./client";
 
-export {
-  readReactHealthConfigOrNull,
-  isReactHealthStubMode,
-} from "./config";
-export { buildReactHealthStubSnapshot } from "./stub";
+export { readReactHealthConfigOrNull } from "./config";
 export { fetchReactHealthSnapshot } from "./client";
 
 export function createReactHealthAdapter(
   env: NodeJS.ProcessEnv = process.env,
 ): IntegrationAdapter {
   const config = readReactHealthConfigOrNull(env);
-  const stub = config === null;
-  const stubReason: "no_credentials" | "stub_mode" = isReactHealthStubMode(env)
-    ? "stub_mode"
-    : "no_credentials";
 
   return {
     source: "react_health",
     availability() {
-      if (stub) return { status: "stub", reason: stubReason };
+      if (!config) {
+        return { status: "unavailable", reason: "not_configured" };
+      }
       return { status: "configured" };
     },
     async fetchSnapshot(
       input: FetchSnapshotInput,
     ): Promise<FetchSnapshotResult> {
-      if (stub || !config) {
-        return {
-          ok: true,
-          snapshot: buildReactHealthStubSnapshot(
-            input.partnerPatientId,
-            input.windowDays ?? 30,
-          ),
-        };
+      if (!config) {
+        return { ok: false, error: "unavailable" };
       }
       return fetchReactHealthSnapshot(config, input);
     },
