@@ -255,15 +255,17 @@ describe("createSftpTransport — error classification", () => {
     }
   });
 
-  it("returns unavailable when the process was killed by a signal", async () => {
-    failExecFile({ killed: true, signal: "SIGTERM" });
+  it("classifies a timeout-killed sftp process as transfer_failed (retryable)", async () => {
+    // execFile's own timeout kills the child with SIGTERM; that's a
+    // transient transfer interruption, not a permanent config error.
+    failExecFileSticky({ killed: true, signal: "SIGTERM" });
     const transport = createSftpTransport(makeConfig());
     const p = transport.upload(makeRequest());
     await vi.runAllTimersAsync();
     const outcome = await p;
     expect(outcome.ok).toBe(false);
     if (!outcome.ok) {
-      expect(outcome.kind).toBe("unavailable");
+      expect(outcome.kind).toBe("transfer_failed");
       expect(outcome.message).toContain("SIGTERM");
     }
   });
@@ -473,19 +475,19 @@ describe("createSftpTransport — retry loop", () => {
     expect(execFileMock).toHaveBeenCalledTimes(1);
   });
 
-  it("does NOT retry when process is killed by a signal (unavailable)", async () => {
-    failExecFile({ killed: true, signal: "SIGKILL" });
+  it("retries when the process is killed by a signal (timeout → transient)", async () => {
+    // execFile's timeout kills sftp with a signal; that's transient, so
+    // the transport retries and the second attempt succeeds.
+    failExecFile({ killed: true, signal: "SIGTERM" });
+    // attempt 2 hits the default success mock
 
     const transport = createSftpTransport(makeConfig());
     const p = transport.upload(makeRequest());
     await vi.runAllTimersAsync();
     const outcome = await p;
 
-    expect(outcome.ok).toBe(false);
-    if (!outcome.ok) {
-      expect(outcome.kind).toBe("unavailable");
-    }
-    expect(execFileMock).toHaveBeenCalledTimes(1);
+    expect(outcome.ok).toBe(true);
+    expect(execFileMock).toHaveBeenCalledTimes(2);
   });
 
   it("does NOT retry on a successful outcome (ok:true)", async () => {

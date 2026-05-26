@@ -71,8 +71,10 @@ const DEFAULT_TIMEOUT_MS = 60_000;
 // the transient-failure window without meaningfully delaying the
 // submission. We retry ONLY the failure kinds that are transient by
 // nature — connect_failed and transfer_failed are typically network
-// blips or remote-side hiccups; auth_failed and unavailable (missing
-// binary, killed process) indicate a config error that won't recover.
+// blips, remote-side hiccups, or a timeout-killed sftp (execFile's own
+// timeout sends SIGTERM, which classifyError maps to transfer_failed);
+// auth_failed and unavailable (missing binary) indicate a config error
+// that won't recover.
 const MAX_UPLOAD_ATTEMPTS = 3;
 const UPLOAD_RETRY_DELAYS_MS = [1000, 2000];
 
@@ -193,9 +195,13 @@ function classifyError(err: unknown): UploadOutcome {
         : "";
 
   if (e?.killed && e?.signal) {
+    // execFile's own `timeout` kills the child with SIGTERM. A killed
+    // sftp is a transient transfer interruption (slow/hung network or
+    // remote), not a permanent config error — classify it retryable so
+    // the upload retry policy kicks in.
     return {
       ok: false,
-      kind: "unavailable",
+      kind: "transfer_failed",
       message: `sftp killed by signal ${e.signal}`,
     };
   }
