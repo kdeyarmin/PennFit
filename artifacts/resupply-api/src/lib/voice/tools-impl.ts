@@ -372,6 +372,34 @@ class Impl implements VoiceToolDispatcher {
         result: { ok: false, order_id: "", accepted_skus: [] },
       };
     }
+    // Validate the model's requested SKUs against the patient's active
+    // prescriptions. The model can mis-hear or invent a SKU; without
+    // this filter the agent would read back ineligible items as
+    // "ordered". Fulfillment is driven downstream from the
+    // prescriptions (not this echo), so we still confirm the episode —
+    // we just never claim an ineligible SKU was accepted.
+    const { data: rxRows, error: rxErr } = await this.supabase
+      .schema("resupply")
+      .from("prescriptions")
+      .select("item_sku")
+      .eq("patient_id", this.deps.patientId)
+      .eq("status", "active");
+    if (rxErr) throw rxErr;
+    const normalizeSku = (sku: string): string => sku.trim().toUpperCase();
+    const eligibleSkus = new Set(
+      (rxRows ?? [])
+        .map((r) => r.item_sku)
+        .filter((s): s is string => Boolean(s))
+        .map(normalizeSku),
+    );
+    const acceptedSkus = Array.from(
+      new Set(
+        args.skus
+          .map(normalizeSku)
+          .filter((s) => eligibleSkus.has(s)),
+      ),
+    );
+
     // Mark the episode as `confirmed`. Actual order placement against
     // Pacware is a downstream worker job; the admin dashboard will
     // pick this episode up in the "ready to fulfil" queue. The .eq on
@@ -402,7 +430,7 @@ class Impl implements VoiceToolDispatcher {
       result: {
         ok: true,
         order_id: orderId,
-        accepted_skus: args.skus,
+        accepted_skus: acceptedSkus,
       },
     };
   }

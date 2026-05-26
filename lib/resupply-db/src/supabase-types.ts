@@ -1,5 +1,4 @@
-// Hand-authored Supabase Database type for the Drizzle → Supabase
-// migration in progress.
+// Hand-authored Supabase `Database` type for the CPAP resupply system.
 //
 // Why hand-authored: `mcp__supabase__generate_typescript_types` only
 // emits the schemas exposed via PostgREST's `db_schemas` setting.
@@ -9,9 +8,8 @@
 // → Project Settings → API → "Exposed schemas") this file is the
 // authoritative type source for the Supabase JS client.
 //
-// Coverage today: the tables touched by `artifacts/resupply-api/src/
-// routes/storefront/admin-users.ts` (the first module ported off
-// Drizzle). Extend as more modules migrate.
+// Coverage: the `public`, `resupply`, and `resupply_auth` tables the
+// API reads/writes through PostgREST. Extend as new tables are added.
 //
 // When the `resupply` and `resupply_auth` schemas are exposed, replace
 // this file with the generator output and delete the hand-authored

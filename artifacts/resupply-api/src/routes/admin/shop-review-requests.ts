@@ -21,7 +21,7 @@
 // review_request_sent_at IS NOT NULL for every row we just stamped,
 // so it sends nothing.
 //
-// Concurrency posture: the original Drizzle path used a single SQL
+// Concurrency posture: the original SQL path used a single
 // `WITH eligible … FOR UPDATE SKIP LOCKED` CTE so parallel workers
 // could pick up disjoint rows. PostgREST has no SKIP LOCKED, so we
 // approximate with a SELECT-then-UPDATE-with-null-guard. Two parallel

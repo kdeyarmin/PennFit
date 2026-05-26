@@ -72,7 +72,11 @@ router.post(
       out.icd10 !== null &&
       out.confidence >= (bodyParsed.data?.requireConfidence ?? 0.9);
 
-    if (shouldApply && !study.diagnosis_icd10) {
+    // `applied` reflects whether we ACTUALLY wrote the code. autoApply is
+    // a no-op when the study already carries a diagnosis; reporting
+    // applied:true there would mislead the CSR and the audit row.
+    const applied = shouldApply && !study.diagnosis_icd10;
+    if (applied) {
       await supabase
         .schema("resupply")
         .from("sleep_studies")
@@ -98,7 +102,7 @@ router.post(
         suggested_code: out.icd10,
         confidence: out.confidence,
         in_allowlist: out.inAllowlist,
-        applied: shouldApply,
+        applied,
         prompt_version: ICD10_PROMPT_VERSION,
         had_error: out.errorMessage !== null,
       },
@@ -116,7 +120,7 @@ router.post(
       confidence: out.confidence,
       rationale: out.rationale,
       inAllowlist: out.inAllowlist,
-      applied: shouldApply,
+      applied,
       promptVersion: ICD10_PROMPT_VERSION,
     });
   },

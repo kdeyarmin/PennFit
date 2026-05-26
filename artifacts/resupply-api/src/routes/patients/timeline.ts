@@ -98,7 +98,7 @@ router.get("/patients/:id/timeline", requireAdmin, async (req, res) => {
 
   // Run the four child reads in parallel — none depend on each
   // other and the connection pool can handle them concurrently.
-  // Note: the original Drizzle path JOINed messages → conversations
+  // Note: the original SQL path JOINed messages → conversations
   // (to filter messages by patient) and episodes → prescriptions (for
   // itemSku display). PostgREST has no JOIN, so we fetch the parent
   // collections first and resolve the join via JS Maps below.

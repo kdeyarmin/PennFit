@@ -102,7 +102,7 @@ router.post(
     // the rows that actually matched. Anything missing from the
     // RETURNING set is a "not_found" failure.
     //
-    // The original Drizzle path used `date_trunc('milliseconds',
+    // The original SQL path used `date_trunc('milliseconds',
     // now())` to keep updated_at addressable by subsequent PATCH
     // calls' optimistic-concurrency check (JS Date round-trip drops
     // sub-ms precision). PostgREST doesn't take a SQL expression

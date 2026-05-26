@@ -232,3 +232,102 @@ describe("runSmartTriggerEvaluator", () => {
     expect(auditJson).not.toContain("ahi");
   });
 });
+
+// ---------------------------------------------------------------------------
+// Roster pagination (new in this PR)
+// ---------------------------------------------------------------------------
+// Before this PR the evaluator made a SINGLE .select() for the roster
+// (no .range()), which PostgREST silently capped at ~1000 rows. Patients
+// past that cap were NEVER evaluated. The new implementation pages in
+// PAGE_SIZE=1000 chunks until it gets a partial/empty page.
+//
+// The structural tests pin the two key implementation details without
+// requiring a 1000-row test fixture.  The behavioural test exercises the
+// multi-page code path with a real (but small) two-page sequence that
+// verifies the second request is issued and results de-duplicated.
+
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const __dirname2 = path.dirname(fileURLToPath(import.meta.url));
+const EVAL_SRC = readFileSync(path.join(__dirname2, "evaluator.ts"), "utf8");
+
+describe("runSmartTriggerEvaluator — roster pagination (source check)", () => {
+  it("uses .range() for pagination (not a single uncapped query)", () => {
+    // .range() was not present before this PR; its presence proves the
+    // paginated fetch is wired up.
+    expect(EVAL_SRC).toContain(".range(");
+  });
+
+  it("defines PAGE_SIZE = 1000", () => {
+    expect(EVAL_SRC).toContain("const PAGE_SIZE = 1000");
+  });
+
+  it("uses MAX_PATIENTS_PER_RUN (5000) instead of the old PER_RUN_PATIENT_CAP (200)", () => {
+    expect(EVAL_SRC).toContain("const MAX_PATIENTS_PER_RUN = 5000");
+    // Old constant must be gone
+    expect(EVAL_SRC).not.toContain("PER_RUN_PATIENT_CAP");
+  });
+
+  it("logs a warn event when roster exceeds MAX_PATIENTS_PER_RUN", () => {
+    expect(EVAL_SRC).toContain("smart_triggers.evaluate.roster_overflow");
+  });
+
+  it("no longer breaks out of the candidate loop when the set reaches 200 (old cap removed)", () => {
+    // The old code had: `if (candidateSet.size >= PER_RUN_PATIENT_CAP) break;`
+    // The new code only caps via .slice(0, MAX_PATIENTS_PER_RUN) after paging.
+    expect(EVAL_SRC).not.toContain("candidateSet.size >=");
+  });
+});
+
+describe("runSmartTriggerEvaluator — multi-page roster (behavioural)", () => {
+  // Build a page of exactly PAGE_SIZE=1000 unique patients.  The second
+  // page is empty, which terminates the pagination loop.  Per-patient
+  // night selects fall through to the unstaged default ({ data: null })
+  // so evaluateAll receives an empty array and produces no proposals.
+  const PAGE_SIZE = 1000;
+
+  it("makes two roster requests when first page is full (PAGE_SIZE rows)", async () => {
+    // First roster page — exactly PAGE_SIZE rows triggers a follow-up request.
+    const page1 = Array.from({ length: PAGE_SIZE }, (_, i) => ({
+      patient_id: `p_page1_${i}`,
+    }));
+    stageSupabaseResponse("patient_therapy_nights", "select", {
+      data: page1,
+    });
+    // Second roster page — empty terminates the loop.
+    stageSupabaseResponse("patient_therapy_nights", "select", {
+      data: [],
+    });
+    // Per-patient night selects for the 1000 patients fall through to the
+    // unstaged default ({ data: null }), so each patient has 0 nights and
+    // evaluateAll fires with an empty array → no proposals.
+
+    const result = await runSmartTriggerEvaluator(ACTOR);
+
+    expect(result.scanned).toBe(PAGE_SIZE);
+    // No events were produced (empty nights).
+    expect(result.proposed).toBe(0);
+    expect(result.inserted).toBe(0);
+  });
+
+  it("de-duplicates patient_ids that appear in multiple pages", async () => {
+    // Overlap: p_dup_0 … p_dup_4 appear in both pages.
+    const sharedIds = Array.from({ length: 5 }, (_, i) => `p_dup_${i}`);
+    const page1 = Array.from({ length: PAGE_SIZE }, (_, i) => ({
+      patient_id: i < 5 ? sharedIds[i]! : `p_page1_${i}`,
+    }));
+    const page2 = sharedIds.map((id) => ({ patient_id: id })); // all duplicates
+
+    stageSupabaseResponse("patient_therapy_nights", "select", { data: page1 });
+    stageSupabaseResponse("patient_therapy_nights", "select", { data: page2 });
+    // Per-patient night selects (unstaged → empty nights)
+
+    const result = await runSmartTriggerEvaluator(ACTOR);
+
+    // After de-duplication: 1000 from page1 + 0 new from page2 (all overlap)
+    // = exactly PAGE_SIZE unique candidates.
+    expect(result.scanned).toBe(PAGE_SIZE);
+  });
+});

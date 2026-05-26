@@ -171,7 +171,7 @@ router.get("/episodes", requireAdmin, async (req, res) => {
   const { data: rows, count, error } = await episodesListQuery;
   if (error) throw error;
 
-  // Bulk-fetch the joined identity rows. The original Drizzle path
+  // Bulk-fetch the joined identity rows. The original SQL path
   // LEFT JOINed patients + prescriptions; PostgREST has no JOIN, so
   // we collect the IDs from this page's rows and fetch in one extra
   // round-trip per side.

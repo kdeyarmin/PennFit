@@ -61,7 +61,6 @@ const STOP_ANYWHERE = new Set([
   "quit",
   "optout",
   "opt-out",
-  "revoke",
   // Spanish
   "detener",
   "cancelar",
@@ -81,6 +80,14 @@ const HELP_ANYWHERE = new Set([
   "ajuda",
 ]);
 
+// Carrier-reserved opt-in (re-subscribe) set. CTIA reserves START /
+// UNSTOP as the counterpart to STOP. Unlike STOP we match these as a
+// LEADING token only, not anywhere: over-honoring STOP is the safe
+// error direction, but a spurious START matched mid-sentence
+// ("yes, start shipping") would hijack a confirm and derail the order.
+// `yes` is deliberately excluded — it's our confirm keyword.
+const START_LEADING = new Set(["start", "unstop"]);
+
 // Leading-keyword sets. Match only against the first 1–2 tokens so a
 // freeform message that happens to contain "yes" mid-sentence
 // ("did you say yes the last time?") doesn't get misrouted.
@@ -95,10 +102,14 @@ const CONFIRM_LEADING = new Set([
   "sure",
   "confirm",
   "confirmed",
-  "go",
-  "send",
-  "ship",
 ]);
+
+// Action verbs that read as "confirm" on their own ("ship it", "go",
+// "send them") but are ambiguous when the reply is actually asking to
+// change the destination ("send it to my new address"). We treat a
+// leading action verb as confirm only when no address-change signal is
+// present elsewhere in the body; otherwise it routes to edit_address.
+const CONFIRM_ACTION_VERBS = new Set(["go", "send", "ship"]);
 
 const DECLINE_LEADING = new Set([
   "n",
@@ -138,8 +149,11 @@ function tokenize(body: string): string[] {
  * Decision order:
  *   1. STOP-family anywhere → `stop`. Carriers require this.
  *   2. HELP-family anywhere → `help`. Carriers require this.
- *   3. First token matches confirm/decline/edit set → that intent.
- *   4. Otherwise → `unknown` (caller escalates to AI fallback).
+ *   3. First token is START/UNSTOP → `start` (carrier opt-in).
+ *   4. First token matches confirm/decline/edit set → that intent
+ *      (a leading action verb yields `edit_address` instead of
+ *      `confirm` when the body also mentions an address change).
+ *   5. Otherwise → `unknown` (caller escalates to AI fallback).
  */
 export function parseSmsIntent(
   body: string | null | undefined,
@@ -160,11 +174,27 @@ export function parseSmsIntent(
     }
   }
 
-  // 3: leading-keyword for confirm/decline/edit.
+  // 3: carrier opt-in (START / UNSTOP), leading token only.
   const first = tokens[0];
   if (first) {
+    if (START_LEADING.has(first)) {
+      return { intent: "start", raw, normalized, matched: "keyword-leading" };
+    }
+  }
+
+  // 4: leading-keyword for confirm/decline/edit.
+  if (first) {
+    const mentionsAddressChange = tokens.some((t) => EDIT_LEADING.has(t));
     if (CONFIRM_LEADING.has(first)) {
       return { intent: "confirm", raw, normalized, matched: "keyword-leading" };
+    }
+    // A leading action verb ("ship it", "go") confirms — unless the
+    // reply is actually asking to change the address, in which case it
+    // must not ship to the stale on-file address.
+    if (CONFIRM_ACTION_VERBS.has(first)) {
+      return mentionsAddressChange
+        ? { intent: "edit_address", raw, normalized, matched: "keyword-leading" }
+        : { intent: "confirm", raw, normalized, matched: "keyword-leading" };
     }
     if (DECLINE_LEADING.has(first)) {
       return { intent: "decline", raw, normalized, matched: "keyword-leading" };

@@ -81,7 +81,7 @@ router.get(
 
     res.json({
       // PostgREST returns numeric columns as strings (preserves
-      // precision); the original Drizzle path also returned strings
+      // precision); the original SQL path also returned strings
       // and the route already coerced via Number(). Same here.
       nights: (rows ?? []).map((r) => ({
         id: r.id,

@@ -103,7 +103,7 @@ router.post(
           // Map SendGrid event names to our delivery_status taxonomy.
           const statusUpdate = mapEventToStatus(ev.event);
           if (statusUpdate && sgMessageId) {
-            // The original Drizzle path used `case when status='delivered'
+            // The original SQL path used `case when status='delivered'
             // then now() else delivered_at end` to conditionally bump the
             // delivered_at timestamp. PostgREST has no SQL CASE, so we
             // compute the column JS-side: include `delivered_at` only

@@ -8,8 +8,8 @@
 // without spinning up a real backend.
 //
 // History note: a Postgres-backed implementation
-// (`pgAuthRepository(pool)`) used to live here. It was retired in
-// the Drizzle → Supabase migration. Every runtime path now goes
+// (`pgAuthRepository(pool)`) used to live here. It was retired when
+// the auth layer moved to Supabase. Every runtime path now goes
 // through Supabase's PostgREST surface via the supabase-repository
 // implementation, so the pg-based factory + its 30 internal SQL
 // helpers were removed. See git history if you need to reconstruct

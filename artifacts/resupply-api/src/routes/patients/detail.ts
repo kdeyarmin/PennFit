@@ -43,7 +43,7 @@ router.get("/patients/:id", requireAdmin, async (req, res) => {
   // Five independent reads (header + four child collections), each
   // keyed on the patient id. Run them concurrently so the detail
   // page pays max(query) latency rather than sum(query). The
-  // original Drizzle path's LEFT JOINs (header → patient_latest_message
+  // original SQL path's LEFT JOINs (header → patient_latest_message
   // and patients → auth.users) become bulk-fetch + JS merges; both
   // joins are 1-to-1, so a separate `.maybeSingle()` lookup keyed on
   // the relevant id is the simplest equivalent.

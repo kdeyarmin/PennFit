@@ -259,7 +259,7 @@ router.post(
 
     // Guard against a CSR inadvertently (or maliciously) supplying an
     // email that already belongs to a DIFFERENT patient's portal
-    // account. The original Drizzle path took a transaction-scoped
+    // account. The original SQL path took a transaction-scoped
     // pg_advisory_xact_lock keyed on the auth user id and ran the
     // check + UPDATE in one transaction. PostgREST has no
     // transactions and no advisory locks, so we accept a narrow race

@@ -584,7 +584,7 @@ router.post(
     }
 
     const supabase = getSupabaseServiceRoleClient();
-    // Atomicity note: the original Drizzle path used a
+    // Atomicity note: the original SQL path used a
     //   `CASE WHEN tracking_carrier IS DISTINCT FROM $new
     //         OR tracking_number IS DISTINCT FROM $new
     //         THEN NULL ELSE shipping_email_sent_at END`

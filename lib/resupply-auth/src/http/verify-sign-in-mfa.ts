@@ -364,11 +364,19 @@ export function makeVerifySignInMfaHandler(deps: AuthDeps) {
         // gate near the top of this handler). A NAT-pooled attacker
         // can rotate IPs to bypass the edge limiter, but the
         // per-user counter cuts a brute-force run off in seconds.
-        void deps.repo.recordLoginAttempt({
-          emailLower: `__mfa_verify:${user.id}`,
-          ip: req.ip ?? null,
-          success: false,
-        });
+        // AWAITed (not fire-and-forget) so the failure is durable
+        // before we respond — otherwise a sequential attacker's next
+        // request reads a stale count and slips past the throttle.
+        // Mirrors the recovery-code branch above.
+        try {
+          await deps.repo.recordLoginAttempt({
+            emailLower: `__mfa_verify:${user.id}`,
+            ip: req.ip ?? null,
+            success: false,
+          });
+        } catch {
+          // best-effort: keep auth response behavior unchanged
+        }
         void deps.audit({
           action: "auth.mfa_verify_failed",
           adminEmail: user.emailLower,

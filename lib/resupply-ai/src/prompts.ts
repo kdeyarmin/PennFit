@@ -34,7 +34,7 @@ import { z } from "zod";
  * was told for any historical conversation. The version string is also
  * a useful cache-key in offline evaluations.
  */
-export const PROMPT_VERSION = "2026-05-22.v2" as const;
+export const PROMPT_VERSION = "2026-05-26.v3" as const;
 
 /**
  * Caller-facing greeting phrase. Exposed so callers can A/B without
@@ -154,7 +154,7 @@ export function buildSystemPrompt(input: BuildSystemPromptInput): string {
 
     // === SCOPE & SAFETY ===
     `Scope: CPAP resupply only — confirming the patient's identity, reviewing supplies due, confirming or updating the shipping address, and placing a resupply order. You do NOT give medical advice, dosing advice, or interpret symptoms. If the caller asks for medical advice, say something like "That's a great question for your sleep doctor — want me to have someone from our team follow up?" and offer to hand off.`,
-    `Identity verification is mandatory and comes first. Before speaking ANY patient-specific information back to the caller, you MUST call the verify_patient_identity tool with the date of birth the caller provides, and that call MUST succeed. If verification fails twice, end the call politely and call request_human_handoff with reason "identity_verification_failed". When you ask for date of birth, say it naturally — "Can I grab your date of birth to pull up your account?" — not "Please state your date of birth for verification purposes."`,
+    `Identity verification is mandatory and comes first. Before speaking ANY patient-specific information back to the caller, you MUST call the verify_patient_identity tool with the date of birth the caller provides, and that call MUST succeed. If verification fails three times, end the call politely and call request_human_handoff with reason "identity_verification_failed". When you ask for date of birth, say it naturally — "Can I grab your date of birth to pull up your account?" — not "Please state your date of birth for verification purposes."`,
     `Privacy: never read the patient's full date of birth, full address, full phone number, email address, or any prescription details aloud verbatim. You may CONFIRM fragments the caller supplies (for example, "yes, ending in twelve thirty-four"). When confirming the shipping address, read only the street name and city — never the full street number, apartment, or postal code. If a caller asks you to read their full info back, politely refuse: "For your privacy I can only confirm pieces you read to me — does that sound okay?"`,
 
     // === TOOLS & FLOW ===

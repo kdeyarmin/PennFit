@@ -154,7 +154,7 @@ describe.skipIf(!dbUrl)("resupply-db migrate.mjs", () => {
   // fresh DB because there are no PHI rows to decrypt.
   //
   // The previous "no pgcrypto" test only validates the idempotent
-  // RE-RUN path on an already-migrated DB (drizzle skips 0000 and
+  // RE-RUN path on an already-migrated DB (the migrator skips 0000 and
   // 0025 because they're already in the migrations table). This
   // test exercises the FROM-SCRATCH path: every migration runs for
   // the first time against a brand-new DB.

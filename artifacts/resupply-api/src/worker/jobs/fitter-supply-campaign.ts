@@ -83,6 +83,7 @@ import {
   REORDER_TOUCHPOINT_OFFSETS_MS,
   TOTAL_ALL_TOUCHPOINTS,
   FINAL_CALL_OFFSET_MS,
+  FINAL_CALL_TOUCH_INDEX,
   signUnsubscribeToken,
   signOpenTrackingToken,
   signClickTrackingToken,
@@ -904,7 +905,16 @@ export async function runFitterSupplyCampaignSweep(): Promise<SupplyCampaignStat
 
   for (const lead of candidates) {
     stats.scanned += 1;
-    const nextTouchIndex = lead.campaign_touch_count + 1;
+    // The 'final_call_pending' holding stage pins campaign_touch_count
+    // at the pre-purchase total (T6=6), so count+1 would resolve to T7
+    // (the reorder-cushion copy) instead of the single final-call touch.
+    // The final-call touch is always T11 (FINAL_CALL_TOUCH_INDEX) — the
+    // copy, tracking tokens, recorded touch index, and SMS-channel gate
+    // (T11 is email-only) all key off this value.
+    const nextTouchIndex =
+      lead.journey_stage === "final_call_pending"
+        ? FINAL_CALL_TOUCH_INDEX
+        : lead.campaign_touch_count + 1;
 
     // Cold-lead suppression (mig 0156).
     // ---------------------------------
@@ -939,10 +949,10 @@ export async function runFitterSupplyCampaignSweep(): Promise<SupplyCampaignStat
         .schema("resupply")
         .from("fitter_leads")
         .update({
-          // Pin campaign_touch_count to the would-be T6 value so
-          // the T11 dispatcher branch ('final_call_pending')
-          // computes nextTouchIndex=11 correctly. (T11 is
-          // FINAL_CALL_TOUCH_INDEX = TOTAL_ALL_TOUCHPOINTS + 1.)
+          // Pin campaign_touch_count to the T6 value to mark the
+          // pre-purchase phase complete. The final-call touch index
+          // (T11) is derived from journey_stage in the dispatcher, not
+          // from this count.
           campaign_touch_count: TOTAL_TOUCHPOINTS,
           last_campaign_touch_at: skipIso,
           next_campaign_touch_at: t11DueAt,

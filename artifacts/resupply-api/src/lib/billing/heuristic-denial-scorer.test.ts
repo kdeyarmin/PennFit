@@ -148,3 +148,168 @@ describe("scoreClaim", () => {
     expect(r!.probability).toBeGreaterThan(0.5);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Fee-schedule date filtering (new in this PR)
+// ---------------------------------------------------------------------------
+// Before this PR the fee schedule lookup used only `.eq("payer_profile_id",
+// ...).eq("hcpcs_code", ...)` — no date guards. That meant a future-dated
+// or already-expired fee row could be selected and used to weight the
+// predicted-denial score, producing incorrect risk estimates.
+//
+// The PR adds `.lte("effective_from", onDate)` and
+// `.or("effective_through.is.null,effective_through.gte.<onDate>")` so
+// only a row effective on the date of service can be returned.
+//
+// These tests verify the filter calls by inspecting `supabaseMock.filterCalls`.
+
+describe("scoreClaim — fee-schedule date filtering (payer_fee_schedules)", () => {
+  it("applies lte(effective_from) with the claim date_of_service", async () => {
+    stageClaim({ date_of_service: "2026-05-12" });
+    stagePayer();
+    stageSupabaseResponse("sleep_studies", "select", {
+      data: { diagnosis_icd10: "G47.33" },
+    });
+    stageSupabaseResponse("patients", "select", {
+      data: {
+        address: { line1: "1 Main", city: "Pittsburgh", state: "PA", zip: "15201" },
+      },
+    });
+    stageSupabaseResponse("insurance_claim_line_items", "select", {
+      data: [{ hcpcs_code: "E0601", modifier: "RR,KX", billed_cents: 24999, quantity: 1 }],
+    });
+    // Stage the fee schedule lookup
+    stageSupabaseResponse("payer_fee_schedules", "select", {
+      data: { allowed_cents: 20000 },
+    });
+
+    await scoreClaim(CLAIM_ID);
+
+    const filters = supabaseMock.filterCalls("payer_fee_schedules", "select");
+    const lteCall = filters.find((f) => f.verb === "lte");
+    expect(lteCall).toBeDefined();
+    expect(lteCall!.args[0]).toBe("effective_from");
+    expect(lteCall!.args[1]).toBe("2026-05-12");
+  });
+
+  it("applies or(effective_through) with the claim date_of_service", async () => {
+    stageClaim({ date_of_service: "2026-05-12" });
+    stagePayer();
+    stageSupabaseResponse("sleep_studies", "select", {
+      data: { diagnosis_icd10: "G47.33" },
+    });
+    stageSupabaseResponse("patients", "select", {
+      data: {
+        address: { line1: "1 Main", city: "Pittsburgh", state: "PA", zip: "15201" },
+      },
+    });
+    stageSupabaseResponse("insurance_claim_line_items", "select", {
+      data: [{ hcpcs_code: "E0601", modifier: "RR,KX", billed_cents: 24999, quantity: 1 }],
+    });
+    stageSupabaseResponse("payer_fee_schedules", "select", {
+      data: { allowed_cents: 20000 },
+    });
+
+    await scoreClaim(CLAIM_ID);
+
+    const filters = supabaseMock.filterCalls("payer_fee_schedules", "select");
+    const orCall = filters.find((f) => f.verb === "or");
+    expect(orCall).toBeDefined();
+    expect(orCall!.args[0] as string).toContain("effective_through.is.null");
+    expect(orCall!.args[0] as string).toContain("2026-05-12");
+  });
+
+  it("uses today's date as the fallback when claim has no date_of_service", async () => {
+    stageClaim({ date_of_service: null });
+    stagePayer();
+    stageSupabaseResponse("sleep_studies", "select", {
+      data: { diagnosis_icd10: "G47.33" },
+    });
+    stageSupabaseResponse("patients", "select", {
+      data: {
+        address: { line1: "1 Main", city: "Pittsburgh", state: "PA", zip: "15201" },
+      },
+    });
+    stageSupabaseResponse("insurance_claim_line_items", "select", {
+      data: [{ hcpcs_code: "E0601", modifier: "RR,KX", billed_cents: 24999, quantity: 1 }],
+    });
+    stageSupabaseResponse("payer_fee_schedules", "select", {
+      data: { allowed_cents: 20000 },
+    });
+
+    await scoreClaim(CLAIM_ID);
+
+    const filters = supabaseMock.filterCalls("payer_fee_schedules", "select");
+    const lteCall = filters.find((f) => f.verb === "lte");
+    expect(lteCall).toBeDefined();
+    // The fallback is today's date (YYYY-MM-DD). We can't assert the exact
+    // value without freezing time, but we can confirm it is a valid date string.
+    expect(lteCall!.args[1] as string).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+
+  it("flags billed_over_fee_schedule_2x when billed_cents > 2x allowed_cents on the DOS fee row", async () => {
+    // Billed: 50000 ($500), allowed: 20000 ($200) → 2x threshold = 40000.
+    stageClaim({ date_of_service: "2026-05-12" });
+    stagePayer();
+    stageSupabaseResponse("sleep_studies", "select", {
+      data: { diagnosis_icd10: "G47.33" },
+    });
+    stageSupabaseResponse("patients", "select", {
+      data: {
+        address: { line1: "1 Main", city: "Pittsburgh", state: "PA", zip: "15201" },
+      },
+    });
+    stageSupabaseResponse("insurance_claim_line_items", "select", {
+      data: [{ hcpcs_code: "E0601", modifier: "RR,KX", billed_cents: 50000, quantity: 1 }],
+    });
+    stageSupabaseResponse("payer_fee_schedules", "select", {
+      data: { allowed_cents: 20000 },
+    });
+
+    const r = await scoreClaim(CLAIM_ID);
+    expect(r!.factors.some((f) => f.key === "billed_over_fee_schedule_2x")).toBe(true);
+  });
+
+  it("does NOT flag billed_over_fee_schedule_2x when billed_cents ≤ 2x allowed_cents", async () => {
+    // Billed: 30000, allowed: 20000 → 2x threshold = 40000, so no flag.
+    stageClaim({ date_of_service: "2026-05-12" });
+    stagePayer();
+    stageSupabaseResponse("sleep_studies", "select", {
+      data: { diagnosis_icd10: "G47.33" },
+    });
+    stageSupabaseResponse("patients", "select", {
+      data: {
+        address: { line1: "1 Main", city: "Pittsburgh", state: "PA", zip: "15201" },
+      },
+    });
+    stageSupabaseResponse("insurance_claim_line_items", "select", {
+      data: [{ hcpcs_code: "E0601", modifier: "RR,KX", billed_cents: 30000, quantity: 1 }],
+    });
+    stageSupabaseResponse("payer_fee_schedules", "select", {
+      data: { allowed_cents: 20000 },
+    });
+
+    const r = await scoreClaim(CLAIM_ID);
+    expect(r!.factors.some((f) => f.key === "billed_over_fee_schedule_2x")).toBe(false);
+  });
+
+  it("skips the fee schedule lookup entirely when claim has no payer_profile_id", async () => {
+    stageClaim({ payer_profile_id: null });
+    stageSupabaseResponse("sleep_studies", "select", {
+      data: { diagnosis_icd10: "G47.33" },
+    });
+    stageSupabaseResponse("patients", "select", {
+      data: {
+        address: { line1: "1 Main", city: "Pittsburgh", state: "PA", zip: "15201" },
+      },
+    });
+    stageSupabaseResponse("insurance_claim_line_items", "select", {
+      data: [{ hcpcs_code: "E0601", modifier: "RR", billed_cents: 24999, quantity: 1 }],
+    });
+
+    await scoreClaim(CLAIM_ID);
+
+    // payer_fee_schedules should never be queried
+    expect(supabaseMock.callCount("payer_fee_schedules", "select")).toBe(0);
+  });
+});

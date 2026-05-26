@@ -20,7 +20,10 @@
 //                             structured diagnosis array lands later).
 //   add_line                — append a HCPCS line.
 //   remove_line             — remove a line by hcpcs code.
-//   set_prior_auth_number   — set the prior-auth REF*G1 value.
+//   set_prior_auth_number   — append the prior-auth number to claim
+//                             notes (no structured PA column yet; see
+//                             appendPriorAuthNote). Mirrors add_diagnosis;
+//                             never clobbers claim_number.
 //
 // PHI posture: patches reference fields by name and contain only
 // payer-side identifiers, HCPCS codes, modifier strings, and money.
@@ -229,12 +232,7 @@ async function applySingle(
     case "remove_line":
       return removeLineByHcpcs(supabase, claimId, patch.hcpcsCode);
     case "set_prior_auth_number":
-      return applyClaimFieldPatch(
-        supabase,
-        claimId,
-        "claim_number",
-        patch.authNumber,
-      );
+      return appendPriorAuthNote(supabase, claimId, patch.authNumber);
   }
 }
 
@@ -350,6 +348,38 @@ async function appendDiagnosisNote(
   return { status: "applied" };
 }
 
+async function appendPriorAuthNote(
+  supabase: SupabaseClient,
+  claimId: string,
+  authNumber: string,
+): Promise<{ status: PatchApplyOutcome["status"]; message?: string }> {
+  // No structured prior-auth column on insurance_claims yet (the 837P
+  // REF*G1 builder will read from one once it lands). Writing the PA
+  // number into claim_number would clobber the payer/clearinghouse
+  // submission tracking reference, so we append it to notes with a
+  // stable marker — the same pattern as appendDiagnosisNote — for the
+  // EDI builder and CSR UI to opt into. Idempotent on the marker.
+  const { data: claim } = await supabase
+    .schema("resupply")
+    .from("insurance_claims")
+    .select("notes")
+    .eq("id", claimId)
+    .limit(1)
+    .maybeSingle();
+  const marker = `[ai-pa:${authNumber}]`;
+  if (claim?.notes?.includes(marker)) {
+    return { status: "skipped", message: "prior-auth already noted" };
+  }
+  const updated = claim?.notes ? `${claim.notes} ${marker}` : marker;
+  const { error } = await supabase
+    .schema("resupply")
+    .from("insurance_claims")
+    .update({ notes: updated, updated_at: new Date().toISOString() })
+    .eq("id", claimId);
+  if (error) return { status: "errored", message: error.message };
+  return { status: "applied" };
+}
+
 async function addLineItem(
   supabase: SupabaseClient,
   claimId: string,
@@ -410,11 +440,13 @@ async function recomputeTotals(
   const { data: lines } = await supabase
     .schema("resupply")
     .from("insurance_claim_line_items")
-    .select("billed_cents, allowed_cents, paid_cents")
+    .select("billed_cents, quantity, allowed_cents, paid_cents")
     .eq("claim_id", claimId);
   const totals = (lines ?? []).reduce(
     (acc, l) => ({
-      billed: acc.billed + (l.billed_cents ?? 0),
+      // billed_cents is per-unit → extended charge is * quantity.
+      // allowed/paid are payer 835 line totals (already extended).
+      billed: acc.billed + (l.billed_cents ?? 0) * (l.quantity ?? 1),
       allowed: acc.allowed + (l.allowed_cents ?? 0),
       paid: acc.paid + (l.paid_cents ?? 0),
     }),

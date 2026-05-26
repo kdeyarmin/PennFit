@@ -290,3 +290,78 @@ describe("askSleepCoach — round cap", () => {
     );
   });
 });
+
+describe("askSleepCoach — OpenAI fallback path (tools)", () => {
+  it("passes catalog tools and runs the tool-call loop on the OpenAI path", async () => {
+    const prevAnthropic = process.env.ANTHROPIC_API_KEY;
+    delete process.env.ANTHROPIC_API_KEY; // force the OpenAI fallback
+    stageEmptyContext();
+
+    const okJson = (data: unknown) => ({
+      ok: true,
+      status: 200,
+      json: async () => data,
+      text: async () => JSON.stringify(data),
+    });
+
+    const bodies: Array<Record<string, unknown>> = [];
+    let calls = 0;
+    const fetchImpl = (async (_url: string, init: { body: string }) => {
+      bodies.push(JSON.parse(init.body));
+      calls += 1;
+      if (calls === 1) {
+        // Round 1: the model asks to call a catalog tool.
+        return okJson({
+          choices: [
+            {
+              message: {
+                content: null,
+                tool_calls: [
+                  {
+                    id: "tc1",
+                    type: "function",
+                    function: { name: "find_masks", arguments: "{}" },
+                  },
+                ],
+              },
+            },
+          ],
+        });
+      }
+      // Round 2: the model answers with catalog-grounded text.
+      return okJson({
+        choices: [
+          {
+            message: {
+              content: "The AirFit P30i is a solid nasal-pillow option.",
+            },
+          },
+        ],
+      });
+    }) as unknown as typeof fetch;
+
+    try {
+      const result = await askSleepCoach({
+        patientId: "pt_openai_tools",
+        question: "what nasal masks do you carry?",
+        apiKey: "sk-test",
+        fetchImpl,
+      });
+      expect(result.reply).toContain("AirFit P30i");
+      expect(calls).toBe(2);
+      // Round 1 sent the catalog tools so the model could ground itself.
+      expect(Array.isArray(bodies[0]!.tools)).toBe(true);
+      expect((bodies[0]!.tools as unknown[]).length).toBeGreaterThan(0);
+      // Round 2 carried the tool result back to the model.
+      expect(
+        (bodies[1]!.messages as Array<{ role: string }>).some(
+          (m) => m.role === "tool",
+        ),
+      ).toBe(true);
+    } finally {
+      if (prevAnthropic !== undefined) {
+        process.env.ANTHROPIC_API_KEY = prevAnthropic;
+      }
+    }
+  });
+});

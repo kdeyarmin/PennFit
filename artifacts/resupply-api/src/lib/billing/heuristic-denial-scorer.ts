@@ -228,6 +228,8 @@ export async function scoreClaim(claimId: string): Promise<DenialScore | null> {
 
   // 5d. Billed >> fee schedule (caps writeoff but signals coding error).
   if (claim.payer_profile_id) {
+    const onDate =
+      claim.date_of_service ?? new Date().toISOString().slice(0, 10);
     for (const line of lineList) {
       const { data: fee } = await supabase
         .schema("resupply")
@@ -235,6 +237,12 @@ export async function scoreClaim(claimId: string): Promise<DenialScore | null> {
         .select("allowed_cents")
         .eq("payer_profile_id", claim.payer_profile_id)
         .eq("hcpcs_code", line.hcpcs_code)
+        // Only a fee row effective on the date of service (mirrors
+        // claim-builder); the prior "newest effective_from" pick could
+        // compare against a future-dated or expired rate, mis-weighting
+        // the predicted-denial score.
+        .lte("effective_from", onDate)
+        .or(`effective_through.is.null,effective_through.gte.${onDate}`)
         .order("effective_from", { ascending: false })
         .limit(1)
         .maybeSingle();
