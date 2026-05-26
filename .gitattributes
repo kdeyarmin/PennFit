@@ -10,18 +10,24 @@
 # (lockfiles) or syntactically-broken JSON (the drizzle journal). Marking
 # them `-diff merge=binary` makes Git treat each side as opaque, so a
 # conflict surfaces as a single "pick one side" decision instead of
-# hundreds of inline `<<<<<<<` hunks scattered through generated text.
+# hundreds of inline `<<<<<<<` hunks. This is also what GitHub's
+# server-side merge sees — keep these `binary` so a conflict blocks the
+# merge button rather than risking a corrupt auto-merge landing on main.
 #
-# Recovery recipe when one of these conflicts (also documented in CLAUDE.md):
+# pnpm-lock.yaml: `scripts/install-hooks.sh` installs a LOCAL-ONLY merge
+# driver (registered in .git/info/attributes, which overrides this file
+# for your clone only) so local merges/rebases auto-resolve the lockfile
+# and re-run `pnpm install`. If you ever resolve one by hand:
 #
-#   # take whichever side is closer to what you want, then regenerate:
-#   git checkout --ours pnpm-lock.yaml      # or --theirs
-#   pnpm install                            # regenerates pnpm-lock.yaml
+#   git checkout --theirs pnpm-lock.yaml    # or --ours, whichever is closer
+#   pnpm install                            # regenerates from package.json
 #   git add pnpm-lock.yaml
 #
-# For the drizzle journal, manually splice the new entries from the other
-# side (each entry is keyed by `idx` and `tag`); both branches' new
-# migrations must end up in the final `entries` array.
+# _journal.json: DO NOT hand-edit or splice it. It is frozen at 52 entries
+# and new migrations are no longer journaled; rebuilding it can make
+# migrate.mjs re-apply or skip migrations against production (see
+# docs/migration-state-investigation-2026-05-08.md). The marker below is
+# only a guard — if it ever conflicts, take either side verbatim.
 # ---------------------------------------------------------------------------
 
 pnpm-lock.yaml                                  -diff merge=binary

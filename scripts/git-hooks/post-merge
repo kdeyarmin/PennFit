@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# managed by scripts/install-hooks.sh
+#
+# post-merge GIT HOOK — note this is NOT the deploy script
+# scripts/post-merge.sh (same name, different job). Fires after a
+# successful `git merge` / `git pull`. Reconciles pnpm-lock.yaml when the
+# merge changed it (e.g. the pnpm-lock merge driver took one side of a
+# lockfile conflict). Best-effort; never blocks the merge.
+set -uo pipefail
+
+root="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
+exec bash "$root/scripts/git-hooks/reconcile-pnpm-lock.sh"

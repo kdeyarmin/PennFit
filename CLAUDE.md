@@ -31,22 +31,32 @@ Post-mortem of the drift event: [`docs/git-state-2026-05-01.md`](./docs/git-stat
 
 ## Merge conflicts in generated files
 
-Two files in this repo are auto-generated and conflict on nearly every
-multi-PR merge train. `.gitattributes` marks them `-diff merge=binary`
-so Git surfaces a single "pick one side" decision instead of producing
-garbled line-merged output. When you hit one:
+`pnpm-lock.yaml` is the one auto-generated file that still conflicts on
+multi-PR merge trains. `.gitattributes` marks it `-diff merge=binary` so
+Git (and GitHub's server-side merge) surface a single "pick one side"
+conflict instead of a corrupt line-merge. Locally you get better:
+`scripts/install-hooks.sh` registers a `merge.pnpm-lock` driver (via
+`.git/info/attributes`, which overrides the committed attribute for your
+clone only) that auto-takes one side, plus `post-merge` / `post-rewrite`
+hooks that re-run `pnpm install` to reconcile. So after running
+`bash scripts/install-hooks.sh`, local merges and rebases no longer halt
+on the lockfile. If you ever resolve one by hand:
 
 ```bash
-# pnpm-lock.yaml — take either side, then regenerate from package.json
-git checkout --ours pnpm-lock.yaml   # or --theirs, whichever is closer
-pnpm install                         # regenerates the lockfile
+git checkout --theirs pnpm-lock.yaml   # or --ours, whichever is closer
+pnpm install                           # regenerates from package.json
 git add pnpm-lock.yaml
-
-# lib/resupply-db/drizzle/meta/_journal.json — splice manually; both
-# branches' new entries (keyed by `idx` and `tag`) must end up in the
-# final `entries` array with unique `tag`/`when` values. `migrate.mjs`
-# only gates by `when`/`created_at` (no de-dupe), so duplicates/backdating can break or skip migrations.
 ```
+
+**Do NOT hand-edit `lib/resupply-db/drizzle/meta/_journal.json`.** Despite
+the older guidance to "splice" it, that file is **frozen** at 52 entries
+and is no longer appended to (new migrations are not journaled — there are
+180+ `.sql` files but only 52 journal entries). It therefore does not
+actually conflict anymore. Splicing or rebuilding it can make `migrate.mjs`
+re-apply or skip migrations against production — see
+[`docs/migration-state-investigation-2026-05-08.md`](./docs/migration-state-investigation-2026-05-08.md).
+Its `-diff merge=binary` marker stays only as a guard; if it ever
+conflicts, take either side verbatim and do not merge entries by hand.
 
 Do NOT add `merge=union` or `merge=ours` for source files in
 `artifacts/`, `lib/`, or `replit.md` — those are real edits and silently

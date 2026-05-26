@@ -63,6 +63,19 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      # Migration prefix-collision guard. The same check runs as a local
+      # pre-commit hook, but commits made via the GitHub web UI — or by
+      # agents/CI without the hook installed — can still introduce a
+      # duplicate NNNN_ migration prefix: two parallel PRs each grab the
+      # next free number and only collide once both merge (that is how
+      # 0156×4 / 0157×2 landed). Enforcing it here against the PR base
+      # closes that gap. PR-only — a push to main has no base to diff.
+      - name: Migration prefix collision check
+        if: github.event_name == 'pull_request'
+        run: |
+          git fetch --no-tags --depth=1 origin "$GITHUB_BASE_REF"
+          BASE_REF=FETCH_HEAD DIFF_TARGET= bash scripts/check-resupply-migration-prefix.sh
+
       - name: Install pnpm
         run: |
           corepack disable pnpm 2>/dev/null || true
