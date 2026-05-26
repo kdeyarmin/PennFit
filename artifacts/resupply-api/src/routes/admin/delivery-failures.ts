@@ -60,8 +60,11 @@ router.get("/admin/delivery-failures", requirePermission("reports.read"), async 
   const parseResult = querySchema.safeParse(req.query);
   if (!parseResult.success) {
     return res.status(400).json({
-      error: "Invalid query parameters",
-      details: parseResult.error.format(),
+      error: "invalid_query",
+      issues: parseResult.error.issues.map((i) => ({
+        path: i.path.join("."),
+        message: i.message,
+      })),
     });
   }
   const sinceDays = parseResult.data.sinceDays ?? DEFAULT_DAYS_BACK;
