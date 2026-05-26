@@ -8,45 +8,30 @@ import type {
   IntegrationAdapter,
 } from "@workspace/resupply-integrations";
 
-import {
-  isCareOrchestratorStubMode,
-  readCareOrchestratorConfigOrNull,
-} from "./config";
-import { buildCareOrchestratorStubSnapshot } from "./stub";
+import { readCareOrchestratorConfigOrNull } from "./config";
 import { fetchCareOrchestratorSnapshot } from "./client";
 
-export {
-  readCareOrchestratorConfigOrNull,
-  isCareOrchestratorStubMode,
-} from "./config";
-export { buildCareOrchestratorStubSnapshot } from "./stub";
+export { readCareOrchestratorConfigOrNull } from "./config";
 export { fetchCareOrchestratorSnapshot } from "./client";
 
 export function createCareOrchestratorAdapter(
   env: NodeJS.ProcessEnv = process.env,
 ): IntegrationAdapter {
   const config = readCareOrchestratorConfigOrNull(env);
-  const stub = config === null;
-  const stubReason: "no_credentials" | "stub_mode" =
-    isCareOrchestratorStubMode(env) ? "stub_mode" : "no_credentials";
 
   return {
     source: "philips_care",
     availability() {
-      if (stub) return { status: "stub", reason: stubReason };
+      if (!config) {
+        return { status: "unavailable", reason: "not_configured" };
+      }
       return { status: "configured" };
     },
     async fetchSnapshot(
       input: FetchSnapshotInput,
     ): Promise<FetchSnapshotResult> {
-      if (stub || !config) {
-        return {
-          ok: true,
-          snapshot: buildCareOrchestratorStubSnapshot(
-            input.partnerPatientId,
-            input.windowDays ?? 30,
-          ),
-        };
+      if (!config) {
+        return { ok: false, error: "unavailable" };
       }
       return fetchCareOrchestratorSnapshot(config, input);
     },

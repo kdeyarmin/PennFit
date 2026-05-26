@@ -1,13 +1,15 @@
 // Tests for lib/admin/delivery-failures-api.ts
 //
-// PR change: two fields were removed from DeliveryFailuresResponse:
+// The system-events stream reads from the retired `audit_log` table, so
+// the route short-circuits to a degraded response (CLAUDE.md hard rule:
+// no new `audit_log` readers). DeliveryFailuresResponse therefore models
+// that contract:
 //   - `auditEventsUnavailable?` (audit-log retirement notice flag)
-//   - `counts.auditFailures` changed from `number | null` → `number`
-//     (the field is now always present and numeric)
+//   - `counts.auditFailures` is `number | null` (null when unavailable)
 //
 // Coverage:
-//   1. DeliveryFailuresResponse does NOT carry `auditEventsUnavailable`.
-//   2. counts.auditFailures is typed as `number` (not `number | null`).
+//   1. DeliveryFailuresResponse carries `auditEventsUnavailable`.
+//   2. counts.auditFailures is typed as `number | null`.
 //   3. fetchDeliveryFailures() calls the correct URL.
 //   4. fetchDeliveryFailures() uses the sinceDays parameter.
 //   5. fetchDeliveryFailures() propagates HTTP errors.
@@ -43,43 +45,39 @@ afterEach(() => {
 // Type shape — DeliveryFailuresResponse
 // ---------------------------------------------------------------------------
 
+// The interface's own closing brace sits at column 0 (`\n}`), so anchor
+// on that rather than the first `}` — which would stop inside the inline
+// `counts: { ... }` object literal.
+function deliveryFailuresIfaceBody(): string {
+  const ifaceStart = SRC.indexOf("interface DeliveryFailuresResponse {");
+  expect(ifaceStart).toBeGreaterThan(-1);
+function deliveryFailuresIfaceBody(): string {
+  const ifaceStart = SRC.indexOf("interface DeliveryFailuresResponse {");
+  expect(ifaceStart).toBeGreaterThan(-1);
+  const ifaceEnd = SRC.indexOf("\n}", ifaceStart);
+  expect(ifaceEnd).toBeGreaterThan(-1);
+  return SRC.slice(ifaceStart, ifaceEnd);
+}
+}
+
 describe("delivery-failures-api — DeliveryFailuresResponse type shape", () => {
-  it("interface does NOT declare `auditEventsUnavailable`", () => {
-    const ifaceStart = SRC.indexOf("interface DeliveryFailuresResponse {");
-    expect(ifaceStart).toBeGreaterThan(-1);
-    const ifaceEnd = SRC.indexOf("}", ifaceStart);
-    const ifaceBody = SRC.slice(ifaceStart, ifaceEnd);
-    expect(ifaceBody).not.toContain("auditEventsUnavailable");
+  it("declares the `auditEventsUnavailable` retirement flag", () => {
+    expect(deliveryFailuresIfaceBody()).toContain("auditEventsUnavailable");
   });
 
-  it("counts.auditFailures is typed as `number` (not `number | null`)", () => {
-    const ifaceStart = SRC.indexOf("interface DeliveryFailuresResponse {");
-    const ifaceEnd = SRC.indexOf("}", ifaceStart);
-    const ifaceBody = SRC.slice(ifaceStart, ifaceEnd);
-    // Must contain the non-nullable form
-    expect(ifaceBody).toContain("auditFailures: number");
-    // Must NOT use the nullable union
-    expect(ifaceBody).not.toContain("auditFailures: number | null");
+  it("counts.auditFailures is nullable (`number | null` — null when unavailable)", () => {
+    expect(deliveryFailuresIfaceBody()).toContain(
+      "auditFailures: number | null",
+    );
   });
 
   it("declares all expected top-level fields", () => {
-    const ifaceStart = SRC.indexOf("interface DeliveryFailuresResponse {");
-    const ifaceEnd = SRC.indexOf("}", ifaceStart);
-    const ifaceBody = SRC.slice(ifaceStart, ifaceEnd);
+    const ifaceBody = deliveryFailuresIfaceBody();
     expect(ifaceBody).toContain("sinceDays");
     expect(ifaceBody).toContain("counts");
     expect(ifaceBody).toContain("failureStatuses");
     expect(ifaceBody).toContain("messageEvents");
     expect(ifaceBody).toContain("auditEvents");
-  });
-
-  // Boundary: the word "unavailable" must not appear anywhere in the
-  // interface region — not even in a comment — since the retirement
-  // notice was fully removed.
-  it("source does not mention `unavailable` in the interface region", () => {
-    const ifaceStart = SRC.indexOf("interface DeliveryFailuresResponse {");
-    const ifaceRegion = SRC.slice(ifaceStart, ifaceStart + 400);
-    expect(ifaceRegion).not.toContain("unavailable");
   });
 });
 
