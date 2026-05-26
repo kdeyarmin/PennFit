@@ -211,7 +211,7 @@ router.post("/sms/inbound", signatureMiddleware, smsPhoneLimiter, async (req, re
         .type("text/xml")
         .send(
           earlyRouted.intent === "stop"
-            ? "<Response><Message>You've been unsubscribed and won't get further messages from us. Reply START to resume.</Message></Response>"
+            ? "<Response><Message>You've been unsubscribed and won't get further texts from us. Reply START to resume.</Message></Response>"
             : `<Response><Message>${escapeXml(cfg.practiceName)} — automated CPAP refill reminders. Reply YES to confirm, NO to decline, EDIT to change your address, STOP to opt out. Standard message + data rates may apply.</Message></Response>`,
         );
       return;
@@ -356,7 +356,7 @@ router.post("/sms/inbound", signatureMiddleware, smsPhoneLimiter, async (req, re
         .type("text/xml")
         .send(
           earlyRouted.intent === "stop"
-            ? "<Response><Message>You've been unsubscribed and won't get further messages from us. Reply START to resume.</Message></Response>"
+            ? "<Response><Message>You've been unsubscribed and won't get further texts from us. Reply START to resume.</Message></Response>"
             : `<Response><Message>${escapeXml(cfg.practiceName)} — automated CPAP refill reminders. Reply YES to confirm, NO to decline, EDIT to change your address, STOP to opt out. Standard message + data rates may apply.</Message></Response>`,
         );
       return;
@@ -911,7 +911,7 @@ async function dispatchIntent(input: DispatchInput): Promise<string> {
         ip: input.ip,
         userAgent: input.userAgent,
       });
-      return "You've been unsubscribed and won't get further messages from us. Reply START to resume.";
+      return "You've been unsubscribed and won't get further texts from us. Reply START to resume.";
     }
     case "start": {
       // Carrier-mandated opt-in. Reverse a STOP-induced pause so the

@@ -268,6 +268,9 @@ describe("POST /sms/inbound", () => {
       });
     expect(res.status).toBe(200);
     expect(res.text).toContain("unsubscribed");
+    // SMS-only opt-out: the reply scopes to texts (not "messages"), since
+    // marketing email keeps its own separate opt-out.
+    expect(res.text).toContain("texts");
     expect(pausePatientMock).toHaveBeenCalledWith(PATIENT_ID);
     const handoffAudit = logAuditMock.mock.calls
       .map((c) => c[0])

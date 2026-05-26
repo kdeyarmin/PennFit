@@ -241,10 +241,16 @@ async function applyClaim(
     .eq("id", claim.id);
 
   // 4. Append the event row.
+  // The event label drives the patient EOB email: "paid" = the patient
+  // owes nothing (insurance covered it), "partial_pay" = the patient
+  // still owes a balance (deductible/coinsurance) the email explains.
+  // Key off the patient's residual responsibility — NOT paid-vs-billed,
+  // which tagged nearly every claim "partial_pay" because payers
+  // reimburse the (lower) allowed amount, never the full billed charge.
   const eventType: Database["resupply"]["Tables"]["insurance_claim_events"]["Row"]["event_type"] =
     eraClaim.isDenied
       ? "denied"
-      : newTotalPaid >= claim.total_billed_cents
+      : newPatientResp <= 0
         ? "paid"
         : "partial_pay";
   await supabase

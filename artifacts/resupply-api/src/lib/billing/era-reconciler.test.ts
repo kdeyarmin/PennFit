@@ -297,7 +297,7 @@ describe("era-reconciler — decision_at stamping", () => {
 // importing it here is sufficient to intercept all Supabase calls made inside
 // reconcileEra → applyClaim.
 
-import { beforeEach, afterEach } from "vitest";
+import { beforeEach } from "vitest";
 import {
   installSupabaseMock,
   stageSupabaseResponse,
@@ -319,6 +319,7 @@ function makeParsed835(claimOverrides: {
   patientControlNumber: string;
   paidCents: number;
   isDenied: boolean;
+  patientResponsibilityCents?: number;
   adjustments?: Array<{ groupCode: string; reasonCode: string; amountCents: number; quantity: null }>;
 }) {
   return {
@@ -338,7 +339,7 @@ function makeParsed835(claimOverrides: {
         claimStatusCode: claimOverrides.isDenied ? "4" : "1",
         totalChargeCents: 10000,
         paidCents: claimOverrides.paidCents,
-        patientResponsibilityCents: 0,
+        patientResponsibilityCents: claimOverrides.patientResponsibilityCents ?? 0,
         filingIndicator: null,
         payerClaimReference: null,
         patientLastName: null,
@@ -529,5 +530,98 @@ describe("era-reconciler — decision_at stamping (behavioural)", () => {
     expect(summary.matchedClaims).toBe(0);
     expect(summary.unmatchedClaims).toBe(1);
     expect(summary.outcomes[0]?.matched).toBe(false);
+  });
+});
+describe("era-reconciler — EOB event label (patient-balance semantics)", () => {
+  it("labels the event 'paid' when the patient owes nothing", async () => {
+    stageMatchedClaim({
+      id: "claim-paid-nogap",
+      patient_id: "p1",
+      status: "accepted",
+      total_billed_cents: 10000,
+      total_allowed_cents: 8000,
+      total_paid_cents: 0,
+      patient_responsibility_cents: 0,
+      denial_reason: null,
+      decision_at: null,
+    });
+
+    await reconcileEra(
+      makeParsed835({
+        patientControlNumber: "claim-paid-nogap",
+        paidCents: 8000,
+        isDenied: false,
+        patientResponsibilityCents: 0,
+      }),
+      ERA_OPTS,
+    );
+
+    const [evt] = supabaseMock.writePayloads(
+      "insurance_claim_events",
+      "insert",
+    ) as Array<Record<string, unknown>>;
+    expect(evt?.event_type).toBe("paid");
+  });
+
+  it("labels the event 'partial_pay' when the patient still owes a balance", async () => {
+    stageMatchedClaim({
+      id: "claim-partial",
+      patient_id: "p2",
+      status: "accepted",
+      total_billed_cents: 10000,
+      total_allowed_cents: 8000,
+      total_paid_cents: 0,
+      patient_responsibility_cents: 0,
+      denial_reason: null,
+      decision_at: null,
+    });
+
+    await reconcileEra(
+      makeParsed835({
+        patientControlNumber: "claim-partial",
+        paidCents: 6000,
+        isDenied: false,
+        patientResponsibilityCents: 2000, // patient still owes $20
+      }),
+      ERA_OPTS,
+    );
+
+    const [evt] = supabaseMock.writePayloads(
+      "insurance_claim_events",
+      "insert",
+    ) as Array<Record<string, unknown>>;
+    expect(evt?.event_type).toBe("partial_pay");
+  });
+
+  it("labels the event 'denied' for a denied claim regardless of balance", async () => {
+    stageMatchedClaim({
+      id: "claim-denied-evt",
+      patient_id: "p3",
+      status: "accepted",
+      total_billed_cents: 10000,
+      total_allowed_cents: 0,
+      total_paid_cents: 0,
+      patient_responsibility_cents: 0,
+      denial_reason: null,
+      decision_at: null,
+    });
+
+    await reconcileEra(
+      makeParsed835({
+        patientControlNumber: "claim-denied-evt",
+        paidCents: 0,
+        isDenied: true,
+        adjustments: [
+          { groupCode: "CO", reasonCode: "4", amountCents: 10000, quantity: null },
+        ],
+      }),
+      ERA_OPTS,
+    );
+
+    const [evt] = supabaseMock.writePayloads(
+      "insurance_claim_events",
+      "insert",
+    ) as Array<Record<string, unknown>>;
+    expect(evt?.event_type).toBe("denied");
   });
 });
