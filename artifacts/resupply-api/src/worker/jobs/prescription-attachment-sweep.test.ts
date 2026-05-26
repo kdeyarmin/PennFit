@@ -4,7 +4,7 @@
 // production. These tests pin the PURE decision logic — every I/O
 // dependency is injected via the `SweepDeps` shape, so the suite
 // runs without standing up a bucket or a pool. The boundary code
-// (drizzle SELECT for referenced keys, `logAudit`, GCS list/delete)
+// (Supabase SELECT for referenced keys, `logAudit`, GCS list/delete)
 // is exercised in the `resupply-check` integration sweep.
 //
 // Coverage matrix (see jobs/prescription-attachment-sweep.ts comments
