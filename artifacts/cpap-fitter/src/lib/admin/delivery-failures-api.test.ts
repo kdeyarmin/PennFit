@@ -51,13 +51,9 @@ afterEach(() => {
 function deliveryFailuresIfaceBody(): string {
   const ifaceStart = SRC.indexOf("interface DeliveryFailuresResponse {");
   expect(ifaceStart).toBeGreaterThan(-1);
-function deliveryFailuresIfaceBody(): string {
-  const ifaceStart = SRC.indexOf("interface DeliveryFailuresResponse {");
-  expect(ifaceStart).toBeGreaterThan(-1);
   const ifaceEnd = SRC.indexOf("\n}", ifaceStart);
   expect(ifaceEnd).toBeGreaterThan(-1);
   return SRC.slice(ifaceStart, ifaceEnd);
-}
 }
 
 describe("delivery-failures-api — DeliveryFailuresResponse type shape", () => {
