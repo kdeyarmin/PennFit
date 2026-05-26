@@ -652,15 +652,8 @@ router.post(
       return;
     }
     const nowIso = new Date().toISOString();
-    const { error: delErr } = await supabase
-      .schema("resupply")
-      .from("admin_mfa_secrets")
-      .delete()
-      .eq("id", target.id);
-    if (delErr) throw delErr;
-    // Burn the matched device's TOTP counter so the same code can't be
-    // replayed to remove another device. No-op when the matched device
-    // was the one removed. Mirrors the verify / regenerate endpoints.
+    // Prefer a transaction/RPC here. If that's not available, burn
+    // before delete so a partial failure doesn't leave the code reusable.
     if (authDevice.id !== target.id) {
       const { error: burnErr } = await supabase
         .schema("resupply")
@@ -668,6 +661,13 @@ router.post(
         .update({ last_used_at: nowIso, last_used_counter: authDevice.counter })
         .eq("id", authDevice.id);
       if (burnErr) throw burnErr;
+    }
+    const { error: delErr } = await supabase
+      .schema("resupply")
+      .from("admin_mfa_secrets")
+      .delete()
+      .eq("id", target.id);
+    if (delErr) throw delErr;
     }
 
     await logAudit({
