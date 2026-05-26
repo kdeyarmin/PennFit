@@ -355,7 +355,7 @@ async function detectNoResponse(
     now.getTime() - NO_RESPONSE_MIN_DAYS_ELAPSED * MS_PER_DAY,
   ).toISOString();
 
-  // The original Drizzle path LEFT JOINed
+  // The original SQL path LEFT JOINed
   // patient_onboarding_journeys → patient_latest_message. PostgREST
   // has no JOIN, so we fetch the journey set first then bulk-look
   // up the latest-message rows by patient_id. Patients with no

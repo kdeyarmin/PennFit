@@ -142,7 +142,7 @@ router.get("/conversations", requireAdmin, async (req, res) => {
   const { data: rows, count, error } = await query;
   if (error) throw error;
 
-  // Bulk-fetch the joined identity rows. The original Drizzle query
+  // Bulk-fetch the joined identity rows. The original SQL query
   // LEFT JOINed patients + shop_customers; PostgREST has no JOIN, so
   // we collect the IDs from this page's rows and fetch in one extra
   // round-trip per side.

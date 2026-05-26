@@ -298,7 +298,7 @@ router.patch(
     }
 
     const adminId = req.adminUserId ?? null;
-    // Snake-case columns at the write boundary; the Drizzle path's
+    // Snake-case columns at the write boundary; the prior ORM path's
     // $onUpdateFn that bumped updated_at becomes an explicit JS-side
     // timestamp here since PostgREST won't run it for us.
     const updateValues: MessageTemplateUpdate = {

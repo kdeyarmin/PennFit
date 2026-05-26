@@ -145,7 +145,7 @@ router.patch("/patients/:id", requireAdmin, async (req, res) => {
   // `updated_at = $expected`. The dashboard echoes back the exact
   // ISO string it received from a prior response, so a literal
   // `.eq()` matches reliably for values written through this code
-  // path. The original Drizzle implementation used
+  // path. The original SQL implementation used
   // `date_trunc('milliseconds', updated_at) = $expected` to defend
   // against `pg` lossily reparsing microsecond Postgres timestamps
   // into millisecond JS `Date`s; PostgREST returns the full

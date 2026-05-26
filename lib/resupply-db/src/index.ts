@@ -3,10 +3,10 @@
 //
 // Public surface:
 //   - Pure types and constants from `./types` (AdminRole,
-//     EmailTokenPurpose, CommunicationPreferences, etc.). The
-//     `./schema/` directory of Drizzle table definitions was
-//     deleted when the Drizzle tooling was retired — these types
-//     are now declared directly in `./types.ts`.
+//     EmailTokenPurpose, CommunicationPreferences, etc.). These
+//     used to be generated into a `./schema/` directory; that
+//     codegen was removed and they are now declared directly in
+//     `./types.ts`.
 //   - `getSupabaseServiceRoleClient()` — the shared, lazily-initialized
 //     Supabase JS client used by every resupply package that needs
 //     to read/write Postgres at runtime.

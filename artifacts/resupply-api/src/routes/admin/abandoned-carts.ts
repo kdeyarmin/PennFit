@@ -27,7 +27,7 @@
 // `reminded_at IS NOT NULL` for every row we just stamped, so it sends
 // nothing. Safe to re-run.
 //
-// Concurrency posture: the original Drizzle path used a single SQL
+// Concurrency posture: the original SQL path used a single
 // `WITH eligible … FOR UPDATE SKIP LOCKED` claim. PostgREST has no
 // SKIP LOCKED, so we approximate with SELECT-then-UPDATE-with-null-
 // guard. Two parallel invocations both fetch the same candidate ids

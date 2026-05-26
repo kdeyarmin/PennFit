@@ -60,7 +60,7 @@ router.get("/admin/delivery-failures", requirePermission("reports.read"), async 
 
   const supabase = getSupabaseServiceRoleClient();
 
-  // Per-message failures. The original Drizzle path joined to
+  // Per-message failures. The original SQL path joined to
   // conversations + patients in one shot; PostgREST has no JOIN, so
   // we fetch messages first then bulk-fetch the parent conversations
   // and (via the conversation's patient_id) the patients in a second
