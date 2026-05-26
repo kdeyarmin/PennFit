@@ -21,14 +21,14 @@ import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 import { logger } from "../logger";
 import { evaluateAll } from "./index";
 
-/** Per-evaluator-run cap to keep the response time bounded. This
- *  module reports only the summary counts in `EvaluatorResult`
- *  (`scanned`, `proposed`, `inserted`, `skippedExisting`) and does
- *  not expose a `remaining`/pagination value. Admins may rerun the
- *  evaluator manually to process another capped batch; the cron job
- *  runs daily, so a per-run cap of 200 covers the steady-state
- *  detection load comfortably. */
-const PER_RUN_PATIENT_CAP = 200;
+/** Defensive per-run patient cap. The daily cron evaluates EVERY active
+ *  patient (the recent-night roster is paged in full below), so this is
+ *  a safety bound against pathological roster growth, not a steady-state
+ *  limiter. If it is ever exceeded the overflow is logged loudly so the
+ *  un-evaluated patients are visible and a rotating cursor can be added.
+ *  (The prior value of 200 silently starved everyone past the first 200
+ *  patient_ids once the roster grew.) */
+const MAX_PATIENTS_PER_RUN = 5000;
 
 export interface EvaluatorActor {
   /** Stamped on every audit row this run produces. Use the admin
@@ -62,21 +62,46 @@ export async function runSmartTriggerEvaluator(
   )
     .toISOString()
     .slice(0, 10);
-  const { data: recentRows, error: candidatesErr } = await supabase
-    .schema("resupply")
-    .from("patient_therapy_nights")
-    .select("patient_id")
-    .gte("night_date", cutoffIso)
-    .order("patient_id", { ascending: true });
-  if (candidatesErr) throw candidatesErr;
+  // Page the FULL recent-night roster. PostgREST caps a single response
+  // (~1000 rows); the prior single ordered-by-patient_id query truncated
+  // there, so once recent nights exceeded that cap only the
+  // alphabetically-lowest patient_ids were ever seen and every other
+  // patient was NEVER evaluated. De-dupe patient_ids across pages.
+  const PAGE_SIZE = 1000;
   const candidateSet = new Set<string>();
-  for (const r of recentRows ?? []) {
-    if (r.patient_id) candidateSet.add(r.patient_id);
-    if (candidateSet.size >= PER_RUN_PATIENT_CAP) break;
+  for (let from = 0; ; from += PAGE_SIZE) {
+    const { data: page, error: candidatesErr } = await supabase
+      .schema("resupply")
+      .from("patient_therapy_nights")
+      .select("patient_id")
+      .gte("night_date", cutoffIso)
+      .order("patient_id", { ascending: true })
+      .range(from, from + PAGE_SIZE - 1);
+    if (candidatesErr) throw candidatesErr;
+    if (!page || page.length === 0) break;
+    for (const r of page) {
+      if (r.patient_id) candidateSet.add(r.patient_id);
+    }
+    if (page.length < PAGE_SIZE) break;
   }
-  const candidates = Array.from(candidateSet).map((patientId) => ({
-    patientId,
-  }));
+
+  // Daily off-peak cron: evaluate every active patient. Only fall back
+  // to the cap on a pathologically large roster — and log it so the
+  // overflow (which would silently go un-evaluated) is visible.
+  const allCandidateIds = Array.from(candidateSet);
+  if (allCandidateIds.length > MAX_PATIENTS_PER_RUN) {
+    logger.warn(
+      {
+        event: "smart_triggers.evaluate.roster_overflow",
+        rosterSize: allCandidateIds.length,
+        cap: MAX_PATIENTS_PER_RUN,
+      },
+      "smart-triggers.evaluate: roster exceeds per-run cap — overflow patients not evaluated this run; add a rotating cursor",
+    );
+  }
+  const candidates = allCandidateIds
+    .slice(0, MAX_PATIENTS_PER_RUN)
+    .map((patientId) => ({ patientId }));
 
   let scanned = 0;
   let proposed = 0;
