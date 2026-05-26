@@ -440,11 +440,13 @@ async function recomputeTotals(
   const { data: lines } = await supabase
     .schema("resupply")
     .from("insurance_claim_line_items")
-    .select("billed_cents, allowed_cents, paid_cents")
+    .select("billed_cents, quantity, allowed_cents, paid_cents")
     .eq("claim_id", claimId);
   const totals = (lines ?? []).reduce(
     (acc, l) => ({
-      billed: acc.billed + (l.billed_cents ?? 0),
+      // billed_cents is per-unit → extended charge is * quantity.
+      // allowed/paid are payer 835 line totals (already extended).
+      billed: acc.billed + (l.billed_cents ?? 0) * (l.quantity ?? 1),
       allowed: acc.allowed + (l.allowed_cents ?? 0),
       paid: acc.paid + (l.paid_cents ?? 0),
     }),

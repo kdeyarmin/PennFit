@@ -457,7 +457,12 @@ export async function preflightClaim(claimId: string): Promise<PreflightSummary>
 
   // ── Total billed matches sum of lines ───────────────────────────
   if (lines && lines.length > 0) {
-    const sum = lines.reduce((s, l) => s + (l.billed_cents ?? 0), 0);
+    // billed_cents is per-unit; the extended line charge is
+    // billed_cents * quantity, matching the header total recompute.
+    const sum = lines.reduce(
+      (s, l) => s + (l.billed_cents ?? 0) * (l.quantity ?? 1),
+      0,
+    );
     if (sum !== claim.total_billed_cents) {
       items.push({
         key: "totals",

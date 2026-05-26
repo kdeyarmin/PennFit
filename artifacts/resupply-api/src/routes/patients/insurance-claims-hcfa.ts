@@ -203,7 +203,9 @@ router.get(
           .map((m: string) => m.trim().toUpperCase())
           .filter((m: string) => m.length === 2),
         diagnosisPointer: "A",
-        chargesCents: l.billed_cents,
+        // Box 24F is the EXTENDED line charge (per-unit billed_cents x
+        // units); Box 24G (units) carries the quantity separately.
+        chargesCents: l.billed_cents * l.quantity,
         units: l.quantity,
       })),
       taxId,

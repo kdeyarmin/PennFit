@@ -163,7 +163,9 @@ router.get("/me/claims/:claimId", async (req, res) => {
       modifier: l.modifier,
       description: l.description,
       quantity: l.quantity,
-      billedCents: l.billed_cents,
+      // Extended line charge for the patient view: billed_cents is
+      // per-unit. allowed/paid are payer 835 line totals already.
+      billedCents: l.billed_cents * l.quantity,
       allowedCents: l.allowed_cents,
       paidCents: l.paid_cents,
       status: l.status,
