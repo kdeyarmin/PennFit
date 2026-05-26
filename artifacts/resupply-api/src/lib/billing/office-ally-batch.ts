@@ -479,8 +479,8 @@ export async function buildOneDetail(
         .filter((m: string) => m.length === 2),
       // 837P SV102 is the EXTENDED line charge (per-unit billed_cents x
       // units); SV104 (units) carries the quantity separately.
-      billedCents: l.billed_cents * l.quantity,
-      units: l.quantity,
+      billedCents: (l.billed_cents ?? 0) * (l.quantity ?? 1),
+      units: l.quantity ?? 1,
       serviceDate: claim.date_of_service,
       diagnosisPointers: [1],
     })),
