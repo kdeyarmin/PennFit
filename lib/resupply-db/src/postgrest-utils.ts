@@ -32,11 +32,11 @@ export function escapePostgRESTFilterValue(value: string): string {
     .replace(/\\/g, "\\\\")
     .replace(/%/g, "\\%")
     .replace(/_/g, "\\_");
-  // 2. .or() delimiter quoting. Re-escape backslashes (then quotes) for
-  //    the quoted-value layer: PostgREST decodes \\ -> \ and \" -> "
-  //    inside quotes, leaving the LIKE-escaped value for ilike.
+  // 2. .or() delimiter quoting. Use standard string escaping for the
+  //    quoted-value layer so backslashes and quotes are encoded once in
+  //    a well-defined way.
   if (/[,()"]/.test(likeEscaped)) {
-    return `"${likeEscaped.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+    return JSON.stringify(likeEscaped);
   }
   return likeEscaped;
 }
