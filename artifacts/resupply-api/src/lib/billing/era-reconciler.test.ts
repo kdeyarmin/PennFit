@@ -287,3 +287,247 @@ describe("era-reconciler — decision_at stamping", () => {
     expect(selectBlock).toContain("decision_at");
   });
 });
+
+// ---------------------------------------------------------------------------
+// decision_at stamping — behavioural tests via supabase mock
+// ---------------------------------------------------------------------------
+// These tests call reconcileEra() directly with staged Supabase responses so
+// we verify the actual runtime behaviour, not just the source text. The supabase
+// mock patches @workspace/resupply-db at module scope (hoisted by Vitest), so
+// importing it here is sufficient to intercept all Supabase calls made inside
+// reconcileEra → applyClaim.
+
+import { beforeEach, afterEach } from "vitest";
+import {
+  installSupabaseMock,
+  stageSupabaseResponse,
+} from "../../test-helpers/supabase-mock";
+import { reconcileEra } from "./era-reconciler";
+
+const supabaseMock = installSupabaseMock();
+beforeEach(() => supabaseMock.reset());
+
+// Re-used ERA options for all behavioural tests.
+const ERA_OPTS = {
+  actorEmail: "test@example.com",
+  fileName: "test-835.edi",
+  checkOrEftNumber: "CHK001",
+};
+
+// Helper that builds a minimal Parsed835 with one claim.
+function makeParsed835(claimOverrides: {
+  patientControlNumber: string;
+  paidCents: number;
+  isDenied: boolean;
+  adjustments?: Array<{ groupCode: string; reasonCode: string; amountCents: number; quantity: null }>;
+}) {
+  return {
+    totalPaidCents: claimOverrides.paidCents,
+    paymentMethod: null,
+    paymentDate: null,
+    checkOrEftNumber: ERA_OPTS.checkOrEftNumber,
+    originatingPayerId: null,
+    receiverIdentifier: null,
+    payerName: null,
+    payerId: null,
+    payeeName: null,
+    payeeNpi: null,
+    claims: [
+      {
+        patientControlNumber: claimOverrides.patientControlNumber,
+        claimStatusCode: claimOverrides.isDenied ? "4" : "1",
+        totalChargeCents: 10000,
+        paidCents: claimOverrides.paidCents,
+        patientResponsibilityCents: 0,
+        filingIndicator: null,
+        payerClaimReference: null,
+        patientLastName: null,
+        patientFirstName: null,
+        adjustments: claimOverrides.adjustments ?? [],
+        serviceLines: [],
+        isPaid: claimOverrides.paidCents > 0,
+        isDenied: claimOverrides.isDenied,
+      },
+    ],
+    providerAdjustments: [],
+  };
+}
+
+// Helper that stages the standard 3-call sequence for one matched claim:
+// (1) insurance_claims select, (2) insurance_claims update, (3) insurance_claim_events insert.
+function stageMatchedClaim(claimRow: {
+  id: string;
+  patient_id: string;
+  status: string;
+  total_billed_cents: number;
+  total_allowed_cents: number;
+  total_paid_cents: number;
+  patient_responsibility_cents: number;
+  denial_reason: string | null;
+  decision_at: string | null;
+}) {
+  stageSupabaseResponse("insurance_claims", "select", { data: claimRow, error: null });
+  stageSupabaseResponse("insurance_claims", "update", { data: null, error: null });
+  stageSupabaseResponse("insurance_claim_events", "insert", { data: null, error: null });
+}
+
+describe("era-reconciler — decision_at stamping (behavioural)", () => {
+  it("stamps decision_at when an accepted claim transitions to paid for the first time", async () => {
+    // Regression: the old `status === "submitted"` gate would have left
+    // decision_at NULL on this accepted → paid path.
+    stageMatchedClaim({
+      id: "claim-accepted-paid",
+      patient_id: "patient-1",
+      status: "accepted",
+      total_billed_cents: 10000,
+      total_allowed_cents: 0,
+      total_paid_cents: 0,
+      patient_responsibility_cents: 0,
+      denial_reason: null,
+      decision_at: null,
+    });
+
+    await reconcileEra(
+      makeParsed835({ patientControlNumber: "claim-accepted-paid", paidCents: 8000, isDenied: false }),
+      ERA_OPTS,
+    );
+
+    const [payload] = supabaseMock.writePayloads("insurance_claims", "update") as Array<Record<string, unknown>>;
+    expect(payload).toBeDefined();
+    // decision_at must be a truthy ISO string (not undefined/null).
+    expect(typeof payload.decision_at).toBe("string");
+    expect(payload.decision_at).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+  });
+
+  it("stamps decision_at when an accepted claim transitions to denied for the first time", async () => {
+    stageMatchedClaim({
+      id: "claim-accepted-denied",
+      patient_id: "patient-2",
+      status: "accepted",
+      total_billed_cents: 10000,
+      total_allowed_cents: 0,
+      total_paid_cents: 0,
+      patient_responsibility_cents: 0,
+      denial_reason: null,
+      decision_at: null,
+    });
+
+    const denialAdj = [{ groupCode: "CO", reasonCode: "4", amountCents: 10000, quantity: null }];
+    await reconcileEra(
+      makeParsed835({ patientControlNumber: "claim-accepted-denied", paidCents: 0, isDenied: true, adjustments: denialAdj }),
+      ERA_OPTS,
+    );
+
+    const [payload] = supabaseMock.writePayloads("insurance_claims", "update") as Array<Record<string, unknown>>;
+    expect(typeof payload.decision_at).toBe("string");
+  });
+
+  it("does NOT re-stamp decision_at when the claim already has one (preserves existing stamp)", async () => {
+    const existingStamp = "2025-01-01T00:00:00.000Z";
+    stageMatchedClaim({
+      id: "claim-already-stamped",
+      patient_id: "patient-3",
+      status: "accepted",
+      total_billed_cents: 10000,
+      total_allowed_cents: 0,
+      total_paid_cents: 0,
+      patient_responsibility_cents: 0,
+      denial_reason: null,
+      decision_at: existingStamp,
+    });
+
+    await reconcileEra(
+      makeParsed835({ patientControlNumber: "claim-already-stamped", paidCents: 5000, isDenied: false }),
+      ERA_OPTS,
+    );
+
+    const [payload] = supabaseMock.writePayloads("insurance_claims", "update") as Array<Record<string, unknown>>;
+    // decision_at must be undefined so the existing stamp is left untouched.
+    expect(payload.decision_at).toBeUndefined();
+  });
+
+  it("stamps decision_at on a direct submitted → paid transition (existing behaviour preserved)", async () => {
+    stageMatchedClaim({
+      id: "claim-submitted-paid",
+      patient_id: "patient-4",
+      status: "submitted",
+      total_billed_cents: 10000,
+      total_allowed_cents: 0,
+      total_paid_cents: 0,
+      patient_responsibility_cents: 0,
+      denial_reason: null,
+      decision_at: null,
+    });
+
+    await reconcileEra(
+      makeParsed835({ patientControlNumber: "claim-submitted-paid", paidCents: 9000, isDenied: false }),
+      ERA_OPTS,
+    );
+
+    const [payload] = supabaseMock.writePayloads("insurance_claims", "update") as Array<Record<string, unknown>>;
+    expect(typeof payload.decision_at).toBe("string");
+  });
+
+  it("does NOT stamp decision_at when the new status is not paid or denied (e.g., accepted)", async () => {
+    // A submitted → accepted transition should leave decision_at undefined.
+    stageMatchedClaim({
+      id: "claim-submitted-accepted",
+      patient_id: "patient-5",
+      status: "submitted",
+      total_billed_cents: 10000,
+      total_allowed_cents: 0,
+      total_paid_cents: 0,
+      patient_responsibility_cents: 0,
+      denial_reason: null,
+      decision_at: null,
+    });
+
+    // ERA with paidCents=0 and isDenied=false — status stays at submitted
+    // (no transition happens since submitted→submitted is blocked).
+    await reconcileEra(
+      makeParsed835({ patientControlNumber: "claim-submitted-accepted", paidCents: 0, isDenied: false }),
+      ERA_OPTS,
+    );
+
+    const [payload] = supabaseMock.writePayloads("insurance_claims", "update") as Array<Record<string, unknown>>;
+    // Status didn't change to paid/denied, so decision_at should not be stamped.
+    expect(payload.decision_at).toBeUndefined();
+  });
+
+  it("returns matched: true with newStatus='paid' when accepted claim is paid", async () => {
+    stageMatchedClaim({
+      id: "claim-check-outcome",
+      patient_id: "patient-6",
+      status: "accepted",
+      total_billed_cents: 10000,
+      total_allowed_cents: 0,
+      total_paid_cents: 0,
+      patient_responsibility_cents: 0,
+      denial_reason: null,
+      decision_at: null,
+    });
+
+    const summary = await reconcileEra(
+      makeParsed835({ patientControlNumber: "claim-check-outcome", paidCents: 10000, isDenied: false }),
+      ERA_OPTS,
+    );
+
+    expect(summary.matchedClaims).toBe(1);
+    expect(summary.paidClaims).toBe(1);
+    expect(summary.outcomes[0]?.newStatus).toBe("paid");
+  });
+
+  it("returns matched: false for an unrecognised claim control number", async () => {
+    // Unstaged select returns { data: null } — simulates no matching row.
+    stageSupabaseResponse("insurance_claim_events", "insert", { data: null, error: null });
+
+    const summary = await reconcileEra(
+      makeParsed835({ patientControlNumber: "nonexistent-claim", paidCents: 1000, isDenied: false }),
+      ERA_OPTS,
+    );
+
+    expect(summary.matchedClaims).toBe(0);
+    expect(summary.unmatchedClaims).toBe(1);
+    expect(summary.outcomes[0]?.matched).toBe(false);
+  });
+});
