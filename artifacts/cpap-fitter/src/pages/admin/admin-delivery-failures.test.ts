@@ -21,7 +21,7 @@ const SRC = readFileSync(
 );
 
 // ---------------------------------------------------------------------------
-// AuditFailuresTable — `auditEventsUnavailable` branch removed
+// AuditFailuresTable — `auditEventsUnavailable` branch present
 // ---------------------------------------------------------------------------
 
 describe("admin-delivery-failures AuditFailuresTable — unavailable branch present", () => {
