@@ -152,7 +152,8 @@ describe("recommendSize", () => {
 // React Health mask should out-rank an otherwise-equivalent mask from
 // another manufacturer. The boost is applied AFTER contra/pressure
 // penalties so a contraindicated React mask still loses to a viable
-// non-React one. These tests pin that behavior.
+// non-React one. It affects RANKING only — it is excluded from the
+// patient-facing `confidence`. These tests pin that behavior.
 
 const PROFILE_MEASUREMENTS: FacialMeasurements = {
   noseWidth: 28,
@@ -183,10 +184,11 @@ function answers(
 }
 
 describe("recommend — React Health manufacturer boost", () => {
-  it("ranks the React Health iVolve P2 above the ResMed AirFit P10 for a claustrophobic side-sleeper on low pressure", () => {
-    // Both masks are nasal pillows and are viable for this low-pressure
-    // profile. Without the boost they score very close. With the 1.15×
-    // boost on the React Health entry, iVolve P2 should win.
+  it("gives the React Health iVolve P2 the SAME confidence as the equivalent ResMed AirFit P10 (boost excluded from confidence)", () => {
+    // Both masks are nasal pillows with identical fit ranges and are
+    // viable for this low-pressure profile, so their clinical scores are
+    // equal. The manufacturer boost must NOT inflate the patient-facing
+    // confidence — it only affects ranking (see the next test).
     const result = recommend(
       PROFILE_MEASUREMENTS,
       answers({
@@ -200,7 +202,7 @@ describe("recommend — React Health manufacturer boost", () => {
     const airfitP10 = all.find((m) => m.maskId === "resmed-airfit-p10");
     expect(ivolveP2).toBeDefined();
     expect(airfitP10).toBeDefined();
-    expect(ivolveP2!.confidence).toBeGreaterThan(airfitP10!.confidence);
+    expect(ivolveP2!.confidence).toBeCloseTo(airfitP10!.confidence, 10);
   });
 
   it("keeps iVolve P2 ranked ahead of AirFit P10 by list order when both are viable", () => {
