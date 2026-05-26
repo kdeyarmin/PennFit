@@ -52,10 +52,10 @@ const MAX_ROWS = 200;
 // compliance_officer / agent. Fitter + fulfillment have no
 // delivery-failure workflow.
 router.get("/admin/delivery-failures", requirePermission("reports.read"), async (req, res) => {
-  const sinceDays = Math.min(
-    Math.max(1, Number(req.query.sinceDays ?? DEFAULT_DAYS_BACK)),
-    90,
-  );
+  const rawSinceDays = Number(req.query.sinceDays ?? DEFAULT_DAYS_BACK);
+  const sinceDays = Number.isFinite(rawSinceDays)
+    ? Math.min(Math.max(1, rawSinceDays), 90)
+    : DEFAULT_DAYS_BACK;
   const since = new Date(Date.now() - sinceDays * 86400_000).toISOString();
 
   const supabase = getSupabaseServiceRoleClient();

@@ -254,3 +254,36 @@ describe("era-reconciler — allowedTransition state machine (replicated)", () =
     expect(allowedTransition("paid", "denied")).toBe(false);
   });
 });
+
+// ---------------------------------------------------------------------------
+// decision_at stamping (regression — structural source check)
+// ---------------------------------------------------------------------------
+describe("era-reconciler — decision_at stamping", () => {
+  // Regression: the prior gate `claim.status === "submitted"` only
+  // stamped decision_at on a direct submitted → paid/denied edge. The
+  // common path is submitted → accepted (277CA) → paid/denied; with the
+  // old gate those decided claims kept decision_at = NULL and dropped
+  // out of every decision-window report (denial rate, aging, DSO).
+  // `decision_at:` (with the colon) only appears in the update payload;
+  // the select lists the column as a bare string and the header comment
+  // writes `decision_at  =`, so this anchor is unambiguous.
+  const stampIdx = SRC.indexOf("decision_at:");
+  const updateBlock = SRC.slice(stampIdx, stampIdx + 250);
+
+  it("no longer gates the stamp solely on the 'submitted' status", () => {
+    expect(updateBlock).toContain("decision_at:");
+    expect(updateBlock).not.toContain('claim.status === "submitted" ? nowIso');
+  });
+
+  it("stamps on a fresh paid/denied decision, preserving an existing stamp", () => {
+    expect(updateBlock).toContain("!claim.decision_at");
+    expect(updateBlock).toContain('newStatus === "paid"');
+    expect(updateBlock).toContain('newStatus === "denied"');
+  });
+
+  it("loads decision_at in the claim select so the preserve-existing guard works", () => {
+    const selectIdx = SRC.indexOf('.from("insurance_claims")');
+    const selectBlock = SRC.slice(selectIdx, selectIdx + 400);
+    expect(selectBlock).toContain("decision_at");
+  });
+});

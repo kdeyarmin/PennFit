@@ -11,9 +11,19 @@
 //   * SMS body length stays under the GSM-7 single-segment cap
 //   * SMS-eligible vs email-only touches per the per-touch policy
 
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
 import { describe, it, expect } from "vitest";
 
 import { composeTouchpoint } from "./fitter-supply-campaign";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const SRC = readFileSync(
+  path.join(__dirname, "fitter-supply-campaign.ts"),
+  "utf8",
+);
 
 const BASE_OPTS = {
   practiceName: "PennPaps",
@@ -591,5 +601,34 @@ describe("composeTouchpoint — subject-line A/B variants (mig 0157)", () => {
       subjectVariantKey: "B",
     });
     expect(a.email.subject).toBe(b.email.subject);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Final-call (T11) touch-index routing (regression — structural source check)
+// ---------------------------------------------------------------------------
+describe("dispatcher — final-call touch index", () => {
+  // Regression: the 'final_call_pending' holding stage pins
+  // campaign_touch_count at the pre-purchase total (T6=6), so the old
+  // `campaign_touch_count + 1` derived T7 — sending the reorder-cushion
+  // copy (and a T7 SMS, since 7 is SMS-eligible) to a lead who never
+  // purchased, instead of the single email-only T11 final-call copy.
+  it("derives the final-call touch index from journey_stage, not the touch count", () => {
+    const idxDecl = SRC.slice(
+      SRC.indexOf("const nextTouchIndex ="),
+      SRC.indexOf("const nextTouchIndex =") + 200,
+    );
+    expect(idxDecl).toContain('journey_stage === "final_call_pending"');
+    expect(idxDecl).toContain("FINAL_CALL_TOUCH_INDEX");
+  });
+
+  it("keeps T11 out of the SMS-eligible set (final call is email-only)", () => {
+    // The dispatcher gates SMS on SMS_TOUCH_INDEXES; T11 must not be a
+    // member or the final call would send an unwanted SMS.
+    const smsSetDecl = SRC.slice(
+      SRC.indexOf("SMS_TOUCH_INDEXES = new Set"),
+      SRC.indexOf("SMS_TOUCH_INDEXES = new Set") + 80,
+    );
+    expect(smsSetDecl).not.toContain("11");
   });
 });
