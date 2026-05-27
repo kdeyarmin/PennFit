@@ -164,6 +164,11 @@ describe("scoreClaim", () => {
 // These tests verify the filter calls by inspecting `supabaseMock.filterCalls`.
 
 describe("scoreClaim — fee-schedule date filtering (payer_fee_schedules)", () => {
+  // Reset the mock between tests in this block too — without it the
+  // per-(table,op) callCount accumulates across tests, so the
+  // "never queried" assertion below saw 5 instead of 0.
+  beforeEach(() => supabaseMock.reset());
+
   it("applies lte(effective_from) with the claim date_of_service", async () => {
     stageClaim({ date_of_service: "2026-05-12" });
     stagePayer();
