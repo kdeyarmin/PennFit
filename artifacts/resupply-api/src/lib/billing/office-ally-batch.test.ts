@@ -13,16 +13,21 @@
 // value.
 
 import { describe, expect, it, beforeEach } from "vitest";
-import {
-  getSupabaseServiceRoleClient,
-} from "@workspace/resupply-db";
 
+// The supabase mock must be imported (registering its hoisted
+// vi.mock("@workspace/resupply-db", …)) BEFORE @workspace/resupply-db is
+// imported below — otherwise the real module caches first and
+// getSupabaseServiceRoleClient throws "SUPABASE_URL must be set".
 import {
   installSupabaseMock,
   stageSupabaseResponse,
 } from "../../test-helpers/supabase-mock";
 
 const supabaseMock = installSupabaseMock();
+
+import {
+  getSupabaseServiceRoleClient,
+} from "@workspace/resupply-db";
 
 import { buildOneDetail } from "./office-ally-batch";
 
