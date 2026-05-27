@@ -200,21 +200,26 @@ describeIfDb("invite-password-expiry-notify (live db)", () => {
     await seed("young", {
       ageMs: 1 * 86_400_000,
     });
+    // Reminder-window: age must be older than (TTL - LEAD = ~5d)
+    // but younger than TTL (~7d). `TTL_MS - REMINDER_LEAD_MS + MARGIN`
+    // puts the row ~6h past the reminder cutoff — comfortably inside
+    // the window for both `.lt(reminderCutoff)` and
+    // `.gt(expiredCutoff)`.
     await seed("reminder", {
-      ageMs: TTL_MS - REMINDER_LEAD_MS - SAFE_MARGIN_MS,
+      ageMs: TTL_MS - REMINDER_LEAD_MS + SAFE_MARGIN_MS,
     });
     await seed("expired", {
       ageMs: TTL_MS + SAFE_MARGIN_MS,
     });
     await seed("stale", {
-      ageMs: TTL_MS - REMINDER_LEAD_MS - SAFE_MARGIN_MS,
+      ageMs: TTL_MS - REMINDER_LEAD_MS + SAFE_MARGIN_MS,
       // Stamp recorded 30 days BEFORE set_by_admin_at — i.e. from a
       // previous invite the same row was reused for. The sweep
       // should treat this as stale and re-send.
       reminderStampOffsetMs: -30 * 86_400_000,
     });
     await seed("claimed", {
-      ageMs: TTL_MS - REMINDER_LEAD_MS - SAFE_MARGIN_MS,
+      ageMs: TTL_MS - REMINDER_LEAD_MS + SAFE_MARGIN_MS,
       // Stamp recorded 1 hour AFTER set_by_admin_at — i.e. already
       // claimed for THIS invite. The sweep must NOT re-send.
       reminderStampOffsetMs: 1 * 3_600_000,
