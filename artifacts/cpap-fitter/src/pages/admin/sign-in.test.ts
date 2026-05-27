@@ -1,9 +1,9 @@
-// Tests for admin/sign-in.tsx — the error-handling simplification in this PR.
+// Tests for admin/sign-in.tsx.
 //
-// PR changes:
-//   * Removed SERVER_UNAVAILABLE_MESSAGE constant
-//   * Removed authErrorMessage helper function
-//   * Both onError handlers now use inline AuthError instanceof check
+// Auth error handling is delegated to the shared `authErrorMessage`
+// helper from @workspace/resupply-auth-react. The MFA challenge-
+// expiry branch is still handled separately because it changes UI
+// state (resets to the password step), not just the message.
 
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -13,66 +13,46 @@ import { describe, expect, it } from "vitest";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SRC = readFileSync(path.join(__dirname, "sign-in.tsx"), "utf8");
 
-// ---------------------------------------------------------------------------
-// Removed: SERVER_UNAVAILABLE_MESSAGE constant
-// ---------------------------------------------------------------------------
-describe("admin/sign-in — SERVER_UNAVAILABLE_MESSAGE removed", () => {
-  it("does NOT declare SERVER_UNAVAILABLE_MESSAGE", () => {
+describe("admin/sign-in — uses shared authErrorMessage helper", () => {
+  it("imports authErrorMessage from @workspace/resupply-auth-react", () => {
+    expect(SRC).toMatch(
+      /import\s*\{[^}]*authErrorMessage[^}]*\}\s*from\s*"@workspace\/resupply-auth-react"/,
+    );
+  });
+
+  it("uses the helper in the password-step onError", () => {
+    expect(SRC).toContain('action: "sign you in"');
+    expect(SRC).toContain('subject: "password"');
+    expect(SRC).toContain('fallback: "Sign-in failed."');
+  });
+
+  it("uses the helper in the MFA-step onError", () => {
+    expect(SRC).toContain('action: "verify it\'s you"');
+    expect(SRC).toContain('subject: "code"');
+    expect(SRC).toContain('fallback: "Verification failed."');
+  });
+
+  it("does NOT declare its own SERVER_UNAVAILABLE_MESSAGE", () => {
     expect(SRC).not.toContain("SERVER_UNAVAILABLE_MESSAGE");
   });
 
-  it("does NOT contain the credentials-store-unavailable message text", () => {
+  it("does NOT define a local authErrorMessage helper function", () => {
+    expect(SRC).not.toMatch(/function\s+authErrorMessage/);
+  });
+
+  it("does NOT inline the credentials-store copy", () => {
     expect(SRC).not.toContain("credentials store");
   });
 
-  it("does NOT reference status.pennpaps.com", () => {
+  it("does NOT reference status.pennpaps.com directly", () => {
     expect(SRC).not.toContain("status.pennpaps.com");
   });
-});
 
-// ---------------------------------------------------------------------------
-// Removed: authErrorMessage helper
-// ---------------------------------------------------------------------------
-describe("admin/sign-in — authErrorMessage helper function removed", () => {
-  it("does NOT define an authErrorMessage function", () => {
-    expect(SRC).not.toContain("function authErrorMessage");
-  });
-
-  it("does NOT call authErrorMessage", () => {
-    expect(SRC).not.toContain("authErrorMessage(");
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Error handling: inline AuthError instanceof checks
-// ---------------------------------------------------------------------------
-describe("admin/sign-in — inline error handling", () => {
-  it("uses AuthError instanceof check in password-step onError", () => {
-    expect(SRC).toContain(
-      "err instanceof AuthError ? err.userMessage : \"Sign-in failed.\"",
-    );
-  });
-
-  it("uses AuthError instanceof check in MFA-step onError", () => {
-    expect(SRC).toContain(
-      "err instanceof AuthError ? err.userMessage : \"Verification failed.\"",
-    );
-  });
-
-  it("still imports AuthError from resupply-auth-react", () => {
-    expect(SRC).toContain("AuthError");
-    expect(SRC).toContain("resupply-auth-react");
-  });
-
-  it("does NOT check err.status >= 500 in onError handlers", () => {
-    // The old code had `if (err instanceof AuthError && err.status >= 500)`
+  it("does NOT branch on err.status >= 500 itself", () => {
     expect(SRC).not.toContain("err.status >= 500");
   });
 });
 
-// ---------------------------------------------------------------------------
-// MFA challenge expiry — still handles mfa_challenge_expired
-// ---------------------------------------------------------------------------
 describe("admin/sign-in — MFA challenge expired still handled separately", () => {
   it("checks for mfa_challenge_expired code to reset to password step", () => {
     expect(SRC).toContain("mfa_challenge_expired");
@@ -81,11 +61,12 @@ describe("admin/sign-in — MFA challenge expired still handled separately", () 
   it("checks for mfa_challenge_invalid code too", () => {
     expect(SRC).toContain("mfa_challenge_invalid");
   });
+
+  it("still imports AuthError (for the MFA expiry instanceof check)", () => {
+    expect(SRC).toContain("AuthError");
+  });
 });
 
-// ---------------------------------------------------------------------------
-// Regression: core form behaviour retained
-// ---------------------------------------------------------------------------
 describe("admin/sign-in — core form behaviour retained", () => {
   it("still calls signIn.mutate on password-step submit", () => {
     expect(SRC).toContain("signIn.mutate(");

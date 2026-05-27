@@ -19,29 +19,12 @@ import "@/admin.css";
 import { useState, type FormEvent } from "react";
 import { Link, useLocation } from "wouter";
 
-import { AuthError } from "@workspace/resupply-auth-react";
+import { AuthError, authErrorMessage } from "@workspace/resupply-auth-react";
 
 import { authHooks } from "@/lib/admin/auth-hooks";
 import { AuthLayout } from "@/components/auth-layout";
 
 const basePath = "/admin";
-
-// Same copy as change-password.tsx: when the server returns a 5xx,
-// the user is staring at a "stuck" form and can't tell whether their
-// credentials are wrong or the backend is down. Point them at status
-// so they know it's not their password.
-const SERVER_UNAVAILABLE_MESSAGE =
-  "We can't reach the credentials store right now, so we couldn't sign" +
-  " you in. This is a server problem, not your password. Please try" +
-  " again in a minute — if it keeps failing, check status.pennpaps.com.";
-
-function authErrorMessage(err: unknown, fallback: string): string {
-  if (err instanceof AuthError) {
-    if (err.status >= 500) return SERVER_UNAVAILABLE_MESSAGE;
-    return err.userMessage;
-  }
-  return fallback;
-}
 
 type Step =
   | { kind: "password" }
@@ -74,7 +57,13 @@ export function SignInPage() {
           }
         },
         onError: (err) => {
-          setSubmitError(authErrorMessage(err, "Sign-in failed."));
+          setSubmitError(
+            authErrorMessage(err, {
+              action: "sign you in",
+              subject: "password",
+              fallback: "Sign-in failed.",
+            }),
+          );
         },
       },
     );
@@ -106,7 +95,13 @@ export function SignInPage() {
           setSubmitError(err.userMessage);
           return;
         }
-        setSubmitError(authErrorMessage(err, "Verification failed."));
+        setSubmitError(
+          authErrorMessage(err, {
+            action: "verify it's you",
+            subject: "code",
+            fallback: "Verification failed.",
+          }),
+        );
       },
     });
   }

@@ -12,33 +12,13 @@
 import { useState, type FormEvent } from "react";
 import { Link } from "wouter";
 
-import { AuthError } from "@workspace/resupply-auth-react";
+import { authErrorMessage } from "@workspace/resupply-auth-react";
 
 import { authHooks } from "@/lib/auth-hooks";
 import { AuthLayout } from "@/components/auth-layout";
 import { PasswordInput } from "@/components/password-input";
 
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
-
-// Same copy as the rest of the customer auth surface (sign-in,
-// forgot-password, reset-password) and the admin reference impl:
-// when the server returns a 5xx, a new shopper would otherwise see
-// only the generic AuthError.userMessage and assume something is
-// wrong with their email or password. Point them at status so they
-// know to retry rather than reach for support.
-const SERVER_UNAVAILABLE_MESSAGE =
-  "We can't reach the credentials store right now, so we couldn't" +
-  " create your account. This is a server problem, not your email or" +
-  " password. Please try again in a minute — if it keeps failing," +
-  " check status.pennpaps.com.";
-
-function authErrorMessage(err: unknown, fallback: string): string {
-  if (err instanceof AuthError) {
-    if (err.status >= 500) return SERVER_UNAVAILABLE_MESSAGE;
-    return err.userMessage;
-  }
-  return fallback;
-}
 
 export function SignUpPage() {
   const [email, setEmail] = useState("");
@@ -69,7 +49,13 @@ export function SignUpPage() {
       {
         onSuccess: () => setSubmitted(true),
         onError: (err) => {
-          setSubmitError(authErrorMessage(err, "Could not create the account."));
+          setSubmitError(
+            authErrorMessage(err, {
+              action: "create your account",
+              subject: "email or password",
+              fallback: "Could not create the account.",
+            }),
+          );
         },
       },
     );

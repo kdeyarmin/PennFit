@@ -1,11 +1,10 @@
-// Tests for pages/forgot-password.tsx (storefront variant) — the
-// onSettled simplification in this PR.
+// Tests for pages/forgot-password.tsx (storefront variant).
 //
-// PR changes:
-//   * Uses `onSettled` instead of separate `onSuccess` / `onError` branches
-//   * Removed `submitError` state (no 5xx-specific error copy)
-//   * Removed `AuthError` import
-//   * Removed error UI element
+// The no-enumeration contract is preserved: success and unknown-email
+// both flow through onSuccess to the success view, and any non-5xx
+// error also folds into the success view. Only a 5xx surfaces a
+// visible "credentials store unreachable" notice, and that copy now
+// comes from the shared `serverUnavailableMessage` helper.
 
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -15,65 +14,44 @@ import { describe, expect, it } from "vitest";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SRC = readFileSync(path.join(__dirname, "forgot-password.tsx"), "utf8");
 
-// ---------------------------------------------------------------------------
-// onSettled — new always-render-success contract
-// ---------------------------------------------------------------------------
-describe("pages/forgot-password — uses onSettled", () => {
-  it("calls forgot.mutate with onSettled callback to show success on any outcome", () => {
-    expect(SRC).toContain("onSettled: () => setDone(true)");
+describe("pages/forgot-password — uses shared serverUnavailableMessage helper", () => {
+  it("imports serverUnavailableMessage from @workspace/resupply-auth-react", () => {
+    expect(SRC).toMatch(
+      /import\s*\{[^}]*serverUnavailableMessage[^}]*\}\s*from\s*"@workspace\/resupply-auth-react"/,
+    );
   });
 
-  it("does NOT use a separate onSuccess callback in the mutate call", () => {
-    expect(SRC).not.toContain("onSuccess: () => setDone(true)");
+  it("calls serverUnavailableMessage with the forgot-password action/subject", () => {
+    expect(SRC).toContain('action: "send a reset link"');
+    expect(SRC).toContain('subject: "email"');
   });
 
-  it("does NOT register an onError callback in the mutate call", () => {
-    expect(SRC).not.toContain("onError:");
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Removed: submitError state
-// ---------------------------------------------------------------------------
-describe("pages/forgot-password — submitError removed", () => {
-  it("does NOT declare submitError state", () => {
-    expect(SRC).not.toContain("submitError");
-  });
-
-  it("does NOT call setSubmitError", () => {
-    expect(SRC).not.toContain("setSubmitError");
-  });
-
-  it("does NOT render a role=alert error element", () => {
-    expect(SRC).not.toContain('role="alert"');
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Removed: AuthError import
-// ---------------------------------------------------------------------------
-describe("pages/forgot-password — AuthError import removed", () => {
-  it("does NOT import AuthError", () => {
-    expect(SRC).not.toContain("AuthError");
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Removed: 5xx-specific message
-// ---------------------------------------------------------------------------
-describe("pages/forgot-password — 5xx-specific error copy removed", () => {
-  it("does NOT contain the credentials-store error text", () => {
+  it("does NOT inline the credentials-store copy", () => {
     expect(SRC).not.toContain("credentials store");
   });
 
-  it("does NOT reference status.pennpaps.com", () => {
+  it("does NOT reference status.pennpaps.com directly", () => {
     expect(SRC).not.toContain("status.pennpaps.com");
   });
 });
 
-// ---------------------------------------------------------------------------
-// Regression: core form behaviour retained
-// ---------------------------------------------------------------------------
+describe("pages/forgot-password — no-enumeration contract", () => {
+  it("flips to the success view on onSuccess", () => {
+    expect(SRC).toContain("onSuccess: () => setDone(true)");
+  });
+
+  it("still branches on err.status >= 500 for the visible error", () => {
+    expect(SRC).toContain("err.status >= 500");
+  });
+
+  it("folds any non-5xx error back into the success view", () => {
+    // The onError handler must call setDone(true) after handling
+    // the 5xx branch, so unknown-email and other failures still
+    // surface as the generic "check your inbox" success state.
+    expect(SRC).toContain("setDone(true)");
+  });
+});
+
 describe("pages/forgot-password — core form behaviour retained", () => {
   it("still has done state to render the success view", () => {
     expect(SRC).toContain("setDone(true)");

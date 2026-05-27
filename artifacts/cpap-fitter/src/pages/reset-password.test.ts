@@ -1,15 +1,9 @@
-// Tests for pages/reset-password.tsx (storefront variant)
+// Tests for pages/reset-password.tsx (storefront variant).
 //
-// PR changes:
-//   * stripTokenFromUrl() function — strips ?token=… from the address bar so
-//     the single-use secret doesn't linger in browser history.
-//   * useEffect(stripTokenFromUrl, []) — wires the cleanup on mount.
-//   * Double-submit guard — `if (reset.isPending) return;` at the top of
-//     onSubmit to prevent a fast double-click from firing two API calls.
-//
-// The component uses React + hooks which cannot be rendered in the node
-// vitest environment without jsdom. We read the source file as a string and
-// assert on the structural and security invariants that matter.
+// The component uses React + hooks which cannot be rendered in the
+// node vitest environment without jsdom. We read the source as a
+// string and assert on the structural and security invariants that
+// matter.
 
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -95,7 +89,6 @@ describe("reset-password — double-submit guard in onSubmit", () => {
 
   it("disables the submit button while isPending for visual feedback", () => {
     expect(SRC).toContain("reset.isPending");
-    // Both the button disabled prop and the guard check reference isPending.
     const occurrences = SRC.split("isPending").length - 1;
     expect(occurrences).toBeGreaterThanOrEqual(2);
   });
@@ -124,13 +117,11 @@ describe("reset-password — token reading (storefront)", () => {
 // ---------------------------------------------------------------------------
 describe("reset-password — security: token removed from URL after capture", () => {
   it("both captures and immediately strips the token on mount", () => {
-    // useMemo runs before useEffect so token is captured first, then stripped.
     expect(SRC).toContain("useMemo(readTokenFromUrl, [])");
     expect(SRC).toContain("useEffect(stripTokenFromUrl, [])");
   });
 
   it("rebuilds query string from remaining params (not the raw search string)", () => {
-    // After deleting 'token', params.toString() provides only the survivors.
     expect(SRC).toContain("params.toString()");
   });
 });
@@ -158,32 +149,38 @@ describe("reset-password — regression: core storefront form behaviour intact",
 });
 
 // ---------------------------------------------------------------------------
-// PR change: removed SERVER_UNAVAILABLE_MESSAGE and authErrorMessage
+// Auth error handling delegated to the shared helper
 // ---------------------------------------------------------------------------
-describe("reset-password — SERVER_UNAVAILABLE_MESSAGE removed (this PR)", () => {
-  it("does NOT define SERVER_UNAVAILABLE_MESSAGE", () => {
+describe("reset-password — uses shared authErrorMessage helper", () => {
+  it("imports authErrorMessage from @workspace/resupply-auth-react", () => {
+    expect(SRC).toMatch(
+      /import\s*\{[^}]*authErrorMessage[^}]*\}\s*from\s*"@workspace\/resupply-auth-react"/,
+    );
+  });
+
+  it("calls authErrorMessage with action/subject/fallback options", () => {
+    expect(SRC).toContain('action: "update your password"');
+    expect(SRC).toContain('subject: "reset link"');
+    expect(SRC).toContain('fallback: "Could not reset your password."');
+  });
+
+  it("does NOT declare its own SERVER_UNAVAILABLE_MESSAGE", () => {
     expect(SRC).not.toContain("SERVER_UNAVAILABLE_MESSAGE");
   });
 
-  it("does NOT define an authErrorMessage helper function", () => {
-    expect(SRC).not.toContain("function authErrorMessage");
+  it("does NOT define a local authErrorMessage helper function", () => {
+    expect(SRC).not.toMatch(/function\s+authErrorMessage/);
   });
 
-  it("does NOT contain the credentials-store-unavailable error text", () => {
+  it("does NOT inline the credentials-store copy", () => {
     expect(SRC).not.toContain("credentials store");
   });
 
-  it("does NOT reference status.pennpaps.com", () => {
+  it("does NOT reference status.pennpaps.com directly", () => {
     expect(SRC).not.toContain("status.pennpaps.com");
   });
 
-  it("uses inline AuthError instanceof check for error handling", () => {
-    // Multi-line ternary: each part on its own line.
-    expect(SRC).toContain("err instanceof AuthError");
-    expect(SRC).toContain('"Could not reset your password."');
-  });
-
-  it("does NOT branch on err.status >= 500 in the error handler", () => {
+  it("does NOT branch on err.status >= 500 itself", () => {
     expect(SRC).not.toContain("err.status >= 500");
   });
 });

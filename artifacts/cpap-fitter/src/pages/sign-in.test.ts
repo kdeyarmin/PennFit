@@ -1,10 +1,8 @@
-// Tests for pages/sign-in.tsx (storefront variant) — the error-handling
-// simplification in this PR.
+// Tests for pages/sign-in.tsx (storefront variant).
 //
-// PR changes:
-//   * Removed SERVER_UNAVAILABLE_MESSAGE constant
-//   * Removed authErrorMessage helper function
-//   * onError handler now uses inline AuthError instanceof check
+// Auth error handling is now centralized in
+// @workspace/resupply-auth-react's `authErrorMessage` helper. Each
+// page just supplies its own action/subject/fallback strings.
 
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -14,59 +12,40 @@ import { describe, expect, it } from "vitest";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SRC = readFileSync(path.join(__dirname, "sign-in.tsx"), "utf8");
 
-// ---------------------------------------------------------------------------
-// Removed: SERVER_UNAVAILABLE_MESSAGE constant
-// ---------------------------------------------------------------------------
-describe("pages/sign-in — SERVER_UNAVAILABLE_MESSAGE removed", () => {
-  it("does NOT declare SERVER_UNAVAILABLE_MESSAGE", () => {
-    expect(SRC).not.toContain("SERVER_UNAVAILABLE_MESSAGE");
-  });
-
-  it("does NOT contain the credentials-store error text", () => {
-    expect(SRC).not.toContain("credentials store");
-  });
-
-  it("does NOT reference status.pennpaps.com", () => {
-    expect(SRC).not.toContain("status.pennpaps.com");
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Removed: authErrorMessage helper
-// ---------------------------------------------------------------------------
-describe("pages/sign-in — authErrorMessage helper removed", () => {
-  it("does NOT define an authErrorMessage function", () => {
-    expect(SRC).not.toContain("function authErrorMessage");
-  });
-
-  it("does NOT call authErrorMessage", () => {
-    expect(SRC).not.toContain("authErrorMessage(");
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Error handling: inline AuthError instanceof check
-// ---------------------------------------------------------------------------
-describe("pages/sign-in — inline error handling", () => {
-  it("uses AuthError instanceof check in the signIn onError handler", () => {
-    expect(SRC).toContain(
-      "err instanceof AuthError ? err.userMessage : \"Sign-in failed.\"",
+describe("pages/sign-in — uses shared authErrorMessage helper", () => {
+  it("imports authErrorMessage from @workspace/resupply-auth-react", () => {
+    expect(SRC).toMatch(
+      /import\s*\{[^}]*authErrorMessage[^}]*\}\s*from\s*"@workspace\/resupply-auth-react"/,
     );
   });
 
-  it("still imports AuthError from resupply-auth-react", () => {
-    expect(SRC).toContain("AuthError");
-    expect(SRC).toContain("resupply-auth-react");
+  it("calls authErrorMessage with action/subject/fallback options", () => {
+    expect(SRC).toContain('action: "sign you in"');
+    expect(SRC).toContain('subject: "password"');
+    expect(SRC).toContain('fallback: "Sign-in failed."');
   });
 
-  it("does NOT branch on err.status >= 500", () => {
+  it("does NOT declare its own SERVER_UNAVAILABLE_MESSAGE constant", () => {
+    expect(SRC).not.toContain("SERVER_UNAVAILABLE_MESSAGE");
+  });
+
+  it("does NOT define a local authErrorMessage helper function", () => {
+    expect(SRC).not.toMatch(/function\s+authErrorMessage/);
+  });
+
+  it("does NOT inline the credentials-store copy", () => {
+    expect(SRC).not.toContain("credentials store");
+  });
+
+  it("does NOT reference status.pennpaps.com directly", () => {
+    expect(SRC).not.toContain("status.pennpaps.com");
+  });
+
+  it("does NOT branch on err.status >= 500 itself", () => {
     expect(SRC).not.toContain("err.status >= 500");
   });
 });
 
-// ---------------------------------------------------------------------------
-// Regression: core form behaviour retained
-// ---------------------------------------------------------------------------
 describe("pages/sign-in — core form behaviour retained", () => {
   it("still calls signIn.mutate on submit", () => {
     expect(SRC).toContain("signIn.mutate(");

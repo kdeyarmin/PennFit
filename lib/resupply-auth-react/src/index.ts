@@ -17,3 +17,6 @@ export type {
 
 export { createAuthHooks, SESSION_QUERY_KEY } from "./hooks";
 export type { AuthHooks, CreateAuthHooksOptions } from "./hooks";
+
+export { authErrorMessage, serverUnavailableMessage } from "./error-message";
+export type { AuthErrorMessageOptions } from "./error-message";

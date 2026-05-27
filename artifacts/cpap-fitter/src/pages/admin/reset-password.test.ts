@@ -1,15 +1,9 @@
-// Tests for admin/reset-password.tsx
+// Tests for admin/reset-password.tsx.
 //
-// PR changes:
-//   * stripTokenFromUrl() function — strips ?token=… from the address bar so
-//     the single-use secret doesn't linger in browser history.
-//   * useEffect(stripTokenFromUrl, []) — wires the cleanup on mount.
-//   * Double-submit guard — `if (reset.isPending) return;` at the top of
-//     onSubmit to prevent a fast double-click from firing two API calls.
-//
-// The component uses React + hooks which cannot be rendered in the node
-// vitest environment without jsdom. We read the source file as a string and
-// assert on the structural and security invariants that matter.
+// The component uses React + hooks which cannot be rendered in the
+// node vitest environment without jsdom. We read the source as a
+// string and assert on the structural and security invariants that
+// matter.
 
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -56,7 +50,6 @@ describe("admin/reset-password — stripTokenFromUrl function", () => {
   });
 
   it("omits the '?' separator when no other query params remain", () => {
-    // The ternary `qs ? \`?${qs}\` : ""` ensures the URL ends cleanly.
     expect(SRC).toMatch(/qs \? `\?\$\{qs\}` : ""/);
   });
 
@@ -76,7 +69,6 @@ describe("admin/reset-password — useEffect wires stripTokenFromUrl", () => {
 
   it("imports useEffect from react", () => {
     expect(SRC).toContain("useEffect");
-    // The import statement should include useEffect.
     expect(SRC).toMatch(/import\s*\{[^}]*useEffect[^}]*\}/);
   });
 });
@@ -112,7 +104,6 @@ describe("admin/reset-password — token reading", () => {
 
   it("defines readTokenFromUrl that returns empty string when window is undefined (SSR)", () => {
     expect(SRC).toContain("function readTokenFromUrl()");
-    // Must guard SSR.
     expect(SRC).toMatch(/readTokenFromUrl[\s\S]{0,200}typeof window === "undefined"/);
   });
 
@@ -130,14 +121,11 @@ describe("admin/reset-password — token reading", () => {
 // ---------------------------------------------------------------------------
 describe("admin/reset-password — security: token cleared from address bar", () => {
   it("does NOT re-read window.location after mount (token captured only once)", () => {
-    // The useMemo reads on mount; the useEffect immediately strips from URL.
-    // This is a static check that both patterns coexist.
     expect(SRC).toContain("useMemo(readTokenFromUrl, [])");
     expect(SRC).toContain("useEffect(stripTokenFromUrl, [])");
   });
 
   it("strips token even when other query params are present (preserves them)", () => {
-    // The code rebuilds qs from remaining params before calling replaceState.
     expect(SRC).toContain("params.toString()");
     expect(SRC).toContain("window.history.replaceState");
   });
@@ -162,36 +150,38 @@ describe("admin/reset-password — regression: core form logic intact", () => {
 });
 
 // ---------------------------------------------------------------------------
-// PR change: removed SERVER_UNAVAILABLE_MESSAGE and authErrorMessage
+// Auth error handling delegated to the shared helper
 // ---------------------------------------------------------------------------
-describe("admin/reset-password — 5xx-specific error handling removed (this PR)", () => {
-  it("does NOT define SERVER_UNAVAILABLE_MESSAGE", () => {
-    expect(SRC).not.toContain("SERVER_UNAVAILABLE_MESSAGE");
-  });
-
-  it("does NOT define authErrorMessage helper", () => {
-    expect(SRC).not.toContain("function authErrorMessage");
-  });
-
-  it("does NOT contain the credentials-store-unavailable message text", () => {
-    expect(SRC).not.toContain("credentials store");
-  });
-
-  it("does NOT reference status.pennpaps.com", () => {
-    expect(SRC).not.toContain("status.pennpaps.com");
-  });
-
-  it("uses inline AuthError instanceof check for error message", () => {
-    expect(SRC).toContain(
-      "err instanceof AuthError\n              ? err.userMessage",
+describe("admin/reset-password — uses shared authErrorMessage helper", () => {
+  it("imports authErrorMessage from @workspace/resupply-auth-react", () => {
+    expect(SRC).toMatch(
+      /import\s*\{[^}]*authErrorMessage[^}]*\}\s*from\s*"@workspace\/resupply-auth-react"/,
     );
   });
 
-  it("falls back to 'Could not reset your password.' for non-AuthError errors", () => {
-    expect(SRC).toContain('"Could not reset your password."');
+  it("calls authErrorMessage with action/subject/fallback options", () => {
+    expect(SRC).toContain('action: "reset your password"');
+    expect(SRC).toContain('subject: "reset link"');
+    expect(SRC).toContain('fallback: "Could not reset your password."');
   });
 
-  it("does NOT check err.status >= 500 in the error handler", () => {
+  it("does NOT declare its own SERVER_UNAVAILABLE_MESSAGE", () => {
+    expect(SRC).not.toContain("SERVER_UNAVAILABLE_MESSAGE");
+  });
+
+  it("does NOT define a local authErrorMessage helper function", () => {
+    expect(SRC).not.toMatch(/function\s+authErrorMessage/);
+  });
+
+  it("does NOT inline the credentials-store copy", () => {
+    expect(SRC).not.toContain("credentials store");
+  });
+
+  it("does NOT reference status.pennpaps.com directly", () => {
+    expect(SRC).not.toContain("status.pennpaps.com");
+  });
+
+  it("does NOT branch on err.status >= 500 itself", () => {
     expect(SRC).not.toContain("err.status >= 500");
   });
 });
