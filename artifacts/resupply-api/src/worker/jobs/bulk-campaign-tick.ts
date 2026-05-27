@@ -53,10 +53,7 @@ import {
   TICK_INTERVAL_SECONDS,
 } from "../../lib/bulk-campaigns/dispatch-helpers.js";
 import { logger } from "../../lib/logger.js";
-import {
-  buildQueueConfig,
-  VENDOR_SEND_QUEUE_OPTS,
-} from "../lib/queue-options.js";
+import { createQueueWithDlq, VENDOR_SEND_QUEUE_OPTS } from "../lib/queue-options.js";
 
 export const BULK_CAMPAIGN_TICK_JOB = "bulk-campaigns.send-tick";
 
@@ -78,10 +75,7 @@ export async function registerBulkCampaignTickJob(
   // retries to `<name>.dlq` so a deterministically-poison tick (e.g.
   // template render permanently broken) lands in ops review instead
   // of bouncing through pg-boss's silent-failure path.
-  await boss.createQueue(
-    BULK_CAMPAIGN_TICK_JOB,
-    buildQueueConfig(BULK_CAMPAIGN_TICK_JOB, VENDOR_SEND_QUEUE_OPTS),
-  );
+  await createQueueWithDlq(boss, BULK_CAMPAIGN_TICK_JOB, VENDOR_SEND_QUEUE_OPTS);
   await boss.work<BulkCampaignTickPayload>(
     BULK_CAMPAIGN_TICK_JOB,
     async (jobs) => {

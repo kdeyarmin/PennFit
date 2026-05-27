@@ -35,7 +35,7 @@ import type PgBoss from "pg-boss";
 
 import { logger } from "../../lib/logger";
 import { runRxRenewalSendDue } from "../../lib/rx-renewal/dispatcher";
-import { buildQueueConfig, VENDOR_SEND_QUEUE_OPTS } from "../lib/queue-options";
+import { createQueueWithDlq, VENDOR_SEND_QUEUE_OPTS } from "../lib/queue-options";
 
 const SEND_JOB = "rx-renewal.send-due";
 /** Daily 04:43 UTC. Sequenced 30 min after the smart-trigger send
@@ -45,7 +45,7 @@ const SEND_CRON = "43 4 * * *";
 const SYSTEM_ACTOR_EMAIL = "system:cron:rx-renewal-send";
 
 export async function registerRxRenewalSendJob(boss: PgBoss): Promise<void> {
-  await boss.createQueue(SEND_JOB, buildQueueConfig(SEND_JOB, VENDOR_SEND_QUEUE_OPTS));
+  await createQueueWithDlq(boss, SEND_JOB, VENDOR_SEND_QUEUE_OPTS);
 
   await boss.work(SEND_JOB, async () => {
     const actor = {

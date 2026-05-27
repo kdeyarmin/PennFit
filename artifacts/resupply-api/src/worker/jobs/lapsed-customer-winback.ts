@@ -45,7 +45,7 @@ import {
 import { sendWinbackEmail } from "../../lib/order-emails/send-winback-email";
 import { shouldSendEmail } from "../../lib/comm-prefs";
 import { logger } from "../../lib/logger";
-import { buildQueueConfig, VENDOR_SEND_QUEUE_OPTS } from "../lib/queue-options";
+import { createQueueWithDlq, VENDOR_SEND_QUEUE_OPTS } from "../lib/queue-options";
 
 const JOB_NAME = "shop-customers.winback";
 const JOB_CRON = "17 13 * * 1"; // Mondays at 13:17 UTC.
@@ -270,7 +270,7 @@ export async function runLapsedCustomerWinback(): Promise<WinbackStats> {
 export async function registerLapsedCustomerWinbackJob(
   boss: PgBoss,
 ): Promise<void> {
-  await boss.createQueue(JOB_NAME, buildQueueConfig(JOB_NAME, VENDOR_SEND_QUEUE_OPTS));
+  await createQueueWithDlq(boss, JOB_NAME, VENDOR_SEND_QUEUE_OPTS);
 
   await boss.work(JOB_NAME, async () => {
     try {

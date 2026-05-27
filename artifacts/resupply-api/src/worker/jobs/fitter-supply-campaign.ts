@@ -76,7 +76,7 @@ import { createTwilioSmsClient, TwilioConfigError } from "@workspace/resupply-te
 
 import { isFeatureEnabled } from "../../lib/feature-flags";
 import { logger } from "../../lib/logger";
-import { buildQueueConfig, VENDOR_SEND_QUEUE_OPTS } from "../lib/queue-options";
+import { createQueueWithDlq, VENDOR_SEND_QUEUE_OPTS } from "../lib/queue-options";
 import {
   TOUCHPOINT_OFFSETS_MS,
   TOTAL_TOUCHPOINTS,
@@ -1323,7 +1323,7 @@ export async function registerFitterSupplyCampaignJob(
     );
     return;
   }
-  await boss.createQueue(JOB_NAME, buildQueueConfig(JOB_NAME, VENDOR_SEND_QUEUE_OPTS));
+  await createQueueWithDlq(boss, JOB_NAME, VENDOR_SEND_QUEUE_OPTS);
   await boss.work(JOB_NAME, async () => {
     try {
       const stats = await runFitterSupplyCampaignSweep();

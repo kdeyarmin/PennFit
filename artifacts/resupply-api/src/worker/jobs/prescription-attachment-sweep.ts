@@ -130,7 +130,7 @@ import { logAudit } from "@workspace/resupply-audit";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger.js";
-import { buildQueueConfig, CRON_SCAN_QUEUE_OPTS } from "../lib/queue-options.js";
+import { createQueueWithDlq, CRON_SCAN_QUEUE_OPTS } from "../lib/queue-options.js";
 import {
   attachmentKeyForObjectName,
   deleteAttachmentObject,
@@ -478,7 +478,7 @@ export async function registerPrescriptionAttachmentSweepJob(
   // better than letting the job blow up at the cron tick.
   getPrivateObjectLocation();
 
-  await boss.createQueue(SWEEP_JOB, buildQueueConfig(SWEEP_JOB, CRON_SCAN_QUEUE_OPTS));
+  await createQueueWithDlq(boss, SWEEP_JOB, CRON_SCAN_QUEUE_OPTS);
 
   await boss.work<SweepJobData>(SWEEP_JOB, async (jobs) => {
     const data = jobs[0]?.data ?? {};

@@ -59,7 +59,7 @@ import {
 } from "@workspace/resupply-email";
 
 import { logger } from "../../lib/logger";
-import { buildQueueConfig, VENDOR_SEND_QUEUE_OPTS } from "../lib/queue-options";
+import { createQueueWithDlq, VENDOR_SEND_QUEUE_OPTS } from "../lib/queue-options";
 
 type OrderRow = Database["public"]["Tables"]["orders"]["Row"];
 
@@ -260,7 +260,7 @@ export async function registerFailedEmailDigestJob(
     );
     return;
   }
-  await boss.createQueue(FAILED_EMAIL_DIGEST_JOB, buildQueueConfig(FAILED_EMAIL_DIGEST_JOB, VENDOR_SEND_QUEUE_OPTS));
+  await createQueueWithDlq(boss, FAILED_EMAIL_DIGEST_JOB, VENDOR_SEND_QUEUE_OPTS);
   await boss.work(FAILED_EMAIL_DIGEST_JOB, async () => {
     try {
       const result = await runFailedEmailDigest();

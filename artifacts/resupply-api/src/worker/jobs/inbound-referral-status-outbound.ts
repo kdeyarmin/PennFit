@@ -47,7 +47,7 @@ import {
 import { signParachutePayload } from "@workspace/resupply-integrations-parachute";
 
 import { logger } from "../../lib/logger";
-import { buildQueueConfig, VENDOR_SEND_QUEUE_OPTS } from "../lib/queue-options";
+import { createQueueWithDlq, VENDOR_SEND_QUEUE_OPTS } from "../lib/queue-options";
 
 type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
 type OutboxRow =
@@ -395,7 +395,7 @@ async function markExhausted(
 export async function registerReferralStatusOutboundJob(
   boss: PgBoss,
 ): Promise<void> {
-  await boss.createQueue(JOB, buildQueueConfig(JOB, VENDOR_SEND_QUEUE_OPTS));
+  await createQueueWithDlq(boss, JOB, VENDOR_SEND_QUEUE_OPTS);
   await boss.work(JOB, async () => {
     try {
       const stats = await runReferralStatusOutbound();

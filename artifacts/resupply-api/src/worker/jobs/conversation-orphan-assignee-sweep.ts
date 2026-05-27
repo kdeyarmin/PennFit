@@ -46,7 +46,7 @@ import { logAuditBestEffort } from "@workspace/resupply-audit";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
-import { buildQueueConfig, CRON_SCAN_QUEUE_OPTS } from "../lib/queue-options";
+import { createQueueWithDlq, CRON_SCAN_QUEUE_OPTS } from "../lib/queue-options";
 
 const SWEEP_JOB = "conversations.orphan-assignee-sweep";
 const SWEEP_CRON = "13 4 * * 0";
@@ -201,7 +201,7 @@ export async function runOrphanAssigneeSweep(): Promise<SweepStats> {
 export async function registerConversationOrphanAssigneeSweepJob(
   boss: PgBoss,
 ): Promise<void> {
-  await boss.createQueue(SWEEP_JOB, buildQueueConfig(SWEEP_JOB, CRON_SCAN_QUEUE_OPTS));
+  await createQueueWithDlq(boss, SWEEP_JOB, CRON_SCAN_QUEUE_OPTS);
 
   await boss.work(SWEEP_JOB, async () => {
     try {

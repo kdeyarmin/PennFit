@@ -37,7 +37,7 @@ import type PgBoss from "pg-boss";
 
 import { logger } from "../../lib/logger";
 import { runSmartTriggerEvaluator } from "../../lib/smart-triggers/evaluator";
-import { buildQueueConfig, CRON_SCAN_QUEUE_OPTS } from "../lib/queue-options";
+import { createQueueWithDlq, CRON_SCAN_QUEUE_OPTS } from "../lib/queue-options";
 
 const EVALUATE_JOB = "smart-triggers.evaluate";
 /** Daily 03:23 UTC. Picked off the hour to avoid colliding with the
@@ -50,7 +50,7 @@ const SYSTEM_ACTOR_EMAIL = "system:cron:smart-trigger-evaluator";
 export async function registerSmartTriggerEvaluatorJob(
   boss: PgBoss,
 ): Promise<void> {
-  await boss.createQueue(EVALUATE_JOB, buildQueueConfig(EVALUATE_JOB, CRON_SCAN_QUEUE_OPTS));
+  await createQueueWithDlq(boss, EVALUATE_JOB, CRON_SCAN_QUEUE_OPTS);
 
   await boss.work(EVALUATE_JOB, async () => {
     try {

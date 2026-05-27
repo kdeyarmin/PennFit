@@ -23,11 +23,7 @@ import type PgBoss from "pg-boss";
 import { dispatchDueCheckins } from "../../lib/checkin-dispatcher";
 import { scanCompliance } from "../../lib/compliance-scanner";
 import { logger } from "../../lib/logger";
-import {
-  buildQueueConfig,
-  CRON_SCAN_QUEUE_OPTS,
-  VENDOR_SEND_QUEUE_OPTS,
-} from "../lib/queue-options";
+import { createQueueWithDlq, CRON_SCAN_QUEUE_OPTS, VENDOR_SEND_QUEUE_OPTS } from "../lib/queue-options";
 
 const DISPATCH_JOB = "onboarding-checkins.dispatch";
 const DISPATCH_CRON = "17 14 * * *";
@@ -38,8 +34,8 @@ const SCAN_CRON = "47 14 * * *";
 export async function registerOnboardingCheckinJobs(
   boss: PgBoss,
 ): Promise<void> {
-  await boss.createQueue(DISPATCH_JOB, buildQueueConfig(DISPATCH_JOB, VENDOR_SEND_QUEUE_OPTS));
-  await boss.createQueue(SCAN_JOB, buildQueueConfig(SCAN_JOB, CRON_SCAN_QUEUE_OPTS));
+  await createQueueWithDlq(boss, DISPATCH_JOB, VENDOR_SEND_QUEUE_OPTS);
+  await createQueueWithDlq(boss, SCAN_JOB, CRON_SCAN_QUEUE_OPTS);
 
   await boss.work(DISPATCH_JOB, async () => {
     try {
