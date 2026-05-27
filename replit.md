@@ -76,6 +76,17 @@ All outbound emails across the monorepo are funneled through a single SendGrid c
 
 A "Customers" section in the admin interface (`/admin/customers`) provides staff with a comprehensive view of each shop customer, including lifetime stats, orders, subscriptions, abandoned carts, and product reviews. Admins can reorder for customers directly from their profile.
 
+## Integration tests against a live database
+
+Two test suites do not skip in CI's `Tests` job — they actually run against a real Postgres + a real PostgREST sitting in front of it. If you change either, run them locally too:
+
+- `lib/resupply-audit/src/index.integration.test.ts` — write/read round-trip through PostgREST for `logAudit()`.
+- `artifacts/resupply-api/src/worker/jobs/invite-password-expiry-notify.integration.test.ts` — exercises the real PostgREST filter chain (`.lt`/`.gt`/`.is`) for the invite-expiry sweep against migration 0143.
+
+Both self-skip when `DATABASE_URL`, `SUPABASE_URL`, or `SUPABASE_SERVICE_ROLE_KEY` is missing, so they go silent on a default Replit workspace. CI's `test` job in `.github/workflows/ci.yml` provisions the full stack: a `postgres:14` service container, `node lib/resupply-db/scripts/migrate.mjs` to apply every migration (0143 included), a `postgrest/postgrest` docker container on `127.0.0.1:3001` with `server-base-path=/rest/v1` so `@supabase/supabase-js` talks to it unmodified, and a service-role JWT (HS256, `role: pennfit`) minted from `PGRST_JWT_SECRET` and exported via `$GITHUB_ENV`. If you ever see these suites report as SKIPPED in CI output, one of those pieces broke — start by checking the `Start PostgREST` step's `docker logs postgrest` tail.
+
+To reproduce locally: start any Postgres, `DATABASE_URL=postgres://… node lib/resupply-db/scripts/migrate.mjs`, then either point at a real Supabase project or replicate the CI postgrest + JWT recipe.
+
 ## External Dependencies
 
 - **SendGrid:** For all outbound email communications.
