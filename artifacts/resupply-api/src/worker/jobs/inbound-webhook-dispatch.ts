@@ -39,10 +39,23 @@ import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 import { dispatchEhrFhir } from "../../lib/inbound-dispatchers/ehr-fhir";
 import { dispatchParachute } from "../../lib/inbound-dispatchers/parachute";
 import { logger } from "../../lib/logger";
+import {
+  buildQueueConfig,
+  WEBHOOK_DISPATCH_QUEUE_OPTS,
+} from "../lib/queue-options";
 
 const JOB = "integrations.inbound-webhook-dispatch";
 const CRON = "* * * * *"; // every minute
 const BATCH_SIZE = 50;
+// A row that's been in 'processing' for longer than this is treated
+// as orphaned (worker crash, OOM, container reschedule) and flipped
+// back to 'processing_failed' so the next tick re-claims it. Chosen
+// at 5 minutes — well above the 60s cron cadence, well above any
+// plausible single-row dispatch latency (FHIR writes round-trip
+// HTTP but cap themselves at ~30s), and inside the SIGTERM drain
+// window so a coordinated shutdown doesn't false-orphan in-flight
+// rows.
+const PROCESSING_LEASE_MS = 5 * 60 * 1000;
 
 export interface DispatchStats {
   scanned: number;
@@ -69,36 +82,113 @@ export async function runInboundWebhookDispatcher(): Promise<DispatchStats> {
     skipped_unknown_source: 0,
   };
 
-  const { data: rows, error } = await supabase
+  // Phase 0 — lease recovery. Any row stuck in 'processing' for
+  // longer than PROCESSING_LEASE_MS is orphaned (crashed worker,
+  // OOM, restart mid-row). Flip it back to 'processing_failed' so
+  // the regular claim path below re-picks it up. We don't error on
+  // this — losing a recovery cycle just delays revive by 60s.
+  const leaseCutoff = new Date(
+    Date.now() - PROCESSING_LEASE_MS,
+  ).toISOString();
+  const { error: leaseErr } = await supabase
     .schema("resupply")
     .from("inbound_webhooks")
-    .select(
-      "id, source, payload_json, verification_headers_json, signature_verified",
-    )
+    .update({
+      status: "processing_failed",
+      processing_started_at: null,
+      processing_error: "lease_expired",
+    })
+    .eq("status", "processing")
+    .lt("processing_started_at", leaseCutoff);
+  if (leaseErr) {
+    logger.warn(
+      { err: leaseErr.message },
+      "inbound_webhook_lease_recovery_failed",
+    );
+  }
+
+  // Phase 1 — candidate scan. Read rows in pending status so we have
+  // a bounded list of ids to attempt to claim atomically. We do NOT
+  // process from this snapshot directly — see Phase 2.
+  const { data: candidates, error: scanErr } = await supabase
+    .schema("resupply")
+    .from("inbound_webhooks")
+    .select("id")
     .in("status", ["received", "processing_failed"])
     .order("received_at", { ascending: true })
     .limit(BATCH_SIZE);
-  if (error) {
+  if (scanErr) {
     logger.error(
-      { err: error.message },
+      { err: scanErr.message },
       "inbound_webhook_dispatch_select_failed",
     );
-    throw error;
+    throw scanErr;
   }
-  if (!rows || rows.length === 0) return stats;
+  if (!candidates || candidates.length === 0) return stats;
+
+  // Phase 2 — atomic claim. UPDATE the candidate ids back to status
+  // 'processing' with the still-pending guard; the returned rows are
+  // the ones THIS tick exclusively owns. A second tick that races
+  // overlaps with us will see the same candidate ids but the UPDATE
+  // will exclude rows already flipped to 'processing' — so it gets
+  // a strictly disjoint winner set. Without this, a >60s dispatcher
+  // run lets the next minute's tick re-process the same row,
+  // materialising duplicate patient_referral or ServiceRequest rows.
+  const candidateIds = candidates.map((c) => c.id);
+  const { data: claimedRows, error: claimErr } = await supabase
+    .schema("resupply")
+    .from("inbound_webhooks")
+    .update({
+      status: "processing",
+      // Stamp the claim so the Phase 0 lease-recovery sweep above
+      // can identify rows whose dispatcher never reported back.
+      processing_started_at: new Date().toISOString(),
+    })
+    .in("id", candidateIds)
+    .in("status", ["received", "processing_failed"])
+    .select(
+      "id, source, payload_json, verification_headers_json, signature_verified",
+    );
+  if (claimErr) {
+    logger.error(
+      { err: claimErr.message },
+      "inbound_webhook_dispatch_claim_failed",
+    );
+    throw claimErr;
+  }
+  const rows = claimedRows ?? [];
+  if (rows.length === 0) return stats;
   stats.scanned = rows.length;
 
   for (const row of rows) {
     let outcome: Awaited<ReturnType<typeof dispatchParachute>> | null = null;
-    if (row.source === "parachute") {
-      outcome = await dispatchParachute({ row });
-    } else if (row.source.startsWith("ehr_fhir_")) {
-      outcome = await dispatchEhrFhir({ row });
+    try {
+      if (row.source === "parachute") {
+        outcome = await dispatchParachute({ row });
+      } else if (row.source.startsWith("ehr_fhir_")) {
+        outcome = await dispatchEhrFhir({ row });
+      }
+    } catch (err) {
+      // Treat an uncaught dispatcher throw as a retryable failure
+      // rather than leaving the row stuck in 'processing' forever
+      // (the partial pending index excludes 'processing' so a stuck
+      // row never re-emerges on the next tick).
+      const reason = err instanceof Error ? err.message : String(err);
+      logger.warn(
+        { row_id: row.id, source: row.source, err: reason },
+        "inbound_webhook_dispatcher_threw",
+      );
+      await markRetry(supabase, row.id, reason);
+      stats.retried += 1;
+      continue;
     }
 
     if (outcome === null) {
-      // No dispatcher for this source. Leave the row in its current
-      // status so the admin dashboard can flag it.
+      // No dispatcher for this source. Move the row back out of
+      // 'processing' so the admin dashboard surfaces it via the
+      // pending partial index — leaving it stuck in 'processing'
+      // would silently hide unknown-source rows from triage.
+      await markRetry(supabase, row.id, `no_dispatcher_for_source:${row.source}`);
       stats.skipped_unknown_source += 1;
       continue;
     }
@@ -221,7 +311,11 @@ async function markRetry(
 export async function registerInboundWebhookDispatchJob(
   boss: PgBoss,
 ): Promise<void> {
-  await boss.createQueue(JOB);
+  // Inbound webhook dispatching mirrors outbound delivery's posture
+  // (generous retries, tight expiry, DLQ on exhaustion) since the
+  // failure modes are the same shape — a downstream consumer briefly
+  // 5xx'ing.
+  await boss.createQueue(JOB, buildQueueConfig(JOB, WEBHOOK_DISPATCH_QUEUE_OPTS));
   await boss.work(JOB, async () => {
     try {
       const stats = await runInboundWebhookDispatcher();

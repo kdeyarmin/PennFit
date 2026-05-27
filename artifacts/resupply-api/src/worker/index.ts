@@ -44,7 +44,6 @@ import { registerFitterSupplyCampaignJob } from "./jobs/fitter-supply-campaign.j
 import { registerFitterConversionAttributionJob } from "./jobs/fitter-conversion-attribution.js";
 import { registerCartAbandonmentJob } from "./jobs/cart-abandonment-scan.js";
 import { registerFailedEmailDigestJob } from "./jobs/failed-order-emails-digest.js";
-import { registerAuditLogArchiveSweepJob } from "./jobs/audit-log-archive-sweep.js";
 import { registerTherapyNightlySyncJob } from "./jobs/therapy-integrations-nightly-sync.js";
 import { registerCoachingProgressJob } from "./jobs/coaching-plan-progress.js";
 import { registerPriorAuthExpirySweepJob } from "./jobs/prior-auth-expiry-sweep.js";
@@ -56,19 +55,18 @@ import { registerQuarterlyTherapySummaryJob } from "./jobs/quarterly-therapy-sum
 import { registerLifecycleTouchpointsJob } from "./jobs/lifecycle-touchpoints.js";
 import { registerOfficeAllyInboundPollJob } from "./jobs/office-ally-inbound-poll.js";
 import { registerPaMcoSlaSweepJob } from "./jobs/pa-mco-sla-sweep.js";
-import { registerAccreditationReadinessSweepJob } from "./jobs/accreditation-readiness-sweep.js";
 import { registerPecosSyncJob } from "./jobs/pecos-sync.js";
-import { registerOigLeieSyncJob } from "./jobs/oig-leie-sync.js";
 import { registerCappedRentalAdvanceJob } from "./jobs/capped-rental-advance.js";
 import { registerDwoExpirySweepJob } from "./jobs/dwo-expiry-sweep.js";
 import { registerWebhookDispatcherJob } from "./jobs/webhook-dispatcher.js";
 import { registerAutoWorkflowJob } from "./jobs/auto-workflow.js";
-import { registerComplianceAutoWorkflowJob } from "./jobs/compliance-auto-workflow.js";
 import { registerInvitePasswordExpiryNotifyJob } from "./jobs/invite-password-expiry-notify.js";
 import { registerLowStockAlertsJob } from "./jobs/low-stock-alerts.js";
 import { registerInboundWebhookDispatchJob } from "./jobs/inbound-webhook-dispatch.js";
 import { registerInboundReferralPreflightJob } from "./jobs/inbound-referral-preflight.js";
 import { registerReferralStatusOutboundJob } from "./jobs/inbound-referral-status-outbound.js";
+import { registerPrescriptionRequestAutoDraftJob } from "./jobs/prescription-request-auto-draft.js";
+import { registerConversationOrphanAssigneeSweepJob } from "./jobs/conversation-orphan-assignee-sweep.js";
 
 let bossInstance: PgBoss | null = null;
 let workerReady = false;
@@ -165,17 +163,36 @@ export async function startWorker(): Promise<void> {
   // failure logs once, not every monitoring tick. ops dashboards can
   // alert on `event: "pgboss_jobs_failed"` to page on a stuck queue.
   //
-  // The snapshot lives in this closure and resets on worker restart;
-  // a restart re-baselines counts so historical archived failures
-  // don't trigger a false alert at boot. Tradeoff: a process bounce
-  // immediately after a failure could miss a single alert, which is
-  // acceptable — the failed-state row is still visible in the DB and
-  // the next failure will alert.
+  // The snapshot lives in this closure but the first monitor-states
+  // tick after boot fires a one-time `pgboss_jobs_failed_initial`
+  // line whenever there's a non-zero `failed` count. Without it, a
+  // process bounce immediately after a fresh failure would silently
+  // re-baseline at the post-failure count and never alert — a
+  // crashloop could mask every alert from this surface entirely.
+  // Subsequent ticks delta off `prev` as before so a single permanent
+  // failure only emits one steady-state warning.
   const lastFailedCounts = new Map<string, number>();
   boss.on("monitor-states", (snapshot) => {
     for (const [queueName, state] of Object.entries(snapshot.queues ?? {})) {
-      const prev = lastFailedCounts.get(queueName) ?? state.failed;
-      if (state.failed > prev) {
+      const baselined = lastFailedCounts.has(queueName);
+      const prev = lastFailedCounts.get(queueName) ?? 0;
+      if (!baselined && state.failed > 0) {
+        // First tick after boot AND there's a non-zero failed count
+        // already on the queue — surface it once so a restart
+        // doesn't swallow alerts for failures that landed during
+        // the restart window.
+        logger.warn(
+          {
+            event: "pgboss_jobs_failed_initial",
+            queue: queueName,
+            total_failed: state.failed,
+            queue_size: state.all,
+            retry_pending: state.retry,
+            active: state.active,
+          },
+          `pg-boss queue '${queueName}' booted with ${state.failed} failed job(s) on the books`,
+        );
+      } else if (state.failed > prev) {
         logger.warn(
           {
             event: "pgboss_jobs_failed",
@@ -272,9 +289,6 @@ export async function startWorker(): Promise<void> {
   // + created_at; patient name, email, error text NEVER appear.
   // Off by default — requires the flag AND the recipient env var.
   await registerFailedEmailDigestJob(boss);
-  // HIPAA audit-log retention sweep — nightly flag of rows past
-  // the 6-year floor. Destruction stays human-triggered.
-  await registerAuditLogArchiveSweepJob(boss);
   // Adherence coaching progress sweep — refresh latest_compliance_pct
   // on open plans and auto-flip outreach_made → improving when the
   // patient's recent 30-night adherence crosses target.
@@ -362,21 +376,9 @@ export async function startWorker(): Promise<void> {
   // CSR alerts on at-risk + missed transitions.
   await registerPaMcoSlaSweepJob(boss);
 
-  // Weekly accreditation-survey readiness audit. Runs the rule
-  // engine in lib/accreditation/readiness-engine.ts and persists
-  // structured findings for the CMS annual unannounced surveys
-  // (effective Jan 1, 2026).
-  await registerAccreditationReadinessSweepJob(boss);
-
   // Daily CMS PECOS Order/Referring sync. Powers the preflight
   // "ordering provider not PECOS-enrolled" denial blocker.
   await registerPecosSyncJob(boss);
-
-  // Monthly OIG LEIE refresh. Re-loads the public exclusion list
-  // (4th of each month at 04:07 UTC) so the screening tool answers
-  // against a current dataset. Per-subject screening attempts are
-  // recorded separately in oig_leie_screenings.
-  await registerOigLeieSyncJob(boss);
 
   // Daily capped-rental month advance (mig 0134). For each active
   // cycle past the next anniversary, generates a draft monthly
@@ -396,15 +398,11 @@ export async function startWorker(): Promise<void> {
   // billing_statement.due for patients with cooldown-clear balances.
   await registerAutoWorkflowJob(boss);
 
-  // Every 15 minutes — compliance auto-workflow pass: publish
-  // compliance.baa_expiring_soon / .baa_expired /
-  // .oig_screening_overdue / .patient_rights_overdue webhook events
-  // with 24-hour cooldown gates.
-  await registerComplianceAutoWorkflowJob(boss);
-
-  // Daily — notify admins of upcoming/expired invite-password
-  // expirations so operators can re-invite teammates before they
-  // lose access.
+  // Hourly — warn invited team members whose operator-typed
+  // temporary password is approaching ADMIN_PASSWORD_TTL_MS (heads-up
+  // at ~T-2 days) and again the moment it expires. Idempotency via
+  // stamp columns on resupply_auth.password_credentials added in
+  // migration 0143.
   await registerInvitePasswordExpiryNotifyJob(boss);
 
   // Every 6 hours — shop inventory low-stock alert digest. Reads
@@ -430,28 +428,19 @@ export async function startWorker(): Promise<void> {
   // backoff per migration 0148.
   await registerReferralStatusOutboundJob(boss);
 
-  // Every 6 hours — shop inventory low-stock alert digest. Reads
-  // Stripe catalog, dedups per-SKU via resupply.low_stock_alert_state,
-  // emails RESUPPLY_ADMIN_EMAILS one rollup per tick.
-  await registerLowStockAlertsJob(boss);
+  // Daily 13:43 UTC — pre-build draft prescription_request_packets
+  // for active Rxs expiring in the next 30 days so a CSR doesn't
+  // have to hunt for them. Gated by
+  // RESUPPLY_PRESCRIPTION_AUTO_DRAFT_ENABLED=1 (off in dev/preview);
+  // does NOT auto-fax — CSR reviews + sends.
+  await registerPrescriptionRequestAutoDraftJob(boss);
 
-  // Every minute — drain pending inbound_webhooks rows and route
-  // each to its per-source dispatcher (Parachute today; Phase 4
-  // will add ehr_fhir_* sources). Migration 0144 lands the typed
-  // referral inbox the dispatcher writes into.
-  await registerInboundWebhookDispatchJob(boss);
-
-  // Every 5 minutes — run pre-flight checks (PA requirement,
-  // eligibility, docs gap, physician fax fallback) on new
-  // inbound referrals that have a matched patient. Migration 0146
-  // lands the inbound_referral_preflight_checks history table.
-  await registerInboundReferralPreflightJob(boss);
-
-  // Every minute — drain inbound_referral_status_outbox and POST
-  // lifecycle callbacks (accept, ship, PA decision) back to the
-  // originating Parachute / EHR partner. HMAC-SHA256 signed; expo
-  // backoff per migration 0148.
-  await registerReferralStatusOutboundJob(boss);
+  // Sunday 04:13 UTC — weekly orphan-assignee sweep. Unpins
+  // conversations whose assignee was revoked (Team admin UI flipped
+  // admin_users.status='revoked'); the conversations would otherwise
+  // sit pinned to the ghost admin forever, hidden from the
+  // unassigned queue.
+  await registerConversationOrphanAssigneeSweepJob(boss);
 
   workerReady = true;
   logger.info(
@@ -459,11 +448,17 @@ export async function startWorker(): Promise<void> {
   );
 }
 
-export async function stopWorker(): Promise<void> {
+export async function stopWorker(timeoutMs = 10_000): Promise<void> {
+  // The caller (index.ts shutdown) passes the remaining wall-clock
+  // budget so total HTTP-drain + worker-stop stays inside the
+  // orchestrator's grace window (Replit/K8s ~30s). Hard floor at
+  // 1s — pg-boss needs a non-trivial timeout to avoid throwing
+  // immediately when there are no in-flight jobs.
   workerReady = false;
   if (!bossInstance) return;
+  const budget = Math.max(1_000, timeoutMs);
   try {
-    await bossInstance.stop({ graceful: true, timeout: 10_000 });
+    await bossInstance.stop({ graceful: true, timeout: budget });
   } catch (err) {
     logger.error({ err }, "error stopping pg-boss");
   }

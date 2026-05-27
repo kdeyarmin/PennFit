@@ -37,6 +37,7 @@ import {
 } from "../../lib/stripe/config";
 import { isFeatureEnabled } from "../../lib/feature-flags";
 import { getOrCreateStripeCustomer } from "../../lib/stripe/customer";
+import { validateCartItems } from "../../lib/stripe/validate-cart";
 import { readCustomerProfile } from "../../lib/customer-profile";
 import { rateLimit } from "../../middlewares/rate-limit";
 import { attachSignedIn } from "../../middlewares/requireSignedIn";
@@ -160,11 +161,6 @@ router.post(
       return;
     }
 
-    const idempotencyKey =
-      typeof req.headers["idempotency-key"] === "string"
-        ? req.headers["idempotency-key"]
-        : randomUUID();
-
     const successUrl = `${config.publicBaseUrl}${successPath}?session_id={CHECKOUT_SESSION_ID}`;
     const cancelUrl = `${config.publicBaseUrl}${cancelPath}`;
     // Hash uses priceId+qty+mode so two identical-priced carts with
@@ -177,7 +173,51 @@ router.post(
       })),
     );
 
+    // Namespace the client-supplied Idempotency-Key per signed-in
+    // customer (or per IP for guests) + cart contents before handing
+    // it to Stripe. Stripe scopes idempotency keys across the whole
+    // API key, so two unrelated checkouts that happen to ship the
+    // same client key would otherwise resolve to the SAME Stripe
+    // Session — user B would receive user A's session URL, line
+    // items, and Stripe customer attachment (cross-user PHI / cart
+    // leak). Including cartHash also handles "same user clicks Buy
+    // twice with different carts and a browser-cached header" —
+    // Stripe rejects mismatched bodies for a reused key, so keying
+    // on cart contents avoids the idempotency_error UX glitch and
+    // ensures a real second checkout creates a fresh Session.
+    const clientKey =
+      typeof req.headers["idempotency-key"] === "string"
+        ? req.headers["idempotency-key"]
+        : randomUUID();
+    const idempotencyKey = createHash("sha256")
+      .update(
+        `${req.userCustomerId ?? `guest:${req.ip ?? "unknown"}`}|${clientKey}|${cartHash}|${isSubscription ? "sub" : "one"}`,
+      )
+      .digest("hex");
+
     const stripe = getStripeClient(config);
+
+    // Catalog guard: every price in the cart must belong to the approved
+    // shop catalog and respect stock/type constraints. The sibling
+    // /shop/me/quick-checkout route applies the same guard; without it a
+    // tampered cart could check out stale/legacy prices, out-of-stock
+    // items, or SKUs intentionally excluded from /shop/products.
+    const cartValidation = await validateCartItems(stripe, items);
+    if (!cartValidation.ok) {
+      req.log?.warn(
+        { errors: cartValidation.errors },
+        "shop checkout: cart validation failed",
+      );
+      res.status(400).json({
+        error: "cart_invalid",
+        issues: cartValidation.errors.map((e) => ({
+          priceId: e.priceId,
+          reason: e.reason,
+          message: e.message,
+        })),
+      });
+      return;
+    }
 
     // If the user is signed in, attach (or create) their Stripe Customer
     // so the saved card + address pre-fill on the Stripe page AND so the
@@ -330,12 +370,12 @@ router.post(
       return;
     }
 
-    // Mirror the session into shop_orders. The original Drizzle path
+    // Mirror the session into shop_orders. The original SQL path
     // used INSERT … ON CONFLICT (stripe_session_id) DO UPDATE SET
     // updated_at = now() — supabase-js's `.upsert()` with
     // `onConflict: "stripe_session_id"` is the equivalent. We pass an
     // explicit JS-side `updated_at` because PostgREST won't run the
-    // Drizzle $onUpdateFn for us.
+    // prior ORM's $onUpdateFn for us.
     const supabase = getSupabaseServiceRoleClient();
     const { error: upsertErr } = await supabase
       .schema("resupply")

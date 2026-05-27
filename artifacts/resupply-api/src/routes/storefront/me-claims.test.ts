@@ -156,8 +156,10 @@ describe("GET /me/billing-balance — linked patient with open claims", () => {
     stageSupabaseResponse("shop_customers", "select", {
       data: { customer_id: CUSTOMER_ID, email_lower: "alice@example.com" },
     });
+    // resolvePatientForCustomer now uses .limit(2) to detect the
+    // ambiguous email-collision case — stage as a one-element array.
     stageSupabaseResponse("patients", "select", {
-      data: { id: PATIENT_ID },
+      data: [{ id: PATIENT_ID }],
     });
   }
 

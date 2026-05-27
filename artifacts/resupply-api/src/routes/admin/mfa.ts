@@ -89,11 +89,21 @@ function getIssuerLabel(): string {
  *  toggle without a code change. "required" means surveyors see a
  *  mandatory MFA story and the SPA forces unenrolled admins to
  *  /admin/security on every nav. "off" preserves the original
- *  Phase A posture where enrollment is optional. */
+ *  Phase A posture where enrollment is optional.
+ *
+ *  Captured ONCE at module load. This is a deploy-time policy, not
+ *  a runtime-mutable flag — flipping the env mid-process previously
+ *  allowed a window where in-flight requests saw the new value
+ *  before any audit/log captured the change. To re-arm the flag,
+ *  redeploy. */
 type EnforcementMode = "off" | "required";
-function getEnforcementMode(): EnforcementMode {
+function readEnforcementModeFromEnv(): EnforcementMode {
   const v = process.env.AUTH_REQUIRE_MFA_FOR_ADMINS?.trim().toLowerCase();
   return v === "true" || v === "1" || v === "yes" ? "required" : "off";
+}
+const ENFORCEMENT_MODE: EnforcementMode = readEnforcementModeFromEnv();
+function getEnforcementMode(): EnforcementMode {
+  return ENFORCEMENT_MODE;
 }
 
 router.get("/admin/mfa/status", requireAdmin, async (req, res) => {
@@ -618,20 +628,39 @@ router.post(
       });
       return;
     }
-    // TOTP gate — any remaining device's code is acceptable.
-    const matched = verifiedRows.some((r) => {
+    // TOTP gate — any remaining device's code is acceptable. Capture
+    // the matching device + counter so we can burn the counter after
+    // the removal (below); a plain `.some()` discarded it, leaving the
+    // just-used code replayable within its window to remove a second
+    // device.
+    let authDevice: { id: string; counter: number } | null = null;
+    for (const r of verifiedRows) {
       const result = verifyTotpCode(r.secret_base32, parsed.data.code, {
         window: 1,
         minCounter: r.last_used_counter ?? undefined,
       });
-      return result.ok;
-    });
-    if (!matched) {
+      if (result.ok && result.counter != null) {
+        authDevice = { id: r.id, counter: result.counter };
+        break;
+      }
+    }
+    if (!authDevice) {
       res.status(400).json({
         error: "invalid_code",
         message: "Code didn't match — refusing to remove.",
       });
       return;
+    }
+    const nowIso = new Date().toISOString();
+    // Prefer a transaction/RPC here. If that's not available, burn
+    // before delete so a partial failure doesn't leave the code reusable.
+    if (authDevice.id !== target.id) {
+      const { error: burnErr } = await supabase
+        .schema("resupply")
+        .from("admin_mfa_secrets")
+        .update({ last_used_at: nowIso, last_used_counter: authDevice.counter })
+        .eq("id", authDevice.id);
+      if (burnErr) throw burnErr;
     }
     const { error: delErr } = await supabase
       .schema("resupply")

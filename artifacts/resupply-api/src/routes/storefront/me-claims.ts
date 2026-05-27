@@ -35,15 +35,24 @@ async function resolvePatientForCustomer(
     .limit(1)
     .maybeSingle();
   if (!customer?.email_lower) return null;
-  const { data: patient } = await supabase
+  // Refuse to bind when more than one patient row matches the email.
+  // The /me/claims list and detail surfaces are PHI; returning
+  // either patient's claim history to the wrong shopper is a
+  // cross-patient PHI leak. .ilike is case-INsensitive so legacy
+  // mixed-case patient.email rows still resolve. See me-billing.ts
+  // for the planned fix.
+  const escapedEmail = customer.email_lower.replace(
+    /[\\%_]/g,
+    (c: string) => `\\${c}`,
+  );
+  const { data: patients } = await supabase
     .schema("resupply")
     .from("patients")
     .select("id")
-    .eq("email", customer.email_lower)
-    .limit(1)
-    .maybeSingle();
-  if (!patient) return null;
-  return { patientId: patient.id };
+    .ilike("email", escapedEmail)
+    .limit(2);
+  if (!patients || patients.length !== 1) return null;
+  return { patientId: patients[0]!.id };
 }
 
 router.get("/me/claims", async (req, res) => {
@@ -154,7 +163,9 @@ router.get("/me/claims/:claimId", async (req, res) => {
       modifier: l.modifier,
       description: l.description,
       quantity: l.quantity,
-      billedCents: l.billed_cents,
+      // Extended line charge for the patient view: billed_cents is
+      // per-unit. allowed/paid are payer 835 line totals already.
+      billedCents: l.billed_cents * l.quantity,
       allowedCents: l.allowed_cents,
       paidCents: l.paid_cents,
       status: l.status,

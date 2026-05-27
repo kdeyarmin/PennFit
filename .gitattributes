@@ -1,0 +1,57 @@
+# Normalize line endings: keep text files as LF in the repo regardless of
+# the contributor's platform. Prevents phantom whole-file conflicts when
+# Windows or Replit checkouts re-introduce CRLF.
+* text=auto eol=lf
+
+# ---------------------------------------------------------------------------
+# Auto-generated files — DO NOT line-merge.
+#
+# Git's default three-way merge on these produces either garbled output
+# (lockfiles) or syntactically-broken JSON (the drizzle journal). Marking
+# them `-diff merge=binary` makes Git treat each side as opaque, so a
+# conflict surfaces as a single "pick one side" decision instead of
+# hundreds of inline `<<<<<<<` hunks. This is also what GitHub's
+# server-side merge sees — keep these `binary` so a conflict blocks the
+# merge button rather than risking a corrupt auto-merge landing on main.
+#
+# pnpm-lock.yaml: `scripts/install-hooks.sh` installs a LOCAL-ONLY merge
+# driver (registered in .git/info/attributes, which overrides this file
+# for your clone only) so local merges/rebases auto-resolve the lockfile
+# and re-run `pnpm install`. If you ever resolve one by hand:
+#
+#   git checkout --theirs pnpm-lock.yaml    # or --ours, whichever is closer
+#   pnpm install                            # regenerates from package.json
+#   git add pnpm-lock.yaml
+#
+# _journal.json: DO NOT hand-edit or splice it. It is frozen at 52 entries
+# and new migrations are no longer journaled; rebuilding it can make
+# migrate.mjs re-apply or skip migrations against production (see
+# docs/migration-state-investigation-2026-05-08.md). The marker below is
+# only a guard — if it ever conflicts, take either side verbatim.
+# ---------------------------------------------------------------------------
+
+pnpm-lock.yaml                                  -diff merge=binary
+lib/resupply-db/drizzle/meta/_journal.json      -diff merge=binary
+
+# ---------------------------------------------------------------------------
+# Binary assets — never diff, never line-merge.
+# ---------------------------------------------------------------------------
+
+*.png       binary
+*.jpg       binary
+*.jpeg      binary
+*.gif       binary
+*.ico       binary
+*.webp      binary
+*.pdf       binary
+*.woff      binary
+*.woff2     binary
+*.ttf       binary
+*.otf       binary
+*.eot       binary
+*.mp4       binary
+*.webm      binary
+*.mov       binary
+*.zip       binary
+*.gz        binary
+*.tgz       binary

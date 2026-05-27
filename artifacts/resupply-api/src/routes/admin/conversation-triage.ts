@@ -8,6 +8,7 @@ import { logAudit } from "@workspace/resupply-audit";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
+import { safeCsvCell } from "../../lib/safe-csv-cell";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
 
@@ -25,7 +26,19 @@ const snoozeBody = z
 
 const tagsBody = z
   .object({
-    tags: z.array(z.string().regex(TAG)).max(20),
+    // Per-tag pattern caps each entry at 32 chars; .max(20) caps
+    // the count. The .refine() below caps the SERIALIZED payload at
+    // 4 KB so a payload that passes both per-element checks can't
+    // still blow up the conversations.tags JSONB column when round-
+    // tripped through PostgREST (20 tags * 32 chars + JSON overhead
+    // is comfortably under 1 KB; 4 KB leaves headroom for future
+    // tag length bumps without re-tuning the cap).
+    tags: z
+      .array(z.string().regex(TAG))
+      .max(20)
+      .refine((arr) => JSON.stringify(arr).length <= 4096, {
+        message: "tags payload too large",
+      }),
   })
   .strict();
 
@@ -185,7 +198,7 @@ router.get(
     const { data: convo } = await supabase
       .schema("resupply")
       .from("conversations")
-      .select("id, channel")
+      .select("id, channel, patient_id, customer_id")
       .eq("id", params.data.id)
       .limit(1)
       .maybeSingle();
@@ -203,6 +216,34 @@ router.get(
       .order("created_at", { ascending: true })
       .limit(10_000);
     if (error) throw error;
+
+    // Audit the export BEFORE streaming bytes so a CSR who hits the
+    // route still has the access logged even if the connection drops
+    // mid-stream. Structural metadata only — no message bodies, no
+    // patient identifiers beyond the foreign-key id (PHI-clean per
+    // CLAUDE.md "treat every log line as world-readable").
+    const messageCount = (messages ?? []).length;
+    await logAudit({
+      action: "messaging.conversation.transcript_exported",
+      adminEmail: req.adminEmail ?? null,
+      adminUserId: req.adminUserId ?? null,
+      targetTable: "conversations",
+      targetId: params.data.id,
+      metadata: {
+        channel: convo.channel,
+        patient_id: convo.patient_id ?? null,
+        customer_id: convo.customer_id ?? null,
+        message_count: messageCount,
+        format: "csv",
+      },
+      ip: req.ip ?? null,
+      userAgent: req.get("user-agent") ?? null,
+    }).catch((err) => {
+      logger.warn(
+        { err, conversation_id: params.data.id },
+        "conversation.transcript_exported audit write failed",
+      );
+    });
 
     const filename = `conversation-${params.data.id.slice(0, 8)}-transcript.csv`;
     res.setHeader("Content-Type", "text/csv; charset=utf-8");
@@ -242,11 +283,12 @@ router.get(
   },
 );
 
+// Delegate to the shared safe-csv-cell helper so the transcript
+// export gets formula-injection neutralisation along with the
+// RFC 4180 quoting. The body column is raw patient text — a reply
+// like `=HYPERLINK(...)` would otherwise run in a CSR's Excel.
 function transcriptCsvCell(value: unknown): string {
-  if (value == null) return "";
-  const s = String(value);
-  if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
-  return s;
+  return safeCsvCell(value);
 }
 
 export default router;

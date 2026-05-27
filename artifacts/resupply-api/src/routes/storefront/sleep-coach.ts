@@ -61,18 +61,26 @@ router.post("/me/sleep-coach", async (req, res) => {
     res.status(404).json({ error: "no_linked_patient" });
     return;
   }
-  // Best-effort patient lookup by email match.
-  const { data: patient } = await supabase
+  // Best-effort patient lookup by email match. Case-insensitive
+  // (ilike + escaped meta-chars) so legacy mixed-case patient.email
+  // rows still resolve; .limit(2) + length !== 1 refuses the
+  // ambiguous case rather than serving the sleep-coach memory of
+  // a different patient who shares the email.
+  const escapedEmail = customer.email_lower.replace(
+    /[\\%_]/g,
+    (c: string) => `\\${c}`,
+  );
+  const { data: patients } = await supabase
     .schema("resupply")
     .from("patients")
     .select("id")
-    .eq("email", customer.email_lower)
-    .limit(1)
-    .maybeSingle();
-  if (!patient) {
+    .ilike("email", escapedEmail)
+    .limit(2);
+  if (!patients || patients.length !== 1) {
     res.status(404).json({ error: "no_linked_patient" });
     return;
   }
+  const patient = patients[0]!;
   const result = await askSleepCoach({
     patientId: patient.id,
     question: parsed.data.question,

@@ -38,6 +38,21 @@ const listQuery = z
     /** Filter to a specific assignee. Mutually exclusive with view=mine. */
     assignedTo: z.string().min(1).optional(),
     priority: z.enum(["low", "normal", "high", "urgent"]).optional(),
+    /**
+     * When true, include conversations whose `snoozed_until` is in
+     * the future. Default false — snoozed conversations are
+     * suppressed from default views so they don't clutter the
+     * queue. The "snooze" PATCH endpoint exists today but had no
+     * effect on the list before this filter shipped; setting
+     * snoozed_until now makes the conversation disappear from the
+     * default queue (it re-emerges automatically when the timestamp
+     * expires — no worker needed).
+     */
+    includeSnoozed: z
+      .enum(["0", "1", "false", "true"])
+      .transform((value) => value === "1" || value === "true")
+      .optional()
+      .default(false),
     limit: z.coerce.number().int().min(1).max(100).default(25),
     offset: z.coerce.number().int().min(0).default(0),
   })
@@ -64,6 +79,7 @@ router.get("/conversations", requireAdmin, async (req, res) => {
     view,
     assignedTo,
     priority,
+    includeSnoozed,
     limit,
     offset,
   } = parsed.data;
@@ -76,7 +92,7 @@ router.get("/conversations", requireAdmin, async (req, res) => {
     .schema("resupply")
     .from("conversations")
     .select(
-      "id, patient_id, customer_id, episode_id, channel, status, last_message_at, created_at, assigned_admin_user_id, assigned_at, priority, sla_due_at, escalated_at, escalation_reason",
+      "id, patient_id, customer_id, episode_id, channel, status, last_message_at, created_at, assigned_admin_user_id, assigned_at, priority, sla_due_at, escalated_at, escalation_reason, snoozed_until",
       { count: "exact" },
     )
     .order("escalated_at", { ascending: false, nullsFirst: false })
@@ -112,10 +128,21 @@ router.get("/conversations", requireAdmin, async (req, res) => {
     query = query.eq("assigned_admin_user_id", assignedTo);
   }
 
+  // Auto-expire snoozes by filtering at query time rather than
+  // running a worker. A conversation with snoozed_until set is
+  // included iff (a) the caller opted in via ?includeSnoozed=1,
+  // or (b) the timestamp has passed. Conversations with
+  // snoozed_until=NULL are always included. Mirrors the OR pattern
+  // csr-compliance-alerts uses for the same purpose.
+  if (!includeSnoozed) {
+    const nowIso = new Date().toISOString();
+    query = query.or(`snoozed_until.is.null,snoozed_until.lte.${nowIso}`);
+  }
+
   const { data: rows, count, error } = await query;
   if (error) throw error;
 
-  // Bulk-fetch the joined identity rows. The original Drizzle query
+  // Bulk-fetch the joined identity rows. The original SQL query
   // LEFT JOINed patients + shop_customers; PostgREST has no JOIN, so
   // we collect the IDs from this page's rows and fetch in one extra
   // round-trip per side.
@@ -182,6 +209,7 @@ router.get("/conversations", requireAdmin, async (req, res) => {
         slaDueAt: r.sla_due_at,
         escalatedAt: r.escalated_at,
         escalationReason: r.escalation_reason ?? null,
+        snoozedUntil: r.snoozed_until ?? null,
       };
     }),
     total: count ?? 0,

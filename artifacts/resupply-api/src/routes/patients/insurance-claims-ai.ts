@@ -661,7 +661,11 @@ async function cloneAsDraft(
           status: "pending" as const,
         })),
       );
-    const total = srcLines.reduce((s, l) => s + (l.billed_cents ?? 0), 0);
+    // billed_cents is per-unit → extended line charge is * quantity.
+    const total = srcLines.reduce(
+      (s, l) => s + (l.billed_cents ?? 0) * (l.quantity ?? 1),
+      0,
+    );
     await supabase
       .schema("resupply")
       .from("insurance_claims")

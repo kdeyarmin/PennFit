@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import { useLocation } from "wouter";
 import { keepPreviousData } from "@tanstack/react-query";
 import {
@@ -22,6 +22,7 @@ import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { Pagination } from "@/components/admin/Pagination";
 import { Label, Select } from "@/components/admin/Input";
 import { Button } from "@/components/admin/Button";
+import { useFilteredList } from "@/hooks/use-filtered-list";
 import { fullName, formatDateTime } from "@/lib/admin/format";
 
 const PAGE_SIZE = 25;
@@ -86,17 +87,19 @@ export function ConversationsPage() {
     [],
   );
 
-  const [statusFilter, setStatusFilter] = useState<string>(initialStatus ?? "");
-  const [channelFilter, setChannelFilter] = useState<string>(
-    initialChannel ?? "",
-  );
-  const [view, setView] = useState<InboxView>(initialView);
-  const [offset, setOffset] = useState<number>(0);
-
-  // Reset to first page on any filter change.
-  useEffect(() => {
-    setOffset(0);
-  }, [statusFilter, channelFilter, view]);
+  // Filter + offset state. useFilteredList owns the "reset offset to
+  // 0 on any filter change" invariant so we can't forget it in a
+  // future setter.
+  const { filters, setFilter, clearFilters, offset, setOffset, pageSize } =
+    useFilteredList(
+      {
+        status: initialStatus ?? "",
+        channel: initialChannel ?? "",
+        view: initialView as InboxView,
+      },
+      { pageSize: PAGE_SIZE },
+    );
+  const { status: statusFilter, channel: channelFilter, view } = filters;
 
   const params: ListConversationsParams = useMemo(
     () => ({
@@ -112,10 +115,10 @@ export function ConversationsPage() {
       ...(view
         ? ({ view } as unknown as Partial<ListConversationsParams>)
         : {}),
-      limit: PAGE_SIZE,
+      limit: pageSize,
       offset,
     }),
-    [statusFilter, channelFilter, view, offset],
+    [statusFilter, channelFilter, view, offset, pageSize],
   );
 
   const { data, isPending, isError, error, isFetching, refetch } =
@@ -249,7 +252,7 @@ export function ConversationsPage() {
                   type="button"
                   role="tab"
                   aria-selected={active}
-                  onClick={() => setView(v)}
+                  onClick={() => setFilter("view", v)}
                   className={`px-3 py-1.5 text-sm rounded-md font-medium transition-colors ${
                     active
                       ? "bg-white text-slate-900 shadow-sm"
@@ -270,7 +273,7 @@ export function ConversationsPage() {
                 value={statusFilter}
                 emptyOptionLabel="All statuses"
                 options={STATUS_OPTIONS}
-                onChange={(e) => setStatusFilter(e.target.value)}
+                onChange={(e) => setFilter("status", e.target.value)}
               />
             </div>
             <div>
@@ -280,19 +283,11 @@ export function ConversationsPage() {
                 value={channelFilter}
                 emptyOptionLabel="All channels"
                 options={CHANNEL_OPTIONS}
-                onChange={(e) => setChannelFilter(e.target.value)}
+                onChange={(e) => setFilter("channel", e.target.value)}
               />
             </div>
             <div className="flex items-end">
-              <Button
-                intent="ghost"
-                size="sm"
-                onClick={() => {
-                  setStatusFilter("");
-                  setChannelFilter("");
-                  setView("");
-                }}
-              >
+              <Button intent="ghost" size="sm" onClick={clearFilters}>
                 Clear filters
               </Button>
             </div>

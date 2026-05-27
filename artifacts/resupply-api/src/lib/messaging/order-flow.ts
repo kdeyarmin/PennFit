@@ -26,7 +26,7 @@
 //   accidentally typed NO can still ship.
 //
 // Concurrency posture:
-//   The original Drizzle path opened a transaction and locked the
+//   The original SQL path opened a transaction and locked the
 //   episode row with `SELECT … FOR UPDATE` so two concurrent confirms
 //   (e.g. patient clicks email AND replies YES via SMS within the
 //   same second) couldn't both insert fulfillment rows.
@@ -44,6 +44,7 @@
 
 import {
   getSupabaseServiceRoleClient,
+  type Json,
   type ResupplySupabaseClient,
 } from "@workspace/resupply-db";
 
@@ -256,13 +257,111 @@ async function ensureFulfillments(
  * and the email "stop reminders" link click.
  *
  * Idempotent: paused → paused is a no-op.
+ *
+ * Also mirrors the opt-out into any matching shop_customers row's
+ * communication_preferences JSON so the cart-abandonment dispatcher,
+ * back-in-stock notifier, and other shop-side dispatchers see the
+ * STOP. Twilio's per-number opt-out covers the same Messaging
+ * Service, but the per-customer prefs row is what shop-side code
+ * consults — without this mirror, a patient who STOPs via the
+ * resupply phone would still receive shop-side SMS if the storefront
+ * later uses a different Messaging Service.
  */
 export async function pausePatient(patientId: string): Promise<void> {
   const supabase = getSupabaseServiceRoleClient();
-  const { error } = await supabase
+  const nowIso = new Date().toISOString();
+  const { data: patient, error } = await supabase
     .schema("resupply")
     .from("patients")
-    .update({ status: "paused", updated_at: new Date().toISOString() })
-    .eq("id", patientId);
+    .update({ status: "paused", updated_at: nowIso })
+    .eq("id", patientId)
+    .select("id, email")
+    .maybeSingle();
   if (error) throw error;
+  if (!patient?.email) return;
+  // Look up the matching shop_customers row by lowercased email and
+  // flip both sms-mode flags off. Marketing emails stay on (the
+  // patient's STOP was about SMS, not email). Patients without a
+  // shop account have no row to update — no-op.
+  const emailLower = patient.email.toLowerCase();
+  const { data: cust } = await supabase
+    .schema("resupply")
+    .from("shop_customers")
+    .select("customer_id, communication_preferences")
+    .eq("email_lower", emailLower)
+    .limit(1)
+    .maybeSingle();
+  if (!cust) return;
+  const prefs = (cust.communication_preferences ?? {}) as Record<
+    string,
+    unknown
+  >;
+  const nextPrefs = {
+    ...prefs,
+    smsMarketing: false,
+    smsTransactional: false,
+  };
+  const { error: prefsUpdateErr } = await supabase
+    .schema("resupply")
+    .from("shop_customers")
+    .update({
+      communication_preferences: nextPrefs as unknown as Json,
+      updated_at: nowIso,
+    })
+    .eq("customer_id", cust.customer_id);
+  if (prefsUpdateErr) throw prefsUpdateErr;
+}
+
+/**
+ * Re-activate a patient who previously texted STOP (CTIA START / UNSTOP
+ * opt-in). The exact inverse of `pausePatient`: flips a `paused` patient
+ * back to `active` and re-enables the shop_customers SMS flags.
+ *
+ * The status update is guarded to `paused` rows only so a START reply
+ * can never resurrect an `archived` (or otherwise non-paused) patient —
+ * it only undoes a STOP-induced pause. A no-op (already active, or never
+ * paused) returns cleanly so the caller can still send the canonical
+ * opt-in confirmation reply.
+ */
+export async function reactivatePatient(patientId: string): Promise<void> {
+  const supabase = getSupabaseServiceRoleClient();
+  const nowIso = new Date().toISOString();
+  const { data: patient, error } = await supabase
+    .schema("resupply")
+    .from("patients")
+    .update({ status: "active", updated_at: nowIso })
+    .eq("id", patientId)
+    .eq("status", "paused")
+    .select("id, email")
+    .maybeSingle();
+  if (error) throw error;
+  if (!patient?.email) return;
+  const emailLower = patient.email.toLowerCase();
+  const { data: cust, error: custErr } = await supabase
+    .schema("resupply")
+    .from("shop_customers")
+    .select("customer_id, communication_preferences")
+    .eq("email_lower", emailLower)
+    .limit(1)
+    .maybeSingle();
+  if (custErr) throw custErr;
+  if (!cust) return;
+  const prefs = (cust.communication_preferences ?? {}) as Record<
+    string,
+    unknown
+  >;
+  const nextPrefs = {
+    ...prefs,
+    smsMarketing: true,
+    smsTransactional: true,
+  };
+  const { error: prefsUpdateErr } = await supabase
+    .schema("resupply")
+    .from("shop_customers")
+    .update({
+      communication_preferences: nextPrefs as unknown as Json,
+      updated_at: nowIso,
+    })
+    .eq("customer_id", cust.customer_id);
+  if (prefsUpdateErr) throw prefsUpdateErr;
 }

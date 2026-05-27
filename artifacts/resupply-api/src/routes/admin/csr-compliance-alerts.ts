@@ -72,6 +72,11 @@ const SEVERITY_ORDER: Record<string, number> = {
   info: 3,
 };
 
+// Over-fetch pool for the JS severity re-sort. Equals the q.limit max
+// bound (z.max(200)) so a critical alert anywhere in the newest 200 rows
+// can sort to the top before we slice to q.limit.
+const SEVERITY_SORT_POOL = 200;
+
 router.get(
   "/admin/csr-compliance-alerts",
   requirePermission("compliance.read"),
@@ -96,19 +101,36 @@ router.get(
         : [q.status]
       : ["open"];
 
+    // When the caller asks for the default "open" view (status filter
+    // omitted), include snoozed-but-expired rows too — the snooze
+    // window has elapsed and the alert should be back on the worklist.
+    // An explicit `?status=snoozed` view bypasses this revive so the
+    // CSR can still inspect the actively-snoozed queue.
+    const reviveSnoozedExpired = !q.status;
+    const nowIso = new Date().toISOString();
+
     let alertsQuery = supabase
       .schema("resupply")
       .from("csr_compliance_alerts")
       .select(
         "id, patient_id, journey_id, alert_type, severity, summary, metric_snapshot, status, snoozed_until, resolved_at, resolved_by_email, resolution_note, created_at",
       )
-      .in("status", statuses)
       // The original SQL ordered by `CASE severity WHEN 'critical' THEN 1
       // WHEN 'warning' THEN 2 ELSE 3 END, created_at DESC`. PostgREST
-      // doesn't support CASE in ORDER BY, so we fetch a slightly larger
-      // page (limit is bounded at 200) and re-sort JS-side.
+      // doesn't support CASE in ORDER BY, so we over-fetch the newest
+      // rows up to the max page bound (200), re-sort by severity JS-side,
+      // then slice to q.limit below. Fetching exactly q.limit here would
+      // let a `critical` alert just past the newest q.limit rows never
+      // surface despite the severity sort.
       .order("created_at", { ascending: false })
-      .limit(q.limit);
+      .limit(SEVERITY_SORT_POOL);
+    if (reviveSnoozedExpired) {
+      alertsQuery = alertsQuery.or(
+        `status.eq.open,and(status.eq.snoozed,snoozed_until.lte.${nowIso})`,
+      );
+    } else {
+      alertsQuery = alertsQuery.in("status", statuses);
+    }
     if (q.severity) alertsQuery = alertsQuery.eq("severity", q.severity);
     if (q.alertType) alertsQuery = alertsQuery.eq("alert_type", q.alertType);
     if (q.sinceDays) {
@@ -153,7 +175,9 @@ router.get(
       });
 
     res.json({
-      alerts: merged.map((r) => ({
+      // Slice to the requested page AFTER the severity sort, so the
+      // highest-severity alerts in the over-fetched pool win the page.
+      alerts: merged.slice(0, q.limit).map((r) => ({
         id: r.id,
         patientId: r.patient_id,
         patientFirstName: firstNameByPatient.get(r.patient_id) ?? null,

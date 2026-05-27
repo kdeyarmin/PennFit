@@ -35,6 +35,7 @@ import { logAudit } from "@workspace/resupply-audit";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { logger } from "../lib/logger";
+import { RATE_LIMITS } from "../lib/rate-limits-config";
 
 const router: IRouter = Router();
 
@@ -48,8 +49,8 @@ const rawJson = express.raw({ type: "application/json", limit: "1mb" });
 // audit-log writes for invalid signatures. 300/min/IP is well above
 // vendor push volume.
 const webhookRateLimiter = expressRateLimit({
-  windowMs: 60 * 1000,
-  limit: 300,
+  windowMs: RATE_LIMITS.integrations_inbound_webhooks.windowMs,
+  limit: RATE_LIMITS.integrations_inbound_webhooks.limit,
   standardHeaders: "draft-7",
   legacyHeaders: false,
   keyGenerator: (req: Request) => ipKeyGenerator(req.ip ?? "0.0.0.0"),
@@ -89,13 +90,24 @@ function verifySignature(
   rawBody: Buffer,
   provided: string,
 ): boolean {
+  // Strip an optional `sha256=` prefix (Stripe/GitHub style) so a
+  // partner that ships the prefixed header form doesn't 401 for a
+  // structural reason that's invisible to operators.
+  const stripped = provided.startsWith("sha256=")
+    ? provided.slice("sha256=".length)
+    : provided;
   const expected = createHmac("sha256", secret).update(rawBody).digest("hex");
-  if (expected.length !== provided.length) return false;
+  // Pad both to a fixed length before timingSafeEqual so the length
+  // mismatch fast-path doesn't leak the expected hex length via
+  // response timing, AND so timingSafeEqual doesn't itself throw on
+  // unequal-length buffers. 64 hex chars = sha256 length.
+  const pad = 64;
+  const a = Buffer.alloc(pad);
+  const b = Buffer.alloc(pad);
+  a.write(expected, "utf8");
+  b.write(stripped, "utf8");
   try {
-    return timingSafeEqual(
-      Buffer.from(expected, "utf8"),
-      Buffer.from(provided, "utf8"),
-    );
+    return timingSafeEqual(a, b) && expected.length === stripped.length;
   } catch {
     return false;
   }

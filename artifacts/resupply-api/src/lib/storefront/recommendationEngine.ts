@@ -114,6 +114,12 @@ export interface RecommendationResult {
  * Magnitude is intentionally modest: a ~15% bump is enough to promote
  * a competitive React mask past a non-React peer with a similar score,
  * but small enough that it cannot rescue a clearly worse-fitting mask.
+ *
+ * The boost feeds the RANKING score only. It is deliberately excluded
+ * from the patient-facing `confidence`, which reflects clinical fit
+ * (type + measurements + contraindication/pressure penalties) alone — a
+ * commercial stocking preference must not inflate the number a patient
+ * reads as "how well this mask suits me".
  */
 const MANUFACTURER_BOOST: Record<string, number> = {
   "React Health": 1.15,
@@ -274,6 +280,17 @@ function scoreFitMatch(
   const { fitRanges } = mask;
 
   function dimensionScore(value: number, min: number, max: number): number {
+    // Defence-in-depth: if any input is NaN / Infinity, return 0 so
+    // NaN doesn't propagate into rawScore. NaN comparisons make the
+    // final scoredMasks.sort() non-deterministic — same payload,
+    // different ranks per call — so fail-closed here.
+    if (
+      !Number.isFinite(value) ||
+      !Number.isFinite(min) ||
+      !Number.isFinite(max)
+    ) {
+      return 0;
+    }
     if (value >= min && value <= max) return 1.0;
     const range = max - min;
     if (range <= 0) return value === min ? 1.0 : 0;
@@ -791,16 +808,18 @@ export function recommend(
       pressureNote = `Note: ${mask.name} is rated up to ${mask.pressureRangeMax} cmH₂O; high-pressure patients (15+) typically need a mask rated to at least 20 cmH₂O.`;
     }
 
-    // Combined score: 60% type preference (questionnaire-driven), 40% physical fit
-    // Manufacturer boost is applied LAST (after contra/pressure penalties) so a
-    // contraindicated preferred-line mask still loses to a viable non-preferred
-    // mask. See MANUFACTURER_BOOST docstring.
+    // Clinical score: 60% type preference (questionnaire-driven), 40%
+    // physical fit, times the contraindication and pressure penalties.
+    // This is the patient-facing `confidence` — the manufacturer boost is
+    // deliberately NOT folded in here (see MANUFACTURER_BOOST docstring).
+    const clinicalScore =
+      (typeScore * 0.6 + fitScore * 0.4) * contraMultiplier * pressureMultiplier;
+    // Ranking score applies the manufacturer boost LAST (after the
+    // contra/pressure penalties) so a viable preferred-line mask out-ranks
+    // an otherwise-equivalent peer, while a contraindicated preferred mask
+    // still loses to a viable non-preferred one.
     const brandMultiplier = MANUFACTURER_BOOST[mask.manufacturer] ?? 1.0;
-    const rawScore =
-      (typeScore * 0.6 + fitScore * 0.4) *
-      contraMultiplier *
-      pressureMultiplier *
-      brandMultiplier;
+    const sortScore = clinicalScore * brandMultiplier;
 
     const reasoning = generateReasoning(
       mask,
@@ -818,7 +837,7 @@ export function recommend(
       modelNumber: mask.modelNumber,
       manufacturer: mask.manufacturer,
       type: mask.type,
-      confidence: Math.min(1, Math.max(0, rawScore)),
+      confidence: Math.min(1, Math.max(0, clinicalScore)),
       summary,
       reasoning,
       features: mask.features,
@@ -830,15 +849,17 @@ export function recommend(
 
     return {
       recommendation,
-      sortScore: rawScore,
+      sortScore,
       hasContraindications:
         activeContras.length > 0 || pressureMultiplier < 1.0,
       maskType: mask.type,
     };
   });
 
-  // Sort by unclamped raw score so boosted masks can still outrank
-  // otherwise-equivalent peers even when display confidence is capped at 1.0.
+  // Sort by the unclamped ranking score so boosted masks can still
+  // outrank otherwise-equivalent peers even when display confidence is
+  // capped at 1.0. Confidence (clinical only) and ranking (clinical ×
+  // brand boost) are intentionally separate signals.
   scoredMasks.sort((a, b) => b.sortScore - a.sortScore);
 
   // Top 3 non-contraindicated recommendations

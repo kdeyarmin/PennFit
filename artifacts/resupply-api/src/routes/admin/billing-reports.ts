@@ -137,38 +137,49 @@ router.get("/admin/billing/dso-by-payer", requireAdmin, async (_req, res) => {
 router.get("/admin/billing/denial-rate", requireAdmin, async (_req, res) => {
   const supabase = getSupabaseServiceRoleClient();
   const cutoff = new Date(Date.now() - 90 * 24 * 3600 * 1000).toISOString();
-  // We count claims whose decision_at landed in the window AND whose
-  // status hit any of {denied, paid, closed}. Pure "submitted" rows
-  // are skipped from the denominator.
+  // Per-payer decision/denial counts are aggregated server-side by the
+  // resupply.billing_denial_rate RPC (migration 0164) — Postgres does
+  // the GROUP BY + FILTER over the indexed insurance_claims rows and
+  // returns one row per payer instead of streaming up to 10k claim
+  // rows into Node for a JS reduce. A row counts as a denial when
+  // status IN ('denied','appealed'); the RPC's WHERE clause already
+  // restricts to decisioned statuses within the window.
   const { data, error } = await supabase
     .schema("resupply")
-    .from("insurance_claims")
-    .select("payer_name, status, decision_at")
-    .gte("decision_at", cutoff)
-    .in("status", ["denied", "paid", "closed", "appealed"])
-    .limit(10000);
+    .rpc("billing_denial_rate", { p_cutoff: cutoff });
   if (error) throw error;
-  const totals = { decisions: 0, denials: 0 };
-  const perPayer = new Map<string, { decisions: number; denials: number }>();
-  for (const row of data ?? []) {
-    totals.decisions++;
-    const isDenial = row.status === "denied" || row.status === "appealed";
-    if (isDenial) totals.denials++;
-    const payer = row.payer_name || "unknown";
-    const cur = perPayer.get(payer) ?? { decisions: 0, denials: 0 };
-    cur.decisions++;
-    if (isDenial) cur.denials++;
-    perPayer.set(payer, cur);
-  }
+
+  // PostgREST returns bigint columns as strings; coerce defensively.
+  // The rpc() data generic doesn't always resolve to the Functions
+  // return type through the schema-scoped client, so type the rows
+  // explicitly here.
+  type DenialRateRow = {
+    payer_name: string;
+    decisions: number | string;
+    denials: number | string;
+  };
+  const perPayerRows = ((data ?? []) as DenialRateRow[]).map((r) => ({
+    payerName: r.payer_name,
+    decisions: Number(r.decisions),
+    denials: Number(r.denials),
+  }));
+  const totals = perPayerRows.reduce(
+    (acc, r) => {
+      acc.decisions += r.decisions;
+      acc.denials += r.denials;
+      return acc;
+    },
+    { decisions: 0, denials: 0 },
+  );
   res.json({
     overall: {
       decisions: totals.decisions,
       denials: totals.denials,
       denialRate: totals.decisions > 0 ? totals.denials / totals.decisions : null,
     },
-    perPayer: [...perPayer.entries()]
-      .map(([payerName, agg]) => ({
-        payerName,
+    perPayer: perPayerRows
+      .map((agg) => ({
+        payerName: agg.payerName,
         decisions: agg.decisions,
         denials: agg.denials,
         denialRate: agg.decisions > 0 ? agg.denials / agg.decisions : null,

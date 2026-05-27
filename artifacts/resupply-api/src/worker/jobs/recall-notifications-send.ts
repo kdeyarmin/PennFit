@@ -39,6 +39,7 @@ import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 import { createTwilioSmsClient } from "@workspace/resupply-telecom";
 
 import { logger } from "../../lib/logger";
+import { buildQueueConfig, VENDOR_SEND_QUEUE_OPTS } from "../lib/queue-options";
 
 const SEND_JOB = "recall-notifications.send";
 const SEND_CRON = "23 4 * * *";
@@ -350,7 +351,7 @@ export async function runRecallSendSweep(
 export async function registerRecallNotificationSendJob(
   boss: PgBoss,
 ): Promise<void> {
-  await boss.createQueue(SEND_JOB);
+  await boss.createQueue(SEND_JOB, buildQueueConfig(SEND_JOB, VENDOR_SEND_QUEUE_OPTS));
 
   await boss.work(SEND_JOB, async () => {
     try {

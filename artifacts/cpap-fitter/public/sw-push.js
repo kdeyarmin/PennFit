@@ -49,11 +49,28 @@ self.addEventListener("push", (event) => {
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const targetUrl =
+  // Defense-in-depth same-origin guard. The push payload is minted by
+  // our own backend behind signed VAPID, so in normal operation
+  // data.url is always a same-origin path like "/account/orders/123".
+  // If the VAPID private key ever leaked an attacker could craft a
+  // payload that pointed at an external URL — clicking the notification
+  // would open the attacker's site through clients.openWindow(), which
+  // is good phishing material. We parse the URL against the SW's own
+  // origin and only navigate when the resulting origin matches;
+  // anything else (cross-origin, malformed) falls back to /account.
+  const rawTarget =
     (event.notification.data && event.notification.data.url) || "/account";
+  let targetUrl = "/account";
+  try {
+    const parsed = new URL(rawTarget, self.location.origin);
+    if (parsed.origin === self.location.origin) {
+      targetUrl = `${parsed.pathname}${parsed.search}${parsed.hash}`;
+    }
+  } catch (_err) {
+    targetUrl = "/account";
+  }
   event.waitUntil(
-    self.clients
-      .matchAll({ type: "window", includeUncontrolled: true })
+    self.clients.matchAll({ type: "window", includeUncontrolled: true })
       .then((clientList) => {
         // Re-focus an existing PennPaps tab if one is open; otherwise
         // open a new one. This matches the standard W3C example and

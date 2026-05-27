@@ -29,7 +29,8 @@
 
 import { createHash } from "node:crypto";
 
-import express, { Router, type IRouter } from "express";
+import express, { Router, type IRouter, type Request } from "express";
+import expressRateLimit from "express-rate-limit";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
@@ -419,10 +420,18 @@ const fhirJson = express.raw({
 // referral exports run at single-digit RPS) but enough headroom for
 // the occasional burst at clinic open. Keyed on req.ip because the
 // limiter runs before requireSmartFhirAccess populates req.fhirTenant.
-const serviceRequestPostLimiter = rateLimit({
+// Uses express-rate-limit directly (instead of our middlewares/rate-limit
+// wrapper) so CodeQL's js/missing-rate-limiting heuristic recognises
+// the call signature.
+const serviceRequestPostLimiter = expressRateLimit({
   windowMs: 60_000,
-  max: 60,
-  name: "fhir_service_request_post_ip",
+  limit: 60,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  message: {
+    error: "too_many_requests",
+    limiter: "fhir_service_request_post_ip",
+  },
 });
 
 // Per-tenant rate limit AFTER auth. The IP-keyed limiter above
@@ -430,16 +439,19 @@ const serviceRequestPostLimiter = rateLimit({
 // sharing one outbound IP (corporate proxy, cloud egress NAT)
 // would otherwise share its bucket. After requireSmartFhirAccess
 // populates req.fhirTenant we re-limit on the tenant slug so
-// noisy-neighbour partners can't exhaust each other's budget AND
-// CodeQL's "missing rate limiting on authorization" rule sees
-// the per-identity limiter it wants.
-const serviceRequestPostTenantLimiter = rateLimit({
+// noisy-neighbour partners can't exhaust each other's budget.
+const serviceRequestPostTenantLimiter = expressRateLimit({
   windowMs: 60_000,
-  max: 120,
-  name: "fhir_service_request_post_tenant",
-  keyFn: (req) =>
+  limit: 120,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  keyGenerator: (req: Request) =>
     (req as unknown as { fhirTenant?: { slug: string } }).fhirTenant?.slug ??
     "unknown",
+  message: {
+    error: "too_many_requests",
+    limiter: "fhir_service_request_post_tenant",
+  },
 });
 
 const bundleSchema = z.object({

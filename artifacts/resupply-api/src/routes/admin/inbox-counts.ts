@@ -70,7 +70,11 @@ router.get("/admin/inbox-counts", requireAdmin, async (_req, res) => {
       .schema("resupply")
       .from("shop_returns")
       .select("*", { count: "exact", head: true })
-      .in("status", ["requested", "approved", "shipped_back", "received"]),
+      // Admin-blocking states only (see module doc): `requested` (await
+      // approve/reject), `shipped_back` (await receive), `received`
+      // (await refund/replace). `approved` is waiting on the CUSTOMER to
+      // ship the item back, so it must not inflate the CSR badge.
+      .in("status", ["requested", "shipped_back", "received"]),
     supabase
       .schema("resupply")
       .from("shop_reviews")

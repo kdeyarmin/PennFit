@@ -94,10 +94,25 @@ function readStorage(): { items: CartItem[]; droppedCount: number } {
         typeof it.quantity === "number" &&
         it.quantity > 0,
     );
-    const droppedCount = parsed.length - valid.length;
+    // Currency uniqueness: addItem enforces a single currency per cart
+    // (totalCents sums unitAmountCents regardless of currency, so a
+    // mixed-currency cart silently mis-totals at checkout). Apply the
+    // same invariant on READ so a corrupted localStorage row, a manual
+    // edit, or a cross-tab race can't reintroduce a mismatch. Keep the
+    // first-seen currency; drop everything else.
+    let firstCurrency: string | null = null;
+    const currencyFiltered = valid.filter((it) => {
+      const c = typeof it.currency === "string" ? it.currency : "usd";
+      if (firstCurrency === null) {
+        firstCurrency = c;
+        return true;
+      }
+      return c === firstCurrency;
+    });
+    const droppedCount = parsed.length - currencyFiltered.length;
     return {
       droppedCount,
-      items: valid.map(
+      items: currencyFiltered.map(
         (it): CartItem => ({
           productId: it.productId,
           priceId: it.priceId,
@@ -155,7 +170,9 @@ export function useCart(): {
   addItem: (
     item: Omit<CartItem, "quantity">,
     quantity?: number,
-  ) => { ok: true } | { ok: false; reason: "out_of_stock" };
+  ) =>
+    | { ok: true }
+    | { ok: false; reason: "out_of_stock" | "currency_mismatch" };
   setQuantity: (priceId: string, quantity: number) => void;
   setItemMode: (priceId: string, mode: "one_time" | "subscription") => void;
   removeItem: (priceId: string) => void;
@@ -174,13 +191,19 @@ export function useCart(): {
   });
 
   // Notify the user if any items were silently filtered on load.
+  // Reset the ref to 0 after firing so React 18 StrictMode's
+  // double-mount doesn't replay the toast twice on every dev page
+  // load — same behavior in production where the mount fires once,
+  // but quieter in dev.
   useEffect(() => {
     if (initialDroppedRef.current > 0) {
+      const count = initialDroppedRef.current;
+      initialDroppedRef.current = 0;
       toast({
         title: "Some cart items were removed",
-        description: "Some cart items were removed because they're no longer available.",
+        description: "Some cart items were removed because they couldn't be added to your cart.",
       });
-      track("cart_items_dropped", { count: initialDroppedRef.current });
+      track("cart_items_dropped", { count });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -194,7 +217,8 @@ export function useCart(): {
         if (droppedCount > 0) {
           toast({
             title: "Some cart items were removed",
-            description: "Some cart items were removed because they're no longer available.",
+            description:
+              "Some cart items were removed because they couldn't be added to your cart.",
           });
           track("cart_items_dropped", { count: droppedCount });
         }
@@ -223,7 +247,22 @@ export function useCart(): {
       ) {
         return { ok: false as const, reason: "out_of_stock" as const };
       }
+      // Refuse to mix currencies inside one cart. totalCents sums
+      // unitAmountCents across all items regardless of currency, so a
+      // single non-USD price slipping into the catalog would silently
+      // produce a wrong checkout total. v1 is USD-only by policy;
+      // surface a typed reason instead of silently letting the bug
+      // through if a future price lands on a different currency.
+      // Mismatch check uses the freshest items via the setter below.
+      let currencyMismatch = false;
       setItems((current) => {
+        // Currency check uses the freshest `current` from React
+        // rather than a closure-captured snapshot. Refuse to add an
+        // item whose currency differs from any existing item.
+        if (current.some((i) => i.currency !== item.currency)) {
+          currencyMismatch = true;
+          return current;
+        }
         const idx = current.findIndex((i) => i.priceId === item.priceId);
         let next: CartItem[];
         if (idx === -1) {
@@ -238,6 +277,9 @@ export function useCart(): {
         writeStorage(next);
         return next;
       });
+      if (currencyMismatch) {
+        return { ok: false as const, reason: "currency_mismatch" as const };
+      }
       return { ok: true as const };
     },
     [],

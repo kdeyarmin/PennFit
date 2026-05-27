@@ -5,6 +5,11 @@ import {
   DEFAULT_ANTHROPIC_MODEL_CHAT,
   getResponseText,
   getResponseToolCalls,
+  isRetryableAnthropicError,
+  sendWithRetry,
+  type AnthropicCallResult,
+  type AnthropicClient,
+  type AnthropicRequest,
   type AnthropicResponse,
 } from "./anthropic-client";
 
@@ -98,6 +103,43 @@ describe("createAnthropicClient", () => {
         expect(result.httpStatus).toBe(429);
         expect(result.errorMessage).toContain("429");
       }
+    });
+
+    it("surfaces cache_read_input_tokens as cacheHitTokens", async () => {
+      const cachedResponse: AnthropicResponse = {
+        ...SAMPLE_RESPONSE,
+        usage: {
+          input_tokens: 12,
+          output_tokens: 8,
+          cache_read_input_tokens: 1234,
+          cache_creation_input_tokens: 0,
+        },
+      };
+      const client = createAnthropicClient({
+        apiKey: VALID_KEY,
+        fetchImpl: async () => jsonResponse(cachedResponse),
+      });
+      const result = await client.send({
+        model: DEFAULT_ANTHROPIC_MODEL_CHAT,
+        max_tokens: 100,
+        messages: [{ role: "user", content: "hi" }],
+      });
+      expect(result.ok).toBe(true);
+      if (result.ok) expect(result.cacheHitTokens).toBe(1234);
+    });
+
+    it("defaults cacheHitTokens to 0 when usage omits the field", async () => {
+      const client = createAnthropicClient({
+        apiKey: VALID_KEY,
+        fetchImpl: async () => jsonResponse(SAMPLE_RESPONSE),
+      });
+      const result = await client.send({
+        model: DEFAULT_ANTHROPIC_MODEL_CHAT,
+        max_tokens: 100,
+        messages: [{ role: "user", content: "hi" }],
+      });
+      expect(result.ok).toBe(true);
+      if (result.ok) expect(result.cacheHitTokens).toBe(0);
     });
 
     it("returns transport error on fetch rejection", async () => {
@@ -290,5 +332,277 @@ describe("getResponseText", () => {
       usage: { input_tokens: 1, output_tokens: 1 },
     });
     expect(text).toBe("");
+  });
+});
+
+describe("isRetryableAnthropicError", () => {
+  it("flags timeout as retryable", () => {
+    expect(
+      isRetryableAnthropicError({
+        ok: false,
+        errorCode: "timeout",
+        errorMessage: "aborted",
+        latencyMs: 30_000,
+      }),
+    ).toBe(true);
+  });
+
+  it("flags transport errors as retryable", () => {
+    expect(
+      isRetryableAnthropicError({
+        ok: false,
+        errorCode: "transport",
+        errorMessage: "ECONNRESET",
+        latencyMs: 12,
+      }),
+    ).toBe(true);
+  });
+
+  it("flags 429 rate-limit as retryable", () => {
+    expect(
+      isRetryableAnthropicError({
+        ok: false,
+        errorCode: "http",
+        errorMessage: "rate limited",
+        httpStatus: 429,
+        latencyMs: 80,
+      }),
+    ).toBe(true);
+  });
+
+  it("flags 5xx as retryable", () => {
+    for (const status of [500, 502, 503, 529]) {
+      expect(
+        isRetryableAnthropicError({
+          ok: false,
+          errorCode: "http",
+          errorMessage: `server ${status}`,
+          httpStatus: status,
+          latencyMs: 40,
+        }),
+      ).toBe(true);
+    }
+  });
+
+  it("does NOT flag 4xx (other than 429) as retryable", () => {
+    for (const status of [400, 401, 403, 404, 422]) {
+      expect(
+        isRetryableAnthropicError({
+          ok: false,
+          errorCode: "http",
+          errorMessage: `client ${status}`,
+          httpStatus: status,
+          latencyMs: 40,
+        }),
+      ).toBe(false);
+    }
+  });
+
+  it("does NOT flag empty/parse/config as retryable", () => {
+    for (const code of ["empty", "parse", "config"] as const) {
+      expect(
+        isRetryableAnthropicError({
+          ok: false,
+          errorCode: code,
+          errorMessage: "x",
+          latencyMs: 5,
+        }),
+      ).toBe(false);
+    }
+  });
+});
+
+describe("sendWithRetry", () => {
+  const baseReq: AnthropicRequest = {
+    model: DEFAULT_ANTHROPIC_MODEL_CHAT,
+    max_tokens: 50,
+    messages: [{ role: "user", content: "hi" }],
+  };
+  const noSleep = async (_ms: number): Promise<void> => undefined;
+
+  function clientOf(
+    results: AnthropicCallResult[],
+    onSend?: (req: AnthropicRequest, attempt: number) => void,
+  ): AnthropicClient {
+    let i = 0;
+    return {
+      async send(req: AnthropicRequest): Promise<AnthropicCallResult> {
+        if (onSend) onSend(req, i);
+        const r = results[Math.min(i, results.length - 1)]!;
+        i += 1;
+        return r;
+      },
+      async stream(): Promise<AnthropicCallResult> {
+        throw new Error("not used");
+      },
+    };
+  }
+
+  it("returns first success without retrying", async () => {
+    let calls = 0;
+    const client = clientOf(
+      [
+        {
+          ok: true,
+          response: SAMPLE_RESPONSE,
+          latencyMs: 10,
+          cacheHitTokens: 0,
+        },
+      ],
+      () => calls++,
+    );
+    const result = await sendWithRetry(client, baseReq, { sleep: noSleep });
+    expect(result.ok).toBe(true);
+    expect(calls).toBe(1);
+  });
+
+  it("retries once on 429 and returns the eventual success", async () => {
+    let calls = 0;
+    const client = clientOf(
+      [
+        {
+          ok: false,
+          errorCode: "http",
+          errorMessage: "rate limit",
+          httpStatus: 429,
+          latencyMs: 10,
+        },
+        {
+          ok: true,
+          response: SAMPLE_RESPONSE,
+          latencyMs: 12,
+          cacheHitTokens: 0,
+        },
+      ],
+      () => calls++,
+    );
+    const result = await sendWithRetry(client, baseReq, { sleep: noSleep });
+    expect(result.ok).toBe(true);
+    expect(calls).toBe(2);
+  });
+
+  it("retries once on timeout and surfaces the final failure if it persists", async () => {
+    let calls = 0;
+    const client = clientOf(
+      [
+        {
+          ok: false,
+          errorCode: "timeout",
+          errorMessage: "aborted",
+          latencyMs: 30_000,
+        },
+        {
+          ok: false,
+          errorCode: "timeout",
+          errorMessage: "aborted",
+          latencyMs: 30_000,
+        },
+      ],
+      () => calls++,
+    );
+    const result = await sendWithRetry(client, baseReq, { sleep: noSleep });
+    expect(result.ok).toBe(false);
+    expect(calls).toBe(2);
+  });
+
+  it("does NOT retry on 400 (non-retryable)", async () => {
+    let calls = 0;
+    const client = clientOf(
+      [
+        {
+          ok: false,
+          errorCode: "http",
+          errorMessage: "bad request",
+          httpStatus: 400,
+          latencyMs: 5,
+        },
+      ],
+      () => calls++,
+    );
+    const result = await sendWithRetry(client, baseReq, { sleep: noSleep });
+    expect(result.ok).toBe(false);
+    expect(calls).toBe(1);
+  });
+
+  it("respects maxRetries=0 (no retries)", async () => {
+    let calls = 0;
+    const client = clientOf(
+      [
+        {
+          ok: false,
+          errorCode: "timeout",
+          errorMessage: "aborted",
+          latencyMs: 30_000,
+        },
+        {
+          ok: true,
+          response: SAMPLE_RESPONSE,
+          latencyMs: 12,
+          cacheHitTokens: 0,
+        },
+      ],
+      () => calls++,
+    );
+    const result = await sendWithRetry(client, baseReq, {
+      sleep: noSleep,
+      maxRetries: 0,
+    });
+    expect(result.ok).toBe(false);
+    expect(calls).toBe(1);
+  });
+
+  it("does NOT retry on empty/parse responses", async () => {
+    let calls = 0;
+    const client = clientOf(
+      [
+        {
+          ok: false,
+          errorCode: "empty",
+          errorMessage: "no content",
+          latencyMs: 12,
+        },
+      ],
+      () => calls++,
+    );
+    const result = await sendWithRetry(client, baseReq, { sleep: noSleep });
+    expect(result.ok).toBe(false);
+    expect(calls).toBe(1);
+  });
+
+  it("uses the sleep hook between attempts with backoff", async () => {
+    const sleeps: number[] = [];
+    const client = clientOf([
+      {
+        ok: false,
+        errorCode: "transport",
+        errorMessage: "blip",
+        latencyMs: 5,
+      },
+      {
+        ok: false,
+        errorCode: "transport",
+        errorMessage: "blip",
+        latencyMs: 5,
+      },
+      {
+        ok: true,
+        response: SAMPLE_RESPONSE,
+        latencyMs: 12,
+        cacheHitTokens: 0,
+      },
+    ]);
+    await sendWithRetry(client, baseReq, {
+      sleep: async (ms) => {
+        sleeps.push(ms);
+      },
+      maxRetries: 2,
+      baseDelayMs: 100,
+    });
+    expect(sleeps.length).toBe(2);
+    // 100 * 2^0 = 100 (+0..49 jitter); 100 * 2^1 = 200 (+0..49 jitter).
+    expect(sleeps[0]).toBeGreaterThanOrEqual(100);
+    expect(sleeps[0]).toBeLessThan(150);
+    expect(sleeps[1]).toBeGreaterThanOrEqual(200);
+    expect(sleeps[1]).toBeLessThan(250);
   });
 });

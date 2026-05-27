@@ -77,6 +77,10 @@ export function parse271(input: string): Parsed271 {
   let deductibleRemainingRaw: number | null = null;
   let oopTotalRaw: number | null = null;
   let oopRemainingRaw: number | null = null;
+  // Resolve coverage status after the full scan (see below) so segment
+  // order can't let a later EB01=I (non-covered service type) or EB01=6
+  // line clobber a plan-level EB01=1 (active) — real 271s carry both.
+  let sawActiveCoverage = false;
   for (const seg of segments) {
     if (seg.id === "TRN") {
       // The 271's TRN echoes TRN02 from the 270 — that's our key.
@@ -87,8 +91,11 @@ export function parse271(input: string): Parsed271 {
       const timeQual = (seg.elements[5] ?? "").trim();
       const amt = (seg.elements[6] ?? "").trim();
       const pct = (seg.elements[7] ?? "").trim();
-      if (code === "1") out.isActive = true;
-      if (code === "I") out.isActive = false;
+      // EB01=1 = active coverage. EB01=6 = inactive and EB01=I =
+      // non-covered service type both leave the conservative
+      // not-active default; a non-covered *service* must never flip
+      // plan-level eligibility.
+      if (code === "1") sawActiveCoverage = true;
       if (code === "C" && amt) {
         const cents = safeMoney(amt);
         // remaining = "29" or "Y"; total = "23" or "30".
@@ -142,6 +149,10 @@ export function parse271(input: string): Parsed271 {
   // Second pass: compute met = total - remaining where both are
   // known; otherwise expose whichever raw values we got. Order-
   // independent.
+  // Plan-level active coverage (any EB01=1) wins; an EB01=6 / EB01=I or
+  // a status-segment-less response stays at the conservative
+  // not-active default.
+  out.isActive = sawActiveCoverage;
   out.deductibleCents = deductibleTotalRaw;
   out.deductibleRemainingCents = deductibleRemainingRaw;
   if (deductibleTotalRaw !== null && deductibleRemainingRaw !== null) {

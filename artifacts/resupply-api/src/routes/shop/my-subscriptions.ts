@@ -72,6 +72,7 @@ interface OwnedSubscription {
   items: SubscriptionItemSnapshot[];
 }
 
+import { safeAudit } from "../../lib/messaging/safe-audit";
 import {
   getStripeClient,
   readStripeConfigOrNull,
@@ -223,6 +224,20 @@ router.post(
       .update({ cancel_at_period_end: true })
       .eq("id", sub.id);
     if (flipErr) throw flipErr;
+
+    await safeAudit({
+      action: "shop.subscription.cancelled",
+      adminEmail: `customer:${req.shopCustomerEmail ?? req.userCustomerId ?? "unknown"}`,
+      adminUserId: null,
+      targetTable: "shop_subscriptions",
+      targetId: sub.id,
+      metadata: {
+        stripe_subscription_id: sub.stripeSubscriptionId,
+        cancel_at_period_end: true,
+      },
+      ip: req.ip ?? null,
+      userAgent: req.get("user-agent") ?? null,
+    });
 
     res.json({ ok: true });
   },
@@ -419,6 +434,19 @@ async function handlePauseOrResume(
   // The webhook (customer.subscription.updated) will fire and the
   // /account page will see fresh state on next refresh. The button
   // UI flips optimistically client-side.
+  await safeAudit({
+    action: verb === "pause" ? "shop.subscription.paused" : "shop.subscription.resumed",
+    adminEmail: `customer:${req.shopCustomerEmail ?? customerId}`,
+    adminUserId: null,
+    targetTable: "shop_subscriptions",
+    targetId: sub.id,
+    metadata: {
+      stripe_subscription_id: sub.stripeSubscriptionId,
+      verb,
+    },
+    ip: req.ip ?? null,
+    userAgent: req.get("user-agent") ?? null,
+  });
   res.json({ ok: true });
 }
 
@@ -585,6 +613,19 @@ router.post(
     // Webhook will mirror items back; no local optimistic write
     // here because items is a jsonb snapshot and we don't have the
     // new price's display fields (name, intervalLabel, unit amount).
+    await safeAudit({
+      action: "shop.subscription.cadence_changed",
+      adminEmail: `customer:${req.shopCustomerEmail ?? customerId}`,
+      adminUserId: null,
+      targetTable: "shop_subscriptions",
+      targetId: sub.id,
+      metadata: {
+        stripe_subscription_id: sub.stripeSubscriptionId,
+        new_price_id: newPriceId,
+      },
+      ip: req.ip ?? null,
+      userAgent: req.get("user-agent") ?? null,
+    });
     res.json({ ok: true });
   },
 );

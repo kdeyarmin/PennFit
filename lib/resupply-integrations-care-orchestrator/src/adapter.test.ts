@@ -3,27 +3,24 @@ import { describe, expect, it } from "vitest";
 import { createCareOrchestratorAdapter } from "./index";
 
 describe("createCareOrchestratorAdapter", () => {
-  it("reports stub when no creds are present", () => {
+  it("reports unavailable when no creds are present", () => {
     const adapter = createCareOrchestratorAdapter({});
     expect(adapter.source).toBe("philips_care");
     expect(adapter.availability()).toEqual({
-      status: "stub",
-      reason: "no_credentials",
+      status: "unavailable",
+      reason: "not_configured",
     });
   });
 
-  it("returns a stub snapshot in stub mode", async () => {
-    const adapter = createCareOrchestratorAdapter({
-      CARE_ORCHESTRATOR_STUB: "1",
-    });
+  it("returns an unavailable error (no fabricated snapshot) when not configured", async () => {
+    const adapter = createCareOrchestratorAdapter({});
     const result = await adapter.fetchSnapshot({
       partnerPatientId: "abc",
       windowDays: 30,
     });
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.snapshot.source).toBe("philips_care");
-      expect(result.snapshot.recentNights.length).toBe(30);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toBe("unavailable");
     }
   });
 

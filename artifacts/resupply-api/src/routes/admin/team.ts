@@ -154,7 +154,7 @@ function effectiveStatus(
 
 router.get("/admin/team", requireAdminOnly, async (_req, res) => {
   const supabase = getSupabaseServiceRoleClient();
-  // The original Drizzle path LEFT JOINed admin_users → auth.users
+  // The original SQL path LEFT JOINed admin_users → auth.users
   // for each row's `email_verified_at`. PostgREST has no JOIN, so
   // we fetch admin_users first then bulk-fetch the auth rows by
   // auth_user_id.

@@ -15,7 +15,6 @@ describe("parseSmsIntent", () => {
       "end",
       "QUIT",
       "opt-out now",
-      "I want to revoke",
       "please stop reminding me",
     ])("classifies %j as stop", (body) => {
       expect(parseSmsIntent(body).intent).toBe("stop");
@@ -79,6 +78,35 @@ describe("parseSmsIntent", () => {
     it("yes-then-comment still confirms", () => {
       expect(parseSmsIntent("yes please send them").intent).toBe("confirm");
       expect(parseSmsIntent("y. thanks").intent).toBe("confirm");
+    });
+
+    it("a leading action verb that asks to change the address routes to edit, not confirm", () => {
+      // "send it to my new address" must not ship to the stale on-file
+      // address. A bare "ship it" / "send them" still confirms.
+      expect(parseSmsIntent("send it to my new address").intent).toBe(
+        "edit_address",
+      );
+      expect(parseSmsIntent("ship it").intent).toBe("confirm");
+      expect(parseSmsIntent("send them").intent).toBe("confirm");
+    });
+  });
+
+  describe("START family (carrier opt-in, leading token)", () => {
+    it.each(["START", "start", "Start", "UNSTOP", "unstop", "start please"])(
+      "classifies %j as start",
+      (body) => {
+        expect(parseSmsIntent(body).intent).toBe("start");
+      },
+    );
+
+    it("STOP wins over START when both are present", () => {
+      expect(parseSmsIntent("stop, do not start again").intent).toBe("stop");
+    });
+
+    it("does NOT hijack a confirm that merely contains 'start' mid-body", () => {
+      // Leading-token matching keeps "yes, start shipping" a confirm
+      // instead of a spurious re-subscribe.
+      expect(parseSmsIntent("yes start shipping").intent).toBe("confirm");
     });
   });
 

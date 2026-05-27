@@ -20,6 +20,7 @@ import { z } from "zod";
 import { logAudit } from "@workspace/resupply-audit";
 import {
   type Database,
+  escapePostgRESTFilterValue,
   getSupabaseServiceRoleClient,
 } from "@workspace/resupply-db";
 
@@ -37,6 +38,15 @@ import {
 const router: IRouter = Router();
 
 const idParam = z.object({ id: z.string().uuid() });
+
+const bulkResubmitBody = z
+  .object({
+    // Cap at 20 — each entry does a sequential SFTP upload at ~2-5s
+    // each, so 20 is roughly a 1-2 min worst-case round-trip. Larger
+    // bulks should be split.
+    submissionIds: z.array(z.string().uuid()).min(1).max(20),
+  })
+  .strict();
 
 type SubmissionRowFull = Database["resupply"]["Tables"]["office_ally_submissions"]["Row"];
 type SubmissionStatus = SubmissionRowFull["status"];
@@ -108,6 +118,7 @@ function rowToApi(r: SubmissionRow) {
 
 const FULL_SELECT =
   "id, file_name, isa_control_number, gs_control_number, status, file_size_bytes, claim_count, office_ally_session_id, ack_999_file_name, ack_999_received_at, ack_277ca_file_name, ack_277ca_received_at, rejection_reason, submitted_by_email, submitted_at, updated_at, attempted_claim_ids, parent_submission_id";
+const SUBMISSIONS_PAGE_SIZE = 1000;
 
 // ── LIST ────────────────────────────────────────────────────────────
 router.get(
@@ -140,6 +151,148 @@ router.get(
     const { data, error } = await query;
     if (error) throw error;
     res.json({ submissions: (data ?? []).map(rowToApi) });
+  },
+);
+
+// ── BULK RESUBMIT ───────────────────────────────────────────────────
+//
+// Best-effort "resubmit all of these" for an op cleaning up after a
+// transport outage. Takes 1–20 submission ids; for each it does
+// exactly what `/admin/office-ally-submissions/:id/resubmit` does
+// (delegates to the shared batch core, links parent_submission_id),
+// and returns a per-id outcome array so the UI can render a
+// success/failure tally.
+//
+// Sequential, not parallel: each SFTP upload owns the inbox lock
+// on Office Ally's side for ~2-5s; parallel uploads risk file-
+// name collisions and stress the (single-tenant) SSH session.
+//
+// Idempotency: each individual resubmit is gated on the original
+// row being `transport_failed`; once it succeeds the original row
+// stays as-is and a NEW office_ally_submissions row is created with
+// parent_submission_id pointing at the original. A second call to
+// bulk-resubmit with the same id list will resubmit each ONCE more
+// (creating a chain), so the UI guards against double-clicks.
+router.post(
+  "/admin/office-ally/bulk-resubmit",
+  requirePermission("admin.tools.manage"),
+  adminRateLimit({
+    name: "office_ally.bulk_resubmit",
+    preset: "bulk",
+  }),
+  async (req, res) => {
+    const parsed = bulkResubmitBody.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: "invalid_body",
+        issues: parsed.error.issues.map((i) => ({
+          path: i.path.join("."),
+          message: i.message,
+        })),
+      });
+      return;
+    }
+    const supabase = getSupabaseServiceRoleClient();
+    const { data: originals, error: originalsError } = await supabase
+      .schema("resupply")
+      .from("office_ally_submissions")
+      .select("id, status, attempted_claim_ids")
+      .in("id", parsed.data.submissionIds);
+    if (originalsError) {
+      logger.error(
+        { err: originalsError, submissionIds: parsed.data.submissionIds },
+        "Failed to load Office Ally submissions for bulk resubmit",
+      );
+      res.status(500).json({ error: "failed_to_load_original_submissions" });
+      return;
+    }
+    const originalsById = new Map<
+      string,
+      { id: string; status: string; attempted_claim_ids: string[] | null }
+    >();
+    for (const r of originals ?? []) originalsById.set(r.id, r);
+
+    type OutcomeOk = {
+      submissionId: string;
+      ok: true;
+      newSubmissionId: string;
+      claimCount: number;
+      isaControlNumber: string;
+      transport: string;
+      uploadOk: boolean;
+      uploadError: string | null;
+    };
+    type OutcomeErr = {
+      submissionId: string;
+      ok: false;
+      error: string;
+      message?: string;
+    };
+    const outcomes: Array<OutcomeOk | OutcomeErr> = [];
+
+    for (const id of parsed.data.submissionIds) {
+      const original = originalsById.get(id);
+      if (!original) {
+        outcomes.push({ submissionId: id, ok: false, error: "not_found" });
+        continue;
+      }
+      if (original.status !== "transport_failed") {
+        outcomes.push({
+          submissionId: id,
+          ok: false,
+          error: "not_resubmittable",
+          message: `status is "${original.status}"`,
+        });
+        continue;
+      }
+      const claimIds = original.attempted_claim_ids ?? [];
+      if (claimIds.length === 0) {
+        outcomes.push({
+          submissionId: id,
+          ok: false,
+          error: "no_attempted_claims",
+        });
+        continue;
+      }
+      const result = await executeOfficeAllyBatchSubmit({
+        claimIds,
+        parentSubmissionId: original.id,
+        adminEmail: req.adminEmail ?? null,
+        adminUserId: req.adminUserId ?? null,
+        ip: req.ip ?? null,
+        userAgent: req.get("user-agent") ?? null,
+      });
+      if (!result.ok) {
+        outcomes.push({
+          submissionId: id,
+          ok: false,
+          error: result.kind,
+          message:
+            typeof result.detail.message === "string"
+              ? result.detail.message
+              : undefined,
+        });
+        continue;
+      }
+      outcomes.push({
+        submissionId: id,
+        ok: true,
+        newSubmissionId: result.submissionId,
+        claimCount: result.claimCount,
+        isaControlNumber: result.isaControlNumber,
+        transport: result.transport,
+        uploadOk: result.uploadOk,
+        uploadError: result.uploadError,
+      });
+    }
+
+    const okCount = outcomes.filter((o) => o.ok).length;
+    res.json({
+      total: outcomes.length,
+      okCount,
+      failedCount: outcomes.length - okCount,
+      outcomes,
+    });
   },
 );
 
@@ -235,6 +388,176 @@ router.get(
             ? Math.round(ackLatencySumMs / ackLatencyCount / 60000)
             : null,
       },
+    });
+  },
+);
+
+// ── PAYER STATS (top payers by submission volume) ──────────────────
+//
+// Aggregates the trailing 30 days of office_ally_submissions by
+// payer (via the first claim in each batch — batches are single-
+// payer by precondition) and returns the top 10. Powers the "By
+// payer" card on the OA Operations page so a billing director can
+// see at a glance which payers are bleeding rejections vs. which
+// are clean.
+//
+// Per-payer fields returned:
+//   * submissionCount     — total OA batches sent in 30d
+//   * claimCount          — total individual claims (sum of
+//                           claim_count across submissions)
+//   * acceptedCount       — accepted_999 + accepted_277ca
+//   * rejectedCount       — rejected_999 + rejected_277ca
+//   * transportFailedCount
+//   * pendingCount        — uploaded / queued (no terminal ack yet)
+//   * acceptanceRatePct   — accepted / (accepted+rejected); null on 0 denom
+router.get(
+  "/admin/office-ally/payer-stats",
+  requirePermission("admin.tools.manage"),
+  async (_req, res) => {
+    const supabase = getSupabaseServiceRoleClient();
+    const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+
+    // 1. Pull recent submissions with their attempted_claim_ids.
+    const rows: Array<{
+      id: string;
+      status: SubmissionStatus;
+      claim_count: number;
+      attempted_claim_ids: string[] | null;
+    }> = [];
+    for (let from = 0; ; from += SUBMISSIONS_PAGE_SIZE) {
+      const { data: page, error } = await supabase
+        .schema("resupply")
+        .from("office_ally_submissions")
+        .select("id, status, claim_count, attempted_claim_ids")
+        .gte("submitted_at", since)
+        .order("submitted_at", { ascending: false })
+        .order("id", { ascending: false })
+        .range(from, from + SUBMISSIONS_PAGE_SIZE - 1);
+      if (error) throw error;
+      const pageRows = page ?? [];
+      rows.push(...pageRows);
+      if (pageRows.length < SUBMISSIONS_PAGE_SIZE) break;
+    }
+    if (rows.length === 0) {
+      res.json({ window: { sinceIso: since, days: 30 }, payers: [] });
+      return;
+    }
+
+    // 2. Single .in() lookup against the first claim of each batch —
+    //    batches are single-payer by precondition, so the first
+    //    claim's payer is the batch's payer.
+    const firstClaimIds = Array.from(
+      new Set(
+        rows
+          .map((r) => r.attempted_claim_ids?.[0])
+          .filter((id): id is string => typeof id === "string"),
+      ),
+    );
+    const claimToPayer = new Map<string, string>();
+    if (firstClaimIds.length > 0) {
+      const { data: claims } = await supabase
+        .schema("resupply")
+        .from("insurance_claims")
+        .select("id, payer_profile_id")
+        .in("id", firstClaimIds);
+      for (const c of claims ?? []) {
+        if (c.payer_profile_id) {
+          claimToPayer.set(c.id, c.payer_profile_id);
+        }
+      }
+    }
+
+    // 3. Aggregate by payer.
+    interface Bucket {
+      submissionCount: number;
+      claimCount: number;
+      accepted: number;
+      rejected: number;
+      transportFailed: number;
+      pending: number;
+    }
+    const byPayer = new Map<string, Bucket>();
+    for (const r of rows) {
+      const firstClaimId = r.attempted_claim_ids?.[0];
+      const payerId = firstClaimId
+        ? claimToPayer.get(firstClaimId)
+        : undefined;
+      if (!payerId) continue;
+      let b = byPayer.get(payerId);
+      if (!b) {
+        b = {
+          submissionCount: 0,
+          claimCount: 0,
+          accepted: 0,
+          rejected: 0,
+          transportFailed: 0,
+          pending: 0,
+        };
+        byPayer.set(payerId, b);
+      }
+      b.submissionCount += 1;
+      b.claimCount += r.claim_count;
+      if (r.status === "accepted_999" || r.status === "accepted_277ca") {
+        b.accepted += 1;
+      } else if (
+        r.status === "rejected_999" ||
+        r.status === "rejected_277ca"
+      ) {
+        b.rejected += 1;
+      } else if (r.status === "transport_failed") {
+        b.transportFailed += 1;
+      } else {
+        b.pending += 1;
+      }
+    }
+
+    // 4. Top 10 by submission count, then lookup names.
+    const topPayerIds = [...byPayer.entries()]
+      .sort((a, b) => b[1].submissionCount - a[1].submissionCount)
+      .slice(0, 10)
+      .map(([id]) => id);
+    const payerInfo = new Map<
+      string,
+      { display_name: string; slug: string; line_of_business: string }
+    >();
+    if (topPayerIds.length > 0) {
+      const { data: payers } = await supabase
+        .schema("resupply")
+        .from("payer_profiles")
+        .select("id, slug, display_name, line_of_business")
+        .in("id", topPayerIds);
+      for (const p of payers ?? []) {
+        payerInfo.set(p.id, {
+          display_name: p.display_name,
+          slug: p.slug,
+          line_of_business: p.line_of_business,
+        });
+      }
+    }
+
+    res.json({
+      window: { sinceIso: since, days: 30 },
+      payers: topPayerIds.map((id) => {
+        const b = byPayer.get(id)!;
+        const info = payerInfo.get(id);
+        const decided = b.accepted + b.rejected;
+        return {
+          payerProfileId: id,
+          displayName: info?.display_name ?? "(unknown payer)",
+          slug: info?.slug ?? null,
+          lineOfBusiness: info?.line_of_business ?? null,
+          submissionCount: b.submissionCount,
+          claimCount: b.claimCount,
+          acceptedCount: b.accepted,
+          rejectedCount: b.rejected,
+          transportFailedCount: b.transportFailed,
+          pendingCount: b.pending,
+          acceptanceRatePct:
+            decided > 0
+              ? Math.round((b.accepted / decided) * 1000) / 10
+              : null,
+        };
+      }),
     });
   },
 );
@@ -337,6 +660,79 @@ router.get(
   },
 );
 
+// ── CSV EXPORT (submissions) ────────────────────────────────────────
+//
+// MUST be registered before the `/:id` route below; otherwise the
+// :id matcher catches "export.csv" and returns 404.
+//
+// Returns the submissions list as RFC-4180 CSV — one row per OA
+// batch, with the same filterable shape as the JSON list endpoint
+// (status, q) plus an optional `?days=` (default 90, max 365) so
+// accountants can pull a quarter at a time. Used by:
+//   * accounting — reconcile billed vs. accepted batches against
+//     the GL
+//   * OA support tickets — paste the CSV into an attachment
+//   * internal audit — periodic compliance review
+//
+// Filename includes today's date so a sequence of exports doesn't
+// collide on disk.
+router.get(
+  "/admin/office-ally-submissions/export.csv",
+  requirePermission("admin.tools.manage"),
+  async (req, res) => {
+    const supabase = getSupabaseServiceRoleClient();
+    const daysRaw = typeof req.query.days === "string" ? Number(req.query.days) : 90;
+    const days =
+      Number.isFinite(daysRaw) && daysRaw > 0 && daysRaw <= 365
+        ? Math.floor(daysRaw)
+        : 90;
+    const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+    let query = supabase
+      .schema("resupply")
+      .from("office_ally_submissions")
+      .select(FULL_SELECT)
+      .gte("submitted_at", since)
+      .order("submitted_at", { ascending: false })
+      .order("id", { ascending: false });
+
+    const statusFilter =
+      typeof req.query.status === "string" ? req.query.status : undefined;
+    if (statusFilter && isSubmissionStatus(statusFilter)) {
+      query = query.eq("status", statusFilter);
+    }
+    const qRaw = typeof req.query.q === "string" ? req.query.q.trim() : "";
+    if (qRaw.length > 0 && qRaw.length <= 80) {
+      const escaped = escapePostgRESTFilterValue(qRaw);
+      const pattern = `*${escaped}*`;
+      query = query.or(
+        `isa_control_number.ilike.${pattern},file_name.ilike.${pattern}`,
+      );
+    }
+    const allRows: SubmissionRow[] = [];
+    for (let from = 0; ; from += SUBMISSIONS_PAGE_SIZE) {
+      const { data, error } = await query.range(
+        from,
+        from + SUBMISSIONS_PAGE_SIZE - 1,
+      );
+      if (error) throw error;
+      const pageRows = data ?? [];
+      allRows.push(...pageRows);
+      if (pageRows.length < SUBMISSIONS_PAGE_SIZE) break;
+    }
+    const rows = allRows.map(rowToApi);
+    const filename = `oa-submissions-${new Date()
+      .toISOString()
+      .slice(0, 10)}.csv`;
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${filename}"`,
+    );
+    res.setHeader("Cache-Control", "no-store");
+    res.send(renderSubmissionsCsv(rows));
+  },
+);
+
 // ── DETAIL incl linked claims, patient names, resubmit chain ──────
 router.get(
   "/admin/office-ally-submissions/:id",
@@ -433,18 +829,78 @@ router.get(
         .order("submitted_at", { ascending: false }),
     ]);
 
+    // 277CA per-claim outcomes. The dispatcher in
+    // worker/jobs/office-ally-inbound-poll.ts writes one
+    // insurance_claim_events row per claim whose note begins with
+    // "277CA accepted:" or "277CA rejected:". Fetch the latest such
+    // event per claim so the detail page can render the per-claim
+    // reject reason inline instead of forcing the op to scroll to
+    // the events tab.
+    const claimIds = claims.map((c) => c.id);
+    const ackEvents = new Map<
+      string,
+      {
+        outcome: "accepted" | "rejected" | "note";
+        note: string;
+        occurredAt: string;
+      }
+    >();
+    if (claimIds.length > 0) {
+      const { data: events, error } = await supabase
+        .schema("resupply")
+        .from("insurance_claim_events")
+        .select("claim_id, event_type, note, occurred_at")
+        .in("claim_id", claimIds)
+        .in("event_type", ["denied", "note"])
+        .like("note", "277CA%")
+        .order("occurred_at", { ascending: false });
+      if (error) throw error;
+      // Keep only the newest 277CA event per claim. Iteration order
+      // is DESC so the first one we see for a claim is the latest.
+      for (const e of events ?? []) {
+        if (ackEvents.has(e.claim_id)) continue;
+        const note = e.note ?? "";
+        const outcome: "accepted" | "rejected" | "note" = note.startsWith(
+          "277CA rejected:",
+        )
+          ? "rejected"
+          : note.startsWith("277CA accepted:")
+            ? "accepted"
+            : "note";
+        ackEvents.set(e.claim_id, {
+          outcome,
+          note,
+          occurredAt: e.occurred_at,
+        });
+      }
+    }
+
     res.json({
       submission: rowToApi(submission),
-      claims: claims.map((c) => ({
-        id: c.id,
-        patientId: c.patient_id,
-        patientName: patientNames.get(c.patient_id) ?? null,
-        payerName: c.payer_name,
-        claimNumber: c.claim_number,
-        dateOfService: c.date_of_service,
-        status: c.status,
-        totalBilledCents: c.total_billed_cents,
-      })),
+      claims: claims.map((c) => {
+        const ack = ackEvents.get(c.id) ?? null;
+        return {
+          id: c.id,
+          patientId: c.patient_id,
+          patientName: patientNames.get(c.patient_id) ?? null,
+          payerName: c.payer_name,
+          claimNumber: c.claim_number,
+          dateOfService: c.date_of_service,
+          status: c.status,
+          totalBilledCents: c.total_billed_cents,
+          // Per-claim 277CA outcome + reason. Null when no 277CA has
+          // been received yet for this claim. `reason` strips the
+          // "277CA accepted: " / "277CA rejected: " prefix so the UI
+          // can render it raw.
+          ack277ca: ack
+            ? {
+                outcome: ack.outcome,
+                reason: ack.note.replace(/^277CA (accepted|rejected): /, ""),
+                receivedAt: ack.occurredAt,
+              }
+            : null,
+        };
+      }),
       lineage: {
         parent: parentRes.data ? rowToApi(parentRes.data) : null,
         children: (childrenRes.data ?? []).map(rowToApi),
@@ -652,6 +1108,61 @@ router.patch(
     res.json({ ok: true });
   },
 );
+
+// CSV cell escaper per RFC 4180: wrap in quotes if the value
+// contains a comma, quote, or newline; double any embedded quotes.
+function csvCell(v: unknown): string {
+  if (v === null || v === undefined) return "";
+  const s = Array.isArray(v) ? v.join("|") : String(v);
+  const safe = /^[=+\-@\t]/.test(s) ? `'${s}` : s;
+  if (/[",\r\n]/.test(safe)) return `"${safe.replace(/"/g, '""')}"`;
+  return safe;
+}
+
+function renderSubmissionsCsv(rows: ReturnType<typeof rowToApi>[]): string {
+  const headers = [
+    "Submitted At",
+    "Status",
+    "File Name",
+    "ISA Control #",
+    "GS Control #",
+    "Claim Count",
+    "File Size Bytes",
+    "Submitted By",
+    "999 Received At",
+    "999 File",
+    "277CA Received At",
+    "277CA File",
+    "Rejection Reason",
+    "Parent Submission Id",
+    "Submission Id",
+  ];
+  const lines: string[] = [headers.map(csvCell).join(",")];
+  for (const r of rows) {
+    lines.push(
+      [
+        r.submittedAt,
+        r.status,
+        r.fileName,
+        r.isaControlNumber,
+        r.gsControlNumber,
+        r.claimCount,
+        r.fileSizeBytes,
+        r.submittedByEmail,
+        r.ack999ReceivedAt,
+        r.ack999FileName,
+        r.ack277caReceivedAt,
+        r.ack277caFileName,
+        r.rejectionReason,
+        r.parentSubmissionId,
+        r.id,
+      ]
+        .map(csvCell)
+        .join(","),
+    );
+  }
+  return `${lines.join("\r\n")}\r\n`;
+}
 
 function isSubmissionStatus(v: string): v is SubmissionStatus {
   return (STATUS_VALUES as readonly string[]).includes(v);

@@ -933,6 +933,7 @@ function TransitionButton({
     <div className="flex items-center gap-2">
       <Input
         placeholder="Denial reason (required)"
+        aria-label="Denial reason"
         value={reason}
         onChange={(e) => setReason(e.target.value)}
         className="w-64"
@@ -988,18 +989,21 @@ function AddLineForm({
       <div className="grid grid-cols-2 gap-2">
         <Input
           placeholder="HCPCS (e.g. E0601)"
+          aria-label="HCPCS code"
           value={hcpcsCode}
           onChange={(e) => setHcpcsCode(e.target.value.toUpperCase())}
           maxLength={12}
         />
         <Input
           placeholder="Modifier(s) (e.g. RR,KX)"
+          aria-label="Modifiers"
           value={modifier}
           onChange={(e) => setModifier(e.target.value.toUpperCase())}
           maxLength={32}
         />
         <Input
           placeholder="Description"
+          aria-label="Description"
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           maxLength={240}
@@ -1010,6 +1014,7 @@ function AddLineForm({
           min={1}
           max={9999}
           placeholder="Quantity"
+          aria-label="Quantity"
           value={quantity}
           onChange={(e) => setQuantity(e.target.value)}
         />
@@ -1018,6 +1023,7 @@ function AddLineForm({
           min={0}
           step={1}
           placeholder="Billed (cents)"
+          aria-label="Billed amount in cents"
           value={billed}
           onChange={(e) => setBilled(e.target.value)}
         />
@@ -1099,6 +1105,7 @@ function AddEventForm({
           onChange={(e) =>
             setEventType(e.target.value as InsuranceClaimEventType)
           }
+          aria-label="Event type"
           className="px-3 py-2 rounded-md border text-sm"
           style={{
             borderColor: "hsl(var(--surface-3))",
@@ -1116,11 +1123,13 @@ function AddEventForm({
           min={0}
           step={1}
           placeholder="Amount (cents, optional)"
+          aria-label="Amount in cents"
           value={amount}
           onChange={(e) => setAmount(e.target.value)}
         />
         <Input
           placeholder="Payer reference (EOB id, check #)"
+          aria-label="Payer reference"
           value={payerRef}
           onChange={(e) => setPayerRef(e.target.value)}
           maxLength={120}
@@ -1128,6 +1137,7 @@ function AddEventForm({
         />
         <textarea
           placeholder="Note (optional)"
+          aria-label="Note"
           value={note}
           onChange={(e) => setNote(e.target.value)}
           rows={2}

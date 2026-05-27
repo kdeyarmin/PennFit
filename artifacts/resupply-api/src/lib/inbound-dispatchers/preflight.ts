@@ -94,6 +94,26 @@ export async function runReferralPreflight(
     throw new Error(`inbound referral ${input.referralId} not found`);
   }
 
+  // Idempotency: clear any prior preflight checks for this referral
+  // before recording the new run. recordCheck() only inserts, so without
+  // this a re-run — the manual /run-preflight route, a pg-boss retry, or
+  // a future overlapping tick — appends a second full set of check rows.
+  // (The physician-fax side effect is already idempotent via its 7-day
+  // cool-down in checkDocsGap, so the checks table was the only
+  // un-deduped write.)
+  const { error: clearChecksErr } = await supabase
+    .schema("resupply")
+    .from("inbound_referral_preflight_checks")
+    .delete()
+    .eq("referral_id", referral.id);
+  if (clearChecksErr) {
+    logger.warn(
+      { referral_id: referral.id, err_code: clearChecksErr.code },
+      "inbound_referral.preflight.clear_prior_checks_failed",
+    );
+    throw clearChecksErr;
+  }
+
   const checks: PreflightRunOutcome["checks"] = [];
 
   // 1+5. PA requirement + PAS endpoint availability

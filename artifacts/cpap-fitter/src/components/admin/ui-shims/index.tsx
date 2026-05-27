@@ -229,6 +229,7 @@ interface SelectProps {
   defaultValue?: string;
   onValueChange?: (value: string) => void;
   children?: React.ReactNode;
+  "aria-label"?: string;
 }
 
 interface CollectedItem {
@@ -291,6 +292,7 @@ export function Select({
   defaultValue,
   onValueChange,
   children,
+  "aria-label": ariaLabel,
 }: SelectProps) {
   const items = React.useMemo(() => collectSelectItems(children), [children]);
   const trigger = React.useMemo(() => findTriggerProps(children), [children]);
@@ -314,6 +316,7 @@ export function Select({
     >
       <select
         value={current ?? ""}
+        aria-label={ariaLabel ?? (trigger.placeholder || undefined)}
         onChange={(e) => {
           const next = e.target.value;
           if (!isControlled) setInternal(next);

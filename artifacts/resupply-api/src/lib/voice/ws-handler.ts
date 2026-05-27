@@ -58,6 +58,7 @@ import {
 import { getAnthropicClient } from "../llm-provider";
 import { logger } from "../logger";
 import type { PendingSessionEntry } from "./pending-sessions";
+import { routeVoiceHandoffToCsrQueue } from "./post-call-handoff";
 import {
   summarizePostCall,
   type PostCallSummary,
@@ -95,6 +96,18 @@ export async function handleVoiceWsConnection(
   // Capped so a stuck call can't grow unbounded.
   const turnHistory: TurnForSummary[] = [];
   const MAX_RETAINED_TURNS = 200;
+
+  // Hard ceiling on call duration — wired AFTER bridge is built (see
+  // below). A patient resupply check-in has never historically run
+  // beyond ~8 minutes; 15 minutes is well past the long tail. Without
+  // this, a wedged bridge (Twilio dropped the hang-up frame, OpenAI
+  // Realtime stalled mid-stream, the patient walked away with the
+  // line open) burns Realtime + Deepgram + Twilio minutes
+  // indefinitely. The cutoff fires a clean close — same path a normal
+  // hangup takes — so the post-call summary, Deepgram audit transcript,
+  // and conversation finalize all run.
+  const MAX_CALL_DURATION_MS = 15 * 60 * 1000;
+  let maxDurationTimer: ReturnType<typeof setTimeout> | null = null;
 
   // Sink Twilio side. We only know `streamSid` after the `start`
   // frame, so audio deltas before that are silently dropped (the
@@ -148,6 +161,24 @@ export async function handleVoiceWsConnection(
 
   const bridge = new VoiceBridge({ client, sink, dispatcher });
 
+  // Arm the max-duration timer now that `bridge` exists. See declaration
+  // above for rationale.
+  maxDurationTimer = setTimeout(() => {
+    if (closed) return;
+    logger.warn(
+      {
+        event: "voice_max_duration_exceeded",
+        conversationId: pending.conversationId,
+        max_duration_ms: MAX_CALL_DURATION_MS,
+      },
+      "voice ws: max call duration reached — closing bridge",
+    );
+    bridge.close("max-duration-exceeded");
+  }, MAX_CALL_DURATION_MS);
+  // Don't keep the Node event loop alive for the timer; if the process
+  // is shutting down for unrelated reasons we want it to exit cleanly.
+  maxDurationTimer.unref?.();
+
   // Optional Deepgram parallel transcription. When DEEPGRAM_API_KEY
   // is set, we run Nova-3 on the caller-side audio in parallel with
   // the OpenAI Realtime model's built-in STT. The model continues to
@@ -156,6 +187,14 @@ export async function handleVoiceWsConnection(
   // medical record and the post-call summarizer.
   let deepgramSession: DeepgramLiveSession | null = null;
   const deepgramTurns: string[] = [];
+  // Track Deepgram error count + whether we've already WARN'd this
+  // call. The first error of the call is loud (we want to know about
+  // a vendor outage); subsequent errors during the same call drop to
+  // DEBUG so a sustained outage doesn't flood the log with thousands
+  // of identical WARN lines. Total count is logged on session close
+  // so a Deepgram dropout still leaves a single summary signal.
+  let deepgramErrorCount = 0;
+  let deepgramWarnEmitted = false;
   if (config.deepgramApiKey) {
     try {
       const dg = createDeepgramClient({ apiKey: config.deepgramApiKey });
@@ -188,6 +227,22 @@ export async function handleVoiceWsConnection(
         deepgramTurns.push(text);
       });
       deepgramSession.onError((err) => {
+        deepgramErrorCount += 1;
+        if (deepgramWarnEmitted) {
+          // De-spam: subsequent errors in the same call are recorded
+          // for the close-time summary but don't re-fire the WARN.
+          logger.debug(
+            {
+              event: "voice_deepgram_error_subsequent",
+              code: err.code,
+              count: deepgramErrorCount,
+              conversationId: pending.conversationId,
+            },
+            "voice deepgram subsequent error (suppressed from WARN)",
+          );
+          return;
+        }
+        deepgramWarnEmitted = true;
         logger.warn(
           {
             event: "voice_deepgram_error",
@@ -283,6 +338,10 @@ export async function handleVoiceWsConnection(
   bridge.on("session.closed", (info) => {
     if (closed) return;
     closed = true;
+    if (maxDurationTimer !== null) {
+      clearTimeout(maxDurationTimer);
+      maxDurationTimer = null;
+    }
     logger.info(
       {
         event: "voice_session_closed",
@@ -315,6 +374,20 @@ export async function handleVoiceWsConnection(
         deepgramSession.close();
       } catch {
         // best-effort
+      }
+      // Single end-of-call summary if Deepgram had any errors. The
+      // WARN already fired at first error; this gives ops a count
+      // signal so dashboards can rank "calls with N Deepgram errors"
+      // even though the per-error noise was suppressed.
+      if (deepgramErrorCount > 0) {
+        logger.warn(
+          {
+            event: "voice_deepgram_errors_summary",
+            count: deepgramErrorCount,
+            conversationId: pending.conversationId,
+          },
+          "voice deepgram: parallel transcription error count for this call",
+        );
       }
     }
     // Write the Deepgram transcript to the audit log as its own row
@@ -466,24 +539,64 @@ async function finalizeConversation(
 }
 
 /**
- * Persist the Deepgram-side transcript to the audit log as a single
- * `voice.call.deepgram_transcript` row. We log the FULL transcript
- * (the @workspace/resupply-audit metadata sanitizer enforces size
- * caps; if a long call overflows, the sanitizer truncates rather
- * than rejecting). One row per call is the right granularity — the
- * model's per-turn `messages` rows already give us turn-level detail
- * via the OpenAI transcripts; Deepgram is the audit-grade backup.
+ * Persist the Deepgram-side transcript so we keep an audit-grade
+ * backup to the OpenAI Realtime per-turn messages.
  *
- * Always resolves — never throws. A failed audit write here would be
- * a degraded audit trail, not a broken call.
+ * PHI handling: the raw transcript carries patient utterances —
+ * name, DOB, address, complaints — exactly the high-PHI surface
+ * the audit log isn't supposed to hold. So we split the write into
+ * two pieces:
+ *
+ *   1. The raw transcript bytes go into the `messages` table (which
+ *      is RLS-scoped + encrypted at rest), as a single row tagged
+ *      sender_role='deepgram_transcript'. That row holds the PHI.
+ *   2. The audit-log row carries only structural metadata: turn
+ *      count, char count, and the message id. The HMAC-chained
+ *      audit row stays world-readable safe; investigators can join
+ *      back to messages by id under RLS.
+ *
+ * Always resolves — never throws. A failed write here is a degraded
+ * audit trail, not a broken call.
  */
 async function writeDeepgramAuditTranscript(
   conversationId: string,
   twilioCallSid: string | null,
   deepgramTurns: ReadonlyArray<string>,
 ): Promise<void> {
+  const fullTranscript = deepgramTurns.join(" ");
+  let transcriptMessageId: string | null = null;
   try {
-    const fullTranscript = deepgramTurns.join(" ");
+    const supabase = getSupabaseServiceRoleClient();
+    const { data: inserted, error } = await supabase
+      .schema("resupply")
+      .from("messages")
+      .insert({
+        conversation_id: conversationId,
+        direction: "inbound",
+        sender_role: "deepgram_transcript",
+        body: fullTranscript,
+        vendor_metadata: {
+          twilio_call_sid: twilioCallSid ?? null,
+          prompt_version: PROMPT_VERSION,
+          turn_count: deepgramTurns.length,
+        },
+      })
+      .select("id")
+      .limit(1)
+      .maybeSingle();
+    if (error) throw error;
+    transcriptMessageId = inserted?.id ?? null;
+  } catch (err) {
+    logger.warn(
+      {
+        event: "voice_deepgram_message_insert_failed",
+        err: serializeErr(err),
+        conversationId,
+      },
+      "voice: deepgram transcript message insert failed",
+    );
+  }
+  try {
     await logAudit({
       action: "voice.call.deepgram_transcript",
       targetTable: "conversations",
@@ -491,7 +604,7 @@ async function writeDeepgramAuditTranscript(
       metadata: {
         twilio_call_sid: twilioCallSid ?? null,
         prompt_version: PROMPT_VERSION,
-        transcript: fullTranscript,
+        transcript_message_id: transcriptMessageId,
         turn_count: deepgramTurns.length,
         char_count: fullTranscript.length,
       },
@@ -572,6 +685,18 @@ async function runPostCallSummary(
       },
       "voice: post-call summary written",
     );
+
+    // Route the conversation into the CSR escalated-queue when the
+    // model flagged a handoff. The audit row above is the durable
+    // record; this is the routing — without it the flag sits in
+    // the audit log and no supervisor sees it in time.
+    if (summary.recommendsHandoff) {
+      await routeVoiceHandoffToCsrQueue({
+        conversationId: input.conversationId,
+        outcome: summary.outcome,
+        sentiment: summary.sentiment,
+      });
+    }
   } catch (err) {
     logger.warn(
       {

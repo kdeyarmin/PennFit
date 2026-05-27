@@ -419,9 +419,13 @@ describe("PrescriptionsTab — handleUpload size guard", () => {
 // PrescriptionsTab — handleRemoveAttachment
 // ---------------------------------------------------------------------------
 describe("PrescriptionsTab — handleRemoveAttachment", () => {
-  it("confirms removal with window.confirm before proceeding", () => {
+  it("confirms removal via useConfirmDialog before proceeding", () => {
+    // Migrated from window.confirm to the accessible useConfirmDialog
+    // hook (which wraps Radix AlertDialog). The prompt text moved
+    // into structured `title`/`description` fields.
+    expect(SRC).toContain("title: \"Remove attached document?\"");
     expect(SRC).toContain(
-      "Remove the attached document? The patient's record will no longer link to it.",
+      "The patient's record will no longer link to it.",
     );
   });
 
@@ -467,9 +471,17 @@ describe("PrescriptionsTab — changeStatus (mark expired / revoke)", () => {
   });
 
   it("does not proceed when user cancels the confirm dialog (early return)", () => {
-    // window.confirm returns falsy → the function returns immediately.
-    // The guard pattern: if (!window.confirm(...)) { return; }
-    expect(SRC).toMatch(/!window\.confirm[\s\S]{0,200}return;/);
+    // Migrated from window.confirm → useConfirmDialog. The hook
+    // returns false on cancel/dismiss, so the guard now reads:
+    // `if (!(await confirm({...}))) { return; }`
+    expect(SRC).toMatch(/!\(await confirm\(\{[\s\S]{0,400}return;/);
+  });
+
+  it("flags the destructive variant only on revoke (not on mark-expired)", () => {
+    // Revoking an active Rx is permanent and visible to clinicians,
+    // so it should render the destructive (red) confirm button.
+    // Mark-expired is reversible-by-Rx-renewal and rendered neutral.
+    expect(SRC).toContain('destructive: nextStatus === "revoked"');
   });
 });
 
@@ -858,5 +870,45 @@ describe("PrescriptionsTab — AddPrescriptionModal optional fields", () => {
 
   it("includes notes only when non-blank", () => {
     expect(SRC).toContain("if (notes.trim()) body.notes");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// This PR: Rx packets & faxing link removed from header
+// ---------------------------------------------------------------------------
+
+describe("PrescriptionsTab — Rx packets & faxing link removed", () => {
+  it("no longer renders an 'Rx packets & faxing' link in the header", () => {
+    expect(SRC).not.toContain("Rx packets");
+    expect(SRC).not.toContain("faxing");
+  });
+
+  it("no longer links to /prescription-requests", () => {
+    expect(SRC).not.toContain("prescription-requests");
+  });
+
+  it("no longer has the 'Open the pre-populated faxable Rx packets surface' title attribute", () => {
+    expect(SRC).not.toContain("pre-populated faxable Rx packets surface");
+  });
+
+  it("header section only has the '+ Add prescription' button (no extra link)", () => {
+    // Confirm the header section still renders the button but no anchor link.
+    expect(SRC).toContain("+ Add prescription");
+    // The containing div: flex items-center justify-between gap-3
+    // should not contain an <a> element pointing at prescription-requests.
+    const headerStart = SRC.indexOf("flex items-center justify-between gap-3");
+    const addBtnIdx = SRC.indexOf("+ Add prescription", headerStart);
+    expect(headerStart).toBeGreaterThanOrEqual(0);
+    expect(addBtnIdx).toBeGreaterThan(headerStart);
+    const headerSection = SRC.slice(
+      headerStart,
+      addBtnIdx + "+ Add prescription".length,
+    );
+    expect(headerSection).not.toContain("prescription-requests");
+  });
+
+  it("+ Add prescription button is still present and triggers setShowAdd(true)", () => {
+    expect(SRC).toContain("onClick={() => setShowAdd(true)}");
+    expect(SRC).toContain("+ Add prescription");
   });
 });

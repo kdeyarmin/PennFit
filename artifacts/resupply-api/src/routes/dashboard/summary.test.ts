@@ -2,8 +2,8 @@
 //
 // Five `head: true` count probes (conversations × 2, episodes,
 // fulfillments, patients) plus the sweep-status helper which reads
-// the latest `prescription.attachment.sweep` audit row from
-// resupply.audit_log via the Supabase service-role client.
+// the latest `prescription_attachment_sweep` run from
+// resupply.worker_run_summary via the Supabase service-role client.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import express, { type Express } from "express";
@@ -118,9 +118,9 @@ describe("GET /dashboard/summary", () => {
       fulfillmentsThisWeek: 41,
       pausedPatients: 2,
     });
-    // Sweep-status helper fetches from audit_log via .maybeSingle();
-    // empty data → null sweep status.
-    stageSupabaseResponse("audit_log", "select", { data: null });
+    // Sweep-status helper fetches from worker_run_summary via
+    // .maybeSingle(); empty data → null sweep status.
+    stageSupabaseResponse("worker_run_summary", "select", { data: null });
 
     const res = await request(makeApp()).get("/resupply-api/dashboard/summary");
     expect(res.status).toBe(200);
@@ -158,7 +158,7 @@ describe("GET /dashboard/summary", () => {
       data: null,
       count: null,
     });
-    stageSupabaseResponse("audit_log", "select", { data: null });
+    stageSupabaseResponse("worker_run_summary", "select", { data: null });
 
     const res = await request(makeApp()).get("/resupply-api/dashboard/summary");
     expect(res.status).toBe(200);
@@ -199,10 +199,10 @@ describe("GET /dashboard/summary", () => {
     it("surfaces the latest sweep row with snake→camel mapping", async () => {
       stubVerifiedAdmin();
       stageZeroCounts();
-      stageSupabaseResponse("audit_log", "select", {
+      stageSupabaseResponse("worker_run_summary", "select", {
         data: {
-          occurred_at: "2026-04-26T03:13:42.000Z",
-          metadata: {
+          completed_at: "2026-04-26T03:13:42.000Z",
+          counters: {
             objects_scanned: 1234,
             references_loaded: 1100,
             orphans_deleted: 7,
@@ -238,15 +238,15 @@ describe("GET /dashboard/summary", () => {
       });
     });
 
-    it("degrades to null when metadata fails Zod validation", async () => {
+    it("degrades to null when counters fail Zod validation", async () => {
       // Missing several required fields + one negative — strict
       // schema must reject and the route must NOT 500.
       stubVerifiedAdmin();
       stageZeroCounts();
-      stageSupabaseResponse("audit_log", "select", {
+      stageSupabaseResponse("worker_run_summary", "select", {
         data: {
-          occurred_at: "2026-04-26T03:13:42.000Z",
-          metadata: { objects_scanned: -1, garbage: "yes" },
+          completed_at: "2026-04-26T03:13:42.000Z",
+          counters: { objects_scanned: -1, garbage: "yes" },
         },
       });
 
@@ -257,14 +257,14 @@ describe("GET /dashboard/summary", () => {
       expect(res.body.prescriptionAttachmentSweep).toBeNull();
     });
 
-    it("degrades to null when occurred_at is missing/invalid", async () => {
-      // Belt-and-suspenders: even if metadata parses, an
-      // unparseable occurred_at must not let "Invalid Date" leak
-      // into the response.
+    it("degrades to null when completed_at is missing/invalid", async () => {
+      // Belt-and-suspenders: even if counters parse, an unparseable
+      // completed_at must not let "Invalid Date" leak into the
+      // response.
       stubVerifiedAdmin();
       stageZeroCounts();
-      stageSupabaseResponse("audit_log", "select", {
-        data: { occurred_at: null, metadata: ALL_ZERO_METADATA },
+      stageSupabaseResponse("worker_run_summary", "select", {
+        data: { completed_at: null, counters: ALL_ZERO_METADATA },
       });
 
       const res = await request(makeApp()).get(
@@ -274,15 +274,15 @@ describe("GET /dashboard/summary", () => {
       expect(res.body.prescriptionAttachmentSweep).toBeNull();
     });
 
-    it("normalises occurred_at to a stable ISO string", async () => {
+    it("normalises completed_at to a stable ISO string", async () => {
       // PostgREST returns timestamptz as an ISO string; the helper
       // round-trips through Date to normalise the format.
       stubVerifiedAdmin();
       stageZeroCounts();
-      stageSupabaseResponse("audit_log", "select", {
+      stageSupabaseResponse("worker_run_summary", "select", {
         data: {
-          occurred_at: "2026-04-26T03:13:42.000Z",
-          metadata: ALL_ZERO_METADATA,
+          completed_at: "2026-04-26T03:13:42.000Z",
+          counters: ALL_ZERO_METADATA,
         },
       });
 

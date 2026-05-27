@@ -71,6 +71,7 @@ import {
 } from "../../lib/messaging/messaging-config";
 import {
   pausePatient,
+  reactivatePatient,
   placeResupplyOrderForConversation,
 } from "../../lib/messaging/order-flow";
 import { findActiveClosure } from "../../lib/office-closure/active";
@@ -210,7 +211,7 @@ router.post("/sms/inbound", signatureMiddleware, smsPhoneLimiter, async (req, re
         .type("text/xml")
         .send(
           earlyRouted.intent === "stop"
-            ? "<Response><Message>You've been unsubscribed and won't get further messages from us. Reply START to resume.</Message></Response>"
+            ? "<Response><Message>You've been unsubscribed and won't get further texts from us. Reply START to resume.</Message></Response>"
             : `<Response><Message>${escapeXml(cfg.practiceName)} — automated CPAP refill reminders. Reply YES to confirm, NO to decline, EDIT to change your address, STOP to opt out. Standard message + data rates may apply.</Message></Response>`,
         );
       return;
@@ -274,12 +275,18 @@ router.post("/sms/inbound", signatureMiddleware, smsPhoneLimiter, async (req, re
   const patientId = lookupMatches[0]?.id;
 
   // Office closure auto-reply — STOP/HELP are already handled above
-  // and never reach here. Any other inbound during an active closure
-  // gets the configured auto-reply and short-circuits the normal
-  // dispatch (no conversation row created, no patient-side reply
-  // beyond the closure message). Surveyors and operations folks
-  // both expect a "we're closed today" voice on inbound messages.
-  if (earlyRouted.intent !== "stop" && earlyRouted.intent !== "help") {
+  // and never reach here. START (carrier opt-in) also bypasses the
+  // closure so a re-subscribe is honored immediately. Any other inbound
+  // during an active closure gets the configured auto-reply and
+  // short-circuits the normal dispatch (no conversation row created, no
+  // patient-side reply beyond the closure message). Surveyors and
+  // operations folks both expect a "we're closed today" voice on
+  // inbound messages.
+  if (
+    earlyRouted.intent !== "stop" &&
+    earlyRouted.intent !== "help" &&
+    earlyRouted.intent !== "start"
+  ) {
     try {
       const activeClosure = await findActiveClosure(supabase);
       if (activeClosure) {
@@ -349,7 +356,7 @@ router.post("/sms/inbound", signatureMiddleware, smsPhoneLimiter, async (req, re
         .type("text/xml")
         .send(
           earlyRouted.intent === "stop"
-            ? "<Response><Message>You've been unsubscribed and won't get further messages from us. Reply START to resume.</Message></Response>"
+            ? "<Response><Message>You've been unsubscribed and won't get further texts from us. Reply START to resume.</Message></Response>"
             : `<Response><Message>${escapeXml(cfg.practiceName)} — automated CPAP refill reminders. Reply YES to confirm, NO to decline, EDIT to change your address, STOP to opt out. Standard message + data rates may apply.</Message></Response>`,
         );
       return;
@@ -628,6 +635,7 @@ router.post("/sms/inbound", signatureMiddleware, smsPhoneLimiter, async (req, re
   let intent: Intent = earlyRouted.intent;
   let agentReply: string | null = null;
   let resolvedBy: "keyword" | "ai" | "none" = "keyword";
+  let lowConfidenceOverride = false;
   if (intent === "unknown") {
     const adapter = getAiAdapter();
     if (adapter) {
@@ -655,6 +663,52 @@ router.post("/sms/inbound", signatureMiddleware, smsPhoneLimiter, async (req, re
       intent = result.intent;
       agentReply = result.reply ?? null;
       resolvedBy = "ai";
+
+      // Confidence gate. The action-taking intents (confirm, decline,
+      // edit_address) trigger irreversible real-world side effects:
+      // confirm ships a CPAP order, decline closes the episode for the
+      // cycle, edit_address takes the patient out of auto-fulfillment.
+      // A low-confidence classification ("sure I guess", a one-word
+      // reply that could mean two things) must never auto-dispatch
+      // those — route to a human instead. The reporting / pass-through
+      // intents (stop, help, unknown) are safe at any confidence.
+      // Threshold is intentionally conservative: a precision drop here
+      // is invisible (patient gets a polite "we'll follow up" instead
+      // of the action), but a precision miss on `confirm` ships an
+      // unwanted order. Adapters that don't report a confidence at all
+      // (older fine-tunes, malformed output) are treated as "no signal"
+      // and also gated.
+      const MIN_AI_DISPATCH_CONFIDENCE = 0.7;
+      const confidence =
+        typeof result.confidence === "number" && Number.isFinite(result.confidence)
+          ? result.confidence
+          : undefined;
+      const isActionIntent =
+        intent === "confirm" ||
+        intent === "decline" ||
+        intent === "edit_address";
+      if (
+        isActionIntent &&
+        (confidence === undefined || confidence < MIN_AI_DISPATCH_CONFIDENCE)
+      ) {
+        logger.info(
+          {
+            event: "ai_fallback_dispatch_gated_low_confidence",
+            conversation_id: conversationId,
+            patient_id: patientId,
+            proposed_intent: intent,
+            confidence: confidence ?? null,
+            threshold: MIN_AI_DISPATCH_CONFIDENCE,
+          },
+          "sms.inbound: gating low-confidence AI classification — routing to human",
+        );
+        intent = "unknown";
+        // Drop the AI's reply too — its text was crafted for the
+        // confident action; the route's `unknown` handler will render
+        // a neutral "passing to a teammate" line.
+        agentReply = null;
+        lowConfidenceOverride = true;
+      }
     } else {
       resolvedBy = "none";
     }
@@ -672,6 +726,7 @@ router.post("/sms/inbound", signatureMiddleware, smsPhoneLimiter, async (req, re
       patient_id: patientId,
       intent,
       resolved_by: resolvedBy,
+      low_confidence_override: lowConfidenceOverride || undefined,
     },
     ip: req.ip ?? null,
     userAgent: req.get("user-agent") ?? null,
@@ -856,7 +911,36 @@ async function dispatchIntent(input: DispatchInput): Promise<string> {
         ip: input.ip,
         userAgent: input.userAgent,
       });
-      return "You've been unsubscribed and won't get further messages from us. Reply START to resume.";
+      return "You've been unsubscribed and won't get further texts from us. Reply START to resume.";
+    }
+    case "start": {
+      // Carrier-mandated opt-in. Reverse a STOP-induced pause so the
+      // patient resumes receiving reminders, then close the
+      // conversation (a keyword reply, not a dialog turn).
+      await reactivatePatient(input.patientId);
+      const { error: startErr } = await supabase
+        .schema("resupply")
+        .from("conversations")
+        .update({ status: "closed", updated_at: nowIso })
+        .eq("id", input.conversationId);
+      if (startErr) throw startErr;
+      await safeAudit({
+        action: "messaging.handoff.escalated",
+        adminEmail: null,
+        adminUserId: null,
+        targetTable: "patients",
+        targetId: input.patientId,
+        metadata: {
+          channel: "sms",
+          conversation_id: input.conversationId,
+          patient_id: input.patientId,
+          reason: "start_keyword",
+          patient_status: "active",
+        },
+        ip: input.ip,
+        userAgent: input.userAgent,
+      });
+      return `You're resubscribed and will start receiving messages from ${input.practiceName} again. Reply STOP to opt out at any time.`;
     }
     case "help": {
       return (

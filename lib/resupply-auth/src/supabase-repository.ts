@@ -3,8 +3,8 @@
 // Production wires `supabaseAuthRepository` via `getAuthDeps()` in
 // artifacts/resupply-api/src/lib/auth-deps.ts. This is the only
 // implementation of `AuthRepository` in the codebase — the legacy
-// pg-pool–backed `pgAuthRepository` was removed in the Drizzle →
-// Supabase migration. `./repository.ts` now contains only the
+// pg-pool–backed `pgAuthRepository` was removed in the move to
+// Supabase. `./repository.ts` now contains only the
 // abstract interface + row-shape types.
 //
 // Bytea columns (sessions.token_hash, sessions.user_agent_hash,

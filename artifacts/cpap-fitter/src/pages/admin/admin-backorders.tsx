@@ -12,6 +12,7 @@ import { Spinner } from "@/components/admin/Spinner";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { Button } from "@/components/admin/Button";
 import { Input } from "@/components/admin/Input";
+import { useConfirmDialog } from "@/hooks/use-confirm-dialog";
 import {
   clearBackorder,
   createSubstitute,
@@ -26,7 +27,7 @@ import {
 
 export function AdminBackordersPage() {
   return (
-    <div className="p-6 space-y-6 max-w-6xl">
+    <div className="admin-root p-6 space-y-6 max-w-6xl">
       <header>
         <h1 className="text-2xl font-semibold flex items-center gap-2">
           <AlertOctagon className="h-6 w-6" />
@@ -82,6 +83,7 @@ function BackordersPanel() {
             value={sku}
             onChange={(e) => setSku(e.target.value)}
             placeholder="AF20-S"
+            aria-label="SKU"
             style={{ width: "10rem", fontFamily: "monospace" }}
           />
         </div>
@@ -93,6 +95,7 @@ function BackordersPanel() {
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
             placeholder="ETA from Pacware: 5/22"
+            aria-label="Notes"
           />
         </div>
         <Button
@@ -194,8 +197,18 @@ function BackorderRow({
   );
 }
 
+/**
+ * Render the substitution catalog panel with UI to list, add, toggle, and delete SKU substitution rules.
+ *
+ * Renders a form for creating new substitutes (primary SKU, alternative SKU, priority), a table of existing
+ * substitution rules with controls to toggle active/paused state and delete entries (deletion requires confirmation),
+ * and handles loading, empty, and error states for the substitutes query.
+ *
+ * @returns A React element containing the substitution catalog UI, including the add form, substitutes table, and confirmation dialog.
+ */
 function SubstitutesPanel() {
   const qc = useQueryClient();
+  const [confirm, ConfirmDialogEl] = useConfirmDialog();
   const queryKey = ["admin", "shop", "substitutes"] as const;
   const { data, isPending, isError, error, refetch } = useQuery({
     queryKey,
@@ -244,6 +257,7 @@ function SubstitutesPanel() {
             value={primary}
             onChange={(e) => setPrimary(e.target.value)}
             placeholder="AF20-S"
+            aria-label="Primary SKU"
             style={{ width: "8rem", fontFamily: "monospace" }}
           />
         </div>
@@ -256,6 +270,7 @@ function SubstitutesPanel() {
             value={alternative}
             onChange={(e) => setAlternative(e.target.value)}
             placeholder="AF20-M"
+            aria-label="Alternative SKU"
             style={{ width: "8rem", fontFamily: "monospace" }}
           />
         </div>
@@ -269,6 +284,7 @@ function SubstitutesPanel() {
               setPriority(e.target.value.replace(/\D/g, "").slice(0, 4))
             }
             inputMode="numeric"
+            aria-label="Priority"
             style={{ width: "4rem", fontFamily: "monospace" }}
           />
         </div>
@@ -316,19 +332,24 @@ function SubstitutesPanel() {
                 onToggle={() =>
                   toggle.mutate({ id: s.id, active: !s.active })
                 }
-                onDelete={() => {
+                onDelete={async () => {
                   if (
-                    window.confirm(
-                      `Delete substitute ${s.primarySku} → ${s.alternativeSku}?`,
-                    )
+                    !(await confirm({
+                      title: "Delete substitute?",
+                      description: `Delete substitute ${s.primarySku} → ${s.alternativeSku}?`,
+                      confirmLabel: "Delete",
+                      destructive: true,
+                    }))
                   )
-                    remove.mutate(s.id);
+                    return;
+                  remove.mutate(s.id);
                 }}
               />
             ))}
           </tbody>
         </table>
       )}
+      {ConfirmDialogEl}
     </Card>
   );
 }

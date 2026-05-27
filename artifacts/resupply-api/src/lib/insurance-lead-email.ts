@@ -208,7 +208,12 @@ export async function sendInsuranceLeadEmails(
         subject: "New insurance verification request",
         html: renderNotificationHtml(payload),
         text: renderNotificationText(payload),
-        replyTo: payload.email,
+        // DO NOT set replyTo to payload.email. The /insurance-lead
+        // form is unauthenticated, so anyone can submit an arbitrary
+        // address; a "Reply" by the CSR would then send PHI / a
+        // verification quote to whoever the attacker chose. The
+        // patient's real email is rendered in the body (HTML + text)
+        // for the CSR to copy-paste into their own reply.
         customArgs: { kind: "insurance_lead_notification_v1" },
       });
       notificationDelivered = true;

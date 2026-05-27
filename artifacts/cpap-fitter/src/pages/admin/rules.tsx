@@ -21,6 +21,7 @@ import { Button } from "@/components/admin/Button";
 import { Input, Label, Select } from "@/components/admin/Input";
 import { formatDateTime } from "@/lib/admin/format";
 import { useAdminRole } from "@/lib/admin/role-context";
+import { useConfirmDialog } from "@/hooks/use-confirm-dialog";
 
 // PennPaps — Global frequency rules.
 //
@@ -329,6 +330,19 @@ function parseRequiredInt(
   return { value: n, error: null };
 }
 
+/**
+ * Render a modal form for creating or editing a frequency rule.
+ *
+ * The modal validates form input, submits create or update requests, allows toggling active state,
+ * and supports deleting a rule after a destructive confirmation. Calls `onSaved` after a successful
+ * create/update/delete and `onClose` to dismiss the modal.
+ *
+ * @param mode - "create" to render an empty form, "edit" to populate the form with `initial`
+ * @param initial - Optional existing rule used to populate the form when editing
+ * @param onClose - Called to close the modal without saving
+ * @param onSaved - Called after a successful save, toggle, or delete operation
+ * @returns The modal element for creating or editing a frequency rule
+ */
 function RuleFormModal({
   mode,
   initial,
@@ -341,6 +355,7 @@ function RuleFormModal({
   onSaved: () => void;
 }) {
   const queryClient = useQueryClient();
+  const [confirm, ConfirmDialogEl] = useConfirmDialog();
   const [form, setForm] = useState<FormState>(
     initial ? ruleToForm(initial) : EMPTY_FORM,
   );
@@ -474,7 +489,12 @@ function RuleFormModal({
   async function onDelete() {
     if (!initial) return;
     if (
-      !window.confirm(`Delete rule "${initial.name}"? This cannot be undone.`)
+      !(await confirm({
+        title: "Delete rule?",
+        description: `Delete rule "${initial.name}"? This cannot be undone.`,
+        confirmLabel: "Delete",
+        destructive: true,
+      }))
     ) {
       return;
     }
@@ -712,6 +732,7 @@ function RuleFormModal({
           </div>
         </form>
       </div>
+      {ConfirmDialogEl}
     </div>
   );
 }

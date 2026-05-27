@@ -12,14 +12,22 @@ import type PgBoss from "pg-boss";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
+import { buildQueueConfig, CRON_SCAN_QUEUE_OPTS } from "../lib/queue-options";
 
 const JOB = "dwo.expiry-sweep";
-const CRON = "37 4 * * 1"; // Mondays 04:37 UTC
+// Daily — Mondays-only + exact-day match on expires_on meant a DWO
+// expiring on any Tuesday-Sunday in the lookup window never matched
+// `today + 7 = expires_on` on any Monday in that window, so T-7
+// alerts silently never fired for those DWOs. A daily cadence
+// guarantees every DWO has at least one tick on each of T-60 / T-30
+// / T-7, and the per-(patient, daysOut) idempotency dedupe below
+// prevents the same heads-up firing twice.
+const CRON = "37 4 * * *"; // Daily 04:37 UTC
 
 const HEADS_UP_DAYS = [60, 30, 7];
 
 export async function registerDwoExpirySweepJob(boss: PgBoss): Promise<void> {
-  await boss.createQueue(JOB);
+  await boss.createQueue(JOB, buildQueueConfig(JOB, CRON_SCAN_QUEUE_OPTS));
   await boss.work(JOB, async () => {
     try {
       const stats = await runDwoExpirySweep();

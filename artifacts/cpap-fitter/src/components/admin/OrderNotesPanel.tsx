@@ -81,6 +81,7 @@ export function OrderNotesPanel({ orderId }: Props) {
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           placeholder="Add an internal note about this order. Visible only to admins."
+          aria-label="Order note"
           rows={2}
           maxLength={MAX_BODY + 200}
           disabled={mutation.isPending}

@@ -46,6 +46,7 @@ import {
 import { sendLifecycleTouchpointEmail } from "../../lib/order-emails/send-lifecycle-touchpoint-email";
 import { shouldSendEmail } from "../../lib/comm-prefs";
 import { logger } from "../../lib/logger";
+import { buildQueueConfig, VENDOR_SEND_QUEUE_OPTS } from "../lib/queue-options";
 
 const JOB_NAME = "patients.lifecycle-touchpoints";
 const JOB_CRON = "33 13 * * *";
@@ -88,15 +89,40 @@ function todayMmDd(now: Date = new Date()): string {
   return now.toISOString().slice(5, 10); // "MM-DD"
 }
 
+/**
+ * Build the list of MM-DD patterns the birthday-email pass should
+ * match for `today`. Always includes today's MM-DD. In a non-leap
+ * year, ALSO includes "02-29" when today is "02-28" so Feb-29
+ * patients see a birthday email each year (we celebrate them on
+ * Feb 28; Mar 1 is also a defensible choice but Feb 28 keeps the
+ * birthday in February).
+ */
+function birthdayPatternsForToday(now: Date = new Date()): string[] {
+  const today = todayMmDd(now);
+  const patterns = [today];
+  if (today === "02-28") {
+    const year = now.getUTCFullYear();
+    const isLeapYear =
+      (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+    if (!isLeapYear) {
+      patterns.push("02-29");
+    }
+  }
+  return patterns;
+}
+
 async function isOptedIn(
   supabase: ReturnType<typeof getSupabaseServiceRoleClient>,
   email: string,
 ): Promise<{ optedIn: boolean; hadShopCustomer: boolean }> {
+  // .eq is exact; .ilike would let an email containing `_` or `%`
+  // cross-match other patients' shop_customers rows and resolve
+  // the opt-in gate against the wrong row.
   const { data: cust } = await supabase
     .schema("resupply")
     .from("shop_customers")
     .select("communication_preferences")
-    .ilike("email_lower", email.toLowerCase())
+    .eq("email_lower", email.toLowerCase())
     .limit(1)
     .maybeSingle();
   if (!cust) return { optedIn: false, hadShopCustomer: false };
@@ -128,6 +154,13 @@ export async function runLifecycleTouchpoints(
   // Filter SQL-side on the MM-DD of date_of_birth using to_char.
   // PostgREST doesn't expose to_char directly; emulate with substring.
   // patients.date_of_birth is a `date`; substring(...) gives 'YYYY-MM-DD'.
+  // Match today's MM-DD AND, on Feb 28 in a non-leap year, ALSO
+  // match Feb 29 patients so their birthday email lands once a year
+  // instead of skipping three years out of four.
+  const bdayPatterns = birthdayPatternsForToday(now);
+  const bdayPatternExpr = bdayPatterns
+    .map((p) => `date_of_birth.ilike.*-${p}`)
+    .join(",");
   const { data: bdayRows, error: bdayErr } = await supabase
     .schema("resupply")
     .from("patients")
@@ -135,7 +168,7 @@ export async function runLifecycleTouchpoints(
       "id, email, legal_first_name, date_of_birth, birthday_email_year_sent, sleep_anniversary_year_sent",
     )
     .not("email", "is", null)
-    .ilike("date_of_birth", `%-${mmdd}`)
+    .or(bdayPatternExpr)
     .or(
       `birthday_email_year_sent.is.null,birthday_email_year_sent.neq.${currentYear}`,
     )
@@ -314,7 +347,7 @@ export async function runLifecycleTouchpoints(
 export async function registerLifecycleTouchpointsJob(
   boss: PgBoss,
 ): Promise<void> {
-  await boss.createQueue(JOB_NAME);
+  await boss.createQueue(JOB_NAME, buildQueueConfig(JOB_NAME, VENDOR_SEND_QUEUE_OPTS));
   await boss.work(JOB_NAME, async () => {
     try {
       const stats = await runLifecycleTouchpoints();

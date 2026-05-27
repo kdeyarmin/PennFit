@@ -29,6 +29,39 @@ canonical; bypass with `SKIP_HOOKS=1` only for genuine emergencies.
 
 Post-mortem of the drift event: [`docs/git-state-2026-05-01.md`](./docs/git-state-2026-05-01.md).
 
+## Merge conflicts in generated files
+
+`pnpm-lock.yaml` is the one auto-generated file that still conflicts on
+multi-PR merge trains. `.gitattributes` marks it `-diff merge=binary` so
+Git (and GitHub's server-side merge) surface a single "pick one side"
+conflict instead of a corrupt line-merge. Locally you get better:
+`scripts/install-hooks.sh` registers a `merge.pnpm-lock` driver (via
+`.git/info/attributes`, which overrides the committed attribute for your
+clone only) that auto-takes one side, plus `post-merge` / `post-rewrite`
+hooks that re-run `pnpm install` to reconcile. So after running
+`bash scripts/install-hooks.sh`, local merges and rebases no longer halt
+on the lockfile. If you ever resolve one by hand:
+
+```bash
+git checkout --theirs pnpm-lock.yaml   # or --ours, whichever is closer
+pnpm install                           # regenerates from package.json
+git add pnpm-lock.yaml
+```
+
+**Do NOT hand-edit `lib/resupply-db/drizzle/meta/_journal.json`.** Despite
+the older guidance to "splice" it, that file is **frozen** at 52 entries
+and is no longer appended to (new migrations are not journaled — there are
+180+ `.sql` files but only 52 journal entries). It therefore does not
+actually conflict anymore. Splicing or rebuilding it can make `migrate.mjs`
+re-apply or skip migrations against production — see
+[`docs/migration-state-investigation-2026-05-08.md`](./docs/migration-state-investigation-2026-05-08.md).
+Its `-diff merge=binary` marker stays only as a guard; if it ever
+conflicts, take either side verbatim and do not merge entries by hand.
+
+Do NOT add `merge=union` or `merge=ours` for source files in
+`artifacts/`, `lib/`, or `replit.md` — those are real edits and silently
+dropping a side is worse than a visible conflict.
+
 ## Repository map
 
 This is a `pnpm` workspaces monorepo (Node v24, TypeScript 5.9, pnpm 10.33).
@@ -94,6 +127,25 @@ correctness, not style:
 - **No password pepper.** Task #38 removed `AUTH_PASSWORD_PEPPER`;
   passwords are hashed with plain argon2id. Stale pepper values in the
   environment are silently ignored.
+- **No HIPAA / DMEPOS / ACHC compliance machinery.** Migration 0156
+  retired all 11 in-app compliance domains (audit-log tamper-evidence,
+  BAA inventory, DMEPOS staff policy attestation, staff training
+  records, patient grievances, OIG LEIE screening, patient rights
+  requests, patient disclosure log, contingency drills, ACHC QAPI,
+  DME ownership disclosure). The `@workspace/resupply-audit` package
+  is a no-op stub kept for back-compat with 150+ callsites — don't
+  write new audit logic against it. `RESUPPLY_AUDIT_HMAC_KEY` is no
+  longer read by any code path. Compliance is now handled out of band
+  by the business owner. The four historical `audit_log` readers
+  (`/admin/delivery-failures` system-events stream,
+  `/admin/feature-flags/activity`, `/admin/analytics/csr-productivity`,
+  and the dashboard's PHI-sweep status helper) now short-circuit to
+  route-specific degraded responses (for example, delivery failures
+  returns `auditEventsUnavailable: true`, while the PHI-sweep status
+  helper returns `null`) so the SPA can render an explicit "no longer
+  tracked" notice; new readers must NOT add `.from("audit_log")`
+  calls. The `/readyz` DB probe was moved off `audit_log` onto
+  `feature_flags`.
 - **One From address.** Every outbound email funnels through
   `lib/resupply-email`'s `createSendgridClient()`; `SENDGRID_FROM_EMAIL`
   is `info@pennpaps.com`. Don't bypass the shared client.
@@ -119,7 +171,6 @@ of these is missing):
 | `DATABASE_URL`                                      | Postgres v14+ (no extensions; only `gen_random_uuid()` is used). Used by the migrator and a small number of legacy worker paths; the runtime data path is Supabase, not raw pg.                                                                       |
 | `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY`        | Runtime data path. Validated by `validateSupabaseEnv()` in `lib/resupply-db/src/supabase-client.ts`. Service-role JWT bypasses RLS; never expose client-side. Both `resupply` and `resupply_auth` schemas must be added to Studio → Project Settings → API → "Exposed schemas" or every query 503s. |
 | `RESUPPLY_LINK_HMAC_KEY`                            | 32+ random bytes. Signs short-lived patient links in SMS/email reminders. Generate with `openssl rand -base64 48`. Rotation invalidates in-flight links.                                                                                              |
-| `RESUPPLY_AUDIT_HMAC_KEY`                           | 32+ bytes (base64). HMAC-chains every row written to `resupply.audit_log` (migration 0116) for HIPAA §164.312(b) tamper-evidence. Generate with `openssl rand -base64 48`. MUST be different from `RESUPPLY_LINK_HMAC_KEY`. Rotation does NOT invalidate prior rows. |
 | `RESUPPLY_ALLOWED_ORIGINS` **or** `REPLIT_DOMAINS`  | CORS allowlist (origin form for the first, bare-host for the second). In `NODE_ENV=production` the API throws at boot if both are empty — `artifacts/resupply-api/src/app.ts:63`. Replit deployments auto-populate `REPLIT_DOMAINS`.                  |
 
 `preflight:prod` (under `scripts/`) validates every row above plus

@@ -25,9 +25,7 @@ import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import {
   aggregateComplianceCohorts,
-  aggregateCsrProductivity,
   aggregateResupplyFunnel,
-  type AuditRow,
   type EpisodeRow,
   type PatientCohortPoint,
 } from "../../lib/analytics/aggregate";
@@ -36,7 +34,7 @@ import {
   WINDOW_DAYS,
   findBestAdherenceWindow,
 } from "../../lib/compliance-attestation";
-import { logger } from "../../lib/logger";
+import { safeCsvCell } from "../../lib/safe-csv-cell";
 import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
@@ -179,40 +177,29 @@ router.get(
       return;
     }
     const days = parsed.data.days;
-    const cutoff = isoDaysAgo(days);
-    const supabase = getSupabaseServiceRoleClient();
-
-    // We deliberately pull a single bounded page rather than
-    // paginating: a busy team writes ~hundreds of productive audit
-    // rows per day. Hard ceiling of 50_000 keeps the response
-    // bounded even in pathological cases; logs warn when the cap
-    // hits so we know to add pagination.
-    const HARD_LIMIT = 50_000;
-    const { data, error } = await supabase
-      .schema("resupply")
-      .from("audit_log")
-      .select("operator_email, action, occurred_at")
-      .gte("occurred_at", cutoff)
-      .order("occurred_at", { ascending: false })
-      .limit(HARD_LIMIT);
-    if (error) throw error;
-
-    if ((data?.length ?? 0) >= HARD_LIMIT) {
-      logger.warn(
-        { windowDays: days, count: data?.length },
-        "csr_productivity_hard_limit_hit",
-      );
-    }
-
-    const rows: AuditRow[] = (data ?? []).map((r) => ({
-      operatorEmail: r.operator_email,
-      action: r.action,
-      occurredAt: r.occurred_at,
-    }));
-    const result = aggregateCsrProductivity(rows, days);
+    // CSR productivity was historically rolled up from
+    // `resupply.audit_log` rows. That table was dropped with the
+    // wider audit-chain cleanup, and there is no replacement
+    // per-operator event log yet. Return an empty rollup paired with
+    // `unavailable: true` so the SPA renders a clear "no longer
+    // tracked" notice rather than a misleading empty productivity
+    // table.
+    const result: CsrProductivityResponseShape = {
+      windowDays: days,
+      rows: [],
+      totalActions: 0,
+      unavailable: true,
+    };
     res.json(result);
   },
 );
+
+interface CsrProductivityResponseShape {
+  windowDays: number;
+  rows: never[];
+  totalActions: 0;
+  unavailable: true;
+}
 
 // ────────────────────────────────────────────────────────────────
 // GET /admin/analytics/episodes-stuck — drill-down on episodes
@@ -456,13 +443,10 @@ router.get(
   },
 );
 
+// Delegates to the shared safe-csv-cell helper for formula-injection
+// neutralisation + RFC 4180 quoting.
 function csvCell(value: unknown): string {
-  if (value == null) return "";
-  const s = String(value);
-  if (/[",\n\r]/.test(s)) {
-    return `"${s.replace(/"/g, '""')}"`;
-  }
-  return s;
+  return safeCsvCell(value);
 }
 
 function isoDaysAgo(days: number): string {

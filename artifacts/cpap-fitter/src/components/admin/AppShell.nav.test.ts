@@ -162,3 +162,143 @@ describe("AppShell NAV_GROUPS — pre-existing routes not removed by this PR", (
     });
   }
 });
+
+// ---------------------------------------------------------------------------
+// This PR: Audit Log nav item re-added to System group
+// ---------------------------------------------------------------------------
+describe("AppShell NAV_GROUPS — audit-log entry (System group)", () => {
+  it("registers the /admin/audit href", () => {
+    expect(APPSHELL_SRC).toContain('href: "/admin/audit"');
+  });
+
+  it("uses 'Audit Log' as the label", () => {
+    expect(APPSHELL_SRC).toContain('label: "Audit Log"');
+  });
+
+  it("uses /admin/audit as the matchPrefix", () => {
+    expect(APPSHELL_SRC).toContain('matchPrefix: "/admin/audit"');
+  });
+
+  it("includes a descriptive hint for the audit trail", () => {
+    expect(APPSHELL_SRC).toContain("Resupply admin activity trail");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// This PR: Compliance binder nav item re-added to System group
+// ---------------------------------------------------------------------------
+describe("AppShell NAV_GROUPS — compliance-binder entry (System group)", () => {
+  it("registers the /admin/compliance href", () => {
+    expect(APPSHELL_SRC).toContain('href: "/admin/compliance"');
+  });
+
+  it("uses 'Compliance binder' as the label", () => {
+    expect(APPSHELL_SRC).toContain('label: "Compliance binder"');
+  });
+
+  it("uses /admin/compliance as the matchPrefix", () => {
+    expect(APPSHELL_SRC).toContain('matchPrefix: "/admin/compliance"');
+  });
+
+  it("includes a hint mentioning DMEPOS surveyors", () => {
+    expect(APPSHELL_SRC).toContain(
+      "Staff training records + patient grievances for DMEPOS surveyors",
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// This PR: collapsible nav machinery removed — structural regression guards
+// ---------------------------------------------------------------------------
+describe("AppShell — collapsible nav machinery removed in this PR", () => {
+  it("no longer imports ChevronRight from lucide-react", () => {
+    expect(APPSHELL_SRC).not.toContain("ChevronRight");
+  });
+
+  it("no longer imports useRef from react", () => {
+    expect(APPSHELL_SRC).not.toContain("useRef");
+  });
+
+  it("no longer defines findGroupForActiveHref helper", () => {
+    expect(APPSHELL_SRC).not.toContain("function findGroupForActiveHref");
+  });
+
+  it("no longer defines loadInitialExpandedGroups helper", () => {
+    expect(APPSHELL_SRC).not.toContain("function loadInitialExpandedGroups");
+  });
+
+  it("no longer defines persistExpandedGroups helper", () => {
+    expect(APPSHELL_SRC).not.toContain("function persistExpandedGroups");
+  });
+
+  it("no longer defines loadExplicitCollapsedGroups helper", () => {
+    expect(APPSHELL_SRC).not.toContain("function loadExplicitCollapsedGroups");
+  });
+
+  it("no longer defines persistExplicitCollapsedGroups helper", () => {
+    expect(APPSHELL_SRC).not.toContain("function persistExplicitCollapsedGroups");
+  });
+
+  it("no longer defines groupDomId for aria-controls IDs", () => {
+    expect(APPSHELL_SRC).not.toContain("function groupDomId");
+  });
+
+  it("no longer defines toggleNavGroup inside AppShell", () => {
+    expect(APPSHELL_SRC).not.toContain("function toggleNavGroup(label: string)");
+  });
+
+  it("no longer uses NAV_EXPANDED_STORAGE_KEY", () => {
+    expect(APPSHELL_SRC).not.toContain("NAV_EXPANDED_STORAGE_KEY");
+  });
+
+  it("no longer uses NAV_EXPLICIT_COLLAPSED_STORAGE_KEY", () => {
+    expect(APPSHELL_SRC).not.toContain("NAV_EXPLICIT_COLLAPSED_STORAGE_KEY");
+  });
+
+  it("no longer tracks navExpanded state", () => {
+    expect(APPSHELL_SRC).not.toContain("navExpanded");
+  });
+
+  it("no longer tracks navExplicitCollapsed state", () => {
+    expect(APPSHELL_SRC).not.toContain("navExplicitCollapsed");
+  });
+
+  it("no longer uses hidden={!isOpen} to toggle group visibility", () => {
+    expect(APPSHELL_SRC).not.toContain("hidden={!isOpen}");
+  });
+
+  it("no longer passes expanded prop to SidebarNavBody", () => {
+    expect(APPSHELL_SRC).not.toContain("expanded: Set<string>");
+  });
+
+  it("no longer passes onToggleGroup prop to SidebarNavBody", () => {
+    expect(APPSHELL_SRC).not.toContain("onToggleGroup: (label: string) => void");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// This PR: SidebarNavBody simplified to static non-collapsible groups
+// ---------------------------------------------------------------------------
+describe("AppShell — SidebarNavBody simplified to static groups", () => {
+  it("renders each group label as a static <p> element, not a toggle button", () => {
+    expect(APPSHELL_SRC).toContain("tracking-[0.22em] font-semibold mb-1.5 px-3");
+  });
+
+  it("still iterates over NAV_GROUPS to render sections", () => {
+    expect(APPSHELL_SRC).toContain("NAV_GROUPS.map((group) =>");
+  });
+
+  it("still renders NavItem for each link within a group", () => {
+    expect(APPSHELL_SRC).toContain("NavItem");
+    expect(APPSHELL_SRC).toContain("group.items.map((link) =>");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// This PR: imports ClipboardList (for accreditation-binder icon)
+// ---------------------------------------------------------------------------
+describe("AppShell — ClipboardList icon imported for accreditation-binder", () => {
+  it("imports ClipboardList from lucide-react", () => {
+    expect(APPSHELL_SRC).toContain("ClipboardList");
+  });
+});

@@ -11,6 +11,7 @@ export const INTENT_NAMES = [
   "decline",
   "edit_address",
   "stop",
+  "start",
   "help",
   "unknown",
 ] as const;

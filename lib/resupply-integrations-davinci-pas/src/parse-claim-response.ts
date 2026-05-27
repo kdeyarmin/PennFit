@@ -19,6 +19,17 @@ export interface ParsedClaimResponse {
   authNumber: string | null;
   denialReason: string | null;
   dispositionText: string | null;
+  /**
+   * The payer's echo of the original request identifier — pulled
+   * from ClaimResponse.request.identifier.value first, then from
+   * ClaimResponse.identifier[0].value as a fallback. The caller
+   * MUST compare this against the local claimIdentifier we sent
+   * before applying any state change; without that guard a
+   * misrouted / replayed / cached / compromised payer response can
+   * overwrite the wrong PA. Null when neither field is present —
+   * the caller should treat that as a transport failure.
+   */
+  requestIdentifier: string | null;
 }
 
 export function parseClaimResponse(payload: unknown): ParsedClaimResponse {
@@ -29,6 +40,7 @@ export function parseClaimResponse(payload: unknown): ParsedClaimResponse {
       authNumber: null,
       denialReason: null,
       dispositionText: "No ClaimResponse in payload — pending",
+      requestIdentifier: null,
     };
   }
   const dispositionText = typeof cr.disposition === "string" ? cr.disposition : null;
@@ -37,6 +49,25 @@ export function parseClaimResponse(payload: unknown): ParsedClaimResponse {
     : Array.isArray(cr.preAuthRef) && typeof cr.preAuthRef[0] === "string"
       ? (cr.preAuthRef[0] as string)
       : null;
+
+  // Per Da Vinci PAS IG: payer echoes back the original Claim
+  // identifier in ClaimResponse.request.identifier.value AND/OR
+  // ClaimResponse.identifier[0].value. We surface either so the
+  // caller can match.
+  let requestIdentifier: string | null = null;
+  const request = cr.request;
+  if (request && typeof request === "object") {
+    const reqObj = request as { identifier?: { value?: unknown } };
+    if (typeof reqObj.identifier?.value === "string") {
+      requestIdentifier = reqObj.identifier.value;
+    }
+  }
+  if (!requestIdentifier && Array.isArray(cr.identifier)) {
+    const first = (cr.identifier as Array<{ value?: unknown }>)[0];
+    if (first && typeof first.value === "string") {
+      requestIdentifier = first.value;
+    }
+  }
 
   // Walk item[].adjudication looking for the first concrete decision code.
   let decision: ParsedClaimResponse["decision"] = "pended";
@@ -75,7 +106,13 @@ export function parseClaimResponse(payload: unknown): ParsedClaimResponse {
     denialReason = dispositionText;
   }
 
-  return { decision, authNumber, denialReason, dispositionText };
+  return {
+    decision,
+    authNumber,
+    denialReason,
+    dispositionText,
+    requestIdentifier,
+  };
 }
 
 function extractClaimResponse(payload: unknown): Record<string, unknown> | null {
@@ -99,11 +136,13 @@ function extractAdjudicationCode(
   if (!coding) return null;
   for (const c of coding) {
     const code = typeof c.code === "string" ? c.code.toLowerCase() : "";
-    if (
-      code === "approved" ||
-      code === "submitted" ||
-      code === "complete"
-    ) {
+    // Only an explicit `approved` adjudication code is an approval.
+    // `submitted` is the FHIR financial category for the billed amount
+    // (it rides along on essentially every adjudicated item, including
+    // denials), and `complete` is a `ClaimResponse.outcome` value
+    // ("processing finished", not "authorized"). Treating either as
+    // approved would auto-approve a denied/pended prior auth.
+    if (code === "approved") {
       return "approved";
     }
     if (code === "denied" || code === "rejected") return "denied";

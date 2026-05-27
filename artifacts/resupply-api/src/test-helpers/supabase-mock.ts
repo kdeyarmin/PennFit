@@ -45,6 +45,7 @@ export interface StagedSupabaseResponse {
   count?: number | null;
   status?: number;
   statusText?: string;
+  throws?: unknown;
 }
 
 const queues = new Map<string, StagedSupabaseResponse[]>();
@@ -167,7 +168,7 @@ function makeTableBuilder(table: string): TableBuilder {
     // pins an op (or, for verb-promotion `select -> insert/update/...`,
     // at the moment of promotion). This gives tests a per-(table, op)
     // counter equivalent to `expect(dbStub.update).toHaveBeenCalled(N)`
-    // from the legacy Drizzle stub.
+    // from the legacy db stub.
     if (op === null) {
       op = next;
       bumpCallCount(table, op);
@@ -183,7 +184,11 @@ function makeTableBuilder(table: string): TableBuilder {
   };
 
   const finalize = (): Promise<StagedSupabaseResponse> => {
-    return Promise.resolve(popResponse(table, op ?? "select"));
+    const response = popResponse(table, op ?? "select");
+    if (response.throws !== undefined) {
+      return Promise.reject(response.throws);
+    }
+    return Promise.resolve(response);
   };
 
   const recordPayload = (writeOp: SupabaseOp, payload: unknown): void => {
@@ -341,7 +346,7 @@ export interface SupabaseMockHandle {
   /**
    * How many times the route invoked `(table, op)` since the last
    * `reset()`. Useful for testing call-count invariants the legacy
-   * Drizzle stub exposed via `expect(dbStub.update).toHaveBeenCalledTimes`.
+   * db stub exposed via `expect(dbStub.update).toHaveBeenCalledTimes`.
    * The op is locked at the FIRST verb, so an `insert(...).select(...)`
    * RETURNING chain counts once under "insert", not twice.
    */
@@ -350,7 +355,7 @@ export interface SupabaseMockHandle {
    * Payloads passed to each call of a write verb on this table since
    * the last `reset()`. Equivalent to capturing `vals` from
    * `dbStub.insert(vals)` / `dbStub.update(vals)` in the legacy
-   * Drizzle stub. Returns `[]` if the table+op combination was never
+   * db stub. Returns `[]` if the table+op combination was never
    * exercised. `delete` records `undefined`.
    */
   writePayloads(table: string, op: SupabaseOp): unknown[];

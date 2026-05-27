@@ -99,7 +99,7 @@ export function TrackOrder() {
     setSubmitting(true);
     setError(null);
     try {
-      const res = await fetch("/resupply-api/orders/track", {
+      const res = await fetch("/api/orders/track", {
         method: "POST",
         headers: {
           Accept: "application/json",

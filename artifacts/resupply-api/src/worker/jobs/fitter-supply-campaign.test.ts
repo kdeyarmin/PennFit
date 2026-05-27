@@ -11,9 +11,19 @@
 //   * SMS body length stays under the GSM-7 single-segment cap
 //   * SMS-eligible vs email-only touches per the per-touch policy
 
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
 import { describe, it, expect } from "vitest";
 
 import { composeTouchpoint } from "./fitter-supply-campaign";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const SRC = readFileSync(
+  path.join(__dirname, "fitter-supply-campaign.ts"),
+  "utf8",
+);
 
 const BASE_OPTS = {
   practiceName: "PennPaps",
@@ -504,5 +514,121 @@ describe("composeTouchpoint — tracking pixel", () => {
       trackingPixelUrl: "https://example.test/shop/track/o?t=PIXEL_TOKEN",
     });
     expect(out.email.text).not.toContain("track/o?t=");
+  });
+});
+
+describe("composeTouchpoint — subject-line A/B variants (mig 0157)", () => {
+  it("T1 variant A defaults to loss-aversion subject", () => {
+    const out = composeTouchpoint({
+      ...BASE_OPTS,
+      touchIndex: 1,
+      subjectVariantKey: "A",
+    });
+    expect(out.email.subject).toContain("is on hold for you");
+  });
+
+  it("T1 variant B switches to promise-based subject", () => {
+    const out = composeTouchpoint({
+      ...BASE_OPTS,
+      touchIndex: 1,
+      subjectVariantKey: "B",
+    });
+    expect(out.email.subject).toContain("is ready when you are");
+    expect(out.email.subject).not.toContain("is on hold");
+  });
+
+  it("T4 variant A leads with the promo code as the curiosity hook", () => {
+    const out = composeTouchpoint({
+      ...BASE_OPTS,
+      touchIndex: 4,
+      subjectVariantKey: "A",
+    });
+    // Promo-code-first format starts with "WELCOME15:" before "15%".
+    expect(out.email.subject).toMatch(/WELCOME15.*15%/);
+  });
+
+  it("T4 variant B leads with urgency, not the promo code", () => {
+    const out = composeTouchpoint({
+      ...BASE_OPTS,
+      touchIndex: 4,
+      subjectVariantKey: "B",
+    });
+    // Urgency-first format starts with "15% off" — no leading
+    // promo code prefix.
+    expect(out.email.subject).toContain("15% off");
+    expect(out.email.subject).not.toMatch(/^[^,]*WELCOME15/);
+  });
+
+  it("body copy stays constant across variants — only the subject varies", () => {
+    const a = composeTouchpoint({
+      ...BASE_OPTS,
+      touchIndex: 1,
+      subjectVariantKey: "A",
+    });
+    const b = composeTouchpoint({
+      ...BASE_OPTS,
+      touchIndex: 1,
+      subjectVariantKey: "B",
+    });
+    expect(a.email.text).toBe(b.email.text);
+    expect(a.email.html).toBe(b.email.html);
+  });
+
+  it("defaults to variant A when subjectVariantKey is omitted", () => {
+    const a = composeTouchpoint({
+      ...BASE_OPTS,
+      touchIndex: 1,
+      subjectVariantKey: "A",
+    });
+    const omitted = composeTouchpoint({
+      ...BASE_OPTS,
+      touchIndex: 1,
+    });
+    expect(omitted.email.subject).toBe(a.email.subject);
+  });
+
+  it("touches without a registered variant fall back to single subject regardless of key", () => {
+    // T2 doesn't have a variant test configured. Passing 'B' here
+    // is a no-op — the composer renders the default copy.
+    const a = composeTouchpoint({
+      ...BASE_OPTS,
+      touchIndex: 2,
+      subjectVariantKey: "A",
+    });
+    const b = composeTouchpoint({
+      ...BASE_OPTS,
+      touchIndex: 2,
+      subjectVariantKey: "B",
+    });
+    expect(a.email.subject).toBe(b.email.subject);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Final-call (T11) touch-index routing (regression — structural source check)
+// ---------------------------------------------------------------------------
+describe("dispatcher — final-call touch index", () => {
+  // Regression: the 'final_call_pending' holding stage pins
+  // campaign_touch_count at the pre-purchase total (T6=6), so the old
+  // `campaign_touch_count + 1` derived T7 — sending the reorder-cushion
+  // copy (and a T7 SMS, since 7 is SMS-eligible) to a lead who never
+  // purchased, instead of the single email-only T11 final-call copy.
+  it("derives the final-call touch index from journey_stage, not the touch count", () => {
+    const idxDecl = SRC.slice(
+      SRC.indexOf("const nextTouchIndex ="),
+      SRC.indexOf("const nextTouchIndex =") + 200,
+    );
+    expect(idxDecl).toContain('journey_stage === "final_call_pending"');
+    expect(idxDecl).toContain("FINAL_CALL_TOUCH_INDEX");
+  });
+
+  it("keeps T11 out of the SMS-eligible set (final call is email-only)", () => {
+    // The dispatcher gates SMS on SMS_TOUCH_INDEXES; T11 must not be a
+    // member or the final call would send an unwanted SMS.
+    const smsSetDecl = SRC.slice(
+      SRC.indexOf("SMS_TOUCH_INDEXES = new Set"),
+      SRC.indexOf("SMS_TOUCH_INDEXES = new Set") + 80,
+    );
+    expect(smsSetDecl).not.toContain("11");
   });
 });

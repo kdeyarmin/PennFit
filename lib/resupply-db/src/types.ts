@@ -1,8 +1,8 @@
 // Pure TypeScript types and constants re-exported by the
 // `@workspace/resupply-db` package barrel.
 //
-// History: these types used to live inside individual Drizzle schema
-// files under `./schema/**`. The Drizzle tooling was retired and the
+// History: these types used to be generated into individual schema
+// files under `./schema/**`. That codegen was retired and the
 // schema directory was deleted; this module is now the only home
 // for the public DB-level types.
 //
@@ -513,3 +513,17 @@ export const OWNERSHIP_PERSON_ROLE_VALUES = [
 ] as const;
 export type OwnershipPersonRole =
   (typeof OWNERSHIP_PERSON_ROLE_VALUES)[number];
+
+// ────────────────────────────────────────────────────────────────
+// Phase 12 — payer enrollment status (migration 0142)
+// ────────────────────────────────────────────────────────────────
+
+export const PAYER_ENROLLMENT_STATUS_VALUES = [
+  "unknown",
+  "not_required",
+  "pending",
+  "active",
+  "suspended",
+] as const;
+export type PayerEnrollmentStatus =
+  (typeof PAYER_ENROLLMENT_STATUS_VALUES)[number];

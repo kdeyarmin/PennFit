@@ -3,26 +3,24 @@ import { describe, expect, it } from "vitest";
 import { createAirviewAdapter } from "./index";
 
 describe("createAirviewAdapter", () => {
-  it("reports stub when no creds are present", () => {
+  it("reports unavailable when no creds are present", () => {
     const adapter = createAirviewAdapter({});
     expect(adapter.source).toBe("resmed_airview");
     expect(adapter.availability()).toEqual({
-      status: "stub",
-      reason: "no_credentials",
+      status: "unavailable",
+      reason: "not_configured",
     });
   });
 
-  it("returns a stub snapshot in stub mode", async () => {
-    const adapter = createAirviewAdapter({ AIRVIEW_STUB: "1" });
+  it("returns an unavailable error (no fabricated snapshot) when not configured", async () => {
+    const adapter = createAirviewAdapter({});
     const result = await adapter.fetchSnapshot({
       partnerPatientId: "abc",
       windowDays: 14,
     });
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.snapshot.source).toBe("resmed_airview");
-      expect(result.snapshot.recentNights.length).toBe(14);
-      expect(result.snapshot.compliance?.windowDays).toBe(14);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toBe("unavailable");
     }
   });
 

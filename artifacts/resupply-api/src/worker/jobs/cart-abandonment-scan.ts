@@ -38,6 +38,7 @@ import type PgBoss from "pg-boss";
 
 import { logger } from "../../lib/logger";
 import { runCartAbandonmentDispatch } from "../../lib/cart-abandonment/run-dispatch";
+import { buildQueueConfig, CRON_SCAN_QUEUE_OPTS } from "../lib/queue-options";
 
 export const CART_ABANDONMENT_JOB = "cart-abandonment.scan";
 
@@ -57,7 +58,7 @@ export async function registerCartAbandonmentJob(boss: PgBoss): Promise<void> {
     );
     return;
   }
-  await boss.createQueue(CART_ABANDONMENT_JOB);
+  await boss.createQueue(CART_ABANDONMENT_JOB, buildQueueConfig(CART_ABANDONMENT_JOB, CRON_SCAN_QUEUE_OPTS));
   await boss.work(CART_ABANDONMENT_JOB, async () => {
     try {
       const stats = await runCartAbandonmentDispatch({ log: logger });

@@ -276,6 +276,28 @@ const LearnNasalCongestion = lazy(() =>
   })),
 );
 
+// Utility & marketing additions — patient stories landing, plus three
+// further long-form learn pieces (sleep-report explainer, sleep
+// hygiene companion, CPAP & weight-loss relationship).
+const Stories = lazy(() =>
+  import("@/pages/stories").then((m) => ({ default: m.Stories })),
+);
+const LearnReadingYourSleepReport = lazy(() =>
+  import("@/pages/learn-reading-your-sleep-report").then((m) => ({
+    default: m.LearnReadingYourSleepReport,
+  })),
+);
+const LearnSleepHygiene = lazy(() =>
+  import("@/pages/learn-sleep-hygiene").then((m) => ({
+    default: m.LearnSleepHygiene,
+  })),
+);
+const LearnCpapAndWeightLoss = lazy(() =>
+  import("@/pages/learn-cpap-and-weight-loss").then((m) => ({
+    default: m.LearnCpapAndWeightLoss,
+  })),
+);
+
 // Brand marketing pages — a hub plus per-brand spotlights (React Health
 // is our flagship line, ResMed and Fisher & Paykel round out the catalog).
 // Lazy-loaded because they're SEO landing surfaces, not entry points for
@@ -483,21 +505,119 @@ function GuardedAccountBilling() {
 }
 
 /**
- * Order-success has its own gating: the order confirmation lives in
- * sessionStorage (so a refresh after order doesn't re-submit) rather
- * than in the in-memory fitter store. We check it here at route-mount
- * time so a deep link to /order-success either renders cleanly or
- * redirects.
+ * Order-success gating. The confirmation normally lives in
+ * sessionStorage (so a refresh after order doesn't re-submit). If
+ * that's gone — tab crashed, cache cleared, deep link from an email
+ * — we fall back to recovering the confirmation server-side using
+ * the ?ref + ?email URL params that /order appended on submit.
+ * The /api/orders/track endpoint already enforces matching email +
+ * rate limiting, so this doesn't widen the attack surface beyond
+ * the existing track-order page.
  */
 function GuardedOrderSuccess() {
   const [state, setState] = useState<"checking" | "ok" | "deny">("checking");
   useEffect(() => {
+    let cancelled = false;
+    // Fast path: sessionStorage carries the confirmation from /order.
     try {
       const stored = sessionStorage.getItem("fitter_order_confirmation");
-      setState(stored ? "ok" : "deny");
+      if (stored) {
+        setState("ok");
+        return;
+      }
     } catch {
-      setState("deny");
+      /* fall through to URL-param recovery */
     }
+    // Recovery path: read ?ref + ?email from the URL and ask the
+    // server. If both are present and the lookup succeeds, prime
+    // sessionStorage so <OrderSuccess /> renders normally without
+    // its own retry needed.
+    let ref: string | null = null;
+    let email: string | null = null;
+    try {
+      const params = new URLSearchParams(window.location.search);
+      ref = params.get("ref");
+      email = params.get("email");
+    } catch {
+      /* ignore — URL parse failure falls through to deny */
+    }
+    if (!ref || !email) {
+      setState("deny");
+      return;
+    }
+    void (async () => {
+      try {
+        const res = await fetch("/api/orders/track", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: {
+            Accept: "application/json",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ orderReference: ref, email }),
+        });
+        if (cancelled) return;
+        if (!res.ok) {
+          setState("deny");
+          return;
+        }
+        const data = (await res.json()) as {
+          orderReference: string;
+          mask: {
+            name: string;
+            manufacturer: string | null;
+            modelNumber?: string | null;
+          };
+        };
+        // Prime sessionStorage in the same shape /order writes so the
+        // OrderSuccess component's existing hydration path Just Works.
+        // Recovered orders don't carry measurements (not returned by
+        // /api/orders/track — they live in the persisted order's
+        // payload jsonb and aren't part of the public lookup surface);
+        // <OrderSuccess /> already renders the measurements card
+        // conditionally so absence is a clean visual no-op.
+        try {
+          sessionStorage.setItem(
+            "fitter_order_confirmation",
+            JSON.stringify({
+              orderReference: data.orderReference,
+              message:
+                "Your order has been sent to Penn Home Medical Supply. A team member will contact you within 1 business day to confirm and arrange shipping.",
+              mask: {
+                name: data.mask.name,
+                manufacturer: data.mask.manufacturer ?? "",
+                modelNumber: data.mask.modelNumber ?? "",
+              },
+            }),
+          );
+          setState("ok");
+        } catch {
+          // sessionStorage write failed (e.g. private browsing /
+          // storage disabled). Without it, OrderSuccess hydrates to
+          // null and the page is blank — better to deny+redirect so
+          // the patient at least sees the home page than to leave
+          // them staring at an empty "Order confirmed" frame.
+          setState("deny");
+          return;
+        }
+        // URL scrub runs ONLY after successful recovery so that a
+        // transient fetch failure leaves the ?ref + ?email intact —
+        // the patient can refresh and retry from the same URL.
+        // Scrubbing earlier would burn the recovery inputs on the
+        // first attempt and bounce them to "/" with no way back.
+        try {
+          const scrubbedUrl = `${window.location.pathname}${window.location.hash}`;
+          window.history.replaceState(window.history.state, "", scrubbedUrl);
+        } catch {
+          /* ignore — best-effort URL scrub */
+        }
+      } catch {
+        if (!cancelled) setState("deny");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
   if (state === "checking") return null;
   if (state === "deny") return <Redirect to="/" />;
@@ -621,6 +741,16 @@ function PatientRouter() {
           <Route
             path="/learn/nasal-congestion"
             component={LearnNasalCongestion}
+          />
+          <Route path="/stories" component={Stories} />
+          <Route
+            path="/learn/reading-your-sleep-report"
+            component={LearnReadingYourSleepReport}
+          />
+          <Route path="/learn/sleep-hygiene" component={LearnSleepHygiene} />
+          <Route
+            path="/learn/cpap-and-weight-loss"
+            component={LearnCpapAndWeightLoss}
           />
           <Route path="/comfort-guarantee" component={ComfortGuaranteePage} />
           <Route path="/insurance" component={Insurance} />

@@ -459,11 +459,20 @@ export function ShopCart() {
       window.location.assign(url);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
-      setError(message);
+      const category = classifyCheckoutError(message);
       track("checkout_error", {
         flow: "standard",
-        category: classifyCheckoutError(message),
+        category,
       });
+      // Auth expired mid-checkout: bounce the user through sign-in
+      // and return them to the cart with a marker so they can retry
+      // checkout in one click instead of hunting for the button.
+      if (category === "auth_required") {
+        const back = encodeURIComponent("/shop/cart?resume=1");
+        window.location.assign(`/sign-in?redirect=${back}`);
+        return;
+      }
+      setError(message);
       setCheckingOut(false);
     }
   }
@@ -505,11 +514,18 @@ export function ShopCart() {
           : err instanceof Error
             ? err.message
             : String(err);
-      setError(msg);
+      const category = classifyCheckoutError(msg);
       track("checkout_error", {
         flow: "express",
-        category: classifyCheckoutError(msg),
+        category,
       });
+      // Same auth-recovery shortcut as the standard flow.
+      if (category === "auth_required") {
+        const back = encodeURIComponent("/shop/cart?resume=1");
+        window.location.assign(`/sign-in?redirect=${back}`);
+        return;
+      }
+      setError(msg);
     } finally {
       setExpressCheckingOut(false);
     }

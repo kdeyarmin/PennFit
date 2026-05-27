@@ -58,6 +58,7 @@ import { logAuditBestEffort } from "@workspace/resupply-audit";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
+import { buildQueueConfig, CRON_SCAN_QUEUE_OPTS } from "../lib/queue-options";
 
 const SWEEP_JOB = "prior-auth.expiry-sweep";
 const SWEEP_CRON = "47 3 * * *";
@@ -134,23 +135,32 @@ export async function runPriorAuthExpirySweep(
   if (dueErr) throw dueErr;
 
   for (const row of dueToExpire ?? []) {
-    // The .eq("status", "approved") predicate is the race-safe gate:
+    // The .eq("status","approved") predicate is the race-safe gate:
     // a concurrent worker that already flipped the row to "expired"
-    // would leave this update with 0 affected rows + no error. We
-    // don't .select("id") to verify because the established test
-    // contract stages updates with just { error: null }, and the
-    // double-flip is harmless either way (status stays expired).
-    const { error: updErr } = await supabase
+    // leaves this UPDATE with 0 affected rows + no error. We DO
+    // .select("id") so we can tell winner from loser, because the
+    // csr_compliance_alerts insert + stats.expired bump below MUST
+    // fire exactly once per actual expiry — otherwise overlapping
+    // ticks duplicate the critical CSR alert (it's gated by a
+    // partial unique index, so the duplicate INSERT would throw a
+    // 23505) and over-report the expired count.
+    const { data: claimed, error: updErr } = await supabase
       .schema("resupply")
       .from("prior_authorizations")
       .update({ status: "expired" })
       .eq("id", row.id)
-      .eq("status", "approved");
+      .eq("status", "approved")
+      .select("id");
     if (updErr) {
       logger.warn(
         { err: updErr.message, paId: row.id },
         "prior-auth.expiry-sweep: expire update failed",
       );
+      continue;
+    }
+    if (!claimed || claimed.length === 0) {
+      // Lost the race to a concurrent tick — that tick will own
+      // the alert insert + stats bump.
       continue;
     }
     stats.expired += 1;
@@ -276,7 +286,7 @@ export async function runPriorAuthExpirySweep(
 export async function registerPriorAuthExpirySweepJob(
   boss: PgBoss,
 ): Promise<void> {
-  await boss.createQueue(SWEEP_JOB);
+  await boss.createQueue(SWEEP_JOB, buildQueueConfig(SWEEP_JOB, CRON_SCAN_QUEUE_OPTS));
 
   await boss.work(SWEEP_JOB, async () => {
     try {

@@ -31,6 +31,8 @@
 // the shipping address, physician info, or insurance — those need
 // a real session.
 
+import { timingSafeEqual } from "node:crypto";
+
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
@@ -123,7 +125,12 @@ router.post("/orders/track", async (req, res) => {
     .schema("public")
     .from("orders")
     .select(
-      "order_reference, patient_email, mask_name, mask_manufacturer, email_status, email_delivered_at, created_at",
+      // mask_model_number is included so that a session-storage-loss
+      // recovery on /order-success can render the same confirmation
+      // card the patient saw the first time (which references the
+      // model number). Not PHI; the patient already chose the mask
+      // by model number on /results.
+      "order_reference, patient_email, mask_name, mask_manufacturer, mask_model_number, email_status, email_delivered_at, created_at",
     )
     .eq("order_reference", normalizedRef)
     .limit(1)
@@ -140,10 +147,26 @@ router.post("/orders/track", async (req, res) => {
   // Treat "found but email doesn't match" the same as "not found"
   // so an attacker who guesses a reference can't infer which email
   // it belongs to.
-  if (
-    !legacyRow ||
-    (legacyRow.patient_email ?? "").toLowerCase() !== parsed.data.email
-  ) {
+  //
+  // Constant-time compare on the email string so the response time
+  // doesn't leak letter-by-letter how close the attacker's guess
+  // got. `!==` short-circuits on the first divergent byte, which
+  // a determined attacker can measure across many tries even with
+  // the IP rate limit (distributed sources). Pad to a fixed buffer
+  // length so timingSafeEqual doesn't itself leak length information
+  // via its length-mismatch fast-path.
+  const storedEmail = (legacyRow?.patient_email ?? "").toLowerCase();
+  const probedEmail = parsed.data.email;
+  let emailMatches = false;
+  if (legacyRow) {
+    const pad = Math.max(storedEmail.length, probedEmail.length, 320);
+    const a = Buffer.alloc(pad);
+    const b = Buffer.alloc(pad);
+    a.write(storedEmail, "utf8");
+    b.write(probedEmail, "utf8");
+    emailMatches = timingSafeEqual(a, b);
+  }
+  if (!legacyRow || !emailMatches) {
     res.status(404).json({ error: "not_found" });
     return;
   }
@@ -159,6 +182,7 @@ router.post("/orders/track", async (req, res) => {
     mask: {
       name: legacyRow.mask_name,
       manufacturer: legacyRow.mask_manufacturer,
+      modelNumber: legacyRow.mask_model_number,
     },
     createdAt: legacyRow.created_at,
     emailStatus: legacyRow.email_status,

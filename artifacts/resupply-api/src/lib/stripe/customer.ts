@@ -177,7 +177,7 @@ async function insertRow(
     displayName?: string | null;
   },
 ): Promise<ShopCustomerRow> {
-  // The original Drizzle path used INSERT … ON CONFLICT
+  // The original SQL path used INSERT … ON CONFLICT
   // (customer_id) DO NOTHING RETURNING. PostgREST has no DO
   // NOTHING; we INSERT and treat 23505 as the "sibling beat us"
   // path, then re-read.

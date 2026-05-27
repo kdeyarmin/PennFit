@@ -76,15 +76,18 @@ import { createTwilioSmsClient, TwilioConfigError } from "@workspace/resupply-te
 
 import { isFeatureEnabled } from "../../lib/feature-flags";
 import { logger } from "../../lib/logger";
+import { buildQueueConfig, VENDOR_SEND_QUEUE_OPTS } from "../lib/queue-options";
 import {
   TOUCHPOINT_OFFSETS_MS,
   TOTAL_TOUCHPOINTS,
   REORDER_TOUCHPOINT_OFFSETS_MS,
   TOTAL_ALL_TOUCHPOINTS,
   FINAL_CALL_OFFSET_MS,
+  FINAL_CALL_TOUCH_INDEX,
   signUnsubscribeToken,
   signOpenTrackingToken,
   signClickTrackingToken,
+  pickSubjectVariant,
 } from "../../routes/shop/fitter-complete";
 
 const JOB_NAME = "fitter-lead.supply-campaign";
@@ -112,6 +115,9 @@ export interface SupplyCampaignStats {
   skippedClaimLost: number;
   expired: number;
   errors: number;
+  /** Mig 0156 — leads where the dispatcher short-circuited T5+T6
+   *  because the lead showed zero engagement through T4. */
+  coldSkipped: number;
 }
 
 interface LeadRow {
@@ -129,6 +135,11 @@ interface LeadRow {
   first_name: string | null;
   first_order_placed_at: string | null;
   journey_stage: "campaign_active" | "reorder_active" | "final_call_pending";
+  // Mig 0153/0154 — engagement signals used by the cold-skip
+  // transition. Pre-T5 we check if zero engagement has accrued
+  // across T1-T4; if so, short-circuit T5 + T6 to T11.
+  engagement_score: number;
+  click_count: number;
 }
 
 interface TouchpointCopy {
@@ -390,6 +401,12 @@ export function composeTouchpoint(opts: {
    *  text CTAs ALWAYS use the bare URL — tracking-redirect domains
    *  in plain text read as spammy and trip filters. */
   wrapCta?: ((linkKey: string) => string) | null;
+  /** Mig 0157 — subject-line A/B variant for this lead+touch.
+   *  Defaults to 'A' when unset; touches that don't have a
+   *  variant configured for this key fall back to the default
+   *  copy. Tests pin a specific variant for deterministic
+   *  output. */
+  subjectVariantKey?: string;
 }): TouchpointCopy {
   const {
     touchIndex,
@@ -402,6 +419,7 @@ export function composeTouchpoint(opts: {
     firstName,
     trackingPixelUrl,
     wrapCta,
+    subjectVariantKey = "A",
   } = opts;
 
   /** HTML CTA URL — wrapped through the click-tracking redirect
@@ -480,11 +498,20 @@ export function composeTouchpoint(opts: {
 
   switch (touchIndex) {
     case 1: {
-      // T1 — day 1: warm recap. Subject leads with the specific mask
-      // model so the patient recognizes the email at a glance even
-      // before opening; "is on hold" beats "is ready" because it
-      // implies the recommendation might evaporate (loss-aversion).
-      const subject = `${nameSubjectPrefix}${maskRef} is on hold for you`;
+      // T1 — day 1: warm recap. Mig 0157 ships two A/B subject
+      // variants:
+      //   * A (default) — loss-aversion: "is on hold for you"
+      //     implies the recommendation might evaporate.
+      //   * B — promise-based: "is ready when you are" leads with
+      //     warmth + patient agency.
+      // Both subjects keep the mask model up front so the patient
+      // recognizes the email at a glance. Body copy + preheader
+      // stay constant across variants — we're isolating the
+      // subject as the test variable.
+      const subject =
+        subjectVariantKey === "B"
+          ? `${nameSubjectPrefix}${maskRef} is ready when you are`
+          : `${nameSubjectPrefix}${maskRef} is on hold for you`;
       const preheader = `Your measurements are saved — finish your fitting in 2 minutes.`;
       const bodyText = [
         `Yesterday you ran our at-home fitting and we matched you to ${maskRef}.`,
@@ -557,8 +584,17 @@ export function composeTouchpoint(opts: {
     }
     case 4: {
       // T4 — day 14: one-time discount with explicit 7-day deadline.
+      // Mig 0157 ships two A/B subject variants:
+      //   * A (default) — promo-code-first: leads with WELCOME15
+      //     as the curiosity hook ("what's WELCOME15?").
+      //   * B — urgency-first: leads with "15% off ends in 7 days"
+      //     to engage on scarcity/deadline framing.
+      // Body copy stays constant; only the subject varies.
       const promo = process.env.FITTER_SUPPLY_CAMPAIGN_PROMO ?? "WELCOME15";
-      const subject = `${nameSubjectPrefix}${promo}: 15% off ${maskRef} — ends in 7 days`;
+      const subject =
+        subjectVariantKey === "B"
+          ? `${nameSubjectPrefix}15% off ${maskRef} — ends in 7 days`
+          : `${nameSubjectPrefix}${promo}: 15% off ${maskRef} — ends in 7 days`;
       const preheader = `One-time offer. Use code ${promo} at checkout — expires automatically.`;
       const bodyText = [
         `One-time offer: code ${promo} takes 15% off your first order, mask or supplies.`,
@@ -813,6 +849,7 @@ export async function runFitterSupplyCampaignSweep(): Promise<SupplyCampaignStat
     skippedClaimLost: 0,
     expired: 0,
     errors: 0,
+    coldSkipped: 0,
   };
 
   // Runtime feature-flag check. The boot-time RESUPPLY_FITTER_*_ENABLED
@@ -839,7 +876,7 @@ export async function runFitterSupplyCampaignSweep(): Promise<SupplyCampaignStat
     .schema("resupply")
     .from("fitter_leads")
     .select(
-      "id, email, phone_e164, sms_opt_in, recommended_mask_id, recommended_mask_name, recommended_mask_type, campaign_touch_count, completed_at, first_name, first_order_placed_at, journey_stage",
+      "id, email, phone_e164, sms_opt_in, recommended_mask_id, recommended_mask_name, recommended_mask_type, campaign_touch_count, completed_at, first_name, first_order_placed_at, journey_stage, engagement_score, click_count",
     )
     .in("journey_stage", [
       "campaign_active",
@@ -868,7 +905,90 @@ export async function runFitterSupplyCampaignSweep(): Promise<SupplyCampaignStat
 
   for (const lead of candidates) {
     stats.scanned += 1;
-    const nextTouchIndex = lead.campaign_touch_count + 1;
+    // The 'final_call_pending' holding stage pins campaign_touch_count
+    // at the pre-purchase total (T6=6), so count+1 would resolve to T7
+    // (the reorder-cushion copy) instead of the single final-call touch.
+    // The final-call touch is always T11 (FINAL_CALL_TOUCH_INDEX) — the
+    // copy, tracking tokens, recorded touch index, and SMS-channel gate
+    // (T11 is email-only) all key off this value.
+    const nextTouchIndex =
+      lead.journey_stage === "final_call_pending"
+        ? FINAL_CALL_TOUCH_INDEX
+        : lead.campaign_touch_count + 1;
+
+    // Cold-lead suppression (mig 0156).
+    // ---------------------------------
+    // About to send T5 from 'campaign_active' AND the lead has
+    // shown ZERO engagement signal through T4 → short-circuit the
+    // remaining pre-purchase touches and jump straight to the T11
+    // final-call holding stage. The patient still gets a strong-
+    // incentive reactivation email 90 days from now; we just
+    // stop pushing the soft-touch educational + sendoff emails
+    // (T5 + T6) that are statistically unlikely to convert this
+    // cohort.
+    //
+    // The 0-engagement threshold is intentionally strict: a SINGLE
+    // open or click signals enough warmth to keep going. Apple
+    // Mail Privacy pre-fetch noise + cached image loads mean even
+    // marginally-interested patients will accumulate at least one
+    // open across 4 touches.
+    //
+    // We do this BEFORE the regular phase-routing block so the
+    // skip transition is atomic + visible from the admin queue.
+    if (
+      lead.journey_stage === "campaign_active" &&
+      nextTouchIndex === 5 &&
+      (lead.engagement_score ?? 0) === 0 &&
+      (lead.click_count ?? 0) === 0
+    ) {
+      const t11DueAt = new Date(
+        Date.now() + FINAL_CALL_OFFSET_MS,
+      ).toISOString();
+      const skipIso = new Date().toISOString();
+      const { data: skipClaimed, error: skipErr } = await supabase
+        .schema("resupply")
+        .from("fitter_leads")
+        .update({
+          // Pin campaign_touch_count to the T6 value to mark the
+          // pre-purchase phase complete. The final-call touch index
+          // (T11) is derived from journey_stage in the dispatcher, not
+          // from this count.
+          campaign_touch_count: TOTAL_TOUCHPOINTS,
+          last_campaign_touch_at: skipIso,
+          next_campaign_touch_at: t11DueAt,
+          journey_stage: "final_call_pending",
+          cold_skipped_at: skipIso,
+        })
+        .eq("id", lead.id)
+        .eq("campaign_touch_count", lead.campaign_touch_count)
+        .eq("journey_stage", "campaign_active")
+        .select("id");
+      if (skipErr) {
+        stats.errors += 1;
+        logger.warn(
+          { err: skipErr.message, leadId: lead.id },
+          "fitter-lead.supply-campaign: cold-skip claim failed",
+        );
+        continue;
+      }
+      if (!skipClaimed || skipClaimed.length === 0) {
+        // Lost race — another worker / attribution flipped the
+        // row under us. Skip this tick.
+        stats.skippedClaimLost += 1;
+        continue;
+      }
+      stats.coldSkipped += 1;
+      logger.info(
+        {
+          event: "fitter_lead.cold_skipped",
+          leadId: lead.id,
+          touchSkippedFrom: 5,
+          touchSkippedTo: 11,
+        },
+        "fitter-lead.supply-campaign: cold-skipped T5+T6 → T11",
+      );
+      continue;
+    }
 
     // Phase routing:
     //   * 'campaign_active' (T1-T6) — touches anchor on completed_at.
@@ -962,6 +1082,13 @@ export async function runFitterSupplyCampaignSweep(): Promise<SupplyCampaignStat
     }
     if (isAnyFinal) stats.expired += 1;
 
+    // Mig 0157 — deterministic A/B subject-line variant per
+    // (lead, touch). Same lead always gets the same variant on
+    // the same touch; bucket assignment hashes (lead_id |
+    // touch_index) and mods the variant count for that touch.
+    // Touches without a registered A/B test fall back to 'A'.
+    const subjectVariantKey = pickSubjectVariant(lead.id, nextTouchIndex);
+
     // Build the unsubscribe + tracking-pixel URLs once per lead.
     // Both signed tokens include the lead_id so they can't be
     // forged or replayed against another patient.
@@ -989,14 +1116,18 @@ export async function runFitterSupplyCampaignSweep(): Promise<SupplyCampaignStat
       // (lead, touch, link_key) on demand. Same key as the open
       // pixel; distinct payload prefix 'c|' so cross-replay across
       // the open/unsubscribe/click endpoints all fail closed.
+      // Mig 0157: also carries the subject_variant_key forward so
+      // per-variant CTR attribution doesn't need a DB lookup.
       const safeLeadId = lead.id;
       const safeTouchIndex = nextTouchIndex;
+      const safeVariantKey = subjectVariantKey;
       wrapCta = (linkKey: string): string => {
         try {
           const token = signClickTrackingToken(
             safeLeadId,
             safeTouchIndex,
             linkKey,
+            safeVariantKey,
           );
           return `${baseUrl}/shop/track/c?t=${encodeURIComponent(token)}`;
         } catch (err) {
@@ -1051,6 +1182,7 @@ export async function runFitterSupplyCampaignSweep(): Promise<SupplyCampaignStat
       firstName: lead.first_name,
       trackingPixelUrl,
       wrapCta,
+      subjectVariantKey,
     });
 
     // Email leg.
@@ -1065,10 +1197,14 @@ export async function runFitterSupplyCampaignSweep(): Promise<SupplyCampaignStat
             kind: "fitter_supply_campaign",
             touch_index: String(nextTouchIndex),
             lead_id: lead.id,
+            // Mig 0157 — surface variant in SendGrid event
+            // webhooks too, so ops can sanity-check at the
+            // provider level.
+            variant: subjectVariantKey,
           },
         });
         stats.emailed += 1;
-        await recordTouch(lead.id, nextTouchIndex, "email", "sent", null);
+        await recordTouch(lead.id, nextTouchIndex, "email", "sent", null, subjectVariantKey);
       } catch (err) {
         stats.errors += 1;
         logger.warn(
@@ -1081,11 +1217,12 @@ export async function runFitterSupplyCampaignSweep(): Promise<SupplyCampaignStat
           "email",
           "failed",
           err instanceof Error ? err.message.slice(0, 500) : String(err).slice(0, 500),
+          subjectVariantKey,
         );
       }
     } else {
       stats.skippedNoEmailConfig += 1;
-      await recordTouch(lead.id, nextTouchIndex, "email", "skipped", "no_sendgrid_config");
+      await recordTouch(lead.id, nextTouchIndex, "email", "skipped", "no_sendgrid_config", subjectVariantKey);
     }
 
     // SMS leg — gated by both per-touch policy (SMS_TOUCH_INDEXES)
@@ -1103,7 +1240,7 @@ export async function runFitterSupplyCampaignSweep(): Promise<SupplyCampaignStat
             body: copy.sms,
           });
           stats.smsSent += 1;
-          await recordTouch(lead.id, nextTouchIndex, "sms", "sent", null);
+          await recordTouch(lead.id, nextTouchIndex, "sms", "sent", null, subjectVariantKey);
         } catch (err) {
           stats.errors += 1;
           logger.warn(
@@ -1116,11 +1253,12 @@ export async function runFitterSupplyCampaignSweep(): Promise<SupplyCampaignStat
             "sms",
             "failed",
             err instanceof Error ? err.message.slice(0, 500) : String(err).slice(0, 500),
+            subjectVariantKey,
           );
         }
       } else {
         stats.skippedNoSmsConfig += 1;
-        await recordTouch(lead.id, nextTouchIndex, "sms", "skipped", "no_twilio_config");
+        await recordTouch(lead.id, nextTouchIndex, "sms", "skipped", "no_twilio_config", subjectVariantKey);
       }
     }
   }
@@ -1136,6 +1274,7 @@ async function recordTouch(
   channel: "email" | "sms",
   status: "sent" | "failed" | "skipped",
   errorMessage: string | null,
+  subjectVariantKey: string = "A",
 ): Promise<void> {
   try {
     const supabase = getSupabaseServiceRoleClient();
@@ -1149,6 +1288,10 @@ async function recordTouch(
         template_key: `fitter_supply_campaign.t${touchIndex}`,
         status,
         error_message: errorMessage,
+        // Mig 0157 — subject-line A/B variant. Default 'A' for
+        // call sites in dev/test that don't run experiments;
+        // production worker passes the bucket-assigned key.
+        subject_variant_key: subjectVariantKey,
       });
     if (error) {
       // Unique-constraint hit is expected on a retry of a lost-race
@@ -1180,7 +1323,7 @@ export async function registerFitterSupplyCampaignJob(
     );
     return;
   }
-  await boss.createQueue(JOB_NAME);
+  await boss.createQueue(JOB_NAME, buildQueueConfig(JOB_NAME, VENDOR_SEND_QUEUE_OPTS));
   await boss.work(JOB_NAME, async () => {
     try {
       const stats = await runFitterSupplyCampaignSweep();

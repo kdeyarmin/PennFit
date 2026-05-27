@@ -21,7 +21,8 @@
 
 import { createHash } from "node:crypto";
 
-import express, { Router, type IRouter } from "express";
+import express, { Router, type IRouter, type Request } from "express";
+import expressRateLimit, { ipKeyGenerator } from "express-rate-limit";
 import type { IncomingHttpHeaders } from "node:http";
 import { z } from "zod";
 
@@ -34,7 +35,7 @@ import {
 import { verifyParachuteSignature } from "@workspace/resupply-integrations-parachute";
 
 import { logger } from "../lib/logger";
-import { rateLimit } from "../middlewares/rate-limit";
+import { RATE_LIMITS } from "../lib/rate-limits-config";
 
 const router: IRouter = Router();
 
@@ -82,11 +83,16 @@ const rawJson = express.raw({ type: "application/json", limit: "1mb" });
 // above the burstiest partner replay window (Parachute caps its
 // retry storm at ~30/min) but cuts off scripted abuse early.
 // Keyed on req.ip because no authenticated identity is available at
-// this point in the request lifecycle.
-const inboundWebhookLimiter = rateLimit({
-  windowMs: 60_000,
-  max: 120,
-  name: "integrations_inbound_ip",
+// this point in the request lifecycle. Uses `express-rate-limit`
+// directly (rather than the in-house `rateLimit` helper) so static
+// analyzers recognize the gate on this unauthenticated endpoint.
+const inboundWebhookLimiter = expressRateLimit({
+  windowMs: RATE_LIMITS.integrations_inbound_dispatch.windowMs,
+  limit: RATE_LIMITS.integrations_inbound_dispatch.limit,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  keyGenerator: (req: Request) => ipKeyGenerator(req.ip ?? "0.0.0.0"),
+  message: { error: "too_many_requests", limiter: "integrations_inbound_ip" },
 });
 
 router.post("/integrations/inbound/:source", inboundWebhookLimiter, rawJson, async (req, res) => {
@@ -178,6 +184,20 @@ router.post("/integrations/inbound/:source", inboundWebhookLimiter, rawJson, asy
     return;
   }
   const signatureVerified = sigOutcome.outcome === "configured_ok";
+
+  // Dedupe key safety: when the request is NOT signature-verified
+  // (dev/preview without partner secrets), we must NOT trust the
+  // partner-supplied delivery-id header for dedupe. Otherwise an
+  // unauthenticated attacker can pre-poison the dedupe slot for any
+  // future legitimate delivery id — every real later webhook for
+  // that id would 200-deduplicate without ever being processed.
+  // Force sha256(body) for unverified inserts so the attacker's
+  // poison row sits in a body-content slot that a real partner
+  // payload will never collide with.
+  if (!signatureVerified) {
+    const sha = createHash("sha256").update(rawBuffer).digest("hex");
+    dedupeKey = `sha256:${sha}`;
+  }
 
   const supabase = getSupabaseServiceRoleClient();
   const { error } = await supabase

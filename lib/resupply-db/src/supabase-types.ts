@@ -1,5 +1,4 @@
-// Hand-authored Supabase Database type for the Drizzle → Supabase
-// migration in progress.
+// Hand-authored Supabase `Database` type for the CPAP resupply system.
 //
 // Why hand-authored: `mcp__supabase__generate_typescript_types` only
 // emits the schemas exposed via PostgREST's `db_schemas` setting.
@@ -9,9 +8,8 @@
 // → Project Settings → API → "Exposed schemas") this file is the
 // authoritative type source for the Supabase JS client.
 //
-// Coverage today: the tables touched by `artifacts/resupply-api/src/
-// routes/storefront/admin-users.ts` (the first module ported off
-// Drizzle). Extend as more modules migrate.
+// Coverage: the `public`, `resupply`, and `resupply_auth` tables the
+// API reads/writes through PostgREST. Extend as new tables are added.
 //
 // When the `resupply` and `resupply_auth` schemas are exposed, replace
 // this file with the generator output and delete the hand-authored
@@ -121,6 +119,20 @@ export interface Database {
   };
   resupply: {
     Tables: {
+      stripe_webhook_events: {
+        Row: {
+          event_id: string;
+          event_type: string;
+          received_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["stripe_webhook_events"]["Row"]
+        > & { event_id: string; event_type: string };
+        Update: Partial<
+          Database["resupply"]["Tables"]["stripe_webhook_events"]["Row"]
+        >;
+        Relationships: [];
+      };
       patient_checkin_attempts: {
         Row: {
           id: string;
@@ -155,6 +167,60 @@ export interface Database {
         };
         Insert: Partial<Database["resupply"]["Tables"]["idempotency_keys"]["Row"]>;
         Update: Partial<Database["resupply"]["Tables"]["idempotency_keys"]["Row"]>;
+        Relationships: [];
+      };
+      worker_dedup_keys: {
+        Row: {
+          key: string;
+          created_at: string;
+          expires_at: string;
+        };
+        Insert: {
+          key: string;
+          created_at?: string;
+          expires_at: string;
+        };
+        Update: Partial<Database["resupply"]["Tables"]["worker_dedup_keys"]["Row"]>;
+        Relationships: [];
+      };
+      worker_run_summary: {
+        Row: {
+          id: string;
+          worker_kind: string;
+          started_at: string;
+          completed_at: string;
+          counters: Json;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          worker_kind: string;
+          started_at?: string;
+          completed_at?: string;
+          counters?: Json;
+          created_at?: string;
+        };
+        Update: Partial<Database["resupply"]["Tables"]["worker_run_summary"]["Row"]>;
+        Relationships: [];
+      };
+      feature_flag_events: {
+        Row: {
+          id: string;
+          key: string;
+          previous_enabled: boolean;
+          next_enabled: boolean;
+          operator_email: string | null;
+          occurred_at: string;
+        };
+        Insert: {
+          id?: string;
+          key: string;
+          previous_enabled: boolean;
+          next_enabled: boolean;
+          operator_email?: string | null;
+          occurred_at?: string;
+        };
+        Update: Partial<Database["resupply"]["Tables"]["feature_flag_events"]["Row"]>;
         Relationships: [];
       };
       admin_users: {
@@ -363,6 +429,7 @@ export interface Database {
           quarterly_summary_last_sent_at: string | null;
           birthday_email_year_sent: number | null;
           sleep_anniversary_year_sent: number | null;
+          timezone: string;
           created_at: string;
           updated_at: string;
         };
@@ -412,6 +479,9 @@ export interface Database {
           return_tracking_number: string | null;
           admin_note: string | null;
           admin_user_id: string | null;
+          refund_failure_count: number;
+          refund_last_failure_at: string | null;
+          refund_last_failure_reason: string | null;
           created_at: string;
           updated_at: string;
           approved_at: string | null;
@@ -560,6 +630,9 @@ export interface Database {
           // Mig 0155 — per-lead engagement recency.
           last_open_at: string | null;
           last_click_at: string | null;
+          // Mig 0156 — CSR free-text notes + cold-skip marker.
+          csr_notes: string | null;
+          cold_skipped_at: string | null;
         };
         Insert: Partial<Database["resupply"]["Tables"]["fitter_leads"]["Row"]>;
         Update: Partial<Database["resupply"]["Tables"]["fitter_leads"]["Row"]>;
@@ -581,6 +654,9 @@ export interface Database {
           open_count: number;
           first_opened_at: string | null;
           last_opened_at: string | null;
+          // Mig 0157 — A/B subject-line variant key assigned at
+          // send time. Default 'A' covers single-variant touches.
+          subject_variant_key: string;
         };
         Insert: Partial<
           Database["resupply"]["Tables"]["fitter_campaign_touches"]["Row"]
@@ -599,6 +675,10 @@ export interface Database {
           link_key: string;
           clicked_at: string;
           submitter_ip: string | null;
+          // Mig 0157 — A/B subject-line variant assigned at the
+          // email send that originated this click. Carried through
+          // the signed click token so attribution is automatic.
+          subject_variant_key: string;
         };
         Insert: Partial<
           Database["resupply"]["Tables"]["fitter_campaign_clicks"]["Row"]
@@ -2246,6 +2326,9 @@ export interface Database {
           claims_denied_count: number;
           lines_processed_count: number;
           matched_submission_id: string | null;
+          /** Phase 16 (mig 0143): resolved payer_profile FK or NULL when
+           *  the 835's payer ID didn't match any catalog entry. */
+          payer_profile_id: string | null;
           status: "processed" | "parse_failed" | "partial" | "rejected";
           rejection_reason: string | null;
           ingested_by_email: string;
@@ -2889,6 +2972,29 @@ export interface Database {
         >;
         Update: Partial<
           Database["resupply"]["Tables"]["feature_flags"]["Row"]
+        >;
+        Relationships: [];
+      };
+      report_presets: {
+        Row: {
+          id: string;
+          user_id: string;
+          name: string;
+          slug: string;
+          format: "csv" | "pdf" | "iif" | "qbo.csv";
+          range_kind: "absolute" | "preset";
+          range_preset: string | null;
+          range_from: string | null;
+          range_to: string | null;
+          recipient: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["report_presets"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["report_presets"]["Row"]
         >;
         Relationships: [];
       };
@@ -3813,8 +3919,46 @@ export interface Database {
           clicks: number;
         };
       };
+      // Mig 0157 — same shape but broken out per subject-line
+      // variant. One row per (touch_index, subject_variant_key)
+      // actually-shipped combination.
+      fitter_campaign_touch_variant_metrics: {
+        Row: {
+          touch_index: number;
+          subject_variant_key: string;
+          email_sends: number;
+          email_failures: number;
+          opens: number;
+          clicks: number;
+        };
+      };
     };
     Functions: {
+      // Mig 0164 — server-side per-payer denial-rate aggregation for
+      // the /admin/billing/denial-rate endpoint (replaces a 10k-row
+      // JS reduce). bigint columns serialize as string over PostgREST.
+      billing_denial_rate: {
+        Args: { p_cutoff: string };
+        Returns: Array<{
+          payer_name: string;
+          decisions: number | string;
+          denials: number | string;
+        }>;
+      };
+      // Mig 0164 — per-product back-in-stock queue rollup for the
+      // /admin/shop/back-in-stock-queue endpoint (top 200, replaces a
+      // 10k-row JS group+sort). bigint counts serialize as string.
+      shop_back_in_stock_queue: {
+        Args: Record<string, never>;
+        Returns: Array<{
+          product_id: string;
+          pending_count: number | string;
+          notified_count: number | string;
+          delivered_count: number | string;
+          oldest_pending_at: string | null;
+          last_notified_at: string | null;
+        }>;
+      };
       // Mig 0155 — atomic per-touch open-count bump, called by
       // the open-tracking pixel endpoint on every pixel load.
       record_fitter_touch_open: {

@@ -14,6 +14,7 @@ import { Spinner } from "@/components/admin/Spinner";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { Button } from "@/components/admin/Button";
 import { Input } from "@/components/admin/Input";
+import { useConfirmDialog } from "@/hooks/use-confirm-dialog";
 import {
   createClosure,
   endClosureNow,
@@ -112,6 +113,7 @@ function NewClosureCard() {
             value={label}
             onChange={(e) => setLabel(e.target.value.slice(0, 200))}
             placeholder="Thanksgiving Day"
+            aria-label="Label"
           />
         </div>
         <div>
@@ -122,6 +124,7 @@ function NewClosureCard() {
             type="datetime-local"
             value={startsAt}
             onChange={(e) => setStartsAt(e.target.value)}
+            aria-label="Starts at"
           />
         </div>
         <div>
@@ -132,6 +135,7 @@ function NewClosureCard() {
             type="datetime-local"
             value={endsAt}
             onChange={(e) => setEndsAt(e.target.value)}
+            aria-label="Ends at"
           />
         </div>
         <div className="sm:col-span-2">
@@ -146,6 +150,7 @@ function NewClosureCard() {
             rows={3}
             className="w-full rounded border px-2 py-1.5 text-sm"
             style={{ borderColor: "hsl(var(--line-1))" }}
+            aria-label="Auto-reply message"
           />
           <div className="text-[10px] text-muted-foreground mt-1">
             {autoReplyMessage.length} / 320
@@ -171,8 +176,18 @@ function NewClosureCard() {
   );
 }
 
+/**
+ * Render the "Recent + upcoming" admin card showing office closures and controls to end them.
+ *
+ * Displays loading, error, empty, or a table of closures. Each active closure exposes an
+ * "End now" action that prompts for confirmation before ending the closure and refreshing
+ * the closures queries.
+ *
+ * @returns The card React element containing the closures UI and confirmation dialog element.
+ */
 function ClosureListCard() {
   const qc = useQueryClient();
+  const [confirm, ConfirmDialogEl] = useConfirmDialog();
   const queryKey = ["admin", "closures", "list"] as const;
   const { data, isPending, isError, error, refetch } = useQuery({
     queryKey,
@@ -234,13 +249,16 @@ function ClosureListCard() {
               <ClosureRow
                 key={c.id}
                 row={c}
-                onEndNow={() => {
+                onEndNow={async () => {
                   if (
-                    window.confirm(
-                      `End "${c.label}" right now? Auto-reply stops immediately.`,
-                    )
+                    !(await confirm({
+                      title: "End closure now?",
+                      description: `End "${c.label}" right now? Auto-reply stops immediately.`,
+                      confirmLabel: "End now",
+                    }))
                   )
-                    endNow.mutate(c.id);
+                    return;
+                  endNow.mutate(c.id);
                 }}
                 endPending={endNow.isPending}
               />
@@ -248,6 +266,7 @@ function ClosureListCard() {
           </tbody>
         </table>
       )}
+      {ConfirmDialogEl}
     </Card>
   );
 }

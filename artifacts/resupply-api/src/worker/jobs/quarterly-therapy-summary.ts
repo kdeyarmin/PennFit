@@ -46,6 +46,7 @@ import { buildQuarterlySummary } from "../../lib/therapy-summary/build-quarterly
 import { sendQuarterlySummaryEmail } from "../../lib/order-emails/send-quarterly-summary-email";
 import { shouldSendEmail } from "../../lib/comm-prefs";
 import { logger } from "../../lib/logger";
+import { buildQueueConfig, VENDOR_SEND_QUEUE_OPTS } from "../lib/queue-options";
 
 const JOB_NAME = "patients.quarterly-summary";
 const JOB_CRON = "17 6 * * *"; // Daily 06:17 UTC.
@@ -138,11 +139,14 @@ export async function runQuarterlyTherapySummary(): Promise<QuarterlySummaryStat
     // "marketing OFF by default" stance — we skip them. Engaged
     // customers (the target cohort for this email) all have a row
     // via /account.
+    // .eq is exact; .ilike would let `_` / `%` in the patient's
+    // email cross-match other rows and resolve opt-in against the
+    // wrong customer.
     const { data: cust } = await supabase
       .schema("resupply")
       .from("shop_customers")
       .select("communication_preferences")
-      .ilike("email_lower", patient.email.toLowerCase())
+      .eq("email_lower", patient.email.toLowerCase())
       .limit(1)
       .maybeSingle();
     if (!cust) {
@@ -279,7 +283,7 @@ export async function runQuarterlyTherapySummary(): Promise<QuarterlySummaryStat
 export async function registerQuarterlyTherapySummaryJob(
   boss: PgBoss,
 ): Promise<void> {
-  await boss.createQueue(JOB_NAME);
+  await boss.createQueue(JOB_NAME, buildQueueConfig(JOB_NAME, VENDOR_SEND_QUEUE_OPTS));
 
   await boss.work(JOB_NAME, async () => {
     try {

@@ -10,7 +10,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
   CheckCircle2,
-  FileSignature,
   KeyRound,
   ShieldAlert,
   ShieldCheck,
@@ -21,6 +20,7 @@ import { Spinner } from "@/components/admin/Spinner";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { Button } from "@/components/admin/Button";
 import { Input } from "@/components/admin/Input";
+import { useConfirmDialog } from "@/hooks/use-confirm-dialog";
 import {
   beginEnrollMfa,
   disableMfa,
@@ -32,12 +32,6 @@ import {
   type MfaDevice,
   type MfaStatus,
 } from "@/lib/admin/mfa-api";
-import {
-  attestPolicy,
-  listMyPendingPolicies,
-  type PendingPolicy,
-} from "@/lib/admin/accreditation-api";
-
 const statusKey = ["admin", "mfa", "status"] as const;
 
 export function AdminSecurityPage() {
@@ -64,8 +58,6 @@ export function AdminSecurityPage() {
         </p>
       </header>
 
-      <PendingAttestationsCard />
-
       <Card
         title={
           <span className="flex items-center gap-2">
@@ -88,114 +80,17 @@ export function AdminSecurityPage() {
   );
 }
 
-/** Per-staff "policies awaiting your signature" surface. Renders
- *  nothing when there's no work to do — security page stays calm
- *  when the user is current. */
-function PendingAttestationsCard() {
-  const qc = useQueryClient();
-  const queryKey = ["admin", "accreditation", "my-pending"] as const;
-  const { data } = useQuery({
-    queryKey,
-    queryFn: listMyPendingPolicies,
-  });
-  if (!data || data.pending.length === 0) return null;
-  return (
-    <Card
-      title={
-        <span className="flex items-center gap-2">
-          <FileSignature className="h-4 w-4" />
-          Policies awaiting your acknowledgement
-        </span>
-      }
-    >
-      <div className="space-y-3">
-        <p className="text-sm" style={{ color: "hsl(var(--ink-3))" }}>
-          The compliance team has published the following policies. Read each
-          one, then attest below — your signature lands in the accreditation
-          binder.
-        </p>
-        {data.pending.map((p) => (
-          <PendingAttestationRow
-            key={p.id}
-            policy={p}
-            onAttested={() => {
-              void qc.invalidateQueries({ queryKey });
-            }}
-          />
-        ))}
-      </div>
-    </Card>
-  );
-}
-
-function PendingAttestationRow({
-  policy,
-  onAttested,
-}: {
-  policy: PendingPolicy;
-  onAttested: () => void;
-}) {
-  const ackText = `I, the signed-in admin, have read and acknowledge "${policy.title}" v${policy.version} (${policy.policyKey}).`;
-  const [confirmed, setConfirmed] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const attest = useMutation({
-    mutationFn: () => attestPolicy(policy.id, ackText),
-    onSuccess: onAttested,
-    onError: (e: Error) => setError(e.message),
-  });
-  return (
-    <div
-      className="rounded border p-3 space-y-2"
-      style={{ borderColor: "hsl(var(--line-1))" }}
-    >
-      <div className="flex items-baseline justify-between gap-3">
-        <div>
-          <div className="text-sm font-semibold">{policy.title}</div>
-          <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
-            {policy.category} · version {policy.version}
-          </div>
-        </div>
-        {policy.bodyUrl && (
-          <a
-            href={policy.bodyUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-xs hover:underline"
-            style={{ color: "hsl(var(--penn-navy))" }}
-          >
-            Open policy →
-          </a>
-        )}
-      </div>
-      {policy.summary && (
-        <p className="text-xs text-muted-foreground">{policy.summary}</p>
-      )}
-      <label className="flex items-center gap-2 text-xs">
-        <input
-          type="checkbox"
-          checked={confirmed}
-          onChange={(e) => setConfirmed(e.target.checked)}
-        />
-        I have read this policy and acknowledge it.
-      </label>
-      {error && (
-        <div className="rounded border border-rose-200 bg-rose-50 p-2 text-xs text-rose-900">
-          {error}
-        </div>
-      )}
-      <Button
-        disabled={!confirmed || attest.isPending}
-        isLoading={attest.isPending}
-        onClick={() => attest.mutate()}
-      >
-        Attest
-      </Button>
-    </div>
-  );
-}
-
+/**
+ * Render the enrolled-MFA management panel for an admin account.
+ *
+ * Displays enrollment metadata (enrolled date, last used, recovery codes remaining), the list of enrolled devices, warnings when recovery codes are low or absent, and controls to regenerate recovery codes, disable MFA, or add another device. Handles inline display of newly regenerated one-time recovery codes and delegates destructive confirmations to the provided confirm dialog hook.
+ *
+ * @param data - The current MFA status used to populate device lists, timestamps, and recovery code counts
+ * @returns The React element representing the enrolled MFA management UI
+ */
 function EnrolledPanel({ data }: { data: MfaStatus }) {
   const qc = useQueryClient();
+  const [confirm, ConfirmDialogEl] = useConfirmDialog();
   const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
   // After regenerate succeeds we render the one-time codes panel
@@ -323,6 +218,7 @@ function EnrolledPanel({ data }: { data: MfaStatus }) {
             maxLength={6}
             inputMode="numeric"
             autoComplete="one-time-code"
+            aria-label="Authenticator code"
             style={{ width: "8rem", fontFamily: "monospace" }}
           />
           <Button
@@ -333,13 +229,18 @@ function EnrolledPanel({ data }: { data: MfaStatus }) {
               disable.isPending
             }
             isLoading={regenerate.isPending}
-            onClick={() => {
+            onClick={async () => {
               if (
-                window.confirm(
-                  "Generate a fresh batch of 10 recovery codes? Your existing codes will stop working.",
-                )
+                !(await confirm({
+                  title: "Regenerate recovery codes?",
+                  description:
+                    "Generate a fresh batch of 10 recovery codes? Your existing codes will stop working.",
+                  confirmLabel: "Regenerate",
+                  destructive: true,
+                }))
               )
-                regenerate.mutate();
+                return;
+              regenerate.mutate();
             }}
           >
             Regenerate recovery codes
@@ -372,6 +273,7 @@ function EnrolledPanel({ data }: { data: MfaStatus }) {
           + Add another device
         </Button>
       </div>
+      {ConfirmDialogEl}
     </div>
   );
 }
@@ -457,6 +359,7 @@ function UnenrolledPanel({ inProgress }: { inProgress: boolean }) {
             value={deviceLabel}
             onChange={(e) => setDeviceLabel(e.target.value.slice(0, 64))}
             placeholder="iPhone, Yubikey, Desktop authy…"
+            aria-label="Device label"
             style={{ width: "16rem" }}
           />
         </div>
@@ -519,6 +422,7 @@ function UnenrolledPanel({ inProgress }: { inProgress: boolean }) {
           maxLength={6}
           inputMode="numeric"
           autoComplete="one-time-code"
+          aria-label="Authenticator code"
           style={{ width: "8rem", fontFamily: "monospace" }}
         />
         <Button
@@ -616,11 +520,17 @@ function RecoveryCodesPanel({
   );
 }
 
-/** Multi-device list — one row per enrolled authenticator. The
- *  per-device "Remove" button requires the current TOTP code from
- *  the global code field (same field used for Disable / Regenerate).
- *  Refuses to remove the LAST device — the server enforces this too
- *  and we mirror it in the UI for a friendlier error path.
+/**
+ * Render a list of enrolled MFA devices with per-device removal controls.
+ *
+ * Each device shows its label, added date, and last-used date. The "Remove"
+ * button is shown only when more than one device is enrolled and requires the
+ * current 6-digit TOTP `code` to be present; removal opens a confirmation
+ * dialog and invalidates the MFA status query on success. Returns null when
+ * `devices` is empty.
+ *
+ * @param devices - The enrolled MFA devices to display
+ * @param code - The current global 6-digit TOTP code used to authorize removals
  */
 function DeviceList({
   devices,
@@ -630,6 +540,7 @@ function DeviceList({
   code: string;
 }) {
   const qc = useQueryClient();
+  const [confirm, ConfirmDialogEl] = useConfirmDialog();
   const remove = useMutation({
     mutationFn: (id: string) => disableMfaDevice(id, code.trim()),
     onSuccess: () => void qc.invalidateQueries({ queryKey: statusKey }),
@@ -664,13 +575,17 @@ function DeviceList({
                 intent="ghost"
                 size="sm"
                 disabled={code.length !== 6 || remove.isPending}
-                onClick={() => {
+                onClick={async () => {
                   if (
-                    window.confirm(
-                      `Remove "${d.label ?? "this device"}"? Other devices and recovery codes stay active.`,
-                    )
+                    !(await confirm({
+                      title: "Remove device?",
+                      description: `Remove "${d.label ?? "this device"}"? Other devices and recovery codes stay active.`,
+                      confirmLabel: "Remove",
+                      destructive: true,
+                    }))
                   )
-                    remove.mutate(d.id);
+                    return;
+                  remove.mutate(d.id);
                 }}
               >
                 Remove
@@ -684,6 +599,7 @@ function DeviceList({
           {remove.error.message}
         </p>
       )}
+      {ConfirmDialogEl}
     </div>
   );
 }

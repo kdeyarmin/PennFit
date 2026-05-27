@@ -158,7 +158,7 @@ describe("reminders-manage — regression: core manage behaviour intact", () => 
     expect(SRC).toMatch(/data:\s*\{\s*items:\s*enabled\s*\}/);
   });
 
-  it("calls unsub.mutate with the token on Unsubscribe", () => {
+  it("calls unsub.mutate with the token (when present) on Unsubscribe", () => {
     expect(SRC).toContain("unsub.mutate(");
     expect(SRC).toMatch(/unsub\.mutate\([^)]*params:\s*hasToken\s*\?\s*\{\s*token\s*\}/s);
   });

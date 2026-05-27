@@ -9,6 +9,7 @@ import type { ShopReturnReason } from "@workspace/resupply-db";
 
 import {
   AUTO_APPROVE_DEFECTIVE_MAX_AGE_DAYS,
+  AUTO_APPROVE_ORDER_VALUE_CAP_CENTS,
   AUTO_APPROVE_PRIOR_RETURN_CAP,
   AUTO_APPROVE_WRONG_ITEM_MAX_AGE_DAYS,
   evaluateAutoApprovalRules,
@@ -22,6 +23,7 @@ function input(
     reason: "defective" as ShopReturnReason,
     ageDays: 1,
     priorApprovedReturnsLast90d: 0,
+    orderValueCents: 0,
     ...over,
   };
 }
@@ -140,6 +142,54 @@ describe("evaluateAutoApprovalRules — fraud cap", () => {
         }),
       ),
     ).toEqual({ autoApprove: false, rule: null });
+  });
+});
+
+describe("evaluateAutoApprovalRules — high-value order guard", () => {
+  it("falls through to manual when orderValueCents exceeds the cap", () => {
+    expect(
+      evaluateAutoApprovalRules(
+        input({
+          reason: "defective",
+          ageDays: 1,
+          orderValueCents: AUTO_APPROVE_ORDER_VALUE_CAP_CENTS + 1,
+        }),
+      ),
+    ).toEqual({ autoApprove: false, rule: null });
+  });
+
+  it("falls through to manual when orderValueCents is exactly at the cap", () => {
+    // Inclusive: the policy text says "$500+ orders are queued", so a
+    // $500.00 exact order must route to manual review, not auto-approve.
+    expect(
+      evaluateAutoApprovalRules(
+        input({
+          reason: "defective",
+          ageDays: 1,
+          orderValueCents: AUTO_APPROVE_ORDER_VALUE_CAP_CENTS,
+        }),
+      ),
+    ).toEqual({ autoApprove: false, rule: null });
+  });
+
+  it("auto-approves just below the cap", () => {
+    expect(
+      evaluateAutoApprovalRules(
+        input({
+          reason: "defective",
+          ageDays: 1,
+          orderValueCents: AUTO_APPROVE_ORDER_VALUE_CAP_CENTS - 1,
+        }),
+      ),
+    ).toEqual({ autoApprove: true, rule: "defective_within_7d" });
+  });
+
+  it("orderValueCents=0 (unknown) does not trip the cap", () => {
+    expect(
+      evaluateAutoApprovalRules(
+        input({ reason: "wrong_item", ageDays: 5, orderValueCents: 0 }),
+      ),
+    ).toEqual({ autoApprove: true, rule: "wrong_item_within_30d" });
   });
 });
 

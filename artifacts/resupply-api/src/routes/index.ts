@@ -26,9 +26,6 @@ import inboundReferralsRouter from "./admin/inbound-referrals.js";
 import equipmentRecallsRouter from "./admin/equipment-recalls.js";
 import analyticsRouter from "./admin/analytics.js";
 import rtOverviewRouter from "./admin/rt-overview.js";
-import trainingRecordsRouter from "./admin/training-records.js";
-import grievancesRouter from "./admin/grievances.js";
-import accreditationPoliciesRouter from "./admin/accreditation-policies.js";
 import productivityRouter from "./admin/productivity.js";
 import patientDocumentsRetentionRouter from "./admin/patient-documents-retention.js";
 import shopBackordersRouter from "./admin/shop-backorders.js";
@@ -39,7 +36,6 @@ import conversationCoachingNotesRouter from "./admin/conversation-coaching-notes
 import conversationTriageRouter from "./admin/conversation-triage.js";
 import patientAddressHistoryRouter from "./admin/patient-address-history.js";
 import patientTimelineRouter from "./admin/patient-timeline.js";
-import auditArchiveRouter from "./admin/audit-archive.js";
 import csrShiftsRouter from "./admin/csr-shifts.js";
 import appointmentRequestsRouter from "./admin/appointment-requests.js";
 import shopOrderLossClaimsRouter from "./admin/shop-order-loss-claims.js";
@@ -63,6 +59,7 @@ import integrationsSyncEquipmentRouter from "./admin/integrations-sync-equipment
 import bulkCampaignsRouter from "./admin/bulk-campaigns.js";
 import mfaRouter from "./admin/mfa.js";
 import reportsRouter from "./admin/reports.js";
+import reportPresetsRouter from "./admin/report-presets.js";
 import featureFlagsRouter from "./admin/feature-flags.js";
 import npsSummaryRouter from "./admin/nps-summary.js";
 import deliveryFailuresRouter from "./admin/delivery-failures.js";
@@ -100,8 +97,6 @@ import fulfillmentToClaimRouter from "./admin/fulfillment-to-claim.js";
 import aiBillingQueueRouter from "./admin/ai-billing-queue.js";
 import dmeOrganizationRouter from "./admin/dme-organization.js";
 import clearinghouseCredentialsRouter from "./admin/clearinghouse-credentials.js";
-import accreditationReadinessRouter from "./admin/accreditation-readiness.js";
-import accreditationSurveysRouter from "./admin/accreditation-surveys.js";
 import goodFaithEstimatesRouter from "./admin/good-faith-estimates.js";
 import pecosStatusRouter from "./admin/pecos-status.js";
 import eligibilityChecksRouter from "./admin/eligibility-checks.js";
@@ -125,16 +120,9 @@ import webhookTestSendRouter from "./admin/webhook-test-send.js";
 import payerFeeSchedulesImportRouter from "./admin/payer-fee-schedules-import.js";
 import systemIntegrationsStatusRouter from "./admin/system-integrations-status.js";
 import integrationsInboundRouter from "./integrations-inbound.js";
-import hipaaBreachIncidentsRouter from "./admin/hipaa-breach-incidents.js";
 import documentationPacketsRouter from "./admin/documentation-packets.js";
 import webhookDeliveryRetryRouter from "./admin/webhook-delivery-retry.js";
 import dispenseReadinessRouter from "./admin/dispense-readiness.js";
-import baaRouter from "./admin/business-associate-agreements.js";
-import oigLeieScreeningsRouter from "./admin/oig-leie-screenings.js";
-import patientRightsRequestsRouter from "./admin/patient-rights-requests.js";
-import complianceRecordsRouter from "./admin/compliance-records.js";
-import complianceOfficerSummaryRouter from "./admin/compliance-officer-summary.js";
-import auditRouter from "./audit/index.js";
 import conversationsRouter from "./conversations/index.js";
 import dashboardRouter from "./dashboard/index.js";
 import emailRouter from "./email/index.js";
@@ -186,7 +174,6 @@ router.use(patientsRouter);
 router.use(rulesRouter);
 router.use(conversationsRouter);
 router.use(episodesRouter);
-router.use(auditRouter);
 // /admin/shop/abandoned-carts/* — operator tooling for the cart-
 // abandonment SendGrid nudge (list + manual dispatcher trigger).
 // requireAdmin gate is on the router itself.
@@ -344,8 +331,6 @@ router.use(clearinghouseCredentialsRouter);
 // /admin/accreditation/readiness — survey-readiness audit results +
 // /admin/accreditation/surveys CRUD for scheduled + completed visits.
 // CMS-required annual unannounced surveys land Jan 1, 2026.
-router.use(accreditationReadinessRouter);
-router.use(accreditationSurveysRouter);
 // /admin/good-faith-estimates — No Surprises Act cash-pay GFE
 // generator. PDF stream + persistent audit row (3-year HHS
 // retention requirement).
@@ -419,7 +404,6 @@ router.use(systemIntegrationsStatusRouter);
 // intake for third-party deliveries (Parachute, HSAT vendors, etc).
 router.use(integrationsInboundRouter);
 // /admin/hipaa-breach-incidents — HIPAA §164.404-414 lifecycle.
-router.use(hipaaBreachIncidentsRouter);
 // /admin/patients/:id/documentation-packets — combined PDF
 // support packets (cover letter + sleep study + Rx + DWO summaries).
 router.use(documentationPacketsRouter);
@@ -436,27 +420,22 @@ router.use(dispenseReadinessRouter);
 // ── Phase 10 (compliance machinery, migration 0141) ──────────────
 // /admin/compliance/business-associate-agreements — HIPAA
 // §164.504(e) BAA inventory + expiry buckets.
-router.use(baaRouter);
 // /admin/compliance/oig-leie-screenings — record + list OIG LEIE
 // monthly exclusion-list screens against staff / providers /
 // BAs / contractors. Coverage rollup flags overdue subjects.
-router.use(oigLeieScreeningsRouter);
 // /admin/compliance/patient-rights-requests — HIPAA
 // §164.522/524/526/528 access / amendment / accounting /
 // restriction / confidential-communications workflow with the
 // 30-day response clock (single 30-day extension allowed).
-router.use(patientRightsRequestsRouter);
 // /admin/compliance/risk-assessments + contingency-attestations +
 // disaster-drills + qi-initiatives + qi-measurements +
 // ownership-disclosures + disclosure-log — registers that close
 // out §164.308(a)(1)/(a)(7), ACHC QAPI, and §424.57(c)(17).
-router.use(complianceRecordsRouter);
 // /admin/compliance/officer-summary — single round-trip rollup the
 // compliance officer loads every morning. Aggregate counts across
 // BAA inventory, OIG screening, patient rights, disclosures, risk
 // assessments, contingency / drills, QAPI, ownership, training,
 // grievances, and the most recent accreditation readiness run.
-router.use(complianceOfficerSummaryRouter);
 // /admin/shop/products/* — operator tooling for the cash-pay catalog
 // itself. Today: PATCH stock_count metadata on a Stripe Product.
 // requireAdmin gate is on the router itself.
@@ -568,13 +547,10 @@ router.use(rtOverviewRouter);
 // orientation) and patient grievances (complaints + grievances +
 // adverse events under one typed row). Surveyors (ACHC, BOC, TJC)
 // query these exact artifacts during DMEPOS site visits.
-router.use(trainingRecordsRouter);
-router.use(grievancesRouter);
 // /admin/accreditation/* — the policy catalog + per-staff
 // attestation surface + binder summary that ties the three
 // evidence sections (policies, training, grievances) together
 // for a single hand-off to a surveyor.
-router.use(accreditationPoliciesRouter);
 // /admin/patient-documents/retention/* — HIPAA retention sweep
 // review queue, legal-hold toggle, and (admin-only) destruction.
 router.use(patientDocumentsRetentionRouter);
@@ -603,7 +579,6 @@ router.use(patientAddressHistoryRouter);
 // coaching plans, and recall notifications.
 router.use(patientTimelineRouter);
 // HIPAA audit-log archive — list flagged rows + admin destroy.
-router.use(auditArchiveRouter);
 // CSR shift schedule — who's on now + admin scheduling.
 router.use(csrShiftsRouter);
 // /admin/appointment-requests — CSR queue for patient-initiated
@@ -684,6 +659,10 @@ router.use(mfaRouter);
 // /admin/reports/* — date-bounded CSV/PDF/QuickBooks exports for ops
 // + finance.
 router.use(reportsRouter);
+// /admin/reports/presets/* — per-user saved report shortcuts
+// (slug + format + date-range preset). Mounted alongside the
+// reports router so the page-level UI only has one base path.
+router.use(reportPresetsRouter);
 // /admin/feature-flags/* — Control Center on/off toggles that gate
 // dispatchers and route handlers in real time.
 router.use(featureFlagsRouter);

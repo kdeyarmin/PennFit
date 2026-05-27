@@ -16,28 +16,22 @@
  * every third-party credential. Those vars are documented as
  * optional / feature-gated in the top-level README.
  *
- * `RESUPPLY_LINK_HMAC_KEY` and `RESUPPLY_AUDIT_HMAC_KEY` are the
- * two resupply-specific secrets validated here. The link key signs
- * patient reminder URLs (migration 0025 stripped the pgcrypto
- * column-level encryption secrets); the audit key signs every
- * row written to `resupply.audit_log` (migration 0116 — required
- * for HIPAA §164.312(b) tamper-evidence). Both are checked at boot
- * so the first signing or verifying request doesn't fail
- * mid-flight on a misconfigured deploy.
+ * `RESUPPLY_LINK_HMAC_KEY` is the only resupply-specific secret
+ * validated here. It signs patient reminder URLs (migration 0025
+ * stripped the pgcrypto column-level encryption secrets) and is
+ * checked at boot so the first signing or verifying request doesn't
+ * fail mid-flight on a misconfigured deploy.
  */
 
-import {
-  AUDIT_HMAC_KEY_ENV,
-  AuditHmacKeyError,
-  requireAuditHmacKey,
-} from "@workspace/resupply-audit";
 import { validateSupabaseEnv } from "@workspace/resupply-db";
 import { hasLinkHmacKey, LINK_HMAC_KEY_ENV } from "@workspace/resupply-secrets";
 
-// `DATABASE_URL` is still required during the Drizzle → Supabase
-// migration: most query sites haven't been ported yet and continue
-// to use the shared pg pool. Once every site is on the Supabase JS
-// client, drop DATABASE_URL from this list and from .env.example.
+// `DATABASE_URL` is still required at boot: the migrator
+// (`scripts/migrate.mjs`) and a small number of legacy worker paths
+// (e.g. `worker/jobs/bulk-campaign-tick.ts`) still use the shared
+// `pg` pool. The runtime data path is the Supabase JS client; if
+// those last `pg` callers are ported, drop DATABASE_URL from this
+// list and from .env.example.
 const REQUIRED_PLAIN_ENV_VARS = ["PORT", "DATABASE_URL"] as const;
 
 /**
@@ -56,22 +50,6 @@ export function assertRequiredEnv(): void {
     }
   }
   if (!hasLinkHmacKey()) missing.push(LINK_HMAC_KEY_ENV);
-  // Boot-time decode + length check for the audit HMAC key. Adding
-  // it to REQUIRED_PLAIN_ENV_VARS would only verify the var is
-  // non-empty; a deploy with a malformed base64 string or a key
-  // that decodes to fewer than 32 bytes would pass that check and
-  // then fail on the very first audited write. Re-using the
-  // production decoder makes the boot check and the runtime check
-  // see exactly the same bytes.
-  try {
-    requireAuditHmacKey();
-  } catch (err) {
-    if (err instanceof AuditHmacKeyError) {
-      missing.push(AUDIT_HMAC_KEY_ENV);
-    } else {
-      throw err;
-    }
-  }
   missing.push(...validateSupabaseEnv());
 
   if (missing.length === 0) return;

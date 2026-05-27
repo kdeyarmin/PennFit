@@ -220,3 +220,73 @@ describe("formatDate — edge dates", () => {
     expect(() => formatDate("2026-12-31T23:59:59Z")).not.toThrow();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Static check: formatDate options include year/month/day keys
+// ---------------------------------------------------------------------------
+// Allow either quoted or bareword keys here. Both compile to equivalent
+// runtime behavior and we only care that all three options are present.
+
+describe("admin-shop-inventory-reconcile — formatDate option key style", () => {
+  it("includes a year option key", () => {
+    expect(SRC).toMatch(/"?year"?:\s*["']/);
+  });
+
+  it("includes a month option key", () => {
+    expect(SRC).toMatch(/"?month"?:\s*["']/);
+  });
+
+  it("includes a day option key", () => {
+    expect(SRC).toMatch(/"?day"?:\s*["']/);
+  });
+
+  it("all three option keys appear within the same toLocaleDateString call", () => {
+    // Find the toLocaleDateString call and verify all three keys are within
+    // a reasonable character window of it.
+    const callIdx = SRC.indexOf("toLocaleDateString");
+    expect(callIdx).toBeGreaterThan(-1);
+    // The options object follows the call — look 200 chars ahead.
+    const optionsBlock = SRC.slice(callIdx, callIdx + 200);
+    expect(optionsBlock).toMatch(/"?year"?:/);
+    expect(optionsBlock).toMatch(/"?month"?:/);
+    expect(optionsBlock).toMatch(/"?day"?:/);
+  });
+
+  it("year value is the string 'numeric'", () => {
+    expect(SRC).toMatch(/"?year"?:\s*"numeric"/);
+  });
+
+  it("day value is the string 'numeric'", () => {
+    expect(SRC).toMatch(/"?day"?:\s*"numeric"/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Pure-logic re-implementation — additional formatDate edge cases
+// ---------------------------------------------------------------------------
+
+describe("formatDate — additional edge cases", () => {
+  it("handles date-only strings (no time component)", () => {
+    expect(() => formatDate("2026-03-15")).not.toThrow();
+    expect(typeof formatDate("2026-03-15")).toBe("string");
+  });
+
+  it("handles Unix epoch (1970-01-01T00:00:00Z) without throwing", () => {
+    expect(() => formatDate("1970-01-01T00:00:00Z")).not.toThrow();
+    const result = formatDate("1970-01-01T00:00:00Z");
+    expect(result).toBeTruthy();
+  });
+
+  it("returns a string for a future date (2099)", () => {
+    expect(() => formatDate("2099-12-31T23:59:59Z")).not.toThrow();
+    expect(typeof formatDate("2099-12-31T23:59:59Z")).toBe("string");
+  });
+
+  it("always returns a string — never throws regardless of input", () => {
+    const inputs = ["", "garbage", "null", "undefined", "2026-13-45", "2026-00-00"];
+    for (const input of inputs) {
+      expect(() => formatDate(input)).not.toThrow();
+      expect(typeof formatDate(input)).toBe("string");
+    }
+  });
+});

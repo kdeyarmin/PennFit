@@ -310,14 +310,16 @@ router.post(
       .insert(lineRows);
     if (insertErr) throw insertErr;
 
-    // Recompute the header total to match the new line sum.
+    // Recompute the header total to match the new line sum. billed_cents
+    // is per-unit, so the extended line charge is billed_cents * quantity
+    // (template lines carry units > 1, e.g. disposable filters x2).
     const { data: allLines } = await supabase
       .schema("resupply")
       .from("insurance_claim_line_items")
-      .select("billed_cents")
+      .select("billed_cents, quantity")
       .eq("claim_id", claim.id);
     const newTotal = (allLines ?? []).reduce(
-      (s, l) => s + (l.billed_cents ?? 0),
+      (s, l) => s + (l.billed_cents ?? 0) * (l.quantity ?? 1),
       0,
     );
     await supabase

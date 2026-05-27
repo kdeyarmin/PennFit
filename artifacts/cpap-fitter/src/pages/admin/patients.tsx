@@ -26,11 +26,19 @@ import {
   patientStatusVariant,
 } from "@/components/admin/Badge";
 import { Spinner } from "@/components/admin/Spinner";
+import { useConfirmDialog } from "@/hooks/use-confirm-dialog";
 import { EmptyState } from "@/components/admin/EmptyState";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { Pagination } from "@/components/admin/Pagination";
 import { Input, Label, Select } from "@/components/admin/Input";
 import { Button } from "@/components/admin/Button";
+import { BulkActionBar } from "@/components/admin/BulkActionBar";
+import {
+  HeaderSelectionCheckbox,
+  RowSelectionCheckbox,
+} from "@/components/admin/SelectionCheckbox";
+import { useBulkSelection } from "@/hooks/use-bulk-selection";
+import { useFilteredList } from "@/hooks/use-filtered-list";
 import { fullName, formatDateTime } from "@/lib/admin/format";
 
 const PAGE_SIZE = 25;
@@ -60,26 +68,41 @@ type PatientRow = {
   lastMessagePreview?: string | null;
 };
 
+/**
+ * Render the Patients administration page with list, filtering, bulk actions, CSV import/export, and create patient modal.
+ *
+ * The component manages filter and pagination state, debounced search input, row selection for bulk operations,
+ * CSV export/import flows, and displays modals for creating a new patient and importing CSVs. It also renders
+ * a confirmation dialog element used by bulk actions.
+ *
+ * @returns The Patients administration page as a React element.
+ */
 export function PatientsPage() {
   const [, setLocation] = useLocation();
   const queryClient = useQueryClient();
+  const [confirm, ConfirmDialogEl] = useConfirmDialog();
 
-  const [statusFilter, setStatusFilter] = useState<string>("");
+  // Filter + offset state. useFilteredList owns the "reset offset to
+  // 0 on any filter change" invariant — pagination state still lives
+  // here, but the page can never forget to reset it.
+  const {
+    filters,
+    setFilter,
+    clearFilters,
+    offset,
+    setOffset,
+    pageSize,
+  } = useFilteredList(
+    { status: "", search: "" },
+    { pageSize: PAGE_SIZE },
+  );
+  const { status: statusFilter, search } = filters;
+  // Search-input is debounced into filters.search so we don't hammer
+  // the API while the admin is mid-type. The input value is pure UI
+  // state; the committed string is what drives the query params.
   const [searchInput, setSearchInput] = useState<string>("");
-  // Debounce the search input so we don't hammer the API while the
-  // admin is mid-type. The committed string is what drives the
-  // query params; the input value is purely UI state.
-  const [search, setSearch] = useState<string>("");
-  const [offset, setOffset] = useState<number>(0);
   const [creating, setCreating] = useState<boolean>(false);
   const [importing, setImporting] = useState<boolean>(false);
-  // Bulk-action selection. We hold patient ids in a Set so toggle
-  // is O(1); React state cycles a fresh Set instance on every change
-  // so the components see new identities and re-render. Selection
-  // intentionally does NOT persist across pagination — the action
-  // bar always shows "N selected" reflecting only what's currently
-  // visible-and-checked.
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [bulkFeedback, setBulkFeedback] = useState<{
     kind: "success" | "error";
     text: string;
@@ -90,12 +113,12 @@ export function PatientsPage() {
   const bulkMut = useBulkUpdatePatientStatus();
 
   useEffect(() => {
+    const trimmed = searchInput.trim();
     const t = setTimeout(() => {
-      setSearch(searchInput.trim());
-      setOffset(0);
+      setFilter("search", trimmed);
     }, 250);
     return () => clearTimeout(t);
-  }, [searchInput]);
+  }, [searchInput, setFilter]);
 
   const params: ListPatientsParams = useMemo(
     () => ({
@@ -103,10 +126,10 @@ export function PatientsPage() {
         ? { status: statusFilter as keyof typeof ListPatientsStatus }
         : {}),
       ...(search ? { search } : {}),
-      limit: PAGE_SIZE,
+      limit: pageSize,
       offset,
     }),
-    [statusFilter, search, offset],
+    [statusFilter, search, offset, pageSize],
   );
 
   const { data, isPending, isError, error, isFetching, refetch } =
@@ -117,55 +140,24 @@ export function PatientsPage() {
       },
     });
 
-  // Whenever the visible page changes (filter / paginate / refetch
-  // success), drop any selected ids that are no longer on screen.
-  // This keeps the bulk action bar honest — clicking "Pause 12" must
-  // pause the 12 the admin can see, not 12 ghosts from a prior page.
-  useEffect(() => {
-    if (!data) return;
-    const visible = new Set(data.items.map((r) => r.id));
-    setSelectedIds((prev) => {
-      let changed = false;
-      const next = new Set<string>();
-      for (const id of prev) {
-        if (visible.has(id)) next.add(id);
-        else changed = true;
-      }
-      return changed ? next : prev;
-    });
-  }, [data]);
-
-  const allVisibleSelected =
-    !!data &&
-    data.items.length > 0 &&
-    data.items.every((r) => selectedIds.has(r.id));
-  const someVisibleSelected =
-    !!data && data.items.some((r) => selectedIds.has(r.id));
-
-  function toggleOne(id: string): void {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }
-  function toggleAllVisible(): void {
-    if (!data) return;
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      const allOn = data.items.every((r) => next.has(r.id));
-      if (allOn) {
-        for (const r of data.items) next.delete(r.id);
-      } else {
-        for (const r of data.items) next.add(r.id);
-      }
-      return next;
-    });
-  }
-  function clearSelection(): void {
-    setSelectedIds(new Set());
-  }
+  // Bulk-action selection. Selection intentionally does NOT persist
+  // across pagination — the action bar always shows "N selected"
+  // reflecting only what's currently visible-and-checked. The hook
+  // owns the auto-prune on visible-set change so a "Pause 12" click
+  // after pagination targets the 12 visible rows, not ghosts.
+  const visibleItems = useMemo(() => data?.items ?? [], [data]);
+  const {
+    selectedIds,
+    allVisibleSelected,
+    someVisibleSelected,
+    toggleOne,
+    toggleAllVisible,
+    clear: clearSelection,
+    set: setSelection,
+  } = useBulkSelection<PatientRow>({
+    visibleItems,
+    itemId: (r) => r.id,
+  });
 
   async function runBulk(
     targetStatus: BulkPatientStatusRequestStatus,
@@ -178,11 +170,20 @@ export function PatientsPage() {
         : targetStatus === "paused"
           ? "Pause"
           : "Close";
-    const confirmMsg =
-      targetStatus === "closed"
-        ? `Close ${ids.length} patient${ids.length === 1 ? "" : "s"}? Closed patients are removed from outreach permanently.`
-        : `${verb} ${ids.length} patient${ids.length === 1 ? "" : "s"}?`;
-    if (!window.confirm(confirmMsg)) return;
+    const isClosing = targetStatus === "closed";
+    if (
+      !(await confirm({
+        title: isClosing
+          ? `Close ${ids.length} patient${ids.length === 1 ? "" : "s"}?`
+          : `${verb} ${ids.length} patient${ids.length === 1 ? "" : "s"}?`,
+        description: isClosing
+          ? "Closed patients are removed from outreach permanently."
+          : undefined,
+        confirmLabel: verb,
+        destructive: isClosing,
+      }))
+    )
+      return;
     setBulkFeedback(null);
     try {
       const res = await bulkMut.mutateAsync({
@@ -218,7 +219,7 @@ export function PatientsPage() {
       if (failedCount === 0) clearSelection();
       else {
         const failedSet = new Set(res.failed.map((f) => f.id));
-        setSelectedIds(failedSet);
+        setSelection(failedSet);
       }
     } catch (err) {
       const msg =
@@ -291,33 +292,19 @@ export function PatientsPage() {
   const columns: Column<PatientRow>[] = [
     {
       key: "select",
-      // The header checkbox toggles selection across the visible
-      // page; an indeterminate state communicates partial selection.
       header: (
-        <input
-          type="checkbox"
-          aria-label="Select all on this page"
-          checked={allVisibleSelected}
-          // The DOM `indeterminate` property isn't a React prop, so we
-          // set it via a ref callback.
-          ref={(el) => {
-            if (el)
-              el.indeterminate = !allVisibleSelected && someVisibleSelected;
-          }}
-          onChange={() => toggleAllVisible()}
-          onClick={(e) => e.stopPropagation()}
-          style={{ cursor: "pointer" }}
+        <HeaderSelectionCheckbox
+          allSelected={allVisibleSelected}
+          someSelected={someVisibleSelected}
+          onToggle={toggleAllVisible}
         />
       ),
       className: "w-10",
       render: (r) => (
-        <input
-          type="checkbox"
-          aria-label={`Select ${r.pacwareId}`}
+        <RowSelectionCheckbox
+          ariaLabel={`Select ${r.pacwareId}`}
           checked={selectedIds.has(r.id)}
-          onChange={() => toggleOne(r.id)}
-          onClick={(e) => e.stopPropagation()}
-          style={{ cursor: "pointer" }}
+          onToggle={() => toggleOne(r.id)}
         />
       ),
     },
@@ -471,10 +458,7 @@ export function PatientsPage() {
               value={statusFilter}
               emptyOptionLabel="All statuses"
               options={STATUS_OPTIONS}
-              onChange={(e) => {
-                setStatusFilter(e.target.value);
-                setOffset(0);
-              }}
+              onChange={(e) => setFilter("status", e.target.value)}
             />
           </div>
           <div className="flex items-end">
@@ -482,10 +466,11 @@ export function PatientsPage() {
               intent="ghost"
               size="sm"
               onClick={() => {
-                setStatusFilter("");
+                // Reset the un-debounced input ref alongside the
+                // hook-managed filters so the visible input clears
+                // immediately too.
                 setSearchInput("");
-                setSearch("");
-                setOffset(0);
+                clearFilters();
               }}
             >
               Clear filters
@@ -494,89 +479,33 @@ export function PatientsPage() {
         </div>
       </Card>
 
-      {(selectedIds.size > 0 || bulkFeedback) && (
-        <div
-          className="rounded-md border px-4 py-3 flex items-center justify-between gap-4 sticky top-0 z-10"
-          style={{
-            borderColor: bulkFeedback?.kind === "error" ? "#fca5a5" : "#c9a24a",
-            backgroundColor:
-              bulkFeedback?.kind === "error" ? "#fef2f2" : "#fffaf0",
-          }}
-          role="region"
-          aria-label="Bulk patient actions"
-        >
-          <div className="flex items-center gap-3">
-            <span
-              className="font-semibold"
-              style={{ color: "hsl(var(--ink-1))" }}
-            >
-              {selectedIds.size > 0
-                ? `${selectedIds.size} selected on this page`
-                : "Bulk action result"}
-            </span>
-            {bulkFeedback && (
-              <span
-                className="text-sm"
-                style={{
-                  color: bulkFeedback.kind === "error" ? "#991b1b" : "#374151",
-                }}
-              >
-                {bulkFeedback.text}
-              </span>
-            )}
-          </div>
-          <div className="flex items-center gap-2">
-            {selectedIds.size > 0 && (
-              <>
-                <Button
-                  size="sm"
-                  intent="secondary"
-                  onClick={() => void runBulk("active")}
-                  isLoading={bulkMut.isPending}
-                  disabled={bulkMut.isPending}
-                >
-                  Resume {selectedIds.size}
-                </Button>
-                <Button
-                  size="sm"
-                  intent="secondary"
-                  onClick={() => void runBulk("paused")}
-                  isLoading={bulkMut.isPending}
-                  disabled={bulkMut.isPending}
-                >
-                  Pause {selectedIds.size}
-                </Button>
-                <Button
-                  size="sm"
-                  intent="secondary"
-                  onClick={() => void runBulk("closed")}
-                  isLoading={bulkMut.isPending}
-                  disabled={bulkMut.isPending}
-                >
-                  Close {selectedIds.size}
-                </Button>
-                <Button
-                  size="sm"
-                  intent="ghost"
-                  onClick={clearSelection}
-                  disabled={bulkMut.isPending}
-                >
-                  Clear selection
-                </Button>
-              </>
-            )}
-            {selectedIds.size === 0 && bulkFeedback && (
-              <Button
-                size="sm"
-                intent="ghost"
-                onClick={() => setBulkFeedback(null)}
-              >
-                Dismiss
-              </Button>
-            )}
-          </div>
-        </div>
-      )}
+      <BulkActionBar
+        selectedCount={selectedIds.size}
+        onClear={clearSelection}
+        feedback={bulkFeedback}
+        onDismissFeedback={() => setBulkFeedback(null)}
+        ariaLabel="Bulk patient actions"
+        actions={[
+          {
+            key: "resume",
+            label: `Resume ${selectedIds.size}`,
+            onClick: () => void runBulk("active"),
+            isPending: bulkMut.isPending,
+          },
+          {
+            key: "pause",
+            label: `Pause ${selectedIds.size}`,
+            onClick: () => void runBulk("paused"),
+            isPending: bulkMut.isPending,
+          },
+          {
+            key: "close",
+            label: `Close ${selectedIds.size}`,
+            onClick: () => void runBulk("closed"),
+            isPending: bulkMut.isPending,
+          },
+        ]}
+      />
 
       {isError ? (
         <ErrorPanel error={error} onRetry={() => void refetch()} />
@@ -629,6 +558,7 @@ export function PatientsPage() {
           }}
         />
       )}
+      {ConfirmDialogEl}
     </div>
   );
 }

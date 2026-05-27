@@ -244,10 +244,21 @@ describe("signUnsubscribeToken → route verify round-trip", () => {
 
   it("a tampered signature returns 400 'Link no longer valid'", async () => {
     const token = signUnsubscribeToken(SAMPLE_LEAD_ID);
-    // Flip a character in the signature (after the '.')
     const [payload, sig] = token.split(".");
-    const badSig = sig!.slice(0, -1) + (sig!.slice(-1) === "a" ? "b" : "a");
-    const badToken = `${payload}.${badSig}`;
+    // Flip the FIRST signature character, not the last. The signature
+    // is base64url-encoded HMAC-SHA256 (32 bytes). base64url drops the
+    // trailing '=' padding, so the LAST encoded char of a 32-byte
+    // value carries only 2 significant bits + 4 padding bits that the
+    // decoder ignores — flipping it between 'a' and 'b' changes only
+    // those ignored pad bits, leaving the decoded signature
+    // byte-identical and verification PASSING (a flaky 200 instead of
+    // the expected 400, ~3% of runs since the token embeds a live
+    // timestamp). The first char encodes the top 6 bits of byte 0,
+    // which are always significant, so flipping it reliably changes
+    // the decoded bytes.
+    const firstChar = sig!.slice(0, 1);
+    const flippedFirst = firstChar === "a" ? "b" : "a";
+    const badToken = `${payload}.${flippedFirst}${sig!.slice(1)}`;
 
     const res = await request(makeApp()).get(
       `/resupply-api/shop/fitter-leads/unsubscribe?t=${encodeURIComponent(badToken)}`,
@@ -672,7 +683,7 @@ describe("GET /shop/track/c — click tracking redirect", () => {
       .query({ t: "garbage" });
     expect(res.status).toBe(302);
     expect(res.headers.location).toContain("/shop");
-    expect(supabaseMock).not.toHaveBeenCalled();
+    expect(supabaseMockLegacy).not.toHaveBeenCalled();
   });
 
   it("rejects a click token whose link_key was tampered with", async () => {
@@ -723,7 +734,7 @@ describe("GET /shop/track/c — click tracking redirect", () => {
     expect(res.status).toBe(302);
     // Falls back since the prefix is 'o|' not 'c|'.
     expect(res.headers.location).toContain("/shop");
-    expect(supabaseMock).not.toHaveBeenCalled();
+    expect(supabaseMockLegacy).not.toHaveBeenCalled();
   });
 });
 
@@ -734,12 +745,73 @@ describe("signClickTrackingToken / cross-token isolation", () => {
       tok.split(".")[0].replace(/-/g, "+").replace(/_/g, "/"),
       "base64",
     ).toString("utf8");
-    expect(payload).toMatch(/^c\|lead-1\|7\|subscribe\|\d+$/);
+    // Mig 0157: payload now 6 segments with variant_key at end.
+    expect(payload).toMatch(/^c\|lead-1\|7\|subscribe\|\d+\|A$/);
   });
 
   it("produces a distinct token for the same lead+touch with a different link_key", () => {
     const a = signClickTrackingToken("lead-1", 7, "shop");
     const b = signClickTrackingToken("lead-1", 7, "subscribe");
     expect(a).not.toBe(b);
+  });
+
+  it("produces a distinct token for the same lead+touch+link_key with a different variant_key (mig 0157)", () => {
+    const a = signClickTrackingToken("lead-1", 4, "shop", "A");
+    const b = signClickTrackingToken("lead-1", 4, "shop", "B");
+    expect(a).not.toBe(b);
+  });
+
+  it("defaults variant_key to 'A' when omitted (back-compat)", () => {
+    const tok = signClickTrackingToken("lead-1", 4, "shop");
+    const payload = Buffer.from(
+      tok.split(".")[0].replace(/-/g, "+").replace(/_/g, "/"),
+      "base64",
+    ).toString("utf8");
+    expect(payload.endsWith("|A")).toBe(true);
+  });
+});
+
+describe("pickSubjectVariant — A/B bucket assignment (mig 0157)", () => {
+  // Imported lazily because top-of-file imports already cover
+  // signClickTrackingToken; keeping the variant function close
+  // to its tests improves readability.
+  it("returns the same variant for the same (lead, touch) every call", async () => {
+    const { pickSubjectVariant } = await import("./fitter-complete");
+    const first = pickSubjectVariant("lead-deterministic-1", 1);
+    const second = pickSubjectVariant("lead-deterministic-1", 1);
+    const third = pickSubjectVariant("lead-deterministic-1", 1);
+    expect(first).toBe(second);
+    expect(second).toBe(third);
+  });
+
+  it("returns different variants for different leads on the same touch (bucket distribution)", async () => {
+    const { pickSubjectVariant } = await import("./fitter-complete");
+    // Across 200 distinct lead ids, both 'A' and 'B' should appear
+    // for a 2-variant touch. (Pathological case: hash collision
+    // for every id is astronomically unlikely.)
+    const variants = new Set<string>();
+    for (let i = 0; i < 200; i++) {
+      variants.add(pickSubjectVariant(`lead-${i}`, 1));
+    }
+    expect(variants.has("A")).toBe(true);
+    expect(variants.has("B")).toBe(true);
+  });
+
+  it("returns 'A' for touches without a registered A/B test", async () => {
+    const { pickSubjectVariant } = await import("./fitter-complete");
+    // T2, T3, T5, T6, T7-T11 don't have variants registered.
+    for (const touchIndex of [2, 3, 5, 6, 7, 8, 9, 10, 11]) {
+      expect(pickSubjectVariant("any-lead-id", touchIndex)).toBe("A");
+    }
+  });
+
+  it("never returns a variant outside the registered set", async () => {
+    const { pickSubjectVariant, SUBJECT_VARIANTS } = await import(
+      "./fitter-complete"
+    );
+    for (let i = 0; i < 50; i++) {
+      const v = pickSubjectVariant(`lead-${i}`, 4);
+      expect(SUBJECT_VARIANTS[4]).toContain(v);
+    }
   });
 });

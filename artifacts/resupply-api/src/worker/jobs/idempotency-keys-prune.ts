@@ -29,6 +29,7 @@ import type PgBoss from "pg-boss";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
+import { buildQueueConfig, CRON_SCAN_QUEUE_OPTS } from "../lib/queue-options";
 
 const PRUNE_JOB = "idempotency-keys.prune";
 const PRUNE_CRON = "7 2 * * *";
@@ -36,23 +37,29 @@ const PRUNE_CRON = "7 2 * * *";
 export async function registerIdempotencyKeysPruneJob(
   boss: PgBoss,
 ): Promise<void> {
-  await boss.createQueue(PRUNE_JOB);
+  await boss.createQueue(PRUNE_JOB, buildQueueConfig(PRUNE_JOB, CRON_SCAN_QUEUE_OPTS));
 
   await boss.work(PRUNE_JOB, async () => {
     const supabase = getSupabaseServiceRoleClient();
     try {
-      // PostgREST returns the deleted rows when we ask for `.select()`,
-      // so we ask for just the composite-PK fields and count them.
-      // Cheaper than a head=true count followed by a delete.
-      const { data: deletedRows, error } = await supabase
+      // PostgREST RETURNING is page-size capped (~1000 rows by
+      // default). The DB DELETE removes every matching row, but the
+      // `.select()` we used to "count" returned only the first
+      // page — so on busy days the log claimed `deleted: 1000` while
+      // the actual deletion was correct, and on very-busy days the
+      // implementation could vary. Use `count: "exact"` on the
+      // DELETE itself so the response carries the true deleted-row
+      // count without paging.
+      const { count, error } = await supabase
         .schema("resupply")
         .from("idempotency_keys")
-        .delete()
-        .lte("expires_at", new Date().toISOString())
-        .select("user_id");
+        .delete({ count: "exact" })
+        .lte("expires_at", new Date().toISOString());
       if (error) throw error;
-      const deleted = (deletedRows ?? []).length;
-      logger.info({ deleted }, "idempotency-keys.prune: completed");
+      logger.info(
+        { deleted: count ?? 0 },
+        "idempotency-keys.prune: completed",
+      );
     } catch (err) {
       logger.error(
         {

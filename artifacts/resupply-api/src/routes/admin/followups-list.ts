@@ -35,7 +35,7 @@ const TOTAL_CAP = 200;
 router.get("/admin/followups", requirePermission("conversations.manage"), async (req, res) => {
   const supabase = getSupabaseServiceRoleClient();
 
-  // The original Drizzle implementation joined each followup table
+  // The original SQL implementation joined each followup table
   // against its identity table. PostgREST exposes embedded selects
   // via FK relationships (the customer_id / patient_id FKs are in
   // place), but the relationship name needs the column to be unique

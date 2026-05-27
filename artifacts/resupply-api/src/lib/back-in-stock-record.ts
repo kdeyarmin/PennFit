@@ -35,7 +35,7 @@ export async function recordBackInStockSignup(
 ): Promise<RecordBackInStockSignupResult> {
   try {
     const supabase = getSupabaseServiceRoleClient();
-    // The original Drizzle path used ON CONFLICT (product_id, email)
+    // The original SQL path used ON CONFLICT (product_id, email)
     // WHERE notified_at IS NULL DO NOTHING against a partial unique
     // index. PostgREST has no `DO NOTHING WHERE`, so we INSERT and
     // catch the 23505 unique-violation as the "duplicate" branch.
@@ -97,7 +97,7 @@ export interface DispatchBackInStockResult {
  * to run this fire-and-forget (`void dispatchBackInStockForProduct(...)`)
  * so an admin save returns immediately.
  *
- * Concurrency posture: the original Drizzle path used a single SQL
+ * Concurrency posture: the original SQL path used a single
  * `WITH … FOR UPDATE SKIP LOCKED` claim so two concurrent dispatches
  * (two admins saving stock at the same time) each took a disjoint
  * slice of the queue and never double-emailed. PostgREST has no

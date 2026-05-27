@@ -130,6 +130,7 @@ import { logAudit } from "@workspace/resupply-audit";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger.js";
+import { buildQueueConfig, CRON_SCAN_QUEUE_OPTS } from "../lib/queue-options.js";
 import {
   attachmentKeyForObjectName,
   deleteAttachmentObject,
@@ -403,6 +404,12 @@ export function buildProductionSweepDeps(
       }
     },
     audit: async (counters) => {
+      // The legacy audit_log write is kept for back-compat with any
+      // historical SOC tooling that filters by action — it's now a
+      // no-op stub per CLAUDE.md (migration 0156 retired the audit
+      // chain). The DURABLE record of "did the sweep run?" + the
+      // counters payload is the worker_run_summary INSERT below;
+      // sweep-status.ts reads from there now.
       await logAudit({
         action: "prescription.attachment.sweep",
         // Stable system actor (matches the convention used by the
@@ -415,6 +422,40 @@ export function buildProductionSweepDeps(
         targetId: null,
         metadata: { ...counters },
       });
+
+      // Durable liveness + counters row for the ops dashboard. The
+      // dashboard tile (routes/dashboard/sweep-status.ts) reads the
+      // newest row with worker_kind='prescription_attachment_sweep'.
+      // started_at/completed_at default to now() in the schema; this
+      // single-INSERT call site treats the row's timestamp as "run
+      // completed at" since the sweep doesn't currently track its own
+      // start time separately. Failure to insert here is logged and
+      // swallowed — a missing summary row is preferable to a failed
+      // sweep job that was otherwise successful.
+      try {
+        const supabase = getSupabaseServiceRoleClient();
+        const { error } = await supabase
+          .schema("resupply")
+          .from("worker_run_summary")
+          .insert({
+            worker_kind: "prescription_attachment_sweep",
+            counters: counters as unknown as Record<string, unknown>,
+          });
+        if (error) {
+          logger.warn(
+            { err: error },
+            "attachment-sweep: worker_run_summary insert failed (dashboard liveness will lag)",
+          );
+        }
+      } catch (err) {
+        logger.warn(
+          {
+            err: err instanceof Error ? err : undefined,
+            errType: err instanceof Error ? undefined : typeof err,
+          },
+          "attachment-sweep: worker_run_summary insert crashed",
+        );
+      }
     },
   };
 }
@@ -437,7 +478,7 @@ export async function registerPrescriptionAttachmentSweepJob(
   // better than letting the job blow up at the cron tick.
   getPrivateObjectLocation();
 
-  await boss.createQueue(SWEEP_JOB);
+  await boss.createQueue(SWEEP_JOB, buildQueueConfig(SWEEP_JOB, CRON_SCAN_QUEUE_OPTS));
 
   await boss.work<SweepJobData>(SWEEP_JOB, async (jobs) => {
     const data = jobs[0]?.data ?? {};

@@ -90,6 +90,7 @@ export function AdminOrders() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <Input
               placeholder="Search by name, email, or reference"
+              aria-label="Search orders"
               value={q}
               onChange={(e) => {
                 setQ(e.target.value);
@@ -101,6 +102,7 @@ export function AdminOrders() {
           </div>
           <Select
             value={status ?? "all"}
+            aria-label="Filter by status"
             onValueChange={(v) => {
               setStatus(v === "all" ? undefined : v);
               setPage(1);

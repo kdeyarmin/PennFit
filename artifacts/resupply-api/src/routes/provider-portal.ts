@@ -14,6 +14,7 @@ import { z } from "zod";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { verifyProviderPortalToken } from "../lib/provider-portal-token";
+import { RATE_LIMITS } from "../lib/rate-limits-config";
 
 const router: IRouter = Router();
 
@@ -23,8 +24,8 @@ const router: IRouter = Router();
 // above any honest physician browsing pattern but well below what a
 // scraper guessing tokens would need.
 const providerPortalRateLimiter = expressRateLimit({
-  windowMs: 60 * 1000,
-  limit: 60,
+  windowMs: RATE_LIMITS.provider_portal.windowMs,
+  limit: RATE_LIMITS.provider_portal.limit,
   standardHeaders: "draft-7",
   legacyHeaders: false,
   keyGenerator: (req: Request) => ipKeyGenerator(req.ip ?? "0.0.0.0"),
@@ -60,6 +61,12 @@ router.get(
     res.status(404).json({ error: "provider_not_found" });
     return;
   }
+  // Only ACTIVE, currently-valid prescriptions. The portal link
+  // is a 30-day capability; without this filter the provider sees
+  // every patient name they ever prescribed for (incl. expired
+  // and revoked Rx) — too much disclosure for a long-lived link.
+  // `valid_until is null` covers the "no end-of-life set" case.
+  const todayIso = new Date().toISOString().slice(0, 10);
   const { data: rxs, error: rErr } = await supabase
     .schema("resupply")
     .from("prescriptions")
@@ -67,6 +74,8 @@ router.get(
       "id, item_sku, hcpcs_code, status, valid_from, valid_until, patients!inner(id, legal_first_name, legal_last_name)",
     )
     .eq("provider_id", v.providerId)
+    .eq("status", "active")
+    .or(`valid_until.is.null,valid_until.gte.${todayIso}`)
     .order("valid_from", { ascending: false })
     .limit(200);
   if (rErr) throw rErr;

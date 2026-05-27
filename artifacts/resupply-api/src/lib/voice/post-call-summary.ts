@@ -138,15 +138,44 @@ const SYSTEM_PROMPT = [
 
 const DEFAULT_TURN_TEXT_CAP = 600;
 const DEFAULT_MAX_TURNS = 80;
+/**
+ * Per-field cap on the strings we accept out of the parsed summary
+ * JSON (concerns + followUps). The audit-log sanitizer applies a
+ * size cap of its own, but a single 64KB "concern" — a patient's
+ * full medical history dumped into one bullet — would round-trip
+ * through the logger and the audit row before being clipped. Cap
+ * here so the upstream surfaces stay small.
+ */
+const DEFAULT_LIST_ITEM_CHAR_CAP = 300;
 
 /**
  * Format the turns into a single user message. We cap per-turn text
  * length so a single long agent monologue can't blow the context
  * budget, and we cap the total turn count from oldest-first (i.e.
  * we keep the most recent N turns) so a 30-minute call still fits.
+ *
+ * Truncation is logged at INFO so ops can tell when a long call lost
+ * its early context (sentiment + concerns from the open are absent
+ * from the summary in that case).
  */
-function buildTranscriptMessage(input: SummarizeCallInput): string {
+function buildTranscriptMessage(
+  input: SummarizeCallInput,
+  log: typeof logger = logger,
+): string {
+  const requested = input.turns.length;
   const turns = input.turns.slice(-DEFAULT_MAX_TURNS);
+  if (requested > turns.length) {
+    log.info(
+      {
+        event: "post_call_summary_turns_truncated",
+        requested,
+        used: turns.length,
+        cap: DEFAULT_MAX_TURNS,
+        conversationId: input.conversationId,
+      },
+      "post-call summary: dropped oldest turns to fit cap",
+    );
+  }
   const lines: string[] = [];
   lines.push(`Practice: ${input.practiceName}`);
   lines.push(`Call ended because: ${input.endReason}`);
@@ -195,6 +224,14 @@ function parseSummary(raw: string): PostCallSummary | null {
       .filter((x): x is string => typeof x === "string")
       .map((s) => s.trim())
       .filter((s) => s.length > 0)
+      // Per-item char cap before the array-length cap. Without this,
+      // a single 64KB-long "concern" would survive the slice(0, 20)
+      // and land in the audit log before its own sanitizer clips it.
+      .map((s) =>
+        s.length > DEFAULT_LIST_ITEM_CHAR_CAP
+          ? s.slice(0, DEFAULT_LIST_ITEM_CHAR_CAP) + "…"
+          : s,
+      )
       .slice(0, 20);
   };
   return {
@@ -230,7 +267,15 @@ export async function summarizePostCall(
     model: input.model ?? DEFAULT_ANTHROPIC_MODEL_CHAT,
     max_tokens: 600,
     temperature: 0,
-    system: SYSTEM_PROMPT,
+    // `cache_control: ephemeral` makes Anthropic serve the system
+    // prompt from cache on every post-call summary after the first.
+    // The block is static (~1.5K tokens, identical across calls) and
+    // fires once per voice call — without caching every summary
+    // re-pays the full input cost. Mirrors the pattern already in
+    // routes/storefront/chat.ts:879.
+    system: [
+      { type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } },
+    ],
     messages: [{ role: "user", content: userMessage }],
   });
   if (!result.ok) {

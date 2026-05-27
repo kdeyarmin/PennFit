@@ -18,12 +18,16 @@
 // All other states are terminal — only the Add note button remains
 // for posterity.
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import {
   useInfiniteQuery,
   useMutation,
   useQueryClient,
 } from "@tanstack/react-query";
+
+import { useUrlState } from "@/hooks/use-url-state";
+import { useConfirmDialog } from "@/hooks/use-confirm-dialog";
+import { useToast } from "@/hooks/use-toast";
 import {
   approveReturn,
   listAdminShopReturns,
@@ -56,41 +60,21 @@ const PAGE_SIZE = 25;
 
 const TAB_IDS: ReadonlySet<Tab> = new Set(TABS.map((t) => t.id));
 
-function readTabFromUrl(): Tab {
-  if (typeof window === "undefined") return "open";
-  const raw = new URLSearchParams(window.location.search).get("tab");
-  return raw && TAB_IDS.has(raw as Tab) ? (raw as Tab) : "open";
-}
+// Type-narrowing guard passed to useUrlState so unknown ?tab= values
+// silently coerce back to the "open" default rather than landing the
+// page in an unrecognised state.
+const isTab = (v: string): v is Tab => TAB_IDS.has(v as Tab);
 
 export function AdminShopReturnsPage() {
   // Persist the active tab in `?tab=<id>` so a refresh, back/forward
   // nav, or bookmarked link lands on the same view. The "open" default
-  // is omitted from the URL.
-  const [tab, setTabState] = useState<Tab>(() => readTabFromUrl());
-
-  function setTab(next: Tab) {
-    setTabState(next);
-    if (typeof window === "undefined") return;
-    const params = new URLSearchParams(window.location.search);
-    if (next === "open") params.delete("tab");
-    else params.set("tab", next);
-    const qs = params.toString();
-    const newUrl =
-      window.location.pathname +
-      (qs ? `?${qs}` : "") +
-      window.location.hash;
-    window.history.replaceState(null, "", newUrl);
-  }
-
-  useEffect(() => {
-    function handlePopstate() {
-      setTabState(readTabFromUrl());
-    }
-    window.addEventListener("popstate", handlePopstate);
-    return () => {
-      window.removeEventListener("popstate", handlePopstate);
-    };
-  }, []);
+  // is omitted from the URL. History management (replaceState +
+  // popstate listener) is owned by useUrlState.
+  const [tab, setTab] = useUrlState<Tab>({
+    key: "tab",
+    defaultValue: "open",
+    isAllowed: isTab,
+  });
 
   return (
     <div className="space-y-6" data-testid="admin-shop-returns-page">
@@ -228,42 +212,80 @@ const STATUS_TONE: Record<ReturnStatus, string> = {
   closed: "bg-slate-200 text-slate-700 border-slate-300",
 };
 
+/**
+ * Render a single admin return card showing status, metadata, notes, and status-gated actions.
+ *
+ * Renders an <li> containing the return's status badge, reason, order/customer identifiers,
+ * optional customer/admin notes, an internal notes log, inline mutation-driven actions
+ * (approve, reject, mark shipped/received, refund, replace, add note), and the confirm dialog element.
+ *
+ * @param item - The `AdminReturn` record to display and operate on
+ * @returns A list item (<li>) element containing the return card UI
+ */
 function ReturnCard({ item }: { item: AdminReturn }) {
   const qc = useQueryClient();
+  const { toast } = useToast();
+  const [confirm, ConfirmDialogEl] = useConfirmDialog();
   const invalidate = () =>
     qc.invalidateQueries({ queryKey: ["admin-shop-returns"] });
 
+  // Shared toast helpers — every mutation here moves money, ships a
+  // replacement, or closes out a customer dispute. Silent failures
+  // are the worst posture: a CSR clicks "Refund" expecting the queue
+  // to update; without a toast the click looks like a no-op, the
+  // CSR re-clicks, and we end up with duplicate side-effects (or
+  // they walk away thinking it worked). Each mutation now hands ops
+  // an obvious red toast on failure.
+  const onMutationError = (action: string) => (err: unknown) => {
+    toast({
+      variant: "destructive",
+      title: `${action} failed`,
+      description: err instanceof Error ? err.message : String(err),
+    });
+  };
+  const onMutationSuccess = (action: string) => () => {
+    invalidate();
+    toast({ title: action });
+  };
+
   const approveMut = useMutation({
     mutationFn: () => approveReturn(item.id, {}),
-    onSuccess: invalidate,
+    onSuccess: onMutationSuccess("Return approved"),
+    onError: onMutationError("Approve"),
   });
   const rejectMut = useMutation({
     mutationFn: (note: string) => rejectReturn(item.id, note),
-    onSuccess: invalidate,
+    onSuccess: onMutationSuccess("Return rejected"),
+    onError: onMutationError("Reject"),
   });
   const shippedMut = useMutation({
     mutationFn: () => markShipped(item.id),
-    onSuccess: invalidate,
+    onSuccess: onMutationSuccess("Marked shipped"),
+    onError: onMutationError("Mark shipped"),
   });
   const receivedMut = useMutation({
     mutationFn: () => markReceived(item.id),
-    onSuccess: invalidate,
+    onSuccess: onMutationSuccess("Marked received"),
+    onError: onMutationError("Mark received"),
   });
   const refundMut = useMutation({
     mutationFn: (amountCents?: number) =>
       refundReturn(item.id, amountCents ? { amountCents } : {}),
-    onSuccess: invalidate,
+    onSuccess: onMutationSuccess("Refund issued"),
+    onError: onMutationError("Refund"),
   });
   const replaceMut = useMutation({
     mutationFn: (body: {
       exchangeProductId: string;
       exchangePriceId: string;
     }) => replaceReturn(item.id, body),
-    onSuccess: invalidate,
+    onSuccess: onMutationSuccess("Replacement issued"),
+    onError: onMutationError("Replace"),
   });
   const noteMut = useMutation({
     mutationFn: (note: string) => noteReturn(item.id, note),
-    onSuccess: invalidate,
+    onSuccess: onMutationSuccess("Note saved"),
+    onError: onMutationError("Save note"),
   });
 
   const [rejectNote, setRejectNote] = useState("");
@@ -399,6 +421,7 @@ function ReturnCard({ item }: { item: AdminReturn }) {
                   value={rejectNote}
                   onChange={(e) => setRejectNote(e.target.value.slice(0, 500))}
                   placeholder="Reason for rejection (optional)"
+                  aria-label="Reason for rejection"
                   className="rounded border border-slate-300 px-2 py-1.5 text-xs"
                 />
                 <button
@@ -423,13 +446,17 @@ function ReturnCard({ item }: { item: AdminReturn }) {
         {item.status === "approved" && (
           <button
             type="button"
-            onClick={() => {
+            onClick={async () => {
               if (
-                window.confirm(
-                  "Mark this return as shipped back? Use this when the customer confirms they've handed off the parcel, before it physically arrives.",
-                )
+                !(await confirm({
+                  title: "Mark return as shipped back?",
+                  description:
+                    "Use this when the customer confirms they've handed off the parcel, before it physically arrives.",
+                  confirmLabel: "Mark shipped",
+                }))
               )
-                shippedMut.mutate();
+                return;
+              shippedMut.mutate();
             }}
             disabled={shippedMut.isPending}
             className="rounded bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-60"
@@ -441,9 +468,17 @@ function ReturnCard({ item }: { item: AdminReturn }) {
         {(item.status === "approved" || item.status === "shipped_back") && (
           <button
             type="button"
-            onClick={() => {
-              if (window.confirm("Mark this return as received? This advances the return to the refund/replace stage."))
-                receivedMut.mutate();
+            onClick={async () => {
+              if (
+                !(await confirm({
+                  title: "Mark return as received?",
+                  description:
+                    "This advances the return to the refund/replace stage.",
+                  confirmLabel: "Mark received",
+                }))
+              )
+                return;
+              receivedMut.mutate();
             }}
             disabled={receivedMut.isPending}
             className="rounded bg-violet-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-violet-700 disabled:opacity-60"
@@ -456,9 +491,18 @@ function ReturnCard({ item }: { item: AdminReturn }) {
           <>
             <button
               type="button"
-              onClick={() => {
-                if (window.confirm("Issue a full refund for this return? This action cannot be undone."))
-                  refundMut.mutate(undefined);
+              onClick={async () => {
+                if (
+                  !(await confirm({
+                    title: "Issue a full refund?",
+                    description:
+                      "This refunds the customer's original payment in full. It cannot be undone.",
+                    confirmLabel: "Refund",
+                    destructive: true,
+                  }))
+                )
+                  return;
+                refundMut.mutate(undefined);
               }}
               disabled={refundMut.isPending}
               className="rounded bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
@@ -481,6 +525,7 @@ function ReturnCard({ item }: { item: AdminReturn }) {
                   value={replaceProductId}
                   onChange={(e) => setReplaceProductId(e.target.value)}
                   placeholder="prod_xxx"
+                  aria-label="Replacement Stripe product ID"
                   className="rounded border border-slate-300 px-2 py-1.5 text-xs font-mono"
                 />
                 <input
@@ -488,16 +533,36 @@ function ReturnCard({ item }: { item: AdminReturn }) {
                   value={replacePriceId}
                   onChange={(e) => setReplacePriceId(e.target.value)}
                   placeholder="price_xxx"
+                  aria-label="Replacement Stripe price ID"
                   className="rounded border border-slate-300 px-2 py-1.5 text-xs font-mono"
                 />
                 <button
                   type="button"
-                  onClick={() => {
-                    if (window.confirm(`Send replacement product ${replaceProductId} at price ${replacePriceId}? This creates a new order for the customer.`))
-                      replaceMut.mutate({
-                        exchangeProductId: replaceProductId,
-                        exchangePriceId: replacePriceId,
-                      });
+                  onClick={async () => {
+                    if (
+                      !(await confirm({
+                        title: "Send replacement?",
+                        description: (
+                          <>
+                            Send replacement product{" "}
+                            <code className="font-mono text-xs">
+                              {replaceProductId}
+                            </code>{" "}
+                            at price{" "}
+                            <code className="font-mono text-xs">
+                              {replacePriceId}
+                            </code>
+                            ? This creates a new order for the customer.
+                          </>
+                        ),
+                        confirmLabel: "Send replacement",
+                      }))
+                    )
+                      return;
+                    replaceMut.mutate({
+                      exchangeProductId: replaceProductId,
+                      exchangePriceId: replacePriceId,
+                    });
                   }}
                   disabled={
                     replaceMut.isPending || !replaceProductId || !replacePriceId
@@ -532,6 +597,7 @@ function ReturnCard({ item }: { item: AdminReturn }) {
               value={extraNote}
               onChange={(e) => setExtraNote(e.target.value.slice(0, 2000))}
               placeholder="Internal note (≤2000 chars)"
+              aria-label="Internal note"
               className="flex-1 min-w-[16rem] rounded border border-slate-300 px-2 py-1.5 text-xs"
             />
             <button
@@ -557,6 +623,7 @@ function ReturnCard({ item }: { item: AdminReturn }) {
           </div>
         )}
       </div>
+      {ConfirmDialogEl}
     </li>
   );
 }

@@ -53,6 +53,10 @@ import {
   TICK_INTERVAL_SECONDS,
 } from "../../lib/bulk-campaigns/dispatch-helpers.js";
 import { logger } from "../../lib/logger.js";
+import {
+  buildQueueConfig,
+  VENDOR_SEND_QUEUE_OPTS,
+} from "../lib/queue-options.js";
 
 export const BULK_CAMPAIGN_TICK_JOB = "bulk-campaigns.send-tick";
 
@@ -70,7 +74,14 @@ const SYSTEM_ACTOR_EMAIL = "system:worker:bulk-campaigns";
 export async function registerBulkCampaignTickJob(
   boss: PgBoss,
 ): Promise<void> {
-  await boss.createQueue(BULK_CAMPAIGN_TICK_JOB);
+  // Each tick is a vendor-call surface (SendGrid). Routes exhausted
+  // retries to `<name>.dlq` so a deterministically-poison tick (e.g.
+  // template render permanently broken) lands in ops review instead
+  // of bouncing through pg-boss's silent-failure path.
+  await boss.createQueue(
+    BULK_CAMPAIGN_TICK_JOB,
+    buildQueueConfig(BULK_CAMPAIGN_TICK_JOB, VENDOR_SEND_QUEUE_OPTS),
+  );
   await boss.work<BulkCampaignTickPayload>(
     BULK_CAMPAIGN_TICK_JOB,
     async (jobs) => {
@@ -155,7 +166,9 @@ export async function processTick(
   }
 
   // Flip the claimed batch to 'sending' in one update so a
-  // concurrent worker tick can't re-claim the same rows.
+  // concurrent worker tick can't re-claim the same rows. recipient_kind
+  // + recipient_id are included on the RETURNING set so the per-row
+  // opt-out re-check below has them without a second fetch.
   const claimedIds = pendingRows.map((r) => r.id);
   const { data: claimed, error: claimErr } = await supabase
     .schema("resupply")
@@ -163,7 +176,7 @@ export async function processTick(
     .update({ status: "sending" })
     .in("id", claimedIds)
     .eq("status", "pending")
-    .select("id, recipient_email");
+    .select("id, recipient_email, recipient_kind, recipient_id");
   if (claimErr) {
     log.error({ err: claimErr.message }, "bulk_campaigns.tick: claim update failed");
     throw claimErr;
@@ -230,9 +243,17 @@ export async function processTick(
   //    because SendGrid's API tolerates parallel calls but the
   //    Phase B priority is correctness over throughput; parallel
   //    fan-out can come later if needed.
+  //
+  //    Iterate `claimed` (the UPDATE-RETURNING set), NOT `pendingRows`
+  //    (the pre-claim snapshot). If an admin edited recipient_email
+  //    between our SELECT and UPDATE, the snapshot carries the stale
+  //    address — the UPDATE re-reads from the row and RETURNING gives
+  //    us the freshest value. Using `pendingRows` here lost that
+  //    update and shipped to the OLD address.
   let sent = 0;
   let failed = 0;
-  for (const row of pendingRows) {
+  let suppressedAtSend = 0;
+  for (const row of claimed ?? []) {
     if (!winningIds.has(row.id)) continue;
     const email = row.recipient_email;
     if (!email) {
@@ -244,6 +265,43 @@ export async function processTick(
         .update({ status: "failed", error: "no_email_at_send_time" })
         .eq("id", row.id);
       failed += 1;
+      continue;
+    }
+    // Re-check opt-out at send time. resolve-audience filters at
+    // enqueue, but a patient who unsubscribes between the campaign's
+    // resolveAudience pass and this tick (campaigns can run for hours)
+    // would otherwise still receive the message. Compliance categories
+    // (recall / HIPAA notice) intentionally bypass this gate — the
+    // resolver makes the same exception at enqueue time.
+    const optedOut = await isRecipientOptedOut(
+      supabase,
+      row.recipient_kind,
+      row.recipient_id,
+      campaign.category,
+    );
+    if (optedOut) {
+      const { error: supErr } = await supabase
+        .schema("resupply")
+        .from("bulk_campaign_recipients")
+        .update({
+          status: "suppressed",
+          suppression_reason: "opted_out_at_send_time",
+        })
+        .eq("id", row.id);
+      if (supErr) {
+        log.error(
+          { err: supErr.message, recipientId: row.id, campaignId: campaign.id },
+          "bulk_campaigns.tick: suppression update failed — marking recipient failed",
+        );
+        await supabase
+          .schema("resupply")
+          .from("bulk_campaign_recipients")
+          .update({ status: "failed", error: supErr.message.slice(0, 500) })
+          .eq("id", row.id);
+        failed += 1;
+        continue;
+      }
+      suppressedAtSend += 1;
       continue;
     }
     try {
@@ -282,16 +340,29 @@ export async function processTick(
   // 5. Update counters on the campaign row using atomic increments.
   //    We use a raw UPDATE with column references to ensure concurrent
   //    ticks properly accumulate deltas instead of clobbering each other.
-  if (sent > 0 || failed > 0) {
+  if (sent > 0 || failed > 0 || suppressedAtSend > 0) {
     const pool = await import("@workspace/resupply-db").then((m) => m.getDbPool());
-    const { rows } = await pool.query(
+    // Use pg's `rowCount` instead of `rows.length`. The UPDATE has no
+    // RETURNING, so `rows` is always [] and the prior length check
+    // was dead code — operators got no log when a concurrent cancel
+    // deleted the campaign row mid-tick.
+    //
+    // suppressed_count accumulates BOTH enqueue-time suppressions
+    // (resolved-but-opted-out at audience resolution) AND at-send-time
+    // suppressions (patient unsubscribed between enqueue and tick).
+    // The two sources share a column because the dashboard surfaces
+    // them as one number; the per-recipient `suppression_reason` on
+    // bulk_campaign_recipients distinguishes them when investigators
+    // need to know.
+    const result = await pool.query(
       `UPDATE resupply.bulk_campaigns
        SET sent_count = sent_count + $1,
-           failed_count = failed_count + $2
-       WHERE id = $3`,
-      [sent, failed, campaign.id],
+           failed_count = failed_count + $2,
+           suppressed_count = suppressed_count + $3
+       WHERE id = $4`,
+      [sent, failed, suppressedAtSend, campaign.id],
     );
-    if (rows.length === 0) {
+    if (result.rowCount === 0) {
       log.warn(
         { campaignId: campaign.id },
         "bulk_campaigns.tick: counter update affected 0 rows",
@@ -300,7 +371,13 @@ export async function processTick(
   }
 
   log.info(
-    { campaignId: campaign.id, sent, failed, batchSize },
+    {
+      campaignId: campaign.id,
+      sent,
+      failed,
+      suppressedAtSend,
+      batchSize,
+    },
     "bulk_campaigns.tick: batch complete",
   );
 
@@ -340,6 +417,63 @@ export async function processTick(
   }
 
   await enqueueNextTick(boss, campaign.id);
+}
+
+/**
+ * Re-check whether a recipient is opted-out of the campaign's
+ * category at SEND time. The resolver did this at enqueue time, but
+ * a campaign that runs for hours can ship to a patient who
+ * unsubscribed in between — this gate closes that window.
+ *
+ * Posture: any error here (Supabase blip, deleted row, malformed
+ * prefs JSON) returns `false` (= not opted-out, proceed with send).
+ * The principle: a failed re-check should not silently block a
+ * compliant send; the enqueue-time gate has already filtered the
+ * known opt-outs, and this is the second line of defense for the
+ * narrow window where prefs changed mid-campaign.
+ */
+async function isRecipientOptedOut(
+  supabase: ReturnType<typeof getSupabaseServiceRoleClient>,
+  kind: string,
+  id: string,
+  category: string,
+): Promise<boolean> {
+  // Which preference key gates this category? Mirrors the policy in
+  // lib/bulk-campaigns/resolve-audience.ts.
+  const prefKey =
+    category === "marketing"
+      ? "emailMarketing"
+      : category === "service"
+        ? "emailResupplyReminders"
+        : null;
+  if (!prefKey) return false;
+
+  // At send time, only shop customers can be re-checked from the
+  // generated schema source used here. Patients do not expose a
+  // `communication_preferences` column in the generated Database
+  // types, so querying `patients` here is both invalid and wasted
+  // work. Preserve the existing fail-open posture by skipping the
+  // re-check for patient recipients until preferences are resolved
+  // from the correct source.
+  if (kind !== "shop_customer") return false;
+
+  try {
+    const { data } = await supabase
+      .schema("resupply")
+      .from("shop_customers")
+      .select("communication_preferences")
+      .eq("customer_id", id)
+      .limit(1)
+      .maybeSingle();
+    const prefs =
+      data && typeof data.communication_preferences === "object"
+        ? (data.communication_preferences as Record<string, unknown> | null)
+        : null;
+    if (!prefs) return false;
+    return prefs[prefKey] === false;
+  } catch {
+    return false;
+  }
 }
 
 async function markCampaignSent(

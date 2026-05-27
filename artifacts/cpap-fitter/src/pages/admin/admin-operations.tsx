@@ -117,8 +117,8 @@ function VendorStrip({ vendors }: { vendors: OpsStatus["vendors"] }) {
       label: "SendGrid",
       hint: "Outbound email (receipts, reminders, review requests)",
     },
-    { key: "twilioSms", label: "Twilio SMS", hint: "Outbound resupply SMS" },
-    { key: "twilioVoice", label: "Twilio Voice", hint: "Outbound voice calls" },
+    { key: "twilioSms", label: "SMS", hint: "Outbound resupply SMS" },
+    { key: "twilioVoice", label: "Voice", hint: "Outbound voice calls" },
     {
       key: "stripe",
       label: "Stripe",

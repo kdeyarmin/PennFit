@@ -200,14 +200,24 @@ process.on("unhandledRejection", (reason) => {
 // Graceful shutdown: drain HTTP, close the WS server, stop the
 // in-process pg-boss worker, exit. Without this, SIGTERM kills
 // in-flight requests mid-flight (the orchestrator's deploy-rollover
-// signal). The 25-second cap is below typical orchestrator grace
-// periods (30s on Replit, K8s default) so we always abort cleanly
-// before the kernel SIGKILLs us — better to drop a stuck connection
-// than have the kernel interrupt a half-written DB transaction.
+// signal). Both phases share a single deadline below typical
+// orchestrator grace periods (30s on Replit, K8s default) so we
+// always abort cleanly before the kernel SIGKILLs us — better to
+// drop a stuck connection than have the kernel interrupt a
+// half-written DB transaction OR a pg-boss job mid-flight.
+//
+// Previously the HTTP drain capped at 25s and stopWorker had a
+// further 10s budget — worst-case ~35s would blow the 30s grace
+// and SIGKILL pg-boss mid-job. The shared deadline below gives
+// HTTP up to TOTAL_BUDGET_MS - WORKER_MIN_BUDGET_MS and lets the
+// worker consume the remainder, so total wall time stays at
+// TOTAL_BUDGET_MS regardless of which phase takes longer.
 //
 // Application DB connections are managed by the Supabase client
 // (HTTP via PostgREST — no pool to drain). pg-boss owns its own
 // node-postgres pool and closes it as part of `boss.stop()`.
+const TOTAL_BUDGET_MS = 25_000;
+const WORKER_MIN_BUDGET_MS = 5_000;
 let shuttingDown = false;
 async function shutdown(signal: string): Promise<void> {
   if (shuttingDown) {
@@ -216,19 +226,29 @@ async function shutdown(signal: string): Promise<void> {
   }
   shuttingDown = true;
   logger.info({ signal }, "shutdown: draining in-flight requests");
+  const startedAt = Date.now();
+  const deadline = startedAt + TOTAL_BUDGET_MS;
 
   const httpClosed = new Promise<void>((resolve) => {
     httpServer.close(() => resolve());
   });
   wss.close();
 
-  const timeout = new Promise<void>((resolve) => setTimeout(resolve, 25_000));
-  await Promise.race([httpClosed, timeout]);
+  // Give HTTP at most TOTAL_BUDGET - WORKER_MIN_BUDGET so pg-boss
+  // always has the time it needs to drain in-flight handlers.
+  const httpDeadlineMs = TOTAL_BUDGET_MS - WORKER_MIN_BUDGET_MS;
+  const httpTimeout = new Promise<void>((resolve) =>
+    setTimeout(resolve, httpDeadlineMs),
+  );
+  await Promise.race([httpClosed, httpTimeout]);
 
   // Stop pg-boss — owns its own node-postgres pool and drains any
-  // in-flight job handlers gracefully on `boss.stop()`.
+  // in-flight job handlers gracefully on `boss.stop()`. Pass it the
+  // remaining time budget so the total wall clock stays inside
+  // TOTAL_BUDGET_MS.
+  const remainingMs = Math.max(1_000, deadline - Date.now());
   try {
-    await stopWorker();
+    await stopWorker(remainingMs);
   } catch (err) {
     logger.warn({ err: serializeErr(err) }, "shutdown: worker stop errored");
   }

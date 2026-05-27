@@ -1028,6 +1028,7 @@ function FollowupsTab({ patientId }: { patientId: string }) {
           value={body}
           onChange={(e) => setBody(e.target.value)}
           placeholder="What do you need to do (e.g. 'Call about Rx renewal')?"
+          aria-label="Follow-up task"
           rows={2}
           maxLength={FOLLOWUP_MAX_BODY + 200}
           disabled={createMutation.isPending}
@@ -2328,31 +2329,37 @@ function AddressHistoryForm({
       <div className="grid sm:grid-cols-2 gap-2">
         <Input
           placeholder="Line 1"
+          aria-label="Address line 1"
           value={line1}
           onChange={(e) => setLine1(e.target.value)}
         />
         <Input
           placeholder="Line 2"
+          aria-label="Address line 2"
           value={line2}
           onChange={(e) => setLine2(e.target.value)}
         />
         <Input
           placeholder="City"
+          aria-label="City"
           value={city}
           onChange={(e) => setCity(e.target.value)}
         />
         <Input
           placeholder="State"
+          aria-label="State"
           value={state}
           onChange={(e) => setState(e.target.value)}
         />
         <Input
           placeholder="Postal code"
+          aria-label="Postal code"
           value={postalCode}
           onChange={(e) => setPostalCode(e.target.value)}
         />
         <Input
           placeholder="Country (2-letter)"
+          aria-label="Country"
           value={country}
           onChange={(e) => setCountry(e.target.value.toUpperCase())}
           maxLength={2}
@@ -2360,6 +2367,7 @@ function AddressHistoryForm({
       </div>
       <Input
         placeholder="Reason (required)"
+        aria-label="Reason for address change"
         value={reason}
         onChange={(e) => setReason(e.target.value)}
       />

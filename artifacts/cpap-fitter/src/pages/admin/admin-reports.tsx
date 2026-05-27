@@ -13,7 +13,16 @@
 // the file save via <a download>. Auth follows the pf_session cookie
 // automatically.
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+
+import {
+  createReportPreset,
+  deleteReportPreset,
+  listReportPresets,
+  type ReportPreset,
+  type ReportPresetCreate,
+} from "@/lib/admin/report-presets-api";
 
 import { DATE_PRESETS, isoDate } from "./admin-reports-presets";
 import {
@@ -117,6 +126,7 @@ export function AdminReportsPage() {
               value={from}
               onChange={(e) => setFrom(e.target.value)}
               max={to}
+              aria-label="From date"
               className="rounded border border-slate-300 px-2 py-1.5 text-sm"
               data-testid="reports-from"
             />
@@ -131,6 +141,7 @@ export function AdminReportsPage() {
               onChange={(e) => setTo(e.target.value)}
               min={from}
               max={isoDate(today)}
+              aria-label="To date"
               className="rounded border border-slate-300 px-2 py-1.5 text-sm"
               data-testid="reports-to"
             />
@@ -161,6 +172,26 @@ export function AdminReportsPage() {
           </label>
         </div>
       </section>
+
+      <SavedPresetsSection
+        from={from}
+        to={to}
+        onApply={(p) => {
+          if (p.rangeKind === "preset" && p.rangePreset) {
+            const preset = DATE_PRESETS.find(
+              (entry) => entry.testId === p.rangePreset,
+            );
+            if (preset) {
+              const { from: pf, to: pt } = preset.compute(new Date());
+              setFrom(pf);
+              setTo(pt);
+            }
+          } else if (p.rangeFrom && p.rangeTo) {
+            setFrom(p.rangeFrom);
+            setTo(p.rangeTo);
+          }
+        }}
+      />
 
       <section className="grid gap-3 sm:grid-cols-2">
         {REPORTS.map((r) => (
@@ -381,6 +412,7 @@ function EmailReportModal({
             onChange={(e) =>
               setFormat(e.target.value as typeof format)
             }
+            aria-label="Format"
             className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
             data-testid={`email-report-${report.slug}-format`}
           >
@@ -400,6 +432,7 @@ function EmailReportModal({
             type="email"
             value={recipient}
             onChange={(e) => setRecipient(e.target.value)}
+            aria-label="Recipient email"
             className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
             placeholder="accounting@example.com"
             data-testid={`email-report-${report.slug}-recipient`}
@@ -416,6 +449,7 @@ function EmailReportModal({
             onChange={(e) => setNote(e.target.value)}
             rows={2}
             maxLength={500}
+            aria-label="Note"
             className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
             placeholder="For the April close — please file with this month's receipts."
             data-testid={`email-report-${report.slug}-note`}
@@ -481,6 +515,432 @@ function EmailReportModal({
             data-testid={`email-report-${report.slug}-send`}
           >
             {submitting ? "Sending…" : "Send"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Saved presets section.
+//
+// Each preset is a (slug, format, range) tuple the admin saved for
+// fast re-apply. Clicking a preset row applies the range to the
+// page's date inputs and surfaces a download link for the saved
+// (slug, format). Range mode "preset" (e.g. last-month) re-computes
+// off `new Date()` each click so "always last month" stays current.
+// ─────────────────────────────────────────────────────────────────
+
+const PRESETS_QUERY_KEY = ["admin-report-presets"] as const;
+
+function SavedPresetsSection({
+  from,
+  to,
+  onApply,
+}: {
+  from: string;
+  to: string;
+  onApply: (preset: ReportPreset) => void;
+}) {
+  const query = useQuery({
+    queryKey: PRESETS_QUERY_KEY,
+    queryFn: listReportPresets,
+  });
+  const [creating, setCreating] = useState(false);
+
+  return (
+    <section
+      aria-label="Saved report presets"
+      data-testid="reports-saved-presets"
+      className="space-y-2"
+    >
+      <div className="flex items-center justify-between">
+        <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-600">
+          Saved presets
+        </h2>
+        <button
+          type="button"
+          onClick={() => setCreating(true)}
+          className="rounded border border-slate-300 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+          data-testid="reports-presets-new"
+        >
+          + Save current view
+        </button>
+      </div>
+      <div className="rounded-lg border border-slate-200 bg-white">
+        {query.isPending ? (
+          <p className="px-4 py-3 text-sm text-slate-500">Loading…</p>
+        ) : query.isError ? (
+          <p
+            className="px-4 py-3 text-sm text-rose-700"
+            role="alert"
+            data-testid="reports-presets-error"
+          >
+            Couldn&apos;t load presets:{" "}
+            {query.error instanceof Error ? query.error.message : "unknown"}
+          </p>
+        ) : (query.data?.presets ?? []).length === 0 ? (
+          <p className="px-4 py-3 text-sm text-slate-500">
+            No saved presets yet. Pick a date range + format above and
+            click <strong>+ Save current view</strong> to pin it.
+          </p>
+        ) : (
+          <ul className="divide-y divide-slate-200">
+            {(query.data?.presets ?? []).map((p) => (
+              <SavedPresetRow
+                key={p.id}
+                preset={p}
+                onApply={() => onApply(p)}
+              />
+            ))}
+          </ul>
+        )}
+      </div>
+      {creating && (
+        <NewPresetModal
+          defaultRange={{ from, to }}
+          onClose={() => setCreating(false)}
+        />
+      )}
+    </section>
+  );
+}
+
+function SavedPresetRow({
+  preset,
+  onApply,
+}: {
+  preset: ReportPreset;
+  onApply: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const remove = useMutation({
+    mutationFn: () => deleteReportPreset(preset.id),
+    onSettled: () =>
+      queryClient.invalidateQueries({ queryKey: PRESETS_QUERY_KEY }),
+  });
+
+  const rangeLabel =
+    preset.rangeKind === "preset"
+      ? (DATE_PRESETS.find((p) => p.testId === preset.rangePreset)?.label ??
+        preset.rangePreset ??
+        "preset")
+      : `${preset.rangeFrom} → ${preset.rangeTo}`;
+
+  return (
+    <li
+      className="flex items-center gap-3 px-4 py-2 text-sm"
+      data-testid={`preset-row-${preset.id}`}
+    >
+      <div className="min-w-0 flex-1">
+        <div className="font-semibold text-slate-900 truncate">
+          {preset.name}
+        </div>
+        <div className="text-xs text-slate-600 truncate">
+          <code className="rounded bg-slate-100 px-1 font-mono">
+            {preset.slug}
+          </code>{" "}
+          · {preset.format} · {rangeLabel}
+          {preset.recipient && (
+            <span className="ml-1 text-slate-500">→ {preset.recipient}</span>
+          )}
+        </div>
+      </div>
+      <button
+        type="button"
+        onClick={onApply}
+        className="rounded border border-slate-300 bg-white px-2 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+        data-testid={`preset-row-${preset.id}-apply`}
+      >
+        Apply range
+      </button>
+      <button
+        type="button"
+        onClick={() => remove.mutate()}
+        disabled={remove.isPending}
+        className="rounded border border-rose-200 bg-white px-2 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-50"
+        data-testid={`preset-row-${preset.id}-delete`}
+        aria-label={`Delete preset ${preset.name}`}
+        title="Delete preset"
+      >
+        ✕
+      </button>
+    </li>
+  );
+}
+
+// Slugs + formats are the same lists used by the page-level
+// ReportCard grid; keep this catalog in sync. (A future refactor
+// could derive both from one source.)
+const PRESET_SLUG_OPTIONS = [
+  "orders",
+  "returns",
+  "revenue-summary",
+  "refunds-journal",
+  "insurance-claims",
+  "customer-activity",
+] as const;
+// Matches the FORMAT_VALUES enum on the backend (routes/admin/report-presets.ts).
+type PresetFormat = "csv" | "pdf" | "iif" | "qbo.csv";
+
+function NewPresetModal({
+  defaultRange,
+  onClose,
+}: {
+  defaultRange: { from: string; to: string };
+  onClose: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const [name, setName] = useState("");
+  const [slug, setSlug] =
+    useState<(typeof PRESET_SLUG_OPTIONS)[number]>("orders");
+  const [format, setFormat] =
+    useState<PresetFormat>("csv");
+  // "absolute" pins the dates as-of save; "preset" stores the
+  // DATE_PRESETS testId so "always last month" stays current.
+  const [rangeMode, setRangeMode] = useState<"absolute" | "preset">(
+    "absolute",
+  );
+  const [rangePreset, setRangePreset] = useState<string>(
+    DATE_PRESETS[0]?.testId ?? "",
+  );
+  const [recipient, setRecipient] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const nameRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    nameRef.current?.focus();
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [onClose]);
+
+  const create = useMutation({
+    mutationFn: (body: ReportPresetCreate) => createReportPreset(body),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: PRESETS_QUERY_KEY });
+      onClose();
+    },
+    onError: (err) => {
+      setError(err instanceof Error ? err.message : "Couldn't save.");
+    },
+  });
+
+  // Allowable formats per slug — mirrors the REPORTS array's
+  // formats field. Memoise so the <select> doesn't recompute on
+  // every keystroke.
+  const allowedFormats = useMemo(() => {
+    const r = REPORTS.find((x) => x.slug === slug);
+    return (r?.formats ?? []).map((f) =>
+      f === "qbo" ? "qbo.csv" : f,
+    ) as ReadonlyArray<PresetFormat>;
+  }, [slug]);
+
+  const validName = name.trim().length > 0;
+  const validRange =
+    rangeMode === "absolute"
+      ? Boolean(defaultRange.from && defaultRange.to)
+      : Boolean(rangePreset);
+  const validRecipient =
+    recipient.trim().length === 0 || /@/.test(recipient);
+  const canSubmit =
+    validName && validRange && validRecipient && !create.isPending;
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="new-preset-title"
+      onClick={onClose}
+      data-testid="reports-presets-new-modal"
+    >
+      <div
+        className="w-full max-w-md rounded-lg bg-white shadow-xl border border-slate-200 p-5 space-y-3"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h3 id="new-preset-title" className="text-base font-bold text-slate-900">
+          Save current view as preset
+        </h3>
+        <div>
+          <label className="block text-xs font-semibold text-slate-600 mb-1">
+            Name
+          </label>
+          <input
+            ref={nameRef}
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            maxLength={120}
+            aria-label="Preset name"
+            className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+            placeholder="Monthly close — last month IIF"
+            data-testid="reports-presets-new-name"
+          />
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs font-semibold text-slate-600 mb-1">
+              Report
+            </label>
+            <select
+              value={slug}
+              onChange={(e) => {
+                const next = e.target.value as typeof slug;
+                setSlug(next);
+                // Reset the format if the new slug doesn't support
+                // the current one (e.g. revenue-summary → can't be
+                // iif). Pick the first allowed format.
+                const r = REPORTS.find((x) => x.slug === next);
+                const allowed = (r?.formats ?? []).map((f) =>
+                  f === "qbo" ? "qbo.csv" : f,
+                ) as ReadonlyArray<PresetFormat>;
+                if (allowed.length > 0 && !allowed.includes(format)) {
+                  setFormat(allowed[0]!);
+                }
+              }}
+              aria-label="Report"
+              className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+              data-testid="reports-presets-new-slug"
+            >
+              {PRESET_SLUG_OPTIONS.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-slate-600 mb-1">
+              Format
+            </label>
+            <select
+              value={format}
+              onChange={(e) => setFormat(e.target.value as typeof format)}
+              aria-label="Format"
+              className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+              data-testid="reports-presets-new-format"
+            >
+              {allowedFormats.map((f) => (
+                <option key={f} value={f}>
+                  {f}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+        <div>
+          <label className="block text-xs font-semibold text-slate-600 mb-1">
+            Range
+          </label>
+          <div className="flex items-center gap-3 text-xs text-slate-700">
+            <label className="flex items-center gap-1">
+              <input
+                type="radio"
+                checked={rangeMode === "absolute"}
+                onChange={() => setRangeMode("absolute")}
+                data-testid="reports-presets-new-range-absolute"
+              />
+              <span>
+                Use current dates ({defaultRange.from} → {defaultRange.to})
+              </span>
+            </label>
+            <label className="flex items-center gap-1">
+              <input
+                type="radio"
+                checked={rangeMode === "preset"}
+                onChange={() => setRangeMode("preset")}
+                data-testid="reports-presets-new-range-preset"
+              />
+              <span>Use a relative preset</span>
+            </label>
+          </div>
+          {rangeMode === "preset" && (
+            <select
+              value={rangePreset}
+              onChange={(e) => setRangePreset(e.target.value)}
+              aria-label="Relative range preset"
+              className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+              data-testid="reports-presets-new-range-preset-select"
+            >
+              {DATE_PRESETS.map((p) => (
+                <option key={p.testId} value={p.testId}>
+                  {p.label}
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
+        <div>
+          <label className="block text-xs font-semibold text-slate-600 mb-1">
+            Default email recipient (optional)
+          </label>
+          <input
+            value={recipient}
+            onChange={(e) => setRecipient(e.target.value)}
+            placeholder="accounting@example.com"
+            aria-label="Default email recipient"
+            className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+            data-testid="reports-presets-new-recipient"
+          />
+        </div>
+        {error && (
+          <p
+            className="text-xs text-rose-700"
+            role="alert"
+            data-testid="reports-presets-new-error"
+          >
+            {error}
+          </p>
+        )}
+        <div className="flex items-center justify-end gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            disabled={!canSubmit}
+            onClick={() => {
+              setError(null);
+              const recipientValue = recipient.trim()
+                ? recipient.trim()
+                : null;
+              const body: ReportPresetCreate =
+                rangeMode === "preset"
+                  ? {
+                      name: name.trim(),
+                      slug,
+                      format,
+                      rangeKind: "preset",
+                      rangePreset,
+                      recipient: recipientValue,
+                    }
+                  : {
+                      name: name.trim(),
+                      slug,
+                      format,
+                      rangeKind: "absolute",
+                      rangeFrom: defaultRange.from,
+                      rangeTo: defaultRange.to,
+                      recipient: recipientValue,
+                    };
+              create.mutate(body);
+            }}
+            className={[
+              "rounded px-3 py-1.5 text-sm font-semibold text-white",
+              canSubmit
+                ? "bg-blue-600 hover:bg-blue-700"
+                : "bg-blue-300 cursor-not-allowed",
+            ].join(" ")}
+            data-testid="reports-presets-new-save"
+          >
+            {create.isPending ? "Saving…" : "Save preset"}
           </button>
         </div>
       </div>

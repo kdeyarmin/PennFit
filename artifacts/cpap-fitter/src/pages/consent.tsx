@@ -86,7 +86,45 @@ export function Consent() {
       phone: phoneFilled ? phone.trim() : undefined,
       smsOptIn: phoneFilled && smsOptIn,
       website: "",
-    }).catch((err) => {
+    }).catch((err: unknown) => {
+      // Silent failure metric. The patient flow always advances —
+      // see comment above the submit call — but a rising failure
+      // rate here means downstream resupply funnels (supply
+      // campaigns, conversion attribution) silently lose leads.
+      // Emit a structured event so ops can graph the rate and a
+      // creeping problem doesn't hide as a slow drop in fitter-
+      // funnel volume.
+      const raw =
+        err instanceof Error ? err.message : String(err ?? "unknown");
+      const httpMatch = /^http_(\d{3})$/.exec(raw);
+      const httpStatus = httpMatch ? Number(httpMatch[1]) : null;
+      let category: "http_4xx" | "http_5xx" | "network" | "other";
+      if (httpStatus !== null) {
+        category =
+          httpStatus >= 500
+            ? "http_5xx"
+            : httpStatus >= 400
+              ? "http_4xx"
+              : "other";
+      } else if (
+        err instanceof TypeError ||
+        /networkerror|failed to fetch/i.test(raw)
+      ) {
+        // fetch() rejects with a TypeError on network failure; some
+        // browsers surface a localised message instead, so we also
+        // match the canonical text.
+        category = "network";
+      } else {
+        category = "other";
+      }
+      track("fitter_lead_submit_failed", {
+        category,
+        httpStatus,
+        errorCode: raw.slice(0, 64),
+      });
+      // Preserve the legacy console.warn for live-debugging — ops
+      // gets the metric, devs hunting a regression still see the
+      // raw error in the browser console.
       console.warn("fitter-lead submit failed (continuing)", err);
     });
     setLocation("/capture");

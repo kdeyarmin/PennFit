@@ -170,7 +170,7 @@ async function loadAccountContext(
 
   try {
     const supabase = getSupabaseServiceRoleClient();
-    // Run the four reads in parallel — the original Drizzle path
+    // Run the four reads in parallel — the original SQL path
     // ran them sequentially but they're independent and indexed on
     // customer_id.
     const [customerRes, orderCountRes, latestOrderRes, subsRes] =

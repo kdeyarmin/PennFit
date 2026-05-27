@@ -90,6 +90,9 @@ function receivedReturnRow(
     return_tracking_number: null,
     admin_note: null,
     admin_user_id: null,
+    refund_failure_count: 0,
+    refund_last_failure_at: null,
+    refund_last_failure_reason: null,
     created_at: "2026-04-01T10:00:00Z",
     updated_at: "2026-04-01T10:00:00Z",
     approved_at: "2026-04-02T10:00:00Z",
@@ -314,6 +317,11 @@ describe("POST /admin/shop/returns/:id/refund — handler logic", () => {
     stageSupabaseResponse("shop_orders", "select", {
       data: shopOrderRow(),
     });
+    // The handler now writes the failure counter on the catch
+    // branch — stage a non-erroring response for that UPDATE so
+    // the assertion focuses on the response body, not on the
+    // tracking write succeeding.
+    stageSupabaseResponse("shop_returns", "update", { data: null });
     stripeRefundsMock.mockRejectedValue(new Error("charge_already_refunded"));
 
     const res = await request(makeApp())
@@ -322,6 +330,44 @@ describe("POST /admin/shop/returns/:id/refund — handler logic", () => {
 
     expect(res.status).toBe(502);
     expect(res.body.error).toBe("stripe_refund_failed");
+    // The 502 body now surfaces the per-row failure count so the
+    // admin UI can render "Refund failed N times" without
+    // refetching the row.
+    expect(res.body.failureCount).toBe(1);
+    expect(res.body.message).toContain("charge_already_refunded");
+  });
+
+  it("escalates via WARN once the failure count crosses the threshold", async () => {
+    stubAdmin();
+    // Seed the row with two prior failures so this attempt makes
+    // three — the configured REFUND_FAILURE_ESCALATION_THRESHOLD.
+    stageSupabaseResponse("shop_returns", "select", {
+      data: receivedReturnRow({
+        refund_failure_count: 2,
+        refund_last_failure_at: "2026-05-22T20:00:00Z",
+        refund_last_failure_reason:
+          "charge_already_refunded: prior attempt",
+      }),
+    });
+    stageSupabaseResponse("shop_orders", "select", {
+      data: shopOrderRow(),
+    });
+    stageSupabaseResponse("shop_returns", "update", { data: null });
+    stripeRefundsMock.mockRejectedValue(
+      Object.assign(new Error("rate_limited"), { code: "rate_limited" }),
+    );
+
+    const res = await request(makeApp())
+      .post(`/resupply-api/admin/shop/returns/${RETURN_ID}/refund`)
+      .send({ amountCents: 4998 });
+
+    expect(res.status).toBe(502);
+    expect(res.body.failureCount).toBe(3);
+    // The threshold WARN ("shop_return_refund_stuck") is what
+    // pages ops — we can't directly assert on the log from
+    // supertest without a logger mock, but the response shape
+    // proves the counter incremented past the threshold, which
+    // is the condition the WARN gates on.
   });
 
   it("returns 400 when the refund amount resolves to zero or missing", async () => {

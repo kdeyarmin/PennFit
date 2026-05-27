@@ -163,6 +163,7 @@ function AddSleepStudyModal({
           <select
             value={studyType}
             onChange={(e) => setStudyType(e.target.value as SleepStudyType)}
+            aria-label="Study type"
             className="w-full rounded border px-2 py-1.5 text-sm"
             style={{ borderColor: "hsl(var(--line-1))" }}
           >
@@ -544,6 +545,7 @@ function AddInsuranceCoverageModal({
           <select
             value={rank}
             onChange={(e) => setRank(e.target.value as CoverageRank)}
+            aria-label="Rank"
             className="w-full rounded border px-2 py-1.5 text-sm"
             style={{ borderColor: "hsl(var(--line-1))" }}
           >
@@ -753,6 +755,7 @@ function AddPriorAuthorizationModal({
           <select
             value={status}
             onChange={(e) => setStatus(e.target.value as PriorAuthStatus)}
+            aria-label="Status"
             className="w-full rounded border px-2 py-1.5 text-sm"
             style={{ borderColor: "hsl(var(--line-1))" }}
           >
@@ -819,6 +822,7 @@ function LabeledInput({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
+        aria-label={label}
       />
     </div>
   );

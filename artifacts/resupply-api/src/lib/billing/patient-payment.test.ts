@@ -91,7 +91,14 @@ describe("applySucceededPayment — allocation walk", () => {
     stageSupabaseResponse("insurance_claims", "select", {
       data: { id: CLAIM1, patient_responsibility_cents: 12500 },
     });
-    stageSupabaseResponse("insurance_claims", "update", { data: {} });
+    // applySucceededPayment now uses a CAS-with-retry loop: the UPDATE
+    // requires patient_responsibility_cents to still match the
+    // pre-read value, and the .select("id") return shape tells us
+    // whether THIS writer won the race vs needing to retry. Stage
+    // a one-row array so the first attempt wins.
+    stageSupabaseResponse("insurance_claims", "update", {
+      data: [{ id: CLAIM1 }],
+    });
     stageSupabaseResponse("insurance_claim_events", "insert", { data: {} });
     void supabase;
     // Run.
@@ -126,7 +133,14 @@ describe("applySucceededPayment — allocation walk", () => {
     stageSupabaseResponse("insurance_claims", "select", {
       data: { id: CLAIM1, patient_responsibility_cents: 100 },
     });
-    stageSupabaseResponse("insurance_claims", "update", { data: {} });
+    // applySucceededPayment now uses a CAS-with-retry loop: the UPDATE
+    // requires patient_responsibility_cents to still match the
+    // pre-read value, and the .select("id") return shape tells us
+    // whether THIS writer won the race vs needing to retry. Stage
+    // a one-row array so the first attempt wins.
+    stageSupabaseResponse("insurance_claims", "update", {
+      data: [{ id: CLAIM1 }],
+    });
     stageSupabaseResponse("insurance_claim_events", "insert", { data: {} });
     const realSupabase = (await import("@workspace/resupply-db"))
       .getSupabaseServiceRoleClient();

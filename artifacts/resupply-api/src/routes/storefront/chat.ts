@@ -112,12 +112,34 @@ const chatBodySchema = z
   })
   .strict();
 
+// Cache the chat system prompt with a TTL so admin-side mask catalog
+// or FAQ edits become visible to the chatbot within minutes instead
+// of "next deploy". The original module-init-only cache meant prompt
+// content drifted for hours/days after a catalog update.
+const SYSTEM_PROMPT_TTL_MS = 10 * 60 * 1000;
 let cachedSystemPrompt: string | null = null;
+let cachedSystemPromptAtMs = 0;
 function getSystemPrompt(): string {
-  if (cachedSystemPrompt === null) {
+  const now = Date.now();
+  if (
+    cachedSystemPrompt === null ||
+    now - cachedSystemPromptAtMs > SYSTEM_PROMPT_TTL_MS
+  ) {
     cachedSystemPrompt = buildChatSystemPrompt();
+    cachedSystemPromptAtMs = now;
   }
   return cachedSystemPrompt;
+}
+
+/**
+ * Test helper — invalidate the cached system prompt so a test that
+ * mutates the underlying mask catalog or FAQ data sees the change on
+ * the next request without waiting on the TTL. Not exported from the
+ * package barrel.
+ */
+export function __invalidateChatSystemPromptCacheForTests(): void {
+  cachedSystemPrompt = null;
+  cachedSystemPromptAtMs = 0;
 }
 
 /** OpenAI message shape, including tool roles. */
@@ -141,6 +163,18 @@ interface OpenAiChatResponse {
     };
     finish_reason?: string;
   }>;
+  /**
+   * Per-request token accounting. Present on every non-streaming
+   * response since the public API was launched; only optional in this
+   * type so a partial JSON parse doesn't crash. `cached_tokens` is the
+   * prompt-cache hit metric (Aug 2024+).
+   */
+  usage?: {
+    prompt_tokens?: number;
+    completion_tokens?: number;
+    total_tokens?: number;
+    prompt_tokens_details?: { cached_tokens?: number };
+  };
 }
 
 interface OpenAiStreamDelta {
@@ -279,6 +313,24 @@ router.post("/chat", chatRateLimit, async (req, res) => {
   }
 
   const { messages } = parseResult.data;
+
+  // Aggregate content cap. Per-message Zod already enforces
+  // MAX_USER_MESSAGE_CHARS, but with MAX_CHAT_TURNS turns the
+  // multiplicative ceiling lets a spammer fit ~30 kB of text per
+  // request and burn LLM budget even inside the per-IP rate limit.
+  // Cap the total at MAX_USER_MESSAGE_CHARS × 4 so a normal
+  // back-and-forth still fits; longer threads are likely abuse.
+  const aggregateChars = messages.reduce(
+    (sum, m) => sum + m.content.length,
+    0,
+  );
+  if (aggregateChars > MAX_USER_MESSAGE_CHARS * 4) {
+    res.status(400).json({
+      error:
+        "Conversation too long. Please start a new chat with a shorter recent history.",
+    });
+    return;
+  }
   const lastMessage = messages.at(-1);
   if (!lastMessage || lastMessage.role !== "user") {
     res.status(400).json({
@@ -435,12 +487,24 @@ async function handleJson(
         return;
       }
 
+      // Token usage on the OpenAI path — the Anthropic branch logs the
+      // equivalent so cost dashboards aggregate across vendors. OpenAI
+      // includes `usage` on every non-streaming response; on a missing
+      // field we just emit zeros rather than skip the log line.
       logger.info(
         {
           event: "chat_ok",
+          vendor: "openai",
           turns,
           replyChars: reply.length,
           rounds: round,
+          inputTokens: json.usage?.prompt_tokens ?? 0,
+          outputTokens: json.usage?.completion_tokens ?? 0,
+          // OpenAI surfaces cached prompt-token reads under
+          // prompt_tokens_details.cached_tokens (Aug 2024+). When
+          // absent the model didn't hit a cached prefix on this call.
+          cachedInputTokens:
+            json.usage?.prompt_tokens_details?.cached_tokens ?? 0,
         },
         "chat: replied",
       );
@@ -630,11 +694,38 @@ async function handleStreaming(
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), DEFAULT_TIMEOUT_MS);
 
+  // Abort the upstream fetch when the client tab closes mid-stream.
+  // Without this the model keeps generating + tool calls keep running
+  // until either the timeout fires (long) or the model finishes —
+  // burning tokens and side-effects the client will never see.
+  let clientClosed = false;
+  const onClientClose = () => {
+    clientClosed = true;
+    ctrl.abort();
+  };
+  res.on("close", onClientClose);
+
   let messages = initialMessages;
   let totalChars = 0;
   let degraded = false;
 
+  // Single gate for every write/end on this response — once the
+  // client tab closes the socket is gone and any further write
+  // would throw ERR_STREAM_WRITE_AFTER_END. Centralising the check
+  // means the catch / round-cap / degraded fallback paths can't
+  // accidentally write to a dead socket.
+  const isOpen = () => !clientClosed && !res.destroyed && !res.writableEnded;
+  const safeEvent = (payload: object) => {
+    if (!isOpen()) return;
+    writeSseEvent(res, payload);
+  };
+  const safeEnd = () => {
+    if (!isOpen()) return;
+    res.end();
+  };
+
   const writeChunk = (text: string) => {
+    if (!isOpen()) return;
     totalChars += text.length;
     writeSseEvent(res, { type: "chunk", text });
   };
@@ -649,10 +740,10 @@ async function handleStreaming(
       );
       if (result.degraded) {
         if (totalChars === 0) {
-          writeSseEvent(res, { type: "chunk", text: DEGRADED_FALLBACK_REPLY });
+          safeEvent({ type: "chunk", text: DEGRADED_FALLBACK_REPLY });
         }
-        writeSseEvent(res, { type: "done", degraded: true });
-        res.end();
+        safeEvent({ type: "done", degraded: true });
+        safeEnd();
         return;
       }
       if (
@@ -669,7 +760,7 @@ async function handleStreaming(
           { event: "chat_empty_reply", streaming: true, round },
           "chat: openai stream returned no content",
         );
-        writeSseEvent(res, { type: "chunk", text: DEGRADED_FALLBACK_REPLY });
+        safeEvent({ type: "chunk", text: DEGRADED_FALLBACK_REPLY });
         degraded = true;
       }
       logger.info(
@@ -683,11 +774,8 @@ async function handleStreaming(
         },
         "chat: streamed reply",
       );
-      writeSseEvent(
-        res,
-        degraded ? { type: "done", degraded: true } : { type: "done" },
-      );
-      res.end();
+      safeEvent(degraded ? { type: "done", degraded: true } : { type: "done" });
+      safeEnd();
       return;
     }
     // Hit the round cap.
@@ -696,10 +784,10 @@ async function handleStreaming(
       "chat: hit MAX_TOOL_ROUNDS without a final reply",
     );
     if (totalChars === 0) {
-      writeSseEvent(res, { type: "chunk", text: DEGRADED_FALLBACK_REPLY });
+      safeEvent({ type: "chunk", text: DEGRADED_FALLBACK_REPLY });
     }
-    writeSseEvent(res, { type: "done", degraded: true });
-    res.end();
+    safeEvent({ type: "done", degraded: true });
+    safeEnd();
   } catch (err) {
     logger.warn(
       {
@@ -710,12 +798,13 @@ async function handleStreaming(
       "chat: exception during stream (returning degraded fallback)",
     );
     if (totalChars === 0) {
-      writeSseEvent(res, { type: "chunk", text: DEGRADED_FALLBACK_REPLY });
+      safeEvent({ type: "chunk", text: DEGRADED_FALLBACK_REPLY });
     }
-    writeSseEvent(res, { type: "done", degraded: true });
-    res.end();
+    safeEvent({ type: "done", degraded: true });
+    safeEnd();
   } finally {
     clearTimeout(timer);
+    res.off("close", onClientClose);
   }
 }
 
@@ -942,9 +1031,36 @@ async function handleAnthropicStreaming(
 ): Promise<void> {
   startSseHeaders(res);
 
+  // Track client-tab disconnect so writeChunk can short-circuit
+  // mid-stream. The Anthropic client's `stream()` doesn't currently
+  // expose an AbortSignal hook, so we can't cancel the upstream call;
+  // but we CAN stop calling writeSseEvent on a destroyed socket and
+  // stop running more tool rounds, which is the bigger waste.
+  let clientClosed = false;
+  const onClientClose = () => {
+    clientClosed = true;
+  };
+  res.on("close", onClientClose);
+
   let messages = initialMessages;
   let totalChars = 0;
+
+  // See the OpenAI path's safeEvent/safeEnd above — same shape, same
+  // reason: a write after the socket has closed throws
+  // ERR_STREAM_WRITE_AFTER_END and turns a normal client disconnect
+  // into a noisy stack trace.
+  const isOpen = () => !clientClosed && !res.destroyed && !res.writableEnded;
+  const safeEvent = (payload: object) => {
+    if (!isOpen()) return;
+    writeSseEvent(res, payload);
+  };
+  const safeEnd = () => {
+    if (!isOpen()) return;
+    res.end();
+  };
+
   const writeChunk = (text: string) => {
+    if (!isOpen()) return;
     totalChars += text.length;
     writeSseEvent(res, { type: "chunk", text });
   };
@@ -980,14 +1096,21 @@ async function handleAnthropicStreaming(
           "chat: anthropic stream failed",
         );
         if (totalChars === 0) {
-          writeSseEvent(res, { type: "chunk", text: DEGRADED_FALLBACK_REPLY });
+          safeEvent({ type: "chunk", text: DEGRADED_FALLBACK_REPLY });
         }
-        writeSseEvent(res, { type: "done", degraded: true });
-        res.end();
+        safeEvent({ type: "done", degraded: true });
+        safeEnd();
         return;
       }
       const text = getResponseText(result.response);
       const toolCalls = getResponseToolCalls(result.response);
+      // If the tab closed mid-round, stop chaining more rounds —
+      // tool executions are real side effects we shouldn't run for
+      // a viewer who's gone.
+      if (clientClosed) {
+        safeEnd();
+        return;
+      }
       if (toolCalls.length > 0 && round < MAX_TOOL_ROUNDS) {
         messages = appendAnthropicAssistantTurn(messages, text, toolCalls);
         const openAiToolCalls = toolCalls.map((c) => ({
@@ -1005,9 +1128,9 @@ async function handleAnthropicStreaming(
           { event: "chat_empty_reply", vendor: "anthropic", streaming: true, round },
           "chat: anthropic stream returned no content",
         );
-        writeSseEvent(res, { type: "chunk", text: DEGRADED_FALLBACK_REPLY });
-        writeSseEvent(res, { type: "done", degraded: true });
-        res.end();
+        safeEvent({ type: "chunk", text: DEGRADED_FALLBACK_REPLY });
+        safeEvent({ type: "done", degraded: true });
+        safeEnd();
         return;
       }
       logger.info(
@@ -1024,8 +1147,8 @@ async function handleAnthropicStreaming(
         },
         "chat: anthropic streamed reply",
       );
-      writeSseEvent(res, { type: "done" });
-      res.end();
+      safeEvent({ type: "done" });
+      safeEnd();
       return;
     }
     logger.warn(
@@ -1033,10 +1156,10 @@ async function handleAnthropicStreaming(
       "chat: hit MAX_TOOL_ROUNDS without a final reply",
     );
     if (totalChars === 0) {
-      writeSseEvent(res, { type: "chunk", text: DEGRADED_FALLBACK_REPLY });
+      safeEvent({ type: "chunk", text: DEGRADED_FALLBACK_REPLY });
     }
-    writeSseEvent(res, { type: "done", degraded: true });
-    res.end();
+    safeEvent({ type: "done", degraded: true });
+    safeEnd();
   } catch (err) {
     logger.warn(
       {
@@ -1048,10 +1171,12 @@ async function handleAnthropicStreaming(
       "chat: anthropic exception during stream (returning degraded fallback)",
     );
     if (totalChars === 0) {
-      writeSseEvent(res, { type: "chunk", text: DEGRADED_FALLBACK_REPLY });
+      safeEvent({ type: "chunk", text: DEGRADED_FALLBACK_REPLY });
     }
-    writeSseEvent(res, { type: "done", degraded: true });
-    res.end();
+    safeEvent({ type: "done", degraded: true });
+    safeEnd();
+  } finally {
+    res.off("close", onClientClose);
   }
 }
 

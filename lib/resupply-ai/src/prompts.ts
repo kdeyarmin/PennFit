@@ -34,7 +34,7 @@ import { z } from "zod";
  * was told for any historical conversation. The version string is also
  * a useful cache-key in offline evaluations.
  */
-export const PROMPT_VERSION = "2026-05-22.v2" as const;
+export const PROMPT_VERSION = "2026-05-26.v3" as const;
 
 /**
  * Caller-facing greeting phrase. Exposed so callers can A/B without
@@ -69,25 +69,45 @@ const buildSystemPromptInputSchema = z.object({
    * patient names, phone numbers, addresses, or any other identifier.
    * Caller is responsible for filtering.
    *
-   * Capped at 500 characters. Control characters, newlines, backticks,
+   * Capped at 250 characters. Control characters, newlines, backticks,
    * and common prompt-injection trigger words are stripped before the
-   * value is embedded in the system prompt.
+   * value is embedded in the system prompt. The cap is intentionally
+   * tighter than the original 500 — every byte of caller-supplied
+   * context is an injection surface, and 250 chars is enough for a
+   * realistic outreach summary ("90 days since last shipment; mask is
+   * AirFit P10; mentioned mild dryness last call").
    */
   callContext: z
     .string()
     .trim()
     .min(1)
-    .max(500)
-    .transform((s) =>
-      s
+    .max(250)
+    .transform((s) => {
+      // First pass: normalize whitespace and collapse so injection
+      // patterns can't slip through with internal spaces (e.g.
+      // "I G N O R E", "O V E R R I D E").
+      const collapsed = s
         // eslint-disable-next-line no-control-regex -- intentionally strips control chars from user text before embedding in the system prompt
         .replace(/[\r\n\x00-\x1F\x7F]+/g, " ")
-        .replace(/`/g, "'")
-        .replace(/\bIGNORE\b/gi, "[redacted]")
-        .replace(/\bOVERRIDE\b/gi, "[redacted]")
-        .replace(/SYSTEM:/gi, "[redacted]")
-        .trim(),
-    ),
+        .replace(/`/g, "'");
+      // Second pass: scrub injection trigger words on a
+      // letter-spacing-tolerant pattern (matches "IGNORE",
+      // "I G N O R E", "I.G.N.O.R.E", "IG_NORE", "OVER_RIDE", etc.).
+      // `\W*` between each letter eats common obfuscations without
+      // collapsing the surrounding legitimate text.
+      const injectionPatterns: ReadonlyArray<RegExp> = [
+        /\bI[\W_]*G[\W_]*N[\W_]*O[\W_]*R[\W_]*E\b/gi,
+        /\bO[\W_]*V[\W_]*E[\W_]*R[\W_]*R[\W_]*I[\W_]*D[\W_]*E\b/gi,
+        /\bS[\W_]*Y[\W_]*S[\W_]*T[\W_]*E[\W_]*M\s*:/gi,
+        /\bDISREGARD\b/gi,
+        /\bFORGET\s+(YOUR|ALL|PREVIOUS|PRIOR)\b/gi,
+      ];
+      let scrubbed = collapsed;
+      for (const re of injectionPatterns) {
+        scrubbed = scrubbed.replace(re, "[redacted]");
+      }
+      return scrubbed.trim();
+    }),
 });
 
 export type BuildSystemPromptInput = z.input<
@@ -134,7 +154,7 @@ export function buildSystemPrompt(input: BuildSystemPromptInput): string {
 
     // === SCOPE & SAFETY ===
     `Scope: CPAP resupply only — confirming the patient's identity, reviewing supplies due, confirming or updating the shipping address, and placing a resupply order. You do NOT give medical advice, dosing advice, or interpret symptoms. If the caller asks for medical advice, say something like "That's a great question for your sleep doctor — want me to have someone from our team follow up?" and offer to hand off.`,
-    `Identity verification is mandatory and comes first. Before speaking ANY patient-specific information back to the caller, you MUST call the verify_patient_identity tool with the date of birth the caller provides, and that call MUST succeed. If verification fails twice, end the call politely and call request_human_handoff with reason "identity_verification_failed". When you ask for date of birth, say it naturally — "Can I grab your date of birth to pull up your account?" — not "Please state your date of birth for verification purposes."`,
+    `Identity verification is mandatory and comes first. Before speaking ANY patient-specific information back to the caller, you MUST call the verify_patient_identity tool with the date of birth the caller provides, and that call MUST succeed. If verification fails three times, end the call politely and call request_human_handoff with reason "identity_verification_failed". When you ask for date of birth, say it naturally — "Can I grab your date of birth to pull up your account?" — not "Please state your date of birth for verification purposes."`,
     `Privacy: never read the patient's full date of birth, full address, full phone number, email address, or any prescription details aloud verbatim. You may CONFIRM fragments the caller supplies (for example, "yes, ending in twelve thirty-four"). When confirming the shipping address, read only the street name and city — never the full street number, apartment, or postal code. If a caller asks you to read their full info back, politely refuse: "For your privacy I can only confirm pieces you read to me — does that sound okay?"`,
 
     // === TOOLS & FLOW ===

@@ -36,6 +36,10 @@
 import type PgBoss from "pg-boss";
 
 import { logger } from "../../lib/logger";
+import {
+  buildQueueConfig,
+  VENDOR_SEND_QUEUE_OPTS,
+} from "../lib/queue-options";
 import { runSmartTriggerSendDue } from "../../lib/smart-triggers/dispatcher";
 import {
   htmlBody,
@@ -53,7 +57,11 @@ const SEND_CRON = "13 4 * * *";
 const SYSTEM_ACTOR_EMAIL = "system:cron:smart-trigger-send";
 
 export async function registerSmartTriggerSendJob(boss: PgBoss): Promise<void> {
-  await boss.createQueue(SEND_JOB);
+  // Smart-trigger sends fan out to Twilio / SendGrid / Web Push; the
+  // vendor-send retry posture applies. Exhausted retries land in the
+  // DLQ so a deterministically-broken trigger (e.g. template render
+  // permanently failing) surfaces to ops.
+  await boss.createQueue(SEND_JOB, buildQueueConfig(SEND_JOB, VENDOR_SEND_QUEUE_OPTS));
 
   await boss.work(SEND_JOB, async () => {
     const renderers = { subjectForKind, textBody, htmlBody, smsBody, pushBody };
