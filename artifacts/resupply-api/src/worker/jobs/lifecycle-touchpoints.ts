@@ -46,7 +46,7 @@ import {
 import { sendLifecycleTouchpointEmail } from "../../lib/order-emails/send-lifecycle-touchpoint-email";
 import { shouldSendEmail } from "../../lib/comm-prefs";
 import { logger } from "../../lib/logger";
-import { buildQueueConfig, VENDOR_SEND_QUEUE_OPTS } from "../lib/queue-options";
+import { createQueueWithDlq, VENDOR_SEND_QUEUE_OPTS } from "../lib/queue-options";
 
 const JOB_NAME = "patients.lifecycle-touchpoints";
 const JOB_CRON = "33 13 * * *";
@@ -347,7 +347,7 @@ export async function runLifecycleTouchpoints(
 export async function registerLifecycleTouchpointsJob(
   boss: PgBoss,
 ): Promise<void> {
-  await boss.createQueue(JOB_NAME, buildQueueConfig(JOB_NAME, VENDOR_SEND_QUEUE_OPTS));
+  await createQueueWithDlq(boss, JOB_NAME, VENDOR_SEND_QUEUE_OPTS);
   await boss.work(JOB_NAME, async () => {
     try {
       const stats = await runLifecycleTouchpoints();

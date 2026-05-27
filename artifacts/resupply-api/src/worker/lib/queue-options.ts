@@ -47,6 +47,7 @@
 // Per-queue overrides are still possible at the call site by
 // spreading the preset and overwriting individual fields.
 
+import type PgBoss from "pg-boss";
 import type { Queue as PgBossQueue } from "pg-boss";
 
 /** Build a Queue config that carries the queue name + sane defaults
@@ -64,6 +65,40 @@ export function buildQueueConfig(
   // is what ops dashboards group by; letting one queue silently
   // re-route to a foreign DLQ would break that grouping invariant.
   return { name, ...preset, ...overrides, deadLetter: `${name}.dlq` };
+}
+
+/**
+ * Create a pg-boss queue together with its dead-letter queue.
+ *
+ * pg-boss v10 enforces a self-referential FK on `queue.dead_letter`:
+ * the DLQ row must already exist in `pgboss_resupply.queue` before
+ * the main queue can be inserted with that reference. `buildQueueConfig`
+ * always sets `deadLetter` to `${name}.dlq`, so callers that just do
+ * `boss.createQueue(name, buildQueueConfig(name, OPTS))` will crash on
+ * the FIRST boot of a newly-added queue with:
+ *
+ *   error: insert or update on table "queue" violates foreign key
+ *   constraint "queue_dead_letter_fkey"
+ *
+ * Existing queues survive because `ON CONFLICT DO NOTHING` short-
+ * circuits the FK check on subsequent boots — which made this trap
+ * invisible until two new queues landed in May 2026 and took down
+ * the API on boot.
+ *
+ * This helper makes the correct ordering the default for every queue:
+ * create the DLQ first (idempotent — pg-boss treats createQueue as
+ * upsert), then create the main queue with the dead-letter reference.
+ * All worker `register*` functions should use this instead of calling
+ * `boss.createQueue` + `buildQueueConfig` themselves.
+ */
+export async function createQueueWithDlq(
+  boss: PgBoss,
+  name: string,
+  preset: Omit<PgBossQueue, "name">,
+  overrides?: Partial<Omit<PgBossQueue, "name">>,
+): Promise<void> {
+  await boss.createQueue(`${name}.dlq`);
+  await boss.createQueue(name, buildQueueConfig(name, preset, overrides));
 }
 
 /**

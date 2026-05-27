@@ -30,7 +30,7 @@ import {
 import { getIntegrationAdapters } from "../../lib/integrations/registry.js";
 import { persistTherapyNights } from "../../lib/integrations/persist-nights.js";
 import { logger } from "../../lib/logger.js";
-import { buildQueueConfig, VENDOR_SEND_QUEUE_OPTS } from "../lib/queue-options.js";
+import { createQueueWithDlq, VENDOR_SEND_QUEUE_OPTS } from "../lib/queue-options.js";
 
 export const THERAPY_NIGHTLY_SYNC_JOB =
   "therapy-integrations.nightly-sync";
@@ -47,7 +47,7 @@ async function sleep(ms: number): Promise<void> {
 export async function registerTherapyNightlySyncJob(
   boss: PgBoss,
 ): Promise<void> {
-  await boss.createQueue(THERAPY_NIGHTLY_SYNC_JOB, buildQueueConfig(THERAPY_NIGHTLY_SYNC_JOB, VENDOR_SEND_QUEUE_OPTS));
+  await createQueueWithDlq(boss, THERAPY_NIGHTLY_SYNC_JOB, VENDOR_SEND_QUEUE_OPTS);
   await boss.work(THERAPY_NIGHTLY_SYNC_JOB, async () => {
     await runTherapyNightlySync();
   });

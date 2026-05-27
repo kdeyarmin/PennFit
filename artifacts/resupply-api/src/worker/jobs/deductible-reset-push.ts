@@ -46,7 +46,7 @@ import {
 import { sendDeductibleResetEmail } from "../../lib/order-emails/send-deductible-reset-email";
 import { shouldSendEmail } from "../../lib/comm-prefs";
 import { logger } from "../../lib/logger";
-import { buildQueueConfig, VENDOR_SEND_QUEUE_OPTS } from "../lib/queue-options";
+import { createQueueWithDlq, VENDOR_SEND_QUEUE_OPTS } from "../lib/queue-options";
 
 const JOB_NAME = "shop-customers.deductible-reset";
 const JOB_CRON = "53 14 * * *"; // Daily 14:53 UTC.
@@ -229,7 +229,7 @@ export async function runDeductibleResetPush(
 export async function registerDeductibleResetPushJob(
   boss: PgBoss,
 ): Promise<void> {
-  await boss.createQueue(JOB_NAME, buildQueueConfig(JOB_NAME, VENDOR_SEND_QUEUE_OPTS));
+  await createQueueWithDlq(boss, JOB_NAME, VENDOR_SEND_QUEUE_OPTS);
 
   await boss.work(JOB_NAME, async () => {
     try {

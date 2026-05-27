@@ -40,7 +40,7 @@ import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { computeRetentionUntilAt } from "../../lib/patient-documents/retention";
-import { buildQueueConfig, CRON_SCAN_QUEUE_OPTS } from "../lib/queue-options";
+import { createQueueWithDlq, CRON_SCAN_QUEUE_OPTS } from "../lib/queue-options";
 
 const SWEEP_JOB = "patient-documents.retention-sweep";
 const SWEEP_CRON = "11 3 * * *";
@@ -189,7 +189,7 @@ export async function runRetentionSweep(): Promise<SweepStats> {
 export async function registerPatientDocumentsRetentionSweepJob(
   boss: PgBoss,
 ): Promise<void> {
-  await boss.createQueue(SWEEP_JOB, buildQueueConfig(SWEEP_JOB, CRON_SCAN_QUEUE_OPTS));
+  await createQueueWithDlq(boss, SWEEP_JOB, CRON_SCAN_QUEUE_OPTS);
 
   await boss.work(SWEEP_JOB, async () => {
     try {

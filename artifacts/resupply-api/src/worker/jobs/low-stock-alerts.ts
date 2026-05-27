@@ -32,7 +32,7 @@ import {
 } from "@workspace/resupply-email";
 
 import { logger } from "../../lib/logger";
-import { buildQueueConfig, VENDOR_SEND_QUEUE_OPTS } from "../lib/queue-options";
+import { createQueueWithDlq, VENDOR_SEND_QUEUE_OPTS } from "../lib/queue-options";
 import {
   getStripeClient,
   readStripeConfigOrNull,
@@ -405,7 +405,7 @@ async function upsertAlertState(
 }
 
 export async function registerLowStockAlertsJob(boss: PgBoss): Promise<void> {
-  await boss.createQueue(ALERT_JOB, buildQueueConfig(ALERT_JOB, VENDOR_SEND_QUEUE_OPTS));
+  await createQueueWithDlq(boss, ALERT_JOB, VENDOR_SEND_QUEUE_OPTS);
   await boss.work(ALERT_JOB, async () => {
     try {
       const stats = await runLowStockAlerts();

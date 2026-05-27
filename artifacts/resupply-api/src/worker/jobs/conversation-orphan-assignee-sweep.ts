@@ -46,7 +46,7 @@ import { logAuditBestEffort } from "@workspace/resupply-audit";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
-import { buildQueueConfig, CRON_SCAN_QUEUE_OPTS } from "../lib/queue-options";
+import { createQueueWithDlq, CRON_SCAN_QUEUE_OPTS } from "../lib/queue-options";
 
 const SWEEP_JOB = "conversations.orphan-assignee-sweep";
 const SWEEP_CRON = "13 4 * * 0";
@@ -201,14 +201,7 @@ export async function runOrphanAssigneeSweep(): Promise<SweepStats> {
 export async function registerConversationOrphanAssigneeSweepJob(
   boss: PgBoss,
 ): Promise<void> {
-  // pg-boss 10 enforces a self-referential FK on queue.dead_letter,
-  // so the DLQ row must exist before the main queue can reference it.
-  // buildQueueConfig() always sets deadLetter to `${name}.dlq`; we
-  // pre-create that DLQ here so the FK insert below succeeds on the
-  // first boot of this queue. Existing queues skip this on subsequent
-  // boots via ON CONFLICT DO NOTHING.
-  await boss.createQueue(`${SWEEP_JOB}.dlq`);
-  await boss.createQueue(SWEEP_JOB, buildQueueConfig(SWEEP_JOB, CRON_SCAN_QUEUE_OPTS));
+  await createQueueWithDlq(boss, SWEEP_JOB, CRON_SCAN_QUEUE_OPTS);
 
   await boss.work(SWEEP_JOB, async () => {
     try {

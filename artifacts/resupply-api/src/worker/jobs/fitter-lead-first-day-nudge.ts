@@ -54,7 +54,7 @@ import { createSendgridClient, EmailConfigError } from "@workspace/resupply-emai
 import { createTwilioSmsClient, TwilioConfigError } from "@workspace/resupply-telecom";
 
 import { logger } from "../../lib/logger";
-import { buildQueueConfig, VENDOR_SEND_QUEUE_OPTS } from "../lib/queue-options";
+import { createQueueWithDlq, VENDOR_SEND_QUEUE_OPTS } from "../lib/queue-options";
 
 const NUDGE_JOB = "fitter-lead.first-day-nudge";
 /** Hourly at :19 — keeps the schedule clear of every other resupply cron. */
@@ -367,7 +367,7 @@ export async function registerFitterLeadFirstDayNudgeJob(
     );
     return;
   }
-  await boss.createQueue(NUDGE_JOB, buildQueueConfig(NUDGE_JOB, VENDOR_SEND_QUEUE_OPTS));
+  await createQueueWithDlq(boss, NUDGE_JOB, VENDOR_SEND_QUEUE_OPTS);
   await boss.work(NUDGE_JOB, async () => {
     try {
       const stats = await runFirstDayNudgeSweep();

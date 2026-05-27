@@ -63,6 +63,22 @@ vi.mock("../../lib/logger.js", () => ({
 }));
 vi.mock("../lib/queue-options.js", () => ({
   buildQueueConfig: vi.fn((name: string, preset: object) => ({ name, ...preset })),
+  createQueueWithDlq: vi.fn(
+    async (
+      boss: { createQueue: (name: string, opts?: object) => Promise<void> },
+      name: string,
+      preset: object,
+      overrides?: object,
+    ) => {
+      await boss.createQueue(`${name}.dlq`);
+      await boss.createQueue(name, {
+        name,
+        ...preset,
+        ...overrides,
+        deadLetter: `${name}.dlq`,
+      });
+    },
+  ),
   VENDOR_SEND_QUEUE_OPTS: { retryLimit: 5, retryBackoff: true, retryDelay: 10 },
 }));
 

@@ -37,7 +37,7 @@ type CoachingPlanUpdate =
   Database["resupply"]["Tables"]["patient_coaching_plans"]["Update"];
 
 import { logger } from "../../lib/logger";
-import { buildQueueConfig, VENDOR_SEND_QUEUE_OPTS } from "../lib/queue-options";
+import { createQueueWithDlq, VENDOR_SEND_QUEUE_OPTS } from "../lib/queue-options";
 
 const PROGRESS_JOB = "coaching-plan.progress-sweep";
 const PROGRESS_CRON = "41 4 * * *";
@@ -167,7 +167,7 @@ export async function runCoachingProgressSweep(): Promise<ProgressSweepStats> {
 export async function registerCoachingProgressJob(
   boss: PgBoss,
 ): Promise<void> {
-  await boss.createQueue(PROGRESS_JOB, buildQueueConfig(PROGRESS_JOB, VENDOR_SEND_QUEUE_OPTS));
+  await createQueueWithDlq(boss, PROGRESS_JOB, VENDOR_SEND_QUEUE_OPTS);
   await boss.work(PROGRESS_JOB, async () => {
     try {
       const stats = await runCoachingProgressSweep();

@@ -72,7 +72,7 @@ import { analyzeDenial } from "../../lib/billing/ai-denial-analyzer";
 import { reconcileEra } from "../../lib/billing/era-reconciler";
 import { resolveClearinghouse } from "../../lib/billing/identity-resolver";
 import { logger } from "../../lib/logger";
-import { buildQueueConfig, VENDOR_SEND_QUEUE_OPTS } from "../lib/queue-options";
+import { createQueueWithDlq, VENDOR_SEND_QUEUE_OPTS } from "../lib/queue-options";
 
 const JOB = "office-ally.inbound-poll";
 const CRON = "*/15 * * * *";
@@ -697,7 +697,7 @@ function summarise835(p: Parsed835): Record<string, unknown> {
 export async function registerOfficeAllyInboundPollJob(
   boss: PgBoss,
 ): Promise<void> {
-  await boss.createQueue(JOB, buildQueueConfig(JOB, VENDOR_SEND_QUEUE_OPTS));
+  await createQueueWithDlq(boss, JOB, VENDOR_SEND_QUEUE_OPTS);
   await boss.work(JOB, async () => {
     try {
       const stats = await runOfficeAllyInboundPoll();

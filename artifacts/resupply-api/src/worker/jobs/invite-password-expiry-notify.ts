@@ -44,7 +44,7 @@ import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 import { ADMIN_PASSWORD_TTL_MS } from "@workspace/resupply-auth";
 
 import { logger } from "../../lib/logger";
-import { buildQueueConfig, VENDOR_SEND_QUEUE_OPTS } from "../lib/queue-options";
+import { createQueueWithDlq, VENDOR_SEND_QUEUE_OPTS } from "../lib/queue-options";
 
 const NOTIFY_JOB = "invite-password.expiry-notify";
 // Hourly at :23 — staggered off the top-of-hour bursts the reminders
@@ -461,7 +461,7 @@ export async function runInvitePasswordExpiryNotifySweep(
 export async function registerInvitePasswordExpiryNotifyJob(
   boss: PgBoss,
 ): Promise<void> {
-  await boss.createQueue(NOTIFY_JOB, buildQueueConfig(NOTIFY_JOB, VENDOR_SEND_QUEUE_OPTS));
+  await createQueueWithDlq(boss, NOTIFY_JOB, VENDOR_SEND_QUEUE_OPTS);
   await boss.work(NOTIFY_JOB, async () => {
     try {
       const stats = await runInvitePasswordExpiryNotifySweep();
