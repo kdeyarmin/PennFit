@@ -198,6 +198,13 @@ export async function runPrescriptionRequestAutoDraft(): Promise<AutoDraftStats>
 export async function registerPrescriptionRequestAutoDraftJob(
   boss: PgBoss,
 ): Promise<void> {
+  // pg-boss 10 enforces a self-referential FK on queue.dead_letter,
+  // so the DLQ row must exist before the main queue can reference it.
+  // buildQueueConfig() always sets deadLetter to `${name}.dlq`; we
+  // pre-create that DLQ here so the FK insert below succeeds on the
+  // first boot of this queue. Existing queues skip this on subsequent
+  // boots via ON CONFLICT DO NOTHING.
+  await boss.createQueue(`${JOB}.dlq`);
   await boss.createQueue(JOB, buildQueueConfig(JOB, VENDOR_SEND_QUEUE_OPTS));
   await boss.work(JOB, async () => {
     try {

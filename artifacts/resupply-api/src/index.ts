@@ -288,8 +288,6 @@ async function start(): Promise<void> {
 }
 
 start().catch((err) => {
-  // eslint-disable-next-line no-console
-  console.error("[DEBUG-RAW-BOOT-ERROR]", err);
   logger.fatal(
     { err: serializeErr(err) },
     "fatal: resupply-api failed to start",
