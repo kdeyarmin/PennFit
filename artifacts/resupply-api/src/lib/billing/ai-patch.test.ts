@@ -11,141 +11,27 @@
 
 import { describe, expect, it, beforeEach } from "vitest";
 
-import {
-  aiPatchSchema,
-  applyAiPatches,
-} from "./ai-patch";
+// IMPORTANT: the supabase mock must be imported BEFORE ./ai-patch so its
+// hoisted vi.mock("@workspace/resupply-db", …) is registered before
+// ai-patch.ts binds getSupabaseServiceRoleClient — otherwise the applier
+// tests hit the real client and throw "SUPABASE_URL must be set".
 import {
   installSupabaseMock,
   stageSupabaseResponse,
 } from "../../test-helpers/supabase-mock";
+import {
+  aiPatchSchema,
+  applyAiPatches,
+} from "./ai-patch";
 
 describe("aiPatchSchema", () => {
   it("accepts a well-formed set_line_modifier patch", () => {
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    expect(r.dropped).toHaveLength(1);
+    const r = aiPatchSchema.safeParse({
+      kind: "set_line_modifier",
+      hcpcsCode: "A7038",
+      modifierCsv: "NU",
+    });
+    expect(r.success).toBe(true);
   });
 });
 
