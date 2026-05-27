@@ -1,7 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   buildQueueConfig,
+  createQueueWithDlq,
   CRON_SCAN_QUEUE_OPTS,
   VENDOR_SEND_QUEUE_OPTS,
   WEBHOOK_DISPATCH_QUEUE_OPTS,
@@ -220,5 +221,111 @@ describe("buildQueueConfig — deadLetter ordering invariant (regression)", () =
     // values from either preset or overrides.
     const cfg = buildQueueConfig("scan.job", CRON_SCAN_QUEUE_OPTS);
     expect(cfg.retryBackoff).toBe(false); // CRON preset: no backoff
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────────────────
+// createQueueWithDlq — DLQ-first ordering invariant (regression)
+// ──────────────────────────────────────────────────────────────────────────────
+//
+// pg-boss v10 enforces a self-referential FK on queue.dead_letter: the DLQ
+// row must exist BEFORE the main queue row references it. If a register
+// function calls boss.createQueue(name, buildQueueConfig(...)) without
+// pre-creating `${name}.dlq`, the FIRST boot of that queue crashes the API
+// with "queue_dead_letter_fkey". The createQueueWithDlq helper enforces the
+// correct ordering. These tests pin that contract so a future refactor of
+// the helper (e.g. accidentally reordering the two awaits) can't silently
+// resurrect the boot crash.
+
+describe("createQueueWithDlq", () => {
+  function makeBossSpy() {
+    const calls: Array<{ name: string; opts?: object }> = [];
+    const createQueue = vi.fn(async (name: string, opts?: object) => {
+      calls.push({ name, opts });
+    });
+    // Cast through `never` so the helper accepts the spy without us pulling
+    // in the full PgBoss type surface — we only exercise createQueue.
+    return { boss: { createQueue } as never, calls, createQueue };
+  }
+
+  it("creates the DLQ before the main queue (strict ordering)", async () => {
+    const { boss, calls } = makeBossSpy();
+    await createQueueWithDlq(boss, "my.queue", VENDOR_SEND_QUEUE_OPTS);
+    expect(calls).toHaveLength(2);
+    expect(calls[0]?.name).toBe("my.queue.dlq");
+    expect(calls[1]?.name).toBe("my.queue");
+  });
+
+  it("DLQ is created with no options (idempotent bare-name upsert)", async () => {
+    const { boss, calls } = makeBossSpy();
+    await createQueueWithDlq(boss, "scan.job", CRON_SCAN_QUEUE_OPTS);
+    expect(calls[0]).toEqual({ name: "scan.job.dlq", opts: undefined });
+  });
+
+  it("main queue is created with the buildQueueConfig output (preset + locked deadLetter)", async () => {
+    const { boss, calls } = makeBossSpy();
+    await createQueueWithDlq(boss, "vendor.send", VENDOR_SEND_QUEUE_OPTS);
+    const mainCallOpts = calls[1]?.opts as Record<string, unknown>;
+    expect(mainCallOpts.name).toBe("vendor.send");
+    expect(mainCallOpts.deadLetter).toBe("vendor.send.dlq");
+    expect(mainCallOpts.retryLimit).toBe(VENDOR_SEND_QUEUE_OPTS.retryLimit);
+    expect(mainCallOpts.retryBackoff).toBe(VENDOR_SEND_QUEUE_OPTS.retryBackoff);
+    expect(mainCallOpts.retryDelay).toBe(VENDOR_SEND_QUEUE_OPTS.retryDelay);
+    expect(mainCallOpts.expireInMinutes).toBe(VENDOR_SEND_QUEUE_OPTS.expireInMinutes);
+  });
+
+  it("applies overrides onto the main queue config", async () => {
+    const { boss, calls } = makeBossSpy();
+    await createQueueWithDlq(boss, "tuned.queue", VENDOR_SEND_QUEUE_OPTS, {
+      retryLimit: 99,
+    });
+    const mainCallOpts = calls[1]?.opts as Record<string, unknown>;
+    expect(mainCallOpts.retryLimit).toBe(99);
+    // deadLetter is still locked even when overrides attempt to change it
+    expect(mainCallOpts.deadLetter).toBe("tuned.queue.dlq");
+  });
+
+  it("override attempting to redirect deadLetter is ignored (same invariant as buildQueueConfig)", async () => {
+    const { boss, calls } = makeBossSpy();
+    await createQueueWithDlq(boss, "locked.dlq.queue", CRON_SCAN_QUEUE_OPTS, {
+      deadLetter: "foreign.dlq",
+    } as never);
+    const mainCallOpts = calls[1]?.opts as Record<string, unknown>;
+    expect(mainCallOpts.deadLetter).toBe("locked.dlq.queue.dlq");
+  });
+
+  it("if DLQ creation rejects, the main queue is NOT created (fail-closed)", async () => {
+    const calls: string[] = [];
+    const boss = {
+      createQueue: vi.fn(async (name: string) => {
+        calls.push(name);
+        if (name.endsWith(".dlq")) throw new Error("simulated DLQ failure");
+      }),
+    } as never;
+    await expect(
+      createQueueWithDlq(boss, "fragile.queue", VENDOR_SEND_QUEUE_OPTS),
+    ).rejects.toThrow("simulated DLQ failure");
+    // Only the DLQ attempt happened — the main queue create must NOT run
+    // when DLQ pre-create fails, otherwise we'd re-introduce the FK crash.
+    expect(calls).toEqual(["fragile.queue.dlq"]);
+  });
+
+  it("queue names with dots produce a single-suffix DLQ name", async () => {
+    const { boss, calls } = makeBossSpy();
+    await createQueueWithDlq(boss, "a.b.c.queue", CRON_SCAN_QUEUE_OPTS);
+    expect(calls[0]?.name).toBe("a.b.c.queue.dlq");
+    expect((calls[1]?.opts as Record<string, unknown>).deadLetter).toBe(
+      "a.b.c.queue.dlq",
+    );
+  });
+
+  it("works with WEBHOOK_DISPATCH_QUEUE_OPTS preset", async () => {
+    const { boss, calls } = makeBossSpy();
+    await createQueueWithDlq(boss, "webhook.dispatch", WEBHOOK_DISPATCH_QUEUE_OPTS);
+    const mainCallOpts = calls[1]?.opts as Record<string, unknown>;
+    expect(mainCallOpts.retryLimit).toBe(WEBHOOK_DISPATCH_QUEUE_OPTS.retryLimit);
+    expect(mainCallOpts.expireInMinutes).toBe(
+      WEBHOOK_DISPATCH_QUEUE_OPTS.expireInMinutes,
+    );
   });
 });

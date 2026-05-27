@@ -694,6 +694,48 @@ assert_pass "providers + sleep-studies schemas (clinical, not WMS)"
 rm "$WORK"/lib/resupply-db/src/schema/providers.ts \
    "$WORK"/lib/resupply-db/src/schema/sleep-studies.ts
 
+echo "[self-test] Rule 15: worker jobs may not call boss.createQueue() directly"
+mkdir -p "$WORK"/artifacts/resupply-api/src/worker/jobs
+cat > "$WORK"/artifacts/resupply-api/src/worker/jobs/bad-job.ts <<'EOF'
+import type PgBoss from "pg-boss";
+export async function registerBadJob(boss: PgBoss) {
+  await boss.createQueue("bad.job");
+}
+EOF
+assert_fail_with "worker job calling boss.createQueue() directly" \
+  "must create queues via createQueueWithDlq"
+rm "$WORK"/artifacts/resupply-api/src/worker/jobs/bad-job.ts
+
+echo "[self-test] Rule 15: worker jobs may not call buildQueueConfig() directly"
+cat > "$WORK"/artifacts/resupply-api/src/worker/jobs/bad-job.ts <<'EOF'
+import { buildQueueConfig, VENDOR_SEND_QUEUE_OPTS } from "../lib/queue-options";
+export const cfg = buildQueueConfig("x", VENDOR_SEND_QUEUE_OPTS);
+EOF
+assert_fail_with "worker job calling buildQueueConfig() directly" \
+  "must create queues via createQueueWithDlq"
+rm "$WORK"/artifacts/resupply-api/src/worker/jobs/bad-job.ts
+
+echo "[self-test] Rule 15: test files in worker/jobs are exempt"
+cat > "$WORK"/artifacts/resupply-api/src/worker/jobs/some.test.ts <<'EOF'
+// Tests may mock buildQueueConfig and boss.createQueue freely.
+import { buildQueueConfig } from "../lib/queue-options";
+const fake = { createQueue: () => buildQueueConfig("x", {} as never) };
+export { fake };
+EOF
+assert_pass "test files in worker/jobs may use buildQueueConfig / boss.createQueue"
+rm "$WORK"/artifacts/resupply-api/src/worker/jobs/some.test.ts
+
+echo "[self-test] Rule 15: register function using createQueueWithDlq passes"
+cat > "$WORK"/artifacts/resupply-api/src/worker/jobs/good-job.ts <<'EOF'
+import type PgBoss from "pg-boss";
+import { createQueueWithDlq, VENDOR_SEND_QUEUE_OPTS } from "../lib/queue-options";
+export async function registerGoodJob(boss: PgBoss) {
+  await createQueueWithDlq(boss, "good.job", VENDOR_SEND_QUEUE_OPTS);
+}
+EOF
+assert_pass "worker job using createQueueWithDlq() helper"
+rm "$WORK"/artifacts/resupply-api/src/worker/jobs/good-job.ts
+
 echo "[self-test] Final clean-tree check"
 assert_pass "post-test cleanup"
 
