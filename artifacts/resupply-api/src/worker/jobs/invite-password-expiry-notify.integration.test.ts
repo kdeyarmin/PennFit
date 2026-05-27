@@ -364,4 +364,122 @@ describeIfDb("invite-password-expiry-notify (live db)", () => {
     expect(diffMs).toBeGreaterThan(55 * 60 * 1000);
     expect(diffMs).toBeLessThan(65 * 60 * 1000);
   });
+
+  it("keeps the stamp written when SendGrid throws (no re-spam on retry)", async (ctx) => {
+    if (!migrationsReady) {
+      ctx.skip();
+      return;
+    }
+    // The sweep deliberately leaves the stamp in place when
+    // sendEmail() throws — on the theory that one missed nudge is
+    // better than spamming a user every hour for the duration of a
+    // SendGrid outage. The single-test mock in the existing case
+    // can't catch a regression here because it doesn't fail any
+    // sends. This case seeds two reminder-window rows + one
+    // expired-window row, makes SendGrid reject the "fail" emails,
+    // and asserts the stamps STILL land in the DB (proving the
+    // claim was NOT rolled back) AND the "ok" row in the same
+    // batch is processed normally (proving one bad send doesn't
+    // poison the rest of the sweep).
+    await seed("sendfail-reminder", {
+      ageMs: TTL_MS - REMINDER_LEAD_MS + SAFE_MARGIN_MS,
+    });
+    await seed("sendok-reminder", {
+      ageMs: TTL_MS - REMINDER_LEAD_MS + SAFE_MARGIN_MS,
+    });
+    await seed("sendfail-expired", {
+      ageMs: TTL_MS + SAFE_MARGIN_MS,
+    });
+    const failEmails = new Set([
+      emailFor("sendfail-reminder"),
+      emailFor("sendfail-expired"),
+    ]);
+    // Single failing implementation for the duration of this test.
+    // Reject ONLY for our two fail-slot addresses; succeed for
+    // every other recipient (including rows seeded by other
+    // parallel suites that happen to be in a reminder/expired
+    // window). This keeps the failure scoped — we never want this
+    // test to falsely fail the sweep for unrelated rows.
+    sendEmailMock.mockImplementation(async (arg: unknown) => {
+      const to = (arg as { to?: string } | undefined)?.to;
+      if (typeof to === "string" && failEmails.has(to)) {
+        throw new Error("simulated sendgrid outage");
+      }
+      return undefined;
+    });
+
+    const stats = await runInvitePasswordExpiryNotifySweep(FULL_CFG);
+
+    // errors counter incremented for each thrown send — one per
+    // fail-slot. >= because other parallel suites' rows could in
+    // theory contribute if they also hit a transient mock failure,
+    // though our mock only fails our two slots.
+    expect(stats.errors).toBeGreaterThanOrEqual(2);
+    // The good row in the same batch was processed normally.
+    const ourSends = sendEmailMock.mock.calls.filter((call) => {
+      const arg = call[0] as { to?: string } | undefined;
+      return (
+        typeof arg?.to === "string" && arg.to.startsWith(`${runTag}+`)
+      );
+    });
+    const ourToAddresses = ourSends.map(
+      (c) => (c[0] as { to: string }).to,
+    );
+    // sendEmail() WAS invoked for all three — proving the sweep
+    // attempted delivery for every claimed row, including the
+    // good one in the same batch as the failing sends.
+    expect(ourToAddresses).toEqual(
+      expect.arrayContaining([
+        emailFor("sendfail-reminder"),
+        emailFor("sendok-reminder"),
+        emailFor("sendfail-expired"),
+      ]),
+    );
+
+    // Stamp invariant — read back the freshly-failed rows via
+    // PostgREST. The claim wrote a stamp BEFORE sendEmail() was
+    // called; the catch block must NOT have rolled it back. If a
+    // future refactor moves the stamp-write to AFTER the send
+    // (or wraps both in a manual rollback path), these assertions
+    // fail loudly and the next hourly sweep would re-email the
+    // same user, repeatedly, for the duration of any outage.
+    const supabase = getSupabaseServiceRoleClient();
+    const newSlotIds = [
+      userIdBySlot.get("sendfail-reminder")!,
+      userIdBySlot.get("sendok-reminder")!,
+      userIdBySlot.get("sendfail-expired")!,
+    ];
+    const { data: rows, error } = await supabase
+      .schema("resupply_auth")
+      .from("password_credentials")
+      .select(
+        "user_id, set_by_admin_at, expiry_reminder_sent_at, expired_notice_sent_at",
+      )
+      .in("user_id", newSlotIds);
+    expect(error).toBeNull();
+    const byUserId = new Map(
+      (rows ?? []).map((r) => [r.user_id as string, r]),
+    );
+
+    // sendfail-reminder — reminder stamp set DESPITE the send
+    // throwing; expired stamp untouched (wrong window).
+    const fr = byUserId.get(userIdBySlot.get("sendfail-reminder")!)!;
+    expect(fr.expiry_reminder_sent_at).not.toBeNull();
+    expect(
+      new Date(fr.expiry_reminder_sent_at as string).getTime(),
+    ).toBeGreaterThan(new Date(fr.set_by_admin_at as string).getTime());
+    expect(fr.expired_notice_sent_at).toBeNull();
+
+    // sendok-reminder — normal happy-path: stamp set.
+    const ok = byUserId.get(userIdBySlot.get("sendok-reminder")!)!;
+    expect(ok.expiry_reminder_sent_at).not.toBeNull();
+
+    // sendfail-expired — expiry stamp set DESPITE the send
+    // throwing. Same invariant on the other code path.
+    const fe = byUserId.get(userIdBySlot.get("sendfail-expired")!)!;
+    expect(fe.expired_notice_sent_at).not.toBeNull();
+    expect(
+      new Date(fe.expired_notice_sent_at as string).getTime(),
+    ).toBeGreaterThan(new Date(fe.set_by_admin_at as string).getTime());
+  });
 });
