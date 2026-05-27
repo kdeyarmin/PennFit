@@ -29,6 +29,18 @@ export function formatDate(value: string | null | undefined): string {
         Number(dateOnly[3]),
       )
     : new Date(value);
+  if (dateOnly) {
+    const expectedYear = Number(dateOnly[1]);
+    const expectedMonth = Number(dateOnly[2]) - 1;
+    const expectedDay = Number(dateOnly[3]);
+    if (
+      d.getFullYear() !== expectedYear ||
+      d.getMonth() !== expectedMonth ||
+      d.getDate() !== expectedDay
+    ) {
+      return "—";
+    }
+  }
   if (Number.isNaN(d.getTime())) return "—";
   return dateFormatter.format(d);
 }
