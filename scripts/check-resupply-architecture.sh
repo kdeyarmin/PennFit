@@ -402,6 +402,38 @@ if [[ -d lib/resupply-db/drizzle ]]; then
   fi
 fi
 
+# Rule 15: every pg-boss queue in the worker MUST be created through
+# createQueueWithDlq() in artifacts/resupply-api/src/worker/lib/queue-options.ts.
+#
+# pg-boss v10 enforces a self-referential FK on `queue.dead_letter`:
+# the DLQ row must exist BEFORE the main queue can be inserted with
+# that reference. buildQueueConfig() always sets deadLetter to
+# `${name}.dlq`, so any direct `boss.createQueue(NAME, buildQueueConfig(...))`
+# in a register function crashes the API on first boot of a newly-
+# added queue with "queue_dead_letter_fkey" violation. Existing
+# queues survive via ON CONFLICT DO NOTHING — which made this trap
+# invisible until two new queues landed in May 2026 and took down
+# the API on boot.
+#
+# The fix is the createQueueWithDlq helper, which pre-creates the
+# DLQ before the main queue. This rule prevents regression: any new
+# `boss.createQueue(` or `buildQueueConfig(` call in
+# artifacts/resupply-api/src/worker/jobs/ must go through the helper
+# instead. Test files (`*.test.*`) are exempt because they mock the
+# helper. The helper definition itself in queue-options.ts is also
+# exempt — that's the ONE allowed call site.
+if [[ -d artifacts/resupply-api/src/worker/jobs ]]; then
+  bad="$(rg --no-messages -n "${RG_TYPES[@]}" \
+    -e 'boss\.createQueue\(' \
+    -e '\bbuildQueueConfig\(' \
+    artifacts/resupply-api/src/worker/jobs 2>/dev/null \
+    | rg -v '\.test\.' || true)"
+  if [[ -n "$bad" ]]; then
+    fail "artifacts/resupply-api/src/worker/jobs/ must create queues via createQueueWithDlq() from ../lib/queue-options — direct boss.createQueue() / buildQueueConfig() calls skip DLQ pre-creation and will crash on first boot (pg-boss self-FK on queue.dead_letter)"
+    echo "$bad" | sed 's/^/    /' >&2
+  fi
+fi
+
 if [[ "$errors" -gt 0 ]]; then
   echo "" >&2
   echo "$errors architecture rule violation(s). See docs/resupply/ARCHITECTURE.md for the full ruleset." >&2
