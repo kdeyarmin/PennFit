@@ -1,0 +1,44 @@
+~/workspace$ pnpm install
+node lib/resupply-db/scripts/migrate.mjs
+Scope: all 26 workspace projects
+Lockfile is up to date, resolution step is skipped
+
+   ╭─────────────────────────────────────────╮
+   │                                         │
+   │   Update available! 10.33.2 → 11.4.0.   │
+   │   Changelog: https://pnpm.io/v/11.4.0   │
+   │    To update, run: pnpm add -g pnpm     │
+   │                                         │
+   ╰─────────────────────────────────────────╯
+
+Packages: +6 -3
+++++++---
+Progress: resolved 6, reused 5, downloaded 1, added 1, done
+. preinstall$ node -e "for(const f of ['package-lock.json','yarn.lock'])if(require('fs').existsSync(f)){process.stderr.write…
+└─ Done in 50ms
+╭ Warning ───────────────────────────────────────────────────────────────────────────────────╮
+│                                                                                            │
+│   Ignored build scripts: argon2@0.44.0.                                                    │
+│   Run "pnpm approve-builds" to pick which dependencies should be allowed to run scripts.   │
+│                                                                                            │
+╰────────────────────────────────────────────────────────────────────────────────────────────╯
+Done in 3.5s using pnpm v10.33.2
+[resupply-db-migrate] migrations applied (or already up to date).
+~/workspace$ cd artifacts/resupply-api && NODE_ENV=development LOG_LEVEL=debug node --enable-source-maps ./dist/index.mjs 2>&1 | tail -80
+[22:51:03.658] INFO (resupply-api/8182): in-house auth routes mounted at /resupply-api/auth
+    event: "auth_in_house_mounted"
+[22:51:03.661] INFO (resupply-api/8182): in-house auth routes mounted at /api/auth (storefront, allowSignUp=true)
+    event: "auth_in_house_storefront_mounted"
+/home/runner/workspace/artifacts/resupply-api/src/lib/env-check.ts:57
+  throw new Error(
+        ^
+
+Error: resupply-api: missing required environment variable(s): PORT. See README.md for the full list.
+    at assertRequiredEnv (/home/runner/workspace/artifacts/resupply-api/src/lib/env-check.ts:57:9)
+    at <anonymous> (/home/runner/workspace/artifacts/resupply-api/src/index.ts:15:1)
+    at ModuleJob.run (node:internal/modules/esm/module_job:413:25)
+    at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:660:26)
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)
+
+Node.js v24.13.0
+~/.../artifacts/resupply-api$ 
