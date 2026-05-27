@@ -12,10 +12,17 @@
 import { useState, type FormEvent } from "react";
 import { Link } from "wouter";
 
-import { AuthError, serverUnavailableMessage } from "@workspace/resupply-auth-react";
-
 import { authHooks } from "@/lib/auth-hooks";
 import { AuthLayout } from "@/components/auth-layout";
+
+import { decideForgotPasswordErrorOutcome } from "./forgot-password.helpers";
+
+// Re-exported so existing imports of this branch from "./forgot-password"
+// (and the source-grep tests that lock the page to the shared helper)
+// keep working — the actual implementation lives in the .ts helper
+// module so tests can pull it in without dragging JSX through the
+// import graph.
+export { decideForgotPasswordErrorOutcome } from "./forgot-password.helpers";
 
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -33,13 +40,9 @@ export function ForgotPasswordPage() {
       {
         onSuccess: () => setDone(true),
         onError: (err) => {
-          if (err instanceof AuthError && err.status >= 500) {
-            setSubmitError(
-              serverUnavailableMessage({
-                action: "send a reset link",
-                subject: "email",
-              }),
-            );
+          const outcome = decideForgotPasswordErrorOutcome(err);
+          if (outcome.kind === "show-error") {
+            setSubmitError(outcome.message);
             return;
           }
           // Preserve the no-enumeration contract: any non-5xx error

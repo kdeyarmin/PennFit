@@ -13,25 +13,42 @@ import { describe, expect, it } from "vitest";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SRC = readFileSync(path.join(__dirname, "forgot-password.tsx"), "utf8");
+// The 5xx branch lives in a sibling .ts helper module so it can be
+// unit-tested in the node vitest env without dragging JSX through
+// the import graph. Source-grep both files together.
+const HELPERS_SRC = readFileSync(
+  path.join(__dirname, "forgot-password.helpers.ts"),
+  "utf8",
+);
+const COMBINED = SRC + "\n" + HELPERS_SRC;
 
 describe("pages/forgot-password — uses shared serverUnavailableMessage helper", () => {
   it("imports serverUnavailableMessage from @workspace/resupply-auth-react", () => {
-    expect(SRC).toMatch(
+    expect(HELPERS_SRC).toMatch(
       /import\s*\{[^}]*serverUnavailableMessage[^}]*\}\s*from\s*"@workspace\/resupply-auth-react"/,
     );
   });
 
   it("calls serverUnavailableMessage with the forgot-password action/subject", () => {
-    expect(SRC).toContain('action: "send a reset link"');
-    expect(SRC).toContain('subject: "email"');
+    expect(HELPERS_SRC).toContain('action: "send a reset link"');
+    expect(HELPERS_SRC).toContain('subject: "email"');
+  });
+
+  it("the page wires its onError through the shared decision helper", () => {
+    // Lock the page to the extracted branch so a future refactor
+    // can't silently inline a divergent 5xx check.
+    expect(SRC).toMatch(
+      /import\s*\{[^}]*decideForgotPasswordErrorOutcome[^}]*\}\s*from\s*"\.\/forgot-password\.helpers"/,
+    );
+    expect(SRC).toContain("decideForgotPasswordErrorOutcome(err)");
   });
 
   it("does NOT inline the credentials-store copy", () => {
-    expect(SRC).not.toContain("credentials store");
+    expect(COMBINED).not.toContain("credentials store");
   });
 
   it("does NOT reference status.pennpaps.com directly", () => {
-    expect(SRC).not.toContain("status.pennpaps.com");
+    expect(COMBINED).not.toContain("status.pennpaps.com");
   });
 });
 
@@ -41,7 +58,7 @@ describe("pages/forgot-password — no-enumeration contract", () => {
   });
 
   it("still branches on err.status >= 500 for the visible error", () => {
-    expect(SRC).toContain("err.status >= 500");
+    expect(HELPERS_SRC).toContain("err.status >= 500");
   });
 
   it("folds any non-5xx error back into the success view", () => {
