@@ -12,7 +12,7 @@
 // because the backend list endpoint is per-patient (a global CSR
 // work-list lands as a follow-up).
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useParams } from "wouter";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -58,22 +58,6 @@ export function AdminPrescriptionRequestsPage() {
   const patientId = params.patientId ?? "";
   const [createOpen, setCreateOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-
-  // Deep-link entry: PrescriptionsTab's "Renew via fax packet"
-  // button creates a draft server-side and redirects here with
-  // ?packet=<id>. Open the detail modal automatically on first
-  // mount; strip the query string so a refresh doesn't re-open
-  // the same modal.
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const url = new URL(window.location.href);
-    const packetId = url.searchParams.get("packet");
-    if (packetId && /^[0-9a-f-]{36}$/i.test(packetId)) {
-      setSelectedId(packetId);
-      url.searchParams.delete("packet");
-      window.history.replaceState({}, "", url.toString());
-    }
-  }, []);
 
   const { data, isPending, isError, error, refetch } = useQuery({
     queryKey: listKey(patientId),
@@ -491,14 +475,12 @@ function CreateModal({
                 value={l.hcpcs}
                 onChange={(e) => updateLine(idx, { hcpcs: e.target.value })}
                 placeholder="E0601"
-                aria-label="HCPCS code"
               />
               <Input
                 className="col-span-6"
                 value={l.description}
                 onChange={(e) => updateLine(idx, { description: e.target.value })}
                 placeholder="Description"
-                aria-label="Line description"
               />
               <Input
                 className="col-span-1"
@@ -509,7 +491,6 @@ function CreateModal({
                 onChange={(e) =>
                   updateLine(idx, { quantity: Number(e.target.value) || 1 })
                 }
-                aria-label="Quantity"
               />
               <Input
                 className="col-span-2"
@@ -524,7 +505,6 @@ function CreateModal({
                   })
                 }
                 placeholder="days"
-                aria-label="Cadence days"
               />
               <button
                 type="button"
@@ -563,7 +543,6 @@ function CreateModal({
             onChange={(e) =>
               setDeviceClass(e.target.value as PrescriptionDeviceClass | "none")
             }
-            aria-label="Therapy mode"
           >
             <option value="none">No settings (mask-only refill)</option>
             <option value="cpap">CPAP (fixed pressure)</option>
@@ -662,7 +641,6 @@ function CreateModal({
             maxLength={2000}
             value={clinicalNotes}
             onChange={(e) => setClinicalNotes(e.target.value)}
-            aria-label="Clinical notes"
           />
         </div>
 
@@ -928,7 +906,6 @@ function LifecycleActions({
             value={signedKey}
             onChange={(e) => onSignedKeyChange(e.target.value)}
             placeholder="signed scan object key (optional)"
-            aria-label="Signed scan object key"
             style={{ minWidth: 220 }}
           />
           <Button
@@ -1028,7 +1005,6 @@ function Field({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        aria-label={label}
       />
     </div>
   );

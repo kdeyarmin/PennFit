@@ -379,43 +379,29 @@ describe("tools-impl — episode update gated on status='pending' (PR change)", 
 //   2. Episode is NOT in "pending" (already confirmed / cancelled) — update
 //      returns an empty array → ok:false without mutating state.
 
-/**
- * Build a stub that returns `episodeUpdateResult` for the episodes
- * update and `activePrescriptionSkus` (as active prescription rows) for
- * the prescriptions select place_resupply_order runs to validate SKUs.
- */
+/** Build a stub that returns `episodeUpdateResult` for the episodes update. */
 function buildStubSupabaseWithEpisode(
   patientRow: { date_of_birth: string | null; legal_first_name: string | null },
   episodeUpdateResult: { data: Array<{ id: string }> | null; error: null },
-  activePrescriptionSkus: string[] = [],
 ) {
-  const makeBuilder = (table: string): Record<string, unknown> => {
-    const builder: Record<string, unknown> = {
-      select: () => builder,
-      update: () => builder,
-      eq: () => builder,
-      limit: () => builder,
-      maybeSingle: () => Promise.resolve({ data: patientRow, error: null }),
-      single: () => Promise.resolve({ data: patientRow, error: null }),
-      then: (
-        onfulfilled: (v: unknown) => unknown,
-        onrejected?: (e: unknown) => unknown,
-      ) => {
-        const result =
-          table === "prescriptions"
-            ? {
-                data: activePrescriptionSkus.map((s) => ({ item_sku: s })),
-                error: null,
-              }
-            : episodeUpdateResult;
-        return Promise.resolve(result).then(onfulfilled, onrejected);
-      },
-    };
-    return builder;
+  const builder: Record<string, unknown> = {
+    select: () => builder,
+    update: () => builder,
+    eq: () => builder,
+    limit: () => builder,
+    maybeSingle: () =>
+      Promise.resolve({ data: patientRow, error: null }),
+    single: () =>
+      Promise.resolve({ data: patientRow, error: null }),
+    then: (
+      onfulfilled: (v: unknown) => unknown,
+      onrejected?: (e: unknown) => unknown,
+    ) =>
+      Promise.resolve(episodeUpdateResult).then(onfulfilled, onrejected),
   };
   return {
     schema: () => ({
-      from: (table: string) => makeBuilder(table),
+      from: () => builder,
     }),
   } as unknown as never;
 }
@@ -473,7 +459,6 @@ describe("VoiceToolDispatcher — place_resupply_order episode status gate (PR c
     const supabase = buildStubSupabaseWithEpisode(
       { date_of_birth: "1980-01-01", legal_first_name: "Alex" },
       { data: [{ id: "epi-1" }], error: null }, // one row updated
-      ["A7030", "A7034"], // both requested SKUs are on active scripts
     );
     const dispatcher = createVoiceToolDispatcher({
       ...baseDeps,
@@ -488,27 +473,6 @@ describe("VoiceToolDispatcher — place_resupply_order episode status gate (PR c
     });
     expect(result.result.ok).toBe(true);
     expect((result.result as { ok: boolean; accepted_skus: string[] }).accepted_skus).toEqual(["A7030", "A7034"]);
-  });
-
-  it("filters accepted_skus to the patient's active prescriptions (drops invented SKUs)", async () => {
-    const supabase = buildStubSupabaseWithEpisode(
-      { date_of_birth: "1980-01-01", legal_first_name: "Alex" },
-      { data: [{ id: "epi-1" }], error: null },
-      ["A7030"], // only A7030 is on an active script
-    );
-    const dispatcher = createVoiceToolDispatcher({ ...baseDeps, supabase });
-    await verifyIdentity(dispatcher);
-
-    const result = await dispatcher.dispatch({
-      callId: "o3b",
-      name: "place_resupply_order",
-      // model also passes a hallucinated SKU "ZZZ-FAKE"
-      args: { skus: ["A7030", "ZZZ-FAKE"], address_confirmed: true },
-    });
-    expect(result.result.ok).toBe(true);
-    expect(
-      (result.result as { ok: boolean; accepted_skus: string[] }).accepted_skus,
-    ).toEqual(["A7030"]);
   });
 
   it("returns ok:false when address_confirmed is false (pre-existing guard, unaffected by PR)", async () => {

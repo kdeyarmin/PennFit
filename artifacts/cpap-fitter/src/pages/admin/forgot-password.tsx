@@ -1,18 +1,18 @@
 // Forgot-password page. Server contract is "always 200, no
 // enumeration" — we render the success state regardless of whether
 // the email matches an account. The one exception is a 5xx from
-// /auth/forgot-password: the credentials store is unreachable, the
-// email wasn't queued, and the user would otherwise wait forever
-// for a reset link that never arrives. In that case we show the
-// same server-status copy the rest of the admin auth surface uses
-// (see ./sign-in.tsx, ./reset-password.tsx, ./change-password.tsx).
+// /auth/forgot-password: the backend is unreachable, the email
+// wasn't queued, and the user would otherwise wait forever for a
+// reset link that never arrives. In that case we surface the shared
+// server-trouble notice (see `serverUnavailableMessage` in
+// @workspace/resupply-auth-react).
 
 import "@/admin.css";
 
 import { useState, type FormEvent } from "react";
 import { Link } from "wouter";
 
-import { AuthError } from "@workspace/resupply-auth-react";
+import { AuthError, serverUnavailableMessage } from "@workspace/resupply-auth-react";
 
 import { authHooks } from "@/lib/admin/auth-hooks";
 import { AuthLayout } from "@/components/auth-layout";
@@ -34,20 +34,19 @@ export function ForgotPasswordPage() {
         // The server's normal contract is "always 200, no
         // enumeration" — so success and unknown-email both flow
         // through onSuccess and we render the generic success
-        // state. A 5xx means the credentials store is actually
-        // down, the email wasn't queued, and the user would
-        // otherwise wait forever for a reset link that never
-        // arrives. Surface the same server-status copy used on
-        // sign-in / change-password / reset-password so the
-        // messaging is consistent across the auth surface.
+        // state. A 5xx means the backend is actually down, the
+        // email wasn't queued, and the user would otherwise wait
+        // forever for a reset link that never arrives. Surface
+        // the shared server-trouble notice so the messaging is
+        // consistent across the auth surface.
         onSuccess: () => setDone(true),
         onError: (err) => {
           if (err instanceof AuthError && err.status >= 500) {
             setSubmitError(
-              "We can't reach the credentials store right now, so we" +
-                " couldn't send a reset link. This is a server problem," +
-                " not your email. Please try again in a minute — if it" +
-                " keeps failing, check status.pennpaps.com.",
+              serverUnavailableMessage({
+                action: "send a reset link",
+                subject: "email",
+              }),
             );
             return;
           }

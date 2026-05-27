@@ -1,11 +1,10 @@
-// Tests for admin/forgot-password.tsx — the onSettled simplification in this PR.
+// Tests for admin/forgot-password.tsx.
 //
-// PR changes:
-//   * Uses `onSettled` instead of separate `onSuccess` / `onError` branches
-//   * Removed `submitError` state (no more 5xx-specific error copy)
-//   * Removed `AuthError` import (no longer needed)
-//   * No error UI element rendered
-//   * Always shows the success state after the mutation settles
+// The no-enumeration contract is preserved: success and unknown-email
+// both flow through onSuccess to the success view, and any non-5xx
+// error also folds into the success view. Only a 5xx surfaces a
+// visible "credentials store unreachable" notice, and that copy now
+// comes from the shared `serverUnavailableMessage` helper.
 
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -15,25 +14,41 @@ import { describe, expect, it } from "vitest";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SRC = readFileSync(path.join(__dirname, "forgot-password.tsx"), "utf8");
 
-// ---------------------------------------------------------------------------
-// onSettled — new submission contract
-// ---------------------------------------------------------------------------
+describe("admin/forgot-password — uses shared serverUnavailableMessage helper", () => {
+  it("imports serverUnavailableMessage from @workspace/resupply-auth-react", () => {
+    expect(SRC).toMatch(
+      /import\s*\{[^}]*serverUnavailableMessage[^}]*\}\s*from\s*"@workspace\/resupply-auth-react"/,
+    );
+  });
 
-// ---------------------------------------------------------------------------
-// Removed: submitError state
-// ---------------------------------------------------------------------------
+  it("calls serverUnavailableMessage with the forgot-password action/subject", () => {
+    expect(SRC).toContain('action: "send a reset link"');
+    expect(SRC).toContain('subject: "email"');
+  });
 
-// ---------------------------------------------------------------------------
-// Removed: AuthError import
-// ---------------------------------------------------------------------------
+  it("does NOT inline the credentials-store copy", () => {
+    expect(SRC).not.toContain("credentials store");
+  });
 
-// ---------------------------------------------------------------------------
-// Removed: 5xx-specific server-unavailable message
-// ---------------------------------------------------------------------------
+  it("does NOT reference status.pennpaps.com directly", () => {
+    expect(SRC).not.toContain("status.pennpaps.com");
+  });
+});
 
-// ---------------------------------------------------------------------------
-// Regression: core form behaviour retained
-// ---------------------------------------------------------------------------
+describe("admin/forgot-password — no-enumeration contract", () => {
+  it("flips to the success view on onSuccess", () => {
+    expect(SRC).toContain("onSuccess: () => setDone(true)");
+  });
+
+  it("still branches on err.status >= 500 for the visible error", () => {
+    expect(SRC).toContain("err.status >= 500");
+  });
+
+  it("folds any non-5xx error back into the success view", () => {
+    expect(SRC).toContain("setDone(true)");
+  });
+});
+
 describe("admin/forgot-password — core form behaviour retained", () => {
   it("still has done state to switch to the success view", () => {
     expect(SRC).toContain("setDone(true)");
@@ -49,7 +64,7 @@ describe("admin/forgot-password — core form behaviour retained", () => {
   });
 
   it("still links back to the sign-in page", () => {
-    expect(SRC).toContain('href={`${basePath}/sign-in`}');
+    expect(SRC).toContain("/sign-in");
   });
 
   it("success view tells the user to check their inbox", () => {

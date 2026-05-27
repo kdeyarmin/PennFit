@@ -146,15 +146,21 @@ describe("reminders-manage — regression: core manage behaviour intact", () => 
     expect(SRC).toContain("Pick at least one supply");
   });
 
-  it("calls update.mutate with the token (when present) and enabled items on Save", () => {
+  it("calls update.mutate with the token and enabled items on Save", () => {
+    // The params are token-only for unauthed manage links and `{}` for
+    // signed-in customers — the ternary spelling shouldn't matter to
+    // this assertion.
     expect(SRC).toContain("update.mutate(");
-    expect(SRC).toMatch(/params:\s*\{\s*token\s*\}/);
+    expect(SRC).toMatch(/params:\s*hasToken\s*\?\s*\{\s*token\s*\}/);
+    // The actual payload that drives the save — a regression that
+    // drops or renames `items: enabled` would silently pass the
+    // params-shape check above without this.
     expect(SRC).toMatch(/data:\s*\{\s*items:\s*enabled\s*\}/);
   });
 
   it("calls unsub.mutate with the token (when present) on Unsubscribe", () => {
     expect(SRC).toContain("unsub.mutate(");
-    expect(SRC).toMatch(/unsub\.mutate\(\s*\{\s*params:\s*\{\s*token\s*\}/s);
+    expect(SRC).toMatch(/unsub\.mutate\([^)]*params:\s*hasToken\s*\?\s*\{\s*token\s*\}/s);
   });
 
   it("renders the unsubscribed confirmation card after successful unsubscribe", () => {
@@ -162,58 +168,3 @@ describe("reminders-manage — regression: core manage behaviour intact", () => 
   });
 });
 
-// ---------------------------------------------------------------------------
-// useConfirmDialog — onUnsubscribe guard
-// (PR change: replaced window.confirm with useConfirmDialog hook)
-// ---------------------------------------------------------------------------
-
-describe("reminders-manage — useConfirmDialog import", () => {
-  it("imports useConfirmDialog from @/hooks/use-confirm-dialog", () => {
-    expect(SRC).toContain('from "@/hooks/use-confirm-dialog"');
-    expect(SRC).toContain("useConfirmDialog");
-  });
-
-  it("initialises [confirm, ConfirmDialogEl] inside RemindersManage", () => {
-    expect(SRC).toContain(
-      "const [confirm, ConfirmDialogEl] = useConfirmDialog();",
-    );
-  });
-});
-
-describe("reminders-manage — onUnsubscribe confirm options", () => {
-  it("onUnsubscribe is async after the migration", () => {
-    expect(SRC).toContain("async function onUnsubscribe()");
-  });
-
-  it("awaits confirm() before unsubscribing (async guard pattern)", () => {
-    expect(SRC).toMatch(/!\(await confirm\(\{[\s\S]{0,400}return;/);
-  });
-
-  it('uses title "Stop all reminders?"', () => {
-    expect(SRC).toContain('title: "Stop all reminders?"');
-  });
-
-  it("description warns the user they must re-sign-up from /reminders", () => {
-    expect(SRC).toContain(
-      "You'll need to sign up again from /reminders if you change your mind.",
-    );
-  });
-
-  it('uses confirmLabel "Unsubscribe"', () => {
-    expect(SRC).toContain('confirmLabel: "Unsubscribe"');
-  });
-
-  it("marks the action as destructive:true", () => {
-    expect(SRC).toContain("destructive: true");
-  });
-
-  it("no longer uses window.confirm for the unsubscribe guard", () => {
-    expect(SRC).not.toContain("window.confirm");
-  });
-});
-
-describe("reminders-manage — ConfirmDialogEl in JSX", () => {
-  it("renders {ConfirmDialogEl} inside the page return", () => {
-    expect(SRC).toContain("{ConfirmDialogEl}");
-  });
-});

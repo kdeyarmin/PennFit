@@ -10,7 +10,7 @@ import "@/admin.css";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { Link, useLocation } from "wouter";
 
-import { AuthError } from "@workspace/resupply-auth-react";
+import { authErrorMessage } from "@workspace/resupply-auth-react";
 
 import { authHooks } from "@/lib/admin/auth-hooks";
 import { AuthLayout } from "@/components/auth-layout";
@@ -69,24 +69,12 @@ export function ResetPasswordPage() {
       {
         onSuccess: () => setLocation("/admin/sign-in"),
         onError: (err) => {
-          // 5xx means the credentials store is unreachable — the
-          // reset token may still be valid, the user just can't
-          // commit a new password right now. Same copy as
-          // change-password.tsx / sign-in.tsx so users see a
-          // consistent message across the auth surface.
-          if (err instanceof AuthError && err.status >= 500) {
-            setSubmitError(
-              "We can't reach the credentials store right now, so your" +
-                " password wasn't reset. This is a server problem, not" +
-                " your reset link. Please try again in a minute — if it" +
-                " keeps failing, check status.pennpaps.com.",
-            );
-            return;
-          }
           setSubmitError(
-            err instanceof AuthError
-              ? err.userMessage
-              : "Could not reset your password.",
+            authErrorMessage(err, {
+              action: "reset your password",
+              subject: "reset link",
+              fallback: "Could not reset your password.",
+            }),
           );
         },
       },

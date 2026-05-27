@@ -1,21 +1,28 @@
 // Forgot-password landing for the cpap-fitter shop. Server contract
 // is "always 200, no enumeration" — success and unknown-email both
 // flow through onSuccess and we render the generic success state.
-// The one exception is a 5xx from /auth/forgot-password: the
-// credentials store is unreachable, the email wasn't queued, and the
-// shopper would otherwise wait forever for a reset link that never
-// arrives. In that case we surface the same server-status copy the
-// admin auth surface uses (see src/pages/admin/forgot-password.tsx).
+// The one exception is a 5xx from /auth/forgot-password: the backend
+// is unreachable, the email wasn't queued, and the shopper would
+// otherwise wait forever for a reset link that never arrives. In
+// that case we surface the shared server-trouble notice (see
+// `serverUnavailableMessage` in @workspace/resupply-auth-react).
 // Any non-5xx error path still folds into the generic success state
 // to preserve the no-enumeration contract.
 
 import { useState, type FormEvent } from "react";
 import { Link } from "wouter";
 
-import { AuthError } from "@workspace/resupply-auth-react";
-
 import { authHooks } from "@/lib/auth-hooks";
 import { AuthLayout } from "@/components/auth-layout";
+
+import { decideForgotPasswordErrorOutcome } from "./forgot-password.helpers";
+
+// Re-exported so existing imports of this branch from "./forgot-password"
+// (and the source-grep tests that lock the page to the shared helper)
+// keep working — the actual implementation lives in the .ts helper
+// module so tests can pull it in without dragging JSX through the
+// import graph.
+export { decideForgotPasswordErrorOutcome } from "./forgot-password.helpers";
 
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -33,13 +40,9 @@ export function ForgotPasswordPage() {
       {
         onSuccess: () => setDone(true),
         onError: (err) => {
-          if (err instanceof AuthError && err.status >= 500) {
-            setSubmitError(
-              "We can't reach the credentials store right now, so we" +
-                " couldn't send a reset link. This is a server problem," +
-                " not your email. Please try again in a minute — if it" +
-                " keeps failing, check status.pennpaps.com.",
-            );
+          const outcome = decideForgotPasswordErrorOutcome(err);
+          if (outcome.kind === "show-error") {
+            setSubmitError(outcome.message);
             return;
           }
           // Preserve the no-enumeration contract: any non-5xx error

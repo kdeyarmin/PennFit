@@ -172,38 +172,3 @@ describe("formatUsPhone — boundary: 10-digit truncation", () => {
     expect(formatUsPhone("9991234567890")).toBe("(999) 123-4567");
   });
 });
-
-// ---------------------------------------------------------------------------
-// PR change: ?ref + ?email appended to /order-success redirect
-// ---------------------------------------------------------------------------
-describe("order — success redirect appends ?ref and ?email (PR change)", () => {
-  it("constructs the redirect URL with URLSearchParams", () => {
-    // The PR replaces setLocation('/order-success') with a parameterised URL.
-    expect(SRC).toContain("new URLSearchParams(");
-    expect(SRC).toContain("ref: data.orderReference");
-    expect(SRC).toContain("email: values.patient.email");
-  });
-
-  it("redirects to /order-success with the query string appended", () => {
-    expect(SRC).toContain("`/order-success?${params.toString()}`");
-  });
-
-  it("uses orderReference as the 'ref' param (matches /api/orders/track contract)", () => {
-    // The success-page recovery fetch uses orderReference as the lookup key;
-    // the param name must match.
-    const refIdx = SRC.indexOf("ref: data.orderReference");
-    expect(refIdx).toBeGreaterThan(-1);
-    // The param also appears in the URLSearchParams block, not earlier.
-    const paramsIdx = SRC.indexOf("new URLSearchParams(");
-    expect(refIdx).toBeGreaterThan(paramsIdx);
-  });
-
-  it("still writes to sessionStorage before navigating (fast path still primed)", () => {
-    // sessionStorage write must come BEFORE the redirect so the success
-    // page's fast path can hydrate from it on the same tab.
-    const sessionStorageIdx = SRC.indexOf("sessionStorage.setItem");
-    const locationIdx = SRC.indexOf('`/order-success?${params.toString()}`');
-    expect(sessionStorageIdx).toBeGreaterThan(-1);
-    expect(locationIdx).toBeGreaterThan(sessionStorageIdx);
-  });
-});

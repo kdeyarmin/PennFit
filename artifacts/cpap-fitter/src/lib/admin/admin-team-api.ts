@@ -32,6 +32,15 @@ export interface TeamMember {
   revokedAt: string | null;
   revokedBy: string | null;
   lastLoginAt: string | null;
+  /** When the background invite-expiry notifier emailed this
+   *  invitee a heads-up that their admin-typed temporary password
+   *  is about to expire. Null when no heads-up was sent (or the
+   *  row isn't a pending admin-typed invite). */
+  expiryReminderSentAt: string | null;
+  /** When the notifier emailed this invitee that their temporary
+   *  password has expired and they need to ask for a re-invite.
+   *  Null when no such email was sent. */
+  expiredNoticeSentAt: string | null;
 }
 
 interface InviteResponse {

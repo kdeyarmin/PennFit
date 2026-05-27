@@ -12,7 +12,6 @@
 import React, { useEffect, useState } from "react";
 import {
   ShieldCheck,
-  MapPin,
   RefreshCw,
   PackageCheck,
   Star,
@@ -51,11 +50,6 @@ export function TrustSignalStrip() {
     label: React.ReactNode;
     testid: string;
   }> = [
-    {
-      Icon: MapPin,
-      label: "Local Penn DME team",
-      testid: "trust-local",
-    },
     {
       Icon: ShieldCheck,
       label: "Medicare & most major plans",

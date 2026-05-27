@@ -108,6 +108,7 @@ fi
 
 need_arch=0
 need_resupply_prefix=0
+ts_files=()
 
 while IFS= read -r file; do
   [[ -z "$file" ]] && continue
@@ -129,9 +130,28 @@ while IFS= read -r file; do
       need_resupply_prefix=1
       ;;
   esac
+  # TS/TSX syntax check (Task #81): collect any staged TS/TSX file
+  # under a source tree that feeds the build (artifacts/, lib/,
+  # scripts/src/). The dispatch below runs them through
+  # `scripts/check-ts-syntax.mjs`, which catches malformed React
+  # Query hook calls and any other unbalanced brace/paren/bracket
+  # bug at commit time instead of at workflow build time, where
+  # TS1136 surfaces as a cryptic "Unexpected token". Excludes
+  # generated .d.ts files; the script itself filters extensions
+  # defensively too. We use a plain prefix match so deeply-nested
+  # paths (any depth under artifacts/<artifact>/src/...) are picked
+  # up uniformly.
+  case "$file" in
+    artifacts/*|lib/*|scripts/src/*)
+      case "$file" in
+        *.d.ts) ;;
+        *.ts|*.tsx|*.mts|*.cts) ts_files+=("$file") ;;
+      esac
+      ;;
+  esac
 done <<< "$staged"
 
-if [[ $need_arch -eq 0 && $need_resupply_prefix -eq 0 ]]; then
+if [[ $need_arch -eq 0 && $need_resupply_prefix -eq 0 && ${#ts_files[@]} -eq 0 ]]; then
   exit 0
 fi
 
@@ -154,6 +174,17 @@ run_checks() {
   if [[ $need_resupply_prefix -eq 1 ]]; then
     printf '[pre-commit] Running resupply migration-prefix moratorium check…\n' >&2
     if ! bash "$REPO_ROOT/scripts/check-resupply-migration-prefix.sh"; then
+      f=1
+    fi
+  fi
+  # TS/TSX syntax check (Task #81). Runs LAST because, although it's
+  # already fast (~10ms per file via ts.createSourceFile, no type
+  # check), the failure message points at line/col inside the
+  # developer's source — easiest signal to act on, so it's fine for
+  # it to sit at the bottom of multi-failure output.
+  if [[ ${#ts_files[@]} -gt 0 ]]; then
+    printf '[pre-commit] Running TS/TSX syntax check on %d staged file(s)…\n' "${#ts_files[@]}" >&2
+    if ! node "$REPO_ROOT/scripts/check-ts-syntax.mjs" "${ts_files[@]}"; then
       f=1
     fi
   fi

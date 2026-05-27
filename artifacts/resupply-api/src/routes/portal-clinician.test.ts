@@ -19,7 +19,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import express, { type Express } from "express";
 import request from "supertest";
-import type { VerifyClinicianShareTokenResult } from "../lib/clinician-share-token";
 
 import {
   installSupabaseMock,
@@ -46,11 +45,12 @@ vi.mock("@workspace/resupply-audit", () => ({
 
 // ── verifyClinicianShareToken mock ───────────────────────────────────
 // Default: return valid with a known shareRowId. Override per test.
-// Annotating the mock with VerifyClinicianShareTokenResult (the
-// source-of-truth union) keeps both the valid and invalid branches
-// type-correct without duplicating the shape here.
 const verifyClinicianShareTokenMock = vi.hoisted(() =>
-  vi.fn<(token: string) => VerifyClinicianShareTokenResult>(() => ({
+  vi.fn<
+    (token: string) =>
+      | { valid: true; shareRowId: string }
+      | { valid: false }
+  >(() => ({
     valid: true,
     shareRowId: "share-row-uuid-1111",
   })),

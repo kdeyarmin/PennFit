@@ -5,7 +5,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "wouter";
 
-import { AuthError } from "@workspace/resupply-auth-react";
+import { authErrorMessage } from "@workspace/resupply-auth-react";
 
 import { authHooks } from "@/lib/auth-hooks";
 import { AuthLayout } from "@/components/auth-layout";
@@ -59,9 +59,11 @@ export function VerifyEmailPage() {
         onError: (err) => {
           setStatus("error");
           setErrorMessage(
-            err instanceof AuthError
-              ? err.userMessage
-              : "Could not verify this link.",
+            authErrorMessage(err, {
+              action: "verify your email",
+              subject: "link",
+              fallback: "Could not verify this link.",
+            }),
           );
         },
       },

@@ -12,7 +12,7 @@
 import { useState, type FormEvent } from "react";
 import { Link } from "wouter";
 
-import { AuthError } from "@workspace/resupply-auth-react";
+import { authErrorMessage } from "@workspace/resupply-auth-react";
 
 import { authHooks } from "@/lib/auth-hooks";
 import { AuthLayout } from "@/components/auth-layout";
@@ -50,9 +50,11 @@ export function SignUpPage() {
         onSuccess: () => setSubmitted(true),
         onError: (err) => {
           setSubmitError(
-            err instanceof AuthError
-              ? err.userMessage
-              : "Could not create the account.",
+            authErrorMessage(err, {
+              action: "create your account",
+              subject: "email or password",
+              fallback: "Could not create the account.",
+            }),
           );
         },
       },

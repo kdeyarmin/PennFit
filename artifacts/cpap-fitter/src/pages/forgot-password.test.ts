@@ -1,11 +1,10 @@
-// Tests for pages/forgot-password.tsx (storefront variant) — the
-// onSettled simplification in this PR.
+// Tests for pages/forgot-password.tsx (storefront variant).
 //
-// PR changes:
-//   * Uses `onSettled` instead of separate `onSuccess` / `onError` branches
-//   * Removed `submitError` state (no 5xx-specific error copy)
-//   * Removed `AuthError` import
-//   * Removed error UI element
+// The no-enumeration contract is preserved: success and unknown-email
+// both flow through onSuccess to the success view, and any non-5xx
+// error also folds into the success view. Only a 5xx surfaces a
+// visible "credentials store unreachable" notice, and that copy now
+// comes from the shared `serverUnavailableMessage` helper.
 
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -14,26 +13,62 @@ import { describe, expect, it } from "vitest";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SRC = readFileSync(path.join(__dirname, "forgot-password.tsx"), "utf8");
+// The 5xx branch lives in a sibling .ts helper module so it can be
+// unit-tested in the node vitest env without dragging JSX through
+// the import graph. Source-grep both files together.
+const HELPERS_SRC = readFileSync(
+  path.join(__dirname, "forgot-password.helpers.ts"),
+  "utf8",
+);
+const COMBINED = SRC + "\n" + HELPERS_SRC;
 
-// ---------------------------------------------------------------------------
-// onSettled — new always-render-success contract
-// ---------------------------------------------------------------------------
+describe("pages/forgot-password — uses shared serverUnavailableMessage helper", () => {
+  it("imports serverUnavailableMessage from @workspace/resupply-auth-react", () => {
+    expect(HELPERS_SRC).toMatch(
+      /import\s*\{[^}]*serverUnavailableMessage[^}]*\}\s*from\s*"@workspace\/resupply-auth-react"/,
+    );
+  });
 
-// ---------------------------------------------------------------------------
-// Removed: submitError state
-// ---------------------------------------------------------------------------
+  it("calls serverUnavailableMessage with the forgot-password action/subject", () => {
+    expect(HELPERS_SRC).toContain('action: "send a reset link"');
+    expect(HELPERS_SRC).toContain('subject: "email"');
+  });
 
-// ---------------------------------------------------------------------------
-// Removed: AuthError import
-// ---------------------------------------------------------------------------
+  it("the page wires its onError through the shared decision helper", () => {
+    // Lock the page to the extracted branch so a future refactor
+    // can't silently inline a divergent 5xx check.
+    expect(SRC).toMatch(
+      /import\s*\{[^}]*decideForgotPasswordErrorOutcome[^}]*\}\s*from\s*"\.\/forgot-password\.helpers"/,
+    );
+    expect(SRC).toContain("decideForgotPasswordErrorOutcome(err)");
+  });
 
-// ---------------------------------------------------------------------------
-// Removed: 5xx-specific message
-// ---------------------------------------------------------------------------
+  it("does NOT inline the credentials-store copy", () => {
+    expect(COMBINED).not.toContain("credentials store");
+  });
 
-// ---------------------------------------------------------------------------
-// Regression: core form behaviour retained
-// ---------------------------------------------------------------------------
+  it("does NOT reference status.pennpaps.com directly", () => {
+    expect(COMBINED).not.toContain("status.pennpaps.com");
+  });
+});
+
+describe("pages/forgot-password — no-enumeration contract", () => {
+  it("flips to the success view on onSuccess", () => {
+    expect(SRC).toContain("onSuccess: () => setDone(true)");
+  });
+
+  it("still branches on err.status >= 500 for the visible error", () => {
+    expect(HELPERS_SRC).toContain("err.status >= 500");
+  });
+
+  it("folds any non-5xx error back into the success view", () => {
+    // The onError handler must call setDone(true) after handling
+    // the 5xx branch, so unknown-email and other failures still
+    // surface as the generic "check your inbox" success state.
+    expect(SRC).toContain("setDone(true)");
+  });
+});
+
 describe("pages/forgot-password — core form behaviour retained", () => {
   it("still has done state to render the success view", () => {
     expect(SRC).toContain("setDone(true)");

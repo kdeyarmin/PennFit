@@ -35,12 +35,6 @@ export function Home() {
           as a deliberate hero card rather than a full-bleed band. */}
       <section className="hero-card w-full mb-14 md:mb-20 animate-shimmer-in">
         <div className="relative z-10 text-center max-w-5xl mx-auto px-6 py-14 md:px-12 md:py-24">
-          <div className="flex flex-wrap items-center justify-center gap-2 mb-7 md:mb-9">
-            <span className="status-pill status-pill-gold status-pill-on-dark">
-              Local Penn DME team
-            </span>
-          </div>
-
           <h1 className="text-display text-4xl sm:text-5xl md:text-6xl font-bold tracking-tight mb-6 md:mb-7 leading-[1.08] sm:leading-[1.05] text-white">
             Your CPAP, made simple.
             <br />

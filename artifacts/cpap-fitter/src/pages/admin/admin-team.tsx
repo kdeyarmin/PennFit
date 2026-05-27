@@ -165,18 +165,54 @@ function Section({
   );
 }
 
-/**
- * Render a team member row showing status, metadata, and management controls.
- *
- * Renders the member's status chip, display name/email, role label, invite/audit timestamps, and optional notes.
- * Provides action controls appropriate to the member's state: resend invite (pending), role selection and promote (active, non-admin),
- * demote (active admin), and revoke access (active or pending). Actions that change server state show confirmation dialogs
- * where applicable and surface any mutation error messages. Successful mutations invalidate the ["admin-team"] query.
- *
- * @param member - The team member to render.
- * @param subtle - When true, use subdued styling for the row.
- * @returns A list item JSX element representing the member row with interactive controls.
- */
+/** Human-friendly "N days ago" / "today" / "yesterday" for a stamp.
+ *  Falls back to a locale date if the stamp is older than ~30 days
+ *  so the badge doesn't read awkwardly for stale invites. */
+function relativeDaysAgo(iso: string, now: number = Date.now()): string {
+  const ms = now - new Date(iso).getTime();
+  if (!Number.isFinite(ms) || ms < 0) return "just now";
+  const days = Math.floor(ms / 86_400_000);
+  if (days <= 0) return "today";
+  if (days === 1) return "yesterday";
+  if (days < 30) return `${days} days ago`;
+  return new Date(iso).toLocaleDateString();
+}
+
+/** Shows the invite-expiry notifier stamps on pending invites so
+ *  admins can tell at a glance whether the background sweep has
+ *  already emailed this person about their about-to-expire (or
+ *  already-expired) admin-typed temporary password. Renders nothing
+ *  when no stamps are present — including for active/revoked rows
+ *  where the server returns null. */
+function InviteNotifyBadges({ member }: { member: TeamMember }) {
+  if (!member.expiryReminderSentAt && !member.expiredNoticeSentAt) return null;
+  return (
+    <div
+      className="mt-1 flex flex-wrap gap-1.5"
+      data-testid={`team-member-${member.id}-notify-badges`}
+    >
+      {member.expiredNoticeSentAt && (
+        <span
+          className="inline-flex items-center rounded-full border border-rose-300 bg-rose-50 px-2 py-0.5 text-[11px] font-semibold text-rose-900"
+          title={`Expiry notice emailed ${new Date(member.expiredNoticeSentAt).toLocaleString()}`}
+          data-testid={`team-member-${member.id}-expired-notice`}
+        >
+          Expiry notice emailed {relativeDaysAgo(member.expiredNoticeSentAt)}
+        </span>
+      )}
+      {member.expiryReminderSentAt && !member.expiredNoticeSentAt && (
+        <span
+          className="inline-flex items-center rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-900"
+          title={`Reminder emailed ${new Date(member.expiryReminderSentAt).toLocaleString()}`}
+          data-testid={`team-member-${member.id}-expiry-reminder`}
+        >
+          Reminder emailed {relativeDaysAgo(member.expiryReminderSentAt)}
+        </span>
+      )}
+    </div>
+  );
+}
+
 function MemberRow({
   member,
   subtle,
@@ -274,6 +310,7 @@ function MemberRow({
               </span>
             )}
           </div>
+          <InviteNotifyBadges member={member} />
           {member.notes && (
             <p className="text-xs text-slate-600 mt-2 italic">{member.notes}</p>
           )}

@@ -142,6 +142,21 @@ jobs:
 
     env:
       DATABASE_URL: postgresql://pennfit:pennfit@localhost:5432/pennfit_test
+      # PostgREST sits in front of the same Postgres instance and
+      # serves the resupply / resupply_auth schemas under /rest/v1 so
+      # `@supabase/supabase-js` can talk to it unmodified. The two
+      # integration suites that exercise the live PostgREST filter
+      # chain — `lib/resupply-audit/src/index.integration.test.ts`
+      # and `artifacts/resupply-api/src/worker/jobs/
+      # invite-password-expiry-notify.integration.test.ts` — skip
+      # silently when SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY is
+      # missing, so wiring those vars + a real PostgREST is what
+      # actually flips them from SKIPPED to RUN in this job.
+      SUPABASE_URL: http://127.0.0.1:3001
+      # JWT secret PostgREST validates the Authorization header
+      # against. 64 hex chars (256 bits) — well above PostgREST's
+      # 32-char minimum. Test-only; never reused outside CI.
+      PGRST_JWT_SECRET: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
 
     steps:
       - uses: actions/checkout@v5
@@ -195,6 +210,98 @@ jobs:
           ss -tlnp 2>&1 | head -20 || true
           docker ps --format 'table {{.Names}}\t{{.Status}}' 2>&1 | head -10 || true
           exit 1
+
+      # Apply resupply migrations BEFORE starting PostgREST so the
+      # `resupply` and `resupply_auth` schemas exist when PostgREST
+      # scans the DB on boot (PostgREST caches the schema at startup;
+      # tables created later require a SIGUSR1 to refresh). This is
+      # also what makes the invite-expiry integration test's
+      # `migrationsReady` probe pass — it queries
+      # `resupply_auth.password_credentials.expiry_reminder_sent_at`,
+      # a column added by migration 0143.
+      - name: Apply resupply migrations
+        run: node lib/resupply-db/scripts/migrate.mjs
+
+      # Start PostgREST on :3001 with `server-base-path=/rest/v1`
+      # so `@supabase/supabase-js` (which suffixes `${SUPABASE_URL}/
+      # rest/v1` onto every request) talks to it unmodified. The
+      # container reaches the postgres service via host.docker.internal
+      # (mapped to the runner's host-gateway), which is the published
+      # port of the postgres service container.
+      #
+      # `db-anon-role=pennfit` and `db-schemas=resupply,resupply_auth,
+      # public` match the schemas our worker code queries. Service-
+      # role JWTs (issued below) carry `role: pennfit` so PostgREST
+      # SETs the session role to the real Postgres user that already
+      # owns these schemas — no `service_role` DB role needs to be
+      # provisioned.
+      - name: Start PostgREST
+        run: |
+          docker run -d --name postgrest \
+            --add-host=host.docker.internal:host-gateway \
+            -p 127.0.0.1:3001:3000 \
+            -e PGRST_DB_URI="postgres://pennfit:pennfit@host.docker.internal:5432/pennfit_test" \
+            -e PGRST_DB_SCHEMAS="resupply,resupply_auth,public" \
+            -e PGRST_DB_ANON_ROLE="pennfit" \
+            -e PGRST_JWT_SECRET="$PGRST_JWT_SECRET" \
+            -e PGRST_SERVER_PORT="3000" \
+            -e PGRST_SERVER_HOST="*4" \
+            -e PGRST_OPENAPI_SERVER_PROXY_URI="http://127.0.0.1:3001/rest/v1" \
+            -e PGRST_SERVER_BASE_PATH="/rest/v1" \
+            postgrest/postgrest:v12.2.3
+          # Wait for PostgREST to actually serve requests. The schema
+          # cache load + initial DB connection can take a few seconds
+          # on a cold runner; fail fast at 30s if it never comes up.
+          for i in $(seq 1 30); do
+            if curl -fsS "http://127.0.0.1:3001/rest/v1/" > /dev/null 2>&1; then
+              echo "postgrest is up after ${i}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "postgrest did not respond on :3001 within 30s" >&2
+          docker logs postgrest 2>&1 | tail -50 || true
+          exit 1
+
+      # Mint a service-role JWT signed with PGRST_JWT_SECRET so
+      # `@supabase/supabase-js` (which sends it as both `apikey` and
+      # `Authorization: Bearer …`) can authenticate against the
+      # PostgREST instance above. `role: pennfit` makes PostgREST
+      # SET ROLE to the real owner of our schemas. We export
+      # SUPABASE_SERVICE_ROLE_KEY via $GITHUB_ENV so subsequent
+      # steps (the test runner) see it.
+      - name: Mint Supabase service-role JWT
+        run: |
+          # CommonJS one-liner inside SINGLE-quoted bash so neither
+          # `$` (end-of-regex anchor) nor `\` (regex escapes) need
+          # any bash-level escaping — the script reaches node
+          # byte-for-byte. The secret comes through process.env so
+          # it never appears in argv. HS256 signed with
+          # PGRST_JWT_SECRET; `role: pennfit` makes PostgREST
+          # `SET LOCAL ROLE pennfit` (the schema owner) for the
+          # request, so the integration tests' SELECTs go through.
+          node -e '
+            const crypto = require("node:crypto");
+            const fs = require("node:fs");
+            const b64u = (b) => Buffer.from(b).toString("base64")
+              .replace(/=+$/, "").replace(/\+/g, "-").replace(/\//g, "_");
+            const header = b64u(JSON.stringify({ alg: "HS256", typ: "JWT" }));
+            const payload = b64u(JSON.stringify({
+              role: "pennfit",
+              iss: "supabase-ci",
+              iat: Math.floor(Date.now()/1000),
+              exp: Math.floor(Date.now()/1000) + 60*60*24,
+            }));
+            const sig = crypto.createHmac("sha256", process.env.PGRST_JWT_SECRET)
+              .update(header + "." + payload).digest();
+            const jwt = header + "." + payload + "." + b64u(sig);
+            fs.appendFileSync(process.env.GITHUB_ENV,
+              "SUPABASE_SERVICE_ROLE_KEY=" + jwt + "\n");
+            // Sanity log: print only the header (never the signature)
+            // so a malformed JWT is obvious from the CI logs.
+            console.log("minted JWT header:",
+              Buffer.from(header, "base64").toString());
+          '
 
       # Run the test suite. Show vitest output verbosely so a single
       # failing test name is searchable in the CI logs without having

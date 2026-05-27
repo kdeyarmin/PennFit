@@ -23,6 +23,15 @@ const SRC = readFileSync(path.join(__dirname, "team.ts"), "utf8");
 // inviteBody Zod schema — removed fields
 // ---------------------------------------------------------------------------
 describe("team.ts inviteBody — initialPassword removed from schema (this PR)", () => {
+  it("does NOT include initialPassword in inviteBody schema", () => {
+    expect(SRC).not.toContain("initialPassword");
+  });
+
+  it("does NOT reference a password field in the invite schema", () => {
+    // The old schema had `initialPassword: z.string()…`
+    expect(SRC).not.toMatch(/initialPassword\s*:/);
+  });
+
   it("inviteBody is declared as a strict schema (no extra fields allowed)", () => {
     expect(SRC).toContain(".strict()");
   });
@@ -48,6 +57,10 @@ describe("team.ts inviteBody — initialPassword removed from schema (this PR)",
 // Response payloads — signInReady removed
 // ---------------------------------------------------------------------------
 describe("team.ts invite response — signInReady removed (this PR)", () => {
+  it("does NOT include signInReady in any response payload", () => {
+    expect(SRC).not.toContain("signInReady");
+  });
+
   it("invite response includes emailSent field", () => {
     expect(SRC).toContain("emailSent: invite.emailSent");
   });

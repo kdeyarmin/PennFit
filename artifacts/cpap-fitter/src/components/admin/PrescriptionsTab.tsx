@@ -260,7 +260,16 @@ export function PrescriptionsTab({
           Clinical fields are immutable after creation — to edit, add a new
           one and mark the old one expired.
         </p>
-        <Button onClick={() => setShowAdd(true)}>+ Add prescription</Button>
+        <div className="flex items-center gap-2">
+          <a
+            href={`/admin/patients/${encodeURIComponent(patientId)}/prescription-requests`}
+            className="inline-flex items-center text-xs font-semibold text-[hsl(var(--penn-navy))] hover:underline"
+            title="Open the pre-populated faxable Rx packets surface"
+          >
+            Rx packets &amp; faxing →
+          </a>
+          <Button onClick={() => setShowAdd(true)}>+ Add prescription</Button>
+        </div>
       </div>
       {actionError && (
         <p className="text-sm" style={{ color: "#b91c1c" }} role="alert">

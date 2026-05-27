@@ -22,10 +22,52 @@ const SRC = readFileSync(path.join(__dirname, "admin-team.tsx"), "utf8");
 // ---------------------------------------------------------------------------
 // Removed: initial-password / set-password UI
 // ---------------------------------------------------------------------------
+describe("admin-team InviteCard — set-password mode removed", () => {
+  it("does NOT contain setPasswordMode state", () => {
+    expect(SRC).not.toContain("setPasswordMode");
+  });
+
+  it("does NOT contain setInitialPassword state", () => {
+    expect(SRC).not.toContain("setInitialPassword");
+  });
+
+  it("does NOT render the set-password checkbox toggle", () => {
+    expect(SRC).not.toContain("team-invite-set-password-toggle");
+  });
+
+  it("does NOT render the initial-password input field", () => {
+    expect(SRC).not.toContain("team-invite-initial-password");
+  });
+
+  it("does NOT contain initialPasswordTooShort validation", () => {
+    expect(SRC).not.toContain("initialPasswordTooShort");
+  });
+
+  it("does NOT contain the 'Set their password for them' label copy", () => {
+    expect(SRC).not.toContain("Set their password for them");
+  });
+
+  it("does NOT pass initialPassword to inviteMember", () => {
+    expect(SRC).not.toContain("initialPassword");
+  });
+});
 
 // ---------------------------------------------------------------------------
 // Removed: success message
 // ---------------------------------------------------------------------------
+describe("admin-team InviteCard — success message removed", () => {
+  it("does NOT contain setSuccess state", () => {
+    expect(SRC).not.toContain("setSuccess");
+  });
+
+  it("does NOT render team-invite-success testid", () => {
+    expect(SRC).not.toContain("team-invite-success");
+  });
+
+  it("does NOT contain signInReady branch in onSuccess handler", () => {
+    expect(SRC).not.toContain("signInReady");
+  });
+});
 
 // ---------------------------------------------------------------------------
 // Submit button text — always "Send invitation"
@@ -35,11 +77,25 @@ describe("admin-team InviteCard — submit button text", () => {
     expect(SRC).toContain('"Send invitation"');
   });
 
+  it("does NOT show 'Create account' as an alternative button label", () => {
+    expect(SRC).not.toContain('"Create account"');
+  });
 });
 
 // ---------------------------------------------------------------------------
 // Simplified disabled logic
 // ---------------------------------------------------------------------------
+describe("admin-team InviteCard — simplified disabled logic", () => {
+  it("disables submit only while pending or email is empty", () => {
+    // The new code: disabled={invite.isPending || !email}
+    expect(SRC).toContain("disabled={invite.isPending || !email}");
+  });
+
+  it("does NOT block submit based on password length", () => {
+    // Old code had: (setPasswordMode && initialPassword.length < 12)
+    expect(SRC).not.toContain("initialPassword.length < 12");
+  });
+});
 
 // ---------------------------------------------------------------------------
 // onSuccess handler — simplified
@@ -61,11 +117,23 @@ describe("admin-team InviteCard — simplified onSuccess handler", () => {
     expect(SRC).toContain("We couldn't send the invitation email automatically");
   });
 
+  it("does NOT contain the old success message mentioning 'Invitation email sent'", () => {
+    expect(SRC).not.toContain("Invitation email sent to");
+  });
 });
 
 // ---------------------------------------------------------------------------
 // Description copy updated
 // ---------------------------------------------------------------------------
+describe("admin-team InviteCard — updated description copy", () => {
+  it("shows the simplified description about email invite only", () => {
+    expect(SRC).toContain("They'll get a sign-up link by email.");
+  });
+
+  it("does NOT contain the old 'or set a password yourself' description", () => {
+    expect(SRC).not.toContain("or set a password yourself");
+  });
+});
 
 // ---------------------------------------------------------------------------
 // Regression: core invite fields still present
@@ -93,119 +161,5 @@ describe("admin-team InviteCard — core invite fields retained", () => {
     expect(SRC).toContain("invite.mutate(");
     expect(SRC).toContain("email,");
     expect(SRC).toContain("role,");
-  });
-});
-
-// ---------------------------------------------------------------------------
-// useConfirmDialog — MemberRow confirmation dialogs
-// (PR change: replaced window.confirm with useConfirmDialog hook)
-// ---------------------------------------------------------------------------
-
-describe("admin-team MemberRow — useConfirmDialog import", () => {
-  it("imports useConfirmDialog from @/hooks/use-confirm-dialog", () => {
-    expect(SRC).toContain('from "@/hooks/use-confirm-dialog"');
-    expect(SRC).toContain("useConfirmDialog");
-  });
-
-  it("initialises [confirm, ConfirmDialogEl] inside MemberRow", () => {
-    expect(SRC).toContain(
-      "const [confirm, ConfirmDialogEl] = useConfirmDialog();",
-    );
-  });
-});
-
-describe("admin-team MemberRow — promote to admin confirm", () => {
-  it("promote onClick handler is async", () => {
-    // All three handlers (promote, demote, revoke) are async.
-    expect(SRC).toContain("onClick={async () => {");
-  });
-
-  it("awaits confirm() before promoting (async guard pattern)", () => {
-    expect(SRC).toMatch(/!\(await confirm\(\{[\s\S]{0,600}return;/);
-  });
-
-  it('uses title "Promote to admin?"', () => {
-    expect(SRC).toContain('title: "Promote to admin?"');
-  });
-
-  it("description mentions granting admin privileges", () => {
-    expect(SRC).toContain(
-      "Grant admin privileges to",
-    );
-  });
-
-  it('uses confirmLabel "Promote"', () => {
-    expect(SRC).toContain('confirmLabel: "Promote"');
-  });
-
-  it("promote does NOT use destructive styling (reversible by demote)", () => {
-    // The promote dialog is neutral — the admin can demote later.
-    // Look for the promote-specific block.
-    expect(SRC).toContain('title: "Promote to admin?"');
-    // Confirm destructive is NOT in the promote block (it appears only
-    // in the revoke block).
-    const promoteBlock =
-      SRC.match(
-        /title: "Promote to admin\?"[\s\S]{0,300}?confirmLabel: "Promote"/,
-      )?.[0] ?? "";
-    expect(promoteBlock).not.toContain("destructive: true");
-  });
-
-  it("still calls promote.mutate() on confirmation", () => {
-    expect(SRC).toContain("promote.mutate();");
-  });
-});
-
-describe("admin-team MemberRow — demote to CSR confirm", () => {
-  it('uses title "Demote to CSR?"', () => {
-    expect(SRC).toContain('title: "Demote to CSR?"');
-  });
-
-  it("description mentions losing admin privileges", () => {
-    expect(SRC).toContain("They will lose admin privileges.");
-  });
-
-  it('uses confirmLabel "Demote"', () => {
-    expect(SRC).toContain('confirmLabel: "Demote"');
-  });
-
-  it("still calls demote.mutate() on confirmation", () => {
-    expect(SRC).toContain("demote.mutate();");
-  });
-});
-
-describe("admin-team MemberRow — revoke access confirm", () => {
-  it('uses title "Revoke access?"', () => {
-    expect(SRC).toContain('title: "Revoke access?"');
-  });
-
-  it("description warns the session ends immediately", () => {
-    expect(SRC).toContain(
-      "This will immediately end their session and prevent future sign-in.",
-    );
-  });
-
-  it('uses confirmLabel "Revoke access"', () => {
-    expect(SRC).toContain('confirmLabel: "Revoke access"');
-  });
-
-  it("marks the revoke action as destructive:true", () => {
-    expect(SRC).toContain("destructive: true");
-  });
-
-  it("still calls revoke.mutate() on confirmation", () => {
-    expect(SRC).toContain("revoke.mutate();");
-  });
-});
-
-describe("admin-team MemberRow — ConfirmDialogEl in JSX", () => {
-  it("renders {ConfirmDialogEl} inside MemberRow return", () => {
-    expect(SRC).toContain("{ConfirmDialogEl}");
-  });
-});
-
-describe("admin-team — window.confirm removed", () => {
-  it("does not use window.confirm anywhere in the file", () => {
-    expect(SRC).not.toContain("window.confirm");
   });
 });

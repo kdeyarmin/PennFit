@@ -167,16 +167,19 @@ router.get("/admin/team", requireAdminOnly, async (_req, res) => {
     .order("invited_at", { ascending: false });
   if (error) throw error;
 
-  const verifiedByAuthId = await fetchVerifiedAtMap(
-    supabase,
-    (rows ?? [])
-      .map((r) => r.auth_user_id)
-      .filter((v): v is string => v !== null),
-  );
+  const authIds = (rows ?? [])
+    .map((r) => r.auth_user_id)
+    .filter((v): v is string => v !== null);
+  const verifiedByAuthId = await fetchVerifiedAtMap(supabase, authIds);
+  const credentialByAuthId = await fetchInviteCredentialMap(supabase, authIds);
 
   res.json({
     members: (rows ?? []).map((r) =>
-      serialize(r, verifiedByAuthId.get(r.auth_user_id ?? "") ?? null),
+      serialize(
+        r,
+        verifiedByAuthId.get(r.auth_user_id ?? "") ?? null,
+        credentialByAuthId.get(r.auth_user_id ?? "") ?? null,
+      ),
     ),
   });
 });
@@ -608,8 +611,36 @@ type AdminListRow = Pick<
   | "last_login_at"
 >;
 
-function serialize(row: AdminListRow, emailVerifiedAt: string | null) {
+interface InviteCredentialStamps {
+  setByAdminAt: string | null;
+  expiryReminderSentAt: string | null;
+  expiredNoticeSentAt: string | null;
+}
+
+function serialize(
+  row: AdminListRow,
+  emailVerifiedAt: string | null,
+  credential: InviteCredentialStamps | null,
+) {
   const status = effectiveStatus(row.status, emailVerifiedAt);
+  // Surface invite-expiry notifier stamps only while the row is
+  // still a pending admin-typed invite. Same predicate the worker
+  // uses (must_change + set_by_admin_at IS NOT NULL is implied by
+  // `setByAdminAt` being present in the map). Stamps that predate
+  // the current `set_by_admin_at` are stale leftovers from a prior
+  // invite and are treated as null so the UI doesn't claim a fresh
+  // re-invite was already notified.
+  const fresh =
+    status === "pending" && credential && credential.setByAdminAt
+      ? credential
+      : null;
+  const setByAdminMs = fresh?.setByAdminAt
+    ? new Date(fresh.setByAdminAt).getTime()
+    : null;
+  const freshStamp = (stamp: string | null): string | null => {
+    if (!stamp || setByAdminMs === null) return null;
+    return new Date(stamp).getTime() >= setByAdminMs ? stamp : null;
+  };
   return {
     id: row.id,
     email: row.email_lower,
@@ -625,6 +656,8 @@ function serialize(row: AdminListRow, emailVerifiedAt: string | null) {
     revokedAt: row.revoked_at,
     revokedBy: row.revoked_by,
     lastLoginAt: row.last_login_at,
+    expiryReminderSentAt: freshStamp(fresh?.expiryReminderSentAt ?? null),
+    expiredNoticeSentAt: freshStamp(fresh?.expiredNoticeSentAt ?? null),
   };
 }
 
@@ -673,7 +706,46 @@ async function serializeWithAuthLookup(
     if (error) throw error;
     emailVerifiedAt = auth?.email_verified_at ?? null;
   }
-  return serialize(row, emailVerifiedAt);
+  const credentialMap = row.auth_user_id
+    ? await fetchInviteCredentialMap(supabase, [row.auth_user_id])
+    : null;
+  const credential = row.auth_user_id
+    ? credentialMap?.get(row.auth_user_id) ?? null
+    : null;
+  return serialize(row, emailVerifiedAt, credential);
+}
+
+/**
+ * Bulk lookup of invite-expiry notifier stamps for a set of auth
+ * user ids. Reads `set_by_admin_at` alongside the two stamp columns
+ * so callers can drop stale stamps that predate the current invite
+ * (see the worker's `invite-password-expiry-notify` for the same
+ * predicate). Missing ids (no password_credentials row yet, or the
+ * user has rotated their password and we cleared `set_by_admin_at`)
+ * resolve to absent — the UI will show no notifier badges for them.
+ */
+async function fetchInviteCredentialMap(
+  supabase: ResupplySupabaseClient,
+  ids: string[],
+): Promise<Map<string, InviteCredentialStamps>> {
+  const result = new Map<string, InviteCredentialStamps>();
+  if (ids.length === 0) return result;
+  const { data, error } = await supabase
+    .schema("resupply_auth")
+    .from("password_credentials")
+    .select(
+      "user_id, set_by_admin_at, expiry_reminder_sent_at, expired_notice_sent_at",
+    )
+    .in("user_id", ids);
+  if (error) throw error;
+  for (const r of data ?? []) {
+    result.set(r.user_id, {
+      setByAdminAt: r.set_by_admin_at,
+      expiryReminderSentAt: r.expiry_reminder_sent_at,
+      expiredNoticeSentAt: r.expired_notice_sent_at,
+    });
+  }
+  return result;
 }
 
 export default router;

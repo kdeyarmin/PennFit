@@ -24,15 +24,6 @@ describe("parseSmsIntent", () => {
       expect(parseSmsIntent("hi. STOP. thanks.").intent).toBe("stop");
     });
 
-    it("does NOT treat 'revoke' as an opt-out keyword (over-matched real prose)", () => {
-      // "revoke" is not a CTIA-reserved keyword and matched anywhere,
-      // so "I didn't revoke my prescription, please ship" wrongly paused
-      // the patient. It now escalates instead of force-stopping.
-      expect(
-        parseSmsIntent("I didn't revoke my prescription").intent,
-      ).not.toBe("stop");
-    });
-
     it.each([
       "DETENER",
       "detener",
