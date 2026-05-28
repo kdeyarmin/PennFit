@@ -109,6 +109,6 @@ describe("matchPatient", () => {
         dob: null,
         lastName: null,
       }),
-    ).rejects.toBeTruthy();
+    ).rejects.toThrow();
   });
 });
