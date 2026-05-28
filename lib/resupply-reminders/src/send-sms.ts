@@ -187,6 +187,22 @@ export async function sendReminderSms(
       throw err;
     }
     if (err instanceof TwilioApiError) {
+      // Best-effort: tear down the orphan conversation row we just
+      // created. The conversations table's `last_message_at = now()`
+      // value would otherwise feed into the 48h quiet-period check
+      // on subsequent ticks and silently suppress the patient's next
+      // reminder even though no message was actually delivered. We
+      // ignore delete errors here so a transient Supabase blip
+      // doesn't make the vendor-error path itself fail.
+      try {
+        await supabase
+          .schema("resupply")
+          .from("conversations")
+          .delete()
+          .eq("id", conversationId);
+      } catch {
+        /* leave the row; ops can reconcile from the audit row below */
+      }
       await safeAuditFromActor({
         action: "messaging.reminder.sent",
         actor,

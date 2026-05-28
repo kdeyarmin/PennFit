@@ -163,6 +163,19 @@ export async function sendReminderEmail(
       throw err;
     }
     if (err instanceof EmailApiError) {
+      // Best-effort: tear down the orphan conversation row we just
+      // created. Otherwise its `last_message_at = now()` feeds the
+      // quiet-period check on later ticks and silently suppresses
+      // the patient's next reminder even though no email was sent.
+      try {
+        await supabase
+          .schema("resupply")
+          .from("conversations")
+          .delete()
+          .eq("id", conversationId);
+      } catch {
+        /* leave the row; ops can reconcile from the audit row below */
+      }
       await safeAuditFromActor({
         action: "messaging.reminder.sent",
         actor,
