@@ -157,10 +157,14 @@ export async function isFeatureEnabled(key: FeatureFlagKey): Promise<boolean> {
       message.includes("ENOTFOUND") ||
       message.includes("EAI_AGAIN") ||
       message.includes("fetch failed");
-    if (isMissingDbConfig) {
+    if (isMissingDbConfig && process.env.NODE_ENV !== "production") {
       // No Supabase configured at all — dev / smoke environment.
       // Fall through to "all features enabled" so the rest of the
-      // app remains usable without a DB.
+      // app remains usable without a DB. In production this branch
+      // shouldn't be reachable (env-check.ts refuses to boot), but
+      // we still fail CLOSED on the off-chance the boot-time gate
+      // was bypassed or regressed — silently running with every
+      // feature enabled is worse than disabled.
       cache.set(key, { value: true, expiresAt: now + CACHE_TTL_MS });
       return true;
     }

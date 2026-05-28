@@ -313,6 +313,17 @@ export async function replyInConversation(
       .eq("id", conversationId);
     if (stampConvErr) throw stampConvErr;
   } catch (dbErr) {
+    // Capture the PostgREST `code` discriminator (e.g. 23505 for a
+    // unique violation, PGRST116 for "row not found", etc.) so the
+    // reconciliation log is actionable. Read `code`/`message`/`name`
+    // defensively off the error object — PostgrestError extends Error
+    // in the pinned @supabase/postgrest-js, but some adapters wrap
+    // errors as plain objects. Deliberately NOT logging `details` or
+    // `hint` — those echo row values and would risk PHI in stderr.
+    const errObj =
+      dbErr && typeof dbErr === "object"
+        ? (dbErr as { message?: unknown; code?: unknown; name?: unknown })
+        : null;
     process.stderr.write(
       JSON.stringify({
         level: 50,
@@ -320,8 +331,19 @@ export async function replyInConversation(
         conversationId,
         vendorRef,
         channel: conv.channel,
-        errName: dbErr instanceof Error ? dbErr.name : "non_error",
-        errMessage: dbErr instanceof Error ? dbErr.message : String(dbErr),
+        errName:
+          dbErr instanceof Error
+            ? dbErr.name
+            : typeof errObj?.name === "string"
+              ? errObj.name
+              : "non_error",
+        errCode: typeof errObj?.code === "string" ? errObj.code : null,
+        errMessage:
+          dbErr instanceof Error
+            ? dbErr.message
+            : typeof errObj?.message === "string"
+              ? errObj.message
+              : String(dbErr),
         msg: "Reply delivered by vendor but messages row not written — manual reconciliation required",
       }) + "\n",
     );

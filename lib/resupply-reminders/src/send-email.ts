@@ -217,14 +217,29 @@ export async function sendReminderEmail(
       .eq("id", conversationId);
     if (stampConvErr) throw stampConvErr;
   } catch (dbErr) {
+    const errObj =
+      dbErr && typeof dbErr === "object"
+        ? (dbErr as { message?: unknown; code?: unknown; name?: unknown })
+        : null;
     process.stderr.write(
       JSON.stringify({
         level: 50,
         event: "send_email_db_write_failed_after_vendor_accept",
         conversationId,
         messageId,
-        errName: dbErr instanceof Error ? dbErr.name : "non_error",
-        errMessage: dbErr instanceof Error ? dbErr.message : String(dbErr),
+        errName:
+          dbErr instanceof Error
+            ? dbErr.name
+            : typeof errObj?.name === "string"
+              ? errObj.name
+              : "non_error",
+        errCode: typeof errObj?.code === "string" ? errObj.code : null,
+        errMessage:
+          dbErr instanceof Error
+            ? dbErr.message
+            : typeof errObj?.message === "string"
+              ? errObj.message
+              : String(dbErr),
         msg: "Email delivered by SendGrid but messages row not written — manual reconciliation required",
       }) + "\n",
     );

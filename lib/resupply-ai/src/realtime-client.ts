@@ -151,6 +151,13 @@ export class RealtimeClient extends EventEmitter {
   private readonly ws: WebSocketLike;
   private sessionUpdateSent = false;
   private closed = false;
+  /**
+   * Last time we emitted a `ws_backpressure` error. Throttles the
+   * emission to once per second during a sustained stall so the
+   * consumer's log dashboard isn't flooded with one warning per
+   * dropped Twilio media frame (50 frames/sec).
+   */
+  private lastBackpressureWarnAt = 0;
 
   constructor(opts: RealtimeClientOptions) {
     super();
@@ -219,10 +226,18 @@ export class RealtimeClient extends EventEmitter {
     const MAX_OUTBOUND_BUFFER_BYTES = 256 * 1024;
     const bufferedAmount = (this.ws as unknown as { bufferedAmount?: number }).bufferedAmount;
     if (typeof bufferedAmount === "number" && bufferedAmount > MAX_OUTBOUND_BUFFER_BYTES) {
-      this.emit("error", {
-        code: "ws_backpressure",
-        message: `OpenAI realtime WS send buffer at ${bufferedAmount} bytes — dropping audio frame`,
-      });
+      // Throttle to at most one error emission per second during a
+      // sustained stall. Twilio sends ~50 media frames/sec, so without
+      // throttling a 5s stall would flood the consumer with 250 warns
+      // that all carry the same actionable signal.
+      const now = Date.now();
+      if (now - this.lastBackpressureWarnAt > 1_000) {
+        this.lastBackpressureWarnAt = now;
+        this.emit("error", {
+          code: "ws_backpressure",
+          message: `OpenAI realtime WS send buffer at ${bufferedAmount} bytes — dropping audio frames`,
+        });
+      }
       return;
     }
     this.sendJson({

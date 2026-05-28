@@ -340,25 +340,45 @@ export async function runLifecycleTouchpoints(
         yearsOnTherapy: currentYear - firstYear,
       });
       if (!r.delivered) {
-        await supabase
+        const { error: rollbackErr } = await supabase
           .schema("resupply")
           .from("patients")
           .update({
             sleep_anniversary_year_sent: row.sleep_anniversary_year_sent,
           })
           .eq("id", row.id);
+        if (rollbackErr) {
+          logger.error(
+            {
+              err: rollbackErr.message,
+              patientId: row.id,
+              event: "lifecycle_touchpoints_anniversary_stamp_rollback_failed",
+            },
+            "lifecycle-touchpoints: anniversary stamp rollback failed — patient may be permanently skipped this year",
+          );
+        }
         stats.anniversaryFailed += 1;
         continue;
       }
       stats.anniversarySent += 1;
     } catch (err) {
-      await supabase
+      const { error: rollbackErr } = await supabase
         .schema("resupply")
         .from("patients")
         .update({
           sleep_anniversary_year_sent: row.sleep_anniversary_year_sent,
         })
         .eq("id", row.id);
+      if (rollbackErr) {
+        logger.error(
+          {
+            err: rollbackErr.message,
+            patientId: row.id,
+            event: "lifecycle_touchpoints_anniversary_stamp_rollback_failed",
+          },
+          "lifecycle-touchpoints: anniversary stamp rollback failed — patient may be permanently skipped this year",
+        );
+      }
       stats.anniversaryFailed += 1;
       logger.error(
         {

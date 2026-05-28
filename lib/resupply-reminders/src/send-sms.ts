@@ -242,15 +242,32 @@ export async function sendReminderSms(
     // Emit as a structured JSON line so pino-style scrapers (and
     // /admin/operations alerting) can match on `event` even though
     // this lib stays dependency-free. CLAUDE.md: messaging libs must
-    // not import pino directly.
+    // not import pino directly. Include PostgREST `code` for
+    // discriminating the DB failure mode without logging
+    // `details`/`hint` (which would echo row values and risk PHI).
+    const errObj =
+      dbErr && typeof dbErr === "object"
+        ? (dbErr as { message?: unknown; code?: unknown; name?: unknown })
+        : null;
     process.stderr.write(
       JSON.stringify({
         level: 50,
         event: "send_sms_db_write_failed_after_vendor_accept",
         conversationId,
         messageSid,
-        errName: dbErr instanceof Error ? dbErr.name : "non_error",
-        errMessage: dbErr instanceof Error ? dbErr.message : String(dbErr),
+        errName:
+          dbErr instanceof Error
+            ? dbErr.name
+            : typeof errObj?.name === "string"
+              ? errObj.name
+              : "non_error",
+        errCode: typeof errObj?.code === "string" ? errObj.code : null,
+        errMessage:
+          dbErr instanceof Error
+            ? dbErr.message
+            : typeof errObj?.message === "string"
+              ? errObj.message
+              : String(dbErr),
         msg: "SMS delivered by Twilio but messages row not written — manual reconciliation required",
       }) + "\n",
     );

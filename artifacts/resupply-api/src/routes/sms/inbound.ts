@@ -814,10 +814,23 @@ router.post("/sms/inbound", signatureMiddleware, smsPhoneLimiter, async (req, re
       sent_at: replyIso,
     });
   if (replyInsertErr) {
+    // Capture PostgREST `code` so ops can discriminate the failure
+    // mode without re-running the request. serializeErr alone returns
+    // `{ name: "unknown" }` for non-Error supabase-js error shapes.
+    // Deliberately NOT logging `details`/`hint` — those echo row
+    // values and risk PHI.
     logger.error(
       {
         event: "sms_outbound_reply_persist_failed",
         err: serializeErr(replyInsertErr),
+        errCode:
+          typeof (replyInsertErr as { code?: unknown }).code === "string"
+            ? (replyInsertErr as { code: string }).code
+            : null,
+        errMessage:
+          typeof (replyInsertErr as { message?: unknown }).message === "string"
+            ? (replyInsertErr as { message: string }).message
+            : null,
         conversation_id: conversationId,
         intent,
       },

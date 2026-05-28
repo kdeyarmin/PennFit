@@ -184,9 +184,29 @@ router.post("/me/payments/checkout-session", async (req, res) => {
     .split(",")
     .map((o) => o.trim())
     .filter(Boolean);
-  for (const o of explicit) allowedOrigins.add(o);
+  // Normalize each entry through `new URL(...).origin` so a trailing
+  // slash, explicit default port (`:443`), or different hostname
+  // casing in RESUPPLY_ALLOWED_ORIGINS still matches the same
+  // normalized origin we compare against below. Without this, a
+  // legitimate preview origin in the env was silently bypassed and
+  // the fallback to SHOP_PUBLIC_BASE_URL redirected preview
+  // checkouts to the production billing page.
+  for (const o of explicit) {
+    try {
+      allowedOrigins.add(new URL(o).origin);
+    } catch {
+      // Skip malformed allowlist entries rather than storing a raw
+      // value that can never match a parsed origin.
+    }
+  }
   const railwayHost = (process.env.RAILWAY_PUBLIC_DOMAIN ?? "").trim();
-  if (railwayHost) allowedOrigins.add(`https://${railwayHost}`);
+  if (railwayHost) {
+    try {
+      allowedOrigins.add(new URL(`https://${railwayHost}`).origin);
+    } catch {
+      /* unreachable for a bare host */
+    }
+  }
   const shopBase = (process.env.SHOP_PUBLIC_BASE_URL ?? "").trim();
   if (shopBase) {
     try {

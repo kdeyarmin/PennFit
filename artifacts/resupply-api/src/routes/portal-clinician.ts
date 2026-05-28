@@ -148,7 +148,15 @@ router.get(
       .select("view_count")
       .limit(1)
       .maybeSingle();
-    const observedCount = bumped?.view_count ?? share.view_count + 1;
+    // On bump failure, fall back to the PERSISTED value (no
+    // optimistic +1). Otherwise the audit row and the response
+    // claim a view we didn't actually record. Only use the +1
+    // fallback when the bump didn't error and the row simply
+    // didn't return a refreshed count (shouldn't happen with
+    // .select("view_count"), but defensive).
+    const observedCount = bumpErr
+      ? share.view_count
+      : bumped?.view_count ?? share.view_count + 1;
     if (bumpErr) {
       logger.warn(
         { err: bumpErr },
@@ -199,8 +207,11 @@ router.get(
         at: o.created_at,
       })),
       // Footer: when this link expires + view count for transparency.
+      // Use observedCount (the actually-persisted value) instead of
+      // an optimistic +1 so the response stays consistent with the
+      // audit row and the stored count when the bump fails.
       expiresAt: share.expires_at,
-      viewCount: share.view_count + 1,
+      viewCount: observedCount,
     });
   },
 );

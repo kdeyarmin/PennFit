@@ -160,18 +160,44 @@ export async function runMaintenanceNudgeSweep(
   // therapy_link or therapy_night (i.e. an active CPAP user). We
   // don't want to badger pre-onboarding leads or returning
   // customers with no therapy stream.
-  // Sort by `id` so cohorts past the BATCH_SIZE cap still rotate
-  // through. Without an order-by, the SQL planner can return an
-  // arbitrary (but stable across runs) set, which under the JS-side
-  // quiet-period check left every patient in the "already nudged"
-  // bucket and the cron silently never reached the next cohort.
-  // We page on `id` rather than `last_nudged_at` to avoid a UPDATE
-  // dependency on the row.
-  const { data: candidates, error } = await supabase
+  // Pre-filter at the DB layer: exclude patients whose most recent
+  // nudge is within the quiet period. Without this, BATCH_SIZE could
+  // be entirely consumed by low-id patients still in their cooldown
+  // window, starving the cohort past id N from EVER being evaluated.
+  // We fetch the still-warm list first (small — only one row per
+  // patient nudged in the last QUIET_PERIOD_MS) and exclude those
+  // ids from the candidate query. The remaining JS-side quiet check
+  // below stays as a defense-in-depth read-after-write guard.
+  const cutoffPre = new Date(Date.now() - QUIET_PERIOD_MS).toISOString();
+  const { data: recentNudges, error: nudgeListErr } = await supabase
+    .schema("resupply")
+    .from("patient_maintenance_nudges")
+    .select("patient_id")
+    .gte("sent_at", cutoffPre);
+  if (nudgeListErr) throw nudgeListErr;
+  const recentlyNudgedIds = new Set<string>();
+  for (const r of recentNudges ?? []) {
+    if (r.patient_id) recentlyNudgedIds.add(r.patient_id);
+  }
+
+  // Build the query in one chain so TypeScript's deep PostgREST type
+  // inference doesn't blow out with TS2589 on the conditional .not()
+  // path. When we have a cap-busting number of recently-nudged
+  // patients we accept some starvation risk over an unbounded URL.
+  // PostgREST's NOT IN serializes the values as `(a,b,c)`.
+  const excludeFilter =
+    recentlyNudgedIds.size > 0 && recentlyNudgedIds.size <= 5000
+      ? `(${Array.from(recentlyNudgedIds).join(",")})`
+      : null;
+  const baseQuery = supabase
     .schema("resupply")
     .from("patients")
     .select("id, email")
-    .not("email", "is", null)
+    .not("email", "is", null);
+  const filteredQuery = excludeFilter
+    ? baseQuery.not("id", "in", excludeFilter)
+    : baseQuery;
+  const { data: candidates, error } = await filteredQuery
     .order("id", { ascending: true })
     .limit(BATCH_SIZE);
   if (error) throw error;
