@@ -320,20 +320,21 @@ async function start(): Promise<void> {
     clearTimeout(workerTimeoutHandle);
   }
 
-  httpServer.listen(port, () => {
-    const voiceConfigured = readVoiceConfigOrNull() !== null;
-    logger.info(
-      {
-        port,
-        voice_configured: voiceConfigured,
-        voice_ws_path: VOICE_WS_PATH,
-      },
-      "resupply-api listening",
-    );
-  });
-  httpServer.on("error", (err) => {
-    logger.error({ err }, "Error listening on port");
-    void flushLogsAndExit(1);
+  await new Promise<void>((resolve, reject) => {
+    httpServer.once("error", reject);
+    httpServer.listen(port, () => {
+      httpServer.off("error", reject);
+      const voiceConfigured = readVoiceConfigOrNull() !== null;
+      logger.info(
+        {
+          port,
+          voice_configured: voiceConfigured,
+          voice_ws_path: VOICE_WS_PATH,
+        },
+        "resupply-api listening",
+      );
+      resolve();
+    });
   });
 }
 
