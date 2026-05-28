@@ -22,6 +22,8 @@ import type {
   TherapyNight,
 } from "@workspace/resupply-integrations";
 
+import { createHash } from "node:crypto";
+
 import type { AirviewConfig } from "./config";
 
 interface OauthToken {
@@ -32,7 +34,17 @@ interface OauthToken {
 let cachedToken: { configKey: string; token: OauthToken } | null = null;
 
 function configKey(config: AirviewConfig): string {
-  return `${config.oauthTokenUrl}|${config.clientId}|${config.dmeId}`;
+  // Include a hash of the client secret so a secret rotation
+  // invalidates any token minted against the previous secret. Hash
+  // (not raw value) keeps the secret out of the in-memory cache key
+  // even though both live in the same process. Hash is keyed —
+  // domain-separating by purpose — so it can never collide with an
+  // unrelated SHA-256 use of the same secret elsewhere.
+  const secretHash = createHash("sha256")
+    .update(`airview-token-cache|${config.clientSecret}`)
+    .digest("hex")
+    .slice(0, 16);
+  return `${config.oauthTokenUrl}|${config.clientId}|${config.dmeId}|${secretHash}`;
 }
 
 class ClientError extends Error {

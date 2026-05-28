@@ -159,6 +159,27 @@ export function createSendgridClient(
 
   return {
     async sendEmail(input) {
+      // Defense-in-depth header-injection guard. SendGrid's v3 JSON API
+      // does not interpret CR/LF as header separators (JSON encoding
+      // escapes them), but a future migration to SMTP / a different
+      // provider would inherit the unsafe values verbatim. Failing
+      // loudly here also catches accidental bugs where caller-supplied
+      // template variables containing newlines leak into the subject.
+      if (/[\r\n]/.test(input.subject)) {
+        throw new EmailConfigError(
+          "Email subject contains a newline character (CR/LF). Header injection guard rejected the send.",
+        );
+      }
+      if (/[\r\n]/.test(input.to)) {
+        throw new EmailConfigError(
+          "Email recipient contains a newline character (CR/LF). Header injection guard rejected the send.",
+        );
+      }
+      if (input.replyTo && /[\r\n]/.test(input.replyTo)) {
+        throw new EmailConfigError(
+          "Email reply-to contains a newline character (CR/LF). Header injection guard rejected the send.",
+        );
+      }
       sg.setApiKey(apiKey);
       try {
         const attachments = input.attachments?.map((a) => ({

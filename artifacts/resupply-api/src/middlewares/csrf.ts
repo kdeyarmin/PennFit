@@ -35,7 +35,7 @@ import {
   SESSION_COOKIE,
 } from "@workspace/resupply-auth";
 
-import { isAdminMutationRequest } from "./admin-path";
+import { isAdminMutationRequest, isShopMutationRequest } from "./admin-path";
 
 function denyCsrf(req: Request, res: Response, reason?: string): void {
   // Best-effort structured log so ops can grep by reason without the
@@ -157,6 +157,52 @@ export const requireCsrfOnAdminMutations: RequestHandler = (
   next: NextFunction,
 ): void => {
   if (!isAdminMutationRequest(req)) {
+    next();
+    return;
+  }
+  const result = checkCsrf(req);
+  if (result.ok) {
+    next();
+    return;
+  }
+  denyCsrf(req, res, result.reason);
+};
+
+/**
+ * App-level conditional CSRF gate for shop-tree mutations.
+ *
+ * Difference from `requireCsrfOnAdminMutations`: the shop tree mixes
+ * anonymous traffic (guest checkout, public product browse) with
+ * signed-in customer traffic (`/shop/me/*`). Anonymous requests carry
+ * no `pf_session` cookie to replay, so requiring CSRF on them would
+ * block legitimate no-cookie callers without any security benefit.
+ * `requireCsrfWhenSession` semantics handle both: pass-through when
+ * no session cookie is present, enforce when one is.
+ *
+ * Mount once at app level *before* the shop routers so any future
+ * `/shop/...` mutation is gated automatically. Both the cpap-fitter
+ * storefront SPA's hand-rolled fetch helpers
+ * (artifacts/cpap-fitter/src/lib/shop-api.ts) and the generated
+ * client (lib/api-client-react/src/storefront/custom-fetch.ts) attach
+ * the `X-PF-CSRF` header on every state-changing fetch, so this is a
+ * server-only addition with no client coordination.
+ *
+ * Per-router `requireCsrf` calls remain — double-checking is harmless
+ * because the middleware short-circuits on success.
+ */
+export const requireCsrfWhenSessionOnShopMutations: RequestHandler = (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): void => {
+  if (!isShopMutationRequest(req)) {
+    next();
+    return;
+  }
+  // No session cookie ⇒ anonymous traffic ⇒ no cookie-replay attack
+  // surface. Pass through so guest checkout / unauthenticated form
+  // submissions still work.
+  if (!readCookie(req, SESSION_COOKIE)) {
     next();
     return;
   }

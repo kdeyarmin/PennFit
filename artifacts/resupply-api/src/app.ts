@@ -19,7 +19,10 @@ import {
   requestContextMiddleware,
 } from "./lib/request-context";
 import { errorHandler } from "./middlewares/errorHandler";
-import { requireCsrfOnAdminMutations } from "./middlewares/csrf";
+import {
+  requireCsrfOnAdminMutations,
+  requireCsrfWhenSessionOnShopMutations,
+} from "./middlewares/csrf";
 import { adminMutationLooseLimit } from "./middlewares/rate-limit";
 import { securityHeaders } from "./middlewares/securityHeaders";
 import { stripeWebhookHandler } from "./lib/stripe/webhook-handler";
@@ -333,6 +336,17 @@ app.use(
 // — double-checking is harmless and keeps the per-route contracts
 // self-documenting.
 app.use(requireCsrfOnAdminMutations);
+
+// Same posture for the shop tree (`/api/shop/*` and
+// `/resupply-api/shop/*`). Anonymous traffic (guest checkout, public
+// product browse) passes through; signed-in customers must carry the
+// `X-PF-CSRF` double-submit header. Closes the gap surfaced by the
+// 2026-05-28 review: state-changing routes like `/shop/checkout`,
+// `/shop/me/quick-checkout`, `/shop/me/cart-snapshot`, and the rest
+// of `/shop/me/*` accept cookie-based session auth but had no CSRF
+// gate, leaving signed-in customers exposed to cross-origin forgery
+// on every mutation.
+app.use(requireCsrfWhenSessionOnShopMutations);
 
 // Defense-in-depth IP-keyed loose rate limit on admin-tree
 // mutations. Catches the gap surfaced by docs/app-review-2026-05-13.md

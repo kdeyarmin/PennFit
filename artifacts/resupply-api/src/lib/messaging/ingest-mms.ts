@@ -277,6 +277,7 @@ async function downloadOneMedia(
   twilioAccountSid: string,
   twilioAuthToken: string,
   logger: Logger,
+  outerSignal?: AbortSignal,
 ): Promise<{
   bytes: Uint8Array;
   contentType: string;
@@ -317,6 +318,18 @@ async function downloadOneMedia(
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), PER_MEDIA_TIMEOUT_MS);
+  // Propagate the outer (budget-level) abort: if the overall ingest
+  // budget blows, the caller signals here so we tear down the fetch
+  // instead of leaking the connection + Twilio body stream until the
+  // GC catches up. Already-aborted signals trigger immediately.
+  const onOuterAbort = () => controller.abort();
+  if (outerSignal) {
+    if (outerSignal.aborted) {
+      controller.abort();
+    } else {
+      outerSignal.addEventListener("abort", onOuterAbort, { once: true });
+    }
+  }
   try {
     // Twilio media URL responds with a 307 redirect to a temporary
     // signed URL on Twilio's CDN that does NOT require auth. Fetch
@@ -446,6 +459,7 @@ async function downloadOneMedia(
     return null;
   } finally {
     clearTimeout(timer);
+    if (outerSignal) outerSignal.removeEventListener("abort", onOuterAbort);
   }
 }
 
@@ -704,6 +718,12 @@ export async function ingestInboundMmsMedia(
 
   type Outcome = "succeeded" | "rejected" | "errored";
 
+  // Outer abort controller — fires when the wall-clock budget blows,
+  // signalling downloadOneMedia (and through it, the underlying
+  // fetch) to tear down so a stalled Twilio CDN response doesn't
+  // leak its connection past the webhook response.
+  const budgetController = new AbortController();
+
   async function processOne(
     slot: MediaSlot,
     _ordinal: number,
@@ -713,6 +733,7 @@ export async function ingestInboundMmsMedia(
       input.twilioAccountSid,
       input.twilioAuthToken,
       logger,
+      budgetController.signal,
     );
     if (!downloaded) return "rejected";
     // Hand off to the shared validate→upload→insert tail. The MMS
@@ -751,12 +772,14 @@ export async function ingestInboundMmsMedia(
   ]);
 
   if (settled === BUDGET_SENTINEL) {
-    // Overall budget blew. We can't actually cancel the in-flight
-    // fetches (no AbortSignal plumbed at this scope), but we MUST
-    // return so the webhook handler can answer Twilio in time. The
-    // background tasks either finish quietly (their DB insert
-    // lands a few hundred ms late, harmless) or get GC'd if the
-    // process restarts. Count every slot as errored for the audit.
+    // Overall budget blew. Signal every still-running task to abort
+    // so its fetch tears down the Twilio CDN connection instead of
+    // sitting open until GC. We still have to return synchronously
+    // so the webhook handler can answer Twilio in time; the aborted
+    // tasks resolve in the background as "rejected" (downloadOneMedia
+    // catches the AbortError and returns null) and the GC reclaims
+    // them. Count every slot as errored for the audit.
+    budgetController.abort();
     logger.warn(
       {
         budget_ms: OVERALL_BUDGET_MS,

@@ -130,11 +130,9 @@ describe("home — hero CTA buttons", () => {
   it("primary 'Get fitted' button does NOT carry the btn-gold-glow class", () => {
     // btn-gold-glow was designed for the dark navy card; on the light card
     // it is no longer needed.
-    const fitBtnMatch = SRC.match(
-      /data-testid="home-cta-fit"[\s\S]*?onClick/,
-    );
-    // Check the src does not contain btn-gold-glow near the fit button.
-    // A broader assertion is fine here: the class should not appear anywhere.
+    // (The match below would have anchored a narrower assertion, but a
+    // file-wide grep is sufficient and matches the sibling 'Shop' test
+    // below; keep the broader form for symmetry.)
     expect(SRC).not.toContain("btn-gold-glow");
   });
 

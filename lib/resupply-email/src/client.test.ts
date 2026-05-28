@@ -214,4 +214,76 @@ describe("createSendgridClient", () => {
     });
     expect(result.messageId).toBe("msg-array");
   });
+
+  // ── Header-injection guard ───────────────────────────────────────
+  describe("CR/LF injection guard", () => {
+    function client() {
+      process.env.SENDGRID_API_KEY = "SG.xxx";
+      process.env.SENDGRID_FROM_EMAIL = "no-reply@penn.example";
+      const send = vi
+        .fn()
+        .mockResolvedValue([
+          { statusCode: 202, headers: { "x-message-id": "ok" } },
+          undefined,
+        ]);
+      return {
+        send,
+        client: createSendgridClient({ sgFactory: () => fakeSdk(send) }),
+      };
+    }
+
+    it.each([
+      ["LF in subject", { field: "subject", value: "Hello\nBcc: evil@x.com" }],
+      ["CR in subject", { field: "subject", value: "Hello\rBcc: evil@x.com" }],
+      ["CRLF in subject", { field: "subject", value: "Hello\r\nX-foo: bar" }],
+    ])("rejects %s", async (_name, { field, value }) => {
+      const { client: c, send } = client();
+      const payload = {
+        to: "p@e.com",
+        subject: field === "subject" ? value : "ok",
+        html: "h",
+        text: "t",
+      };
+      await expect(c.sendEmail(payload)).rejects.toThrow(EmailConfigError);
+      expect(send).not.toHaveBeenCalled();
+    });
+
+    it("rejects LF in `to`", async () => {
+      const { client: c, send } = client();
+      await expect(
+        c.sendEmail({
+          to: "p@e.com\nBcc: evil@x.com",
+          subject: "ok",
+          html: "h",
+          text: "t",
+        }),
+      ).rejects.toThrow(EmailConfigError);
+      expect(send).not.toHaveBeenCalled();
+    });
+
+    it("rejects LF in `replyTo`", async () => {
+      const { client: c, send } = client();
+      await expect(
+        c.sendEmail({
+          to: "p@e.com",
+          subject: "ok",
+          html: "h",
+          text: "t",
+          replyTo: "ops@e.com\nBcc: evil@x.com",
+        }),
+      ).rejects.toThrow(EmailConfigError);
+      expect(send).not.toHaveBeenCalled();
+    });
+
+    it("does not reject a clean subject", async () => {
+      const { client: c, send } = client();
+      await c.sendEmail({
+        to: "p@e.com",
+        subject: "Refill reminder · order #1234",
+        html: "h",
+        text: "t",
+      });
+      expect(send).toHaveBeenCalledTimes(1);
+    });
+  });
 });

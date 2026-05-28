@@ -19,6 +19,7 @@ import {
   requireCsrf,
   requireCsrfOnAdminMutations,
   requireCsrfWhenSession,
+  requireCsrfWhenSessionOnShopMutations,
 } from "./csrf";
 
 interface FakeRes {
@@ -366,6 +367,131 @@ describe("requireCsrfOnAdminMutations", () => {
     );
     expect(nextCalled).toBe(false);
     expect(res.statusCode).toBe(403);
+  });
+});
+
+describe("requireCsrfWhenSessionOnShopMutations", () => {
+  function makePathReq(opts: {
+    method: string;
+    path: string;
+    sessionCookie?: string;
+    csrfCookie?: string;
+    header?: string;
+  }): Request {
+    const parts: string[] = [];
+    if (opts.sessionCookie) parts.push(`pf_session=${opts.sessionCookie}`);
+    if (opts.csrfCookie) parts.push(`pf_csrf=${opts.csrfCookie}`);
+    const cookieHeader = parts.length > 0 ? parts.join("; ") : undefined;
+    return {
+      headers: {
+        ...(cookieHeader ? { cookie: cookieHeader } : {}),
+        ...(opts.header ? { "x-pf-csrf": opts.header } : {}),
+      },
+      method: opts.method,
+      path: opts.path,
+    } as unknown as Request;
+  }
+
+  function runPath(req: Request): { res: FakeRes; nextCalled: boolean } {
+    const res = makeRes();
+    let nextCalled = false;
+    requireCsrfWhenSessionOnShopMutations(
+      req,
+      res as unknown as Response,
+      () => {
+        nextCalled = true;
+      },
+    );
+    return { res, nextCalled };
+  }
+
+  it.each(["GET", "HEAD", "OPTIONS"])(
+    "passes through %s requests on shop paths",
+    (method) => {
+      const { res, nextCalled } = runPath(
+        makePathReq({ method, path: "/api/shop/me/cart-snapshot" }),
+      );
+      expect(nextCalled).toBe(true);
+      expect(res.statusCode).toBe(200);
+    },
+  );
+
+  it("passes through non-shop POST paths", () => {
+    const { res, nextCalled } = runPath(
+      makePathReq({ method: "POST", path: "/api/admin/users/invite" }),
+    );
+    expect(nextCalled).toBe(true);
+    expect(res.statusCode).toBe(200);
+  });
+
+  it("passes through anonymous shop POST (no pf_session cookie)", () => {
+    // Guest checkout — must NOT be gated on CSRF, since no cookie
+    // exists for a cross-site attacker to ride on.
+    const { res, nextCalled } = runPath(
+      makePathReq({ method: "POST", path: "/api/shop/checkout" }),
+    );
+    expect(nextCalled).toBe(true);
+    expect(res.statusCode).toBe(200);
+  });
+
+  it("enforces CSRF on signed-in shop POST (pf_session present, no header)", () => {
+    const { res, nextCalled } = runPath(
+      makePathReq({
+        method: "POST",
+        path: "/api/shop/checkout",
+        sessionCookie: "session-token",
+        csrfCookie: "csrf-token",
+      }),
+    );
+    expect(nextCalled).toBe(false);
+    expect(res.statusCode).toBe(403);
+    expect(res.body).toMatchObject({ error: "csrf_failed" });
+  });
+
+  it("calls next() when CSRF cookie + header match on a signed-in shop POST", () => {
+    const token = "valid-csrf-token";
+    const { res, nextCalled } = runPath(
+      makePathReq({
+        method: "POST",
+        path: "/api/shop/me/quick-checkout",
+        sessionCookie: "session-token",
+        csrfCookie: token,
+        header: token,
+      }),
+    );
+    expect(nextCalled).toBe(true);
+    expect(res.statusCode).toBe(200);
+  });
+
+  it.each([
+    ["PUT", "/api/shop/me/cart-snapshot"],
+    ["DELETE", "/api/shop/me/caregiver"],
+    ["PATCH", "/resupply-api/shop/me/comm-prefs"],
+  ])("enforces CSRF on signed-in %s %s with mismatched header", (method, path) => {
+    const { res, nextCalled } = runPath(
+      makePathReq({
+        method,
+        path,
+        sessionCookie: "s",
+        csrfCookie: "cookie-token",
+        header: "different-token",
+      }),
+    );
+    expect(nextCalled).toBe(false);
+    expect(res.statusCode).toBe(403);
+  });
+
+  it("does not match look-alike prefixes like /api/shoppers", () => {
+    const { res, nextCalled } = runPath(
+      makePathReq({
+        method: "POST",
+        path: "/api/shoppers",
+        sessionCookie: "s",
+        csrfCookie: "c",
+      }),
+    );
+    expect(nextCalled).toBe(true);
+    expect(res.statusCode).toBe(200);
   });
 });
 

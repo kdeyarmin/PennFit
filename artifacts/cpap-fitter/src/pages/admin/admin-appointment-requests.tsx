@@ -10,6 +10,7 @@ import { Card } from "@/components/admin/Card";
 import { Spinner } from "@/components/admin/Spinner";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { Button } from "@/components/admin/Button";
+import { useToast } from "@/hooks/use-toast";
 import {
   listAppointmentRequests,
   updateAppointmentRequest,
@@ -108,11 +109,23 @@ function RequestTable({ rows }: { rows: AppointmentRequest[] }) {
 
 function RequestRow({ row }: { row: AppointmentRequest }) {
   const qc = useQueryClient();
+  const { toast } = useToast();
   const setStatus = useMutation({
     mutationFn: (status: AppointmentRequestStatus) =>
       updateAppointmentRequest(row.id, { status }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["admin", "appointment-requests"] });
+    },
+    onError: (err) => {
+      // Surface the failure so the CSR knows the row state didn't
+      // change. Without this the button just settles back to idle
+      // and they'd assume the action stuck.
+      toast({
+        title: "Couldn't update appointment request",
+        description:
+          err instanceof Error ? err.message : "Please try again in a moment.",
+        variant: "destructive",
+      });
     },
   });
   return (

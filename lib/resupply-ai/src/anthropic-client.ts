@@ -44,8 +44,10 @@ const DEFAULT_TIMEOUT_MS = 30_000;
 
 /** Default Sonnet model — best balance of quality, latency, and cost. */
 export const DEFAULT_ANTHROPIC_MODEL_CHAT = "claude-sonnet-4-6";
-/** Cheaper Haiku model — for high-volume, latency-sensitive tasks (SMS classification). */
-export const DEFAULT_ANTHROPIC_MODEL_CLASSIFY = "claude-haiku-4-5";
+/** Cheaper Haiku model — for high-volume, latency-sensitive tasks (SMS classification).
+ *  Pinned to the date-stamped snapshot so deploys aren't silently rolled forward when
+ *  Anthropic deprecates the generic alias. */
+export const DEFAULT_ANTHROPIC_MODEL_CLASSIFY = "claude-haiku-4-5-20251001";
 /** Top-tier Opus model — for clinical reasoning when cost is no object. */
 export const DEFAULT_ANTHROPIC_MODEL_REASONING = "claude-opus-4-7";
 

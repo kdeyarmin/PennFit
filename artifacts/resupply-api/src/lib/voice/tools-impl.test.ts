@@ -383,7 +383,15 @@ describe("tools-impl — episode update gated on status='pending' (PR change)", 
 function buildStubSupabaseWithEpisode(
   patientRow: { date_of_birth: string | null; legal_first_name: string | null },
   episodeUpdateResult: { data: Array<{ id: string }> | null; error: null },
+  prescriptions?: Array<{ item_sku: string }>,
 ) {
+  // Track which table the current builder chain is targeting so the
+  // awaitable resolves to the matching response. place_resupply_order
+  // queries `prescriptions` BEFORE running the episode update; without
+  // per-table responses the prescriptions query would resolve to the
+  // episode-update payload and the eligibility filter would drop
+  // every SKU the model offered.
+  let currentTable: string | null = null;
   const builder: Record<string, unknown> = {
     select: () => builder,
     update: () => builder,
@@ -396,12 +404,20 @@ function buildStubSupabaseWithEpisode(
     then: (
       onfulfilled: (v: unknown) => unknown,
       onrejected?: (e: unknown) => unknown,
-    ) =>
-      Promise.resolve(episodeUpdateResult).then(onfulfilled, onrejected),
+    ) => {
+      const payload =
+        currentTable === "prescriptions"
+          ? { data: prescriptions ?? [], error: null }
+          : episodeUpdateResult;
+      return Promise.resolve(payload).then(onfulfilled, onrejected);
+    },
   };
   return {
     schema: () => ({
-      from: () => builder,
+      from: (table: string) => {
+        currentTable = table;
+        return builder;
+      },
     }),
   } as unknown as never;
 }
@@ -459,6 +475,10 @@ describe("VoiceToolDispatcher — place_resupply_order episode status gate (PR c
     const supabase = buildStubSupabaseWithEpisode(
       { date_of_birth: "1980-01-01", legal_first_name: "Alex" },
       { data: [{ id: "epi-1" }], error: null }, // one row updated
+      // The eligibility filter requires an active prescription for
+      // each requested SKU — without these rows the implementation
+      // (correctly) drops every offered SKU as ineligible.
+      [{ item_sku: "A7030" }, { item_sku: "A7034" }],
     );
     const dispatcher = createVoiceToolDispatcher({
       ...baseDeps,
