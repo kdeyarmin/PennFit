@@ -287,9 +287,12 @@ export class ObjectStorageService {
       return rawPath;
     }
 
-    // The Supabase signed-upload URL is shaped
-    //   https://<project>.supabase.co/storage/v1/object/upload/sign/<bucket>/<path>?token=...
-    // We only need the <path> after the bucket segment.
+    // Supabase signed URLs are shaped:
+    //   upload:   .../storage/v1/object/upload/sign/<bucket>/<path>?token=...
+    //   download: .../storage/v1/object/sign/<bucket>/<path>?token=...
+    // Anchor on the fixed "object/(upload/)sign" prefix to locate the bucket
+    // at a known offset rather than searching for the bucket name, which could
+    // appear elsewhere in the path (e.g. as part of the entity id).
     let url: URL;
     try {
       url = new URL(rawPath);
@@ -299,8 +302,24 @@ export class ObjectStorageService {
 
     const bucket = requirePrivateBucket();
     const segments = url.pathname.split("/").filter(Boolean);
-    const bucketIdx = segments.lastIndexOf(bucket);
-    if (bucketIdx < 0 || bucketIdx >= segments.length - 1) {
+
+    let bucketIdx = -1;
+    for (let i = 0; i < segments.length; i++) {
+      if (segments[i] === "object") {
+        if (segments[i + 1] === "upload" && segments[i + 2] === "sign") {
+          bucketIdx = i + 3;
+        } else if (segments[i + 1] === "sign") {
+          bucketIdx = i + 2;
+        }
+        break;
+      }
+    }
+
+    if (
+      bucketIdx < 0 ||
+      segments[bucketIdx] !== bucket ||
+      bucketIdx >= segments.length - 1
+    ) {
       return rawPath;
     }
     const entityId = segments.slice(bucketIdx + 1).join("/");
