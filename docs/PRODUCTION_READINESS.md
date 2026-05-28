@@ -107,8 +107,9 @@ shows green/red dots per vendor)
 - [ ] `TWILIO_VOICE_PHONE_NUMBER` — outbound voice calls.
 - [ ] `ANTHROPIC_API_KEY` — Claude conversation agent.
 - [ ] `OPENAI_API_KEY` — voice realtime transcription.
-- [ ] `PRIVATE_OBJECT_DIR` — GCS bucket prefix for prescription
-      attachments.
+- [ ] `SUPABASE_STORAGE_BUCKET_PRIVATE` — Supabase Storage bucket
+      name for prescription attachments. `SUPABASE_STORAGE_BUCKET_PUBLIC`
+      is the matching public bucket for product imagery.
 
 ### Public URLs
 
@@ -134,9 +135,9 @@ the `pf_session` cookie and respect `SameSite=Lax` / `Secure`.
 - [ ] Verify the dashboard SPA and the resupply-api are co-located
       under the same hostname (or set `RESUPPLY_ALLOWED_ORIGINS` to
       a comma-separated list of allowed origins, in scheme+host form
-      — see `artifacts/resupply-api/src/app.ts:44`). On Replit
-      deployments, `REPLIT_DOMAINS` is auto-populated and serves
-      as the fallback when `RESUPPLY_ALLOWED_ORIGINS` is unset.
+      — see `artifacts/resupply-api/src/app.ts:44`). On Railway
+      deployments, `RAILWAY_PUBLIC_DOMAIN` is auto-populated and
+      serves as the fallback when `RESUPPLY_ALLOWED_ORIGINS` is unset.
 
 ---
 

@@ -353,12 +353,13 @@ export class ObjectStorageService {
     try {
       const supabase = getSupabaseServiceRoleClient();
       const { data } = await supabase
+        .schema("resupply")
         .from("object_storage_acls")
         .select("policy")
         .eq("bucket", file.bucket)
         .eq("path", file.path)
         .maybeSingle();
-      return (data?.policy as ObjectAclPolicy | undefined) ?? null;
+      return (data?.policy as unknown as ObjectAclPolicy | undefined) ?? null;
     } catch {
       return null;
     }

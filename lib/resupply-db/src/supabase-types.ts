@@ -119,6 +119,35 @@ export interface Database {
   };
   resupply: {
     Tables: {
+      // Migration 0165: per-object ACL policy for objects stored in
+      // Supabase Storage. The policy JSON mirrors the in-memory
+      // ObjectAclPolicy shape (`{ owner, visibility, aclRules }`)
+      // exported from artifacts/resupply-api/src/lib/object-storage/
+      // objectAcl.ts.
+      object_storage_acls: {
+        Row: {
+          bucket: string;
+          path: string;
+          policy: Json;
+          owner_id: string | null;
+          visibility: "public" | "private";
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          bucket: string;
+          path: string;
+          policy: Json;
+          owner_id?: string | null;
+          visibility: "public" | "private";
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<
+          Database["resupply"]["Tables"]["object_storage_acls"]["Insert"]
+        >;
+        Relationships: [];
+      };
       stripe_webhook_events: {
         Row: {
           event_id: string;

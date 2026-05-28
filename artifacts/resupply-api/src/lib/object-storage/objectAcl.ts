@@ -5,7 +5,7 @@
 // (ObjectAclPolicy, ObjectPermission, canAccessObject, set/get) is
 // unchanged so callers don't need to move.
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getSupabaseServiceRoleClient, type Json } from "@workspace/resupply-db";
 
 // Can be flexibly defined according to the use case.
 //
@@ -103,6 +103,7 @@ export async function setObjectAclPolicy(
   // objectPath that belongs to another customer and hijacking its
   // ownership.
   const { data: existing, error: readErr } = await supabase
+    .schema("resupply")
     .from("object_storage_acls")
     .select("owner_id")
     .eq("bucket", obj.bucket)
@@ -118,12 +119,13 @@ export async function setObjectAclPolicy(
   }
 
   const { error: writeErr } = await supabase
+    .schema("resupply")
     .from("object_storage_acls")
     .upsert(
       {
         bucket: obj.bucket,
         path: obj.path,
-        policy: aclPolicy,
+        policy: aclPolicy as unknown as Json,
         owner_id: aclPolicy.owner,
         visibility: aclPolicy.visibility,
         updated_at: new Date().toISOString(),
@@ -142,6 +144,7 @@ export async function getObjectAclPolicy(
 ): Promise<ObjectAclPolicy | null> {
   const supabase = getSupabaseServiceRoleClient();
   const { data, error } = await supabase
+    .schema("resupply")
     .from("object_storage_acls")
     .select("policy")
     .eq("bucket", obj.bucket)
@@ -153,7 +156,7 @@ export async function getObjectAclPolicy(
     );
   }
   if (!data?.policy) return null;
-  return data.policy as ObjectAclPolicy;
+  return data.policy as unknown as ObjectAclPolicy;
 }
 
 export async function canAccessObject({

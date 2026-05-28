@@ -25,10 +25,11 @@ self-cleaning.
 Normal happy path. The dashboard flow is:
 
 ```
-POST /upload-url      →  receives presigned PUT URL (bearer token, ~15min)
-PUT  to GCS directly  →  bytes land in the bucket
-POST /attachment      →  /finalize: re-validates GCS metadata, persists
-                          row, sets ACL
+POST /upload-url        →  receives presigned PUT URL (bearer token, ~15min)
+PUT to Supabase Storage →  bytes land in the bucket
+POST /attachment        →  /finalize: re-validates the Supabase Storage
+                            object metadata, persists row, inserts the
+                            ACL row in resupply.object_storage_acls
 ```
 
 No orphan possible — every upload produces a row pointer.
@@ -51,12 +52,12 @@ the row is correctly cleared but the bytes need a sweep.
 
 Concrete causes:
 
-- Admin starts an upload, browser closes mid-flight, presigned PUT
-  succeeds at GCS but the response never reaches the dashboard's finalize
-  call.
+- Admin starts an upload, browser closes mid-flight, the presigned
+  Supabase Storage PUT succeeds but the response never reaches the
+  dashboard's finalize call.
 - Admin's network drops between PUT and POST.
-- Admin opens the file picker, GCS PUT fires, then the admin navigates
-  away before the finalize POST is dispatched.
+- Admin opens the file picker, the Supabase Storage PUT fires, then
+  the admin navigates away before the finalize POST is dispatched.
 
 Result: bytes in the bucket with no DB row pointing at them, no audit trail
 beyond the `upload_url_issued` entry.
@@ -82,9 +83,10 @@ Implementation: `artifacts/resupply-worker/src/jobs/prescription-attachment-swee
      private bucket.
   3. Per bucket object: derive its expected
      `/objects/uploads/<uuid>` shape and look it up in the Set.
-     Referenced → leave alone. Unreferenced AND `timeCreated`
-     missing → skip-and-warn (rare GCS anomaly, safer than blind
-     delete; counter alerts operator if persistent). Unreferenced
+     Referenced → leave alone. Unreferenced AND `created_at`
+     missing → skip-and-warn (rare Supabase Storage anomaly, safer
+     than blind delete; counter alerts operator if persistent).
+     Unreferenced
      AND younger than 24h → leave for next run (in-flight finalize
      grace). Unreferenced AND older than 24h → **per-candidate DB
      recheck** (`SELECT 1 FROM prescriptions WHERE
@@ -111,8 +113,9 @@ attachment_object_key = $1 LIMIT 1`); if the recheck still
   `prescription-attachment-sweep.ts`.
 - Boot-time check: `getPrivateObjectLocation()` is called during
   `registerPrescriptionAttachmentSweepJob`, so a missing or
-  malformed `PRIVATE_OBJECT_DIR` fails the worker boot rather than
-  silently no-op'ing the sweep for the lifetime of the deploy.
+  malformed `SUPABASE_STORAGE_BUCKET_PRIVATE` fails the worker boot
+  rather than silently no-op'ing the sweep for the lifetime of the
+  deploy.
 
 Operational follow-ups:
 
@@ -130,13 +133,15 @@ days`.
 
 ## Open follow-ups (non-orphan)
 
-- Bucket-side ACL is `visibility:"private"` with `owner: adminUserId` set
-  but downloads are gated only by `requireAdmin` middleware (any allowlisted
-  admin can read any prescription scan). This mirrors the existing rule for
-  patient `details` PHI in the same dashboard. Tightening to "issuing admin
-  or assigned care team only" requires a domain-level access model that does
-  not exist yet for any other PHI in the system; out of scope here.
-- Encryption-at-rest is GCS-managed (Google's default). For a HIPAA-bound
-  launch we will need to either (a) confirm the BAA with Google covers the
-  default keys for our project, or (b) move to customer-managed encryption
-  keys (CMEK).
+- The `resupply.object_storage_acls` row carries `visibility:"private"`
+  plus `owner: adminUserId`, but downloads are gated only by
+  `requireAdmin` middleware (any allowlisted admin can read any
+  prescription scan). This mirrors the existing rule for patient
+  `details` PHI in the same dashboard. Tightening to "issuing admin
+  or assigned care team only" requires a domain-level access model
+  that does not exist yet for any other PHI in the system; out of
+  scope here.
+- Encryption-at-rest is Supabase-managed (AES-256 on the underlying
+  S3-compatible storage). The BAA Supabase signs with PennPaps covers
+  the default keys; revisit if compliance later requires
+  customer-managed encryption keys (CMEK).
