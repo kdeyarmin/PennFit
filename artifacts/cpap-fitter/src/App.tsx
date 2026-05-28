@@ -364,7 +364,6 @@ const RemindersManage = lazy(() =>
 );
 
 import { FitterProvider, useFitterStore } from "@/hooks/use-fitter-store";
-import { TranslationProvider } from "@/i18n/provider";
 import { useShopIdentity } from "@/lib/identity";
 import { canStayOnMeasure } from "@/lib/measure-flow";
 
@@ -866,21 +865,19 @@ function AppInner() {
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
-        <TranslationProvider>
-          <FitterProvider>
-            {/*
-              ErrorBoundary wraps the router so any thrown render error in a
-              page falls back to a recoverable on-brand screen instead of a
-              blank white page.
-            */}
-            <ErrorBoundary>
-              <WouterRouter base={basePath}>
-                <TopRouter />
-              </WouterRouter>
-            </ErrorBoundary>
-            <Toaster />
-          </FitterProvider>
-        </TranslationProvider>
+        <FitterProvider>
+          {/*
+            ErrorBoundary wraps the router so any thrown render error in a
+            page falls back to a recoverable on-brand screen instead of a
+            blank white page.
+          */}
+          <ErrorBoundary>
+            <WouterRouter base={basePath}>
+              <TopRouter />
+            </WouterRouter>
+          </ErrorBoundary>
+          <Toaster />
+        </FitterProvider>
       </TooltipProvider>
     </QueryClientProvider>
   );
