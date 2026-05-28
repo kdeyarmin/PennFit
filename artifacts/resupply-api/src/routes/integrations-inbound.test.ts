@@ -35,7 +35,12 @@ const supabaseMock = installSupabaseMock();
 // Mock Parachute signature verification — controls whether the source
 // appears as "configured_ok" or "configured_bad".
 const verifyParachuteSigMock = vi.hoisted(() =>
-  vi.fn(() => ({ ok: false, reason: "mock_bad_sig" })),
+  vi.fn(
+    (): { ok: boolean; reason?: string } => ({
+      ok: false,
+      reason: "mock_bad_sig",
+    }),
+  ),
 );
 vi.mock("@workspace/resupply-integrations-parachute", () => ({
   verifyParachuteSignature: verifyParachuteSigMock,

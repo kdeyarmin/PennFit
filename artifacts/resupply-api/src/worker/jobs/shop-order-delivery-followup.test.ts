@@ -22,11 +22,17 @@ import {
 const supabaseMock = installSupabaseMock();
 
 const { sendDeliveryFollowupEmailMock } = vi.hoisted(() => ({
-  sendDeliveryFollowupEmailMock: vi.fn(async () => ({
-    configured: true,
-    delivered: true,
-    error: null,
-  })),
+  sendDeliveryFollowupEmailMock: vi.fn(
+    async (): Promise<{
+      configured: boolean;
+      delivered: boolean;
+      error: string | null;
+    }> => ({
+      configured: true,
+      delivered: true,
+      error: null,
+    }),
+  ),
 }));
 vi.mock("../../lib/order-emails/send-delivery-followup-email", () => ({
   sendDeliveryFollowupEmail: sendDeliveryFollowupEmailMock,
