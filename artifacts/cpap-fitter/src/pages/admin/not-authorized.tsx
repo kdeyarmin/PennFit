@@ -81,8 +81,13 @@ export function NotAuthorizedPage({
       : "This account isn't approved for the admin console";
 
   return (
+    // .admin-root wrapper required so admin theme tokens (--ink-1,
+    // --line-1, etc., defined in admin.css) resolve. This page is
+    // rendered OUTSIDE the <AppShell> (it's the "no AppShell yet"
+    // fallback for unauthorised users), so it has to apply the
+    // scope itself or the borders/body text below render unstyled.
     <div
-      className="min-h-screen flex flex-col"
+      className="admin-root min-h-screen flex flex-col"
       style={{ backgroundColor: "#f7f8fb" }}
     >
       <header

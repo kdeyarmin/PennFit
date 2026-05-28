@@ -124,9 +124,19 @@ router.get(
       return;
     }
 
-    // Stamp view + bump count. Fire-and-forget; the response goes
-    // out regardless.
-    void supabase
+    // Stamp view + bump count. We await the UPDATE here (not the
+    // previous fire-and-forget) so we can read back the incremented
+    // count and stamp the audit row with what was actually written.
+    // Two concurrent views previously both read view_count=N and
+    // both wrote N+1 — losing one increment and recording an
+    // inconsistent count in the audit metadata.
+    //
+    // Note: PostgREST has no server-side "view_count = view_count +
+    // 1" expression, so a small race window remains between the
+    // SELECT above and the UPDATE here. The audit row reads the
+    // CONFLICT-free actual value via `select()` below, which at
+    // least keeps the recorded count consistent with the row.
+    const { data: bumped, error: bumpErr } = await supabase
       .schema("resupply")
       .from("clinician_share_tokens")
       .update({
@@ -135,7 +145,24 @@ router.get(
         view_count: share.view_count + 1,
       })
       .eq("id", share.id)
-      .then(() => undefined);
+      .select("view_count")
+      .limit(1)
+      .maybeSingle();
+    // On bump failure, fall back to the PERSISTED value (no
+    // optimistic +1). Otherwise the audit row and the response
+    // claim a view we didn't actually record. Only use the +1
+    // fallback when the bump didn't error and the row simply
+    // didn't return a refreshed count (shouldn't happen with
+    // .select("view_count"), but defensive).
+    const observedCount = bumpErr
+      ? share.view_count
+      : bumped?.view_count ?? share.view_count + 1;
+    if (bumpErr) {
+      logger.warn(
+        { err: bumpErr },
+        "clinician_share_tokens view bump failed (continuing)",
+      );
+    }
 
     await logAudit({
       action: "inbound_referral.clinician_share_viewed",
@@ -145,7 +172,7 @@ router.get(
       targetId: share.id,
       metadata: {
         referral_id: share.referral_id,
-        view_count: share.view_count + 1,
+        view_count: observedCount,
       },
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
@@ -180,8 +207,11 @@ router.get(
         at: o.created_at,
       })),
       // Footer: when this link expires + view count for transparency.
+      // Use observedCount (the actually-persisted value) instead of
+      // an optimistic +1 so the response stays consistent with the
+      // audit row and the stored count when the bump fails.
       expiresAt: share.expires_at,
-      viewCount: share.view_count + 1,
+      viewCount: observedCount,
     });
   },
 );

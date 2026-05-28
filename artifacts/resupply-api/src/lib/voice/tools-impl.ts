@@ -205,15 +205,14 @@ class Impl implements VoiceToolDispatcher {
   private async verifyIdentity(
     call: DispatchToolCall<"verify_patient_identity">,
   ): Promise<DispatchToolResult<"verify_patient_identity">> {
-    this.verifyAttempts += 1;
-    const attemptsRemaining = Math.max(
-      0,
-      MAX_VERIFY_ATTEMPTS - this.verifyAttempts,
-    );
-
-    // Read DOB + first name. The plaintext DOB is compared in Node
-    // with `timingSafeEqual` so we don't leak match duration via the
-    // SQL planner.
+    // Read DOB + first name FIRST. If the patient row was deleted
+    // (or never had a DOB on file), we don't want to burn a verify
+    // attempt — three calls and the patient is locked out without
+    // the system ever actually comparing anything. The previous
+    // order incremented `verifyAttempts` before this lookup.
+    //
+    // The plaintext DOB is compared in Node with `timingSafeEqual`
+    // so we don't leak match duration via the SQL planner.
     const { data: row, error } = await this.supabase
       .schema("resupply")
       .from("patients")
@@ -224,12 +223,23 @@ class Impl implements VoiceToolDispatcher {
     if (error) throw error;
 
     if (!row || !row.date_of_birth) {
+      // No comparison happened — don't increment.
+      const attemptsRemaining = Math.max(
+        0,
+        MAX_VERIFY_ATTEMPTS - this.verifyAttempts,
+      );
       return {
         callId: call.callId,
         name: call.name,
         result: { matched: false, attempts_remaining: attemptsRemaining },
       };
     }
+
+    this.verifyAttempts += 1;
+    const attemptsRemaining = Math.max(
+      0,
+      MAX_VERIFY_ATTEMPTS - this.verifyAttempts,
+    );
 
     const matched = constantTimeStringEquals(
       call.args.date_of_birth,

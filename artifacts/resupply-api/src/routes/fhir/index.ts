@@ -131,6 +131,28 @@ router.get(
     .status(200)
     .type("application/fhir+json")
     .json(patientToFhir(patient));
+  // PHI-view audit. Mirrors the `patient.view` row that
+  // `routes/patients/detail.ts` writes for the admin console read
+  // path. The FHIR Patient endpoint returns the same PHI (legal name,
+  // DOB, phone, email, address); without this audit an admin could
+  // pull patient records via FHIR invisibly.
+  try {
+    await logAudit({
+      action: "patient.view",
+      adminEmail: req.adminEmail ?? null,
+      adminUserId: req.adminUserId ?? null,
+      targetTable: "patients",
+      targetId: patient.id,
+      ip: req.ip ?? null,
+      userAgent: req.get("user-agent") ?? null,
+      metadata: { source: "fhir.patient.read" },
+    });
+  } catch (err) {
+    logger.error(
+      { err: err instanceof Error ? { name: err.name, message: err.message } : err },
+      "fhir: patient.view audit failed",
+    );
+  }
   },
 );
 
@@ -228,6 +250,31 @@ router.get(
       },
       "fhir: $everything",
     );
+    // PHI-view audit. The $everything bundle is more revealing than
+    // the bare Patient resource (it adds Coverage, Condition, Rx,
+    // Device); recording it under the same `patient.view` action
+    // keeps the audit-stream uniform with the admin console PHI read
+    // path.
+    try {
+      await logAudit({
+        action: "patient.view",
+        adminEmail: req.adminEmail ?? null,
+        adminUserId: req.adminUserId ?? null,
+        targetTable: "patients",
+        targetId: patient.id,
+        ip: req.ip ?? null,
+        userAgent: req.get("user-agent") ?? null,
+        metadata: {
+          source: "fhir.patient.everything",
+          entry_count: entries.length,
+        },
+      });
+    } catch (err) {
+      logger.error(
+        { err: err instanceof Error ? { name: err.name, message: err.message } : err },
+        "fhir: patient.view audit failed",
+      );
+    }
   },
 );
 

@@ -157,6 +157,19 @@ async function main(): Promise<void> {
         })
         .eq("id", userId);
       if (error) throw error;
+    } else if (!argsParsed.force) {
+      // Existing user, same role, not revoked — re-running this
+      // command would otherwise silently issue a fresh
+      // password_reset link (below) and hand whoever ran it an
+      // account-takeover link for an existing admin without any
+      // explicit confirmation. Refuse unless --force is supplied so
+      // the operation is intentional.
+      fail(
+        `User ${emailLower} already exists with role=${argsParsed.role} and ` +
+          `status=${existing.status}. Re-running would issue a new ` +
+          `password-reset link, effectively resetting this admin's password. ` +
+          `Re-run with --force if that's intended.`,
+      );
     }
     if (existing.status === "revoked") {
       if (!argsParsed.force) {

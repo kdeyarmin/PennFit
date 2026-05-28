@@ -45,6 +45,16 @@ const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 const idParam = z.object({ id: z.string().uuid() });
 
 /**
+ * Escape PostgREST `ilike` wildcards (`%`, `_`) so an admin-supplied
+ * manufacturer/model field can't fan the query out to every asset.
+ * Backslash escapes for both wildcards mirror Postgres' standard
+ * `ilike` semantics.
+ */
+function escapeIlikePattern(s: string): string {
+  return s.replace(/\\/g, "\\\\").replace(/[%_]/g, (m) => `\\${m}`);
+}
+
+/**
  * z.string().url() accepts javascript:, data:, file:, vbscript: and
  * arbitrary custom protocols — all of which execute in the renderer's
  * origin when interpolated into <a href={...}>. Restrict to http(s)
@@ -341,11 +351,15 @@ router.get(
       .select(
         "id, patient_id, manufacturer, model, serial_number, status, dispensed_at",
       )
-      .ilike("manufacturer", recall.manufacturer)
+      // Escape `%` and `_` in admin-supplied recall fields so an admin
+      // entering `%` doesn't sweep every asset into the recall set.
+      // The JS-side `recallMatchesAsset` filter narrows further, but
+      // the DB-side fan-out matters for the bulk-notify path.
+      .ilike("manufacturer", escapeIlikePattern(recall.manufacturer))
       .in("status", ["active", "recalled"])
       .order("created_at", { ascending: true });
     if (recall.model_match) {
-      query = query.ilike("model", recall.model_match);
+      query = query.ilike("model", escapeIlikePattern(recall.model_match));
     }
     const { data: candidates, error: cErr } = await query;
     if (cErr) throw cErr;

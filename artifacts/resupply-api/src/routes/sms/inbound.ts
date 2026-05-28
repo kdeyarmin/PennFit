@@ -105,15 +105,44 @@ function getAiAdapter(): AiFallbackAdapter | null {
 // keyword router and triggering many resupply orders in a short window.
 // The signature middleware runs first (guaranteeing the From number is
 // authentic) so this key can't be forged by an outside caller.
-const smsPhoneLimiter = rateLimit({
+//
+// Key normalization: Twilio occasionally delivers the same logical
+// number in different shapes (`+12155551212` vs `2155551212` vs
+// `(215) 555-1212`). Without normalization, the same patient gets
+// two separate buckets and the limit effectively doubles for them.
+// We run the same E.164 normalizer the rest of the route uses so a
+// single sender always hits the same bucket.
+const smsPhoneLimiterRaw = rateLimit({
   windowMs: 60 * 60 * 1000,
   max: 20,
   name: "sms_inbound_per_phone",
   keyFn: (req) => {
     const from = req.body?.From;
-    return typeof from === "string" && from.length > 0 ? from : "unknown";
+    if (typeof from !== "string" || from.length === 0) return "unknown";
+    return normalizeE164(from) ?? from;
   },
 });
+
+// Wrapping middleware that SKIPS the per-phone limit for carrier-
+// compliance keywords (STOP, HELP, START, INFO, etc.). The CTIA
+// short-code handbook and every major US carrier on 10DLC require
+// these to be honored unconditionally — a STOP that's silently 429ed
+// by our own limiter is both a carrier-suspension event and a HIPAA
+// "patient asked us to stop and we kept contacting them" exposure.
+// Twilio does not retry 429s, so once the bucket is full the STOP
+// is permanently dropped. We MUST let the route handler run for
+// compliance keywords regardless of bucket state.
+const smsPhoneLimiter: import("express").RequestHandler = (req, res, next) => {
+  const body = req.body?.Body;
+  if (typeof body === "string") {
+    const intent = parseSmsIntent(body).intent;
+    if (intent === "stop" || intent === "help" || intent === "start") {
+      next();
+      return;
+    }
+  }
+  smsPhoneLimiterRaw(req, res, next);
+};
 
 const signatureMiddleware = requireTwilioSignature({
   getAuthToken: () => readSmsConfigOrNull()?.twilioAuthToken,
@@ -426,14 +455,17 @@ router.post("/sms/inbound", signatureMiddleware, smsPhoneLimiter, async (req, re
     return;
   }
 
-  // Find or create the conversation. We prefer the most recent OPEN
-  // SMS conversation for this patient — same thread, same context.
-  // Requiring status = 'open' prevents a replayed webhook from being
-  // rebound to a newer closed or awaiting_admin conversation that was
-  // created after the original message was sent.
-  // If no open conversation exists, we open a new one bound to the
-  // most recent episode. (Inbound SMS without an open conversation is
-  // possible — a patient texts back days after the admin closed theirs.)
+  // Find or create the conversation. Reuse any LIVE conversation
+  // ('open', 'awaiting_admin', or 'awaiting_patient') for this
+  // patient so a multi-turn exchange stays one thread. Previously
+  // we only matched status='open', so after `dispatchIntent` flipped
+  // to 'awaiting_admin' (EDIT/unknown intent) or an admin reply
+  // flipped to 'awaiting_patient', every subsequent patient SMS
+  // spawned a brand-new conversation row — shattering the dashboard
+  // queue, breaking SLA tracking, and stranding admin context.
+  // Replay protection is owned by the MessageSid idempotency check
+  // upstream of this block, so widening the status filter here is
+  // safe.
   let conversationId: string | null;
   const { data: openConv, error: openConvErr } = await supabase
     .schema("resupply")
@@ -441,7 +473,7 @@ router.post("/sms/inbound", signatureMiddleware, smsPhoneLimiter, async (req, re
     .select("id")
     .eq("patient_id", patientId)
     .eq("channel", "sms")
-    .eq("status", "open")
+    .in("status", ["open", "awaiting_admin", "awaiting_patient"])
     .order("last_message_at", { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -759,7 +791,14 @@ router.post("/sms/inbound", signatureMiddleware, smsPhoneLimiter, async (req, re
       "Thanks — we've passed your message to a team member who will follow up.";
   }
 
-  // Persist the outbound reply we're about to send.
+  // Persist the outbound reply we're about to send. The persist
+  // itself is best-effort: if the insert errors, we MUST still send
+  // the TwiML — otherwise Twilio retries the webhook, our MessageSid
+  // idempotency check upstream short-circuits to an empty response,
+  // and the patient never sees the CONFIRM/STOP/HELP reply even
+  // though the side effect (placing the order, marking the opt-out)
+  // already ran. Log loud so ops can reconcile the missing audit
+  // row by hand.
   const replyAt = new Date();
   const replyIso = replyAt.toISOString();
   const { error: replyInsertErr } = await supabase
@@ -774,7 +813,30 @@ router.post("/sms/inbound", signatureMiddleware, smsPhoneLimiter, async (req, re
       vendor_metadata: { twiml_inline: true } as unknown as Json,
       sent_at: replyIso,
     });
-  if (replyInsertErr) throw replyInsertErr;
+  if (replyInsertErr) {
+    // Capture PostgREST `code` so ops can discriminate the failure
+    // mode without re-running the request. serializeErr alone returns
+    // `{ name: "unknown" }` for non-Error supabase-js error shapes.
+    // Deliberately NOT logging `details`/`hint` — those echo row
+    // values and risk PHI.
+    logger.error(
+      {
+        event: "sms_outbound_reply_persist_failed",
+        err: serializeErr(replyInsertErr),
+        errCode:
+          typeof (replyInsertErr as { code?: unknown }).code === "string"
+            ? (replyInsertErr as { code: string }).code
+            : null,
+        errMessage:
+          typeof (replyInsertErr as { message?: unknown }).message === "string"
+            ? (replyInsertErr as { message: string }).message
+            : null,
+        conversation_id: conversationId,
+        intent,
+      },
+      "sms.inbound: outbound reply insert failed — sending TwiML anyway to avoid Twilio retry storm",
+    );
+  }
 
   // Refresh latest-message projection (best-effort).
   await tryUpsertPatientLatestMessageSb(

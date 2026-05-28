@@ -33,18 +33,33 @@ vi.mock("../../middlewares/requireSignedIn", () =>
 );
 
 const buildQuarterlySummaryMock = vi.hoisted(() =>
-  vi.fn(() => ({
-    html: "<html><body>Q Summary</body></html>",
-    fields: {
-      patientName: "Test Patient",
-      nightsRecorded: 0,
-      avgUsageHours: null,
-      avgAhi: null,
-      avgLeakLMin: null,
-      compliantNights: null,
-      complianceRate: null,
-    },
-  })),
+  vi.fn(
+    (
+      _input: unknown,
+    ): {
+      html: string;
+      fields: {
+        patientName: string;
+        nightsRecorded: number;
+        avgUsageHours: number | null;
+        avgAhi: number | null;
+        avgLeakLMin: number | null;
+        compliantNights: number | null;
+        complianceRate: number | null;
+      };
+    } => ({
+      html: "<html><body>Q Summary</body></html>",
+      fields: {
+        patientName: "Test Patient",
+        nightsRecorded: 0,
+        avgUsageHours: null,
+        avgAhi: null,
+        avgLeakLMin: null,
+        compliantNights: null,
+        complianceRate: null,
+      },
+    }),
+  ),
 );
 vi.mock("../../lib/therapy-summary/build-quarterly-html", () => ({
   buildQuarterlySummary: buildQuarterlySummaryMock,
@@ -104,7 +119,7 @@ describe("GET /shop/me/quarterly-summary", () => {
     expect(res.headers["content-type"]).toContain("text/html");
     expect(res.text).toContain("Q Summary");
     expect(buildQuarterlySummaryMock).toHaveBeenCalledTimes(1);
-    const args = buildQuarterlySummaryMock.mock.calls[0]?.[0] as {
+    const args = buildQuarterlySummaryMock.mock.calls[0]?.[0] as unknown as {
       patient: { id: string };
       windowStart: string;
       windowEnd: string;

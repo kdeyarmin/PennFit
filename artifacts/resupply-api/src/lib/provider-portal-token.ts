@@ -15,6 +15,15 @@ import { getLinkHmacKey } from "@workspace/resupply-secrets";
 interface ProviderPortalPayload {
   id: string;
   e: number;
+  /**
+   * Optional revocation version. Mirrors
+   * `providers.portal_link_version` at mint time so a CSR can
+   * invalidate every outstanding token for a provider by bumping
+   * that column. Older tokens minted before this field existed are
+   * treated as v=0 by the verifier, which matches the column's
+   * DEFAULT.
+   */
+  v?: number;
 }
 
 const DEFAULT_TTL_SECONDS = 30 * 86400; // 30 days
@@ -48,10 +57,14 @@ function hmacSign(payloadEncoded: string): Buffer {
 export function signProviderPortalToken(
   providerId: string,
   ttlSeconds = DEFAULT_TTL_SECONDS,
+  options: { portalLinkVersion?: number } = {},
 ): string {
   const payload: ProviderPortalPayload = {
     id: providerId,
     e: Math.floor(Date.now() / 1000) + ttlSeconds,
+    ...(options.portalLinkVersion !== undefined
+      ? { v: options.portalLinkVersion }
+      : {}),
   };
   const payloadEncoded = base64urlEncode(
     Buffer.from(JSON.stringify(payload), "utf8"),
@@ -61,7 +74,7 @@ export function signProviderPortalToken(
 }
 
 export type VerifyProviderPortalTokenResult =
-  | { valid: true; providerId: string }
+  | { valid: true; providerId: string; version: number }
   | { valid: false };
 
 export function verifyProviderPortalToken(
@@ -109,7 +122,12 @@ export function verifyProviderPortalToken(
   }
   const p = parsed as Record<string, unknown>;
   const keys = Object.keys(p);
-  if (keys.length !== 2 || !keys.includes("id") || !keys.includes("e")) {
+  // Accept either {id, e} (legacy) or {id, e, v} (post-revocation).
+  if (
+    !keys.includes("id") ||
+    !keys.includes("e") ||
+    keys.some((k) => k !== "id" && k !== "e" && k !== "v")
+  ) {
     return { valid: false };
   }
   if (typeof p.id !== "string" || typeof p.e !== "number") {
@@ -123,6 +141,13 @@ export function verifyProviderPortalToken(
   if (!Number.isFinite(p.e) || Date.now() / 1000 > p.e) {
     return { valid: false };
   }
+  let version = 0;
+  if (p.v !== undefined) {
+    if (typeof p.v !== "number" || !Number.isFinite(p.v) || p.v < 0) {
+      return { valid: false };
+    }
+    version = p.v;
+  }
 
-  return { valid: true, providerId: p.id };
+  return { valid: true, providerId: p.id, version };
 }

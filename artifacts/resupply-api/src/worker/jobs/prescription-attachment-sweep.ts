@@ -215,6 +215,18 @@ export interface SweepDeps {
  * age-bucket only. Object names are NEVER logged (they embed the
  * patient UUID via our `/objects/uploads/<uuid>` scheme).
  */
+/**
+ * Cap on per-run object processing. CRON_SCAN_QUEUE_OPTS.expireInMinutes
+ * is 5 minutes; at Supabase Storage's serial-delete throughput a bucket
+ * past a few thousand orphans could blow that window, at which point
+ * pg-boss re-claims the job and a second worker starts deleting from
+ * the (now-shorter) list — risking duplicate deletes on still-pending
+ * objects. Cap each run at MAX_OBJECTS_PER_RUN so the loop reliably
+ * finishes inside the visibility timeout; the next scheduled tick
+ * processes whatever remains.
+ */
+const MAX_OBJECTS_PER_RUN = 1_000;
+
 export async function sweepOrphans(deps: SweepDeps): Promise<SweepCounters> {
   const counters: SweepCounters = {
     objects_scanned: 0,
@@ -235,7 +247,19 @@ export async function sweepOrphans(deps: SweepDeps): Promise<SweepCounters> {
   const objects = await deps.listObjects();
   counters.objects_scanned = objects.length;
 
-  for (const obj of objects) {
+  const processable = objects.slice(0, MAX_OBJECTS_PER_RUN);
+  if (objects.length > MAX_OBJECTS_PER_RUN) {
+    logger.warn(
+      {
+        objects_total: objects.length,
+        objects_processing: processable.length,
+        cap: MAX_OBJECTS_PER_RUN,
+      },
+      "attachment-sweep: bucket has more orphans than MAX_OBJECTS_PER_RUN; remainder will be picked up next tick",
+    );
+  }
+
+  for (const obj of processable) {
     const key = deps.attachmentKeyOf(obj.objectName);
     if (key === null) {
       counters.non_attachment_skipped += 1;

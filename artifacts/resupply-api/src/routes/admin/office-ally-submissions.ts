@@ -139,11 +139,16 @@ router.get(
     }
     // Free-text search across the two identifiers an op typically has
     // in hand: the ISA control number (from an OA support ticket) and
-    // the file name (from a CSR's screenshot). Stripped to digits+letters
-    // so we don't pass wildcard control chars into the ilike pattern.
+    // the file name (from a CSR's screenshot). Use the canonical
+    // escapePostgRESTFilterValue helper (already used for the export
+    // endpoint below) — the previous local-only `.replace(/[%_]/g)`
+    // only escaped wildcards, leaving commas, parens, and PostgREST
+    // operator delimiters un-escaped. An authenticated admin.tools.
+    // manage caller could inject extra `.or()` clauses (q=a,id.eq.
+    // <uuid>) and pivot the query out of the intended columns.
     const qRaw = typeof req.query.q === "string" ? req.query.q.trim() : "";
     if (qRaw.length > 0 && qRaw.length <= 80) {
-      const safe = qRaw.replace(/[%_]/g, (m) => `\\${m}`);
+      const safe = escapePostgRESTFilterValue(qRaw);
       query = query.or(
         `isa_control_number.ilike.%${safe}%,file_name.ilike.%${safe}%`,
       );

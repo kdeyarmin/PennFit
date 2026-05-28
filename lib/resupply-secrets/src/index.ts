@@ -54,5 +54,17 @@ export function getLinkHmacKey(env: EnvLike = process.env): Buffer {
         `resupply links. Set ${LINK_HMAC_KEY_ENV} to a 32+ byte secret.`,
     );
   }
+  // Treat the env value as a utf-8 string of secret bytes (matches
+  // the original implementation and every signed token in the wild).
+  // Preflight (scripts/src/preflight-prod-env.ts) is the deploy-time
+  // gate that base64-decodes and enforces >=32 raw bytes — we do
+  // NOT mirror that base64 check here because:
+  //   (a) it would change the HMAC key material vs every existing
+  //       in-flight token, invalidating reminder/portal/Rx links
+  //       across the entire deploy at upgrade time;
+  //   (b) the docstring length unit ("32+ bytes") referred to the
+  //       base64-decoded length, not the utf-8 string length, so a
+  //       runtime utf-8 length check would have different semantics
+  //       than preflight (as CodeRabbit flagged on PR #409).
   return Buffer.from(value, "utf8");
 }

@@ -51,7 +51,7 @@ router.get(
     .schema("resupply")
     .from("providers")
     .select(
-      "id, npi, legal_name, practice_name, taxonomy_code",
+      "id, npi, legal_name, practice_name, taxonomy_code, portal_link_version",
     )
     .eq("id", v.providerId)
     .limit(1)
@@ -59,6 +59,18 @@ router.get(
   if (pErr) throw pErr;
   if (!provider) {
     res.status(404).json({ error: "provider_not_found" });
+    return;
+  }
+  // Revocation check. The token embeds the provider's
+  // `portal_link_version` at mint time; if the row's current value is
+  // higher than the embedded value, every outstanding token was
+  // revoked (CSR clicked "Revoke portal link" in the admin UI, which
+  // increments the column). Without this check, the 30-day TTL was
+  // the only thing limiting access — a CSR couldn't actually cut a
+  // mis-issued link short.
+  const currentVersion = (provider.portal_link_version as number | null) ?? 0;
+  if (currentVersion > v.version) {
+    res.status(401).json({ error: "invalid_or_expired_token" });
     return;
   }
   // Only ACTIVE, currently-valid prescriptions. The portal link

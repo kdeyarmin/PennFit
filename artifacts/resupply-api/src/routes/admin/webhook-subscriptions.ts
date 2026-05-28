@@ -195,12 +195,25 @@ router.delete(
       return;
     }
     const supabase = getSupabaseServiceRoleClient();
-    await supabase
+    // Verify the row existed AND check the DELETE error so the
+    // response actually reflects what happened. Previously this
+    // handler swallowed errors AND ignored "row didn't exist",
+    // returning `{ ok: true }` regardless — an operator clicking
+    // "delete" on a stale list saw success but the row was either
+    // still there or had been deleted earlier with no observable
+    // signal either way.
+    const { data: deleted, error } = await supabase
       .schema("resupply")
       .from("webhook_subscriptions")
       .delete()
-      .eq("id", idParsed.data.id);
-    res.json({ ok: true });
+      .eq("id", idParsed.data.id)
+      .select("id");
+    if (error) throw error;
+    if (!deleted || deleted.length === 0) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    res.json({ ok: true, deletedId: deleted[0]!.id });
   },
 );
 

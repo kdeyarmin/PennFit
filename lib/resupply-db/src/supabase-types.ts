@@ -1028,6 +1028,7 @@ export interface Database {
           source: "nppes" | "csr_entry" | "backfill";
           verified_at: string | null;
           notes: string | null;
+          portal_link_version: number;
           created_at: string;
           updated_at: string;
         };
@@ -3413,6 +3414,7 @@ export interface Database {
           stripe_payment_intent_id: string | null;
           status: string;
           amount_total_cents: number | null;
+          amount_refunded_cents: number;
           currency: string | null;
           cart_hash: string | null;
           customer_id: string | null;

@@ -64,6 +64,32 @@ export function escapeHtml(s: string): string {
     .replace(/'/g, "&#39;");
 }
 
+/**
+ * Coerce a caller-supplied URL into a safe `href` value. Only
+ * absolute http(s) URLs survive; anything else (javascript:, data:,
+ * vbscript:, mailto:, malformed) falls back to `"#"` which renders
+ * as a no-op link. The returned value is HTML-escaped and ready to
+ * drop into a `href="..."` attribute.
+ *
+ * Why this matters: `escapeHtml` HTML-entity-escapes the input but
+ * does NOT mitigate dangerous URI schemes — a `javascript:fetch(...)`
+ * string survives entity escaping intact and executes when the
+ * recipient clicks it. URLs in reminder emails flow from
+ * `publicBaseUrl` (admin-configured); a misconfigured prefix would
+ * otherwise become an executable XSS payload in every email.
+ */
+export function safeHref(rawUrl: string): string {
+  try {
+    const parsed = new URL(rawUrl);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      return "#";
+    }
+    return escapeHtml(parsed.toString());
+  } catch {
+    return "#";
+  }
+}
+
 export function renderResupplyReminder(
   input: RenderResupplyReminderInput,
 ): RenderedEmail {
@@ -120,15 +146,15 @@ export function renderResupplyReminder(
       ${itemsHtmlLines || `<li style="margin:4px 0;">Your supplies, per your prescription.</li>`}
     </ul>
     <div style="margin:0 0 24px;">
-      <a href="${escapeHtml(input.confirmUrl)}" style="display:inline-block;padding:12px 20px;border-radius:6px;background:#0f766e;color:#ffffff;text-decoration:none;font-weight:600;font-size:15px;">
+      <a href="${safeHref(input.confirmUrl)}" style="display:inline-block;padding:12px 20px;border-radius:6px;background:#0f766e;color:#ffffff;text-decoration:none;font-weight:600;font-size:15px;">
         Yes, ship it
       </a>
     </div>
     <p style="margin:0 0 8px;font-size:14px;line-height:20px;color:#475569;">
-      <a href="${escapeHtml(input.editUrl)}" style="color:#0f766e;text-decoration:underline;">Change my shipping address</a>
+      <a href="${safeHref(input.editUrl)}" style="color:#0f766e;text-decoration:underline;">Change my shipping address</a>
     </p>
     <p style="margin:0 0 24px;font-size:14px;line-height:20px;color:#475569;">
-      <a href="${escapeHtml(input.stopUrl)}" style="color:#0f766e;text-decoration:underline;">Stop these reminders</a>
+      <a href="${safeHref(input.stopUrl)}" style="color:#0f766e;text-decoration:underline;">Stop these reminders</a>
     </p>
     <hr style="border:none;border-top:1px solid #e2e8f0;margin:24px 0;" />
     <p style="margin:0;font-size:12px;line-height:18px;color:#64748b;">

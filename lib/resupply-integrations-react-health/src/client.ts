@@ -9,6 +9,8 @@
 //
 // Loaded only when ReactHealthConfig is non-null (see adapter.ts).
 
+import { createHash } from "node:crypto";
+
 import type {
   AdapterError,
   ComplianceSummary,
@@ -30,7 +32,19 @@ interface OauthToken {
 let cachedToken: { configKey: string; token: OauthToken } | null = null;
 
 function configKey(config: ReactHealthConfig): string {
-  return `${config.oauthTokenUrl}|${config.clientId}|${config.accountId}`;
+  // Include a hash of the clientSecret so a secret rotation
+  // invalidates the cached token. Without this, after an operator
+  // rotates the React Health credentials, the cached access token
+  // (minted with the old secret) keeps being served until expiry
+  // (~1h) — every call lands at the partner with a token signed by
+  // an old credential, and the partner's revocation timing decides
+  // whether they 401 or accept. AirView and Care Orchestrator do
+  // this; React Health was the only adapter without it.
+  const secretFingerprint = createHash("sha256")
+    .update(`react-health-token-cache|${config.clientSecret}`)
+    .digest("hex")
+    .slice(0, 16);
+  return `${config.oauthTokenUrl}|${config.clientId}|${config.accountId}|${secretFingerprint}`;
 }
 
 class ClientError extends Error {

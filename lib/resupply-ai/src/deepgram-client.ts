@@ -332,6 +332,27 @@ export function createDeepgramClient(
       const errorCbs: Array<(err: { code: string; message: string }) => void> = [];
       const closeCbs: Array<(info: { code: number; reason: string }) => void> = [];
 
+      // Buffer events that arrive BEFORE the caller has had a chance
+      // to wire .onError / .onClose. Without this, a synchronous WS
+      // failure (bad URL, immediate handshake reject) emits into an
+      // empty cbs array and the caller's late-registered handler
+      // never sees the failure — silent vanish.
+      const pendingTranscripts: DeepgramLiveTranscriptEvent[] = [];
+      const pendingErrors: Array<{ code: string; message: string }> = [];
+      const pendingCloses: Array<{ code: number; reason: string }> = [];
+      const drain = <T>(buffer: T[], cbs: Array<(v: T) => void>): void => {
+        while (buffer.length > 0) {
+          const v = buffer.shift()!;
+          for (const cb of cbs) {
+            try {
+              cb(v);
+            } catch {
+              /* consumer threw — best effort */
+            }
+          }
+        }
+      };
+
       let keepaliveTimer: ReturnType<typeof setInterval> | null = null;
 
       ws.addEventListener("open", () => {
@@ -362,30 +383,39 @@ export function createDeepgramClient(
         if (parsed.type === "Results" || (!parsed.type && parsed.channel)) {
           const alt = parsed.channel?.alternatives?.[0];
           if (!alt) return;
-          for (const cb of transcriptCbs) {
-            cb({
-              transcript: alt.transcript,
-              isFinal: parsed.is_final ?? false,
-              speechFinal: parsed.speech_final ?? false,
-              confidence: alt.confidence,
-              start: parsed.start ?? 0,
-              duration: parsed.duration ?? 0,
-              words: alt.words ?? [],
-            });
+          const evOut: DeepgramLiveTranscriptEvent = {
+            transcript: alt.transcript,
+            isFinal: parsed.is_final ?? false,
+            speechFinal: parsed.speech_final ?? false,
+            confidence: alt.confidence,
+            start: parsed.start ?? 0,
+            duration: parsed.duration ?? 0,
+            words: alt.words ?? [],
+          };
+          if (transcriptCbs.length === 0) {
+            pendingTranscripts.push(evOut);
+          } else {
+            for (const cb of transcriptCbs) cb(evOut);
           }
         } else if (parsed.type === "Error") {
-          for (const cb of errorCbs) {
-            cb({
-              code: parsed.error?.code ?? "unknown",
-              message: parsed.error?.message ?? "deepgram error",
-            });
+          const errOut = {
+            code: parsed.error?.code ?? "unknown",
+            message: parsed.error?.message ?? "deepgram error",
+          };
+          if (errorCbs.length === 0) {
+            pendingErrors.push(errOut);
+          } else {
+            for (const cb of errorCbs) cb(errOut);
           }
         }
       });
 
       ws.addEventListener("error", (ev) => {
-        for (const cb of errorCbs) {
-          cb({ code: "transport", message: ev.message ?? "ws error" });
+        const errOut = { code: "transport", message: ev.message ?? "ws error" };
+        if (errorCbs.length === 0) {
+          pendingErrors.push(errOut);
+        } else {
+          for (const cb of errorCbs) cb(errOut);
         }
       });
 
@@ -394,8 +424,11 @@ export function createDeepgramClient(
           clearInterval(keepaliveTimer);
           keepaliveTimer = null;
         }
-        for (const cb of closeCbs) {
-          cb({ code: ev.code, reason: ev.reason });
+        const info = { code: ev.code, reason: ev.reason };
+        if (closeCbs.length === 0) {
+          pendingCloses.push(info);
+        } else {
+          for (const cb of closeCbs) cb(info);
         }
       });
 
@@ -406,12 +439,15 @@ export function createDeepgramClient(
         },
         onTranscript(cb): void {
           transcriptCbs.push(cb);
+          drain(pendingTranscripts, transcriptCbs);
         },
         onError(cb): void {
           errorCbs.push(cb);
+          drain(pendingErrors, errorCbs);
         },
         onClose(cb): void {
           closeCbs.push(cb);
+          drain(pendingCloses, closeCbs);
         },
         close(): void {
           if (ws.readyState === WS_OPEN) {

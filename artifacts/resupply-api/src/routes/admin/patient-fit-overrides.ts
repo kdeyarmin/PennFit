@@ -134,23 +134,31 @@ router.delete(
       return;
     }
     const supabase = getSupabaseServiceRoleClient();
-    const { error } = await supabase
+    const { data: deleted, error } = await supabase
       .schema("resupply")
       .from("patient_fit_overrides")
       .delete()
-      .eq("patient_id", p.data.id);
+      .eq("patient_id", p.data.id)
+      .select("patient_id");
     if (error) throw error;
+    if (!deleted || deleted.length === 0) {
+      // Idempotent success: there was nothing to clear. Don't burn an
+      // audit row for a no-op delete, but signal it back so the UI
+      // can render "already cleared" instead of pretending we did work.
+      res.json({ ok: true, deletedCount: 0 });
+      return;
+    }
     await logAudit({
       action: "patient.fit_override.cleared",
       adminEmail: req.adminEmail ?? null,
       adminUserId: req.adminUserId ?? null,
       targetTable: "patient_fit_overrides",
       targetId: p.data.id,
-      metadata: {},
+      metadata: { deletedCount: deleted.length },
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch(() => {});
-    res.json({ ok: true });
+    res.json({ ok: true, deletedCount: deleted.length });
   },
 );
 
