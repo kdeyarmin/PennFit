@@ -308,7 +308,7 @@ The roadmap above closes the table-stakes gaps so the AI story doesn't get blown
 ## Sources
 
 ### Capability inventory
-- `replit.md`, `README.md`, `CLAUDE.md`
+- `README.md`, `CLAUDE.md`
 - 139 SQL migrations in `lib/resupply-db/drizzle/`
 - 150+ Express routes in `artifacts/resupply-api/src/routes/`
 - 24 worker jobs in `artifacts/resupply-api/src/worker/jobs/`

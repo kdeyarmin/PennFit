@@ -134,7 +134,7 @@ import { createQueueWithDlq, CRON_SCAN_QUEUE_OPTS } from "../lib/queue-options.j
 import {
   attachmentKeyForObjectName,
   deleteAttachmentObject,
-  getPrivateObjectLocation,
+  getPrivateStorageBucket,
   listAttachmentObjects,
   type AttachmentObject,
 } from "../lib/object-storage.js";
@@ -464,11 +464,11 @@ export function buildProductionSweepDeps(
  * Register the sweep queue, handler, and weekly schedule. Idempotent
  * — pg-boss `createQueue` and `schedule` are upsert-style.
  *
- * Boot-time PRIVATE_OBJECT_DIR validation: a missing or malformed env
- * var should fail the worker boot, not a job 7 days later. Calling
- * `getPrivateObjectLocation()` here lets the registration throw if
- * the env is unusable, which `index.ts` translates into a fatal +
- * exit(1).
+ * Boot-time storage-config validation: a missing
+ * SUPABASE_STORAGE_BUCKET_PRIVATE should fail the worker boot, not a
+ * job 7 days later. Calling `getPrivateStorageBucket()` here lets the
+ * registration throw if the env is unusable, which `index.ts`
+ * translates into a fatal + exit(1).
  */
 export async function registerPrescriptionAttachmentSweepJob(
   boss: PgBoss,
@@ -476,7 +476,7 @@ export async function registerPrescriptionAttachmentSweepJob(
   // Fail fast on misconfigured object storage. The shim function
   // throws a clear error; surfacing it at registration time is much
   // better than letting the job blow up at the cron tick.
-  getPrivateObjectLocation();
+  getPrivateStorageBucket();
 
   await createQueueWithDlq(boss, SWEEP_JOB, CRON_SCAN_QUEUE_OPTS);
 

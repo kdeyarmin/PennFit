@@ -3,12 +3,12 @@
 //
 // Why these aren't generated from OpenAPI:
 //   The flow has three JSON exchanges plus one direct PUT to a
-//   GCS-issued presigned URL. The PUT is intentionally outside the
-//   API contract — it streams binary bytes to a third-party origin
-//   with no Replit/admin auth attached. Generating typed hooks for
-//   only the three JSON calls would create surface-area drift
-//   between endpoints that ship as a single coordinated workflow,
-//   so we keep the whole orchestration colocated here.
+//   Supabase-Storage-issued presigned URL. The PUT is intentionally
+//   outside the API contract — it streams binary bytes to a
+//   third-party origin with no admin auth attached. Generating typed
+//   hooks for only the three JSON calls would create surface-area
+//   drift between endpoints that ship as a single coordinated
+//   workflow, so we keep the whole orchestration colocated here.
 //
 // All paths are relative — the same proxy rules that route
 // `/resupply-api/*` to the resupply-api service apply.

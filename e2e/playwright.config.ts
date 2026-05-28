@@ -51,7 +51,7 @@ export default defineConfig({
 
   // The dev server is not auto-started; tests assume it's already
   // running on `BASE_URL`. Auto-starting it from Playwright would
-  // duplicate the dev workflow Replit already exposes and tangle
-  // CI startup ordering. Document this in the README when the suite
-  // grows beyond smoke tests.
+  // duplicate the `pnpm dev` scripts already documented in the
+  // README and tangle CI startup ordering. Document this in the
+  // README when the suite grows beyond smoke tests.
 });

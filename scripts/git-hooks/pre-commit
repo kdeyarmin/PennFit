@@ -42,20 +42,20 @@ fi
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 
-# ----- Source-of-truth drift warning (Task #47) ---------------------------
+# ----- Source-of-truth drift warning --------------------------------------
 # The canonical ref is `main` on github.com/kdeyarmin/PennFit
-# (Replit remote-tracking name: subrepl-3ppc2e03/main). When local
-# `main` falls more than DRIFT_THRESHOLD commits behind that ref,
-# print a non-blocking warning so the developer notices BEFORE they
-# branch off a stale base. Uses the cached remote-tracking ref only
-# (no network), so it's free.
+# (remote-tracking name: origin/main). When local `main` falls more
+# than DRIFT_THRESHOLD commits behind that ref, print a non-blocking
+# warning so the developer notices BEFORE they branch off a stale
+# base. Uses the cached remote-tracking ref only (no network), so
+# it's free.
 #
 # Silently skipped when:
 #   - the remote-tracking ref doesn't exist (fresh clone, different
 #     remote name, etc.)
 #   - the current branch is not `main` (feature-branch commits
 #     shouldn't get nagged on every save)
-DRIFT_REMOTE="subrepl-3ppc2e03/main"
+DRIFT_REMOTE="origin/main"
 if git rev-parse --verify --quiet "$DRIFT_REMOTE" >/dev/null; then
   current_branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo '')"
   if [[ "$current_branch" == "main" ]]; then
@@ -64,14 +64,14 @@ if git rev-parse --verify --quiet "$DRIFT_REMOTE" >/dev/null; then
       cat >&2 <<EOF
 [pre-commit] BLOCKED: you are committing to local 'main' while it is
             $behind commits behind ${DRIFT_REMOTE} (the canonical
-            source of truth — see replit.md "Git source of truth").
-            Committing here creates drift that turns every push into
-            a merge-conflict cleanup.
+            source of truth — see CLAUDE.md "Start-of-session
+            checklist"). Committing here creates drift that turns
+            every push into a merge-conflict cleanup.
 
             Do this instead — put the work on a feature branch:
 
                 git stash                     # if you have uncommitted edits
-                git fetch subrepl-3ppc2e03
+                git fetch origin
                 git checkout -b <branch-name> ${DRIFT_REMOTE}
                 git stash pop                 # if you stashed
                 # now commit normally; push the branch and open a PR
@@ -79,7 +79,7 @@ if git rev-parse --verify --quiet "$DRIFT_REMOTE" >/dev/null; then
             If you truly need to commit on local main (emergency
             hotfix only), align first:
 
-                git fetch subrepl-3ppc2e03
+                git fetch origin
                 git merge --ff-only ${DRIFT_REMOTE}
 
             Last resort bypass (do NOT use for normal work):

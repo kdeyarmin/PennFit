@@ -1,33 +1,38 @@
 # CLAUDE.md
 
 Guidance for Claude Code (and other coding agents) working in this repository.
-For the full product/architecture overview, see [`replit.md`](./replit.md);
-for the human-facing setup guide, see [`README.md`](./README.md).
+For the human-facing setup guide, see [`README.md`](./README.md).
 
 ## Start-of-session checklist
 
-The repo had a ~150-commit drift event in May 2026 across four divergent Git
-surfaces. Every session — agent or human — must align to the canonical ref
-**before** doing any work:
+Every session — agent or human — must align to the canonical ref **before**
+doing any work:
 
 ```bash
 git status                                          # 1. confirm clean tree
-git fetch subrepl-3ppc2e03                          # 2. fetch canonical
-git rev-list --count main..subrepl-3ppc2e03/main    # 3. how far behind?
+git fetch origin                                    # 2. fetch canonical
+git rev-list --count main..origin/main              # 3. how far behind?
 # If clean and behind, align (destructive — only when status is clean):
-git reset --hard subrepl-3ppc2e03/main
+git reset --hard origin/main
 ```
 
 **Canonical ref:** `main` on `https://github.com/kdeyarmin/PennFit`
-(remote-tracking name in Replit: `subrepl-3ppc2e03/main`).
+(remote-tracking name: `origin/main`).
 
 **Where new work lands:** push a feature branch and open a PR on GitHub.
 Never commit directly to local `main`. The pre-commit hook (installed
 via `scripts/install-hooks.sh`, source in `scripts/git-hooks/pre-commit`)
-prints a non-blocking warning when `main` is more than 10 commits behind
-canonical; bypass with `SKIP_HOOKS=1` only for genuine emergencies.
+blocks commits to local `main` when it falls behind `origin/main`; bypass
+with `SKIP_HOOKS=1` only for genuine emergencies.
 
-Post-mortem of the drift event: [`docs/git-state-2026-05-01.md`](./docs/git-state-2026-05-01.md).
+**Deploy target:** Railway. The repo ships with `railway.json` and
+`nixpacks.toml` at the root; pushing a branch and opening a PR triggers
+Railway's GitHub integration to build a preview environment. Production
+is the `main`-branch deploy under the `pennfit.up.railway.app` host (or
+the bound custom domain).
+
+Post-mortem of the historical Git-drift event:
+[`docs/git-state-2026-05-01.md`](./docs/git-state-2026-05-01.md).
 
 ## Merge conflicts in generated files
 
@@ -59,8 +64,8 @@ Its `-diff merge=binary` marker stays only as a guard; if it ever
 conflicts, take either side verbatim and do not merge entries by hand.
 
 Do NOT add `merge=union` or `merge=ours` for source files in
-`artifacts/`, `lib/`, or `replit.md` — those are real edits and silently
-dropping a side is worse than a visible conflict.
+`artifacts/` or `lib/` — those are real edits and silently dropping a
+side is worse than a visible conflict.
 
 ## Repository map
 
@@ -76,9 +81,10 @@ This is a `pnpm` workspaces monorepo (Node v24, TypeScript 5.9, pnpm 11.4).
 | `scripts/`               | Architecture + migration drift checks (`check-resupply-architecture`, `check-resupply-migration-prefix`) plus operator-facing utilities under `src/`: `preflight-prod-env.ts` (env validator), `auth-bootstrap-admin.ts` (seed first admin), `seed-stripe-products.ts`. The historical `check-codegen.sh` was retired when Task #37 removed the OpenAPI spec packages. |
 | `docs/`                  | Architecture notes, post-mortems, production readiness.                                                                                                                                                                          |
 
-There is **one** customer-facing site (`pennfit.replit.app/`). The former
-separate `api-server`, `resupply-worker`, and `resupply-dashboard` artifacts
-were folded in during the May 2026 consolidations.
+There is **one** customer-facing site (`pennfit.up.railway.app/` or your
+bound custom domain). The former separate `api-server`,
+`resupply-worker`, and `resupply-dashboard` artifacts were folded in
+during the May 2026 consolidations.
 
 ## Common commands
 
@@ -105,9 +111,11 @@ pnpm --filter @workspace/scripts auth:bootstrap-admin  # seed the first admin
                                                        # password-reset link
 ```
 
-In Replit, prefer the registered workflows (`artifacts/resupply-api: Resupply
-API` and `artifacts/cpap-fitter: web`) — they wire up the per-artifact
-`PORT` and `BASE_PATH` the dev servers expect.
+Locally, set `PORT` and `BASE_PATH` per-artifact before running `pnpm
+--filter @workspace/<artifact> dev`. The cpap-fitter SPA expects
+`BASE_PATH=/` and a free port (typically 5173); the resupply-api
+expects a port distinct from the SPA (typically 3000). On Railway,
+`PORT` is injected by the platform and `BASE_PATH` defaults to `/`.
 
 ## Hard rules — do not break
 
@@ -171,7 +179,8 @@ of these is missing):
 | `DATABASE_URL`                                      | Postgres v14+ (no extensions; only `gen_random_uuid()` is used). Used by the migrator and a small number of legacy worker paths; the runtime data path is Supabase, not raw pg.                                                                       |
 | `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY`        | Runtime data path. Validated by `validateSupabaseEnv()` in `lib/resupply-db/src/supabase-client.ts`. Service-role JWT bypasses RLS; never expose client-side. Both `resupply` and `resupply_auth` schemas must be added to Studio → Project Settings → API → "Exposed schemas" or every query 503s. |
 | `RESUPPLY_LINK_HMAC_KEY`                            | 32+ random bytes. Signs short-lived patient links in SMS/email reminders. Generate with `openssl rand -base64 48`. Rotation invalidates in-flight links.                                                                                              |
-| `RESUPPLY_ALLOWED_ORIGINS` **or** `REPLIT_DOMAINS`  | CORS allowlist (origin form for the first, bare-host for the second). In `NODE_ENV=production` the API throws at boot if both are empty — `artifacts/resupply-api/src/app.ts:63`. Replit deployments auto-populate `REPLIT_DOMAINS`.                  |
+| `RESUPPLY_ALLOWED_ORIGINS` **or** `RAILWAY_PUBLIC_DOMAIN` | CORS allowlist (origin form for the first, bare-host for the second). In `NODE_ENV=production` the API throws at boot if both are empty — `artifacts/resupply-api/src/app.ts`. Railway deployments auto-populate `RAILWAY_PUBLIC_DOMAIN`.            |
+| `SUPABASE_STORAGE_BUCKET_PRIVATE`                   | Bucket name in Supabase Storage where customer attachments (POD photos, prescription PDFs, MMS media) are uploaded. The PHI sweep job refuses to register without it.                                                                              |
 
 `preflight:prod` (under `scripts/`) validates every row above plus
 production-only shape checks (sk_live vs sk_test, strict base64 round-trip
@@ -285,8 +294,16 @@ the warmest of the current Realtime voices.
   `pnpm --filter @workspace/scripts auth:bootstrap-admin --email=… --role=admin`.
 - **Inbound MMS:** webhook downloads each `MediaUrlN` with HTTP basic auth
   (5s/media timeout, 5MB cap, image/\* + application/pdf allowlist, max 10
-  attachments/message), uploads to App Storage, persists as
-  `message_attachments`. Audit emits counts only — no media URLs, no PHI.
+  attachments/message), uploads to Supabase Storage
+  (`SUPABASE_STORAGE_BUCKET_PRIVATE`), persists as `message_attachments`.
+  Audit emits counts only — no media URLs, no PHI.
+- **Object storage:** Supabase Storage. All uploads (POD photos,
+  prescription PDFs, MMS media) land in the bucket named in
+  `SUPABASE_STORAGE_BUCKET_PRIVATE`. Per-object ACL lives in
+  `resupply.object_storage_acls` (migration 0165) — not in bucket-level
+  RLS, not in object metadata. The public API surface is
+  `ObjectStorageService` in
+  `artifacts/resupply-api/src/lib/object-storage/objectStorage.ts`.
 - **API clients:** `lib/api-client-react/src/{admin,storefront}/generated/`
   and `lib/resupply-api-client/src/generated/` are the source of truth
   for client-side HTTP types — they used to be generated from OpenAPI
@@ -296,7 +313,7 @@ the warmest of the current Realtime voices.
 
 ## When in doubt
 
-- For product/architecture questions, read [`replit.md`](./replit.md).
+- For product/architecture questions, read [`README.md`](./README.md).
 - For env setup, read [`.env.example`](./.env.example) and
   [`README.md`](./README.md).
 - For first-launch / deploy-side procedure, read

@@ -1,4 +1,4 @@
-// Worker-side GCS shim for the prescription-attachment PHI sweep.
+// Worker-side storage shim for the prescription-attachment PHI sweep.
 //
 // Why duplicated, not shared
 // --------------------------
@@ -14,173 +14,129 @@
 // THIRD caller ever needs object-storage access, that's the cue to
 // promote this module + the api one into a shared lib.
 //
-// What lives here
-// ---------------
-// - The same Replit-sidecar credentialed `Storage` client the api
-//   uses (auth shape MUST stay in lockstep with the api version —
-//   see `objectStorage.ts` lines 12-30).
-// - `listAttachmentObjects()` — paginates the bucket under the
-//   `<entity-dir>/uploads/` prefix where attachments land, returns
-//   each object's name + creation timestamp.
-// - `deleteAttachmentObject()` — best-effort delete; the sweep
-//   handler decides whether a thrown error means "object vanished
-//   between list and delete (fine)" or "real failure (count it)".
-// - `attachmentKeyForObjectName()` — turns a bucket-listed object
-//   path into the same `/objects/uploads/<uuid>` shape the
-//   `prescriptions.attachment_object_key` column stores, so the
-//   sweep's reference check is a Set lookup against the DB column
-//   value rather than per-row SQL.
+// History: this module used to talk to GCS via the Replit sidecar
+// (token exchange at http://127.0.0.1:1106). On Railway we use
+// Supabase Storage through the same service-role client used
+// elsewhere in the codebase.
 
-import { Storage } from "@google-cloud/storage";
-
-const REPLIT_SIDECAR_ENDPOINT = "http://127.0.0.1:1106";
-
-/**
- * Sidecar-credentialed GCS client. Auth shape MUST stay in lockstep
- * with `artifacts/resupply-api/src/lib/object-storage/objectStorage.ts`
- * — both processes hit the same Replit object-storage sidecar.
- */
-export const objectStorageClient = new Storage({
-  credentials: {
-    audience: "replit",
-    subject_token_type: "access_token",
-    token_url: `${REPLIT_SIDECAR_ENDPOINT}/token`,
-    type: "external_account",
-    credential_source: {
-      url: `${REPLIT_SIDECAR_ENDPOINT}/credential`,
-      format: {
-        type: "json",
-        subject_token_field_name: "access_token",
-      },
-    },
-    universe_domain: "googleapis.com",
-  },
-  projectId: "",
-});
+import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 export interface AttachmentObject {
-  /** Bucket name as parsed from PRIVATE_OBJECT_DIR. */
+  /** Supabase bucket name (from SUPABASE_STORAGE_BUCKET_PRIVATE). */
   bucketName: string;
-  /** Full object name within the bucket (e.g. `replit-objstore-…/uploads/abc`). */
+  /** Full object path within the bucket (e.g. `uploads/<uuid>`). */
   objectName: string;
-  /** GCS `timeCreated` parsed to a Date. Null when GCS omitted it. */
+  /** Created-at parsed to a Date. Null when Supabase omitted it. */
   timeCreated: Date | null;
-  /** Object size in bytes, parsed from GCS metadata. Null when GCS
-   *  omitted `size` (rare; the sweep handles it as "delete on schedule
-   *  but contribute 0 to bytes_reclaimed"). */
+  /** Object size in bytes. Null when Supabase omitted it. */
   size: number | null;
 }
 
 /**
- * Read PRIVATE_OBJECT_DIR and split it into `<bucket>/<entity-prefix>`.
- * Mirrors the parser in the api version (`parseObjectPath`) but
- * specialised to PRIVATE_OBJECT_DIR's "/<bucket>/<rest>" shape.
- *
- * Throws if the env var is missing or malformed — the worker should
- * surface this as a fatal at boot rather than silently no-op the
+ * Read SUPABASE_STORAGE_BUCKET_PRIVATE. Throws if unset — the worker
+ * surfaces this as a fatal at boot rather than silently no-op the
  * sweep job for the lifetime of the deploy.
  */
-export function getPrivateObjectLocation(
+export function getPrivateStorageBucket(
   env: NodeJS.ProcessEnv = process.env,
-): { bucketName: string; entityPrefix: string } {
-  const dir = env.PRIVATE_OBJECT_DIR ?? "";
-  if (!dir) {
+): string {
+  const bucket = (env.SUPABASE_STORAGE_BUCKET_PRIVATE ?? "").trim();
+  if (!bucket) {
     throw new Error(
-      "PRIVATE_OBJECT_DIR not set. The PHI attachment sweep cannot run " +
-        "without a private object directory configured.",
+      "SUPABASE_STORAGE_BUCKET_PRIVATE not set. The PHI attachment " +
+        "sweep cannot run without a private object bucket configured.",
     );
   }
-  const normalized = dir.startsWith("/") ? dir : `/${dir}`;
-  const parts = normalized.split("/").filter((p) => p.length > 0);
-  if (parts.length < 1) {
-    throw new Error(
-      `PRIVATE_OBJECT_DIR is malformed: '${dir}' (expected '/<bucket>[/<entity-prefix>]')`,
-    );
-  }
-  const [bucketName, ...rest] = parts;
-  return {
-    bucketName,
-    entityPrefix: rest.join("/"),
-  };
+  return bucket;
 }
 
 /**
- * List every object under `<entity-prefix>/uploads/` in the private
- * bucket. Uses GCS's auto-paginated `getFiles({ autoPaginate: true })`
- * so callers get a flat array; the prefix is small enough (single-
- * digit thousands of attachments at production scale) that we don't
- * need a streaming iterator.
- *
- * Returns an empty array when the prefix is empty.
+ * Paginated list of every object under `uploads/` in the private
+ * bucket. Supabase Storage's `list()` caps at 100 by default; we
+ * iterate explicitly so callers get the complete set.
  */
 export async function listAttachmentObjects(
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<AttachmentObject[]> {
-  const { bucketName, entityPrefix } = getPrivateObjectLocation(env);
-  const prefix = entityPrefix ? `${entityPrefix}/uploads/` : "uploads/";
-  const bucket = objectStorageClient.bucket(bucketName);
-  const [files] = await bucket.getFiles({ prefix, autoPaginate: true });
-  return files.map((f) => {
-    const tcRaw = f.metadata.timeCreated;
-    let timeCreated: Date | null = null;
-    if (typeof tcRaw === "string") {
-      const d = new Date(tcRaw);
-      if (!Number.isNaN(d.getTime())) timeCreated = d;
+  const bucketName = getPrivateStorageBucket(env);
+  const supabase = getSupabaseServiceRoleClient();
+  const out: AttachmentObject[] = [];
+  const pageSize = 100;
+  let offset = 0;
+  // Hard ceiling — guards against accidental unbounded listing if the
+  // bucket grows past expectations. Production scale is sub-10k.
+  const maxPages = 1000;
+  for (let page = 0; page < maxPages; page++) {
+    const { data, error } = await supabase.storage
+      .from(bucketName)
+      .list("uploads", { limit: pageSize, offset });
+    if (error) {
+      throw new Error(
+        `Failed to list ${bucketName}/uploads: ${error.message}`,
+      );
     }
-    // GCS returns `size` as a stringified integer; coerce defensively
-    // and fall back to null on anything we can't parse so a single
-    // weird metadata blob can't crash the sweep.
-    const sizeRaw = f.metadata.size;
-    let size: number | null = null;
-    if (typeof sizeRaw === "string") {
-      const n = Number.parseInt(sizeRaw, 10);
-      if (Number.isFinite(n) && n >= 0) size = n;
-    } else if (typeof sizeRaw === "number" && Number.isFinite(sizeRaw)) {
-      size = sizeRaw;
+    if (!data || data.length === 0) break;
+    for (const entry of data) {
+      if (!entry.name || entry.id === null) continue;
+      const createdAt = entry.created_at ? new Date(entry.created_at) : null;
+      const sizeRaw =
+        (entry.metadata as { size?: number | string } | null)?.size ?? null;
+      let size: number | null = null;
+      if (typeof sizeRaw === "string") {
+        const n = Number.parseInt(sizeRaw, 10);
+        if (Number.isFinite(n) && n >= 0) size = n;
+      } else if (typeof sizeRaw === "number" && Number.isFinite(sizeRaw)) {
+        size = sizeRaw;
+      }
+      out.push({
+        bucketName,
+        objectName: `uploads/${entry.name}`,
+        timeCreated:
+          createdAt && !Number.isNaN(createdAt.getTime()) ? createdAt : null,
+        size,
+      });
     }
-    return {
-      bucketName,
-      objectName: f.name,
-      timeCreated,
-      size,
-    };
-  });
+    if (data.length < pageSize) break;
+    offset += data.length;
+  }
+  return out;
 }
 
 /**
  * Delete one object from the private bucket. Throws on failure
- * (including 404 — caller decides whether a vanished-mid-sweep object
- * is benign).
+ * (caller decides whether a vanished-mid-sweep object is benign).
  */
 export async function deleteAttachmentObject(
   bucketName: string,
   objectName: string,
 ): Promise<void> {
-  await objectStorageClient.bucket(bucketName).file(objectName).delete();
+  const supabase = getSupabaseServiceRoleClient();
+  const { error } = await supabase.storage
+    .from(bucketName)
+    .remove([objectName]);
+  if (error) {
+    const wrapped = new Error(
+      `Failed to delete ${bucketName}/${objectName}: ${error.message}`,
+    ) as Error & { code?: number; status?: number; cause?: unknown };
+    wrapped.cause = error;
+    wrapped.code =
+      (error as { code?: number; statusCode?: number; status?: number }).code ??
+      (error as { statusCode?: number }).statusCode ??
+      (error as { status?: number }).status;
+    throw wrapped;
+  }
+  }
 }
 
 /**
- * Translate a bucket-listed object name (e.g.
- * `replit-objstore-abc/.private/uploads/<uuid>`) into the
- * `/objects/uploads/<uuid>` form the `prescriptions.attachment_object_key`
- * column stores. Returns null if the object doesn't sit under the
- * expected `<entity-prefix>/uploads/` prefix — those are not
- * attachment-PHI objects and the sweep should leave them alone.
- *
- * The DB column shape comes from
- * `ObjectStorageService.normalizeObjectEntityPath` in the api; the
- * api persists `/objects/<entityId>` where `<entityId>` is the path
- * after `<entity-prefix>/`. For attachments that path is always
- * `uploads/<uuid>`.
+ * Translate a bucket-listed object name (e.g. `uploads/<uuid>`) into
+ * the `/objects/uploads/<uuid>` form the
+ * `prescriptions.attachment_object_key` column stores. Returns null if
+ * the object doesn't sit under the expected `uploads/` prefix.
  */
-export function attachmentKeyForObjectName(
-  objectName: string,
-  env: NodeJS.ProcessEnv = process.env,
-): string | null {
-  const { entityPrefix } = getPrivateObjectLocation(env);
-  const expected = entityPrefix ? `${entityPrefix}/uploads/` : "uploads/";
-  if (!objectName.startsWith(expected)) return null;
-  const tail = objectName.slice(expected.length);
+export function attachmentKeyForObjectName(objectName: string): string | null {
+  if (!objectName.startsWith("uploads/")) return null;
+  const tail = objectName.slice("uploads/".length);
   if (!tail) return null;
   return `/objects/uploads/${tail}`;
 }

@@ -351,14 +351,14 @@ describe("readReengageMessagingConfig", () => {
     expect(cfg.practiceName).toBe("PennPaps");
   });
 
-  it("falls back to REPLIT_DEV_DOMAIN when RESUPPLY_VOICE_PUBLIC_BASE_URL is absent", () => {
+  it("falls back to RAILWAY_PUBLIC_DOMAIN when RESUPPLY_VOICE_PUBLIC_BASE_URL is absent", () => {
     const cfg = readReengageMessagingConfig({
       SENDGRID_API_KEY: "SG.x",
       SENDGRID_FROM_EMAIL: "f@x.com",
       SENDGRID_FROM_NAME: "X",
-      REPLIT_DEV_DOMAIN: "my-repl.repl.co",
+      RAILWAY_PUBLIC_DOMAIN: "pennfit.up.railway.app",
     });
-    expect(cfg.publicBaseUrl).toBe("https://my-repl.repl.co");
+    expect(cfg.publicBaseUrl).toBe("https://pennfit.up.railway.app");
   });
 
   it("returns null for credentials that are not in env", () => {

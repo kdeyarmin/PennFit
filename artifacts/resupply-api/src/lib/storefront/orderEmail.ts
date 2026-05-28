@@ -8,7 +8,7 @@
  *   - We do NOT persist the order — it is composed, sent, and discarded.
  *   - The recommendation engine and route remain stateless and PHI-free.
  *
- * Configuration (all REQUIRED — set as Replit Secrets):
+ * Configuration (all REQUIRED — set as Railway Variables):
  *   - SENDGRID_API_KEY       — SendGrid API key with "Mail Send" permission
  *   - PENN_FULFILLMENT_EMAIL — Where the order is delivered
  *   - SENDGRID_FROM_EMAIL    — Verified sender on the SendGrid account

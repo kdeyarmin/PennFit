@@ -694,8 +694,8 @@ function buildClients(publicBaseUrlOverride?: string): BuiltClients {
   const publicBaseUrl =
     publicBaseUrlOverride ??
     process.env["RESUPPLY_VOICE_PUBLIC_BASE_URL"] ??
-    (process.env["REPLIT_DEV_DOMAIN"]
-      ? `https://${process.env["REPLIT_DEV_DOMAIN"]}`
+    (process.env["RAILWAY_PUBLIC_DOMAIN"]
+      ? `https://${process.env["RAILWAY_PUBLIC_DOMAIN"]}`
       : "");
   if (accountSid && authToken && phoneNumber && publicBaseUrl) {
     try {

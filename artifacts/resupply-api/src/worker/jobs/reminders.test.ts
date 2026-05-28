@@ -129,15 +129,15 @@ describe("readWorkerMessagingConfig (worker env preflight)", () => {
     expect(cfg.sms?.publicBaseUrl).toBe("https://example.test");
   });
 
-  it("falls back to REPLIT_DEV_DOMAIN when explicit base URL absent", () => {
+  it("falls back to RAILWAY_PUBLIC_DOMAIN when explicit base URL absent", () => {
     const cfg = readWorkerMessagingConfigForTest({
-      REPLIT_DEV_DOMAIN: "abc.repl.co",
+      RAILWAY_PUBLIC_DOMAIN: "pennfit.up.railway.app",
       RESUPPLY_PRACTICE_NAME: "Test Practice",
       TWILIO_ACCOUNT_SID: "AC_x",
       TWILIO_AUTH_TOKEN: "tok",
       TWILIO_PHONE_NUMBER: "+15555550100",
     });
-    expect(cfg.sms?.publicBaseUrl).toBe("https://abc.repl.co");
+    expect(cfg.sms?.publicBaseUrl).toBe("https://pennfit.up.railway.app");
   });
 });
 

@@ -85,7 +85,7 @@ router.get("/admin/system-info", requireAdmin, async (_req, res) => {
         webhookSecretConfigured: Boolean(env.STRIPE_WEBHOOK_SIGNING_SECRET),
       },
       objectStorage: {
-        privateBucketConfigured: Boolean(env.PRIVATE_OBJECT_DIR),
+        privateBucketConfigured: Boolean(env.SUPABASE_STORAGE_BUCKET_PRIVATE),
       },
       openai: {
         apiKeyConfigured: Boolean(env.OPENAI_API_KEY),

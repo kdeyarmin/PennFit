@@ -41,7 +41,7 @@
 //     at what lives in req.log.
 //   * Logs (req.log) carry userId + counts + adminEmail only —
 //     NEVER customer email, address, item names, or review bodies.
-//   * No image logging anywhere (per replit.md rule).
+//   * No image logging anywhere (per CLAUDE.md "Hard rules").
 //
 // Lifetime value:
 //   Sums shop_orders.amount_total_cents over rows where

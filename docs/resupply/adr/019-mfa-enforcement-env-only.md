@@ -35,15 +35,15 @@ and explains why we accept it.
 
 `AUTH_REQUIRE_MFA_FOR_ADMINS` is the single source of truth for
 enforcement mode. Changing it is a deploy-time operation: an
-operator with Replit secrets-access permission edits the value,
+operator with Railway Variables write permission edits the value,
 the API process restarts, and every subsequent
 `/admin/mfa/status` call returns the new mode.
 
 The audit trail for "when did MFA enforcement change?" lives
-primarily in **Replit secrets history**:
+primarily in **Railway Variables history**:
 
-1. **Replit secrets history.** The hosting layer records the
-   identity of the operator who edited the secret plus the
+1. **Railway Variables history.** The hosting layer records the
+   identity of the operator who edited the variable plus the
    timestamp. This is the canonical chain-of-custody record for
    accreditation surveys.
 2. **Deploy/restart timing (supporting evidence only).** The
@@ -67,8 +67,8 @@ We picked env-only because:
    that turns enforcement off is a sharp tool: an attacker who
    pops one admin session (somehow, while MFA is mandatory) could
    immediately disable MFA for every other admin and survive
-   detection longer. Env-only adds a real-world step (Replit
-   console access, distinct from API session access) between
+   detection longer. Env-only adds a real-world step (Railway
+   dashboard access, distinct from API session access) between
    compromise and policy weakening.
 3. **The cost of "when did this change?" is small.** Surveyors
    ask the question once per accreditation cycle. Two log /

@@ -48,8 +48,8 @@ const signatureMiddleware = requireTwilioSignature({
   buildPublicUrl: (req) => {
     const base = (
       process.env.RESUPPLY_VOICE_PUBLIC_BASE_URL ??
-      (process.env.REPLIT_DEV_DOMAIN
-        ? `https://${process.env.REPLIT_DEV_DOMAIN}`
+      (process.env.RAILWAY_PUBLIC_DOMAIN
+        ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
         : "")
     ).replace(/\/+$/u, "");
     const originalUrl =
