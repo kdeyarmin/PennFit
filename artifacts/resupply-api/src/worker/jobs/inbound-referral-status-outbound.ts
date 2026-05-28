@@ -49,6 +49,14 @@ import { signParachutePayload } from "@workspace/resupply-integrations-parachute
 import { logger } from "../../lib/logger";
 import { createQueueWithDlq, VENDOR_SEND_QUEUE_OPTS } from "../lib/queue-options";
 
+/** Thrown when the partner-supplied callback URL is permanently unsafe. */
+class OutboundUrlUnsafeError extends Error {
+  constructor(public readonly reason: string) {
+    super(reason);
+    this.name = "OutboundUrlUnsafeError";
+  }
+}
+
 type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
 type OutboxRow =
   Database["resupply"]["Tables"]["inbound_referral_status_outbox"]["Row"];
@@ -220,6 +228,15 @@ export async function runReferralStatusOutbound(
         }
       }
     } catch (err) {
+      if (err instanceof OutboundUrlUnsafeError) {
+        // Permanently-unsafe target URL (private IP, http-only, DNS
+        // rebinding). Exhaust immediately — retrying will never make
+        // the URL safe, and a partner who controls target_url could
+        // otherwise silently consume our retry budget by submitting
+        // bad URLs.
+        await markExhausted(supabase, row.id, err.reason, null, stats);
+        return;
+      }
       const message = err instanceof Error ? err.message : String(err);
       await scheduleRetry(supabase, row, null, message.slice(0, 500), stats);
     }
@@ -288,19 +305,29 @@ async function postWithTimeout(
   // partner-supplied (DB-stored) callback URL can't be turned
   // into an internal-network probe. assertSafeOutboundUrlSync
   // also enforces https-only.
+  //
+  // Why we throw instead of synthesizing a 400 response: the caller
+  // (`processOne`) treats `status: 400` as a partner-rejected 4xx
+  // and schedules retries up to `max_retries` before exhausting. A
+  // permanently-unsafe URL (private IP, http-only, DNS rebinding)
+  // can never become safe, so retrying just burns the retry budget
+  // — and worse, a partner who controls the `target_url` column
+  // could use it to silently consume our retry capacity. Throwing a
+  // dedicated `OutboundUrlUnsafeError` lets the caller mark the row
+  // exhausted immediately with a precise reason code.
   let parsedUrl: URL;
   try {
     parsedUrl = assertSafeOutboundUrlSync(url);
   } catch (err) {
     const reason = err instanceof SsrfError ? err.reason : "unsafe_url";
-    return new Response(reason, { status: 400 });
+    throw new OutboundUrlUnsafeError(reason);
   }
   let pinnedIp: string;
   try {
     pinnedIp = await assertSafeOutboundHost(parsedUrl.hostname);
   } catch (err) {
     const reason = err instanceof SsrfError ? err.reason : "dns_failed";
-    return new Response(reason, { status: 400 });
+    throw new OutboundUrlUnsafeError(reason);
   }
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);

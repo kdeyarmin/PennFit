@@ -160,11 +160,19 @@ export async function runMaintenanceNudgeSweep(
   // therapy_link or therapy_night (i.e. an active CPAP user). We
   // don't want to badger pre-onboarding leads or returning
   // customers with no therapy stream.
+  // Sort by `id` so cohorts past the BATCH_SIZE cap still rotate
+  // through. Without an order-by, the SQL planner can return an
+  // arbitrary (but stable across runs) set, which under the JS-side
+  // quiet-period check left every patient in the "already nudged"
+  // bucket and the cron silently never reached the next cohort.
+  // We page on `id` rather than `last_nudged_at` to avoid a UPDATE
+  // dependency on the row.
   const { data: candidates, error } = await supabase
     .schema("resupply")
     .from("patients")
     .select("id, email")
     .not("email", "is", null)
+    .order("id", { ascending: true })
     .limit(BATCH_SIZE);
   if (error) throw error;
   const patients = (candidates ?? []).filter(

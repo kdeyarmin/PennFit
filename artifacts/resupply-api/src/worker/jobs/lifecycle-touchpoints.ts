@@ -161,6 +161,10 @@ export async function runLifecycleTouchpoints(
   const bdayPatternExpr = bdayPatterns
     .map((p) => `date_of_birth.ilike.*-${p}`)
     .join(",");
+  // ORDER BY id so popular birthdates (e.g. Jan 1, Jul 4) that
+  // exceed `PER_KIND_MAX * 2` candidates still rotate through cohorts
+  // across cron ticks. Without an explicit order the planner picks
+  // an arbitrary set; rows past the limit never get a chance.
   const { data: bdayRows, error: bdayErr } = await supabase
     .schema("resupply")
     .from("patients")
@@ -172,6 +176,7 @@ export async function runLifecycleTouchpoints(
     .or(
       `birthday_email_year_sent.is.null,birthday_email_year_sent.neq.${currentYear}`,
     )
+    .order("id", { ascending: true })
     .limit(PER_KIND_MAX * 2);
   if (bdayErr) throw bdayErr;
   for (const row of (bdayRows ?? []) as PatientRow[]) {
@@ -211,21 +216,45 @@ export async function runLifecycleTouchpoints(
         kind: "birthday",
       });
       if (!r.delivered) {
-        await supabase
+        // Roll back the stamp so next tick can retry. Check the
+        // rollback errored — if Supabase blips here, the stamp
+        // sticks and the patient silently won't see a birthday
+        // email until next year.
+        const { error: rollbackErr } = await supabase
           .schema("resupply")
           .from("patients")
           .update({ birthday_email_year_sent: row.birthday_email_year_sent })
           .eq("id", row.id);
+        if (rollbackErr) {
+          logger.error(
+            {
+              err: rollbackErr.message,
+              patientId: row.id,
+              event: "lifecycle_touchpoints_birthday_stamp_rollback_failed",
+            },
+            "lifecycle-touchpoints: birthday stamp rollback failed — patient may be permanently skipped this year",
+          );
+        }
         stats.birthdayFailed += 1;
         continue;
       }
       stats.birthdaySent += 1;
     } catch (err) {
-      await supabase
+      const { error: rollbackErr } = await supabase
         .schema("resupply")
         .from("patients")
         .update({ birthday_email_year_sent: row.birthday_email_year_sent })
         .eq("id", row.id);
+      if (rollbackErr) {
+        logger.error(
+          {
+            err: rollbackErr.message,
+            patientId: row.id,
+            event: "lifecycle_touchpoints_birthday_stamp_rollback_failed",
+          },
+          "lifecycle-touchpoints: birthday stamp rollback failed — patient may be permanently skipped this year",
+        );
+      }
       stats.birthdayFailed += 1;
       logger.error(
         {

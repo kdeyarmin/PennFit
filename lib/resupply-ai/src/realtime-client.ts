@@ -168,6 +168,17 @@ export class RealtimeClient extends EventEmitter {
       allowedToolNames: opts.allowedToolNames,
     };
 
+    // Attach a noop "error" listener immediately so a synchronously
+    // emitted error event (rare, but possible if the WS lib emits
+    // one before the bridge can wire its own listeners) doesn't
+    // hit the EventEmitter's default "unhandled error → throw"
+    // behavior and crash the worker process. The bridge attaches
+    // its real handler when it constructs around this client; it
+    // becomes the second listener.
+    this.on("error", () => {
+      /* default no-op until consumer attaches a real handler */
+    });
+
     const url = `${REALTIME_URL_BASE}?model=${encodeURIComponent(this.opts.model)}`;
     const headers = {
       Authorization: `Bearer ${this.opts.apiKey}`,
@@ -196,6 +207,24 @@ export class RealtimeClient extends EventEmitter {
 
   /** Forward base64-encoded µ-law audio captured from Twilio. */
   appendAudio(base64Mulaw: string): void {
+    // Drop audio frames when the WS send buffer is already deep —
+    // a stalled OpenAI socket (network blip, vendor throttle)
+    // otherwise lets every 20ms Twilio frame queue up unbounded.
+    // For a 15-minute call that's ~45,000 frames, plus the kernel
+    // buffer behind it; concurrent calls compound and RSS balloons
+    // toward OOM. 256 KB is well above one-frame-per-tick steady
+    // state but well below where it begins to matter for delivery
+    // latency. The hard drop is preferable to the OOM-kill that
+    // would otherwise take down every concurrent call.
+    const MAX_OUTBOUND_BUFFER_BYTES = 256 * 1024;
+    const bufferedAmount = (this.ws as unknown as { bufferedAmount?: number }).bufferedAmount;
+    if (typeof bufferedAmount === "number" && bufferedAmount > MAX_OUTBOUND_BUFFER_BYTES) {
+      this.emit("error", {
+        code: "ws_backpressure",
+        message: `OpenAI realtime WS send buffer at ${bufferedAmount} bytes — dropping audio frame`,
+      });
+      return;
+    }
     this.sendJson({
       type: "input_audio_buffer.append",
       audio: base64Mulaw,
