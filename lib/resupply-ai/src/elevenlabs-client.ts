@@ -353,9 +353,19 @@ export function createElevenLabsClient(
             latencyMs,
           };
         }
-        const json = (await upstream.json()) as {
-          voices?: ElevenLabsVoiceSummary[];
-        };
+        const json = await upstream.json().then(
+          (j) => j as { voices?: ElevenLabsVoiceSummary[] },
+          (parseErr) => {
+            // Misconfigured proxy returning HTML on the success path,
+            // or a transient body-parse error. Surface as a structured
+            // failure rather than letting JSON.parse leak through.
+            throw new Error(
+              `elevenlabs voices parse error: ${
+                parseErr instanceof Error ? parseErr.message : String(parseErr)
+              }`,
+            );
+          },
+        );
         return {
           ok: true,
           voices: Array.isArray(json.voices) ? json.voices : [],
