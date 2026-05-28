@@ -157,6 +157,5 @@ overrides:
   # are intentionally omitted here — pnpm-workspace.yaml already pins
   # them to stricter versions above (esbuild 0.27.3, uuid ^14.0.0).
   ip-address: ">=10.1.1"
-  "@tootallnate/once": ">=3.0.1"
   fast-xml-builder: ">=1.1.7"
   qs: ">=6.15.2"
