@@ -115,9 +115,16 @@ export async function deleteAttachmentObject(
     .from(bucketName)
     .remove([objectName]);
   if (error) {
-    throw new Error(
+    const wrapped = new Error(
       `Failed to delete ${bucketName}/${objectName}: ${error.message}`,
-    );
+    ) as Error & { code?: number; status?: number; cause?: unknown };
+    wrapped.cause = error;
+    wrapped.code =
+      (error as { code?: number; statusCode?: number; status?: number }).code ??
+      (error as { statusCode?: number }).statusCode ??
+      (error as { status?: number }).status;
+    throw wrapped;
+  }
   }
 }
 
