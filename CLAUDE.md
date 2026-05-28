@@ -69,7 +69,7 @@ side is worse than a visible conflict.
 
 ## Repository map
 
-This is a `pnpm` workspaces monorepo (Node v24, TypeScript 5.9, pnpm 10.33).
+This is a `pnpm` workspaces monorepo (Node v24, TypeScript 5.9, pnpm 11.4).
 
 | Path                     | Purpose                                                                                                                                                                                                                          |
 | ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
