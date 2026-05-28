@@ -1089,10 +1089,12 @@
   }
 
   /* Landing hero — light editorial card. Near-white pearl surface
-     with a navy hairline border and a softly tinted navy shadow,
-     so it lifts off the page without painting a colored band. Navy
-     ink display type carries the brand voice; a single thin gold
-     hairline along the bottom is the only chromatic accent. */
+     with a navy hairline border, an inset platinum frame for an
+     engraved-stationery feel, and a softly tinted navy shadow.
+     Navy ink display type with a single serif italic accent
+     carries the editorial register; thin gold cues (headline
+     swoosh + bottom hairline) keep the brand mark present
+     without painting a colored band. */
   .hero-card {
     position: relative;
     overflow: hidden;
@@ -1102,12 +1104,22 @@
       hsl(0 0% 100%) 0%,
       hsl(var(--penn-pearl)) 100%
     );
-    border: 1px solid hsl(var(--penn-platinum) / 0.7);
+    border: 1px solid hsl(var(--penn-platinum) / 0.75);
     box-shadow:
       0 1px 0 hsl(0 0% 100%) inset,
-      0 1px 2px hsl(var(--penn-navy-deep) / 0.04),
-      0 12px 32px hsl(var(--penn-navy-deep) / 0.06),
-      0 40px 80px hsl(var(--penn-navy-deep) / 0.04);
+      0 1px 2px hsl(var(--penn-navy-deep) / 0.05),
+      0 18px 40px hsl(var(--penn-navy-deep) / 0.08),
+      0 50px 100px hsl(var(--penn-navy-deep) / 0.06);
+  }
+  /* Inset hairline frame — the engraved-stationery detail that
+     lifts the surface from "plain card" to "considered object". */
+  .hero-card::before {
+    content: "";
+    position: absolute;
+    inset: 14px;
+    border: 1px solid hsl(var(--penn-platinum) / 0.55);
+    border-radius: calc(1.75rem - 14px);
+    pointer-events: none;
   }
   /* Single thin gold hairline along the bottom — the lone
      chromatic accent, echoing the logo's swoosh without
@@ -1115,17 +1127,63 @@
   .hero-card::after {
     content: "";
     position: absolute;
-    left: 12%;
-    right: 12%;
-    bottom: 0;
+    left: 14%;
+    right: 14%;
+    bottom: 14px;
     height: 1px;
     background: linear-gradient(
       90deg,
       transparent 0%,
-      hsl(var(--penn-gold) / 0.5) 50%,
+      hsl(var(--penn-gold) / 0.55) 50%,
       transparent 100%
     );
     pointer-events: none;
+  }
+
+  /* Editorial eyebrow — tracked uppercase label between thin
+     hairlines, sitting above the hero headline. The kind of
+     restrained typographic mark you'd see on a premium print ad
+     or a hotel brand homepage. */
+  .hero-eyebrow {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.875rem;
+    margin: 0 auto 1.75rem;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: hsl(var(--penn-navy) / 0.78);
+  }
+  .hero-eyebrow-rule {
+    display: inline-block;
+    width: 2.25rem;
+    height: 1px;
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      hsl(var(--penn-navy) / 0.4) 50%,
+      transparent 100%
+    );
+  }
+  .hero-eyebrow-mark {
+    display: inline-block;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: hsl(var(--penn-gold));
+    box-shadow: 0 0 0 2px hsl(var(--penn-gold) / 0.18);
+  }
+
+  /* Serif italic accent for one word inside an otherwise
+     sans-serif display headline — a single editorial moment that
+     reads as "carefully composed", not "marketing splash". */
+  .hero-headline-italic {
+    font-family: var(--app-font-serif);
+    font-style: italic;
+    font-weight: 500;
+    letter-spacing: -0.012em;
   }
 
   /* Hand-drawn gold swoosh beneath an accented headline line —

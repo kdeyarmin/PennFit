@@ -35,8 +35,16 @@ export function Home() {
           primary CTA, ghost outline secondary. */}
       <section className="hero-card w-full mb-14 md:mb-20 animate-shimmer-in">
         <div className="relative z-10 text-center max-w-5xl mx-auto px-6 py-14 md:px-12 md:py-24">
+          <div className="hero-eyebrow" aria-hidden="true">
+            <span className="hero-eyebrow-rule" />
+            <span className="hero-eyebrow-mark" />
+            <span>Penn Home Medical Supply &middot; CPAP Care</span>
+            <span className="hero-eyebrow-mark" />
+            <span className="hero-eyebrow-rule" />
+          </div>
           <h1 className="text-display text-4xl sm:text-5xl md:text-6xl font-bold tracking-tight mb-6 md:mb-7 leading-[1.08] sm:leading-[1.05] text-foreground">
-            Your CPAP, made simple.
+            Your CPAP, made{" "}
+            <span className="hero-headline-italic">simple</span>.
             <br />
             <span className="hero-headline-swoosh">Fit. Shop. Resupply.</span>
           </h1>
