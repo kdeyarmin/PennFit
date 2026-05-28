@@ -43,7 +43,7 @@ local `main` when it is behind `origin/main`. Bypass with
 `SKIP_HOOKS=1 git commit ...` or `--no-verify` for genuine
 emergencies.
 
-This is a `pnpm` workspaces monorepo (Node v22+, TypeScript 5.9). The
+This is a `pnpm` workspaces monorepo (Node v24, TypeScript 5.9). The
 top-level structure is:
 
 | Path                     | What lives here                                                                                                                                                                                                                                                                                                                                                                                                                                   |
@@ -55,7 +55,7 @@ top-level structure is:
 
 ## Prerequisites
 
-- Node.js **v22+** (CI runs v24; Railway/Railpack defaults to v22).
+- Node.js **v24** (matches CI; `engines.node` is pinned to `>=24`).
 - pnpm **v11+** (pinned to `pnpm@11.4.0` via `packageManager`).
 - Postgres **v14+** (we run v16). No extensions required — the
   active resupply schema only relies on `gen_random_uuid()`, which
