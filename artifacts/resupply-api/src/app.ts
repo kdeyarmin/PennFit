@@ -30,7 +30,7 @@ registerAuditRequestIdResolver(getRequestId);
 
 const app: Express = express();
 
-// We're behind Replit's reverse proxy. Without trust proxy, every request
+// We're behind Railway's reverse proxy. Without trust proxy, every request
 // looks like it came from 127.0.0.1, which breaks rate limiting and
 // audit-log IP capture.
 app.set("trust proxy", 1);
@@ -42,21 +42,15 @@ app.set("trust proxy", 1);
 app.use(securityHeaders);
 
 // CORS allowlist resolution, in priority order:
-//   1. RESUPPLY_ALLOWED_ORIGINS — explicit comma-separated list. Use this
-//      for custom domains or multi-tenant deployments where the runtime
-//      hostnames don't match the public-facing URL (e.g. fronted by a
-//      CDN or vanity domain).
-//   2. REPLIT_DOMAINS (production only) — Replit's runtime sets this to
-//      the exact hostnames the deployment is serving on. It is NOT
-//      attacker-controlled (no inbound HTTP can mutate it), so falling
-//      back to it preserves the same safety property as the explicit
-//      allowlist while removing a foot-gun where every deploy needs a
-//      manual env var.
-//   3. Dev fallback (non-production only) — Replit dev domain +
-//      localhost ports so preview iframes and curl can hit the API.
+//   1. RESUPPLY_ALLOWED_ORIGINS — explicit comma-separated list (required
+//      in production). Set this to the Railway-assigned public URL(s) or
+//      any custom domain fronting the API (e.g. a CDN or vanity domain).
+//   2. Dev fallback (non-production only) — localhost ports covering the
+//      Vite dev server (5173), the API itself (3000), and common
+//      alternatives (8080) so local development works without extra config.
 //
-// Production fails CLOSED: if NODE_ENV=production and BOTH the explicit
-// env var and REPLIT_DOMAINS are missing or empty, the process exits at
+// Production fails CLOSED: if NODE_ENV=production and
+// RESUPPLY_ALLOWED_ORIGINS is missing or empty, the process exits at
 // boot rather than silently inheriting the dev allowlist. That would
 // expose the admin API to unintended origins, and the risk grows as
 // soon as PHI-touching endpoints land — catching it at boot is cheaper
@@ -69,38 +63,19 @@ const allowedOrigins = (() => {
   if (fromEnv.length > 0) return fromEnv;
 
   if (process.env.NODE_ENV === "production") {
-    // REPLIT_DOMAINS is comma-separated and bare-host (no scheme).
-    // Production deployments are always HTTPS, so prepend `https://`.
-    const fromReplit = (process.env.REPLIT_DOMAINS ?? "")
-      .split(",")
-      .map((d) => d.trim())
-      .filter(Boolean)
-      .map((d) => `https://${d}`);
-    if (fromReplit.length > 0) {
-      logger.info(
-        { origins: fromReplit, source: "REPLIT_DOMAINS" },
-        "CORS allowlist derived from REPLIT_DOMAINS",
-      );
-      return fromReplit;
-    }
     throw new Error(
-      "Refusing to start: in production we require either " +
-        "RESUPPLY_ALLOWED_ORIGINS or REPLIT_DOMAINS to be set so the " +
-        "CORS allowlist is bound to vetted hostnames. Both are empty.",
+      "Refusing to start: in production RESUPPLY_ALLOWED_ORIGINS must be " +
+        "set to a comma-separated list of allowed origins so the CORS " +
+        "allowlist is bound to vetted hostnames. The variable is empty.",
     );
   }
 
-  const dev: string[] = [];
-  if (process.env.REPLIT_DEV_DOMAIN) {
-    dev.push(`https://${process.env.REPLIT_DEV_DOMAIN}`);
-  }
-  dev.push(
+  return [
     "http://localhost",
     "http://localhost:3000",
     "http://localhost:5173",
-    "http://localhost:80",
-  );
-  return dev;
+    "http://localhost:8080",
+  ];
 })();
 
 // `credentials: true` is required for the in-house auth path —
@@ -246,7 +221,7 @@ logger.info(
 // workflow per request — throttle hard. Usage events are anonymous
 // telemetry — looser limit. Both are keyed by IP via `ipKeyGenerator`
 // for IPv6-safe normalisation. `app.set("trust proxy", 1)` above is
-// what makes the IP key honest behind Replit's reverse proxy.
+// what makes the IP key honest behind Railway's reverse proxy.
 const storefrontOrderLimiter = expressRateLimit({
   windowMs: RATE_LIMITS.storefront_orders.windowMs,
   limit: RATE_LIMITS.storefront_orders.limit,
@@ -365,19 +340,17 @@ app.use(requireCsrfOnAdminMutations);
 // them as a generous IP-based safety net.
 app.use(adminMutationLooseLimit());
 
-// Routes are mounted under /resupply-api (matches the artifact.toml path
-// list). Phase 0 ships /resupply-api/healthz, /resupply-api/readyz,
-// and the admin smoke endpoint /resupply-api/me; richer endpoints
-// land in later phases.
+// Routes are mounted under /resupply-api. Phase 0 ships
+// /resupply-api/healthz, /resupply-api/readyz, and the admin smoke
+// endpoint /resupply-api/me; richer endpoints land in later phases.
 app.use("/resupply-api", router);
 
 // Storefront routes (lifted in from the deleted `api-server`
 // artifact). Mounted under /api so the cpap-fitter SPA's existing
 // fetch calls — `/api/orders`, `/api/recommend`, `/api/admin/*`,
 // `/api/usage-events`, `/api/reminders`, `/api/healthz` — keep
-// working unchanged. Both `/api` and `/resupply-api` are advertised
-// in this artifact's artifact.toml `paths` so the Replit reverse
-// proxy routes both prefixes to this same Express process.
+// working unchanged. Both `/api` and `/resupply-api` are served by
+// this same Express process on Railway.
 app.use("/api", storefrontRouter);
 
 // Top-level error handler — MUST be the last middleware mounted on
