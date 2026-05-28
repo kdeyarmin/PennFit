@@ -34,7 +34,6 @@ let pool: Pool | null = null;
 // `setPoolErrorLogger(() => {})` in setup.
 type ErrorLogger = (err: unknown, msg: string) => void;
 let errorLogger: ErrorLogger = (err, msg) => {
-  // eslint-disable-next-line no-console
   console.error(msg, err);
 };
 
