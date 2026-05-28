@@ -16,6 +16,44 @@ import tseslint from "typescript-eslint";
 import reactHooks from "eslint-plugin-react-hooks";
 import globals from "globals";
 
+// Restricted-syntax entries declared at module scope so per-file overrides
+// can opt OUT of one without losing the others. ESLint's `no-restricted-syntax`
+// rule replaces (not merges) its options when an override block sets it, so
+// every override block must re-list the entries it still wants enforced.
+
+const RESTRICT_UPSERT_CREDENTIAL = {
+  selector:
+    "CallExpression[callee.type='MemberExpression'][callee.property.name='upsertCredential']",
+  message:
+    "Do not call repo.upsertCredential directly — use writeUserChosenPassword, writeAdminSetPassword, or rehashPasswordPreservingProvenance from lib/resupply-auth/src/credential-writes.ts so the set_by_admin_at provenance is set explicitly.",
+};
+
+// Block accidental direct `boss.createQueue(...)` calls.
+//
+// pg-boss v10 enforces a self-referential FK on `queue.dead_letter`: the
+// DLQ row must already exist in `pgboss_resupply.queue` before the main
+// queue can be inserted with that reference. `buildQueueConfig` always
+// sets `deadLetter` to `${name}.dlq`, so a register function that calls
+// `boss.createQueue(name, buildQueueConfig(...))` without first creating
+// the `.dlq` queue will CRASH the API on first boot with
+// `queue_dead_letter_fkey`. The bug stayed invisible for months because
+// existing queues short-circuit the FK via `ON CONFLICT DO NOTHING`; new
+// queues took the API down in May 2026.
+//
+// `createQueueWithDlq` in worker/lib/queue-options.ts is the only safe
+// path — it creates the DLQ first, then the main queue. This rule makes
+// the previous-style direct call a lint error so the next person adding
+// a queue cannot quietly reintroduce the crash. Allowed exceptions are
+// declared in the override block below (queue-options.ts itself, where
+// `boss.createQueue` is implemented; and `*.test.ts` files that mock or
+// implement the helper).
+const RESTRICT_BOSS_CREATE_QUEUE = {
+  selector:
+    "CallExpression[callee.type='MemberExpression'][callee.property.name='createQueue']",
+  message:
+    "Do not call boss.createQueue directly — use createQueueWithDlq from artifacts/resupply-api/src/worker/lib/queue-options.ts so the DLQ is created before the main queue and `deadLetter` is locked to `${name}.dlq`.",
+};
+
 export default [
   // Global ignores — never lint generated, vendored, or build output.
   {
@@ -123,12 +161,8 @@ export default [
       // below.
       "no-restricted-syntax": [
         "error",
-        {
-          selector:
-            "CallExpression[callee.type='MemberExpression'][callee.property.name='upsertCredential']",
-          message:
-            "Do not call repo.upsertCredential directly — use writeUserChosenPassword, writeAdminSetPassword, or rehashPasswordPreservingProvenance from lib/resupply-auth/src/credential-writes.ts so the set_by_admin_at provenance is set explicitly.",
-        },
+        RESTRICT_UPSERT_CREDENTIAL,
+        RESTRICT_BOSS_CREATE_QUEUE,
       ],
     },
   },
@@ -137,7 +171,9 @@ export default [
   // list tight — every entry is a place where calling the repo
   // method directly is the correct thing to do (the three helpers
   // themselves; tests that exercise the lower-level repo contract).
-  // New product code must go through credential-writes.ts.
+  // New product code must go through credential-writes.ts. The
+  // createQueue ban still applies in these files (none of them touch
+  // pg-boss), so we re-list RESTRICT_BOSS_CREATE_QUEUE here.
   {
     files: [
       "lib/resupply-auth/src/credential-writes.ts",
@@ -151,7 +187,28 @@ export default [
       "lib/resupply-auth/src/**/*.test.ts",
     ],
     rules: {
-      "no-restricted-syntax": "off",
+      "no-restricted-syntax": ["error", RESTRICT_BOSS_CREATE_QUEUE],
+    },
+  },
+
+  // Allowed exceptions to the boss.createQueue ban above. Keep this
+  // list tight — every entry is a place where calling createQueue
+  // directly is correct:
+  //   - queue-options.ts itself IS the safe wrapper; it has to call
+  //     boss.createQueue twice (DLQ then main).
+  //   - Worker job *.test.ts files mock/stub boss.createQueue (or
+  //     re-implement createQueueWithDlq inside a vi.mock factory) to
+  //     assert registration behavior in isolation.
+  // The upsertCredential ban still applies in these files; we re-list
+  // RESTRICT_UPSERT_CREDENTIAL so it is not silently dropped.
+  {
+    files: [
+      "artifacts/resupply-api/src/worker/lib/queue-options.ts",
+      "artifacts/resupply-api/src/worker/lib/queue-options.test.ts",
+      "artifacts/resupply-api/src/worker/**/*.test.ts",
+    ],
+    rules: {
+      "no-restricted-syntax": ["error", RESTRICT_UPSERT_CREDENTIAL],
     },
   },
 ];
