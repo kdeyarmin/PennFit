@@ -1,6 +1,11 @@
-import { File } from "@google-cloud/storage";
+// Object-level ACL helpers. Policies live in
+// `resupply.object_storage_acls` (migration 0165) — Supabase Storage's
+// JS API doesn't expose per-object custom metadata, so we lift the
+// policy into Postgres. The in-process TypeScript surface
+// (ObjectAclPolicy, ObjectPermission, canAccessObject, set/get) is
+// unchanged so callers don't need to move.
 
-const ACL_POLICY_METADATA_KEY = "custom:aclPolicy";
+import { getSupabaseServiceRoleClient, type Json } from "@workspace/resupply-db";
 
 // Can be flexibly defined according to the use case.
 //
@@ -29,11 +34,24 @@ export interface ObjectAclRule {
   permission: ObjectPermission;
 }
 
-// Stored as object custom metadata under "custom:aclPolicy" (JSON string).
+// Persisted as a JSONB row in resupply.object_storage_acls, keyed by
+// (bucket, path).
 export interface ObjectAclPolicy {
   owner: string;
   visibility: "public" | "private";
   aclRules?: Array<ObjectAclRule>;
+}
+
+/**
+ * Stable handle for a stored object. The previous codebase passed
+ * `@google-cloud/storage`'s `File` around; we replace it with a
+ * lightweight identity record so callers don't need to import any
+ * vendor-specific type. Storage I/O always goes through
+ * `ObjectStorageService` — this type is identity-only.
+ */
+export interface StoredObject {
+  bucket: string;
+  path: string;
 }
 
 function isPermissionAllowed(
@@ -75,53 +93,70 @@ export class ObjectAlreadyOwnedError extends Error {
 }
 
 export async function setObjectAclPolicy(
-  objectFile: File,
+  obj: StoredObject,
   aclPolicy: ObjectAclPolicy,
 ): Promise<void> {
-  const [exists] = await objectFile.exists();
-  if (!exists) {
-    throw new Error(`Object not found: ${objectFile.name}`);
+  const supabase = getSupabaseServiceRoleClient();
+
+  // Reject if an owner is already set and it differs from the incoming
+  // owner. This prevents a customer from supplying a previously-issued
+  // objectPath that belongs to another customer and hijacking its
+  // ownership.
+  const { data: existing, error: readErr } = await supabase
+    .schema("resupply")
+    .from("object_storage_acls")
+    .select("owner_id")
+    .eq("bucket", obj.bucket)
+    .eq("path", obj.path)
+    .maybeSingle();
+  if (readErr) {
+    throw new Error(
+      `Failed to read existing ACL for ${obj.bucket}/${obj.path}: ${readErr.message}`,
+    );
+  }
+  if (existing?.owner_id && existing.owner_id !== aclPolicy.owner) {
+    throw new ObjectAlreadyOwnedError();
   }
 
-  // Reject if an owner is already set and it differs from the incoming owner.
-  // This prevents a customer from supplying a previously-issued objectPath
-  // that belongs to another customer and hijacking its ownership.
-  const [existingMeta] = await objectFile.getMetadata();
-  const rawExisting = existingMeta?.metadata?.[ACL_POLICY_METADATA_KEY];
-  if (rawExisting) {
-    let existing: ObjectAclPolicy | null = null;
-    try {
-      existing = JSON.parse(rawExisting as string) as ObjectAclPolicy;
-    } catch {
-      // Malformed existing metadata — treat as unclaimed.
-    }
-    if (existing?.owner && existing.owner !== aclPolicy.owner) {
-      throw new ObjectAlreadyOwnedError();
-    }
+  const { error: writeErr } = await supabase
+    .schema("resupply")
+    .from("object_storage_acls")
+    .upsert(
+      {
+        bucket: obj.bucket,
+        path: obj.path,
+        policy: aclPolicy as unknown as Json,
+        owner_id: aclPolicy.owner,
+        visibility: aclPolicy.visibility,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "bucket,path" },
+    );
+  if (writeErr) {
+    throw new Error(
+      `Failed to write ACL for ${obj.bucket}/${obj.path}: ${writeErr.message}`,
+    );
   }
-
-  await objectFile.setMetadata({
-    metadata: {
-      [ACL_POLICY_METADATA_KEY]: JSON.stringify(aclPolicy),
-    },
-  });
 }
 
 export async function getObjectAclPolicy(
-  objectFile: File,
+  obj: StoredObject,
 ): Promise<ObjectAclPolicy | null> {
-  const [metadata] = await objectFile.getMetadata();
-  const aclPolicy = metadata?.metadata?.[ACL_POLICY_METADATA_KEY];
-  if (!aclPolicy) {
-    return null;
+  const supabase = getSupabaseServiceRoleClient();
+  const { data, error } = await supabase
+    .schema("resupply")
+    .from("object_storage_acls")
+    .select("policy")
+    .eq("bucket", obj.bucket)
+    .eq("path", obj.path)
+    .maybeSingle();
+  if (error) {
+    throw new Error(
+      `Failed to read ACL for ${obj.bucket}/${obj.path}: ${error.message}`,
+    );
   }
-  try {
-    return JSON.parse(aclPolicy as string) as ObjectAclPolicy;
-  } catch {
-    // Malformed metadata — treat as unclaimed, consistent with
-    // setObjectAclPolicy validation behavior.
-    return null;
-  }
+  if (!data?.policy) return null;
+  return data.policy as unknown as ObjectAclPolicy;
 }
 
 export async function canAccessObject({
@@ -130,7 +165,7 @@ export async function canAccessObject({
   requestedPermission,
 }: {
   userId?: string;
-  objectFile: File;
+  objectFile: StoredObject;
   requestedPermission: ObjectPermission;
 }): Promise<boolean> {
   const aclPolicy = await getObjectAclPolicy(objectFile);

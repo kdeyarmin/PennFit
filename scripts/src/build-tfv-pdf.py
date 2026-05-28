@@ -123,7 +123,7 @@ story.append(Paragraph("Twilio Toll-Free Verification", H1))
 story.append(Paragraph("Step 2/2 — Messaging use case · Copy-paste answer sheet", SUB))
 story.append(Paragraph(
     "Replace every <b><font color='#b08d3e'>YOUR-DOMAIN</font></b> placeholder with the public "
-    "domain that serves your deployed PennPaps site (e.g. <font face='Courier'>pennpaps.replit.app</font> "
+    "domain that serves your deployed PennPaps site (e.g. <font face='Courier'>pennfit.up.railway.app</font> "
     "or your custom domain). The URLs you submit must be reachable by Twilio reviewers without a login.",
     NOTE,
 ))

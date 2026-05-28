@@ -61,7 +61,6 @@ export default [
       "**/dist/**",
       "**/build/**",
       "**/node_modules/**",
-      "**/.replit-artifact/**",
       "**/*.d.ts",
       // Orval-generated client code (was lib/resupply-api-client and
       // lib/api-client-react/src/generated; both folded into

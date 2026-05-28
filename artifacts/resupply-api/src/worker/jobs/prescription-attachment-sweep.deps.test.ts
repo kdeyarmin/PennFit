@@ -28,16 +28,13 @@ import {
 
 const supabaseMock = installSupabaseMock();
 
-// The shim's GCS calls aren't exercised here; stub them out so the
-// production deps factory is callable with no live bucket.
+// The shim's Supabase Storage calls aren't exercised here; stub them
+// out so the production deps factory is callable with no live bucket.
 vi.mock("../lib/object-storage.js", () => ({
   listAttachmentObjects: async () => [],
   attachmentKeyForObjectName: () => null,
   deleteAttachmentObject: async () => undefined,
-  getPrivateObjectLocation: () => ({
-    bucketName: "test-bucket",
-    entityPrefix: "",
-  }),
+  getPrivateStorageBucket: () => "test-bucket",
 }));
 
 // `logAudit` writes to a real audit_log table in production; stub it.

@@ -2,9 +2,9 @@
 
 ## Project Overview
 
-PennPaps is a privacy-first CPAP fitting, ordering, and resupply platform implemented as a pnpm monorepo. The production system consists primarily of two Node/Express backends (`artifacts/api-server` and `artifacts/resupply-api`), a background worker (`artifacts/resupply-worker`), and two React frontends (`artifacts/cpap-fitter` and `artifacts/resupply-dashboard`). PostgreSQL stores order data, reminder subscriptions, shop data, and resupply/patient records; Clerk provides authentication; Stripe handles checkout and subscription billing; SendGrid, Twilio, OpenAI, and Google Cloud Storage are integrated server-side.
+PennPaps is a privacy-first CPAP fitting, ordering, and resupply platform implemented as a pnpm monorepo. The production system consists primarily of two Node/Express backends (`artifacts/api-server` and `artifacts/resupply-api`), a background worker (`artifacts/resupply-worker`), and two React frontends (`artifacts/cpap-fitter` and `artifacts/resupply-dashboard`). PostgreSQL stores order data, reminder subscriptions, shop data, and resupply/patient records; Clerk provides authentication; Stripe handles checkout and subscription billing; SendGrid, Twilio, OpenAI, and Supabase Storage are integrated server-side.
 
-Production scanning should focus on server-reachable code and production frontends. `artifacts/mockup-sandbox`, agent skill assets, generated review UIs, and other development-only helper content are out of scope unless a production path imports or serves them. Replit terminates TLS for deployed traffic, and `NODE_ENV=production` is assumed in production.
+Production scanning should focus on server-reachable code and production frontends. `artifacts/mockup-sandbox`, agent skill assets, generated review UIs, and other development-only helper content are out of scope unless a production path imports or serves them. The Railway edge proxy terminates TLS for deployed traffic, and `NODE_ENV=production` is assumed in production.
 
 ## Assets
 
@@ -12,8 +12,8 @@ Production scanning should focus on server-reachable code and production fronten
 - **Protected health information in resupply** — patient names, contact channels, prescription metadata, conversation content, and encrypted PHI columns in the resupply schema. Compromise has high privacy and regulatory impact.
 - **User accounts and admin sessions** — Clerk-backed customer and admin identities, session state, role metadata, and allowlist-gated operator access. Compromise enables impersonation or privileged console access.
 - **Billing state and order integrity** — Stripe checkout sessions, subscription state, order status, refund actions, and reorder flows. Tampering can cause fraudulent purchases, refunds, or account confusion.
-- **Capability secrets and webhook secrets** — reminder manage tokens, Stripe/Twilio/SendGrid webhook verification material, GCS signed upload/download URLs, and environment secrets. Leakage can grant direct object access or let attackers drive privileged side effects.
-- **Application secrets and service credentials** — database credentials, Clerk secret key, Stripe secret key, Twilio credentials, SendGrid API key, OpenAI credentials, and GCS signing credentials. Exposure enables broad service compromise.
+- **Capability secrets and webhook secrets** — reminder manage tokens, Stripe/Twilio/SendGrid webhook verification material, Supabase Storage signed upload/download URLs, and environment secrets. Leakage can grant direct object access or let attackers drive privileged side effects.
+- **Application secrets and service credentials** — database credentials, Clerk secret key, Stripe secret key, Twilio credentials, SendGrid API key, OpenAI credentials, and Supabase service-role JWT (used to mint Supabase Storage signed URLs). Exposure enables broad service compromise.
 
 ## Trust Boundaries
 
@@ -22,7 +22,7 @@ Production scanning should focus on server-reachable code and production fronten
 - **Authenticated customer to unauthenticated public user** — customer-only shop/account operations must not be reachable with guessed identifiers or client-only checks.
 - **Authenticated admin/agent to normal user** — admin dashboards, PHI views, uploads, reorder/refund tooling, and audit-affecting routes must enforce role checks server-side and prevent cross-surface privilege confusion between PennPaps admin and resupply admin.
 - **API to PostgreSQL** — server code has broad database authority; injection or improper row scoping can expose or modify sensitive records.
-- **API/worker to third-party services** — Stripe, Clerk, Twilio, SendGrid, OpenAI, and GCS calls cross into external systems using privileged credentials. Webhooks and callbacks must verify origin/authenticity.
+- **API/worker to third-party services** — Stripe, Clerk, Twilio, SendGrid, OpenAI, and Supabase Storage calls cross into external systems using privileged credentials. Webhooks and callbacks must verify origin/authenticity.
 - **HTTP to WebSocket upgrade (`/resupply-api/voice/stream`)** — upgrade requests bypass normal Express middleware and require their own authentication and anti-replay controls.
 - **Development-only to production boundary** — mockup sandbox, internal skills, tests, generated eval pages, and dev fallbacks must not become production-reachable through misconfiguration or imports.
 

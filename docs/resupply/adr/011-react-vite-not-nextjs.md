@@ -3,8 +3,9 @@
 ## Context
 
 The original plan called for Next.js 14 (app router) for the admin
-dashboard. Replit's web scaffold is React + Vite + Tailwind + shadcn/ui,
-and the existing `artifacts/cpap-fitter` (the PennPaps fitter) follows that pattern.
+dashboard. The existing scaffold (and the `artifacts/cpap-fitter` PennPaps
+fitter) is React + Vite + Tailwind + shadcn/ui, so the dashboard inherits
+that pattern.
 
 Adding Next.js would mean:
 
@@ -14,7 +15,7 @@ Adding Next.js would mean:
   can use the generated React Query hooks fine, but the SSR / RSC parts
   are wasted in a static admin tool).
 - A different reverse-proxy story (Next.js wants to own the server; the
-  Replit shared proxy already routes by path).
+  Railway edge proxy already routes by path).
 
 ## Decision
 

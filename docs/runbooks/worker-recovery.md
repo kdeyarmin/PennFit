@@ -3,7 +3,7 @@
 Covers the in-process pg-boss worker booted from
 `artifacts/resupply-api/src/worker/index.ts`. All jobs run as crons
 inside the same process as the API; there is no separate worker
-artifact (see `replit.md` and the header comment in `worker/index.ts`
+artifact (see `README.md` and the header comment in `worker/index.ts`
 for why).
 
 This runbook is the playbook for the alert that fires when a job hits
@@ -173,7 +173,7 @@ If `active = 0` and `created/retry > 0` and the alert is firing,
 nothing is processing the queue. Check:
 
 1. **Is the API process up?** `/readyz` should return 200. If it's
-   wedged, restart the artifact (`Resupply API` workflow).
+   wedged, redeploy the `resupply-api` Railway service.
 2. **Is pg-boss boot complete?** The worker logs
    `"resupply in-process worker ready"` once `startWorker()` finishes.
    If that line is missing from the boot log, pg-boss failed to start.

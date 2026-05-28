@@ -24,12 +24,12 @@
 //
 // IMPORTANT URL-PROXY HAZARD:
 //   When Twilio POSTs to a domain that's behind a reverse proxy (which
-//   is exactly our setup on Replit), the URL Twilio signed is the
-//   PUBLIC one — `https://<replit-dev-domain>/resupply-api/voice/...`
-//   — NOT the internal `http://localhost:80/...` Express sees. The
+//   is exactly our setup on Railway), the URL Twilio signed is the
+//   PUBLIC one — `https://<railway-public-domain>/resupply-api/voice/...`
+//   — NOT the internal `http://localhost:<PORT>/...` Express sees. The
 //   caller is responsible for reconstructing the public URL before
 //   calling validateTwilioSignature. The route handler builds it from
-//   `RESUPPLY_VOICE_PUBLIC_BASE_URL` (or the dev REPLIT_DEV_DOMAIN
+//   `RESUPPLY_VOICE_PUBLIC_BASE_URL` (or the RAILWAY_PUBLIC_DOMAIN
 //   fallback) plus `req.originalUrl`.
 
 import { createHmac, timingSafeEqual } from "node:crypto";

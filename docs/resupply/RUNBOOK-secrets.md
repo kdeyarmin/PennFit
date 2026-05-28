@@ -3,8 +3,9 @@
 The resupply application reads exactly one application-level secret
 that affects in-flight signed artifacts: `RESUPPLY_LINK_HMAC_KEY`.
 Everything else (DB credentials, Stripe / SendGrid / Twilio / OpenAI
-keys, GCS service-account JSON) is "rotate, restart, done" — they
-don't affect any signed artifacts already in flight.
+keys, Supabase service-role JWT used by Supabase Storage) is "rotate,
+restart, done" — they don't affect any signed artifacts already in
+flight.
 
 This runbook covers `RESUPPLY_LINK_HMAC_KEY` rotation specifically,
 because that one is *not* a simple swap.
@@ -101,7 +102,7 @@ done":
 | `SENDGRID_API_KEY` | Outbound email | Rotate at SendGrid first, then deploy. |
 | `TWILIO_AUTH_TOKEN` | Inbound webhook signatures + outbound SMS/voice | Twilio supports token rollover via secondary auth tokens. |
 | `OPENAI_API_KEY` | Storefront chat | No signed artifacts in flight — rotate, restart. |
-| Object storage credentials | GCS / Replit storage | Same. |
+| Object storage credentials | Supabase Storage (service-role JWT) | Same. |
 
 ## Documenting another secret
 

@@ -11,9 +11,6 @@ allowBuilds:
 autoInstallPeers: false
 
 catalog:
-  "@replit/vite-plugin-cartographer": ^0.5.5
-  "@replit/vite-plugin-dev-banner": ^0.1.1
-  "@replit/vite-plugin-runtime-error-modal": ^0.0.6
   "@tailwindcss/vite": ^4.3.0
   "@tanstack/react-query": ^5.100.10
   "@types/node": ^25.8.0
@@ -33,10 +30,6 @@ catalog:
   zod: 4.4.3
 
 minimumReleaseAge: 1440
-
-minimumReleaseAgeExclude:
-  - "@replit/*"
-  - stripe-replit-sync
 
 onlyBuiltDependencies:
   - "@swc/core"
@@ -140,15 +133,6 @@ overrides:
   postcss: ^8.5.10
   yaml: ^2.8.3
   http-proxy-agent: ^7.0.2
-  # NOTE: GHSA-vpq2-c234-7xj6 (LOW) on @tootallnate/once <3.0.1 is reachable
-  # only via @google-cloud/storage > teeny-request > http-proxy-agent (the
-  # legacy v5 line that teeny-request still pins). Forcing http-proxy-agent
-  # v7 inside that subtree breaks teeny-request's API contract; jumping
-  # @tootallnate/once to v3 breaks the v2 consumer that imports it.
-  # The advisory requires an attacker-controlled proxy URL, which the GCS
-  # client never accepts from user input — we only call it for our own
-  # bucket. Tracking upstream; accepted risk until @google-cloud/storage
-  # bumps teeny-request.
   vitest>vite: ^8.0.13
   vite-node>vite: ^8.0.13
   "@vitest/mocker>vite": ^8.0.13

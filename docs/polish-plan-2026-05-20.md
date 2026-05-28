@@ -232,7 +232,7 @@ Lighthouse scores baseline + fail-on-regression policy is in CI.
   `artifacts/cpap-fitter/src/pages/admin/patient-detail/overview-tab.tsx`
   as the pattern. ~400 LOC drop.
 - Document the pattern in
-  [`replit.md`](../replit.md) under "Admin SPA conventions."
+  [`README.md`](../README.md) under "Admin SPA conventions."
 
 **Exit criteria:** `patient-detail.tsx` drops to ~4,150 LOC; the
 ratchet is in CI.

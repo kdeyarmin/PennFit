@@ -5,8 +5,8 @@
 // and the inbound-referral status outbox (worker/jobs/
 // inbound-referral-status-outbound.ts) so an admin-controlled
 // callback URL cannot be turned into an SSRF probe against the
-// Replit / Supabase internal network or the AWS metadata endpoint
-// at 169.254.169.254.
+// Railway / Supabase internal network or the cloud metadata
+// endpoint at 169.254.169.254.
 //
 // Two layers of defence:
 //   1. `assertSafeOutboundUrlSync(url)` — synchronous, runs at

@@ -230,8 +230,8 @@ admins?" and "who has the env-var access?"
 **Fix sketch:** Either (a) add a one-page ADR
 (`docs/adr/0007-mfa-enforcement-env-only.md`) stating the env-only
 posture, the reason (deploy-time policy, not runtime), and the audit
-trail (deploy logs / Replit secrets history), or (b) add an admin route
-that flips the setting and writes an audit row. **Effort: S (doc)
+trail (deploy logs / Railway Variables history), or (b) add an admin
+route that flips the setting and writes an audit row. **Effort: S (doc)
 or M (route).**
 
 ---

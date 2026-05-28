@@ -11,11 +11,11 @@ production secret-store access and live database credentials.
 | # | Step                                                                      | Where it runs                          | Section |
 | - | ------------------------------------------------------------------------- | -------------------------------------- | ------- |
 | 0 | Generate fresh HMAC keys                                                  | Your laptop                            | [§1](#1-generate-fresh-hmac-keys-2-min)              |
-| 1 | Set every production secret in the deploy target's secret store           | Replit Deployments → Secrets           | [§2](#2-set-every-production-secret-5-min)              |
+| 1 | Set every production secret in the deploy target's secret store           | Railway dashboard → service → Variables | [§2](#2-set-every-production-secret-5-min)              |
 | 2 | Run `preflight:prod` against the loaded env                               | A shell inside the deploy target       | [§3](#3-run-preflightprod-90-s)              |
 | 3 | Apply pending migrations against the production Supabase database         | Your laptop, pointed at prod creds     | [§4](#4-apply-migrations-against-the-production-db-5-min)              |
 | 4 | Bootstrap the first admin user                                            | Your laptop, pointed at prod creds     | [§5](#5-bootstrap-the-first-admin-3-min)              |
-| 5 | Restart the API + run post-deploy smoke tests                             | Replit Deployments → Restart           | [§6](#6-restart-and-smoke-test-5-min)              |
+| 5 | Restart the API + run post-deploy smoke tests                             | Railway dashboard → service → Redeploy | [§6](#6-restart-and-smoke-test-5-min)              |
 
 Total wall-clock once you have the credentials in hand: ~20 minutes.
 
@@ -51,21 +51,22 @@ Notes:
 
 ## 2. Set every production secret (5 min)
 
-Open Replit Deployments → Secrets and confirm every variable below
-is set to its production value. The list mirrors
-`artifacts/resupply-api/src/lib/env-check.ts` (required-at-boot) plus
-the vendor keys called out by name in the launch brief.
+Open the Railway dashboard → the `resupply-api` service → Variables
+and confirm every variable below is set to its production value. The
+list mirrors `artifacts/resupply-api/src/lib/env-check.ts`
+(required-at-boot) plus the vendor keys called out by name in the
+launch brief.
 
 ### Required at boot — `resupply-api` will not start without these
 
 | Variable                     | Production value                                                                  |
 | ---------------------------- | --------------------------------------------------------------------------------- |
-| `PORT`                       | The port the deployment listens on (Replit sets this automatically).              |
+| `PORT`                       | The port the deployment listens on (Railway sets this automatically).             |
 | `DATABASE_URL`               | `postgres://…` pointing at the production Supabase database, NOT a test branch.  |
 | `SUPABASE_URL`               | The production project's API URL from Supabase → Project Settings → API.          |
 | `SUPABASE_SERVICE_ROLE_KEY`  | Service-role JWT from the same page. Bypasses RLS — never expose client-side.    |
 | `RESUPPLY_LINK_HMAC_KEY`     | `openssl` output from §1.                                                          |
-| `RESUPPLY_ALLOWED_ORIGINS` **or** `REPLIT_DOMAINS` | Comma-separated hostnames (origin form for the first, bare-host for the second) that the CORS allowlist trusts. On Replit deployments `REPLIT_DOMAINS` is auto-populated; on any other host you must set `RESUPPLY_ALLOWED_ORIGINS`. With both empty in `NODE_ENV=production` the API throws at boot — `artifacts/resupply-api/src/app.ts:85`. |
+| `RESUPPLY_ALLOWED_ORIGINS` **or** `RAILWAY_PUBLIC_DOMAIN` | Comma-separated hostnames (origin form for the first, bare-host for the second) that the CORS allowlist trusts. On Railway deployments `RAILWAY_PUBLIC_DOMAIN` is auto-populated; on any other host you must set `RESUPPLY_ALLOWED_ORIGINS`. With both empty in `NODE_ENV=production` the API throws at boot — `artifacts/resupply-api/src/app.ts:85`. |
 
 These five (plus the CORS-allowlist gate) are what
 `assertRequiredEnv()` + the CORS sanity check
@@ -134,16 +135,17 @@ Production secrets in place — confirm the shape before booting the API.
 
 Two ways to run it:
 
-**From a shell inside the deploy target (recommended).** The Replit
-deployment's secret store is already loaded into the shell, so
-`process.env` mirrors what `resupply-api` will see at boot.
+**From a shell inside the deploy target (recommended).** A `railway
+run` shell against the production environment loads the service's
+Variables into `process.env`, mirroring what `resupply-api` will see
+at boot.
 
 ```bash
 pnpm --filter @workspace/scripts preflight:prod
 ```
 
 **From your laptop against an exported env file.** Useful for a
-pre-flight before you've pushed the secrets to Replit.
+pre-flight before you've pushed the secrets to Railway.
 
 ```bash
 # Drop the production secrets you intend to push into an env file
@@ -305,7 +307,7 @@ Trigger a deploy / restart so the new env values take effect, then
 walk the smoke-test list.
 
 ```text
-Replit Deployments → Restart   (or push to main, depending on your wiring)
+Railway dashboard → service → Redeploy   (or push to main, depending on your wiring)
 ```
 
 Smoke tests — every one of these should pass before you announce the

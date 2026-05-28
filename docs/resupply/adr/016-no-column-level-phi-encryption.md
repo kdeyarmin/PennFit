@@ -51,7 +51,7 @@ outweighed its incremental security:
    0025 — none of which were testable without a live key, none
    of which composed cleanly with Drizzle's query builder.
 3. **No proven threat reduction.** The keys were stored in
-   Replit secrets, fetched at boot, held in process memory.
+   Railway Variables, fetched at boot, held in process memory.
    Anyone with shell on the deploy host could decrypt at will. The
    threat model that pgcrypto actually defended against (DB dump
    leaving the deploy boundary) is the same one Postgres's

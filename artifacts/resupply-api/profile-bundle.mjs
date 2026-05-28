@@ -67,7 +67,6 @@ const result = await esbuild({
     "@aws-sdk/*",
     "@azure/*",
     "@opentelemetry/*",
-    "@google-cloud/*",
     "@google/*",
     "googleapis",
     "firebase-admin",

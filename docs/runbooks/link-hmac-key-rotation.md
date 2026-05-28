@@ -97,13 +97,13 @@ Concretely, at the moment the new key takes effect on a process:
 
 ### Rotation (3 minutes, atomic across all processes)
 
-1. **Set the new value in the secret store** — Replit Secrets,
+1. **Set the new value in the secret store** — Railway Variables,
    Doppler, AWS Secrets Manager, etc. (whichever is wired up).
 2. **Restart every process that runs the API artifact.** The key
    is read at first call, not at boot, but a restart guarantees
-   no in-process cached old key persists. The
-   `Resupply API: Resupply API` workflow restart is the supported
-   path (it bounces all replicas atomically).
+   no in-process cached old key persists. Triggering a redeploy
+   of the `resupply-api` Railway service bounces all replicas
+   atomically.
 3. **Verify boot:** `/readyz` returns 200. Tail the boot log for
    any `RESUPPLY_LINK_HMAC_KEY is not set` errors — none should
    appear if the secret store is correctly wired.

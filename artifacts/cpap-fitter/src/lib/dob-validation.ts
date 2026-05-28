@@ -3,9 +3,9 @@
 // on the <input>, but this function is the authoritative gate so a
 // paste-in-future-date or browser without HTML5 validation can't slip
 // through.
-// NOTE: an alternate local-date-string implementation from
-// subrepl-3ppc2e03/main was discarded in favor of the UTC end-of-today
-// path below (Task #72 merge preference).
+// NOTE: an alternate local-date-string implementation was discarded
+// in favor of the UTC end-of-today path below (Task #72 merge
+// preference).
 export const DOB_MIN = "1900-01-01";
 
 /**

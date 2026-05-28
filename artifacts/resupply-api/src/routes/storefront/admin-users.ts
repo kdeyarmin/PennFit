@@ -209,8 +209,8 @@ router.get("/admin/users", requireAdminOnly, adminUsersReadLimiter, async (req, 
 function buildInviteRedirectUrl(req: import("express").Request): string {
   const fromEnv = process.env.PENN_ADMIN_PUBLIC_BASE_URL?.trim();
   if (fromEnv) return fromEnv.replace(/\/+$/, "");
-  const replit = process.env.REPLIT_DOMAINS?.split(",")[0]?.trim();
-  if (replit) return `https://${replit}`;
+  const railway = process.env.RAILWAY_PUBLIC_DOMAIN?.trim();
+  if (railway) return `https://${railway}`;
   const proto = (req.headers["x-forwarded-proto"] as string) ?? req.protocol;
   const host = req.headers["x-forwarded-host"] ?? req.headers.host;
   return `${proto}://${host}`;

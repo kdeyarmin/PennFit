@@ -75,14 +75,14 @@ const listQuery = z
 
 /**
  * Returns the public base URL used for Twilio fax callbacks and the
- * cover-letter mediaUrl. Falls back to the Replit dev domain in dev.
- * Returns null when neither env var is set.
+ * cover-letter mediaUrl. Falls back to RAILWAY_PUBLIC_DOMAIN when the
+ * explicit env var is unset. Returns null when neither is set.
  */
 export function getFaxPublicBaseUrl(): string | null {
   const raw =
     process.env.RESUPPLY_VOICE_PUBLIC_BASE_URL?.trim() ??
-    (process.env.REPLIT_DEV_DOMAIN
-      ? `https://${process.env.REPLIT_DEV_DOMAIN}`
+    (process.env.RAILWAY_PUBLIC_DOMAIN
+      ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
       : null);
   return raw ? raw.replace(/\/+$/u, "") : null;
 }
@@ -91,7 +91,7 @@ export function getFaxPublicBaseUrl(): string | null {
  * Returns true when all four conditions for a live fax dispatch are met:
  *   - TWILIO_ACCOUNT_SID + TWILIO_AUTH_TOKEN (shared with SMS/voice)
  *   - TWILIO_FAX_FROM_NUMBER (fax-enabled Twilio number)
- *   - RESUPPLY_VOICE_PUBLIC_BASE_URL or REPLIT_DEV_DOMAIN (needed to
+ *   - RESUPPLY_VOICE_PUBLIC_BASE_URL or RAILWAY_PUBLIC_DOMAIN (needed to
  *     build the signed mediaUrl that Twilio fetches, and the
  *     statusCallback URL for delivery events)
  *
