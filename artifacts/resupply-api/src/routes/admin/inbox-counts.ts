@@ -52,15 +52,12 @@ router.get("/admin/inbox-counts", requireAdmin, async (_req, res) => {
   // already index-backed (every WHERE clause hits a partial or
   // narrow index), so the wall-clock cost is the slowest of the
   // six rather than their sum.
-  const [
-    { count: awaitingReplyConversations },
-    { count: pendingReturns },
-    { count: pendingReviews },
-    { count: newPatientDocuments },
-    { count: overdueShop },
-    { count: overduePatient },
-    { count: newInboundFaxes },
-  ] = await Promise.all([
+  // Throw on ANY of the seven errors so a partial Supabase failure
+  // surfaces as a 500 rather than silently rendering "queue empty"
+  // on every nav badge. The previous code destructured only `count`
+  // from each result and ignored `error`, which masked transient
+  // table-permission / network-blip errors as zero counts.
+  const results = await Promise.all([
     supabase
       .schema("resupply")
       .from("conversations")
@@ -103,6 +100,18 @@ router.get("/admin/inbox-counts", requireAdmin, async (_req, res) => {
       .select("*", { count: "exact", head: true })
       .eq("status", "new"),
   ]);
+  for (const r of results) {
+    if (r.error) throw r.error;
+  }
+  const [
+    { count: awaitingReplyConversations },
+    { count: pendingReturns },
+    { count: pendingReviews },
+    { count: newPatientDocuments },
+    { count: overdueShop },
+    { count: overduePatient },
+    { count: newInboundFaxes },
+  ] = results;
 
   res.json({
     awaitingReplyConversations: awaitingReplyConversations ?? 0,
