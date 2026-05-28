@@ -1,4 +1,7 @@
 import { randomUUID } from "node:crypto";
+import { existsSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 import express, { type Express, type Request } from "express";
 import cors from "cors";
@@ -352,6 +355,86 @@ app.use("/resupply-api", router);
 // working unchanged. Both `/api` and `/resupply-api` are served by
 // this same Express process on Railway.
 app.use("/api", storefrontRouter);
+
+// Serve the cpap-fitter SPA from this same Express process so a
+// single Railway service hosts both the API and the customer/admin
+// UI (matches the "one customer-facing site" topology documented in
+// README.md / CLAUDE.md). Without this block, every direct URL on
+// the deploy host falls through to a 404 — including the admin sign-
+// in form's POST, which the SPA renders as "Not found." (see
+// lib/resupply-auth-react/src/client.ts:defaultMessageForStatus).
+//
+// Path resolution: this module is bundled to
+// `artifacts/resupply-api/dist/index.mjs`; the Vite build outputs to
+// `artifacts/cpap-fitter/dist/public/`. Two parent dirs up gets us
+// to `artifacts/`, then into `cpap-fitter/dist/public`.
+//
+// We guard on `existsSync` so a dev session running only the API
+// (with Vite serving the SPA on a separate port) skips the wiring
+// gracefully — the API still works, the SPA just isn't co-served.
+const SPA_DIST = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "../../cpap-fitter/dist/public",
+);
+const SPA_INDEX_HTML = path.join(SPA_DIST, "index.html");
+
+if (existsSync(SPA_INDEX_HTML)) {
+  // Vite emits content-hashed filenames under `assets/`; the default
+  // ETag/304 revalidation is plenty for everything else. `index: false`
+  // forces the explicit history-fallback handler below to be the only
+  // path that serves index.html, so a GET to `/` and a GET to
+  // `/admin/sign-in` go through the same code path and pick up the
+  // same Cache-Control header.
+  app.use(express.static(SPA_DIST, { index: false, fallthrough: true }));
+
+  // SPA history fallback. Any unmatched GET that accepts HTML and
+  // isn't under /api or /resupply-api (those return their own
+  // 404 — we don't want a missing API route to silently 200 with
+  // HTML and confuse fetch callers) falls back to index.html so
+  // Wouter can route it client-side. `no-store` on the HTML keeps
+  // a CDN from pinning a stale build after the hashed asset
+  // filenames roll forward.
+  app.use((req, res, next) => {
+    if (req.method !== "GET" && req.method !== "HEAD") return next();
+    const p = req.path;
+    if (
+      p === "/api" ||
+      p === "/resupply-api" ||
+      p.startsWith("/api/") ||
+      p.startsWith("/resupply-api/")
+    ) {
+      return next();
+    }
+    if (p.startsWith("/assets/")) return next();
+    if (path.basename(p).includes(".")) return next();
+    const acceptHeader = req.headers.accept;
+    if (
+      typeof acceptHeader !== "string" ||
+      !acceptHeader.toLowerCase().includes("text/html")
+    ) {
+      return next();
+    }
+    res.set("Cache-Control", "no-cache, no-store, must-revalidate");
+    res.sendFile(SPA_INDEX_HTML);
+  });
+
+  logger.info(
+    { event: "spa_mounted", spa_dist: SPA_DIST },
+    "serving cpap-fitter SPA + history fallback from this process",
+  );
+} else {
+  if (process.env.NODE_ENV === "production") {
+    logger.error(
+      { event: "spa_dist_missing", spa_dist: SPA_DIST },
+      "cpap-fitter dist not found in production — refusing to start",
+    );
+    throw new Error("Refusing to start: cpap-fitter dist/public/index.html missing");
+  }
+  logger.warn(
+    { event: "spa_dist_missing", spa_dist: SPA_DIST },
+    "cpap-fitter dist not found — SPA will not be co-served from this process",
+  );
+}
 
 // Top-level error handler — MUST be the last middleware mounted on
 // the app. Catches any error a route handler throws (or passes via
