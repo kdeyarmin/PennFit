@@ -18,6 +18,14 @@ import { HomeStatusBanner } from "@/components/home-status-banner";
 import { TrustSignalStrip } from "@/components/trust-signal-strip";
 import { openPennBot } from "@/lib/chat-events";
 
+/**
+ * Renders the PennPaps landing page with hero, trust signals, featured paths, and resource tiles.
+ *
+ * The component builds the full Home page UI and wires primary CTAs for fitting, shopping, and account flows;
+ * it also calls the application document-title hook to stamp the canonical URL and exposes a PennBot launch control.
+ *
+ * @returns The React element for the Home (landing) page.
+ */
 export function Home() {
   // Empty title keeps the static index.html title (already optimal
   // for the landing page); the hook is still called so the canonical
@@ -29,22 +37,30 @@ export function Home() {
       <div className="relative z-10 flex flex-col items-center max-w-6xl mx-auto w-full px-4 py-8 md:py-14">
         <HomeStatusBanner />
 
-      {/* Hero — Penn-navy gradient card with white display type, a
-          gold swoosh under the second line (echoes the logo), and a
-          gold primary CTA. Sits inside the page container so it reads
-          as a deliberate hero card rather than a full-bleed band. */}
-      <section className="hero-card w-full mb-14 md:mb-20 animate-shimmer-in">
+      {/* Hero — light editorial card. Pearl surface, navy ink
+          display type, a single thin gold hairline along the
+          bottom edge as the lone chromatic accent. Solid navy
+          primary CTA, ghost outline secondary. */}
+      <section className="hero-card hero-card-editorial w-full mb-14 md:mb-20 animate-shimmer-in">
         <div className="relative z-10 text-center max-w-5xl mx-auto px-6 py-14 md:px-12 md:py-24">
-          <h1 className="text-display text-4xl sm:text-5xl md:text-6xl font-bold tracking-tight mb-6 md:mb-7 leading-[1.08] sm:leading-[1.05] text-white">
-            Your CPAP, made simple.
+          <div className="hero-eyebrow" aria-hidden="true">
+            <span className="hero-eyebrow-rule" />
+            <span className="hero-eyebrow-mark" />
+            <span>Penn Home Medical Supply &middot; CPAP Care</span>
+            <span className="hero-eyebrow-mark" />
+            <span className="hero-eyebrow-rule" />
+          </div>
+          <h1 className="text-display text-4xl sm:text-5xl md:text-6xl font-bold tracking-tight mb-6 md:mb-7 leading-[1.08] sm:leading-[1.05] text-foreground">
+            Your CPAP, made{" "}
+            <span className="hero-headline-italic">simple</span>.
             <br />
             <span className="hero-headline-swoosh">Fit. Shop. Resupply.</span>
           </h1>
 
-          <p className="text-base sm:text-lg md:text-xl text-white/80 leading-relaxed mb-9 md:mb-11 max-w-2xl mx-auto">
-            <span className="font-semibold text-white">PennPaps.com</span> is
-            the online CPAP storefront from{" "}
-            <span className="font-semibold text-white">
+          <p className="text-base sm:text-lg md:text-xl text-muted-foreground leading-relaxed mb-9 md:mb-11 max-w-2xl mx-auto">
+            <span className="font-semibold text-foreground">PennPaps.com</span>{" "}
+            is the online CPAP storefront from{" "}
+            <span className="font-semibold text-foreground">
               Penn Home Medical Supply
             </span>{" "}
             — your local DME team. Get clinically matched to the right mask,
@@ -55,7 +71,7 @@ export function Home() {
           <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
             <Button
               size="lg"
-              className="h-14 px-8 text-base font-semibold rounded-full btn-gold-glow group"
+              className="h-14 px-8 text-base font-semibold rounded-full group"
               data-testid="home-cta-fit"
               onClick={() => navigate("/consent")}
             >
@@ -65,7 +81,7 @@ export function Home() {
             <Button
               size="lg"
               variant="outline"
-              className="h-14 px-6 text-base rounded-full btn-on-dark-outline gap-2"
+              className="h-14 px-6 text-base rounded-full gap-2"
               data-testid="home-cta-shop"
               onClick={() => navigate("/shop")}
             >
@@ -76,7 +92,7 @@ export function Home() {
           <button
             type="button"
             onClick={() => openPennBot()}
-            className="mt-5 inline-flex items-center gap-1.5 text-sm text-white/70 hover:text-white transition-colors"
+            className="mt-5 inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
             data-testid="home-ask-pennbot"
           >
             <Sparkles className="w-3.5 h-3.5" />
