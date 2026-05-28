@@ -4,6 +4,10 @@ packages:
   - lib/integrations/*
   - scripts
 
+allowBuilds:
+  argon2: set this to true or false
+  esbuild: set this to true or false
+
 autoInstallPeers: false
 
 catalog:
@@ -148,3 +152,11 @@ overrides:
   vitest>vite: ^8.0.13
   vite-node>vite: ^8.0.13
   "@vitest/mocker>vite": ^8.0.13
+  # Moved from package.json "pnpm.overrides" during pnpm 11 upgrade
+  # (pnpm 11 no longer reads the package.json field). esbuild and uuid
+  # are intentionally omitted here — pnpm-workspace.yaml already pins
+  # them to stricter versions above (esbuild 0.27.3, uuid ^14.0.0).
+  ip-address: ">=10.1.1"
+  "@tootallnate/once": ">=3.0.1"
+  fast-xml-builder: ">=1.1.7"
+  qs: ">=6.15.2"
