@@ -46,6 +46,40 @@ import { ensureShopCustomerRow } from "../../lib/stripe/customer.js";
 
 const router = Router();
 
+/**
+ * Strip a supabase-js / PostgREST error to safe identifiers only.
+ *
+ * supabase-js wraps PostgREST errors in objects of shape
+ * `{ message, details, hint, code }`. On constraint violations
+ * (unique, NOT NULL, foreign key) the `details` and `hint` fields
+ * echo back the offending row's column values — for orders that
+ * means DOB, insurance member ID, address, and email all land in
+ * structured logs. CLAUDE.md hard rule: "No order request bodies in
+ * the application logger." Pino does NOT redact these by default.
+ */
+function redactDbErr(err: unknown): {
+  name: string;
+  code?: string;
+  message?: string;
+} {
+  if (err instanceof Error) {
+    const code =
+      (err as Error & { code?: unknown }).code !== undefined
+        ? String((err as Error & { code?: unknown }).code)
+        : undefined;
+    return { name: err.name, code, message: err.message };
+  }
+  if (err && typeof err === "object") {
+    const e = err as { code?: unknown; message?: unknown };
+    return {
+      name: "non_error",
+      code: e.code !== undefined ? String(e.code) : undefined,
+      message: e.message !== undefined ? String(e.message) : undefined,
+    };
+  }
+  return { name: "non_error", message: String(err) };
+}
+
 router.post(
   "/orders",
   attachSignedIn,
@@ -135,8 +169,14 @@ router.post(
     // We deliberately don't fail the whole request on a DB write error.
     // The patient's primary expectation is that Penn receives the order;
     // losing the audit row is bad but recoverable, losing the email is not.
+    //
+    // Strip the supabase-js error to name+code+message only. Its raw
+    // shape includes `.details`/`.hint` which echo the rejected row's
+    // column values on constraint violation — for orders these carry
+    // DOB, insurance member ID, and email (PHI). CLAUDE.md hard rule:
+    // "No order request bodies in the application logger."
     logger.error(
-      { err },
+      { err: redactDbErr(err) },
       "Failed to persist order before send (continuing with email)",
     );
   }
@@ -230,7 +270,10 @@ router.post(
         .eq("id", dbId);
       if (updateErr) throw updateErr;
     } catch (err) {
-      logger.error({ err, dbId }, "Failed to update order email_status");
+      logger.error(
+        { err: redactDbErr(err), dbId },
+        "Failed to update order email_status",
+      );
     }
   }
 

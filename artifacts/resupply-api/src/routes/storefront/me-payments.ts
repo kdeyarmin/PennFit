@@ -170,19 +170,53 @@ router.post("/me/payments/checkout-session", async (req, res) => {
     return;
   }
 
-  // Resolve absolute success/cancel URLs from the request origin.
-  // Stripe needs absolute URLs; the caller passes relative paths so
-  // the same code works across preview deployments. Parse with URL
-  // constructor to extract origin and reject malformed input.
+  // Resolve absolute success/cancel URLs. Stripe needs absolute URLs;
+  // the caller passes relative paths so the same code works across
+  // preview deployments. We MUST NOT trust the request's Origin/
+  // Referer header directly — that would let an attacker who can
+  // get the patient to POST this endpoint with a controlled Origin
+  // pick the post-payment redirect destination (Stripe checkout →
+  // /account/billing on evil.com). Validate against the same
+  // allowlist CORS uses (RESUPPLY_ALLOWED_ORIGINS / canonical
+  // SHOP_PUBLIC_BASE_URL / RAILWAY_PUBLIC_DOMAIN).
+  const allowedOrigins = new Set<string>();
+  const explicit = (process.env.RESUPPLY_ALLOWED_ORIGINS ?? "")
+    .split(",")
+    .map((o) => o.trim())
+    .filter(Boolean);
+  for (const o of explicit) allowedOrigins.add(o);
+  const railwayHost = (process.env.RAILWAY_PUBLIC_DOMAIN ?? "").trim();
+  if (railwayHost) allowedOrigins.add(`https://${railwayHost}`);
+  const shopBase = (process.env.SHOP_PUBLIC_BASE_URL ?? "").trim();
+  if (shopBase) {
+    try {
+      allowedOrigins.add(new URL(shopBase).origin);
+    } catch {
+      // Bad SHOP_PUBLIC_BASE_URL — preflight catches this; ignore here.
+    }
+  }
   const originRaw = req.get("origin") ?? req.get("referer") ?? "";
-  let baseOrigin: string;
+  let baseOrigin: string | null = null;
   try {
     const parsed = new URL(originRaw);
-    baseOrigin = parsed.origin;
+    if (allowedOrigins.has(parsed.origin)) {
+      baseOrigin = parsed.origin;
+    }
   } catch {
+    /* fall through to allowlist fallback */
+  }
+  if (!baseOrigin && shopBase) {
+    try {
+      baseOrigin = new URL(shopBase).origin;
+    } catch {
+      // unreachable in production (preflight gates); leave null
+    }
+  }
+  if (!baseOrigin) {
     res.status(400).json({
       error: "invalid_origin",
-      message: "Origin header required for hosted checkout redirect",
+      message:
+        "Could not resolve a trusted redirect base — Origin header was not in the allowlist and SHOP_PUBLIC_BASE_URL is not configured.",
     });
     return;
   }

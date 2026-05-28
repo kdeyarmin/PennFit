@@ -242,7 +242,19 @@ export const stripeWebhookHandler: RequestHandler = async (
       { hasConfig: !!config },
       "stripe webhook hit while shop is not fully configured",
     );
-    res.status(503).json({ error: "shop_unavailable" });
+    // In production, a missing webhook signing secret means the
+    // operator has misconfigured the deploy — return 503 so Stripe
+    // alerts surface it loudly. Outside production (preview / dev /
+    // local), Stripe shouldn't be pointed here at all, but if it is
+    // we ack 200 so it doesn't enter the 3-day exponential retry
+    // pattern and exhaust the per-endpoint retry budget on dev
+    // environments. The body marks the no-op so a developer reading
+    // the dev log can tell what happened.
+    if (process.env.NODE_ENV === "production") {
+      res.status(503).json({ error: "shop_unavailable" });
+    } else {
+      res.status(200).json({ ok: true, ignored: "shop_not_configured" });
+    }
     return;
   }
 
@@ -305,15 +317,19 @@ export const stripeWebhookHandler: RequestHandler = async (
   }
   if (dedupeOutcome === "error") {
     // The dedup INSERT itself failed for a reason other than UNIQUE
-    // conflict (Supabase unreachable, etc.). Fall through and let
-    // the switch run — better to risk a duplicate side-effect than
-    // permanently drop a real event because the idempotency table
-    // is offline. The downstream per-table UNIQUE constraints still
-    // catch the most-load-bearing double-writes (markPaid's session
-    // guard, items upsert's composite UNIQUE).
+    // conflict (Supabase unreachable, transient brownout, etc.).
+    // Surface as 500 so Stripe retries with its standard exponential
+    // backoff — better than running the side effects (refund mirror,
+    // subscription upsert, customer-sync) un-gated and risking a
+    // double-write that the per-table UNIQUE constraints don't all
+    // cover. Stripe's retries handle transient backend faults; the
+    // earlier "proceed without dedup" path was a foot-gun for
+    // brownouts where it would re-run side effects on every redelivery.
     log?.warn?.(
-      "stripe webhook: dedup insert errored — proceeding without event-level gate",
+      "stripe webhook: dedup insert errored — returning 500 so Stripe retries",
     );
+    res.status(500).json({ error: "dedup_unavailable" });
+    return;
   }
 
   try {
@@ -738,18 +754,38 @@ async function markPaid(
   }
   if (customerEmail) update.customer_email = customerEmail;
 
+  // Upsert (not bare UPDATE). The previous UPDATE silently matched
+  // zero rows when `checkout.ts` crashed after creating the Stripe
+  // session but before persisting the local `shop_orders` row — the
+  // webhook handler would then return 200 and Stripe would never
+  // retry, permanently losing a paid order from local history.
+  // Upserting on `stripe_session_id` records the order from the
+  // webhook even when the route-side write was lost; if checkout.ts
+  // later writes the row, the conflict resolves cleanly.
+  const upsertRow: ShopOrderUpdate & { stripe_session_id: string } = {
+    ...update,
+    stripe_session_id: session.id,
+  };
   const { data: rows, error } = await supabase
     .schema("resupply")
     .from("shop_orders")
-    .update(update)
-    .eq("stripe_session_id", session.id)
+    .upsert(upsertRow, { onConflict: "stripe_session_id" })
     .select("id, customer_id, paid_at");
   if (error) throw error;
 
   log?.info?.({ amountCents: session.amount_total }, "shop order marked paid");
 
   const row = rows?.[0];
-  if (!row) return null;
+  if (!row) {
+    // Should be unreachable after the upsert above (the row either
+    // existed and was updated, or didn't and was inserted). Log loud
+    // so an operator can investigate if it ever fires.
+    log?.info?.(
+      { sessionId: session.id },
+      "shop order markPaid: upsert returned no row — investigate",
+    );
+    return null;
+  }
   return {
     id: row.id,
     customerId: row.customer_id,
@@ -1041,16 +1077,36 @@ export async function markCartRecovered(
 async function markStatus(
   sessionId: string,
   status: "expired" | "failed",
-  log: { info?: (...args: unknown[]) => void } | undefined,
+  log:
+    | {
+        info?: (...args: unknown[]) => void;
+        warn?: (...args: unknown[]) => void;
+      }
+    | undefined,
 ): Promise<void> {
   const supabase = getSupabaseServiceRoleClient();
-  const { error } = await supabase
+  // Filter on current status. A late-arriving `checkout.session.expired`
+  // (Stripe redelivery, out-of-order webhook) MUST NOT demote a row
+  // that was already paid or refunded — that would hide the order
+  // from /shop/me/orders, block the return flow, and corrupt the
+  // refund pipeline. Allowed transitions only: pending → expired |
+  // failed.
+  const { data: updated, error } = await supabase
     .schema("resupply")
     .from("shop_orders")
     .update({ status, updated_at: new Date().toISOString() })
-    .eq("stripe_session_id", sessionId);
+    .eq("stripe_session_id", sessionId)
+    .eq("status", "pending")
+    .select("id, status");
   if (error) throw error;
-  log?.info?.({ status }, "shop order status updated");
+  if (!updated || updated.length === 0) {
+    log?.warn?.(
+      { sessionId, attemptedStatus: status },
+      "shop order status update skipped — row not in pending state (late or out-of-order event)",
+    );
+    return;
+  }
+  log?.info?.({ status, count: updated.length }, "shop order status updated");
 }
 
 /**
@@ -1079,10 +1135,19 @@ async function upsertSubscription(
 
   const customerId = readCustomerIdFromMetadata(subscription.metadata);
   if (!customerId) {
+    // Previously this branch stored the row with `customer_id =
+    // "__unknown"`. That collides across unrelated subscriptions
+    // that all share the sentinel value, and lets an admin query
+    // on `customer_id = "__unknown"` return cross-tenant data.
+    // Drop the row entirely instead — surfacing the missing-
+    // metadata case loudly in logs is more useful than a poisoned
+    // shop_subscriptions table. Operators can backfill from Stripe
+    // by event id if the subscription is genuinely ours.
     log?.warn?.(
-      { subscriptionId: subscription.id },
-      "stripe subscription event missing customer_id metadata; storing with __unknown placeholder",
+      { subscriptionId: subscription.id, stripeCustomerId: subscription.customer },
+      "stripe subscription event missing customer_id metadata — dropping (no synthetic placeholder)",
     );
+    return;
   }
 
   const stripeCustomerId =
@@ -1168,7 +1233,7 @@ async function upsertSubscription(
     .schema("resupply")
     .from("shop_subscriptions")
     .insert({
-      customer_id: customerId ?? "__unknown",
+      customer_id: customerId,
       stripe_subscription_id: subscription.id,
       stripe_customer_id: stripeCustomerId,
       status: subscription.status,
@@ -1243,7 +1308,7 @@ async function upsertSubscription(
 
 async function markStatusByPaymentIntent(
   paymentIntentId: string,
-  status: "refunded",
+  _statusHint: "refunded",
   ctx: {
     chargeId: string;
     stripeEventId: string;
@@ -1251,23 +1316,62 @@ async function markStatusByPaymentIntent(
     currency: string | null;
     refundReason: string | null;
     refundId: string | null;
-    log: { info?: (...args: unknown[]) => void } | undefined;
+    log:
+      | {
+          info?: (...args: unknown[]) => void;
+          warn?: (...args: unknown[]) => void;
+        }
+      | undefined;
   },
 ): Promise<void> {
   const supabase = getSupabaseServiceRoleClient();
-  // RETURNING the affected row so we can stamp the audit with the
-  // local order id and short-circuit the audit write if the update
-  // matched nothing (Stripe re-deliveries on a missing row, etc.).
+  // Resolve the order first so we can decide between partial and
+  // full refund. The previous implementation wrote `status:"refunded"`
+  // on EVERY charge.refunded event regardless of whether the refund
+  // was for $1 or the full amount — partial refunds silently flipped
+  // status, hid the order from /shop/me/orders, blocked the return
+  // flow, and made the order's true paid history unrecoverable.
+  const { data: existing, error: lookupErr } = await supabase
+    .schema("resupply")
+    .from("shop_orders")
+    .select("id, customer_id, amount_total_cents, status")
+    .eq("stripe_payment_intent_id", paymentIntentId)
+    .limit(1);
+  if (lookupErr) throw lookupErr;
+  if (!existing || existing.length === 0) {
+    ctx.log?.info?.(
+      { paymentIntentId, matched: 0 },
+      "shop order refund event for unknown payment_intent — skipping",
+    );
+    return;
+  }
+  const row = existing[0]!;
+  const orderTotalCents = row.amount_total_cents ?? null;
+  const isFullRefund =
+    orderTotalCents !== null && ctx.amountRefundedCents >= orderTotalCents;
+  const nowIso = new Date().toISOString();
+  const update: ShopOrderUpdate = {
+    amount_refunded_cents: ctx.amountRefundedCents,
+    updated_at: nowIso,
+  };
+  if (isFullRefund) {
+    update.status = "refunded";
+  }
   const { data: updated, error } = await supabase
     .schema("resupply")
     .from("shop_orders")
-    .update({ status, updated_at: new Date().toISOString() })
-    .eq("stripe_payment_intent_id", paymentIntentId)
+    .update(update)
+    .eq("id", row.id)
     .select("id, customer_id");
   if (error) throw error;
   ctx.log?.info?.(
-    { status, matched: updated?.length ?? 0 },
-    "shop order marked refunded",
+    {
+      matched: updated?.length ?? 0,
+      isFullRefund,
+      amountRefundedCents: ctx.amountRefundedCents,
+      orderTotalCents,
+    },
+    isFullRefund ? "shop order marked refunded (full)" : "shop order partial-refund recorded (status unchanged)",
   );
   if (!updated || updated.length === 0) return;
 
