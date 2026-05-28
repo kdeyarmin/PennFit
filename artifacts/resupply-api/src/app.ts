@@ -405,7 +405,17 @@ if (existsSync(SPA_INDEX_HTML)) {
     ) {
       return next();
     }
-    if (!req.accepts("html")) return next();
+    // Do not history-fallback requests that look like file/assets
+    // (for example `/assets/app.js` or `/favicon.ico`). Those should
+    // remain 404s when missing instead of returning HTML.
+    if (p.includes(".")) return next();
+
+    // Only fall back for clients that explicitly ask for HTML.
+    // `req.accepts("html")` also matches generic `*/*`, which is too
+    // broad and can make missing assets receive index.html.
+    const accept = req.get("Accept") ?? "";
+    if (!accept.includes("text/html")) return next();
+
     res.set("Cache-Control", "no-cache, no-store, must-revalidate");
     res.sendFile(SPA_INDEX_HTML);
   });
