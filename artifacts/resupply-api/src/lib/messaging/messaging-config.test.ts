@@ -313,7 +313,7 @@ describe("readMessagingConfigOrNull", () => {
     const cfg = readMessagingConfigOrNull({
       ...TWILIO_ONLY,
       ...SENDGRID_ONLY,
-      RESUPPLY_LINK_HMAC_KEY: "base64-key-32-bytes-minimum-here=",
+      RESUPPLY_LINK_HMAC_KEY: "QkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkI=",
     });
     // May be null if hasLinkHmacKey() rejects our synthetic key; just verify
     // the structural shape when it succeeds.
@@ -334,7 +334,7 @@ describe("readMessagingConfigOrNull", () => {
       SENDGRID_FROM_NAME: "X",
       SENDGRID_EVENT_WEBHOOK_PUBLIC_KEY: "key",
       RAILWAY_PUBLIC_DOMAIN: "pennfit.up.railway.app",
-      RESUPPLY_LINK_HMAC_KEY: "base64-key-32-bytes-minimum-here=",
+      RESUPPLY_LINK_HMAC_KEY: "QkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkI=",
     });
     if (cfg !== null) {
       expect(cfg.sms.publicBaseUrl).toBe("https://pennfit.up.railway.app");

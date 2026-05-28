@@ -87,7 +87,7 @@ function makeApp(): Express {
 // ─── env setup ────────────────────────────────────────────────────
 // signUnsubscribeToken needs RESUPPLY_LINK_HMAC_KEY at import time
 // via getLinkHmacKey(). We set it once for the whole suite.
-const TEST_HMAC_KEY = "test-fitter-complete-hmac-key-for-vitest";
+const TEST_HMAC_KEY = "QkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkI=";
 let origHmacKey: string | undefined;
 beforeAll(() => {
   origHmacKey = process.env.RESUPPLY_LINK_HMAC_KEY;
@@ -117,7 +117,7 @@ const LEAD_CONSENT = {
 };
 
 beforeEach(() => {
-  process.env.RESUPPLY_LINK_HMAC_KEY = "test-key-supply-campaign-pixel-tests";
+  process.env.RESUPPLY_LINK_HMAC_KEY = "QkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkI=";
   supabaseMock.reset();
   supabaseMockLegacy.mockReset();
   _resetFitterCompleteRateBucketForTests();

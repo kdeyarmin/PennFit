@@ -64,7 +64,7 @@ function setMessagingEnv(): void {
   process.env.SENDGRID_FROM_EMAIL = "no-reply@penn.example";
   process.env.SENDGRID_FROM_NAME = "Penn Sleep";
   process.env.SENDGRID_EVENT_WEBHOOK_PUBLIC_KEY = "fake-pubkey";
-  process.env.RESUPPLY_LINK_HMAC_KEY = "link-hmac-test-key-32bytesXXXXXXX";
+  process.env.RESUPPLY_LINK_HMAC_KEY = "QkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkI=";
   process.env.RESUPPLY_VOICE_PUBLIC_BASE_URL = "https://test.example.com";
 }
 

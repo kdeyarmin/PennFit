@@ -1,6 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { LINK_HMAC_KEY_ENV, getLinkHmacKey, hasLinkHmacKey } from "./index";
+import {
+  LINK_HMAC_KEY_ENV,
+  LINK_HMAC_KEY_MIN_BYTES,
+  getLinkHmacKey,
+  hasLinkHmacKey,
+} from "./index";
+
+// A 32-byte secret, base64-encoded. Matches the preflight contract
+// (`requireBase64Bytes("RESUPPLY_LINK_HMAC_KEY", 32)`) so tests and
+// preflight agree on what a "valid" key looks like.
+const VALID_KEY_BYTES = Buffer.alloc(LINK_HMAC_KEY_MIN_BYTES, 0x42);
+const VALID_KEY_B64 = VALID_KEY_BYTES.toString("base64");
 
 describe("resupply-secrets", () => {
   let saved: string | undefined;
@@ -16,9 +27,9 @@ describe("resupply-secrets", () => {
   });
 
   describe("getLinkHmacKey", () => {
-    it("returns the env value as raw UTF-8 bytes", () => {
-      process.env[LINK_HMAC_KEY_ENV] = "test-link-key";
-      expect(getLinkHmacKey().toString("utf8")).toBe("test-link-key");
+    it("decodes the env value from base64 to raw bytes", () => {
+      process.env[LINK_HMAC_KEY_ENV] = VALID_KEY_B64;
+      expect(getLinkHmacKey().equals(VALID_KEY_BYTES)).toBe(true);
     });
 
     it("treats whitespace-only values as unset", () => {
@@ -30,6 +41,19 @@ describe("resupply-secrets", () => {
     it("throws a clear error when the env var is unset", () => {
       expect(() => getLinkHmacKey()).toThrow(
         /RESUPPLY_LINK_HMAC_KEY is not set/,
+      );
+    });
+
+    it("throws when the value is not strict base64", () => {
+      // URL-safe base64 (- and _) is rejected to match preflight.
+      process.env[LINK_HMAC_KEY_ENV] = "abc-def_ghi";
+      expect(() => getLinkHmacKey()).toThrow(/not valid base64/);
+    });
+
+    it("throws when the decoded value is shorter than the minimum", () => {
+      process.env[LINK_HMAC_KEY_ENV] = Buffer.alloc(8, 1).toString("base64");
+      expect(() => getLinkHmacKey()).toThrow(
+        /at least \d+ bytes are required/,
       );
     });
   });
