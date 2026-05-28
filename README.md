@@ -7,12 +7,14 @@ aimed at coding agents (Claude Code and similar).
 ## Hosting
 
 The app is designed to run on **Railway**. The repo ships with
-`railway.json` and `nixpacks.toml` at the root, so connecting the
-GitHub repo to a Railway project and pointing it at the `main` branch
-is enough to build + deploy. Custom domain → Railway → DNS; the
-fallback host is `pennfit.up.railway.app`. Environment variables are
-configured under **Variables** in the Railway service settings; the
-required set is documented below and validated by `preflight:prod`.
+`railway.json` at the root, so connecting the GitHub repo to a Railway
+project and pointing it at the `main` branch is enough to build +
+deploy. Railpack auto-detects pnpm + Node from the root `package.json`
+(`packageManager` and `engines.node`); no `nixpacks.toml` or
+`Dockerfile` is required. Custom domain → Railway → DNS; the fallback
+host is `pennfit.up.railway.app`. Environment variables are configured
+under **Variables** in the Railway service settings; the required set is
+documented below and validated by `preflight:prod`.
 
 ## Git source of truth
 
@@ -53,8 +55,8 @@ top-level structure is:
 
 ## Prerequisites
 
-- Node.js **v24**
-- pnpm **v9+**
+- Node.js **v24** (matches CI; `engines.node` is pinned to `>=24`).
+- pnpm **v11+** (pinned to `pnpm@11.4.0` via `packageManager`).
 - Postgres **v14+** (we run v16). No extensions required — the
   active resupply schema only relies on `gen_random_uuid()`, which
   has been built into Postgres core since v13.

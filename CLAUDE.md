@@ -25,11 +25,17 @@ via `scripts/install-hooks.sh`, source in `scripts/git-hooks/pre-commit`)
 blocks commits to local `main` when it falls behind `origin/main`; bypass
 with `SKIP_HOOKS=1` only for genuine emergencies.
 
-**Deploy target:** Railway. The repo ships with `railway.json` and
-`nixpacks.toml` at the root; pushing a branch and opening a PR triggers
-Railway's GitHub integration to build a preview environment. Production
-is the `main`-branch deploy under the `pennfit.up.railway.app` host (or
-the bound custom domain).
+**Deploy target:** Railway. The repo ships with `railway.json` at the
+root; Railpack auto-detects pnpm + Node from `packageManager` and
+`engines.node` in the root `package.json` (no `nixpacks.toml` or
+`Dockerfile`). Pushing a branch and opening a PR triggers Railway's
+GitHub integration to build a preview environment. Production is the
+`main`-branch deploy under the `pennfit.up.railway.app` host (or the
+bound custom domain). The Express process is started directly by Node
+(`node --enable-source-maps artifacts/resupply-api/dist/index.mjs`) so
+SIGTERM reaches the graceful-shutdown handler — running it via
+`pnpm start` would make pnpm PID 1 and silently swallow SIGTERM on every
+deploy rollover.
 
 Post-mortem of the historical Git-drift event:
 [`docs/git-state-2026-05-01.md`](./docs/git-state-2026-05-01.md).
