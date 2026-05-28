@@ -97,12 +97,17 @@ describe("POST /integrations/inbound/:source — production fail-closed (PR chan
 
   afterEach(() => {
     // Restore original environment
-    process.env.NODE_ENV = originalNodeEnv;
+    if (originalNodeEnv === undefined) {
+      delete process.env.NODE_ENV;
+    } else {
+      process.env.NODE_ENV = originalNodeEnv;
+    }
     if (originalParachuteSecret === undefined) {
       delete process.env.PARACHUTE_SIGNING_SECRET;
     } else {
       process.env.PARACHUTE_SIGNING_SECRET = originalParachuteSecret;
     }
+  });
   });
 
   it("returns 503 in production when source 'test' has no signing secret", async () => {
