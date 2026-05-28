@@ -185,6 +185,31 @@ router.post("/integrations/inbound/:source", inboundWebhookLimiter, rawJson, asy
   }
   const signatureVerified = sigOutcome.outcome === "configured_ok";
 
+  // Production fail-closed: refuse to land unsigned rows in
+  // production. The dev/preview-friendly fallback (force sha256
+  // dedupe + signature_verified=false) is fine for staging where
+  // partner secrets aren't always plumbed, but on a live deploy
+  // accepting unsigned partner webhooks would let any internet
+  // caller seed our inbound queue with rows that could trip
+  // dispatcher heuristics. The dispatcher already checks the flag,
+  // but defense-in-depth: keep the row out of the table entirely.
+  if (
+    !signatureVerified &&
+    sigOutcome.outcome === "no_secret" &&
+    process.env.NODE_ENV === "production"
+  ) {
+    logger.warn(
+      { source },
+      "integrations.inbound: refusing unsigned webhook in production (no secret configured)",
+    );
+    res.status(503).json({
+      error: "signature_not_configured",
+      message:
+        "Inbound webhook rejected: no signing secret is configured for this source.",
+    });
+    return;
+  }
+
   // Dedupe key safety: when the request is NOT signature-verified
   // (dev/preview without partner secrets), we must NOT trust the
   // partner-supplied delivery-id header for dedupe. Otherwise an

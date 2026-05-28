@@ -477,7 +477,14 @@ export async function buildOneDetail(
         .split(",")
         .map((m: string) => m.trim().toUpperCase())
         .filter((m: string) => m.length === 2),
-      billedCents: l.billed_cents,
+      // EDI 837P SV1-02 expects the EXTENDED line charge — the
+      // per-unit billed_cents multiplied by the quantity. Submitting
+      // the per-unit amount under-bills every multi-unit line and the
+      // payer remits less than the claim total intended. We store
+      // per-unit in `insurance_claim_line_items.billed_cents` so that
+      // the admin UI can show the per-unit price; the multiplication
+      // happens here at the EDI-build boundary.
+      billedCents: l.billed_cents * l.quantity,
       units: l.quantity,
       serviceDate: claim.date_of_service,
       diagnosisPointers: [1],

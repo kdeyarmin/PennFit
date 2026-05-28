@@ -63,7 +63,7 @@ vi.mock("@workspace/resupply-db", () => {
       dbUpsertPayloads.push(p);
       return chain;
     };
-    chain["update"] = (p: unknown) => {
+    chain["update"] = (_p: unknown) => {
       lockedOp ??= "update";
       return chain;
     };
@@ -92,7 +92,7 @@ vi.mock("@workspace/resupply-db", () => {
   // Storage mock: supabase.storage.from(bucket).*
   function makeStorageBuilder(bucket: string) {
     return {
-      list: async (dir: string, opts?: unknown) => {
+      list: async (_dir: string, _opts?: unknown) => {
         const k = `list:${bucket}`;
         return (storageResults.get(k) ?? { data: null, error: null });
       },
@@ -100,15 +100,15 @@ vi.mock("@workspace/resupply-db", () => {
         const k = `download:${bucket}:${path}`;
         return (storageResults.get(k) ?? storageResults.get(`download:${bucket}`) ?? { data: null, error: { message: "not found" } });
       },
-      remove: async (paths: string[]) => {
+      remove: async (_paths: string[]) => {
         const k = `remove:${bucket}`;
         return (storageResults.get(k) ?? { data: null, error: null });
       },
-      createSignedUploadUrl: async (path: string) => {
+      createSignedUploadUrl: async (_path: string) => {
         const k = `createSignedUploadUrl:${bucket}`;
         return (storageResults.get(k) ?? { data: null, error: { message: "not configured" } });
       },
-      createSignedUrl: async (path: string, expiresIn: number) => {
+      createSignedUrl: async (_path: string, _expiresIn: number) => {
         const k = `createSignedUrl:${bucket}`;
         return (storageResults.get(k) ?? { data: null, error: { message: "not configured" } });
       },

@@ -113,10 +113,27 @@ router.get(
     )
     .order("display_name", { ascending: true })
     .limit(200);
-  const payerProfileId =
+  // Validate the query param as a UUID before composing the PostgREST
+  // filter — otherwise an attacker could append filter operators
+  // (`,or(...)`, comma-separated extra expressions, etc.) and pivot the
+  // .or() into a broader read than the route intends.
+  const payerProfileIdRaw =
     typeof req.query.payerProfileId === "string"
       ? req.query.payerProfileId
       : undefined;
+  const payerProfileIdParsed = payerProfileIdRaw
+    ? z.string().uuid().safeParse(payerProfileIdRaw)
+    : null;
+  if (payerProfileIdRaw && !payerProfileIdParsed?.success) {
+    res.status(400).json({
+      error: "invalid_query",
+      message: "payerProfileId must be a UUID.",
+    });
+    return;
+  }
+  const payerProfileId = payerProfileIdParsed?.success
+    ? payerProfileIdParsed.data
+    : undefined;
   if (payerProfileId) {
     query = query.or(
       `scoped_payer_profile_id.eq.${payerProfileId},scoped_payer_profile_id.is.null`,

@@ -66,7 +66,25 @@ router.post("/voice/status-callback", signatureMiddleware, async (req, res) => {
     : null;
 
   if (!callStatus || !callSid || !conversationId) {
-    // ack so Twilio doesn't retry, but don't audit a malformed event
+    // ack so Twilio doesn't retry, but don't audit a malformed event.
+    // Log enough context to investigate — a status-callback that
+    // can't bind to a conversation means the bridge's WS-side
+    // finaliser is the only thing that will ever close that
+    // conversation row. If THAT also fails, the row would stay
+    // open indefinitely and the dashboard'd never show a "call
+    // ended" tick — surface the breakage so ops can see it.
+    logger.warn(
+      {
+        event: "voice_status_callback_malformed",
+        hasCallStatus: callStatus != null,
+        hasCallSid: callSid != null,
+        hasConversationId: conversationId != null,
+        conversationIdParseError: conversationIdParse.success
+          ? null
+          : "invalid_uuid",
+      },
+      "voice/status-callback: required field missing or malformed",
+    );
     res.status(200).type("text/xml").send("<Response/>");
     return;
   }

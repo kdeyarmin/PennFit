@@ -40,6 +40,16 @@ export const ADMIN_PATH_PREFIXES = [
   "/resupply-api/admin",
 ] as const;
 
+/** Lowercase prefixes of the two shop mount trees. Shop routes mix
+ *  anonymous traffic (guest checkout, public product browse) with
+ *  signed-in customer traffic; the CSRF gate paired with this matcher
+ *  is conditional (`requireCsrfWhenSession`) so anonymous callers stay
+ *  unaffected. */
+export const SHOP_PATH_PREFIXES = [
+  "/api/shop",
+  "/resupply-api/shop",
+] as const;
+
 /**
  * True iff `req` is a state-changing request to an admin-tree path.
  *
@@ -55,6 +65,25 @@ export function isAdminMutationRequest(req: Request): boolean {
   if (ADMIN_SAFE_HTTP_METHODS.has(req.method)) return false;
   const lc = req.path.toLowerCase();
   for (const prefix of ADMIN_PATH_PREFIXES) {
+    if (lc === prefix || lc.startsWith(`${prefix}/`)) return true;
+  }
+  return false;
+}
+
+/**
+ * True iff `req` is a state-changing request to a shop-tree path.
+ *
+ * Same matcher contract as `isAdminMutationRequest`. Used by the
+ * app-level conditional-CSRF gate; signed-in traffic must carry the
+ * `X-PF-CSRF` header (the storefront SPA already attaches it on every
+ * non-GET fetch — see lib/api-client-react/src/storefront/custom-fetch.ts
+ * and artifacts/cpap-fitter/src/lib/shop-api.ts), while anonymous
+ * callers (no `pf_session` cookie) pass through unchallenged.
+ */
+export function isShopMutationRequest(req: Request): boolean {
+  if (ADMIN_SAFE_HTTP_METHODS.has(req.method)) return false;
+  const lc = req.path.toLowerCase();
+  for (const prefix of SHOP_PATH_PREFIXES) {
     if (lc === prefix || lc.startsWith(`${prefix}/`)) return true;
   }
   return false;

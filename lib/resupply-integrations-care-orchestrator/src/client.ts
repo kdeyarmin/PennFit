@@ -16,6 +16,8 @@ import type {
   TherapyNight,
 } from "@workspace/resupply-integrations";
 
+import { createHash } from "node:crypto";
+
 import type { CareOrchestratorConfig } from "./config";
 
 interface OauthToken {
@@ -25,7 +27,14 @@ interface OauthToken {
 let cachedToken: { configKey: string; token: OauthToken } | null = null;
 
 function configKey(config: CareOrchestratorConfig): string {
-  return `${config.oauthTokenUrl}|${config.clientId}|${config.partnerId}`;
+  // Include a hash of the client secret so a secret rotation
+  // invalidates any token minted against the previous secret. See
+  // the AirView client for the same pattern.
+  const secretHash = createHash("sha256")
+    .update(`care-orchestrator-token-cache|${config.clientSecret}`)
+    .digest("hex")
+    .slice(0, 16);
+  return `${config.oauthTokenUrl}|${config.clientId}|${config.partnerId}|${secretHash}`;
 }
 
 class ClientError extends Error {

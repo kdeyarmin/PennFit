@@ -12,7 +12,9 @@ import { describe, expect, it } from "vitest";
 import {
   ADMIN_PATH_PREFIXES,
   ADMIN_SAFE_HTTP_METHODS,
+  SHOP_PATH_PREFIXES,
   isAdminMutationRequest,
+  isShopMutationRequest,
 } from "./admin-path";
 
 function req(method: string, path: string): Request {
@@ -89,5 +91,70 @@ describe("isAdminMutationRequest", () => {
     expect(isAdminMutationRequest(req("POST", "/resupply-api/voice/inbound"))).toBe(
       false,
     );
+  });
+});
+
+describe("SHOP_PATH_PREFIXES", () => {
+  it("covers both mount trees, lowercase, no trailing slash", () => {
+    expect(SHOP_PATH_PREFIXES).toContain("/api/shop");
+    expect(SHOP_PATH_PREFIXES).toContain("/resupply-api/shop");
+    for (const prefix of SHOP_PATH_PREFIXES) {
+      expect(prefix).toBe(prefix.toLowerCase());
+      expect(prefix.endsWith("/")).toBe(false);
+    }
+  });
+});
+
+describe("isShopMutationRequest", () => {
+  it.each(["GET", "HEAD", "OPTIONS"])(
+    "returns false for safe method %s on a shop path",
+    (method) => {
+      expect(isShopMutationRequest(req(method, "/api/shop/me/cart-snapshot"))).toBe(
+        false,
+      );
+    },
+  );
+
+  it.each([
+    ["POST", "/api/shop/checkout"],
+    ["POST", "/api/shop/me/quick-checkout"],
+    ["PUT", "/api/shop/me/cart-snapshot"],
+    ["DELETE", "/api/shop/me/caregiver"],
+    ["POST", "/resupply-api/shop/checkout"],
+    ["PATCH", "/resupply-api/shop/me/comm-prefs"],
+  ])("returns true for %s %s", (method, path) => {
+    expect(isShopMutationRequest(req(method, path))).toBe(true);
+  });
+
+  it.each([
+    "/API/SHOP/checkout",
+    "/Api/Shop/Me/cart-snapshot",
+    "/resupply-API/Shop/checkout",
+  ])("matches mixed-case shop path %s", (path) => {
+    expect(isShopMutationRequest(req("POST", path))).toBe(true);
+  });
+
+  it.each(["/api/shop", "/resupply-api/shop"])(
+    "matches the bare shop path %s exactly",
+    (path) => {
+      expect(isShopMutationRequest(req("POST", path))).toBe(true);
+    },
+  );
+
+  it.each([
+    "/api/shop-banner",
+    "/api/shoppers",
+    "/api/shopfoo",
+    "/resupply-api/shop-bridge",
+  ])("does NOT match look-alike prefix %s", (path) => {
+    expect(isShopMutationRequest(req("POST", path))).toBe(false);
+  });
+
+  it("does NOT match admin or webhook paths", () => {
+    expect(isShopMutationRequest(req("POST", "/api/admin/users"))).toBe(false);
+    expect(isShopMutationRequest(req("POST", "/resupply-api/voice/inbound"))).toBe(
+      false,
+    );
+    expect(isShopMutationRequest(req("POST", "/api/orders"))).toBe(false);
   });
 });
