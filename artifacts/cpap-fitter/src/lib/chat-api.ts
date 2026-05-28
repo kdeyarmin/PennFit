@@ -20,6 +20,14 @@ export interface ChatResponse {
   degraded?: boolean;
   /** True when the per-IP rate limiter rejected this turn. */
   rateLimited?: boolean;
+  /**
+   * True when the chat endpoint itself is unreachable — typically a
+   * 404 or, in the deploy-topology regression where `pennfit.up.railway.app`
+   * lands on the SPA host, an HTML body instead of JSON/SSE. The widget
+   * uses this to show a "PennBot is offline" path (phone + email) rather
+   * than the more transient-sounding "connection issue" copy.
+   */
+  unavailable?: boolean;
 }
 
 export class ChatApiError extends Error {
@@ -30,6 +38,22 @@ export class ChatApiError extends Error {
     super(message);
     this.name = "ChatApiError";
   }
+}
+
+/**
+ * Detect responses that mean "the chat endpoint isn't actually running
+ * at this URL" — a 404, or any response whose body is HTML (the SPA
+ * history-fallback shell, which is what `/api/chat` returns when the
+ * resupply-api isn't co-served on the public domain). Both shapes lead
+ * to the same UX outcome: surface a clear "PennBot is offline" path
+ * instead of throwing and falling back to the vague "connection issue".
+ */
+function isEndpointUnavailable(res: Response): boolean {
+  if (res.status === 404) return true;
+  // Guard for the test-suite mocks that pass plain object literals
+  // without a real `Headers` instance.
+  const ct = res.headers?.get?.("content-type") ?? "";
+  return ct.toLowerCase().includes("text/html");
 }
 
 export async function postChatMessage(
@@ -51,6 +75,10 @@ export async function postChatMessage(
         "You're sending messages too quickly. Please wait a minute and try again.",
       rateLimited: true,
     };
+  }
+
+  if (isEndpointUnavailable(res)) {
+    return { reply: "", unavailable: true };
   }
 
   if (!res.ok) {
@@ -92,7 +120,12 @@ export async function streamChatMessage(
   messages: ChatMessage[],
   onChunk: (text: string) => void,
   signal?: AbortSignal,
-): Promise<{ offline?: boolean; degraded?: boolean; rateLimited?: boolean }> {
+): Promise<{
+  offline?: boolean;
+  degraded?: boolean;
+  rateLimited?: boolean;
+  unavailable?: boolean;
+}> {
   let res: Response;
   try {
     res = await fetch("/api/chat", {
@@ -117,6 +150,10 @@ export async function streamChatMessage(
         "You're sending messages too quickly. Please wait a minute and try again.",
     );
     return { rateLimited: true };
+  }
+
+  if (isEndpointUnavailable(res)) {
+    return { unavailable: true };
   }
 
   if (!res.ok || !res.body) {
@@ -196,12 +233,18 @@ async function fallbackToJson(
   messages: ChatMessage[],
   onChunk: (text: string) => void,
   signal?: AbortSignal,
-): Promise<{ offline?: boolean; degraded?: boolean; rateLimited?: boolean }> {
+): Promise<{
+  offline?: boolean;
+  degraded?: boolean;
+  rateLimited?: boolean;
+  unavailable?: boolean;
+}> {
   const reply = await postChatMessage(messages, signal);
   if (reply.reply) onChunk(reply.reply);
   return {
     offline: reply.offline,
     degraded: reply.degraded,
     rateLimited: reply.rateLimited,
+    unavailable: reply.unavailable,
   };
 }

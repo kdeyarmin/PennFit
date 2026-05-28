@@ -86,6 +86,37 @@ describe("postChatMessage", () => {
       ChatApiError,
     );
   });
+
+  test("returns unavailable:true on 404 instead of throwing", async () => {
+    // Production regression: /api/chat 404s when the resupply-api
+    // isn't co-served on the public domain. Surface that as a
+    // structured signal so the widget can render the "PennBot is
+    // offline" path instead of the vague "connection issue".
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 404,
+      json: async () => null,
+    });
+
+    const res = await postChatMessage(baseMessages);
+    expect(res.unavailable).toBe(true);
+    expect(res.reply).toBe("");
+  });
+
+  test("returns unavailable:true when the response Content-Type is HTML", async () => {
+    // When `pennfit.up.railway.app` routes /api/chat through the SPA
+    // host, the response is 200 HTML (the SPA shell). Same UX as 404
+    // — chat literally isn't there.
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: new Headers({ "content-type": "text/html; charset=utf-8" }),
+      json: async () => ({ reply: "should not parse" }),
+    });
+
+    const res = await postChatMessage(baseMessages);
+    expect(res.unavailable).toBe(true);
+  });
 });
 
 describe("streamChatMessage", () => {
@@ -213,6 +244,38 @@ describe("streamChatMessage", () => {
         /* noop */
       }),
     ).rejects.toMatchObject({ name: "AbortError" });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  test("returns unavailable:true when the stream endpoint 404s", async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: false,
+      status: 404,
+      body: null,
+      json: async () => null,
+    });
+
+    const chunks: string[] = [];
+    const result = await streamChatMessage(baseMessages, (c) => chunks.push(c));
+    expect(result.unavailable).toBe(true);
+    expect(chunks).toEqual([]);
+    // No JSON fallback attempted — 404 is decisive.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  test("returns unavailable:true when the stream endpoint returns HTML", async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      headers: new Headers({ "content-type": "text/html; charset=utf-8" }),
+      body: null,
+      json: async () => null,
+    });
+
+    const chunks: string[] = [];
+    const result = await streamChatMessage(baseMessages, (c) => chunks.push(c));
+    expect(result.unavailable).toBe(true);
+    expect(chunks).toEqual([]);
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
