@@ -32,8 +32,14 @@ export function Masks() {
   const { data, isLoading } = useListMasks();
   const [filter, setFilter] = useState<MaskEntryType | "all">("all");
 
-  const filteredMasks =
-    data?.masks.filter((m) => filter === "all" || m.type === filter) || [];
+  // Guard both hops: a non-JSON /api/masks response (transient
+  // proxy fallback during a deploy) lands `data` as a string, where
+  // `data?.masks` short-circuits only on null/undefined `data` and
+  // then `.filter` on `undefined` crashes the page. Same hazard
+  // we hardened on /results.
+  const filteredMasks = Array.isArray(data?.masks)
+    ? data.masks.filter((m) => filter === "all" || m.type === filter)
+    : [];
 
   return (
     <div className="container max-w-6xl mx-auto px-4 py-12">
