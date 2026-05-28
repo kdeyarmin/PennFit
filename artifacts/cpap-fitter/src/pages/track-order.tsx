@@ -25,7 +25,6 @@ import {
 } from "@/components/ui/card";
 import { CheckCircle2, Package, Search } from "lucide-react";
 import { useDocumentTitle } from "@/hooks/use-document-title";
-import { useTranslation } from "@/i18n/provider";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const REF_RE = /^(PENN-)?[A-Za-z0-9]{4,12}$/;
@@ -38,38 +37,31 @@ interface TrackResult {
   emailDeliveredAt: string | null;
 }
 
-/**
- * Resolve label + description for an order's email_status field. The
- * status -> key mapping is held inside the hook closure (status
- * strings are stable server contract; locale text routes through t()).
- */
-function useStatusFormatter() {
-  const { t } = useTranslation();
-  return (s: string | null): { label: string; description: string } => {
-    switch (s) {
-      case "sent":
-        return {
-          label: t("track.statusReceived.label"),
-          description: t("track.statusReceived.description"),
-        };
-      case "failed":
-        return {
-          label: t("track.statusDeliveryIssue.label"),
-          description: t("track.statusDeliveryIssue.description"),
-        };
-      case "pending":
-      case "skipped":
-      default:
-        return {
-          label: t("track.statusProcessing.label"),
-          description: t("track.statusProcessing.description"),
-        };
-    }
-  };
+function formatStatus(s: string | null): { label: string; description: string } {
+  switch (s) {
+    case "sent":
+      return {
+        label: "Received",
+        description:
+          "Our fulfillment team has your order. A team member contacts you within 1 business day.",
+      };
+    case "failed":
+      return {
+        label: "Delivery issue",
+        description:
+          "We hit a snag forwarding your order. Please call us or reply to your confirmation email.",
+      };
+    case "pending":
+    case "skipped":
+    default:
+      return {
+        label: "Processing",
+        description: "Order received. Awaiting confirmation from our team.",
+      };
+  }
 }
 
 export function TrackOrder() {
-  const { t } = useTranslation();
   useDocumentTitle(
     "Track my order — PennPaps",
     "Look up a PennPaps order status without signing in. Enter your order reference and email.",
@@ -111,21 +103,25 @@ export function TrackOrder() {
         }),
       });
       if (res.status === 404) {
-        setError(t("track.errorNotFound"));
+        setError(
+          "We couldn't find that order. Double-check the reference and the email match.",
+        );
         return;
       }
       if (res.status === 429) {
-        setError(t("track.errorRateLimited"));
+        setError(
+          "Too many attempts. Please wait a few minutes and try again.",
+        );
         return;
       }
       if (!res.ok) {
-        setError(t("track.errorGeneric"));
+        setError("Something went wrong. Please try again in a moment.");
         return;
       }
       const data = (await res.json()) as TrackResult;
       setResult(data);
     } catch {
-      setError(t("track.errorGeneric"));
+      setError("Something went wrong. Please try again in a moment.");
     } finally {
       setSubmitting(false);
       inFlightRef.current = false;
@@ -138,29 +134,30 @@ export function TrackOrder() {
         <div className="flex justify-center">
           <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full glass-panel text-primary text-sm font-medium shadow-sm">
             <Package className="w-4 h-4" />
-            {t("track.badge")}
+            Order status
           </div>
         </div>
         <h1 className="text-display text-3xl md:text-4xl font-bold tracking-tight text-gradient-brand leading-[1.05]">
-          {t("track.headline")}
+          Track my order
         </h1>
         <p className="text-base text-muted-foreground max-w-xl mx-auto leading-relaxed">
-          {t("track.intro")}
+          Enter your PennPaps order reference (from your confirmation email)
+          and the email you used to place it. No login needed.
         </p>
       </header>
 
       <Card className="border-0 glass-card rounded-2xl">
         <CardHeader>
           <CardTitle className="text-xl font-semibold tracking-tight">
-            {t("track.formTitle")}
+            Order lookup
           </CardTitle>
           <CardDescription>
-            {t("track.formSubtitleAccountPrefix")}{" "}
+            For full order history, sign in to{" "}
             <Link
               href="/account"
               className="text-primary underline-offset-4 hover:underline"
             >
-              {t("track.formSubtitleAccountLink")}
+              your account
             </Link>
             .
           </CardDescription>
@@ -175,9 +172,7 @@ export function TrackOrder() {
               data-testid="track-order-form"
             >
               <div className="space-y-2">
-                <Label htmlFor="track-reference">
-                  {t("track.fieldReference")}
-                </Label>
+                <Label htmlFor="track-reference">Order reference</Label>
                 <Input
                   id="track-reference"
                   data-testid="track-reference"
@@ -190,7 +185,7 @@ export function TrackOrder() {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="track-email">{t("track.fieldEmail")}</Label>
+                <Label htmlFor="track-email">Email on the order</Label>
                 <Input
                   id="track-email"
                   data-testid="track-email"
@@ -218,7 +213,7 @@ export function TrackOrder() {
                 className="w-full h-11 rounded-full btn-primary-glow disabled:shadow-none"
               >
                 <Search className="w-4 h-4 mr-1.5" />
-                {submitting ? t("track.submitting") : t("track.submit")}
+                {submitting ? "Looking up…" : "Look up my order"}
               </Button>
             </form>
           )}
@@ -235,8 +230,6 @@ function ResultCard({
   result: TrackResult;
   onReset: () => void;
 }) {
-  const { t } = useTranslation();
-  const formatStatus = useStatusFormatter();
   const status = formatStatus(result.emailStatus);
   const maskLine = result.mask.manufacturer
     ? `${result.mask.manufacturer} ${result.mask.name}`
@@ -245,7 +238,7 @@ function ResultCard({
     <div className="space-y-4" data-testid="track-result">
       <div className="rounded-xl bg-[hsl(var(--penn-navy))]/[0.06] ring-1 ring-[hsl(var(--penn-navy))]/10 p-5 space-y-1">
         <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
-          {t("track.resultLabelStatus")}
+          Status
         </p>
         <p className="text-2xl font-bold text-primary inline-flex items-center gap-2">
           <CheckCircle2 className="w-5 h-5 text-[hsl(var(--penn-gold))]" />
@@ -258,7 +251,7 @@ function ResultCard({
       <div className="rounded-xl glass-panel p-4 sm:p-5 space-y-2">
         <div className="flex items-center justify-between">
           <span className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
-            {t("track.resultLabelReference")}
+            Reference
           </span>
           <span className="font-mono text-sm font-semibold">
             {result.orderReference}
@@ -266,13 +259,13 @@ function ResultCard({
         </div>
         <div className="flex items-center justify-between">
           <span className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
-            {t("track.resultLabelMask")}
+            Mask
           </span>
           <span className="text-sm font-medium">{maskLine}</span>
         </div>
         <div className="flex items-center justify-between">
           <span className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
-            {t("track.resultLabelSubmitted")}
+            Submitted
           </span>
           <span className="text-sm">
             {new Date(result.createdAt).toLocaleDateString()}
@@ -284,7 +277,7 @@ function ResultCard({
         onClick={onReset}
         className="w-full h-10 rounded-full"
       >
-        {t("track.lookupAnother")}
+        Look up another order
       </Button>
     </div>
   );
