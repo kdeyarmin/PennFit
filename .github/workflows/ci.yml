@@ -245,15 +245,26 @@ jobs:
           # 60s budget without ever giving PostgREST itself enough
           # headroom to come up.
           docker pull postgrest/postgrest:v12.2.3
+          # --network host so PostgREST shares the runner's network
+          # namespace and can reach the postgres service container
+          # at 127.0.0.1:5432 directly. The original setup used
+          # --add-host=host.docker.internal:host-gateway with a
+          # published port, which on this runner cannot reach
+          # postgres in time — three consecutive runs hit the
+          # readiness ceiling exactly (30s, 60s, 90s) without
+          # PostgREST ever serving a request. Sharing the host
+          # network sidesteps the bridge-network round trip
+          # entirely. The `-p` flag is dropped (host mode has no
+          # published ports; PostgREST binds directly to :3001 via
+          # PGRST_SERVER_PORT below).
           docker run -d --name postgrest \
-            --add-host=host.docker.internal:host-gateway \
-            -p 127.0.0.1:3001:3000 \
-            -e PGRST_DB_URI="postgres://pennfit:pennfit@host.docker.internal:5432/pennfit_test" \
+            --network host \
+            -e PGRST_DB_URI="postgres://pennfit:pennfit@127.0.0.1:5432/pennfit_test" \
             -e PGRST_DB_SCHEMAS="resupply,resupply_auth,public" \
             -e PGRST_DB_ANON_ROLE="pennfit" \
             -e PGRST_JWT_SECRET="$PGRST_JWT_SECRET" \
-            -e PGRST_SERVER_PORT="3000" \
-            -e PGRST_SERVER_HOST="*4" \
+            -e PGRST_SERVER_PORT="3001" \
+            -e PGRST_SERVER_HOST="127.0.0.1" \
             -e PGRST_OPENAPI_SERVER_PROXY_URI="http://127.0.0.1:3001/rest/v1" \
             -e PGRST_LOG_LEVEL="info" \
             -e PGRST_SERVER_BASE_PATH="/rest/v1" \
