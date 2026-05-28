@@ -108,13 +108,34 @@ export async function startWorker(): Promise<void> {
   // loose enough to add no meaningful DB load.
   const MONITOR_STATE_INTERVAL_SECONDS = 60;
 
+  // Mask the DATABASE_URL for logging: strip the password component
+  // so we can confirm which host/db pg-boss is targeting without
+  // leaking credentials into the log stream.
+  const maskedDatabaseUrl = databaseUrl.replace(
+    /\/\/([^:]+):([^@]+)@/,
+    "//$1:***@",
+  );
+
+  const pgBossConfig = {
+    schema: "pgboss_resupply",
+    monitorStateIntervalSeconds: MONITOR_STATE_INTERVAL_SECONDS,
+  };
+
+  logger.info(
+    {
+      event: "pg_boss_starting",
+      database_url: maskedDatabaseUrl,
+      pg_boss_config: pgBossConfig,
+    },
+    "pg-boss: starting boss.start()",
+  );
+
   const boss = new PgBoss({
     connectionString: databaseUrl,
     // Dedicated schema so pg-boss tables never collide with our
     // application tables. The /readyz check also probes this exact
     // schema for its `version` table — keep them in lockstep.
-    schema: "pgboss_resupply",
-    monitorStateIntervalSeconds: MONITOR_STATE_INTERVAL_SECONDS,
+    ...pgBossConfig,
   });
 
   boss.on("error", (err) => {
@@ -210,7 +231,42 @@ export async function startWorker(): Promise<void> {
     }
   });
 
-  await boss.start();
+  try {
+    await boss.start();
+  } catch (err) {
+    // Capture the full error with stack trace and any nested cause
+    // so we can distinguish DB connectivity failures, schema
+    // permission errors, and pg-boss internal errors at a glance.
+    const serialized: Record<string, unknown> = {
+      event: "pg_boss_start_failed",
+      database_url: maskedDatabaseUrl,
+      pg_boss_config: pgBossConfig,
+    };
+    if (err instanceof Error) {
+      serialized["name"] = err.name;
+      serialized["message"] = err.message;
+      serialized["stack"] = err.stack;
+      // Node.js Error.cause — present on pg-boss connection errors
+      // and any error thrown with `new Error(msg, { cause })`.
+      if ("cause" in err && err.cause != null) {
+        const cause = err.cause;
+        serialized["cause"] =
+          cause instanceof Error
+            ? { name: cause.name, message: cause.message, stack: cause.stack }
+            : String(cause);
+      }
+    } else {
+      serialized["raw"] = String(err);
+    }
+    logger.fatal(serialized, "pg-boss: boss.start() threw — cannot start worker");
+    throw err;
+  }
+
+  logger.info(
+    { event: "pg_boss_started", database_url: maskedDatabaseUrl },
+    "pg-boss: boss.start() succeeded",
+  );
+
   bossInstance = boss;
 
   // Register reminder + attachment-sweep jobs. The handlers
