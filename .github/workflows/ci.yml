@@ -19,7 +19,7 @@ env:
   # The pnpm version pinned in root package.json. Mirror it explicitly so
   # the workflow runner uses the same interpreter the lockfile was
   # produced with.
-  PNPM_VERSION: "10.33.2"
+  PNPM_VERSION: "11.4.0"
   NODE_VERSION: "24"
 
 jobs:
