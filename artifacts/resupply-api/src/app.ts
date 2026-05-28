@@ -48,31 +48,40 @@ app.set("trust proxy", 1);
 app.use(securityHeaders);
 
 // CORS allowlist resolution, in priority order:
-//   1. RESUPPLY_ALLOWED_ORIGINS — explicit comma-separated list (required
-//      in production). Set this to the Railway-assigned public URL(s) or
-//      any custom domain fronting the API (e.g. a CDN or vanity domain).
-//   2. Dev fallback (non-production only) — localhost ports covering the
+//   1. RESUPPLY_ALLOWED_ORIGINS — explicit comma-separated list. Set this
+//      to a custom domain or any extra origin that fronts the API.
+//   2. RAILWAY_PUBLIC_DOMAIN — auto-populated by Railway with the
+//      canonical *.up.railway.app host (or the bound custom domain). On
+//      a single-service Railway deploy this alone is enough; we wrap it
+//      in https:// to match the platform's edge-terminated TLS.
+//   3. Dev fallback (non-production only) — localhost ports covering the
 //      Vite dev server (5173), the API itself (3000), and common
 //      alternatives (8080) so local development works without extra config.
 //
-// Production fails CLOSED: if NODE_ENV=production and
-// RESUPPLY_ALLOWED_ORIGINS is missing or empty, the process exits at
-// boot rather than silently inheriting the dev allowlist. That would
-// expose the admin API to unintended origins, and the risk grows as
-// soon as PHI-touching endpoints land — catching it at boot is cheaper
-// than catching it after a leak.
+// Production fails CLOSED: if NODE_ENV=production and BOTH
+// RESUPPLY_ALLOWED_ORIGINS and RAILWAY_PUBLIC_DOMAIN are missing, the
+// process exits at boot rather than silently inheriting the dev
+// allowlist. That would expose the admin API to unintended origins, and
+// the risk grows as soon as PHI-touching endpoints land — catching it
+// at boot is cheaper than catching it after a leak.
 const allowedOrigins = (() => {
-  const fromEnv = (process.env.RESUPPLY_ALLOWED_ORIGINS ?? "")
+  const explicit = (process.env.RESUPPLY_ALLOWED_ORIGINS ?? "")
     .split(",")
     .map((o) => o.trim())
     .filter(Boolean);
-  if (fromEnv.length > 0) return fromEnv;
+
+  const railwayHost = (process.env.RAILWAY_PUBLIC_DOMAIN ?? "").trim();
+  const fromRailway = railwayHost ? [`https://${railwayHost}`] : [];
+
+  // De-dupe so a custom domain present in both lists doesn't appear twice.
+  const merged = Array.from(new Set([...explicit, ...fromRailway]));
+  if (merged.length > 0) return merged;
 
   if (process.env.NODE_ENV === "production") {
     throw new Error(
-      "Refusing to start: in production RESUPPLY_ALLOWED_ORIGINS must be " +
-        "set to a comma-separated list of allowed origins so the CORS " +
-        "allowlist is bound to vetted hostnames. The variable is empty.",
+      "Refusing to start: in production at least one of " +
+        "RESUPPLY_ALLOWED_ORIGINS or RAILWAY_PUBLIC_DOMAIN must be set " +
+        "so the CORS allowlist is bound to vetted hostnames. Both are empty.",
     );
   }
 
