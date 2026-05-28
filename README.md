@@ -43,7 +43,7 @@ local `main` when it is behind `origin/main`. Bypass with
 `SKIP_HOOKS=1 git commit ...` or `--no-verify` for genuine
 emergencies.
 
-This is a `pnpm` workspaces monorepo (Node v24, TypeScript 5.9). The
+This is a `pnpm` workspaces monorepo (Node v22+, TypeScript 5.9). The
 top-level structure is:
 
 | Path                     | What lives here                                                                                                                                                                                                                                                                                                                                                                                                                                   |
