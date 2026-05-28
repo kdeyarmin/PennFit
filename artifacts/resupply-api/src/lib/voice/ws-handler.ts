@@ -161,6 +161,12 @@ export async function handleVoiceWsConnection(
 
   const bridge = new VoiceBridge({ client, sink, dispatcher });
 
+  // Hoisted force-cleanup timer (assignment happens further down in
+  // the ws.on("close")/("error") handlers via `scheduleForceCleanup`).
+  // We declare it here so the `bridge.on("session.closed")` handler
+  // can null it out without a forward-reference warning.
+  let forceCleanupTimer: ReturnType<typeof setTimeout> | null = null;
+
   // Arm the max-duration timer now that `bridge` exists. See declaration
   // above for rationale.
   maxDurationTimer = setTimeout(() => {
@@ -174,6 +180,34 @@ export async function handleVoiceWsConnection(
       "voice ws: max call duration reached — closing bridge",
     );
     bridge.close("max-duration-exceeded");
+    // Same hung-OpenAI-WS safety net: if `session.closed` doesn't
+    // arrive within 5s of bridge.close(), force the cleanup. We
+    // can't reference scheduleForceCleanup here (declared below in
+    // the same function), so duplicate the minimal teardown.
+    setTimeout(() => {
+      if (closed) return;
+      logger.warn(
+        {
+          event: "voice_force_cleanup",
+          conversationId: pending.conversationId,
+          reason: "max-duration-exceeded",
+        },
+        "voice ws: bridge.close did not produce session.closed in time after max-duration — forcing cleanup",
+      );
+      closed = true;
+      if (deepgramSession) {
+        try {
+          deepgramSession.close();
+        } catch {
+          /* best-effort */
+        }
+      }
+      try {
+        ws.close(1011, "force-cleanup-max-duration");
+      } catch {
+        /* already closed */
+      }
+    }, 5_000).unref?.();
   }, MAX_CALL_DURATION_MS);
   // Don't keep the Node event loop alive for the timer; if the process
   // is shutting down for unrelated reasons we want it to exit cleanly.
@@ -342,6 +376,10 @@ export async function handleVoiceWsConnection(
       clearTimeout(maxDurationTimer);
       maxDurationTimer = null;
     }
+    if (forceCleanupTimer !== null) {
+      clearTimeout(forceCleanupTimer);
+      forceCleanupTimer = null;
+    }
     logger.info(
       {
         event: "voice_session_closed",
@@ -458,8 +496,51 @@ export async function handleVoiceWsConnection(
     }
   });
 
+  // Force-cleanup safety net: bridge.close() asks the OpenAI WS to
+  // close, but if that socket is hung at the TCP/TLS layer the
+  // `session.closed` event never fires and the chain that clears
+  // maxDurationTimer / closes Deepgram / runs finalize / kills the
+  // Twilio WS would leak. Schedule a hard cleanup after
+  // FORCE_CLEANUP_MS and let bridge.close() handlers race it — if
+  // they win and emit `session.closed`, `closed` is set to true and
+  // this fallback no-ops.
+  const FORCE_CLEANUP_MS = 5_000;
+  const scheduleForceCleanup = (reason: string): void => {
+    if (forceCleanupTimer !== null || closed) return;
+    forceCleanupTimer = setTimeout(() => {
+      if (closed) return;
+      logger.warn(
+        {
+          event: "voice_force_cleanup",
+          conversationId: pending.conversationId,
+          reason,
+        },
+        "voice ws: bridge.close did not produce session.closed in time — forcing cleanup",
+      );
+      closed = true;
+      if (maxDurationTimer !== null) {
+        clearTimeout(maxDurationTimer);
+        maxDurationTimer = null;
+      }
+      if (deepgramSession) {
+        try {
+          deepgramSession.close();
+        } catch {
+          /* best-effort */
+        }
+      }
+      try {
+        ws.close(1011, "force-cleanup");
+      } catch {
+        /* already closed */
+      }
+    }, FORCE_CLEANUP_MS);
+    forceCleanupTimer.unref?.();
+  };
+
   ws.on("close", () => {
     bridge.close("twilio-ws-closed");
+    scheduleForceCleanup("twilio-ws-closed");
   });
 
   ws.on("error", (err) => {
@@ -472,6 +553,7 @@ export async function handleVoiceWsConnection(
       "voice ws error",
     );
     bridge.close("twilio-ws-error");
+    scheduleForceCleanup("twilio-ws-error");
   });
 
   // Resolve once the bridge has actually emitted `session.closed`. The
