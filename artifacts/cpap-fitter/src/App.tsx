@@ -345,11 +345,6 @@ const AdminVerifyEmailPage = lazy(() =>
     default: m.VerifyEmailPage,
   })),
 );
-const AdminChangePasswordPage = lazy(() =>
-  import("@/pages/admin/change-password").then((m) => ({
-    default: m.ChangePasswordPage,
-  })),
-);
 
 // Gated admin console — bundles all 28 admin pages, the AppShell
 // chrome, and the generated resupply-api client into a single chunk
@@ -854,18 +849,6 @@ function TopRouter() {
           component={AdminResetPasswordPage}
         />
         <Route path="/admin/verify-email" component={AdminVerifyEmailPage} />
-        {/*
-          /admin/change-password is mounted OUTSIDE the AdminConsoleRoute
-          gate. ConsoleRoute redirects forced-rotation users here, and
-          having it ungated by the allowlist check means a freshly
-          invited admin can land here even before /resupply-api/admin/me
-          would let them through — the change-password endpoint itself
-          only needs a valid session.
-        */}
-        <Route
-          path="/admin/change-password"
-          component={AdminChangePasswordPage}
-        />
         <Route path="/admin" component={AdminConsoleRoute} />
         <Route path="/admin/*" component={AdminConsoleRoute} />
 
