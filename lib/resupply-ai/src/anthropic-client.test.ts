@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import {
   createAnthropicClient,
   DEFAULT_ANTHROPIC_MODEL_CHAT,
+  DEFAULT_ANTHROPIC_MODEL_CLASSIFY,
+  DEFAULT_ANTHROPIC_MODEL_REASONING,
   getResponseText,
   getResponseToolCalls,
   isRetryableAnthropicError,
@@ -604,5 +606,42 @@ describe("sendWithRetry", () => {
     expect(sleeps[0]).toBeLessThan(150);
     expect(sleeps[1]).toBeGreaterThanOrEqual(200);
     expect(sleeps[1]).toBeLessThan(250);
+  });
+});
+
+// ── Model constant pin (PR change: DEFAULT_ANTHROPIC_MODEL_CLASSIFY) ─────────
+//
+// PR pinned the Haiku classification model to a date-stamped snapshot
+// ("claude-haiku-4-5-20251001") so deployments aren't silently rolled
+// forward if Anthropic deprecates the generic "claude-haiku-4-5" alias.
+describe("model constant pins", () => {
+  it("DEFAULT_ANTHROPIC_MODEL_CLASSIFY is pinned to a date-stamped snapshot", () => {
+    // Must include a date stamp (YYYYMMDD suffix) — generic aliases
+    // like "claude-haiku-4-5" are not acceptable.
+    expect(DEFAULT_ANTHROPIC_MODEL_CLASSIFY).toMatch(/-\d{8}$/);
+  });
+
+  it("DEFAULT_ANTHROPIC_MODEL_CLASSIFY starts with 'claude-haiku'", () => {
+    expect(DEFAULT_ANTHROPIC_MODEL_CLASSIFY).toMatch(/^claude-haiku/);
+  });
+
+  it("DEFAULT_ANTHROPIC_MODEL_CLASSIFY equals the pinned snapshot value", () => {
+    // Regression guard: changing this requires an intentional code edit.
+    expect(DEFAULT_ANTHROPIC_MODEL_CLASSIFY).toBe("claude-haiku-4-5-20251001");
+  });
+
+  it("DEFAULT_ANTHROPIC_MODEL_CLASSIFY differs from the unpinned alias", () => {
+    // The unpinned alias would roll forward silently on Anthropic deprecation.
+    expect(DEFAULT_ANTHROPIC_MODEL_CLASSIFY).not.toBe("claude-haiku-4-5");
+  });
+
+  it("DEFAULT_ANTHROPIC_MODEL_CHAT is defined and non-empty", () => {
+    expect(typeof DEFAULT_ANTHROPIC_MODEL_CHAT).toBe("string");
+    expect(DEFAULT_ANTHROPIC_MODEL_CHAT.length).toBeGreaterThan(0);
+  });
+
+  it("DEFAULT_ANTHROPIC_MODEL_REASONING is defined and non-empty", () => {
+    expect(typeof DEFAULT_ANTHROPIC_MODEL_REASONING).toBe("string");
+    expect(DEFAULT_ANTHROPIC_MODEL_REASONING.length).toBeGreaterThan(0);
   });
 });
