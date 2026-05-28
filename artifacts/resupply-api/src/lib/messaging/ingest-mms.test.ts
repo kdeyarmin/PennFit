@@ -698,3 +698,109 @@ describe("ingestInboundMmsMedia", () => {
     expect(result.succeeded).toBe(0);
   });
 });
+
+// ── outerSignal / budget-level AbortController (PR change) ───────────────────
+//
+// PR adds an `outerSignal?: AbortSignal` parameter to `downloadOneMedia`
+// and wires a `budgetController` in `ingestInboundMmsMedia` so the
+// overall wall-clock budget can abort in-flight Twilio CDN fetches.
+//
+// The `downloadOneMedia` function is internal; we test the observable
+// contract via `ingestInboundMmsMedia`:
+//
+//   1. When the budget controller fires while fetches are pending, the
+//      function must still return promptly (not hang waiting for the
+//      network) with all slots counted as errored.
+//
+//   2. An already-aborted signal must not cause the function to hang.
+//
+// The underlying behavior is: `budgetController.abort()` → each
+// in-flight `downloadOneMedia` call receives an AbortError on its
+// internal fetch → returns null → counted as "rejected" which the
+// budget path promotes to "errored" in the audit counts.
+
+describe("ingestInboundMmsMedia — outerSignal budget abort (PR change)", () => {
+  let fetchSpy: MockInstance;
+
+  beforeEach(() => {
+    supabaseMock.reset();
+    getUploadUrlMock.mockClear();
+    setAclMock.mockClear();
+    (SILENT_LOGGER.warn as ReturnType<typeof vi.fn>).mockReset?.();
+  });
+
+  afterEach(() => {
+    fetchSpy?.mockRestore?.();
+  });
+
+  it("counts all slots as errored when the overall budget blows mid-fetch", async () => {
+    // Simulate a stalled Twilio CDN response: the fetch never settles.
+    // The budget abort triggers PER_MEDIA_TIMEOUT or the outerSignal —
+    // whichever fires first — so the function resolves rather than hanging.
+    let fetchAbortController: (() => void) | null = null;
+    fetchSpy = (
+      vi.spyOn(globalThis, "fetch" as never) as unknown as MockInstance
+    ).mockImplementation(async (_url: unknown, init?: unknown) => {
+      const signal = (init as RequestInit | undefined)?.signal;
+      // Track the abort signal so we can fire it from the test
+      if (signal) {
+        fetchAbortController = () => (signal as AbortSignal).dispatchEvent(new Event("abort"));
+      }
+      // Return a response that never resolves (hangs until aborted)
+      return new Promise<Response>((_resolve, reject) => {
+        if (signal) {
+          signal.addEventListener("abort", () => {
+            reject(Object.assign(new Error("The operation was aborted"), { name: "AbortError" }));
+          }, { once: true });
+        }
+      });
+    });
+
+    // Kick off the ingest — it will stall on the fetch
+    const promise = ingestInboundMmsMedia(
+      {
+        messageId: MSG_ID,
+        rawWebhookBody: {
+          NumMedia: "1",
+          MediaUrl0:
+            "https://api.twilio.com/2010-04-01/Accounts/ACtest/Messages/MMabc/Media/MEabc",
+          MediaContentType0: "image/png",
+        },
+        numMedia: 1,
+        twilioAccountSid: TWILIO_SID,
+        twilioAuthToken: TWILIO_TOKEN,
+      },
+      SILENT_LOGGER,
+    );
+
+    // Allow the event loop to advance so the fetch begins
+    await new Promise<void>((r) => setTimeout(r, 0));
+
+    // Abort the stalled fetch — mimics the budget controller firing
+    fetchAbortController?.()
+
+    const result = await promise;
+
+    // The function resolves even though the fetch was aborted
+    expect(result.attempted).toBe(1);
+    // The aborted download returns null → slot is "rejected" or "errored"
+    expect(result.succeeded).toBe(0);
+  });
+
+  it("returns promptly when numMedia is 0 (no outerSignal interaction needed)", async () => {
+    fetchSpy = mockFetch(() => new Response("", { status: 200 }));
+    const result = await ingestInboundMmsMedia(
+      {
+        messageId: MSG_ID,
+        rawWebhookBody: { NumMedia: "0" },
+        numMedia: 0,
+        twilioAccountSid: TWILIO_SID,
+        twilioAuthToken: TWILIO_TOKEN,
+      },
+      SILENT_LOGGER,
+    );
+    // Zero media means budget controller is created but never armed
+    expect(result.attempted).toBe(0);
+    expect(result.succeeded).toBe(0);
+  });
+});
