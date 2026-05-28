@@ -1,12 +1,26 @@
 {
   "$schema": "https://railway.com/railway.schema.json",
   "build": {
-    "buildCommand": "pnpm run build"
+    "builder": "RAILPACK",
+    "buildCommand": "pnpm run build",
+    "watchPatterns": [
+      "artifacts/resupply-api/**",
+      "artifacts/cpap-fitter/**",
+      "artifacts/shared/**",
+      "lib/**",
+      "package.json",
+      "pnpm-lock.yaml",
+      "pnpm-workspace.yaml",
+      "tsconfig.base.json",
+      "tsconfig.json",
+      "railway.json"
+    ]
   },
   "deploy": {
-    "startCommand": "pnpm --filter @workspace/resupply-api run start",
+    "startCommand": "node --enable-source-maps artifacts/resupply-api/dist/index.mjs",
     "healthcheckPath": "/resupply-api/readyz",
-    "healthcheckTimeout": 30,
+    "healthcheckTimeout": 90,
+    "drainingSeconds": 30,
     "restartPolicyType": "ON_FAILURE",
     "restartPolicyMaxRetries": 10
   }
