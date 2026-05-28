@@ -4,6 +4,10 @@ packages:
   - lib/integrations/*
   - scripts
 
+allowBuilds:
+  argon2: true
+  esbuild: true
+
 autoInstallPeers: false
 
 catalog:
