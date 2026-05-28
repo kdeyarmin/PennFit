@@ -1080,26 +1080,26 @@ describe("SENDGRID_FROM_EMAIL in non-production mode", () => {
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
-// CORS allowlist — RESUPPLY_ALLOWED_ORIGINS / REPLIT_DOMAINS
+// CORS allowlist — RESUPPLY_ALLOWED_ORIGINS / RAILWAY_PUBLIC_DOMAIN
 // ---------------------------------------------------------------------------
 
-describe("RESUPPLY_ALLOWED_ORIGINS / REPLIT_DOMAINS in production", () => {
+describe("RESUPPLY_ALLOWED_ORIGINS / RAILWAY_PUBLIC_DOMAIN in production", () => {
   it("fails when neither is set in production", () => {
-    // app.ts:85 throws at boot when both are empty in prod.
+    // app.ts throws at boot when both are empty in prod.
     const env = withEnv({
       RESUPPLY_ALLOWED_ORIGINS: undefined,
-      REPLIT_DOMAINS: undefined,
+      RAILWAY_PUBLIC_DOMAIN: undefined,
     });
     const { exitCode, stdout } = run(env);
     expect(exitCode).toBe(1);
     expect(stdout).toContain("RESUPPLY_ALLOWED_ORIGINS");
-    expect(stdout).toContain("REPLIT_DOMAINS");
+    expect(stdout).toContain("RAILWAY_PUBLIC_DOMAIN");
   });
 
-  it("passes when only REPLIT_DOMAINS is set (Replit-managed deployment)", () => {
+  it("passes when only RAILWAY_PUBLIC_DOMAIN is set (Railway-managed deployment)", () => {
     const env = withEnv({
       RESUPPLY_ALLOWED_ORIGINS: undefined,
-      REPLIT_DOMAINS: "pennpaps.com,www.pennpaps.com",
+      RAILWAY_PUBLIC_DOMAIN: "pennfit.up.railway.app",
     });
     const { exitCode } = run(env);
     expect(exitCode).toBe(0);
@@ -1108,7 +1108,7 @@ describe("RESUPPLY_ALLOWED_ORIGINS / REPLIT_DOMAINS in production", () => {
   it("passes when only RESUPPLY_ALLOWED_ORIGINS is set", () => {
     const env = withEnv({
       RESUPPLY_ALLOWED_ORIGINS: "https://pennpaps.com",
-      REPLIT_DOMAINS: undefined,
+      RAILWAY_PUBLIC_DOMAIN: undefined,
     });
     const { exitCode } = run(env);
     expect(exitCode).toBe(0);
@@ -1118,7 +1118,7 @@ describe("RESUPPLY_ALLOWED_ORIGINS / REPLIT_DOMAINS in production", () => {
     const env = withEnv({
       NODE_ENV: "staging",
       RESUPPLY_ALLOWED_ORIGINS: undefined,
-      REPLIT_DOMAINS: undefined,
+      RAILWAY_PUBLIC_DOMAIN: undefined,
     });
     const { exitCode } = run(env);
     expect(exitCode).toBe(0);

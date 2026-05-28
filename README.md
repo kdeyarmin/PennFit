@@ -1,21 +1,23 @@
 # PennPaps
 
 Privacy-first CPAP fitting, ordering, and resupply automation for
-Penn Home Medical Supply. See [`replit.md`](./replit.md) for the
-full product and architecture overview, and [`CLAUDE.md`](./CLAUDE.md)
-for guidance aimed at coding agents (Claude Code and similar).
+Penn Home Medical Supply. See [`CLAUDE.md`](./CLAUDE.md) for guidance
+aimed at coding agents (Claude Code and similar).
+
+## Hosting
+
+The app is designed to run on **Railway**. The repo ships with
+`railway.json` and `nixpacks.toml` at the root, so connecting the
+GitHub repo to a Railway project and pointing it at the `main` branch
+is enough to build + deploy. Custom domain → Railway → DNS; the
+fallback host is `pennfit.up.railway.app`. Environment variables are
+configured under **Variables** in the Railway service settings; the
+required set is documented below and validated by `preflight:prod`.
 
 ## Git source of truth
 
 **Canonical ref:** `main` on `https://github.com/kdeyarmin/PennFit`
-(the Replit remote-tracking name is `subrepl-3ppc2e03/main`).
-
-**Why this exists:** in May 2026 the Replit workspace, GitHub, and
-Replit's `gitsafe-backup` snapshots had drifted by ~150 commits
-across four divergent lines because no agent or human knew which
-surface was authoritative. See
-[`docs/git-state-2026-05-01.md`](./docs/git-state-2026-05-01.md) for
-the post-mortem. This rule prevents a repeat.
+(remote-tracking name: `origin/main`).
 
 **At the start of every session, every agent and human MUST:**
 
@@ -24,22 +26,20 @@ the post-mortem. This rule prevents a repeat.
 git status
 
 # 2. Pull canonical ref and align local main to it
-git fetch subrepl-3ppc2e03
-git rev-list --count main..subrepl-3ppc2e03/main   # how many commits you're behind
+git fetch origin
+git rev-list --count main..origin/main   # how many commits you're behind
 # If clean and behind: align (destructive — only when status is clean)
-git reset --hard subrepl-3ppc2e03/main
+git reset --hard origin/main
 ```
 
 **Where new work lands:** push a feature branch and open a PR on
 `github.com/kdeyarmin/PennFit`. Do NOT commit directly to local
-`main` and let it drift again. The Replit Git pane has a "Push"
-action that creates the branch on the remote; finish the PR on
-github.com.
+`main` and let it drift again.
 
-**Pre-commit drift warning:** the pre-commit hook prints a non-
-blocking warning when local `main` is more than 10 commits behind
-`subrepl-3ppc2e03/main`. Bypass with `SKIP_HOOKS=1 git commit ...`
-or `--no-verify` for genuine emergencies.
+**Pre-commit drift block:** the pre-commit hook blocks commits to
+local `main` when it is behind `origin/main`. Bypass with
+`SKIP_HOOKS=1 git commit ...` or `--no-verify` for genuine
+emergencies.
 
 This is a `pnpm` workspaces monorepo (Node v24, TypeScript 5.9). The
 top-level structure is:
@@ -79,10 +79,12 @@ pnpm --filter @workspace/resupply-api dev   # boots the in-process pg-boss worke
 pnpm --filter @workspace/cpap-fitter dev    # serves customer storefront + admin console
 ```
 
-In the Replit workspace, prefer the registered workflows
-(`artifacts/resupply-api: Resupply API` and `artifacts/cpap-fitter:
-web`) over running `pnpm dev` directly — the workflows wire up the
-per-artifact `PORT` and `BASE_PATH` that the dev servers expect.
+Locally, set `PORT` and `BASE_PATH` per-artifact before running
+`pnpm --filter @workspace/<artifact> dev`. The cpap-fitter SPA
+expects `BASE_PATH=/` and a free port (typically 5173); the
+resupply-api expects a port distinct from the SPA (typically 3000).
+On Railway, `PORT` is injected by the platform and `BASE_PATH`
+defaults to `/`.
 
 Each long-running service validates its required environment
 variables at startup and fails fast with a single error listing
@@ -141,7 +143,8 @@ ignored — feel free to delete it.
 | `SUPABASE_URL`                                      |       ✅       | Production Supabase project URL (from Studio → Project Settings → API). The resupply-api routes its reads/writes through the Supabase JS service-role client — this is the only runtime data path. URL is safe to expose; the key is not.                                     |
 | `SUPABASE_SERVICE_ROLE_KEY`                         |       ✅       | Service-role JWT for the project above. Bypasses RLS; MUST stay server-side. Both this and `SUPABASE_URL` are validated by `validateSupabaseEnv()` in `lib/resupply-db/src/supabase-client.ts`.                                                                                |
 | `RESUPPLY_LINK_HMAC_KEY`                            |       ✅       | 32+ random bytes used to sign the short-lived patient links delivered in SMS / email reminders. Generate with `openssl rand -base64 48`. Rotating it invalidates in-flight links.                                                                                              |
-| `RESUPPLY_ALLOWED_ORIGINS` **or** `REPLIT_DOMAINS`  |       ✅       | CORS allowlist hostnames (one of either). In production `artifacts/resupply-api/src/app.ts:63` throws at boot if both are empty. On Replit, `REPLIT_DOMAINS` is auto-populated; on any other host, set `RESUPPLY_ALLOWED_ORIGINS` to the production origins.                   |
+| `RESUPPLY_ALLOWED_ORIGINS` **or** `RAILWAY_PUBLIC_DOMAIN` |       ✅       | CORS allowlist hostnames (one of either). In production `artifacts/resupply-api/src/app.ts` throws at boot if both are empty. On Railway, `RAILWAY_PUBLIC_DOMAIN` is auto-populated; set `RESUPPLY_ALLOWED_ORIGINS` explicitly when you need multiple origins (custom domain + the `*.up.railway.app` fallback). |
+| `SUPABASE_STORAGE_BUCKET_PRIVATE`                   |       ✅       | Bucket name in Supabase Storage where customer attachments land (POD photos, prescription PDFs, MMS media). The PHI attachment sweep job refuses to register without it.                                                                                                       |
 
 > Migration 0025 stripped pgcrypto column-level PHI encryption and
 > dropped the `phone_lookup` table, so the legacy
@@ -155,7 +158,7 @@ ignored — feel free to delete it.
 | ---------------------------------------------------------------------------------------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `NODE_ENV`, `LOG_LEVEL`                                                                              | All services      | Defaults to `development` / `info`.                                                                                                                                                                                                                                                                                                                                                        |
 | `BASE_PATH`                                                                                          | Vite apps         | Required by every Vite app at config time (the config throws if missing or empty). Set to `/` for root mounts.                                                                                                                                                                                                                                                                             |
-| `RESUPPLY_ALLOWED_ORIGINS`                                                                           | `resupply-api`    | CORS allowlist for the `/resupply-api/*` mount. In `NODE_ENV=production` the API throws at boot if BOTH this and `REPLIT_DOMAINS` are empty (`artifacts/resupply-api/src/app.ts:63`); on Replit, `REPLIT_DOMAINS` is auto-populated so this is genuinely optional there. Outside production, falls back to Replit dev domain + localhost.                                                  |
+| `RESUPPLY_ALLOWED_ORIGINS`                                                                           | `resupply-api`    | CORS allowlist for the `/resupply-api/*` mount. In `NODE_ENV=production` the API throws at boot if BOTH this and `RAILWAY_PUBLIC_DOMAIN` are empty (`artifacts/resupply-api/src/app.ts`); on Railway, `RAILWAY_PUBLIC_DOMAIN` is auto-populated so this is genuinely optional there. Outside production, falls back to localhost ports.                                                    |
 | `SHOP_PUBLIC_BASE_URL`, `REMINDER_PUBLIC_BASE_URL`, `RESUPPLY_VOICE_PUBLIC_BASE_URL`                 | `resupply-api`    | Public base URLs used in outbound deep links. Cart-recovery + reminder emails fall through `SHOP → RESUPPLY_VOICE → https://pennpaps.com` in order.                                                                                                                                                                                                                                        |
 | `SENDGRID_API_KEY`, `SENDGRID_FROM_EMAIL`, `SENDGRID_FROM_NAME`, `SENDGRID_EVENT_WEBHOOK_PUBLIC_KEY` | `resupply-api`    | Outbound email + delivery webhooks (used by both the request-handling routes and the in-process worker's reminder jobs). Every sender across the monorepo funnels through the shared `createSendgridClient()` in `lib/resupply-email`, so `SENDGRID_FROM_EMAIL` (set to `info@pennpaps.com`) is the single From address for the entire platform. Email features log-and-skip when missing. |
 | `PENN_FULFILLMENT_EMAIL`                                                                             | `resupply-api`    | Where Penn Fit fulfillment receives new mask orders (this is the recipient, not the sender).                                                                                                                                                                                                                                                                                               |
@@ -163,10 +166,10 @@ ignored — feel free to delete it.
 | `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_PHONE_NUMBER`, `TWILIO_MESSAGING_SERVICE_SID`     | `resupply-api`    | SMS + voice. Outbound SMS / voice routes return 503 when missing.                                                                                                                                                                                                                                                                                                                          |
 | `OPENAI_API_KEY`                                                                                     | `resupply-api`    | Conversation AI. AI features disable when missing.                                                                                                                                                                                                                                                                                                                                         |
 | `STRIPE_SECRET_KEY`                                                                                  | `resupply-api`    | Cash-pay shop checkout + webhooks. Shop endpoints return preview-mode responses when missing.                                                                                                                                                                                                                                                                                              |
-| `PRIVATE_OBJECT_DIR`, `PUBLIC_OBJECT_SEARCH_PATHS`                                                   | `resupply-api`    | Object-storage paths for prescription attachments (used by both the upload routes and the in-process worker's PHI sweep job). The implementation uses `@google-cloud/storage`; in production this points at Replit Object Storage's GCS-compatible API, but any GCS-compatible endpoint works.                                                                                             |
+| `SUPABASE_STORAGE_BUCKET_PRIVATE`, `SUPABASE_STORAGE_BUCKET_PUBLIC`                                  | `resupply-api`    | Supabase Storage bucket names for prescription attachments + public assets. The private bucket is required at boot — the upload routes and the worker's PHI sweep both refuse to start without it. Per-object ACL lives in `resupply.object_storage_acls` (migration 0165), not in bucket-level RLS.                                                                                       |
 | `VITE_RESUPPLY_CONTACT_EMAIL`                                                                        | Vite apps         | UI display value (contact email surfaced in the SPA).                                                                                                                                                                                                                                                                                                                                       |
 | `CODEGEN_OUT_PENNPAPS_CLIENT`, `CODEGEN_OUT_PENNPAPS_ZOD`, `CODEGEN_OUT_RESUPPLY_CLIENT`             | `scripts/codegen` | Override OpenAPI codegen output paths. Defaults are in-repo.                                                                                                                                                                                                                                                                                                                               |
-| `REPL_ID`, `REPLIT_DEV_DOMAIN`, `REPLIT_DOMAINS`                                                     | All services      | Set automatically on Replit; usually leave blank locally.                                                                                                                                                                                                                                                                                                                                  |
+| `RAILWAY_PUBLIC_DOMAIN`                                                                              | All services      | Set automatically on Railway to the canonical `*.up.railway.app` host (or the bound custom domain). The API reads it as a CORS-allowlist fallback and as a source for the public base URL Twilio/Stripe callbacks use when `RESUPPLY_VOICE_PUBLIC_BASE_URL` is unset. Leave blank locally.                                                                                                |
 
 ## Useful scripts
 
@@ -181,7 +184,7 @@ ignored — feel free to delete it.
 
 ## Privacy contract
 
-Two non-negotiable rules from `replit.md` worth repeating here:
+Two non-negotiable rules from `CLAUDE.md` worth repeating here:
 
 - **Do not add image logging anywhere in the backend.** Camera images
   and video frames never leave the browser; only numeric facial

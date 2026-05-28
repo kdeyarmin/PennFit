@@ -74,7 +74,9 @@ export function readReengageMessagingConfig(
     practiceName: env.RESUPPLY_PRACTICE_NAME ?? "PennPaps",
     publicBaseUrl:
       (env.RESUPPLY_VOICE_PUBLIC_BASE_URL ??
-        (env.REPLIT_DEV_DOMAIN ? `https://${env.REPLIT_DEV_DOMAIN}` : "")) ||
+        (env.RAILWAY_PUBLIC_DOMAIN
+          ? `https://${env.RAILWAY_PUBLIC_DOMAIN}`
+          : "")) ||
       "",
   };
 }

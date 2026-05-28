@@ -451,7 +451,7 @@ async function resolveProductDisplayName(productId: string): Promise<string> {
  * in moderation emails. The shop is mounted at the cpap-fitter
  * artifact root, NOT at the resupply-api base path — we use the
  * request origin (set by the same proxy that serves the dashboard)
- * so dev (https://<repl>.replit.dev/shop/p/...) and production
+ * so dev (https://<deploy>.up.railway.app/shop/p/...) and production
  * (https://pennpaps.com/shop/p/...) both render the right link
  * without a separate config.
  */

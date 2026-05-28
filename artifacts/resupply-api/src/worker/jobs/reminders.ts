@@ -302,7 +302,9 @@ function readWorkerMessagingConfig(env: NodeJS.ProcessEnv = process.env): {
   const practiceName = env.RESUPPLY_PRACTICE_NAME ?? "PennPaps";
   const publicBaseUrl = stripTrailingSlash(
     env.RESUPPLY_VOICE_PUBLIC_BASE_URL ??
-      (env.REPLIT_DEV_DOMAIN ? `https://${env.REPLIT_DEV_DOMAIN}` : ""),
+      (env.RAILWAY_PUBLIC_DOMAIN
+        ? `https://${env.RAILWAY_PUBLIC_DOMAIN}`
+        : ""),
   );
   // RESUPPLY_LINK_HMAC_KEY is needed for signed email-action links
   // (confirm/edit/stop). It's the only HMAC key the program still

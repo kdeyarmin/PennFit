@@ -17,10 +17,10 @@
 //     correct.
 //
 // Why we don't enforce HTTPS on `publicBaseUrl` here:
-//   In dev we use the Replit dev domain (which IS https) but the
-//   Twilio sandbox accepts http for local testing too. The signature
-//   middleware will reject mismatched URLs regardless, so an http/https
-//   typo fails CLOSED downstream.
+//   In dev we may run against an https tunnel (Railway preview, ngrok,
+//   etc.) but the Twilio sandbox accepts http for local testing too.
+//   The signature middleware will reject mismatched URLs regardless,
+//   so an http/https typo fails CLOSED downstream.
 
 export interface VoiceConfig {
   openaiApiKey: string;
@@ -35,8 +35,8 @@ export interface VoiceConfig {
   twilioPhoneNumber?: string;
   /**
    * Public origin Twilio uses to call back into us. Trailing slash
-   * stripped. e.g. "https://my-repl.replit.app". Falls back to
-   * `https://${REPLIT_DEV_DOMAIN}` in dev.
+   * stripped. e.g. "https://pennfit.up.railway.app". Falls back to
+   * `https://${RAILWAY_PUBLIC_DOMAIN}` when the explicit env var is unset.
    */
   publicBaseUrl: string;
   /**
@@ -76,7 +76,9 @@ export function readVoiceConfigOrNull(
 
   const publicBaseUrl = stripTrailingSlash(
     env.RESUPPLY_VOICE_PUBLIC_BASE_URL ??
-      (env.REPLIT_DEV_DOMAIN ? `https://${env.REPLIT_DEV_DOMAIN}` : ""),
+      (env.RAILWAY_PUBLIC_DOMAIN
+        ? `https://${env.RAILWAY_PUBLIC_DOMAIN}`
+        : ""),
   );
   if (!publicBaseUrl) return null;
 
@@ -103,7 +105,8 @@ export function readVoiceConfigOrThrow(
     throw new Error(
       "Voice configuration is incomplete. Required env vars: " +
         "OPENAI_API_KEY, TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, and " +
-        "RESUPPLY_VOICE_PUBLIC_BASE_URL (or REPLIT_DEV_DOMAIN in dev).",
+        "RESUPPLY_VOICE_PUBLIC_BASE_URL (or RAILWAY_PUBLIC_DOMAIN as a " +
+        "fallback when running on Railway).",
     );
   }
   return cfg;

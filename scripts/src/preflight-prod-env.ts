@@ -2,7 +2,7 @@
 //
 // Read-only validator that runs against the current `process.env` and
 // reports whether the environment is safe to launch as production.
-// Designed to be run from inside the deploy target (Replit Secrets
+// Designed to be run from inside the deploy target (Railway Variables
 // already loaded into the process) or locally against a dotenv file
 // via Node's native --env-file flag, e.g.
 //
@@ -12,8 +12,8 @@
 // What it covers (and what it does NOT):
 //   * Presence + shape of every var the resupply-api refuses to boot
 //     without — mirrors artifacts/resupply-api/src/lib/env-check.ts
-//     AND the CORS-allowlist fail-closed in app.ts:63 (in production,
-//     at least one of RESUPPLY_ALLOWED_ORIGINS / REPLIT_DOMAINS).
+//     AND the CORS-allowlist fail-closed in app.ts (in production, at
+//     least one of RESUPPLY_ALLOWED_ORIGINS / RAILWAY_PUBLIC_DOMAIN).
 //   * Strict base64 (regex + round-trip) for the two HMAC keys —
 //     mirrors lib/resupply-audit so preflight can't pass values
 //     that boot-time validation would reject.
@@ -359,26 +359,26 @@ function runChecks(): void {
   // tamper-evident audit chain (migration 0156). Preflight no longer
   // validates it — stale values in the environment are ignored.
 
-  // CORS allowlist — `artifacts/resupply-api/src/app.ts:63` throws
-  // at boot if NODE_ENV=production AND both RESUPPLY_ALLOWED_ORIGINS
-  // and REPLIT_DOMAINS are empty. Mirror that requirement so the
+  // CORS allowlist — `artifacts/resupply-api/src/app.ts` throws at boot
+  // if NODE_ENV=production AND both RESUPPLY_ALLOWED_ORIGINS and
+  // RAILWAY_PUBLIC_DOMAIN are empty. Mirror that requirement so the
   // operator catches it pre-deploy instead of on the first request.
   if (prodModeEarly) {
     const allowedOrigins = getTrimmed("RESUPPLY_ALLOWED_ORIGINS");
-    const replitDomains = getTrimmed("REPLIT_DOMAINS");
-    if (allowedOrigins === undefined && replitDomains === undefined) {
+    const railwayDomain = getTrimmed("RAILWAY_PUBLIC_DOMAIN");
+    if (allowedOrigins === undefined && railwayDomain === undefined) {
       record(
-        "RESUPPLY_ALLOWED_ORIGINS / REPLIT_DOMAINS",
+        "RESUPPLY_ALLOWED_ORIGINS / RAILWAY_PUBLIC_DOMAIN",
         "fail",
-        "neither is set in NODE_ENV=production — the API will refuse to start (artifacts/resupply-api/src/app.ts:85). Set one of them to the production hostname(s).",
+        "neither is set in NODE_ENV=production — the API will refuse to start. Set one of them to the production hostname(s).",
       );
     } else {
       record(
-        "RESUPPLY_ALLOWED_ORIGINS / REPLIT_DOMAINS",
+        "RESUPPLY_ALLOWED_ORIGINS / RAILWAY_PUBLIC_DOMAIN",
         "pass",
         allowedOrigins !== undefined
           ? "RESUPPLY_ALLOWED_ORIGINS set"
-          : "REPLIT_DOMAINS set (Replit deployment)",
+          : "RAILWAY_PUBLIC_DOMAIN set (Railway deployment)",
       );
     }
   }

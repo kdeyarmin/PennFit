@@ -5,11 +5,15 @@ Status: living doc. Last reviewed 2026-04-30 (sweep job shipped).
 ## Background
 
 Admins can attach a single prescription document (PDF or image, ≤10MB) per
-prescription row. The bytes live in our default Replit object storage bucket
-under the standard `objectStorage.getObjectEntityUploadURL()` prefix; the
-database row in `prescriptions` carries the object key plus four pieces of
-display metadata. Both layers are PHI under HIPAA — a wet-signed prescription
-PDF can include patient name, address, DOB, and clinical detail.
+prescription row. The bytes live in our private Supabase Storage bucket
+(named by `SUPABASE_STORAGE_BUCKET_PRIVATE`) under the standard
+`objectStorage.getObjectEntityUploadURL()` prefix; the database row in
+`prescriptions` carries the object key plus four pieces of display
+metadata, and per-object ACLs live in `resupply.object_storage_acls`
+(added by migration 0165 — the legacy GCS-custom-metadata ACL approach
+is gone). Both the bytes and the row are PHI under HIPAA — a wet-signed
+prescription PDF can include patient name, address, DOB, and clinical
+detail.
 
 ## Lifecycle and orphan analysis
 

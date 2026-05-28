@@ -334,7 +334,7 @@ async function main(): Promise<void> {
   const secret = process.env.STRIPE_SECRET_KEY;
   if (!secret) {
     console.error(
-      "STRIPE_SECRET_KEY is not set. Add it via Replit Secrets and re-run.",
+      "STRIPE_SECRET_KEY is not set. Add it to your environment (Railway → Variables) and re-run.",
     );
     process.exit(1);
   }

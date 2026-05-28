@@ -1,0 +1,21 @@
+# Nixpacks build config for Railway.
+# The repo is a pnpm workspaces monorepo; we pin Node + pnpm via corepack
+# so Railway uses the package manager declared in the root package.json.
+
+[phases.setup]
+nixPkgs = ["nodejs_24", "pnpm-10_x", "openssh"]
+
+[phases.install]
+cmds = [
+  "corepack enable",
+  "corepack prepare pnpm@11.4.0 --activate",
+  "pnpm install --frozen-lockfile"
+]
+
+[phases.build]
+cmds = [
+  "pnpm run build"
+]
+
+[start]
+cmd = "pnpm --filter @workspace/resupply-api run start"

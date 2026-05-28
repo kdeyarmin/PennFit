@@ -8,7 +8,7 @@ spanning a week with SMS, voice, and email steps).
 
 Temporal requires running its own server cluster (Cassandra/MySQL/Postgres
 backend, history service, matching service, frontend service, workers).
-That is awkward to host on a single Replit container; the realistic options
+That is awkward to host on a single Railway service; the realistic options
 are Temporal Cloud (paid, no BAA on free tier) or a self-hosted cluster on a
 real cloud.
 
@@ -65,7 +65,7 @@ Move to Temporal when **any** of these become true:
 ## Alternatives Considered
 
 - **Temporal dev server in a workflow** — rejected; the dev server is not
-  meant for production and there is no clean Replit production target for
+  meant for production and there is no clean Railway production target for
   the cluster.
 - **BullMQ + Redis** — rejected; would require a managed Redis (extra
   dependency, extra BAA) when pg-boss covers the same ground using the DB

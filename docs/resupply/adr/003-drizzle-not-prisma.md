@@ -92,12 +92,12 @@ straightforward schema drift between dev and prod.
   state.
 - Deploy wiring: `scripts/post-merge.sh` invokes the storefront
   migrator (replacing the prior `pnpm --filter db push` call), and
-  `artifacts/api-server/.replit-artifact/artifact.toml`'s production
-  build step runs the migrator before building the server — mirroring
-  what `artifacts/resupply-api/.replit-artifact/artifact.toml` already
-  does for the resupply DB. The api-server artifact owns the deploy-
-  time migrate (rather than the cpap-fitter static build) because it
-  is the consumer most tightly coupled to the storefront schema.
+  the Railway service definition for `artifacts/api-server` runs the
+  migrator as a pre-deploy step before booting the server — mirroring
+  what `artifacts/resupply-api`'s Railway service already does for
+  the resupply DB. The api-server service owns the deploy-time
+  migrate (rather than the cpap-fitter static build) because it is
+  the consumer most tightly coupled to the storefront schema.
 - `push` and `push-force` remain in `lib/db/package.json` strictly as
   developer conveniences against a throwaway dev DB, with the same
   caveats noted above.

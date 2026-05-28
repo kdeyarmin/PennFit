@@ -24,9 +24,8 @@ export interface StripeConfig {
   webhookSigningSecret: string | null;
   /**
    * Public origin used for Stripe Checkout success/cancel redirects.
-   * In dev we synthesize from REPLIT_DEV_DOMAIN; in prod we take the
-   * first entry of REPLIT_DOMAINS (Replit publishes a comma-separated
-   * list of bound hostnames).
+   * On Railway we synthesize from RAILWAY_PUBLIC_DOMAIN unless
+   * RESUPPLY_PUBLIC_BASE_URL is set explicitly.
    */
   publicBaseUrl: string;
 }
@@ -35,18 +34,12 @@ export function readPublicBaseUrl(
   env: NodeJS.ProcessEnv = process.env,
 ): string | null {
   // Explicit override wins — useful for staging deploys with a
-  // custom domain that isn't yet in REPLIT_DOMAINS.
+  // custom domain that isn't yet in RAILWAY_PUBLIC_DOMAIN.
   const explicit = env.RESUPPLY_PUBLIC_BASE_URL;
   if (explicit) return explicit.replace(/\/$/, "");
 
-  const replitDomains = env.REPLIT_DOMAINS;
-  if (replitDomains) {
-    const first = replitDomains.split(",")[0]?.trim();
-    if (first) return `https://${first}`;
-  }
-
-  const dev = env.REPLIT_DEV_DOMAIN;
-  if (dev) return `https://${dev}`;
+  const railwayHost = env.RAILWAY_PUBLIC_DOMAIN?.trim();
+  if (railwayHost) return `https://${railwayHost}`;
 
   return null;
 }

@@ -54,7 +54,7 @@ if (Number.isNaN(port) || port <= 0) {
 //   routes. Express 5's `app.listen()` returns the underlying HTTP
 //   server, but constructing it explicitly here makes the intent
 //   obvious and lets the WS handshake share the same port + TLS
-//   termination Replit's reverse proxy already terminates for us.
+//   termination Railway's edge proxy already terminates for us.
 //
 // Path strategy:
 //   - The WS server is created with `noServer: true`. We attach an
@@ -220,7 +220,7 @@ process.on("unhandledRejection", (reason) => {
 // in-process pg-boss worker, exit. Without this, SIGTERM kills
 // in-flight requests mid-flight (the orchestrator's deploy-rollover
 // signal). Both phases share a single deadline below typical
-// orchestrator grace periods (30s on Replit, K8s default) so we
+// orchestrator grace periods (30s on Railway, K8s default) so we
 // always abort cleanly before the kernel SIGKILLs us — better to
 // drop a stuck connection than have the kernel interrupt a
 // half-written DB transaction OR a pg-boss job mid-flight.

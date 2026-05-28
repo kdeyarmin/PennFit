@@ -28,7 +28,7 @@ export interface SmsConfig {
   /**
    * Public origin Twilio uses to call back into us. Mirrors voice
    * config — we reuse the voice base URL when set, falling back to
-   * REPLIT_DEV_DOMAIN in dev.
+   * RAILWAY_PUBLIC_DOMAIN when the explicit env var is unset.
    */
   publicBaseUrl: string;
 }
@@ -41,7 +41,7 @@ export interface EmailConfig {
   sendgridEventWebhookPublicKey: string;
   /**
    * Public origin used to build click-through links. Reuses the same
-   * value as the SMS public base URL — there is only one Replit
+   * value as the SMS public base URL — there is only one runtime
    * deployment surface.
    */
   publicBaseUrl: string;
@@ -75,7 +75,9 @@ export function readSmsConfigOrNull(
 
   const publicBaseUrl = stripTrailingSlash(
     env.RESUPPLY_VOICE_PUBLIC_BASE_URL ??
-      (env.REPLIT_DEV_DOMAIN ? `https://${env.REPLIT_DEV_DOMAIN}` : ""),
+      (env.RAILWAY_PUBLIC_DOMAIN
+        ? `https://${env.RAILWAY_PUBLIC_DOMAIN}`
+        : ""),
   );
   if (!publicBaseUrl) return null;
 
@@ -106,7 +108,9 @@ export function readEmailConfigOrNull(
 
   const publicBaseUrl = stripTrailingSlash(
     env.RESUPPLY_VOICE_PUBLIC_BASE_URL ??
-      (env.REPLIT_DEV_DOMAIN ? `https://${env.REPLIT_DEV_DOMAIN}` : ""),
+      (env.RAILWAY_PUBLIC_DOMAIN
+        ? `https://${env.RAILWAY_PUBLIC_DOMAIN}`
+        : ""),
   );
   if (!publicBaseUrl) return null;
 

@@ -34,7 +34,7 @@ issues (`event=pg_boss_error`).
 > Operators: alert on either of those events firing more than twice
 > in a 30 min window. A single tick can be a transient retry; a
 > persistent count usually means an external dependency
-> (SendGrid / Twilio / SMTP / GCS) is unhealthy.
+> (SendGrid / Twilio / SMTP / Supabase Storage) is unhealthy.
 
 ## Common questions
 
@@ -122,9 +122,11 @@ Likely causes (pick one based on the `output` column):
 Symptoms: `prescription-attachment-sweep` failed.
 
 Likely causes:
-* **`PRIVATE_OBJECT_DIR` unset / typo.** The job logs a categorized
-  error before pg-boss sees the throw. Fix the env, redeploy.
-* **GCS auth expired.** Same fix.
+* **`SUPABASE_STORAGE_BUCKET_PRIVATE` unset / typo.** The job logs a
+  categorized error before pg-boss sees the throw. Fix the env,
+  redeploy.
+* **Supabase Storage auth expired** (rotated service-role JWT).
+  Same fix.
 * **An attachment ref disappeared between the reference SET build
   and the per-object recheck.** The job is robust to this: the
   recheck is per-object and aborts the delete if the row showed up.

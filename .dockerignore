@@ -1,0 +1,49 @@
+# Files that should not land in the build context shipped to Railway.
+# Mirrors most of .gitignore plus a few build-time artifacts that
+# nixpacks regenerates anyway.
+
+node_modules
+**/node_modules
+
+.git
+.github
+
+# Test output
+coverage
+**/coverage
+.nyc_output
+playwright-report
+test-results
+
+# Build output (rebuilt during deploy)
+dist
+**/dist
+build
+**/build
+.next
+.turbo
+.cache
+
+# Local env / secrets
+.env
+.env.*
+!.env.example
+
+# Editor / OS noise
+.DS_Store
+.vscode
+.idea
+
+# Local pnpm store
+.local
+.pnpm-store
+
+# Screenshots, docs, etc. (kept in repo for humans, not needed at runtime)
+screenshots
+e2e
+docs/user-manual
+attached_assets
+
+# Logs
+*.log
+logs

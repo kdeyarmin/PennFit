@@ -13,9 +13,9 @@
 //   hydration. Modern Googlebot renders JS and will index these
 //   tags. Static OG crawlers (Slack, Discord, Facebook, iMessage)
 //   do NOT execute JS, so unfurls of /shop/p/:id links will fall
-//   back to the document-level OG tags from index.html. Documented
-//   in replit.md; pre-rendering or SSG of the product detail page
-//   is a future-work item the team has explicitly accepted for v1.
+//   back to the document-level OG tags from index.html. Pre-rendering
+//   or SSG of the product detail page is a future-work item the team
+//   has explicitly accepted for v1.
 //
 // Lifecycle contract:
 //   * On mount / re-render with new inputs we upsert tags by a

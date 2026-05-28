@@ -47,7 +47,7 @@ const ALL_VENDOR_KEYS = [
   "TWILIO_FAX_FROM_NUMBER",
   "RESUPPLY_VOICE_PUBLIC_BASE_URL",
   "STRIPE_SECRET_KEY",
-  "PRIVATE_OBJECT_DIR",
+  "SUPABASE_STORAGE_BUCKET_PRIVATE",
 ] as const;
 
 const originalEnv: Partial<
@@ -176,7 +176,7 @@ describe("GET /admin/ops-status", () => {
     process.env.TWILIO_FAX_FROM_NUMBER = "+15005550006";
     process.env.RESUPPLY_VOICE_PUBLIC_BASE_URL = "https://example.com";
     process.env.STRIPE_SECRET_KEY = "sk_test_xxx";
-    process.env.PRIVATE_OBJECT_DIR = "/objects";
+    process.env.SUPABASE_STORAGE_BUCKET_PRIVATE = "attachments";
     queueCounts([0, 0, 0, 0, 0, 0, 0, 0]);
     const res = await request(makeApp()).get("/admin/ops-status");
     expect(res.body.vendors).toEqual({

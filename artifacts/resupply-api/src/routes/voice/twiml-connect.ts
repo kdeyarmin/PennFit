@@ -39,9 +39,9 @@ const signatureMiddleware = requireTwilioSignature({
   // "auth_token_unset" — fail closed.
   getAuthToken: () => readVoiceConfigOrNull()?.twilioAuthToken,
   // Reconstruct the URL Twilio originally signed: the public base URL
-  // (https://<replit-dev-domain>) + the path Twilio POSTed to. We
-  // intentionally use `originalUrl` (path + query) because Twilio's
-  // signature includes the FULL URL with the query string.
+  // (e.g. https://<railway-public-domain>) + the path Twilio POSTed
+  // to. We intentionally use `originalUrl` (path + query) because
+  // Twilio's signature includes the FULL URL with the query string.
   buildPublicUrl: (req) => {
     const cfg = readVoiceConfigOrNull();
     const base = cfg?.publicBaseUrl ?? "";
