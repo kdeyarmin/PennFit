@@ -631,6 +631,50 @@ describe("ObjectStorageService.searchPublicObject", () => {
     const result = await svc.searchPublicObject("logo.png");
     expect(result).toBeNull();
   });
+
+  it("returns null when data is null and no error is returned", async () => {
+    vi.stubEnv("SUPABASE_STORAGE_BUCKET_PUBLIC", "public-assets");
+    stageStorage("list:public-assets", {
+      data: null,
+      error: null,
+    });
+
+    const svc = new ObjectStorageService();
+    const result = await svc.searchPublicObject("logo.png");
+    expect(result).toBeNull();
+  });
+
+  it("returns a handle when exact match is among multiple list results", async () => {
+    vi.stubEnv("SUPABASE_STORAGE_BUCKET_PUBLIC", "public-assets");
+    stageStorage("list:public-assets", {
+      data: [
+        { name: "logo.png.bak", metadata: {} },
+        { name: "logo.png", metadata: {} },
+        { name: "logo.png.tmp", metadata: {} },
+      ],
+      error: null,
+    });
+
+    const svc = new ObjectStorageService();
+    const handle = await svc.searchPublicObject("logo.png");
+    expect(handle).not.toBeNull();
+    expect(handle!.bucket).toBe("public-assets");
+    expect(handle!.path).toBe("logo.png");
+  });
+
+  it("handles nested file paths by splitting dir and base correctly", async () => {
+    vi.stubEnv("SUPABASE_STORAGE_BUCKET_PUBLIC", "public-assets");
+    stageStorage("list:public-assets", {
+      data: [{ name: "logo.png", metadata: {} }],
+      error: null,
+    });
+
+    const svc = new ObjectStorageService();
+    const handle = await svc.searchPublicObject("images/logo.png");
+    expect(handle).not.toBeNull();
+    expect(handle!.bucket).toBe("public-assets");
+    expect(handle!.path).toBe("images/logo.png");
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -655,10 +699,93 @@ describe("StoredObjectHandle.getMetadata (readObjectMetadata)", () => {
     });
     await expect(handle.getMetadata()).rejects.toThrow(ObjectNotFoundError);
   });
+
+  it("throws ObjectNotFoundError when data is null and no error is returned", async () => {
+    stageStorage("list:attachments", {
+      data: [{ name: "test-uuid", metadata: { size: 100, mimetype: "image/png" } }],
+      error: null,
+    });
+    const svc = new ObjectStorageService();
+    const handle = await svc.getObjectEntityFile("/objects/uploads/test-uuid");
+
+    stageStorage("list:attachments", { data: null, error: null });
+    await expect(handle.getMetadata()).rejects.toThrow(ObjectNotFoundError);
+  });
+
+  it("throws ObjectNotFoundError when storage returns an error on metadata read", async () => {
+    stageStorage("list:attachments", {
+      data: [{ name: "test-uuid", metadata: { size: 100, mimetype: "image/png" } }],
+      error: null,
+    });
+    const svc = new ObjectStorageService();
+    const handle = await svc.getObjectEntityFile("/objects/uploads/test-uuid");
+
+    stageStorage("list:attachments", {
+      data: null,
+      error: { message: "internal error" },
+    });
+    await expect(handle.getMetadata()).rejects.toThrow(ObjectNotFoundError);
+  });
+
+  it("returns metadata from the exact match when it is not the first list entry (regression for data[0])", async () => {
+    // Regression: the old code used data[0] which would return the wrong entry
+    // if a prefix-named file appeared before the target in the list.
+    stageStorage("list:attachments", {
+      data: [{ name: "test-uuid", metadata: { size: 100, mimetype: "image/png" } }],
+      error: null,
+    });
+    const svc = new ObjectStorageService();
+    const handle = await svc.getObjectEntityFile("/objects/uploads/test-uuid");
+
+    stageStorage("list:attachments", {
+      data: [
+        { name: "test-uuid-prefix", metadata: { size: 9999, mimetype: "application/octet-stream" } },
+        { name: "test-uuid", metadata: { size: 512, mimetype: "image/jpeg" } },
+      ],
+      error: null,
+    });
+    const [meta] = await handle.getMetadata();
+    expect(meta.size).toBe(512);
+    expect(meta.contentType).toBe("image/jpeg");
+  });
+
+  it("returns application/octet-stream when metadata mimetype is absent", async () => {
+    stageStorage("list:attachments", {
+      data: [{ name: "test-uuid", metadata: { size: 256 } }],
+      error: null,
+    });
+    const svc = new ObjectStorageService();
+    const handle = await svc.getObjectEntityFile("/objects/uploads/test-uuid");
+
+    stageStorage("list:attachments", {
+      data: [{ name: "test-uuid", metadata: { size: 256 } }],
+      error: null,
+    });
+    const [meta] = await handle.getMetadata();
+    expect(meta.contentType).toBe("application/octet-stream");
+    expect(meta.size).toBe(256);
+  });
+
+  it("parses string-valued size metadata correctly", async () => {
+    stageStorage("list:attachments", {
+      data: [{ name: "test-uuid", metadata: { size: "1024", mimetype: "text/plain" } }],
+      error: null,
+    });
+    const svc = new ObjectStorageService();
+    const handle = await svc.getObjectEntityFile("/objects/uploads/test-uuid");
+
+    stageStorage("list:attachments", {
+      data: [{ name: "test-uuid", metadata: { size: "1024", mimetype: "text/plain" } }],
+      error: null,
+    });
+    const [meta] = await handle.getMetadata();
+    expect(meta.size).toBe(1024);
+    expect(meta.contentType).toBe("text/plain");
+  });
 });
 
 // ---------------------------------------------------------------------------
-// trySetObjectEntityAclPolicy
+
 // ---------------------------------------------------------------------------
 
 describe("ObjectStorageService.trySetObjectEntityAclPolicy", () => {
