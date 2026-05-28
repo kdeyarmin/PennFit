@@ -153,9 +153,28 @@ function rejectUpgrade(socket: Socket, code: number, reason: string): void {
   socket.destroy();
 }
 
-function serializeErr(err: unknown): { name: string; message?: string } {
-  if (err instanceof Error) return { name: err.name, message: err.message };
-  return { name: "unknown" };
+function serializeErr(err: unknown): {
+  name: string;
+  message?: string;
+  stack?: string;
+  cause?: unknown;
+} {
+  if (err instanceof Error) {
+    const out: ReturnType<typeof serializeErr> = {
+      name: err.name,
+      message: err.message,
+      stack: err.stack,
+    };
+    if ("cause" in err && err.cause != null) {
+      const cause = err.cause;
+      out.cause =
+        cause instanceof Error
+          ? { name: cause.name, message: cause.message, stack: cause.stack }
+          : String(cause);
+    }
+    return out;
+  }
+  return { name: "unknown", message: String(err) };
 }
 
 // Why we sleep before exit: pino with a transport (pino-pretty in
@@ -259,6 +278,17 @@ async function shutdown(signal: string): Promise<void> {
 process.on("SIGTERM", () => void shutdown("SIGTERM"));
 process.on("SIGINT", () => void shutdown("SIGINT"));
 
+// How long to wait for pg-boss to initialise before giving up.
+// pg-boss.start() connects to Postgres, runs schema migrations, and
+// acquires an advisory lock — all of which can hang indefinitely if
+// the DB is unreachable or the lock is held by a zombie process.
+// Without a deadline the process would hang silently and the
+// orchestrator would only kill it after its own (much longer) deploy
+// timeout, making the failure window very wide. 30 s is generous
+// enough for a cold Postgres start on a shared instance while still
+// surfacing a connectivity problem quickly.
+const START_WORKER_TIMEOUT_MS = 30_000;
+
 async function start(): Promise<void> {
   // Start pg-boss + register job handlers BEFORE accepting traffic.
   // The /readyz check probes the `pgboss_resupply.version` table, so
@@ -268,7 +298,27 @@ async function start(): Promise<void> {
   // the throw bubbles to start()'s caller below, which logs fatal
   // and exits 1 — the orchestrator then sees a never-ready container
   // and marks the deploy failed instead of half-promoting it.
-  await startWorker();
+  //
+  // The timeout race ensures a hung pg-boss.start() (e.g. DB
+  // unreachable, advisory lock held by a zombie) surfaces as a clear
+  // timeout error rather than a silent hang that outlasts the
+  // orchestrator's deploy gate.
+  let workerTimeoutHandle: ReturnType<typeof setTimeout> | undefined;
+  const workerTimeout = new Promise<never>((_, reject) => {
+    workerTimeoutHandle = setTimeout(() => {
+      reject(
+        new Error(
+          `startWorker() timed out after ${START_WORKER_TIMEOUT_MS}ms — pg-boss may be unable to reach the database or is waiting on an advisory lock`,
+        ),
+      );
+    }, START_WORKER_TIMEOUT_MS);
+  });
+
+  try {
+    await Promise.race([startWorker(), workerTimeout]);
+  } finally {
+    clearTimeout(workerTimeoutHandle);
+  }
 
   httpServer.listen(port, () => {
     const voiceConfigured = readVoiceConfigOrNull() !== null;
