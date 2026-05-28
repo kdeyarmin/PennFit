@@ -112,6 +112,10 @@ describe("GET /shop/me/quarterly-summary", () => {
     expect(args.patient.id).toBe("p_1");
     expect(args.windowStart).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     expect(args.windowEnd).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    const start = new Date(`${args.windowStart}T00:00:00.000Z`);
+    const end = new Date(`${args.windowEnd}T00:00:00.000Z`);
+    const spanDays = Math.round((end.getTime() - start.getTime()) / 86_400_000);
+    expect([89, 90]).toContain(spanDays); // inclusive/exclusive boundary tolerance
   });
 
   it("returns JSON fields when ?format=json", async () => {
