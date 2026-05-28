@@ -66,6 +66,23 @@ export interface VoiceConfig {
  * because it lets you discover the missing secret at the worst possible
  * moment (mid-call to a real patient).
  */
+/**
+ * Twilio webhook signature middleware needs the auth token but NOT
+ * the full voice config — inbound TwiML, status callbacks, and
+ * check-in webhooks should work even when OPENAI_API_KEY is unset
+ * (e.g. an inbound-only deployment). Returning the auth token
+ * independently avoids the foot-gun where every Twilio-signed
+ * webhook 403s because OPENAI_API_KEY happens to be missing.
+ */
+export function readTwilioWebhookAuthTokenOrNull(
+  env: NodeJS.ProcessEnv = process.env,
+): string | null {
+  const v = env.TWILIO_AUTH_TOKEN;
+  if (!v) return null;
+  const trimmed = v.trim();
+  return trimmed === "" ? null : trimmed;
+}
+
 export function readVoiceConfigOrNull(
   env: NodeJS.ProcessEnv = process.env,
 ): VoiceConfig | null {

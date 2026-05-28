@@ -31,7 +31,10 @@ import {
 } from "@workspace/resupply-telecom";
 
 import { logger } from "../../lib/logger";
-import { readVoiceConfigOrNull } from "../../lib/voice/voice-config";
+import {
+  readTwilioWebhookAuthTokenOrNull,
+  readVoiceConfigOrNull,
+} from "../../lib/voice/voice-config";
 
 const router: IRouter = Router();
 
@@ -42,7 +45,9 @@ const inboundBody = z.object({
 });
 
 const signatureMiddleware = requireTwilioSignature({
-  getAuthToken: () => readVoiceConfigOrNull()?.twilioAuthToken,
+  // Use token-only reader so inbound webhooks authenticate even when
+  // OPENAI_API_KEY is unset.
+  getAuthToken: () => readTwilioWebhookAuthTokenOrNull() ?? undefined,
   buildPublicUrl: (req) => {
     const cfg = readVoiceConfigOrNull();
     const base = cfg?.publicBaseUrl ?? "";

@@ -31,13 +31,19 @@ import { requireTwilioSignature } from "@workspace/resupply-telecom";
 
 import { voiceScriptForDay } from "../../lib/checkin-dispatcher";
 import { logger } from "../../lib/logger";
-import { readVoiceConfigOrNull } from "../../lib/voice/voice-config";
+import {
+  readTwilioWebhookAuthTokenOrNull,
+  readVoiceConfigOrNull,
+} from "../../lib/voice/voice-config";
 import type { OnboardingDayLabel } from "@workspace/resupply-db";
 
 const router: IRouter = Router();
 
 const signatureMiddleware = requireTwilioSignature({
-  getAuthToken: () => readVoiceConfigOrNull()?.twilioAuthToken,
+  // Read Twilio token independently of the full voice config —
+  // inbound webhooks must work even when OPENAI_API_KEY is unset
+  // (inbound-only deployment, transient outage).
+  getAuthToken: () => readTwilioWebhookAuthTokenOrNull() ?? undefined,
   buildPublicUrl: (req) => {
     const cfg = readVoiceConfigOrNull();
     const base = cfg?.publicBaseUrl ?? "";

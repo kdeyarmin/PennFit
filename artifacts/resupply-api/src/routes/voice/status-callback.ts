@@ -22,7 +22,10 @@ import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 import { requireTwilioSignature } from "@workspace/resupply-telecom";
 
 import { logger } from "../../lib/logger";
-import { readVoiceConfigOrNull } from "../../lib/voice/voice-config";
+import {
+  readTwilioWebhookAuthTokenOrNull,
+  readVoiceConfigOrNull,
+} from "../../lib/voice/voice-config";
 
 const router: IRouter = Router();
 
@@ -35,7 +38,10 @@ const TERMINAL_STATUSES = new Set([
 ]);
 
 const signatureMiddleware = requireTwilioSignature({
-  getAuthToken: () => readVoiceConfigOrNull()?.twilioAuthToken,
+  // Use token-only reader so status callbacks authenticate even when
+  // OPENAI_API_KEY is unset (status callbacks fire after a real
+  // outbound call too, but ALSO for missed inbound — must not fail).
+  getAuthToken: () => readTwilioWebhookAuthTokenOrNull() ?? undefined,
   buildPublicUrl: (req) => {
     const cfg = readVoiceConfigOrNull();
     const base = cfg?.publicBaseUrl ?? "";

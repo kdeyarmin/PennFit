@@ -27,6 +27,7 @@ import { logger } from "../../lib/logger";
 import { getPendingSessions } from "../../lib/voice/pending-sessions";
 import {
   publicWsOriginFromBaseUrl,
+  readTwilioWebhookAuthTokenOrNull,
   readVoiceConfigOrNull,
 } from "../../lib/voice/voice-config";
 
@@ -34,10 +35,11 @@ const router: IRouter = Router();
 
 const signatureMiddleware = requireTwilioSignature({
   // Read the token at request time so secret rotation does not require
-  // a process restart. readVoiceConfigOrNull returns null if any
-  // required env var is unset; the middleware will then 403 with
-  // "auth_token_unset" — fail closed.
-  getAuthToken: () => readVoiceConfigOrNull()?.twilioAuthToken,
+  // a process restart. Use the token-only reader (not the full voice
+  // config) so signature validation works on inbound webhooks even
+  // when OPENAI_API_KEY is unset — outbound voice may be offline but
+  // inbound TwiML and status callbacks should still authenticate.
+  getAuthToken: () => readTwilioWebhookAuthTokenOrNull() ?? undefined,
   // Reconstruct the URL Twilio originally signed: the public base URL
   // (e.g. https://<railway-public-domain>) + the path Twilio POSTed
   // to. We intentionally use `originalUrl` (path + query) because
