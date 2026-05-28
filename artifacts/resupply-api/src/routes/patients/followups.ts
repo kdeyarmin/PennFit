@@ -65,6 +65,14 @@ router.get("/patients/:id/followups", requireAdmin, async (req, res) => {
     return;
   }
 
+  // ALWAYS order descending so the newest entries are returned
+  // when the 100-row cap kicks in. The previous code flipped order
+  // to ascending when `includeCompleted` was true — which, for a
+  // patient with more than 100 historical completed followups,
+  // silently dropped the most-recent ones and surfaced the OLDEST.
+  // The UI uses this list to render "recent activity", so a CSR
+  // reviewing the past week's calls would see nothing and might
+  // re-attempt outreach the patient already received.
   let listQuery = supabase
     .schema("resupply")
     .from("patient_followups")
@@ -72,7 +80,7 @@ router.get("/patients/:id/followups", requireAdmin, async (req, res) => {
       "id, body, due_at, completed_at, completed_by_email, created_by_email, created_at",
     )
     .eq("patient_id", patientId)
-    .order("due_at", { ascending: !includeCompleted })
+    .order("due_at", { ascending: false })
     .limit(100);
   if (!includeCompleted) listQuery = listQuery.is("completed_at", null);
   const { data: rows, error } = await listQuery;

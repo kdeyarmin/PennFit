@@ -140,6 +140,22 @@ export async function replyInConversation(
     return { status: "patient_missing_contact", channel: conv.channel as "sms" | "email" };
   }
 
+  // Twilio's per-message body cap is 1600 characters (segmented across
+  // up to 10 SMS parts). The conversations/reply HTTP route allows up
+  // to 4000 characters because the same endpoint also services email
+  // (which has no such cap). Without an explicit SMS-side clamp,
+  // bodies in the 1600..4000 range were either silently split into
+  // many billed segments (Twilio absorbs the cost question quietly)
+  // or rejected with a `vendor_api_error` — neither is great. Truncate
+  // at 1600 with a trailing ellipsis so the admin notices the clip.
+  const SMS_BODY_MAX = 1600;
+  const SMS_BODY_TRUNCATE_TAIL = "… (truncated)";
+  const smsBody =
+    body.length > SMS_BODY_MAX
+      ? body.slice(0, SMS_BODY_MAX - SMS_BODY_TRUNCATE_TAIL.length) +
+        SMS_BODY_TRUNCATE_TAIL
+      : body;
+
   let vendorRef: string;
   if (conv.channel === "sms") {
     if (!patient.phone_e164) {
@@ -160,7 +176,7 @@ export async function replyInConversation(
       });
       const r = await sms.sendSms({
         to: normalizedPhone,
-        body,
+        body: smsBody,
         statusCallbackUrl,
       });
       vendorRef = r.messageSid;
@@ -267,7 +283,10 @@ export async function replyInConversation(
         conversation_id: conversationId,
         direction: "outbound",
         sender_role: "admin",
-        body,
+        // Persist what we actually sent. For SMS that's `smsBody`
+        // (potentially truncated to 1600); for email it's the
+        // untouched `body`.
+        body: conv.channel === "sms" ? smsBody : body,
         delivery_status: "queued",
         vendor_metadata:
           (conv.channel === "sms"
@@ -294,6 +313,7 @@ export async function replyInConversation(
       .eq("id", conversationId);
     if (stampConvErr) throw stampConvErr;
   } catch (dbErr) {
+<<<<<<< HEAD
     const errCode =
       typeof dbErr === "object" && dbErr !== null && "code" in dbErr
         ? String((dbErr as { code?: unknown }).code ?? "")
@@ -306,6 +326,41 @@ export async function replyInConversation(
         errCode: errCode || undefined,
         err: dbErr instanceof Error ? dbErr.message : String(dbErr),
       },
+=======
+    // Capture the PostgREST `code` discriminator (e.g. 23505 for a
+    // unique violation, PGRST116 for "row not found", etc.) so the
+    // reconciliation log is actionable. Read `code`/`message`/`name`
+    // defensively off the error object — PostgrestError extends Error
+    // in the pinned @supabase/postgrest-js, but some adapters wrap
+    // errors as plain objects. Deliberately NOT logging `details` or
+    // `hint` — those echo row values and would risk PHI in stderr.
+    const errObj =
+      dbErr && typeof dbErr === "object"
+        ? (dbErr as { message?: unknown; code?: unknown; name?: unknown })
+        : null;
+    process.stderr.write(
+      JSON.stringify({
+        level: 50,
+        event: "reply_db_write_failed_after_vendor_accept",
+        conversationId,
+        vendorRef,
+        channel: conv.channel,
+        errName:
+          dbErr instanceof Error
+            ? dbErr.name
+            : typeof errObj?.name === "string"
+              ? errObj.name
+              : "non_error",
+        errCode: typeof errObj?.code === "string" ? errObj.code : null,
+        errMessage:
+          dbErr instanceof Error
+            ? dbErr.message
+            : typeof errObj?.message === "string"
+              ? errObj.message
+              : String(dbErr),
+        msg: "Reply delivered by vendor but messages row not written — manual reconciliation required",
+      }) + "\n",
+>>>>>>> origin/main
     );
   }
 

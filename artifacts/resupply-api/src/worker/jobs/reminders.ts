@@ -117,8 +117,42 @@ async function tryClaimReminderDedupKey(
   episodeId: string,
   jobId: string,
 ): Promise<{ proceed: boolean; key: string }> {
-  const todayUtc = new Date().toISOString().slice(0, 10);
-  const key = `reminder-${channel}:${patientId}:${episodeId}:${todayUtc}`;
+  // Key dedup by PATIENT-LOCAL date, not UTC. Previously the dedup
+  // key used the UTC date; a West-Coast patient processed at
+  // 16:30-PT and again at 17:30-PT (same local day) crossed UTC
+  // midnight in between, producing two different keys and double-
+  // firing. Pull the date in the patient's timezone so two events
+  // on the same local day always collide on the same key. One DB
+  // round-trip per dedup check is acceptable: this fires at most
+  // once per (patient, episode, channel, day).
+  let timezone = "America/New_York";
+  try {
+    const { data: tzRow } = await supabase
+      .schema("resupply")
+      .from("patients")
+      .select("timezone")
+      .eq("id", patientId)
+      .limit(1)
+      .maybeSingle();
+    if (tzRow?.timezone) timezone = tzRow.timezone;
+  } catch {
+    // Network blip — fall back to default tz. Loss-of-precision
+    // here at worst re-introduces the UTC-midnight bug for this
+    // request, which is no worse than the prior behavior.
+  }
+  let todayLocal: string;
+  try {
+    todayLocal = new Intl.DateTimeFormat("en-CA", {
+      timeZone: timezone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(new Date());
+  } catch {
+    // Invalid tz string falls back to UTC.
+    todayLocal = new Date().toISOString().slice(0, 10);
+  }
+  const key = `reminder-${channel}:${patientId}:${episodeId}:${todayLocal}`;
   const expiresAt = new Date(Date.now() + 22 * 60 * 60 * 1000).toISOString();
   const { error } = await supabase
     .schema("resupply")

@@ -31,7 +31,11 @@ import {
 } from "@workspace/resupply-telecom";
 
 import { logger } from "../../lib/logger";
-import { readVoiceConfigOrNull } from "../../lib/voice/voice-config";
+import {
+  readTwilioWebhookAuthTokenOrNull,
+  readVoiceConfigOrNull,
+  readVoicePublicBaseUrlOrNull,
+} from "../../lib/voice/voice-config";
 
 const router: IRouter = Router();
 
@@ -42,10 +46,14 @@ const inboundBody = z.object({
 });
 
 const signatureMiddleware = requireTwilioSignature({
-  getAuthToken: () => readVoiceConfigOrNull()?.twilioAuthToken,
+  // Use token-only reader so inbound webhooks authenticate even when
+  // OPENAI_API_KEY is unset. The public base URL also must be
+  // sourced independently of the full voice config — otherwise the
+  // signature comparison reconstructs the URL with an empty base and
+  // 403s on every signed inbound.
+  getAuthToken: () => readTwilioWebhookAuthTokenOrNull() ?? undefined,
   buildPublicUrl: (req) => {
-    const cfg = readVoiceConfigOrNull();
-    const base = cfg?.publicBaseUrl ?? "";
+    const base = readVoicePublicBaseUrlOrNull() ?? "";
     const originalUrl =
       (req as unknown as { originalUrl?: string }).originalUrl ?? "";
     return `${base}${originalUrl}`;

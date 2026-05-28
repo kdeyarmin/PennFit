@@ -64,9 +64,17 @@ export function rateLimit(opts: RateLimitOptions): RequestHandler {
 
   return (req, res, next) => {
     const now = Date.now();
-    const key = opts.keyFn
-      ? (opts.keyFn(req) || "unknown")
-      : (req.ip ?? req.socket.remoteAddress ?? "unknown");
+    // When the keyFn returns an empty/falsy value (e.g. a custom keyFn
+    // that pulls `req.body?.phone` and the body had no phone), fall
+    // back to the IP rather than collapsing every such caller into a
+    // single shared `"unknown"` bucket. The old single-bucket fallback
+    // meant that one misbehaving caller with no key could rate-limit
+    // every other unkeyed caller AT THE SAME TIME — clearly wrong for
+    // a defense-in-depth limiter.
+    const rawKey = opts.keyFn ? opts.keyFn(req) : "";
+    const key =
+      rawKey ||
+      `ip:${req.ip ?? req.socket.remoteAddress ?? "unknown"}`;
 
     let bucket = buckets.get(key);
     if (!bucket || bucket.resetAt <= now) {

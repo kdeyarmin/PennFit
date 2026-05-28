@@ -157,6 +157,7 @@ export async function isFeatureEnabled(key: FeatureFlagKey): Promise<boolean> {
       message.includes("ENOTFOUND") ||
       message.includes("EAI_AGAIN") ||
       message.includes("fetch failed");
+<<<<<<< HEAD
     if (isMissingDbConfig || isUnreachable) {
       // Dev / smoke environments without a real Supabase fall back to
       // "all features enabled" so the rest of the app stays usable.
@@ -180,6 +181,28 @@ export async function isFeatureEnabled(key: FeatureFlagKey): Promise<boolean> {
       );
       cache.set(key, { value: false, expiresAt: now + CACHE_TTL_MS });
       return false;
+=======
+    if (isMissingDbConfig && process.env.NODE_ENV !== "production") {
+      // No Supabase configured at all — dev / smoke environment.
+      // Fall through to "all features enabled" so the rest of the
+      // app remains usable without a DB. In production this branch
+      // shouldn't be reachable (env-check.ts refuses to boot), but
+      // we still fail CLOSED on the off-chance the boot-time gate
+      // was bypassed or regressed — silently running with every
+      // feature enabled is worse than disabled.
+      cache.set(key, { value: true, expiresAt: now + CACHE_TTL_MS });
+      return true;
+    }
+    if (isUnreachable && process.env.NODE_ENV !== "production") {
+      // Supabase is configured but unreachable AND we're not in
+      // production — likely a dev/CI run pointing at a stand-in
+      // host. Fall through to enabled so dispatchers stay testable.
+      // In production an unreachable DB is a real outage; the file
+      // header pins fail-CLOSED posture, so we fall through to the
+      // fail-closed branch below instead.
+      cache.set(key, { value: true, expiresAt: now + CACHE_TTL_MS });
+      return true;
+>>>>>>> origin/main
     }
     logger.warn(
       {

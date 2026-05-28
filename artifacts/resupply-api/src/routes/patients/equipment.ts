@@ -236,9 +236,11 @@ router.post("/patients/:id/equipment", requireAdmin, async (req, res) => {
     const code = (error as { code?: string }).code;
     if (code === "23505") {
       // Unique violation on (manufacturer, serial_number) — same
-      // device is already on file. We surface a 409 with the
-      // existing row id so the CSR can navigate to it instead of
-      // creating a phantom dupe.
+      // device is already on file. Only surface cross-patient
+      // information when the existing row belongs to THIS patient;
+      // otherwise return a generic 409 so an admin can't probe
+      // arbitrary serials to enumerate equipment registered to
+      // other patients (or harvest their equipment_assets.id).
       const { data: existing } = await supabase
         .schema("resupply")
         .from("equipment_assets")
@@ -247,13 +249,16 @@ router.post("/patients/:id/equipment", requireAdmin, async (req, res) => {
         .eq("serial_number", b.serialNumber)
         .limit(1)
         .maybeSingle();
+      const sameOwner = existing && existing.patient_id === patientId;
       res.status(409).json({
         error: "serial_already_registered",
-        message:
-          existing && existing.patient_id === patientId
-            ? "This serial number is already on this patient's record."
-            : "This serial number is already registered to a different patient. Verify the serial and either correct it or open a transfer request.",
-        existingId: existing?.id ?? null,
+        message: sameOwner
+          ? "This serial number is already on this patient's record."
+          : "This serial number is already registered. If you believe this is an error, contact support to verify ownership.",
+        // Only return existingId for same-patient conflicts; an
+        // attacker enumerating serials must not learn other
+        // patients' equipment row ids.
+        existingId: sameOwner ? existing?.id ?? null : null,
       });
       return;
     }

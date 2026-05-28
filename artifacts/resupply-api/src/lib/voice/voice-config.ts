@@ -66,6 +66,42 @@ export interface VoiceConfig {
  * because it lets you discover the missing secret at the worst possible
  * moment (mid-call to a real patient).
  */
+/**
+ * Twilio webhook signature middleware needs the auth token but NOT
+ * the full voice config — inbound TwiML, status callbacks, and
+ * check-in webhooks should work even when OPENAI_API_KEY is unset
+ * (e.g. an inbound-only deployment). Returning the auth token
+ * independently avoids the foot-gun where every Twilio-signed
+ * webhook 403s because OPENAI_API_KEY happens to be missing.
+ */
+export function readTwilioWebhookAuthTokenOrNull(
+  env: NodeJS.ProcessEnv = process.env,
+): string | null {
+  const v = env.TWILIO_AUTH_TOKEN;
+  if (!v) return null;
+  const trimmed = v.trim();
+  return trimmed === "" ? null : trimmed;
+}
+
+/**
+ * Public base URL used to reconstruct the URL Twilio signed when
+ * verifying inbound webhook signatures. Returns null when neither
+ * RESUPPLY_VOICE_PUBLIC_BASE_URL nor RAILWAY_PUBLIC_DOMAIN is set.
+ *
+ * Decoupled from `readVoiceConfigOrNull()` so signature verification
+ * still works when OPENAI_API_KEY is missing — the URL Twilio
+ * signed is independent of whether outbound voice is configured.
+ */
+export function readVoicePublicBaseUrlOrNull(
+  env: NodeJS.ProcessEnv = process.env,
+): string | null {
+  const explicit = env.RESUPPLY_VOICE_PUBLIC_BASE_URL?.trim();
+  if (explicit) return stripTrailingSlash(explicit);
+  const railway = env.RAILWAY_PUBLIC_DOMAIN?.trim();
+  if (railway) return stripTrailingSlash(`https://${railway}`);
+  return null;
+}
+
 export function readVoiceConfigOrNull(
   env: NodeJS.ProcessEnv = process.env,
 ): VoiceConfig | null {

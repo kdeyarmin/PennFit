@@ -149,13 +149,21 @@ router.patch(
     } = { updated_at: new Date().toISOString() };
     if (parsed.data.status) update.status = parsed.data.status;
     if (parsed.data.notes !== undefined) update.notes = parsed.data.notes;
+    // Read back so we distinguish "no row to update" (404) from a real
+    // update (200). Without this the handler silently returned 200
+    // even when the id was nonexistent.
     const supabase = getSupabaseServiceRoleClient();
-    const { error } = await supabase
+    const { data: updated, error } = await supabase
       .schema("resupply")
       .from("csr_shifts")
       .update(update)
-      .eq("id", params.data.id);
+      .eq("id", params.data.id)
+      .select("id");
     if (error) throw error;
+    if (!updated || updated.length === 0) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
     res.json({ ok: true });
   },
 );

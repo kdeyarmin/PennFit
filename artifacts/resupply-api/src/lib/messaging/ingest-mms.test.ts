@@ -777,7 +777,7 @@ describe("ingestInboundMmsMedia — outerSignal budget abort (PR change)", () =>
     await new Promise<void>((r) => setTimeout(r, 0));
 
     // Abort the stalled fetch — mimics the budget controller firing
-    fetchAbortController?.()
+    (fetchAbortController as (() => void) | null)?.();
 
     const result = await promise;
 

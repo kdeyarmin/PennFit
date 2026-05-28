@@ -185,7 +185,16 @@ export class ObjectStorageService {
   /**
    * Stream the object back to the caller, wrapped in a Response with
    * the right Content-Type / Cache-Control / Content-Length headers.
-   * The ACL controls whether the cache header is public or private.
+   *
+   * IMPORTANT: this method does NOT enforce per-object ACLs. The ACL
+   * is read only to pick the `Cache-Control` (public vs private)
+   * header; the download itself is unconditional. EVERY caller is
+   * responsible for verifying ownership/authorization BEFORE
+   * resolving the `StoredObject` and calling this method (e.g.
+   * `routes/shop/me-documents.ts` filters on `patient_id = patient.id`
+   * before retrieving the `object_key`). The method name was kept for
+   * back-compat — a future rename to `downloadObjectUnchecked` would
+   * make the contract explicit at every call site.
    */
   async downloadObject(
     file: StoredObject,

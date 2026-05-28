@@ -27,24 +27,28 @@ import { logger } from "../../lib/logger";
 import { getPendingSessions } from "../../lib/voice/pending-sessions";
 import {
   publicWsOriginFromBaseUrl,
+  readTwilioWebhookAuthTokenOrNull,
   readVoiceConfigOrNull,
+  readVoicePublicBaseUrlOrNull,
 } from "../../lib/voice/voice-config";
 
 const router: IRouter = Router();
 
 const signatureMiddleware = requireTwilioSignature({
   // Read the token at request time so secret rotation does not require
-  // a process restart. readVoiceConfigOrNull returns null if any
-  // required env var is unset; the middleware will then 403 with
-  // "auth_token_unset" — fail closed.
-  getAuthToken: () => readVoiceConfigOrNull()?.twilioAuthToken,
+  // a process restart. Use the token-only reader (not the full voice
+  // config) so signature validation works on inbound webhooks even
+  // when OPENAI_API_KEY is unset — outbound voice may be offline but
+  // inbound TwiML and status callbacks should still authenticate.
+  getAuthToken: () => readTwilioWebhookAuthTokenOrNull() ?? undefined,
   // Reconstruct the URL Twilio originally signed: the public base URL
   // (e.g. https://<railway-public-domain>) + the path Twilio POSTed
   // to. We intentionally use `originalUrl` (path + query) because
   // Twilio's signature includes the FULL URL with the query string.
   buildPublicUrl: (req) => {
-    const cfg = readVoiceConfigOrNull();
-    const base = cfg?.publicBaseUrl ?? "";
+    // Decoupled from the full voice config so signature verification
+    // still works in token-only mode (OPENAI_API_KEY unset).
+    const base = readVoicePublicBaseUrlOrNull() ?? "";
     // express request: typed as SignatureRequestLike here, but the real
     // request also carries originalUrl. Cast through unknown to read it.
     const originalUrl =
@@ -56,13 +60,18 @@ const signatureMiddleware = requireTwilioSignature({
 router.post("/voice/twiml-connect", signatureMiddleware, async (req, res) => {
   const config = readVoiceConfigOrNull();
   if (!config) {
-    // Should be unreachable: if voice config were missing, the
-    // signature middleware would have 403'd above (no auth token).
-    // Belt + braces.
+    // Reachable now that signature verification is decoupled from
+    // the full voice config (readTwilioWebhookAuthTokenOrNull +
+    // readVoicePublicBaseUrlOrNull): inbound webhooks can
+    // authenticate even when OPENAI_API_KEY is unset (e.g. the
+    // realtime voice path is offline). Return 200 with hangup TwiML
+    // matching the feature-flag-off branch below so Twilio sees a
+    // clean disposition and does NOT retry on its exponential
+    // backoff. 503 here would trigger the retry storm.
     res
-      .status(503)
+      .status(200)
       .type("text/xml")
-      .send(buildHangupTwiml("Service unavailable."));
+      .send(buildHangupTwiml("This service is temporarily unavailable. Please try again later."));
     return;
   }
 

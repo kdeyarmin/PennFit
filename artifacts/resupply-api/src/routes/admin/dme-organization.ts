@@ -433,12 +433,17 @@ router.patch(
     if (b.isPrimary !== undefined) update.is_primary = b.isPrimary;
     if (b.isActive !== undefined) update.is_active = b.isActive;
     const supabase = getSupabaseServiceRoleClient();
-    const { error } = await supabase
+    const { data: updated, error } = await supabase
       .schema("resupply")
       .from("dme_organization_contacts")
       .update(update)
-      .eq("id", idParsed.data.id);
+      .eq("id", idParsed.data.id)
+      .select("id");
     if (error) throw error;
+    if (!updated || updated.length === 0) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
     res.json({ ok: true });
   },
 );

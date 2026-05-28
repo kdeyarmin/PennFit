@@ -6,6 +6,7 @@
 // on whether a session is present.
 
 import type * as React from "react";
+import { useQueryClient } from "@tanstack/react-query";
 
 import { authClient, authHooks } from "./auth-hooks";
 
@@ -20,6 +21,7 @@ export interface ShopIdentity {
 
 export function useShopIdentity(): ShopIdentity {
   const { data, isPending } = authHooks.useSession();
+  const queryClient = useQueryClient();
   return {
     email: data?.email ?? null,
     userId: data?.id ?? null,
@@ -82,11 +84,14 @@ export function useShopIdentity(): ShopIdentity {
       }
       // Clear shop-side per-device state so the next sign-in on a
       // shared device (library / clinic kiosk / family iPad) doesn't
-      // inherit User A's cart, wishlist, comparator selection, or
-      // recently-viewed history. The cart in particular leaks
-      // intent — User B signing in shouldn't see User A's items
-      // pre-loaded at checkout. Run this even if the server-side
-      // sign-out failed so the device-shared content doesn't bleed.
+      // inherit User A's cart, wishlist, comparator selection,
+      // recently-viewed history, OR account-chatbot transcript.
+      // The chatbot in particular streams PHI-bearing assistant
+      // replies (order detail, address, device on file) and was
+      // NOT being cleared by previous sign-outs — User B re-signing
+      // in the same tab would see User A's full transcript.
+      // Run this even if the server-side sign-out failed so the
+      // device-shared content doesn't bleed.
       if (typeof window !== "undefined") {
         try {
           window.localStorage.removeItem("pennpaps_cart_v1");
@@ -96,6 +101,24 @@ export function useShopIdentity(): ShopIdentity {
         } catch {
           // Safari private mode etc — best-effort.
         }
+        try {
+          window.sessionStorage.removeItem("pennpaps_account_chat_v1");
+        } catch {
+          /* best-effort */
+        }
+      }
+      // Invalidate the React Query cache for /api/auth/me so the
+      // next render reflects the signed-out state immediately rather
+      // than waiting for the 60s staleTime to lapse. Previously
+      // useSignOut() did this; the explicit bypass on line ~78
+      // (so the shim is callable from non-component contexts) meant
+      // the cache stuck around past sign-out, and a re-sign-in on a
+      // shared device kept rendering &lt;SignedIn&gt; gates with the
+      // prior user's identity for up to a minute.
+      try {
+        await queryClient.invalidateQueries({ queryKey: ["auth", "me"] });
+      } catch {
+        /* best-effort */
       }
       if (serverSignOutError) throw serverSignOutError;
     },

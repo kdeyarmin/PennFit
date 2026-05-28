@@ -436,6 +436,7 @@ async function consumeAnthropicStream(
   const toolJsonBuffers: Map<number, string> = new Map();
   let usage: AnthropicUsage = { input_tokens: 0, output_tokens: 0 };
 
+  try {
   for (;;) {
     const { done, value } = await reader.read();
     if (done) break;
@@ -484,7 +485,14 @@ async function consumeAnthropicStream(
           break;
         }
         case "content_block_delta": {
-          const idx = parsed.index ?? 0;
+          // The Anthropic stream protocol always emits `index` on
+          // content_block_delta. Drop events that omit it instead of
+          // falling back to index 0 — for a multi-block response with
+          // a tool_use at index 0 followed by text at index 1, the
+          // fallback would merge text into the tool_use block and
+          // also corrupt that tool's JSON buffer.
+          if (typeof parsed.index !== "number") break;
+          const idx = parsed.index;
           if (parsed.delta?.type === "text_delta" && parsed.delta.text) {
             const cur = blocks[idx];
             if (cur && cur.type === "text") {
@@ -501,7 +509,8 @@ async function consumeAnthropicStream(
           break;
         }
         case "content_block_stop": {
-          const idx = parsed.index ?? 0;
+          if (typeof parsed.index !== "number") break;
+          const idx = parsed.index;
           const cur = blocks[idx];
           const buf = toolJsonBuffers.get(idx);
           if (cur && cur.type === "tool_use" && buf) {
@@ -523,6 +532,25 @@ async function consumeAnthropicStream(
         default:
           break;
       }
+    }
+  }
+  } finally {
+    // Always release the reader (and cancel the upstream) so a
+    // mid-stream throw (transport drop, malformed JSON, slow client)
+    // doesn't leak the SSE connection. Without this, the undici
+    // per-host connection pool slowly exhausts under errors and the
+    // process eventually wedges. cancel() ALSO releases the lock,
+    // but call it explicitly so the reader is unblocked even if the
+    // cancel rejects (e.g. body already errored).
+    try {
+      await reader.cancel().catch(() => undefined);
+    } catch {
+      /* ignored */
+    }
+    try {
+      reader.releaseLock();
+    } catch {
+      /* already released */
     }
   }
 

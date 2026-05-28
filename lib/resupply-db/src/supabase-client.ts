@@ -51,9 +51,19 @@ export function getSupabaseServiceRoleClient(
     return cachedClient;
   }
 
-  const url = options.url ?? process.env.SUPABASE_URL;
-  const serviceRoleKey =
-    options.serviceRoleKey ?? process.env.SUPABASE_SERVICE_ROLE_KEY;
+  // Treat empty string the same as unset. `process.env.X=""` is a
+  // common shape from `.env` files / CI configs (Node populates the
+  // var as `""` rather than leaving it undefined), and the bare
+  // `!url` falsy check below catches both — but a future refactor
+  // could accidentally rely on `typeof url === "string"` and silently
+  // pass an empty value through to `createClient`, which would
+  // construct a useless client whose every request 401s. Normalize
+  // up front so the misconfig becomes a single, clear boot error.
+  const rawUrl = options.url ?? process.env.SUPABASE_URL ?? "";
+  const rawKey =
+    options.serviceRoleKey ?? process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
+  const url = rawUrl.trim();
+  const serviceRoleKey = rawKey.trim();
 
   if (!url) {
     throw new Error(
@@ -105,9 +115,15 @@ export function getSupabaseServiceRoleClient(
  */
 export function validateSupabaseEnv(): string[] {
   const missing: string[] = [];
-  if (!process.env.SUPABASE_URL) missing.push("SUPABASE_URL");
-  if (!process.env.SUPABASE_SERVICE_ROLE_KEY)
-    missing.push("SUPABASE_SERVICE_ROLE_KEY");
+  // Treat empty / whitespace-only values as missing. Node populates
+  // `process.env.X=""` for `.env` files that declare X with no value
+  // — without the trim+empty check, validateSupabaseEnv() would
+  // claim the env is healthy and the client builder would then
+  // throw at first use.
+  const url = (process.env.SUPABASE_URL ?? "").trim();
+  if (!url) missing.push("SUPABASE_URL");
+  const key = (process.env.SUPABASE_SERVICE_ROLE_KEY ?? "").trim();
+  if (!key) missing.push("SUPABASE_SERVICE_ROLE_KEY");
   return missing;
 }
 

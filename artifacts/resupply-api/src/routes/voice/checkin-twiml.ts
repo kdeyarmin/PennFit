@@ -31,16 +31,24 @@ import { requireTwilioSignature } from "@workspace/resupply-telecom";
 
 import { voiceScriptForDay } from "../../lib/checkin-dispatcher";
 import { logger } from "../../lib/logger";
-import { readVoiceConfigOrNull } from "../../lib/voice/voice-config";
+import {
+  readTwilioWebhookAuthTokenOrNull,
+  readVoiceConfigOrNull,
+  readVoicePublicBaseUrlOrNull,
+} from "../../lib/voice/voice-config";
 import type { OnboardingDayLabel } from "@workspace/resupply-db";
 
 const router: IRouter = Router();
 
 const signatureMiddleware = requireTwilioSignature({
-  getAuthToken: () => readVoiceConfigOrNull()?.twilioAuthToken,
+  // Read Twilio token + public base URL independently of the full
+  // voice config — inbound webhooks must authenticate even when
+  // OPENAI_API_KEY is unset (inbound-only deployment, transient
+  // outage). Without this, every signed Twilio webhook 403s with
+  // signature_mismatch because cfg?.publicBaseUrl resolves to "".
+  getAuthToken: () => readTwilioWebhookAuthTokenOrNull() ?? undefined,
   buildPublicUrl: (req) => {
-    const cfg = readVoiceConfigOrNull();
-    const base = cfg?.publicBaseUrl ?? "";
+    const base = readVoicePublicBaseUrlOrNull() ?? "";
     const originalUrl =
       (req as unknown as { originalUrl?: string }).originalUrl ?? "";
     return `${base}${originalUrl}`;

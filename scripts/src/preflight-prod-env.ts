@@ -290,7 +290,15 @@ function refusePlaceholder(name: string, ...placeholders: string[]): boolean {
   const value = getTrimmed(name);
   if (value === undefined) return false;
   for (const placeholder of placeholders) {
-    if (value === placeholder || value.includes("replace_me")) {
+    // Exact-match only. A previous version also matched on
+    // value.includes("replace_me"), but that was a substring check
+    // that false-positives on legitimate values that happen to
+    // contain the literal — e.g. an admin email of the form
+    // replace_me_review@pennpaps.com, or an API key whose body
+    // includes those bytes. The placeholders ship in .env.example
+    // verbatim and the operator either copies the whole value
+    // (caught here) or supplies their own (not caught — correct).
+    if (value === placeholder) {
       // Detail intentionally omits the value: some vars in this
       // family are secrets (service-role JWTs, signing keys) and
       // even the first 40 chars can be enough to identify or
@@ -315,11 +323,33 @@ function refusePlaceholder(name: string, ...placeholders: string[]): boolean {
  */
 
 function runChecks(): void {
-  // Determine production mode up front so the boot-required checks
-  // below can apply stricter shape rules (e.g. no-localhost in prod).
-  // Re-recorded as a check later in section 3 so the report shows
-  // NODE_ENV explicitly.
-  const nodeEnvEarly = getTrimmed("NODE_ENV") ?? "development";
+  // NODE_ENV must be explicitly set to one of the known values. An
+  // undefined NODE_ENV used to default to "development", which silently
+  // downgraded every production gate below from FAIL to WARN — so a
+  // misconfigured deploy environment where NODE_ENV was simply never
+  // exported would pass preflight while still being a production
+  // target. Require it explicitly.
+  const nodeEnvRaw = getTrimmed("NODE_ENV");
+  if (nodeEnvRaw === undefined) {
+    record(
+      "NODE_ENV",
+      "fail",
+      "unset — must be one of development|test|production. preflight will not run production gates when NODE_ENV is missing.",
+    );
+    // Treat unknown-mode as non-prod here; the FAIL above gates the
+    // exit code so this run will exit 1 regardless.
+  } else if (
+    nodeEnvRaw !== "development" &&
+    nodeEnvRaw !== "test" &&
+    nodeEnvRaw !== "production"
+  ) {
+    record(
+      "NODE_ENV",
+      "fail",
+      `is "${nodeEnvRaw}" — must be one of development|test|production`,
+    );
+  }
+  const nodeEnvEarly = nodeEnvRaw ?? "development";
   const prodModeEarly = nodeEnvEarly === "production";
 
   // 1. Boot-required vars — mirrors env-check.ts in resupply-api.
@@ -427,21 +457,27 @@ function runChecks(): void {
   const prodSeverity: Severity = prodMode ? "fail" : "warn";
 
   // Stripe — sk_live_ in prod, never the test or placeholder key.
+  // The shape regex anchors on a real-key body after the prefix to
+  // refuse cute hybrids like `sk_live_test_replace_me` that would
+  // otherwise satisfy a bare `startsWith("sk_live_")` check and pass
+  // the prod-mode gate.
+  const STRIPE_LIVE_KEY_SHAPE = /^sk_live_[A-Za-z0-9]{20,}$/;
+  const STRIPE_TEST_KEY_SHAPE = /^sk_test_[A-Za-z0-9]{20,}$/;
   if (!refusePlaceholder("STRIPE_SECRET_KEY", "sk_test_replace_me")) {
     const sk = getTrimmed("STRIPE_SECRET_KEY");
     if (sk === undefined) {
       record("STRIPE_SECRET_KEY", prodSeverity, "unset (Stripe checkout will be disabled)");
-    } else if (prodMode && !sk.startsWith("sk_live_")) {
+    } else if (prodMode && !STRIPE_LIVE_KEY_SHAPE.test(sk)) {
       // Distinguish the common-mistake case ("sk_test_ in production")
       // from the unexpected-shape case without leaking the actual key.
       const reason = sk.startsWith("sk_test_")
         ? "must be a live key (sk_live_…), got a test key (sk_test_…)"
-        : "must be a live key (sk_live_…)";
+        : "must be a live key matching sk_live_<alphanum>{20+}";
       record("STRIPE_SECRET_KEY", "fail", reason);
-    } else if (sk.startsWith("sk_live_")) {
-      record("STRIPE_SECRET_KEY", "pass", "starts with sk_live_");
-    } else if (sk.startsWith("sk_test_")) {
-      record("STRIPE_SECRET_KEY", "pass", "starts with sk_test_");
+    } else if (STRIPE_LIVE_KEY_SHAPE.test(sk)) {
+      record("STRIPE_SECRET_KEY", "pass", "live key shape");
+    } else if (STRIPE_TEST_KEY_SHAPE.test(sk)) {
+      record("STRIPE_SECRET_KEY", "pass", "test key shape");
     } else {
       record("STRIPE_SECRET_KEY", prodSeverity, "unexpected key shape");
     }

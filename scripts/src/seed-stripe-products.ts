@@ -355,8 +355,15 @@ async function main(): Promise<void> {
   console.log(`Seeding ${PRODUCTS.length} products into Stripe…`);
 
   for (const item of PRODUCTS) {
+    // Look up by SKU only, NOT filtered on active:'true'. If a
+    // previously-seeded product was later archived in Stripe (active=
+    // false), filtering on active='true' would miss it, fall through
+    // to products.create(), and create a duplicate Product (and a new
+    // Price) on every subsequent run. Idempotency requires matching
+    // archived products too; we explicitly re-activate them by issuing
+    // an update with active=true in the update payload below.
     const existing = await stripe.products.search({
-      query: `metadata['shop_sku']:'${item.sku}' AND active:'true'`,
+      query: `metadata['shop_sku']:'${item.sku}'`,
       limit: 1,
     });
 
@@ -379,6 +386,11 @@ async function main(): Promise<void> {
       name: item.name,
       description: item.description,
       metadata,
+      // Re-activate any product the operator previously archived. We
+      // dedupe on SKU regardless of active state (see search above),
+      // so without this an archived SKU stays archived even though
+      // the seeder is supposed to reset Stripe to a known state.
+      active: true,
     };
     const createPayload: Stripe.ProductCreateParams = {
       name: item.name,
