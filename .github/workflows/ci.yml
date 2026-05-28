@@ -237,6 +237,14 @@ jobs:
       # provisioned.
       - name: Start PostgREST
         run: |
+          # Pre-pull so the wait loop's budget is purely the
+          # container's schema-cache load, not Docker Hub latency.
+          # On a cold runner the pull alone has been measured at
+          # 5-15s; previously that ate into the start-wait ceiling
+          # and pushed total Tests-job runtime over the previous
+          # 60s budget without ever giving PostgREST itself enough
+          # headroom to come up.
+          docker pull postgrest/postgrest:v12.2.3
           docker run -d --name postgrest \
             --add-host=host.docker.internal:host-gateway \
             -p 127.0.0.1:3001:3000 \
@@ -247,25 +255,40 @@ jobs:
             -e PGRST_SERVER_PORT="3000" \
             -e PGRST_SERVER_HOST="*4" \
             -e PGRST_OPENAPI_SERVER_PROXY_URI="http://127.0.0.1:3001/rest/v1" \
+            -e PGRST_LOG_LEVEL="info" \
             -e PGRST_SERVER_BASE_PATH="/rest/v1" \
             postgrest/postgrest:v12.2.3
           # Wait for PostgREST to actually serve requests. The schema
           # cache load + initial DB connection can take a few seconds
-          # on a cold runner. We've seen the 30s ceiling miss
-          # occasionally on bigger-PR runs (cold image pull pushed
-          # the schema-cache load past the budget); 60s with 1s
-          # polling keeps the fast path identical (exits on the very
-          # first iteration) while giving cold runs the headroom they
-          # need — same posture as the postgres-wait step above.
-          for i in $(seq 1 60); do
+          # on a cold runner. With the pre-pull above, 90s with 1s
+          # polling is comfortably above the worst case we've seen
+          # while keeping the fast path (exit on the very first
+          # iteration) unchanged. Periodic intermediate dumps surface
+          # WHY we're stuck if it ever times out again — previous
+          # runs only saw the final tail and the root cause was
+          # invisible.
+          for i in $(seq 1 90); do
             if curl -fsS "http://127.0.0.1:3001/rest/v1/" > /dev/null 2>&1; then
               echo "postgrest is up after ${i}s"
               exit 0
             fi
+            # Every 15s log container state + tail of stdout so the
+            # failure tail isn't the first time we see what PostgREST
+            # is doing.
+            if [ $((i % 15)) -eq 0 ]; then
+              echo "--- postgrest still not ready after ${i}s ---"
+              docker ps --filter name=postgrest --format 'status: {{.Status}}' || true
+              docker logs --tail 20 postgrest 2>&1 || true
+            fi
             sleep 1
           done
-          echo "postgrest did not respond on :3001 within 60s" >&2
-          docker logs postgrest 2>&1 | tail -50 || true
+          echo "postgrest did not respond on :3001 within 90s" >&2
+          echo "--- final container status ---" >&2
+          docker ps -a --filter name=postgrest 2>&1 || true
+          echo "--- final postgrest logs ---" >&2
+          docker logs postgrest 2>&1 | tail -100 || true
+          echo "--- runner network state ---" >&2
+          ss -tlnp 2>&1 | head -20 || true
           exit 1
 
       # Mint a service-role JWT signed with PGRST_JWT_SECRET so
