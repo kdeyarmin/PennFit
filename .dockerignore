@@ -42,7 +42,7 @@ build
 screenshots
 e2e
 docs/user-manual
-attached_assets
+# attached_assets — needed at build time for Vite @assets alias
 
 # Logs
 *.log
