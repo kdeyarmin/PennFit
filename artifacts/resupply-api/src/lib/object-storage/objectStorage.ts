@@ -262,15 +262,16 @@ export class ObjectStorageService {
 
     const bucket = requirePrivateBucket();
 
-    // Existence check via list with a single-result search.
+    // Existence check via list + exact name match.
     const supabase = getSupabaseServiceRoleClient();
     const slashIdx = tail.lastIndexOf("/");
     const dir = slashIdx >= 0 ? tail.slice(0, slashIdx) : "";
     const base = slashIdx >= 0 ? tail.slice(slashIdx + 1) : tail;
     const { data, error } = await supabase.storage
       .from(bucket)
-      .list(dir, { search: base, limit: 1 });
-    if (error || !data?.length) {
+      .list(dir, { search: base });
+    const hasExactMatch = data?.some((entry) => entry.name === base) ?? false;
+    if (error || !hasExactMatch) {
       throw new ObjectNotFoundError();
     }
     return makeStoredObjectHandle({ bucket, path: tail });

@@ -311,7 +311,7 @@ describe("ObjectStorageService.getObjectEntityFile", () => {
 
   it("returns a StoredObjectHandle when the object exists", async () => {
     stageStorage("list:attachments", {
-      data: [{ name: "nonexistent", metadata: { size: 100, mimetype: "image/png" } }],
+      data: [{ name: "test-uuid", metadata: { size: 100, mimetype: "image/png" } }],
       error: null,
     });
 
@@ -319,6 +319,18 @@ describe("ObjectStorageService.getObjectEntityFile", () => {
     const handle = await svc.getObjectEntityFile("/objects/uploads/test-uuid");
     expect(handle.bucket).toBe("attachments");
     expect(handle.path).toBe("uploads/test-uuid");
+  });
+
+  it("throws ObjectNotFoundError when only a prefix match exists", async () => {
+    stageStorage("list:attachments", {
+      data: [{ name: "test-uuid-extra", metadata: { size: 100, mimetype: "image/png" } }],
+      error: null,
+    });
+
+    const svc = new ObjectStorageService();
+    await expect(
+      svc.getObjectEntityFile("/objects/uploads/test-uuid"),
+    ).rejects.toThrow(ObjectNotFoundError);
   });
 
   it("handle.getMetadata() returns size and contentType from storage", async () => {
