@@ -426,6 +426,24 @@ router.post("/conversations/:id/escalate", requireAdmin, async (req, res) => {
     res.status(404).json({ error: "conversation_not_found" });
     return;
   }
+  // Audit envelope — supervisors investigating the queue need to be
+  // able to see who escalated which thread and why. Structural
+  // metadata only; the reason is operator-typed and short by Zod.
+  await safeAudit({
+    action: "messaging.conversation.escalate",
+    adminEmail: req.adminEmail ?? null,
+    adminUserId: req.adminUserId ?? null,
+    targetTable: "conversations",
+    targetId: id,
+    metadata: {
+      escalated_to: parsed.data.escalateTo ?? null,
+      prior_priority: currentPriority,
+      next_priority: nextPriority,
+      reason_length: parsed.data.reason.length,
+    },
+    ip: req.ip ?? null,
+    userAgent: req.get("user-agent") ?? null,
+  });
   res.json({ ok: true });
 });
 
@@ -455,6 +473,16 @@ router.post(
       res.status(404).json({ error: "conversation_not_found" });
       return;
     }
+    await safeAudit({
+      action: "messaging.conversation.de_escalate",
+      adminEmail: req.adminEmail ?? null,
+      adminUserId: req.adminUserId ?? null,
+      targetTable: "conversations",
+      targetId: id,
+      metadata: {},
+      ip: req.ip ?? null,
+      userAgent: req.get("user-agent") ?? null,
+    });
     res.json({ ok: true });
   },
 );
