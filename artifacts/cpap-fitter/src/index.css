@@ -1088,17 +1088,66 @@
     color: hsl(var(--penn-navy));
   }
 
-  /* Landing hero — light editorial card. Near-white pearl surface
-     with a navy hairline border, an inset platinum frame for an
-     engraved-stationery feel, and a softly tinted navy shadow.
-     Navy ink display type with a single serif italic accent
-     carries the editorial register; thin gold cues (headline
-     swoosh + bottom hairline) keep the brand mark present
-     without painting a colored band. */
+  /* Landing hero — bounded Penn-navy gradient card with a soft
+     warm-light catch in the top-right corner (echoes the logo's
+     gold swoosh without painting it across the page). Pairs white
+     display type with the gold accent CTA and brand swoosh
+     underline. Sits inside the page's max-w-6xl container so it
+     reads as a deliberate hero card, not a full-bleed band. */
   .hero-card {
     position: relative;
     overflow: hidden;
     border-radius: 1.75rem;
+    background: linear-gradient(
+      150deg,
+      hsl(var(--penn-navy-deep)) 0%,
+      hsl(var(--penn-navy)) 55%,
+      hsl(var(--penn-navy-soft)) 100%
+    );
+    box-shadow:
+      0 1px 0 hsl(0 0% 100% / 0.08) inset,
+      0 0 0 1px hsl(var(--penn-onyx) / 0.4),
+      0 24px 48px hsl(var(--penn-navy-deep) / 0.22),
+      0 56px 112px hsl(var(--penn-navy-deep) / 0.12);
+  }
+  /* Single warm catch in the corner — a clean radial, not a
+     floating animated blob. */
+  .hero-card::before {
+    content: "";
+    position: absolute;
+    top: -30%;
+    right: -10%;
+    width: 70%;
+    height: 110%;
+    background: radial-gradient(
+      ellipse at center,
+      hsl(var(--penn-gold) / 0.18) 0%,
+      transparent 65%
+    );
+    pointer-events: none;
+  }
+  /* Thin gold rule along the bottom edge — echoes the logo's
+     swoosh under the wordmark. */
+  .hero-card::after {
+    content: "";
+    position: absolute;
+    left: 8%;
+    right: 8%;
+    bottom: 0;
+    height: 2px;
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      hsl(var(--penn-gold) / 0.55) 35%,
+      hsl(var(--penn-gold) / 0.8) 50%,
+      hsl(var(--penn-gold) / 0.55) 65%,
+      transparent 100%
+    );
+    pointer-events: none;
+  }
+
+  /* Home-only editorial hero variant. */
+  .hero-card-editorial {
     background: linear-gradient(
       180deg,
       hsl(0 0% 100%) 0%,
@@ -1111,9 +1160,7 @@
       0 18px 40px hsl(var(--penn-navy-deep) / 0.08),
       0 50px 100px hsl(var(--penn-navy-deep) / 0.06);
   }
-  /* Inset hairline frame — the engraved-stationery detail that
-     lifts the surface from "plain card" to "considered object". */
-  .hero-card::before {
+  .hero-card-editorial::before {
     content: "";
     position: absolute;
     inset: 14px;
@@ -1121,14 +1168,11 @@
     border-radius: calc(1.75rem - 14px);
     pointer-events: none;
   }
-  /* Single thin gold hairline along the bottom — the lone
-     chromatic accent, echoing the logo's swoosh without
-     dominating the surface. */
-  .hero-card::after {
+  .hero-card-editorial::after {
     content: "";
     position: absolute;
-    left: 14%;
-    right: 14%;
+    left: 14px;
+    right: 14px;
     bottom: 14px;
     height: 1px;
     background: linear-gradient(

@@ -33,7 +33,7 @@ export function Home() {
           display type, a single thin gold hairline along the
           bottom edge as the lone chromatic accent. Solid navy
           primary CTA, ghost outline secondary. */}
-      <section className="hero-card w-full mb-14 md:mb-20 animate-shimmer-in">
+      <section className="hero-card hero-card-editorial w-full mb-14 md:mb-20 animate-shimmer-in">
         <div className="relative z-10 text-center max-w-5xl mx-auto px-6 py-14 md:px-12 md:py-24">
           <div className="hero-eyebrow" aria-hidden="true">
             <span className="hero-eyebrow-rule" />
