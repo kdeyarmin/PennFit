@@ -122,12 +122,38 @@ router.post("/conversations/:id/claim", requireAdmin, async (req, res) => {
     updated_at: nowIso,
   };
   if (slaDueAt !== undefined) updates.sla_due_at = slaDueAt?.toISOString() ?? null;
-  const { error: updateErr } = await supabase
+  // Optimistic-concurrency precondition: the UPDATE only matches when
+  // the row's current `assigned_admin_user_id` is exactly what we read
+  // above (or `force=1` was supplied, in which case we already passed
+  // the explicit takeover gate). Two CSRs racing to claim the same
+  // unassigned conversation no longer both succeed — the loser sees
+  // zero rows updated and gets the 409 below.
+  let updateBuilder = supabase
     .schema("resupply")
     .from("conversations")
     .update(updates)
     .eq("id", id);
+  if (!force) {
+    if (row.assigned_admin_user_id === null) {
+      updateBuilder = updateBuilder.is("assigned_admin_user_id", null);
+    } else {
+      updateBuilder = updateBuilder.eq(
+        "assigned_admin_user_id",
+        row.assigned_admin_user_id,
+      );
+    }
+  }
+  const { data: updatedRows, error: updateErr } = await updateBuilder.select("id");
   if (updateErr) throw updateErr;
+  if (!updatedRows || updatedRows.length === 0) {
+    // Someone else won the race between our SELECT and our UPDATE.
+    res.status(409).json({
+      error: "already_assigned",
+      message:
+        "Another team member just claimed this conversation. Refresh and try again.",
+    });
+    return;
+  }
   // Audit envelope — supervisors need to see who self-assigned what
   // (and who used `force=1` to steal an active claim). Structural
   // metadata only; no message bodies.
@@ -483,7 +509,7 @@ router.post("/conversations/:id/status", requireAdmin, async (req, res) => {
   const { data: row, error: lookupErr } = await supabase
     .schema("resupply")
     .from("conversations")
-    .select("status, channel")
+    .select("status, channel, priority")
     .eq("id", id)
     .limit(1)
     .maybeSingle();
@@ -513,6 +539,11 @@ router.post("/conversations/:id/status", requireAdmin, async (req, res) => {
     return;
   }
 
+  // Use the conversation's stored priority for SLA recompute on
+  // reopen, NOT a hard-coded "normal". A previously-urgent thread
+  // (1h SLA) that was closed and reopened would otherwise silently
+  // downgrade to normal (8h SLA), losing patient queue priority.
+  const existingPriority = (row.priority as ConversationPriority) ?? "normal";
   const { error: updateErr } = await supabase
     .schema("resupply")
     .from("conversations")
@@ -524,7 +555,7 @@ router.post("/conversations/:id/status", requireAdmin, async (req, res) => {
       sla_due_at:
         nextStatus === "closed"
           ? null
-          : computeSlaDueAt("normal", nextStatus, new Date())?.toISOString() ??
+          : computeSlaDueAt(existingPriority, nextStatus, new Date())?.toISOString() ??
             null,
       updated_at: new Date().toISOString(),
     })

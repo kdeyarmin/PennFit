@@ -217,9 +217,16 @@ export async function sendReminderEmail(
       .eq("id", conversationId);
     if (stampConvErr) throw stampConvErr;
   } catch (dbErr) {
-    console.error(
-      "[send-email] DB write failed after SendGrid accept — email sent but unrecorded. Manual reconciliation required.",
-      { conversationId, messageId, err: dbErr instanceof Error ? dbErr.message : String(dbErr) },
+    process.stderr.write(
+      JSON.stringify({
+        level: 50,
+        event: "send_email_db_write_failed_after_vendor_accept",
+        conversationId,
+        messageId,
+        errName: dbErr instanceof Error ? dbErr.name : "non_error",
+        errMessage: dbErr instanceof Error ? dbErr.message : String(dbErr),
+        msg: "Email delivered by SendGrid but messages row not written — manual reconciliation required",
+      }) + "\n",
     );
   }
 

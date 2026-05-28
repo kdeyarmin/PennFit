@@ -239,9 +239,20 @@ export async function sendReminderSms(
       .eq("id", conversationId);
     if (stampConvErr) throw stampConvErr;
   } catch (dbErr) {
-    console.error(
-      "[send-sms] DB write failed after Twilio accept — SMS sent but unrecorded. Manual reconciliation required.",
-      { conversationId, messageSid, err: dbErr instanceof Error ? dbErr.message : String(dbErr) },
+    // Emit as a structured JSON line so pino-style scrapers (and
+    // /admin/operations alerting) can match on `event` even though
+    // this lib stays dependency-free. CLAUDE.md: messaging libs must
+    // not import pino directly.
+    process.stderr.write(
+      JSON.stringify({
+        level: 50,
+        event: "send_sms_db_write_failed_after_vendor_accept",
+        conversationId,
+        messageSid,
+        errName: dbErr instanceof Error ? dbErr.name : "non_error",
+        errMessage: dbErr instanceof Error ? dbErr.message : String(dbErr),
+        msg: "SMS delivered by Twilio but messages row not written — manual reconciliation required",
+      }) + "\n",
     );
   }
 
