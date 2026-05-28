@@ -247,5 +247,6 @@ describe("POST /shop/me/documents/upload-url", () => {
     expect(audit.action).toBe("patient.document.upload_url_issued");
     // No PHI in audit metadata: the filename must NOT appear
     expect(JSON.stringify(audit.metadata)).not.toContain("f.pdf");
+    expect(JSON.stringify(audit.metadata)).not.toContain("a@a.test");
   });
 });
