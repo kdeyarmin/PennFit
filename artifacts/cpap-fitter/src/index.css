@@ -1088,59 +1088,41 @@
     color: hsl(var(--penn-navy));
   }
 
-  /* Landing hero — bounded Penn-navy gradient card with a soft
-     warm-light catch in the top-right corner (echoes the logo's
-     gold swoosh without painting it across the page). Pairs white
-     display type with the gold accent CTA and brand swoosh
-     underline. Sits inside the page's max-w-6xl container so it
-     reads as a deliberate hero card, not a full-bleed band. */
+  /* Landing hero — light editorial card. Near-white pearl surface
+     with a navy hairline border and a softly tinted navy shadow,
+     so it lifts off the page without painting a colored band. Navy
+     ink display type carries the brand voice; a single thin gold
+     hairline along the bottom is the only chromatic accent. */
   .hero-card {
     position: relative;
     overflow: hidden;
     border-radius: 1.75rem;
     background: linear-gradient(
-      150deg,
-      hsl(var(--penn-navy-deep)) 0%,
-      hsl(var(--penn-navy)) 55%,
-      hsl(var(--penn-navy-soft)) 100%
+      180deg,
+      hsl(0 0% 100%) 0%,
+      hsl(var(--penn-pearl)) 100%
     );
+    border: 1px solid hsl(var(--penn-platinum) / 0.7);
     box-shadow:
-      0 1px 0 hsl(0 0% 100% / 0.08) inset,
-      0 0 0 1px hsl(var(--penn-onyx) / 0.4),
-      0 24px 48px hsl(var(--penn-navy-deep) / 0.22),
-      0 56px 112px hsl(var(--penn-navy-deep) / 0.12);
+      0 1px 0 hsl(0 0% 100%) inset,
+      0 1px 2px hsl(var(--penn-navy-deep) / 0.04),
+      0 12px 32px hsl(var(--penn-navy-deep) / 0.06),
+      0 40px 80px hsl(var(--penn-navy-deep) / 0.04);
   }
-  /* Single warm catch in the corner — a clean radial, not a
-     floating animated blob. */
-  .hero-card::before {
-    content: "";
-    position: absolute;
-    top: -30%;
-    right: -10%;
-    width: 70%;
-    height: 110%;
-    background: radial-gradient(
-      ellipse at center,
-      hsl(var(--penn-gold) / 0.18) 0%,
-      transparent 65%
-    );
-    pointer-events: none;
-  }
-  /* Thin gold rule along the bottom edge — echoes the logo's
-     swoosh under the wordmark. */
+  /* Single thin gold hairline along the bottom — the lone
+     chromatic accent, echoing the logo's swoosh without
+     dominating the surface. */
   .hero-card::after {
     content: "";
     position: absolute;
-    left: 8%;
-    right: 8%;
+    left: 12%;
+    right: 12%;
     bottom: 0;
-    height: 2px;
+    height: 1px;
     background: linear-gradient(
       90deg,
       transparent 0%,
-      hsl(var(--penn-gold) / 0.55) 35%,
-      hsl(var(--penn-gold) / 0.8) 50%,
-      hsl(var(--penn-gold) / 0.55) 65%,
+      hsl(var(--penn-gold) / 0.5) 50%,
       transparent 100%
     );
     pointer-events: none;
