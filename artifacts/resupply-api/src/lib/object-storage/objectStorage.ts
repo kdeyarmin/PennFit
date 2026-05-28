@@ -83,11 +83,11 @@ async function readObjectMetadata(
   const base = slashIdx >= 0 ? obj.path.slice(slashIdx + 1) : obj.path;
   const { data, error } = await supabase.storage
     .from(obj.bucket)
-    .list(dir, { search: base, limit: 1 });
-  if (error || !data?.length) {
+    .list(dir, { search: base });
+  const entry = data?.find((e) => e.name === base);
+  if (error || !entry) {
     throw new ObjectNotFoundError();
   }
-  const entry = data[0]!;
   const md = (entry.metadata as { size?: number | string; mimetype?: string } | null) ?? null;
   const sizeRaw = md?.size;
   let size = 0;
@@ -175,8 +175,10 @@ export class ObjectStorageService {
     const base = slashIdx >= 0 ? filePath.slice(slashIdx + 1) : filePath;
     const { data, error } = await supabase.storage
       .from(bucket)
-      .list(dir, { search: base, limit: 1 });
-    if (error || !data?.length) return null;
+      .list(dir, { search: base });
+    if (error) return null;
+    const hasExactMatch = data?.some((entry) => entry.name === base) ?? false;
+    if (!hasExactMatch) return null;
     return makeStoredObjectHandle({ bucket, path: filePath });
   }
 
