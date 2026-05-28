@@ -73,19 +73,20 @@ router.post(
       return;
     }
     const supabase = getSupabaseServiceRoleClient();
-    const { data: patient } = await supabase
+    const { data: patient, error: patientErr } = await supabase
       .schema("resupply")
       .from("patients")
       .select("legal_first_name, legal_last_name, address, email")
       .eq("id", idParsed.data.id)
       .limit(1)
       .maybeSingle();
+    if (patientErr) throw patientErr;
     if (!patient) {
       res.status(404).json({ error: "patient_not_found" });
       return;
     }
     // Pull every claim with non-zero patient responsibility.
-    const { data: claims } = await supabase
+    const { data: claims, error: claimsErr } = await supabase
       .schema("resupply")
       .from("insurance_claims")
       .select(
@@ -95,6 +96,7 @@ router.post(
       .gt("patient_responsibility_cents", 0)
       .in("status", ["paid", "denied", "appealed", "closed"])
       .order("date_of_service", { ascending: false });
+    if (claimsErr) throw claimsErr;
     if (!claims || claims.length === 0) {
       res.status(409).json({
         error: "no_open_balance",

@@ -84,12 +84,12 @@ router.get("/admin/billing/ai-queue", requireAdmin, async (_req, res) => {
   }
   const supabase = getSupabaseServiceRoleClient();
 
-  const [
-    { data: blocking },
-    { data: fixable },
-    { data: deniedNoAnalysis },
-    { data: autoReady },
-  ] = await Promise.all([
+  // Throw on ANY of the four errors so a partial Supabase failure
+  // surfaces as a 500 rather than silently rendering "queue empty"
+  // on the AI billing surface. The previous code destructured `data`
+  // only and ignored `error`, which masked transient table-
+  // permission / network-blip errors as missing rows.
+  const results = await Promise.all([
     supabase
       .schema("resupply")
       .from("insurance_claims")
@@ -131,6 +131,15 @@ router.get("/admin/billing/ai-queue", requireAdmin, async (_req, res) => {
       .order("created_at", { ascending: false })
       .limit(50),
   ]);
+  for (const r of results) {
+    if (r.error) throw r.error;
+  }
+  const [
+    { data: blocking },
+    { data: fixable },
+    { data: deniedNoAnalysis },
+    { data: autoReady },
+  ] = results;
 
   const enabledResponse = aiBillingQueueResponseSchema.parse({
     scrubBlockingClaims: (blocking ?? []).map((c) => ({
