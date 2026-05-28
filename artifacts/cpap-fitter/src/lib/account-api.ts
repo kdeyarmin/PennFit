@@ -802,10 +802,9 @@ export async function uploadMyDocument(
   }
   if (
     parsedUpload.protocol !== "https:" ||
-    (parsedUpload.hostname !== "storage.googleapis.com" &&
-      !parsedUpload.hostname.endsWith(".storage.googleapis.com"))
+    !parsedUpload.hostname.endsWith(".supabase.co")
   ) {
-    throw new Error("Upload URL is not a trusted HTTPS Google Cloud Storage URL.");
+    throw new Error("Upload URL is not a trusted HTTPS Supabase Storage URL.");
   }
 
   const putRes = await fetch(uploadURL, {
