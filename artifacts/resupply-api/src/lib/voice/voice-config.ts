@@ -83,6 +83,25 @@ export function readTwilioWebhookAuthTokenOrNull(
   return trimmed === "" ? null : trimmed;
 }
 
+/**
+ * Public base URL used to reconstruct the URL Twilio signed when
+ * verifying inbound webhook signatures. Returns null when neither
+ * RESUPPLY_VOICE_PUBLIC_BASE_URL nor RAILWAY_PUBLIC_DOMAIN is set.
+ *
+ * Decoupled from `readVoiceConfigOrNull()` so signature verification
+ * still works when OPENAI_API_KEY is missing — the URL Twilio
+ * signed is independent of whether outbound voice is configured.
+ */
+export function readVoicePublicBaseUrlOrNull(
+  env: NodeJS.ProcessEnv = process.env,
+): string | null {
+  const explicit = env.RESUPPLY_VOICE_PUBLIC_BASE_URL?.trim();
+  if (explicit) return stripTrailingSlash(explicit);
+  const railway = env.RAILWAY_PUBLIC_DOMAIN?.trim();
+  if (railway) return stripTrailingSlash(`https://${railway}`);
+  return null;
+}
+
 export function readVoiceConfigOrNull(
   env: NodeJS.ProcessEnv = process.env,
 ): VoiceConfig | null {

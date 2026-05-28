@@ -287,6 +287,10 @@ export async function runLifecycleTouchpoints(
     .or(
       `sleep_anniversary_year_sent.is.null,sleep_anniversary_year_sent.neq.${currentYear}`,
     )
+    // Same deterministic order as the birthday query: without it,
+    // cohorts past the PER_KIND_MAX * 4 cap depend on the planner's
+    // arbitrary choice and large populations can starve.
+    .order("id", { ascending: true })
     .limit(PER_KIND_MAX * 4);
   if (annErr) throw annErr;
   for (const row of (anniversaryRows ?? []) as PatientRow[]) {

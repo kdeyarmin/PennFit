@@ -24,7 +24,7 @@ import { requireTwilioSignature } from "@workspace/resupply-telecom";
 import { logger } from "../../lib/logger";
 import {
   readTwilioWebhookAuthTokenOrNull,
-  readVoiceConfigOrNull,
+  readVoicePublicBaseUrlOrNull,
 } from "../../lib/voice/voice-config";
 
 const router: IRouter = Router();
@@ -43,8 +43,9 @@ const signatureMiddleware = requireTwilioSignature({
   // outbound call too, but ALSO for missed inbound — must not fail).
   getAuthToken: () => readTwilioWebhookAuthTokenOrNull() ?? undefined,
   buildPublicUrl: (req) => {
-    const cfg = readVoiceConfigOrNull();
-    const base = cfg?.publicBaseUrl ?? "";
+    // Decoupled from full voice config so the URL Twilio signed can
+    // be reconstructed even without OPENAI_API_KEY.
+    const base = readVoicePublicBaseUrlOrNull() ?? "";
     const originalUrl =
       (req as unknown as { originalUrl?: string }).originalUrl ?? "";
     return `${base}${originalUrl}`;
