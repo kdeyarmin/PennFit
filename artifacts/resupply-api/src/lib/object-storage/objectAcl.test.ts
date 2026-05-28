@@ -53,9 +53,10 @@ vi.mock("@workspace/resupply-db", () => {
       upsertPayloads.push(p);
       return chain;
     };
-    chain["update"] = (p: unknown) => {
+    chain["update"] = (_p: unknown) => {
       lockedOp ??= "update";
       return chain;
+    };
     };
     chain["upsert"] = (p: unknown, _opts?: unknown) => {
       lockedOp ??= "upsert";
