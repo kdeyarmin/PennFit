@@ -18,6 +18,14 @@ import { HomeStatusBanner } from "@/components/home-status-banner";
 import { TrustSignalStrip } from "@/components/trust-signal-strip";
 import { openPennBot } from "@/lib/chat-events";
 
+/**
+ * Renders the PennPaps landing page with hero, trust signals, featured paths, and resource tiles.
+ *
+ * The component builds the full Home page UI and wires primary CTAs for fitting, shopping, and account flows;
+ * it also calls the application document-title hook to stamp the canonical URL and exposes a PennBot launch control.
+ *
+ * @returns The React element for the Home (landing) page.
+ */
 export function Home() {
   // Empty title keeps the static index.html title (already optimal
   // for the landing page); the hook is still called so the canonical
