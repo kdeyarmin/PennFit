@@ -251,15 +251,20 @@ jobs:
             postgrest/postgrest:v12.2.3
           # Wait for PostgREST to actually serve requests. The schema
           # cache load + initial DB connection can take a few seconds
-          # on a cold runner; fail fast at 30s if it never comes up.
-          for i in $(seq 1 30); do
+          # on a cold runner. We've seen the 30s ceiling miss
+          # occasionally on bigger-PR runs (cold image pull pushed
+          # the schema-cache load past the budget); 60s with 1s
+          # polling keeps the fast path identical (exits on the very
+          # first iteration) while giving cold runs the headroom they
+          # need — same posture as the postgres-wait step above.
+          for i in $(seq 1 60); do
             if curl -fsS "http://127.0.0.1:3001/rest/v1/" > /dev/null 2>&1; then
               echo "postgrest is up after ${i}s"
               exit 0
             fi
             sleep 1
           done
-          echo "postgrest did not respond on :3001 within 30s" >&2
+          echo "postgrest did not respond on :3001 within 60s" >&2
           docker logs postgrest 2>&1 | tail -50 || true
           exit 1
 
