@@ -101,7 +101,14 @@ export function Results() {
   const { data: catalog } = useListMasks();
   const catalogById = React.useMemo(() => {
     const map = new Map<string, NonNullable<typeof catalog>["masks"][number]>();
-    catalog?.masks.forEach((m) => map.set(m.id, m));
+    // Defensive: `catalog?.masks.forEach` only short-circuits on a
+    // null/undefined `catalog`. If a transient failure on /api/masks
+    // (e.g. mid-deploy, the proxy serves the SPA shell instead of the
+    // resupply-api JSON) lands `catalog` as a string or `{}`, the
+    // unguarded `.masks.forEach` crashes the page and trips the
+    // ErrorBoundary. Guard both hops.
+    if (!catalog || !Array.isArray(catalog.masks)) return map;
+    catalog.masks.forEach((m) => map.set(m.id, m));
     return map;
   }, [catalog]);
 
