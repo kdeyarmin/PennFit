@@ -199,7 +199,7 @@ for nopool in artifacts/resupply-api/src \
       -e "from ['\"]pg['\"]" \
       -e "require\(['\"]pg['\"]\)" \
       "$nopool" 2>/dev/null \
-      | rg -v '\.test\.' || true)"
+      | rg -v '\.(test|spec)\.[mc]?tsx?:' || true)"
     if [[ -n "$bad" ]]; then
       fail "$nopool: must not construct its own Postgres pool or import 'pg' directly — use getSupabaseServiceRoleClient() from @workspace/resupply-db (or, for legacy paths, getDbPool from the same package)"
       echo "$bad" | sed 's/^/    /' >&2

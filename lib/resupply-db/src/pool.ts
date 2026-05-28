@@ -26,10 +26,17 @@ let pool: Pool | null = null;
 // stays free of any internal logging dependency (resupply-db must not
 // pull in pino, the dashboard's logger, etc.), so the API/worker can
 // pass their own logger if they want pool-level errors routed through
-// their structured logging pipeline. Defaults to no-op so tests stay
-// quiet.
+// their structured logging pipeline. Defaults to `console.error` so
+// that a forgotten `setPoolErrorLogger` call (regression) doesn't
+// silently swallow idle-client errors — a previous no-op default
+// masked "connection terminated"/"database does not exist" failures
+// during real outages. Test suites that want quiet output can call
+// `setPoolErrorLogger(() => {})` in setup.
 type ErrorLogger = (err: unknown, msg: string) => void;
-let errorLogger: ErrorLogger = () => {};
+let errorLogger: ErrorLogger = (err, msg) => {
+  // eslint-disable-next-line no-console
+  console.error(msg, err);
+};
 
 export function setPoolErrorLogger(fn: ErrorLogger): void {
   errorLogger = fn;
