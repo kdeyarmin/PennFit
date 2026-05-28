@@ -125,7 +125,6 @@ export async function deleteAttachmentObject(
       (error as { status?: number }).status;
     throw wrapped;
   }
-  }
 }
 
 /**
