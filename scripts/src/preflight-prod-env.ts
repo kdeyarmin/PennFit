@@ -352,6 +352,16 @@ function runChecks(): void {
     requirePresent("SUPABASE_SERVICE_ROLE_KEY");
   }
 
+  // SUPABASE_STORAGE_BUCKET_PRIVATE — bucket name where customer
+  // attachments (POD photos, prescription PDFs, MMS media) live.
+  // `registerPrescriptionAttachmentSweepJob()` calls
+  // `getPrivateStorageBucket()` at worker boot and throws a fatal
+  // error if the var is unset or empty, which kills the API process
+  // before it accepts traffic. Mirror that as a hard fail in
+  // preflight so the operator catches the misconfig pre-deploy
+  // instead of from the crash loop.
+  requirePresent("SUPABASE_STORAGE_BUCKET_PRIVATE");
+
   if (!refusePlaceholder("RESUPPLY_LINK_HMAC_KEY", "replace_me_with_32_byte_secret")) {
     requireBase64Bytes("RESUPPLY_LINK_HMAC_KEY", 32);
   }

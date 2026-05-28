@@ -29,6 +29,7 @@ const VALID_PROD_ENV: Record<string, string> = {
   DATABASE_URL: "postgres://user:pass@db.prod.example.com:5432/pennpaps",
   SUPABASE_URL: "https://abcxyz123.supabase.co",
   SUPABASE_SERVICE_ROLE_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.service_role",
+  SUPABASE_STORAGE_BUCKET_PRIVATE: "attachments",
   RESUPPLY_LINK_HMAC_KEY: VALID_HMAC_KEY,
   RESUPPLY_ADMIN_EMAILS: "admin@pennpaps.com",
   // NODE_ENV = production unlocks stricter checks:
@@ -259,6 +260,38 @@ describe("boot-required variables — exit 1 on failure", () => {
 
   it("fails when SUPABASE_SERVICE_ROLE_KEY is missing", () => {
     const { exitCode } = run(withEnv({ SUPABASE_SERVICE_ROLE_KEY: undefined }));
+    expect(exitCode).toBe(1);
+  });
+
+  it("fails when SUPABASE_STORAGE_BUCKET_PRIVATE is missing", () => {
+    // registerPrescriptionAttachmentSweepJob() throws at worker boot
+    // when this var is unset, which crashes the API process. Preflight
+    // must catch it pre-deploy.
+    const { exitCode, stdout } = run(
+      withEnv({ SUPABASE_STORAGE_BUCKET_PRIVATE: undefined }),
+    );
+    expect(exitCode).toBe(1);
+    expect(stdout).toContain("SUPABASE_STORAGE_BUCKET_PRIVATE");
+  });
+
+  it("fails when SUPABASE_STORAGE_BUCKET_PRIVATE is whitespace-only (treated as unset)", () => {
+    // Mirror getPrivateStorageBucket()'s trim-then-check behavior.
+    const { exitCode, stdout } = run(
+      withEnv({ SUPABASE_STORAGE_BUCKET_PRIVATE: "   " }),
+    );
+    expect(exitCode).toBe(1);
+    expect(stdout).toContain("SUPABASE_STORAGE_BUCKET_PRIVATE");
+  });
+
+  it("fails when SUPABASE_STORAGE_BUCKET_PRIVATE is missing even outside production mode", () => {
+    // The worker crash isn't gated by NODE_ENV — staging/preview deploys
+    // hit the same boot-time throw, so preflight fails unconditionally.
+    const { exitCode } = run(
+      withEnv({
+        NODE_ENV: "staging",
+        SUPABASE_STORAGE_BUCKET_PRIVATE: undefined,
+      }),
+    );
     expect(exitCode).toBe(1);
   });
 
