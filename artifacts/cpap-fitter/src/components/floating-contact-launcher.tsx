@@ -633,21 +633,36 @@ export function FloatingContactLauncher() {
   return (
     <div data-testid="floating-contact" className="print:hidden">
       {open && (
-        <div
-          ref={dialogRef}
-          className={cn(
-            "border border-border bg-background shadow-xl overflow-hidden flex flex-col z-50",
-            // Mobile: cover the viewport so older eyes don't have to
-            // squint into a 22rem panel on a phone.
-            "fixed inset-0",
-            // Desktop: original floating card pinned bottom-right.
-            "md:inset-auto md:fixed md:bottom-4 md:right-4 md:w-[22rem] md:max-w-[calc(100vw-2rem)] md:rounded-xl md:h-[min(32rem,calc(100vh-8rem))]",
-          )}
-          role="dialog"
-          aria-modal="true"
-          aria-label="PennPaps support"
-          data-testid="floating-contact-popover"
-        >
+        <>
+          {/*
+            Scrim behind the popover. Without it, the bottom-right card
+            sits on top of the footer's right column ("Legal & Privacy",
+            "Staff sign-in") and any chip with a transparent edge can
+            visually collide with the link list underneath. The scrim
+            dims the page so the dialog clearly owns the foreground and
+            doubles as a click-to-dismiss target — standard modal UX.
+          */}
+          <div
+            onClick={() => setOpen(false)}
+            aria-hidden="true"
+            className="fixed inset-0 z-40 bg-black/50"
+            data-testid="floating-contact-scrim"
+          />
+          <div
+            ref={dialogRef}
+            className={cn(
+              "border border-border bg-background shadow-xl overflow-hidden flex flex-col z-50",
+              // Mobile: cover the viewport so older eyes don't have to
+              // squint into a 22rem panel on a phone.
+              "fixed inset-0",
+              // Desktop: original floating card pinned bottom-right.
+              "md:inset-auto md:fixed md:bottom-4 md:right-4 md:w-[22rem] md:max-w-[calc(100vw-2rem)] md:rounded-xl md:h-[min(32rem,calc(100vh-8rem))]",
+            )}
+            role="dialog"
+            aria-modal="true"
+            aria-label="PennPaps support"
+            data-testid="floating-contact-popover"
+          >
           <div className="px-4 py-3 bg-[hsl(var(--penn-navy))] text-white flex items-center justify-between shrink-0">
             <div>
               <div className="text-sm font-semibold">PennPaps support</div>
@@ -856,7 +871,8 @@ export function FloatingContactLauncher() {
               </SignedIn>
             </div>
           )}
-        </div>
+          </div>
+        </>
       )}
 
       <button
