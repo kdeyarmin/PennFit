@@ -70,26 +70,6 @@ export function getLinkHmacKey(env: EnvLike = process.env): Buffer {
         `secret of at least ${LINK_HMAC_KEY_MIN_BYTES} decoded bytes.`,
     );
   }
-<<<<<<< HEAD
-  // Mirror requireBase64Bytes(): reject anything outside strict
-  // base64 alphabet (Buffer.from silently drops invalid chars, so a
-  // URL-safe or hex string would otherwise produce surprising key
-  // material).
-  if (!/^[A-Za-z0-9+/]+=*$/.test(value)) {
-    throw new Error(
-      `${LINK_HMAC_KEY_ENV} is not valid base64 ` +
-        `(only A-Z, a-z, 0-9, +, /, = padding allowed).`,
-    );
-  }
-  const decoded = Buffer.from(value, "base64");
-  if (decoded.length < LINK_HMAC_KEY_MIN_BYTES) {
-    throw new Error(
-      `${LINK_HMAC_KEY_ENV} decodes to ${decoded.length} bytes; ` +
-        `at least ${LINK_HMAC_KEY_MIN_BYTES} bytes are required.`,
-    );
-  }
-  return decoded;
-=======
   // Treat the env value as a utf-8 string of secret bytes (matches
   // the original implementation and every signed token in the wild).
   // Preflight (scripts/src/preflight-prod-env.ts) is the deploy-time
@@ -103,5 +83,4 @@ export function getLinkHmacKey(env: EnvLike = process.env): Buffer {
   //       runtime utf-8 length check would have different semantics
   //       than preflight (as CodeRabbit flagged on PR #409).
   return Buffer.from(value, "utf8");
->>>>>>> origin/main
 }

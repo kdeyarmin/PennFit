@@ -313,20 +313,6 @@ export async function replyInConversation(
       .eq("id", conversationId);
     if (stampConvErr) throw stampConvErr;
   } catch (dbErr) {
-<<<<<<< HEAD
-    const errCode =
-      typeof dbErr === "object" && dbErr !== null && "code" in dbErr
-        ? String((dbErr as { code?: unknown }).code ?? "")
-        : "";
-    console.error(
-      "[reply] DB write failed after vendor accept — message sent but unrecorded. Manual reconciliation required.",
-      {
-        conversationId,
-        vendorRef,
-        errCode: errCode || undefined,
-        err: dbErr instanceof Error ? dbErr.message : String(dbErr),
-      },
-=======
     // Capture the PostgREST `code` discriminator (e.g. 23505 for a
     // unique violation, PGRST116 for "row not found", etc.) so the
     // reconciliation log is actionable. Read `code`/`message`/`name`
@@ -360,7 +346,6 @@ export async function replyInConversation(
               : String(dbErr),
         msg: "Reply delivered by vendor but messages row not written — manual reconciliation required",
       }) + "\n",
->>>>>>> origin/main
     );
   }
 

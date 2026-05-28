@@ -287,12 +287,9 @@ export async function runLifecycleTouchpoints(
     .or(
       `sleep_anniversary_year_sent.is.null,sleep_anniversary_year_sent.neq.${currentYear}`,
     )
-<<<<<<< HEAD
-=======
     // Same deterministic order as the birthday query: without it,
     // cohorts past the PER_KIND_MAX * 4 cap depend on the planner's
     // arbitrary choice and large populations can starve.
->>>>>>> origin/main
     .order("id", { ascending: true })
     .limit(PER_KIND_MAX * 4);
   if (annErr) throw annErr;
@@ -357,19 +354,11 @@ export async function runLifecycleTouchpoints(
         if (rollbackErr) {
           logger.error(
             {
-<<<<<<< HEAD
-              event: "lifecycle_touchpoints_anniversary_stamp_rollback_failed",
-              err: rollbackErr.message,
-              patientId: row.id,
-            },
-            "lifecycle-touchpoints: anniversary stamp rollback failed after non-delivery",
-=======
               err: rollbackErr.message,
               patientId: row.id,
               event: "lifecycle_touchpoints_anniversary_stamp_rollback_failed",
             },
             "lifecycle-touchpoints: anniversary stamp rollback failed — patient may be permanently skipped this year",
->>>>>>> origin/main
           );
         }
         stats.anniversaryFailed += 1;
@@ -387,19 +376,11 @@ export async function runLifecycleTouchpoints(
       if (rollbackErr) {
         logger.error(
           {
-<<<<<<< HEAD
-            event: "lifecycle_touchpoints_anniversary_stamp_rollback_failed",
-            err: rollbackErr.message,
-            patientId: row.id,
-          },
-          "lifecycle-touchpoints: anniversary stamp rollback failed after send threw",
-=======
             err: rollbackErr.message,
             patientId: row.id,
             event: "lifecycle_touchpoints_anniversary_stamp_rollback_failed",
           },
           "lifecycle-touchpoints: anniversary stamp rollback failed — patient may be permanently skipped this year",
->>>>>>> origin/main
         );
       }
       stats.anniversaryFailed += 1;
