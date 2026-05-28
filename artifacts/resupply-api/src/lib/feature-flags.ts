@@ -158,15 +158,28 @@ export async function isFeatureEnabled(key: FeatureFlagKey): Promise<boolean> {
       message.includes("EAI_AGAIN") ||
       message.includes("fetch failed");
     if (isMissingDbConfig || isUnreachable) {
-      // Both branches fall back to "all features enabled" so dev /
-      // smoke environments stay usable when the DB isn't there. The
-      // block comment above (and feature-flags.test.ts) pins this
-      // posture; a CodeRabbit auto-fix briefly split it into a
-      // fail-closed branch for `isUnreachable` (commit a8f037b) but
-      // that contradicted both the docstring and the test. Restored
-      // here so the documented contract holds.
-      cache.set(key, { value: true, expiresAt: now + CACHE_TTL_MS });
-      return true;
+      // Dev / smoke environments without a real Supabase fall back to
+      // "all features enabled" so the rest of the app stays usable.
+      // In production, however, a missing/unreachable DB must NOT
+      // silently open every feature — that would fail-open precisely
+      // when the operator's safety net (the flag table) is gone.
+      // Restrict the fallback to non-production envs and log loudly
+      // otherwise so ops sees the misconfiguration immediately.
+      if (process.env.NODE_ENV !== "production") {
+        cache.set(key, { value: true, expiresAt: now + CACHE_TTL_MS });
+        return true;
+      }
+      logger.error(
+        {
+          event: "feature_flag_lookup_failed_prod_failclosed",
+          key,
+          err: message,
+          reason: isMissingDbConfig ? "missing_db_config" : "db_unreachable",
+        },
+        "feature flag lookup failed in production; failing closed (disabled)",
+      );
+      cache.set(key, { value: false, expiresAt: now + CACHE_TTL_MS });
+      return false;
     }
     logger.warn(
       {

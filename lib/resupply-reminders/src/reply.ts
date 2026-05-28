@@ -294,9 +294,18 @@ export async function replyInConversation(
       .eq("id", conversationId);
     if (stampConvErr) throw stampConvErr;
   } catch (dbErr) {
+    const errCode =
+      typeof dbErr === "object" && dbErr !== null && "code" in dbErr
+        ? String((dbErr as { code?: unknown }).code ?? "")
+        : "";
     console.error(
       "[reply] DB write failed after vendor accept — message sent but unrecorded. Manual reconciliation required.",
-      { conversationId, vendorRef, err: dbErr instanceof Error ? dbErr.message : String(dbErr) },
+      {
+        conversationId,
+        vendorRef,
+        errCode: errCode || undefined,
+        err: dbErr instanceof Error ? dbErr.message : String(dbErr),
+      },
     );
   }
 

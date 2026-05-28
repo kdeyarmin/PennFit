@@ -258,6 +258,7 @@ export async function runLifecycleTouchpoints(
     .or(
       `sleep_anniversary_year_sent.is.null,sleep_anniversary_year_sent.neq.${currentYear}`,
     )
+    .order("id", { ascending: true })
     .limit(PER_KIND_MAX * 4);
   if (annErr) throw annErr;
   for (const row of (anniversaryRows ?? []) as PatientRow[]) {
@@ -311,25 +312,45 @@ export async function runLifecycleTouchpoints(
         yearsOnTherapy: currentYear - firstYear,
       });
       if (!r.delivered) {
-        await supabase
+        const { error: rollbackErr } = await supabase
           .schema("resupply")
           .from("patients")
           .update({
             sleep_anniversary_year_sent: row.sleep_anniversary_year_sent,
           })
           .eq("id", row.id);
+        if (rollbackErr) {
+          logger.error(
+            {
+              event: "lifecycle_touchpoints_anniversary_stamp_rollback_failed",
+              err: rollbackErr.message,
+              patientId: row.id,
+            },
+            "lifecycle-touchpoints: anniversary stamp rollback failed after non-delivery",
+          );
+        }
         stats.anniversaryFailed += 1;
         continue;
       }
       stats.anniversarySent += 1;
     } catch (err) {
-      await supabase
+      const { error: rollbackErr } = await supabase
         .schema("resupply")
         .from("patients")
         .update({
           sleep_anniversary_year_sent: row.sleep_anniversary_year_sent,
         })
         .eq("id", row.id);
+      if (rollbackErr) {
+        logger.error(
+          {
+            event: "lifecycle_touchpoints_anniversary_stamp_rollback_failed",
+            err: rollbackErr.message,
+            patientId: row.id,
+          },
+          "lifecycle-touchpoints: anniversary stamp rollback failed after send threw",
+        );
+      }
       stats.anniversaryFailed += 1;
       logger.error(
         {

@@ -18,6 +18,15 @@
 
 export const LINK_HMAC_KEY_ENV = "RESUPPLY_LINK_HMAC_KEY";
 
+/**
+ * Minimum decoded byte length for the link-signing key. Must stay in
+ * lockstep with the preflight check in scripts/preflight-prod-env.ts
+ * (`requireBase64Bytes("RESUPPLY_LINK_HMAC_KEY", 32)`); otherwise a
+ * key that boots cleanly under preflight could be rejected at runtime
+ * or vice-versa.
+ */
+export const LINK_HMAC_KEY_MIN_BYTES = 32;
+
 type EnvLike = NodeJS.ProcessEnv | Record<string, string | undefined>;
 
 function readEnv(name: string, env: EnvLike): string | undefined {
@@ -45,14 +54,38 @@ export function hasLinkHmacKey(env: EnvLike = process.env): boolean {
  * sentinel) if the env var is missing — every caller is on a hot
  * path where issuing or verifying an unkeyed token would be a bug,
  * not a degraded mode.
+ *
+ * The env value is decoded as base64 (matching the preflight check
+ * in scripts/preflight-prod-env.ts `requireBase64Bytes(...)`), then
+ * verified against `LINK_HMAC_KEY_MIN_BYTES`. Earlier revisions used
+ * `Buffer.from(value, "utf8")` which silently produced key material
+ * that did not match what preflight had validated.
  */
 export function getLinkHmacKey(env: EnvLike = process.env): Buffer {
   const value = readEnv(LINK_HMAC_KEY_ENV, env);
   if (value === undefined) {
     throw new Error(
       `${LINK_HMAC_KEY_ENV} is not set — refusing to sign or verify ` +
-        `resupply links. Set ${LINK_HMAC_KEY_ENV} to a 32+ byte secret.`,
+        `resupply links. Set ${LINK_HMAC_KEY_ENV} to a base64-encoded ` +
+        `secret of at least ${LINK_HMAC_KEY_MIN_BYTES} decoded bytes.`,
     );
   }
-  return Buffer.from(value, "utf8");
+  // Mirror requireBase64Bytes(): reject anything outside strict
+  // base64 alphabet (Buffer.from silently drops invalid chars, so a
+  // URL-safe or hex string would otherwise produce surprising key
+  // material).
+  if (!/^[A-Za-z0-9+/]+=*$/.test(value)) {
+    throw new Error(
+      `${LINK_HMAC_KEY_ENV} is not valid base64 ` +
+        `(only A-Z, a-z, 0-9, +, /, = padding allowed).`,
+    );
+  }
+  const decoded = Buffer.from(value, "base64");
+  if (decoded.length < LINK_HMAC_KEY_MIN_BYTES) {
+    throw new Error(
+      `${LINK_HMAC_KEY_ENV} decodes to ${decoded.length} bytes; ` +
+        `at least ${LINK_HMAC_KEY_MIN_BYTES} bytes are required.`,
+    );
+  }
+  return decoded;
 }

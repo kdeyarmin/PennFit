@@ -13,7 +13,10 @@ describe("signLinkToken / verifyLinkToken", () => {
 
   beforeEach(() => {
     savedKey = process.env[KEY_ENV];
-    process.env[KEY_ENV] = "test-key-aaaa";
+    // 32-byte base64-encoded key — matches the preflight contract
+    // (`requireBase64Bytes("RESUPPLY_LINK_HMAC_KEY", 32)`) so test
+    // and production agree on what a "valid" key looks like.
+    process.env[KEY_ENV] = Buffer.alloc(32, 0x11).toString("base64");
   });
 
   afterEach(() => {
@@ -115,19 +118,19 @@ describe("signLinkToken / verifyLinkToken", () => {
   });
 
   it("produces different tokens under different keys", () => {
-    process.env[KEY_ENV] = "key-one";
+    process.env[KEY_ENV] = Buffer.alloc(32, 0x22).toString("base64");
     const a = signLinkToken({
       conversationId: "conv-123",
       action: "confirm",
     });
-    process.env[KEY_ENV] = "key-two";
+    process.env[KEY_ENV] = Buffer.alloc(32, 0x33).toString("base64");
     const b = signLinkToken({
       conversationId: "conv-123",
       action: "confirm",
     });
     expect(a).not.toBe(b);
     // And cross-verification fails.
-    process.env[KEY_ENV] = "key-one";
+    process.env[KEY_ENV] = Buffer.alloc(32, 0x22).toString("base64");
     const r = verifyLinkToken(b);
     expect(r.valid).toBe(false);
   });
