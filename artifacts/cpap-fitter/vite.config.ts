@@ -25,6 +25,31 @@ if (!isBuild && !basePath) {
   );
 }
 
+// Forward API requests to the resupply-api process. The SPA fetches
+// `/api/*` and `/resupply-api/*` against its own origin (see
+// `lib/api-client-react/src/storefront/custom-fetch.ts`); when the
+// SPA is served by a different process than the API (dev: vite dev
+// server on 5173 vs. API on 3000; production: separate Railway
+// services), there has to be a proxy hop or those calls land on the
+// SPA host and get back the index.html shell — which is what
+// produced the empty `/masks` page after the Replit→Railway move.
+//
+// Dev default targets the README's documented local API port. In
+// production set API_PROXY_TARGET to the resupply-api service URL
+// (on Railway, use the internal hostname, e.g.
+// `http://resupply-api.railway.internal:${PORT}`).
+const apiProxyTarget = process.env.API_PROXY_TARGET ?? "http://localhost:3000";
+const apiProxyConfig = {
+  "/api": {
+    target: apiProxyTarget,
+    changeOrigin: true,
+  },
+  "/resupply-api": {
+    target: apiProxyTarget,
+    changeOrigin: true,
+  },
+};
+
 export default defineConfig({
   base: basePath ?? "/",
   plugins: [
@@ -86,10 +111,12 @@ export default defineConfig({
     fs: {
       strict: true,
     },
+    proxy: apiProxyConfig,
   },
   preview: {
     port,
     host: "0.0.0.0",
     allowedHosts: true,
+    proxy: apiProxyConfig,
   },
 });
