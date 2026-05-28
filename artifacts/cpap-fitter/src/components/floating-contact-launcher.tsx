@@ -159,11 +159,22 @@ const DEFAULT_PROMPTS = [
   "What is your return policy?",
 ];
 
+/**
+ * Message shown when the chat endpoint itself is unreachable (404 or
+ * HTML SPA fallback — see chat-api.ts:isEndpointUnavailable). Phrased
+ * as a clear "we're offline, here are the real ways to reach us"
+ * rather than the more transient-sounding "connection issue".
+ */
+const UNAVAILABLE_FALLBACK_TEXT = `PennBot is offline right now. For help, call ${SUPPORT_PHONE_DISPLAY} (${SUPPORT_HOURS}) or email ${SUPPORT_EMAIL} — our team will answer anything I would have.`;
+
 interface UiMessage extends ChatMessage {
   /** Local-only id for React keying. */
   id: number;
-  /** Server set this flag (offline / degraded / rate-limited). */
-  meta?: "offline" | "degraded" | "rate-limited";
+  /** Server set this flag (offline / degraded / rate-limited), or the
+      client classified the response (unavailable: endpoint reachable
+      but returned 404 / HTML, distinct from "degraded" which is a
+      transient upstream failure). */
+  meta?: "offline" | "degraded" | "rate-limited" | "unavailable";
   /** True while the assistant bubble is still being streamed. */
   pending?: boolean;
   /** User has voted on this assistant turn — drives the
@@ -441,15 +452,31 @@ export function FloatingContactLauncher() {
         const result = await streamChatMessage(history, onChunk, ctrl.signal);
         const meta = result.rateLimited
           ? "rate-limited"
-          : result.offline
-            ? "offline"
-            : result.degraded
-              ? "degraded"
-              : undefined;
+          : result.unavailable
+            ? "unavailable"
+            : result.offline
+              ? "offline"
+              : result.degraded
+                ? "degraded"
+                : undefined;
         setMessages((prev) =>
-          prev.map((m) =>
-            m.id === placeholder.id ? { ...m, pending: false, meta } : m,
-          ),
+          prev.map((m) => {
+            if (m.id !== placeholder.id) return m;
+            // When the endpoint is unavailable, no chunks arrived — the
+            // server-side prerendered offline copy never reached us
+            // because the API isn't responding. Substitute a clear
+            // "PennBot is offline" message with both phone and email
+            // so the patient can act on a real path.
+            if (meta === "unavailable" && m.content.length === 0) {
+              return {
+                ...m,
+                pending: false,
+                meta,
+                content: UNAVAILABLE_FALLBACK_TEXT,
+              };
+            }
+            return { ...m, pending: false, meta };
+          }),
         );
         track("chat_replied", {
           path: location,
@@ -490,8 +517,7 @@ export function FloatingContactLauncher() {
               ...m,
               pending: false,
               meta: "degraded",
-              content:
-                "Something went wrong reaching the chat service. You can try again, or call (814) 471-0627 (Mon-Fri 9-5 ET).",
+              content: `Something went wrong reaching the chat service. You can try again, or call ${SUPPORT_PHONE_DISPLAY} (${SUPPORT_HOURS}) or email ${SUPPORT_EMAIL}.`,
             };
           }),
         );
@@ -1103,7 +1129,8 @@ function ChatBubble({
     !message.pending &&
     (message.meta === "degraded" ||
       message.meta === "offline" ||
-      message.meta === "rate-limited");
+      message.meta === "rate-limited" ||
+      message.meta === "unavailable");
 
   return (
     <div
@@ -1138,6 +1165,11 @@ function ChatBubble({
           {message.meta === "offline" && (
             <span className="block mt-1 text-[10px] uppercase tracking-wide opacity-70">
               chat offline
+            </span>
+          )}
+          {message.meta === "unavailable" && (
+            <span className="block mt-1 text-[10px] uppercase tracking-wide opacity-70">
+              chat unavailable
             </span>
           )}
           {message.meta === "degraded" && (

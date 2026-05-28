@@ -96,7 +96,7 @@ type MetadataForStep<T extends TrackStep> = T extends "capture_blocked"
         : T extends "chat_replied"
           ? {
               path: string;
-              meta?: "offline" | "degraded" | "rate-limited";
+              meta?: "offline" | "degraded" | "rate-limited" | "unavailable";
               durationMs: number;
             }
           : T extends "chat_feedback"

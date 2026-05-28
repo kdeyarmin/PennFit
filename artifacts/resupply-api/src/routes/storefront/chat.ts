@@ -356,13 +356,7 @@ router.post("/chat", chatRateLimit, async (req, res) => {
       writeSseEvent(res, { type: "done", offline: true });
       res.end();
     } else {
-      res.json({
-        reply: {
-          role: "assistant",
-          content: offlineMessage,
-        },
-        offline: true,
-      });
+      res.json({ reply: offlineMessage, offline: true });
     }
     return;
   }
