@@ -605,7 +605,8 @@ export function FloatingContactLauncher() {
             const el = inputRef.current;
             if (!el) return;
             el.focus();
-            el.setSelectionRange(detail.prefill!.length, detail.prefill!.length);
+            // Select the prefill so a long question doesn't read as un-editable placeholder text.
+            el.select();
           }, 50);
         }
       }
