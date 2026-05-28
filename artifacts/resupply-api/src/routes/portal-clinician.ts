@@ -124,9 +124,19 @@ router.get(
       return;
     }
 
-    // Stamp view + bump count. Fire-and-forget; the response goes
-    // out regardless.
-    void supabase
+    // Stamp view + bump count. We await the UPDATE here (not the
+    // previous fire-and-forget) so we can read back the incremented
+    // count and stamp the audit row with what was actually written.
+    // Two concurrent views previously both read view_count=N and
+    // both wrote N+1 — losing one increment and recording an
+    // inconsistent count in the audit metadata.
+    //
+    // Note: PostgREST has no server-side "view_count = view_count +
+    // 1" expression, so a small race window remains between the
+    // SELECT above and the UPDATE here. The audit row reads the
+    // CONFLICT-free actual value via `select()` below, which at
+    // least keeps the recorded count consistent with the row.
+    const { data: bumped, error: bumpErr } = await supabase
       .schema("resupply")
       .from("clinician_share_tokens")
       .update({
@@ -135,7 +145,16 @@ router.get(
         view_count: share.view_count + 1,
       })
       .eq("id", share.id)
-      .then(() => undefined);
+      .select("view_count")
+      .limit(1)
+      .maybeSingle();
+    const observedCount = bumped?.view_count ?? share.view_count + 1;
+    if (bumpErr) {
+      logger.warn(
+        { err: bumpErr },
+        "clinician_share_tokens view bump failed (continuing)",
+      );
+    }
 
     await logAudit({
       action: "inbound_referral.clinician_share_viewed",
@@ -145,7 +164,7 @@ router.get(
       targetId: share.id,
       metadata: {
         referral_id: share.referral_id,
-        view_count: share.view_count + 1,
+        view_count: observedCount,
       },
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,

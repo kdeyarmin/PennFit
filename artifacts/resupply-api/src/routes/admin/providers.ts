@@ -342,15 +342,73 @@ router.post(
       res.status(404).json({ error: "not_found" });
       return;
     }
+    // Read the provider's current portal_link_version so the token
+    // payload carries it. The verifier rejects any token whose
+    // embedded version is below the row's current value, so bumping
+    // this column revokes every outstanding token (see the new
+    // DELETE handler below).
+    const supabase = getSupabaseServiceRoleClient();
+    const { data: existing, error: pErr } = await supabase
+      .schema("resupply")
+      .from("providers")
+      .select("id, portal_link_version")
+      .eq("id", idParse.data)
+      .limit(1)
+      .maybeSingle();
+    if (pErr) throw pErr;
+    if (!existing) {
+      res.status(404).json({ error: "provider_not_found" });
+      return;
+    }
     const { signProviderPortalToken } = await import(
       "../../lib/provider-portal-token"
     );
-    const token = signProviderPortalToken(idParse.data);
+    const token = signProviderPortalToken(idParse.data, undefined, {
+      portalLinkVersion: existing.portal_link_version,
+    });
     res.json({
       token,
       path: `/provider-portal/${token}`,
       expiresInDays: 30,
     });
+  },
+);
+
+// DELETE /admin/providers/:id/portal-link — revoke every outstanding
+// portal token for this provider by incrementing portal_link_version.
+// Any token issued before this bump fails the version check in the
+// public portal route. Subsequent mints use the new version.
+router.delete(
+  "/admin/providers/:id/portal-link",
+  requirePermission("patients.update"),
+  adminRateLimit({ name: "providers.portal_link_revoke", preset: "mutation" }),
+  async (req, res) => {
+    const idParse = z.string().uuid().safeParse(req.params.id);
+    if (!idParse.success) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    const supabase = getSupabaseServiceRoleClient();
+    const { data: existing, error: pErr } = await supabase
+      .schema("resupply")
+      .from("providers")
+      .select("id, portal_link_version")
+      .eq("id", idParse.data)
+      .limit(1)
+      .maybeSingle();
+    if (pErr) throw pErr;
+    if (!existing) {
+      res.status(404).json({ error: "provider_not_found" });
+      return;
+    }
+    const nextVersion = (existing.portal_link_version ?? 0) + 1;
+    const { error: updErr } = await supabase
+      .schema("resupply")
+      .from("providers")
+      .update({ portal_link_version: nextVersion, updated_at: new Date().toISOString() })
+      .eq("id", idParse.data);
+    if (updErr) throw updErr;
+    res.json({ ok: true, portalLinkVersion: nextVersion });
   },
 );
 

@@ -1028,6 +1028,7 @@ export interface Database {
           source: "nppes" | "csr_entry" | "backfill";
           verified_at: string | null;
           notes: string | null;
+          portal_link_version: number;
           created_at: string;
           updated_at: string;
         };

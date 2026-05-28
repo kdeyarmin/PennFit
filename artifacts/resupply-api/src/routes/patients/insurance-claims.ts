@@ -487,12 +487,32 @@ router.patch(
       update.patient_responsibility_cents = b.patientResponsibilityCents;
     }
 
-    const { error: updErr } = await supabase
+    // Optimistic-concurrency precondition. We validated the transition
+    // against `current.status` (the value we read at the top of the
+    // handler), so the UPDATE must only land when the row is still in
+    // that state. Without this guard, two concurrent PATCHes from
+    // different admins (e.g. "submitted→accepted" and "submitted→
+    // denied") both pass the in-memory transition check and both
+    // apply; the later writer silently wins, the prior history event
+    // misrepresents the chain, and a money-bearing row ends up in
+    // the wrong terminal state.
+    const { data: updated, error: updErr } = await supabase
       .schema("resupply")
       .from("insurance_claims")
       .update(update)
-      .eq("id", idParsed.data.claimId);
+      .eq("id", idParsed.data.claimId)
+      .eq("status", current.status)
+      .select("id");
     if (updErr) throw updErr;
+    if (!updated || updated.length === 0) {
+      // Another admin moved the row between our SELECT and our UPDATE.
+      res.status(409).json({
+        error: "concurrent_modification",
+        message:
+          "Another team member updated this claim while you were reviewing. Refresh and try again.",
+      });
+      return;
+    }
 
     // Status change → append history event so the audit reconstruction
     // matches the canonical state machine even if the audit_log row

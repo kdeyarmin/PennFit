@@ -65,6 +65,10 @@ const patchBody = z
       .nullable()
       .optional()
       .transform((v) => (v === "" ? null : v)),
+    // Optional ISO-8601 timestamp the client read with the row.
+    // When supplied, the UPDATE is conditioned on the row's current
+    // updated_at matching it (optimistic-concurrency guard).
+    expectedUpdatedAt: z.string().datetime().optional(),
   })
   .strict();
 
@@ -89,6 +93,18 @@ router.patch("/rules/:id", requireAdmin, async (req, res) => {
   }
 
   const body = bodyParsed.data;
+  // Optimistic-concurrency precondition: the client must echo back
+  // the `updatedAt` it read with the row, and the UPDATE only lands
+  // when the DB still shows that timestamp. Without this guard, two
+  // admins editing the same rule concurrently each `UPDATE ... WHERE
+  // id = $id` — the later writer silently wins, the loser's
+  // `active: false` toggle vanishes with a 200 response, and the
+  // rule keeps firing. Rules drive the eligibility engine so a lost
+  // toggle is observable patient-side.
+  const expectedUpdatedAt =
+    typeof (body as Record<string, unknown>).expectedUpdatedAt === "string"
+      ? ((body as Record<string, unknown>).expectedUpdatedAt as string)
+      : null;
   const updates: FrequencyRulesUpdate = {};
   const changedKeys: string[] = [];
   for (const [camel, snake] of Object.entries(FIELD_MAP) as Array<
@@ -152,15 +168,38 @@ router.patch("/rules/:id", requireAdmin, async (req, res) => {
 
   updates.updated_at = new Date().toISOString();
 
-  const { data: result, error } = await supabase
+  let updateBuilder = supabase
     .schema("resupply")
     .from("frequency_rules")
     .update(updates)
-    .eq("id", idParsed.data.id)
-    .select("id");
+    .eq("id", idParsed.data.id);
+  if (expectedUpdatedAt) {
+    updateBuilder = updateBuilder.eq("updated_at", expectedUpdatedAt);
+  }
+  const { data: result, error } = await updateBuilder.select("id");
   if (error) throw error;
 
   if (!result || result.length === 0) {
+    if (expectedUpdatedAt) {
+      // Distinguish "concurrent update overwrote our base value"
+      // from "row doesn't exist" so the UI can prompt a refresh
+      // instead of a generic "not found" toast.
+      const { data: stillExists } = await supabase
+        .schema("resupply")
+        .from("frequency_rules")
+        .select("id")
+        .eq("id", idParsed.data.id)
+        .limit(1)
+        .maybeSingle();
+      if (stillExists) {
+        res.status(409).json({
+          error: "concurrent_modification",
+          message:
+            "Another team member updated this rule while you were editing. Refresh and try again.",
+        });
+        return;
+      }
+    }
     res.status(404).json({ error: "not_found" });
     return;
   }

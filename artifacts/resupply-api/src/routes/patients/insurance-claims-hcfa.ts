@@ -168,9 +168,22 @@ router.get(
             zip: payerMailingParsed.zip,
           }
         : null;
-    const diagnosisCodes = sleep?.diagnosis_icd10
-      ? [sleep.diagnosis_icd10]
-      : ["G47.33"];
+    // Refuse to render a CMS-1500 with a fabricated diagnosis. The
+    // earlier hard-coded fallback of "G47.33" (Obstructive Sleep
+    // Apnea) silently invented a clinical diagnosis for any patient
+    // whose sleep_studies row had no ICD-10 captured — that's a
+    // synthesized diagnosis on a regulated billing form. Bounce with
+    // a 422 so the admin records the actual study diagnosis before
+    // submitting the claim.
+    if (!sleep?.diagnosis_icd10) {
+      res.status(422).json({
+        error: "missing_diagnosis",
+        message:
+          "This patient has no sleep_studies.diagnosis_icd10 on file. Record the actual study diagnosis before generating a CMS-1500.",
+      });
+      return;
+    }
+    const diagnosisCodes = [sleep.diagnosis_icd10];
 
     const input: Hcfa1500Input = {
       insuranceType: "group_health",
