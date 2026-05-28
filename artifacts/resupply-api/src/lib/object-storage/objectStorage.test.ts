@@ -619,6 +619,42 @@ describe("ObjectStorageService.searchPublicObject", () => {
     const result = await svc.searchPublicObject("logo.png");
     expect(result).toBeNull();
   });
+
+  it("returns null when only a prefix match exists (list search is prefix-based)", async () => {
+    vi.stubEnv("SUPABASE_STORAGE_BUCKET_PUBLIC", "public-assets");
+    stageStorage("list:public-assets", {
+      data: [{ name: "logo.png.bak", metadata: {} }],
+      error: null,
+    });
+
+    const svc = new ObjectStorageService();
+    const result = await svc.searchPublicObject("logo.png");
+    expect(result).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// readObjectMetadata (via StoredObjectHandle.getMetadata)
+// ---------------------------------------------------------------------------
+
+describe("StoredObjectHandle.getMetadata (readObjectMetadata)", () => {
+  it("throws ObjectNotFoundError when only a prefix match exists", async () => {
+    // First list call: existence check in getObjectEntityFile succeeds.
+    stageStorage("list:attachments", {
+      data: [{ name: "test-uuid", metadata: { size: 100, mimetype: "image/png" } }],
+      error: null,
+    });
+    const svc = new ObjectStorageService();
+    const handle = await svc.getObjectEntityFile("/objects/uploads/test-uuid");
+
+    // Second list call (from readObjectMetadata): only a prefix match is
+    // returned, so the exact-name lookup must fail.
+    stageStorage("list:attachments", {
+      data: [{ name: "test-uuid-extra", metadata: { size: 999, mimetype: "image/png" } }],
+      error: null,
+    });
+    await expect(handle.getMetadata()).rejects.toThrow(ObjectNotFoundError);
+  });
 });
 
 // ---------------------------------------------------------------------------
