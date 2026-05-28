@@ -29,7 +29,11 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  if (originalKey !== undefined) process.env.OPENAI_API_KEY = originalKey;
+  if (originalKey === undefined) {
+    delete process.env.OPENAI_API_KEY;
+  } else {
+    process.env.OPENAI_API_KEY = originalKey;
+  }
 });
 
 describe("explainDenialToPatient", () => {
