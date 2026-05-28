@@ -46,6 +46,9 @@ export function hasLinkHmacKey(env: EnvLike = process.env): boolean {
  * path where issuing or verifying an unkeyed token would be a bug,
  * not a degraded mode.
  */
+/** Minimum byte length for the link-signing key (matches preflight). */
+export const LINK_HMAC_KEY_MIN_BYTES = 32;
+
 export function getLinkHmacKey(env: EnvLike = process.env): Buffer {
   const value = readEnv(LINK_HMAC_KEY_ENV, env);
   if (value === undefined) {
@@ -54,5 +57,16 @@ export function getLinkHmacKey(env: EnvLike = process.env): Buffer {
         `resupply links. Set ${LINK_HMAC_KEY_ENV} to a 32+ byte secret.`,
     );
   }
-  return Buffer.from(value, "utf8");
+  const buf = Buffer.from(value, "utf8");
+  // Length floor at use-time so a shell-escaped or truncated value
+  // doesn't silently sign tokens with a too-short key. Preflight
+  // checks the env at deploy time; this guards anywhere
+  // `getLinkHmacKey()` is called without preflight (CLI scripts, etc.).
+  if (buf.length < LINK_HMAC_KEY_MIN_BYTES) {
+    throw new Error(
+      `${LINK_HMAC_KEY_ENV} must decode to at least ${LINK_HMAC_KEY_MIN_BYTES} bytes ` +
+        `(got ${buf.length}). A truncated or shell-escaped key was likely supplied.`,
+    );
+  }
+  return buf;
 }

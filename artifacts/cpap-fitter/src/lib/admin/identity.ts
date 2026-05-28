@@ -5,6 +5,8 @@
 // Use `useDashboardIdentity()` to read the current admin/agent's
 // session state.
 
+import { useQueryClient } from "@tanstack/react-query";
+
 import { authHooks, authClient } from "./auth-hooks";
 
 export interface DashboardIdentity {
@@ -22,6 +24,7 @@ export interface DashboardIdentity {
  */
 export function useDashboardIdentity(): DashboardIdentity {
   const { data } = authHooks.useSession();
+  const queryClient = useQueryClient();
   return {
     email: data?.email ?? null,
     role: data?.role ?? null,
@@ -30,16 +33,29 @@ export function useDashboardIdentity(): DashboardIdentity {
     signOut: async () => {
       // Bypass the React Query mutation so the shim is callable
       // from non-component contexts (e.g. an error boundary).
-      // Components that want the cache-reset side effect on
-      // sign-out should use authHooks.useSignOut() directly.
       //
       // DO NOT swallow the auth-server error. A failed /sign-out
       // leaves the server-side session cookie valid; the UI flips
-      // to the signed-out state but the next /api/auth/me succeeds
-      // and the admin is silently back in their account (much
-      // worse than the patient case — admin tokens unlock PHI).
-      // Re-throw so the caller surfaces a retry prompt.
+      // to the signed-out state but the next /resupply-api/me
+      // succeeds and the admin is silently back in their account
+      // (much worse than the patient case — admin tokens unlock
+      // PHI). Re-throw so the caller surfaces a retry prompt.
       await authClient.signOut();
+      // Invalidate cached identity queries so AppShell stops
+      // rendering with the prior role/email. Without this, sign-out
+      // + sign-in as a demoted user (admin → agent) would render
+      // admin-only nav tiles for up to staleTime because
+      // useGetAdminMe served the cached prior role.
+      try {
+        await Promise.all([
+          queryClient.invalidateQueries({
+            queryKey: ["/resupply-api/me"],
+          }),
+          queryClient.invalidateQueries({ queryKey: ["auth", "me"] }),
+        ]);
+      } catch {
+        /* best-effort */
+      }
     },
   };
 }

@@ -293,10 +293,20 @@ export async function renderMessage(
     };
   }
 
-  // Fallback path. The fallback strings may contain placeholder
-  // tokens too; substitute against the union of variable names the
-  // caller supplied so unset placeholders stay literal.
-  const fallbackAllowlist = Object.keys(req.variables);
+  // Fallback path. Previously this was `Object.keys(req.variables)`
+  // — every caller-supplied variable name was admitted, including
+  // `*_html` suffix keys that opt OUT of HTML escaping in
+  // `applyVariablesHtmlSafe`. During a DB outage, a caller that
+  // supplied any `*_html` key would have its raw value passed
+  // through unsafely, even if the actual template wouldn't have
+  // allowed that variable. Tighten to an explicit allowlist that
+  // EXCLUDES every `*_html` key — fallbacks are operator-written
+  // strings and never need raw-HTML interpolation. If a fallback
+  // legitimately needs an HTML variable, the lookup-success path
+  // (which carries an explicit `allowedVariables` array) handles it.
+  const fallbackAllowlist = Object.keys(req.variables).filter(
+    (k) => !k.endsWith("_html"),
+  );
   return {
     subject:
       fallback.subject !== null
