@@ -12,7 +12,7 @@
 //   * Non-UUID string → 400 with error: "invalid_query"
 //   * SQL-injection-style string → 400
 //   * UUID with appended operator fragment → 400
-//   * Empty string query param → 400 (empty strings fail uuid validation)
+//   * Empty string query param → 200 (treated as "no filter")
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import express, { type Express } from "express";
@@ -175,5 +175,6 @@ describe("GET /admin/claim-templates — payerProfileId UUID validation (PR chan
     // Confirm no DB select was attempted
     // (stageSupabaseResponse was never called, and the code must have
     //  returned early before reaching the DB call)
+    expect(stageSupabaseResponse).not.toHaveBeenCalled();
   });
 });

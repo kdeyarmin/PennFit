@@ -737,14 +737,14 @@ describe("ingestInboundMmsMedia — outerSignal budget abort (PR change)", () =>
     // Simulate a stalled Twilio CDN response: the fetch never settles.
     // The budget abort triggers PER_MEDIA_TIMEOUT or the outerSignal —
     // whichever fires first — so the function resolves rather than hanging.
-    let fetchAbortController: AbortController | null = null;
+    let fetchAbortController: (() => void) | null = null;
     fetchSpy = (
       vi.spyOn(globalThis, "fetch" as never) as unknown as MockInstance
     ).mockImplementation(async (_url: unknown, init?: unknown) => {
       const signal = (init as RequestInit | undefined)?.signal;
       // Track the abort signal so we can fire it from the test
       if (signal) {
-        fetchAbortController = { abort: () => (signal as AbortSignal).dispatchEvent(new Event("abort")) } as AbortController;
+        fetchAbortController = () => (signal as AbortSignal).dispatchEvent(new Event("abort"));
       }
       // Return a response that never resolves (hangs until aborted)
       return new Promise<Response>((_resolve, reject) => {
@@ -777,7 +777,7 @@ describe("ingestInboundMmsMedia — outerSignal budget abort (PR change)", () =>
     await new Promise<void>((r) => setTimeout(r, 0));
 
     // Abort the stalled fetch — mimics the budget controller firing
-    fetchAbortController?.abort();
+    fetchAbortController?.()
 
     const result = await promise;
 
