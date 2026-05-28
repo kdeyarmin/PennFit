@@ -224,6 +224,20 @@ describe("ObjectStorageService.getObjectEntityUploadURL", () => {
     );
   });
 
+  it("converts relative signed upload URLs to absolute using SUPABASE_URL", async () => {
+    vi.stubEnv("SUPABASE_URL", "https://project.supabase.co");
+    stageStorage("createSignedUploadUrl:attachments", {
+      data: { signedUrl: "/storage/v1/object/upload/sign/attachments/uploads/uuid?token=abc" },
+      error: null,
+    });
+
+    const svc = new ObjectStorageService();
+    const url = await svc.getObjectEntityUploadURL();
+    expect(url).toBe(
+      "https://project.supabase.co/storage/v1/object/upload/sign/attachments/uploads/uuid?token=abc",
+    );
+  });
+
   it("throws when Supabase Storage returns an error", async () => {
     stageStorage("createSignedUploadUrl:attachments", {
       data: null,
@@ -253,6 +267,19 @@ describe("ObjectStorageService.getObjectEntityUploadURL", () => {
     const svc = new ObjectStorageService();
     await expect(svc.getObjectEntityUploadURL()).rejects.toThrow(
       "Failed to mint signed upload URL",
+    );
+  });
+
+  it("throws when signedUrl is relative and SUPABASE_URL is unset", async () => {
+    vi.stubEnv("SUPABASE_URL", "");
+    stageStorage("createSignedUploadUrl:attachments", {
+      data: { signedUrl: "/storage/v1/object/upload/sign/attachments/uploads/uuid?token=abc" },
+      error: null,
+    });
+
+    const svc = new ObjectStorageService();
+    await expect(svc.getObjectEntityUploadURL()).rejects.toThrow(
+      "SUPABASE_URL not set",
     );
   });
 });

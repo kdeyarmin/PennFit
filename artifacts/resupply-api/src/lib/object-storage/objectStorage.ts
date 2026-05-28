@@ -231,7 +231,19 @@ export class ObjectStorageService {
         `Failed to mint signed upload URL for ${bucket}/${path}: ${error?.message ?? "unknown error"}`,
       );
     }
-    return data.signedUrl;
+    if (
+      data.signedUrl.startsWith("https://") ||
+      data.signedUrl.startsWith("http://")
+    ) {
+      return data.signedUrl;
+    }
+    const supabaseUrl = process.env.SUPABASE_URL;
+    if (!supabaseUrl) {
+      throw new Error(
+        `Failed to mint signed upload URL for ${bucket}/${path}: SUPABASE_URL not set`,
+      );
+    }
+    return new URL(data.signedUrl, supabaseUrl).toString();
   }
 
   /**
