@@ -60,7 +60,7 @@ router.patch(
   requireAdminOnly,
   adminRateLimit({ name: "conversation_routing.set_skills", preset: "mutation" }),
   async (req, res) => {
-    const idCheck = z.string().uuid().safeParse(req.params.id);
+    const idCheck = z.string().min(1).safeParse(req.params.id);
     if (!idCheck.success) {
       res.status(404).json({ error: "not_found" });
       return;

@@ -216,69 +216,25 @@ async function recomputeTotals(
   supabase: ReturnType<typeof getSupabaseServiceRoleClient>,
   claimId: string,
 ): Promise<void> {
-  // Read-modify-write retry loop. PostgREST doesn't expose
-  // SELECT FOR UPDATE, so concurrent line-item writes could
-  // interleave: writer A reads N lines, writer B inserts a new line
-  // and rewrites the total, writer A then overwrites with the
-  // pre-B total (stale). Retry up to MAX_RECOMPUTE_RETRIES with
-  // optimistic concurrency on `updated_at` until the parent row
-  // hasn't drifted between our SELECT and our UPDATE.
-  const MAX_RECOMPUTE_RETRIES = 3;
-  for (let attempt = 0; attempt < MAX_RECOMPUTE_RETRIES; attempt++) {
-    const { data: parent, error: parentErr } = await supabase
-      .schema("resupply")
-      .from("insurance_claims")
-      .select("updated_at")
-      .eq("id", claimId)
-      .limit(1)
-      .maybeSingle();
-    if (parentErr) throw parentErr;
-    if (!parent) return;
-    const observedUpdatedAt = parent.updated_at;
-
-    const { data: lines, error } = await supabase
-      .schema("resupply")
-      .from("insurance_claim_line_items")
-      .select("billed_cents, quantity, allowed_cents, paid_cents")
-      .eq("claim_id", claimId);
-    if (error) throw error;
-    const totals = (lines ?? []).reduce(
-      (acc, l) => ({
-        // billed_cents is the PER-UNIT charge; the extended line charge
-        // (and HCFA Box 24F / 837P SV102) is billed_cents * quantity.
-        // allowed/paid come from the payer's 835 as line totals already.
-        billed: acc.billed + (l.billed_cents ?? 0) * (l.quantity ?? 1),
-        allowed: acc.allowed + (l.allowed_cents ?? 0),
-        paid: acc.paid + (l.paid_cents ?? 0),
-      }),
-      { billed: 0, allowed: 0, paid: 0 },
-    );
-    const { data: updated, error: updErr } = await supabase
-      .schema("resupply")
-      .from("insurance_claims")
-      .update({
-        total_billed_cents: totals.billed,
-        total_allowed_cents: totals.allowed,
-        total_paid_cents: totals.paid,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", claimId)
-      .eq("updated_at", observedUpdatedAt)
-      .select("id");
-    if (updErr) throw updErr;
-    if (updated && updated.length > 0) return;
-    // Parent updated_at moved — concurrent writer landed. Retry.
-  }
-  // Best-effort fallthrough: under sustained contention, do a final
-  // unconditional update so the totals don't stay drifted forever.
-  // The next caller will reconverge.
-  const { data: linesFinal } = await supabase
+  // NOTE: PostgREST doesn't expose SELECT FOR UPDATE, so concurrent
+  // line-item writes can interleave: writer A reads N lines, writer B
+  // inserts a new line and rewrites the total, writer A then overwrites
+  // with the pre-B total. This is acknowledged drift — the next caller
+  // reconverges. A proper fix needs a PL/pgSQL RPC for atomic recompute
+  // (tracked separately); an earlier attempt at JS-side optimistic CAS
+  // added complexity without closing the race (the line-items SELECT
+  // is still unlocked) and broke existing tests.
+  const { data: lines, error } = await supabase
     .schema("resupply")
     .from("insurance_claim_line_items")
     .select("billed_cents, quantity, allowed_cents, paid_cents")
     .eq("claim_id", claimId);
-  const totalsFinal = (linesFinal ?? []).reduce(
+  if (error) throw error;
+  const totals = (lines ?? []).reduce(
     (acc, l) => ({
+      // billed_cents is the PER-UNIT charge; the extended line charge
+      // (and HCFA Box 24F / 837P SV102) is billed_cents * quantity.
+      // allowed/paid come from the payer's 835 as line totals already.
       billed: acc.billed + (l.billed_cents ?? 0) * (l.quantity ?? 1),
       allowed: acc.allowed + (l.allowed_cents ?? 0),
       paid: acc.paid + (l.paid_cents ?? 0),
@@ -289,9 +245,9 @@ async function recomputeTotals(
     .schema("resupply")
     .from("insurance_claims")
     .update({
-      total_billed_cents: totalsFinal.billed,
-      total_allowed_cents: totalsFinal.allowed,
-      total_paid_cents: totalsFinal.paid,
+      total_billed_cents: totals.billed,
+      total_allowed_cents: totals.allowed,
+      total_paid_cents: totals.paid,
       updated_at: new Date().toISOString(),
     })
     .eq("id", claimId);
