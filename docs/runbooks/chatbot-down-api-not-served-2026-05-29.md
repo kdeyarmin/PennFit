@@ -17,9 +17,10 @@ _"Something went wrong reaching the chat service … connection issue"_.
 > service domains in place (`cpap-fitter`'s → `pennfit-legacy`, then
 > `resupply-api`'s `penn` → `pennfit`). Verified: `/`=SPA 200,
 > `/api/healthz`=JSON, `/readyz`=ready, `/api/chat`=real Claude reply.
-> **Follow-ups:** delete the now-orphaned `cpap-fitter` service
-> (`pennfit-legacy.up.railway.app`); reconcile the broader DB migration drift
-> (some worker jobs still log `*_select_failed` against missing tables).
+> **Follow-ups:** ~~delete the orphaned `cpap-fitter` service~~ (done — service
+> deleted 2026-05-29); reconcile the broader DB migration drift (some worker
+> jobs still log `*_select_failed` against missing tables — full inventory +
+> triage in [`docs/db-schema-drift-2026-05-29.md`](../db-schema-drift-2026-05-29.md)).
 
 This runbook captures the root cause and the steps taken. The chatbot
 **code was healthy throughout** — the problem was purely deploy topology:
