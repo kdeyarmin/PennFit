@@ -70,6 +70,10 @@ import { registerConversationOrphanAssigneeSweepJob } from "./jobs/conversation-
 
 let bossInstance: PgBoss | null = null;
 let workerReady = false;
+// Single-flight guard for startWorker(): the in-flight start promise,
+// or null when no start is running. Lets boot retries join an
+// in-progress attempt instead of opening a second pg-boss instance.
+let workerStartInFlight: Promise<void> | null = null;
 
 export function isWorkerReady(): boolean {
   return workerReady;
@@ -82,6 +86,10 @@ export function getBoss(): PgBoss | null {
 /**
  * Start and configure the resupply in-process pg-boss worker and register all resupply scheduled and dispatch jobs.
  *
+ * Idempotent and single-flight: a no-op when pg-boss is already running, and when a start is already in progress
+ * (e.g. a boot retry that raced a slow first attempt) callers join the in-flight attempt rather than opening a
+ * second pg-boss connection / advisory-lock holder.
+ *
  * On success this sets the module-level pg-boss instance, attaches structured error and monitor-state handlers,
  * registers recurring resupply and dispatch jobs (reminders, sweeps, campaign ticks, nightly syncs, webhook/inbound
  * dispatchers, workflows, alerts, and other scheduled tasks), and marks the worker ready.
@@ -89,6 +97,23 @@ export function getBoss(): PgBoss | null {
  * @throws If `DATABASE_URL` is not set in the environment.
  */
 export async function startWorker(): Promise<void> {
+  if (bossInstance) {
+    // Already running — keep "ready" idempotent for retry callers.
+    workerReady = true;
+    return;
+  }
+  if (workerStartInFlight) {
+    // A start is already in progress; join it instead of racing a
+    // second boss.start() (which would contend on the advisory lock).
+    return workerStartInFlight;
+  }
+  workerStartInFlight = doStartWorker().finally(() => {
+    workerStartInFlight = null;
+  });
+  return workerStartInFlight;
+}
+
+async function doStartWorker(): Promise<void> {
   const databaseUrl = process.env["DATABASE_URL"];
   if (!databaseUrl) {
     // env-check.ts already validates this at boot, but we keep a

@@ -18,7 +18,7 @@
   },
   "deploy": {
     "startCommand": "node --enable-source-maps artifacts/resupply-api/dist/index.mjs",
-    "healthcheckPath": "/resupply-api/readyz",
+    "healthcheckPath": "/resupply-api/healthz",
     "healthcheckTimeout": 90,
     "drainingSeconds": 30,
     "restartPolicyType": "ON_FAILURE",

@@ -176,6 +176,20 @@ gated variables (Twilio, SendGrid, OpenAI, Stripe, object storage) degrade
 gracefully when unset so dev/preview environments don't need every
 third-party credential.
 
+**HTTP serving is decoupled from the in-process worker** (`src/index.ts`):
+the Express listener binds first, then pg-boss starts in the background and
+retries on a backoff if it can't reach Postgres. A worker/DB hiccup must
+NOT take the whole site down — the static storefront and the public shop
+catalog (Stripe-less preview fallback) need neither the worker nor the DB.
+Accordingly Railway's health check is `/resupply-api/healthz` (liveness,
+no dependency), **not** `/readyz`; `/readyz` still reports DB + worker
+readiness but is a monitoring/alerting signal, not a deploy gate. Don't
+re-couple them (don't `process.exit` on worker-boot failure, don't point
+the health check back at `/readyz`) — that's what blackholed the entire
+site behind one failing dependency. After any deploy, confirm the API is
+actually routed (not just the SPA) with
+`pnpm --filter @workspace/scripts verify:deploy -- https://<host>`.
+
 Required at boot for `resupply-api` (the API refuses to start if any
 of these is missing):
 
