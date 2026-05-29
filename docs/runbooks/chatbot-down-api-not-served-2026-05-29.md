@@ -141,6 +141,29 @@ If it 503s, read `checks` / `errors` in the body:
 (step 1); `queue: "schema_not_initialized"` → pg-boss couldn't reach
 `DATABASE_URL` (step 3).
 
+### 4a. Verify the Railway service is the consolidated server
+
+The live host serves a **static SPA**, which means the service that owns the
+domain is either a leftover static-only service or is misconfigured. In the
+Railway project for `pennfit.up.railway.app`, confirm the service that owns
+the domain has:
+
+- **Source** = GitHub repo `kdeyarmin/PennFit`, branch `main`, **root
+  directory = repo root** (NOT `artifacts/cpap-fitter` — a SPA root makes
+  Railpack serve a static site and ignore the API).
+- **Builder** = Railpack, honoring root `railway.json`
+  (`build.buildCommand = pnpm run build`,
+  `deploy.startCommand = node --enable-source-maps artifacts/resupply-api/dist/index.mjs`).
+- A successful deploy whose logs show **`resupply-api listening`** (proves
+  the Express server — not a static adapter — is the process).
+
+> **Integration-health signal (2026-05-29):** pushing branch
+> `claude/intelligent-meitner-n9TZc` + opening PR #415 produced **no Railway
+> preview deploy / PR check** (only CodeRabbit posted). Per `CLAUDE.md` a
+> push should trigger a Railway preview — its absence suggests the Railway
+> GitHub integration is **disconnected or paused**. If so, reconnect it (or
+> deploy manually) so production actually tracks `main`.
+
 ### 5. Confirm the domain binding
 
 Ensure `pennfit.up.railway.app` (and any custom domain) is bound to the
