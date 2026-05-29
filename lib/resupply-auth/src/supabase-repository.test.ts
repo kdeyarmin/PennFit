@@ -21,7 +21,7 @@
 //   8. Does NOT chain both .eq("email_lower") and .eq("ip") when only
 //      one is given (verifies the conditional application)
 
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { supabaseAuthRepository } from "./supabase-repository";
 import type { ResupplySupabaseClient } from "@workspace/resupply-db";

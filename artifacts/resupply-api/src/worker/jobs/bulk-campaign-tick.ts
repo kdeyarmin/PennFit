@@ -165,7 +165,7 @@ export async function processTick(
     .lt("updated_at", staleSendingBefore);
   if (reclaimErr) {
     log.warn(
-      { err: reclaimErr, campaignId: campaign.id }
+      { err: reclaimErr, campaignId: campaign.id },
       "bulk_campaigns.tick: stale 'sending' reclaim failed (continuing)",
     );
   }
@@ -459,7 +459,7 @@ async function finalizeOrReschedule(
   if (error) {
     // Be conservative: reschedule rather than risk a premature 'sent'.
     log.error(
-      { err: error, campaignId }
+      { err: error, campaignId },
       "bulk_campaigns.tick: remaining-work count failed — rescheduling",
     );
     await enqueueNextTick(boss, campaignId);
