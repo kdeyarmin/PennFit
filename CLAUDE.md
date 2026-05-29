@@ -166,7 +166,17 @@ correctness, not style:
 - **Admin theme stays scoped.** Admin tokens (`--penn-navy`, etc.) live
   in `src/admin.css` under `.admin-root`. Every admin surface must wrap
   its outer `<div>` with `className="admin-root"` so it doesn't clobber
-  storefront brand tokens.
+  storefront brand tokens. Do **not** add a global `@theme` block to
+  `admin.css` to remap shared shadcn tokens (`--color-background`, etc.):
+  Tailwind v4 emits `@theme` utilities **globally**, so they override the
+  storefront's own `.bg-background` / `.text-foreground` / … the moment
+  the lazy-loaded admin stylesheet is in the document — and since the
+  admin values live only under `.admin-root`, every storefront surface
+  then resolves to an undefined variable and renders transparent (this is
+  what left the PennBot panel see-through). Re-point shadcn tokens for the
+  admin pages by overriding the **raw** `--background` / `--foreground` /
+  … variables under `.admin-root` (the storefront utilities already read
+  them). Enforced by `artifacts/cpap-fitter/src/admin.scope.test.ts`.
 
 ## Service boot contract
 
