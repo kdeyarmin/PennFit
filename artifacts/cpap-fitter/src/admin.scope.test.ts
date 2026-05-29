@@ -173,7 +173,7 @@ describe("admin.css scoping", () => {
   it("scopes globally-reaching selectors under .admin-root", () => {
     const GLOBAL_REACH =
       /(^|,)\s*(\*|html|body|:root|#root)\b|:focus-visible|::-webkit-scrollbar/;
-    const ADMIN_ROOT_SCOPED = /^\.admin-root(?:$|[\s>+~:.#\[]|::)/;
+    const ADMIN_ROOT_SCOPED = /^\.admin-root(?:$|[\s>+~:.#[]|::)/;
     const offenders = rules
       .map((r) => r.selectors)
       .filter((selectors) => GLOBAL_REACH.test(selectors))
