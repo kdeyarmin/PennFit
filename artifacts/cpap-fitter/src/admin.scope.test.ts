@@ -99,6 +99,8 @@ function findDeclarations(body: string): string[] {
   return tokens;
 }
 
+// ── Tests ─────────────────────────────────────────────────────────────────────
+
 describe("admin.css scoping", () => {
   const cleaned = stripCssComments(ADMIN_CSS);
   const rules = Array.from(iterateTopLevelRules(cleaned));
@@ -158,6 +160,43 @@ describe("admin.css scoping", () => {
         "(undefined vars → transparent surfaces). Override the raw " +
         "--background/--foreground/… tokens under .admin-root instead.",
     ).toBe(false);
+  });
+
+  // Companion to the rule above: the shadcn token bridge must actually be
+  // present (and scoped). admin.css re-points the RAW shadcn variables
+  // (`--background`, `--foreground`, `--primary`, …) under `.admin-root`
+  // so the storefront-admin pages' `bg-background` / `text-primary` / …
+  // utilities resolve to the Penn-brand palette. Guard that the bridge
+  // stays scoped under `.admin-root` (never leaked to `:root`/global).
+  it("declares the raw shadcn token bridge under .admin-root (not globally)", () => {
+    const BRIDGE_TOKENS = [
+      "--background",
+      "--foreground",
+      "--border",
+      "--input",
+      "--muted",
+      "--muted-foreground",
+      "--primary",
+      "--primary-foreground",
+      "--destructive",
+      "--destructive-foreground",
+    ];
+    for (const token of BRIDGE_TOKENS) {
+      const declRe = new RegExp(`(?:^|[\\s;{])(${token})\\s*:`);
+      const declaringRules = rules.filter((r) => declRe.test(r.body));
+      // Every rule that declares a bridge token must be .admin-root-scoped.
+      for (const r of declaringRules) {
+        const allScoped = r.selectors
+          .split(",")
+          .map((s) => s.trim())
+          .every((s) => s === ".admin-root" || s.startsWith(".admin-root"));
+        expect(
+          allScoped,
+          `'${token}' is declared under '${r.selectors}' — the shadcn bridge ` +
+            `must be scoped to .admin-root so it can't leak onto the storefront.`,
+        ).toBe(true);
+      }
+    }
   });
 
   // admin.css is lazy-loaded into the storefront's document, so any rule
