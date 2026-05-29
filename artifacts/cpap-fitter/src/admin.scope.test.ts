@@ -159,4 +159,35 @@ describe("admin.css scoping", () => {
         "--background/--foreground/… tokens under .admin-root instead.",
     ).toBe(false);
   });
+
+  // admin.css is lazy-loaded into the storefront's document, so any rule
+  // here whose selector ALSO matches storefront elements (:focus-visible,
+  // ::-webkit-scrollbar*, #root, :root, html, body, the universal *) leaks
+  // admin styling onto the storefront — and because admin colours live
+  // only under `.admin-root`, those rules often resolve to undefined
+  // variables off-admin (e.g. the storefront focus ring vanished when
+  // admin.css's global `:focus-visible`, which references the admin-only
+  // `--surface-2`, won the cascade). Such selectors must be scoped under
+  // `.admin-root`. Admin-only class utilities (`.surface-card`, …) are
+  // fine: those class names never appear on the storefront.
+  it("scopes globally-reaching selectors under .admin-root", () => {
+    const GLOBAL_REACH =
+      /(^|\s|,)(\*|html|body|:root|#root|:focus-visible|::-webkit-scrollbar)/;
+    const offenders = rules
+      .map((r) => r.selectors)
+      .filter((selectors) => GLOBAL_REACH.test(selectors))
+      .filter(
+        (selectors) =>
+          !selectors
+            .split(",")
+            .map((s) => s.trim())
+            .every((s) => s.startsWith(".admin-root")),
+      );
+    expect(
+      offenders,
+      "These admin.css selectors reach storefront elements and must be " +
+        "scoped under .admin-root (or moved to the shared index.css): " +
+        JSON.stringify(offenders, null, 2),
+    ).toEqual([]);
+  });
 });
