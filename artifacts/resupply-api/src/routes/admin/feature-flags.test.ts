@@ -315,4 +315,58 @@ describe("GET /admin/feature-flags/activity", () => {
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ activity: [] });
   });
+
+  // Regression guard: a repeated query param (?limit=1&limit=2) makes
+  // req.query.limit an array, which fails z.string() and previously
+  // caused an unhandled ZodError → 500. safeParse must degrade to the
+  // default limit (20) rather than 5xx.
+  it("falls back to default limit when ?limit is a repeated (array) query param", async () => {
+    stubAdmin();
+    stageSupabaseResponse("feature_flag_events", "select", { data: [] });
+
+    // Supertest allows passing the same param twice to force an array.
+    const res = await request(makeApp()).get(
+      "/admin/feature-flags/activity?limit=1&limit=2",
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ activity: [] });
+  });
+
+  it("uses the default limit (20) when the limit param is absent", async () => {
+    stubAdmin();
+    stageSupabaseResponse("feature_flag_events", "select", {
+      data: [
+        {
+          occurred_at: "2026-05-20T00:00:00.000Z",
+          operator_email: "ops@example.com",
+          key: "sms.reminders",
+          previous_enabled: false,
+          next_enabled: true,
+        },
+      ],
+    });
+
+    const res = await request(makeApp()).get("/admin/feature-flags/activity");
+
+    expect(res.status).toBe(200);
+    expect(res.body.activity).toHaveLength(1);
+    expect(res.body.activity[0]).toMatchObject({
+      key: "sms.reminders",
+      from: false,
+      to: true,
+    });
+  });
+
+  it("falls back to default limit when limit is a non-numeric string", async () => {
+    stubAdmin();
+    stageSupabaseResponse("feature_flag_events", "select", { data: [] });
+
+    const res = await request(makeApp()).get(
+      "/admin/feature-flags/activity?limit=abc",
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ activity: [] });
+  });
 });

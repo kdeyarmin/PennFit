@@ -238,12 +238,20 @@ process.on("unhandledRejection", (reason) => {
 const TOTAL_BUDGET_MS = 25_000;
 const WORKER_MIN_BUDGET_MS = 5_000;
 let shuttingDown = false;
+// Handle for the background worker-start retry timer (see
+// scheduleWorkerStart). Cleared on shutdown so a pending retry can't
+// fire mid-drain or keep the process alive.
+let workerRetryTimer: ReturnType<typeof setTimeout> | undefined;
 async function shutdown(signal: string): Promise<void> {
   if (shuttingDown) {
     logger.warn({ signal }, "second shutdown signal — exiting immediately");
     await flushLogsAndExit(0);
   }
   shuttingDown = true;
+  if (workerRetryTimer) {
+    clearTimeout(workerRetryTimer);
+    workerRetryTimer = undefined;
+  }
   logger.info({ signal }, "shutdown: draining in-flight requests");
   const startedAt = Date.now();
   const deadline = startedAt + TOTAL_BUDGET_MS;
@@ -278,31 +286,28 @@ async function shutdown(signal: string): Promise<void> {
 process.on("SIGTERM", () => void shutdown("SIGTERM"));
 process.on("SIGINT", () => void shutdown("SIGINT"));
 
-// How long to wait for pg-boss to initialise before giving up.
-// pg-boss.start() connects to Postgres, runs schema migrations, and
-// acquires an advisory lock — all of which can hang indefinitely if
-// the DB is unreachable or the lock is held by a zombie process.
-// Without a deadline the process would hang silently and the
-// orchestrator would only kill it after its own (much longer) deploy
-// timeout, making the failure window very wide. 30 s is generous
-// enough for a cold Postgres start on a shared instance while still
-// surfacing a connectivity problem quickly.
+// How long to wait for a single pg-boss start attempt before giving
+// up on it. pg-boss.start() connects to Postgres, runs schema
+// migrations, and acquires an advisory lock — any of which can hang
+// indefinitely if the DB is unreachable or the lock is held by a
+// zombie process. The timeout turns a silent hang into a clear,
+// retryable failure. 30 s is generous enough for a cold Postgres start
+// on a shared instance while still surfacing a connectivity problem
+// quickly.
 const START_WORKER_TIMEOUT_MS = 30_000;
 
-async function start(): Promise<void> {
-  // Start pg-boss + register job handlers BEFORE accepting traffic.
-  // The /readyz check probes the `pgboss_resupply.version` table, so
-  // this ordering guarantees readyz can flip green as soon as the
-  // listener is up — no race between traffic and queue bootstrap.
-  // If pg-boss boot fails (bad DATABASE_URL, schema permissions),
-  // the throw bubbles to start()'s caller below, which logs fatal
-  // and exits 1 — the orchestrator then sees a never-ready container
-  // and marks the deploy failed instead of half-promoting it.
-  //
-  // The timeout race ensures a hung pg-boss.start() (e.g. DB
-  // unreachable, advisory lock held by a zombie) surfaces as a clear
-  // timeout error rather than a silent hang that outlasts the
-  // orchestrator's deploy gate.
+// Background worker-start retry cadence. A worker boot failure no
+// longer kills the process (see start() below), so we retry on an
+// exponential backoff until pg-boss comes up — capped so a sustained
+// DB outage settles into a steady once-a-minute probe rather than a
+// tight reconnect loop.
+const WORKER_RETRY_BASE_MS = 5_000;
+const WORKER_RETRY_MAX_MS = 60_000;
+
+// One bounded attempt to start the in-process pg-boss worker. Resolves
+// `true` on success and `false` on any failure (already logged). Never
+// throws — the caller owns the retry decision.
+async function attemptStartWorker(): Promise<boolean> {
   let workerTimeoutHandle: ReturnType<typeof setTimeout> | undefined;
   const workerTimeout = new Promise<never>((_, reject) => {
     workerTimeoutHandle = setTimeout(() => {
@@ -313,13 +318,66 @@ async function start(): Promise<void> {
       );
     }, START_WORKER_TIMEOUT_MS);
   });
-
   try {
     await Promise.race([startWorker(), workerTimeout]);
+    return true;
+  } catch (err) {
+    logger.error(
+      { err: serializeErr(err), event: "worker_start_failed" },
+      "worker failed to start — HTTP stays up; the worker will retry in the background",
+    );
+    return false;
   } finally {
     clearTimeout(workerTimeoutHandle);
   }
+}
 
+// Start the worker in the background, retrying with backoff until it
+// succeeds. Decoupled from the HTTP listener so a DB/queue problem
+// degrades to "background jobs are paused" instead of taking the whole
+// public site down. `startWorker()` is idempotent (it no-ops when
+// pg-boss is already running), so a retry that races a slow-but-
+// eventually-successful first attempt is harmless.
+function scheduleWorkerStart(attempt = 0): void {
+  if (shuttingDown) return;
+  void attemptStartWorker().then((ok) => {
+    if (ok || shuttingDown) return;
+    const delay = Math.min(
+      WORKER_RETRY_MAX_MS,
+      WORKER_RETRY_BASE_MS * 2 ** attempt,
+    );
+    logger.warn(
+      {
+        event: "worker_retry_scheduled",
+        attempt: attempt + 1,
+        delay_ms: delay,
+      },
+      `worker start failed — retrying in ${Math.round(delay / 1000)}s`,
+    );
+    workerRetryTimer = setTimeout(
+      () => scheduleWorkerStart(attempt + 1),
+      delay,
+    );
+    // Don't let the retry timer alone keep the event loop alive — if
+    // everything else has closed, the process should still be free to
+    // exit.
+    workerRetryTimer.unref?.();
+  });
+}
+
+async function start(): Promise<void> {
+  // Bring the HTTP listener up FIRST, then start the worker in the
+  // background. Previously the listener only bound AFTER startWorker()
+  // resolved, and a worker failure exited the process — so a transient
+  // DB/queue problem at deploy time took the ENTIRE site dark: with no
+  // healthy instance, Railway's edge returns a 404 for every path,
+  // including the static storefront and the public shop catalog,
+  // neither of which needs the worker or even the database (the catalog
+  // has a Stripe-less preview fallback). The /readyz probe still
+  // reports the worker's true state for monitoring and alerting; we
+  // just no longer hold the front door shut on it. (Railway's health
+  // check is /healthz — liveness — so a worker hiccup can't blackhole
+  // the deploy; see railway.json.)
   await new Promise<void>((resolve, reject) => {
     httpServer.once("error", reject);
     httpServer.listen(port, () => {
@@ -336,12 +394,17 @@ async function start(): Promise<void> {
       resolve();
     });
   });
+
+  scheduleWorkerStart();
 }
 
 start().catch((err) => {
+  // We only reach here if the HTTP listener itself fails to bind (e.g.
+  // the port is already in use). Worker failures are handled by the
+  // background retry above and never reject start().
   logger.fatal(
     { err: serializeErr(err) },
-    "fatal: resupply-api failed to start",
+    "fatal: resupply-api failed to start (HTTP listener)",
   );
   void flushLogsAndExit(1);
 });

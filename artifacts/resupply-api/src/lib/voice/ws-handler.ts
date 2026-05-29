@@ -88,6 +88,10 @@ export async function handleVoiceWsConnection(
   let streamSid: string | null = null;
   let twilioCallSid: string | null = pending.twilioCallSid ?? null;
   let closed = false;
+  // Resolver for the promise this function returns. Called from
+  // `finalizeAndClose` so the awaiter completes on EVERY close path
+  // (clean session.closed OR a forced cleanup), not just session.closed.
+  let resolveClosed: (() => void) | null = null;
 
   // Accumulate finalized transcript turns from the bridge so the
   // post-call summarizer can see the whole arc of the conversation
@@ -181,9 +185,12 @@ export async function handleVoiceWsConnection(
     );
     bridge.close("max-duration-exceeded");
     // Same hung-OpenAI-WS safety net: if `session.closed` doesn't
-    // arrive within 5s of bridge.close(), force the cleanup. We
-    // can't reference scheduleForceCleanup here (declared below in
-    // the same function), so duplicate the minimal teardown.
+    // arrive within 5s of bridge.close(), force the FULL teardown via
+    // the shared `finalizeAndClose` so the conversation is still
+    // finalized and the Deepgram transcript + post-call summary run
+    // even when the OpenAI socket is wedged. (`finalizeAndClose` is
+    // declared below but only invoked here asynchronously, so the
+    // forward reference is safe.)
     setTimeout(() => {
       if (closed) return;
       logger.warn(
@@ -194,19 +201,7 @@ export async function handleVoiceWsConnection(
         },
         "voice ws: bridge.close did not produce session.closed in time after max-duration — forcing cleanup",
       );
-      closed = true;
-      if (deepgramSession) {
-        try {
-          deepgramSession.close();
-        } catch {
-          /* best-effort */
-        }
-      }
-      try {
-        ws.close(1011, "force-cleanup-max-duration");
-      } catch {
-        /* already closed */
-      }
+      finalizeAndClose("max-duration-exceeded", { forced: true });
     }, 5_000).unref?.();
   }, MAX_CALL_DURATION_MS);
   // Don't keep the Node event loop alive for the timer; if the process
@@ -307,6 +302,105 @@ export async function handleVoiceWsConnection(
     }
   }
 
+  // Idempotent end-of-call teardown. Runs the SAME side effects whether
+  // the OpenAI Realtime WS closed cleanly (`session.closed`) or we had
+  // to force a cleanup because that socket wedged at the TCP/TLS layer
+  // (max-duration timer / Twilio WS close/error). Before this was
+  // extracted, the two force-cleanup paths only closed Deepgram + the
+  // Twilio WS and set `closed = true` — so on a hung OpenAI socket the
+  // conversation was never finalized, the Deepgram audit transcript (a
+  // PHI medical record) was silently lost, and the post-call summary +
+  // `recommendsHandoff` CSR routing never ran (a distressed-patient
+  // handoff would be dropped). The `closed` guard makes this run exactly
+  // once regardless of how many paths fire.
+  const finalizeAndClose = (reason: string, opts: { forced: boolean }): void => {
+    if (closed) return;
+    closed = true;
+    if (maxDurationTimer !== null) {
+      clearTimeout(maxDurationTimer);
+      maxDurationTimer = null;
+    }
+    if (forceCleanupTimer !== null) {
+      clearTimeout(forceCleanupTimer);
+      forceCleanupTimer = null;
+    }
+    logger.info(
+      {
+        event: "voice_session_closed",
+        reason,
+        forced: opts.forced,
+        conversationId: pending.conversationId,
+      },
+      "voice session closed",
+    );
+    void finalizeConversation(
+      supabase,
+      pending.conversationId,
+      twilioCallSid,
+      reason,
+    ).catch((err) => {
+      logger.error(
+        {
+          event: "voice_finalize_failed",
+          err: serializeErr(err),
+          conversationId: pending.conversationId,
+        },
+        "voice conversation finalise failed",
+      );
+    });
+    // Close Deepgram cleanly (sends a CloseStream frame; the accumulated
+    // final transcripts in `deepgramTurns` are already captured).
+    if (deepgramSession) {
+      try {
+        deepgramSession.close();
+      } catch {
+        // best-effort
+      }
+      if (deepgramErrorCount > 0) {
+        logger.warn(
+          {
+            event: "voice_deepgram_errors_summary",
+            count: deepgramErrorCount,
+            conversationId: pending.conversationId,
+          },
+          "voice deepgram: parallel transcription error count for this call",
+        );
+      }
+    }
+    // Write the Deepgram-side transcript to the audit log as its own row
+    // when we have one — a distinct clinician-review artifact.
+    if (deepgramTurns.length > 0) {
+      void writeDeepgramAuditTranscript(
+        pending.conversationId,
+        twilioCallSid,
+        deepgramTurns,
+      );
+    }
+    // Fire-and-forget post-call summarization (Claude Sonnet 4.6 when
+    // ANTHROPIC_API_KEY is set; otherwise a no-op). A flaky model call
+    // must NEVER delay hangup, so the promise is detached.
+    void runPostCallSummary({
+      conversationId: pending.conversationId,
+      twilioCallSid,
+      practiceName: config.practiceName ?? "PennPaps",
+      endReason: reason,
+      turns: turnHistory,
+    });
+    try {
+      ws.close(
+        opts.forced ? 1011 : 1000,
+        opts.forced ? "force-cleanup" : "session-closed",
+      );
+    } catch {
+      /* already closed */
+    }
+    if (resolveClosed) {
+      const resolve = resolveClosed;
+      resolveClosed = null;
+      resolve();
+    }
+  };
+
   bridge.on("session.opened", () => {
     logger.info(
       { event: "voice_session_opened", conversationId: pending.conversationId },
@@ -370,93 +464,10 @@ export async function handleVoiceWsConnection(
   });
 
   bridge.on("session.closed", (info) => {
-    if (closed) return;
-    closed = true;
-    if (maxDurationTimer !== null) {
-      clearTimeout(maxDurationTimer);
-      maxDurationTimer = null;
-    }
-    if (forceCleanupTimer !== null) {
-      clearTimeout(forceCleanupTimer);
-      forceCleanupTimer = null;
-    }
-    logger.info(
-      {
-        event: "voice_session_closed",
-        info,
-        conversationId: pending.conversationId,
-      },
-      "voice session closed",
-    );
-    void finalizeConversation(
-      supabase,
-      pending.conversationId,
-      twilioCallSid,
-      info.reason,
-    ).catch((err) => {
-      logger.error(
-        {
-          event: "voice_finalize_failed",
-          err: serializeErr(err),
-          conversationId: pending.conversationId,
-        },
-        "voice conversation finalise failed",
-      );
-    });
-    // Close Deepgram cleanly (sends a CloseStream frame; the
-    // accumulated final transcripts in `deepgramTurns` are already
-    // captured). Failures here are non-fatal — the session would
-    // close anyway when the parent WS closes.
-    if (deepgramSession) {
-      try {
-        deepgramSession.close();
-      } catch {
-        // best-effort
-      }
-      // Single end-of-call summary if Deepgram had any errors. The
-      // WARN already fired at first error; this gives ops a count
-      // signal so dashboards can rank "calls with N Deepgram errors"
-      // even though the per-error noise was suppressed.
-      if (deepgramErrorCount > 0) {
-        logger.warn(
-          {
-            event: "voice_deepgram_errors_summary",
-            count: deepgramErrorCount,
-            conversationId: pending.conversationId,
-          },
-          "voice deepgram: parallel transcription error count for this call",
-        );
-      }
-    }
-    // Write the Deepgram transcript to the audit log as its own row
-    // when we have one. The post-call summary uses the SAME turn
-    // history below, but the raw Deepgram-side transcript is a
-    // distinct artifact worth keeping for clinician review.
-    if (deepgramTurns.length > 0) {
-      void writeDeepgramAuditTranscript(
-        pending.conversationId,
-        twilioCallSid,
-        deepgramTurns,
-      );
-    }
-    // Fire-and-forget post-call summarization. Runs against Claude
-    // Sonnet 4.6 when ANTHROPIC_API_KEY is set; otherwise no-op (the
-    // helper returns null). A flaky model call must NEVER delay
-    // hangup, so the promise is detached and errors only land in the
-    // log. Result is persisted to the audit log via a
-    // `voice.call.summary` action.
-    void runPostCallSummary({
-      conversationId: pending.conversationId,
-      twilioCallSid,
-      practiceName: config.practiceName ?? "PennPaps",
-      endReason: info.reason,
-      turns: turnHistory,
-    });
-    try {
-      ws.close(1000, "session-closed");
-    } catch {
-      /* already closed */
-    }
+    // Clean close from the OpenAI Realtime side. Run the shared,
+    // idempotent teardown (finalize + Deepgram transcript + post-call
+    // summary + Twilio WS close). `forced: false` ⇒ a normal 1000 close.
+    finalizeAndClose(info.reason, { forced: false });
   });
 
   // RealtimeClient connects in its constructor; no explicit connect() call.
@@ -517,23 +528,10 @@ export async function handleVoiceWsConnection(
         },
         "voice ws: bridge.close did not produce session.closed in time — forcing cleanup",
       );
-      closed = true;
-      if (maxDurationTimer !== null) {
-        clearTimeout(maxDurationTimer);
-        maxDurationTimer = null;
-      }
-      if (deepgramSession) {
-        try {
-          deepgramSession.close();
-        } catch {
-          /* best-effort */
-        }
-      }
-      try {
-        ws.close(1011, "force-cleanup");
-      } catch {
-        /* already closed */
-      }
+      // Run the FULL shared teardown (not just a socket close) so a
+      // wedged OpenAI WS still finalizes the conversation and persists
+      // the Deepgram transcript + post-call summary.
+      finalizeAndClose(reason, { forced: true });
     }, FORCE_CLEANUP_MS);
     forceCleanupTimer.unref?.();
   };
@@ -556,10 +554,18 @@ export async function handleVoiceWsConnection(
     scheduleForceCleanup("twilio-ws-error");
   });
 
-  // Resolve once the bridge has actually emitted `session.closed`. The
-  // integration test awaits this; production callers ignore.
+  // Resolve once the call has fully torn down via ANY path —
+  // `session.closed` OR a forced cleanup (`finalizeAndClose` invokes
+  // `resolveClosed`). The previous version resolved only on
+  // `bridge.once("session.closed")`, which never fires when the OpenAI
+  // WS is wedged, so the returned promise leaked on every force-cleanup
+  // path. The integration test awaits this; production callers ignore.
   await new Promise<void>((resolve) => {
-    bridge.once("session.closed", () => resolve());
+    resolveClosed = resolve;
+    // Defensive: if teardown somehow already completed before we wired
+    // the resolver (handlers fire async after this point, so this is
+    // not expected), resolve immediately to avoid hanging.
+    if (closed) resolve();
   });
 }
 

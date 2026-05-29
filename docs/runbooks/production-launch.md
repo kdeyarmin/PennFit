@@ -311,12 +311,33 @@ Railway dashboard → service → Redeploy   (or push to main, depending on your
 ```
 
 Smoke tests — every one of these should pass before you announce the
-launch:
+launch. Start with the automated reachability gate, which catches the
+single most common deploy regression: the public domain serving the
+SPA but **not** routing `/resupply-api/*` to a live API process (every
+JSON API call then 404s and the shop page shows "Failed to load shop
+products (404)").
 
-- [ ] `GET https://pennpaps.com/resupply-api/healthz` → `200`.
+- [ ] `pnpm --filter @workspace/scripts verify:deploy -- https://pennpaps.com`
+      exits `0`. It asserts `/resupply-api/healthz` and
+      `/resupply-api/shop/products` return real JSON (not a `404`, not
+      the SPA HTML shell) and that `/` serves the SPA. A FAIL with
+      "the API tree is NOT mounted on this host" means the domain is
+      bound to a static / SPA-only service instead of the single
+      Express service defined by `railway.json`'s `startCommand` —
+      rebind the domain to that service and redeploy.
+- [ ] `GET https://pennpaps.com/resupply-api/healthz` → `200` JSON
+      `{"status":"ok"}`. This is also Railway's configured health
+      check (liveness): it touches no dependency, so the process
+      reports healthy as soon as it is serving — a DB/queue hiccup at
+      boot can no longer blackhole the entire site behind a failing
+      health check.
 - [ ] `GET https://pennpaps.com/resupply-api/readyz` → `200`. This
-      confirms the DB pool, Supabase client, and the in-process worker
-      all booted.
+      confirms the Supabase client AND the in-process worker booted.
+      Unlike `/healthz`, `/readyz` returns `503` while the DB or the
+      pg-boss worker is down — that is now a monitoring / alerting
+      signal, **not** a deploy gate. The worker retries in the
+      background and the public storefront keeps serving the Stripe
+      catalog meanwhile.
 - [ ] The bootstrap admin from §5 can complete `/admin/reset-password`,
       sign in at `/admin/sign-in`, and reach `/admin` with the
       `admin` role.

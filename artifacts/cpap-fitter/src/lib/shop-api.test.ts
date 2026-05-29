@@ -10,7 +10,11 @@
 
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { Mock } from "vitest";
-import { submitFitterLead, submitFitterComplete } from "./shop-api";
+import {
+  submitFitterLead,
+  submitFitterComplete,
+  fetchShopProducts,
+} from "./shop-api";
 
 const ORIGINAL_FETCH = globalThis.fetch;
 
@@ -297,5 +301,106 @@ describe("submitFitterComplete", () => {
     await expect(submitFitterComplete(VALID_COMPLETE_INPUT)).rejects.toThrow(
       "http_429",
     );
+  });
+});
+
+describe("fetchShopProducts", () => {
+  const CATALOG = {
+    previewMode: false,
+    categories: ["mask"],
+    products: [{ id: "prod_1", name: "Mask" }],
+    byCategory: { mask: [{ id: "prod_1", name: "Mask" }] },
+  };
+
+  test("returns the catalog on a 200 JSON response", async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => CATALOG,
+    });
+
+    const result = await fetchShopProducts();
+    expect("unavailable" in result).toBe(false);
+    expect(result).toMatchObject({
+      previewMode: false,
+      products: [{ id: "prod_1", name: "Mask" }],
+    });
+  });
+
+  test("fetches /resupply-api/shop/products with a JSON Accept header", async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => CATALOG,
+    });
+
+    await fetchShopProducts();
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("/resupply-api/shop/products");
+    expect((init.headers as Record<string, string>).Accept).toBe(
+      "application/json",
+    );
+  });
+
+  test("degrades to 'unavailable' (with the server message) on 503", async () => {
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 503,
+      json: async () => ({ message: "Stripe is down" }),
+    });
+
+    const result = await fetchShopProducts();
+    expect(result).toEqual({ unavailable: true, message: "Stripe is down" });
+  });
+
+  // Regression: a misconfigured deploy where /resupply-api/* isn't
+  // routed to a live API lands this call on the SPA history-fallback,
+  // which returns 404 for a JSON request. We must NOT throw
+  // "Failed to load shop products (404)" at the patient — degrade to
+  // the friendly "unavailable" card instead.
+  test("degrades to 'unavailable' on 404 instead of throwing", async () => {
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 404,
+      json: async () => {
+        throw new SyntaxError("no body");
+      },
+    });
+
+    const result = await fetchShopProducts();
+    expect("unavailable" in result).toBe(true);
+    if ("unavailable" in result) {
+      expect(result.unavailable).toBe(true);
+      expect(result.message).toMatch(/isn't available/i);
+    }
+  });
+
+  // A 200 whose body is the SPA HTML shell (some static hosts answer
+  // unknown paths with index.html + 200) must not throw a SyntaxError
+  // out of res.json() — it degrades gracefully.
+  test("degrades to 'unavailable' when a 200 body isn't JSON", async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => {
+        throw new SyntaxError("Unexpected token < in JSON");
+      },
+    });
+
+    const result = await fetchShopProducts();
+    expect("unavailable" in result).toBe(true);
+  });
+
+  // 5xx still throws so the shop page's one-shot auto-retry can ride
+  // out a transient server blip (existing behavior, preserved).
+  test("throws on a 500 so the caller can auto-retry", async () => {
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 500,
+      json: async () => ({}),
+    });
+
+    await expect(fetchShopProducts()).rejects.toThrow(/500/);
   });
 });
