@@ -147,8 +147,12 @@ describe("happy path — all checks pass", () => {
     expect(stdout).not.toContain("Not safe to launch.");
   });
 
-  it("exits 0 and warns (not fails) when NODE_ENV is not production", () => {
-    const env = withEnv({ NODE_ENV: "staging" });
+  it("exits 0 and warns (not fails) when NODE_ENV is a recognized non-production value", () => {
+    // NODE_ENV must be one of development|test|production. A recognized
+    // non-production value (here "development") downgrades the prod-only
+    // gates to advisory WARN and exits 0. (An *unrecognized* value such
+    // as "staging" is a hard FAIL — see the NODE_ENV variants block.)
+    const env = withEnv({ NODE_ENV: "development" });
     const { exitCode, stdout } = run(env);
     expect(exitCode).toBe(0);
     expect(stdout).toContain("Launch-eligible with warnings.");
@@ -180,12 +184,18 @@ describe("boot-required variables — exit 1 on failure", () => {
     expect(stdout).toContain("placeholder");
   });
 
-  it("fails when DATABASE_URL contains 'replace_me'", () => {
+  it("fails when DATABASE_URL points at localhost in production (even with a replace_me substring)", () => {
+    // refusePlaceholder is exact-match only now (it no longer matches a
+    // bare "replace_me" substring — see the dedicated test below), so
+    // this value is NOT flagged as a placeholder. It still fails: the
+    // host is localhost and NODE_ENV=production, which the prod-only
+    // localhost guard rejects before anything else can pass it.
     const { exitCode, stdout } = run(
       withEnv({ DATABASE_URL: "postgres://replace_me@localhost:5432/pennpaps" }),
     );
     expect(exitCode).toBe(1);
-    expect(stdout).toContain("placeholder");
+    expect(stdout).toContain("DATABASE_URL");
+    expect(stdout).toContain("localhost");
   });
 
   it("fails when DATABASE_URL does not start with postgres:// or postgresql://", () => {
@@ -219,10 +229,12 @@ describe("boot-required variables — exit 1 on failure", () => {
   });
 
   it("passes when DATABASE_URL points at localhost outside production mode", () => {
-    // Staging / dev / preview is allowed to point at a local DB —
-    // the rejection above is prod-only.
+    // dev / test / preview is allowed to point at a local DB — the
+    // localhost rejection above is prod-only. NODE_ENV must be a
+    // recognized value (development|test|production), so use
+    // "development" here to exercise the non-prod path.
     const env = withEnv({
-      NODE_ENV: "staging",
+      NODE_ENV: "development",
       DATABASE_URL: "postgres://localuser:localpass@localhost:5432/pennpaps_local",
     });
     const { exitCode } = run(env);
@@ -284,15 +296,19 @@ describe("boot-required variables — exit 1 on failure", () => {
   });
 
   it("fails when SUPABASE_STORAGE_BUCKET_PRIVATE is missing even outside production mode", () => {
-    // The worker crash isn't gated by NODE_ENV — staging/preview deploys
+    // The worker crash isn't gated by NODE_ENV — dev/test/preview deploys
     // hit the same boot-time throw, so preflight fails unconditionally.
-    const { exitCode } = run(
+    // NODE_ENV=development (a recognized non-prod value) isolates the
+    // bucket check so the exit-1 cannot be attributed to the NODE_ENV
+    // gate instead.
+    const { exitCode, stdout } = run(
       withEnv({
-        NODE_ENV: "staging",
+        NODE_ENV: "development",
         SUPABASE_STORAGE_BUCKET_PRIVATE: undefined,
       }),
     );
     expect(exitCode).toBe(1);
+    expect(stdout).toContain("SUPABASE_STORAGE_BUCKET_PRIVATE");
   });
 
   it("fails when RESUPPLY_LINK_HMAC_KEY is missing", () => {
@@ -498,7 +514,7 @@ describe("Twilio checks", () => {
 
   it("passes when TWILIO_ACCOUNT_SID is not set (Twilio entirely optional in non-prod)", () => {
     const env = withEnv({
-      NODE_ENV: "staging",
+      NODE_ENV: "development",
       TWILIO_ACCOUNT_SID: undefined,
       TWILIO_AUTH_TOKEN: undefined,
       TWILIO_MESSAGING_SERVICE_SID: undefined,
@@ -551,7 +567,7 @@ describe("public URL checks in production mode", () => {
 
   it("does not reject http:// public URLs in non-production mode", () => {
     const env = withEnv({
-      NODE_ENV: "staging",
+      NODE_ENV: "development",
       SHOP_PUBLIC_BASE_URL: "http://localhost:3000",
       REMINDER_PUBLIC_BASE_URL: "http://localhost:3001",
       RESUPPLY_VOICE_PUBLIC_BASE_URL: "http://localhost:3002",
@@ -570,7 +586,7 @@ describe("public URL checks in production mode", () => {
 
 describe("warnings that do not block launch", () => {
   it("warns but exits 0 when STRIPE_SECRET_KEY is missing in non-production mode", () => {
-    const env = withEnv({ NODE_ENV: "staging", STRIPE_SECRET_KEY: undefined });
+    const env = withEnv({ NODE_ENV: "development", STRIPE_SECRET_KEY: undefined });
     const { exitCode, stdout } = run(env);
     expect(exitCode).toBe(0);
     expect(stdout).toContain("WARN");
@@ -630,17 +646,23 @@ describe("warnings that do not block launch", () => {
     expect(stdout).toContain("WARN");
   });
 
-  it("warns but exits 0 when NODE_ENV is not set (defaults to development)", () => {
+  it("fails (exit 1) when NODE_ENV is not set — it no longer silently defaults to development", () => {
+    // An undefined NODE_ENV used to default to "development", silently
+    // downgrading every production gate from FAIL to WARN. A deploy
+    // environment that simply never exported NODE_ENV would then pass
+    // preflight while still being a production target. It is now a hard
+    // FAIL so the misconfiguration is caught pre-deploy.
     const env = withEnv({ NODE_ENV: undefined });
     const { exitCode, stdout } = run(env);
-    expect(exitCode).toBe(0);
+    expect(exitCode).toBe(1);
     expect(stdout).toContain("NODE_ENV");
-    expect(stdout).toContain("WARN");
+    expect(stdout).toContain("FAIL");
+    expect(stdout).toContain("Not safe to launch.");
   });
 
   it("warns but exits 0 when SENDGRID_FROM_EMAIL is unset in non-prod", () => {
     const env = withEnv({
-      NODE_ENV: "staging",
+      NODE_ENV: "development",
       SENDGRID_FROM_EMAIL: undefined,
     });
     const { exitCode, stdout } = run(env);
@@ -799,20 +821,26 @@ describe("edge cases and regression", () => {
 
   it("accepts sk_test_ key in non-production mode without failing", () => {
     const env = withEnv({
-      NODE_ENV: "staging",
+      NODE_ENV: "development",
       STRIPE_SECRET_KEY: "sk_test" + "_abc123",
     });
     const { exitCode } = run(env);
     expect(exitCode).toBe(0);
   });
 
-  it("refusePlaceholder catches 'replace_me' substring anywhere in value", () => {
-    // e.g. DATABASE_URL contains replace_me somewhere in the hostname
+  it("refusePlaceholder is exact-match only — a 'replace_me' substring in an otherwise valid value is NOT flagged", () => {
+    // refusePlaceholder used to fire on value.includes("replace_me"),
+    // but that substring check false-positived on legitimate values
+    // that happen to contain the literal (e.g. an admin email like
+    // replace_me_review@pennpaps.com). It now matches the .env.example
+    // placeholders by exact equality only. So a DATABASE_URL whose
+    // userinfo contains "replace_me" but whose host is a real
+    // (non-localhost) host passes in production.
     const { exitCode, stdout } = run(
       withEnv({ DATABASE_URL: "postgres://replace_me:pass@host:5432/db" }),
     );
-    expect(exitCode).toBe(1);
-    expect(stdout).toContain("placeholder");
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain("Ready for launch.");
   });
 
   it("TWILIO_ACCOUNT_SID placeholder ACxxx... is caught as failure", () => {
@@ -955,7 +983,7 @@ describe("@example.* email scan for arbitrary _EMAIL vars", () => {
 describe("non-production mode — missing vendor vars warn rather than fail", () => {
   it("warns (not fails) when STRIPE_WEBHOOK_SIGNING_SECRET is missing in non-prod", () => {
     const env = withEnv({
-      NODE_ENV: "staging",
+      NODE_ENV: "development",
       STRIPE_WEBHOOK_SIGNING_SECRET: undefined,
     });
     const { exitCode, stdout } = run(env);
@@ -966,7 +994,7 @@ describe("non-production mode — missing vendor vars warn rather than fail", ()
 
   it("warns (not fails) when SENDGRID_API_KEY is missing in non-prod", () => {
     const env = withEnv({
-      NODE_ENV: "staging",
+      NODE_ENV: "development",
       SENDGRID_API_KEY: undefined,
     });
     const { exitCode, stdout } = run(env);
@@ -977,7 +1005,7 @@ describe("non-production mode — missing vendor vars warn rather than fail", ()
 
   it("warns (not fails) when TWILIO_AUTH_TOKEN is missing in non-prod", () => {
     const env = withEnv({
-      NODE_ENV: "staging",
+      NODE_ENV: "development",
       TWILIO_AUTH_TOKEN: undefined,
     });
     const { exitCode, stdout } = run(env);
@@ -988,7 +1016,7 @@ describe("non-production mode — missing vendor vars warn rather than fail", ()
 
   it("warns (not fails) when a public URL var is missing in non-prod", () => {
     const env = withEnv({
-      NODE_ENV: "staging",
+      NODE_ENV: "development",
       SHOP_PUBLIC_BASE_URL: undefined,
     });
     const { exitCode, stdout } = run(env);
@@ -999,7 +1027,7 @@ describe("non-production mode — missing vendor vars warn rather than fail", ()
 
   it("passes (not warns) when RESUPPLY_FITTER_REENGAGE_ENABLED is '0' in non-prod", () => {
     const env = withEnv({
-      NODE_ENV: "staging",
+      NODE_ENV: "development",
       RESUPPLY_FITTER_REENGAGE_ENABLED: "0",
     });
     const { exitCode, stdout } = run(env);
@@ -1010,7 +1038,7 @@ describe("non-production mode — missing vendor vars warn rather than fail", ()
 
   it("passes (not warns) when RESUPPLY_FITTER_REENGAGE_ENABLED is unset in non-prod", () => {
     const env = withEnv({
-      NODE_ENV: "staging",
+      NODE_ENV: "development",
       RESUPPLY_FITTER_REENGAGE_ENABLED: undefined,
     });
     const { exitCode, stdout } = run(env);
@@ -1043,11 +1071,11 @@ describe("non-production mode — missing vendor vars warn rather than fail", ()
     expect(accountSidFailLine).toBe(false);
   });
 
-  it("warns (not fails) for TWILIO_ACCOUNT_SID unset in prod — exit 0 when AUTH_TOKEN is also omitted via non-prod", () => {
+  it("exits 0 in non-prod when the whole Twilio trio is omitted (TWILIO_ACCOUNT_SID unset produces no entry)", () => {
     // In non-prod, TWILIO_ACCOUNT_SID unset simply produces no entry at all
     // (the tsid===undefined && prodMode guard is false).
     const env = withEnv({
-      NODE_ENV: "staging",
+      NODE_ENV: "development",
       TWILIO_ACCOUNT_SID: undefined,
       TWILIO_AUTH_TOKEN: undefined,
       TWILIO_MESSAGING_SERVICE_SID: undefined,
@@ -1095,8 +1123,8 @@ describe("NODE_ENV variants", () => {
 describe("SENDGRID_FROM_EMAIL in non-production mode", () => {
   it("passes (not warns) when SENDGRID_FROM_EMAIL is set to any valid address in non-prod", () => {
     const env = withEnv({
-      NODE_ENV: "staging",
-      SENDGRID_FROM_EMAIL: "staging-sender@mycompany.com",
+      NODE_ENV: "development",
+      SENDGRID_FROM_EMAIL: "dev-sender@mycompany.com",
     });
     const { exitCode, stdout } = run(env);
     expect(exitCode).toBe(0);
@@ -1149,7 +1177,7 @@ describe("RESUPPLY_ALLOWED_ORIGINS / RAILWAY_PUBLIC_DOMAIN in production", () =>
 
   it("skips the check in non-production mode", () => {
     const env = withEnv({
-      NODE_ENV: "staging",
+      NODE_ENV: "development",
       RESUPPLY_ALLOWED_ORIGINS: undefined,
       RAILWAY_PUBLIC_DOMAIN: undefined,
     });
