@@ -44,6 +44,11 @@ import { createQueueWithDlq, VENDOR_SEND_QUEUE_OPTS } from "../lib/queue-options
 const SEND_JOB = "recall-notifications.send";
 const SEND_CRON = "23 4 * * *";
 const BATCH_SIZE = 50;
+// How long a row may sit in the transient 'sending' state before a
+// later sweep assumes the claiming worker died and re-queues it. Must
+// comfortably exceed one row's vendor round-trip (seconds) so a slow-
+// but-live send is never yanked; well under the daily cron cadence.
+const SENDING_LEASE_MS = 10 * 60 * 1000;
 
 interface SweepStats {
   attempted: number;
@@ -238,6 +243,29 @@ async function runRecallSendSweepInner(
   const supabase = getSupabaseServiceRoleClient();
   const stats: SweepStats = { attempted: 0, sent: 0, failed: 0, skipped: 0 };
 
+  // Phase 0 — reclaim orphaned claims. A worker that flipped a row to
+  // 'sending' (below) and then crashed before the terminal flip would
+  // otherwise leave it stuck forever — the SELECT only picks 'queued',
+  // so the patient would never get the recall notice. Re-queue any
+  // 'sending' row older than the lease so the next pass retries it. The
+  // generous lease means a slow-but-live send is never reclaimed out
+  // from under itself.
+  const leaseCutoff = new Date(Date.now() - SENDING_LEASE_MS).toISOString();
+  const { error: reclaimErr } = await supabase
+    .schema("resupply")
+    .from("recall_notifications")
+    .update({ status: "queued", updated_at: new Date().toISOString() })
+    .eq("status", "sending")
+    .lt("updated_at", leaseCutoff);
+  if (reclaimErr) {
+    // Non-fatal: a reclaim hiccup shouldn't abort the whole sweep. Worst
+    // case the stuck row waits for the next pass.
+    logger.warn(
+      { err: reclaimErr.message },
+      "recall-notifications.send: stale-claim reclaim failed",
+    );
+  }
+
   const { data: queued, error } = await supabase
     .schema("resupply")
     .from("recall_notifications")
@@ -299,6 +327,33 @@ async function runRecallSendSweepInner(
       continue;
     }
 
+    // Claim the row exclusively BEFORE the vendor call: queued ->
+    // sending. Only the worker whose UPDATE matches status='queued'
+    // proceeds; a concurrent worker (in-process OR a horizontally-scaled
+    // instance) that already claimed it gets 0 rows back and skips — so
+    // the recall notice is sent at most once per row. This is the
+    // cross-process guarantee the in-process single-flight guard alone
+    // cannot give. Phase 0 above re-queues a claim whose worker died.
+    const claimIso = new Date().toISOString();
+    const { data: claimed, error: claimErr } = await supabase
+      .schema("resupply")
+      .from("recall_notifications")
+      .update({ status: "sending", updated_at: claimIso })
+      .eq("id", row.id)
+      .eq("status", "queued")
+      .select("id");
+    if (claimErr) {
+      logger.warn(
+        { err: claimErr.message, id: row.id },
+        "recall-notifications.send: claim failed",
+      );
+      continue;
+    }
+    if (!claimed || claimed.length === 0) {
+      // Lost the claim to a concurrent worker — it owns the send.
+      continue;
+    }
+
     const outcome = await sendRecallNotification(
       {
         recall: {
@@ -318,17 +373,12 @@ async function runRecallSendSweepInner(
       cfg,
     );
 
-    // Defense-in-depth: gate every terminal status flip on
-    // status='queued'. Today pg-boss runs this sweep with teamSize=1
-    // so the SELECT-then-loop above won't really race within a
-    // single process, but if a future deploy ever horizontally
-    // scales the worker, two instances could both pull the same row
-    // from the SELECT. The .eq("status", "queued") guard makes the
-    // final UPDATE a no-op for the losing worker — DB state stays
-    // consistent (the original outcome wins) rather than getting
-    // re-written by a slower second send. The duplicate vendor call
-    // upstream is a separate concern (would require an in_progress
-    // intermediate status to fully close, which is a migration).
+    // Terminal flip: sending -> sent/failed/skipped, gated on
+    // status='sending' (the state THIS worker claimed above). If a
+    // Phase-0 reclaim from another pass had flipped our claim back to
+    // 'queued' past the lease, this UPDATE is a no-op and the reclaiming
+    // pass owns the (re)send — the lease is sized so that only happens
+    // on a genuinely stuck claim.
     const nowIso = new Date().toISOString();
     if (outcome.kind === "sent") {
       await supabase
@@ -340,7 +390,7 @@ async function runRecallSendSweepInner(
           notified_at: nowIso,
         })
         .eq("id", row.id)
-        .eq("status", "queued");
+        .eq("status", "sending");
       stats.sent += 1;
     } else if (outcome.kind === "failed") {
       await supabase
@@ -353,7 +403,7 @@ async function runRecallSendSweepInner(
           failed_reason: outcome.reason.slice(0, 500),
         })
         .eq("id", row.id)
-        .eq("status", "queued");
+        .eq("status", "sending");
       stats.failed += 1;
     } else {
       await supabase
@@ -365,7 +415,7 @@ async function runRecallSendSweepInner(
           failed_reason: outcome.reason,
         })
         .eq("id", row.id)
-        .eq("status", "queued");
+        .eq("status", "sending");
       stats.skipped += 1;
     }
   }
