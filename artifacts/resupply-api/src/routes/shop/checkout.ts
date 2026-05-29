@@ -370,12 +370,16 @@ router.post(
       return;
     }
 
-    // Mirror the session into shop_orders. The original SQL path
-    // used INSERT … ON CONFLICT (stripe_session_id) DO UPDATE SET
-    // updated_at = now() — supabase-js's `.upsert()` with
-    // `onConflict: "stripe_session_id"` is the equivalent. We pass an
-    // explicit JS-side `updated_at` because PostgREST won't run the
-    // prior ORM's $onUpdateFn for us.
+    // Mirror the session into shop_orders as a fresh `pending` row.
+    // INSERT-or-IGNORE on conflict (`ignoreDuplicates: true`): a plain
+    // `.upsert()` would overwrite EVERY column on conflict, including
+    // resetting `status` back to "pending" — so a webhook that had
+    // already advanced the row to paid/expired/failed would be silently
+    // reverted, hiding the order from history and the returns flow. The
+    // status (and the rest of the row) is only ever written on the
+    // initial insert; later lifecycle transitions own the row. Mirrors
+    // the quick-checkout mirror-upsert. (`status` is the source of truth
+    // here; we deliberately do not re-touch `updated_at` on conflict.)
     const supabase = getSupabaseServiceRoleClient();
     const { error: upsertErr } = await supabase
       .schema("resupply")
@@ -388,7 +392,7 @@ router.post(
           ...(req.userCustomerId ? { customer_id: req.userCustomerId } : {}),
           updated_at: new Date().toISOString(),
         },
-        { onConflict: "stripe_session_id" },
+        { onConflict: "stripe_session_id", ignoreDuplicates: true },
       );
     if (upsertErr) {
       req.log?.error(

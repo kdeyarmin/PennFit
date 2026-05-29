@@ -100,7 +100,40 @@ interface JourneyRow {
 const DEFAULT_CAP = 50;
 const ALL_CHANNELS: CheckinAttemptChannel[] = ["email", "sms", "voice"];
 
-export async function dispatchDueCheckins(
+// Single-flight guard for the whole scan-and-send pass.
+//
+// Two callers reach the dispatcher — the daily `onboarding-checkins`
+// cron job and the CSR-facing `POST /admin/onboarding/send-due` "Run
+// now" route — and the pg-boss worker runs IN-PROCESS with the API
+// (see CLAUDE.md), so both execute in the same Node process. Each
+// per-day send only stamps `dayN_sent_at` AFTER the vendor call, so two
+// overlapping runs could both pass the `IS NULL` check and double-send
+// the same check-in to a patient. Coalescing concurrent calls onto a
+// single in-flight run makes the scan-and-send happen exactly once; a
+// caller that arrives mid-run awaits and returns the same summary (its
+// `opts` are intentionally ignored — the work, and its audit
+// attribution, belong to the run already underway).
+//
+// Scope: this guards SAME-PROCESS concurrency, the realistic race on
+// the current single-instance deploy. It does NOT cover a multi-
+// instance (cross-process) deploy, nor a pg-boss retry that resumes
+// after a crash between the vendor send and the stamp write; those
+// remain bounded by the per-row `.is(dayN_sent_at, null)` stamp and are
+// tracked as a follow-up (a claim-before-send reorder).
+let inFlightDispatch: Promise<DispatchSummary> | null = null;
+
+export function dispatchDueCheckins(
+  opts: DispatchOptions,
+): Promise<DispatchSummary> {
+  if (inFlightDispatch) return inFlightDispatch;
+  const run = runDueCheckins(opts).finally(() => {
+    inFlightDispatch = null;
+  });
+  inFlightDispatch = run;
+  return run;
+}
+
+async function runDueCheckins(
   opts: DispatchOptions,
 ): Promise<DispatchSummary> {
   // Control Center feature gate. Returns the same zeroed envelope as
