@@ -678,7 +678,17 @@ export function FloatingContactLauncher() {
           <div
             ref={dialogRef}
             className={cn(
-              "border border-border bg-background shadow-xl overflow-hidden flex flex-col z-50",
+              // Opaque panel surface. Intentionally the arbitrary value
+              // `bg-[hsl(var(--background))]` and NOT the `bg-background`
+              // token: the admin theme (src/admin.css) remaps the
+              // `bg-background` utility to `hsl(var(--surface-1))` via an
+              // `@theme inline` block, and `--surface-1` is only defined
+              // under `.admin-root`. Once the lazy-loaded admin CSS lands in
+              // the document, a plain `bg-background` here resolves to an
+              // undefined var and renders transparent — the floating panel
+              // then bleeds the page behind it. Arbitrary values are immune
+              // to that utility remap, so the panel stays opaque everywhere.
+              "border border-border bg-[hsl(var(--background))] shadow-xl overflow-hidden flex flex-col z-50",
               // Mobile: cover the viewport so older eyes don't have to
               // squint into a 22rem panel on a phone.
               "fixed inset-0",
