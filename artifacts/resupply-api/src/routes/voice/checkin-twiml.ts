@@ -83,7 +83,7 @@ router.post(
     // parameters on the callback POST.
     const base = cfg?.publicBaseUrl ?? "";
     const pressActionUrl =
-      `${base}/voice/checkin-press?` +
+      `${base}/resupply-api/voice/checkin-press?` +
       [
         `patientId=${encodeURIComponent(patientId)}`,
         `journeyId=${encodeURIComponent(journeyId)}`,

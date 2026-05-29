@@ -146,6 +146,13 @@ const SECTION_ORDER: Category[] = [
   "accessory",
 ];
 
+/**
+ * Render the PennPaps public shop storefront for browsing and purchasing CPAP supplies.
+ *
+ * Renders the catalog UI including hero, filter bar, search (synced to ?q=), machine/device filter, sorting, recently viewed strip, product grid (or flat search results), review-aggregate-driven "top-rated" ordering, insurance CTA, compare tray, and appropriate loading, unavailable, error, and empty states with retry behavior.
+ *
+ * @returns The shop page element that displays products, filtering and sorting controls, and contextual UI states (loading, error, unavailable, or empty).
+ */
 export function Shop() {
   useDocumentTitle(
     "Shop CPAP supplies",
@@ -228,6 +235,12 @@ export function Shop() {
   // so the closure resolves it without a forward-reference TDZ.
   const [sort, setSort] = useState<ShopSort>("featured");
 
+  // Review aggregates (avg rating + count per SKU). Declared here —
+  // above applySort — because the top-rated branch reads it AND it is
+  // an applySort dependency; a forward reference would be a TDZ error.
+  // Populated by the post-products effect further down.
+  const [aggregates, setAggregates] = useState<AggregateMap>({});
+
   // Apply the active sort to a list of products. Pure function;
   // returns a new array (never mutates the input). "featured"
   // is a no-op so the admin's curated category order survives.
@@ -263,11 +276,12 @@ export function Shop() {
       }
       return next;
     },
-    // aggregates is defined a few lines below — captured lazily via
-    // closure, so the dependency list lists it for completeness once
-    // the state exists. Forward-reference safe.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [sort],
+    // `aggregates` MUST be a dependency: the top-rated branch reads it
+    // via closure. Without it, selecting "Top rated" before the review
+    // aggregates finish loading captures an empty map and the list
+    // never re-sorts once they arrive (every product reads as rating 0,
+    // so the order silently stays "featured" under a "Top rated" label).
+    [sort, aggregates],
   );
 
   // Search query state. Lives on the parent so the filter bar can
@@ -347,7 +361,8 @@ export function Shop() {
   // primary products fetch so a flaky reviews endpoint never blanks
   // the entire storefront — `aggregates` simply stays empty and the
   // cards render with no rating block (the existing zero-state).
-  const [aggregates, setAggregates] = useState<AggregateMap>({});
+  // (`aggregates` state is declared above, beside `sort`, so applySort
+  // can depend on it without a forward reference.)
   useEffect(() => {
     if (!data || data.products.length === 0) return;
     let active = true;

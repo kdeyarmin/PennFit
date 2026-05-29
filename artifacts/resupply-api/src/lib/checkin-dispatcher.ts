@@ -532,6 +532,19 @@ async function sendSms(
   }
 }
 
+/**
+ * Places an automated onboarding voice call for the given patient when calling is permitted.
+ *
+ * This function respects quiet hours (evaluated in the America/New_York timezone) and will
+ * short-circuit if the patient has no phone number or if the voice vendor is not configured.
+ *
+ * @param day - The onboarding day label used to select call content and included as a query param to the TwiML endpoint
+ * @param asOf - The reference time used to evaluate the permitted call window (quiet-hours check uses America/New_York)
+ * @returns An object with:
+ *  - `outcome`: `"ok"` when the call was placed, `"no_contact"` when the patient has no phone, `"not_configured"` when the voice vendor is unavailable or calls are disallowed by quiet hours, or `"vendor_error"` when Twilio returns an error;
+ *  - `vendorRef`: the Twilio call SID on success, otherwise `null`;
+ *  - `errorCode`: a vendor-specific error code when applicable (e.g. `"twilio:<code>"`), otherwise `null`.
+ */
 async function placeVoiceCall(
   clients: BuiltClients,
   row: JourneyRow,
@@ -574,8 +587,8 @@ async function placeVoiceCall(
           // answers. We pass `day` AND `patientId` so the press-1 callback
           // can attribute the manual alert to the right patient without
           // touching the database first.
-          url: `${clients.voice!.publicBaseUrl}/voice/checkin-twiml?day=${encodeURIComponent(day)}&patientId=${encodeURIComponent(row.patientId)}&journeyId=${encodeURIComponent(row.journeyId)}`,
-          statusCallbackUrl: `${clients.voice!.publicBaseUrl}/voice/status-callback`,
+          url: `${clients.voice!.publicBaseUrl}/resupply-api/voice/checkin-twiml?day=${encodeURIComponent(day)}&patientId=${encodeURIComponent(row.patientId)}&journeyId=${encodeURIComponent(row.journeyId)}`,
+          statusCallbackUrl: `${clients.voice!.publicBaseUrl}/resupply-api/voice/status-callback`,
           record: false,
           timeLimit: 120,
         }),
