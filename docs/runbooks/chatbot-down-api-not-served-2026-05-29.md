@@ -22,10 +22,11 @@ _"Something went wrong reaching the chat service … connection issue"_.
 > jobs still log `*_select_failed` against missing tables — full inventory +
 > triage in [`docs/db-schema-drift-2026-05-29.md`](../db-schema-drift-2026-05-29.md)).
 
-This runbook captures the root cause and the steps taken. The chatbot
-**code was healthy throughout** — the problem was purely deploy topology:
-the customer domain pointed at a static-SPA-only service, so every API
-call (including `POST /api/chat`) 404'd.
+This runbook captures the root cause and the steps taken on **2026-05-29**.
+The chatbot **code was healthy throughout** — the issue was deploy topology.
+
+> For future incidents, use the checklist below as a **re-run procedure**.
+> For the 2026-05-29 incident specifically, steps 1–6 were completed to restore service.
 
 | # | Step | Where it runs | Status |
 | - | ---- | ------------- | ------ |
