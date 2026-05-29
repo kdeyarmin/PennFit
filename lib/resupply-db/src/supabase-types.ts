@@ -2653,7 +2653,13 @@ export interface Database {
           recall_id: string;
           asset_id: string;
           patient_id: string;
-          status: "queued" | "sent" | "failed" | "bounced" | "skipped";
+          status:
+            | "queued"
+            | "sending"
+            | "sent"
+            | "failed"
+            | "bounced"
+            | "skipped";
           channel: "email" | "sms" | "letter" | null;
           notified_at: string | null;
           failed_at: string | null;
