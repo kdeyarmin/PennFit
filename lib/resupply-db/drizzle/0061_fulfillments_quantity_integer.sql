@@ -6,12 +6,12 @@
 -- The default changes from '1' (text) to 1 (integer) — semantically
 -- identical, just correctly typed.
 
--- Drop the existing text default ('1') BEFORE the type change. Postgres
--- does not auto-cast a column's DEFAULT expression to the new type, so
--- `ALTER COLUMN quantity TYPE integer` fails with "default for column
--- quantity cannot be cast automatically to type integer" while the text
--- default is still attached (the USING clause only converts existing row
--- values, not the default). Drop, retype, then re-set the typed default.
+-- Drop the existing text default ('1') BEFORE the type change: Postgres
+-- will not automatically cast a column's DEFAULT expression to the new
+-- type, so `ALTER COLUMN ... TYPE integer` fails with "default for
+-- column quantity cannot be cast automatically to type integer" while
+-- the text default is still attached. The USING clause only converts
+-- existing row values, not the default. Drop, retype, then re-set.
 ALTER TABLE resupply.fulfillments
   ALTER COLUMN quantity DROP DEFAULT;
 
