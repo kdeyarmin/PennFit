@@ -195,9 +195,9 @@ describe("buildOtpauthUri", () => {
     });
     // Standard authenticator apps require: issuer in the label
     // segment AND in the query, algorithm=SHA1, digits=6, period=30.
-    expect(uri.startsWith("otpauth://totp/PennPaps%3Acsr%40penn.example?")).toBe(
-      true,
-    );
+    expect(
+      uri.startsWith("otpauth://totp/PennPaps%3Acsr%40penn.example?"),
+    ).toBe(true);
     expect(uri).toContain("secret=JBSWY3DPEHPK3PXP");
     expect(uri).toContain("issuer=PennPaps");
     expect(uri).toContain("algorithm=SHA1");

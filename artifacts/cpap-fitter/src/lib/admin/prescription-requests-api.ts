@@ -82,10 +82,7 @@ export interface CreatePrescriptionRequestRequest {
   clinicalNotes?: string | null;
 }
 
-async function jsonFetch<T>(
-  path: string,
-  init: RequestInit = {},
-): Promise<T> {
+async function jsonFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
   const res = await fetch(`/resupply-api${path}`, {
     headers: { Accept: "application/json", ...(init.headers ?? {}) },
     ...init,
@@ -114,9 +111,7 @@ export async function listPatientPrescriptionRequests(
 export async function getPrescriptionRequest(
   id: string,
 ): Promise<PrescriptionRequestDetail> {
-  return jsonFetch(
-    `/admin/prescription-requests/${encodeURIComponent(id)}`,
-  );
+  return jsonFetch(`/admin/prescription-requests/${encodeURIComponent(id)}`);
 }
 
 export async function createPrescriptionRequest(

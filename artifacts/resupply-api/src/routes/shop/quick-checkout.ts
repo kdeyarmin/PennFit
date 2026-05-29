@@ -213,7 +213,11 @@ router.post(
             description: line.description ?? null,
           });
         }
-        return { priceId, quantity: line.quantity ?? 1, mode: "one_time" as const };
+        return {
+          priceId,
+          quantity: line.quantity ?? 1,
+          mode: "one_time" as const,
+        };
       });
       basket = mapped.filter(
         (b): b is { priceId: string; quantity: number; mode: "one_time" } =>

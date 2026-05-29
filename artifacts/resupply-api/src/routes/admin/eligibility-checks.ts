@@ -33,7 +33,12 @@ const verifyParams = z.object({
   coverageId: z.string().uuid(),
 });
 const verifyBody = z
-  .object({ hcpcsCode: z.string().regex(/^[A-Z]\d{4}$/).optional() })
+  .object({
+    hcpcsCode: z
+      .string()
+      .regex(/^[A-Z]\d{4}$/)
+      .optional(),
+  })
   .strict()
   .optional();
 

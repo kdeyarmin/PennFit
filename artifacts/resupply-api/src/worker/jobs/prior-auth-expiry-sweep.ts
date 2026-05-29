@@ -311,7 +311,8 @@ export async function runPriorAuthExpirySweep(
       if (existing && existing.length > 0) continue;
 
       // Severity escalates the closer we are to expiry.
-      const severity: "warning" | "critical" = win <= 7 ? "critical" : "warning";
+      const severity: "warning" | "critical" =
+        win <= 7 ? "critical" : "warning";
 
       await supabase
         .schema("resupply")

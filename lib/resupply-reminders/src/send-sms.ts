@@ -251,7 +251,10 @@ export async function sendReminderSms(
     const { error: stampConvErr } = await supabase
       .schema("resupply")
       .from("conversations")
-      .update({ external_ref: messageSid, updated_at: new Date().toISOString() })
+      .update({
+        external_ref: messageSid,
+        updated_at: new Date().toISOString(),
+      })
       .eq("id", conversationId);
     if (stampConvErr) throw stampConvErr;
   } catch (dbErr) {

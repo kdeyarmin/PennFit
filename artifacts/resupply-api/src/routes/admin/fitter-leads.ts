@@ -44,10 +44,7 @@ const JOURNEY_STAGES = [
 
 const listQuery = z.object({
   stage: z
-    .enum(["all", ...JOURNEY_STAGES] as [
-      "all",
-      ...typeof JOURNEY_STAGES,
-    ])
+    .enum(["all", ...JOURNEY_STAGES] as ["all", ...typeof JOURNEY_STAGES])
     .optional()
     .default("all"),
   // Optional source filter (consent / sleep_apnea_quiz / insurance_quote).
@@ -206,8 +203,7 @@ router.get(
       counts.final_call_pending +
       counts.converted +
       counts.expired;
-    const conversionRate =
-      denominator > 0 ? convertedTotal / denominator : 0;
+    const conversionRate = denominator > 0 ? convertedTotal / denominator : 0;
 
     req.log?.info?.(
       {

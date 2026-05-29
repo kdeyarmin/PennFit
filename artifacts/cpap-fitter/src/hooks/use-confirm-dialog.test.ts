@@ -55,9 +55,7 @@ describe("use-confirm-dialog — exports", () => {
   });
 
   it("useConfirmDialog returns a tuple [ConfirmFn, React.ReactNode]", () => {
-    expect(SRC).toContain(
-      "useConfirmDialog(): [ConfirmFn, React.ReactNode]",
-    );
+    expect(SRC).toContain("useConfirmDialog(): [ConfirmFn, React.ReactNode]");
   });
 });
 
@@ -273,9 +271,7 @@ describe("use-confirm-dialog — dialog element memoisation", () => {
 
 describe("use-confirm-dialog — Radix AlertDialog components", () => {
   it("imports AlertDialog from @/components/ui/alert-dialog", () => {
-    expect(SRC).toContain(
-      'from "@/components/ui/alert-dialog"',
-    );
+    expect(SRC).toContain('from "@/components/ui/alert-dialog"');
   });
 
   it("imports the Radix Action primitive (or shadcn re-export) for the confirm button", () => {

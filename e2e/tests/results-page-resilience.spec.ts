@@ -37,10 +37,7 @@ import { test, expect, Page } from "@playwright/test";
  * capture step, the build is bundled and the stub can't take effect. */
 type InterceptState = { moduleIntercepted: boolean };
 
-async function mockCameraAndMediaPipe(
-  page: Page,
-  state: InterceptState,
-) {
+async function mockCameraAndMediaPipe(page: Page, state: InterceptState) {
   await page.addInitScript(() => {
     // Camera stream stub built from a canvas captureStream — a
     // real MediaStream so HTMLMediaElement.srcObject's type check
@@ -171,7 +168,10 @@ test("Results page never trips the ErrorBoundary when /api/masks returns non-JSO
   // /consent — fill the email + opt-in gate.
   await page.goto("/consent");
   await page.getByLabel(/email/i).first().fill("repro@example.com");
-  await page.getByRole("checkbox", { name: /confirm|consent/i }).first().check();
+  await page
+    .getByRole("checkbox", { name: /confirm|consent/i })
+    .first()
+    .check();
   await page.getByRole("checkbox", { name: /email/i }).first().check();
   await page.getByRole("button", { name: /continue/i }).click();
 
@@ -224,8 +224,6 @@ test("Results page never trips the ErrorBoundary when /api/masks returns non-JSO
   // API is up) or the in-page "Error Generating Recommendations"
   // alert renders (if it's not). Both are acceptable; the
   // ErrorBoundary is not.
-  await expect(
-    page.getByTestId("error-boundary-fallback"),
-  ).toBeHidden();
+  await expect(page.getByTestId("error-boundary-fallback")).toBeHidden();
   expect(pageErrors).toEqual([]);
 });

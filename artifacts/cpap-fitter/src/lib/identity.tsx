@@ -39,7 +39,8 @@ export function useShopIdentity(): ShopIdentity {
       // BEFORE we clear local state.
       if (typeof window !== "undefined" && "serviceWorker" in navigator) {
         try {
-          const reg = await navigator.serviceWorker.getRegistration("/sw-push.js");
+          const reg =
+            await navigator.serviceWorker.getRegistration("/sw-push.js");
           const sub = reg ? await reg.pushManager.getSubscription() : null;
           if (sub) {
             const endpoint = sub.endpoint;

@@ -73,11 +73,19 @@ function maybeLogProviderSelection(provider: LlmProvider): void {
  * Pure selection — useful for routes that want to log "using
  * provider X" before dispatching the actual call.
  */
-export function selectLlmProvider(env: NodeJS.ProcessEnv = process.env): LlmSelection {
+export function selectLlmProvider(
+  env: NodeJS.ProcessEnv = process.env,
+): LlmSelection {
   let provider: LlmProvider;
-  if (typeof env.ANTHROPIC_API_KEY === "string" && env.ANTHROPIC_API_KEY.trim() !== "") {
+  if (
+    typeof env.ANTHROPIC_API_KEY === "string" &&
+    env.ANTHROPIC_API_KEY.trim() !== ""
+  ) {
     provider = "anthropic";
-  } else if (typeof env.OPENAI_API_KEY === "string" && env.OPENAI_API_KEY.trim() !== "") {
+  } else if (
+    typeof env.OPENAI_API_KEY === "string" &&
+    env.OPENAI_API_KEY.trim() !== ""
+  ) {
     provider = "openai";
   } else {
     provider = "offline";

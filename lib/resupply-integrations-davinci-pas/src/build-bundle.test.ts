@@ -79,9 +79,7 @@ describe("buildPasBundle", () => {
     const { bundle } = buildPasBundle(fixture());
     const claim = bundle.entry[0]!.resource as Record<string, unknown>;
     expect(claim.use).toBe("preauthorization");
-    expect(
-      (claim.meta as { profile?: string[] }).profile,
-    ).toContain(
+    expect((claim.meta as { profile?: string[] }).profile).toContain(
       "http://hl7.org/fhir/us/davinci-pas/StructureDefinition/profile-claim",
     );
   });

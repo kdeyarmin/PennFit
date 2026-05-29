@@ -49,11 +49,7 @@ function makeRes(): FakeRes {
   };
 }
 
-function makeReq(opts: {
-  method: string;
-  path: string;
-  ip?: string;
-}): Request {
+function makeReq(opts: { method: string; path: string; ip?: string }): Request {
   return {
     method: opts.method,
     path: opts.path,
@@ -131,7 +127,10 @@ describe("adminMutationLooseLimit", () => {
 
   it("gates POST on /api/admin/* and PATCH on /resupply-api/admin/*", () => {
     const mw = adminMutationLooseLimit();
-    const r1 = drive(mw, makeReq({ method: "POST", path: "/api/admin/users/invite" }));
+    const r1 = drive(
+      mw,
+      makeReq({ method: "POST", path: "/api/admin/users/invite" }),
+    );
     expect(r1.nextCalled).toBe(true);
     expect(r1.res.headers["X-RateLimit-Limit"]).toBe("300");
 
@@ -153,7 +152,10 @@ describe("adminMutationLooseLimit", () => {
     for (let i = 0; i < 3; i++) {
       const path =
         i % 2 === 0 ? "/api/admin/users" : "/resupply-api/admin/customers";
-      const { res } = drive(mw, makeReq({ method: "POST", path, ip: "1.2.3.4" }));
+      const { res } = drive(
+        mw,
+        makeReq({ method: "POST", path, ip: "1.2.3.4" }),
+      );
       lastRemaining = Number(res.headers["X-RateLimit-Remaining"]);
     }
     // After 3 hits, remaining should be 297 — proving the bucket
@@ -163,8 +165,14 @@ describe("adminMutationLooseLimit", () => {
 
   it("isolates buckets by IP", () => {
     const mw = adminMutationLooseLimit();
-    drive(mw, makeReq({ method: "POST", path: "/api/admin/users", ip: "1.1.1.1" }));
-    drive(mw, makeReq({ method: "POST", path: "/api/admin/users", ip: "1.1.1.1" }));
+    drive(
+      mw,
+      makeReq({ method: "POST", path: "/api/admin/users", ip: "1.1.1.1" }),
+    );
+    drive(
+      mw,
+      makeReq({ method: "POST", path: "/api/admin/users", ip: "1.1.1.1" }),
+    );
     const { res } = drive(
       mw,
       makeReq({ method: "POST", path: "/api/admin/users", ip: "2.2.2.2" }),

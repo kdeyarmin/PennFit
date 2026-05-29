@@ -80,7 +80,9 @@ describe("learn — deep-dive guide section exists", () => {
   });
 
   it("mentions that each guide has a built-in share button", () => {
-    expect(LEARN_SRC).toContain("built-in share button");
+    // Whitespace-normalized so Prettier line-wrapping the JSX prose
+    // (e.g. "built-in share\nbutton") doesn't break the match.
+    expect(LEARN_SRC.replace(/\s+/g, " ")).toContain("built-in share button");
   });
 });
 

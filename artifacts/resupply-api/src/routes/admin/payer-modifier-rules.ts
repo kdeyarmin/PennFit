@@ -54,7 +54,10 @@ const upsertBody = z
       .min(2)
       .max(32)
       .transform((s) => s.toUpperCase())
-      .refine((s) => MOD_CSV_RE.test(s), "must be a CSV of 2-char alphanumeric modifiers"),
+      .refine(
+        (s) => MOD_CSV_RE.test(s),
+        "must be a CSV of 2-char alphanumeric modifiers",
+      ),
     priority: z.number().int().min(0).max(32767).default(100),
     rationale: z.string().trim().max(2000).nullable().optional(),
     isActive: z.boolean().default(true),
@@ -84,27 +87,32 @@ router.get(
   "/admin/payer-modifier-rules",
   requirePermission("reports.read"),
   async (req, res) => {
-  const supabase = getSupabaseServiceRoleClient();
-  let query = supabase
-    .schema("resupply")
-    .from("payer_modifier_rules")
-    .select(
-      "id, payer_profile_id, hcpcs_code, condition, modifiers_csv, priority, rationale, is_active, created_at, updated_at",
-    )
-    .order("payer_profile_id", { ascending: true })
-    .order("hcpcs_code", { ascending: true })
-    .order("priority", { ascending: true })
-    .limit(500);
-  const payerProfileId =
-    typeof req.query.payerProfileId === "string" ? req.query.payerProfileId : undefined;
-  if (payerProfileId) query = query.eq("payer_profile_id", payerProfileId);
-  const hcpcs =
-    typeof req.query.hcpcs === "string" ? req.query.hcpcs.toUpperCase() : undefined;
-  if (hcpcs) query = query.eq("hcpcs_code", hcpcs);
-  const { data, error } = await query;
-  if (error) throw error;
-  res.json({ rules: (data ?? []).map(rowToApi) });
-});
+    const supabase = getSupabaseServiceRoleClient();
+    let query = supabase
+      .schema("resupply")
+      .from("payer_modifier_rules")
+      .select(
+        "id, payer_profile_id, hcpcs_code, condition, modifiers_csv, priority, rationale, is_active, created_at, updated_at",
+      )
+      .order("payer_profile_id", { ascending: true })
+      .order("hcpcs_code", { ascending: true })
+      .order("priority", { ascending: true })
+      .limit(500);
+    const payerProfileId =
+      typeof req.query.payerProfileId === "string"
+        ? req.query.payerProfileId
+        : undefined;
+    if (payerProfileId) query = query.eq("payer_profile_id", payerProfileId);
+    const hcpcs =
+      typeof req.query.hcpcs === "string"
+        ? req.query.hcpcs.toUpperCase()
+        : undefined;
+    if (hcpcs) query = query.eq("hcpcs_code", hcpcs);
+    const { data, error } = await query;
+    if (error) throw error;
+    res.json({ rules: (data ?? []).map(rowToApi) });
+  },
+);
 
 router.post(
   "/admin/payer-modifier-rules",
@@ -182,10 +190,12 @@ router.patch(
       return;
     }
     const b = parsed.data;
-    const update: Database["resupply"]["Tables"]["payer_modifier_rules"]["Update"] = {
-      updated_at: new Date().toISOString(),
-    };
-    if (b.payerProfileId !== undefined) update.payer_profile_id = b.payerProfileId;
+    const update: Database["resupply"]["Tables"]["payer_modifier_rules"]["Update"] =
+      {
+        updated_at: new Date().toISOString(),
+      };
+    if (b.payerProfileId !== undefined)
+      update.payer_profile_id = b.payerProfileId;
     if (b.hcpcsCode !== undefined) update.hcpcs_code = b.hcpcsCode;
     if (b.condition !== undefined) update.condition = b.condition;
     if (b.modifiersCsv !== undefined) update.modifiers_csv = b.modifiersCsv;

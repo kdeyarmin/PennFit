@@ -81,9 +81,21 @@ describe("aggregateResupplyFunnel", () => {
 describe("aggregateComplianceCohorts — byMonth", () => {
   it("buckets patients by YYYY-MM prefix of signedUpAt", () => {
     const r = aggregateComplianceCohorts([
-      { signedUpAt: "2026-01-15T00:00:00Z", qualifies: true, insurancePayer: "Medicare" },
-      { signedUpAt: "2026-01-28T00:00:00Z", qualifies: false, insurancePayer: "Medicare" },
-      { signedUpAt: "2026-02-03T00:00:00Z", qualifies: true, insurancePayer: "Medicare" },
+      {
+        signedUpAt: "2026-01-15T00:00:00Z",
+        qualifies: true,
+        insurancePayer: "Medicare",
+      },
+      {
+        signedUpAt: "2026-01-28T00:00:00Z",
+        qualifies: false,
+        insurancePayer: "Medicare",
+      },
+      {
+        signedUpAt: "2026-02-03T00:00:00Z",
+        qualifies: true,
+        insurancePayer: "Medicare",
+      },
     ]);
     expect(r.byMonth.map((b) => b.cohort)).toEqual(["2026-01", "2026-02"]);
     expect(r.byMonth[0]!.total).toBe(2);
@@ -120,7 +132,11 @@ describe("aggregateComplianceCohorts — byPayer", () => {
   it("buckets null AND empty-string payer as Unspecified", () => {
     const r = aggregateComplianceCohorts([
       { signedUpAt: "2026-01-01", qualifies: true, insurancePayer: null },
-      { signedUpAt: "2026-01-02", qualifies: false, insurancePayer: "Medicare" },
+      {
+        signedUpAt: "2026-01-02",
+        qualifies: false,
+        insurancePayer: "Medicare",
+      },
       { signedUpAt: "2026-01-03", qualifies: true, insurancePayer: "" },
       { signedUpAt: "2026-01-04", qualifies: false, insurancePayer: null },
     ]);
@@ -135,14 +151,22 @@ describe("aggregateComplianceCohorts — byPayer", () => {
       { signedUpAt: "2026-01-01", qualifies: true, insurancePayer: "Aetna" },
       { signedUpAt: "2026-01-02", qualifies: true, insurancePayer: "Medicare" },
       { signedUpAt: "2026-01-03", qualifies: true, insurancePayer: "Medicare" },
-      { signedUpAt: "2026-01-04", qualifies: false, insurancePayer: "Medicare" },
+      {
+        signedUpAt: "2026-01-04",
+        qualifies: false,
+        insurancePayer: "Medicare",
+      },
     ]);
     expect(r.byPayer.map((b) => b.payer)).toEqual(["Medicare", "Aetna"]);
   });
 
   it("trims whitespace on payer name", () => {
     const r = aggregateComplianceCohorts([
-      { signedUpAt: "2026-01-01", qualifies: true, insurancePayer: "  Medicare  " },
+      {
+        signedUpAt: "2026-01-01",
+        qualifies: true,
+        insurancePayer: "  Medicare  ",
+      },
       { signedUpAt: "2026-01-02", qualifies: true, insurancePayer: "Medicare" },
     ]);
     expect(r.byPayer).toHaveLength(1);
@@ -159,10 +183,22 @@ describe("aggregateCsrProductivity", () => {
   it("only counts actions from PRODUCTIVE_ACTIONS", () => {
     const r = aggregateCsrProductivity(
       [
-        { operatorEmail: "csr@example.test", action: ACTION_A, occurredAt: "2026-05-10T12:00:00Z" },
+        {
+          operatorEmail: "csr@example.test",
+          action: ACTION_A,
+          occurredAt: "2026-05-10T12:00:00Z",
+        },
         // Read-only action — must be filtered out
-        { operatorEmail: "csr@example.test", action: "patient.view", occurredAt: "2026-05-10T12:01:00Z" },
-        { operatorEmail: "csr@example.test", action: "audit.export", occurredAt: "2026-05-10T12:02:00Z" },
+        {
+          operatorEmail: "csr@example.test",
+          action: "patient.view",
+          occurredAt: "2026-05-10T12:01:00Z",
+        },
+        {
+          operatorEmail: "csr@example.test",
+          action: "audit.export",
+          occurredAt: "2026-05-10T12:02:00Z",
+        },
       ],
       14,
     );
@@ -174,10 +210,26 @@ describe("aggregateCsrProductivity", () => {
   it("buckets operators independently + sorts by total desc", () => {
     const r = aggregateCsrProductivity(
       [
-        { operatorEmail: "a@example.test", action: ACTION_A, occurredAt: "2026-05-10T10:00:00Z" },
-        { operatorEmail: "b@example.test", action: ACTION_A, occurredAt: "2026-05-10T10:00:00Z" },
-        { operatorEmail: "b@example.test", action: ACTION_B, occurredAt: "2026-05-10T11:00:00Z" },
-        { operatorEmail: "b@example.test", action: ACTION_A, occurredAt: "2026-05-10T12:00:00Z" },
+        {
+          operatorEmail: "a@example.test",
+          action: ACTION_A,
+          occurredAt: "2026-05-10T10:00:00Z",
+        },
+        {
+          operatorEmail: "b@example.test",
+          action: ACTION_A,
+          occurredAt: "2026-05-10T10:00:00Z",
+        },
+        {
+          operatorEmail: "b@example.test",
+          action: ACTION_B,
+          occurredAt: "2026-05-10T11:00:00Z",
+        },
+        {
+          operatorEmail: "b@example.test",
+          action: ACTION_A,
+          occurredAt: "2026-05-10T12:00:00Z",
+        },
       ],
       14,
     );
@@ -192,7 +244,11 @@ describe("aggregateCsrProductivity", () => {
   it("buckets null operator as 'system'", () => {
     const r = aggregateCsrProductivity(
       [
-        { operatorEmail: null, action: ACTION_A, occurredAt: "2026-05-10T10:00:00Z" },
+        {
+          operatorEmail: null,
+          action: ACTION_A,
+          occurredAt: "2026-05-10T10:00:00Z",
+        },
       ],
       14,
     );
@@ -202,9 +258,21 @@ describe("aggregateCsrProductivity", () => {
   it("tracks per-action counts and last-active date", () => {
     const r = aggregateCsrProductivity(
       [
-        { operatorEmail: "csr@example.test", action: ACTION_A, occurredAt: "2026-05-08T10:00:00Z" },
-        { operatorEmail: "csr@example.test", action: ACTION_A, occurredAt: "2026-05-10T10:00:00Z" },
-        { operatorEmail: "csr@example.test", action: ACTION_B, occurredAt: "2026-05-09T10:00:00Z" },
+        {
+          operatorEmail: "csr@example.test",
+          action: ACTION_A,
+          occurredAt: "2026-05-08T10:00:00Z",
+        },
+        {
+          operatorEmail: "csr@example.test",
+          action: ACTION_A,
+          occurredAt: "2026-05-10T10:00:00Z",
+        },
+        {
+          operatorEmail: "csr@example.test",
+          action: ACTION_B,
+          occurredAt: "2026-05-09T10:00:00Z",
+        },
       ],
       14,
     );
@@ -217,7 +285,11 @@ describe("aggregateCsrProductivity", () => {
   it("returns empty rows array when nothing productive in the window", () => {
     const r = aggregateCsrProductivity(
       [
-        { operatorEmail: "csr@example.test", action: "patient.view", occurredAt: "2026-05-10T10:00:00Z" },
+        {
+          operatorEmail: "csr@example.test",
+          action: "patient.view",
+          occurredAt: "2026-05-10T10:00:00Z",
+        },
       ],
       14,
     );

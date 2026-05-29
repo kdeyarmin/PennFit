@@ -270,11 +270,7 @@ export type CsrComplianceAlertStatus = "open" | "snoozed" | "resolved";
 // Insurance lead status (resupply.insurance_leads.status)
 // ────────────────────────────────────────────────────────────────
 
-export type InsuranceLeadStatus =
-  | "new"
-  | "contacted"
-  | "verified"
-  | "closed";
+export type InsuranceLeadStatus = "new" | "contacted" | "verified" | "closed";
 
 export const INSURANCE_LEAD_STATUSES: readonly InsuranceLeadStatus[] = [
   "new",
@@ -393,8 +389,7 @@ export const OIG_LEIE_SUBJECT_KIND_VALUES = [
   "contractor",
   "owner",
 ] as const;
-export type OigLeieSubjectKind =
-  (typeof OIG_LEIE_SUBJECT_KIND_VALUES)[number];
+export type OigLeieSubjectKind = (typeof OIG_LEIE_SUBJECT_KIND_VALUES)[number];
 
 export const OIG_LEIE_RESULT_VALUES = [
   "clear",
@@ -434,8 +429,7 @@ export const PATIENT_RIGHTS_STATUS_VALUES = [
   "withdrawn",
   "expired",
 ] as const;
-export type PatientRightsStatus =
-  (typeof PATIENT_RIGHTS_STATUS_VALUES)[number];
+export type PatientRightsStatus = (typeof PATIENT_RIGHTS_STATUS_VALUES)[number];
 
 export const PATIENT_RIGHTS_DECISION_VALUES = [
   "granted",
@@ -511,8 +505,7 @@ export const OWNERSHIP_PERSON_ROLE_VALUES = [
   "agent",
   "authorized_official",
 ] as const;
-export type OwnershipPersonRole =
-  (typeof OWNERSHIP_PERSON_ROLE_VALUES)[number];
+export type OwnershipPersonRole = (typeof OWNERSHIP_PERSON_ROLE_VALUES)[number];
 
 // ────────────────────────────────────────────────────────────────
 // Phase 12 — payer enrollment status (migration 0142)

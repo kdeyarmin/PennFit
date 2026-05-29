@@ -395,7 +395,9 @@ describe("POST /conversations/:id/reply (in_app)", () => {
     stageSupabaseResponse("conversations", "select", {
       data: {
         customer_id: "user_anna",
-        last_in_app_notification_at: new Date(Date.now() - 60_000).toISOString(),
+        last_in_app_notification_at: new Date(
+          Date.now() - 60_000,
+        ).toISOString(),
       },
     });
     stageSupabaseResponse("shop_customers", "select", {

@@ -57,8 +57,14 @@ const body = z
         line1: z.string().trim().min(1).max(120),
         line2: z.string().trim().max(120).optional(),
         city: z.string().trim().min(1).max(80),
-        state: z.string().trim().regex(/^[A-Z]{2}$/),
-        zip: z.string().trim().regex(/^\d{5}(-?\d{4})?$/),
+        state: z
+          .string()
+          .trim()
+          .regex(/^[A-Z]{2}$/),
+        zip: z
+          .string()
+          .trim()
+          .regex(/^\d{5}(-?\d{4})?$/),
       })
       .optional(),
     customerId: z.string().uuid().nullable().optional(),
@@ -74,18 +80,19 @@ router.get(
   "/admin/good-faith-estimates",
   requirePermission("reports.read"),
   async (_req, res) => {
-  const supabase = getSupabaseServiceRoleClient();
-  const { data, error } = await supabase
-    .schema("resupply")
-    .from("good_faith_estimates")
-    .select(
-      "id, customer_id, recipient_name, recipient_email, items_json, total_cents, expected_service_date, delivery_method, delivered_at, generated_by_email, created_at",
-    )
-    .order("created_at", { ascending: false })
-    .limit(100);
-  if (error) throw error;
-  res.json({ estimates: data ?? [] });
-});
+    const supabase = getSupabaseServiceRoleClient();
+    const { data, error } = await supabase
+      .schema("resupply")
+      .from("good_faith_estimates")
+      .select(
+        "id, customer_id, recipient_name, recipient_email, items_json, total_cents, expected_service_date, delivery_method, delivered_at, generated_by_email, created_at",
+      )
+      .order("created_at", { ascending: false })
+      .limit(100);
+    if (error) throw error;
+    res.json({ estimates: data ?? [] });
+  },
+);
 
 router.get(
   "/admin/good-faith-estimates/:id",
@@ -161,7 +168,8 @@ router.post(
       expectedServiceDate: b.expectedServiceDate ?? null,
       disclaimerText: DEFAULT_GFE_DISCLAIMER,
       dmeOrganization: {
-        legalName: identity.organization?.legal_name ??
+        legalName:
+          identity.organization?.legal_name ??
           identity.billingProvider.organizationName,
         npi: identity.billingProvider.npi,
         addressLine1: identity.billingProvider.address.line1,
@@ -174,17 +182,18 @@ router.post(
       },
     });
 
-    const insertRow: Database["resupply"]["Tables"]["good_faith_estimates"]["Insert"] = {
-      customer_id: b.customerId ?? null,
-      recipient_name: b.recipientName,
-      recipient_email: b.recipientEmail,
-      items_json: b.items as unknown as Json,
-      total_cents: result.totalCents,
-      expected_service_date: b.expectedServiceDate ?? null,
-      disclaimer_text: DEFAULT_GFE_DISCLAIMER,
-      generated_by_email: req.adminEmail ?? "unknown",
-      delivery_method: b.deliveryMethod ?? null,
-    };
+    const insertRow: Database["resupply"]["Tables"]["good_faith_estimates"]["Insert"] =
+      {
+        customer_id: b.customerId ?? null,
+        recipient_name: b.recipientName,
+        recipient_email: b.recipientEmail,
+        items_json: b.items as unknown as Json,
+        total_cents: result.totalCents,
+        expected_service_date: b.expectedServiceDate ?? null,
+        disclaimer_text: DEFAULT_GFE_DISCLAIMER,
+        generated_by_email: req.adminEmail ?? "unknown",
+        delivery_method: b.deliveryMethod ?? null,
+      };
     const { data: row, error: insertErr } = await supabase
       .schema("resupply")
       .from("good_faith_estimates")

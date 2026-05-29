@@ -23,10 +23,14 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 
 // ── Pool mock ────────────────────────────────────────────────────────────────
-const poolQueryMock = vi.hoisted(() => vi.fn(async () => ({ rowCount: 1, rows: [] })));
+const poolQueryMock = vi.hoisted(() =>
+  vi.fn(async () => ({ rowCount: 1, rows: [] })),
+);
 
 // ── SendGrid mock ────────────────────────────────────────────────────────────
-const sendEmailMock = vi.hoisted(() => vi.fn(async () => ({ messageId: "sg-msg-1" })));
+const sendEmailMock = vi.hoisted(() =>
+  vi.fn(async () => ({ messageId: "sg-msg-1" })),
+);
 const createSendgridClientMock = vi.hoisted(() =>
   vi.fn(() => ({ sendEmail: sendEmailMock })),
 );
@@ -62,7 +66,10 @@ vi.mock("../../lib/logger.js", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 vi.mock("../lib/queue-options.js", () => ({
-  buildQueueConfig: vi.fn((name: string, preset: object) => ({ name, ...preset })),
+  buildQueueConfig: vi.fn((name: string, preset: object) => ({
+    name,
+    ...preset,
+  })),
   createQueueWithDlq: vi.fn(
     async (
       boss: { createQueue: (name: string, opts?: object) => Promise<void> },
@@ -99,11 +106,7 @@ interface StagedResponse {
 const staged = new Map<string, StagedResponse[]>();
 const writes = new Map<string, unknown[]>();
 
-function stageDb(
-  table: string,
-  op: SupabaseOp,
-  result: StagedResponse,
-): void {
+function stageDb(table: string, op: SupabaseOp, result: StagedResponse): void {
   const k = `${table}.${op}`;
   const list = staged.get(k) ?? [];
   list.push(result);
@@ -135,25 +138,68 @@ function makeBuilder(table: string) {
     writes.set(k, list);
   };
 
-  const resolve = (): Promise<{ data?: unknown; error?: unknown; count?: number | null }> => {
+  const resolve = (): Promise<{
+    data?: unknown;
+    error?: unknown;
+    count?: number | null;
+  }> => {
     const resp = popDb(table, op ?? "select");
     if (resp.throws !== undefined) return Promise.reject(resp.throws);
     return Promise.resolve(resp);
   };
 
   const builder: Record<string, unknown> = {
-    select: (..._args: unknown[]) => { if (!op) op = "select"; return builder; },
-    insert: (payload?: unknown) => { if (!op) { op = "insert"; recordWrite("insert", payload); } return builder; },
-    update: (payload?: unknown) => { if (!op) { op = "update"; recordWrite("update", payload); } return builder; },
-    upsert: (payload?: unknown) => { if (!op) { op = "upsert"; recordWrite("upsert", payload); } return builder; },
-    delete: () => { if (!op) { op = "delete"; recordWrite("delete", undefined); } return builder; },
-    eq: () => builder, neq: () => builder,
-    in: () => builder, lt: () => builder, lte: () => builder,
-    gt: () => builder, gte: () => builder, not: () => builder,
-    is: () => builder, like: () => builder, ilike: () => builder,
-    order: () => builder, limit: () => builder, range: () => builder,
-    filter: () => builder, or: () => builder, match: () => builder,
-    contains: () => builder, containedBy: () => builder,
+    select: (..._args: unknown[]) => {
+      if (!op) op = "select";
+      return builder;
+    },
+    insert: (payload?: unknown) => {
+      if (!op) {
+        op = "insert";
+        recordWrite("insert", payload);
+      }
+      return builder;
+    },
+    update: (payload?: unknown) => {
+      if (!op) {
+        op = "update";
+        recordWrite("update", payload);
+      }
+      return builder;
+    },
+    upsert: (payload?: unknown) => {
+      if (!op) {
+        op = "upsert";
+        recordWrite("upsert", payload);
+      }
+      return builder;
+    },
+    delete: () => {
+      if (!op) {
+        op = "delete";
+        recordWrite("delete", undefined);
+      }
+      return builder;
+    },
+    eq: () => builder,
+    neq: () => builder,
+    in: () => builder,
+    lt: () => builder,
+    lte: () => builder,
+    gt: () => builder,
+    gte: () => builder,
+    not: () => builder,
+    is: () => builder,
+    like: () => builder,
+    ilike: () => builder,
+    order: () => builder,
+    limit: () => builder,
+    range: () => builder,
+    filter: () => builder,
+    or: () => builder,
+    match: () => builder,
+    contains: () => builder,
+    containedBy: () => builder,
     maybeSingle: resolve,
     single: resolve,
     then: (ok: (v: unknown) => unknown, fail?: (v: unknown) => unknown) =>
@@ -231,8 +277,11 @@ function stageSingleRecipientTick(opts: {
   // 3. Claim UPDATE (status → sending, RETURNING id + email + kind + id)
   stageDb("bulk_campaign_recipients", "update", { data: [recipient] });
   // 4. Opt-out check SELECT (patients or shop_customers)
-  const prefTable = opts.claimTable ??
-    (recipient.recipient_kind === "shop_customer" ? "shop_customers" : "patients");
+  const prefTable =
+    opts.claimTable ??
+    (recipient.recipient_kind === "shop_customer"
+      ? "shop_customers"
+      : "patients");
   stageDb(prefTable, "select", {
     data:
       opts.patientPrefs !== undefined
@@ -244,7 +293,10 @@ function stageSingleRecipientTick(opts: {
   // 6. Campaign status re-check (still "sending" → enqueue next tick)
   stageDb("bulk_campaigns", "select", { data: { status: "sending" } });
   // 7. Pending count (0 remaining → mark sent)
-  stageDb("bulk_campaign_recipients", "select", { data: null, count: 0 } as { data: null; count: number });
+  stageDb("bulk_campaign_recipients", "select", { data: null, count: 0 } as {
+    data: null;
+    count: number;
+  });
   // 8. markCampaignSent UPDATE
   stageDb("bulk_campaigns", "update", { data: [{ id: campaign.id }] });
 }
@@ -264,7 +316,9 @@ beforeEach(() => {
   sendEmailMock.mockClear();
   sendEmailMock.mockResolvedValue({ messageId: "sg-msg-1" });
   createSendgridClientMock.mockClear();
-  createSendgridClientMock.mockImplementation(() => ({ sendEmail: sendEmailMock }));
+  createSendgridClientMock.mockImplementation(() => ({
+    sendEmail: sendEmailMock,
+  }));
   testLog.info.mockClear();
   testLog.warn.mockClear();
   testLog.error.mockClear();
@@ -288,14 +342,19 @@ describe("processTick — opt-out re-check at send time (marketing)", () => {
     });
 
     const boss = makeBoss();
-    await processTick(boss as never, { campaignId: "camp-1" }, testLog as never);
+    await processTick(
+      boss as never,
+      { campaignId: "camp-1" },
+      testLog as never,
+    );
 
     // The recipient should be flipped to 'suppressed' with the at-send reason
     const updates = getWrites("bulk_campaign_recipients", "update");
     const suppressionUpdate = updates.find(
       (u) =>
         (u as Record<string, unknown>).status === "suppressed" &&
-        (u as Record<string, unknown>).suppression_reason === "opted_out_at_send_time",
+        (u as Record<string, unknown>).suppression_reason ===
+          "opted_out_at_send_time",
     );
     expect(suppressionUpdate).toBeDefined();
     // sendEmail must NOT be called for this recipient
@@ -309,7 +368,11 @@ describe("processTick — opt-out re-check at send time (marketing)", () => {
     });
 
     const boss = makeBoss();
-    await processTick(boss as never, { campaignId: "camp-1" }, testLog as never);
+    await processTick(
+      boss as never,
+      { campaignId: "camp-1" },
+      testLog as never,
+    );
 
     expect(sendEmailMock).toHaveBeenCalledTimes(1);
   });
@@ -321,7 +384,11 @@ describe("processTick — opt-out re-check at send time (marketing)", () => {
     });
 
     const boss = makeBoss();
-    await processTick(boss as never, { campaignId: "camp-1" }, testLog as never);
+    await processTick(
+      boss as never,
+      { campaignId: "camp-1" },
+      testLog as never,
+    );
 
     expect(sendEmailMock).toHaveBeenCalledTimes(1);
   });
@@ -341,13 +408,18 @@ describe("processTick — opt-out re-check at send time (service)", () => {
     });
 
     const boss = makeBoss();
-    await processTick(boss as never, { campaignId: "camp-1" }, testLog as never);
+    await processTick(
+      boss as never,
+      { campaignId: "camp-1" },
+      testLog as never,
+    );
 
     const updates = getWrites("bulk_campaign_recipients", "update");
     const suppressionUpdate = updates.find(
       (u) =>
         (u as Record<string, unknown>).status === "suppressed" &&
-        (u as Record<string, unknown>).suppression_reason === "opted_out_at_send_time",
+        (u as Record<string, unknown>).suppression_reason ===
+          "opted_out_at_send_time",
     );
     expect(suppressionUpdate).toBeDefined();
     expect(sendEmailMock).not.toHaveBeenCalled();
@@ -359,7 +431,11 @@ describe("processTick — opt-out re-check at send time (service)", () => {
       patientPrefs: { emailResupplyReminders: true },
     });
 
-    await processTick(makeBoss() as never, { campaignId: "camp-1" }, testLog as never);
+    await processTick(
+      makeBoss() as never,
+      { campaignId: "camp-1" },
+      testLog as never,
+    );
     expect(sendEmailMock).toHaveBeenCalledTimes(1);
   });
 });
@@ -381,10 +457,17 @@ describe("processTick — compliance category bypasses opt-out gate", () => {
     // NO patient/shop_customers SELECT — the opt-out check is skipped
     stageDb("bulk_campaign_recipients", "update", { data: null }); // sent update
     stageDb("bulk_campaigns", "select", { data: { status: "sending" } });
-    stageDb("bulk_campaign_recipients", "select", { data: null, count: 0 } as { data: null; count: number });
+    stageDb("bulk_campaign_recipients", "select", { data: null, count: 0 } as {
+      data: null;
+      count: number;
+    });
     stageDb("bulk_campaigns", "update", { data: [{ id: campaign.id }] });
 
-    await processTick(makeBoss() as never, { campaignId: "camp-1" }, testLog as never);
+    await processTick(
+      makeBoss() as never,
+      { campaignId: "camp-1" },
+      testLog as never,
+    );
 
     expect(sendEmailMock).toHaveBeenCalledTimes(1);
     // patients / shop_customers tables must NOT have been queried for prefs —
@@ -405,10 +488,17 @@ describe("processTick — compliance category bypasses opt-out gate", () => {
     stageDb("bulk_campaign_recipients", "update", { data: [recipient] });
     stageDb("bulk_campaign_recipients", "update", { data: null });
     stageDb("bulk_campaigns", "select", { data: { status: "sending" } });
-    stageDb("bulk_campaign_recipients", "select", { data: null, count: 0 } as { data: null; count: number });
+    stageDb("bulk_campaign_recipients", "select", { data: null, count: 0 } as {
+      data: null;
+      count: number;
+    });
     stageDb("bulk_campaigns", "update", { data: [{ id: campaign.id }] });
 
-    await processTick(makeBoss() as never, { campaignId: "camp-1" }, testLog as never);
+    await processTick(
+      makeBoss() as never,
+      { campaignId: "camp-1" },
+      testLog as never,
+    );
     expect(sendEmailMock).toHaveBeenCalledTimes(1);
   });
 });
@@ -425,7 +515,11 @@ describe("processTick — unknown category does not block the send", () => {
       patientPrefs: { emailMarketing: false, emailResupplyReminders: false },
     });
 
-    await processTick(makeBoss() as never, { campaignId: "camp-1" }, testLog as never);
+    await processTick(
+      makeBoss() as never,
+      { campaignId: "camp-1" },
+      testLog as never,
+    );
     expect(sendEmailMock).toHaveBeenCalledTimes(1);
   });
 });
@@ -438,12 +532,20 @@ describe("processTick — shop_customer uses shop_customers table for opt-out ch
   it("suppresses a shop_customer with emailMarketing=false", async () => {
     stageSingleRecipientTick({
       campaign: { category: "marketing" },
-      recipient: { recipient_kind: "shop_customer", recipient_id: "sc-1", recipient_email: "shop@example.com" },
+      recipient: {
+        recipient_kind: "shop_customer",
+        recipient_id: "sc-1",
+        recipient_email: "shop@example.com",
+      },
       patientPrefs: { emailMarketing: false },
       claimTable: "shop_customers",
     });
 
-    await processTick(makeBoss() as never, { campaignId: "camp-1" }, testLog as never);
+    await processTick(
+      makeBoss() as never,
+      { campaignId: "camp-1" },
+      testLog as never,
+    );
 
     const updates = getWrites("bulk_campaign_recipients", "update");
     const suppressionUpdate = updates.find(
@@ -456,12 +558,20 @@ describe("processTick — shop_customer uses shop_customers table for opt-out ch
   it("sends to a shop_customer with emailMarketing=true", async () => {
     stageSingleRecipientTick({
       campaign: { category: "marketing" },
-      recipient: { recipient_kind: "shop_customer", recipient_id: "sc-1", recipient_email: "shop@example.com" },
+      recipient: {
+        recipient_kind: "shop_customer",
+        recipient_id: "sc-1",
+        recipient_email: "shop@example.com",
+      },
       patientPrefs: { emailMarketing: true },
       claimTable: "shop_customers",
     });
 
-    await processTick(makeBoss() as never, { campaignId: "camp-1" }, testLog as never);
+    await processTick(
+      makeBoss() as never,
+      { campaignId: "camp-1" },
+      testLog as never,
+    );
     expect(sendEmailMock).toHaveBeenCalledTimes(1);
   });
 });
@@ -483,10 +593,17 @@ describe("processTick — opt-out DB error is fail-open", () => {
     stageDb("patients", "select", { throws: new Error("DB connection lost") });
     stageDb("bulk_campaign_recipients", "update", { data: null }); // sent
     stageDb("bulk_campaigns", "select", { data: { status: "sending" } });
-    stageDb("bulk_campaign_recipients", "select", { data: null, count: 0 } as { data: null; count: number });
+    stageDb("bulk_campaign_recipients", "select", { data: null, count: 0 } as {
+      data: null;
+      count: number;
+    });
     stageDb("bulk_campaigns", "update", { data: [{ id: campaign.id }] });
 
-    await processTick(makeBoss() as never, { campaignId: "camp-1" }, testLog as never);
+    await processTick(
+      makeBoss() as never,
+      { campaignId: "camp-1" },
+      testLog as never,
+    );
 
     // Fail-open: send is attempted despite the DB error
     expect(sendEmailMock).toHaveBeenCalledTimes(1);
@@ -507,11 +624,18 @@ describe("processTick — suppressedAtSend counter and pool.query", () => {
       patientPrefs: { emailMarketing: false },
     });
 
-    await processTick(makeBoss() as never, { campaignId: "camp-1" }, testLog as never);
+    await processTick(
+      makeBoss() as never,
+      { campaignId: "camp-1" },
+      testLog as never,
+    );
 
     // pool.query should have been called
     expect(poolQueryMock).toHaveBeenCalledTimes(1);
-    const [sql, params] = poolQueryMock.mock.calls[0] as unknown as [string, unknown[]];
+    const [sql, params] = poolQueryMock.mock.calls[0] as unknown as [
+      string,
+      unknown[],
+    ];
     expect(sql).toContain("suppressed_count");
     // params = [sent, failed, suppressedAtSend, campaignId]
     expect(params).toHaveLength(4);
@@ -529,7 +653,11 @@ describe("processTick — suppressedAtSend counter and pool.query", () => {
       patientPrefs: { emailMarketing: false },
     });
 
-    await processTick(makeBoss() as never, { campaignId: "camp-1" }, testLog as never);
+    await processTick(
+      makeBoss() as never,
+      { campaignId: "camp-1" },
+      testLog as never,
+    );
     expect(poolQueryMock).toHaveBeenCalledTimes(1);
     const [sql] = poolQueryMock.mock.calls[0] as unknown as [string, unknown[]];
     expect(sql).toContain("failed_count");
@@ -543,10 +671,17 @@ describe("processTick — suppressedAtSend counter and pool.query", () => {
     stageDb("bulk_campaign_recipients", "update", { data: null }); // stale-'sending' reclaim (no-op)
     stageDb("bulk_campaign_recipients", "select", { data: [] }); // no pending
     // finalizeOrReschedule: 0 pending+sending remaining → mark sent
-    stageDb("bulk_campaign_recipients", "select", { data: null, count: 0 } as { data: null; count: number });
+    stageDb("bulk_campaign_recipients", "select", { data: null, count: 0 } as {
+      data: null;
+      count: number;
+    });
     stageDb("bulk_campaigns", "update", { data: [{ id: campaign.id }] }); // markSent
 
-    await processTick(makeBoss() as never, { campaignId: "camp-1" }, testLog as never);
+    await processTick(
+      makeBoss() as never,
+      { campaignId: "camp-1" },
+      testLog as never,
+    );
     expect(poolQueryMock).not.toHaveBeenCalled();
   });
 
@@ -560,7 +695,11 @@ describe("processTick — suppressedAtSend counter and pool.query", () => {
     // Claim UPDATE returns empty → lost the race
     stageDb("bulk_campaign_recipients", "update", { data: [] });
 
-    await processTick(makeBoss() as never, { campaignId: "camp-1" }, testLog as never);
+    await processTick(
+      makeBoss() as never,
+      { campaignId: "camp-1" },
+      testLog as never,
+    );
     expect(poolQueryMock).not.toHaveBeenCalled();
   });
 
@@ -570,9 +709,16 @@ describe("processTick — suppressedAtSend counter and pool.query", () => {
       patientPrefs: { emailResupplyReminders: false },
     });
 
-    await processTick(makeBoss() as never, { campaignId: "camp-1" }, testLog as never);
+    await processTick(
+      makeBoss() as never,
+      { campaignId: "camp-1" },
+      testLog as never,
+    );
 
-    const [, params] = poolQueryMock.mock.calls[0] as unknown as [string, unknown[]];
+    const [, params] = poolQueryMock.mock.calls[0] as unknown as [
+      string,
+      unknown[],
+    ];
     expect(params[3]).toBe("camp-1");
   });
 });
@@ -601,7 +747,11 @@ describe("processTick — opt-out re-check scope: patient kind fails open", () =
       patientPrefs: { emailMarketing: false },
     });
 
-    await processTick(makeBoss() as never, { campaignId: "camp-1" }, testLog as never);
+    await processTick(
+      makeBoss() as never,
+      { campaignId: "camp-1" },
+      testLog as never,
+    );
 
     // Patient is NOT suppressed — send proceeds despite the pref being false.
     // (The shop_customer path would suppress here; see the marketing tests above.)
@@ -610,7 +760,8 @@ describe("processTick — opt-out re-check scope: patient kind fails open", () =
     const suppressionUpdate = updates.find(
       (u) =>
         (u as Record<string, unknown>).status === "suppressed" &&
-        (u as Record<string, unknown>).suppression_reason === "opted_out_at_send_time",
+        (u as Record<string, unknown>).suppression_reason ===
+          "opted_out_at_send_time",
     );
     expect(suppressionUpdate).toBeUndefined();
   });
@@ -622,7 +773,11 @@ describe("processTick — opt-out re-check scope: patient kind fails open", () =
       patientPrefs: { emailResupplyReminders: false },
     });
 
-    await processTick(makeBoss() as never, { campaignId: "camp-1" }, testLog as never);
+    await processTick(
+      makeBoss() as never,
+      { campaignId: "camp-1" },
+      testLog as never,
+    );
 
     // Patient recipient is still sent to — fail-open scope.
     expect(sendEmailMock).toHaveBeenCalledTimes(1);
@@ -645,7 +800,11 @@ describe("processTick — orphaned 'sending' recovery", () => {
       patientPrefs: { emailMarketing: true },
     });
 
-    await processTick(makeBoss() as never, { campaignId: "camp-1" }, testLog as never);
+    await processTick(
+      makeBoss() as never,
+      { campaignId: "camp-1" },
+      testLog as never,
+    );
 
     // The FIRST recipient UPDATE is the stale-'sending' reclaim. In the
     // route it is scoped to status='sending' AND updated_at < lease; the
@@ -672,7 +831,11 @@ describe("processTick — orphaned 'sending' recovery", () => {
     });
 
     const boss = makeBoss();
-    await processTick(boss as never, { campaignId: "camp-1" }, testLog as never);
+    await processTick(
+      boss as never,
+      { campaignId: "camp-1" },
+      testLog as never,
+    );
 
     // Must reschedule a follow-up tick, NOT complete the campaign.
     expect(boss.send).toHaveBeenCalledTimes(1);
@@ -690,9 +853,8 @@ describe("processTick — orphaned 'sending' recovery", () => {
 describe("registerBulkCampaignTickJob — queue is created with buildQueueConfig", () => {
   it("calls boss.createQueue with BULK_CAMPAIGN_TICK_JOB and a queue options object (not bare name)", async () => {
     const boss = makeBoss();
-    const { registerBulkCampaignTickJob, BULK_CAMPAIGN_TICK_JOB } = await import(
-      "./bulk-campaign-tick"
-    );
+    const { registerBulkCampaignTickJob, BULK_CAMPAIGN_TICK_JOB } =
+      await import("./bulk-campaign-tick");
     await registerBulkCampaignTickJob(boss as never);
     expect(boss.createQueue).toHaveBeenCalledWith(
       BULK_CAMPAIGN_TICK_JOB,

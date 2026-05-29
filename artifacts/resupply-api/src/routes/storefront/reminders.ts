@@ -301,7 +301,9 @@ router.post("/reminders", async (req, res) => {
  * Returns `{ column, value }` for a `.eq()` clause, or null with a
  * status + message the handler should return.
  */
-function resolveManageLookup(req: import("express").Request):
+function resolveManageLookup(
+  req: import("express").Request,
+):
   | { ok: true; column: "manage_token" | "email"; value: string }
   | { ok: false; status: number; message: string } {
   const tokenParsed = GetReminderSubscriptionQueryParams.safeParse(req.query);
@@ -315,8 +317,7 @@ function resolveManageLookup(req: import("express").Request):
   return {
     ok: false,
     status: 401,
-    message:
-      "sign_in_required or token query parameter — pass one of the two",
+    message: "sign_in_required or token query parameter — pass one of the two",
   };
 }
 

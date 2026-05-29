@@ -37,9 +37,9 @@ export function NpsLanding() {
     const n = Number(raw);
     return Number.isInteger(n) && n >= 0 && n <= 10 ? n : null;
   });
-  const [submitState, setSubmitState] = useState<
-    "submitting" | "ok" | "error"
-  >("submitting");
+  const [submitState, setSubmitState] = useState<"submitting" | "ok" | "error">(
+    "submitting",
+  );
   const [comment, setComment] = useState("");
   const [commentState, setCommentState] = useState<
     "idle" | "submitting" | "ok" | "error"
@@ -136,10 +136,7 @@ export function NpsLanding() {
           )}
           {submitState === "error" && (
             <div className="space-y-2">
-              <p
-                className="text-sm text-destructive"
-                data-testid="nps-error"
-              >
+              <p className="text-sm text-destructive" data-testid="nps-error">
                 We couldn&apos;t save your rating from this link. It may have
                 expired (links work for 30 days). Please reply to the email
                 directly — we read every one.
@@ -153,8 +150,8 @@ export function NpsLanding() {
                 data-testid="nps-ok"
               >
                 We recorded your rating of <strong>{score}/10</strong>. Want to
-                tell us anything else? Optional but appreciated — every
-                comment lands in front of a real human.
+                tell us anything else? Optional but appreciated — every comment
+                lands in front of a real human.
               </p>
               {commentState !== "ok" ? (
                 <div className="space-y-3">
@@ -199,15 +196,12 @@ export function NpsLanding() {
                   className="text-sm text-muted-foreground"
                   data-testid="nps-comment-ok"
                 >
-                  Got it — thank you. We&apos;ll be in touch if anything needs
-                  a follow-up.
+                  Got it — thank you. We&apos;ll be in touch if anything needs a
+                  follow-up.
                 </p>
               )}
               <div className="pt-2">
-                <Link
-                  href="/"
-                  className="text-sm text-primary hover:underline"
-                >
+                <Link href="/" className="text-sm text-primary hover:underline">
                   Back to PennPaps
                 </Link>
               </div>

@@ -166,4 +166,3 @@ describe("reminders-manage — regression: core manage behaviour intact", () => 
     expect(SRC).toContain("You've been unsubscribed");
   });
 });
-

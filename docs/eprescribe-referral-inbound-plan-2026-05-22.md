@@ -8,13 +8,13 @@ The user asked us to research the top DME/CPAP and inventory systems, identify w
 
 ## Market summary — what makes the leaders "best"
 
-| System | Best-known strength |
-| --- | --- |
-| **Brightree** (market leader) | Deep ResMed AirView integration; automated resupply enrollment on PAP compliance signal; mobile patient app; IVR + live agent voice services; advanced analytics dashboards (days-in-AR, denial rate, on-time delivery) |
-| **NikoHealth** (modern challenger) | Magic-link reorder, native delivery driver app with POD/barcode/route-opt, **Parachute Health integration**, on-demand PECOS verification, flat pricing, robust public API |
-| **Bonafide** | Lower-cost simpler operations for small providers |
-| **Parachute Health** | Dominant ePrescribing rail: **270k clinicians, 3k DME suppliers**, EHR integrations (Athena, Epic, PointClickCare), 98% first-pass clean-order rate, integrated prior auth |
-| **ResMed myAir / Philips DreamMapper** | Patient engagement apps proven to improve PAP compliance ~17 pts vs. AirView/Care Orchestrator alone |
+| System                                 | Best-known strength                                                                                                                                                                                                     |
+| -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Brightree** (market leader)          | Deep ResMed AirView integration; automated resupply enrollment on PAP compliance signal; mobile patient app; IVR + live agent voice services; advanced analytics dashboards (days-in-AR, denial rate, on-time delivery) |
+| **NikoHealth** (modern challenger)     | Magic-link reorder, native delivery driver app with POD/barcode/route-opt, **Parachute Health integration**, on-demand PECOS verification, flat pricing, robust public API                                              |
+| **Bonafide**                           | Lower-cost simpler operations for small providers                                                                                                                                                                       |
+| **Parachute Health**                   | Dominant ePrescribing rail: **270k clinicians, 3k DME suppliers**, EHR integrations (Athena, Epic, PointClickCare), 98% first-pass clean-order rate, integrated prior auth                                              |
+| **ResMed myAir / Philips DreamMapper** | Patient engagement apps proven to improve PAP compliance ~17 pts vs. AirView/Care Orchestrator alone                                                                                                                    |
 
 **Cross-cutting features that define a "best" DME platform in 2026:** real-time eligibility (270/271), pre-submission claim scrubbing, CMN/PA tracking with payer-rule engine, denial AI (20–30% lower first-pass denials reported), bidirectional ePrescribe with EHR/Parachute, multi-location inventory with par-levels & demand forecasting, mobile driver app with route optimization & POD, configurable KPI dashboards, mobile patient app with push reorder.
 

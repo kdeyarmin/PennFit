@@ -125,9 +125,9 @@ describe("roleHasPermission", () => {
     // documented behavior change of the 3-bucket collapse.
     expect(roleHasPermission("fitter", "conversations.manage")).toBe(true);
     expect(roleHasPermission("fulfillment", "conversations.manage")).toBe(true);
-    expect(roleHasPermission("compliance_officer", "conversations.manage")).toBe(
-      true,
-    );
+    expect(
+      roleHasPermission("compliance_officer", "conversations.manage"),
+    ).toBe(true);
   });
 
   it("admin.tools.manage is admin-bucket-and-up", () => {

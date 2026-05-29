@@ -248,7 +248,10 @@ describe("inviteMember — response handling", () => {
       json: async () => INVITE_RESPONSE,
     });
 
-    const result = await inviteMember({ email: "new@example.com", role: "csr" });
+    const result = await inviteMember({
+      email: "new@example.com",
+      role: "csr",
+    });
     expect(result.member.email).toBe("pat@example.com");
     expect(result.emailSent).toBe(true);
     expect(result.inviteLink).toBeNull();
@@ -261,7 +264,10 @@ describe("inviteMember — response handling", () => {
       json: async () => INVITE_RESPONSE,
     });
 
-    const result = await inviteMember({ email: "new@example.com", role: "csr" });
+    const result = await inviteMember({
+      email: "new@example.com",
+      role: "csr",
+    });
     expect("signInReady" in result).toBe(false);
   });
 
@@ -277,7 +283,10 @@ describe("inviteMember — response handling", () => {
       json: async () => resp,
     });
 
-    const result = await inviteMember({ email: "new@example.com", role: "csr" });
+    const result = await inviteMember({
+      email: "new@example.com",
+      role: "csr",
+    });
     expect(result.emailSent).toBe(false);
     expect(result.inviteLink).toBe("https://example.com/invite/abc");
   });
@@ -405,7 +414,9 @@ describe("resendInvite", () => {
     fetchMock.mockResolvedValue({
       ok: false,
       status: 500,
-      json: async () => { throw new SyntaxError("no body"); },
+      json: async () => {
+        throw new SyntaxError("no body");
+      },
     });
 
     await expect(resendInvite("m-1")).rejects.toThrow("500");
@@ -465,7 +476,9 @@ describe("revokeMember", () => {
       json: async () => ({ message: "insufficient permissions" }),
     });
 
-    await expect(revokeMember("m-1")).rejects.toThrow("insufficient permissions");
+    await expect(revokeMember("m-1")).rejects.toThrow(
+      "insufficient permissions",
+    );
   });
 
   it("returns { member } on success", async () => {
@@ -597,7 +610,9 @@ describe("patchMember", () => {
     fetchMock.mockResolvedValue({
       ok: false,
       status: 500,
-      json: async () => { throw new SyntaxError("no body"); },
+      json: async () => {
+        throw new SyntaxError("no body");
+      },
     });
 
     await expect(patchMember("m-1", { role: "csr" })).rejects.toThrow("500");

@@ -52,11 +52,12 @@ const REGION_OPTIONS: Array<{ value: PayerRegion; label: string }> = [
   { value: "national", label: "National" },
 ];
 
-const CLAIM_FORMAT_OPTIONS: Array<{ value: PayerClaimFormat; label: string }> = [
-  { value: "837p", label: "837P (professional)" },
-  { value: "837i", label: "837I (institutional)" },
-  { value: "paper_1500", label: "Paper HCFA-1500" },
-];
+const CLAIM_FORMAT_OPTIONS: Array<{ value: PayerClaimFormat; label: string }> =
+  [
+    { value: "837p", label: "837P (professional)" },
+    { value: "837i", label: "837I (institutional)" },
+    { value: "paper_1500", label: "Paper HCFA-1500" },
+  ];
 
 const PA_METHOD_OPTIONS: Array<{
   value: PayerPaSubmissionMethod;
@@ -118,7 +119,8 @@ export function AdminBillingConfigPayersPage() {
             Payer profiles
           </h1>
           <p className="text-sm" style={{ color: "hsl(var(--ink-2))" }}>
-            The PA payer catalog backing every claim header. {data?.payerProfiles.length ?? 0} match the current filters.
+            The PA payer catalog backing every claim header.{" "}
+            {data?.payerProfiles.length ?? 0} match the current filters.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -157,7 +159,10 @@ export function AdminBillingConfigPayersPage() {
             onChange={setRegion}
             options={[
               { value: "", label: "All" },
-              ...REGION_OPTIONS.map((o) => ({ value: o.value, label: o.label })),
+              ...REGION_OPTIONS.map((o) => ({
+                value: o.value,
+                label: o.label,
+              })),
             ]}
           />
           <FilterSelect
@@ -234,13 +239,7 @@ export function AdminBillingConfigPayersPage() {
   );
 }
 
-function PayerRow({
-  p,
-  onEdit,
-}: {
-  p: PayerProfile;
-  onEdit: () => void;
-}) {
+function PayerRow({ p, onEdit }: { p: PayerProfile; onEdit: () => void }) {
   return (
     <tr
       className="border-t"
@@ -248,10 +247,7 @@ function PayerRow({
       data-testid={`payer-row-${p.slug}`}
     >
       <td className="p-3">
-        <p
-          className="font-medium"
-          style={{ color: "hsl(var(--ink-1))" }}
-        >
+        <p className="font-medium" style={{ color: "hsl(var(--ink-1))" }}>
           {p.displayName}
         </p>
         <p className="text-[11px]" style={{ color: "hsl(var(--ink-3))" }}>
@@ -328,11 +324,7 @@ function PayerRow({
   );
 }
 
-function EnrollmentBadge({
-  status,
-}: {
-  status: PayerEdiEnrollmentStatus;
-}) {
+function EnrollmentBadge({ status }: { status: PayerEdiEnrollmentStatus }) {
   const colors: Record<PayerEdiEnrollmentStatus, { bg: string; fg: string }> = {
     enrolled: { bg: "rgba(21,128,61,0.14)", fg: "#15803d" },
     pending: { bg: "rgba(180,83,9,0.14)", fg: "#b45309" },
@@ -361,10 +353,7 @@ function PayerDrawer({
 }) {
   const queryClient = useQueryClient();
   const initial = useMemo<PayerProfileFormState>(
-    () =>
-      mode.kind === "edit"
-        ? formFromProfile(mode.payer)
-        : emptyForm(),
+    () => (mode.kind === "edit" ? formFromProfile(mode.payer) : emptyForm()),
     [mode],
   );
   const [form, setForm] = useState<PayerProfileFormState>(initial);
@@ -420,12 +409,9 @@ function PayerDrawer({
             >
               {isEdit ? "Edit payer" : "Add payer"}
             </h2>
-            <p
-              className="text-xs"
-              style={{ color: "hsl(var(--ink-3))" }}
-            >
-              Saving stamps {`"requirements last verified"`} with your email
-              so the catalog tracks freshness.
+            <p className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
+              Saving stamps {`"requirements last verified"`} with your email so
+              the catalog tracks freshness.
             </p>
           </div>
           <button
@@ -595,9 +581,7 @@ function PayerDrawer({
                   onChange={(v) =>
                     set(
                       "priorAuthSubmissionMethod",
-                      v === ""
-                        ? null
-                        : (v as PayerPaSubmissionMethod),
+                      v === "" ? null : (v as PayerPaSubmissionMethod),
                     )
                   }
                   options={[
@@ -656,9 +640,7 @@ function PayerDrawer({
               <input
                 type="text"
                 value={form.requiredClaimModifiers}
-                onChange={(e) =>
-                  set("requiredClaimModifiers", e.target.value)
-                }
+                onChange={(e) => set("requiredClaimModifiers", e.target.value)}
                 placeholder="KX, GA"
                 className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm font-mono"
               />
@@ -715,9 +697,7 @@ function PayerDrawer({
                 <input
                   type="tel"
                   value={form.claimStatusPhoneE164}
-                  onChange={(e) =>
-                    set("claimStatusPhoneE164", e.target.value)
-                  }
+                  onChange={(e) => set("claimStatusPhoneE164", e.target.value)}
                   placeholder="+18005551234"
                   className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm font-mono"
                 />

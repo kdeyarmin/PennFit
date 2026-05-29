@@ -27,7 +27,8 @@ import {
 import { logger } from "../logger";
 
 type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
-type PriorAuthRow = Database["resupply"]["Tables"]["prior_authorizations"]["Row"];
+type PriorAuthRow =
+  Database["resupply"]["Tables"]["prior_authorizations"]["Row"];
 type SlaStatus = NonNullable<PriorAuthRow["mco_sla_status"]>;
 
 const STANDARD_PA_SLA_DAYS = 7;
@@ -90,10 +91,7 @@ export async function runPaMcoSlaSweep(): Promise<SweepStats> {
     const next = computeStatus(target);
     stats.byStatus[next] += 1;
 
-    if (
-      pa.mco_sla_status !== next ||
-      pa.mco_sla_target_date !== target
-    ) {
+    if (pa.mco_sla_status !== next || pa.mco_sla_target_date !== target) {
       await supabase
         .schema("resupply")
         .from("prior_authorizations")

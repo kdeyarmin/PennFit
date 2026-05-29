@@ -49,12 +49,7 @@ export const DEFAULT_DEEPGRAM_MODEL = "nova-3";
  *   - `opus`    — WebRTC default.
  *   - `flac` / `mp3` — for batch transcription of stored recordings.
  */
-export type DeepgramEncoding =
-  | "mulaw"
-  | "linear16"
-  | "opus"
-  | "flac"
-  | "mp3";
+export type DeepgramEncoding = "mulaw" | "linear16" | "opus" | "flac" | "mp3";
 
 export interface DeepgramPrerecordedOptions {
   /** Audio bytes (a Buffer or Uint8Array). */
@@ -111,7 +106,13 @@ export type DeepgramCallResult =
   | DeepgramPrerecordedResult
   | {
       ok: false;
-      errorCode: "config" | "http" | "timeout" | "transport" | "parse" | "empty";
+      errorCode:
+        | "config"
+        | "http"
+        | "timeout"
+        | "transport"
+        | "parse"
+        | "empty";
       errorMessage: string;
       httpStatus?: number;
       latencyMs: number;
@@ -206,10 +207,7 @@ export interface DeepgramWebSocketLike {
   send(data: string | Uint8Array | ArrayBufferLike): void;
   close(code?: number, reason?: string): void;
   addEventListener(event: "open", cb: () => void): void;
-  addEventListener(
-    event: "message",
-    cb: (ev: { data: unknown }) => void,
-  ): void;
+  addEventListener(event: "message", cb: (ev: { data: unknown }) => void): void;
   addEventListener(
     event: "error",
     cb: (ev: { message?: string }) => void,
@@ -298,7 +296,10 @@ export function createDeepgramClient(
           })),
           durationSeconds: json.metadata?.duration ?? 0,
           latencyMs,
-          model: json.metadata?.model_info?.name ?? pr.model ?? DEFAULT_DEEPGRAM_MODEL,
+          model:
+            json.metadata?.model_info?.name ??
+            pr.model ??
+            DEFAULT_DEEPGRAM_MODEL,
         };
       } catch (err) {
         const latencyMs = Date.now() - startedAt;
@@ -328,9 +329,12 @@ export function createDeepgramClient(
       const url = `${wsUrl}?${params.toString()}`;
       const ws = wsFactory(url, { Authorization: `Token ${apiKey}` });
 
-      const transcriptCbs: Array<(ev: DeepgramLiveTranscriptEvent) => void> = [];
-      const errorCbs: Array<(err: { code: string; message: string }) => void> = [];
-      const closeCbs: Array<(info: { code: number; reason: string }) => void> = [];
+      const transcriptCbs: Array<(ev: DeepgramLiveTranscriptEvent) => void> =
+        [];
+      const errorCbs: Array<(err: { code: string; message: string }) => void> =
+        [];
+      const closeCbs: Array<(info: { code: number; reason: string }) => void> =
+        [];
 
       // Buffer events that arrive BEFORE the caller has had a chance
       // to wire .onError / .onClose. Without this, a synchronous WS
@@ -371,7 +375,8 @@ export function createDeepgramClient(
       ws.addEventListener("message", (ev) => {
         let raw: string;
         if (typeof ev.data === "string") raw = ev.data;
-        else if (ev.data instanceof Uint8Array) raw = Buffer.from(ev.data).toString("utf-8");
+        else if (ev.data instanceof Uint8Array)
+          raw = Buffer.from(ev.data).toString("utf-8");
         else if (Buffer.isBuffer(ev.data)) raw = ev.data.toString("utf-8");
         else return;
         let parsed: DeepgramLiveEvent;

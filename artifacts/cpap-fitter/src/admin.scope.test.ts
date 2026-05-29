@@ -91,9 +91,7 @@ function* iterateTopLevelRules(
 const ADMIN_TOKEN_DECL_RE = /(?:^|[\s;{])(--penn-[A-Za-z0-9_-]+)\s*:/;
 
 function findDeclarations(body: string): string[] {
-  const matches = body.matchAll(
-    /(?:^|[\s;{])(--penn-[A-Za-z0-9_-]+)\s*:/g,
-  );
+  const matches = body.matchAll(/(?:^|[\s;{])(--penn-[A-Za-z0-9_-]+)\s*:/g);
   const tokens: string[] = [];
   for (const m of matches) tokens.push(m[1]!);
   return tokens;

@@ -37,9 +37,8 @@ export function DocumentsSection() {
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [selectedType, setSelectedType] = useState<PatientDocumentType>(
-    "insurance_card",
-  );
+  const [selectedType, setSelectedType] =
+    useState<PatientDocumentType>("insurance_card");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   async function load() {
@@ -99,9 +98,8 @@ export function DocumentsSection() {
         <h2 className="font-semibold">My documents</h2>
       </div>
       <p className="text-sm text-muted-foreground">
-        Upload insurance cards, prescriptions, referrals, or other documents
-        for Penn Home Medical Supply. Our team will be able to view these
-        directly.
+        Upload insurance cards, prescriptions, referrals, or other documents for
+        Penn Home Medical Supply. Our team will be able to view these directly.
       </p>
 
       {/* Upload controls */}

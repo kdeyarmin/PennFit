@@ -122,7 +122,10 @@ export async function getLatestPhiSweepStatus(): Promise<PhiSweepStatus | null> 
     .maybeSingle();
 
   if (error) {
-    logger.warn({ err: error }, "phi-sweep-status: query failed; surfacing null");
+    logger.warn(
+      { err: error },
+      "phi-sweep-status: query failed; surfacing null",
+    );
     return null;
   }
   if (!row) return null;

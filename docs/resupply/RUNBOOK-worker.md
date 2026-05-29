@@ -10,12 +10,12 @@ those jobs.
 
 ## Where the queue lives
 
-| Object | Notes |
-| --- | --- |
-| Schema `pgboss_resupply` | Created by `boss.start()` on the first run. Holds every pg-boss table. |
-| Table `pgboss_resupply.job` | Active queue. One row per pending or retrying job. |
-| Table `pgboss_resupply.archive` | Completed and `failed` jobs after their archive interval. |
-| Table `pgboss_resupply.version` | The `/readyz` probe checks this exact table to gate traffic. |
+| Object                          | Notes                                                                  |
+| ------------------------------- | ---------------------------------------------------------------------- |
+| Schema `pgboss_resupply`        | Created by `boss.start()` on the first run. Holds every pg-boss table. |
+| Table `pgboss_resupply.job`     | Active queue. One row per pending or retrying job.                     |
+| Table `pgboss_resupply.archive` | Completed and `failed` jobs after their archive interval.              |
+| Table `pgboss_resupply.version` | The `/readyz` probe checks this exact table to gate traffic.           |
 
 `drizzle.resupply_migrations` is unrelated; it tracks application schema migrations.
 
@@ -56,10 +56,11 @@ issues (`event=pg_boss_error`).
 ### "Should I just delete the failed rows?"
 
 Almost never. The archive is the audit trail for cron health and is
-the only record an operator has of *what* failed *when*. Truncating
+the only record an operator has of _what_ failed _when_. Truncating
 hides the same failure that's about to recur.
 
 The exceptions are:
+
 - **`failed` rows that pre-date a code change that fixed the
   underlying bug**: replay first; if the replay also fails, the bug
   isn't fixed.
@@ -72,11 +73,11 @@ Most cron jobs are idempotent (the partial-unique indexes on
 `patient_smart_trigger_events`, `prescription_renewal_requests`,
 etc. ensure they don't double-fire) and safe to retry. Two ways:
 
-* **Wait for the next scheduled run.** The simplest option for the
+- **Wait for the next scheduled run.** The simplest option for the
   daily-ish crons. They'll re-evaluate the same set of rows and
   the idempotency key stops a duplicate side effect.
 
-* **Manual re-enqueue from a Node REPL on the deploy host:**
+- **Manual re-enqueue from a Node REPL on the deploy host:**
   ```ts
   import { getBoss } from "./worker/index.js";
   const boss = getBoss();
@@ -87,6 +88,7 @@ etc. ensure they don't double-fire) and safe to retry. Two ways:
   scan.
 
 ### "A job is stuck in `active` state long after the worker
+
 restarted"
 
 `active` rows that outlive their owning worker process get reaped
@@ -107,13 +109,14 @@ WHERE id = '...' AND state = 'active';
 Symptoms: `reminders.scan` queue shows `failed` jobs.
 
 Likely causes (pick one based on the `output` column):
-* **`SENDGRID_API_KEY` rotated.** Confirm the deploy got the new
+
+- **`SENDGRID_API_KEY` rotated.** Confirm the deploy got the new
   value; restart the API process; the next scan will succeed.
-* **Twilio account suspended / over quota.** Look for `21610` /
+- **Twilio account suspended / over quota.** Look for `21610` /
   `21408` style codes in the error output. The reminders codepath
   is best-effort per channel — fix the Twilio account, then wait
   for the next scheduled run.
-* **DB stalled write.** Run a short `SELECT 1` against
+- **DB stalled write.** Run a short `SELECT 1` against
   `DATABASE_URL` from the deploy host. If it hangs, the DB is the
   blocker, not the worker.
 
@@ -122,12 +125,13 @@ Likely causes (pick one based on the `output` column):
 Symptoms: `prescription-attachment-sweep` failed.
 
 Likely causes:
-* **`SUPABASE_STORAGE_BUCKET_PRIVATE` unset / typo.** The job logs a
+
+- **`SUPABASE_STORAGE_BUCKET_PRIVATE` unset / typo.** The job logs a
   categorized error before pg-boss sees the throw. Fix the env,
   redeploy.
-* **Supabase Storage auth expired** (rotated service-role JWT).
+- **Supabase Storage auth expired** (rotated service-role JWT).
   Same fix.
-* **An attachment ref disappeared between the reference SET build
+- **An attachment ref disappeared between the reference SET build
   and the per-object recheck.** The job is robust to this: the
   recheck is per-object and aborts the delete if the row showed up.
   No action needed.
@@ -152,12 +156,12 @@ schema mismatches after a migration, not code bugs.
 If you find yourself updating this runbook often, the right answer
 is probably one of:
 
-* Promote the in-process worker to its own artifact when the queue
+- Promote the in-process worker to its own artifact when the queue
   becomes throughput-class (per the comment at the top of
   `artifacts/resupply-api/src/worker/index.ts`).
-* Add per-job structured failure logs at the job-handler boundary
+- Add per-job structured failure logs at the job-handler boundary
   so the runbook stops being the canonical interpreter of pg-boss
   `output` JSON.
-* Wire a real DLQ — pg-boss only models failed-and-archived; a
+- Wire a real DLQ — pg-boss only models failed-and-archived; a
   separate dead-letter queue would let on-call inspect failures
   without parsing the archive table.

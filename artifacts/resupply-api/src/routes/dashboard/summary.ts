@@ -23,7 +23,9 @@ const router: IRouter = Router();
 
 router.get("/dashboard/summary", requireAdmin, async (_req, res) => {
   const supabase = getSupabaseServiceRoleClient();
-  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  const sevenDaysAgo = new Date(
+    Date.now() - 7 * 24 * 60 * 60 * 1000,
+  ).toISOString();
   const nowIso = new Date().toISOString();
 
   const [

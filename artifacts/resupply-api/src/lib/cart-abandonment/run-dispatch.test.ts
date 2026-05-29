@@ -75,7 +75,9 @@ import {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
 
-function makeCartRow(over: Partial<Record<string, unknown>> = {}): Record<string, unknown> {
+function makeCartRow(
+  over: Partial<Record<string, unknown>> = {},
+): Record<string, unknown> {
   return {
     id: "cart-1",
     customer_id: "cust-1",
@@ -100,11 +102,13 @@ function makePrefRow(
  *  2. UPDATE shop_abandoned_carts (claim)
  *  3. SELECT shop_customers (prefs)
  */
-function stageMinimalDispatch(opts: {
-  candidateIds?: string[];
-  claimedRows?: Record<string, unknown>[];
-  prefRows?: Record<string, unknown>[];
-} = {}): void {
+function stageMinimalDispatch(
+  opts: {
+    candidateIds?: string[];
+    claimedRows?: Record<string, unknown>[];
+    prefRows?: Record<string, unknown>[];
+  } = {},
+): void {
   const candidateIds = opts.candidateIds ?? ["cart-1"];
   const claimedRows = opts.claimedRows ?? [makeCartRow()];
   const prefRows = opts.prefRows ?? [];
@@ -258,9 +262,21 @@ describe("runCartAbandonmentDispatch — successful send", () => {
     });
     stageSupabaseResponse("shop_abandoned_carts", "update", {
       data: [
-        makeCartRow({ id: "cart-1", customer_id: "cust-1", email: "p1@ex.com" }),
-        makeCartRow({ id: "cart-2", customer_id: "cust-2", email: "p2@ex.com" }),
-        makeCartRow({ id: "cart-3", customer_id: "cust-3", email: "p3@ex.com" }),
+        makeCartRow({
+          id: "cart-1",
+          customer_id: "cust-1",
+          email: "p1@ex.com",
+        }),
+        makeCartRow({
+          id: "cart-2",
+          customer_id: "cust-2",
+          email: "p2@ex.com",
+        }),
+        makeCartRow({
+          id: "cart-3",
+          customer_id: "cust-3",
+          email: "p3@ex.com",
+        }),
       ],
     });
     stageSupabaseResponse("shop_customers", "select", { data: [] });
@@ -416,7 +432,9 @@ describe("runCartAbandonmentDispatch — send throws", () => {
     // First send succeeds, second throws.
     sendCartAbandonmentEmailMock
       .mockResolvedValueOnce({ configured: true, delivered: true })
-      .mockRejectedValueOnce(new Error("EmailConfigError: SENDGRID_API_KEY is required"));
+      .mockRejectedValueOnce(
+        new Error("EmailConfigError: SENDGRID_API_KEY is required"),
+      );
 
     // Unclaim for cart-2 (the one that threw).
     stageSupabaseResponse("shop_abandoned_carts", "update", { data: null });

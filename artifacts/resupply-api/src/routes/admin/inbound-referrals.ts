@@ -81,7 +81,10 @@ const listQuery = z.object({
     ])
     .optional()
     .default("open"),
-  source: z.string().regex(/^[a-z0-9_]{2,40}$/).optional(),
+  source: z
+    .string()
+    .regex(/^[a-z0-9_]{2,40}$/)
+    .optional(),
   limit: z.coerce.number().int().min(1).max(100).optional().default(50),
 });
 
@@ -145,7 +148,11 @@ router.get(
       .limit(q.data.limit);
 
     if (q.data.status === "open") {
-      query = query.not("triage_status", "in", "(archived,rejected,duplicate,accepted)");
+      query = query.not(
+        "triage_status",
+        "in",
+        "(archived,rejected,duplicate,accepted)",
+      );
     } else {
       query = query.eq("triage_status", q.data.status);
     }
@@ -454,7 +461,9 @@ router.get(
       const { data } = await supabase
         .schema("resupply")
         .from("patients")
-        .select("id, legal_first_name, legal_last_name, email, phone_e164, date_of_birth")
+        .select(
+          "id, legal_first_name, legal_last_name, email, phone_e164, date_of_birth",
+        )
         .eq("phone_e164", phone)
         .limit(5);
       for (const p of data ?? []) {
@@ -479,7 +488,9 @@ router.get(
       const { data } = await supabase
         .schema("resupply")
         .from("patients")
-        .select("id, legal_first_name, legal_last_name, email, phone_e164, date_of_birth")
+        .select(
+          "id, legal_first_name, legal_last_name, email, phone_e164, date_of_birth",
+        )
         .eq("date_of_birth", dob)
         .ilike("legal_last_name", escapedLastName)
         .limit(5);
@@ -501,7 +512,9 @@ router.get(
         const { data } = await supabase
           .schema("resupply")
           .from("patients")
-          .select("id, legal_first_name, legal_last_name, email, phone_e164, date_of_birth")
+          .select(
+            "id, legal_first_name, legal_last_name, email, phone_e164, date_of_birth",
+          )
           .ilike("phone_e164", `%${tail}%`)
           .limit(5);
         for (const p of data ?? []) {
@@ -561,7 +574,10 @@ router.patch(
       return;
     }
 
-    if (fields.status !== undefined && fields.status !== existing.triage_status) {
+    if (
+      fields.status !== undefined &&
+      fields.status !== existing.triage_status
+    ) {
       const allowed =
         VALID_PATCH_TRANSITIONS[existing.triage_status as ReferralStatus];
       if (!allowed.includes(fields.status)) {
@@ -619,10 +635,7 @@ router.patch(
     // When the CSR flipped status to `rejected`, fan out an
     // order.rejected callback to the originating source. Other
     // transitions are internal-only.
-    if (
-      fields.status === "rejected" &&
-      existing.triage_status !== "rejected"
-    ) {
+    if (fields.status === "rejected" && existing.triage_status !== "rejected") {
       await enqueueReferralStatusEvent({
         referralId: params.data.id,
         eventType: "order.rejected",

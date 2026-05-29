@@ -85,7 +85,8 @@ export async function sendReminderEmail(
     .maybeSingle();
   if (epErr) throw epErr;
   if (!ep) return { status: "episode_not_found" };
-  if (ep.patient_id !== patientId) return { status: "episode_patient_mismatch" };
+  if (ep.patient_id !== patientId)
+    return { status: "episode_patient_mismatch" };
 
   const { data: rxRow, error: rxErr } = await supabase
     .schema("resupply")

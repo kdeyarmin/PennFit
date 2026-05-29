@@ -74,7 +74,11 @@ async function fetchWithTimeout(
     // failures → TypeError. Both mean "upstream unreachable."
     if (err instanceof Error) {
       const name = err.name;
-      if (name === "TimeoutError" || name === "AbortError" || name === "TypeError") {
+      if (
+        name === "TimeoutError" ||
+        name === "AbortError" ||
+        name === "TypeError"
+      ) {
         throw new ClientError("unavailable");
       }
     }
@@ -122,10 +126,7 @@ async function getAccessToken(config: ReactHealthConfig): Promise<string> {
   return json.access_token;
 }
 
-async function request<T>(
-  config: ReactHealthConfig,
-  path: string,
-): Promise<T> {
+async function request<T>(config: ReactHealthConfig, path: string): Promise<T> {
   const token = await getAccessToken(config);
   const res = await fetchWithTimeout(
     `${config.apiBaseUrl}${path}`,
@@ -234,10 +235,7 @@ function summariseCompliance(
     .sort((a, b) => a.nightDate.localeCompare(b.nightDate))
     .slice(-30)
     .filter((n) => (n.usageMinutes ?? 0) >= 240);
-  const totalMins = withData.reduce(
-    (s, n) => s + (n.usageMinutes ?? 0),
-    0,
-  );
+  const totalMins = withData.reduce((s, n) => s + (n.usageMinutes ?? 0), 0);
   const ahiVals = withData
     .map((n) => n.ahi)
     .filter((v): v is number => v !== null);

@@ -104,7 +104,9 @@ describe("reset-password — token reading (storefront)", () => {
 
   it("defines readTokenFromUrl that is SSR-safe", () => {
     expect(SRC).toContain("function readTokenFromUrl()");
-    expect(SRC).toMatch(/readTokenFromUrl[\s\S]{0,200}typeof window === "undefined"/);
+    expect(SRC).toMatch(
+      /readTokenFromUrl[\s\S]{0,200}typeof window === "undefined"/,
+    );
   });
 
   it("falls back to empty string when the token query param is absent", () => {

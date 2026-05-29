@@ -35,12 +35,10 @@ const supabaseMock = installSupabaseMock();
 // Mock Parachute signature verification — controls whether the source
 // appears as "configured_ok" or "configured_bad".
 const verifyParachuteSigMock = vi.hoisted(() =>
-  vi.fn(
-    (): { ok: boolean; reason?: string } => ({
-      ok: false,
-      reason: "mock_bad_sig",
-    }),
-  ),
+  vi.fn((): { ok: boolean; reason?: string } => ({
+    ok: false,
+    reason: "mock_bad_sig",
+  })),
 );
 vi.mock("@workspace/resupply-integrations-parachute", () => ({
   verifyParachuteSignature: verifyParachuteSigMock,
@@ -95,7 +93,10 @@ describe("POST /integrations/inbound/:source — production fail-closed (PR chan
     supabaseMock.reset();
     loggerWarnMock.mockReset();
     verifyParachuteSigMock.mockReset();
-    verifyParachuteSigMock.mockReturnValue({ ok: false, reason: "mock_bad_sig" });
+    verifyParachuteSigMock.mockReturnValue({
+      ok: false,
+      reason: "mock_bad_sig",
+    });
     // Clear secrets to ensure no_secret outcome
     delete process.env.PARACHUTE_SIGNING_SECRET;
   });
@@ -138,8 +139,9 @@ describe("POST /integrations/inbound/:source — production fail-closed (PR chan
     await postWebhook(makeApp(), "test");
 
     expect(loggerWarnMock).toHaveBeenCalled();
-    const warnCall = loggerWarnMock.mock.calls.find((c: unknown[]) =>
-      typeof c[1] === "string" && c[1].includes("refusing unsigned webhook"),
+    const warnCall = loggerWarnMock.mock.calls.find(
+      (c: unknown[]) =>
+        typeof c[1] === "string" && c[1].includes("refusing unsigned webhook"),
     );
     expect(warnCall).toBeDefined();
   });
@@ -147,7 +149,10 @@ describe("POST /integrations/inbound/:source — production fail-closed (PR chan
   it("does NOT return 503 in development when source has no signing secret", async () => {
     process.env.NODE_ENV = "development";
     // Stage a successful DB insert
-    stageSupabaseResponse("inbound_webhooks", "insert", { data: null, error: null });
+    stageSupabaseResponse("inbound_webhooks", "insert", {
+      data: null,
+      error: null,
+    });
 
     const res = await postWebhook(makeApp(), "test");
     // In dev, unsigned webhooks are accepted (signature_verified=false)
@@ -157,7 +162,10 @@ describe("POST /integrations/inbound/:source — production fail-closed (PR chan
 
   it("does NOT return 503 in test environment when source has no signing secret", async () => {
     // NODE_ENV is "test" by default in vitest
-    stageSupabaseResponse("inbound_webhooks", "insert", { data: null, error: null });
+    stageSupabaseResponse("inbound_webhooks", "insert", {
+      data: null,
+      error: null,
+    });
 
     const res = await postWebhook(makeApp(), "test");
     expect(res.status).toBe(202);
@@ -179,7 +187,10 @@ describe("POST /integrations/inbound/:source — production fail-closed (PR chan
     process.env.NODE_ENV = "production";
     process.env.PARACHUTE_SIGNING_SECRET = "super-secret";
     verifyParachuteSigMock.mockReturnValue({ ok: true });
-    stageSupabaseResponse("inbound_webhooks", "insert", { data: null, error: null });
+    stageSupabaseResponse("inbound_webhooks", "insert", {
+      data: null,
+      error: null,
+    });
 
     const res = await postWebhook(makeApp(), "parachute");
     expect(res.status).toBe(202);

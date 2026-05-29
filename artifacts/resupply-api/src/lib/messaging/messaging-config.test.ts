@@ -271,9 +271,9 @@ describe("readEmailConfigOrNull", () => {
 
 describe("readPracticeName", () => {
   it("returns RESUPPLY_PRACTICE_NAME when set", () => {
-    expect(
-      readPracticeName({ RESUPPLY_PRACTICE_NAME: "Acme DME" }),
-    ).toBe("Acme DME");
+    expect(readPracticeName({ RESUPPLY_PRACTICE_NAME: "Acme DME" })).toBe(
+      "Acme DME",
+    );
   });
 
   it("defaults to PennPaps when env var is absent", () => {

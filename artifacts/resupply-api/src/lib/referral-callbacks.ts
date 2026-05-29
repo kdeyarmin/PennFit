@@ -71,7 +71,9 @@ export async function enqueueReferralStatusEvent(
   const { data: referral } = await supabase
     .schema("resupply")
     .from("inbound_referral_orders")
-    .select("id, source, source_order_id, triage_status, accepted_order_id, accepted_order_kind")
+    .select(
+      "id, source, source_order_id, triage_status, accepted_order_id, accepted_order_kind",
+    )
     .eq("id", input.referralId)
     .limit(1)
     .maybeSingle();
@@ -165,10 +167,7 @@ export async function enqueueReferralStatusEvent(
     ip: null,
     userAgent: null,
   }).catch((err) => {
-    logger.warn(
-      { err },
-      "referral_callbacks.enqueue audit write failed",
-    );
+    logger.warn({ err }, "referral_callbacks.enqueue audit write failed");
   });
 
   return { outboxId: inserted.id };

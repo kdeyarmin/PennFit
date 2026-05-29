@@ -20,7 +20,13 @@
 //   * Composer disabled while a response streams; visible loading
 //     indicator while waiting for the first chunk.
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   Bot,
   Loader2,
@@ -49,7 +55,10 @@ const SEND_TURNS_CAP = 11;
 const MAX_USER_MESSAGE_CHARS = 1500;
 
 const SUGGESTED_PROMPTS: ReadonlyArray<{ label: string; prompt: string }> = [
-  { label: "Where is my last order?", prompt: "Where is my most recent order?" },
+  {
+    label: "Where is my last order?",
+    prompt: "Where is my most recent order?",
+  },
   {
     label: "When is my next subscription shipment?",
     prompt: "When is my next subscription shipment?",
@@ -113,14 +122,9 @@ function persistMessages(messages: DisplayMessage[]): void {
   if (typeof window === "undefined") return;
   // Persist only finalized (non-streaming) turns so a refresh during
   // a stream doesn't replay a half-rendered assistant message.
-  const stable = messages
-    .filter((m) => !m.streaming)
-    .slice(-PERSIST_TURNS_CAP);
+  const stable = messages.filter((m) => !m.streaming).slice(-PERSIST_TURNS_CAP);
   try {
-    window.sessionStorage.setItem(
-      SESSION_STORAGE_KEY,
-      JSON.stringify(stable),
-    );
+    window.sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(stable));
   } catch {
     // sessionStorage full / disabled — ignore; chat still works in-memory.
   }
@@ -184,8 +188,8 @@ class ChatErrorBoundary extends React.Component<
       >
         <h2 className="text-lg font-semibold mb-2">Chat is unavailable</h2>
         <p className="text-sm text-muted-foreground mb-4">
-          The chat hit an unexpected error. The rest of your account is
-          still available; clear the conversation to try again.
+          The chat hit an unexpected error. The rest of your account is still
+          available; clear the conversation to try again.
         </p>
         <Button
           onClick={this.handleReset}
@@ -472,7 +476,10 @@ function CustomerChatSectionInner(): React.JSX.Element | null {
         ))}
       </div>
 
-      <div className="flex flex-wrap gap-2" data-testid="customer-chat-suggestions">
+      <div
+        className="flex flex-wrap gap-2"
+        data-testid="customer-chat-suggestions"
+      >
         {SUGGESTED_PROMPTS.map((s) => (
           <button
             key={s.label}
@@ -532,7 +539,9 @@ function ChatBubble({ message }: ChatBubbleProps): React.JSX.Element {
   return (
     <div
       className={`flex ${isUser ? "justify-end" : "justify-start"}`}
-      data-testid={isUser ? "customer-chat-user-bubble" : "customer-chat-bot-bubble"}
+      data-testid={
+        isUser ? "customer-chat-user-bubble" : "customer-chat-bot-bubble"
+      }
     >
       <div
         className={[

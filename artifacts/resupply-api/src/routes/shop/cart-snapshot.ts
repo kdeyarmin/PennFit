@@ -142,7 +142,8 @@ router.put("/shop/me/cart-snapshot", requireSignedIn, async (req, res) => {
     .limit(1)
     .maybeSingle();
   if (existingError) throw existingError;
-  const existingItems = (existing?.items ?? []) as unknown as ShopAbandonedCartItem[];
+  const existingItems = (existing?.items ??
+    []) as unknown as ShopAbandonedCartItem[];
   const materiallyChanged =
     !existing || itemsSignature(existingItems) !== itemsSignature(items);
 

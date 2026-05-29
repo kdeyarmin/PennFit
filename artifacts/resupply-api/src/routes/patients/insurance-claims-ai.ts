@@ -48,10 +48,7 @@ import {
 import { applyAiPatches, type AiPatch } from "../../lib/billing/ai-patch";
 import { scoreAndPersist } from "../../lib/billing/heuristic-denial-scorer";
 import { logger } from "../../lib/logger";
-import {
-  requireAdmin,
-  requireAdminOnly,
-} from "../../middlewares/requireAdmin";
+import { requireAdmin, requireAdminOnly } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
 
@@ -109,23 +106,24 @@ router.post(
 
     const output = await scrubClaim({ claimId: claim.id });
 
-    const insertRow: Database["resupply"]["Tables"]["claim_scrub_results"]["Insert"] = {
-      claim_id: claim.id,
-      verdict: output.verdict,
-      model: "gpt-4o-mini",
-      prompt_version: SCRUB_PROMPT_VERSION,
-      confidence: output.confidence,
-      findings_json: {
-        summary: output.summary,
-        findings: output.findings,
-      } as unknown as Json,
-      suggested_patches_json: output.suggestedPatches as unknown as Json,
-      review_status: "pending",
-      latency_ms: output.latencyMs,
-      prompt_tokens: output.promptTokens,
-      completion_tokens: output.completionTokens,
-      error_message: output.errorMessage,
-    };
+    const insertRow: Database["resupply"]["Tables"]["claim_scrub_results"]["Insert"] =
+      {
+        claim_id: claim.id,
+        verdict: output.verdict,
+        model: "gpt-4o-mini",
+        prompt_version: SCRUB_PROMPT_VERSION,
+        confidence: output.confidence,
+        findings_json: {
+          summary: output.summary,
+          findings: output.findings,
+        } as unknown as Json,
+        suggested_patches_json: output.suggestedPatches as unknown as Json,
+        review_status: "pending",
+        latency_ms: output.latencyMs,
+        prompt_tokens: output.promptTokens,
+        completion_tokens: output.completionTokens,
+        error_message: output.errorMessage,
+      };
     const { data: row, error } = await supabase
       .schema("resupply")
       .from("claim_scrub_results")
@@ -206,9 +204,7 @@ router.post(
     const { data: scrub } = await supabase
       .schema("resupply")
       .from("claim_scrub_results")
-      .select(
-        "id, claim_id, suggested_patches_json, review_status, applied_at",
-      )
+      .select("id, claim_id, suggested_patches_json, review_status, applied_at")
       .eq("id", parsed.data.scrubResultId)
       .eq("claim_id", idParsed.data.claimId)
       .limit(1)
@@ -229,7 +225,10 @@ router.post(
       const p = allPatches[i];
       if (p) patchesToApply.push(p);
     }
-    const outcomes = await applyAiPatches(idParsed.data.claimId, patchesToApply);
+    const outcomes = await applyAiPatches(
+      idParsed.data.claimId,
+      patchesToApply,
+    );
 
     // Update the scrub row's log + review status.
     await supabase
@@ -335,27 +334,28 @@ router.post(
 
     const output = await analyzeDenial({ claimId: claim.id });
 
-    const insertRow: Database["resupply"]["Tables"]["claim_denial_analyses"]["Insert"] = {
-      claim_id: claim.id,
-      model: "gpt-4o-mini",
-      prompt_version: DENIAL_PROMPT_VERSION,
-      confidence: output.confidence,
-      root_cause_summary: output.rootCauseSummary,
-      recommendation: output.recommendation,
-      analysis_json: {
-        mappedCodes: output.mappedCodes,
-        fixSteps: output.fixSteps,
-        appealLetterSketch: output.appealLetterSketch,
-        droppedPatches: output.droppedPatches,
-      } as unknown as Json,
-      suggested_patches_json: output.suggestedPatches as unknown as Json,
-      can_auto_resubmit: output.canAutoResubmit,
-      review_status: output.errorMessage ? "errored" : "pending",
-      latency_ms: output.latencyMs,
-      prompt_tokens: output.promptTokens,
-      completion_tokens: output.completionTokens,
-      error_message: output.errorMessage,
-    };
+    const insertRow: Database["resupply"]["Tables"]["claim_denial_analyses"]["Insert"] =
+      {
+        claim_id: claim.id,
+        model: "gpt-4o-mini",
+        prompt_version: DENIAL_PROMPT_VERSION,
+        confidence: output.confidence,
+        root_cause_summary: output.rootCauseSummary,
+        recommendation: output.recommendation,
+        analysis_json: {
+          mappedCodes: output.mappedCodes,
+          fixSteps: output.fixSteps,
+          appealLetterSketch: output.appealLetterSketch,
+          droppedPatches: output.droppedPatches,
+        } as unknown as Json,
+        suggested_patches_json: output.suggestedPatches as unknown as Json,
+        can_auto_resubmit: output.canAutoResubmit,
+        review_status: output.errorMessage ? "errored" : "pending",
+        latency_ms: output.latencyMs,
+        prompt_tokens: output.promptTokens,
+        completion_tokens: output.completionTokens,
+        error_message: output.errorMessage,
+      };
     const { data: row, error } = await supabase
       .schema("resupply")
       .from("claim_denial_analyses")
@@ -633,7 +633,10 @@ async function cloneAsDraft(
       payer_profile_id: src.payer_profile_id,
       referring_provider_id: src.referring_provider_id,
       rendering_provider_id: src.rendering_provider_id,
-      notes: `[ai-resubmit-from:${sourceClaimId}] ${src.notes ?? ""}`.slice(0, 2000),
+      notes: `[ai-resubmit-from:${sourceClaimId}] ${src.notes ?? ""}`.slice(
+        0,
+        2000,
+      ),
       status: "draft",
     })
     .select("id")
@@ -711,39 +714,43 @@ async function submitDraftToOfficeAlly(
       errorMessage: "claim missing",
     };
   }
-  const [{ data: lines }, { data: payer }, { data: coverage }, { data: patient }] =
-    await Promise.all([
-      supabase
-        .schema("resupply")
-        .from("insurance_claim_line_items")
-        .select("hcpcs_code, modifier, billed_cents, quantity")
-        .eq("claim_id", claim.id),
-      claim.payer_profile_id
-        ? supabase
-            .schema("resupply")
-            .from("payer_profiles")
-            .select("payer_legal_name, office_ally_payer_id")
-            .eq("id", claim.payer_profile_id)
-            .limit(1)
-            .maybeSingle()
-        : Promise.resolve({ data: null }),
-      claim.insurance_coverage_id
-        ? supabase
-            .schema("resupply")
-            .from("insurance_coverages")
-            .select("member_id, policyholder_relationship")
-            .eq("id", claim.insurance_coverage_id)
-            .limit(1)
-            .maybeSingle()
-        : Promise.resolve({ data: null }),
-      supabase
-        .schema("resupply")
-        .from("patients")
-        .select("legal_first_name, legal_last_name, date_of_birth, address")
-        .eq("id", claim.patient_id)
-        .limit(1)
-        .maybeSingle(),
-    ]);
+  const [
+    { data: lines },
+    { data: payer },
+    { data: coverage },
+    { data: patient },
+  ] = await Promise.all([
+    supabase
+      .schema("resupply")
+      .from("insurance_claim_line_items")
+      .select("hcpcs_code, modifier, billed_cents, quantity")
+      .eq("claim_id", claim.id),
+    claim.payer_profile_id
+      ? supabase
+          .schema("resupply")
+          .from("payer_profiles")
+          .select("payer_legal_name, office_ally_payer_id")
+          .eq("id", claim.payer_profile_id)
+          .limit(1)
+          .maybeSingle()
+      : Promise.resolve({ data: null }),
+    claim.insurance_coverage_id
+      ? supabase
+          .schema("resupply")
+          .from("insurance_coverages")
+          .select("member_id, policyholder_relationship")
+          .eq("id", claim.insurance_coverage_id)
+          .limit(1)
+          .maybeSingle()
+      : Promise.resolve({ data: null }),
+    supabase
+      .schema("resupply")
+      .from("patients")
+      .select("legal_first_name, legal_last_name, date_of_birth, address")
+      .eq("id", claim.patient_id)
+      .limit(1)
+      .maybeSingle(),
+  ]);
   if (!payer?.office_ally_payer_id || !coverage || !patient) {
     return {
       officeAllySubmissionId: null,
@@ -751,9 +758,12 @@ async function submitDraftToOfficeAlly(
       errorMessage: "missing payer / coverage / patient for resubmit",
     };
   }
-  const addr = patient.address as
-    | { line1?: string; city?: string; state?: string; zip?: string }
-    | null;
+  const addr = patient.address as {
+    line1?: string;
+    city?: string;
+    state?: string;
+    zip?: string;
+  } | null;
   if (!addr || !addr.line1 || !addr.city || !addr.state || !addr.zip) {
     return {
       officeAllySubmissionId: null,
@@ -837,7 +847,9 @@ async function submitDraftToOfficeAlly(
       status,
       file_size_bytes: result.fileSizeBytes,
       claim_count: result.claimCount,
-      rejection_reason: result.upload.ok ? null : result.upload.message.slice(0, 2000),
+      rejection_reason: result.upload.ok
+        ? null
+        : result.upload.message.slice(0, 2000),
       submitted_by_email: actorEmail,
     })
     .select("id")

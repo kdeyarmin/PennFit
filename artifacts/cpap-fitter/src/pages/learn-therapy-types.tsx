@@ -116,10 +116,10 @@ export function LearnTherapyTypes() {
           CPAP, APAP, BiPAP, ASV — explained.
         </h1>
         <p className="text-lg text-muted-foreground leading-relaxed">
-          Four acronyms, one therapy family. The difference between them is
-          how the machine decides what pressure to deliver, when. Most adults
-          end up on APAP today — but the right mode depends entirely on what
-          your sleep study found.
+          Four acronyms, one therapy family. The difference between them is how
+          the machine decides what pressure to deliver, when. Most adults end up
+          on APAP today — but the right mode depends entirely on what your sleep
+          study found.
         </p>
       </header>
 
@@ -138,12 +138,17 @@ export function LearnTherapyTypes() {
             <tbody>
               <tr className="border-t border-border/30">
                 <td className="p-4 font-semibold">CPAP</td>
-                <td className="p-4 text-muted-foreground">One fixed pressure</td>
+                <td className="p-4 text-muted-foreground">
+                  One fixed pressure
+                </td>
                 <td className="p-4 text-muted-foreground">
                   Stable moderate OSA
                 </td>
                 <td className="p-4">
-                  <Badge variant="outline" className="chip-tier-budget border-0">
+                  <Badge
+                    variant="outline"
+                    className="chip-tier-budget border-0"
+                  >
                     Budget
                   </Badge>
                 </td>
@@ -161,7 +166,9 @@ export function LearnTherapyTypes() {
                 <td className="p-4 text-muted-foreground">
                   Auto-adjusts within range
                 </td>
-                <td className="p-4 text-muted-foreground">Most new diagnoses</td>
+                <td className="p-4 text-muted-foreground">
+                  Most new diagnoses
+                </td>
                 <td className="p-4">
                   <Badge
                     variant="outline"
@@ -307,16 +314,16 @@ export function LearnTherapyTypes() {
             </h2>
           </div>
           <p className="text-sm text-muted-foreground leading-relaxed mb-3">
-            The decision rests on three pieces of information: your sleep
-            study results (AHI, central event count, baseline oxygen),
-            comorbidities (COPD, heart failure, neuromuscular disease), and a
-            titration — either in-lab or via an auto-adjusting trial.
+            The decision rests on three pieces of information: your sleep study
+            results (AHI, central event count, baseline oxygen), comorbidities
+            (COPD, heart failure, neuromuscular disease), and a titration —
+            either in-lab or via an auto-adjusting trial.
           </p>
           <p className="text-sm text-muted-foreground leading-relaxed">
-            In practice: most newly diagnosed adults start on APAP because
-            the auto-adjustment effectively builds in the titration step.
-            BiPAP and ASV are reserved for cases where APAP fails or where
-            specific clinical criteria are present from day one.
+            In practice: most newly diagnosed adults start on APAP because the
+            auto-adjustment effectively builds in the titration step. BiPAP and
+            ASV are reserved for cases where APAP fails or where specific
+            clinical criteria are present from day one.
           </p>
         </div>
       </section>
@@ -345,8 +352,8 @@ export function LearnTherapyTypes() {
               How PAP therapy actually works
             </h3>
             <p className="text-sm text-muted-foreground leading-relaxed">
-              The mechanism, the pressure, the numbers your machine tracks
-              every night.
+              The mechanism, the pressure, the numbers your machine tracks every
+              night.
             </p>
           </div>
           <ArrowRight className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors mt-1" />

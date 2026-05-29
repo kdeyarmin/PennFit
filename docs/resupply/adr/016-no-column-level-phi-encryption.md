@@ -6,7 +6,7 @@
 record of the pgcrypto-based column-level encryption that the
 resupply schema launched with. Migration
 [`0025_strip_phi_encryption`](../../../lib/resupply-db/drizzle/0025_strip_phi_encryption.sql)
-removed it. This ADR documents the *current* posture: we
+removed it. This ADR documents the _current_ posture: we
 deliberately do NOT re-introduce column-level encryption, and the
 threat-model rationale for that choice.
 
@@ -68,13 +68,13 @@ propagation, role-scoped routes).
 
 This ADR should be reopened — not silently overturned — if:
 
-* The application takes a BAA with a signing partner that
+- The application takes a BAA with a signing partner that
   explicitly requires column-level encryption with key custody
   outside the application process. (Common ask from health-system
   partners, less common from device manufacturers.)
-* The deploy host stops providing transparent storage-layer
+- The deploy host stops providing transparent storage-layer
   encryption and we can't migrate to one that does.
-* We need to enforce a hard "no employee can ever see column X
+- We need to enforce a hard "no employee can ever see column X
   even with full DB shell" boundary. Today the answer is "the
   audit log records every read"; if that becomes insufficient,
   encryption with a key the application can't unilaterally read
@@ -82,13 +82,13 @@ This ADR should be reopened — not silently overturned — if:
 
 ## What this ADR does NOT cover
 
-* **Image / attachment storage.** Prescription documents and
+- **Image / attachment storage.** Prescription documents and
   message attachments live in object storage and are subject to
   the policy in [`PHI-RETENTION.md`](../PHI-RETENTION.md), not
   this ADR.
-* **Transport encryption.** Every external HTTPS endpoint is
+- **Transport encryption.** Every external HTTPS endpoint is
   TLS-terminated; that's not in scope here.
-* **Audit log retention.** Covered by
+- **Audit log retention.** Covered by
   [`AUDIT-RETENTION.md`](../AUDIT-RETENTION.md).
 
 ## Related

@@ -58,7 +58,9 @@ export interface PreflightSummary {
  * a complete checklist (one item per check), even when the underlying
  * data is missing — that's what gives the CSR a deterministic UI.
  */
-export async function preflightClaim(claimId: string): Promise<PreflightSummary> {
+export async function preflightClaim(
+  claimId: string,
+): Promise<PreflightSummary> {
   const supabase = getSupabaseServiceRoleClient();
   const items: PreflightItem[] = [];
   let payerRequiresReferringProviderNpi = true;
@@ -256,12 +258,16 @@ export async function preflightClaim(claimId: string): Promise<PreflightSummary>
           key: "timely_filing",
           severity: "warning",
           label: "Date of service missing",
-          detail: "Claim is missing date_of_service, so timely filing cannot be calculated.",
+          detail:
+            "Claim is missing date_of_service, so timely filing cannot be calculated.",
         });
       }
 
       // ── Required modifiers (Phase 12) ─────────────────────────
-      if (!payer.required_modifiers_dme || payer.required_modifiers_dme.length === 0) {
+      if (
+        !payer.required_modifiers_dme ||
+        payer.required_modifiers_dme.length === 0
+      ) {
         items.push({
           key: "payer_modifiers",
           severity: "warning",
@@ -450,7 +456,11 @@ export async function preflightClaim(claimId: string): Promise<PreflightSummary>
         severity: "warning",
         label: `${zeroBilled.length} line${zeroBilled.length === 1 ? "" : "s"} have $0 billed`,
         detail: "Set a billed amount or attach a payer fee schedule.",
-        fixAction: { kind: "edit_line_item", claimId: claim.id, lineId: zeroBilled[0]!.id },
+        fixAction: {
+          kind: "edit_line_item",
+          claimId: claim.id,
+          lineId: zeroBilled[0]!.id,
+        },
       });
     }
   }
@@ -519,7 +529,8 @@ export async function preflightClaim(claimId: string): Promise<PreflightSummary>
           key: "referring_provider",
           severity: "ok",
           label: "Referring provider not required",
-          detail: "Selected payer does not require a referring provider for this claim.",
+          detail:
+            "Selected payer does not require a referring provider for this claim.",
         },
   );
 
@@ -568,7 +579,10 @@ export async function preflightClaim(claimId: string): Promise<PreflightSummary>
   }
 
   // ── KX modifier implies documented compliance ───────────────────
-  if (lines && lines.some((l) => (l.modifier ?? "").toUpperCase().includes("KX"))) {
+  if (
+    lines &&
+    lines.some((l) => (l.modifier ?? "").toUpperCase().includes("KX"))
+  ) {
     const compliant = await isPatientCompliant(supabase, claim.patient_id);
     items.push(
       compliant
@@ -611,7 +625,12 @@ function missingPayer(claimId: string, detail: string): PreflightItem {
 
 function hasStructuredAddress(raw: unknown): boolean {
   if (!raw || typeof raw !== "object") return false;
-  const a = raw as { line1?: unknown; city?: unknown; state?: unknown; zip?: unknown };
+  const a = raw as {
+    line1?: unknown;
+    city?: unknown;
+    state?: unknown;
+    zip?: unknown;
+  };
   return (
     typeof a.line1 === "string" &&
     typeof a.city === "string" &&
@@ -636,7 +655,11 @@ function formatCents(cents: number): string {
 }
 
 function toUtcDateEpochMs(value: Date): number {
-  return Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), value.getUTCDate());
+  return Date.UTC(
+    value.getUTCFullYear(),
+    value.getUTCMonth(),
+    value.getUTCDate(),
+  );
 }
 
 async function isPatientCompliant(

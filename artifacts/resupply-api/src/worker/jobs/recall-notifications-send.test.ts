@@ -100,13 +100,13 @@ describe("sendRecallNotification", () => {
   });
 
   it("falls back to SMS when SendGrid throws", async () => {
-    (createSendgridClient as unknown as ReturnType<typeof vi.fn>).mockImplementationOnce(
-      () => ({
-        sendEmail: vi.fn(async () => {
-          throw new Error("vendor down");
-        }),
+    (
+      createSendgridClient as unknown as ReturnType<typeof vi.fn>
+    ).mockImplementationOnce(() => ({
+      sendEmail: vi.fn(async () => {
+        throw new Error("vendor down");
       }),
-    );
+    }));
     const r = await sendRecallNotification(
       { recall: RECALL, patient: PATIENT_BOTH },
       CFG_FULL,
@@ -115,13 +115,13 @@ describe("sendRecallNotification", () => {
   });
 
   it("returns failed when SMS path also throws", async () => {
-    (createTwilioSmsClient as unknown as ReturnType<typeof vi.fn>).mockImplementationOnce(
-      () => ({
-        sendSms: vi.fn(async () => {
-          throw new Error("twilio rejected");
-        }),
+    (
+      createTwilioSmsClient as unknown as ReturnType<typeof vi.fn>
+    ).mockImplementationOnce(() => ({
+      sendSms: vi.fn(async () => {
+        throw new Error("twilio rejected");
       }),
-    );
+    }));
     const r = await sendRecallNotification(
       { recall: RECALL, patient: PATIENT_SMS_ONLY },
       CFG_NO_EMAIL,

@@ -16,7 +16,7 @@ The triage doc claimed:
 - P0.1: 52 journal entries vs 73 SQL files (drift of 21).
 - P0.2: six duplicate migration prefixes (0016, 0017, 0049, 0050, 0052, 0065).
 - Suggested fix: rename newer-of-each-pair, then `pnpm --filter
-  @workspace/resupply-db run generate` to rebuild the snapshot.
+@workspace/resupply-db run generate` to rebuild the snapshot.
 
 That framing assumed the unjournaled files were just "files that haven't
 been told to drizzle yet" — i.e. lint, not data integrity.
@@ -65,7 +65,7 @@ clean `migrate.mjs` run.
 
 ## Why this matters
 
-The TypeScript schema in `lib/resupply-db/src/schema/*.ts` *does*
+The TypeScript schema in `lib/resupply-db/src/schema/*.ts` _does_
 reference these tables and columns, and the API code uses them. A
 deploy that runs `migrate.mjs` against an empty DB and then boots the
 API would fail at first query of `shop_customers.facialMeasurements`,
@@ -129,7 +129,7 @@ Once we have those, the safe procedure is:
    production's `created_at` ordering — whichever was applied first
    wins the lower idx slot.
 3. Compute the new file hashes; if they match what production has
-   recorded under the old tag, only update the *tag* in
+   recorded under the old tag, only update the _tag_ in
    `drizzle.resupply_migrations` (a one-row UPDATE per renamed file)
    in lockstep with the deploy. If hashes differ, the migration was
    applied via `push` and we cannot rename without a `--no-op` shim
@@ -156,10 +156,10 @@ job in CI per P0.3); the benefit is that nothing breaks at deploy.
 
 1. Does production's `drizzle.resupply_migrations` table actually have
    rows for the 0050+ migrations? `psql -c "SELECT migration_name FROM
-   drizzle.resupply_migrations ORDER BY created_at"` — paste the
+drizzle.resupply_migrations ORDER BY created_at"` — paste the
    output into the follow-up ticket.
 2. Does the deploy pipeline run `pnpm --filter @workspace/resupply-db
-   run generate` (or any drizzle-kit command) before `migrate.mjs`? If
+run generate` (or any drizzle-kit command) before `migrate.mjs`? If
    yes, the on-disk journal isn't authoritative and this whole question
    needs reframing.
 3. Are any of the post-Phase-G feature flags (smart triggers, fax

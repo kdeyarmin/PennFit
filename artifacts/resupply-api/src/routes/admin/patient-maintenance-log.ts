@@ -28,9 +28,7 @@ router.get(
     const { data, error } = await supabase
       .schema("resupply")
       .from("patient_maintenance_log")
-      .select(
-        "id, task_key, completed_at, source, created_at",
-      )
+      .select("id, task_key, completed_at, source, created_at")
       .eq("patient_id", idParse.data)
       .order("completed_at", { ascending: false })
       .limit(200);
@@ -40,7 +38,10 @@ router.get(
     // ago" without scanning the full list.
     const latestByTask: Record<string, string> = {};
     for (const r of data ?? []) {
-      if (!latestByTask[r.task_key] || r.completed_at > latestByTask[r.task_key]!) {
+      if (
+        !latestByTask[r.task_key] ||
+        r.completed_at > latestByTask[r.task_key]!
+      ) {
         latestByTask[r.task_key] = r.completed_at;
       }
     }

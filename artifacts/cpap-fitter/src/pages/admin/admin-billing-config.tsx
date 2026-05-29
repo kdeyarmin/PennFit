@@ -79,8 +79,8 @@ export function AdminBillingConfigHubPage() {
         </h1>
         <p className="text-sm" style={{ color: "hsl(var(--ink-2))" }}>
           The configuration that drives the scrubber, claim-builder,
-          fee-schedule lookups, and denial analyzer. Read-only here —
-          edits still go through engineering.
+          fee-schedule lookups, and denial analyzer. Read-only here — edits
+          still go through engineering.
         </p>
       </header>
 
@@ -123,10 +123,9 @@ export function AdminBillingConfigHubPage() {
           <li className="flex items-start gap-2">
             <BookOpen className="h-3.5 w-3.5 mt-0.5 shrink-0" />
             <span>
-              Mutations on these tables (create / edit / soft-delete)
-              still go through admin-only API routes. The SPA shows
-              the current state and lets us spot rules that fired in
-              denials we want to investigate.
+              Mutations on these tables (create / edit / soft-delete) still go
+              through admin-only API routes. The SPA shows the current state and
+              lets us spot rules that fired in denials we want to investigate.
             </span>
           </li>
         </ul>

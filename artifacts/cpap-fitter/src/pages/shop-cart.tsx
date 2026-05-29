@@ -245,7 +245,7 @@ export function ShopCart() {
           data !== null &&
           typeof data === "object" &&
           Array.isArray((data as Record<string, unknown>).items)
-            ? ((data as { items: CartSnapshotItem[] }).items)
+            ? (data as { items: CartSnapshotItem[] }).items
             : [];
         if (serverItems.length === 0) {
           setResumeState("nothing_to_do");
@@ -705,7 +705,10 @@ export function ShopCart() {
                           // user can clear the field mid-edit. The
                           // controlled value is the draft when set,
                           // falling back to committed cart quantity.
-                          setDraftQty((prev) => ({ ...prev, [it.priceId]: raw }));
+                          setDraftQty((prev) => ({
+                            ...prev,
+                            [it.priceId]: raw,
+                          }));
                           if (raw === "") return;
                           const n = parseInt(raw, 10);
                           if (Number.isFinite(n)) {

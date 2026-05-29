@@ -27,19 +27,19 @@ backend is forbidden from logging anything image-shaped. This is a
 
 ## What this means in practice
 
-* The `/orders` endpoint MUST NOT log `req.body` because the body
+- The `/orders` endpoint MUST NOT log `req.body` because the body
   carries a `measurements` object on the orders that include them
   (and could in the future carry image-adjacent fields).
-* The `lib/logger.ts` redactor is a defense-in-depth back-stop, NOT
+- The `lib/logger.ts` redactor is a defense-in-depth back-stop, NOT
   the primary control. The primary control is "don't log the body
   at all" and that is the developer's responsibility at the call
   site.
-* Patient-uploaded prescription documents and inbound MMS images
+- Patient-uploaded prescription documents and inbound MMS images
   follow the separate object-storage policy in
   [`PHI-RETENTION.md`](../PHI-RETENTION.md). Object KEYS are
   loggable (they're random UUIDs); object BYTES are not, and are
   never proxied through the logger.
-* MediaPipe runs on-device (`scripts/setup-mediapipe.mjs` ships the
+- MediaPipe runs on-device (`scripts/setup-mediapipe.mjs` ships the
   WASM bundle into the cpap-fitter `public/`). Inference is in the
   browser; the result is a small JSON object of measurements.
 
@@ -57,7 +57,7 @@ Three reasons:
 
 1. **It's load-bearing for the privacy posture, not stylistic.** A
    well-meaning future contributor adding `logger.info({ req }, "
-   /orders")` would feel correct — "logs are private, this is just
+/orders")` would feel correct — "logs are private, this is just
    for ops". The ADR is what makes the wrongness obvious.
 2. **The CLAUDE.md hard rule lives one keystroke away from being
    silently softened.** The ADR pins the rationale in a place that
@@ -70,10 +70,10 @@ Three reasons:
 
 ## Enforcement gaps (open follow-ups)
 
-* No automated lint rule today catches `logger.*({ req.body })` or
+- No automated lint rule today catches `logger.*({ req.body })` or
   `logger.*(measurementValue)` in the API. Manual code review +
   this ADR are the controls.
-* `lib/logger.ts` redacts `req.headers.authorization`,
+- `lib/logger.ts` redacts `req.headers.authorization`,
   `req.headers.cookie`, and `res.headers.set-cookie`. It does NOT
   blanket-redact `req.body`; that would defeat structured
   field-level logging on bodies that are deliberately non-PHI
@@ -81,9 +81,9 @@ Three reasons:
 
 ## Related
 
-* CLAUDE.md "Hard rules — do not break".
-* `PHI-RETENTION.md` — attachment-storage rules for non-camera
+- CLAUDE.md "Hard rules — do not break".
+- `PHI-RETENTION.md` — attachment-storage rules for non-camera
   uploads.
-* `AUDIT-RETENTION.md` — what audit metadata MAY contain.
-* ADR 016 — no column-level encryption (works in concert with
+- `AUDIT-RETENTION.md` — what audit metadata MAY contain.
+- ADR 016 — no column-level encryption (works in concert with
   this rule: don't store or log image bytes either way).

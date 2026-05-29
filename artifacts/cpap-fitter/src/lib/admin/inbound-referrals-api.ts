@@ -96,12 +96,7 @@ export interface ReferralShareToken {
 }
 
 export interface ReferralAiClassification {
-  intent:
-    | "new_patient"
-    | "refill"
-    | "replacement"
-    | "resupply"
-    | "unknown";
+  intent: "new_patient" | "refill" | "replacement" | "resupply" | "unknown";
   confidence: number;
   summary: string;
   flags: string[];
@@ -134,10 +129,7 @@ export interface SuggestedPatient {
   kind: "exact_phone" | "exact_dob_last_name" | "fuzzy_phone_tail";
 }
 
-async function jsonFetch<T>(
-  path: string,
-  init: RequestInit = {},
-): Promise<T> {
+async function jsonFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
   const res = await fetch(`/resupply-api${path}`, {
     headers: { Accept: "application/json", ...(init.headers ?? {}) },
     ...init,
@@ -163,12 +155,8 @@ export async function listInboundReferrals(
   );
 }
 
-export async function getInboundReferral(
-  id: string,
-): Promise<ReferralDetail> {
-  return jsonFetch(
-    `/admin/inbound-referrals/${encodeURIComponent(id)}`,
-  );
+export async function getInboundReferral(id: string): Promise<ReferralDetail> {
+  return jsonFetch(`/admin/inbound-referrals/${encodeURIComponent(id)}`);
 }
 
 export async function getSuggestedPatients(

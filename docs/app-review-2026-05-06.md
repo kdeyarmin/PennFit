@@ -1,12 +1,14 @@
 # PennFit App Review — 2026-05-06
 
 ## Scope reviewed
+
 - Monorepo architecture and scripts (`README.md`, root `package.json`).
 - Existing deep bug/security audit (`docs/deep-bug-audit-2026-05-05.md`).
 - Static pattern scan across API, frontend, and shared libraries.
 - Baseline quality gates (`pnpm lint:resupply`, `pnpm typecheck`).
 
 ## Overall assessment
+
 The app has strong foundations (strict linting, type safety, broad tests, thoughtful privacy posture), but there are several **high-priority reliability and security risks** that should be treated as immediate fixes before additional feature work.
 
 ---
@@ -66,24 +68,28 @@ The app has strong foundations (strict linting, type safety, broad tests, though
    - Source: `docs/deep-bug-audit-2026-05-05.md` (B-15).
 
 10. **Frontend PHI hygiene follow-up**
-   - Static scan shows intentional `localStorage` use in admin draft workflows.
-   - Enhance with configurable short TTL and explicit “local draft stored” UX.
-   - Evidence files:
-     - `artifacts/cpap-fitter/src/lib/admin/use-draft-autosave.ts`
-     - `artifacts/cpap-fitter/src/pages/admin/conversation-detail.tsx`
+
+- Static scan shows intentional `localStorage` use in admin draft workflows.
+- Enhance with configurable short TTL and explicit “local draft stored” UX.
+- Evidence files:
+  - `artifacts/cpap-fitter/src/lib/admin/use-draft-autosave.ts`
+  - `artifacts/cpap-fitter/src/pages/admin/conversation-detail.tsx`
 
 11. **Type-safety debt hotspots**
-   - Small number of explicit `any`/eslint suppressions remain in UI shims and advanced internals.
-   - This appears deliberate but should be tracked with an owner and retirement plan.
+
+- Small number of explicit `any`/eslint suppressions remain in UI shims and advanced internals.
+- This appears deliberate but should be tracked with an owner and retirement plan.
 
 ---
 
 ## What I validated in this review
+
 - `pnpm lint:resupply` passes.
 - `pnpm typecheck` passes.
 - Existing deep audit already catalogs 79 items with severity and direct file pointers.
 
 ## Recommended execution plan
+
 1. Resolve all Priority 0 items behind one hardening epic.
 2. Add security regression tests for each fixed auth/idempotency/route issue.
 3. Roll out Priority 1 changes with observability metrics (rate-limit hit counts, webhook parse error counters).

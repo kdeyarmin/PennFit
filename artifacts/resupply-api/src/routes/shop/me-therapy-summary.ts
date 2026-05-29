@@ -235,8 +235,9 @@ function projectNights(rows: TherapyNightRow[]): TherapySummaryResponse {
   const leak = nights
     .map((n) => n.leakLMin)
     .filter((v): v is number => v != null);
-  const compliantNights = usage.filter((h) => h >= COMPLIANT_HOURS_PER_NIGHT)
-    .length;
+  const compliantNights = usage.filter(
+    (h) => h >= COMPLIANT_HOURS_PER_NIGHT,
+  ).length;
 
   // Compute window bounds from the nights we actually have, not the
   // 30-day cutoff — patients with a 5-night history shouldn't see a

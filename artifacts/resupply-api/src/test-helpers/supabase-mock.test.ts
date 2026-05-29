@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  installSupabaseMock,
-  stageSupabaseResponse,
-} from "./supabase-mock";
+import { installSupabaseMock, stageSupabaseResponse } from "./supabase-mock";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 describe("installSupabaseMock", () => {

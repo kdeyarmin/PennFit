@@ -14,10 +14,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const APPSHELL_SRC = readFileSync(
-  path.join(__dirname, "AppShell.tsx"),
-  "utf8",
-);
+const APPSHELL_SRC = readFileSync(path.join(__dirname, "AppShell.tsx"), "utf8");
 
 // ---------------------------------------------------------------------------
 // New nav item: Appointment requests (Inbox group)
@@ -32,7 +29,9 @@ describe("AppShell NAV_GROUPS — appointment-requests entry (Inbox group)", () 
   });
 
   it("uses /admin/appointment-requests as the matchPrefix", () => {
-    expect(APPSHELL_SRC).toContain('matchPrefix: "/admin/appointment-requests"');
+    expect(APPSHELL_SRC).toContain(
+      'matchPrefix: "/admin/appointment-requests"',
+    );
   });
 
   it("includes a descriptive hint for the CSR appointment-requests queue", () => {

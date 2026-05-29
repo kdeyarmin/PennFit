@@ -55,7 +55,8 @@ export async function evaluatePatientSmartTriggers(
       date: n.night_date,
       usageMinutes: n.usage_minutes,
       ahi: n.ahi !== null ? Number(n.ahi) : null,
-      leakRateLMin: n.leak_rate_l_min !== null ? Number(n.leak_rate_l_min) : null,
+      leakRateLMin:
+        n.leak_rate_l_min !== null ? Number(n.leak_rate_l_min) : null,
       pressureP95Cmh2o:
         n.pressure_p95_cmh2o !== null ? Number(n.pressure_p95_cmh2o) : null,
     })),

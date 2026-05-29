@@ -139,9 +139,7 @@ describe("getJSON shared behaviour (via fetchPayerProfiles)", () => {
       statusText: "Not Found",
     });
 
-    await expect(fetchPayerProfiles()).rejects.toThrow(
-      "/admin/payer-profiles",
-    );
+    await expect(fetchPayerProfiles()).rejects.toThrow("/admin/payer-profiles");
   });
 
   test("calls fetch exactly once", async () => {
@@ -329,7 +327,11 @@ describe("fetchPayerFeeSchedules", () => {
   });
 
   test("throws on non-OK response", async () => {
-    fetchMock.mockResolvedValue({ ok: false, status: 403, statusText: "Forbidden" });
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 403,
+      statusText: "Forbidden",
+    });
     await expect(fetchPayerFeeSchedules()).rejects.toThrow("403");
   });
 });
@@ -359,7 +361,10 @@ describe("fetchPayerModifierRules", () => {
       json: async () => ({ rules: [] }),
     });
 
-    await fetchPayerModifierRules({ payerProfileId: "payer-2", hcpcs: "A7030" });
+    await fetchPayerModifierRules({
+      payerProfileId: "payer-2",
+      hcpcs: "A7030",
+    });
 
     const [url] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toContain("payerProfileId=payer-2");
@@ -467,7 +472,11 @@ describe("fetchDenialCodes", () => {
   });
 
   test("throws on non-OK response", async () => {
-    fetchMock.mockResolvedValue({ ok: false, status: 401, statusText: "Unauthorized" });
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 401,
+      statusText: "Unauthorized",
+    });
     await expect(fetchDenialCodes()).rejects.toThrow("401");
   });
 });
@@ -551,7 +560,11 @@ describe("fetchClaimTemplates", () => {
   });
 
   test("throws on non-OK response", async () => {
-    fetchMock.mockResolvedValue({ ok: false, status: 503, statusText: "Unavailable" });
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 503,
+      statusText: "Unavailable",
+    });
     await expect(fetchClaimTemplates()).rejects.toThrow("503");
   });
 

@@ -957,19 +957,17 @@ function MfaEnforcementBanner() {
     // inline notice rather than a redirect.
     return (
       <div className="mb-4 rounded border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-        Enroll multi-factor authentication below to access the rest of
-        the admin console. This is a policy-level requirement; your team
-        flipped it on.
+        Enroll multi-factor authentication below to access the rest of the admin
+        console. This is a policy-level requirement; your team flipped it on.
       </div>
     );
   }
   return (
     <div className="mb-4 rounded border border-amber-300 bg-amber-50 px-3 py-3 text-sm text-amber-900 flex items-start justify-between gap-3">
       <div>
-        <strong>Multi-factor authentication is required.</strong> You
-        must enroll an authenticator app before you can keep using the
-        admin console. This policy applies to every admin / CSR
-        account.
+        <strong>Multi-factor authentication is required.</strong> You must
+        enroll an authenticator app before you can keep using the admin console.
+        This policy applies to every admin / CSR account.
       </div>
       <Link
         href="/admin/security"
@@ -1011,9 +1009,9 @@ export function AppShell({
   // Tracks groups the user has *explicitly* collapsed so the deep-link
   // auto-expand never reopens a group the rep deliberately closed.
   // Opening a group removes it from this set.
-  const [navExplicitCollapsed, setNavExplicitCollapsed] = useState<
-    Set<string>
-  >(() => loadExplicitCollapsedGroups());
+  const [navExplicitCollapsed, setNavExplicitCollapsed] = useState<Set<string>>(
+    () => loadExplicitCollapsedGroups(),
+  );
 
   // Keep a ref so the auto-expand effect can read the current value of
   // navExplicitCollapsed without listing it as a dependency (we only want

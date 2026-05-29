@@ -80,12 +80,20 @@ const E164 = /^\+[1-9]\d{6,14}$/;
 
 const hcpcsLineSchema = z
   .object({
-    hcpcs: z.string().trim().regex(/^[A-Z]\d{4}$/u, "HCPCS must be like E0601"),
+    hcpcs: z
+      .string()
+      .trim()
+      .regex(/^[A-Z]\d{4}$/u, "HCPCS must be like E0601"),
     description: z.string().trim().min(1).max(200),
     quantity: z.number().int().min(1).max(50),
     cadenceDays: z.number().int().min(0).max(3650).nullable().optional(),
     modifiers: z
-      .array(z.string().trim().regex(/^[A-Z0-9]{2}$/u))
+      .array(
+        z
+          .string()
+          .trim()
+          .regex(/^[A-Z0-9]{2}$/u),
+      )
       .max(4)
       .optional(),
   })
@@ -113,7 +121,12 @@ const createBody = z
     sourcePrescriptionId: z.string().uuid().optional(),
     hcpcsLines: z.array(hcpcsLineSchema).min(1).max(20),
     icd10Codes: z
-      .array(z.string().trim().regex(/^[A-Z]\d{2}(\.\d{1,4})?$/u))
+      .array(
+        z
+          .string()
+          .trim()
+          .regex(/^[A-Z]\d{2}(\.\d{1,4})?$/u),
+      )
       .min(1)
       .max(10),
     settings: settingsSchema.nullable().optional(),
@@ -177,8 +190,7 @@ router.post(
       return;
     }
 
-    const returnFax =
-      parsed.data.returnFaxE164 ?? provider.fax_e164 ?? null;
+    const returnFax = parsed.data.returnFaxE164 ?? provider.fax_e164 ?? null;
 
     const { data: inserted, error: insertErr } = await supabase
       .schema("resupply")
@@ -189,8 +201,8 @@ router.post(
         source_prescription_id: parsed.data.sourcePrescriptionId ?? null,
         hcpcs_items_json: parsed.data.hcpcsLines as unknown as Json,
         icd10_codes_json: parsed.data.icd10Codes as unknown as Json,
-        device_settings_json:
-          (parsed.data.settings ?? null) as unknown as Json | null,
+        device_settings_json: (parsed.data.settings ??
+          null) as unknown as Json | null,
         length_of_need_months: parsed.data.lengthOfNeedMonths,
         return_fax_e164: returnFax,
         return_email: parsed.data.returnEmail ?? null,
@@ -333,10 +345,7 @@ router.get(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn(
-        { err },
-        "prescription_request.previewed audit write failed",
-      );
+      logger.warn({ err }, "prescription_request.previewed audit write failed");
     });
   },
 );
@@ -488,10 +497,7 @@ router.post(
           updated_at: nowIso,
         })
         .eq("id", packet.id);
-      logger.warn(
-        { packet_id: packet.id },
-        "prescription_request.send.failed",
-      );
+      logger.warn({ packet_id: packet.id }, "prescription_request.send.failed");
       res.status(502).json({ error: "fax_dispatch_failed", message: msg });
     }
   },
@@ -512,7 +518,13 @@ router.post(
     }
     const body = z
       .object({
-        signedObjectKey: z.string().trim().min(1).max(500).nullable().optional(),
+        signedObjectKey: z
+          .string()
+          .trim()
+          .min(1)
+          .max(500)
+          .nullable()
+          .optional(),
       })
       .strict()
       .safeParse(req.body ?? {});
@@ -568,10 +580,7 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn(
-        { err },
-        "prescription_request.signed audit write failed",
-      );
+      logger.warn({ err }, "prescription_request.signed audit write failed");
     });
     res.status(200).json({ status: "signed" });
   },
@@ -628,29 +637,28 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn(
-        { err },
-        "prescription_request.void audit write failed",
-      );
+      logger.warn({ err }, "prescription_request.void audit write failed");
     });
     res.status(200).json({ status: "void" });
   },
 );
 
-function projectListItem(r: Pick<
-  PacketRow,
-  | "id"
-  | "provider_id"
-  | "status"
-  | "return_fax_e164"
-  | "sent_to_fax_e164"
-  | "sent_at"
-  | "delivered_at"
-  | "signed_at"
-  | "failed_at"
-  | "failure_reason"
-  | "created_at"
->) {
+function projectListItem(
+  r: Pick<
+    PacketRow,
+    | "id"
+    | "provider_id"
+    | "status"
+    | "return_fax_e164"
+    | "sent_to_fax_e164"
+    | "sent_at"
+    | "delivered_at"
+    | "signed_at"
+    | "failed_at"
+    | "failure_reason"
+    | "created_at"
+  >,
+) {
   return {
     id: r.id,
     providerId: r.provider_id,

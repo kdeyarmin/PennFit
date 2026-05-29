@@ -26,7 +26,11 @@ const idParam = z.object({ id: z.string().uuid() });
 
 const body = z
   .object({
-    payByDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
+    payByDate: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/)
+      .nullable()
+      .optional(),
     paymentUrl: z.string().url().max(500).nullable().optional(),
     deliveryMethod: z.enum(["email", "sms", "mail", "in_person"]).optional(),
   })
@@ -112,9 +116,13 @@ router.post(
       });
       return;
     }
-    const address = patient.address as
-      | { line1?: string; line2?: string; city?: string; state?: string; zip?: string }
-      | null;
+    const address = patient.address as {
+      line1?: string;
+      line2?: string;
+      city?: string;
+      state?: string;
+      zip?: string;
+    } | null;
     const result = await renderStatementPdf({
       patient: {
         name: `${patient.legal_first_name} ${patient.legal_last_name}`,
@@ -153,21 +161,22 @@ router.post(
       paymentUrl: bodyParsed.data?.paymentUrl,
     });
 
-    const insertRow: Database["resupply"]["Tables"]["patient_billing_statements"]["Insert"] = {
-      patient_id: idParsed.data.id,
-      line_items_json: claims.map((c) => ({
-        claim_id: c.id,
-        payer_name: c.payer_name,
-        date_of_service: c.date_of_service,
-        billed_cents: c.total_billed_cents,
-        paid_cents: c.total_paid_cents,
-        patient_responsibility_cents: c.patient_responsibility_cents,
-      })) as unknown as Json,
-      total_patient_responsibility_cents:
-        result.totalPatientResponsibilityCents,
-      delivery_method: bodyParsed.data?.deliveryMethod ?? null,
-      generated_by_email: req.adminEmail ?? "unknown",
-    };
+    const insertRow: Database["resupply"]["Tables"]["patient_billing_statements"]["Insert"] =
+      {
+        patient_id: idParsed.data.id,
+        line_items_json: claims.map((c) => ({
+          claim_id: c.id,
+          payer_name: c.payer_name,
+          date_of_service: c.date_of_service,
+          billed_cents: c.total_billed_cents,
+          paid_cents: c.total_paid_cents,
+          patient_responsibility_cents: c.patient_responsibility_cents,
+        })) as unknown as Json,
+        total_patient_responsibility_cents:
+          result.totalPatientResponsibilityCents,
+        delivery_method: bodyParsed.data?.deliveryMethod ?? null,
+        generated_by_email: req.adminEmail ?? "unknown",
+      };
     const { data: row, error: insertErr } = await supabase
       .schema("resupply")
       .from("patient_billing_statements")

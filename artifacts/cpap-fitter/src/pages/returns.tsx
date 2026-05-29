@@ -47,8 +47,8 @@ export function ReturnsPage() {
           </div>
           <h3 className="font-semibold tracking-tight">30-day window</h3>
           <p className="text-sm text-muted-foreground">
-            The clock starts the day your order is delivered. Plenty of time
-            to actually try the supplies before you decide.
+            The clock starts the day your order is delivered. Plenty of time to
+            actually try the supplies before you decide.
           </p>
         </article>
 
@@ -68,10 +68,12 @@ export function ReturnsPage() {
           <div className="h-12 w-12 rounded-xl icon-halo-gold flex items-center justify-center">
             <Truck className="w-5 h-5" />
           </div>
-          <h3 className="font-semibold tracking-tight">Free exchange shipping</h3>
+          <h3 className="font-semibold tracking-tight">
+            Free exchange shipping
+          </h3>
           <p className="text-sm text-muted-foreground">
-            We cover return shipping on fit-guarantee exchanges. No
-            restocking fees, no surprise charges.
+            We cover return shipping on fit-guarantee exchanges. No restocking
+            fees, no surprise charges.
           </p>
         </article>
       </section>
@@ -85,17 +87,17 @@ export function ReturnsPage() {
             <span className="font-semibold text-foreground">
               Unopened, unused supplies
             </span>{" "}
-            — tubing, filters, headgear, humidifier chambers, and accessories
-            in their original sealed packaging can be returned within 30 days
-            of delivery for a full refund to your original payment method.
+            — tubing, filters, headgear, humidifier chambers, and accessories in
+            their original sealed packaging can be returned within 30 days of
+            delivery for a full refund to your original payment method.
           </p>
           <p>
             <span className="font-semibold text-foreground">
               Masks and mask cushions
             </span>{" "}
-            are covered by our 30-day fit guarantee even once they&apos;ve
-            been opened and tried. If the fit isn&apos;t right, we&apos;ll
-            send a different size or style at no charge — see the{" "}
+            are covered by our 30-day fit guarantee even once they&apos;ve been
+            opened and tried. If the fit isn&apos;t right, we&apos;ll send a
+            different size or style at no charge — see the{" "}
             <Link
               href="/comfort-guarantee"
               className="text-primary hover:underline"
@@ -109,8 +111,8 @@ export function ReturnsPage() {
               CPAP machines and humidifiers
             </span>{" "}
             can be returned unopened within 30 days. Once a device has been
-            used, returns are evaluated case-by-case — please contact us
-            before shipping anything back.
+            used, returns are evaluated case-by-case — please contact us before
+            shipping anything back.
           </p>
         </div>
       </section>
@@ -133,8 +135,8 @@ export function ReturnsPage() {
             Custom or special-order items not stocked in our standard catalog.
           </li>
           <li>
-            Items damaged after delivery from misuse — though shipping damage
-            is always our problem to fix, not yours.
+            Items damaged after delivery from misuse — though shipping damage is
+            always our problem to fix, not yours.
           </li>
         </ul>
       </section>
@@ -152,9 +154,9 @@ export function ReturnsPage() {
             . Find the order and click <em>Request return</em>.
           </li>
           <li>
-            Tell us which items and why — a sentence is fine. We&apos;ll
-            email a prepaid return label within one business day for fit
-            exchanges, or a return authorization for refund requests.
+            Tell us which items and why — a sentence is fine. We&apos;ll email a
+            prepaid return label within one business day for fit exchanges, or a
+            return authorization for refund requests.
           </li>
           <li>
             Drop the package at any USPS or UPS location. Once it arrives,
@@ -169,9 +171,7 @@ export function ReturnsPage() {
             </Link>
           </Button>
           <Button variant="outline" asChild>
-            <Link href="/comfort-guarantee">
-              Comfort guarantee details
-            </Link>
+            <Link href="/comfort-guarantee">Comfort guarantee details</Link>
           </Button>
           <Button
             variant="outline"
@@ -195,8 +195,8 @@ export function ReturnsPage() {
         </h2>
         <p className="text-sm text-muted-foreground leading-relaxed">
           Our team would rather talk fit and comfort with you than process a
-          return. If you&apos;re unsure whether to exchange or refund, reach
-          out and we&apos;ll help you decide.
+          return. If you&apos;re unsure whether to exchange or refund, reach out
+          and we&apos;ll help you decide.
         </p>
         <div className="flex flex-col sm:flex-row gap-3 pt-1">
           <a

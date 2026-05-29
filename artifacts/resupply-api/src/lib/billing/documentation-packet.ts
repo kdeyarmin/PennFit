@@ -213,10 +213,13 @@ function drawPacket(doc: PDFKit.PDFDocument, input: PacketInput): void {
   doc.moveDown(1);
 
   // Cover letter body
-  doc.font("Helvetica").fontSize(11).text(
-    input.coverLetterBody ?? DEFAULT_COVER_LETTER[input.kind],
-    { align: "left", lineGap: 2 },
-  );
+  doc
+    .font("Helvetica")
+    .fontSize(11)
+    .text(input.coverLetterBody ?? DEFAULT_COVER_LETTER[input.kind], {
+      align: "left",
+      lineGap: 2,
+    });
   doc.moveDown(2);
 
   // Signer
@@ -247,9 +250,11 @@ function drawPacket(doc: PDFKit.PDFDocument, input: PacketInput): void {
       doc.font("Helvetica-Bold").fontSize(10).text("Attached documents:");
       doc.font("Helvetica");
       for (const att of section.attachments) {
-        doc.fontSize(10).text(
-          `  • ${att.name}${att.objectKey ? `  [object: ${att.objectKey.slice(0, 64)}]` : ""}`,
-        );
+        doc
+          .fontSize(10)
+          .text(
+            `  • ${att.name}${att.objectKey ? `  [object: ${att.objectKey.slice(0, 64)}]` : ""}`,
+          );
       }
     }
   }

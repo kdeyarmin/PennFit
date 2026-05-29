@@ -59,11 +59,15 @@ describe("resupply-audit index — error classes still exported", () => {
   });
 
   it("exports AuditMetadataDepthError", () => {
-    expect(new auditIndex.AuditMetadataDepthError("test")).toBeInstanceOf(Error);
+    expect(new auditIndex.AuditMetadataDepthError("test")).toBeInstanceOf(
+      Error,
+    );
   });
 
   it("exports AuditMetadataShapeError", () => {
-    expect(new auditIndex.AuditMetadataShapeError("test")).toBeInstanceOf(Error);
+    expect(new auditIndex.AuditMetadataShapeError("test")).toBeInstanceOf(
+      Error,
+    );
   });
 
   it("exports AuditHmacKeyError", () => {
@@ -142,4 +146,3 @@ describe("resupply-audit index — no-op functions", () => {
     expect(onWriteFailure).not.toHaveBeenCalled();
   });
 });
-

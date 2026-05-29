@@ -73,11 +73,8 @@ router.post(
       weightOz: 16,
     });
     if (!result.ok) {
-      const status =
-        result.error === "vendor_not_configured" ? 503 : 502;
-      res
-        .status(status)
-        .json({ error: result.error, message: result.message });
+      const status = result.error === "vendor_not_configured" ? 503 : 502;
+      res.status(status).json({ error: result.error, message: result.message });
       return;
     }
     res.json({

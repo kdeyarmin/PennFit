@@ -33,7 +33,9 @@ const SRC = readFileSync(
 
 describe("admin-shop-inventory-reconcile-edit — exports", () => {
   it("exports AdminShopInventoryReconcileEditPage", () => {
-    expect(SRC).toContain("export function AdminShopInventoryReconcileEditPage");
+    expect(SRC).toContain(
+      "export function AdminShopInventoryReconcileEditPage",
+    );
   });
 });
 
@@ -328,7 +330,13 @@ describe("buildDraftLines — mapping", () => {
       reconciliation: BASE_RECON,
       lines: [],
       currentProducts: [
-        { productId: "prod_abc", name: "Mask A", category: "masks", systemCount: 10, lowStockThreshold: 2 },
+        {
+          productId: "prod_abc",
+          name: "Mask A",
+          category: "masks",
+          systemCount: 10,
+          lowStockThreshold: 2,
+        },
       ],
     };
     const [line] = buildDraftLines(detail);
@@ -340,7 +348,13 @@ describe("buildDraftLines — mapping", () => {
       reconciliation: BASE_RECON,
       lines: [],
       currentProducts: [
-        { productId: "prod_abc", name: "Mask A", category: "masks", systemCount: 10, lowStockThreshold: 2 },
+        {
+          productId: "prod_abc",
+          name: "Mask A",
+          category: "masks",
+          systemCount: 10,
+          lowStockThreshold: 2,
+        },
       ],
     };
     const [line] = buildDraftLines(detail);
@@ -352,7 +366,13 @@ describe("buildDraftLines — mapping", () => {
       reconciliation: BASE_RECON,
       lines: [],
       currentProducts: [
-        { productId: "prod_abc", name: "Mask A", category: "masks", systemCount: null, lowStockThreshold: null },
+        {
+          productId: "prod_abc",
+          name: "Mask A",
+          category: "masks",
+          systemCount: null,
+          lowStockThreshold: null,
+        },
       ],
     };
     const [line] = buildDraftLines(detail);
@@ -364,7 +384,13 @@ describe("buildDraftLines — mapping", () => {
       reconciliation: BASE_RECON,
       lines: [],
       currentProducts: [
-        { productId: "prod_abc", name: "Mask A", category: "masks", systemCount: 5, lowStockThreshold: 2 },
+        {
+          productId: "prod_abc",
+          name: "Mask A",
+          category: "masks",
+          systemCount: 5,
+          lowStockThreshold: 2,
+        },
       ],
     };
     const [line] = buildDraftLines(detail);
@@ -378,13 +404,35 @@ describe("buildDraftLines — sorting", () => {
       reconciliation: BASE_RECON,
       lines: [],
       currentProducts: [
-        { productId: "prod_c", name: "Zzz Mask", category: "masks", systemCount: 1, lowStockThreshold: null },
-        { productId: "prod_a", name: "Aaa Tube", category: "tubes", systemCount: 5, lowStockThreshold: null },
-        { productId: "prod_b", name: "Mmm Filter", category: "filters", systemCount: 3, lowStockThreshold: null },
+        {
+          productId: "prod_c",
+          name: "Zzz Mask",
+          category: "masks",
+          systemCount: 1,
+          lowStockThreshold: null,
+        },
+        {
+          productId: "prod_a",
+          name: "Aaa Tube",
+          category: "tubes",
+          systemCount: 5,
+          lowStockThreshold: null,
+        },
+        {
+          productId: "prod_b",
+          name: "Mmm Filter",
+          category: "filters",
+          systemCount: 3,
+          lowStockThreshold: null,
+        },
       ],
     };
     const lines = buildDraftLines(detail);
-    expect(lines.map((l) => l.productName)).toEqual(["Aaa Tube", "Mmm Filter", "Zzz Mask"]);
+    expect(lines.map((l) => l.productName)).toEqual([
+      "Aaa Tube",
+      "Mmm Filter",
+      "Zzz Mask",
+    ]);
   });
 
   it("preserves original order when names are identical (stable-ish sort)", () => {
@@ -392,8 +440,20 @@ describe("buildDraftLines — sorting", () => {
       reconciliation: BASE_RECON,
       lines: [],
       currentProducts: [
-        { productId: "prod_1", name: "Same Name", category: "x", systemCount: 1, lowStockThreshold: null },
-        { productId: "prod_2", name: "Same Name", category: "x", systemCount: 2, lowStockThreshold: null },
+        {
+          productId: "prod_1",
+          name: "Same Name",
+          category: "x",
+          systemCount: 1,
+          lowStockThreshold: null,
+        },
+        {
+          productId: "prod_2",
+          name: "Same Name",
+          category: "x",
+          systemCount: 2,
+          lowStockThreshold: null,
+        },
       ],
     };
     const lines = buildDraftLines(detail);
@@ -409,7 +469,13 @@ describe("buildDraftLines — sorting", () => {
       reconciliation: BASE_RECON,
       lines: [],
       currentProducts: [
-        { productId: "prod_x", name: "Only Product", category: "x", systemCount: 7, lowStockThreshold: 2 },
+        {
+          productId: "prod_x",
+          name: "Only Product",
+          category: "x",
+          systemCount: 7,
+          lowStockThreshold: 2,
+        },
       ],
     };
     const lines = buildDraftLines(detail);

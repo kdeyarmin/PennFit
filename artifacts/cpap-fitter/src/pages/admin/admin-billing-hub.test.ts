@@ -11,10 +11,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const SRC = readFileSync(
-  path.join(__dirname, "admin-billing-hub.tsx"),
-  "utf8",
-);
+const SRC = readFileSync(path.join(__dirname, "admin-billing-hub.tsx"), "utf8");
 
 // ---------------------------------------------------------------------------
 // Imports from billing-api
@@ -71,11 +68,11 @@ describe("admin-billing-hub — KPI tile data-testid attributes", () => {
     // The source contains the template literal:
     // `billing-kpi-${k.label.replace(/\s+/g, "-").toLowerCase()}`
     expect(SRC).toContain("billing-kpi-");
-    expect(SRC).toContain('k.label.replace(');
+    expect(SRC).toContain("k.label.replace(");
   });
 
   it("generates KPI testIds from labels lowercased with hyphens", () => {
-    expect(SRC).toContain('toLowerCase()');
+    expect(SRC).toContain("toLowerCase()");
   });
 });
 
@@ -144,7 +141,9 @@ describe("admin-billing-hub — quick links", () => {
 
   for (const [href, label] of quickLinks) {
     it(`includes quick link to "${href}" labeled "${label}"`, () => {
-      expect(SRC).toContain(`href="/admin/billing/${href.split("/admin/billing/")[1]}"`);
+      expect(SRC).toContain(
+        `href="/admin/billing/${href.split("/admin/billing/")[1]}"`,
+      );
       expect(SRC).toContain(label);
     });
   }

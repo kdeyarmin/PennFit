@@ -64,14 +64,11 @@ export function AdminInboundFaxesPage() {
           <Inbox className="h-6 w-6" />
           Inbound faxes
         </h1>
-        <p
-          className="text-sm mt-1"
-          style={{ color: "hsl(var(--ink-3))" }}
-        >
-          Faxes delivered to our fax number. Triage each into the
-          right patient + document category, or archive junk. Bytes
-          are mirrored to private storage so the PDF stays available
-          long after the carrier&apos;s 365-day media retention window.
+        <p className="text-sm mt-1" style={{ color: "hsl(var(--ink-3))" }}>
+          Faxes delivered to our fax number. Triage each into the right patient
+          + document category, or archive junk. Bytes are mirrored to private
+          storage so the PDF stays available long after the carrier&apos;s
+          365-day media retention window.
         </p>
       </header>
 
@@ -81,7 +78,9 @@ export function AdminInboundFaxesPage() {
             <FilterChip
               key={f}
               label={
-                f === "open" ? "Open queue" : f.charAt(0).toUpperCase() + f.slice(1)
+                f === "open"
+                  ? "Open queue"
+                  : f.charAt(0).toUpperCase() + f.slice(1)
               }
               active={filter === f}
               onClick={() => setFilter(f)}
@@ -96,10 +95,7 @@ export function AdminInboundFaxesPage() {
         ) : isError ? (
           <ErrorPanel error={error} onRetry={() => void refetch()} />
         ) : data.faxes.length === 0 ? (
-          <p
-            className="text-sm py-3"
-            style={{ color: "hsl(var(--ink-3))" }}
-          >
+          <p className="text-sm py-3" style={{ color: "hsl(var(--ink-3))" }}>
             No faxes in this view.
           </p>
         ) : (
@@ -190,18 +186,14 @@ function FaxTable({
               onClick={() => onSelect(r.id)}
             >
               <td className="py-2">{received}</td>
-              <td className="py-2 font-mono text-xs">
-                {r.fromE164 ?? "—"}
-              </td>
+              <td className="py-2 font-mono text-xs">{r.fromE164 ?? "—"}</td>
               <td
                 className="py-2 tabular-nums text-xs"
                 style={{ color: "hsl(var(--ink-3))" }}
               >
                 {r.numPages ?? "—"}
               </td>
-              <td className="py-2 text-xs">
-                {r.attachedDocumentType ?? "—"}
-              </td>
+              <td className="py-2 text-xs">{r.attachedDocumentType ?? "—"}</td>
               <td className="py-2">
                 <span
                   className={`inline-block px-1.5 py-0.5 rounded text-[10px] uppercase font-semibold tracking-wider ${STATUS_COLOR[r.status]}`}
@@ -254,9 +246,7 @@ function TriageModal({
   const qc = useQueryClient();
 
   const [patientId, setPatientId] = useState(fax?.attachedPatientId ?? "");
-  const [providerId, setProviderId] = useState(
-    fax?.attachedProviderId ?? "",
-  );
+  const [providerId, setProviderId] = useState(fax?.attachedProviderId ?? "");
   const [prescriptionId, setPrescriptionId] = useState(
     fax?.attachedPrescriptionId ?? "",
   );
@@ -340,11 +330,10 @@ function TriageModal({
                 />
               ) : (
                 <div className="h-full flex items-center justify-center text-sm text-muted-foreground p-4 text-center">
-                  Media not persisted for this fax. The inbound
-                  webhook may have hit the retention window, or the
-                  download failed at receive time. Check the
-                  application log for the audit row with this fax&apos;s
-                  ID.
+                  Media not persisted for this fax. The inbound webhook may have
+                  hit the retention window, or the download failed at receive
+                  time. Check the application log for the audit row with this
+                  fax&apos;s ID.
                 </div>
               )}
             </div>
@@ -443,9 +432,7 @@ function TriageModal({
             </Button>
             <Button
               disabled={
-                patch.isPending ||
-                !formValid ||
-                patientId.trim().length === 0
+                patch.isPending || !formValid || patientId.trim().length === 0
               }
               isLoading={
                 patch.isPending && patch.variables?.status === "attached"

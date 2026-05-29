@@ -91,7 +91,7 @@ anymore). New migrations are hand-written SQL and reviewed manually.
 ## Migration prefix moratorium
 
 Because the journal and on-disk SQL files have temporarily diverged,
-any *added* migration file must use a 4-digit prefix strictly greater
+any _added_ migration file must use a 4-digit prefix strictly greater
 than `0066`. See `./drizzle/README.md` and
 `docs/migration-state-investigation-2026-05-08.md` for the full
 investigation and the eventual rewrite procedure.

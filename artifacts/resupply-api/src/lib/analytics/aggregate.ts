@@ -292,9 +292,7 @@ export function aggregateCsrProductivity(
     }
     totalActions += 1;
   }
-  const out = Array.from(byOperator.values()).sort(
-    (a, b) => b.total - a.total,
-  );
+  const out = Array.from(byOperator.values()).sort((a, b) => b.total - a.total);
   return { windowDays, rows: out, totalActions };
 }
 

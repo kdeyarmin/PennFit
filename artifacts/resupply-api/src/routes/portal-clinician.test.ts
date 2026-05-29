@@ -30,8 +30,7 @@ const supabaseMock = installSupabaseMock();
 
 // ── express-rate-limit — bypass bucket state across tests ────────────
 vi.mock("express-rate-limit", () => ({
-  default: () =>
-    (_req: unknown, _res: unknown, next: () => void) => next(),
+  default: () => (_req: unknown, _res: unknown, next: () => void) => next(),
   ipKeyGenerator: (ip: string) => ip,
 }));
 
@@ -47,9 +46,7 @@ vi.mock("@workspace/resupply-audit", () => ({
 // Default: return valid with a known shareRowId. Override per test.
 const verifyClinicianShareTokenMock = vi.hoisted(() =>
   vi.fn<
-    (token: string) =>
-      | { valid: true; shareRowId: string }
-      | { valid: false }
+    (token: string) => { valid: true; shareRowId: string } | { valid: false }
   >(() => ({
     valid: true,
     shareRowId: "share-row-uuid-1111",
@@ -105,9 +102,7 @@ function stubShareRow(
   });
 }
 
-function stubReferral(
-  overrides: Partial<Record<string, unknown>> = {},
-): void {
+function stubReferral(overrides: Partial<Record<string, unknown>> = {}): void {
   stageSupabaseResponse("inbound_referral_orders", "select", {
     data: {
       id: REFERRAL_ID,
@@ -184,9 +179,7 @@ describe("GET /portal/clinician/:token — input validation", () => {
 
   it("returns 404 when token exceeds 2000 characters", async () => {
     const longToken = "a".repeat(2001);
-    const res = await request(makeApp()).get(
-      `/portal/clinician/${longToken}`,
-    );
+    const res = await request(makeApp()).get(`/portal/clinician/${longToken}`);
     expect(res.status).toBe(404);
     expect(res.body.error).toBe("not_found");
   });
@@ -424,9 +417,7 @@ describe("GET /portal/clinician/:token — audit logging", () => {
     await request(makeApp()).get(`/portal/clinician/${VALID_TOKEN}`);
     expect(logAuditMock).toHaveBeenCalledOnce();
     const auditCall = logAuditMock.mock.calls[0][0] as Record<string, unknown>;
-    expect(auditCall.action).toBe(
-      "inbound_referral.clinician_share_viewed",
-    );
+    expect(auditCall.action).toBe("inbound_referral.clinician_share_viewed");
     expect(auditCall.targetTable).toBe("clinician_share_tokens");
     expect(auditCall.targetId).toBe(SHARE_ROW_ID);
     const meta = auditCall.metadata as Record<string, unknown>;
@@ -470,9 +461,7 @@ describe("GET /portal/clinician/:token — view count fire-and-forget update", (
     stubOutboxRows([]);
     stubPreflightChecks([]);
     await request(makeApp()).get(`/portal/clinician/${VALID_TOKEN}`);
-    expect(
-      supabaseMock.callCount("clinician_share_tokens", "update"),
-    ).toBe(1);
+    expect(supabaseMock.callCount("clinician_share_tokens", "update")).toBe(1);
     const payload = supabaseMock.writePayloads(
       "clinician_share_tokens",
       "update",

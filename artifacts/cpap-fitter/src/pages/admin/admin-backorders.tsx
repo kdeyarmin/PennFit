@@ -35,8 +35,8 @@ export function AdminBackordersPage() {
         </h1>
         <p className="text-sm mt-1" style={{ color: "hsl(var(--ink-3))" }}>
           When a SKU is backordered, the next resupply confirmation
-          automatically substitutes from the catalog below. Substitution
-          rules are admin-curated; backorder marks are CSR-managed.
+          automatically substitutes from the catalog below. Substitution rules
+          are admin-curated; backorder marks are CSR-managed.
         </p>
       </header>
 
@@ -160,10 +160,7 @@ function BackorderRow({
 }) {
   const isActive = row.clearedAt == null;
   return (
-    <tr
-      className="border-b"
-      style={{ borderColor: "hsl(var(--line-2))" }}
-    >
+    <tr className="border-b" style={{ borderColor: "hsl(var(--line-2))" }}>
       <td className="py-1.5 font-mono text-xs">{row.sku}</td>
       <td className="py-1.5">
         <span
@@ -329,9 +326,7 @@ function SubstitutesPanel() {
               <SubstituteRow
                 key={s.id}
                 row={s}
-                onToggle={() =>
-                  toggle.mutate({ id: s.id, active: !s.active })
-                }
+                onToggle={() => toggle.mutate({ id: s.id, active: !s.active })}
                 onDelete={async () => {
                   if (
                     !(await confirm({
@@ -364,10 +359,7 @@ function SubstituteRow({
   onDelete: () => void;
 }) {
   return (
-    <tr
-      className="border-b"
-      style={{ borderColor: "hsl(var(--line-2))" }}
-    >
+    <tr className="border-b" style={{ borderColor: "hsl(var(--line-2))" }}>
       <td className="py-1.5 font-mono text-xs">{row.primarySku}</td>
       <td className="py-1.5 font-mono text-xs">{row.alternativeSku}</td>
       <td className="py-1.5 font-mono tabular-nums">{row.priority}</td>

@@ -70,7 +70,14 @@ function stageHappyContext(): void {
   // line items
   stageSupabaseResponse("insurance_claim_line_items", "select", {
     data: [
-      { id: "lll", hcpcs_code: "E0601", modifier: "RR", description: "CPAP", quantity: 1, billed_cents: 24999 },
+      {
+        id: "lll",
+        hcpcs_code: "E0601",
+        modifier: "RR",
+        description: "CPAP",
+        quantity: 1,
+        billed_cents: 24999,
+      },
     ],
   });
   // payer profile
@@ -98,7 +105,12 @@ function stageHappyContext(): void {
       legal_first_name: "JANE",
       legal_last_name: "DOE",
       date_of_birth: "1965-04-12",
-      address: { line1: "100 Main", city: "State College", state: "PA", zip: "16801" },
+      address: {
+        line1: "100 Main",
+        city: "State College",
+        state: "PA",
+        zip: "16801",
+      },
     },
   });
   stageSupabaseResponse("sleep_studies", "select", {
@@ -106,7 +118,13 @@ function stageHappyContext(): void {
   });
   stageSupabaseResponse("insurance_claim_line_items", "select", {
     data: [
-      { id: "lll", hcpcs_code: "E0601", modifier: "RR", billed_cents: 24999, quantity: 1 },
+      {
+        id: "lll",
+        hcpcs_code: "E0601",
+        modifier: "RR",
+        billed_cents: 24999,
+        quantity: 1,
+      },
     ],
   });
   stageSupabaseResponse("payer_profiles", "select", {
@@ -169,9 +187,7 @@ describe("scrubClaim", () => {
     const fetchImpl = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({
-        choices: [
-          { message: { content: JSON.stringify(modelOutput) } },
-        ],
+        choices: [{ message: { content: JSON.stringify(modelOutput) } }],
         usage: { prompt_tokens: 1200, completion_tokens: 200 },
       }),
     });
@@ -196,27 +212,29 @@ describe("scrubClaim", () => {
   it("never sends PHI (full name, full DOB, address, full member id)", async () => {
     stageHappyContext();
     const capturedBodies: string[] = [];
-    const fetchImpl = vi.fn().mockImplementation(async (_url: string, init: RequestInit) => {
-      capturedBodies.push(typeof init.body === "string" ? init.body : "");
-      return {
-        ok: true,
-        json: async () => ({
-          choices: [
-            {
-              message: {
-                content: JSON.stringify({
-                  verdict: "ready",
-                  confidence: 1,
-                  summary: "ok",
-                  findings: [],
-                  suggested_patches: [],
-                }),
+    const fetchImpl = vi
+      .fn()
+      .mockImplementation(async (_url: string, init: RequestInit) => {
+        capturedBodies.push(typeof init.body === "string" ? init.body : "");
+        return {
+          ok: true,
+          json: async () => ({
+            choices: [
+              {
+                message: {
+                  content: JSON.stringify({
+                    verdict: "ready",
+                    confidence: 1,
+                    summary: "ok",
+                    findings: [],
+                    suggested_patches: [],
+                  }),
+                },
               },
-            },
-          ],
-        }),
-      };
-    });
+            ],
+          }),
+        };
+      });
     await scrubClaim({
       claimId: CLAIM_ID,
       apiKey: "sk-test",

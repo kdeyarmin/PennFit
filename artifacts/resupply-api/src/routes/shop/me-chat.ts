@@ -244,9 +244,7 @@ async function loadAccountContext(
           amountTotalCents: latestOrder.amount_total_cents ?? 0,
           // PostgREST returns timestamptz as ISO string; slice to
           // YYYY-MM-DD for the system-prompt context.
-          paidAt: latestOrder.paid_at
-            ? latestOrder.paid_at.slice(0, 10)
-            : "",
+          paidAt: latestOrder.paid_at ? latestOrder.paid_at.slice(0, 10) : "",
           shippedAt: latestOrder.shipped_at
             ? latestOrder.shipped_at.slice(0, 10)
             : null,
@@ -575,9 +573,7 @@ async function runStreamingRound(
   });
 
   if (!upstream.ok || !upstream.body) {
-    const detail = upstream.body
-      ? await upstream.text().catch(() => "")
-      : "";
+    const detail = upstream.body ? await upstream.text().catch(() => "") : "";
     logger.warn(
       {
         event: "customer_chat_openai_http_error",

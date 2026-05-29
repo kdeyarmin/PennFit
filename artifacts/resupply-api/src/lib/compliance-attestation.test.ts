@@ -30,16 +30,12 @@ function isoFromAnchor(anchor: string, dayOffset: number): string {
  * remainder have 1 hour (intentionally non-zero so the "average
  * hours on used nights" math gets exercised).
  */
-function buildWindow(
-  anchor: string,
-  compliantCount: number,
-): AdherenceNight[] {
+function buildWindow(anchor: string, compliantCount: number): AdherenceNight[] {
   const nights: AdherenceNight[] = [];
   for (let i = 0; i < WINDOW_DAYS; i++) {
     nights.push({
       date: isoFromAnchor(anchor, i),
-      usageMinutes:
-        i < compliantCount ? COMPLIANT_MINUTES_PER_NIGHT + 60 : 60,
+      usageMinutes: i < compliantCount ? COMPLIANT_MINUTES_PER_NIGHT + 60 : 60,
     });
   }
   return nights;
@@ -87,8 +83,7 @@ describe("findBestAdherenceWindow", () => {
     // "patient qualified on the earliest date the threshold was met."
     const nights: AdherenceNight[] = [];
     for (let i = 0; i < 60; i++) {
-      const compliant =
-        i < 21 || (i >= 10 && i < 40); // overlap creates both windows
+      const compliant = i < 21 || (i >= 10 && i < 40); // overlap creates both windows
       nights.push({
         date: isoFromAnchor(ANCHOR, i),
         usageMinutes: compliant ? COMPLIANT_MINUTES_PER_NIGHT : 60,

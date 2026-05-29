@@ -55,13 +55,10 @@ export function AdminProvidersPage() {
       <header className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold">Providers</h1>
-          <p
-            className="text-sm mt-1"
-            style={{ color: "hsl(var(--ink-3))" }}
-          >
-            Central registry of prescribing physicians. Search by NPI
-            (10 digits) or by name. Adds an NPI by looking it up in the
-            public NPPES registry.
+          <p className="text-sm mt-1" style={{ color: "hsl(var(--ink-3))" }}>
+            Central registry of prescribing physicians. Search by NPI (10
+            digits) or by name. Adds an NPI by looking it up in the public NPPES
+            registry.
           </p>
         </div>
         <Button onClick={() => setShowAdd(true)}>
@@ -85,10 +82,7 @@ export function AdminProvidersPage() {
         ) : isError ? (
           <ErrorPanel error={error} onRetry={() => void refetch()} />
         ) : data.providers.length === 0 ? (
-          <p
-            className="text-sm py-3"
-            style={{ color: "hsl(var(--ink-3))" }}
-          >
+          <p className="text-sm py-3" style={{ color: "hsl(var(--ink-3))" }}>
             {search ? "No matches." : "No providers in the registry yet."}
           </p>
         ) : (
@@ -122,9 +116,7 @@ const SOURCE_COLOR: Record<ProviderSource, string> = {
 };
 
 function ProvidersTable({ rows }: { rows: ProviderListItem[] }) {
-  const [caseloadFor, setCaseloadFor] = useState<ProviderListItem | null>(
-    null,
-  );
+  const [caseloadFor, setCaseloadFor] = useState<ProviderListItem | null>(null);
   return (
     <>
       <table className="w-full text-sm">
@@ -175,10 +167,7 @@ function ProvidersTable({ rows }: { rows: ProviderListItem[] }) {
                 </span>
               </td>
               <td className="py-2 text-right">
-                <Button
-                  intent="ghost"
-                  onClick={() => setCaseloadFor(r)}
-                >
+                <Button intent="ghost" onClick={() => setCaseloadFor(r)}>
                   Caseload
                 </Button>
               </td>
@@ -226,10 +215,7 @@ function CaseloadModal({
               <h2 className="text-lg font-semibold">
                 Caseload — {provider.legalName}
               </h2>
-              <p
-                className="text-xs"
-                style={{ color: "hsl(var(--ink-3))" }}
-              >
+              <p className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
                 Patients with a prescription written by NPI{" "}
                 <span className="font-mono">{provider.npi}</span>. Up to 200,
                 most recent first.
@@ -244,10 +230,7 @@ function CaseloadModal({
           ) : isError ? (
             <ErrorPanel error={error} onRetry={() => void refetch()} />
           ) : data.patients.length === 0 ? (
-            <p
-              className="text-sm py-3"
-              style={{ color: "hsl(var(--ink-3))" }}
-            >
+            <p className="text-sm py-3" style={{ color: "hsl(var(--ink-3))" }}>
               No patients currently on this provider&apos;s caseload.
             </p>
           ) : (
@@ -300,18 +283,12 @@ function CaseloadTable({ rows }: { rows: ProviderCaseloadEntry[] }) {
                 </span>
               )}
             </td>
-            <td
-              className="py-2 text-xs"
-              style={{ color: "hsl(var(--ink-3))" }}
-            >
+            <td className="py-2 text-xs" style={{ color: "hsl(var(--ink-3))" }}>
               {r.email ?? "—"}
             </td>
             <td className="py-2 font-mono text-xs">{r.phoneE164 ?? "—"}</td>
             <td className="py-2 text-xs">{r.prescriptionStatus ?? "—"}</td>
-            <td
-              className="py-2 text-xs"
-              style={{ color: "hsl(var(--ink-3))" }}
-            >
+            <td className="py-2 text-xs" style={{ color: "hsl(var(--ink-3))" }}>
               {r.validUntil ?? "open-ended"}
             </td>
           </tr>
@@ -329,8 +306,9 @@ function AddProviderModal({
   onCreated: () => void;
 }) {
   const [npi, setNpi] = useState("");
-  const [autofilled, setAutofilled] =
-    useState<NppesProviderProjection | null>(null);
+  const [autofilled, setAutofilled] = useState<NppesProviderProjection | null>(
+    null,
+  );
   const [legalName, setLegalName] = useState("");
   const [phone, setPhone] = useState("");
   const [fax, setFax] = useState("");
@@ -397,8 +375,8 @@ function AddProviderModal({
           </h2>
           <p className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
             Type the NPI and click Look up. We&apos;ll pull the provider&apos;s
-            name, taxonomy, and contact info from the public NPPES registry
-            for you to confirm.
+            name, taxonomy, and contact info from the public NPPES registry for
+            you to confirm.
           </p>
 
           <div className="flex items-end gap-2">
@@ -473,12 +451,9 @@ function AddProviderModal({
                 </div>
               </div>
               {autofilled && (
-                <p
-                  className="text-xs"
-                  style={{ color: "hsl(var(--ink-3))" }}
-                >
-                  Will save as <strong>NPPES verified</strong>. Edits to
-                  the autofilled values are kept.
+                <p className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
+                  Will save as <strong>NPPES verified</strong>. Edits to the
+                  autofilled values are kept.
                 </p>
               )}
             </div>

@@ -36,21 +36,23 @@ import { rateLimit } from "./rate-limit";
  * limiters (10/hr for one-way / financial / bulk; 30/hr for
  * sensitive mutations; 60/hr for typical mutations).
  */
-export type AdminRateLimitPreset = "destroy" | "bulk" | "sensitive" | "mutation";
+export type AdminRateLimitPreset =
+  | "destroy"
+  | "bulk"
+  | "sensitive"
+  | "mutation";
 
-const PRESETS: Record<
-  AdminRateLimitPreset,
-  { max: number; windowMs: number }
-> = {
-  /** One-way / financial / PHI destruction. Conservative. */
-  destroy: { max: 10, windowMs: 60 * 60 * 1000 },
-  /** Fan-out operations (campaign sends, mass scans). */
-  bulk: { max: 10, windowMs: 60 * 60 * 1000 },
-  /** Sensitive mutations (template overrides, role changes). */
-  sensitive: { max: 30, windowMs: 60 * 60 * 1000 },
-  /** Typical create/update — the default. */
-  mutation: { max: 60, windowMs: 60 * 60 * 1000 },
-};
+const PRESETS: Record<AdminRateLimitPreset, { max: number; windowMs: number }> =
+  {
+    /** One-way / financial / PHI destruction. Conservative. */
+    destroy: { max: 10, windowMs: 60 * 60 * 1000 },
+    /** Fan-out operations (campaign sends, mass scans). */
+    bulk: { max: 10, windowMs: 60 * 60 * 1000 },
+    /** Sensitive mutations (template overrides, role changes). */
+    sensitive: { max: 30, windowMs: 60 * 60 * 1000 },
+    /** Typical create/update — the default. */
+    mutation: { max: 60, windowMs: 60 * 60 * 1000 },
+  };
 
 export interface AdminRateLimitOptions {
   /**

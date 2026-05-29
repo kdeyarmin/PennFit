@@ -636,7 +636,9 @@ describe("POST /admin/shop/orders/:orderId/delivered", () => {
   it("is idempotent on a re-fire (does not bump delivered_at)", async () => {
     stubVerifiedAdmin();
     const shippedAtIso = new Date("2026-04-25T09:00:00Z").toISOString();
-    const originalDeliveredAtIso = new Date("2026-04-28T15:00:00Z").toISOString();
+    const originalDeliveredAtIso = new Date(
+      "2026-04-28T15:00:00Z",
+    ).toISOString();
     stageSupabaseResponse("shop_orders", "select", {
       data: paidOrderRow({
         shipped_at: shippedAtIso,

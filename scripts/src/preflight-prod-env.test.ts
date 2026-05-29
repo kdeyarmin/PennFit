@@ -28,7 +28,8 @@ const VALID_PROD_ENV: Record<string, string> = {
   PORT: "3000",
   DATABASE_URL: "postgres://user:pass@db.prod.example.com:5432/pennpaps",
   SUPABASE_URL: "https://abcxyz123.supabase.co",
-  SUPABASE_SERVICE_ROLE_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.service_role",
+  SUPABASE_SERVICE_ROLE_KEY:
+    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.service_role",
   SUPABASE_STORAGE_BUCKET_PRIVATE: "attachments",
   RESUPPLY_LINK_HMAC_KEY: VALID_HMAC_KEY,
   RESUPPLY_ADMIN_EMAILS: "admin@pennpaps.com",
@@ -77,15 +78,11 @@ function run(env: Record<string, string>): {
   stdout: string;
   stderr: string;
 } {
-  const result = spawnSync(
-    process.execPath,
-    ["--import", "tsx", SCRIPT],
-    {
-      env,
-      encoding: "utf8",
-      timeout: 30_000,
-    },
-  );
+  const result = spawnSync(process.execPath, ["--import", "tsx", SCRIPT], {
+    env,
+    encoding: "utf8",
+    timeout: 30_000,
+  });
 
   return {
     exitCode: result.status ?? -1,
@@ -95,7 +92,9 @@ function run(env: Record<string, string>): {
 }
 
 /** Return a copy of VALID_PROD_ENV with the given overrides applied. */
-function withEnv(overrides: Record<string, string | undefined>): Record<string, string> {
+function withEnv(
+  overrides: Record<string, string | undefined>,
+): Record<string, string> {
   const env: Record<string, string> = { ...VALID_PROD_ENV };
   for (const [k, v] of Object.entries(overrides)) {
     if (v === undefined) {
@@ -130,7 +129,9 @@ describe("happy path — all checks pass", () => {
   });
 
   it("exits 0 and prints 'Ready for launch.' when DATABASE_URL uses postgresql:// prefix", () => {
-    const env = withEnv({ DATABASE_URL: "postgresql://user:pass@db.example.com:5432/pennpaps" });
+    const env = withEnv({
+      DATABASE_URL: "postgresql://user:pass@db.example.com:5432/pennpaps",
+    });
     const { exitCode, stdout } = run(env);
     expect(exitCode).toBe(0);
     expect(stdout).toContain("Ready for launch.");
@@ -178,7 +179,9 @@ describe("boot-required variables — exit 1 on failure", () => {
 
   it("fails when DATABASE_URL is the .env.example placeholder", () => {
     const { exitCode, stdout } = run(
-      withEnv({ DATABASE_URL: "postgres://user:password@localhost:5432/pennpaps" }),
+      withEnv({
+        DATABASE_URL: "postgres://user:password@localhost:5432/pennpaps",
+      }),
     );
     expect(exitCode).toBe(1);
     expect(stdout).toContain("placeholder");
@@ -191,7 +194,9 @@ describe("boot-required variables — exit 1 on failure", () => {
     // host is localhost and NODE_ENV=production, which the prod-only
     // localhost guard rejects before anything else can pass it.
     const { exitCode, stdout } = run(
-      withEnv({ DATABASE_URL: "postgres://replace_me@localhost:5432/pennpaps" }),
+      withEnv({
+        DATABASE_URL: "postgres://replace_me@localhost:5432/pennpaps",
+      }),
     );
     expect(exitCode).toBe(1);
     expect(stdout).toContain("DATABASE_URL");
@@ -235,7 +240,8 @@ describe("boot-required variables — exit 1 on failure", () => {
     // "development" here to exercise the non-prod path.
     const env = withEnv({
       NODE_ENV: "development",
-      DATABASE_URL: "postgres://localuser:localpass@localhost:5432/pennpaps_local",
+      DATABASE_URL:
+        "postgres://localuser:localpass@localhost:5432/pennpaps_local",
     });
     const { exitCode } = run(env);
     expect(exitCode).toBe(0);
@@ -264,7 +270,9 @@ describe("boot-required variables — exit 1 on failure", () => {
 
   it("fails when SUPABASE_SERVICE_ROLE_KEY contains replace_me", () => {
     const { exitCode, stdout } = run(
-      withEnv({ SUPABASE_SERVICE_ROLE_KEY: "replace_me_with_service_role_key" }),
+      withEnv({
+        SUPABASE_SERVICE_ROLE_KEY: "replace_me_with_service_role_key",
+      }),
     );
     expect(exitCode).toBe(1);
     expect(stdout).toContain("placeholder");
@@ -319,7 +327,9 @@ describe("boot-required variables — exit 1 on failure", () => {
   it("fails when RESUPPLY_LINK_HMAC_KEY decodes to fewer than 32 bytes", () => {
     // 20 bytes in base64 = 28 chars
     const shortKey = Buffer.alloc(20).toString("base64");
-    const { exitCode, stdout } = run(withEnv({ RESUPPLY_LINK_HMAC_KEY: shortKey }));
+    const { exitCode, stdout } = run(
+      withEnv({ RESUPPLY_LINK_HMAC_KEY: shortKey }),
+    );
     expect(exitCode).toBe(1);
     expect(stdout).toContain("RESUPPLY_LINK_HMAC_KEY");
     expect(stdout).toContain("bytes");
@@ -347,7 +357,9 @@ describe("boot-required variables — exit 1 on failure", () => {
     // the input. boot-time validation in lib/resupply-audit catches
     // this; the original lax Buffer.from check did not.
     const lengthOff = "A".repeat(65);
-    const { exitCode, stdout } = run(withEnv({ RESUPPLY_LINK_HMAC_KEY: lengthOff }));
+    const { exitCode, stdout } = run(
+      withEnv({ RESUPPLY_LINK_HMAC_KEY: lengthOff }),
+    );
     expect(exitCode).toBe(1);
     expect(stdout).toContain("RESUPPLY_LINK_HMAC_KEY");
     expect(stdout).toContain("round-trip");
@@ -356,7 +368,9 @@ describe("boot-required variables — exit 1 on failure", () => {
   it("warns (does not fail) when RESUPPLY_ADMIN_EMAILS is missing", () => {
     // requireAdmin reads roles from auth.users.role; the env var is
     // not consulted by the auth gate, so an empty value is non-fatal.
-    const { exitCode, stdout } = run(withEnv({ RESUPPLY_ADMIN_EMAILS: undefined }));
+    const { exitCode, stdout } = run(
+      withEnv({ RESUPPLY_ADMIN_EMAILS: undefined }),
+    );
     expect(exitCode).toBe(0);
     expect(stdout).toContain("RESUPPLY_ADMIN_EMAILS");
     expect(stdout).toContain("WARN");
@@ -370,7 +384,9 @@ describe("boot-required variables — exit 1 on failure", () => {
   });
 
   it("passes when RESUPPLY_ADMIN_EMAILS has multiple entries", () => {
-    const env = withEnv({ RESUPPLY_ADMIN_EMAILS: "alice@pennpaps.com,bob@pennpaps.com" });
+    const env = withEnv({
+      RESUPPLY_ADMIN_EMAILS: "alice@pennpaps.com,bob@pennpaps.com",
+    });
     const { exitCode } = run(env);
     expect(exitCode).toBe(0);
   });
@@ -431,7 +447,9 @@ describe("Stripe checks in production mode", () => {
   });
 
   it("fails when STRIPE_WEBHOOK_SIGNING_SECRET is missing in production", () => {
-    const { exitCode } = run(withEnv({ STRIPE_WEBHOOK_SIGNING_SECRET: undefined }));
+    const { exitCode } = run(
+      withEnv({ STRIPE_WEBHOOK_SIGNING_SECRET: undefined }),
+    );
     expect(exitCode).toBe(1);
   });
 });
@@ -509,7 +527,9 @@ describe("Twilio checks", () => {
     });
     const { exitCode, stdout } = run(env);
     expect(exitCode).toBe(1);
-    expect(stdout).toContain("TWILIO_MESSAGING_SERVICE_SID / TWILIO_PHONE_NUMBER");
+    expect(stdout).toContain(
+      "TWILIO_MESSAGING_SERVICE_SID / TWILIO_PHONE_NUMBER",
+    );
   });
 
   it("passes when TWILIO_ACCOUNT_SID is not set (Twilio entirely optional in non-prod)", () => {
@@ -586,7 +606,10 @@ describe("public URL checks in production mode", () => {
 
 describe("warnings that do not block launch", () => {
   it("warns but exits 0 when STRIPE_SECRET_KEY is missing in non-production mode", () => {
-    const env = withEnv({ NODE_ENV: "development", STRIPE_SECRET_KEY: undefined });
+    const env = withEnv({
+      NODE_ENV: "development",
+      STRIPE_SECRET_KEY: undefined,
+    });
     const { exitCode, stdout } = run(env);
     expect(exitCode).toBe(0);
     expect(stdout).toContain("WARN");
@@ -925,7 +948,6 @@ describe("optional placeholder variable checks", () => {
     expect(stdout).toContain("VITE_RESUPPLY_CONTACT_EMAIL");
     expect(stdout).toContain("placeholder");
   });
-
 });
 
 // ---------------------------------------------------------------------------
@@ -1047,7 +1069,10 @@ describe("non-production mode — missing vendor vars warn rather than fail", ()
     // (it records a pass with "intentionally OFF" detail)
     const fitterWarnLine = stdout
       .split("\n")
-      .some((l) => l.includes("WARN") && l.includes("RESUPPLY_FITTER_REENGAGE_ENABLED"));
+      .some(
+        (l) =>
+          l.includes("WARN") && l.includes("RESUPPLY_FITTER_REENGAGE_ENABLED"),
+      );
     expect(fitterWarnLine).toBe(false);
   });
 

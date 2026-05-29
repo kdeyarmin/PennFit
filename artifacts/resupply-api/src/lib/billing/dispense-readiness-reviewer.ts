@@ -142,10 +142,7 @@ const SLEEP_RELATED_HCPCS = new Set([
 // HCPCS subject to Medicare capped-rental rules.
 const CAPPED_RENTAL_HCPCS = new Set(["E0601", "E0470", "E0471", "E0562"]);
 
-const MEDICARE_LIKE_LOBS = new Set([
-  "medicare_part_b",
-  "medicare_advantage",
-]);
+const MEDICARE_LIKE_LOBS = new Set(["medicare_part_b", "medicare_advantage"]);
 
 const QUALIFYING_OSA_ICD10 = new Set([
   "G47.33",
@@ -248,20 +245,13 @@ async function runDeterministicChecks(
           "Ask patient at next contact.",
         ),
   );
-  const addr = patient.address as
-    | {
-        line1?: string;
-        city?: string;
-        state?: string;
-        zip?: string;
-      }
-    | null;
-  if (
-    addr?.line1 &&
-    addr.city &&
-    addr.state &&
-    addr.zip
-  ) {
+  const addr = patient.address as {
+    line1?: string;
+    city?: string;
+    state?: string;
+    zip?: string;
+  } | null;
+  if (addr?.line1 && addr.city && addr.state && addr.zip) {
     findings.push(
       ok(
         "patient_address",
@@ -336,10 +326,7 @@ async function runDeterministicChecks(
       ),
     );
     const today = new Date().toISOString().slice(0, 10);
-    if (
-      coverage.termination_date &&
-      coverage.termination_date < today
-    ) {
+    if (coverage.termination_date && coverage.termination_date < today) {
       findings.push(
         error(
           "insurance_coverage_active",
@@ -549,7 +536,10 @@ async function runDeterministicChecks(
         `Active prescription on file (${rx.hcpcs_code ?? rx.item_sku})`,
       ),
     );
-    if (rx.valid_until && rx.valid_until < new Date().toISOString().slice(0, 10)) {
+    if (
+      rx.valid_until &&
+      rx.valid_until < new Date().toISOString().slice(0, 10)
+    ) {
       findings.push(
         error(
           "prescription_active",
@@ -632,8 +622,7 @@ async function runDeterministicChecks(
 
   // ── Prior authorization ──
   const requiresPa =
-    payer?.requires_prior_auth_dme &&
-    PA_REQUIRED_HCPCS.has(input.hcpcsCode);
+    payer?.requires_prior_auth_dme && PA_REQUIRED_HCPCS.has(input.hcpcsCode);
   if (requiresPa) {
     const { data: pa } = await supabase
       .schema("resupply")
@@ -663,10 +652,7 @@ async function runDeterministicChecks(
         ),
       );
       const today = new Date().toISOString().slice(0, 10);
-      if (
-        pa.approved_through &&
-        pa.approved_through < today
-      ) {
+      if (pa.approved_through && pa.approved_through < today) {
         findings.push(
           error(
             "prior_authorization_active",
@@ -775,11 +761,7 @@ async function runDeterministicChecks(
   ] as const) {
     if (formMap.has(kind)) {
       findings.push(
-        ok(
-          `form_${kind}`,
-          "patient_acknowledgment",
-          `${label} on file`,
-        ),
+        ok(`form_${kind}`, "patient_acknowledgment", `${label} on file`),
       );
     } else {
       findings.push(
@@ -813,11 +795,7 @@ async function runDeterministicChecks(
     );
   } else {
     findings.push(
-      ok(
-        "equipment_recall",
-        "equipment_recall",
-        "No recalled devices on file",
-      ),
+      ok("equipment_recall", "equipment_recall", "No recalled devices on file"),
     );
   }
 
@@ -834,21 +812,9 @@ async function runDeterministicChecks(
   if (org) {
     const today = new Date().toISOString().slice(0, 10);
     for (const [key, label, date] of [
-      [
-        "dme_accreditation",
-        "DME accreditation",
-        org.accreditation_expires_on,
-      ],
-      [
-        "dme_state_license",
-        "DME state license",
-        org.state_license_expires_on,
-      ],
-      [
-        "dme_surety_bond",
-        "DMEPOS surety bond",
-        org.surety_bond_expires_on,
-      ],
+      ["dme_accreditation", "DME accreditation", org.accreditation_expires_on],
+      ["dme_state_license", "DME state license", org.state_license_expires_on],
+      ["dme_surety_bond", "DMEPOS surety bond", org.surety_bond_expires_on],
     ] as const) {
       if (!date) {
         findings.push(
@@ -946,12 +912,9 @@ function computeVerdict(
   const blockingErrors = findings.filter(
     (f) =>
       f.severity === "error" &&
-      (!f.fixHint ||
-        blockingHints.some((b) => f.fixHint?.includes(b))),
+      (!f.fixHint || blockingHints.some((b) => f.fixHint?.includes(b))),
   );
-  return blockingErrors.length > 0
-    ? "gaps_with_blocking"
-    : "gaps_with_fixable";
+  return blockingErrors.length > 0 ? "gaps_with_blocking" : "gaps_with_fixable";
 }
 
 // ── Small helpers ────────────────────────────────────────────────────
@@ -1147,7 +1110,9 @@ async function synthesizeWithAi(
   }
 }
 
-function parseAiOutput(content: string): Omit<
+function parseAiOutput(
+  content: string,
+): Omit<
   AiSynthesis,
   "latencyMs" | "promptTokens" | "completionTokens" | "errorMessage"
 > {

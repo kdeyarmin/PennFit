@@ -24,14 +24,15 @@ const createSendgridClientMock = vi.hoisted(() =>
   vi.fn(() => ({ sendEmail: sendEmailMock })),
 );
 vi.mock("@workspace/resupply-email", async () => {
-  const actual =
-    await vi.importActual<typeof import("@workspace/resupply-email")>(
-      "@workspace/resupply-email",
-    );
+  const actual = await vi.importActual<
+    typeof import("@workspace/resupply-email")
+  >("@workspace/resupply-email");
   return {
     ...actual,
     createSendgridClient: (...args: unknown[]) =>
-      createSendgridClientMock(...(args as Parameters<typeof createSendgridClientMock>)),
+      createSendgridClientMock(
+        ...(args as Parameters<typeof createSendgridClientMock>),
+      ),
   };
 });
 
@@ -70,7 +71,9 @@ function restoreEnv(): void {
   }
 }
 
-function makeFailedRow(over: Record<string, unknown> = {}): Record<string, unknown> {
+function makeFailedRow(
+  over: Record<string, unknown> = {},
+): Record<string, unknown> {
   return {
     order_reference: "PENN-ABC123",
     created_at: "2026-05-21T10:00:00.000Z",
@@ -251,7 +254,9 @@ describe("runFailedEmailDigest — PHI safety", () => {
 
     await runFailedEmailDigest();
     const call = sendEmailMock.mock.calls[0][0] as { html: string };
-    expect(call.html).toContain("&lt;img src=x onerror=&quot;alert(&#39;xss&#39;)&quot;&gt;");
+    expect(call.html).toContain(
+      "&lt;img src=x onerror=&quot;alert(&#39;xss&#39;)&quot;&gt;",
+    );
     expect(call.html).toContain(
       "2026-05-21T10:00:00.000Z&lt;/li&gt;&lt;script&gt;alert(1)&lt;/script&gt;",
     );
@@ -260,10 +265,12 @@ describe("runFailedEmailDigest — PHI safety", () => {
 
   it("caps the body to DIGEST_MAX_REFERENCES_LISTED entries with an overflow note", async () => {
     process.env.RESUPPLY_ADMIN_ALERTS_EMAIL = "ops@example.com";
-    const big = Array.from({ length: DIGEST_MAX_REFERENCES_LISTED + 5 }, (_, i) =>
-      makeFailedRow({
-        order_reference: `PENN-${String(i).padStart(6, "0")}`,
-      }),
+    const big = Array.from(
+      { length: DIGEST_MAX_REFERENCES_LISTED + 5 },
+      (_, i) =>
+        makeFailedRow({
+          order_reference: `PENN-${String(i).padStart(6, "0")}`,
+        }),
     );
     stageSupabaseResponse("orders", "select", {
       count: big.length,

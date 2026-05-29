@@ -241,9 +241,11 @@ export function createAuthClient(config: AuthClientConfig): AuthClient {
         body: input,
         requireCsrf: true,
       });
-      const body = (await expectOk(res)) as
-        | { ok: true; mfaRequired?: boolean; challengeToken?: string }
-        | null;
+      const body = (await expectOk(res)) as {
+        ok: true;
+        mfaRequired?: boolean;
+        challengeToken?: string;
+      } | null;
       if (body && body.mfaRequired === true && body.challengeToken) {
         return {
           ok: true,

@@ -138,10 +138,10 @@ export function LearnCleaningRoutine() {
         </h1>
         <p className="text-lg text-muted-foreground leading-relaxed">
           A CPAP that&apos;s cleaned consistently lasts longer, seals better,
-          and doesn&apos;t become a low-grade infection risk in month three.
-          The good news: the real routine is about 90 seconds a day and 10
-          minutes a week. Most of what you&apos;ve read online is either
-          marketing or fear.
+          and doesn&apos;t become a low-grade infection risk in month three. The
+          good news: the real routine is about 90 seconds a day and 10 minutes a
+          week. Most of what you&apos;ve read online is either marketing or
+          fear.
         </p>
       </header>
 
@@ -193,8 +193,8 @@ export function LearnCleaningRoutine() {
           </h2>
         </div>
         <p className="text-muted-foreground leading-relaxed mb-5">
-          The single most important habit for long-term mask comfort. Skip
-          this and your cushion fails by month two.
+          The single most important habit for long-term mask comfort. Skip this
+          and your cushion fails by month two.
         </p>
         <div className="space-y-4">
           {dailyTasks.map((t, i) => (
@@ -243,15 +243,12 @@ export function LearnCleaningRoutine() {
           </h2>
         </div>
         <p className="text-muted-foreground leading-relaxed mb-5">
-          Pick a day — most patients do Sunday mornings, paired with the
-          weekend distilled-water restock.
+          Pick a day — most patients do Sunday mornings, paired with the weekend
+          distilled-water restock.
         </p>
         <div className="space-y-4">
           {weeklyTasks.map((t) => (
-            <article
-              key={t.what}
-              className="glass-card rounded-2xl p-5 md:p-6"
-            >
+            <article key={t.what} className="glass-card rounded-2xl p-5 md:p-6">
               <div className="grid md:grid-cols-[auto_1fr] gap-4">
                 <div className="relative h-11 w-11 rounded-xl flex items-center justify-center shrink-0 icon-halo-navy">
                   <t.Icon className="w-5 h-5" strokeWidth={2} />
@@ -289,15 +286,12 @@ export function LearnCleaningRoutine() {
         </div>
         <p className="text-muted-foreground leading-relaxed mb-5">
           Calendar it. Set a recurring phone reminder. Our resupply program
-          ships you fresh cushions and filters automatically when
-          insurance allows — this section is for everything else.
+          ships you fresh cushions and filters automatically when insurance
+          allows — this section is for everything else.
         </p>
         <div className="space-y-4">
           {monthlyTasks.map((t) => (
-            <article
-              key={t.what}
-              className="glass-card rounded-2xl p-5 md:p-6"
-            >
+            <article key={t.what} className="glass-card rounded-2xl p-5 md:p-6">
               <div className="grid md:grid-cols-[auto_1fr] gap-4">
                 <div className="relative h-11 w-11 rounded-xl flex items-center justify-center shrink-0 icon-halo-gold">
                   <t.Icon className="w-5 h-5" strokeWidth={2} />
@@ -374,8 +368,8 @@ export function LearnCleaningRoutine() {
               <p className="text-sm text-muted-foreground leading-relaxed">
                 Pre-moistened CPAP mask wipes (alcohol-free, citrus-free),
                 replacement disposable filters, and gallon jugs of distilled
-                water — everything on this page, in one place. Insurance
-                covers most of it on the resupply cadence.
+                water — everything on this page, in one place. Insurance covers
+                most of it on the resupply cadence.
               </p>
             </div>
             <Button
@@ -454,8 +448,8 @@ export function LearnCleaningRoutine() {
 
       <p className="text-xs text-muted-foreground/80 leading-relaxed mt-12 max-w-2xl mx-auto text-center">
         Educational content only. If you develop new respiratory symptoms,
-        persistent sinus infections, or skin reactions, talk to your
-        physician — your cleaning routine may not be the issue.
+        persistent sinus infections, or skin reactions, talk to your physician —
+        your cleaning routine may not be the issue.
       </p>
     </div>
   );

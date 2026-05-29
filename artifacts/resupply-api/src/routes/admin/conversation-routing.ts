@@ -39,9 +39,7 @@ import {
 const router: IRouter = Router();
 
 const SKILL = /^[a-z0-9_]{1,40}$/;
-const SkillArray = z
-  .array(z.string().regex(SKILL))
-  .max(20);
+const SkillArray = z.array(z.string().regex(SKILL)).max(20);
 
 const skillsBody = z
   .object({
@@ -58,7 +56,10 @@ const requiredSkillsBody = z
 router.patch(
   "/admin/team/:id/skills",
   requireAdminOnly,
-  adminRateLimit({ name: "conversation_routing.set_skills", preset: "mutation" }),
+  adminRateLimit({
+    name: "conversation_routing.set_skills",
+    preset: "mutation",
+  }),
   async (req, res) => {
     const idCheck = z.string().min(1).safeParse(req.params.id);
     if (!idCheck.success) {
@@ -136,9 +137,7 @@ router.patch(
       return;
     }
     const required = Array.from(
-      new Set(
-        parsed.data.requiredSkills.map((s) => s.trim().toLowerCase()),
-      ),
+      new Set(parsed.data.requiredSkills.map((s) => s.trim().toLowerCase())),
     );
     const supabase = getSupabaseServiceRoleClient();
     const { data: updated, error } = await supabase

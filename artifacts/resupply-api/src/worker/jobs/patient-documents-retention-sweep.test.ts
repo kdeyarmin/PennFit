@@ -52,9 +52,7 @@ describe("runRetentionSweep — backfill", () => {
     // First update is the backfill; assert the computed horizon.
     expect(writes[0]).toBeDefined();
     const backfillUpdate = writes[0] as { retention_until_at: string };
-    expect(backfillUpdate.retention_until_at).toBe(
-      "2027-01-15T00:00:00.000Z",
-    );
+    expect(backfillUpdate.retention_until_at).toBe("2027-01-15T00:00:00.000Z");
   });
 });
 

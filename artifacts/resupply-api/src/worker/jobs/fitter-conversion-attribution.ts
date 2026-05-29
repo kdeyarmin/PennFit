@@ -41,7 +41,8 @@ import {
   getSupabaseServiceRoleClient,
 } from "@workspace/resupply-db";
 
-type FitterLeadsUpdate = Database["resupply"]["Tables"]["fitter_leads"]["Update"];
+type FitterLeadsUpdate =
+  Database["resupply"]["Tables"]["fitter_leads"]["Update"];
 
 import { logger } from "../../lib/logger";
 import { createQueueWithDlq, CRON_SCAN_QUEUE_OPTS } from "../lib/queue-options";
@@ -101,7 +102,10 @@ export async function runFitterConversionAttribution(): Promise<AttributionStats
     { orderId: string; placedAt: string; firstName: string | null }
   >();
   for (const o of orders) {
-    const e = typeof o.patient_email === "string" ? o.patient_email.toLowerCase() : null;
+    const e =
+      typeof o.patient_email === "string"
+        ? o.patient_email.toLowerCase()
+        : null;
     if (!e) continue;
     if (byEmail.has(e)) continue;
     // Use public.orders.patient_first_name directly — the storefront

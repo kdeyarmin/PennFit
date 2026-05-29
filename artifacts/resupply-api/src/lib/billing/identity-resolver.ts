@@ -263,7 +263,8 @@ function envSubmitter_(env: NodeJS.ProcessEnv): SubmitterIdentity | null {
     etin,
     organizationName: orgName,
     contactName: env.OFFICE_ALLY_CONTACT_NAME?.trim() || "BILLING",
-    contactPhoneE164: env.OFFICE_ALLY_CONTACT_PHONE_E164?.trim() || "+10000000000",
+    contactPhoneE164:
+      env.OFFICE_ALLY_CONTACT_PHONE_E164?.trim() || "+10000000000",
   };
 }
 

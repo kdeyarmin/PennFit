@@ -303,11 +303,7 @@ describe("MockBillingIdentity — organization string field fidelity", () => {
 
 describe("MockBillingIdentity — source union exhaustiveness", () => {
   it("all valid source values can be stored and retrieved", () => {
-    const sources: Array<MockBillingIdentity["source"]> = [
-      "db",
-      "env",
-      "stub",
-    ];
+    const sources: Array<MockBillingIdentity["source"]> = ["db", "env", "stub"];
     sources.forEach((src) => {
       const identity = makeFullIdentity({ source: src });
       expect(identity.source).toBe(src);

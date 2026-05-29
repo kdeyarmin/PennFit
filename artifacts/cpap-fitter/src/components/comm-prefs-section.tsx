@@ -157,8 +157,8 @@ export function CommPrefsSection() {
           testId="comm-toggle-sms-marketing"
         />
         <p className="text-[10px] text-muted-foreground">
-          STOP works on every text we send — replying STOP unsubscribes you
-          from BOTH categories above. You can re-enable here anytime.
+          STOP works on every text we send — replying STOP unsubscribes you from
+          BOTH categories above. You can re-enable here anytime.
         </p>
       </div>
 

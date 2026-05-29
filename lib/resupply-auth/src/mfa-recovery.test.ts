@@ -95,9 +95,7 @@ describe("hashRecoveryCode", () => {
     expect(hashRecoveryCode("ABCDEFGH")).toBe(hashRecoveryCode("ABCDEFGH"));
   });
   it("differs across inputs", () => {
-    expect(hashRecoveryCode("ABCDEFGH")).not.toBe(
-      hashRecoveryCode("ABCDEFGJ"),
-    );
+    expect(hashRecoveryCode("ABCDEFGH")).not.toBe(hashRecoveryCode("ABCDEFGJ"));
   });
   it("treats display form as a different input (caller MUST normalize)", () => {
     // Stored hashes use the normalized (no-hyphen) form. The

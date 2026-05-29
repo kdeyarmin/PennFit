@@ -281,7 +281,12 @@ describe("fetchAiQueue", () => {
         scrubFixableClaims: [],
         deniedNeedsAnalysis: [],
         autoResubmitReady: [item],
-        counts: { scrubBlocking: 0, scrubFixable: 0, deniedNeedsAnalysis: 0, autoResubmitReady: 1 },
+        counts: {
+          scrubBlocking: 0,
+          scrubFixable: 0,
+          deniedNeedsAnalysis: 0,
+          autoResubmitReady: 1,
+        },
         generatedAt: "2026-01-01T00:00:00Z",
       }),
     });
@@ -519,7 +524,6 @@ const INGEST_INPUT = {
 };
 
 describe("ingestEraFile", () => {
-
   test("posts to /resupply-api/admin/billing/era-ingest", async () => {
     fetchMock.mockResolvedValue({
       ok: true,
@@ -527,7 +531,11 @@ describe("ingestEraFile", () => {
       json: async () => ({
         eraFileId: "era-1",
         status: "ok",
-        summary: { claimsMatched: 3, linesProcessed: 10, totalPaidCents: 30000 },
+        summary: {
+          claimsMatched: 3,
+          linesProcessed: 10,
+          totalPaidCents: 30000,
+        },
       }),
     });
 

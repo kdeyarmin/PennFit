@@ -99,9 +99,7 @@ describe("fetchDeliveryFailures", () => {
 
     expect(fetchMock).toHaveBeenCalledOnce();
     const [url] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe(
-      "/resupply-api/admin/delivery-failures?sinceDays=14",
-    );
+    expect(url).toBe("/resupply-api/admin/delivery-failures?sinceDays=14");
   });
 
   it("passes a custom sinceDays value in the query string", async () => {
@@ -184,7 +182,9 @@ describe("fetchDeliveryFailures", () => {
       json: async () => ({}),
     });
 
-    await expect(fetchDeliveryFailures()).rejects.toThrow("Failed to load failures (403)");
+    await expect(fetchDeliveryFailures()).rejects.toThrow(
+      "Failed to load failures (403)",
+    );
   });
 
   // Negative / boundary: the response should work even when auditFailures

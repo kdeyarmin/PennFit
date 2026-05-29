@@ -148,8 +148,7 @@ router.get(
     // within months 2-3 of therapy. We report the raw numbers and
     // let the UI compose the verdict copy.
     const adherenceNights = normalisedNights.filter(
-      (n) =>
-        n.nightDate != null && n.nightDate >= adherenceCutoffDate,
+      (n) => n.nightDate != null && n.nightDate >= adherenceCutoffDate,
     );
     const nightsCompliant = adherenceNights.filter(
       (n) => (n.usageMinutes ?? 0) >= ADHERENCE_MIN_USAGE_MIN,

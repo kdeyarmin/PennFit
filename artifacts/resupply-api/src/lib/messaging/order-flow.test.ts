@@ -50,7 +50,10 @@ describe("reactivatePatient — happy path", () => {
     stageSupabaseResponse("shop_customers", "select", {
       data: {
         customer_id: CUSTOMER_ID,
-        communication_preferences: { smsMarketing: false, smsTransactional: false },
+        communication_preferences: {
+          smsMarketing: false,
+          smsTransactional: false,
+        },
       },
       error: null,
     });
@@ -64,13 +67,22 @@ describe("reactivatePatient — happy path", () => {
 
     // Verify the patient update was called once
     expect(supabaseMock.callCount("patients", "update")).toBe(1);
-    const [patientPayload] = supabaseMock.writePayloads("patients", "update") as Array<Record<string, unknown>>;
+    const [patientPayload] = supabaseMock.writePayloads(
+      "patients",
+      "update",
+    ) as Array<Record<string, unknown>>;
     expect(patientPayload!.status).toBe("active");
 
     // Verify shop_customers was updated with smsMarketing and smsTransactional = true
     expect(supabaseMock.callCount("shop_customers", "update")).toBe(1);
-    const [custPayload] = supabaseMock.writePayloads("shop_customers", "update") as Array<Record<string, unknown>>;
-    const prefs = custPayload!.communication_preferences as Record<string, unknown>;
+    const [custPayload] = supabaseMock.writePayloads(
+      "shop_customers",
+      "update",
+    ) as Array<Record<string, unknown>>;
+    const prefs = custPayload!.communication_preferences as Record<
+      string,
+      unknown
+    >;
     expect(prefs.smsMarketing).toBe(true);
     expect(prefs.smsTransactional).toBe(true);
   });
@@ -99,8 +111,14 @@ describe("reactivatePatient — happy path", () => {
 
     await reactivatePatient(PATIENT_ID);
 
-    const [custPayload] = supabaseMock.writePayloads("shop_customers", "update") as Array<Record<string, unknown>>;
-    const prefs = custPayload!.communication_preferences as Record<string, unknown>;
+    const [custPayload] = supabaseMock.writePayloads(
+      "shop_customers",
+      "update",
+    ) as Array<Record<string, unknown>>;
+    const prefs = custPayload!.communication_preferences as Record<
+      string,
+      unknown
+    >;
     // New values
     expect(prefs.smsMarketing).toBe(true);
     expect(prefs.smsTransactional).toBe(true);
@@ -128,8 +146,14 @@ describe("reactivatePatient — happy path", () => {
 
     await expect(reactivatePatient(PATIENT_ID)).resolves.toBeUndefined();
 
-    const [custPayload] = supabaseMock.writePayloads("shop_customers", "update") as Array<Record<string, unknown>>;
-    const prefs = custPayload!.communication_preferences as Record<string, unknown>;
+    const [custPayload] = supabaseMock.writePayloads(
+      "shop_customers",
+      "update",
+    ) as Array<Record<string, unknown>>;
+    const prefs = custPayload!.communication_preferences as Record<
+      string,
+      unknown
+    >;
     expect(prefs.smsMarketing).toBe(true);
     expect(prefs.smsTransactional).toBe(true);
   });
@@ -240,15 +264,24 @@ describe("reactivatePatient — contrast with pausePatient (regression guard)", 
     stageSupabaseResponse("shop_customers", "select", {
       data: {
         customer_id: CUSTOMER_ID,
-        communication_preferences: { smsMarketing: false, smsTransactional: false },
+        communication_preferences: {
+          smsMarketing: false,
+          smsTransactional: false,
+        },
       },
       error: null,
     });
-    stageSupabaseResponse("shop_customers", "update", { data: null, error: null });
+    stageSupabaseResponse("shop_customers", "update", {
+      data: null,
+      error: null,
+    });
 
     await reactivatePatient(PATIENT_ID);
 
-    const [payload] = supabaseMock.writePayloads("shop_customers", "update") as Array<Record<string, unknown>>;
+    const [payload] = supabaseMock.writePayloads(
+      "shop_customers",
+      "update",
+    ) as Array<Record<string, unknown>>;
     const prefs = payload!.communication_preferences as Record<string, unknown>;
     // If this were pausePatient the values would be false; they must be true here.
     expect(prefs.smsMarketing).toBe(true);

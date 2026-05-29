@@ -437,103 +437,107 @@ async function consumeAnthropicStream(
   let usage: AnthropicUsage = { input_tokens: 0, output_tokens: 0 };
 
   try {
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    let boundary = buffer.indexOf("\n\n");
-    while (boundary !== -1) {
-      const rawEvent = buffer.slice(0, boundary);
-      buffer = buffer.slice(boundary + 2);
-      boundary = buffer.indexOf("\n\n");
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let boundary = buffer.indexOf("\n\n");
+      while (boundary !== -1) {
+        const rawEvent = buffer.slice(0, boundary);
+        buffer = buffer.slice(boundary + 2);
+        boundary = buffer.indexOf("\n\n");
 
-      let dataLine = "";
-      for (const line of rawEvent.split("\n")) {
-        if (line.startsWith("data:")) {
-          dataLine = line.slice(5).trim();
-        }
-      }
-      if (!dataLine) continue;
-      let parsed: AnthropicStreamEvent;
-      try {
-        parsed = JSON.parse(dataLine) as AnthropicStreamEvent;
-      } catch {
-        continue;
-      }
-      switch (parsed.type) {
-        case "message_start": {
-          if (parsed.message?.id) id = parsed.message.id;
-          if (parsed.message?.model) model = parsed.message.model;
-          if (parsed.message?.usage) {
-            usage = { ...usage, ...parsed.message.usage };
+        let dataLine = "";
+        for (const line of rawEvent.split("\n")) {
+          if (line.startsWith("data:")) {
+            dataLine = line.slice(5).trim();
           }
-          break;
         }
-        case "content_block_start": {
-          const idx = parsed.index ?? blocks.length;
-          if (parsed.content_block?.type === "text") {
-            blocks[idx] = { type: "text", text: parsed.content_block.text ?? "" };
-          } else if (parsed.content_block?.type === "tool_use") {
-            blocks[idx] = {
-              type: "tool_use",
-              id: parsed.content_block.id,
-              name: parsed.content_block.name,
-              input: {},
-            };
-            toolJsonBuffers.set(idx, "");
+        if (!dataLine) continue;
+        let parsed: AnthropicStreamEvent;
+        try {
+          parsed = JSON.parse(dataLine) as AnthropicStreamEvent;
+        } catch {
+          continue;
+        }
+        switch (parsed.type) {
+          case "message_start": {
+            if (parsed.message?.id) id = parsed.message.id;
+            if (parsed.message?.model) model = parsed.message.model;
+            if (parsed.message?.usage) {
+              usage = { ...usage, ...parsed.message.usage };
+            }
+            break;
           }
-          break;
-        }
-        case "content_block_delta": {
-          // The Anthropic stream protocol always emits `index` on
-          // content_block_delta. Drop events that omit it instead of
-          // falling back to index 0 — for a multi-block response with
-          // a tool_use at index 0 followed by text at index 1, the
-          // fallback would merge text into the tool_use block and
-          // also corrupt that tool's JSON buffer.
-          if (typeof parsed.index !== "number") break;
-          const idx = parsed.index;
-          if (parsed.delta?.type === "text_delta" && parsed.delta.text) {
+          case "content_block_start": {
+            const idx = parsed.index ?? blocks.length;
+            if (parsed.content_block?.type === "text") {
+              blocks[idx] = {
+                type: "text",
+                text: parsed.content_block.text ?? "",
+              };
+            } else if (parsed.content_block?.type === "tool_use") {
+              blocks[idx] = {
+                type: "tool_use",
+                id: parsed.content_block.id,
+                name: parsed.content_block.name,
+                input: {},
+              };
+              toolJsonBuffers.set(idx, "");
+            }
+            break;
+          }
+          case "content_block_delta": {
+            // The Anthropic stream protocol always emits `index` on
+            // content_block_delta. Drop events that omit it instead of
+            // falling back to index 0 — for a multi-block response with
+            // a tool_use at index 0 followed by text at index 1, the
+            // fallback would merge text into the tool_use block and
+            // also corrupt that tool's JSON buffer.
+            if (typeof parsed.index !== "number") break;
+            const idx = parsed.index;
+            if (parsed.delta?.type === "text_delta" && parsed.delta.text) {
+              const cur = blocks[idx];
+              if (cur && cur.type === "text") {
+                cur.text = (cur.text ?? "") + parsed.delta.text;
+              }
+              onTextDelta(parsed.delta.text);
+            } else if (
+              parsed.delta?.type === "input_json_delta" &&
+              typeof parsed.delta.partial_json === "string"
+            ) {
+              const prev = toolJsonBuffers.get(idx) ?? "";
+              toolJsonBuffers.set(idx, prev + parsed.delta.partial_json);
+            }
+            break;
+          }
+          case "content_block_stop": {
+            if (typeof parsed.index !== "number") break;
+            const idx = parsed.index;
             const cur = blocks[idx];
-            if (cur && cur.type === "text") {
-              cur.text = (cur.text ?? "") + parsed.delta.text;
+            const buf = toolJsonBuffers.get(idx);
+            if (cur && cur.type === "tool_use" && buf) {
+              try {
+                cur.input = JSON.parse(buf) as Record<string, unknown>;
+              } catch {
+                cur.input = {};
+              }
             }
-            onTextDelta(parsed.delta.text);
-          } else if (
-            parsed.delta?.type === "input_json_delta" &&
-            typeof parsed.delta.partial_json === "string"
-          ) {
-            const prev = toolJsonBuffers.get(idx) ?? "";
-            toolJsonBuffers.set(idx, prev + parsed.delta.partial_json);
+            break;
           }
-          break;
-        }
-        case "content_block_stop": {
-          if (typeof parsed.index !== "number") break;
-          const idx = parsed.index;
-          const cur = blocks[idx];
-          const buf = toolJsonBuffers.get(idx);
-          if (cur && cur.type === "tool_use" && buf) {
-            try {
-              cur.input = JSON.parse(buf) as Record<string, unknown>;
-            } catch {
-              cur.input = {};
-            }
+          case "message_delta": {
+            if (parsed.delta?.stop_reason)
+              stopReason = parsed.delta.stop_reason;
+            if (parsed.usage) usage = { ...usage, ...parsed.usage };
+            break;
           }
-          break;
+          case "message_stop":
+            break;
+          default:
+            break;
         }
-        case "message_delta": {
-          if (parsed.delta?.stop_reason) stopReason = parsed.delta.stop_reason;
-          if (parsed.usage) usage = { ...usage, ...parsed.usage };
-          break;
-        }
-        case "message_stop":
-          break;
-        default:
-          break;
       }
     }
-  }
   } finally {
     // Always release the reader (and cancel the upstream) so a
     // mid-stream throw (transport drop, malformed JSON, slow client)
@@ -572,8 +576,11 @@ async function consumeAnthropicStream(
  */
 export function getResponseText(response: AnthropicResponse): string {
   return response.content
-    .filter((b): b is AnthropicResponseContentBlock & { type: "text"; text: string } =>
-      b.type === "text" && typeof b.text === "string",
+    .filter(
+      (
+        b,
+      ): b is AnthropicResponseContentBlock & { type: "text"; text: string } =>
+        b.type === "text" && typeof b.text === "string",
     )
     .map((b) => b.text)
     .join("");
@@ -585,7 +592,11 @@ export function getResponseText(response: AnthropicResponse): string {
 export function getResponseToolCalls(
   response: AnthropicResponse,
 ): Array<{ id: string; name: string; input: Record<string, unknown> }> {
-  const calls: Array<{ id: string; name: string; input: Record<string, unknown> }> = [];
+  const calls: Array<{
+    id: string;
+    name: string;
+    input: Record<string, unknown>;
+  }> = [];
   for (const b of response.content) {
     if (b.type === "tool_use" && b.id && b.name) {
       calls.push({ id: b.id, name: b.name, input: b.input ?? {} });
@@ -624,7 +635,8 @@ export function isRetryableAnthropicError(
   if (result.errorCode === "http") {
     const status = result.httpStatus;
     if (status === 429) return true;
-    if (typeof status === "number" && status >= 500 && status < 600) return true;
+    if (typeof status === "number" && status >= 500 && status < 600)
+      return true;
   }
   return false;
 }
@@ -664,8 +676,7 @@ export async function sendWithRetry(
   const maxRetries = opts.maxRetries ?? 1;
   const baseDelayMs = opts.baseDelayMs ?? 200;
   const sleep =
-    opts.sleep ??
-    ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+    opts.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
   let attempt = 0;
   for (;;) {
     const result = await client.send(req);

@@ -36,14 +36,16 @@ const leakTypes: LeakType[] = [
   {
     Icon: ArrowDown,
     where: "Side of the cheek",
-    feels: "A constant whoosh or whistle in one ear; sometimes pulls the cushion off-center.",
+    feels:
+      "A constant whoosh or whistle in one ear; sometimes pulls the cushion off-center.",
     why: "The cushion isn't seating evenly — usually one strap is tighter than its mirror, or the cushion is past its replacement window and has lost its memory.",
     fix: "Pull the cushion away from your face completely, then lay it back down with mouth and nose centered. Tighten the looser side one click. If it persists, replace the cushion — every 30-90 days depending on type.",
   },
   {
     Icon: Smile,
     where: "Around the mouth (corners of the lips)",
-    feels: "Air pushing out your mouth, often with dry mouth in the morning. Sometimes audible whistling.",
+    feels:
+      "Air pushing out your mouth, often with dry mouth in the morning. Sometimes audible whistling.",
     why: "You're a mouth breather on therapy — common during the first month. Your nasal mask is sealing fine; the air is exiting through your relaxed jaw.",
     fix: "Two options: a chin strap (a velcro wrap that holds your jaw closed), or a switch to a full-face mask that covers nose + mouth. Most patients prefer the full-face for long-term comfort.",
   },
@@ -84,10 +86,10 @@ export function LearnMaskLeaks() {
           Where the leak is tells you how to fix it.
         </h1>
         <p className="text-lg text-muted-foreground leading-relaxed">
-          Mask leaks are the single biggest reason new CPAP patients quit
-          — and almost every leak is identifiable from where it&apos;s
-          coming. Four locations, four causes, four fixes. Diagnose first;
-          don&apos;t just keep tightening the headgear.
+          Mask leaks are the single biggest reason new CPAP patients quit — and
+          almost every leak is identifiable from where it&apos;s coming. Four
+          locations, four causes, four fixes. Diagnose first; don&apos;t just
+          keep tightening the headgear.
         </p>
       </header>
 
@@ -108,11 +110,11 @@ export function LearnMaskLeaks() {
               Don&apos;t overtighten.
             </p>
             <p className="text-sm text-muted-foreground leading-relaxed">
-              A cushion that&apos;s too tight leaks <em>more</em>, not less
-              — the silicone deforms and the seal breaks at the
-              compressed edges. The correct fit is loose enough that you
-              can feel a faint hiss when you first put it on, then snug
-              just enough to silence that hiss.
+              A cushion that&apos;s too tight leaks <em>more</em>, not less —
+              the silicone deforms and the seal breaks at the compressed edges.
+              The correct fit is loose enough that you can feel a faint hiss
+              when you first put it on, then snug just enough to silence that
+              hiss.
             </p>
           </div>
         </div>
@@ -172,11 +174,11 @@ export function LearnMaskLeaks() {
                 When the mask just isn&apos;t right
               </div>
               <p className="text-sm text-foreground/85 leading-relaxed">
-                If you&apos;ve tried every fit adjustment and the leaks
-                persist, the mask was probably wrong for your face. Our
-                comfort guarantee covers a one-time mask exchange in the
-                first 30 days — including across brands. Don&apos;t white-
-                knuckle through weeks of bad sleep; call us.
+                If you&apos;ve tried every fit adjustment and the leaks persist,
+                the mask was probably wrong for your face. Our comfort guarantee
+                covers a one-time mask exchange in the first 30 days — including
+                across brands. Don&apos;t white- knuckle through weeks of bad
+                sleep; call us.
               </p>
             </div>
           </div>
@@ -207,8 +209,7 @@ export function LearnMaskLeaks() {
               Fixing dry mouth
             </h3>
             <p className="text-sm text-muted-foreground leading-relaxed">
-              Often co-presents with mouth leaks — both point at the same
-              cause.
+              Often co-presents with mouth leaks — both point at the same cause.
             </p>
           </div>
           <ArrowRight className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors mt-1" />
@@ -251,8 +252,8 @@ export function LearnMaskLeaks() {
       </div>
 
       <p className="text-xs text-muted-foreground/80 leading-relaxed mt-10 max-w-2xl mx-auto text-center">
-        Educational content only. Persistent therapy issues should be
-        discussed with your sleep medicine provider.
+        Educational content only. Persistent therapy issues should be discussed
+        with your sleep medicine provider.
       </p>
     </div>
   );

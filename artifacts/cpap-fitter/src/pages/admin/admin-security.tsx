@@ -47,14 +47,11 @@ export function AdminSecurityPage() {
           <ShieldCheck className="h-6 w-6" />
           Account security
         </h1>
-        <p
-          className="text-sm mt-1"
-          style={{ color: "hsl(var(--ink-3))" }}
-        >
-          Authenticator-app multi-factor for your admin account. Phase
-          A: enrollment is optional and the sign-in flow is not yet
-          gated on it. Enrolling now puts the secret in place so the
-          team can switch on enforcement when ready.
+        <p className="text-sm mt-1" style={{ color: "hsl(var(--ink-3))" }}>
+          Authenticator-app multi-factor for your admin account. Phase A:
+          enrollment is optional and the sign-in flow is not yet gated on it.
+          Enrolling now puts the secret in place so the team can switch on
+          enforcement when ready.
         </p>
       </header>
 
@@ -160,20 +157,14 @@ function EnrolledPanel({ data }: { data: MfaStatus }) {
       <dl className="text-xs grid grid-cols-2 gap-x-4 gap-y-1">
         <dt className="text-muted-foreground">Enrolled on</dt>
         <dd>
-          {data.verifiedAt
-            ? new Date(data.verifiedAt).toLocaleString()
-            : "—"}
+          {data.verifiedAt ? new Date(data.verifiedAt).toLocaleString() : "—"}
         </dd>
         <dt className="text-muted-foreground">Last used</dt>
         <dd>
-          {data.lastUsedAt
-            ? new Date(data.lastUsedAt).toLocaleString()
-            : "—"}
+          {data.lastUsedAt ? new Date(data.lastUsedAt).toLocaleString() : "—"}
         </dd>
         <dt className="text-muted-foreground">Recovery codes left</dt>
-        <dd>
-          {data.recoveryCodesRemaining} of 10
-        </dd>
+        <dd>{data.recoveryCodesRemaining} of 10</dd>
       </dl>
 
       <DeviceList devices={data.devices} code={code} />
@@ -192,8 +183,8 @@ function EnrolledPanel({ data }: { data: MfaStatus }) {
           <AlertTriangle className="h-4 w-4 flex-shrink-0 mt-0.5" />
           <div>
             Only {data.recoveryCodesRemaining} recovery code
-            {data.recoveryCodesRemaining === 1 ? "" : "s"} remaining.
-            Regenerate a fresh batch below to keep your fallback intact.
+            {data.recoveryCodesRemaining === 1 ? "" : "s"} remaining. Regenerate
+            a fresh batch below to keep your fallback intact.
           </div>
         </div>
       )}
@@ -203,10 +194,9 @@ function EnrolledPanel({ data }: { data: MfaStatus }) {
         style={{ borderColor: "hsl(var(--line-2))" }}
       >
         <p className="text-sm">
-          Enter a current 6-digit code from your authenticator app, then
-          choose an action. The code requirement prevents a compromised
-          session from quietly disabling MFA or rotating your recovery
-          codes.
+          Enter a current 6-digit code from your authenticator app, then choose
+          an action. The code requirement prevents a compromised session from
+          quietly disabling MFA or rotating your recovery codes.
         </p>
         <div className="flex items-center gap-2 flex-wrap">
           <Input
@@ -224,9 +214,7 @@ function EnrolledPanel({ data }: { data: MfaStatus }) {
           <Button
             intent="ghost"
             disabled={
-              code.length !== 6 ||
-              regenerate.isPending ||
-              disable.isPending
+              code.length !== 6 || regenerate.isPending || disable.isPending
             }
             isLoading={regenerate.isPending}
             onClick={async () => {
@@ -248,9 +236,7 @@ function EnrolledPanel({ data }: { data: MfaStatus }) {
           <Button
             intent="ghost"
             disabled={
-              code.length !== 6 ||
-              regenerate.isPending ||
-              disable.isPending
+              code.length !== 6 || regenerate.isPending || disable.isPending
             }
             isLoading={disable.isPending}
             onClick={() => disable.mutate()}
@@ -266,10 +252,7 @@ function EnrolledPanel({ data }: { data: MfaStatus }) {
       </div>
 
       <div>
-        <Button
-          intent="ghost"
-          onClick={() => setAddingDevice(true)}
-        >
+        <Button intent="ghost" onClick={() => setAddingDevice(true)}>
           + Add another device
         </Button>
       </div>
@@ -377,8 +360,8 @@ function UnenrolledPanel({ inProgress }: { inProgress: boolean }) {
   return (
     <div className="space-y-4">
       <p className="text-sm">
-        Open your authenticator app and either scan the QR or type the
-        secret manually. Then enter the 6-digit code it shows.
+        Open your authenticator app and either scan the QR or type the secret
+        manually. Then enter the 6-digit code it shows.
       </p>
 
       {/* The SPA renders an SVG QR client-side via a tiny QR
@@ -481,10 +464,10 @@ function RecoveryCodesPanel({
       <div className="flex items-start gap-2 rounded border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
         <AlertTriangle className="h-4 w-4 flex-shrink-0 mt-0.5" />
         <div>
-          <strong>This is the only time these codes will be shown.</strong>{" "}
-          Save them somewhere safe (password manager, sealed envelope in
-          your desk). Each code can be used <em>once</em> to sign in if you
-          ever lose your authenticator app.
+          <strong>This is the only time these codes will be shown.</strong> Save
+          them somewhere safe (password manager, sealed envelope in your desk).
+          Each code can be used <em>once</em> to sign in if you ever lose your
+          authenticator app.
         </div>
       </div>
 
@@ -532,13 +515,7 @@ function RecoveryCodesPanel({
  * @param devices - The enrolled MFA devices to display
  * @param code - The current global 6-digit TOTP code used to authorize removals
  */
-function DeviceList({
-  devices,
-  code,
-}: {
-  devices: MfaDevice[];
-  code: string;
-}) {
+function DeviceList({ devices, code }: { devices: MfaDevice[]; code: string }) {
   const qc = useQueryClient();
   const [confirm, ConfirmDialogEl] = useConfirmDialog();
   const remove = useMutation({
@@ -595,9 +572,7 @@ function DeviceList({
         ))}
       </ul>
       {remove.error instanceof Error && (
-        <p className="text-[10px] text-rose-700 mt-1">
-          {remove.error.message}
-        </p>
+        <p className="text-[10px] text-rose-700 mt-1">{remove.error.message}</p>
       )}
       {ConfirmDialogEl}
     </div>

@@ -427,8 +427,7 @@ export function SubscriptionsSection({
       )}
       <ul className="divide-y divide-border/40">
         {subs.map((sub) => {
-          const isActive =
-            sub.status === "active" || sub.status === "trialing";
+          const isActive = sub.status === "active" || sub.status === "trialing";
           const isPastDue =
             sub.status === "past_due" || sub.status === "unpaid";
           const isCanceled =
@@ -508,7 +507,9 @@ export function SubscriptionsSection({
                     <Button
                       size="sm"
                       variant="ghost"
-                      disabled={previewMode || isPending(sub.id) || travelModeBusy}
+                      disabled={
+                        previewMode || isPending(sub.id) || travelModeBusy
+                      }
                       onClick={() => void handlePause(sub)}
                       data-testid={`account-subscription-pause-${sub.id}`}
                       title={
@@ -532,7 +533,9 @@ export function SubscriptionsSection({
                     <Button
                       size="sm"
                       variant="ghost"
-                      disabled={previewMode || isPending(sub.id) || travelModeBusy}
+                      disabled={
+                        previewMode || isPending(sub.id) || travelModeBusy
+                      }
                       onClick={() => void handleResume(sub)}
                       data-testid={`account-subscription-resume-${sub.id}`}
                       title={
@@ -556,7 +559,9 @@ export function SubscriptionsSection({
                     <Button
                       size="sm"
                       variant="ghost"
-                      disabled={previewMode || isPending(sub.id) || travelModeBusy}
+                      disabled={
+                        previewMode || isPending(sub.id) || travelModeBusy
+                      }
                       onClick={() => void openCadenceDialog(sub)}
                       data-testid={`account-subscription-cadence-${sub.id}`}
                       title={
@@ -571,7 +576,9 @@ export function SubscriptionsSection({
                     <Button
                       size="sm"
                       variant="outline"
-                      disabled={previewMode || isPending(sub.id) || travelModeBusy}
+                      disabled={
+                        previewMode || isPending(sub.id) || travelModeBusy
+                      }
                       onClick={() => void handleCancel(sub)}
                       data-testid={`account-subscription-cancel-${sub.id}`}
                       title={

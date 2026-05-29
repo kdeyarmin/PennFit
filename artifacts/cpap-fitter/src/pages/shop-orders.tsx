@@ -715,10 +715,7 @@ function ShipmentSection({
       </div>
 
       {order.podUploadedAt && (
-        <PodPhotoSection
-          orderId={order.id}
-          sessionId={order.sessionId}
-        />
+        <PodPhotoSection orderId={order.id} sessionId={order.sessionId} />
       )}
 
       {/* Address row */}
@@ -1167,9 +1164,7 @@ function PodPhotoSection({
     let revoked = false;
     let url: string | null = null;
     setError(null);
-    void fetch(
-      `/resupply-api/shop/orders/${encodeURIComponent(sessionId)}/pod`,
-    )
+    void fetch(`/resupply-api/shop/orders/${encodeURIComponent(sessionId)}/pod`)
       .then(async (res) => {
         if (!res.ok) {
           throw new Error(

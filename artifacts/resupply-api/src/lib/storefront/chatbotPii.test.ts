@@ -30,7 +30,9 @@ describe("redactPiiForOutbound", () => {
   });
 
   it("redacts a Medicare-style long member id", () => {
-    const r = redactPiiForOutbound("Member id 1AB2-CD3-EF45 — uh, 1234567890123.");
+    const r = redactPiiForOutbound(
+      "Member id 1AB2-CD3-EF45 — uh, 1234567890123.",
+    );
     // The all-digit run is what we catch; alpha-numeric mixed ids
     // are left for the model to interpret as just "an identifier".
     expect(r.text).not.toContain("1234567890123");

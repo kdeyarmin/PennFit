@@ -81,34 +81,33 @@ router.post(
     }
 
     // Load coverage + patient + payer profile + referring provider.
-    const [
-      { data: coverage },
-      { data: patient },
-      { data: payerProfile },
-    ] = await Promise.all([
-      supabase
-        .schema("resupply")
-        .from("insurance_coverages")
-        .select("id, payer_name, member_id, group_number")
-        .eq("id", pa.insurance_coverage_id)
-        .limit(1)
-        .maybeSingle(),
-      supabase
-        .schema("resupply")
-        .from("patients")
-        .select("id, legal_first_name, legal_last_name, date_of_birth, address")
-        .eq("id", pa.patient_id)
-        .limit(1)
-        .maybeSingle(),
-      supabase
-        .schema("resupply")
-        .from("payer_profiles")
-        .select("id, payer_legal_name, davinci_pas_endpoint_url, slug")
-        .ilike("display_name", pa.payer_name)
-        .eq("is_active", true)
-        .limit(1)
-        .maybeSingle(),
-    ]);
+    const [{ data: coverage }, { data: patient }, { data: payerProfile }] =
+      await Promise.all([
+        supabase
+          .schema("resupply")
+          .from("insurance_coverages")
+          .select("id, payer_name, member_id, group_number")
+          .eq("id", pa.insurance_coverage_id)
+          .limit(1)
+          .maybeSingle(),
+        supabase
+          .schema("resupply")
+          .from("patients")
+          .select(
+            "id, legal_first_name, legal_last_name, date_of_birth, address",
+          )
+          .eq("id", pa.patient_id)
+          .limit(1)
+          .maybeSingle(),
+        supabase
+          .schema("resupply")
+          .from("payer_profiles")
+          .select("id, payer_legal_name, davinci_pas_endpoint_url, slug")
+          .ilike("display_name", pa.payer_name)
+          .eq("is_active", true)
+          .limit(1)
+          .maybeSingle(),
+      ]);
 
     if (!coverage || !patient) {
       res.status(409).json({ error: "missing_coverage_or_patient" });
@@ -182,15 +181,13 @@ router.post(
       return;
     }
 
-    const address = patient.address as
-      | { line1?: string; city?: string; state?: string; zip?: string }
-      | null;
-    if (
-      !address?.line1 ||
-      !address.city ||
-      !address.state ||
-      !address.zip
-    ) {
+    const address = patient.address as {
+      line1?: string;
+      city?: string;
+      state?: string;
+      zip?: string;
+    } | null;
+    if (!address?.line1 || !address.city || !address.state || !address.zip) {
       res.status(409).json({
         error: "missing_patient_address",
       });
@@ -251,15 +248,16 @@ router.post(
       return;
     }
 
-    const insertRow: Database["resupply"]["Tables"]["davinci_pas_submissions"]["Insert"] = {
-      prior_authorization_id: pa.id,
-      payer_pas_endpoint: payerProfile.davinci_pas_endpoint_url,
-      bundle_id: bundle.bundleId,
-      claim_identifier: claimIdentifier,
-      transport_status: "queued",
-      request_bundle_json: bundle.bundle as unknown as Json,
-      submitted_by_email: req.adminEmail ?? "unknown",
-    };
+    const insertRow: Database["resupply"]["Tables"]["davinci_pas_submissions"]["Insert"] =
+      {
+        prior_authorization_id: pa.id,
+        payer_pas_endpoint: payerProfile.davinci_pas_endpoint_url,
+        bundle_id: bundle.bundleId,
+        claim_identifier: claimIdentifier,
+        transport_status: "queued",
+        request_bundle_json: bundle.bundle as unknown as Json,
+        submitted_by_email: req.adminEmail ?? "unknown",
+      };
     const { data: subRow, error: insertErr } = await supabase
       .schema("resupply")
       .from("davinci_pas_submissions")
@@ -308,30 +306,30 @@ router.post(
     }
 
     // Map decision → table column values.
-    const transportStatus =
-      identifierMismatched
-        ? "transport_failed"
-        : outcome.status === "responded"
-          ? "responded"
-          : outcome.status === "rejected"
-            ? "rejected"
-            : "transport_failed";
-    const update: Database["resupply"]["Tables"]["davinci_pas_submissions"]["Update"] = {
-      transport_status: transportStatus,
-      decision: decision.decision,
-      auth_number: decision.authNumber,
-      decision_at:
-        outcome.status === "responded" && !identifierMismatched
-          ? new Date().toISOString()
-          : null,
-      denial_reason: decision.denialReason,
-      latency_ms: outcome.latencyMs,
-      error_message: identifierMismatched
-        ? decision.dispositionText
-        : outcome.errorMessage,
-      responded_at:
-        outcome.status === "responded" ? new Date().toISOString() : null,
-    };
+    const transportStatus = identifierMismatched
+      ? "transport_failed"
+      : outcome.status === "responded"
+        ? "responded"
+        : outcome.status === "rejected"
+          ? "rejected"
+          : "transport_failed";
+    const update: Database["resupply"]["Tables"]["davinci_pas_submissions"]["Update"] =
+      {
+        transport_status: transportStatus,
+        decision: decision.decision,
+        auth_number: decision.authNumber,
+        decision_at:
+          outcome.status === "responded" && !identifierMismatched
+            ? new Date().toISOString()
+            : null,
+        denial_reason: decision.denialReason,
+        latency_ms: outcome.latencyMs,
+        error_message: identifierMismatched
+          ? decision.dispositionText
+          : outcome.errorMessage,
+        responded_at:
+          outcome.status === "responded" ? new Date().toISOString() : null,
+      };
     await supabase
       .schema("resupply")
       .from("davinci_pas_submissions")
@@ -344,10 +342,11 @@ router.post(
     // never reaches the PA row — see the identifierMismatched
     // branch above.
     if (outcome.status === "responded" && !identifierMismatched) {
-      const paUpdate: Database["resupply"]["Tables"]["prior_authorizations"]["Update"] = {
-        decision_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      };
+      const paUpdate: Database["resupply"]["Tables"]["prior_authorizations"]["Update"] =
+        {
+          decision_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        };
       if (decision.decision === "approved") {
         paUpdate.status = "approved";
         paUpdate.auth_number = decision.authNumber;
@@ -385,8 +384,7 @@ router.post(
       logger.warn({ err }, "davinci_pas.submit audit write failed");
     });
 
-    const responseStatus =
-      outcome.status === "responded" ? 201 : 502;
+    const responseStatus = outcome.status === "responded" ? 201 : 502;
     res.status(responseStatus).json({
       submissionId: subRow.id,
       transportStatus,

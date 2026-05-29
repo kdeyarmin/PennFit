@@ -113,9 +113,18 @@ describe("verifySmartJwt", () => {
     // We can't actually sign with HS256 via our helper, but we can
     // hand-craft a header with alg=HS256 and assert the verifier
     // rejects before signature checking.
-    const headerB64 = base64UrlEncode(JSON.stringify({ alg: "HS256", typ: "JWT" }));
+    const headerB64 = base64UrlEncode(
+      JSON.stringify({ alg: "HS256", typ: "JWT" }),
+    );
     const payloadB64 = base64UrlEncode(
-      JSON.stringify({ iss: ISS, sub: SUB, aud: AUD, exp: 9_999_999_999, iat: 0, jti: "x" }),
+      JSON.stringify({
+        iss: ISS,
+        sub: SUB,
+        aud: AUD,
+        exp: 9_999_999_999,
+        iat: 0,
+        jti: "x",
+      }),
     );
     const r = verifySmartJwt({
       token: `${headerB64}.${payloadB64}.AAAA`,

@@ -102,13 +102,19 @@ router.get("/patients", requireAdmin, async (req, res) => {
   const ids = (rows ?? []).map((r) => r.id);
   let latestById = new Map<
     string,
-    { last_message_at: string; last_message_direction: string; last_message_preview: string }
+    {
+      last_message_at: string;
+      last_message_direction: string;
+      last_message_preview: string;
+    }
   >();
   if (ids.length > 0) {
     const { data: latest, error: latestErr } = await supabase
       .schema("resupply")
       .from("patient_latest_message")
-      .select("patient_id, last_message_at, last_message_direction, last_message_preview")
+      .select(
+        "patient_id, last_message_at, last_message_direction, last_message_preview",
+      )
       .in("patient_id", ids);
     if (latestErr) throw latestErr;
     latestById = new Map(

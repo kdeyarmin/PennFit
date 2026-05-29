@@ -67,7 +67,9 @@ describe("SelectionCheckbox — stopPropagation on click", () => {
   it("HeaderSelectionCheckbox stops click propagation", () => {
     // Without stopPropagation the checkbox click would also trigger
     // the column header's sort handler or the row click handler.
-    const headerFnStart = SRC.indexOf("export function HeaderSelectionCheckbox");
+    const headerFnStart = SRC.indexOf(
+      "export function HeaderSelectionCheckbox",
+    );
     const rowFnStart = SRC.indexOf("export function RowSelectionCheckbox");
     const headerSrc = SRC.slice(headerFnStart, rowFnStart);
     expect(headerSrc).toContain("e.stopPropagation()");
@@ -141,7 +143,8 @@ describe("SelectionCheckbox — cursor style", () => {
     expect(SRC).toContain("const CHECKBOX_STYLE");
     expect(SRC).toContain('cursor: "pointer"');
     // Both variants reference it.
-    const styleOccurrences = (SRC.match(/style=\{CHECKBOX_STYLE\}/g) ?? []).length;
+    const styleOccurrences = (SRC.match(/style=\{CHECKBOX_STYLE\}/g) ?? [])
+      .length;
     expect(styleOccurrences).toBe(2);
   });
 });

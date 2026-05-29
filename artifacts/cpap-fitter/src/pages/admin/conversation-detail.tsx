@@ -287,9 +287,7 @@ export function ConversationDetailPage({ id }: { id: string }) {
 
           <TriagePanel
             conversationId={data.id}
-            initialTags={
-              ((data as { tags?: string[] }).tags ?? []) as string[]
-            }
+            initialTags={((data as { tags?: string[] }).tags ?? []) as string[]}
             initialSnoozedUntil={
               (data as { snoozedUntil?: string | null }).snoozedUntil ?? null
             }
@@ -991,7 +989,10 @@ function ConversationStatusButton({
  * a different signature; keeping this local avoids a refactor.
  */
 function formatDraftSavedAt(savedAt: Date): string {
-  const seconds = Math.max(0, Math.floor((Date.now() - savedAt.getTime()) / 1000));
+  const seconds = Math.max(
+    0,
+    Math.floor((Date.now() - savedAt.getTime()) / 1000),
+  );
   if (seconds < 30) return "just now";
   if (seconds < 60) return `${seconds}s ago`;
   const minutes = Math.floor(seconds / 60);
@@ -1126,9 +1127,7 @@ function NewCoachingNoteForm({
   onSaved: () => void;
   onCancel: () => void;
 }) {
-  const [targetUserId, setTargetUserId] = useState(
-    defaultTargetUserId ?? "",
-  );
+  const [targetUserId, setTargetUserId] = useState(defaultTargetUserId ?? "");
   const [kind, setKind] = useState<CoachingNoteKind>("suggestion");
   const [body, setBody] = useState("");
   const create = useMutation({
@@ -1261,8 +1260,7 @@ function TriagePanel({
     saveTags.mutate([...tags, t]);
     setNewTag("");
   };
-  const removeTag = (t: string) =>
-    saveTags.mutate(tags.filter((x) => x !== t));
+  const removeTag = (t: string) => saveTags.mutate(tags.filter((x) => x !== t));
   const snoozeFor = (days: number) => {
     const d = new Date();
     d.setUTCDate(d.getUTCDate() + days);
@@ -1371,9 +1369,7 @@ function TriagePanel({
             />
           </div>
         </div>
-        {error && (
-          <p className="text-xs text-rose-700">{error}</p>
-        )}
+        {error && <p className="text-xs text-rose-700">{error}</p>}
       </div>
     </Card>
   );

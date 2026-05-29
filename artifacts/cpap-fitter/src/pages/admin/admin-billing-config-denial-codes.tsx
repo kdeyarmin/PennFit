@@ -38,8 +38,8 @@ export function AdminBillingConfigDenialCodesPage() {
           Denial codes
         </h1>
         <p className="text-sm" style={{ color: "hsl(var(--ink-2))" }}>
-          CARC + RARC catalog seeded with the ~50 codes DME suppliers
-          hit most often. {data?.denialCodes.length ?? 0} match.
+          CARC + RARC catalog seeded with the ~50 codes DME suppliers hit most
+          often. {data?.denialCodes.length ?? 0} match.
         </p>
       </header>
 
@@ -128,10 +128,7 @@ export function AdminBillingConfigDenialCodesPage() {
                     >
                       {c.code}
                     </td>
-                    <td
-                      className="p-3"
-                      style={{ color: "hsl(var(--ink-1))" }}
-                    >
+                    <td className="p-3" style={{ color: "hsl(var(--ink-1))" }}>
                       {c.description}
                     </td>
                     <td className="p-3" style={{ color: "hsl(var(--ink-2))" }}>

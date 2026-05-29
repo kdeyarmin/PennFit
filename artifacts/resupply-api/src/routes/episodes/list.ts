@@ -21,7 +21,8 @@ import {
 
 import { requireAdmin } from "../../middlewares/requireAdmin";
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const listQuery = z
   .object({
@@ -92,10 +93,7 @@ export async function resolveEpisodesSearch(
   // (== always false) without firing the second query.
   if (patientIds.length === 0 && !isUuid) return [];
 
-  let resolveQuery = supabase
-    .schema("resupply")
-    .from("episodes")
-    .select("id");
+  let resolveQuery = supabase.schema("resupply").from("episodes").select("id");
   const orParts: string[] = [];
   if (isUuid) {
     orParts.push(`id.eq.${needle}`);
@@ -165,7 +163,9 @@ router.get("/episodes", requireAdmin, async (req, res) => {
   if (isOverdue) {
     episodesListQuery = episodesListQuery.order("due_at", { ascending: true });
   } else {
-    episodesListQuery = episodesListQuery.order("created_at", { ascending: false });
+    episodesListQuery = episodesListQuery.order("created_at", {
+      ascending: false,
+    });
   }
   episodesListQuery = episodesListQuery.range(offset, offset + limit - 1);
   const { data: rows, count, error } = await episodesListQuery;
@@ -221,10 +221,7 @@ router.get("/episodes", requireAdmin, async (req, res) => {
       const pt = patientsById.get(r.patient_id);
       const rx = prescriptionsById.get(r.prescription_id);
       const dueAtMs = new Date(r.due_at).getTime();
-      const daysOverdue = Math.max(
-        0,
-        Math.floor((now - dueAtMs) / 86_400_000),
-      );
+      const daysOverdue = Math.max(0, Math.floor((now - dueAtMs) / 86_400_000));
       return {
         id: r.id,
         patientId: r.patient_id,

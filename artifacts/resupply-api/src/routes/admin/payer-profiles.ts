@@ -55,8 +55,16 @@ const LINE_OF_BUSINESS_VALUES = [
   "other",
 ] as const satisfies readonly PayerLineOfBusiness[];
 
-const REGION_VALUES = ["pa", "multi_state", "national"] as const satisfies readonly PayerRegion[];
-const CLAIM_FORMAT_VALUES = ["837p", "837i", "paper_1500"] as const satisfies readonly PayerClaimFormat[];
+const REGION_VALUES = [
+  "pa",
+  "multi_state",
+  "national",
+] as const satisfies readonly PayerRegion[];
+const CLAIM_FORMAT_VALUES = [
+  "837p",
+  "837i",
+  "paper_1500",
+] as const satisfies readonly PayerClaimFormat[];
 const PA_METHOD_VALUES = [
   "portal",
   "fax",
@@ -230,40 +238,42 @@ router.get(
   "/admin/payer-profiles",
   requirePermission("reports.read"),
   async (req, res) => {
-  const supabase = getSupabaseServiceRoleClient();
-  let query = supabase
-    .schema("resupply")
-    .from("payer_profiles")
-    .select(FULL_SELECT)
-    .order("display_name", { ascending: true })
-    .limit(500);
+    const supabase = getSupabaseServiceRoleClient();
+    let query = supabase
+      .schema("resupply")
+      .from("payer_profiles")
+      .select(FULL_SELECT)
+      .order("display_name", { ascending: true })
+      .limit(500);
 
-  const region = typeof req.query.region === "string" ? req.query.region : undefined;
-  if (region && isRegion(region)) {
-    query = query.eq("region", region);
-  }
-  const lob =
-    typeof req.query.lineOfBusiness === "string"
-      ? req.query.lineOfBusiness
-      : undefined;
-  if (lob && isLineOfBusiness(lob)) {
-    query = query.eq("line_of_business", lob);
-  }
-  const active = req.query.active;
-  if (active === "true") query = query.eq("is_active", true);
-  if (active === "false") query = query.eq("is_active", false);
+    const region =
+      typeof req.query.region === "string" ? req.query.region : undefined;
+    if (region && isRegion(region)) {
+      query = query.eq("region", region);
+    }
+    const lob =
+      typeof req.query.lineOfBusiness === "string"
+        ? req.query.lineOfBusiness
+        : undefined;
+    if (lob && isLineOfBusiness(lob)) {
+      query = query.eq("line_of_business", lob);
+    }
+    const active = req.query.active;
+    if (active === "true") query = query.eq("is_active", true);
+    if (active === "false") query = query.eq("is_active", false);
 
-  const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
-  if (q.length > 0 && q.length <= 80) {
-    // Case-insensitive name search; PostgREST `ilike` w/ escape
-    const safe = q.replace(/[%_]/g, (m) => `\\${m}`);
-    query = query.ilike("display_name", `%${safe}%`);
-  }
+    const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
+    if (q.length > 0 && q.length <= 80) {
+      // Case-insensitive name search; PostgREST `ilike` w/ escape
+      const safe = q.replace(/[%_]/g, (m) => `\\${m}`);
+      query = query.ilike("display_name", `%${safe}%`);
+    }
 
-  const { data, error } = await query;
-  if (error) throw error;
-  res.json({ payerProfiles: (data ?? []).map(rowToApi) });
-});
+    const { data, error } = await query;
+    if (error) throw error;
+    res.json({ payerProfiles: (data ?? []).map(rowToApi) });
+  },
+);
 
 // ── EXPORT — Office Ally enrollment CSV ─────────────────────────────
 //
@@ -298,7 +308,9 @@ router.get(
       .order("display_name", { ascending: true })
       .limit(2000);
     if (!includeNonElectronic) {
-      query = query.eq("paper_only", false).not("office_ally_payer_id", "is", null);
+      query = query
+        .eq("paper_only", false)
+        .not("office_ally_payer_id", "is", null);
     }
     const { data, error } = await query;
     if (error) throw error;
@@ -308,10 +320,7 @@ router.get(
       .toISOString()
       .slice(0, 10)}.csv`;
     res.setHeader("Content-Type", "text/csv; charset=utf-8");
-    res.setHeader(
-      "Content-Disposition",
-      `attachment; filename="${filename}"`,
-    );
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
     res.setHeader("Cache-Control", "no-store");
     res.send(renderOfficeAllyCsv(rows));
   },
@@ -322,26 +331,27 @@ router.get(
   "/admin/payer-profiles/:id",
   requirePermission("reports.read"),
   async (req, res) => {
-  const parsed = idParam.safeParse(req.params);
-  if (!parsed.success) {
-    res.status(404).json({ error: "not_found" });
-    return;
-  }
-  const supabase = getSupabaseServiceRoleClient();
-  const { data, error } = await supabase
-    .schema("resupply")
-    .from("payer_profiles")
-    .select(FULL_SELECT)
-    .eq("id", parsed.data.id)
-    .limit(1)
-    .maybeSingle();
-  if (error) throw error;
-  if (!data) {
-    res.status(404).json({ error: "not_found" });
-    return;
-  }
-  res.json({ payerProfile: rowToApi(data) });
-});
+    const parsed = idParam.safeParse(req.params);
+    if (!parsed.success) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    const supabase = getSupabaseServiceRoleClient();
+    const { data, error } = await supabase
+      .schema("resupply")
+      .from("payer_profiles")
+      .select(FULL_SELECT)
+      .eq("id", parsed.data.id)
+      .limit(1)
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    res.json({ payerProfile: rowToApi(data) });
+  },
+);
 
 // ── CREATE (admin only) ─────────────────────────────────────────────
 router.post(
@@ -349,96 +359,97 @@ router.post(
   requireAdminOnly,
   adminRateLimit({ name: "payer_profiles.create", preset: "sensitive" }),
   async (req, res) => {
-  const parsed = upsertBody.safeParse(req.body);
-  if (!parsed.success) {
-    res.status(400).json({
-      error: "invalid_body",
-      issues: parsed.error.issues.map((i) => ({
-        path: i.path.join("."),
-        message: i.message,
-      })),
-    });
-    return;
-  }
-  const b = parsed.data;
-  if (b.paperOnly && (b.officeAllyPayerId || b.edi5010PayerId)) {
-    res.status(400).json({
-      error: "invalid_body",
-      issues: [
-        {
-          path: "paperOnly",
-          message: "paper-only payers must not carry electronic IDs",
-        },
-      ],
-    });
-    return;
-  }
-  const supabase = getSupabaseServiceRoleClient();
-  const { data, error } = await supabase
-    .schema("resupply")
-    .from("payer_profiles")
-    .insert({
-      slug: b.slug,
-      display_name: b.displayName,
-      payer_legal_name: b.payerLegalName,
-      parent_org: b.parentOrg ?? null,
-      line_of_business: b.lineOfBusiness,
-      region: b.region,
-      office_ally_payer_id: b.officeAllyPayerId ?? null,
-      edi_5010_payer_id: b.edi5010PayerId ?? null,
-      claim_format: b.claimFormat,
-      paper_only: b.paperOnly,
-      requires_prior_auth_dme: b.requiresPriorAuthDme,
-      prior_auth_phone_e164: b.priorAuthPhoneE164 ?? null,
-      claim_status_phone_e164: b.claimStatusPhoneE164 ?? null,
-      provider_portal_url: b.providerPortalUrl ?? null,
-      fee_schedule_source: b.feeScheduleSource ?? null,
-      notes: b.notes ?? null,
-      is_active: b.isActive,
-      timely_filing_days: b.timelyFilingDays ?? null,
-      claims_address_line1: b.claimsAddressLine1 ?? null,
-      claims_address_line2: b.claimsAddressLine2 ?? null,
-      claims_city: b.claimsCity ?? null,
-      claims_state: b.claimsState ?? null,
-      claims_zip: b.claimsZip ?? null,
-      claims_phone_e164: b.claimsPhoneE164 ?? null,
-      claims_fax_e164: b.claimsFaxE164 ?? null,
-      prior_auth_submission_method: b.priorAuthSubmissionMethod ?? null,
-      prior_auth_fax_e164: b.priorAuthFaxE164 ?? null,
-      prior_auth_turnaround_business_days:
-        b.priorAuthTurnaroundBusinessDays ?? null,
-      required_claim_modifiers: b.requiredClaimModifiers ?? [],
-      accepts_electronic_secondary: b.acceptsElectronicSecondary ?? true,
-      edi_enrollment_status: b.ediEnrollmentStatus ?? "not_applicable",
-      member_id_format_hint: b.memberIdFormatHint ?? null,
-      // Creating a new payer = the act of verifying its requirements.
-      requirements_last_verified_at: new Date().toISOString(),
-      requirements_last_verified_by: req.adminEmail ?? null,
-    })
-    .select("id")
-    .single();
-  if (error) {
-    // Unique violation on slug surfaces as 409 — operator can re-key.
-    if (typeof error.code === "string" && error.code === "23505") {
-      res.status(409).json({ error: "slug_conflict" });
+    const parsed = upsertBody.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: "invalid_body",
+        issues: parsed.error.issues.map((i) => ({
+          path: i.path.join("."),
+          message: i.message,
+        })),
+      });
       return;
     }
-    throw error;
-  }
-  await logAudit({
-    action: "payer_profile.create",
-    adminEmail: req.adminEmail ?? null,
-    adminUserId: req.adminUserId ?? null,
-    targetTable: "payer_profiles",
-    targetId: data.id,
-    metadata: { slug: b.slug, display_name: b.displayName },
-    ip: req.ip ?? null,
-    userAgent: req.get("user-agent") ?? null,
-  }).catch((err) => {
-    logger.warn({ err }, "payer_profile.create audit write failed");
-  });
-  res.status(201).json({ id: data.id });
-});
+    const b = parsed.data;
+    if (b.paperOnly && (b.officeAllyPayerId || b.edi5010PayerId)) {
+      res.status(400).json({
+        error: "invalid_body",
+        issues: [
+          {
+            path: "paperOnly",
+            message: "paper-only payers must not carry electronic IDs",
+          },
+        ],
+      });
+      return;
+    }
+    const supabase = getSupabaseServiceRoleClient();
+    const { data, error } = await supabase
+      .schema("resupply")
+      .from("payer_profiles")
+      .insert({
+        slug: b.slug,
+        display_name: b.displayName,
+        payer_legal_name: b.payerLegalName,
+        parent_org: b.parentOrg ?? null,
+        line_of_business: b.lineOfBusiness,
+        region: b.region,
+        office_ally_payer_id: b.officeAllyPayerId ?? null,
+        edi_5010_payer_id: b.edi5010PayerId ?? null,
+        claim_format: b.claimFormat,
+        paper_only: b.paperOnly,
+        requires_prior_auth_dme: b.requiresPriorAuthDme,
+        prior_auth_phone_e164: b.priorAuthPhoneE164 ?? null,
+        claim_status_phone_e164: b.claimStatusPhoneE164 ?? null,
+        provider_portal_url: b.providerPortalUrl ?? null,
+        fee_schedule_source: b.feeScheduleSource ?? null,
+        notes: b.notes ?? null,
+        is_active: b.isActive,
+        timely_filing_days: b.timelyFilingDays ?? null,
+        claims_address_line1: b.claimsAddressLine1 ?? null,
+        claims_address_line2: b.claimsAddressLine2 ?? null,
+        claims_city: b.claimsCity ?? null,
+        claims_state: b.claimsState ?? null,
+        claims_zip: b.claimsZip ?? null,
+        claims_phone_e164: b.claimsPhoneE164 ?? null,
+        claims_fax_e164: b.claimsFaxE164 ?? null,
+        prior_auth_submission_method: b.priorAuthSubmissionMethod ?? null,
+        prior_auth_fax_e164: b.priorAuthFaxE164 ?? null,
+        prior_auth_turnaround_business_days:
+          b.priorAuthTurnaroundBusinessDays ?? null,
+        required_claim_modifiers: b.requiredClaimModifiers ?? [],
+        accepts_electronic_secondary: b.acceptsElectronicSecondary ?? true,
+        edi_enrollment_status: b.ediEnrollmentStatus ?? "not_applicable",
+        member_id_format_hint: b.memberIdFormatHint ?? null,
+        // Creating a new payer = the act of verifying its requirements.
+        requirements_last_verified_at: new Date().toISOString(),
+        requirements_last_verified_by: req.adminEmail ?? null,
+      })
+      .select("id")
+      .single();
+    if (error) {
+      // Unique violation on slug surfaces as 409 — operator can re-key.
+      if (typeof error.code === "string" && error.code === "23505") {
+        res.status(409).json({ error: "slug_conflict" });
+        return;
+      }
+      throw error;
+    }
+    await logAudit({
+      action: "payer_profile.create",
+      adminEmail: req.adminEmail ?? null,
+      adminUserId: req.adminUserId ?? null,
+      targetTable: "payer_profiles",
+      targetId: data.id,
+      metadata: { slug: b.slug, display_name: b.displayName },
+      ip: req.ip ?? null,
+      userAgent: req.get("user-agent") ?? null,
+    }).catch((err) => {
+      logger.warn({ err }, "payer_profile.create audit write failed");
+    });
+    res.status(201).json({ id: data.id });
+  },
+);
 
 // ── PATCH (admin only) ──────────────────────────────────────────────
 router.patch(
@@ -446,94 +457,110 @@ router.patch(
   requireAdminOnly,
   adminRateLimit({ name: "payer_profiles.update", preset: "sensitive" }),
   async (req, res) => {
-  const idParsed = idParam.safeParse(req.params);
-  if (!idParsed.success) {
-    res.status(404).json({ error: "not_found" });
-    return;
-  }
-  const parsed = patchBody.safeParse(req.body);
-  if (!parsed.success) {
-    res.status(400).json({
-      error: "invalid_body",
-      issues: parsed.error.issues.map((i) => ({
-        path: i.path.join("."),
-        message: i.message,
-      })),
+    const idParsed = idParam.safeParse(req.params);
+    if (!idParsed.success) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    const parsed = patchBody.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: "invalid_body",
+        issues: parsed.error.issues.map((i) => ({
+          path: i.path.join("."),
+          message: i.message,
+        })),
+      });
+      return;
+    }
+    const b = parsed.data;
+    const update: Database["resupply"]["Tables"]["payer_profiles"]["Update"] = {
+      updated_at: new Date().toISOString(),
+    };
+    if (b.slug !== undefined) update.slug = b.slug;
+    if (b.displayName !== undefined) update.display_name = b.displayName;
+    if (b.payerLegalName !== undefined)
+      update.payer_legal_name = b.payerLegalName;
+    if (b.parentOrg !== undefined) update.parent_org = b.parentOrg;
+    if (b.lineOfBusiness !== undefined)
+      update.line_of_business = b.lineOfBusiness;
+    if (b.region !== undefined) update.region = b.region;
+    if (b.officeAllyPayerId !== undefined)
+      update.office_ally_payer_id = b.officeAllyPayerId;
+    if (b.edi5010PayerId !== undefined)
+      update.edi_5010_payer_id = b.edi5010PayerId;
+    if (b.claimFormat !== undefined) update.claim_format = b.claimFormat;
+    if (b.paperOnly !== undefined) update.paper_only = b.paperOnly;
+    if (b.requiresPriorAuthDme !== undefined)
+      update.requires_prior_auth_dme = b.requiresPriorAuthDme;
+    if (b.priorAuthPhoneE164 !== undefined)
+      update.prior_auth_phone_e164 = b.priorAuthPhoneE164;
+    if (b.claimStatusPhoneE164 !== undefined)
+      update.claim_status_phone_e164 = b.claimStatusPhoneE164;
+    if (b.providerPortalUrl !== undefined)
+      update.provider_portal_url = b.providerPortalUrl;
+    if (b.feeScheduleSource !== undefined)
+      update.fee_schedule_source = b.feeScheduleSource;
+    if (b.notes !== undefined) update.notes = b.notes;
+    if (b.isActive !== undefined) update.is_active = b.isActive;
+    if (b.timelyFilingDays !== undefined)
+      update.timely_filing_days = b.timelyFilingDays;
+    if (b.claimsAddressLine1 !== undefined)
+      update.claims_address_line1 = b.claimsAddressLine1;
+    if (b.claimsAddressLine2 !== undefined)
+      update.claims_address_line2 = b.claimsAddressLine2;
+    if (b.claimsCity !== undefined) update.claims_city = b.claimsCity;
+    if (b.claimsState !== undefined) update.claims_state = b.claimsState;
+    if (b.claimsZip !== undefined) update.claims_zip = b.claimsZip;
+    if (b.claimsPhoneE164 !== undefined)
+      update.claims_phone_e164 = b.claimsPhoneE164;
+    if (b.claimsFaxE164 !== undefined) update.claims_fax_e164 = b.claimsFaxE164;
+    if (b.priorAuthSubmissionMethod !== undefined)
+      update.prior_auth_submission_method = b.priorAuthSubmissionMethod;
+    if (b.priorAuthFaxE164 !== undefined)
+      update.prior_auth_fax_e164 = b.priorAuthFaxE164;
+    if (b.priorAuthTurnaroundBusinessDays !== undefined)
+      update.prior_auth_turnaround_business_days =
+        b.priorAuthTurnaroundBusinessDays;
+    if (b.requiredClaimModifiers !== undefined)
+      update.required_claim_modifiers = b.requiredClaimModifiers;
+    if (b.acceptsElectronicSecondary !== undefined)
+      update.accepts_electronic_secondary = b.acceptsElectronicSecondary;
+    if (b.ediEnrollmentStatus !== undefined)
+      update.edi_enrollment_status = b.ediEnrollmentStatus;
+    if (b.memberIdFormatHint !== undefined)
+      update.member_id_format_hint = b.memberIdFormatHint;
+    // Any patch is a verification act — stamp the reviewer + time so
+    // the admin list can show staleness without a separate column.
+    update.requirements_last_verified_at = new Date().toISOString();
+    update.requirements_last_verified_by = req.adminEmail ?? null;
+
+    const supabase = getSupabaseServiceRoleClient();
+    const { error } = await supabase
+      .schema("resupply")
+      .from("payer_profiles")
+      .update(update)
+      .eq("id", idParsed.data.id);
+    if (error) throw error;
+
+    await logAudit({
+      action: "payer_profile.update",
+      adminEmail: req.adminEmail ?? null,
+      adminUserId: req.adminUserId ?? null,
+      targetTable: "payer_profiles",
+      targetId: idParsed.data.id,
+      metadata: {
+        fields_changed: Object.keys(update).filter((k) => k !== "updated_at"),
+      },
+      ip: req.ip ?? null,
+      userAgent: req.get("user-agent") ?? null,
+    }).catch((err) => {
+      logger.warn({ err }, "payer_profile.update audit write failed");
     });
-    return;
-  }
-  const b = parsed.data;
-  const update: Database["resupply"]["Tables"]["payer_profiles"]["Update"] = {
-    updated_at: new Date().toISOString(),
-  };
-  if (b.slug !== undefined) update.slug = b.slug;
-  if (b.displayName !== undefined) update.display_name = b.displayName;
-  if (b.payerLegalName !== undefined) update.payer_legal_name = b.payerLegalName;
-  if (b.parentOrg !== undefined) update.parent_org = b.parentOrg;
-  if (b.lineOfBusiness !== undefined) update.line_of_business = b.lineOfBusiness;
-  if (b.region !== undefined) update.region = b.region;
-  if (b.officeAllyPayerId !== undefined) update.office_ally_payer_id = b.officeAllyPayerId;
-  if (b.edi5010PayerId !== undefined) update.edi_5010_payer_id = b.edi5010PayerId;
-  if (b.claimFormat !== undefined) update.claim_format = b.claimFormat;
-  if (b.paperOnly !== undefined) update.paper_only = b.paperOnly;
-  if (b.requiresPriorAuthDme !== undefined) update.requires_prior_auth_dme = b.requiresPriorAuthDme;
-  if (b.priorAuthPhoneE164 !== undefined) update.prior_auth_phone_e164 = b.priorAuthPhoneE164;
-  if (b.claimStatusPhoneE164 !== undefined) update.claim_status_phone_e164 = b.claimStatusPhoneE164;
-  if (b.providerPortalUrl !== undefined) update.provider_portal_url = b.providerPortalUrl;
-  if (b.feeScheduleSource !== undefined) update.fee_schedule_source = b.feeScheduleSource;
-  if (b.notes !== undefined) update.notes = b.notes;
-  if (b.isActive !== undefined) update.is_active = b.isActive;
-  if (b.timelyFilingDays !== undefined) update.timely_filing_days = b.timelyFilingDays;
-  if (b.claimsAddressLine1 !== undefined) update.claims_address_line1 = b.claimsAddressLine1;
-  if (b.claimsAddressLine2 !== undefined) update.claims_address_line2 = b.claimsAddressLine2;
-  if (b.claimsCity !== undefined) update.claims_city = b.claimsCity;
-  if (b.claimsState !== undefined) update.claims_state = b.claimsState;
-  if (b.claimsZip !== undefined) update.claims_zip = b.claimsZip;
-  if (b.claimsPhoneE164 !== undefined) update.claims_phone_e164 = b.claimsPhoneE164;
-  if (b.claimsFaxE164 !== undefined) update.claims_fax_e164 = b.claimsFaxE164;
-  if (b.priorAuthSubmissionMethod !== undefined)
-    update.prior_auth_submission_method = b.priorAuthSubmissionMethod;
-  if (b.priorAuthFaxE164 !== undefined) update.prior_auth_fax_e164 = b.priorAuthFaxE164;
-  if (b.priorAuthTurnaroundBusinessDays !== undefined)
-    update.prior_auth_turnaround_business_days = b.priorAuthTurnaroundBusinessDays;
-  if (b.requiredClaimModifiers !== undefined)
-    update.required_claim_modifiers = b.requiredClaimModifiers;
-  if (b.acceptsElectronicSecondary !== undefined)
-    update.accepts_electronic_secondary = b.acceptsElectronicSecondary;
-  if (b.ediEnrollmentStatus !== undefined)
-    update.edi_enrollment_status = b.ediEnrollmentStatus;
-  if (b.memberIdFormatHint !== undefined)
-    update.member_id_format_hint = b.memberIdFormatHint;
-  // Any patch is a verification act — stamp the reviewer + time so
-  // the admin list can show staleness without a separate column.
-  update.requirements_last_verified_at = new Date().toISOString();
-  update.requirements_last_verified_by = req.adminEmail ?? null;
 
-  const supabase = getSupabaseServiceRoleClient();
-  const { error } = await supabase
-    .schema("resupply")
-    .from("payer_profiles")
-    .update(update)
-    .eq("id", idParsed.data.id);
-  if (error) throw error;
-
-  await logAudit({
-    action: "payer_profile.update",
-    adminEmail: req.adminEmail ?? null,
-    adminUserId: req.adminUserId ?? null,
-    targetTable: "payer_profiles",
-    targetId: idParsed.data.id,
-    metadata: {
-      fields_changed: Object.keys(update).filter((k) => k !== "updated_at"),
-    },
-    ip: req.ip ?? null,
-    userAgent: req.get("user-agent") ?? null,
-  }).catch((err) => {
-    logger.warn({ err }, "payer_profile.update audit write failed");
-  });
-
-  res.json({ ok: true });
-});
+    res.json({ ok: true });
+  },
+);
 
 function isRegion(v: string): v is PayerRegion {
   return (REGION_VALUES as readonly string[]).includes(v);
@@ -551,9 +578,7 @@ function csvCell(v: unknown): string {
   return safeCsvCell(v);
 }
 
-function renderOfficeAllyCsv(
-  rows: ReturnType<typeof rowToApi>[],
-): string {
+function renderOfficeAllyCsv(rows: ReturnType<typeof rowToApi>[]): string {
   // Column order mirrors Office Ally's published enrollment-review
   // spreadsheet. The "REVIEW" markers in cells highlight gaps so an
   // op can spot stale rows at a glance.

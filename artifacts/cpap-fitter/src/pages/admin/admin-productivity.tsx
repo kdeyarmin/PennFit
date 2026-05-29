@@ -44,14 +44,11 @@ export function AdminProductivityPage() {
           <Activity className="h-6 w-6" />
           Team throughput
         </h1>
-        <p
-          className="text-sm mt-1"
-          style={{ color: "hsl(var(--ink-3))" }}
-        >
-          Per-agent count of conversations closed, returns approved,
-          compliance alerts resolved, and follow-ups completed. Open
-          queue depth (left column) reflects the current moment;
-          everything else is scoped to the selected window.
+        <p className="text-sm mt-1" style={{ color: "hsl(var(--ink-3))" }}>
+          Per-agent count of conversations closed, returns approved, compliance
+          alerts resolved, and follow-ups completed. Open queue depth (left
+          column) reflects the current moment; everything else is scoped to the
+          selected window.
         </p>
       </header>
 
@@ -64,13 +61,9 @@ export function AdminProductivityPage() {
             className="rounded-full px-3 py-1 text-xs font-semibold transition-colors"
             style={{
               backgroundColor:
-                w === window
-                  ? "hsl(var(--penn-gold))"
-                  : "hsl(var(--line-2))",
+                w === window ? "hsl(var(--penn-gold))" : "hsl(var(--line-2))",
               color:
-                w === window
-                  ? "hsl(var(--penn-navy))"
-                  : "hsl(var(--ink-2))",
+                w === window ? "hsl(var(--penn-navy))" : "hsl(var(--ink-2))",
             }}
           >
             {WINDOW_LABEL[w]}
@@ -145,8 +138,8 @@ export function AdminProductivityPage() {
           </table>
           <p className="mt-3 text-[10px] text-muted-foreground">
             * &ldquo;Closed conversations&rdquo; attributes to the last
-            assignee; conversation rows don&rsquo;t carry an explicit
-            closer today, so this is a best-effort proxy.
+            assignee; conversation rows don&rsquo;t carry an explicit closer
+            today, so this is a best-effort proxy.
           </p>
         </Card>
       )}
@@ -156,10 +149,7 @@ export function AdminProductivityPage() {
 
 function AgentRow({ agent }: { agent: AgentStats }) {
   return (
-    <tr
-      className="border-b"
-      style={{ borderColor: "hsl(var(--line-2))" }}
-    >
+    <tr className="border-b" style={{ borderColor: "hsl(var(--line-2))" }}>
       <td className="py-1.5">
         <div className="font-semibold">
           {agent.displayName?.trim() || agent.email}

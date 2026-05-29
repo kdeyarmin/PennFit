@@ -1,9 +1,6 @@
 import { describe, it, expect } from "vitest";
 
-import {
-  articlesForStage,
-  stageForDays,
-} from "./catalog";
+import { articlesForStage, stageForDays } from "./catalog";
 
 describe("stageForDays", () => {
   it("boundary days bucket correctly", () => {
@@ -20,7 +17,12 @@ describe("stageForDays", () => {
 
 describe("articlesForStage", () => {
   it("returns a non-empty list for every stage", () => {
-    for (const stage of ["new", "habituating", "steady", "experienced"] as const) {
+    for (const stage of [
+      "new",
+      "habituating",
+      "steady",
+      "experienced",
+    ] as const) {
       expect(articlesForStage(stage).length).toBeGreaterThan(0);
     }
   });
@@ -38,7 +40,12 @@ describe("articlesForStage", () => {
   });
 
   it("every slug starts with /learn/", () => {
-    for (const stage of ["new", "habituating", "steady", "experienced"] as const) {
+    for (const stage of [
+      "new",
+      "habituating",
+      "steady",
+      "experienced",
+    ] as const) {
       for (const a of articlesForStage(stage)) {
         expect(a.slug.startsWith("/learn/")).toBe(true);
       }

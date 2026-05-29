@@ -103,9 +103,7 @@ export async function runWebhookDispatcher(
     .update({ next_attempt_at: leaseUntil, updated_at: nowIso })
     .in("id", candidateIds)
     .eq("status", "queued")
-    .select(
-      "id, subscription_id, event_type, event_payload, attempt_count",
-    );
+    .select("id, subscription_id, event_type, event_payload, attempt_count");
   if (claimErr) throw claimErr;
   if (!deliveries || deliveries.length === 0) return stats;
   stats.scanned = deliveries.length;
@@ -118,9 +116,7 @@ export async function runWebhookDispatcher(
     .from("webhook_subscriptions")
     .select("id, target_url, signing_secret, max_retries, is_active")
     .in("id", subIds);
-  const subById = new Map(
-    (subs ?? []).map((s) => [s.id, s] as const),
-  );
+  const subById = new Map((subs ?? []).map((s) => [s.id, s] as const));
 
   // Step 3: process the claimed batch with bounded parallelism so a
   // slow / dead subscriber doesn't serialise the whole batch. With
@@ -228,9 +224,8 @@ export async function runWebhookDispatcher(
     );
   }
   await Promise.all(
-    Array.from(
-      { length: Math.min(MAX_PARALLEL, deliveries.length) },
-      () => worker(),
+    Array.from({ length: Math.min(MAX_PARALLEL, deliveries.length) }, () =>
+      worker(),
     ),
   );
   return stats;
@@ -256,18 +251,24 @@ async function attemptOnce(
   signature: string,
 ): Promise<AttemptResult> {
   try {
-    const res = await fetchWithPinnedIp(fetchImpl, url, pinnedIp, originalHostname, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-PennFit-Event-Type": delivery.event_type,
-        "X-PennFit-Delivery-Id": delivery.id,
-        "X-PennFit-Signature": signature,
-        "User-Agent": "PennFit-Webhooks/1.0",
+    const res = await fetchWithPinnedIp(
+      fetchImpl,
+      url,
+      pinnedIp,
+      originalHostname,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-PennFit-Event-Type": delivery.event_type,
+          "X-PennFit-Delivery-Id": delivery.id,
+          "X-PennFit-Signature": signature,
+          "User-Agent": "PennFit-Webhooks/1.0",
+        },
+        body,
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       },
-      body,
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-    });
+    );
     if (res.status >= 200 && res.status < 300) {
       return { ok: true, httpStatus: res.status, errorMessage: "" };
     }

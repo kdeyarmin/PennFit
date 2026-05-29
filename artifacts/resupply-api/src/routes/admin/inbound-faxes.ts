@@ -102,93 +102,101 @@ const patchBody = z
 // Inbound-fax triage queue — CSR work. `conversations.manage`
 // matches the rest of the inbox-tier surface (product-questions,
 // reviews, customer-followups).
-router.get("/admin/inbound-faxes", requirePermission("conversations.manage"), async (req, res) => {
-  const q = listQuery.safeParse(req.query);
-  if (!q.success) {
-    res.status(400).json({ error: "invalid_query" });
-    return;
-  }
-  const supabase = getSupabaseServiceRoleClient();
-  let query = supabase
-    .schema("resupply")
-    .from("inbound_faxes")
-    .select(
-      "id, twilio_fax_sid, from_e164, to_e164, received_at, num_pages, media_object_key, media_content_type, media_size_bytes, status, attached_patient_id, attached_provider_id, attached_prescription_id, attached_document_type, assigned_admin_user_id, triaged_at, notes, created_at",
-    )
-    .order("received_at", { ascending: false })
-    .limit(q.data.limit);
-  if (q.data.status === "open") {
-    query = query.not("status", "eq", "archived");
-  } else {
-    query = query.eq("status", q.data.status);
-  }
-  const { data, error } = await query;
-  if (error) throw error;
+router.get(
+  "/admin/inbound-faxes",
+  requirePermission("conversations.manage"),
+  async (req, res) => {
+    const q = listQuery.safeParse(req.query);
+    if (!q.success) {
+      res.status(400).json({ error: "invalid_query" });
+      return;
+    }
+    const supabase = getSupabaseServiceRoleClient();
+    let query = supabase
+      .schema("resupply")
+      .from("inbound_faxes")
+      .select(
+        "id, twilio_fax_sid, from_e164, to_e164, received_at, num_pages, media_object_key, media_content_type, media_size_bytes, status, attached_patient_id, attached_provider_id, attached_prescription_id, attached_document_type, assigned_admin_user_id, triaged_at, notes, created_at",
+      )
+      .order("received_at", { ascending: false })
+      .limit(q.data.limit);
+    if (q.data.status === "open") {
+      query = query.not("status", "eq", "archived");
+    } else {
+      query = query.eq("status", q.data.status);
+    }
+    const { data, error } = await query;
+    if (error) throw error;
 
-  res.json({
-    faxes: (data ?? []).map((r) => ({
-      id: r.id,
-      twilioFaxSid: r.twilio_fax_sid,
-      fromE164: r.from_e164,
-      toE164: r.to_e164,
-      receivedAt: r.received_at,
-      numPages: r.num_pages,
-      hasMedia: r.media_object_key !== null,
-      mediaContentType: r.media_content_type,
-      mediaSizeBytes: r.media_size_bytes,
-      status: r.status,
-      attachedPatientId: r.attached_patient_id,
-      attachedProviderId: r.attached_provider_id,
-      attachedPrescriptionId: r.attached_prescription_id,
-      attachedDocumentType: r.attached_document_type,
-      notes: r.notes,
-      createdAt: r.created_at,
-      triagedAt: r.triaged_at,
-    })),
-  });
-});
+    res.json({
+      faxes: (data ?? []).map((r) => ({
+        id: r.id,
+        twilioFaxSid: r.twilio_fax_sid,
+        fromE164: r.from_e164,
+        toE164: r.to_e164,
+        receivedAt: r.received_at,
+        numPages: r.num_pages,
+        hasMedia: r.media_object_key !== null,
+        mediaContentType: r.media_content_type,
+        mediaSizeBytes: r.media_size_bytes,
+        status: r.status,
+        attachedPatientId: r.attached_patient_id,
+        attachedProviderId: r.attached_provider_id,
+        attachedPrescriptionId: r.attached_prescription_id,
+        attachedDocumentType: r.attached_document_type,
+        notes: r.notes,
+        createdAt: r.created_at,
+        triagedAt: r.triaged_at,
+      })),
+    });
+  },
+);
 
-router.get("/admin/inbound-faxes/:id", requirePermission("conversations.manage"), async (req, res) => {
-  const params = idParam.safeParse(req.params);
-  if (!params.success) {
-    res.status(404).json({ error: "not_found" });
-    return;
-  }
-  const supabase = getSupabaseServiceRoleClient();
-  const { data: row, error } = await supabase
-    .schema("resupply")
-    .from("inbound_faxes")
-    .select("*")
-    .eq("id", params.data.id)
-    .limit(1)
-    .maybeSingle();
-  if (error) throw error;
-  if (!row) {
-    res.status(404).json({ error: "not_found" });
-    return;
-  }
-  res.json({
-    id: row.id,
-    twilioFaxSid: row.twilio_fax_sid,
-    fromE164: row.from_e164,
-    toE164: row.to_e164,
-    receivedAt: row.received_at,
-    numPages: row.num_pages,
-    hasMedia: row.media_object_key !== null,
-    mediaContentType: row.media_content_type,
-    mediaSizeBytes: row.media_size_bytes,
-    status: row.status,
-    attachedPatientId: row.attached_patient_id,
-    attachedProviderId: row.attached_provider_id,
-    attachedPrescriptionId: row.attached_prescription_id,
-    attachedDocumentType: row.attached_document_type,
-    notes: row.notes,
-    createdAt: row.created_at,
-    triagedAt: row.triaged_at,
-    triagedByUserId: row.triaged_by_user_id,
-    assignedAdminUserId: row.assigned_admin_user_id,
-  });
-});
+router.get(
+  "/admin/inbound-faxes/:id",
+  requirePermission("conversations.manage"),
+  async (req, res) => {
+    const params = idParam.safeParse(req.params);
+    if (!params.success) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    const supabase = getSupabaseServiceRoleClient();
+    const { data: row, error } = await supabase
+      .schema("resupply")
+      .from("inbound_faxes")
+      .select("*")
+      .eq("id", params.data.id)
+      .limit(1)
+      .maybeSingle();
+    if (error) throw error;
+    if (!row) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    res.json({
+      id: row.id,
+      twilioFaxSid: row.twilio_fax_sid,
+      fromE164: row.from_e164,
+      toE164: row.to_e164,
+      receivedAt: row.received_at,
+      numPages: row.num_pages,
+      hasMedia: row.media_object_key !== null,
+      mediaContentType: row.media_content_type,
+      mediaSizeBytes: row.media_size_bytes,
+      status: row.status,
+      attachedPatientId: row.attached_patient_id,
+      attachedProviderId: row.attached_provider_id,
+      attachedPrescriptionId: row.attached_prescription_id,
+      attachedDocumentType: row.attached_document_type,
+      notes: row.notes,
+      createdAt: row.created_at,
+      triagedAt: row.triaged_at,
+      triagedByUserId: row.triaged_by_user_id,
+      assignedAdminUserId: row.assigned_admin_user_id,
+    });
+  },
+);
 
 router.get(
   "/admin/inbound-faxes/:id/media",
@@ -205,9 +213,7 @@ router.get(
     const { data: row, error } = await supabase
       .schema("resupply")
       .from("inbound_faxes")
-      .select(
-        "id, media_object_key, media_content_type, twilio_fax_sid",
-      )
+      .select("id, media_object_key, media_content_type, twilio_fax_sid")
       .eq("id", params.data.id)
       .limit(1)
       .maybeSingle();
@@ -399,9 +405,7 @@ router.get(
   // workflow. Same scope as the rest of the inbound-fax surface.
   requirePermission("conversations.manage"),
   async (req, res) => {
-    const params = z
-      .object({ id: z.string().uuid() })
-      .safeParse(req.params);
+    const params = z.object({ id: z.string().uuid() }).safeParse(req.params);
     if (!params.success) {
       res.status(404).json({ error: "not_found" });
       return;
@@ -437,9 +441,7 @@ router.get(
         const fuzzy = await supabase
           .schema("resupply")
           .from("patients")
-          .select(
-            "id, legal_first_name, legal_last_name, email, phone_e164",
-          )
+          .select("id, legal_first_name, legal_last_name, email, phone_e164")
           .ilike("phone_e164", `%${tail}%`)
           .limit(10);
         candidates.push(...(fuzzy.data ?? []));

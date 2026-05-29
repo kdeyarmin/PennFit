@@ -17,8 +17,20 @@ const router: IRouter = Router();
 
 type Row = Database["resupply"]["Tables"]["dwo_documents"]["Row"];
 
-const FAMILY_VALUES = ["pap", "rad", "oxygen", "hospital_bed", "wheelchair", "other"] as const satisfies readonly Row["hcpcs_family"][];
-const FORM_VALUES = ["dwo", "cmn_484", "cmn_843", "swo"] as const satisfies readonly Row["form_type"][];
+const FAMILY_VALUES = [
+  "pap",
+  "rad",
+  "oxygen",
+  "hospital_bed",
+  "wheelchair",
+  "other",
+] as const satisfies readonly Row["hcpcs_family"][];
+const FORM_VALUES = [
+  "dwo",
+  "cmn_484",
+  "cmn_843",
+  "swo",
+] as const satisfies readonly Row["form_type"][];
 
 const createBody = z
   .object({
@@ -64,81 +76,83 @@ router.get(
   "/admin/dwo-documents/expiring",
   requirePermission("patients.read"),
   async (req, res) => {
-  const supabase = getSupabaseServiceRoleClient();
-  const days = Number.parseInt(
-    typeof req.query.days === "string" ? req.query.days : "60",
-    10,
-  );
-  const horizon = new Date(
-    Date.now() + (Number.isFinite(days) ? days : 60) * 24 * 3600 * 1000,
-  )
-    .toISOString()
-    .slice(0, 10);
-  const today = new Date().toISOString().slice(0, 10);
-  const { data } = await supabase
-    .schema("resupply")
-    .from("dwo_documents")
-    .select("*")
-    .gte("expires_on", today)
-    .lte("expires_on", horizon)
-    .order("expires_on", { ascending: true })
-    .limit(200);
-  res.json({ documents: data ?? [] });
-});
+    const supabase = getSupabaseServiceRoleClient();
+    const days = Number.parseInt(
+      typeof req.query.days === "string" ? req.query.days : "60",
+      10,
+    );
+    const horizon = new Date(
+      Date.now() + (Number.isFinite(days) ? days : 60) * 24 * 3600 * 1000,
+    )
+      .toISOString()
+      .slice(0, 10);
+    const today = new Date().toISOString().slice(0, 10);
+    const { data } = await supabase
+      .schema("resupply")
+      .from("dwo_documents")
+      .select("*")
+      .gte("expires_on", today)
+      .lte("expires_on", horizon)
+      .order("expires_on", { ascending: true })
+      .limit(200);
+    res.json({ documents: data ?? [] });
+  },
+);
 
 router.post(
   "/admin/dwo-documents",
   requirePermission("patients.update"),
   adminRateLimit({ name: "dwo_documents.create", preset: "mutation" }),
   async (req, res) => {
-  const parsed = createBody.safeParse(req.body);
-  if (!parsed.success) {
-    res.status(400).json({
-      error: "invalid_body",
-      issues: parsed.error.issues.map((i) => ({
-        path: i.path.join("."),
-        message: i.message,
-      })),
+    const parsed = createBody.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: "invalid_body",
+        issues: parsed.error.issues.map((i) => ({
+          path: i.path.join("."),
+          message: i.message,
+        })),
+      });
+      return;
+    }
+    const b = parsed.data;
+    const supabase = getSupabaseServiceRoleClient();
+    const { data, error } = await supabase
+      .schema("resupply")
+      .from("dwo_documents")
+      .insert({
+        patient_id: b.patientId,
+        hcpcs_family: b.hcpcsFamily,
+        form_type: b.formType,
+        signing_provider_id: b.signingProviderId ?? null,
+        signed_on: b.signedOn,
+        expires_on: b.expiresOn,
+        document_object_key: b.documentObjectKey ?? null,
+        notes: b.notes ?? null,
+      })
+      .select("id")
+      .single();
+    if (error) throw error;
+    await logAudit({
+      action: "dwo_document.create",
+      adminEmail: req.adminEmail ?? null,
+      adminUserId: req.adminUserId ?? null,
+      targetTable: "dwo_documents",
+      targetId: data.id,
+      metadata: {
+        patient_id: b.patientId,
+        family: b.hcpcsFamily,
+        form: b.formType,
+        expires_on: b.expiresOn,
+      },
+      ip: req.ip ?? null,
+      userAgent: req.get("user-agent") ?? null,
+    }).catch((err) => {
+      logger.warn({ err }, "dwo_document.create audit write failed");
     });
-    return;
-  }
-  const b = parsed.data;
-  const supabase = getSupabaseServiceRoleClient();
-  const { data, error } = await supabase
-    .schema("resupply")
-    .from("dwo_documents")
-    .insert({
-      patient_id: b.patientId,
-      hcpcs_family: b.hcpcsFamily,
-      form_type: b.formType,
-      signing_provider_id: b.signingProviderId ?? null,
-      signed_on: b.signedOn,
-      expires_on: b.expiresOn,
-      document_object_key: b.documentObjectKey ?? null,
-      notes: b.notes ?? null,
-    })
-    .select("id")
-    .single();
-  if (error) throw error;
-  await logAudit({
-    action: "dwo_document.create",
-    adminEmail: req.adminEmail ?? null,
-    adminUserId: req.adminUserId ?? null,
-    targetTable: "dwo_documents",
-    targetId: data.id,
-    metadata: {
-      patient_id: b.patientId,
-      family: b.hcpcsFamily,
-      form: b.formType,
-      expires_on: b.expiresOn,
-    },
-    ip: req.ip ?? null,
-    userAgent: req.get("user-agent") ?? null,
-  }).catch((err) => {
-    logger.warn({ err }, "dwo_document.create audit write failed");
-  });
-  res.status(201).json({ id: data.id });
-});
+    res.status(201).json({ id: data.id });
+  },
+);
 
 router.delete(
   "/admin/dwo-documents/:id",

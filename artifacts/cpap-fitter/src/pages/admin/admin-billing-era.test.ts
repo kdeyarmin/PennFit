@@ -10,10 +10,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const SRC = readFileSync(
-  path.join(__dirname, "admin-billing-era.tsx"),
-  "utf8",
-);
+const SRC = readFileSync(path.join(__dirname, "admin-billing-era.tsx"), "utf8");
 
 // ---------------------------------------------------------------------------
 // Imports from billing-api
@@ -59,7 +56,7 @@ describe("admin-billing-era — page heading", () => {
 // ---------------------------------------------------------------------------
 describe("admin-billing-era — upload section", () => {
   it("has a file input element", () => {
-    expect(SRC).toContain('<input');
+    expect(SRC).toContain("<input");
     expect(SRC).toContain('type="file"');
   });
 

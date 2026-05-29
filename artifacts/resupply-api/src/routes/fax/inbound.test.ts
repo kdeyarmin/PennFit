@@ -21,14 +21,14 @@ import request from "supertest";
 
 // Bypass Twilio signature validation — all inbound tests share this stub.
 vi.mock("@workspace/resupply-telecom", async () => {
-  const actual =
-    await vi.importActual<typeof import("@workspace/resupply-telecom")>(
-      "@workspace/resupply-telecom",
-    );
+  const actual = await vi.importActual<
+    typeof import("@workspace/resupply-telecom")
+  >("@workspace/resupply-telecom");
   return {
     ...actual,
-    requireTwilioSignature: () =>
-      (_req: unknown, _res: unknown, next: () => void) => next(),
+    requireTwilioSignature:
+      () => (_req: unknown, _res: unknown, next: () => void) =>
+        next(),
   };
 });
 
@@ -163,17 +163,14 @@ describe("POST /fax/inbound — mid-transfer deduplication", () => {
 
 describe("POST /fax/inbound — terminal received event", () => {
   it("calls ingestInboundFax with parsed params", async () => {
-    await request(makeApp())
-      .post("/fax/inbound")
-      .type("form")
-      .send({
-        FaxSid: "FX004",
-        Status: "received",
-        NumPages: "3",
-        From: "+12155551212",
-        To: "+19785551234",
-        MediaUrl: "https://api.twilio.com/2010-04-01/x/Faxes/FX004/Media/ME9",
-      });
+    await request(makeApp()).post("/fax/inbound").type("form").send({
+      FaxSid: "FX004",
+      Status: "received",
+      NumPages: "3",
+      From: "+12155551212",
+      To: "+19785551234",
+      MediaUrl: "https://api.twilio.com/2010-04-01/x/Faxes/FX004/Media/ME9",
+    });
     await flushMicrotasks();
     expect(ingestInboundFaxMock).toHaveBeenCalledOnce();
     const call = ingestInboundFaxMock.mock.calls[0]?.[0] as
@@ -250,15 +247,12 @@ describe("POST /fax/inbound — terminal received event", () => {
 
 describe("POST /fax/inbound — PHI invariants", () => {
   it("audit metadata never contains From or the literal phone digits", async () => {
-    await request(makeApp())
-      .post("/fax/inbound")
-      .type("form")
-      .send({
-        FaxSid: "FX009",
-        Status: "received",
-        From: "+12155551212", // PHI — must not appear in audit
-        NumPages: "1",
-      });
+    await request(makeApp()).post("/fax/inbound").type("form").send({
+      FaxSid: "FX009",
+      Status: "received",
+      From: "+12155551212", // PHI — must not appear in audit
+      NumPages: "1",
+    });
     await flushMicrotasks();
     const call = logAuditMock.mock.calls[0]?.[0] as Record<string, unknown>;
     const meta = call.metadata as Record<string, unknown>;
@@ -269,15 +263,12 @@ describe("POST /fax/inbound — PHI invariants", () => {
   });
 
   it("audit metadata never contains the MediaUrl literal", async () => {
-    await request(makeApp())
-      .post("/fax/inbound")
-      .type("form")
-      .send({
-        FaxSid: "FX010",
-        Status: "received",
-        MediaUrl:
-          "https://api.twilio.com/2010-04-01/x/Faxes/FX010/Media/SECRET-PATH",
-      });
+    await request(makeApp()).post("/fax/inbound").type("form").send({
+      FaxSid: "FX010",
+      Status: "received",
+      MediaUrl:
+        "https://api.twilio.com/2010-04-01/x/Faxes/FX010/Media/SECRET-PATH",
+    });
     await flushMicrotasks();
     const call = logAuditMock.mock.calls[0]?.[0] as Record<string, unknown>;
     const meta = call.metadata as Record<string, unknown>;

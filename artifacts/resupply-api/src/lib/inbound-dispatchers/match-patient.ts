@@ -52,7 +52,10 @@ export async function matchPatient(
       .limit(2);
     if (error) {
       logger.error(
-        { event: "inbound_referral.match_patient.db_error", err: error.message },
+        {
+          event: "inbound_referral.match_patient.db_error",
+          err: error.message,
+        },
         "inbound referral patient matcher: database error on exact_phone",
       );
       throw error;
@@ -74,7 +77,10 @@ export async function matchPatient(
       .limit(2);
     if (error) {
       logger.error(
-        { event: "inbound_referral.match_patient.db_error", err: error.message },
+        {
+          event: "inbound_referral.match_patient.db_error",
+          err: error.message,
+        },
         "inbound referral patient matcher: database error on exact_dob_last_name",
       );
       throw error;
@@ -96,7 +102,10 @@ export async function matchPatient(
         .limit(2);
       if (error) {
         logger.error(
-          { event: "inbound_referral.match_patient.db_error", err: error.message },
+          {
+            event: "inbound_referral.match_patient.db_error",
+            err: error.message,
+          },
           "inbound referral patient matcher: database error on fuzzy_phone_tail",
         );
         throw error;

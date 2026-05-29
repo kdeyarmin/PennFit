@@ -105,10 +105,7 @@ function drawConfidentialBanner(doc: PDFKit.PDFDocument): void {
   doc.y = saved.y === 36 ? 72 : saved.y;
 }
 
-function drawStatement(
-  doc: PDFKit.PDFDocument,
-  input: StatementInput,
-): void {
+function drawStatement(doc: PDFKit.PDFDocument, input: StatementInput): void {
   doc
     .font("Helvetica-Bold")
     .fontSize(18)
@@ -141,7 +138,9 @@ function drawStatement(
   }
   if (input.patient.email) doc.text(input.patient.email);
   doc.moveDown(1);
-  doc.fontSize(10).text(`Statement Date: ${new Date().toISOString().slice(0, 10)}`);
+  doc
+    .fontSize(10)
+    .text(`Statement Date: ${new Date().toISOString().slice(0, 10)}`);
   if (input.payByDate) {
     doc.font("Helvetica-Bold").text(`Pay By: ${input.payByDate}`);
   }
@@ -187,12 +186,15 @@ function drawStatement(
     doc.fontSize(10).text(`Pay online: ${input.paymentUrl}`);
   }
   doc.moveDown(1);
-  doc.fontSize(8).fillColor("#444").text(
-    "Questions? Contact us at the phone or email above. " +
-      "If you have insurance updates that may apply to these dates of service, " +
-      "please share them with our billing team and we will re-bill on your behalf.",
-    { align: "left" },
-  );
+  doc
+    .fontSize(8)
+    .fillColor("#444")
+    .text(
+      "Questions? Contact us at the phone or email above. " +
+        "If you have insurance updates that may apply to these dates of service, " +
+        "please share them with our billing team and we will re-bill on your behalf.",
+      { align: "left" },
+    );
 }
 
 function money(cents: number): string {

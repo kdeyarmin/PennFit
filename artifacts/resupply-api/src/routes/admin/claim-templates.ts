@@ -55,7 +55,12 @@ const templateLineSchema = z.object({
 
 const upsertBody = z
   .object({
-    slug: z.string().trim().min(2).max(80).regex(/^[a-z0-9_]+$/),
+    slug: z
+      .string()
+      .trim()
+      .min(2)
+      .max(80)
+      .regex(/^[a-z0-9_]+$/),
     displayName: z.string().trim().min(1).max(160),
     description: z.string().trim().max(2000).nullable().optional(),
     lines: z.array(templateLineSchema).min(1).max(20),
@@ -104,99 +109,101 @@ router.get(
   "/admin/claim-templates",
   requirePermission("admin.tools.manage"),
   async (req, res) => {
-  const supabase = getSupabaseServiceRoleClient();
-  let query = supabase
-    .schema("resupply")
-    .from("claim_templates")
-    .select(
-      "id, slug, display_name, description, lines_json, default_diagnosis_codes, scoped_payer_profile_id, is_active, created_at, updated_at",
-    )
-    .order("display_name", { ascending: true })
-    .limit(200);
-  // Validate the query param as a UUID before composing the PostgREST
-  // filter — otherwise an attacker could append filter operators
-  // (`,or(...)`, comma-separated extra expressions, etc.) and pivot the
-  // .or() into a broader read than the route intends.
-  const payerProfileIdRaw =
-    typeof req.query.payerProfileId === "string"
-      ? req.query.payerProfileId
+    const supabase = getSupabaseServiceRoleClient();
+    let query = supabase
+      .schema("resupply")
+      .from("claim_templates")
+      .select(
+        "id, slug, display_name, description, lines_json, default_diagnosis_codes, scoped_payer_profile_id, is_active, created_at, updated_at",
+      )
+      .order("display_name", { ascending: true })
+      .limit(200);
+    // Validate the query param as a UUID before composing the PostgREST
+    // filter — otherwise an attacker could append filter operators
+    // (`,or(...)`, comma-separated extra expressions, etc.) and pivot the
+    // .or() into a broader read than the route intends.
+    const payerProfileIdRaw =
+      typeof req.query.payerProfileId === "string"
+        ? req.query.payerProfileId
+        : undefined;
+    const payerProfileIdParsed = payerProfileIdRaw
+      ? z.string().uuid().safeParse(payerProfileIdRaw)
+      : null;
+    if (payerProfileIdRaw && !payerProfileIdParsed?.success) {
+      res.status(400).json({
+        error: "invalid_query",
+        message: "payerProfileId must be a UUID.",
+      });
+      return;
+    }
+    const payerProfileId = payerProfileIdParsed?.success
+      ? payerProfileIdParsed.data
       : undefined;
-  const payerProfileIdParsed = payerProfileIdRaw
-    ? z.string().uuid().safeParse(payerProfileIdRaw)
-    : null;
-  if (payerProfileIdRaw && !payerProfileIdParsed?.success) {
-    res.status(400).json({
-      error: "invalid_query",
-      message: "payerProfileId must be a UUID.",
-    });
-    return;
-  }
-  const payerProfileId = payerProfileIdParsed?.success
-    ? payerProfileIdParsed.data
-    : undefined;
-  if (payerProfileId) {
-    query = query.or(
-      `scoped_payer_profile_id.eq.${payerProfileId},scoped_payer_profile_id.is.null`,
-    );
-  }
-  const { data, error } = await query;
-  if (error) throw error;
-  res.json({ templates: (data ?? []).map(rowToApi) });
-});
+    if (payerProfileId) {
+      query = query.or(
+        `scoped_payer_profile_id.eq.${payerProfileId},scoped_payer_profile_id.is.null`,
+      );
+    }
+    const { data, error } = await query;
+    if (error) throw error;
+    res.json({ templates: (data ?? []).map(rowToApi) });
+  },
+);
 
 router.post(
   "/admin/claim-templates",
   requireAdminOnly,
   adminRateLimit({ name: "claim_templates.create", preset: "sensitive" }),
   async (req, res) => {
-  const parsed = upsertBody.safeParse(req.body);
-  if (!parsed.success) {
-    res.status(400).json({
-      error: "invalid_body",
-      issues: parsed.error.issues.map((i) => ({
-        path: i.path.join("."),
-        message: i.message,
-      })),
-    });
-    return;
-  }
-  const b = parsed.data;
-  const supabase = getSupabaseServiceRoleClient();
-  const { data, error } = await supabase
-    .schema("resupply")
-    .from("claim_templates")
-    .insert({
-      slug: b.slug,
-      display_name: b.displayName,
-      description: b.description ?? null,
-      lines_json: { lines: b.lines as TemplateLine[] },
-      default_diagnosis_codes: b.defaultDiagnosisCodes,
-      scoped_payer_profile_id: b.scopedPayerProfileId ?? null,
-      is_active: b.isActive,
-    })
-    .select("id")
-    .single();
-  if (error) {
-    if (typeof error.code === "string" && error.code === "23505") {
-      res.status(409).json({ error: "slug_conflict" });
+    const parsed = upsertBody.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: "invalid_body",
+        issues: parsed.error.issues.map((i) => ({
+          path: i.path.join("."),
+          message: i.message,
+        })),
+      });
       return;
     }
-    throw error;
-  }
-  await logAudit({
-    action: "claim_template.create",
-    adminEmail: req.adminEmail ?? null,
-    adminUserId: req.adminUserId ?? null,
-    targetTable: "claim_templates",
-    targetId: data.id,
-    metadata: { slug: b.slug, line_count: b.lines.length },
-    ip: req.ip ?? null,
-    userAgent: req.get("user-agent") ?? null,
-  }).catch((err) => {
-    logger.warn({ err }, "claim_template.create audit write failed");
-  });
-  res.status(201).json({ id: data.id });
-});
+    const b = parsed.data;
+    const supabase = getSupabaseServiceRoleClient();
+    const { data, error } = await supabase
+      .schema("resupply")
+      .from("claim_templates")
+      .insert({
+        slug: b.slug,
+        display_name: b.displayName,
+        description: b.description ?? null,
+        lines_json: { lines: b.lines as TemplateLine[] },
+        default_diagnosis_codes: b.defaultDiagnosisCodes,
+        scoped_payer_profile_id: b.scopedPayerProfileId ?? null,
+        is_active: b.isActive,
+      })
+      .select("id")
+      .single();
+    if (error) {
+      if (typeof error.code === "string" && error.code === "23505") {
+        res.status(409).json({ error: "slug_conflict" });
+        return;
+      }
+      throw error;
+    }
+    await logAudit({
+      action: "claim_template.create",
+      adminEmail: req.adminEmail ?? null,
+      adminUserId: req.adminUserId ?? null,
+      targetTable: "claim_templates",
+      targetId: data.id,
+      metadata: { slug: b.slug, line_count: b.lines.length },
+      ip: req.ip ?? null,
+      userAgent: req.get("user-agent") ?? null,
+    }).catch((err) => {
+      logger.warn({ err }, "claim_template.create audit write failed");
+    });
+    res.status(201).json({ id: data.id });
+  },
+);
 
 router.patch(
   "/admin/claim-templates/:id",
@@ -220,15 +227,19 @@ router.patch(
       return;
     }
     const b = parsed.data;
-    const update: Database["resupply"]["Tables"]["claim_templates"]["Update"] = {
-      updated_at: new Date().toISOString(),
-    };
+    const update: Database["resupply"]["Tables"]["claim_templates"]["Update"] =
+      {
+        updated_at: new Date().toISOString(),
+      };
     if (b.slug !== undefined) update.slug = b.slug;
     if (b.displayName !== undefined) update.display_name = b.displayName;
     if (b.description !== undefined) update.description = b.description;
-    if (b.lines !== undefined) update.lines_json = { lines: b.lines as TemplateLine[] };
-    if (b.defaultDiagnosisCodes !== undefined) update.default_diagnosis_codes = b.defaultDiagnosisCodes;
-    if (b.scopedPayerProfileId !== undefined) update.scoped_payer_profile_id = b.scopedPayerProfileId;
+    if (b.lines !== undefined)
+      update.lines_json = { lines: b.lines as TemplateLine[] };
+    if (b.defaultDiagnosisCodes !== undefined)
+      update.default_diagnosis_codes = b.defaultDiagnosisCodes;
+    if (b.scopedPayerProfileId !== undefined)
+      update.scoped_payer_profile_id = b.scopedPayerProfileId;
     if (b.isActive !== undefined) update.is_active = b.isActive;
     const supabase = getSupabaseServiceRoleClient();
     const { error } = await supabase
@@ -372,10 +383,7 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn(
-        { err },
-        "insurance_claim.apply_template audit write failed",
-      );
+      logger.warn({ err }, "insurance_claim.apply_template audit write failed");
     });
 
     res.status(201).json({

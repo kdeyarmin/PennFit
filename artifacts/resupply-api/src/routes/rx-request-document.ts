@@ -63,7 +63,9 @@ router.get("/rx-request/document/:token", rxDocLimiter, async (req, res) => {
   if (resolved.kind === "invalid_inputs") {
     // The packet exists but is missing required fields for render.
     // Surfacing 422 lets ops distinguish "bad token" from "bad data."
-    res.status(422).json({ error: "invalid_inputs", missing: resolved.missing });
+    res
+      .status(422)
+      .json({ error: "invalid_inputs", missing: resolved.missing });
     return;
   }
   const inputs = resolved.inputs;
@@ -71,7 +73,9 @@ router.get("/rx-request/document/:token", rxDocLimiter, async (req, res) => {
   // Final paranoid re-validate before render — defence in depth.
   const validated = validatePrescriptionRequestInputs(inputs);
   if (!validated.ok) {
-    res.status(422).json({ error: "invalid_inputs", missing: validated.missing });
+    res
+      .status(422)
+      .json({ error: "invalid_inputs", missing: validated.missing });
     return;
   }
 

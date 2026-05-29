@@ -71,10 +71,7 @@ export function getRequestId(): string | null {
  * (e.g. a worker job that was originally enqueued by an HTTP
  * request and that wants to keep the correlation chain).
  */
-export function runWithRequestContext<T>(
-  ctx: RequestContext,
-  fn: () => T,
-): T {
+export function runWithRequestContext<T>(ctx: RequestContext, fn: () => T): T {
   return storage.run(ctx, fn);
 }
 
@@ -98,10 +95,6 @@ export function requestContextMiddleware(
   // sentinel obvious in logs.
   const reqId = (req as { id?: unknown }).id;
   const requestId =
-    typeof reqId === "string"
-      ? reqId
-      : reqId != null
-        ? String(reqId)
-        : "anon";
+    typeof reqId === "string" ? reqId : reqId != null ? String(reqId) : "anon";
   storage.run({ requestId }, () => next());
 }

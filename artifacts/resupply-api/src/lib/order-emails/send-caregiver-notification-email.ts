@@ -89,9 +89,7 @@ function copyFor(
 ): Copy {
   if (kind === "shipped") {
     const trail =
-      carrier && trackingNumber
-        ? ` (${carrier} ${trackingNumber})`
-        : "";
+      carrier && trackingNumber ? ` (${carrier} ${trackingNumber})` : "";
     return {
       subject: `Shipped: PennPaps supplies for ${patientLabel}`,
       headline: `Supplies are on the way to ${patientLabel}`,

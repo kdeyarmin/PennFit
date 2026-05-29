@@ -109,12 +109,8 @@ describe("back-in-stock email — template fallback parity", () => {
     expect(v.product_url).toBe("https://x.test/?a=1&b=2");
     // HTML-escaped variants escape the same characters renderHtml's
     // inline `escapeHtml` would have escaped (& < > " ').
-    expect(v.product_name_html).toBe(
-      "Mask &quot;Pro&quot; &amp; Plus",
-    );
-    expect(v.product_url_html).toBe(
-      "https://x.test/?a=1&amp;b=2",
-    );
+    expect(v.product_name_html).toBe("Mask &quot;Pro&quot; &amp; Plus");
+    expect(v.product_url_html).toBe("https://x.test/?a=1&amp;b=2");
   });
 
   it("buildVariables produces empty conditional blocks when image / price absent", () => {

@@ -47,7 +47,12 @@ export interface SupabaseClientOptions {
 export function getSupabaseServiceRoleClient(
   options: SupabaseClientOptions = {},
 ): ResupplySupabaseClient {
-  if (cachedClient && !options.url && !options.serviceRoleKey && !options.schema) {
+  if (
+    cachedClient &&
+    !options.url &&
+    !options.serviceRoleKey &&
+    !options.schema
+  ) {
     return cachedClient;
   }
 
@@ -82,19 +87,18 @@ export function getSupabaseServiceRoleClient(
   // we only consume the client through `.schema('resupply' |
   // 'resupply_auth').from(...)`, so the runtime shape is correct
   // regardless of the surface the type system shows.
-  const rawClient = createClient<Database, "resupply" | "resupply_auth" | "public">(
-    url,
-    serviceRoleKey,
-    {
-      db: { schema: options.schema ?? "resupply" },
-      auth: {
-        // Server context: never persist or refresh sessions; every
-        // request authenticates fresh via the in-house cookie pipeline.
-        autoRefreshToken: false,
-        persistSession: false,
-      },
+  const rawClient = createClient<
+    Database,
+    "resupply" | "resupply_auth" | "public"
+  >(url, serviceRoleKey, {
+    db: { schema: options.schema ?? "resupply" },
+    auth: {
+      // Server context: never persist or refresh sessions; every
+      // request authenticates fresh via the in-house cookie pipeline.
+      autoRefreshToken: false,
+      persistSession: false,
     },
-  );
+  });
   const client = rawClient as unknown as ResupplySupabaseClient;
 
   if (!options.url && !options.serviceRoleKey && !options.schema) {

@@ -66,7 +66,9 @@ export function LearnSleepApneaMentalHealth() {
           Learn
         </Link>
         <span className="mx-2">/</span>
-        <span className="text-foreground/85">Sleep apnea &amp; mental health</span>
+        <span className="text-foreground/85">
+          Sleep apnea &amp; mental health
+        </span>
       </div>
 
       {/* Header */}
@@ -84,9 +86,9 @@ export function LearnSleepApneaMentalHealth() {
           The overlap between sleep apnea and mood disorders is dense and
           underappreciated. Patients being treated for depression that
           isn&apos;t responding to medication, or for anxiety that won&apos;t
-          settle, are statistically much more likely than the general
-          population to also have undiagnosed OSA. Treating the apnea moves
-          the mental health numbers — sometimes dramatically.
+          settle, are statistically much more likely than the general population
+          to also have undiagnosed OSA. Treating the apnea moves the mental
+          health numbers — sometimes dramatically.
         </p>
       </header>
 
@@ -163,24 +165,23 @@ export function LearnSleepApneaMentalHealth() {
           <p>
             Deep and REM sleep are when the brain processes emotion, files
             memory, and clears metabolic waste. Sleep apnea fragments both —
-            sometimes hundreds of times a night — without you remembering it
-            the next morning.
+            sometimes hundreds of times a night — without you remembering it the
+            next morning.
           </p>
           <p>
             The downstream effects are the symptom cluster mental health
-            clinicians recognize: persistent low mood, anxiety,
-            irritability, brain fog, motivational deficits, and impaired
-            concentration. If those symptoms are happening on top of an
-            underlying sleep disorder no one has tested for, the
-            psychiatric treatment is fighting uphill.
+            clinicians recognize: persistent low mood, anxiety, irritability,
+            brain fog, motivational deficits, and impaired concentration. If
+            those symptoms are happening on top of an underlying sleep disorder
+            no one has tested for, the psychiatric treatment is fighting uphill.
           </p>
           <p>
             This is not a claim that sleep apnea explains all mental health
             symptoms — it doesn&apos;t. It&apos;s the observation that
-            treatment-resistant or atypical mental health presentations
-            should include sleep apnea screening on the workup. The
-            response rate to adherent CPAP in this population is one of
-            the more striking in clinical sleep medicine.
+            treatment-resistant or atypical mental health presentations should
+            include sleep apnea screening on the workup. The response rate to
+            adherent CPAP in this population is one of the more striking in
+            clinical sleep medicine.
           </p>
         </div>
       </section>
@@ -198,9 +199,9 @@ export function LearnSleepApneaMentalHealth() {
                 The VA covers sleep studies, CPAP machines, and replacement
                 supplies for veterans with diagnosed OSA. If you&apos;re a
                 veteran being treated for PTSD, ask your VA primary care or
-                mental health provider about sleep apnea screening
-                specifically — the prevalence in this population is high
-                enough that it should be on every workup.
+                mental health provider about sleep apnea screening specifically
+                — the prevalence in this population is high enough that it
+                should be on every workup.
               </p>
             </div>
           </div>
@@ -265,8 +266,8 @@ export function LearnSleepApneaMentalHealth() {
               Sleep apnea in women
             </h3>
             <p className="text-sm text-muted-foreground leading-relaxed">
-              Why women with OSA are systematically misdiagnosed with
-              insomnia, anxiety, and depression first.
+              Why women with OSA are systematically misdiagnosed with insomnia,
+              anxiety, and depression first.
             </p>
           </div>
           <ArrowRight className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors mt-1" />
@@ -310,9 +311,8 @@ export function LearnSleepApneaMentalHealth() {
 
       <p className="text-xs text-muted-foreground/80 leading-relaxed mt-12 max-w-2xl mx-auto text-center">
         Educational content only. If you are experiencing a mental health
-        crisis, contact 988 (Suicide and Crisis Lifeline) or your mental
-        health provider — sleep apnea screening is not a substitute for
-        immediate care.
+        crisis, contact 988 (Suicide and Crisis Lifeline) or your mental health
+        provider — sleep apnea screening is not a substitute for immediate care.
       </p>
     </div>
   );

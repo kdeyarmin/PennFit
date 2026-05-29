@@ -37,7 +37,10 @@ interface TrackResult {
   emailDeliveredAt: string | null;
 }
 
-function formatStatus(s: string | null): { label: string; description: string } {
+function formatStatus(s: string | null): {
+  label: string;
+  description: string;
+} {
   switch (s) {
     case "sent":
       return {
@@ -109,9 +112,7 @@ export function TrackOrder() {
         return;
       }
       if (res.status === 429) {
-        setError(
-          "Too many attempts. Please wait a few minutes and try again.",
-        );
+        setError("Too many attempts. Please wait a few minutes and try again.");
         return;
       }
       if (!res.ok) {
@@ -141,8 +142,8 @@ export function TrackOrder() {
           Track my order
         </h1>
         <p className="text-base text-muted-foreground max-w-xl mx-auto leading-relaxed">
-          Enter your PennPaps order reference (from your confirmation email)
-          and the email you used to place it. No login needed.
+          Enter your PennPaps order reference (from your confirmation email) and
+          the email you used to place it. No login needed.
         </p>
       </header>
 

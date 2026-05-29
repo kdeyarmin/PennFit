@@ -209,7 +209,11 @@ function formatPressure(settings: DeviceSettings): string | null {
 function inferManufacturer(deviceModel: string): string | null {
   const m = deviceModel.trim().toLowerCase();
   if (!m) return null;
-  if (m.includes("airsense") || m.includes("aircurve") || m.includes("airmini")) {
+  if (
+    m.includes("airsense") ||
+    m.includes("aircurve") ||
+    m.includes("airmini")
+  ) {
     return "ResMed";
   }
   if (m.includes("dreamstation") || m.includes("dreamwear")) {

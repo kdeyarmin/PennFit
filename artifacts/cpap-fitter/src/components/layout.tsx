@@ -408,7 +408,14 @@ export function Layout({ children }: { children: React.ReactNode }) {
                       Mask brands
                     </Link>
                   </li>
-                  <li><Link href="/stories" className="text-muted-foreground hover:text-primary">Patient stories</Link></li>
+                  <li>
+                    <Link
+                      href="/stories"
+                      className="text-muted-foreground hover:text-primary"
+                    >
+                      Patient stories
+                    </Link>
+                  </li>
                   <li>
                     <Link
                       href="/learn/sleep-apnea-quiz"

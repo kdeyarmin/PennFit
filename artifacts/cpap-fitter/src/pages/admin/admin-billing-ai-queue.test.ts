@@ -105,9 +105,7 @@ describe("admin-billing-ai-queue — AiQueueResponse data bindings", () => {
 // ---------------------------------------------------------------------------
 describe("admin-billing-ai-queue — patient claim deep-link", () => {
   it("links claim rows to /admin/patients/:patientId/insurance-claims", () => {
-    expect(SRC).toContain(
-      "/admin/patients/${c.patientId}/insurance-claims",
-    );
+    expect(SRC).toContain("/admin/patients/${c.patientId}/insurance-claims");
   });
 
   it("links auto-resubmit rows to /admin/patients/:patientId/insurance-claims", () => {

@@ -110,9 +110,7 @@ export interface Hcfa1500ServiceLine {
  * Render a CMS-1500 (HCFA) form as a PDF stream. Returns a thenable
  * Buffer; callers `await` and pipe the buffer into the HTTP response.
  */
-export async function renderHcfa1500Pdf(
-  input: Hcfa1500Input,
-): Promise<Buffer> {
+export async function renderHcfa1500Pdf(input: Hcfa1500Input): Promise<Buffer> {
   // pdfkit's typings use the older constructor signature; we use the
   // value side directly here. The cast is unavoidable in TS strict
   // until pdfkit publishes its modern .d.ts.
@@ -156,7 +154,9 @@ function drawHcfa(doc: PDFKit.PDFDocument, input: Hcfa1500Input): void {
 
   // ── Box 1: insurance type ──
   drawLabel(doc, 36, 70, "1. INSURANCE");
-  doc.fontSize(9).text(input.insuranceType.replace(/_/g, " ").toUpperCase(), 110, 70);
+  doc
+    .fontSize(9)
+    .text(input.insuranceType.replace(/_/g, " ").toUpperCase(), 110, 70);
 
   // ── Box 1a: insured's id ──
   drawLabel(doc, 360, 70, "1a. INSURED'S I.D. NUMBER");
@@ -251,11 +251,13 @@ function drawHcfa(doc: PDFKit.PDFDocument, input: Hcfa1500Input): void {
   const rowHeight = 18;
   input.serviceLines.slice(0, 6).forEach((line, i) => {
     const y = tableTop + 12 + i * rowHeight;
-    doc.fontSize(9).text(
-      `${formatHcfaDate(line.fromDate)}-${formatHcfaDate(line.toDate)}`,
-      36,
-      y,
-    );
+    doc
+      .fontSize(9)
+      .text(
+        `${formatHcfaDate(line.fromDate)}-${formatHcfaDate(line.toDate)}`,
+        36,
+        y,
+      );
     doc.text(line.placeOfService, 180, y);
     doc.text(line.hcpcsCode, 210, y);
     doc.text(line.modifiers.join(",") || "-", 280, y);
@@ -278,9 +280,7 @@ function drawHcfa(doc: PDFKit.PDFDocument, input: Hcfa1500Input): void {
 
   // ── Box 33: billing provider ──
   drawLabel(doc, 36, 680, "33. BILLING PROVIDER INFO & PH#");
-  doc
-    .fontSize(10)
-    .text(input.billingProviderName, 36, 694);
+  doc.fontSize(10).text(input.billingProviderName, 36, 694);
   drawAddress(doc, 36, 708, input.billingProviderAddress);
   doc.fontSize(9).text(`PH: ${input.billingProviderPhoneE164}`, 36, 752);
   doc.fontSize(9).text(`NPI: ${input.billingProviderNpi}`, 200, 752);

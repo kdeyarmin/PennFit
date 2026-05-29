@@ -22,10 +22,7 @@ import {
 } from "./config";
 import { createFileTransport } from "./transport/file";
 import { createSftpTransport } from "./transport/sftp";
-import type {
-  SubmissionTransport,
-  UploadOutcome,
-} from "./transport/types";
+import type { SubmissionTransport, UploadOutcome } from "./transport/types";
 
 export type AdapterAvailability =
   | { status: "configured" }

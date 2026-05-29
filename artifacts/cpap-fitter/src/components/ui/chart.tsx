@@ -112,7 +112,13 @@ ${colorConfig
   // Use textContent assignment (via ref) instead of dangerouslySetInnerHTML
   // so the browser's CSS parser receives the string directly without going
   // through React's HTML serialisation path.
-  return <style ref={(el) => { if (el) el.textContent = css; }} />;
+  return (
+    <style
+      ref={(el) => {
+        if (el) el.textContent = css;
+      }}
+    />
+  );
 };
 
 const ChartTooltip = RechartsPrimitive.Tooltip;

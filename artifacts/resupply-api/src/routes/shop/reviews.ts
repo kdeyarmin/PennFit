@@ -45,7 +45,8 @@ import {
   parseCompositeCursor,
 } from "../../lib/cursor";
 
-type ShopReviewInsert = Database["resupply"]["Tables"]["shop_reviews"]["Insert"];
+type ShopReviewInsert =
+  Database["resupply"]["Tables"]["shop_reviews"]["Insert"];
 
 const router: IRouter = Router();
 

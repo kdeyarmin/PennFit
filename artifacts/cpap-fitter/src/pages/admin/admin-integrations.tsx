@@ -13,7 +13,12 @@
 // therapy-integrations.nightly-sync.
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2, RefreshCw, ServerCog, TriangleAlert } from "lucide-react";
+import {
+  CheckCircle2,
+  RefreshCw,
+  ServerCog,
+  TriangleAlert,
+} from "lucide-react";
 
 import { Card } from "@/components/admin/Card";
 import { Spinner } from "@/components/admin/Spinner";
@@ -54,12 +59,9 @@ export function AdminIntegrationsPage() {
           <h1 className="text-2xl font-semibold flex items-center gap-2">
             <ServerCog className="h-6 w-6" /> Therapy-cloud integrations
           </h1>
-          <p
-            className="text-sm mt-1"
-            style={{ color: "hsl(var(--ink-3))" }}
-          >
-            ResMed AirView, Philips Care Orchestrator, and Health
-            Connect adapter health over the last 7 days.
+          <p className="text-sm mt-1" style={{ color: "hsl(var(--ink-3))" }}>
+            ResMed AirView, Philips Care Orchestrator, and Health Connect
+            adapter health over the last 7 days.
           </p>
         </div>
         <Button
@@ -104,17 +106,10 @@ export function AdminIntegrationsPage() {
   );
 }
 
-function AdapterTable({
-  adapters,
-}: {
-  adapters: IntegrationAdapterStatus[];
-}) {
+function AdapterTable({ adapters }: { adapters: IntegrationAdapterStatus[] }) {
   if (adapters.length === 0) {
     return (
-      <p
-        className="text-sm py-3"
-        style={{ color: "hsl(var(--ink-3))" }}
-      >
+      <p className="text-sm py-3" style={{ color: "hsl(var(--ink-3))" }}>
         No adapters registered.
       </p>
     );
@@ -146,16 +141,11 @@ function AdapterRow({ adapter }: { adapter: IntegrationAdapterStatus }) {
   const availStatus = adapter.availability.status;
   return (
     <tr className="border-b" style={{ borderColor: "hsl(var(--line-2))" }}>
-      <td className="py-2 font-medium">
-        {SOURCE_LABELS[adapter.source]}
-      </td>
+      <td className="py-2 font-medium">{SOURCE_LABELS[adapter.source]}</td>
       <td className="py-2">
         <AvailabilityBadge status={availStatus} />
         {availStatus !== "configured" && (
-          <span
-            className="ml-2 text-xs"
-            style={{ color: "hsl(var(--ink-3))" }}
-          >
+          <span className="ml-2 text-xs" style={{ color: "hsl(var(--ink-3))" }}>
             {"reason" in adapter.availability
               ? adapter.availability.reason
               : ""}
@@ -237,9 +227,7 @@ function AvailabilityBadge({
       className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] uppercase font-semibold tracking-wider"
       style={{ backgroundColor: s.bg, color: s.fg }}
     >
-      {status === "configured" && (
-        <CheckCircle2 className="h-3 w-3 mr-1" />
-      )}
+      {status === "configured" && <CheckCircle2 className="h-3 w-3 mr-1" />}
       {s.label}
     </span>
   );

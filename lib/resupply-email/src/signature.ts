@@ -93,10 +93,8 @@ export function validateSendgridSignature(
   if (!Number.isFinite(timestampSeconds) || timestampSeconds <= 0) {
     return false;
   }
-  const nowSeconds =
-    input.nowSeconds ?? Math.floor(Date.now() / 1000);
-  const tolerance =
-    input.toleranceSeconds ?? DEFAULT_TOLERANCE_SECONDS;
+  const nowSeconds = input.nowSeconds ?? Math.floor(Date.now() / 1000);
+  const tolerance = input.toleranceSeconds ?? DEFAULT_TOLERANCE_SECONDS;
   // Asymmetric: tolerate `tolerance` seconds of past staleness AND a
   // small future skew (clocks slightly ahead). Mirrors the Parachute
   // verifier's posture.

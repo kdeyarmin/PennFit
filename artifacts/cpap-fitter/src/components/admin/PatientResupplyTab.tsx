@@ -157,10 +157,7 @@ export function PatientResupplyTab({ patientId }: { patientId: string }) {
           subtitle={`${data.counts.smartTriggersOpen} open in the last 30 days`}
         >
           {data.smartTriggers.length === 0 ? (
-            <p
-              className="text-sm py-1"
-              style={{ color: "hsl(var(--ink-3))" }}
-            >
+            <p className="text-sm py-1" style={{ color: "hsl(var(--ink-3))" }}>
               No triggers firing. Therapy is steady.
             </p>
           ) : (
@@ -213,10 +210,7 @@ export function PatientResupplyTab({ patientId }: { patientId: string }) {
           subtitle={`${data.counts.complianceAlertsOpen} open in the last 90 days`}
         >
           {data.complianceAlerts.length === 0 ? (
-            <p
-              className="text-sm py-1"
-              style={{ color: "hsl(var(--ink-3))" }}
-            >
+            <p className="text-sm py-1" style={{ color: "hsl(var(--ink-3))" }}>
               No open alerts.
             </p>
           ) : (
@@ -277,12 +271,9 @@ export function PatientResupplyTab({ patientId }: { patientId: string }) {
         subtitle={`${data.counts.nightsOnFile} on file; showing the last 14`}
       >
         {data.nights.length === 0 ? (
-          <p
-            className="text-sm py-1"
-            style={{ color: "hsl(var(--ink-3))" }}
-          >
-            No therapy data on file yet. Run a sync from the
-            Integrations tab when the partner ID is captured.
+          <p className="text-sm py-1" style={{ color: "hsl(var(--ink-3))" }}>
+            No therapy data on file yet. Run a sync from the Integrations tab
+            when the partner ID is captured.
           </p>
         ) : (
           <div className="overflow-x-auto -mx-5 -my-5">
@@ -334,9 +325,7 @@ export function PatientResupplyTab({ patientId }: { patientId: string }) {
                       className="p-3 text-right tabular-nums"
                       style={{
                         color:
-                          (n.ahi ?? 0) >= 5
-                            ? "#b45309"
-                            : "hsl(var(--ink-1))",
+                          (n.ahi ?? 0) >= 5 ? "#b45309" : "hsl(var(--ink-1))",
                       }}
                     >
                       {n.ahi == null ? "—" : n.ahi.toFixed(1)}
@@ -345,9 +334,7 @@ export function PatientResupplyTab({ patientId }: { patientId: string }) {
                       className="p-3 text-right tabular-nums"
                       style={{ color: "hsl(var(--ink-1))" }}
                     >
-                      {n.leakRateLMin == null
-                        ? "—"
-                        : n.leakRateLMin.toFixed(1)}
+                      {n.leakRateLMin == null ? "—" : n.leakRateLMin.toFixed(1)}
                     </td>
                     <td
                       className="p-3 text-right tabular-nums"
@@ -419,9 +406,7 @@ function AdherenceCard({ adherence }: { adherence: AdherenceSummary }) {
         <Stat
           label="Median AHI"
           value={
-            adherence.medianAhi == null
-              ? "—"
-              : adherence.medianAhi.toFixed(1)
+            adherence.medianAhi == null ? "—" : adherence.medianAhi.toFixed(1)
           }
           hint="< 5 is good"
         />
@@ -466,10 +451,7 @@ function Stat({
         {value}
       </p>
       {hint && (
-        <p
-          className="text-[11px] mt-1"
-          style={{ color: "hsl(var(--ink-3))" }}
-        >
+        <p className="text-[11px] mt-1" style={{ color: "hsl(var(--ink-3))" }}>
           {hint}
         </p>
       )}
@@ -477,7 +459,11 @@ function Stat({
   );
 }
 
-function SeverityBadge({ severity }: { severity: ComplianceAlert["severity"] }) {
+function SeverityBadge({
+  severity,
+}: {
+  severity: ComplianceAlert["severity"];
+}) {
   const tone = (() => {
     switch (severity) {
       case "critical":

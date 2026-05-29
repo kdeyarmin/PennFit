@@ -88,10 +88,10 @@ export function AdminReportsPage() {
           Reports
         </h1>
         <p className="text-sm text-slate-600">
-          Expansive operational + finance exports. Pick a date range
-          (max 90 days per export) and choose a format. PDF is best for
-          archival; CSV is best for spreadsheets; the QuickBooks formats
-          plug directly into Desktop (.iif) or Online (.csv).
+          Expansive operational + finance exports. Pick a date range (max 90
+          days per export) and choose a format. PDF is best for archival; CSV is
+          best for spreadsheets; the QuickBooks formats plug directly into
+          Desktop (.iif) or Online (.csv).
         </p>
       </header>
 
@@ -409,9 +409,7 @@ function EmailReportModal({
           </label>
           <select
             value={format}
-            onChange={(e) =>
-              setFormat(e.target.value as typeof format)
-            }
+            onChange={(e) => setFormat(e.target.value as typeof format)}
             aria-label="Format"
             className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
             data-testid={`email-report-${report.slug}-format`}
@@ -469,8 +467,8 @@ function EmailReportModal({
             className="text-xs text-emerald-700"
             data-testid={`email-report-${report.slug}-success`}
           >
-            Sent. SendGrid has accepted the message — delivery times
-            vary by recipient.
+            Sent. SendGrid has accepted the message — delivery times vary by
+            recipient.
           </p>
         )}
         <div className="flex items-center justify-end gap-2">
@@ -499,9 +497,7 @@ function EmailReportModal({
                 });
                 setSuccess(true);
               } catch (err) {
-                setError(
-                  err instanceof Error ? err.message : "Send failed.",
-                );
+                setError(err instanceof Error ? err.message : "Send failed.");
               } finally {
                 setSubmitting(false);
               }
@@ -582,8 +578,8 @@ function SavedPresetsSection({
           </p>
         ) : (query.data?.presets ?? []).length === 0 ? (
           <p className="px-4 py-3 text-sm text-slate-500">
-            No saved presets yet. Pick a date range + format above and
-            click <strong>+ Save current view</strong> to pin it.
+            No saved presets yet. Pick a date range + format above and click{" "}
+            <strong>+ Save current view</strong> to pin it.
           </p>
         ) : (
           <ul className="divide-y divide-slate-200">
@@ -695,13 +691,10 @@ function NewPresetModal({
   const [name, setName] = useState("");
   const [slug, setSlug] =
     useState<(typeof PRESET_SLUG_OPTIONS)[number]>("orders");
-  const [format, setFormat] =
-    useState<PresetFormat>("csv");
+  const [format, setFormat] = useState<PresetFormat>("csv");
   // "absolute" pins the dates as-of save; "preset" stores the
   // DATE_PRESETS testId so "always last month" stays current.
-  const [rangeMode, setRangeMode] = useState<"absolute" | "preset">(
-    "absolute",
-  );
+  const [rangeMode, setRangeMode] = useState<"absolute" | "preset">("absolute");
   const [rangePreset, setRangePreset] = useState<string>(
     DATE_PRESETS[0]?.testId ?? "",
   );
@@ -744,8 +737,7 @@ function NewPresetModal({
     rangeMode === "absolute"
       ? Boolean(defaultRange.from && defaultRange.to)
       : Boolean(rangePreset);
-  const validRecipient =
-    recipient.trim().length === 0 || /@/.test(recipient);
+  const validRecipient = recipient.trim().length === 0 || /@/.test(recipient);
   const canSubmit =
     validName && validRange && validRecipient && !create.isPending;
 
@@ -762,7 +754,10 @@ function NewPresetModal({
         className="w-full max-w-md rounded-lg bg-white shadow-xl border border-slate-200 p-5 space-y-3"
         onClick={(e) => e.stopPropagation()}
       >
-        <h3 id="new-preset-title" className="text-base font-bold text-slate-900">
+        <h3
+          id="new-preset-title"
+          className="text-base font-bold text-slate-900"
+        >
           Save current view as preset
         </h3>
         <div>
@@ -908,9 +903,7 @@ function NewPresetModal({
             disabled={!canSubmit}
             onClick={() => {
               setError(null);
-              const recipientValue = recipient.trim()
-                ? recipient.trim()
-                : null;
+              const recipientValue = recipient.trim() ? recipient.trim() : null;
               const body: ReportPresetCreate =
                 rangeMode === "preset"
                   ? {

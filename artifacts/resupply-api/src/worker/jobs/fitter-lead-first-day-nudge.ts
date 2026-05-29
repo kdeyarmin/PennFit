@@ -50,11 +50,20 @@ import {
   escapePostgRESTFilterValue,
   getSupabaseServiceRoleClient,
 } from "@workspace/resupply-db";
-import { createSendgridClient, EmailConfigError } from "@workspace/resupply-email";
-import { createTwilioSmsClient, TwilioConfigError } from "@workspace/resupply-telecom";
+import {
+  createSendgridClient,
+  EmailConfigError,
+} from "@workspace/resupply-email";
+import {
+  createTwilioSmsClient,
+  TwilioConfigError,
+} from "@workspace/resupply-telecom";
 
 import { logger } from "../../lib/logger";
-import { createQueueWithDlq, VENDOR_SEND_QUEUE_OPTS } from "../lib/queue-options";
+import {
+  createQueueWithDlq,
+  VENDOR_SEND_QUEUE_OPTS,
+} from "../lib/queue-options";
 
 const NUDGE_JOB = "fitter-lead.first-day-nudge";
 /** Hourly at :19 — keeps the schedule clear of every other resupply cron. */
@@ -189,9 +198,7 @@ export async function runFirstDayNudgeSweep(): Promise<FirstDayNudgeStats> {
   const { data: leads, error } = await supabase
     .schema("resupply")
     .from("fitter_leads")
-    .select(
-      "id, email, phone_e164, sms_opt_in, source, created_at",
-    )
+    .select("id, email, phone_e164, sms_opt_in, source, created_at")
     .eq("marketing_opt_in", true)
     .is("first_day_nudged_at", null)
     .lt("created_at", youngerThan)
@@ -201,8 +208,7 @@ export async function runFirstDayNudgeSweep(): Promise<FirstDayNudgeStats> {
   if (error) throw error;
 
   const candidates = (leads ?? []).filter(
-    (l): l is LeadRow =>
-      typeof l.email === "string" && l.email.length > 0,
+    (l): l is LeadRow => typeof l.email === "string" && l.email.length > 0,
   );
   if (candidates.length === 0) return stats;
 
@@ -389,8 +395,5 @@ export async function registerFitterLeadFirstDayNudgeJob(
     }
   });
   await boss.schedule(NUDGE_JOB, NUDGE_CRON);
-  logger.info(
-    { cron: NUDGE_CRON },
-    "fitter-lead.first-day-nudge scheduled",
-  );
+  logger.info({ cron: NUDGE_CRON }, "fitter-lead.first-day-nudge scheduled");
 }

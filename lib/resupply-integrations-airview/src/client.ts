@@ -69,10 +69,7 @@ const DEFAULT_API_TIMEOUT_MS = 60_000;
  * @param fallback - The fallback timeout in milliseconds to use when the env var is missing or invalid
  * @returns The parsed timeout in milliseconds, capped at 5 minutes (300000 ms), or `fallback` when parsing fails
  */
-function parseTimeoutEnv(
-  name: string,
-  fallback: number,
-): number {
+function parseTimeoutEnv(name: string, fallback: number): number {
   const raw = process.env[name];
   if (!raw) return fallback;
   // Strict digits-only check. `Number.parseInt("1e3", 10)` returns 1
@@ -121,7 +118,11 @@ async function fetchWithTimeout(
   } catch (err) {
     if (err instanceof Error) {
       const name = err.name;
-      if (name === "TimeoutError" || name === "AbortError" || name === "TypeError") {
+      if (
+        name === "TimeoutError" ||
+        name === "AbortError" ||
+        name === "TypeError"
+      ) {
         throw new ClientError("unavailable");
       }
     }
@@ -172,10 +173,7 @@ async function getAccessToken(config: AirviewConfig): Promise<string> {
   return json.access_token;
 }
 
-async function request<T>(
-  config: AirviewConfig,
-  path: string,
-): Promise<T> {
+async function request<T>(config: AirviewConfig, path: string): Promise<T> {
   const token = await getAccessToken(config);
   const res = await fetchWithTimeout(
     `${config.apiBaseUrl}${path}`,
@@ -287,12 +285,15 @@ function summariseCompliance(
     .map((n) => n.ahi)
     .filter((v): v is number => v !== null);
   const avgAhi =
-    ahiVals.length > 0 ? ahiVals.reduce((s, v) => s + v, 0) / ahiVals.length : null;
+    ahiVals.length > 0
+      ? ahiVals.reduce((s, v) => s + v, 0) / ahiVals.length
+      : null;
   return {
     windowDays,
     daysWithData: withData.length,
     daysOver4Hours: overFour.length,
-    averageUsageMinutes: withData.length > 0 ? totalMins / withData.length : null,
+    averageUsageMinutes:
+      withData.length > 0 ? totalMins / withData.length : null,
     averageAhi: avgAhi,
     meetsCmsCompliance: recentOverFour.length >= 21,
   };

@@ -94,9 +94,7 @@ async function findOwnedSubscription(
   const { data, error } = await supabase
     .schema("resupply")
     .from("shop_subscriptions")
-    .select(
-      "id, stripe_subscription_id, status, cancel_at_period_end, items",
-    )
+    .select("id, stripe_subscription_id, status, cancel_at_period_end, items")
     .eq("id", localId)
     .eq("customer_id", customerId)
     .limit(1)
@@ -157,7 +155,12 @@ router.get("/shop/me/subscriptions", requireSignedIn, async (req, res) => {
 router.post(
   "/shop/me/subscriptions/:id/cancel",
   requireSignedIn,
-  rateLimit({ windowMs: 60_000, max: 5, name: "shop:cancel-sub", keyFn: (req) => req.userCustomerId ?? "unknown" }),
+  rateLimit({
+    windowMs: 60_000,
+    max: 5,
+    name: "shop:cancel-sub",
+    keyFn: (req) => req.userCustomerId ?? "unknown",
+  }),
   async (req, res) => {
     const customerId = req.userCustomerId;
     if (!customerId) {
@@ -435,7 +438,10 @@ async function handlePauseOrResume(
   // /account page will see fresh state on next refresh. The button
   // UI flips optimistically client-side.
   await safeAudit({
-    action: verb === "pause" ? "shop.subscription.paused" : "shop.subscription.resumed",
+    action:
+      verb === "pause"
+        ? "shop.subscription.paused"
+        : "shop.subscription.resumed",
     adminEmail: `customer:${req.shopCustomerEmail ?? customerId}`,
     adminUserId: null,
     targetTable: "shop_subscriptions",
@@ -453,7 +459,12 @@ async function handlePauseOrResume(
 router.post(
   "/shop/me/subscriptions/:id/pause",
   requireSignedIn,
-  rateLimit({ windowMs: 60_000, max: 5, name: "shop:pause-sub", keyFn: (req) => req.userCustomerId ?? "unknown" }),
+  rateLimit({
+    windowMs: 60_000,
+    max: 5,
+    name: "shop:pause-sub",
+    keyFn: (req) => req.userCustomerId ?? "unknown",
+  }),
   (req, res) => {
     void handlePauseOrResume("pause", req, res);
   },
@@ -462,7 +473,12 @@ router.post(
 router.post(
   "/shop/me/subscriptions/:id/resume",
   requireSignedIn,
-  rateLimit({ windowMs: 60_000, max: 5, name: "shop:resume-sub", keyFn: (req) => req.userCustomerId ?? "unknown" }),
+  rateLimit({
+    windowMs: 60_000,
+    max: 5,
+    name: "shop:resume-sub",
+    keyFn: (req) => req.userCustomerId ?? "unknown",
+  }),
   (req, res) => {
     void handlePauseOrResume("resume", req, res);
   },
@@ -481,7 +497,12 @@ const cadenceBody = z.object({
 router.post(
   "/shop/me/subscriptions/:id/cadence",
   requireSignedIn,
-  rateLimit({ windowMs: 60_000, max: 5, name: "shop:cadence-sub", keyFn: (req) => req.userCustomerId ?? "unknown" }),
+  rateLimit({
+    windowMs: 60_000,
+    max: 5,
+    name: "shop:cadence-sub",
+    keyFn: (req) => req.userCustomerId ?? "unknown",
+  }),
   async (req, res) => {
     const customerId = req.userCustomerId;
     if (!customerId) {

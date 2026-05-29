@@ -1,9 +1,6 @@
 import { describe, expect, test } from "vitest";
 import type { FacialMeasurements } from "@workspace/api-client-react/storefront";
-import {
-  canStayOnMeasure,
-  findImplausibleMeasurement,
-} from "./measure-flow";
+import { canStayOnMeasure, findImplausibleMeasurement } from "./measure-flow";
 
 const realisticMeasurements: FacialMeasurements = {
   noseWidth: 35.2,

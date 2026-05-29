@@ -138,10 +138,10 @@ describe("POST /shop/me/orders/:sessionId/returns — A4 auto-approval", () => {
 
     expect(res.status).toBe(201);
     expect(res.body.autoApprovedBy).toBe("wrong_item_within_30d");
-    const payload = getSupabaseWritePayloads("shop_returns", "insert")[0] as Record<
-      string,
-      unknown
-    >;
+    const payload = getSupabaseWritePayloads(
+      "shop_returns",
+      "insert",
+    )[0] as Record<string, unknown>;
     expect(payload.status).toBe("approved");
   });
 
@@ -164,10 +164,10 @@ describe("POST /shop/me/orders/:sessionId/returns — A4 auto-approval", () => {
     expect(res.body.autoApprovedBy).toBeNull();
     // The insert should NOT carry an overridden status — the table
     // default `requested` applies. We assert by absence.
-    const payload = getSupabaseWritePayloads("shop_returns", "insert")[0] as Record<
-      string,
-      unknown
-    >;
+    const payload = getSupabaseWritePayloads(
+      "shop_returns",
+      "insert",
+    )[0] as Record<string, unknown>;
     expect(payload.status).toBeUndefined();
     expect(payload.approved_at).toBeUndefined();
   });
@@ -192,10 +192,10 @@ describe("POST /shop/me/orders/:sessionId/returns — A4 auto-approval", () => {
 
     expect(res.status).toBe(201);
     expect(res.body.autoApprovedBy).toBeNull();
-    const payload = getSupabaseWritePayloads("shop_returns", "insert")[0] as Record<
-      string,
-      unknown
-    >;
+    const payload = getSupabaseWritePayloads(
+      "shop_returns",
+      "insert",
+    )[0] as Record<string, unknown>;
     expect(payload.status).toBeUndefined();
   });
 

@@ -53,10 +53,9 @@ const sendFaxMock = vi.fn<() => Promise<{ sid: string; status: string }>>(
   async () => ({ sid: "FX_test_sid", status: "queued" }),
 );
 vi.mock("@workspace/resupply-telecom", async () => {
-  const actual =
-    await vi.importActual<typeof import("@workspace/resupply-telecom")>(
-      "@workspace/resupply-telecom",
-    );
+  const actual = await vi.importActual<
+    typeof import("@workspace/resupply-telecom")
+  >("@workspace/resupply-telecom");
   return {
     ...actual,
     createTwilioFaxClient: () => ({ sendFax: sendFaxMock }),

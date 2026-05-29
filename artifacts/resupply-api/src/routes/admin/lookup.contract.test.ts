@@ -21,16 +21,11 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const LOOKUP_SOURCE = readFileSync(
-  path.join(__dirname, "lookup.ts"),
-  "utf8",
-);
+const LOOKUP_SOURCE = readFileSync(path.join(__dirname, "lookup.ts"), "utf8");
 
 describe("/admin/lookup hardening", () => {
   it("declares MAX_QUERY_LENGTH and short-circuits before regex/DB work", () => {
-    expect(LOOKUP_SOURCE).toMatch(
-      /MAX_QUERY_LENGTH\s*=\s*(\d+)/,
-    );
+    expect(LOOKUP_SOURCE).toMatch(/MAX_QUERY_LENGTH\s*=\s*(\d+)/);
     // The cap must apply BEFORE the 3-char minimum check (the route
     // already had that one). Easiest way to verify: the cap branch
     // must appear before "q.length < 3" in the source.

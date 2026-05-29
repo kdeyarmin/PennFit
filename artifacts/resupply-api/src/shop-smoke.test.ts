@@ -143,9 +143,7 @@ describe("shop route tree mount (smoke)", () => {
   // environment Stripe is unconfigured so the handler 503s before
   // the body parse; what matters here is the route is FOUND (not 404).
   it("finds POST /shop/checkout (status != 404)", async () => {
-    const res = await request(app)
-      .post("/resupply-api/shop/checkout")
-      .send({});
+    const res = await request(app).post("/resupply-api/shop/checkout").send({});
     expect(res.status).not.toBe(404);
   });
 
@@ -156,9 +154,7 @@ describe("shop route tree mount (smoke)", () => {
     expect(res.status).toBe(401);
   });
   it("rejects unauthenticated GET /admin/rt-overview.csv with 401", async () => {
-    const res = await request(app).get(
-      "/resupply-api/admin/rt-overview.csv",
-    );
+    const res = await request(app).get("/resupply-api/admin/rt-overview.csv");
     expect(res.status).toBe(401);
   });
 

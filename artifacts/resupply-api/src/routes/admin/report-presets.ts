@@ -151,18 +151,17 @@ router.post(
       return;
     }
 
-    const insert: Database["resupply"]["Tables"]["report_presets"]["Insert"] =
-      {
-        user_id: userId,
-        name: b.name,
-        slug: b.slug,
-        format: b.format,
-        range_kind: b.rangeKind,
-        range_preset: b.rangeKind === "preset" ? b.rangePreset : null,
-        range_from: b.rangeKind === "absolute" ? b.rangeFrom : null,
-        range_to: b.rangeKind === "absolute" ? b.rangeTo : null,
-        recipient: b.recipient ?? null,
-      };
+    const insert: Database["resupply"]["Tables"]["report_presets"]["Insert"] = {
+      user_id: userId,
+      name: b.name,
+      slug: b.slug,
+      format: b.format,
+      range_kind: b.rangeKind,
+      range_preset: b.rangeKind === "preset" ? b.rangePreset : null,
+      range_from: b.rangeKind === "absolute" ? b.rangeFrom : null,
+      range_to: b.rangeKind === "absolute" ? b.rangeTo : null,
+      recipient: b.recipient ?? null,
+    };
 
     const supabase = getSupabaseServiceRoleClient();
     const { data, error } = await supabase

@@ -15,10 +15,7 @@
 //   * TwilioApiError/TwilioConfigError re-thrown as-is (no double-wrap)
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  TwilioApiError,
-  TwilioConfigError,
-} from "./client";
+import { TwilioApiError, TwilioConfigError } from "./client";
 import {
   createTwilioFaxClient,
   type FaxHttpSend,
@@ -95,7 +92,11 @@ describe("createTwilioFaxClient — sendFax", () => {
       return { sid: "FX1", status: "queued" };
     });
     const client = createTwilioFaxClient({ ...BASE_CREDS, httpSend: send });
-    await client.sendFax({ to: "+12155551212", from: "+12155550000", mediaUrl: "https://example.com/doc.pdf" });
+    await client.sendFax({
+      to: "+12155551212",
+      from: "+12155550000",
+      mediaUrl: "https://example.com/doc.pdf",
+    });
     expect(capturedUrl[0]).toBe("https://fax.twilio.com/v1/Faxes");
   });
 
@@ -136,7 +137,12 @@ describe("createTwilioFaxClient — sendFax", () => {
       return { sid: "FX4", status: "queued" };
     });
     const client = createTwilioFaxClient({ ...BASE_CREDS, httpSend: send });
-    await client.sendFax({ to: "+1", from: "+2", mediaUrl: "http://x", quality: "superfine" });
+    await client.sendFax({
+      to: "+1",
+      from: "+2",
+      mediaUrl: "http://x",
+      quality: "superfine",
+    });
     const params = new URLSearchParams(capturedBodies[0]);
     expect(params.get("Quality")).toBe("superfine");
   });
@@ -175,7 +181,11 @@ describe("createTwilioFaxClient — sendFax", () => {
   it("returns sid and status from a successful response", async () => {
     const send = makeSend({ sid: "FXabc123", status: "queued" });
     const client = createTwilioFaxClient({ ...BASE_CREDS, httpSend: send });
-    const result = await client.sendFax({ to: "+1", from: "+2", mediaUrl: "http://x" });
+    const result = await client.sendFax({
+      to: "+1",
+      from: "+2",
+      mediaUrl: "http://x",
+    });
     expect(result.sid).toBe("FXabc123");
     expect(result.status).toBe("queued");
   });

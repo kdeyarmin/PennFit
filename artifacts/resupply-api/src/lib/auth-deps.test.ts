@@ -75,7 +75,9 @@ describe("consumeRecoveryCode: admin user lookup", () => {
 
     expect(result).toBeNull();
     // The recovery code table must NOT be touched.
-    expect(supabaseMock.callCount("admin_mfa_recovery_codes", "update")).toBe(0);
+    expect(supabaseMock.callCount("admin_mfa_recovery_codes", "update")).toBe(
+      0,
+    );
   });
 });
 
@@ -111,7 +113,11 @@ describe("consumeRecoveryCode: code already used or not found", () => {
       error: null,
     });
 
-    const result = await consumeRecoveryCode("user-abc", "hash-spent", "10.0.0.1");
+    const result = await consumeRecoveryCode(
+      "user-abc",
+      "hash-spent",
+      "10.0.0.1",
+    );
 
     expect(result).toBeNull();
   });
@@ -136,7 +142,9 @@ describe("consumeRecoveryCode: successful first use", () => {
     );
 
     expect(result).toEqual({ id: "rc-row-42" });
-    expect(supabaseMock.callCount("admin_mfa_recovery_codes", "update")).toBe(1);
+    expect(supabaseMock.callCount("admin_mfa_recovery_codes", "update")).toBe(
+      1,
+    );
   });
 
   it("passes used_ip=null when ip is null", async () => {
@@ -153,7 +161,10 @@ describe("consumeRecoveryCode: successful first use", () => {
     expect(result).toEqual({ id: "rc-row-99" });
 
     // Verify the payload passed to the UPDATE includes used_ip=null.
-    const payloads = supabaseMock.writePayloads("admin_mfa_recovery_codes", "update");
+    const payloads = supabaseMock.writePayloads(
+      "admin_mfa_recovery_codes",
+      "update",
+    );
     expect(payloads).toHaveLength(1);
     expect((payloads[0] as Record<string, unknown>)["used_ip"]).toBeNull();
   });
@@ -169,8 +180,13 @@ describe("consumeRecoveryCode: successful first use", () => {
 
     await consumeRecoveryCode("user-abc", "hash-y", "203.0.113.1");
 
-    const payloads = supabaseMock.writePayloads("admin_mfa_recovery_codes", "update");
-    expect((payloads[0] as Record<string, unknown>)["used_ip"]).toBe("203.0.113.1");
+    const payloads = supabaseMock.writePayloads(
+      "admin_mfa_recovery_codes",
+      "update",
+    );
+    expect((payloads[0] as Record<string, unknown>)["used_ip"]).toBe(
+      "203.0.113.1",
+    );
   });
 });
 
