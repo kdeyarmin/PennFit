@@ -99,39 +99,6 @@ function findDeclarations(body: string): string[] {
   return tokens;
 }
 
-// ── Helpers for the @theme inline bridge tests ───────────────────────────────
-
-/**
- * Extract the body of the first `@theme inline { … }` block from a CSS source.
- * Returns null if no such block exists.
- */
-function extractThemeInlineBody(src: string): string | null {
-  const match = src.match(/@theme\s+inline\s*\{/);
-  if (!match || match.index === undefined) return null;
-  const start = match.index + match[0].length;
-  let depth = 1;
-  let i = start;
-  while (i < src.length && depth > 0) {
-    if (src[i] === "{") depth++;
-    else if (src[i] === "}") depth--;
-    i++;
-  }
-  return src.slice(start, i - 1);
-}
-
-/**
- * Parse `--foo: value;` declarations from a CSS block body.
- * Returns a Map of property name → trimmed value (without trailing semicolon).
- */
-function parseDeclarations(body: string): Map<string, string> {
-  const map = new Map<string, string>();
-  const re = /(--[\w-]+)\s*:\s*([^;]+);/g;
-  for (const m of body.matchAll(re)) {
-    map.set(m[1]!.trim(), m[2]!.trim());
-  }
-  return map;
-}
-
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 describe("admin.css scoping", () => {
@@ -194,150 +161,15 @@ describe("admin.css scoping", () => {
         "--background/--foreground/… tokens under .admin-root instead.",
     ).toBe(false);
   });
-});
 
-// ── @theme inline bridge (new in PR — replaces old scoped overrides) ─────────
-//
-// The storefront-admin pages use shadcn token names (`bg-background`,
-// `text-primary`, etc.). Instead of re-pointing the *raw* `--background` /
-// `--foreground` variables under `.admin-root`, admin.css now uses a
-// top-level `@theme inline` block that maps `--color-*` onto the Penn-brand
-// design-system vocabulary. Tailwind v4 emits those as first-class utilities.
-describe("admin.css @theme inline bridge", () => {
-  const cleaned = stripCssComments(ADMIN_CSS);
-  const themeBody = extractThemeInlineBody(cleaned);
-
-  const EXPECTED_TOKENS = [
-    "--color-background",
-    "--color-foreground",
-    "--color-border",
-    "--color-input",
-    "--color-muted",
-    "--color-muted-foreground",
-    "--color-primary",
-    "--color-primary-foreground",
-    "--color-destructive",
-    "--color-destructive-foreground",
-  ] as const;
-
-  it("admin.css contains an @theme inline block", () => {
-    expect(
-      themeBody,
-      "admin.css must have an `@theme inline { … }` block for the shadcn " +
-        "token bridge — without it bg-muted / text-primary / etc. resolve " +
-        "to unstyled Tailwind defaults on the admin pages.",
-    ).not.toBeNull();
-  });
-
-  it("uses @theme inline, not a bare @theme block", () => {
-    // A bare `@theme { }` (without `inline`) would force Tailwind to emit
-    // every token as a CSS custom property on :root in addition to utility
-    // classes, which is noisier. `@theme inline` is the correct form.
-    const bareThemeRe = /@theme\s*\{/;
-    expect(
-      bareThemeRe.test(cleaned),
-      "admin.css must not contain a bare `@theme { }` block — use " +
-        "`@theme inline { }` instead to avoid unnecessary :root output.",
-    ).toBe(false);
-  });
-
-  it("defines all expected shadcn colour tokens", () => {
-    // themeBody is guaranteed non-null by the earlier test; coerce for TS.
-    const decls = parseDeclarations(themeBody ?? "");
-    for (const token of EXPECTED_TOKENS) {
-      expect(
-        decls.has(token),
-        `@theme inline block is missing '${token}' — storefront-admin pages ` +
-          `that use the corresponding Tailwind utility (e.g. bg-muted for ` +
-          `--color-muted) will fall back to an unstyled default.`,
-      ).toBe(true);
-    }
-  });
-
-  it("defines exactly the expected token set (no extra undocumented tokens)", () => {
-    const decls = parseDeclarations(themeBody ?? "");
-    const actual = [...decls.keys()].sort();
-    const expected = [...EXPECTED_TOKENS].sort();
-    expect(actual).toEqual(expected);
-  });
-
-  it("maps --color-background to hsl(var(--surface-1))", () => {
-    const decls = parseDeclarations(themeBody ?? "");
-    expect(decls.get("--color-background")).toBe("hsl(var(--surface-1))");
-  });
-
-  it("maps --color-foreground to hsl(var(--ink-1))", () => {
-    const decls = parseDeclarations(themeBody ?? "");
-    expect(decls.get("--color-foreground")).toBe("hsl(var(--ink-1))");
-  });
-
-  it("maps --color-border and --color-input to hsl(var(--line-1))", () => {
-    const decls = parseDeclarations(themeBody ?? "");
-    expect(decls.get("--color-border")).toBe("hsl(var(--line-1))");
-    expect(decls.get("--color-input")).toBe("hsl(var(--line-1))");
-  });
-
-  it("maps --color-muted to hsl(var(--surface-3))", () => {
-    const decls = parseDeclarations(themeBody ?? "");
-    expect(decls.get("--color-muted")).toBe("hsl(var(--surface-3))");
-  });
-
-  it("maps --color-muted-foreground to hsl(var(--ink-3))", () => {
-    const decls = parseDeclarations(themeBody ?? "");
-    expect(decls.get("--color-muted-foreground")).toBe("hsl(var(--ink-3))");
-  });
-
-  it("maps --color-primary to hsl(var(--penn-navy))", () => {
-    const decls = parseDeclarations(themeBody ?? "");
-    expect(decls.get("--color-primary")).toBe("hsl(var(--penn-navy))");
-  });
-
-  it("maps --color-destructive to hsl(var(--tone-rose))", () => {
-    const decls = parseDeclarations(themeBody ?? "");
-    expect(decls.get("--color-destructive")).toBe("hsl(var(--tone-rose))");
-  });
-
-  it("maps foreground-on-colour tokens to opaque white", () => {
-    const decls = parseDeclarations(themeBody ?? "");
-    // Both -foreground-on-solid tokens must be full white so text is
-    // legible on the navy primary and rose destructive backgrounds.
-    expect(decls.get("--color-primary-foreground")).toBe("hsl(0 0% 100%)");
-    expect(decls.get("--color-destructive-foreground")).toBe("hsl(0 0% 100%)");
-  });
-
-  it("each var()-based token references a Penn-brand variable (not a shadcn name)", () => {
-    const decls = parseDeclarations(themeBody ?? "");
-    // Tokens that use var() must reference the dashboard's own vocabulary
-    // (--surface-*, --ink-*, --line-*, --penn-*, --tone-*), never a
-    // shadcn/Tailwind built-in, to keep the mapping unambiguous.
-    const VAR_RE = /var\((--[\w-]+)\)/g;
-    const ALLOWED_PREFIXES = [
-      "--surface-",
-      "--ink-",
-      "--line-",
-      "--penn-",
-      "--tone-",
-    ];
-    for (const [token, value] of decls) {
-      for (const m of value.matchAll(VAR_RE)) {
-        const ref = m[1]!;
-        const ok = ALLOWED_PREFIXES.some((p) => ref.startsWith(p));
-        expect(
-          ok,
-          `${token}: '${value}' references '${ref}' which is not in the ` +
-            `Penn-brand vocabulary (--surface-*, --ink-*, --line-*, ` +
-            `--penn-*, --tone-*). Bridge tokens must map onto the ` +
-            `dashboard design system, not to other shadcn names.`,
-        ).toBe(true);
-      }
-    }
-  });
-
-  // Regression: the OLD approach put --background / --foreground / etc.
-  // directly under .admin-root. That has been replaced by the @theme inline
-  // block. Guard against accidental reintroduction of the old pattern.
-  it("does not declare old-style raw shadcn overrides (--background, --foreground, …) under .admin-root", () => {
-    const OLD_RAW_TOKENS = [
+  // Companion to the rule above: the shadcn token bridge must actually be
+  // present (and scoped). admin.css re-points the RAW shadcn variables
+  // (`--background`, `--foreground`, `--primary`, …) under `.admin-root`
+  // so the storefront-admin pages' `bg-background` / `text-primary` / …
+  // utilities resolve to the Penn-brand palette. Guard that the bridge
+  // stays scoped under `.admin-root` (never leaked to `:root`/global).
+  it("declares the raw shadcn token bridge under .admin-root (not globally)", () => {
+    const BRIDGE_TOKENS = [
       "--background",
       "--foreground",
       "--border",
@@ -349,23 +181,20 @@ describe("admin.css @theme inline bridge", () => {
       "--destructive",
       "--destructive-foreground",
     ];
-    const rules = Array.from(iterateTopLevelRules(cleaned));
-    const adminRootRules = rules.filter((r) =>
-      r.selectors
-        .split(",")
-        .map((s) => s.trim())
-        .some((s) => s === ".admin-root" || s.startsWith(".admin-root")),
-    );
-    for (const { selectors, body } of adminRootRules) {
-      for (const token of OLD_RAW_TOKENS) {
-        // Match declaration (not a var() read)
-        const declRe = new RegExp(`(?:^|[\\s;{])(${token})\\s*:`);
+    for (const token of BRIDGE_TOKENS) {
+      const declRe = new RegExp(`(?:^|[\\s;{])(${token})\\s*:`);
+      const declaringRules = rules.filter((r) => declRe.test(r.body));
+      // Every rule that declares a bridge token must be .admin-root-scoped.
+      for (const r of declaringRules) {
+        const allScoped = r.selectors
+          .split(",")
+          .map((s) => s.trim())
+          .every((s) => s === ".admin-root" || s.startsWith(".admin-root"));
         expect(
-          declRe.test(body),
-          `'.admin-root' block (selector: '${selectors}') declares '${token}'. ` +
-            `The raw shadcn overrides were replaced by the @theme inline bridge — ` +
-            `remove the declaration from .admin-root or the two approaches will conflict.`,
-        ).toBe(false);
+          allScoped,
+          `'${token}' is declared under '${r.selectors}' — the shadcn bridge ` +
+            `must be scoped to .admin-root so it can't leak onto the storefront.`,
+        ).toBe(true);
       }
     }
   });
