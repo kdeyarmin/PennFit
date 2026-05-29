@@ -459,7 +459,7 @@ async function finalizeOrReschedule(
   if (error) {
     // Be conservative: reschedule rather than risk a premature 'sent'.
     log.error(
-      { err: error.message, campaignId },
+      { err: error, campaignId }
       "bulk_campaigns.tick: remaining-work count failed — rescheduling",
     );
     await enqueueNextTick(boss, campaignId);
