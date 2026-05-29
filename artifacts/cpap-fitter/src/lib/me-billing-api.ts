@@ -72,6 +72,20 @@ async function meGet<T>(path: string): Promise<T> {
   return (await res.json()) as T;
 }
 
+/** Read the readable `pf_csrf` cookie (set at sign-in by the auth lib)
+ *  and return it as an `X-PF-CSRF` header. The app-level conditional
+ *  CSRF gate requires this header on every signed-in `/api/me/*`
+ *  mutation (e.g. the checkout-session POST below); without it the
+ *  request is rejected. Mirrors shop-api.ts's `csrfHeader()`. */
+function csrfHeader(): Record<string, string> {
+  if (typeof document === "undefined") return {};
+  const token = document.cookie
+    .split("; ")
+    .find((row) => row.startsWith("pf_csrf="))
+    ?.slice("pf_csrf=".length);
+  return token ? { "X-PF-CSRF": decodeURIComponent(token) } : {};
+}
+
 export function fetchBillingBalance(): Promise<BillingBalanceResponse> {
   return meGet<BillingBalanceResponse>("/me/billing-balance");
 }
@@ -116,6 +130,7 @@ export async function createPaymentCheckoutSession(input: {
     headers: {
       "Content-Type": "application/json",
       Accept: "application/json",
+      ...csrfHeader(),
     },
     body: JSON.stringify(input),
   });

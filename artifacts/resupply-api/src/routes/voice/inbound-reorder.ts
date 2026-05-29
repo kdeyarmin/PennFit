@@ -25,6 +25,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { normalizeE164 } from "@workspace/resupply-domain";
 import {
   buildHangupTwiml,
   requireTwilioSignature,
@@ -194,10 +195,13 @@ async function identifyCaller(
   fromE164: string,
 ): Promise<IdentifyResult> {
   if (!fromE164) return { patientId: null, shopCustomerId: null };
-  // Normalise: caller IDs sometimes arrive without the leading +.
-  const normalised = fromE164.startsWith("+")
-    ? fromE164
-    : `+${fromE164.replace(/\D+/g, "")}`;
+  // Use the canonical E.164 normalizer (same as the SMS + inbound voice
+  // paths) so a bare 10-digit US caller ID maps to +1XXXXXXXXXX and
+  // matches the stored patients.phone_e164. The previous naive
+  // `+${digits}` produced `+2155551212` (no country code) and silently
+  // failed to identify a known caller. null ⇒ unparseable ⇒ unidentified.
+  const normalised = normalizeE164(fromE164);
+  if (!normalised) return { patientId: null, shopCustomerId: null };
   const { data: patient } = await supabase
     .schema("resupply")
     .from("patients")
