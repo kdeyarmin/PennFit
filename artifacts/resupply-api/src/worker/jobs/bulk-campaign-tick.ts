@@ -165,7 +165,7 @@ export async function processTick(
     .lt("updated_at", staleSendingBefore);
   if (reclaimErr) {
     log.warn(
-      { err: reclaimErr.message, campaignId: campaign.id },
+      { err: reclaimErr, campaignId: campaign.id }
       "bulk_campaigns.tick: stale 'sending' reclaim failed (continuing)",
     );
   }
