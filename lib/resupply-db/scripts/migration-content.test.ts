@@ -281,12 +281,12 @@ describe("migration SQL content — static checks", () => {
   });
 
   // -------------------------------------------------------------------------
-  // 0090_admin_mfa_trusted_devices.sql.new
+  // 0090_admin_mfa_trusted_devices.sql
   // -------------------------------------------------------------------------
-  describe("0090_admin_mfa_trusted_devices.sql.new", () => {
+  describe("0090_admin_mfa_trusted_devices.sql", () => {
     let sql: string;
     beforeAll(() => {
-      sql = readMigration("0090_admin_mfa_trusted_devices.sql.new");
+      sql = readMigration("0090_admin_mfa_trusted_devices.sql");
     });
 
     it("creates admin_users with IF NOT EXISTS guard (defensive / idempotent)", () => {
@@ -295,12 +295,12 @@ describe("migration SQL content — static checks", () => {
       );
     });
 
-    it("defines admin_users.id as uuid with gen_random_uuid() default", () => {
-      expect(sql).toMatch(/"id" uuid PRIMARY KEY DEFAULT gen_random_uuid\(\)/);
+    it("defines admin_users.id as text (not uuid) matching 0020 canonical definition", () => {
+      expect(sql).toMatch(/"id" text PRIMARY KEY DEFAULT \(gen_random_uuid\(\)::text\)/);
     });
 
-    it("defines admin_users.email as text NOT NULL", () => {
-      expect(sql).toMatch(/"email" text NOT NULL/);
+    it("defines admin_users.email_lower as text NOT NULL UNIQUE", () => {
+      expect(sql).toMatch(/"email_lower" text NOT NULL UNIQUE/);
     });
 
     it("includes created_at and updated_at timestamp columns with defaults", () => {
@@ -506,9 +506,9 @@ describe.skipIf(!dbUrl)(
     });
 
     // -----------------------------------------------------------------------
-    // 0090.new: defensive admin_users table creation
+    // 0090: defensive admin_users table creation
     // -----------------------------------------------------------------------
-    describe("0090.new — admin_users table exists", () => {
+    describe("0090 — admin_users table exists", () => {
       it(
         "resupply.admin_users table is present in the schema",
         async () => {
@@ -526,7 +526,7 @@ describe.skipIf(!dbUrl)(
       );
 
       it(
-        "resupply.admin_users.id is uuid with a non-null default",
+        "resupply.admin_users.id is text (not uuid) with a non-null default",
         async (ctx: TaskContext) => {
           const res = await pool.query<{
             data_type: string;
@@ -542,14 +542,14 @@ describe.skipIf(!dbUrl)(
             ctx.skip("resupply.admin_users does not exist on this DB.");
             return;
           }
-          expect(res.rows[0]!.data_type).toBe("uuid");
+          expect(res.rows[0]!.data_type).toBe("text");
           expect(res.rows[0]!.column_default).toMatch(/gen_random_uuid/);
         },
         30_000,
       );
 
       it(
-        "resupply.admin_users.email is text NOT NULL",
+        "resupply.admin_users.email_lower is text NOT NULL",
         async (ctx: TaskContext) => {
           const res = await pool.query<{
             data_type: string;
@@ -559,7 +559,7 @@ describe.skipIf(!dbUrl)(
                FROM information_schema.columns
               WHERE table_schema = 'resupply'
                 AND table_name = 'admin_users'
-                AND column_name = 'email'`,
+                AND column_name = 'email_lower'`,
           );
           if (res.rows.length === 0) {
             ctx.skip("resupply.admin_users does not exist on this DB.");
