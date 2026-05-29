@@ -75,17 +75,21 @@ side is worse than a visible conflict.
 
 ## Repository map
 
-This is a `pnpm` workspaces monorepo (Node v24, TypeScript 5.9, pnpm 11.4).
+This is a `pnpm` workspaces monorepo (Node v24, TypeScript ~6.0, pnpm 11.4).
+Workspace globs (`pnpm-workspace.yaml`): `artifacts/*`, `lib/*`,
+`lib/integrations/*`, and `scripts`.
 
-| Path                     | Purpose                                                                                                                                                                                                                          |
-| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `artifacts/resupply-api` | Single Express 5 API process. Hosts the storefront/fitter routes (`/api/*`), the resupply admin/voice routes (`/resupply-api/*`), AND the in-process `pg-boss` worker (reminders + PHI sweep) booted from `src/worker/index.ts`. |
-| `artifacts/cpap-fitter`  | Customer-facing SPA (Vite + React + Wouter + Tailwind). Mounts the internal admin console at `/admin/*` (gated by `useGetAdminMe`); legacy `/resupply/*` URLs SPA-redirect to `/admin/*` preserving query strings.               |
-| `artifacts/shared`       | Cross-artifact static assets (favicons served at root).                                                                                                                                                                          |
-| `lib/resupply-*`         | Shared workspace packages: `db`, `auth` (+ `auth-react`), `messaging`, `email`, `ai`, `telecom`, `audit`, `domain`, `secrets`, `reminders`.                                                                                      |
-| `lib/api-client-react`   | Generated API client + React hooks.                                                                                                                                                                                              |
-| `scripts/`               | Architecture + migration drift checks (`check-resupply-architecture`, `check-resupply-migration-prefix`) plus operator-facing utilities under `src/`: `preflight-prod-env.ts` (env validator), `auth-bootstrap-admin.ts` (seed first admin), `seed-stripe-products.ts`. The historical `check-codegen.sh` was retired when Task #37 removed the OpenAPI spec packages. |
-| `docs/`                  | Architecture notes, post-mortems, production readiness.                                                                                                                                                                          |
+| Path                            | Purpose                                                                                                                                                                                                                          |
+| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `artifacts/resupply-api`        | Single Express 5 API process. Hosts the storefront/fitter routes (`/api/*`), the resupply admin/voice routes (`/resupply-api/*`), AND the in-process `pg-boss` worker (reminders + PHI sweep) booted from `src/worker/index.ts`. |
+| `artifacts/cpap-fitter`         | Customer-facing SPA (Vite + React + Wouter + Tailwind). Mounts the internal admin console at `/admin/*` (gated by `useGetAdminMe`); legacy `/resupply/*` URLs SPA-redirect to `/admin/*` preserving query strings.               |
+| `artifacts/shared`              | Cross-artifact static assets (favicons served at root).                                                                                                                                                                          |
+| `lib/resupply-*`                | Shared workspace packages: `db`, `auth` (+ `auth-react`), `messaging`, `email`, `ai`, `telecom`, `audit`, `domain`, `secrets`, `reminders`, `templates`.                                                                          |
+| `lib/resupply-integrations*`    | Partner-connectivity layer (therapy-cloud pulls, inbound order webhooks, payer/claims). `lib/resupply-integrations` is the shared contract; the per-vendor adapters live alongside it. See **Integrations layer** below.         |
+| `lib/api-client-react`          | Hand-maintained API client + React hooks (`src/{admin,storefront}/generated/`).                                                                                                                                                  |
+| `scripts/`                      | Architecture/route/migration drift checks (`check-resupply-architecture`, `check-admin-route-gates`, `check-resupply-migration-prefix`, `check-ts-syntax`) plus operator utilities under `src/`: `preflight-prod-env.ts` (env validator), `verify-deploy.ts` (post-deploy routing probe), `auth-bootstrap-admin.ts` / `auth-set-admin-password.ts`, `seed-stripe-products.ts`, `probe-supabase.ts`. |
+| `e2e/`                          | Playwright end-to-end suite (storefront load, results-page resilience, axe a11y). Run from the repo root, not a workspace.                                                                                                       |
+| `docs/`                         | Architecture notes, post-mortems, production readiness, runbooks.                                                                                                                                                                |
 
 There is **one** customer-facing site (`pennfit.up.railway.app/` or your
 bound custom domain). The former separate `api-server`,
@@ -99,12 +103,20 @@ pnpm install                                      # workspace install
 pnpm typecheck                                    # tsc --build + per-app typecheck
 pnpm build                                        # typecheck, then build everywhere
 pnpm lint:resupply                                # ESLint, zero warnings
+pnpm format        / pnpm format:check            # Prettier write / check
+pnpm test                                         # Vitest across all packages
 pnpm --filter <pkg> test                          # Vitest for one package
+pnpm --filter <pkg> test -- <file> -t "<name>"    # one file / one test by name
+pnpm test:e2e      / pnpm test:e2e:ui             # Playwright (e2e/, headless / UI)
 pnpm --filter @workspace/resupply-api dev         # API + in-process worker
 pnpm --filter @workspace/cpap-fitter dev          # storefront + admin SPA
 ```
 
-Operator-facing utilities under `scripts/`:
+Tests are Vitest per-package; `--passWithNoTests` is set so packages with no
+specs don't fail the run. The e2e suite uses Playwright and is configured at
+`e2e/playwright.config.ts` (run from the repo root, not via `--filter`).
+
+Operator-facing utilities under `scripts/` (all `tsx` entrypoints):
 
 ```bash
 pnpm --filter @workspace/scripts preflight:prod        # validate process.env
@@ -112,9 +124,14 @@ pnpm --filter @workspace/scripts preflight:prod        # validate process.env
                                                        # constraints (see
                                                        # docs/runbooks/
                                                        # production-launch.md)
+pnpm --filter @workspace/scripts verify:deploy -- <url> # confirm the API (not
+                                                       # just the SPA) is routed
+                                                       # after a deploy
 pnpm --filter @workspace/scripts auth:bootstrap-admin  # seed the first admin
                                                        # row + email a 1h
                                                        # password-reset link
+pnpm --filter @workspace/scripts auth:set-admin-password # reset an admin's
+                                                       # password directly
 ```
 
 Locally, set `PORT` and `BASE_PATH` per-artifact before running `pnpm
@@ -286,6 +303,46 @@ session uses `semantic_vad` with `eagerness: "low"` and `temperature:
 `lib/resupply-ai/src/realtime-client.ts`). Default voice is `cedar`,
 the warmest of the current Realtime voices.
 
+## Integrations layer (`lib/resupply-integrations*`)
+
+Partner connectivity is split into one shared contract package plus a
+family of per-vendor adapters. `lib/resupply-integrations` owns the
+unified types, the `IntegrationAdapter` contract, and the Zod schemas;
+every vendor package depends on it and on nothing in the data layer.
+The adapters cover three distinct domains:
+
+| Domain                        | Packages                                                                                     | Direction |
+| ----------------------------- | -------------------------------------------------------------------------------------------- | --------- |
+| Therapy-cloud device data     | `-airview` (ResMed), `-care-orchestrator` (Philips), `-react-health` (3B Medical), `-health-connect` (Android, patient-push) | pull / ingest |
+| Inbound DME order channels     | `-parachute` (HMAC webhook), `-ehr-fhir` (SMART-on-FHIR Backend Services)                    | inbound webhook |
+| Payer / claims / prior-auth    | `-office-ally` (837P/835/277CA clearinghouse over SFTP), `-davinci-pas` (FHIR PAS prior auth) | outbound |
+
+Wiring & conventions:
+
+- **Therapy adapters** register in
+  `artifacts/resupply-api/src/lib/integrations/registry.ts` as a
+  module-level `Map<IntegrationSource, IntegrationAdapter>`. Each
+  implements `availability()` + `fetchSnapshot(input)`. The registry is
+  built at boot but env vars are read at **call** time, so credential
+  rotation is honored without a restart. A nightly pg-boss job
+  (`therapy-integrations.nightly-sync`) walks the map and skips any
+  adapter whose `availability().status` is `"unavailable"`.
+- **Inbound/payer adapters** are imported directly by their route
+  handlers / job processors (no central registry). Parachute and EHR
+  FHIR verify the inbound signature/JWT first
+  (`verifyParachuteSignature`, `requireSmartFhirAccess`) before parsing.
+  Office Ally supports a **stub mode** (`OFFICE_ALLY_STUB=1` or missing
+  creds) that writes the 837P to `OFFICE_ALLY_FILE_OUTBOX_DIR` instead of
+  SFTP-uploading.
+- **Feature-gated, fail-soft.** Each package exposes a
+  `read…ConfigOrNull()` helper; missing env → `availability` reports
+  `"unavailable"` (the admin UI shows a badge without leaking which var
+  is unset) rather than throwing at boot.
+- **No DB imports.** Like the other pure libs, integration packages must
+  not import `pg` or `@workspace/resupply-db` — persistence happens only
+  in the registry/route layer. Adapters return summary numerics + status
+  strings; raw vendor response bodies are never logged or persisted.
+
 ## Conventions worth knowing
 
 - **Validation:** Zod at every HTTP boundary in `resupply-api`.
@@ -322,6 +379,12 @@ the warmest of the current Realtime voices.
   now (populate count tiles on `/admin/operations`); the auth gate
   ignores them. Bootstrap the first admin via
   `pnpm --filter @workspace/scripts auth:bootstrap-admin --email=… --role=admin`.
+  Beyond the coarse `requireAdmin`, finer-grained admin routes use
+  `requirePermission("…")`; `scripts/check-admin-route-gates.sh` audits
+  every admin mutation at CI time and fails only on routes with **neither**
+  gate (a route with no gate is public — a real bug). Inbound SMART-on-FHIR
+  routes gate on `requireSmartFhirAccess` (asymmetric JWT over JWKS), not
+  the cookie session.
 - **Inbound MMS:** webhook downloads each `MediaUrlN` with HTTP basic auth
   (5s/media timeout, 5MB cap, image/\* + application/pdf allowlist, max 10
   attachments/message), uploads to Supabase Storage
