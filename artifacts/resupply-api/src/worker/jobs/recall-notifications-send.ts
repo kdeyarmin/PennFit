@@ -206,9 +206,34 @@ function escapeHtml(s: string): string {
     .replace(/'/g, "&#39;");
 }
 
+// In-process single-flight guard, mirroring the onboarding check-in
+// dispatcher. The sweep does SELECT-queued → send → flip-status, so two
+// concurrent in-process runs could both pull the same `queued` rows and
+// double-send to a patient. Today the only trigger is the teamSize=1
+// pg-boss cron (there is no manual "send now" route), so this is
+// PREVENTIVE — it closes the in-process race the moment any concurrent
+// caller is added (e.g. an admin trigger route, the way onboarding has
+// one). It does NOT address the cross-process race the per-row
+// `.eq("status","queued")` guard below describes (two horizontally-
+// scaled worker instances both pulling the SELECT) — that needs a
+// claim-before-send with an intermediate 'sending' status, i.e. a
+// migration.
+let inFlightRecallSweep: Promise<SweepStats> | null = null;
+
 /** Run one sweep cycle. Exported for test injection. */
-export async function runRecallSendSweep(
+export function runRecallSendSweep(
   cfg: MessagingConfig = readRecallMessagingConfig(),
+): Promise<SweepStats> {
+  if (inFlightRecallSweep) return inFlightRecallSweep;
+  const run = runRecallSendSweepInner(cfg).finally(() => {
+    inFlightRecallSweep = null;
+  });
+  inFlightRecallSweep = run;
+  return run;
+}
+
+async function runRecallSendSweepInner(
+  cfg: MessagingConfig,
 ): Promise<SweepStats> {
   const supabase = getSupabaseServiceRoleClient();
   const stats: SweepStats = { attempted: 0, sent: 0, failed: 0, skipped: 0 };
