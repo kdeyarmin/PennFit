@@ -34,7 +34,7 @@
 
 CREATE TABLE IF NOT EXISTS "resupply"."shop_order_nps_responses" (
   "id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-  "order_id" uuid NOT NULL
+  "order_id" text NOT NULL
     REFERENCES "resupply"."shop_orders"("id") ON DELETE CASCADE,
   "score" smallint NOT NULL,
   "comment" text,
