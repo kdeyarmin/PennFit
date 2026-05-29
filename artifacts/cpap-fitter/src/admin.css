@@ -105,39 +105,40 @@
     hsl(var(--penn-gold) / 0.2) 0%,
     hsl(var(--penn-navy) / 0) 70%
   );
-}
 
-/*
- * shadcn-flavoured colour token bridge. The four PennPaps storefront
- * admin pages ported from cpap-fitter (Task #37 consolidation) were
- * authored against the shadcn naming convention (`text-muted-
- * foreground`, `bg-muted`, `border-border`, `text-primary`,
- * `text-destructive`, …). The dashboard's own design system uses a
- * different vocabulary (`--ink-2`, `--surface-3`, `--line-1`, …).
- *
- * Rather than rewriting the four pages, we map the shadcn token
- * names onto the dashboard's existing Penn-brand variables via a
- * small `@theme inline` block. Tailwind v4 picks these up as
- * first-class colour utilities so `bg-muted`, `text-primary`, etc.
- * resolve to brand-coherent colours instead of falling through to
- * an unstyled default.
- *
- * Scope: this bridge exists ONLY for the storefront-admin pages.
- * Dashboard-native components should keep using the explicit
- * `--ink-*` / `--surface-*` / `--penn-*` vocabulary above; mixing
- * the two systems in new code defeats the point of the bridge.
- */
-@theme inline {
-  --color-background: hsl(var(--surface-1));
-  --color-foreground: hsl(var(--ink-1));
-  --color-border: hsl(var(--line-1));
-  --color-input: hsl(var(--line-1));
-  --color-muted: hsl(var(--surface-3));
-  --color-muted-foreground: hsl(var(--ink-3));
-  --color-primary: hsl(var(--penn-navy));
-  --color-primary-foreground: hsl(0 0% 100%);
-  --color-destructive: hsl(var(--tone-rose));
-  --color-destructive-foreground: hsl(0 0% 100%);
+  /*
+   * shadcn token bridge — SCOPED to the admin console.
+   *
+   * The storefront-admin pages ported from cpap-fitter (Task #37) use
+   * shadcn token names (`bg-background`, `text-foreground`,
+   * `border-border`, `bg-muted`, `text-primary`, `text-destructive`,
+   * …). Re-point those onto the dashboard's surface / ink / line /
+   * brand scale by overriding the RAW theme tokens the storefront's
+   * Tailwind utilities already read: `.bg-background` compiles to
+   * `background-color: hsl(var(--background))`, so redefining
+   * `--background` here re-points the utility without redeclaring it.
+   *
+   * This is deliberately NOT a top-level `@theme` block. Tailwind v4
+   * `@theme` (even `@theme inline`) emits GLOBAL utility rules, so
+   * remapping `--color-background` there overrode the storefront's own
+   * `.bg-background` for the WHOLE document the moment this lazy-loaded
+   * stylesheet landed in the page — and because these admin values
+   * live only under `.admin-root`, every storefront surface then
+   * resolved to an undefined variable and rendered transparent (this is
+   * what left the PennBot support panel see-through). Scoping the
+   * override to `.admin-root` keeps the bridge admin-only, which is
+   * what we always intended. Guarded by admin.scope.test.ts.
+   */
+  --background: var(--surface-1);
+  --foreground: var(--ink-1);
+  --border: var(--line-1);
+  --input: var(--line-1);
+  --muted: var(--surface-3);
+  --muted-foreground: var(--ink-3);
+  --primary: var(--penn-navy);
+  --primary-foreground: 0 0% 100%;
+  --destructive: var(--tone-rose);
+  --destructive-foreground: 0 0% 100%;
 }
 
 @media (prefers-reduced-motion: reduce) {
