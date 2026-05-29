@@ -574,8 +574,8 @@ async function placeVoiceCall(
           // answers. We pass `day` AND `patientId` so the press-1 callback
           // can attribute the manual alert to the right patient without
           // touching the database first.
-          url: `${clients.voice!.publicBaseUrl}/voice/checkin-twiml?day=${encodeURIComponent(day)}&patientId=${encodeURIComponent(row.patientId)}&journeyId=${encodeURIComponent(row.journeyId)}`,
-          statusCallbackUrl: `${clients.voice!.publicBaseUrl}/voice/status-callback`,
+          url: `${clients.voice!.publicBaseUrl}/resupply-api/voice/checkin-twiml?day=${encodeURIComponent(day)}&patientId=${encodeURIComponent(row.patientId)}&journeyId=${encodeURIComponent(row.journeyId)}`,
+          statusCallbackUrl: `${clients.voice!.publicBaseUrl}/resupply-api/voice/status-callback`,
           record: false,
           timeLimit: 120,
         }),

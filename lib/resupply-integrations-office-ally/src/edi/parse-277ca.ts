@@ -88,13 +88,31 @@ export function parse277CA(input: string): Parsed277CA {
     } else if (seg.id === "STC") {
       const parts = splitComposite(seg.elements[0] ?? "", delimiters.component);
       // STC01-01 is the Health Care Claim Status Category Code per
-      // X12 5010 — A0..A8 for accepted, A3/A7 for rejected, P0..P5
-      // for pended. STC01-02 is the granular status code (numeric),
-      // STC01-03 is the entity identifier.
+      // X12 5010 codeset 507. STC01-02 is the granular status code
+      // (numeric), STC01-03 is the entity identifier.
+      //
+      // The "A" (Acknowledgement) family splits into accept vs. reject:
+      //   A1 / A2          — received / accepted into adjudication → accepted
+      //   A3               — returned as unprocessable             → rejected
+      //   A4               — claim not found                       → rejected
+      //   A6 / A7 / A8     — rejected (missing/invalid/relational) → rejected
+      // P1 / P2 are pended; everything else stays `unknown`.
+      //
+      // The ENTIRE rejection family must be classified as rejected:
+      // dispatch277ca maps any non-"rejected" outcome to
+      // `accepted_277ca`, so a rejection that fell through to `unknown`
+      // (A4 / A6 / A8 — previously unhandled) was silently persisted as
+      // ACCEPTED, masking a denied claim from CSR triage.
       const statusCategoryCode = parts[0] ?? "";
       if (statusCategoryCode === "A1" || statusCategoryCode === "A2") {
         current.outcome = "accepted";
-      } else if (statusCategoryCode === "A3" || statusCategoryCode === "A7") {
+      } else if (
+        statusCategoryCode === "A3" ||
+        statusCategoryCode === "A4" ||
+        statusCategoryCode === "A6" ||
+        statusCategoryCode === "A7" ||
+        statusCategoryCode === "A8"
+      ) {
         current.outcome = "rejected";
       } else if (statusCategoryCode === "P1" || statusCategoryCode === "P2") {
         current.outcome = "pended";

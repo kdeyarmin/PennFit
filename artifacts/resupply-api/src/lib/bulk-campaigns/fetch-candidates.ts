@@ -44,49 +44,76 @@ export async function fetchAudienceCandidates(
   const patientCandidates: PatientCandidate[] = [];
 
   if (input.audienceKind === "all_active_shop_customers") {
-    const { data, error } = await supabase
-      .schema("resupply")
-      .from("shop_customers")
-      .select("customer_id, email_lower, communication_preferences");
-    if (error) throw error;
-    for (const r of data ?? []) {
-      shopCandidates.push({
-        id: r.customer_id,
-        emailLower: r.email_lower,
-        communicationPreferences:
-          r.communication_preferences as ShopCustomerCandidate["communicationPreferences"],
-      });
+    // PAGINATED. PostgREST caps a single response at ~1000 rows; an
+    // unpaginated select silently truncates there and the campaign
+    // would only ever reach the first ~1000 customers (the recipient
+    // list is materialized once from this fetch, never re-scanned).
+    // Mirrors the keyset-paging pattern in worker/jobs/reminders.ts.
+    for (let from = 0; ; from += BATCH) {
+      const { data, error } = await supabase
+        .schema("resupply")
+        .from("shop_customers")
+        .select("customer_id, email_lower, communication_preferences")
+        .order("customer_id", { ascending: true })
+        .range(from, from + BATCH - 1);
+      if (error) throw error;
+      if (!data || data.length === 0) break;
+      for (const r of data) {
+        shopCandidates.push({
+          id: r.customer_id,
+          emailLower: r.email_lower,
+          communicationPreferences:
+            r.communication_preferences as ShopCustomerCandidate["communicationPreferences"],
+        });
+      }
+      if (data.length < BATCH) break;
     }
   } else if (input.audienceKind === "all_active_patients") {
-    const { data, error } = await supabase
-      .schema("resupply")
-      .from("patients")
-      .select("id, email, status, insurance_payer")
-      .eq("status", "active");
-    if (error) throw error;
-    for (const r of data ?? []) {
-      patientCandidates.push({
-        id: r.id,
-        email: r.email,
-        status: r.status,
-        insurancePayer: r.insurance_payer,
-      });
+    // PAGINATED — see the note above; an unpaginated select would
+    // silently drop every active patient past the first ~1000.
+    for (let from = 0; ; from += BATCH) {
+      const { data, error } = await supabase
+        .schema("resupply")
+        .from("patients")
+        .select("id, email, status, insurance_payer")
+        .eq("status", "active")
+        .order("id", { ascending: true })
+        .range(from, from + BATCH - 1);
+      if (error) throw error;
+      if (!data || data.length === 0) break;
+      for (const r of data) {
+        patientCandidates.push({
+          id: r.id,
+          email: r.email,
+          status: r.status,
+          insurancePayer: r.insurance_payer,
+        });
+      }
+      if (data.length < BATCH) break;
     }
   } else if (input.audienceKind === "by_patient_payer") {
-    const { data, error } = await supabase
-      .schema("resupply")
-      .from("patients")
-      .select("id, email, status, insurance_payer")
-      .eq("status", "active")
-      .eq("insurance_payer", input.audiencePayer ?? "");
-    if (error) throw error;
-    for (const r of data ?? []) {
-      patientCandidates.push({
-        id: r.id,
-        email: r.email,
-        status: r.status,
-        insurancePayer: r.insurance_payer,
-      });
+    // PAGINATED — see the note above; a popular payer can exceed the
+    // ~1000-row cap and would otherwise be silently truncated.
+    for (let from = 0; ; from += BATCH) {
+      const { data, error } = await supabase
+        .schema("resupply")
+        .from("patients")
+        .select("id, email, status, insurance_payer")
+        .eq("status", "active")
+        .eq("insurance_payer", input.audiencePayer ?? "")
+        .order("id", { ascending: true })
+        .range(from, from + BATCH - 1);
+      if (error) throw error;
+      if (!data || data.length === 0) break;
+      for (const r of data) {
+        patientCandidates.push({
+          id: r.id,
+          email: r.email,
+          status: r.status,
+          insurancePayer: r.insurance_payer,
+        });
+      }
+      if (data.length < BATCH) break;
     }
   } else if (input.audienceKind === "manual_list") {
     const shopIds = input.manualShopCustomerIds ?? [];
