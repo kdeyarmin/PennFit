@@ -19,7 +19,7 @@ import { logger } from "./lib/logger";
 import { getPendingSessions } from "./lib/voice/pending-sessions";
 import { handleVoiceWsConnection } from "./lib/voice/ws-handler";
 import { readVoiceConfigOrNull } from "./lib/voice/voice-config";
-import { startWorker, stopWorker, clearInFlightWorkerStart } from "./worker/index.js";
+import { startWorker, stopWorker } from "./worker/index.js";
 
 // Route resupply-db's projection-failure log path through the
 // API server's structured pino logger. This eliminates the silent-
@@ -311,9 +311,6 @@ async function attemptStartWorker(): Promise<boolean> {
   let workerTimeoutHandle: ReturnType<typeof setTimeout> | undefined;
   const workerTimeout = new Promise<never>((_, reject) => {
     workerTimeoutHandle = setTimeout(() => {
-      // Clear the in-flight promise so the next retry starts a fresh
-      // attempt rather than joining a potentially-stuck in-flight.
-      clearInFlightWorkerStart();
       reject(
         new Error(
           `startWorker() timed out after ${START_WORKER_TIMEOUT_MS}ms — pg-boss may be unable to reach the database or is waiting on an advisory lock`,

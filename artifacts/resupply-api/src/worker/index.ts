@@ -73,11 +73,7 @@ let workerReady = false;
 // Single-flight guard for startWorker(): the in-flight start promise,
 // or null when no start is running. Lets boot retries join an
 // in-progress attempt instead of opening a second pg-boss instance.
-// Cleared by clearInFlightWorkerStart() when an external timeout fires
-// so subsequent retries can make a fresh attempt.
 let workerStartInFlight: Promise<void> | null = null;
-let workerStartInFlightStartedAt = 0;
-const WORKER_START_SINGLE_FLIGHT_STALE_MS = 30_000;
 
 export function isWorkerReady(): boolean {
   return workerReady;
@@ -85,16 +81,6 @@ export function isWorkerReady(): boolean {
 
 export function getBoss(): PgBoss | null {
   return bossInstance;
-}
-
-/**
- * Clears the in-flight start promise so the next startWorker() call can
- * attempt a fresh start rather than joining a potentially-stuck promise.
- * Called by the external timeout in index.ts when boss.start() is suspected
- * to have hung past START_WORKER_TIMEOUT_MS.
- */
-export function clearInFlightWorkerStart(): void {
-  workerStartInFlight = null;
 }
 
 /**
@@ -116,32 +102,16 @@ export async function startWorker(): Promise<void> {
     return;
   }
   if (workerStartInFlight) {
-    const elapsedMs = Date.now() - workerStartInFlightStartedAt;
-    if (elapsedMs >= WORKER_START_SINGLE_FLIGHT_STALE_MS) {
-      logger.warn(
-        {
-          event: "worker_start_inflight_stale",
-          elapsed_ms: elapsedMs,
-          stale_after_ms: WORKER_START_SINGLE_FLIGHT_STALE_MS,
-        },
-        "worker start in-flight guard stale — allowing a fresh start attempt",
-      );
-      workerStartInFlight = null;
-      workerStartInFlightStartedAt = 0;
-    } else {
-      // A start is already in progress; join it instead of racing a
-      // second boss.start() (which would contend on the advisory lock).
-      return workerStartInFlight;
-    }
+    // A start is already in progress; join it instead of racing a
+    // second boss.start() (which would contend on the advisory lock).
+    return workerStartInFlight;
   }
   const inFlight = doStartWorker().finally(() => {
     if (workerStartInFlight === inFlight) {
       workerStartInFlight = null;
-      workerStartInFlightStartedAt = 0;
     }
   });
   workerStartInFlight = inFlight;
-  workerStartInFlightStartedAt = Date.now();
   return workerStartInFlight;
 }
 
