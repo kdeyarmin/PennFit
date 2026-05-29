@@ -1,5 +1,5 @@
 -- Migration 0060: BEFORE UPDATE triggers for resupply_auth.password_credentials and
--- resupply.reminder_subscriptions (storefront schema), completing the
+-- public.reminder_subscriptions (storefront schema), completing the
 -- updatedAt trigger coverage started in migrations 0054-0056.
 -- The shared trigger functions already exist: resupply.set_updated_at() and
 -- auth.set_updated_at() (created in 0054 and 0059 respectively).
@@ -11,7 +11,7 @@ CREATE TRIGGER trg_auth_password_credentials_set_updated_at
   FOR EACH ROW EXECUTE FUNCTION auth.set_updated_at();
 
 CREATE TRIGGER trg_reminder_subscriptions_set_updated_at
-  BEFORE UPDATE ON resupply.reminder_subscriptions
+  BEFORE UPDATE ON public.reminder_subscriptions
   FOR EACH ROW EXECUTE FUNCTION resupply.set_updated_at();
 
 ALTER TABLE resupply.insurance_leads

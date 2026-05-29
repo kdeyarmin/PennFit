@@ -8,7 +8,7 @@
 
 CREATE TABLE IF NOT EXISTS "resupply"."staff_training_records" (
   "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  "staff_user_id" uuid NOT NULL REFERENCES "resupply"."admin_users"("id") ON DELETE CASCADE,
+  "staff_user_id" text NOT NULL REFERENCES "resupply"."admin_users"("id") ON DELETE CASCADE,
   "training_type" text NOT NULL,
   "course_title" varchar(200),
   "completed_at" date NOT NULL,

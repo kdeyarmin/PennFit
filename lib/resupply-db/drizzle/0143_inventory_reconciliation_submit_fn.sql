@@ -1,4 +1,5 @@
 -- 0143_inventory_reconciliation_submit_fn — atomic submit RPC for
+--> statement-breakpoint
 -- the reconciliation workflow added in 0142.
 --
 -- Why an RPC (vs three sequential Supabase JS calls): the submit

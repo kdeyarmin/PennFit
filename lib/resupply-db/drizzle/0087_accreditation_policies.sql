@@ -39,7 +39,7 @@ CREATE INDEX IF NOT EXISTS "accreditation_policies_category_idx"
 
 CREATE TABLE IF NOT EXISTS "resupply"."admin_policy_attestations" (
   "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  "staff_user_id" uuid NOT NULL REFERENCES "resupply"."admin_users"("id"),
+  "staff_user_id" text NOT NULL REFERENCES "resupply"."admin_users"("id"),
   "policy_id" uuid NOT NULL REFERENCES "resupply"."accreditation_policies"("id") ON DELETE RESTRICT,
   "attested_at" timestamp with time zone NOT NULL DEFAULT now(),
   "signature_method" text NOT NULL DEFAULT 'click_through',
