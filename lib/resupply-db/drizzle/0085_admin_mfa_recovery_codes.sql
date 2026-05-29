@@ -8,7 +8,7 @@
 
 CREATE TABLE IF NOT EXISTS "resupply"."admin_mfa_recovery_codes" (
   "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  "staff_user_id" uuid NOT NULL REFERENCES "resupply"."admin_users"("id") ON DELETE CASCADE,
+  "staff_user_id" text NOT NULL REFERENCES "resupply"."admin_users"("id") ON DELETE CASCADE,
   "code_hash" text NOT NULL,
   "used_at" timestamp with time zone,
   "used_ip" inet,
