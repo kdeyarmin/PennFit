@@ -40,7 +40,7 @@ indexes, and FKs that a bare `CREATE TABLE` would miss.
 
 ## Triage
 
-### Tier 0 — verify now (touched by active/scheduled code)
+### Tier 0 — ✅ DONE (created 2026-05-29; touched by active/scheduled code)
 
 These are referenced by code that runs today, so their absence likely causes
 real (often silent) failures, not just dormant-feature no-ops.
@@ -54,9 +54,25 @@ real (often silent) failures, not just dormant-feature no-ops.
 | `admin_mfa_secrets`, `admin_mfa_recovery_codes` | `lib/auth-deps.ts`, `routes/admin/mfa.ts` | Admin MFA enrollment/verification fails. Verify whether MFA is enforced on sign-in. |
 | `feature_flag_events` | `routes/admin/feature-flags.ts` | Admin Control Center toggle-audit writes fail (the flag still flips, but the activity log errors). |
 
-**Recommendation:** verify each against current behavior and create the ones
-in use. These are small, low-FK tables — the lowest-risk, highest-value
-slice to reconcile first.
+**Status — created 2026-05-29.** All 7 tables backfilled (DDL taken faithfully
+from repo migrations `0160`/`0158`/`0163`/`0084`+`0091`/`0085`/`0137`/`0138`,
+cross-checked against `supabase-types.ts` column-by-column), `service_role`
+grants confirmed, and the PostgREST schema cache reloaded
+(`NOTIFY pgrst, 'reload schema'`) so the app's service-role data path sees
+them. The reminders dedup, Stripe webhook dedup, patient payments/statements,
+admin MFA, and feature-flag toggle-audit paths no longer hit missing tables.
+
+> ⚠️ **Type drift discovered while doing this** — important for Tiers 1–3:
+> production's `resupply.admin_users.id` is **`text`**, but the repo's
+> migrations declare it `uuid`. The two `admin_mfa_*` tables were therefore
+> created with `staff_user_id` **`text`** (not `uuid`) to satisfy the FK.
+> **Lesson:** existing prod tables differ from the repo not just in *presence*
+> but in column *types*. Any FK in a backfilled table must be matched to
+> production's **actual** target-column type — confirm via
+> `information_schema.columns`, don't assume the repo DDL. (`patients.id`
+> *is* `uuid`, so the `patient_*` FKs matched as-is.) This also means a naive
+> "apply the repo migrations" reconciliation would fail; the clean-DB-diff
+> approach must account for these pre-existing type differences.
 
 ### Tier 1 — Insurance billing / claims (RCM)
 
@@ -146,3 +162,7 @@ feature truly works.
   deploy; see
   [`docs/runbooks/chatbot-down-api-not-served-2026-05-29.md`](./runbooks/chatbot-down-api-not-served-2026-05-29.md)).
 - Chatbot + core storefront confirmed working on `pennfit.up.railway.app`.
+- **Tier 0 tables backfilled** (7 tables — see that section above): the
+  active-code drift (reminders dedup, Stripe dedup, patient payments,
+  admin MFA, feature-flag audit) is resolved. Tiers 1–3 remain a per-feature
+  decision.
