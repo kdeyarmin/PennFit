@@ -181,11 +181,19 @@ export async function runInboundWebhookDispatcher(): Promise<DispatchStats> {
     }
 
     if (outcome === null) {
-      // No dispatcher for this source. Move the row back out of
-      // 'processing' so the admin dashboard surfaces it via the
-      // pending partial index — leaving it stuck in 'processing'
-      // would silently hide unknown-source rows from triage.
-      await markRetry(supabase, row.id, `no_dispatcher_for_source:${row.source}`);
+      // No dispatcher for this source — a PERMANENT condition (the
+      // source string is unrecognized; it will not become dispatchable
+      // on a retry). Mark it `rejected` (a terminal status excluded
+      // from the claim scan) rather than `processing_failed`, which the
+      // claim query re-selects every tick — that left unknown-source
+      // rows churning forever (claim → no-dispatcher → re-mark → repeat)
+      // and never reaching a settled state. Rejected rows still surface
+      // in admin triage via their status + processing_error.
+      await markRejected(
+        supabase,
+        row.id,
+        `no_dispatcher_for_source:${row.source}`,
+      );
       stats.skipped_unknown_source += 1;
       continue;
     }

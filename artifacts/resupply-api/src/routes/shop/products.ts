@@ -181,7 +181,19 @@ router.get("/shop/products", async (req, res) => {
             const projected = projectRecurringPrice(price);
             if (!projected) continue;
             const existing = cheapestByProduct.get(productId);
-            if (!existing || projected.unitAmount < existing.unitAmount) {
+            // Deterministic tie-break by price id (lexicographically
+            // lowest) so this selection matches validate-cart.ts exactly.
+            // The two paths iterate different Stripe lists (global here,
+            // product-scoped in validate-cart) whose ordering can differ,
+            // so a list-order-dependent tie-break would let the storefront
+            // surface one equal-priced recurring price while checkout
+            // validation approved another — rejecting a valid subscribe.
+            if (
+              !existing ||
+              projected.unitAmount < existing.unitAmount ||
+              (projected.unitAmount === existing.unitAmount &&
+                projected.id < existing.id)
+            ) {
               cheapestByProduct.set(productId, projected);
             }
           }
