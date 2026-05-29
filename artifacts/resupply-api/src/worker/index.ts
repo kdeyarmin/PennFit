@@ -76,6 +76,8 @@ let workerReady = false;
 // Cleared by clearInFlightWorkerStart() when an external timeout fires
 // so subsequent retries can make a fresh attempt.
 let workerStartInFlight: Promise<void> | null = null;
+let workerStartInFlightStartedAt = 0;
+const WORKER_START_SINGLE_FLIGHT_STALE_MS = 30_000;
 
 export function isWorkerReady(): boolean {
   return workerReady;
@@ -114,13 +116,32 @@ export async function startWorker(): Promise<void> {
     return;
   }
   if (workerStartInFlight) {
-    // A start is already in progress; join it instead of racing a
-    // second boss.start() (which would contend on the advisory lock).
-    return workerStartInFlight;
+    const elapsedMs = Date.now() - workerStartInFlightStartedAt;
+    if (elapsedMs >= WORKER_START_SINGLE_FLIGHT_STALE_MS) {
+      logger.warn(
+        {
+          event: "worker_start_inflight_stale",
+          elapsed_ms: elapsedMs,
+          stale_after_ms: WORKER_START_SINGLE_FLIGHT_STALE_MS,
+        },
+        "worker start in-flight guard stale — allowing a fresh start attempt",
+      );
+      workerStartInFlight = null;
+      workerStartInFlightStartedAt = 0;
+    } else {
+      // A start is already in progress; join it instead of racing a
+      // second boss.start() (which would contend on the advisory lock).
+      return workerStartInFlight;
+    }
   }
-  workerStartInFlight = doStartWorker().finally(() => {
-    workerStartInFlight = null;
+  const inFlight = doStartWorker().finally(() => {
+    if (workerStartInFlight === inFlight) {
+      workerStartInFlight = null;
+      workerStartInFlightStartedAt = 0;
+    }
   });
+  workerStartInFlight = inFlight;
+  workerStartInFlightStartedAt = Date.now();
   return workerStartInFlight;
 }
 
