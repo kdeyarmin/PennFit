@@ -146,6 +146,13 @@ const SECTION_ORDER: Category[] = [
   "accessory",
 ];
 
+/**
+ * Render the PennPaps public shop storefront for browsing and purchasing CPAP supplies.
+ *
+ * Renders the catalog UI including hero, filter bar, search (synced to ?q=), machine/device filter, sorting, recently viewed strip, product grid (or flat search results), review-aggregate-driven "top-rated" ordering, insurance CTA, compare tray, and appropriate loading, unavailable, error, and empty states with retry behavior.
+ *
+ * @returns The shop page element that displays products, filtering and sorting controls, and contextual UI states (loading, error, unavailable, or empty).
+ */
 export function Shop() {
   useDocumentTitle(
     "Shop CPAP supplies",

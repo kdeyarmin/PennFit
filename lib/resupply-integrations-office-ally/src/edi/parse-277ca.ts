@@ -48,6 +48,21 @@ export interface Parsed277CAClaim {
   paidCents: number;
 }
 
+/**
+ * Parse an X12 277CA acknowledgment document into structured claim records.
+ *
+ * Produces one Parsed277CAClaim per subscriber/patient HL block, extracting fields such as trace number, payer claim reference, subscriber/patient identifiers and names, adjudication outcome, payer status messages, and monetary amounts (total charge and paid amount, in cents).
+ *
+ * @returns An object with a `claims` array of Parsed277CAClaim. Each claim contains:
+ * - `traceNumber`: trace identifier or `null`
+ * - `payerClaimRef`: payer claim reference or `null`
+ * - `patientId`: patient identifier or `null`
+ * - `subscriberLastName` / `subscriberFirstName`: subscriber name parts or `null`
+ * - `outcome`: one of `"accepted" | "rejected" | "pended" | "unknown"`
+ * - `statusMessages`: array of status message strings
+ * - `totalChargeCents`: total charge in cents (number)
+ * - `paidCents`: paid amount in cents (number)
+ */
 export function parse277CA(input: string): Parsed277CA {
   const { segments, delimiters } = parseX12(input);
   const claims: Parsed277CAClaim[] = [];

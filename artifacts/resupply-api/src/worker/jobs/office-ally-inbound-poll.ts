@@ -610,6 +610,14 @@ async function runDenialAnalysisQuietly(
   }
 }
 
+/**
+ * Associates a parsed 271 eligibility response with the most recent matching eligibility check and updates stored records.
+ *
+ * Parses the provided 271 content, extracts the ISA control number from the trace reference (the second hyphen-delimited segment), looks up the latest eligibility_checks row with that `isa_control_number`, and if found updates that check with parsed eligibility fields, sets `status` to `"parsed"`, records `responded_at` and `applied_to_inbound_file_id`, and writes a compact `parse_summary_json` to the corresponding clearinghouse inbound file. If `traceReference` is missing, the derived ISA control number is empty, or no matching eligibility check exists, the function returns without making changes.
+ *
+ * @param inboundFileId - The id of the `resupply.clearinghouse_inbound_files` row to link the parsed summary to
+ * @param content - Raw 271 EDI payload to parse
+ */
 export async function dispatch271(
   supabase: SupabaseClient,
   inboundFileId: string,

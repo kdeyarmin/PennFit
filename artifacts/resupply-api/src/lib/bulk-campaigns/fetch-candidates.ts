@@ -36,6 +36,21 @@ export interface FetchCandidatesResult {
  *  comfortably under 32KB. */
 const BATCH = 1000;
 
+/**
+ * Fetches and materializes shop-customer and patient candidate lists from the `resupply` schema according to the specified audience.
+ *
+ * For the `"all_active_shop_customers"`, `"all_active_patients"`, and `"by_patient_payer"` modes the function pages through results to avoid PostgREST row limits; for `"manual_list"` it queries the provided ID lists in batches.
+ *
+ * @param input - Selection parameters. `input.audienceKind` determines which candidates are fetched:
+ *   - `"all_active_shop_customers"`: all shop customers
+ *   - `"all_active_patients"`: all patients with status `"active"`
+ *   - `"by_patient_payer"`: active patients filtered by `input.audiencePayer`
+ *   - `"manual_list"`: explicit lists in `input.manualShopCustomerIds` and `input.manualPatientIds`
+ * @returns An object containing:
+ *   - `shopCandidates`: array of shop customer candidates with `id`, `emailLower`, and `communicationPreferences`
+ *   - `patientCandidates`: array of patient candidates with `id`, `email`, `status`, and `insurancePayer`
+ * @throws The first Supabase error encountered when a query fails.
+ */
 export async function fetchAudienceCandidates(
   supabase: SupabaseClient,
   input: FetchCandidatesInput,
