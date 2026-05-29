@@ -1,5 +1,4 @@
 -- 0164 — server-side aggregation RPCs for two admin read endpoints
---> statement-breakpoint
 -- that were scanning up to 10,000 rows into Node and grouping in JS
 -- on every request.
 --
