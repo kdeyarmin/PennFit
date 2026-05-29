@@ -4,7 +4,13 @@
 // per-day script renderers so a copy-paste error can't slip into
 // production unnoticed.
 
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const SRC = readFileSync(path.join(__dirname, "checkin-dispatcher.ts"), "utf8");
 
 import {
   isWithinCallWindow,
@@ -159,5 +165,29 @@ describe("isWithinCallWindow", () => {
     expect(
       isWithinCallWindow(new Date("2026-01-18T16:00:00Z")),
     ).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Source structural checks — voice call URL paths (PR change)
+// ---------------------------------------------------------------------------
+// The PR changed the TwiML and status-callback URLs:
+//   Before: `${publicBaseUrl}/resupply-api/voice/checkin-twiml`
+//   After:  `${publicBaseUrl}/voice/checkin-twiml`
+//
+//   Before: `${publicBaseUrl}/resupply-api/voice/status-callback`
+//   After:  `${publicBaseUrl}/voice/status-callback`
+//
+// placeVoiceCall() is a private function so we verify the URL shapes via
+// source-text checks (the same pattern used by ws-handler.test.ts).
+describe("checkin-dispatcher — voice call URL paths (PR change)", () => {
+  it("uses /voice/checkin-twiml (not /resupply-api/voice/checkin-twiml)", () => {
+    expect(SRC).toContain("/voice/checkin-twiml");
+    expect(SRC).not.toContain("/resupply-api/voice/checkin-twiml");
+  });
+
+  it("uses /voice/status-callback (not /resupply-api/voice/status-callback)", () => {
+    expect(SRC).toContain("/voice/status-callback");
+    expect(SRC).not.toContain("/resupply-api/voice/status-callback");
   });
 });
