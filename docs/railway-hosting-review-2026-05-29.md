@@ -119,14 +119,26 @@ Implications / actions:
   Both are owner tradeoffs (binary-in-git vs. deploy resilience) — flagged, not
   changed here.
 
-### R2 — Node version range `">=24"` resolution under Railpack is ambiguous
-Root `engines.node = ">=24"`; Railpack's documented default is **22** and the
-docs don't confirm how semver **ranges** resolve. Production presumably works
-today, but to be deterministic:
-- This review adds a `.node-version` file (`24`) as a secondary signal.
-- Highest-priority override is the `RAILPACK_NODE_VERSION` Railway variable —
-  recommend setting `RAILPACK_NODE_VERSION=24` in Railway → Variables, and/or
-  confirm the built Node major in the deploy logs.
+### R2 — Pin the Node version explicitly (range `">=24"` can fall back)
+Root `engines.node = ">=24"`; Railpack's documented default is **22**. Multiple
+Railway community reports describe Railpack **silently falling back to its
+default (or even Node 18)** when the requested major isn't in its package
+catalog or a range can't be satisfied — so a range like `">=24"` is not a
+guaranteed pin. In practice this is **most likely fine today** (Node 24 reached
+LTS in late 2025 and production is live), but it is worth making deterministic.
+
+Important caveat on the fix: Railpack's resolution **priority** is
+`RAILPACK_NODE_VERSION` → `engines.node` → `.nvmrc` → `.node-version` → mise →
+default. Because `engines.node` is consulted **before** `.node-version`, the
+`.node-version` file this review adds only helps if Railpack falls through the
+`engines` range without resolving it — it may be ignored entirely. The only
+fully reliable override is therefore:
+- **Set `RAILPACK_NODE_VERSION=24` in Railway → Variables** (highest priority),
+  and/or pin `engines.node` to a concrete value (e.g. `24.x`).
+- Confirm the actual Node major in the next Railway **build log** (Railpack
+  prints the resolved version) and in `/resupply-api`'s boot logs.
+- The `.node-version` (`24`) added here is a harmless secondary signal (also
+  used by nvm/fnm for local dev); it is **not** a substitute for the above.
 
 ### R3 — Make host binding explicit (optional, low)
 `src/index.ts:383` relies on Node's implicit `::` dual-stack bind. Functionally
