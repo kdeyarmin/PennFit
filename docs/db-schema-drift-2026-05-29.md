@@ -173,3 +173,22 @@ feature truly works.
   active-code drift (reminders dedup, Stripe dedup, patient payments,
   admin MFA, feature-flag audit) is resolved. Tiers 1–3 remain a per-feature
   decision.
+- **`worker_run_summary` created** — the PHI/attachment-sweep (a *core* job,
+  not a dormant feature) writes a run row here, and the ops dashboard's
+  "last run" tile reads it. Additive, no FK.
+- **Dormant cron jobs auto-gated.** A self-healing table-existence guard
+  (`artifacts/resupply-api/src/worker/lib/table-guard.ts` →
+  `registerIfProvisioned`) now wraps the registration of the scheduled jobs
+  whose tables are absent, so they neither register a worker nor keep a stale
+  cron firing into a missing table (it `unschedule`s any prior cron). They
+  self-enable on the next boot once their tables exist; environments that have
+  the tables are unaffected; the probe fails open so a transient DB blip can't
+  disable a job whose table exists. Jobs gated this way (10):
+  `webhook.dispatch`, `billing.auto-workflow`, `pecos.sync`, `dwo.expiry-sweep`,
+  `prior-auth.expiry-sweep`, `recall-notifications.send`,
+  `patient-maintenance.weekly-nudge`, `therapy-milestones.run`,
+  `coaching-plan.progress-sweep`, `shop-inventory.low-stock-alerts`.
+  (`bulk-campaign-tick` is event-driven, not cron — it never fires without a
+  campaign, so it needed no gate. The inbound-referral cluster stays behind its
+  explicit `RESUPPLY_INBOUND_REFERRALS_ENABLED` opt-in since it's an external
+  partner integration.)

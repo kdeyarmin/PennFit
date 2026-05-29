@@ -67,6 +67,7 @@ import { registerInboundReferralPreflightJob } from "./jobs/inbound-referral-pre
 import { registerReferralStatusOutboundJob } from "./jobs/inbound-referral-status-outbound.js";
 import { registerPrescriptionRequestAutoDraftJob } from "./jobs/prescription-request-auto-draft.js";
 import { registerConversationOrphanAssigneeSweepJob } from "./jobs/conversation-orphan-assignee-sweep.js";
+import { registerIfProvisioned } from "./lib/table-guard.js";
 
 let bossInstance: PgBoss | null = null;
 let workerReady = false;
@@ -300,10 +301,10 @@ export async function startWorker(): Promise<void> {
   // recall_notifications rows once per day. The matcher
   // (POST /admin/equipment-recalls/:id/match-assets) populates
   // the queue; this job actually delivers email + SMS.
-  await registerRecallNotificationSendJob(boss);
+  await registerIfProvisioned(boss, "recall-notifications.send", ["equipment_recalls", "recall_notifications"], registerRecallNotificationSendJob);
   // Patient hygiene weekly nudge — emails patients with overdue
   // mask-wipe / hose-wash / etc. tasks. Sunday 11:13 UTC.
-  await registerMaintenanceNudgeJob(boss);
+  await registerIfProvisioned(boss, "patient-maintenance.weekly-nudge", ["patient_maintenance_log", "patient_maintenance_nudges"], registerMaintenanceNudgeJob);
   // Abandoned-fitter re-engagement — daily 09:37 UTC. Scans
   // resupply.fitter_leads for opted-in rows aged 3–30 days that
   // never produced a public.orders row, emails a "finish your
@@ -348,7 +349,7 @@ export async function startWorker(): Promise<void> {
   // Adherence coaching progress sweep — refresh latest_compliance_pct
   // on open plans and auto-flip outreach_made → improving when the
   // patient's recent 30-night adherence crosses target.
-  await registerCoachingProgressJob(boss);
+  await registerIfProvisioned(boss, "coaching-plan.progress-sweep", ["patient_coaching_plans"], registerCoachingProgressJob);
   // Phase B.1.1 — daily multi-channel onboarding check-in dispatch
   // (day 3 / 7 / 30 / 60 / 90) + daily compliance scan that creates
   // CSR alerts for at-risk patients. Both crons share the Supabase
@@ -372,7 +373,7 @@ export async function startWorker(): Promise<void> {
   // claims start denying. The /patients/:id/prior-authorizations
   // route header has long claimed this sweep existed; this is its
   // implementation. Runs at 03:47 UTC daily.
-  await registerPriorAuthExpirySweepJob(boss);
+  await registerIfProvisioned(boss, "prior-auth.expiry-sweep", ["prior_authorizations"], registerPriorAuthExpirySweepJob);
 
   // Daily post-delivery follow-up dispatcher. Scans paid shop orders
   // that delivered 3-14 days ago without a follow-up stamp and sends
@@ -388,7 +389,7 @@ export async function startWorker(): Promise<void> {
   // patient_therapy_milestones UNIQUE constraint. Runs at 04:53 UTC,
   // paired with the therapy nightly sync (04:30) so we work against
   // fresh data.
-  await registerTherapyMilestonesJob(boss);
+  await registerIfProvisioned(boss, "therapy-milestones.run", ["patient_therapy_milestones"], registerTherapyMilestonesJob);
 
   // Weekly lapsed-customer win-back. Mondays at 13:17 UTC. Sends one
   // "we miss you" email to any shop_customers row whose last paid
@@ -434,7 +435,7 @@ export async function startWorker(): Promise<void> {
 
   // Daily CMS PECOS Order/Referring sync. Powers the preflight
   // "ordering provider not PECOS-enrolled" denial blocker.
-  await registerPecosSyncJob(boss);
+  await registerIfProvisioned(boss, "pecos.sync", ["providers", "providers_pecos_status"], registerPecosSyncJob);
 
   // Daily capped-rental month advance (mig 0134). For each active
   // cycle past the next anniversary, generates a draft monthly
@@ -443,16 +444,16 @@ export async function startWorker(): Promise<void> {
 
   // Weekly DWO / CMN renewal sweep (mig 0134). T-60/T-30/T-7 CSR
   // alerts before expires_on.
-  await registerDwoExpirySweepJob(boss);
+  await registerIfProvisioned(boss, "dwo.expiry-sweep", ["dwo_documents"], registerDwoExpirySweepJob);
 
   // Every minute — drain webhook_deliveries with exponential
   // backoff retries. HMAC-SHA256-signed POSTs to subscriber URLs.
-  await registerWebhookDispatcherJob(boss);
+  await registerIfProvisioned(boss, "webhook.dispatch", ["webhook_deliveries", "webhook_subscriptions"], registerWebhookDispatcherJob);
 
   // Every 5 minutes — auto-workflow pass: heuristic-score + AI-scrub
   // risky drafts, AI-analyze fresh denials, publish
   // billing_statement.due for patients with cooldown-clear balances.
-  await registerAutoWorkflowJob(boss);
+  await registerIfProvisioned(boss, "billing.auto-workflow", ["insurance_claims"], registerAutoWorkflowJob);
 
   // Hourly — warn invited team members whose operator-typed
   // temporary password is approaching ADMIN_PASSWORD_TTL_MS (heads-up
@@ -464,7 +465,7 @@ export async function startWorker(): Promise<void> {
   // Every 6 hours — shop inventory low-stock alert digest. Reads
   // Stripe catalog, dedups per-SKU via resupply.low_stock_alert_state,
   // emails RESUPPLY_ADMIN_EMAILS one rollup per tick.
-  await registerLowStockAlertsJob(boss);
+  await registerIfProvisioned(boss, "shop-inventory.low-stock-alerts", ["low_stock_alert_state"], registerLowStockAlertsJob);
 
   // Every minute — drain pending inbound_webhooks rows and route
   // each to its per-source dispatcher (Parachute today; Phase 4
