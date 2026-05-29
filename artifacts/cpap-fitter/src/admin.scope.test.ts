@@ -172,6 +172,28 @@ describe("admin.css scoping", () => {
       expect(ADMIN_TOKEN_DECL_RE.test(r.body)).toBe(false);
     }
   });
+
+  // Tailwind v4 `@theme` (including `@theme inline`) emits GLOBAL utility
+  // rules — they are NOT scopeable to a selector. admin.css is lazy-loaded
+  // into the same document as the storefront, so a
+  // `@theme { --color-background: hsl(var(--surface-1)) }` here overrides
+  // the storefront's own `.bg-background` for the WHOLE page. Because the
+  // admin surface/ink/line values live only under `.admin-root`, every
+  // storefront surface then resolves to an undefined variable and renders
+  // transparent — which is exactly what left the PennBot support panel
+  // see-through. The admin console must re-point shadcn tokens by
+  // overriding the RAW `--background` / `--foreground` / … variables
+  // *scoped under `.admin-root`* (the storefront's utilities already read
+  // those), never via a global `@theme` block.
+  it("does not remap shared tokens via a global @theme block", () => {
+    expect(
+      /@theme\b/.test(cleaned),
+      "admin.css must not contain an @theme block — Tailwind emits its " +
+        "utilities globally, so it leaks admin colours onto the storefront " +
+        "(undefined vars → transparent surfaces). Override the raw " +
+        "--background/--foreground/… tokens under .admin-root instead.",
+    ).toBe(false);
+  });
 });
 
 // ── @theme inline bridge (new in PR — replaces old scoped overrides) ─────────
