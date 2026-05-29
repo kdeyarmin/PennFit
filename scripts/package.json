@@ -9,6 +9,7 @@
     "auth:bootstrap-admin": "tsx ./src/auth-bootstrap-admin.ts",
     "auth:set-admin-password": "tsx ./src/auth-set-admin-password.ts",
     "preflight:prod": "tsx ./src/preflight-prod-env.ts",
+    "verify:deploy": "tsx ./src/verify-deploy.ts",
     "test": "vitest run --passWithNoTests",
     "test:coverage": "vitest run --passWithNoTests --coverage",
     "typecheck": "tsc -p tsconfig.json --noEmit"

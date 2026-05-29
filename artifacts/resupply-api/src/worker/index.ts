@@ -70,6 +70,10 @@ import { registerConversationOrphanAssigneeSweepJob } from "./jobs/conversation-
 
 let bossInstance: PgBoss | null = null;
 let workerReady = false;
+// Single-flight guard for startWorker(): the in-flight start promise,
+// or null when no start is running. Lets boot retries join an
+// in-progress attempt instead of opening a second pg-boss instance.
+let workerStartInFlight: Promise<void> | null = null;
 
 export function isWorkerReady(): boolean {
   return workerReady;
@@ -82,6 +86,10 @@ export function getBoss(): PgBoss | null {
 /**
  * Start and configure the resupply in-process pg-boss worker and register all resupply scheduled and dispatch jobs.
  *
+ * Idempotent and single-flight: a no-op when pg-boss is already running and fully registered, and when a start is
+ * already in progress (e.g. a boot retry that raced a slow first attempt) callers join the in-flight attempt rather
+ * than opening a second pg-boss connection / advisory-lock holder.
+ *
  * On success this sets the module-level pg-boss instance, attaches structured error and monitor-state handlers,
  * registers recurring resupply and dispatch jobs (reminders, sweeps, campaign ticks, nightly syncs, webhook/inbound
  * dispatchers, workflows, alerts, and other scheduled tasks), and marks the worker ready.
@@ -89,6 +97,25 @@ export function getBoss(): PgBoss | null {
  * @throws If `DATABASE_URL` is not set in the environment.
  */
 export async function startWorker(): Promise<void> {
+  if (bossInstance && workerReady) {
+    // Fully started and all job registrations complete — no-op.
+    return;
+  }
+  if (workerStartInFlight) {
+    // A start is already in progress; join it instead of racing a
+    // second boss.start() (which would contend on the advisory lock).
+    return workerStartInFlight;
+  }
+  const inFlight = doStartWorker().finally(() => {
+    if (workerStartInFlight === inFlight) {
+      workerStartInFlight = null;
+    }
+  });
+  workerStartInFlight = inFlight;
+  return workerStartInFlight;
+}
+
+async function doStartWorker(): Promise<void> {
   const databaseUrl = process.env["DATABASE_URL"];
   if (!databaseUrl) {
     // env-check.ts already validates this at boot, but we keep a
@@ -121,153 +148,166 @@ export async function startWorker(): Promise<void> {
     monitorStateIntervalSeconds: MONITOR_STATE_INTERVAL_SECONDS,
   };
 
-  logger.info(
-    {
-      event: "pg_boss_starting",
-      database_url: maskedDatabaseUrl,
-      pg_boss_config: pgBossConfig,
-    },
-    "pg-boss: starting boss.start()",
-  );
+  let boss: PgBoss;
 
-  const boss = new PgBoss({
-    connectionString: databaseUrl,
-    // Dedicated schema so pg-boss tables never collide with our
-    // application tables. The /readyz check also probes this exact
-    // schema for its `version` table — keep them in lockstep.
-    ...pgBossConfig,
-  });
-
-  boss.on("error", (err) => {
-    logger.error({ err, event: "pg_boss_error" }, "pg-boss error");
-  });
-
-  boss.on("monitor-states", (states) => {
-    // pg-boss MonitorStates shape:
-    //   { all, created, retry, active, completed, cancelled, failed,
-    //     queues: { [name]: { ...same } } }
-    // We only care about the per-queue rollup. A non-zero `failed`
-    // means at least one job exhausted its retry policy; a non-zero
-    // `retry` means at least one job is currently between attempts.
-    // Both are worth surfacing.
-    const trouble: Array<{
-      queue: string;
-      failed: number;
-      retry: number;
-    }> = [];
-    for (const [queue, counts] of Object.entries(states.queues ?? {})) {
-      if (counts.failed > 0 || counts.retry > 0) {
-        trouble.push({
-          queue,
-          failed: counts.failed,
-          retry: counts.retry,
-        });
-      }
-    }
-    if (trouble.length === 0) return;
-    logger.warn(
-      {
-        event: "pg_boss_jobs_unhealthy",
-        queues: trouble,
-        intervalSeconds: MONITOR_STATE_INTERVAL_SECONDS,
-      },
-      "pg-boss queues report failed or retrying jobs",
+  if (bossInstance) {
+    // boss.start() succeeded in a prior attempt but one or more job
+    // registrations failed; reuse the already-running instance so we
+    // don't contend on the advisory lock a second time.
+    boss = bossInstance;
+    logger.info(
+      { event: "pg_boss_registration_retry" },
+      "pg-boss: boss already started — re-running job registrations to complete setup",
     );
-  });
+  } else {
+    logger.info(
+      {
+        event: "pg_boss_starting",
+        database_url: maskedDatabaseUrl,
+        pg_boss_config: pgBossConfig,
+      },
+      "pg-boss: starting boss.start()",
+    );
 
-  // Failed-job alerting (P1.2). pg-boss does NOT emit a per-job
-  // "failed" event we can subscribe to directly; instead, the
-  // `monitor-states` snapshot exposes the rolling count of jobs in
-  // each terminal state (`failed`, `cancelled`, etc.) per queue. We
-  // remember the last-seen `failed` count per queue and fire ONE
-  // structured warn line on each delta — i.e. a single permanent
-  // failure logs once, not every monitoring tick. ops dashboards can
-  // alert on `event: "pgboss_jobs_failed"` to page on a stuck queue.
-  //
-  // The snapshot lives in this closure but the first monitor-states
-  // tick after boot fires a one-time `pgboss_jobs_failed_initial`
-  // line whenever there's a non-zero `failed` count. Without it, a
-  // process bounce immediately after a fresh failure would silently
-  // re-baseline at the post-failure count and never alert — a
-  // crashloop could mask every alert from this surface entirely.
-  // Subsequent ticks delta off `prev` as before so a single permanent
-  // failure only emits one steady-state warning.
-  const lastFailedCounts = new Map<string, number>();
-  boss.on("monitor-states", (snapshot) => {
-    for (const [queueName, state] of Object.entries(snapshot.queues ?? {})) {
-      const baselined = lastFailedCounts.has(queueName);
-      const prev = lastFailedCounts.get(queueName) ?? 0;
-      if (!baselined && state.failed > 0) {
-        // First tick after boot AND there's a non-zero failed count
-        // already on the queue — surface it once so a restart
-        // doesn't swallow alerts for failures that landed during
-        // the restart window.
-        logger.warn(
-          {
-            event: "pgboss_jobs_failed_initial",
-            queue: queueName,
-            total_failed: state.failed,
-            queue_size: state.all,
-            retry_pending: state.retry,
-            active: state.active,
-          },
-          `pg-boss queue '${queueName}' booted with ${state.failed} failed job(s) on the books`,
-        );
-      } else if (state.failed > prev) {
-        logger.warn(
-          {
-            event: "pgboss_jobs_failed",
-            queue: queueName,
-            newly_failed: state.failed - prev,
-            total_failed: state.failed,
-            queue_size: state.all,
-            retry_pending: state.retry,
-            active: state.active,
-          },
-          `pg-boss queue '${queueName}' has ${state.failed - prev} newly failed job(s) (${state.failed} total)`,
-        );
-      }
-      lastFailedCounts.set(queueName, state.failed);
-    }
-  });
+    boss = new PgBoss({
+      connectionString: databaseUrl,
+      // Dedicated schema so pg-boss tables never collide with our
+      // application tables. The /readyz check also probes this exact
+      // schema for its `version` table — keep them in lockstep.
+      ...pgBossConfig,
+    });
 
-  try {
-    await boss.start();
-  } catch (err) {
-    // Capture the full error with stack trace and any nested cause
-    // so we can distinguish DB connectivity failures, schema
-    // permission errors, and pg-boss internal errors at a glance.
-    const serialized: Record<string, unknown> = {
-      event: "pg_boss_start_failed",
-      database_url: maskedDatabaseUrl,
-      pg_boss_config: pgBossConfig,
-    };
-    if (err instanceof Error) {
-      serialized["name"] = err.name;
-      serialized["message"] = err.message;
-      serialized["stack"] = err.stack;
-      // Node.js Error.cause — present on pg-boss connection errors
-      // and any error thrown with `new Error(msg, { cause })`.
-      if ("cause" in err && err.cause != null) {
-        const cause = err.cause;
-        serialized["cause"] =
-          cause instanceof Error
-            ? { name: cause.name, message: cause.message, stack: cause.stack }
-            : String(cause);
+    boss.on("error", (err) => {
+      logger.error({ err, event: "pg_boss_error" }, "pg-boss error");
+    });
+
+    boss.on("monitor-states", (states) => {
+      // pg-boss MonitorStates shape:
+      //   { all, created, retry, active, completed, cancelled, failed,
+      //     queues: { [name]: { ...same } } }
+      // We only care about the per-queue rollup. A non-zero `failed`
+      // means at least one job exhausted its retry policy; a non-zero
+      // `retry` means at least one job is currently between attempts.
+      // Both are worth surfacing.
+      const trouble: Array<{
+        queue: string;
+        failed: number;
+        retry: number;
+      }> = [];
+      for (const [queue, counts] of Object.entries(states.queues ?? {})) {
+        if (counts.failed > 0 || counts.retry > 0) {
+          trouble.push({
+            queue,
+            failed: counts.failed,
+            retry: counts.retry,
+          });
+        }
       }
-    } else {
-      serialized["raw"] = String(err);
+      if (trouble.length === 0) return;
+      logger.warn(
+        {
+          event: "pg_boss_jobs_unhealthy",
+          queues: trouble,
+          intervalSeconds: MONITOR_STATE_INTERVAL_SECONDS,
+        },
+        "pg-boss queues report failed or retrying jobs",
+      );
+    });
+
+    // Failed-job alerting (P1.2). pg-boss does NOT emit a per-job
+    // "failed" event we can subscribe to directly; instead, the
+    // `monitor-states` snapshot exposes the rolling count of jobs in
+    // each terminal state (`failed`, `cancelled`, etc.) per queue. We
+    // remember the last-seen `failed` count per queue and fire ONE
+    // structured warn line on each delta — i.e. a single permanent
+    // failure logs once, not every monitoring tick. ops dashboards can
+    // alert on `event: "pgboss_jobs_failed"` to page on a stuck queue.
+    //
+    // The snapshot lives in this closure but the first monitor-states
+    // tick after boot fires a one-time `pgboss_jobs_failed_initial`
+    // line whenever there's a non-zero `failed` count. Without it, a
+    // process bounce immediately after a fresh failure would silently
+    // re-baseline at the post-failure count and never alert — a
+    // crashloop could mask every alert from this surface entirely.
+    // Subsequent ticks delta off `prev` as before so a single permanent
+    // failure only emits one steady-state warning.
+    const lastFailedCounts = new Map<string, number>();
+    boss.on("monitor-states", (snapshot) => {
+      for (const [queueName, state] of Object.entries(snapshot.queues ?? {})) {
+        const baselined = lastFailedCounts.has(queueName);
+        const prev = lastFailedCounts.get(queueName) ?? 0;
+        if (!baselined && state.failed > 0) {
+          // First tick after boot AND there's a non-zero failed count
+          // already on the queue — surface it once so a restart
+          // doesn't swallow alerts for failures that landed during
+          // the restart window.
+          logger.warn(
+            {
+              event: "pgboss_jobs_failed_initial",
+              queue: queueName,
+              total_failed: state.failed,
+              queue_size: state.all,
+              retry_pending: state.retry,
+              active: state.active,
+            },
+            `pg-boss queue '${queueName}' booted with ${state.failed} failed job(s) on the books`,
+          );
+        } else if (state.failed > prev) {
+          logger.warn(
+            {
+              event: "pgboss_jobs_failed",
+              queue: queueName,
+              newly_failed: state.failed - prev,
+              total_failed: state.failed,
+              queue_size: state.all,
+              retry_pending: state.retry,
+              active: state.active,
+            },
+            `pg-boss queue '${queueName}' has ${state.failed - prev} newly failed job(s) (${state.failed} total)`,
+          );
+        }
+        lastFailedCounts.set(queueName, state.failed);
+      }
+    });
+
+    try {
+      await boss.start();
+    } catch (err) {
+      // Capture the full error with stack trace and any nested cause
+      // so we can distinguish DB connectivity failures, schema
+      // permission errors, and pg-boss internal errors at a glance.
+      const serialized: Record<string, unknown> = {
+        event: "pg_boss_start_failed",
+        database_url: maskedDatabaseUrl,
+        pg_boss_config: pgBossConfig,
+      };
+      if (err instanceof Error) {
+        serialized["name"] = err.name;
+        serialized["message"] = err.message;
+        serialized["stack"] = err.stack;
+        // Node.js Error.cause — present on pg-boss connection errors
+        // and any error thrown with `new Error(msg, { cause })`.
+        if ("cause" in err && err.cause != null) {
+          const cause = err.cause;
+          serialized["cause"] =
+            cause instanceof Error
+              ? { name: cause.name, message: cause.message, stack: cause.stack }
+              : String(cause);
+        }
+      } else {
+        serialized["raw"] = String(err);
+      }
+      logger.fatal(serialized, "pg-boss: boss.start() threw — cannot start worker");
+      throw err;
     }
-    logger.fatal(serialized, "pg-boss: boss.start() threw — cannot start worker");
-    throw err;
+
+    logger.info(
+      { event: "pg_boss_started", database_url: maskedDatabaseUrl },
+      "pg-boss: boss.start() succeeded",
+    );
+
+    bossInstance = boss;
   }
-
-  logger.info(
-    { event: "pg_boss_started", database_url: maskedDatabaseUrl },
-    "pg-boss: boss.start() succeeded",
-  );
-
-  bossInstance = boss;
 
   // Register reminder + attachment-sweep jobs. The handlers
   // themselves tolerate a partially-configured messaging surface
