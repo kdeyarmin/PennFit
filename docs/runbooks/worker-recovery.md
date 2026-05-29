@@ -184,11 +184,10 @@ nothing is processing the queue. Check:
    server stays up regardless (boot was decoupled from the worker; see
    `artifacts/resupply-api/src/index.ts`), so the public site keeps
    serving while the worker retries on a backoff. Watch for
-   `event: "worker_start_failed"` followed by `event:
-   "worker_retry_scheduled"`; if it never reaches "worker ready", the
+   `event: "worker_retry_scheduled"`; if it never reaches "worker ready", the
    likeliest cause is a DDL / schema migration mismatch in
    `pgboss_resupply.*` or the DB being unreachable. Tail logs at
-   `event: "pg_boss_start_failed"` and `event: "pg-boss error"`.
+   `event: "pg_boss_start_failed"` and `event: "pg_boss_error"`.
 3. **Is `boss.subscribe` registered for the queue?** Each
    `register*Job(boss)` call in `startWorker()` opens a worker
    subscription. If a job was added without a corresponding
