@@ -109,9 +109,16 @@ The **failing worker jobs you observed** (`inbound_referral.*`,
 Scheduled jobs that fail today: `inbound-referral-preflight.ts`,
 `inbound-referral-status-outbound.ts`, `inbound-webhook-dispatch.ts`.
 
-**Recommendation:** if you don't ingest EHR/FHIR referrals, **disable these
-dispatchers** (stops the log noise) rather than create the tables. If you do,
-create the set together.
+**Status — dispatchers gated OFF 2026-05-29.** The three failing jobs
+(`inbound-webhook-dispatch`, `inbound_referral.preflight`,
+`inbound-referral.status-outbound`) now skip registration (and `unschedule`
+any stale cron) unless `RESUPPLY_INBOUND_REFERRALS_ENABLED=1`, so they no
+longer fire minute-by-minute into missing tables. The log noise is gone.
+**To enable the feature:** create this tier's tables (matching prod's actual
+FK target types — see the Tier 0 type-drift note) and set
+`RESUPPLY_INBOUND_REFERRALS_ENABLED=1`. (`office-ally-inbound-poll` already
+self-gates to a no-op when no `clearinghouse_credentials` / `OFFICE_ALLY_*`
+config exists, so it was left as-is.)
 
 ### Tier 3 — Growth / ops / clinical (dormant, lower urgency)
 
