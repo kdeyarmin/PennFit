@@ -236,7 +236,7 @@
  * was byte-identical to a GLOBAL rule in index.css, which is always
  * loaded alongside admin.css, so they were pure duplicates whose only
  * effect was to override the storefront's equivalents document-wide
- * (they were unlayered; index.css's live in `@layer base`). The
+ * (they were unlayered; index.css's rules live in `@layer base`). The
  * scrollbar still renders admin-navy inside `.admin-root` because
  * index.css's `--penn-navy` resolves to the admin value within this
  * scope. Do NOT add global (unlayered, non-`.admin-root`) rules to this
