@@ -400,23 +400,30 @@ export function supabaseAuthRepository(
 
     async countRecentFailures(input) {
       const since = new Date(Date.now() - input.sinceMs).toISOString();
-      // Original predicate is "(email matches OR ip matches)" — the
-      // caller passes one or the other (or both) and we OR them.
-      // PostgREST's `.or()` takes a comma-separated filter string;
-      // each clause is `<col>.<op>.<value>`. Both inputs are
-      // server-controlled sentinels (admin email lower-case / a
-      // request IP); they cannot embed PostgREST metacharacters.
-      const ors: string[] = [];
-      if (input.emailLower) ors.push(`email_lower.eq.${input.emailLower}`);
-      if (input.ip) ors.push(`ip.eq.${input.ip}`);
-      if (ors.length === 0) return 0;
-      const { count, error } = await supabase
+      // Count failed attempts matching the given email and/or IP over
+      // the window. `checkLoginRateLimit` always passes exactly ONE of
+      // `emailLower` / `ip` (the per-email and per-IP buckets run as
+      // two separate calls), so chaining `.eq()` is equivalent to the
+      // original "(email OR ip)" predicate while being injection-safe.
+      //
+      // The previous implementation interpolated the value into a
+      // PostgREST `.or()` filter string (`email_lower.eq.<value>`).
+      // `normalizeEmail` (./email.ts) permits `,` `.` `(` `)` in the
+      // local part, so a crafted address such as
+      // `x,success.eq.true@a.com` injected extra OR clauses — the count
+      // query would mis-parse or throw, and `checkLoginRateLimit` then
+      // fails OPEN, silently disabling the per-email lockout. supabase-js
+      // parameterizes `.eq()` values, so no DSL injection is possible.
+      if (!input.emailLower && !input.ip) return 0;
+      let query = supabase
         .schema("resupply_auth")
         .from("login_attempts")
         .select("id", { count: "exact", head: true })
         .eq("success", false)
-        .gte("attempted_at", since)
-        .or(ors.join(","));
+        .gte("attempted_at", since);
+      if (input.emailLower) query = query.eq("email_lower", input.emailLower);
+      if (input.ip) query = query.eq("ip", input.ip);
+      const { count, error } = await query;
       if (error) throw error;
       return count ?? 0;
     },

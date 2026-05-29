@@ -50,6 +50,19 @@ export const SHOP_PATH_PREFIXES = [
   "/resupply-api/shop",
 ] as const;
 
+/** Lowercase prefixes of the patient-portal (`/me/...`) mount tree.
+ *  These routes (e.g. `POST /api/me/payments/checkout-session`,
+ *  `POST /api/me/sleep-coach`) authenticate purely via the `pf_session`
+ *  cookie through the storefront `attachSignedIn` shim — exactly like
+ *  the shop tree — so a signed-in `/me/*` mutation needs the same
+ *  conditional-CSRF gate. They are mounted at `/api` (NOT under
+ *  `/api/shop`), so `isShopMutationRequest` alone missed them, leaving
+ *  cookie-authed state-changing endpoints with no CSRF protection. */
+export const ME_PATH_PREFIXES = [
+  "/api/me",
+  "/resupply-api/me",
+] as const;
+
 /**
  * True iff `req` is a state-changing request to an admin-tree path.
  *
@@ -84,6 +97,25 @@ export function isShopMutationRequest(req: Request): boolean {
   if (ADMIN_SAFE_HTTP_METHODS.has(req.method)) return false;
   const lc = req.path.toLowerCase();
   for (const prefix of SHOP_PATH_PREFIXES) {
+    if (lc === prefix || lc.startsWith(`${prefix}/`)) return true;
+  }
+  return false;
+}
+
+/**
+ * True iff `req` is a state-changing request to a storefront tree that
+ * accepts `pf_session` cookie auth: the shop tree (`/api/shop`, mixed
+ * guest + signed-in) OR the patient-portal tree (`/api/me`, signed-in
+ * only). Used by the app-level conditional-CSRF gate so that EVERY
+ * cookie-authed storefront mutation — shop and `/me/*` alike — must
+ * carry the `X-PF-CSRF` header. Same exact-or-prefixed matcher contract
+ * as the sibling matchers (look-alikes like `/api/men` fall through).
+ */
+export function isStorefrontSessionMutationRequest(req: Request): boolean {
+  if (ADMIN_SAFE_HTTP_METHODS.has(req.method)) return false;
+  if (isShopMutationRequest(req)) return true;
+  const lc = req.path.toLowerCase();
+  for (const prefix of ME_PATH_PREFIXES) {
     if (lc === prefix || lc.startsWith(`${prefix}/`)) return true;
   }
   return false;

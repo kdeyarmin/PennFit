@@ -12,9 +12,11 @@ import { describe, expect, it } from "vitest";
 import {
   ADMIN_PATH_PREFIXES,
   ADMIN_SAFE_HTTP_METHODS,
+  ME_PATH_PREFIXES,
   SHOP_PATH_PREFIXES,
   isAdminMutationRequest,
   isShopMutationRequest,
+  isStorefrontSessionMutationRequest,
 } from "./admin-path";
 
 function req(method: string, path: string): Request {
@@ -156,5 +158,83 @@ describe("isShopMutationRequest", () => {
       false,
     );
     expect(isShopMutationRequest(req("POST", "/api/orders"))).toBe(false);
+  });
+
+  it("does NOT match the patient-portal /me tree (that's the storefront matcher)", () => {
+    // isShopMutationRequest is shop-only; /me coverage lives in
+    // isStorefrontSessionMutationRequest. This pins the boundary so a
+    // future edit can't silently collapse the two.
+    expect(isShopMutationRequest(req("POST", "/api/me/payments/checkout-session"))).toBe(
+      false,
+    );
+  });
+});
+
+describe("ME_PATH_PREFIXES", () => {
+  it("covers both mount trees, lowercase, no trailing slash", () => {
+    expect(ME_PATH_PREFIXES).toContain("/api/me");
+    expect(ME_PATH_PREFIXES).toContain("/resupply-api/me");
+    for (const prefix of ME_PATH_PREFIXES) {
+      expect(prefix).toBe(prefix.toLowerCase());
+      expect(prefix.endsWith("/")).toBe(false);
+    }
+  });
+});
+
+describe("isStorefrontSessionMutationRequest", () => {
+  it.each(["GET", "HEAD", "OPTIONS"])(
+    "returns false for safe method %s",
+    (method) => {
+      expect(
+        isStorefrontSessionMutationRequest(
+          req(method, "/api/me/payments/checkout-session"),
+        ),
+      ).toBe(false);
+    },
+  );
+
+  it.each([
+    // shop tree (delegates to isShopMutationRequest)
+    ["POST", "/api/shop/checkout"],
+    ["POST", "/api/shop/me/quick-checkout"],
+    ["POST", "/resupply-api/shop/checkout"],
+    // patient-portal /me tree (the regression this matcher fixes)
+    ["POST", "/api/me/payments/checkout-session"],
+    ["POST", "/api/me/payments/intent"],
+    ["POST", "/api/me/sleep-coach"],
+    ["POST", "/resupply-api/me/payments/checkout-session"],
+  ])("returns true for %s %s", (method, path) => {
+    expect(isStorefrontSessionMutationRequest(req(method, path))).toBe(true);
+  });
+
+  it.each(["/api/me", "/resupply-api/me"])(
+    "matches the bare /me path %s exactly",
+    (path) => {
+      expect(isStorefrontSessionMutationRequest(req("POST", path))).toBe(true);
+    },
+  );
+
+  it("matches mixed-case /me paths", () => {
+    expect(
+      isStorefrontSessionMutationRequest(
+        req("POST", "/API/Me/payments/checkout-session"),
+      ),
+    ).toBe(true);
+  });
+
+  it.each(["/api/men", "/api/membership", "/api/mens-health", "/resupply-api/metrics"])(
+    "does NOT match look-alike prefix %s",
+    (path) => {
+      expect(isStorefrontSessionMutationRequest(req("POST", path))).toBe(false);
+    },
+  );
+
+  it("does NOT match admin or webhook paths", () => {
+    expect(isStorefrontSessionMutationRequest(req("POST", "/api/admin/users"))).toBe(
+      false,
+    );
+    expect(
+      isStorefrontSessionMutationRequest(req("POST", "/resupply-api/voice/inbound")),
+    ).toBe(false);
   });
 });
