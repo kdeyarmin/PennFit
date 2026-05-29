@@ -10,11 +10,7 @@
 
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { Mock } from "vitest";
-import {
-  submitFitterLead,
-  submitFitterComplete,
-  fetchShopProducts,
-} from "./shop-api";
+import { submitFitterLead, submitFitterComplete, fetchShopProducts } from "./shop-api";
 
 const ORIGINAL_FETCH = globalThis.fetch;
 
@@ -304,6 +300,12 @@ describe("submitFitterComplete", () => {
   });
 });
 
+// ── fetchShopProducts — new simplified behavior (PR change) ──────────────────
+// The PR removed the 404 "unavailable" fallback and the JSON parse guard.
+// 503 still degrades gracefully; any other non-ok status now THROWS instead
+// of returning { unavailable: true }. A 200 with bad JSON also throws (no
+// try/catch guard).
+
 describe("fetchShopProducts", () => {
   const CATALOG = {
     previewMode: false,
@@ -327,7 +329,7 @@ describe("fetchShopProducts", () => {
     });
   });
 
-  test("fetches /resupply-api/shop/products with a JSON Accept header", async () => {
+  test("fetches /resupply-api/shop/products with Accept: application/json", async () => {
     fetchMock.mockResolvedValue({
       ok: true,
       status: 200,
@@ -343,7 +345,7 @@ describe("fetchShopProducts", () => {
     );
   });
 
-  test("degrades to 'unavailable' (with the server message) on 503", async () => {
+  test("degrades to 'unavailable' (with server message) on 503", async () => {
     fetchMock.mockResolvedValue({
       ok: false,
       status: 503,
@@ -354,32 +356,47 @@ describe("fetchShopProducts", () => {
     expect(result).toEqual({ unavailable: true, message: "Stripe is down" });
   });
 
-  // Regression: a misconfigured deploy where /resupply-api/* isn't
-  // routed to a live API lands this call on the SPA history-fallback,
-  // which returns 404 for a JSON request. We must NOT throw
-  // "Failed to load shop products (404)" at the patient — degrade to
-  // the friendly "unavailable" card instead.
-  test("degrades to 'unavailable' on 404 instead of throwing", async () => {
+  test("uses default message when 503 body has no message field", async () => {
     fetchMock.mockResolvedValue({
       ok: false,
-      status: 404,
-      json: async () => {
-        throw new SyntaxError("no body");
-      },
+      status: 503,
+      json: async () => ({}),
     });
 
     const result = await fetchShopProducts();
-    expect("unavailable" in result).toBe(true);
+    expect(result).toMatchObject({ unavailable: true });
     if ("unavailable" in result) {
-      expect(result.unavailable).toBe(true);
       expect(result.message).toMatch(/isn't available/i);
     }
   });
 
-  // A 200 whose body is the SPA HTML shell (some static hosts answer
-  // unknown paths with index.html + 200) must not throw a SyntaxError
-  // out of res.json() — it degrades gracefully.
-  test("degrades to 'unavailable' when a 200 body isn't JSON", async () => {
+  // Regression: 404 previously returned { unavailable: true } (guarded by
+  // the removed `if (res.status === 404)` branch). After the PR, 404 is
+  // just another non-ok status and MUST throw.
+  test("throws on 404 instead of returning unavailable (regression guard)", async () => {
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 404,
+      json: async () => ({}),
+    });
+
+    await expect(fetchShopProducts()).rejects.toThrow(/404/);
+  });
+
+  test("throws on 500", async () => {
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 500,
+      json: async () => ({}),
+    });
+
+    await expect(fetchShopProducts()).rejects.toThrow(/500/);
+  });
+
+  // Regression: a 200 with a non-JSON body previously returned
+  // { unavailable: true } via the removed try/catch guard. After the PR,
+  // res.json() throws directly (a SyntaxError).
+  test("throws SyntaxError when a 200 body is not JSON (regression guard)", async () => {
     fetchMock.mockResolvedValue({
       ok: true,
       status: 200,
@@ -388,19 +405,19 @@ describe("fetchShopProducts", () => {
       },
     });
 
-    const result = await fetchShopProducts();
-    expect("unavailable" in result).toBe(true);
+    await expect(fetchShopProducts()).rejects.toThrow(SyntaxError);
   });
 
-  // 5xx still throws so the shop page's one-shot auto-retry can ride
-  // out a transient server blip (existing behavior, preserved).
-  test("throws on a 500 so the caller can auto-retry", async () => {
+  test("defaults previewMode to false when the field is absent", async () => {
     fetchMock.mockResolvedValue({
-      ok: false,
-      status: 500,
-      json: async () => ({}),
+      ok: true,
+      status: 200,
+      json: async () => ({ products: [], categories: [], byCategory: {} }),
     });
 
-    await expect(fetchShopProducts()).rejects.toThrow(/500/);
+    const result = await fetchShopProducts();
+    if (!("unavailable" in result)) {
+      expect(result.previewMode).toBe(false);
+    }
   });
 });

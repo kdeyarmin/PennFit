@@ -87,60 +87,6 @@ describe("ws-handler — ring-buffer pattern for deepgramTurns (PR change)", () 
   });
 });
 
-// ---------------------------------------------------------------------------
-// Source structural checks — idempotent end-of-call teardown
-// ---------------------------------------------------------------------------
-// Regression guard: a hung OpenAI Realtime WS must still finalize the
-// conversation, persist the Deepgram audit transcript, and run the
-// post-call summary. Previously the max-duration and force-cleanup
-// paths only closed Deepgram + the Twilio WS (and set `closed = true`),
-// silently losing the transcript + summary + handoff routing. All three
-// close paths must now route through the single idempotent
-// `finalizeAndClose`.
-describe("ws-handler — idempotent finalizeAndClose teardown", () => {
-  it("defines a finalizeAndClose helper guarded by the `closed` flag", () => {
-    expect(SRC).toContain("const finalizeAndClose = (");
-    // The guard makes it run exactly once across all close paths.
-    const fnIdx = SRC.indexOf("const finalizeAndClose = (");
-    const guardIdx = SRC.indexOf("if (closed) return;", fnIdx);
-    expect(guardIdx).toBeGreaterThan(fnIdx);
-  });
-
-  it("runs finalize + Deepgram transcript + post-call summary from ONE place", () => {
-    // Each side effect should be invoked from exactly one place now that
-    // the three close paths share `finalizeAndClose` (no duplicated
-    // teardown). Match the call site (`void <fn>(`) so the helper's own
-    // local function definition doesn't count.
-    expect(SRC.split("void runPostCallSummary({").length - 1).toBe(1);
-    expect(SRC.split("void writeDeepgramAuditTranscript(").length - 1).toBe(1);
-    expect(SRC.split("void finalizeConversation(").length - 1).toBe(1);
-  });
-
-  it("routes the clean session.closed path through finalizeAndClose", () => {
-    expect(SRC).toContain("finalizeAndClose(info.reason, { forced: false })");
-  });
-
-  it("routes BOTH force-cleanup paths through finalizeAndClose (forced)", () => {
-    expect(SRC).toContain(
-      'finalizeAndClose("max-duration-exceeded", { forced: true })',
-    );
-    expect(SRC).toContain("finalizeAndClose(reason, { forced: true })");
-  });
-
-  it("no longer leaves a partial force-cleanup that skips finalize", () => {
-    // The old force-cleanup teardown closed the Twilio WS with this
-    // exact reason WITHOUT finalizing. It must be gone.
-    expect(SRC).not.toContain('"force-cleanup-max-duration"');
-  });
-
-  it("resolves the returned promise from finalizeAndClose, not only session.closed", () => {
-    // The old code awaited bridge.once("session.closed"), which never
-    // fires on a wedged OpenAI socket — leaking the promise.
-    expect(SRC).toContain("resolveClosed");
-    expect(SRC).not.toContain('bridge.once("session.closed", () => resolve())');
-  });
-});
-
 describe("ws-handler — MAX_RETAINED_TURNS constant", () => {
   it("declares MAX_RETAINED_TURNS as a numeric constant", () => {
     expect(SRC).toMatch(/const MAX_RETAINED_TURNS\s*=\s*\d+/);
@@ -240,5 +186,37 @@ describe("ring-buffer algorithm (replicated from PR change)", () => {
     for (let i = 1; i <= 10; i++) rb.push(i);
     expect(rb.toArray()).toEqual([8, 9, 10]); // most recent
     expect(rb.toArray()).not.toEqual(oldStyleBuf);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Source structural checks — removed finalizeAndClose / resolveClosed (PR)
+// ---------------------------------------------------------------------------
+// The PR removed the shared `finalizeAndClose` helper and the `resolveClosed`
+// resolver in favour of inline cleanup paths and `bridge.once("session.closed")`.
+// These checks pin the absence of the removed patterns and presence of the
+// replacement so a revert can be caught in review.
+describe("ws-handler — removed finalizeAndClose / resolveClosed (PR change)", () => {
+  it("does NOT define a finalizeAndClose helper", () => {
+    // The idempotent finalizeAndClose abstraction was removed.
+    expect(SRC).not.toContain("const finalizeAndClose = (");
+  });
+
+  it("does NOT use a resolveClosed resolver variable", () => {
+    // The resolveClosed escape-hatch was removed; the returned promise
+    // is now resolved directly from bridge.once("session.closed").
+    expect(SRC).not.toContain("resolveClosed");
+  });
+
+  it("resolves the returned promise via bridge.once(\"session.closed\")", () => {
+    // Replacement pattern: the promise returned by handleVoiceWsConnection
+    // resolves when the bridge emits session.closed.
+    expect(SRC).toContain('bridge.once("session.closed", () => resolve())');
+  });
+
+  it("uses force-cleanup-max-duration reason in the max-duration branch", () => {
+    // The inline force-cleanup (replacing the old finalizeAndClose call)
+    // closes the Twilio WS with this reason string.
+    expect(SRC).toContain('"force-cleanup-max-duration"');
   });
 });
