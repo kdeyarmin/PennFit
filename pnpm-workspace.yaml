@@ -143,3 +143,7 @@ overrides:
   ip-address: ">=10.1.1"
   fast-xml-builder: ">=1.1.7"
   qs: ">=6.15.2"
+  # axios <1.16.1 is vulnerable to Proxy-Authorization header injection via
+  # prototype pollution (patch bypass for null-prototype objects). Pin the
+  # @sendgrid/client transitive to the patched version.
+  "axios@<1.16.1": ^1.16.1
