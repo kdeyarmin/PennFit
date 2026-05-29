@@ -138,13 +138,16 @@ describe("POST /admin/inbound-referrals/:id/share-tokens", () => {
     expect(res.status).toBe(401);
   });
 
-  it("returns 403 when admin lacks conversations.manage permission", async () => {
+  it("allows csr (customer_service_rep) — conversations.manage is granted by the role collapse", async () => {
+    // The 7→3 role collapse maps db role `csr` → customer_service_rep,
+    // which holds conversations.manage (lib/resupply-auth/src/rbac.ts +
+    // rbac.test.ts). A CSR is therefore NOT permission-denied on
+    // share-token management; the request proceeds past the gate.
     stubAdmin("csr");
     const res = await request(makeApp())
       .post(`/admin/inbound-referrals/${REFERRAL_ID}/share-tokens`)
       .send({});
-    expect(res.status).toBe(403);
-    expect(res.body.error).toBe("permission_denied");
+    expect(res.status).not.toBe(403);
   });
 
   it("returns 404 when referral id is not a valid UUID", async () => {
@@ -369,11 +372,12 @@ describe("DELETE /admin/inbound-referrals/:id/share-tokens/:shareTokenId", () =>
     expect(res.status).toBe(401);
   });
 
-  it("returns 403 when admin lacks conversations.manage permission", async () => {
+  it("allows csr (customer_service_rep) — conversations.manage is granted by the role collapse", async () => {
+    // See the POST counterpart: csr → customer_service_rep holds
+    // conversations.manage, so it is not permission-denied here.
     stubAdmin("csr");
     const res = await request(makeApp()).delete(deleteUrl);
-    expect(res.status).toBe(403);
-    expect(res.body.error).toBe("permission_denied");
+    expect(res.status).not.toBe(403);
   });
 
   it("returns 404 when referral id param is not a UUID", async () => {

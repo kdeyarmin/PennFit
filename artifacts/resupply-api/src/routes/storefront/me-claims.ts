@@ -4,9 +4,10 @@
 //   GET /api/me/claims/:claimId                 — claim detail incl. lines + events
 //   GET /api/me/billing-balance                 — total open patient_responsibility
 //
-// Authentication: relies on the storefront `requireAuthenticatedShopper`
-// middleware that sets req.shopCustomerId. We map customer → patient
-// via the shop_customers.email_lower ↔ patients.email join.
+// Authentication: relies on the storefront `attachSignedIn` middleware
+// (mounted in routes/storefront/index.ts) that sets req.shopCustomerId
+// from the pf_session cookie. We map customer → patient via the
+// shop_customers.email_lower ↔ patients.email join.
 //
 // PHI posture: only the logged-in patient sees their own data. No
 // PHI leaks across patients because every query is bounded by

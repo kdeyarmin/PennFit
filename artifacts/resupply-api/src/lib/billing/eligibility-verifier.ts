@@ -102,7 +102,10 @@ export async function verifyEligibility(
     .schema("resupply")
     .from("payer_profiles")
     .select("id, payer_legal_name, office_ally_payer_id, paper_only")
-    .ilike("display_name", coverage.payer_name)
+    .ilike(
+      "display_name",
+      (coverage.payer_name ?? "").replace(/[\\%_]/g, (c: string) => `\\${c}`),
+    )
     .eq("is_active", true)
     .limit(1)
     .maybeSingle();

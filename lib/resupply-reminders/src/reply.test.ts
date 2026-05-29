@@ -337,7 +337,7 @@ describe("replyInConversation — patient lookup", () => {
 
   it("returns patient_missing_contact when SMS patient has no phone_e164", async () => {
     patientReadMock.mockResolvedValue({
-      data: { id: PATIENT_ID, phone_e164: null, email: null },
+      data: { id: PATIENT_ID, status: "active", phone_e164: null, email: null },
       error: null,
     });
 
@@ -352,6 +352,7 @@ describe("replyInConversation — patient lookup", () => {
     patientReadMock.mockResolvedValue({
       data: {
         id: PATIENT_ID,
+        status: "active",
         phone_e164: "000-not-valid",
         email: null,
       },
@@ -360,6 +361,25 @@ describe("replyInConversation — patient lookup", () => {
 
     const result = await replyInConversation(makeInput());
     expect(result.status).toBe("patient_phone_unnormalizable");
+    expect(sendSmsMock).not.toHaveBeenCalled();
+  });
+
+  it("returns patient_opted_out and does NOT send SMS when the patient is paused (texted STOP)", async () => {
+    // TCPA / STOP opt-out: a paused patient must not receive an SMS even
+    // via an admin reply in a still-open thread. Mirrors the
+    // send-sms.ts `patient_not_active` invariant.
+    patientReadMock.mockResolvedValue({
+      data: {
+        id: PATIENT_ID,
+        status: "paused",
+        phone_e164: "+12155551212",
+        email: null,
+      },
+      error: null,
+    });
+
+    const result = await replyInConversation(makeInput());
+    expect(result.status).toBe("patient_opted_out");
     expect(sendSmsMock).not.toHaveBeenCalled();
   });
 });
@@ -381,7 +401,7 @@ describe("replyInConversation — SMS success path", () => {
       error: null,
     });
     patientReadMock.mockResolvedValue({
-      data: { id: PATIENT_ID, phone_e164: "+12155551212", email: null },
+      data: { id: PATIENT_ID, status: "active", phone_e164: "+12155551212", email: null },
       error: null,
     });
     sendSmsMock.mockResolvedValue({ messageSid: "SM_TEST_123" });
@@ -475,7 +495,7 @@ describe("replyInConversation — SMS vendor errors", () => {
       error: null,
     });
     patientReadMock.mockResolvedValue({
-      data: { id: PATIENT_ID, phone_e164: "+12155551212", email: null },
+      data: { id: PATIENT_ID, status: "active", phone_e164: "+12155551212", email: null },
       error: null,
     });
   });
@@ -530,7 +550,7 @@ describe("replyInConversation — email channel", () => {
 
   it("returns patient_missing_contact when email patient has no email address", async () => {
     patientReadMock.mockResolvedValue({
-      data: { id: PATIENT_ID, phone_e164: null, email: null },
+      data: { id: PATIENT_ID, status: "active", phone_e164: null, email: null },
       error: null,
     });
 
@@ -544,7 +564,7 @@ describe("replyInConversation — email channel", () => {
 
   it("returns ok and audits status=ok on email success", async () => {
     patientReadMock.mockResolvedValue({
-      data: { id: PATIENT_ID, phone_e164: null, email: "joan@example.com" },
+      data: { id: PATIENT_ID, status: "active", phone_e164: null, email: "joan@example.com" },
       error: null,
     });
     sendEmailMock.mockResolvedValue({ messageId: "SG_MSG_999" });
@@ -573,7 +593,7 @@ describe("replyInConversation — email channel", () => {
 
   it("returns vendor_api_error and audits sendgrid_error on EmailApiError", async () => {
     patientReadMock.mockResolvedValue({
-      data: { id: PATIENT_ID, phone_e164: null, email: "joan@example.com" },
+      data: { id: PATIENT_ID, status: "active", phone_e164: null, email: "joan@example.com" },
       error: null,
     });
     const { EmailApiError } = await import("@workspace/resupply-email");
@@ -594,7 +614,7 @@ describe("replyInConversation — email channel", () => {
 
   it("re-throws EmailConfigError (must not be swallowed)", async () => {
     patientReadMock.mockResolvedValue({
-      data: { id: PATIENT_ID, phone_e164: null, email: "joan@example.com" },
+      data: { id: PATIENT_ID, status: "active", phone_e164: null, email: "joan@example.com" },
       error: null,
     });
     const { EmailConfigError } = await import("@workspace/resupply-email");
@@ -607,7 +627,7 @@ describe("replyInConversation — email channel", () => {
 
   it("email subject includes practice name", async () => {
     patientReadMock.mockResolvedValue({
-      data: { id: PATIENT_ID, phone_e164: null, email: "joan@example.com" },
+      data: { id: PATIENT_ID, status: "active", phone_e164: null, email: "joan@example.com" },
       error: null,
     });
     sendEmailMock.mockResolvedValue({ messageId: "SG_SUBJ" });
@@ -638,7 +658,7 @@ describe("replyInConversation — PHI scrubbing in audit metadata", () => {
       error: null,
     });
     patientReadMock.mockResolvedValue({
-      data: { id: PATIENT_ID, phone_e164: "+12155551212", email: null },
+      data: { id: PATIENT_ID, status: "active", phone_e164: "+12155551212", email: null },
       error: null,
     });
     sendSmsMock.mockResolvedValue({ messageSid: "SM_PHI_TEST" });

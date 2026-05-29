@@ -874,28 +874,32 @@ describe("PrescriptionsTab — AddPrescriptionModal optional fields", () => {
 });
 
 // ---------------------------------------------------------------------------
-// This PR: Rx packets & faxing link removed from header
+// Rx packets & faxing link present in header
+//
+// A feature branch once removed this header link; the change was reverted
+// on main, so the header still surfaces the "Rx packets & faxing" anchor
+// next to the "+ Add prescription" button.
 // ---------------------------------------------------------------------------
 
-describe("PrescriptionsTab — Rx packets & faxing link removed", () => {
-  it("no longer renders an 'Rx packets & faxing' link in the header", () => {
-    expect(SRC).not.toContain("Rx packets");
-    expect(SRC).not.toContain("faxing");
+describe("PrescriptionsTab — Rx packets & faxing link present", () => {
+  it("renders an 'Rx packets & faxing' link in the header", () => {
+    expect(SRC).toContain("Rx packets");
+    expect(SRC).toContain("faxing");
   });
 
-  it("no longer links to /prescription-requests", () => {
-    expect(SRC).not.toContain("prescription-requests");
+  it("links to the patient's /prescription-requests surface", () => {
+    expect(SRC).toContain("prescription-requests");
   });
 
-  it("no longer has the 'Open the pre-populated faxable Rx packets surface' title attribute", () => {
-    expect(SRC).not.toContain("pre-populated faxable Rx packets surface");
+  it("has the 'Open the pre-populated faxable Rx packets surface' title attribute", () => {
+    expect(SRC).toContain("pre-populated faxable Rx packets surface");
   });
 
-  it("header section only has the '+ Add prescription' button (no extra link)", () => {
-    // Confirm the header section still renders the button but no anchor link.
+  it("header section has both the Rx-packets link and the '+ Add prescription' button", () => {
+    // Confirm the header section renders the button AND the anchor link.
     expect(SRC).toContain("+ Add prescription");
     // The containing div: flex items-center justify-between gap-3
-    // should not contain an <a> element pointing at prescription-requests.
+    // contains an <a> element pointing at prescription-requests.
     const headerStart = SRC.indexOf("flex items-center justify-between gap-3");
     const addBtnIdx = SRC.indexOf("+ Add prescription", headerStart);
     expect(headerStart).toBeGreaterThanOrEqual(0);
@@ -904,7 +908,7 @@ describe("PrescriptionsTab — Rx packets & faxing link removed", () => {
       headerStart,
       addBtnIdx + "+ Add prescription".length,
     );
-    expect(headerSection).not.toContain("prescription-requests");
+    expect(headerSection).toContain("prescription-requests");
   });
 
   it("+ Add prescription button is still present and triggers setShowAdd(true)", () => {

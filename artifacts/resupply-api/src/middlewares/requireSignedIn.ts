@@ -45,6 +45,15 @@ declare global {
     interface Request {
       userCustomerId?: string;
       /**
+       * Alias of `userCustomerId` for the patient-portal storefront
+       * routers (me-claims / me-billing / me-payments /
+       * me-insurance-estimate / sleep-coach) which read
+       * `req.shopCustomerId`. Populated by the same `attach()` below so
+       * both names resolve to the session-derived customer key — there
+       * is no client-controlled source.
+       */
+      shopCustomerId?: string;
+      /**
        * Customer profile attached by `customerIdResolver` after
        * an in-house cookie has been validated. Handlers that need
        * the email / display name should read these fields rather
@@ -115,6 +124,8 @@ async function resolveCustomer(req: Request): Promise<Resolved | null> {
 
 function attach(req: Request, r: Resolved): void {
   req.userCustomerId = r.customerKey;
+  // Alias for the patient-portal routers that read `req.shopCustomerId`.
+  req.shopCustomerId = r.customerKey;
   req.shopCustomerEmail = r.email;
   req.shopCustomerDisplayName = r.displayName;
 }

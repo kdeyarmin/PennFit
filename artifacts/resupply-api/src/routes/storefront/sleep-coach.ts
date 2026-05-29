@@ -34,10 +34,10 @@ const body = z
   .strict();
 
 router.post("/me/sleep-coach", async (req, res) => {
-  // The storefront `requireAuthenticatedShopper` middleware (mounted
-  // up-tree) sets req.shopCustomerId on success; if it didn't run
-  // for any reason, bail. This is mirror of the pattern used by
-  // /me/orders + /me/reorder-suggestions in storefront/index.ts.
+  // The storefront `attachSignedIn` middleware (mounted up-tree in
+  // routes/storefront/index.ts) sets req.shopCustomerId from the
+  // pf_session cookie; if the request isn't signed in it's absent, so
+  // we bail with 401.
   const customerId =
     (req as unknown as { shopCustomerId?: string }).shopCustomerId ?? null;
   if (!customerId) {

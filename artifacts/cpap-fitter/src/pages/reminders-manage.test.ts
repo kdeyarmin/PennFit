@@ -147,20 +147,19 @@ describe("reminders-manage — regression: core manage behaviour intact", () => 
   });
 
   it("calls update.mutate with the token and enabled items on Save", () => {
-    // The params are token-only for unauthed manage links and `{}` for
-    // signed-in customers — the ternary spelling shouldn't matter to
-    // this assertion.
+    // The manage link is always token-driven: the captured single-use
+    // token is passed in `params: { token }`.
     expect(SRC).toContain("update.mutate(");
-    expect(SRC).toMatch(/params:\s*hasToken\s*\?\s*\{\s*token\s*\}/);
+    expect(SRC).toMatch(/params:\s*\{\s*token\s*\}/);
     // The actual payload that drives the save — a regression that
     // drops or renames `items: enabled` would silently pass the
     // params-shape check above without this.
     expect(SRC).toMatch(/data:\s*\{\s*items:\s*enabled\s*\}/);
   });
 
-  it("calls unsub.mutate with the token (when present) on Unsubscribe", () => {
+  it("calls unsub.mutate with the token on Unsubscribe", () => {
     expect(SRC).toContain("unsub.mutate(");
-    expect(SRC).toMatch(/unsub\.mutate\([^)]*params:\s*hasToken\s*\?\s*\{\s*token\s*\}/s);
+    expect(SRC).toMatch(/unsub\.mutate\([^)]*params:\s*\{\s*token\s*\}/s);
   });
 
   it("renders the unsubscribed confirmation card after successful unsubscribe", () => {

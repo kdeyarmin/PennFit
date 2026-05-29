@@ -449,32 +449,42 @@ export async function scanForDueReminders(
     defaultChannel: r.default_channel as OutreachChannel | null,
   }));
 
-  // Step 2: PostgREST has no JOIN, so we fetch the three core tables
-  // in parallel and stitch them in JS. Cadence resolution happens
-  // after the join so per-patient overrides and rules can SHORTEN the
-  // cadence below `prescriptions.cadence_days`.
+  // Step 2: PostgREST has no JOIN, so we fetch the core tables and
+  // stitch them in JS. Cadence resolution happens after the join so
+  // per-patient overrides and rules can SHORTEN the cadence below
+  // `prescriptions.cadence_days`.
   //
-  // The original SQL capped the JOIN result at 1000 ordered by
-  // `episodes.due_at DESC`. We replicate that ordering by sorting
-  // the joined rows in JS before truncating to 1000.
-  const [activePrescRes, episodesRes] = await Promise.all([
-    supabase
+  // Both fetches are PAGINATED. PostgREST caps a single response at
+  // ~1000 rows; the previous unpaginated selects silently truncated
+  // there. For `prescriptions` that dropped active prescriptions once
+  // the active roster exceeded the cap. For `episodes` — which
+  // accumulate one row per resupply cycle across ALL patients over ALL
+  // time and are NOT "naturally bounded" — it returned an arbitrary,
+  // stable ~1000-row subset every run, so the patients behind the
+  // dropped episodes were NEVER reminded (not merely deferred). Mirror
+  // the keyset-paging pattern in lib/smart-triggers/evaluator.ts.
+  const PAGE_SIZE = 1000;
+
+  const prescriptionsList: Array<{
+    id: string;
+    patient_id: string;
+    item_sku: string;
+    cadence_days: number;
+    created_at: string;
+  }> = [];
+  for (let from = 0; ; from += PAGE_SIZE) {
+    const { data, error } = await supabase
       .schema("resupply")
       .from("prescriptions")
       .select("id, patient_id, item_sku, cadence_days, created_at")
-      .eq("status", "active"),
-    // Fetch every episode's (id, prescription_id, due_at) — we filter
-    // to only those whose prescription is active in JS. Episodes per
-    // active patient are small; the table is naturally bounded.
-    supabase
-      .schema("resupply")
-      .from("episodes")
-      .select("id, prescription_id, due_at"),
-  ]);
-  if (activePrescRes.error) throw activePrescRes.error;
-  if (episodesRes.error) throw episodesRes.error;
-
-  const prescriptionsList = activePrescRes.data ?? [];
+      .eq("status", "active")
+      .order("id", { ascending: true })
+      .range(from, from + PAGE_SIZE - 1);
+    if (error) throw error;
+    if (!data || data.length === 0) break;
+    prescriptionsList.push(...data);
+    if (data.length < PAGE_SIZE) break;
+  }
   if (prescriptionsList.length === 0) return [];
 
   const prescriptionById = new Map(prescriptionsList.map((p) => [p.id, p]));
@@ -483,10 +493,33 @@ export async function scanForDueReminders(
     prescriptionsList.map((p) => [p.id, p.item_sku]),
   );
 
-  // Filter episodes to only those tied to active prescriptions.
-  const allEpisodes = (episodesRes.data ?? []).filter((e) =>
-    prescriptionById.has(e.prescription_id),
-  );
+  // Fetch episodes for active prescriptions only — chunk the
+  // `prescription_id` IN list (PostgREST URL-length limit; ~200 UUIDs
+  // per request) AND page within each chunk (200 prescriptions can
+  // themselves own far more than the ~1000-row episode cap). This
+  // bounds the fetch to relevant rows and never silently drops any.
+  const allEpisodes: Array<{
+    id: string;
+    prescription_id: string;
+    due_at: string;
+  }> = [];
+  const activePrescriptionIds = prescriptionsList.map((p) => p.id);
+  for (let i = 0; i < activePrescriptionIds.length; i += 200) {
+    const idChunk = activePrescriptionIds.slice(i, i + 200);
+    for (let from = 0; ; from += PAGE_SIZE) {
+      const { data, error } = await supabase
+        .schema("resupply")
+        .from("episodes")
+        .select("id, prescription_id, due_at")
+        .in("prescription_id", idChunk)
+        .order("id", { ascending: true })
+        .range(from, from + PAGE_SIZE - 1);
+      if (error) throw error;
+      if (!data || data.length === 0) break;
+      allEpisodes.push(...data);
+      if (data.length < PAGE_SIZE) break;
+    }
+  }
 
   // Step 3: load patients (active only) for the set of patient_ids we
   // saw on active prescriptions. Chunk the .in() query — PostgREST
@@ -560,8 +593,9 @@ export async function scanForDueReminders(
   }
 
   // Step 6: stitch the candidate (patient, prescription, episode)
-  // tuples in JS, drop quiet-period hits, sort by episode.due_at desc,
-  // and cap at 1000 — same shape the original SQL produced.
+  // tuples in JS, drop quiet-period hits, and sort by episode.due_at
+  // desc so the per-patient dedup in Step 7 keeps each patient's
+  // latest episode.
   interface Candidate {
     patientId: string;
     patientCreatedAt: string;
@@ -604,9 +638,12 @@ export async function scanForDueReminders(
         lastFulfilledByKey.get(`${patient.id}\x00${itemSku}`) ?? null,
     });
   }
-  // due_at desc — same as the SQL order.
+  // due_at desc — same as the SQL order. No row-count cap here: Step 7
+  // dedups by patient, so the working set is bounded by the active-
+  // patient count, not by an arbitrary slice that would silently skip
+  // due patients once candidates exceeded it.
   candidates.sort((a, b) => (a.episodeDueAt < b.episodeDueAt ? 1 : -1));
-  const candidateRows = candidates.slice(0, 1000);
+  const candidateRows = candidates;
 
   // Step 7: per-row eligibility + channel resolution.
   const seenPatient = new Set<string>();

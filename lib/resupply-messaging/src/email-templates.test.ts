@@ -121,10 +121,13 @@ describe("renderResupplyReminder", () => {
     expect(out.text).not.toContain("&amp;");
   });
 
-  it("escapes a URL containing a double-quote to prevent href injection", () => {
-    // An attacker-controlled URL with a literal `"` would close the href
-    // attribute and allow injecting additional attributes. escapeHtml
-    // must encode it as &quot; so the attribute boundary is maintained.
+  it("neutralizes a URL containing a double-quote to prevent href injection", () => {
+    // An attacker-controlled URL with a literal `"` would otherwise close
+    // the href attribute and inject additional attributes. `safeHref`
+    // runs the value through `new URL(...).toString()`, which
+    // percent-encodes the `"` (→ %22) and space (→ %20), so the payload
+    // can never break out of the href attribute (and any non-http(s)
+    // scheme is collapsed to "#").
     const maliciousUrl =
       'https://api.example/click?t=conf" onmouseover="alert(1)';
     const out = renderResupplyReminder({
@@ -134,14 +137,12 @@ describe("renderResupplyReminder", () => {
     // The raw unescaped URL with literal quotes MUST NOT appear inside
     // the href — otherwise the attacker breaks out of the attribute.
     expect(out.html).not.toContain(`href="${maliciousUrl}"`);
-    // The literal `"` from the payload must be entity-encoded so the
-    // attacker can't terminate the attribute. This is the load-bearing
-    // assertion. (Note: the text `onmouseover=` itself can still appear
-    // as plain text INSIDE the encoded href value — it's harmless there
-    // because the surrounding `&quot;` prevents the browser from parsing
-    // it as a real attribute.)
+    // No attribute break-out: the literal `" onmouseover="` sequence must
+    // not survive into the markup in any form.
+    expect(out.html).not.toContain('conf" onmouseover="alert(1)');
+    // The href is the percent-encoded, safe form.
     expect(out.html).toContain(
-      'href="https://api.example/click?t=conf&quot; onmouseover=&quot;alert(1)"',
+      'href="https://api.example/click?t=conf%22%20onmouseover=%22alert(1)"',
     );
   });
 });

@@ -11,10 +11,10 @@
 //        demand instead of persisting the PDF: PHI hygiene plus
 //        the snapshot is small (≤ ~20 line items).
 //
-// Authentication: relies on the same storefront
-// `requireAuthenticatedShopper` middleware as me-claims/me-payments.
-// We never expose patient_id directly; the customer → patient
-// resolution is internal.
+// Authentication: relies on the same storefront `attachSignedIn`
+// middleware (mounted in routes/storefront/index.ts) as
+// me-claims/me-payments. We never expose patient_id directly; the
+// customer → patient resolution is internal.
 
 import { Router, type IRouter } from "express";
 import { z } from "zod";

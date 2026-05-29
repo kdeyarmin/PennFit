@@ -25,6 +25,26 @@
 
 import type { ParachuteOrder } from "@workspace/resupply-integrations-parachute";
 
+// Document URLs come from partner-controlled FHIR
+// DocumentReference.content.attachment.url and are rendered as an
+// `<a href>` on the admin inbound-referrals screen. Allow only
+// http:/https: — a `javascript:` / `data:` / `vbscript:` URL would
+// otherwise execute in the admin-session origin when an admin clicks
+// the link (`rel="noopener noreferrer"` does NOT block `javascript:`).
+// Mirrors `httpUrlOrNull` in @workspace/resupply-integrations-parachute,
+// which guards the sibling Parachute document path the same way.
+function httpUrlOrNull(v: string | null | undefined): string | null {
+  if (typeof v !== "string" || v.length === 0) return null;
+  try {
+    const parsed = new URL(v);
+    return parsed.protocol === "http:" || parsed.protocol === "https:"
+      ? v
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 export type ParseBundleOutcome =
   | { ok: true; order: ParachuteOrder }
   | { ok: false; reason: ParseBundleFailure };
@@ -233,7 +253,7 @@ export function parseFhirBundle(input: unknown): ParseBundleOutcome {
       filename: content?.title ?? null,
       contentType: content?.contentType ?? null,
       sizeBytes: typeof content?.size === "number" ? content.size : null,
-      sourceUrl: content?.url ?? null,
+      sourceUrl: httpUrlOrNull(content?.url),
     };
   });
 

@@ -65,10 +65,11 @@ async function resolvePatientForCustomer(
 }
 
 router.get("/me/insurance-estimate", async (req, res) => {
-  // shopCustomerId is set by the storefront session middleware in
-  // app.ts. Treat its absence as "not signed in" → 401, which the
-  // SPA's fetchPersonalEstimate() resolves to { available: false }
-  // and falls back to the static estimator. NOTE: do NOT zod-parse
+  // shopCustomerId is set by the storefront `attachSignedIn` middleware
+  // (mounted in routes/storefront/index.ts). Treat its absence as "not
+  // signed in" → 401, which the SPA's fetchPersonalEstimate() resolves
+  // to { available: false } and falls back to the static estimator.
+  // NOTE: do NOT zod-parse
   // `req` here — the field is a middleware-set property, not HTTP
   // input, and a 400 response would break the silent-fallback the
   // page relies on for unauthenticated visitors.

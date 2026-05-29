@@ -1,21 +1,19 @@
-// Tests for pages/masks.tsx — simplified filteredMasks expression
+// Tests for pages/masks.tsx — defensive filteredMasks expression
 //
-// PR change: the Array.isArray defensive guard was removed from the
-// filteredMasks computation.
+// Canonical shape: filteredMasks is computed with an Array.isArray
+// defensive guard so a non-JSON /api/masks response (a transient proxy
+// fallback during a deploy, where `data` lands as a string) can't crash
+// the page on `.filter` of a non-array.
 //
-// Before:
 //   const filteredMasks = Array.isArray(data?.masks)
 //     ? data.masks.filter((m) => filter === "all" || m.type === filter)
 //     : [];
 //
-// After:
-//   const filteredMasks =
-//     data?.masks.filter((m) => filter === "all" || m.type === filter) || [];
-//
-// The new form trusts the TypeScript type system (useListMasks always
-// returns `{ masks: MaskEntry[] }` or undefined). The || [] fallback
-// handles the undefined → undefined case via optional chaining
-// short-circuit.
+// A feature branch once tried to drop this guard in favour of bare
+// optional chaining (`data?.masks.filter(...) || []`); that change was
+// reverted on main because `data?.masks` only short-circuits on
+// null/undefined `data`, leaving `.filter` to throw when `data` is a
+// string. These tests pin the guarded form that ships on main.
 
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -29,31 +27,29 @@ const SRC = readFileSync(path.join(__dirname, "masks.tsx"), "utf8");
 // filteredMasks — simplified expression
 // ---------------------------------------------------------------------------
 
-describe("masks — filteredMasks uses optional chaining (no Array.isArray guard)", () => {
-  it("uses data?.masks.filter for the filteredMasks computation", () => {
-    expect(SRC).toContain("data?.masks.filter(");
+describe("masks — filteredMasks uses an Array.isArray defensive guard", () => {
+  it("guards data.masks with Array.isArray before filtering", () => {
+    expect(SRC).toContain("data.masks.filter(");
   });
 
-  it("applies a || [] fallback after the filter expression", () => {
-    // The || [] catch is the replacement for the ternary's else branch.
-    // The filter callback itself contains parens, so we verify both parts
-    // independently rather than with a single greedy regex.
-    expect(SRC).toContain("data?.masks.filter(");
-    expect(SRC).toMatch(/filter\(.*\)\s*\|\|\s*\[\]/s);
+  it("returns [] from the guard's else branch when masks isn't an array", () => {
+    // The ternary's else branch supplies the empty-array fallback for a
+    // non-array `data?.masks` (e.g. a string body during a deploy).
+    expect(SRC).toContain("data.masks.filter(");
+    expect(SRC).toMatch(/Array\.isArray\(data\?\.masks\)[\s\S]*:\s*\[\]/);
   });
 
-  it("no longer wraps filteredMasks in an Array.isArray ternary", () => {
-    // The old form: Array.isArray(data?.masks) ? ... : []
-    expect(SRC).not.toContain("Array.isArray(data?.masks)");
+  it("wraps filteredMasks in an Array.isArray(data?.masks) ternary", () => {
+    expect(SRC).toContain("Array.isArray(data?.masks)");
   });
 
-  it("does not use Array.isArray anywhere in the filteredMasks definition", () => {
-    // Broader guard: no Array.isArray calls should exist for the mask filter.
+  it("uses Array.isArray within the filteredMasks definition", () => {
+    // The guard must live in the filteredMasks region, not elsewhere.
     const filteredMasksSection = SRC.slice(
       Math.max(0, SRC.indexOf("filteredMasks")),
       SRC.indexOf("filteredMasks") + 300,
     );
-    expect(filteredMasksSection).not.toContain("Array.isArray");
+    expect(filteredMasksSection).toContain("Array.isArray");
   });
 
   it("filter predicate checks filter === 'all' OR type match", () => {
@@ -77,7 +73,10 @@ function applyMaskFilter(
   masks: MockMask[] | undefined,
   filter: string,
 ): MockMask[] {
-  // Mirrors: data?.masks.filter((m) => filter === "all" || m.type === filter) || []
+  // Mirrors the guarded form's observable behaviour:
+  //   Array.isArray(data?.masks) ? data.masks.filter(...) : []
+  // For the array / undefined inputs this helper exercises, the guarded
+  // ternary and this optional-chain spelling produce identical results.
   return masks?.filter((m) => filter === "all" || m.type === filter) || [];
 }
 

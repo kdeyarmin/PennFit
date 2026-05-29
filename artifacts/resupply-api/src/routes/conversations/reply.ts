@@ -197,6 +197,13 @@ router.post(
               : "Patient has no email address on file.",
         });
         return;
+      case "patient_opted_out":
+        res.status(409).json({
+          error: "patient_opted_out",
+          message:
+            "This patient has opted out of SMS (texted STOP) or is paused. Outbound texts are blocked; reach them by phone or email.",
+        });
+        return;
       case "patient_phone_unnormalizable":
         res.status(422).json({
           error: "patient_phone_unnormalizable",

@@ -66,6 +66,7 @@ export type ReplyInConversationOutcome =
   | { status: "conversation_not_found" }
   | { status: "conversation_closed" }
   | { status: "patient_missing_contact"; channel: "sms" | "email" }
+  | { status: "patient_opted_out" }
   | { status: "patient_phone_unnormalizable" }
   /**
    * The conversation is on a channel this dispatcher doesn't handle
@@ -128,7 +129,7 @@ export async function replyInConversation(
   const { data: patient, error: patientErr } = await supabase
     .schema("resupply")
     .from("patients")
-    .select("id, phone_e164, email")
+    .select("id, status, phone_e164, email")
     .eq("id", patientId)
     .limit(1)
     .maybeSingle();
@@ -158,6 +159,14 @@ export async function replyInConversation(
 
   let vendorRef: string;
   if (conv.channel === "sms") {
+    // TCPA / STOP opt-out: a patient who texted STOP is paused
+    // (dispatchIntent → pausePatient). Mirror the outbound-reminder
+    // invariant in send-sms.ts and refuse to send SMS to a non-active
+    // patient even via an admin reply in a still-open thread. Email
+    // replies are unaffected — STOP is an SMS-channel opt-out.
+    if (patient.status !== "active") {
+      return { status: "patient_opted_out" };
+    }
     if (!patient.phone_e164) {
       return { status: "patient_missing_contact", channel: "sms" };
     }

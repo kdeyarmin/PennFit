@@ -55,11 +55,14 @@ export function hasLinkHmacKey(env: EnvLike = process.env): boolean {
  * path where issuing or verifying an unkeyed token would be a bug,
  * not a degraded mode.
  *
- * The env value is decoded as base64 (matching the preflight check
- * in scripts/preflight-prod-env.ts `requireBase64Bytes(...)`), then
- * verified against `LINK_HMAC_KEY_MIN_BYTES`. Earlier revisions used
- * `Buffer.from(value, "utf8")` which silently produced key material
- * that did not match what preflight had validated.
+ * The env value is used as raw UTF-8 bytes — it is deliberately NOT
+ * base64-decoded at runtime. Preflight (scripts/preflight-prod-env.ts
+ * `requireBase64Bytes(...)`) is the deploy-time gate that base64-decodes
+ * and enforces `LINK_HMAC_KEY_MIN_BYTES`; this accessor does not mirror
+ * that decode because doing so would change the key material versus every
+ * signed token already in flight (reminder / portal / Rx links),
+ * invalidating them across a deploy. See the inline comment in the body
+ * and the rationale recorded on CodeRabbit PR #409.
  */
 export function getLinkHmacKey(env: EnvLike = process.env): Buffer {
   const value = readEnv(LINK_HMAC_KEY_ENV, env);

@@ -12,6 +12,7 @@ import meClaimsRouter from "./me-claims.js";
 import mePaymentsRouter from "./me-payments.js";
 import meBillingRouter from "./me-billing.js";
 import meInsuranceEstimateRouter from "./me-insurance-estimate.js";
+import { attachSignedIn } from "../../middlewares/requireSignedIn.js";
 
 const router: IRouter = Router();
 
@@ -23,6 +24,17 @@ router.use(adminRouter);
 router.use(usageEventsRouter);
 router.use(remindersRouter);
 router.use(chatRouter);
+// Patient-portal session resolution for the routers below. They read
+// `req.shopCustomerId` (the signed-in patient's customer key) — without
+// this middleware nothing populates it, so every one of these PHI
+// endpoints would 401 (or degrade to the static fallback) for signed-in
+// patients in production. `attachSignedIn` is soft (never blocks): it
+// attaches the customer id from the pf_session cookie when present and
+// is a no-op otherwise, so each router keeps its own gate — hard-401 for
+// claims/payments/billing, graceful `{ available: false }` for the
+// insurance estimate. (Per-route tests mount these routers directly with
+// their own stub, so this aggregate-level wiring doesn't affect them.)
+router.use(attachSignedIn);
 router.use(sleepCoachRouter);
 // Patient-portal claim explorer: read-only /api/me/claims +
 // /api/me/billing-balance for the logged-in patient.
