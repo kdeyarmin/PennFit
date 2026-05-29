@@ -172,7 +172,8 @@ describe("admin.css scoping", () => {
   // fine: those class names never appear on the storefront.
   it("scopes globally-reaching selectors under .admin-root", () => {
     const GLOBAL_REACH =
-      /(^|\s|,)(\*|html|body|:root|#root|:focus-visible|::-webkit-scrollbar)/;
+      /(^|,)\s*(\*|html|body|:root|#root)\b|:focus-visible|::-webkit-scrollbar/;
+    const ADMIN_ROOT_SCOPED = /^\.admin-root(?:$|[\s>+~:.#\[]|::)/;
     const offenders = rules
       .map((r) => r.selectors)
       .filter((selectors) => GLOBAL_REACH.test(selectors))
@@ -181,7 +182,7 @@ describe("admin.css scoping", () => {
           !selectors
             .split(",")
             .map((s) => s.trim())
-            .every((s) => s.startsWith(".admin-root")),
+            .every((s) => ADMIN_ROOT_SCOPED.test(s)),
       );
     expect(
       offenders,
