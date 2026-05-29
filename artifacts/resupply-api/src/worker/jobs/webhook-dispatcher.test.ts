@@ -95,12 +95,14 @@ describe("runWebhookDispatcher", () => {
     await runWebhookDispatcher({ fetchImpl: fetchImpl as unknown as typeof fetch });
     expect(calls).toHaveLength(1);
     const call = calls[0]!;
-    // The dispatcher uses fetchWithPinnedIp for SSRF defence — the
-    // URL is rewritten to substitute the resolved IP literal, with
-    // the original hostname preserved in the Host header for TLS
-    // SNI. Assert on the path + Host header rather than the
-    // literal URL, since example.com's IP changes over time.
+    // fetchWithPinnedIp provides SSRF defence by pinning the TCP
+    // connection to the resolved IP via an undici dispatcher while
+    // passing the ORIGINAL url (hostname intact) — so TLS SNI, cert
+    // validation, and the Host header all target the real host. Assert
+    // the url keeps its hostname + path; the pinned connection IP is an
+    // undici-internal concern, not visible on the fetch call.
     const calledUrl = new URL(call.url);
+    expect(calledUrl.hostname).toBe("example.com");
     expect(calledUrl.pathname).toBe("/wh");
     const headersInit = call.init.headers;
     const headerEntries =
@@ -115,16 +117,11 @@ describe("runWebhookDispatcher", () => {
     const eventType =
       headerEntries["X-PennFit-Event-Type"] ??
       headerEntries["x-pennfit-event-type"];
-    // Host header MUST carry the original hostname (not the
-    // pinned IP) so TLS SNI + virtual-host routing on the
-    // subscriber side still target the right cert / vhost.
-    const host = headerEntries["Host"] ?? headerEntries["host"];
     const expected = createHmac("sha256", "test-secret")
       .update(call.init.body as string)
       .digest("base64");
     expect(sig).toBe(expected);
     expect(eventType).toBe("claim.paid");
-    expect(host).toBe("example.com");
   });
 
   it("marks delivery delivered on a 2xx response", async () => {

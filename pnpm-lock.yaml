@@ -492,6 +492,9 @@ importers:
       twilio:
         specifier: ^6.0.2
         version: 6.0.2
+      undici:
+        specifier: ^7.25.0
+        version: 7.25.0
       web-push:
         specifier: ^3.6.7
         version: 3.6.7
