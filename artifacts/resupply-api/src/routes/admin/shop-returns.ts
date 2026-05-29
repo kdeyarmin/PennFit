@@ -620,6 +620,22 @@ router.post(
       res.status(400).json({ error: "missing_refund_amount" });
       return;
     }
+    // Cap the refund at the order total, mirroring the shop_orders
+    // refund gate (shop-orders.ts: "refund_exceeds_amount"). This
+    // money-out path previously had no upper bound, so an explicit
+    // oversized `amountCents` was sent straight to Stripe and only
+    // bounced there (surfaced as a 502). A clean 409 keeps the refund
+    // honest before we ever touch the payment processor.
+    if (
+      typeof orderRow.amount_total_cents === "number" &&
+      refundCents > orderRow.amount_total_cents
+    ) {
+      res.status(409).json({
+        error: "refund_exceeds_amount",
+        amountTotalCents: orderRow.amount_total_cents,
+      });
+      return;
+    }
 
     let stripeRefundId: string | null = null;
     const stripeConfig = readStripeConfigOrNull(process.env);

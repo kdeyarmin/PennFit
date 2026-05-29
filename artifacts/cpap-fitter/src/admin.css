@@ -141,16 +141,6 @@
   --destructive-foreground: 0 0% 100%;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation-duration: 0.001ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.001ms !important;
-  }
-}
-
 .admin-root {
   font-family:
     "Inter",
@@ -220,12 +210,19 @@
   opacity: 0.6;
 }
 
-#root {
-  position: relative;
-  z-index: 1;
-}
-
-:focus-visible {
+/*
+ * Admin focus ring — SCOPED to `.admin-root`.
+ *
+ * This stylesheet is lazy-loaded into the same document as the
+ * storefront. An unlayered, global `:focus-visible` here would override
+ * the storefront's own ring (index.css defines it in `@layer base`,
+ * which loses to anything unlayered) for the WHOLE page — and this
+ * ring's inner halo references `--surface-2`, declared only under
+ * `.admin-root`, so storefront controls would lose their focus outline
+ * entirely once admin.css is in the page. Scoping keeps the admin ring
+ * admin-only; the storefront keeps its index.css ring.
+ */
+.admin-root :focus-visible {
   outline: none;
   box-shadow:
     0 0 0 2px hsl(var(--surface-2)),
@@ -233,26 +230,18 @@
   border-radius: var(--radius-input);
 }
 
-/* Branded scrollbar — webkit only (Firefox falls back to its default).
- * Matches the surface scale so the bar reads as "part of the page"
- * rather than the OS chrome. */
-::-webkit-scrollbar {
-  width: 12px;
-  height: 12px;
-}
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-::-webkit-scrollbar-thumb {
-  background: hsl(var(--penn-navy) / 0.18);
-  border: 3px solid transparent;
-  border-radius: 999px;
-  background-clip: content-box;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: hsl(var(--penn-navy) / 0.32);
-  background-clip: content-box;
-}
+/*
+ * The reduced-motion reset, the `#root` stacking rule, and the branded
+ * `::-webkit-scrollbar` chrome that used to live here were removed: each
+ * was byte-identical to a GLOBAL rule in index.css, which is always
+ * loaded alongside admin.css, so they were pure duplicates whose only
+ * effect was to override the storefront's equivalents document-wide
+ * (they were unlayered; index.css's rules live in `@layer base`). The
+ * scrollbar still renders admin-navy inside `.admin-root` because
+ * index.css's `--penn-navy` resolves to the admin value within this
+ * scope. Do NOT add global (unlayered, non-`.admin-root`) rules to this
+ * file — scope anything admin-specific under `.admin-root`.
+ */
 
 /* ────────────────────────────────────────────────────────────────────
  * Component utility classes — mirror the cpap-fitter vocabulary so a

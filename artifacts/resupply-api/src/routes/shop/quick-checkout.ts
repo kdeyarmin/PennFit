@@ -27,7 +27,7 @@
 // industry-standard "near-one-click" flow used by Shopify Pay,
 // Squarespace, and others.
 
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 import { Router, type IRouter } from "express";
 import { readCustomerProfile } from "../../lib/customer-profile";
@@ -269,26 +269,56 @@ router.post(
       displayName,
     });
 
-    const idempotencyKey =
+    // Subscription mode is enabled if ANY basket line is "subscription"
+    // (computed here so it can also feed the idempotency key below).
+    const isSubscription = basket.some((b) => b.mode === "subscription");
+
+    // Namespace the Stripe idempotency key by customer + basket, exactly
+    // as /shop/checkout does. Stripe scopes idempotency keys account-wide,
+    // so passing a raw client-supplied `Idempotency-Key` verbatim means
+    // two unrelated authenticated patients who happen to send the same
+    // header value would resolve to the SAME Checkout Session — patient B
+    // would receive patient A's session URL, line items, and Stripe
+    // Customer attachment (cross-user PHI/cart leak). Hashing in the
+    // server-side customerId (and the basket) makes the effective key
+    // unforgeable across customers while still de-duping a real
+    // double-click from one buyer. Including the basket also yields a
+    // fresh Session when the same buyer changes their cart and re-submits.
+    const clientKey =
       typeof req.headers["idempotency-key"] === "string"
         ? req.headers["idempotency-key"]
         : randomUUID();
+    const basketHash = createHash("sha256")
+      .update(
+        JSON.stringify(
+          [...basket]
+            .map((b) => ({
+              priceId: b.priceId,
+              quantity: b.quantity,
+              mode: b.mode,
+            }))
+            .sort((a, b) => a.priceId.localeCompare(b.priceId)),
+        ),
+      )
+      .digest("hex");
+    const idempotencyKey = createHash("sha256")
+      .update(
+        `${customerId}|${clientKey}|${basketHash}|${isSubscription ? "sub" : "one"}`,
+      )
+      .digest("hex");
 
     const successUrl = `${config.publicBaseUrl}${successPath}?session_id={CHECKOUT_SESSION_ID}`;
     const cancelUrl = `${config.publicBaseUrl}${cancelPath}`;
 
-    // Subscription mode is enabled if ANY basket line is "subscription".
     // Stripe permits mixed recurring + one-time line items in
     // subscription mode (the one-time SKU is charged on the first
     // invoice and not renewed). Reorder baskets are always one-time
-    // (set above), so this branch only triggers for fresh "Subscribe
-    // & ship" express checkouts. We MUST drop
+    // (set above), so the subscription branch only triggers for fresh
+    // "Subscribe & ship" express checkouts. We MUST drop
     // payment_intent_data.setup_future_usage in subscription mode
     // (Stripe rejects it) and stamp customer_id onto
-    // subscription_data.metadata so the customer.subscription.*
-    // webhook can recover the buyer without a Session lookup.
-    const isSubscription = basket.some((b) => b.mode === "subscription");
-
+    // subscription_data.metadata so the customer.subscription.* webhook
+    // can recover the buyer without a Session lookup.
     const sharedMetadata: Record<string, string> = {
       source: "pennpaps-shop",
       flow: isSubscription

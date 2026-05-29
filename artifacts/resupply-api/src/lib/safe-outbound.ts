@@ -24,9 +24,9 @@
 // skip the fetch.
 
 import { lookup as dnsLookup } from "node:dns/promises";
-import { Agent as HttpAgent } from "node:http";
-import { Agent as HttpsAgent } from "node:https";
 import { BlockList, isIP } from "node:net";
+
+import { Agent } from "undici";
 
 export class SsrfError extends Error {
   readonly reason: string;
@@ -252,9 +252,10 @@ function isReservedIpv6(ip: string): boolean {
 }
 
 /**
- * Create a fetch request that connects to a pre-resolved IP address
- * to prevent TOCTOU DNS rebinding. The original hostname is preserved
- * in the Host header and URL for TLS SNI validation.
+ * Issue a fetch that CONNECTS to a pre-resolved, SSRF-vetted IP address
+ * while keeping the original hostname for TLS SNI, certificate
+ * validation, and the Host header. This closes the TOCTOU DNS-rebinding
+ * window between `assertSafeOutboundHost()` and the actual connect().
  *
  * Usage:
  *   const safeIp = await assertSafeOutboundHost(parsedUrl.hostname);
@@ -267,41 +268,42 @@ export function fetchWithPinnedIp(
   originalHostname: string,
   init?: RequestInit,
 ): Promise<Response> {
-  // Create a custom agent that forces connection to the pinned IP
-  // while preserving the original hostname for TLS SNI and Host header
-  const parsedUrl = new URL(url);
-  const isIpv6 = pinnedIp.includes(":");
-  const host = isIpv6 ? `[${pinnedIp}]` : pinnedIp;
-
-  // Replace hostname in URL with the pinned IP (wrapped in brackets if IPv6)
-  const pinnedUrl = new URL(url);
-  pinnedUrl.hostname = host;
-
-  // For Node.js fetch (undici), we use a custom dispatcher/agent
-  // that overrides the lookup to return our pinned IP
-  const agent = parsedUrl.protocol === "https:"
-    ? new HttpsAgent({
-        lookup: (_hostname, _options, callback) => {
-          // Always return the pinned IP regardless of hostname
-          callback(null, pinnedIp, isIpv6 ? 6 : 4);
-        },
-      })
-    : new HttpAgent({
-        lookup: (_hostname, _options, callback) => {
-          callback(null, pinnedIp, isIpv6 ? 6 : 4);
-        },
-      });
-
-  // Ensure Host header uses original hostname for TLS SNI
-  const headers = new Headers(init?.headers);
-  if (!headers.has("Host")) {
-    headers.set("Host", originalHostname);
+  // Defense-in-depth: `pinnedIp` must have been resolved FROM the host in
+  // `url`. If they disagree, a caller vetted a different host than the
+  // one the request will present — refuse rather than connect a request
+  // for one host to an IP that was checked for another.
+  if (new URL(url).hostname.toLowerCase() !== originalHostname.toLowerCase()) {
+    throw new SsrfError("pinned_host_mismatch");
   }
 
-  return fetchImpl(pinnedUrl.toString(), {
-    ...init,
-    headers,
-    // @ts-expect-error - Node.js fetch supports agent option (undici)
-    agent,
+  // Pin the TCP connection to the pre-resolved IP via an undici
+  // dispatcher whose `connect.lookup` always returns that IP. We pass the
+  // ORIGINAL `url` (hostname intact) so TLS SNI, cert validation, and the
+  // Host header use the real hostname — only the connection target is
+  // pinned.
+  //
+  // Why a dispatcher and NOT the `agent` option: Node's global fetch is
+  // undici, which ignores the node:http/https `agent` option entirely.
+  // The previous implementation rewrote the URL host to the IP and passed
+  // an ignored https.Agent — so every HTTPS pinned fetch actually FAILED
+  // with ERR_TLS_CERT_ALTNAME_INVALID (SNI=IP vs the hostname's cert) AND
+  // never pinned. undici invokes `connect.lookup` with `{ all: true }`
+  // and consumes the array-callback form `cb(err, [{ address, family }])`
+  // (Node's `LookupFunction` type models the single-address form, hence
+  // the callback cast below).
+  const family = pinnedIp.includes(":") ? 6 : 4;
+  const dispatcher = new Agent({
+    connect: {
+      lookup: (_hostname, _options, callback) => {
+        (
+          callback as unknown as (
+            err: NodeJS.ErrnoException | null,
+            addresses: ReadonlyArray<{ address: string; family: number }>,
+          ) => void
+        )(null, [{ address: pinnedIp, family }]);
+      },
+    },
   });
+
+  return fetchImpl(url, { ...init, dispatcher } as RequestInit);
 }

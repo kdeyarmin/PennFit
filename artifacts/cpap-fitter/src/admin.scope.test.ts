@@ -99,6 +99,8 @@ function findDeclarations(body: string): string[] {
   return tokens;
 }
 
+// ── Tests ─────────────────────────────────────────────────────────────────────
+
 describe("admin.css scoping", () => {
   const cleaned = stripCssComments(ADMIN_CSS);
   const rules = Array.from(iterateTopLevelRules(cleaned));
@@ -158,5 +160,74 @@ describe("admin.css scoping", () => {
         "(undefined vars → transparent surfaces). Override the raw " +
         "--background/--foreground/… tokens under .admin-root instead.",
     ).toBe(false);
+  });
+
+  // Companion to the rule above: the shadcn token bridge must actually be
+  // present (and scoped). admin.css re-points the RAW shadcn variables
+  // (`--background`, `--foreground`, `--primary`, …) under `.admin-root`
+  // so the storefront-admin pages' `bg-background` / `text-primary` / …
+  // utilities resolve to the Penn-brand palette. Guard that the bridge
+  // stays scoped under `.admin-root` (never leaked to `:root`/global).
+  it("declares the raw shadcn token bridge under .admin-root (not globally)", () => {
+    const BRIDGE_TOKENS = [
+      "--background",
+      "--foreground",
+      "--border",
+      "--input",
+      "--muted",
+      "--muted-foreground",
+      "--primary",
+      "--primary-foreground",
+      "--destructive",
+      "--destructive-foreground",
+    ];
+    for (const token of BRIDGE_TOKENS) {
+      const declRe = new RegExp(`(?:^|[\\s;{])(${token})\\s*:`);
+      const declaringRules = rules.filter((r) => declRe.test(r.body));
+      // Every rule that declares a bridge token must be .admin-root-scoped.
+      for (const r of declaringRules) {
+        const allScoped = r.selectors
+          .split(",")
+          .map((s) => s.trim())
+          .every((s) => s === ".admin-root" || s.startsWith(".admin-root"));
+        expect(
+          allScoped,
+          `'${token}' is declared under '${r.selectors}' — the shadcn bridge ` +
+            `must be scoped to .admin-root so it can't leak onto the storefront.`,
+        ).toBe(true);
+      }
+    }
+  });
+
+  // admin.css is lazy-loaded into the storefront's document, so any rule
+  // here whose selector ALSO matches storefront elements (:focus-visible,
+  // ::-webkit-scrollbar*, #root, :root, html, body, the universal *) leaks
+  // admin styling onto the storefront — and because admin colours live
+  // only under `.admin-root`, those rules often resolve to undefined
+  // variables off-admin (e.g. the storefront focus ring vanished when
+  // admin.css's global `:focus-visible`, which references the admin-only
+  // `--surface-2`, won the cascade). Such selectors must be scoped under
+  // `.admin-root`. Admin-only class utilities (`.surface-card`, …) are
+  // fine: those class names never appear on the storefront.
+  it("scopes globally-reaching selectors under .admin-root", () => {
+    const GLOBAL_REACH =
+      /(^|,)\s*(\*|html|body|:root|#root)\b|:focus-visible|::-webkit-scrollbar/;
+    const ADMIN_ROOT_SCOPED = /^\.admin-root(?:$|[\s>+~:.#[]|::)/;
+    const offenders = rules
+      .map((r) => r.selectors)
+      .filter((selectors) => GLOBAL_REACH.test(selectors))
+      .filter(
+        (selectors) =>
+          !selectors
+            .split(",")
+            .map((s) => s.trim())
+            .every((s) => ADMIN_ROOT_SCOPED.test(s)),
+      );
+    expect(
+      offenders,
+      "These admin.css selectors reach storefront elements and must be " +
+        "scoped under .admin-root (or moved to the shared index.css): " +
+        JSON.stringify(offenders, null, 2),
+    ).toEqual([]);
   });
 });

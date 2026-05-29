@@ -208,9 +208,14 @@ CREATE INDEX IF NOT EXISTS "dwo_documents_patient_idx"
   ON "resupply"."dwo_documents" ("patient_id", "expires_on" DESC);
 --> statement-breakpoint
 
+-- NOTE: originally a partial index with `WHERE expires_on >= CURRENT_DATE`,
+-- but CURRENT_DATE is only STABLE (not IMMUTABLE) and Postgres rejects
+-- non-IMMUTABLE functions in an index predicate ("functions in index
+-- predicate must be marked IMMUTABLE"), so that form never builds on a
+-- fresh database. A plain B-tree on expires_on serves the same
+-- "expiring soon" range scan; the predicate was only a size trim.
 CREATE INDEX IF NOT EXISTS "dwo_documents_expiring_idx"
-  ON "resupply"."dwo_documents" ("expires_on")
-  WHERE "expires_on" >= CURRENT_DATE;
+  ON "resupply"."dwo_documents" ("expires_on");
 --> statement-breakpoint
 
 -- ────────────────────────────────────────────────────────────────────

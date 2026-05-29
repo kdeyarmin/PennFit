@@ -610,6 +610,14 @@ async function runDenialAnalysisQuietly(
   }
 }
 
+/**
+ * Associates a parsed 271 eligibility response with the most recent matching eligibility check and updates stored records.
+ *
+ * Parses the provided 271 content, extracts the ISA control number from the trace reference (the second hyphen-delimited segment), looks up the latest eligibility_checks row with that `isa_control_number`, and if found updates that check with parsed eligibility fields, sets `status` to `"parsed"`, records `responded_at` and `applied_to_inbound_file_id`, and writes a compact `parse_summary_json` to the corresponding clearinghouse inbound file. If `traceReference` is missing, the derived ISA control number is empty, or no matching eligibility check exists, the function returns without making changes.
+ *
+ * @param inboundFileId - The id of the `resupply.clearinghouse_inbound_files` row to link the parsed summary to
+ * @param content - Raw 271 EDI payload to parse
+ */
 export async function dispatch271(
   supabase: SupabaseClient,
   inboundFileId: string,
@@ -617,10 +625,16 @@ export async function dispatch271(
 ): Promise<void> {
   const parsed = parse271(content);
   if (!parsed.traceReference) return;
-  // The trace reference echoes our TRN02 from the original 270;
-  // we built it as `<etin>-<isaCtl>` so the ISA-control suffix is
-  // the join key into eligibility_checks.
-  const isaCtl = parsed.traceReference.split("-").pop() ?? "";
+  // The trace reference echoes our TRN02 from the original 270.
+  // build270 constructs it as `<etin>-<isaCtl>-<stCtl>-<nonce>`
+  // (see lib/resupply-integrations-office-ally/src/edi/270.ts), so the
+  // SECOND hyphen-delimited segment is the 9-digit ISA control number
+  // stored on eligibility_checks.isa_control_number. (ETINs are
+  // alphanumeric trading-partner IDs with no hyphens, so index [1] is
+  // stable.) The previous `.pop()` grabbed the trailing random nonce,
+  // which never matched the ISA-control column — so every 271 was
+  // silently dropped.
+  const isaCtl = parsed.traceReference.split("-")[1] ?? "";
   if (!isaCtl) return;
   const { data: check } = await supabase
     .schema("resupply")
