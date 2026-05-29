@@ -93,6 +93,12 @@ function stageFullAdvance({
     data: feeScheduleData,
     error: null,
   });
+  // 4b. capped_rental_cycles optimistic month-claim update — returns the
+  //     claimed row so the advancer proceeds to generate the claim.
+  stageSupabaseResponse("capped_rental_cycles", "update", {
+    data: [{ id: "cycle-001" }],
+    error: null,
+  });
   // 5. insurance_claims insert
   stageSupabaseResponse("insurance_claims", "insert", {
     data: { id: "claim-001" },
@@ -108,7 +114,8 @@ function stageFullAdvance({
     data: null,
     error: null,
   });
-  // 8. capped_rental_cycles update (advance current_month)
+  // 8. capped_rental_cycles update (link latest_claim_id; current_month
+  //    was already advanced by the optimistic month-claim above)
   stageSupabaseResponse("capped_rental_cycles", "update", {
     data: null,
     error: null,
@@ -200,6 +207,10 @@ describe("runCappedRentalAdvance — defaultBilledForHcpcs fallback paths", () =
       data: { default_billed_cents: 19999 },
       error: null,
     });
+    stageSupabaseResponse("capped_rental_cycles", "update", {
+      data: [{ id: "cycle-001" }],
+      error: null,
+    });
     stageSupabaseResponse("insurance_claims", "insert", {
       data: { id: "claim-002" },
       error: null,
@@ -240,6 +251,10 @@ describe("runCappedRentalAdvance — defaultBilledForHcpcs fallback paths", () =
     // No payer_profile_id → payer_profiles and payer_fee_schedules are not queried.
     stageSupabaseResponse("product_hcpcs_map", "select", {
       data: { default_billed_cents: 18000 },
+      error: null,
+    });
+    stageSupabaseResponse("capped_rental_cycles", "update", {
+      data: [{ id: "cycle-001" }],
       error: null,
     });
     stageSupabaseResponse("insurance_claims", "insert", {
@@ -292,6 +307,10 @@ describe("runCappedRentalAdvance — defaultBilledForHcpcs fallback paths", () =
     // product_hcpcs_map also returns null
     stageSupabaseResponse("product_hcpcs_map", "select", {
       data: null,
+      error: null,
+    });
+    stageSupabaseResponse("capped_rental_cycles", "update", {
+      data: [{ id: "cycle-001" }],
       error: null,
     });
     stageSupabaseResponse("insurance_claims", "insert", {
@@ -374,6 +393,14 @@ describe("runCappedRentalAdvance — advance stats", () => {
       data: { allowed_cents: 25000 },
       error: null,
     });
+    // Optimistic month-claim succeeds so we reach the claim insert…
+    stageSupabaseResponse("capped_rental_cycles", "update", {
+      data: [{ id: "cycle-001" }],
+      error: null,
+    });
+    // …which then fails. The advancer rolls the month back (a second,
+    // unstaged capped_rental_cycles update → mock returns an empty
+    // envelope) and rethrows, so the cycle is counted as errored.
     stageSupabaseResponse("insurance_claims", "insert", {
       data: null,
       error: { message: "insert failed", code: "PGRST500" },

@@ -1,8 +1,10 @@
 // Sign-in page for the cpap-fitter shop.
 //
-// On success we redirect to /account so a returning shopper
-// lands on their order history. New customers should use
-// /sign-up instead — there's a link below the form.
+// On success we redirect to the sanitized ?redirect= target (so a
+// shopper bounced here mid-checkout returns to /shop/cart?resume=1, and
+// the header/account/orders CTAs return where they came from), falling
+// back to /account for a returning shopper landing on their order
+// history. New customers should use /sign-up instead — link below.
 
 import { useEffect, useState, type FormEvent } from "react";
 import { Link, useLocation } from "wouter";
@@ -19,7 +21,13 @@ const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
 //   ?reset=success    — user just set a new password (sessions revoked)
 //   ?verified=success — user just clicked the email verification link
 // Returning null when neither is present keeps the banner suppressed in
-// the steady-state sign-in view.
+/**
+ * Reads a short success flag from the current page's query string for UI banners.
+ *
+ * Checks the URL search params and returns a flag when a recognized success parameter is present.
+ *
+ * @returns `"reset"` if the query contains `reset=success`, `"verified"` if it contains `verified=success`, or `null` when neither is present or when not running in a browser (SSR).
+ */
 function readSuccessFlag(): "reset" | "verified" | null {
   if (typeof window === "undefined") return null;
   const params = new URLSearchParams(window.location.search);
@@ -28,6 +36,38 @@ function readSuccessFlag(): "reset" | "verified" | null {
   return null;
 }
 
+// Read and sanitize the post-sign-in redirect target. Callers append
+// ?redirect=<path> (user-menu "Sign in", /account + /shop/orders CTAs,
+// and the mid-checkout cart bounce that sends ?redirect=/shop/cart?resume=1)
+// so the shopper lands back where they were instead of always on /account.
+// We honor ONLY same-origin absolute paths: a single leading "/" (reject
+// "//" protocol-relative and absolute http(s) URLs so this can't be an
+// open redirect), and never bounce back into an auth page (avoids a
+/**
+ * Determine a safe post-authentication redirect path from the URL `redirect` query parameter.
+ *
+ * Returns the sanitized path to use after sign-in; falls back to `/account` when executed outside the browser, when `redirect` is missing or empty, when it does not start with a single leading `/`, when it is protocol-relative (`//...`), or when it equals `/sign-in` or `/sign-up`.
+ *
+ * @returns The validated redirect path (a leading-slash path) or `"/account"` on invalid input or during SSR.
+ */
+function readRedirect(): string {
+  if (typeof window === "undefined") return "/account";
+  const raw = new URLSearchParams(window.location.search).get("redirect");
+  if (!raw || !raw.startsWith("/") || raw.startsWith("//")) return "/account";
+  const pathOnly = raw.split(/[?#]/)[0];
+  if (pathOnly === "/sign-in" || pathOnly === "/sign-up") return "/account";
+  return raw;
+}
+
+/**
+ * Render the sign-in UI and handle the sign-in flow, including a sanitized post-login redirect.
+ *
+ * Reads the URL once on mount to capture an optional success flag (`reset` or `verified`) and a validated `redirect` target.
+ * When a success flag is present a corresponding success banner is shown and the query string is stripped from the URL.
+ * Submits credentials through the auth hook, displays submission errors, and navigates to the captured redirect target on successful sign-in.
+ *
+ * @returns The JSX element for the sign-in page and form
+ */
 export function SignInPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -35,6 +75,10 @@ export function SignInPage() {
   // Only read the URL on mount — once the user starts interacting we
   // don't want the banner to flicker back as the form re-renders.
   const [successFlag] = useState(readSuccessFlag);
+  // Capture the redirect target on mount too, BEFORE the successFlag
+  // effect below strips the query string — otherwise a combined
+  // ?reset=success&redirect=… would lose the redirect.
+  const [redirectTarget] = useState(readRedirect);
   const signIn = authHooks.useSignIn();
   const [, setLocation] = useLocation();
 
@@ -49,7 +93,7 @@ export function SignInPage() {
     signIn.mutate(
       { email: email.trim(), password },
       {
-        onSuccess: () => setLocation("/account"),
+        onSuccess: () => setLocation(redirectTarget),
         onError: (err) => {
           setSubmitError(
             authErrorMessage(err, {

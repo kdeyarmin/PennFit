@@ -64,6 +64,22 @@ const FILTER_IDS: ReadonlySet<string> = new Set<ReferralListFilter>([
 ]);
 const isFilter = (v: string): v is ReferralListFilter => FILTER_IDS.has(v);
 
+// Defense-in-depth: only render a document link when the URL is
+// http(s). The server now sanitizes partner-supplied document URLs
+// (parse-bundle.ts / parse-order.ts collapse non-http(s) to null), but
+// rows persisted before that fix could still carry a `javascript:` URL
+// that would execute in the admin-session origin when clicked
+// (rel="noopener noreferrer" does NOT block `javascript:`).
+const isHttpUrl = (v: string | null | undefined): boolean => {
+  if (typeof v !== "string" || v.length === 0) return false;
+  try {
+    const { protocol } = new URL(v);
+    return protocol === "http:" || protocol === "https:";
+  } catch {
+    return false;
+  }
+};
+
 const queryKey = (f: ReferralListFilter) =>
   ["admin", "inbound-referrals", f] as const;
 const detailKey = (id: string) =>
@@ -416,7 +432,15 @@ function Section({
 
 // ────────────────────────────────────────────────────────────────────
 // Overview pane
-// ────────────────────────────────────────────────────────────────────
+/**
+ * Render a two-column overview of a referral's metadata, AI classification, procedure/diagnosis codes, and documents.
+ *
+ * Renders received/triaged/accepted timestamps, payer and ordering NPI, an AI summary block when available,
+ * HCPCS and ICD-10 entries, and a documents list where only `http(s)` URLs are rendered as external links.
+ *
+ * @param referral - Referral data used to populate the overview (timestamps, payer, ordering NPI, AI classification and confidence, documents, HCPCS items, and ICD-10 codes)
+ * @returns A JSX element containing the overview layout described above
+ */
 
 function OverviewPane({
   referral,
@@ -492,9 +516,9 @@ function OverviewPane({
               <li key={d.id}>
                 <span className="font-mono">{d.kind}</span>{" "}
                 {d.filename && <span>· {d.filename}</span>}
-                {d.sourceUrl && (
+                {isHttpUrl(d.sourceUrl) && (
                   <a
-                    href={d.sourceUrl}
+                    href={d.sourceUrl ?? undefined}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="ml-1 inline-flex items-center gap-1 text-[hsl(var(--penn-navy))] hover:underline"

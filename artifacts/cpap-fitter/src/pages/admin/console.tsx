@@ -21,7 +21,11 @@
 
 import { Suspense, lazy } from "react";
 import { Switch, Route, Redirect } from "wouter";
-import { useGetAdminMe, ApiError } from "@workspace/api-client-react/admin";
+import {
+  useGetAdminMe,
+  getGetAdminMeQueryKey,
+  ApiError,
+} from "@workspace/api-client-react/admin";
 import { ErrorBoundary } from "@/components/error-boundary";
 
 import { authHooks } from "@/lib/admin/auth-hooks";
@@ -394,7 +398,22 @@ import "@/admin.css";
  * @returns The admin console UI: an authorization gate (error or loading) or the routed admin pages inside the app shell.
  */
 function AdminConsole() {
-  const { data, isPending, isError, error } = useGetAdminMe();
+  const { data, isPending, isError, error } = useGetAdminMe({
+    query: {
+      queryKey: getGetAdminMeQueryKey(),
+      // A 401/403 here is a terminal answer ("you are not an admin"),
+      // not a transient blip. React Query's default retry:3 with
+      // exponential backoff would otherwise keep a signed-in non-admin
+      // staring at the "Confirming admin access…" spinner for ~7s before
+      // the not-authorized page renders. Retry only network/5xx errors,
+      // and only twice.
+      retry: (failureCount, err) => {
+        const status = err instanceof ApiError ? err.status : 0;
+        if (status >= 400 && status < 500) return false;
+        return failureCount < 2;
+      },
+    },
+  });
 
   if (isError) {
     const status = error instanceof ApiError ? error.status : 0;

@@ -95,7 +95,7 @@ router.get(
   }
   const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
   if (q.length > 0 && q.length <= 80) {
-    const safe = q.replace(/[%_]/g, (m) => `\\${m}`);
+    const safe = q.replace(/[\\%_]/g, (m) => `\\${m}`);
     query = query.ilike("description", `%${safe}%`);
   }
   const { data, error } = await query;

@@ -451,7 +451,13 @@ describe("PATCH /patients/:id/insurance-claims/:claimId", () => {
     stageSupabaseResponse("insurance_claims", "select", {
       data: { id: CLAIM_ID, status: "draft" },
     });
-    stageSupabaseResponse("insurance_claims", "update", { error: null });
+    // The PATCH uses an optimistic-concurrency guard
+    // (`.eq("status", current.status).select("id")`) and 409s when the
+    // UPDATE matches zero rows, so the mock must return the updated row.
+    stageSupabaseResponse("insurance_claims", "update", {
+      data: [{ id: CLAIM_ID }],
+      error: null,
+    });
     stageSupabaseResponse("insurance_claim_events", "insert", { error: null });
     const res = await request(makeApp())
       .patch(
@@ -467,7 +473,10 @@ describe("PATCH /patients/:id/insurance-claims/:claimId", () => {
     stageSupabaseResponse("insurance_claims", "select", {
       data: { id: CLAIM_ID, status: "submitted" },
     });
-    stageSupabaseResponse("insurance_claims", "update", { error: null });
+    stageSupabaseResponse("insurance_claims", "update", {
+      data: [{ id: CLAIM_ID }],
+      error: null,
+    });
     stageSupabaseResponse("insurance_claim_events", "insert", { error: null });
     const res = await request(makeApp())
       .patch(
@@ -482,7 +491,10 @@ describe("PATCH /patients/:id/insurance-claims/:claimId", () => {
     stageSupabaseResponse("insurance_claims", "select", {
       data: { id: CLAIM_ID, status: "draft" },
     });
-    stageSupabaseResponse("insurance_claims", "update", { error: null });
+    stageSupabaseResponse("insurance_claims", "update", {
+      data: [{ id: CLAIM_ID }],
+      error: null,
+    });
     stageSupabaseResponse("insurance_claim_events", "insert", { error: null });
 
     await request(makeApp())
@@ -545,7 +557,10 @@ describe("PATCH /patients/:id/insurance-claims/:claimId", () => {
       stageSupabaseResponse("insurance_claims", "select", {
         data: { id: CLAIM_ID, status: from },
       });
-      stageSupabaseResponse("insurance_claims", "update", { error: null });
+      stageSupabaseResponse("insurance_claims", "update", {
+        data: [{ id: CLAIM_ID }],
+        error: null,
+      });
       stageSupabaseResponse("insurance_claim_events", "insert", {
         error: null,
       });

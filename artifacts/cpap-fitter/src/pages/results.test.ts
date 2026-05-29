@@ -1,20 +1,18 @@
-// Tests for pages/results.tsx — simplified catalogById useMemo
+// Tests for pages/results.tsx — defensive catalogById useMemo
 //
-// PR change: the explicit Array.isArray + early-return guard in the
-// catalogById useMemo was removed.
+// Canonical shape: the catalogById useMemo guards both hops before
+// iterating, so a transient non-JSON /api/masks response (the proxy
+// serving the SPA shell mid-deploy, landing `catalog` as a string or
+// `{}`) can't crash the page on `.masks.forEach`:
 //
-// Before:
 //   if (!catalog || !Array.isArray(catalog.masks)) return map;
 //   catalog.masks.forEach((m) => map.set(m.id, m));
 //
-// After:
-//   catalog?.masks.forEach((m) => map.set(m.id, m));
-//
-// The new form relies on optional chaining: when `catalog` is
-// undefined/null the entire expression short-circuits to undefined
-// and forEach is never called, leaving `map` empty. When catalog is
-// defined TypeScript guarantees catalog.masks is MaskEntry[], so the
-// loop runs normally.
+// A feature branch once replaced this with bare optional chaining
+// (`catalog?.masks.forEach(...)`); that change was reverted on main
+// because `catalog?.masks` only short-circuits on null/undefined
+// `catalog`, leaving `.forEach` to throw when `catalog` is a string.
+// These tests pin the guarded form that ships on main.
 
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -28,26 +26,31 @@ const SRC = readFileSync(path.join(__dirname, "results.tsx"), "utf8");
 // catalogById — simplified optional-chain expression
 // ---------------------------------------------------------------------------
 
-describe("results — catalogById uses optional chaining (no Array.isArray guard)", () => {
-  it("uses catalog?.masks.forEach to populate the map", () => {
-    expect(SRC).toContain("catalog?.masks.forEach(");
+describe("results — catalogById guards both hops with Array.isArray", () => {
+  it("iterates catalog.masks with forEach to populate the map", () => {
+    expect(SRC).toContain("catalog.masks.forEach(");
   });
 
-  it("no longer contains the Array.isArray(catalog.masks) guard", () => {
-    expect(SRC).not.toContain("Array.isArray(catalog.masks)");
+  it("contains the Array.isArray(catalog.masks) guard", () => {
+    expect(SRC).toContain("Array.isArray(catalog.masks)");
   });
 
-  it("no longer contains the !Array.isArray conditional for catalog", () => {
-    // The removed guard used both !catalog and !Array.isArray together.
-    expect(SRC).not.toContain("!Array.isArray(catalog");
+  it("early-returns via the !catalog || !Array.isArray conditional", () => {
+    // The guard combines !catalog and !Array.isArray to early-return the
+    // empty map for any non-array catalog.masks.
+    expect(SRC).toContain("!Array.isArray(catalog");
   });
 
-  it("does not use any Array.isArray call in the catalogById block", () => {
-    // Locate the useMemo block containing catalogById and confirm no
-    // Array.isArray appears in that region.
-    const memoStart = SRC.indexOf("catalogById");
-    const memoSection = SRC.slice(memoStart, memoStart + 500);
-    expect(memoSection).not.toContain("Array.isArray");
+  it("uses an Array.isArray call inside the catalogById block", () => {
+    // Locate the useMemo block containing catalogById and confirm the
+    // defensive guard lives in that region. The block carries a long
+    // explanatory comment before the guard, so the window spans the
+    // whole body up to its `}, [catalog])` dependency-array close.
+    const memoStart = SRC.indexOf("catalogById = React.useMemo");
+    const memoEnd = SRC.indexOf("}, [catalog])", memoStart);
+    const memoSection = SRC.slice(memoStart, memoEnd);
+    expect(memoEnd).toBeGreaterThan(memoStart);
+    expect(memoSection).toContain("Array.isArray");
   });
 
   it("populates the map with m.id as key inside forEach", () => {
@@ -79,7 +82,11 @@ type MockCatalog = { masks: MockMaskEntry[] } | undefined;
 function buildCatalogById(
   catalog: MockCatalog,
 ): Map<string, MockMaskEntry> {
-  // Mirrors: catalog?.masks.forEach((m) => map.set(m.id, m))
+  // Mirrors the guarded form's observable behaviour:
+  //   if (!catalog || !Array.isArray(catalog.masks)) return map;
+  //   catalog.masks.forEach((m) => map.set(m.id, m));
+  // For the array / undefined inputs this helper exercises, the guarded
+  // early-return and this optional-chain spelling produce identical maps.
   const map = new Map<string, MockMaskEntry>();
   catalog?.masks.forEach((m) => map.set(m.id, m));
   return map;

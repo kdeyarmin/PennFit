@@ -53,12 +53,12 @@ describe("admin-shop-inventory-reconcile — formatDate structure", () => {
   });
 
   it("includes year, month, and day in the format options", () => {
-    // The options object uses property shorthand (`year: "numeric"`)
-    // — not string keys — so we assert on the `year:`/`month:`/`day:`
-    // identifier shape rather than a quoted key.
-    expect(SRC).toMatch(/\byear:\s*"/);
-    expect(SRC).toMatch(/\bmonth:\s*"/);
-    expect(SRC).toMatch(/\bday:\s*"/);
+    // The options object uses quoted string keys (`"year": "numeric"`),
+    // so we match either a quoted or bare key followed by a string value
+    // — the assertion that matters is that all three fields are present.
+    expect(SRC).toMatch(/"?year"?:\s*"/);
+    expect(SRC).toMatch(/"?month"?:\s*"/);
+    expect(SRC).toMatch(/"?day"?:\s*"/);
   });
 
   it("falls back to returning the original string on error (try/catch)", () => {

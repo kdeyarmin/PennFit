@@ -66,14 +66,17 @@ describe("POST /voice/twiml-connect", () => {
     __resetPendingSessionsForTests();
   });
 
-  it("returns hangup TwiML 503 when voice config is missing", async () => {
+  it("returns hangup TwiML 200 when voice config is missing", async () => {
     // Don't set env. Signature middleware is mocked-out, so the route
-    // body runs and short-circuits.
+    // body runs and short-circuits. The route deliberately returns 200
+    // (not 503) with hangup TwiML so Twilio sees a clean disposition and
+    // does NOT enter its 5xx exponential retry storm — see
+    // twiml-connect.ts and the CodeRabbit fix on PR #409.
     const res = await request(makeApp())
       .post("/resupply-api/voice/twiml-connect?conversationId=c1")
       .type("form")
       .send({});
-    expect(res.status).toBe(503);
+    expect(res.status).toBe(200);
     expect(res.headers["content-type"]).toContain("text/xml");
     expect(res.text).toContain("<Hangup/>");
   });

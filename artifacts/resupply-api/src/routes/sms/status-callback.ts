@@ -90,11 +90,24 @@ router.post("/sms/status-callback", signatureMiddleware, async (req, res) => {
     if (status === "delivered") {
       update.delivered_at = new Date().toISOString();
     }
-    const { error } = await supabase
+    let updateQuery = supabase
       .schema("resupply")
       .from("messages")
       .update(update)
       .filter("vendor_metadata->>twilio_message_sid", "eq", messageSid);
+    if (status === "sent") {
+      // `sent` (carrier-accepted) is NOT a final state — `delivered`,
+      // `undelivered`, and `failed` are. Twilio status callbacks are not
+      // ordered and can be re-POSTed, so a late or duplicate `sent` must
+      // never regress a row that already reached a final state (which
+      // would downgrade a confirmed delivery or, worse, hide a real
+      // delivery failure in the inbox). Apply `sent` only when the row
+      // has not reached a final state yet (NULL-safe for a brand-new row).
+      updateQuery = updateQuery.or(
+        "delivery_status.is.null,delivery_status.not.in.(delivered,undelivered,failed)",
+      );
+    }
+    const { error } = await updateQuery;
     if (error) throw error;
   } catch (err) {
     // Don't 500 — Twilio retries amplify the issue.

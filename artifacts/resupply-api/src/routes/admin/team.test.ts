@@ -22,14 +22,15 @@ const SRC = readFileSync(path.join(__dirname, "team.ts"), "utf8");
 // ---------------------------------------------------------------------------
 // inviteBody Zod schema — removed fields
 // ---------------------------------------------------------------------------
-describe("team.ts inviteBody — initialPassword removed from schema (this PR)", () => {
-  it("does NOT include initialPassword in inviteBody schema", () => {
-    expect(SRC).not.toContain("initialPassword");
+describe("team.ts inviteBody — initialPassword present in schema", () => {
+  it("includes initialPassword in the inviteBody schema", () => {
+    expect(SRC).toContain("initialPassword");
   });
 
-  it("does NOT reference a password field in the invite schema", () => {
-    // The old schema had `initialPassword: z.string()…`
-    expect(SRC).not.toMatch(/initialPassword\s*:/);
+  it("declares initialPassword as a length-bounded optional field", () => {
+    // Admin-set initial password feature: z.string().min(12)… so an
+    // admin can hand a new staff member a password out of band.
+    expect(SRC).toMatch(/initialPassword:\s*z\.string\(\)\.min\(12\)/);
   });
 
   it("inviteBody is declared as a strict schema (no extra fields allowed)", () => {
@@ -56,9 +57,9 @@ describe("team.ts inviteBody — initialPassword removed from schema (this PR)",
 // ---------------------------------------------------------------------------
 // Response payloads — signInReady removed
 // ---------------------------------------------------------------------------
-describe("team.ts invite response — signInReady removed (this PR)", () => {
-  it("does NOT include signInReady in any response payload", () => {
-    expect(SRC).not.toContain("signInReady");
+describe("team.ts invite response — includes signInReady", () => {
+  it("includes signInReady in the invite response payload", () => {
+    expect(SRC).toContain("signInReady");
   });
 
   it("invite response includes emailSent field", () => {

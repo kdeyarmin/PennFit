@@ -22,6 +22,17 @@ import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 const router: IRouter = Router();
 
+/**
+ * Map a storefront `shop_customers.customer_id` to a single patient record ID when the mapping is unambiguous.
+ *
+ * Looks up the customer's lowercase email from `resupply.shop_customers` and finds patients with a case-insensitive match.
+ * Returns a result only when exactly one patient record matches the customer's email; returns `null` when the email is missing,
+ * no patients match, or multiple patients match (to avoid ambiguous/PHI-leaking mappings).
+ *
+ * @param customerId - The storefront `shop_customers.customer_id` to resolve
+ * @returns `{ patientId: string }` with the matched patient id when exactly one patient matches, `null` otherwise
+ * @throws Error when a database query fails; the error message includes the underlying database error
+ */
 async function resolvePatientForCustomer(
   customerId: string,
 ): Promise<{ patientId: string } | null> {
@@ -65,10 +76,11 @@ async function resolvePatientForCustomer(
 }
 
 router.get("/me/insurance-estimate", async (req, res) => {
-  // shopCustomerId is set by the storefront session middleware in
-  // app.ts. Treat its absence as "not signed in" → 401, which the
-  // SPA's fetchPersonalEstimate() resolves to { available: false }
-  // and falls back to the static estimator. NOTE: do NOT zod-parse
+  // shopCustomerId is set by the storefront `attachSignedIn` middleware
+  // (mounted in routes/storefront/index.ts). Treat its absence as "not
+  // signed in" → 401, which the SPA's fetchPersonalEstimate() resolves
+  // to { available: false } and falls back to the static estimator.
+  // NOTE: do NOT zod-parse
   // `req` here — the field is a middleware-set property, not HTTP
   // input, and a 400 response would break the silent-fallback the
   // page relies on for unauthenticated visitors.

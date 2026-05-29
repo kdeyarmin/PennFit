@@ -166,15 +166,15 @@ describe("GET /admin/claim-templates — payerProfileId UUID validation (PR chan
     expect(res.body.message).toMatch(/UUID/i);
   });
 
-  it("does not call the DB when payerProfileId is invalid", async () => {
+  it("rejects an invalid payerProfileId with 400 before reaching the DB", async () => {
     stubAdmin();
-    // Do NOT stage a DB result — if it were called, it would error
+    // Do NOT stage a DB result — the route validates the UUID and
+    // returns 400 before issuing (awaiting) any query, so the unstaged
+    // mock is never resolved. The 400 below is the observable contract;
+    // `stageSupabaseResponse` is a plain staging helper (not a spy), so
+    // asserting `.not.toHaveBeenCalled()` on it was a test bug.
     const res = await request(makeApp())
       .get("/resupply-api/admin/claim-templates?payerProfileId=invalid");
     expect(res.status).toBe(400);
-    // Confirm no DB select was attempted
-    // (stageSupabaseResponse was never called, and the code must have
-    //  returned early before reaching the DB call)
-    expect(stageSupabaseResponse).not.toHaveBeenCalled();
   });
 });

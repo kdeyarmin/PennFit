@@ -4,20 +4,23 @@
 // as a string and assert structural and behavioural properties rather
 // than importing or executing it.
 //
-// This PR simplified the service worker in two areas:
+// These tests pin the canonical service-worker behaviour that ships on
+// main. A feature branch once tried to simplify the worker (drop the
+// notificationclick same-origin guard, gut the pushsubscriptionchange
+// re-subscribe flow, and delete urlBase64ToUint8Array); that change was
+// reverted on main, so the worker retains all three:
 //
-//   1. notificationclick — removed the same-origin URL-validation block;
-//      the handler now reads event.notification.data.url directly as
-//      `targetUrl` without the rawUrl / URL-parsing guard path.
+//   1. notificationclick — keeps the same-origin URL-validation block;
+//      the handler parses the candidate URL against self.location.origin
+//      and falls back to /account on a cross-origin / malformed payload.
 //
-//   2. pushsubscriptionchange — removed the re-subscribe flow (fetch
-//      VAPID key → pushManager.subscribe → POST new sub); it now only
-//      issues a DELETE for the old endpoint and defers re-subscription
-//      to the next SPA visit.
+//   2. pushsubscriptionchange — keeps the full re-subscribe flow (DELETE
+//      old endpoint → fetch VAPID key → pushManager.subscribe → POST new
+//      sub) so PWA users who rarely reopen the app don't silently lose
+//      push when the browser rotates their subscription.
 //
-//   3. urlBase64ToUint8Array — removed from the service worker entirely;
-//      the SPA's use-push-subscription hook supplies the key via the
-//      push-subscriptions-api helper instead.
+//   3. urlBase64ToUint8Array — defined in the worker and used to turn the
+//      base64url VAPID key into the applicationServerKey for re-subscribe.
 
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -100,7 +103,7 @@ describe("sw-push.js notificationclick — same-origin URL handling", () => {
 // ---------------------------------------------------------------------------
 // pushsubscriptionchange — re-subscribe flow removed
 // ---------------------------------------------------------------------------
-describe("sw-push.js pushsubscriptionchange — re-subscribe flow removed", () => {
+describe("sw-push.js pushsubscriptionchange — re-subscribe flow retained", () => {
   it("still registers a pushsubscriptionchange event listener", () => {
     expect(SW_SRC).toContain('addEventListener("pushsubscriptionchange"');
   });
@@ -115,29 +118,27 @@ describe("sw-push.js pushsubscriptionchange — re-subscribe flow removed", () =
     );
   });
 
-  it("does NOT fetch the VAPID public key from the server", () => {
-    // The removed block fetched:
+  it("fetches the VAPID public key from the server to re-subscribe", () => {
+    // The flow fetches:
     //   /resupply-api/shop/me/push-subscriptions/vapid-public-key
-    expect(SW_SRC).not.toContain("vapid-public-key");
+    expect(SW_SRC).toContain("vapid-public-key");
   });
 
-  it("does NOT call pushManager.subscribe inside pushsubscriptionchange", () => {
-    // The removed flow called reg.pushManager.subscribe({ userVisibleOnly: true, ... }).
-    expect(SW_SRC).not.toContain("pushManager.subscribe");
+  it("calls pushManager.subscribe inside pushsubscriptionchange", () => {
+    // reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey }).
+    expect(SW_SRC).toContain("pushManager.subscribe");
   });
 
-  it("does NOT POST a new subscription to the server in pushsubscriptionchange", () => {
-    // The removed block posted the new sub JSON back. After removal only a
-    // DELETE call remains. Verify there's no POST inside this handler.
+  it("POSTs the new subscription back to the server in pushsubscriptionchange", () => {
+    // After re-subscribing, the new sub JSON is POSTed back so the server
+    // can replace the rotated credentials.
     const handlerStart = SW_SRC.indexOf('addEventListener("pushsubscriptionchange"');
     const handlerSrc = SW_SRC.slice(handlerStart);
-    // The entire pushsubscriptionchange handler should not contain 'method: "POST"'
-    // (the push handler and notificationclick don't send POST either).
-    expect(handlerSrc).not.toContain('method: "POST"');
+    expect(handlerSrc).toContain('method: "POST"');
   });
 
-  it("does NOT define or call applicationServerKey inside pushsubscriptionchange", () => {
-    expect(SW_SRC).not.toContain("applicationServerKey");
+  it("derives applicationServerKey for the re-subscribe call", () => {
+    expect(SW_SRC).toContain("applicationServerKey");
   });
 
   it("uses event.waitUntil with an async IIFE", () => {
@@ -149,20 +150,20 @@ describe("sw-push.js pushsubscriptionchange — re-subscribe flow removed", () =
 // ---------------------------------------------------------------------------
 // urlBase64ToUint8Array — removed from service worker
 // ---------------------------------------------------------------------------
-describe("sw-push.js — urlBase64ToUint8Array removed", () => {
-  it("does not define a urlBase64ToUint8Array function", () => {
-    expect(SW_SRC).not.toContain("function urlBase64ToUint8Array");
+describe("sw-push.js — urlBase64ToUint8Array retained", () => {
+  it("defines a urlBase64ToUint8Array function", () => {
+    expect(SW_SRC).toContain("function urlBase64ToUint8Array");
   });
 
-  it("does not reference urlBase64ToUint8Array anywhere", () => {
-    expect(SW_SRC).not.toContain("urlBase64ToUint8Array");
+  it("references urlBase64ToUint8Array to build the applicationServerKey", () => {
+    expect(SW_SRC).toContain("urlBase64ToUint8Array");
   });
 
-  it("does not perform the base64-padding replacement that urlBase64ToUint8Array did", () => {
-    // The removed function replaced `-` with `+` and `_` with `/` for URL-safe base64.
-    // Now that the function is gone, neither replacement should appear in the file.
-    expect(SW_SRC).not.toContain(".replace(/-/g, \"+\")");
-    expect(SW_SRC).not.toContain(".replace(/_/g, \"/\")");
+  it("performs the URL-safe base64-padding replacement", () => {
+    // The function replaces `-` with `+` and `_` with `/` before atob so a
+    // base64url VAPID key decodes correctly.
+    expect(SW_SRC).toContain(".replace(/-/g, \"+\")");
+    expect(SW_SRC).toContain(".replace(/_/g, \"/\")");
   });
 });
 

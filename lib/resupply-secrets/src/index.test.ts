@@ -2,16 +2,9 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
   LINK_HMAC_KEY_ENV,
-  LINK_HMAC_KEY_MIN_BYTES,
   getLinkHmacKey,
   hasLinkHmacKey,
 } from "./index";
-
-// A 32-byte secret, base64-encoded. Matches the preflight contract
-// (`requireBase64Bytes("RESUPPLY_LINK_HMAC_KEY", 32)`) so tests and
-// preflight agree on what a "valid" key looks like.
-const VALID_KEY_BYTES = Buffer.alloc(LINK_HMAC_KEY_MIN_BYTES, 0x42);
-const VALID_KEY_B64 = VALID_KEY_BYTES.toString("base64");
 
 describe("resupply-secrets", () => {
   let saved: string | undefined;
@@ -27,9 +20,33 @@ describe("resupply-secrets", () => {
   });
 
   describe("getLinkHmacKey", () => {
-    it("decodes the env value from base64 to raw bytes", () => {
-      process.env[LINK_HMAC_KEY_ENV] = VALID_KEY_B64;
-      expect(getLinkHmacKey().equals(VALID_KEY_BYTES)).toBe(true);
+    // The env value is used as raw UTF-8 bytes — deliberately NOT
+    // base64-decoded at runtime. base64-decoding here would change the
+    // key material versus every signed token already in flight,
+    // invalidating reminder/portal/Rx links across a deploy. Preflight
+    // (scripts/preflight-prod-env.ts) is the deploy-time gate that
+    // base64-decodes and enforces the minimum entropy.
+    it("returns the env value as raw UTF-8 bytes (not base64-decoded)", () => {
+      process.env[LINK_HMAC_KEY_ENV] = "my-secret-key-value";
+      expect(
+        getLinkHmacKey().equals(Buffer.from("my-secret-key-value", "utf8")),
+      ).toBe(true);
+    });
+
+    it("does not base64-validate the value (any non-empty string is accepted)", () => {
+      // URL-safe-base64 chars (- and _) are not strict base64; a runtime
+      // base64 check would reject this, but we treat it as raw bytes.
+      process.env[LINK_HMAC_KEY_ENV] = "abc-def_ghi";
+      expect(() => getLinkHmacKey()).not.toThrow();
+      expect(
+        getLinkHmacKey().equals(Buffer.from("abc-def_ghi", "utf8")),
+      ).toBe(true);
+    });
+
+    it("does not enforce a minimum length at runtime (preflight is the gate)", () => {
+      process.env[LINK_HMAC_KEY_ENV] = "short";
+      expect(() => getLinkHmacKey()).not.toThrow();
+      expect(getLinkHmacKey().equals(Buffer.from("short", "utf8"))).toBe(true);
     });
 
     it("treats whitespace-only values as unset", () => {
@@ -41,19 +58,6 @@ describe("resupply-secrets", () => {
     it("throws a clear error when the env var is unset", () => {
       expect(() => getLinkHmacKey()).toThrow(
         /RESUPPLY_LINK_HMAC_KEY is not set/,
-      );
-    });
-
-    it("throws when the value is not strict base64", () => {
-      // URL-safe base64 (- and _) is rejected to match preflight.
-      process.env[LINK_HMAC_KEY_ENV] = "abc-def_ghi";
-      expect(() => getLinkHmacKey()).toThrow(/not valid base64/);
-    });
-
-    it("throws when the decoded value is shorter than the minimum", () => {
-      process.env[LINK_HMAC_KEY_ENV] = Buffer.alloc(8, 1).toString("base64");
-      expect(() => getLinkHmacKey()).toThrow(
-        /at least \d+ bytes are required/,
       );
     });
   });

@@ -49,17 +49,15 @@ export function hasLinkHmacKey(env: EnvLike = process.env): boolean {
 }
 
 /**
- * Link-signing HMAC key as raw bytes. Callers feed this straight to
- * `createHmac("sha256", key)`. Throws (rather than returning a
- * sentinel) if the env var is missing — every caller is on a hot
- * path where issuing or verifying an unkeyed token would be a bug,
- * not a degraded mode.
+ * Provide the link-signing HMAC key as raw UTF-8 bytes suitable for use with `createHmac`.
  *
- * The env value is decoded as base64 (matching the preflight check
- * in scripts/preflight-prod-env.ts `requireBase64Bytes(...)`), then
- * verified against `LINK_HMAC_KEY_MIN_BYTES`. Earlier revisions used
- * `Buffer.from(value, "utf8")` which silently produced key material
- * that did not match what preflight had validated.
+ * The environment value is treated as raw UTF-8 secret bytes and is deliberately NOT base64-decoded at runtime.
+ * Deployment preflight is responsible for base64-decoding the value and enforcing the minimum decoded byte length
+ * so runtime decoding is intentionally avoided to preserve existing key material.
+ *
+ * @param env - Environment object to read the variable from; defaults to `process.env`
+ * @returns A `Buffer` containing the environment variable's bytes interpreted as UTF-8
+ * @throws Error if `RESUPPLY_LINK_HMAC_KEY` is not set or is an empty string
  */
 export function getLinkHmacKey(env: EnvLike = process.env): Buffer {
   const value = readEnv(LINK_HMAC_KEY_ENV, env);

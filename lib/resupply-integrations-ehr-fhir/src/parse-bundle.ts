@@ -25,6 +25,31 @@
 
 import type { ParachuteOrder } from "@workspace/resupply-integrations-parachute";
 
+// Document URLs come from partner-controlled FHIR
+// DocumentReference.content.attachment.url and are rendered as an
+// `<a href>` on the admin inbound-referrals screen. Allow only
+// http:/https: — a `javascript:` / `data:` / `vbscript:` URL would
+// otherwise execute in the admin-session origin when an admin clicks
+// the link (`rel="noopener noreferrer"` does NOT block `javascript:`).
+// Mirrors `httpUrlOrNull` in @workspace/resupply-integrations-parachute,
+/**
+ * Validates a candidate URL string and returns it only when it uses the HTTP or HTTPS scheme.
+ *
+ * @param v - Candidate URL value; may be `null` or `undefined`.
+ * @returns `v` if it is a non-empty string with an `http` or `https` scheme, `null` otherwise.
+ */
+function httpUrlOrNull(v: string | null | undefined): string | null {
+  if (typeof v !== "string" || v.length === 0) return null;
+  try {
+    const parsed = new URL(v);
+    return parsed.protocol === "http:" || parsed.protocol === "https:"
+      ? v
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 export type ParseBundleOutcome =
   | { ok: true; order: ParachuteOrder }
   | { ok: false; reason: ParseBundleFailure };
@@ -149,11 +174,10 @@ interface FhirBundle {
 const NPI_SYSTEM = "http://hl7.org/fhir/sid/us-npi";
 
 /**
- * Parse an inbound FHIR Bundle into a ParachuteOrder. Tenants ship
- * orders as a FHIR Bundle containing ServiceRequest + supporting
- * resources; this function picks the relevant fields and projects
- * them into the same shape the Parachute dispatcher already
- * consumes.
+ * Parse an inbound FHIR Bundle into a ParachuteOrder suitable for dispatcher consumption.
+ *
+ * @param input - The parsed JSON value expected to be a FHIR R4 Bundle containing a ServiceRequest and related resources (Patient, optional Practitioner, optional Coverage, DocumentReference[], Condition[]).
+ * @returns A ParseBundleOutcome: on success `{ ok: true, order }` where `order` is the projected ParachuteOrder; on failure `{ ok: false, reason }` where `reason` is one of: `"not_a_bundle"`, `"no_service_request"`, `"service_request_missing_id"`, or `"no_subject_patient"`.
  */
 export function parseFhirBundle(input: unknown): ParseBundleOutcome {
   if (!isObject(input) || input.resourceType !== "Bundle") {
@@ -233,7 +257,7 @@ export function parseFhirBundle(input: unknown): ParseBundleOutcome {
       filename: content?.title ?? null,
       contentType: content?.contentType ?? null,
       sizeBytes: typeof content?.size === "number" ? content.size : null,
-      sourceUrl: content?.url ?? null,
+      sourceUrl: httpUrlOrNull(content?.url),
     };
   });
 

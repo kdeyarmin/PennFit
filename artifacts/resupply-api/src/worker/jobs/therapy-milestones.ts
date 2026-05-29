@@ -175,7 +175,11 @@ export function detectMilestones(
 }
 
 /**
- * Run the daily milestone scan + send. Exported for testability.
+ * Evaluate patient therapy night histories to create any newly reached milestones and notify patients for milestones that have not yet been sent.
+ *
+ * This performs two phases: (1) scans recently active patients' nightly records and inserts missing milestone rows, and (2) claims pending milestone rows, sends celebration emails (and best-effort push notifications), and updates per-milestone notification state. Errors affecting individual patients or notifications are handled per-row so the overall run continues.
+ *
+ * @returns MilestoneStats containing counts for the run: `patientsScanned`, per-kind `inserted` totals, `sent`, `sendSkipped`, and `sendFailed`.
  */
 export async function runTherapyMilestones(): Promise<MilestoneStats> {
   const supabase = getSupabaseServiceRoleClient();
@@ -200,16 +204,31 @@ export async function runTherapyMilestones(): Promise<MilestoneStats> {
   // subquery. For now, we keep the client-side dedup but note that
   // a better approach would be to use a PostgreSQL function or view.
   const activitySince = isoDaysAgo(ACTIVITY_LOOKBACK_DAYS);
-  const { data: activePatients, error: actErr } = await supabase
-    .schema("resupply")
-    .from("patient_therapy_nights")
-    .select("patient_id")
-    .gte("updated_at", `${activitySince}T00:00:00.000Z`);
-  if (actErr) throw actErr;
+  // Page the roster. patient_therapy_nights has one row per patient per
+  // night (per source), so an active patient owns many rows; an
+  // unpaginated select hits PostgREST's ~1000-row cap after only ~16
+  // distinct patients and silently skips everyone else. Page on a
+  // stable order and de-dupe patient_ids across pages (mirrors the
+  // keyset paging in lib/smart-triggers/evaluator.ts).
+  const PAGE_SIZE = 1000;
+  const patientIdSet = new Set<string>();
+  for (let from = 0; ; from += PAGE_SIZE) {
+    const { data: page, error: actErr } = await supabase
+      .schema("resupply")
+      .from("patient_therapy_nights")
+      .select("patient_id")
+      .gte("updated_at", `${activitySince}T00:00:00.000Z`)
+      .order("patient_id", { ascending: true })
+      .range(from, from + PAGE_SIZE - 1);
+    if (actErr) throw actErr;
+    if (!page || page.length === 0) break;
+    for (const r of page) {
+      if (r.patient_id) patientIdSet.add(r.patient_id);
+    }
+    if (page.length < PAGE_SIZE) break;
+  }
 
-  const uniquePatientIds = Array.from(
-    new Set((activePatients ?? []).map((r) => r.patient_id)),
-  );
+  const uniquePatientIds = Array.from(patientIdSet);
   stats.patientsScanned = uniquePatientIds.length;
 
   for (const patientId of uniquePatientIds) {

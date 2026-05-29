@@ -66,6 +66,7 @@ export type ReplyInConversationOutcome =
   | { status: "conversation_not_found" }
   | { status: "conversation_closed" }
   | { status: "patient_missing_contact"; channel: "sms" | "email" }
+  | { status: "patient_opted_out" }
   | { status: "patient_phone_unnormalizable" }
   /**
    * The conversation is on a channel this dispatcher doesn't handle
@@ -81,6 +82,21 @@ export type ReplyInConversationOutcome =
       vendorCode: string | null;
     };
 
+/**
+ * Append an admin-typed SMS or email reply to an existing conversation, send it via the conversation's channel vendor, and record delivery metadata.
+ *
+ * Performs validation of conversation and patient contact state, sends the outbound message through the configured vendor (Twilio for SMS, SendGrid for email), attempts to persist the new message and update the conversation state (best-effort), updates the latest-message projection (best-effort), and emits an audit record.
+ *
+ * @param input - Configuration and payload required to send the reply, including DB client, channel vendor configs, conversationId, reply body, and actor for auditing
+ * @returns On success: `{ status: "ok"; conversationId: string; messageId?: string; vendorRef: string }`. On failure: one of
+ * - `{ status: "conversation_not_found" }`
+ * - `{ status: "conversation_closed" }`
+ * - `{ status: "patient_missing_contact"; channel: "sms" | "email" }`
+ * - `{ status: "patient_opted_out" }`
+ * - `{ status: "patient_phone_unnormalizable" }`
+ * - `{ status: "unsupported_channel"; channel: string }`
+ * - `{ status: "vendor_api_error"; vendor: "sms_vendor" | "email_vendor"; vendorStatus: number | null; vendorCode: string | null }`
+ */
 export async function replyInConversation(
   input: ReplyInConversationInput,
 ): Promise<ReplyInConversationOutcome> {
@@ -128,7 +144,7 @@ export async function replyInConversation(
   const { data: patient, error: patientErr } = await supabase
     .schema("resupply")
     .from("patients")
-    .select("id, phone_e164, email")
+    .select("id, status, phone_e164, email")
     .eq("id", patientId)
     .limit(1)
     .maybeSingle();
@@ -158,6 +174,14 @@ export async function replyInConversation(
 
   let vendorRef: string;
   if (conv.channel === "sms") {
+    // TCPA / STOP opt-out: a patient who texted STOP is paused
+    // (dispatchIntent → pausePatient). Mirror the outbound-reminder
+    // invariant in send-sms.ts and refuse to send SMS to a non-active
+    // patient even via an admin reply in a still-open thread. Email
+    // replies are unaffected — STOP is an SMS-channel opt-out.
+    if (patient.status !== "active") {
+      return { status: "patient_opted_out" };
+    }
     if (!patient.phone_e164) {
       return { status: "patient_missing_contact", channel: "sms" };
     }

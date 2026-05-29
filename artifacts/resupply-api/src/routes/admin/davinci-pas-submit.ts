@@ -33,6 +33,7 @@ import {
 
 import { resolveBillingIdentity } from "../../lib/billing/identity-resolver";
 import { logger } from "../../lib/logger";
+import { assertSafeOutboundUrlSync, SsrfError } from "../../lib/safe-outbound";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
 
@@ -118,6 +119,28 @@ router.post(
         error: "payer_no_pas_endpoint",
         message:
           "The payer hasn't published a Da Vinci PAS endpoint in payer_profiles",
+      });
+      return;
+    }
+
+    // SSRF guard. `davinci_pas_endpoint_url` is operator-populated
+    // out-of-band (it is NOT in the payer-profiles write schema), so it
+    // bypasses application-layer URL validation. Every other DB-derived
+    // outbound URL in this codebase is wrapped by safe-outbound; mirror
+    // that here (https-only + reject internal/reserved hosts) so we
+    // never POST the Bearer access token to an internal endpoint.
+    try {
+      assertSafeOutboundUrlSync(payerProfile.davinci_pas_endpoint_url);
+    } catch (err) {
+      const reason = err instanceof SsrfError ? err.reason : "unsafe_url";
+      logger.warn(
+        { event: "davinci_pas.submit.unsafe_endpoint", reason, paId: pa.id },
+        "davinci-pas submit refused: payer PAS endpoint failed SSRF validation",
+      );
+      res.status(409).json({
+        error: "unsafe_pas_endpoint",
+        message:
+          "The payer's Da Vinci PAS endpoint must be a public HTTPS URL. Fix payer_profiles.davinci_pas_endpoint_url.",
       });
       return;
     }

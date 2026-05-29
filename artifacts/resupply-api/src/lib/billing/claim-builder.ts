@@ -180,7 +180,10 @@ export async function buildClaimFromFulfillment(
       .select(
         "id, display_name, payer_legal_name, requires_prior_auth_dme, required_modifiers_dme, enrollment_status, enrollment_effective_on, member_id_pattern",
       )
-      .ilike("display_name", primary.payer_name)
+      .ilike(
+        "display_name",
+        (primary.payer_name ?? "").replace(/[\\%_]/g, (c: string) => `\\${c}`),
+      )
       .eq("is_active", true)
       .limit(1)
       .maybeSingle();

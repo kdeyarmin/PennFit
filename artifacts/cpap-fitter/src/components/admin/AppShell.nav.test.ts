@@ -208,80 +208,86 @@ describe("AppShell NAV_GROUPS — compliance-binder entry (System group)", () =>
 });
 
 // ---------------------------------------------------------------------------
-// This PR: collapsible nav machinery removed — structural regression guards
+// Collapsible nav machinery — structural regression guards
+//
+// A feature branch once tried to strip the collapsible-sidebar machinery
+// in favour of static always-open groups; that change was reverted on
+// main. These guards pin the collapsible implementation that ships: the
+// per-group expand/collapse state, its localStorage persistence, and the
+// deep-link auto-expand.
 // ---------------------------------------------------------------------------
-describe("AppShell — collapsible nav machinery removed in this PR", () => {
-  it("no longer imports ChevronRight from lucide-react", () => {
-    expect(APPSHELL_SRC).not.toContain("ChevronRight");
+describe("AppShell — collapsible nav machinery present", () => {
+  it("imports ChevronRight from lucide-react (group toggle chevron)", () => {
+    expect(APPSHELL_SRC).toContain("ChevronRight");
   });
 
-  it("no longer imports useRef from react", () => {
-    expect(APPSHELL_SRC).not.toContain("useRef");
+  it("imports useRef from react", () => {
+    expect(APPSHELL_SRC).toContain("useRef");
   });
 
-  it("no longer defines findGroupForActiveHref helper", () => {
-    expect(APPSHELL_SRC).not.toContain("function findGroupForActiveHref");
+  it("defines findGroupForActiveHref helper", () => {
+    expect(APPSHELL_SRC).toContain("function findGroupForActiveHref");
   });
 
-  it("no longer defines loadInitialExpandedGroups helper", () => {
-    expect(APPSHELL_SRC).not.toContain("function loadInitialExpandedGroups");
+  it("defines loadInitialExpandedGroups helper", () => {
+    expect(APPSHELL_SRC).toContain("function loadInitialExpandedGroups");
   });
 
-  it("no longer defines persistExpandedGroups helper", () => {
-    expect(APPSHELL_SRC).not.toContain("function persistExpandedGroups");
+  it("defines persistExpandedGroups helper", () => {
+    expect(APPSHELL_SRC).toContain("function persistExpandedGroups");
   });
 
-  it("no longer defines loadExplicitCollapsedGroups helper", () => {
-    expect(APPSHELL_SRC).not.toContain("function loadExplicitCollapsedGroups");
+  it("defines loadExplicitCollapsedGroups helper", () => {
+    expect(APPSHELL_SRC).toContain("function loadExplicitCollapsedGroups");
   });
 
-  it("no longer defines persistExplicitCollapsedGroups helper", () => {
-    expect(APPSHELL_SRC).not.toContain("function persistExplicitCollapsedGroups");
+  it("defines persistExplicitCollapsedGroups helper", () => {
+    expect(APPSHELL_SRC).toContain("function persistExplicitCollapsedGroups");
   });
 
-  it("no longer defines groupDomId for aria-controls IDs", () => {
-    expect(APPSHELL_SRC).not.toContain("function groupDomId");
+  it("defines groupDomId for aria-controls IDs", () => {
+    expect(APPSHELL_SRC).toContain("function groupDomId");
   });
 
-  it("no longer defines toggleNavGroup inside AppShell", () => {
-    expect(APPSHELL_SRC).not.toContain("function toggleNavGroup(label: string)");
+  it("defines toggleNavGroup inside AppShell", () => {
+    expect(APPSHELL_SRC).toContain("function toggleNavGroup(label: string)");
   });
 
-  it("no longer uses NAV_EXPANDED_STORAGE_KEY", () => {
-    expect(APPSHELL_SRC).not.toContain("NAV_EXPANDED_STORAGE_KEY");
+  it("uses NAV_EXPANDED_STORAGE_KEY for persisted expansion state", () => {
+    expect(APPSHELL_SRC).toContain("NAV_EXPANDED_STORAGE_KEY");
   });
 
-  it("no longer uses NAV_EXPLICIT_COLLAPSED_STORAGE_KEY", () => {
-    expect(APPSHELL_SRC).not.toContain("NAV_EXPLICIT_COLLAPSED_STORAGE_KEY");
+  it("uses NAV_EXPLICIT_COLLAPSED_STORAGE_KEY for explicit collapses", () => {
+    expect(APPSHELL_SRC).toContain("NAV_EXPLICIT_COLLAPSED_STORAGE_KEY");
   });
 
-  it("no longer tracks navExpanded state", () => {
-    expect(APPSHELL_SRC).not.toContain("navExpanded");
+  it("tracks navExpanded state", () => {
+    expect(APPSHELL_SRC).toContain("navExpanded");
   });
 
-  it("no longer tracks navExplicitCollapsed state", () => {
-    expect(APPSHELL_SRC).not.toContain("navExplicitCollapsed");
+  it("tracks navExplicitCollapsed state", () => {
+    expect(APPSHELL_SRC).toContain("navExplicitCollapsed");
   });
 
-  it("no longer uses hidden={!isOpen} to toggle group visibility", () => {
-    expect(APPSHELL_SRC).not.toContain("hidden={!isOpen}");
+  it("uses hidden={!isOpen} to toggle group visibility", () => {
+    expect(APPSHELL_SRC).toContain("hidden={!isOpen}");
   });
 
-  it("no longer passes expanded prop to SidebarNavBody", () => {
-    expect(APPSHELL_SRC).not.toContain("expanded: Set<string>");
+  it("passes the expanded prop to SidebarNavBody", () => {
+    expect(APPSHELL_SRC).toContain("expanded: Set<string>");
   });
 
-  it("no longer passes onToggleGroup prop to SidebarNavBody", () => {
-    expect(APPSHELL_SRC).not.toContain("onToggleGroup: (label: string) => void");
+  it("passes the onToggleGroup prop to SidebarNavBody", () => {
+    expect(APPSHELL_SRC).toContain("onToggleGroup: (label: string) => void");
   });
 });
 
 // ---------------------------------------------------------------------------
-// This PR: SidebarNavBody simplified to static non-collapsible groups
+// SidebarNavBody renders collapsible group toggles
 // ---------------------------------------------------------------------------
-describe("AppShell — SidebarNavBody simplified to static groups", () => {
-  it("renders each group label as a static <p> element, not a toggle button", () => {
-    expect(APPSHELL_SRC).toContain("tracking-[0.22em] font-semibold mb-1.5 px-3");
+describe("AppShell — SidebarNavBody renders collapsible group toggles", () => {
+  it("renders each group label inside a toggle button styled with tracking-[0.22em]", () => {
+    expect(APPSHELL_SRC).toContain("uppercase tracking-[0.22em] font-semibold");
   });
 
   it("still iterates over NAV_GROUPS to render sections", () => {
