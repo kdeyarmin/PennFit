@@ -120,28 +120,57 @@ export interface ShopUnavailable {
 
 export type ShopProductsResult = ShopProductsResponse | ShopUnavailable;
 
+// Friendly fallback shown whenever the catalog can't be loaded for a
+// reason the patient can't act on (shop down, or the API is unreachable
+// because of a deployment/proxy gap). The storefront renders this as a
+// soft "check back soon" card rather than a hard error.
+const SHOP_UNAVAILABLE_MESSAGE =
+  "The shop isn't available right now. Please check back soon.";
+
 export async function fetchShopProducts(): Promise<ShopProductsResult> {
   const res = await fetch("/resupply-api/shop/products", {
     headers: { Accept: "application/json" },
   });
+
+  // 503 is the API's explicit "shop temporarily down" signal (e.g. a
+  // Stripe outage with no warm cache). It carries a tailored message.
   if (res.status === 503) {
     const body = (await res.json().catch(() => ({}))) as {
       message?: string;
     };
     return {
       unavailable: true,
-      message:
-        body.message ??
-        "The shop isn't available right now. Please check back soon.",
+      message: body.message ?? SHOP_UNAVAILABLE_MESSAGE,
     };
   }
+
+  // A 404 here almost always means the request never reached the API:
+  // in a misconfigured deploy where `/resupply-api/*` isn't routed to a
+  // live API process, the call lands on the SPA host's history-fallback,
+  // which returns 404 for a JSON `Accept` request. Retrying won't help,
+  // so degrade to the same soft "unavailable" card the 503 path uses
+  // instead of throwing "Failed to load shop products (404)" at the
+  // patient. (Other non-OK statuses — 5xx — still throw so the caller's
+  // one-shot auto-retry can ride out a transient server blip.)
+  if (res.status === 404) {
+    return { unavailable: true, message: SHOP_UNAVAILABLE_MESSAGE };
+  }
+
   if (!res.ok) {
     throw new Error(`Failed to load shop products (${res.status})`);
   }
+
   // Older API versions didn't include `previewMode`; default to false
   // so the cart never falsely disables checkout when talking to a
-  // legacy server.
-  const json = (await res.json()) as Partial<ShopProductsResponse>;
+  // legacy server. Guard the parse: a 200 whose body is the SPA HTML
+  // shell (some static hosts answer unknown paths with index.html and
+  // a 200) would otherwise throw a SyntaxError out of res.json().
+  let json: Partial<ShopProductsResponse>;
+  try {
+    json = (await res.json()) as Partial<ShopProductsResponse>;
+  } catch {
+    return { unavailable: true, message: SHOP_UNAVAILABLE_MESSAGE };
+  }
   return {
     previewMode: json.previewMode ?? false,
     categories: json.categories ?? [],

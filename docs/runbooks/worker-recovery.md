@@ -172,13 +172,22 @@ WHERE id = '<uuid>'
 If `active = 0` and `created/retry > 0` and the alert is firing,
 nothing is processing the queue. Check:
 
-1. **Is the API process up?** `/readyz` should return 200. If it's
-   wedged, redeploy the `resupply-api` Railway service.
+1. **Is the API process up?** `/healthz` should return `200` (liveness;
+   touches no dependency). If even `/healthz` is unreachable the
+   process is wedged — redeploy the `resupply-api` Railway service.
+   Note: `/readyz` returns `503` whenever the worker is down even
+   though the process is healthy, so use `/healthz`, not `/readyz`, to
+   answer "is the process up?".
 2. **Is pg-boss boot complete?** The worker logs
    `"resupply in-process worker ready"` once `startWorker()` finishes.
-   If that line is missing from the boot log, pg-boss failed to start.
-   Likeliest cause: a DDL / schema migration mismatch in
-   `pgboss_resupply.*`. Tail logs at `event: "pg-boss error"`.
+   If that line is missing, pg-boss failed to start — but the HTTP
+   server stays up regardless (boot was decoupled from the worker; see
+   `artifacts/resupply-api/src/index.ts`), so the public site keeps
+   serving while the worker retries on a backoff. Watch for
+   `event: "worker_retry_scheduled"`; if it never reaches "worker ready", the
+   likeliest cause is a DDL / schema migration mismatch in
+   `pgboss_resupply.*` or the DB being unreachable. Tail logs at
+   `event: "pg_boss_start_failed"` and `event: "pg_boss_error"`.
 3. **Is `boss.subscribe` registered for the queue?** Each
    `register*Job(boss)` call in `startWorker()` opens a worker
    subscription. If a job was added without a corresponding
