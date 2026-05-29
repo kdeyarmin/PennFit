@@ -12,11 +12,15 @@ API call (including `POST /api/chat`) 404s.
 | # | Step | Where it runs | Status |
 | - | ---- | ------------- | ------ |
 | 1 | Create `resupply.feature_flags` (+ seed) in the prod DB | Supabase (PennPaps) | ✅ **Done 2026-05-29** (migration `0149`) |
-| 2 | Expose `resupply` + `resupply_auth` schemas to PostgREST | Supabase dashboard | ☐ Operator |
+| 2 | Verify `resupply` exposed to PostgREST + `service_role` grants | Supabase | ✅ **Verified 2026-05-29** (no action needed) |
 | 3 | Set required env on the Railway service | Railway dashboard → Variables | ☐ Operator |
 | 4 | Redeploy current `main`; confirm `/readyz` 200 & deploy promotes | Railway dashboard → Redeploy | ☐ Operator |
 | 5 | Confirm the domain is bound to the consolidated service | Railway dashboard → Settings → Domains | ☐ Operator |
 | 6 | Smoke-test the chatbot end to end | Your laptop / browser | ☐ Operator |
+
+> **DB side is fully ready.** Everything Supabase-side that gates the
+> healthcheck is done — the remaining steps (3–6) are all Railway dashboard
+> actions plus setting an LLM key.
 
 ---
 
@@ -84,13 +88,20 @@ select key, enabled from resupply.feature_flags order by key;
 > that one doesn't affect it). A separate migration-reconciliation effort
 > is warranted; see `docs/migration-state-investigation-2026-05-08.md`.
 
-### 2. Expose `resupply` + `resupply_auth` to PostgREST
+### 2. Schema exposure + grants — ✅ verified 2026-05-29, no action needed
 
-Supabase Studio → **Project Settings → API → Exposed schemas** — add
-`resupply` and `resupply_auth`. The runtime data path is the Supabase
-service-role client; if these schemas aren't exposed, **every** PostgREST
-query 503s (including the `/readyz` probe above). This is a documented hard
-requirement (see `CLAUDE.md` → Service boot contract).
+Checked the live PostgREST endpoint: a request to
+`/rest/v1/feature_flags` with `Accept-Profile: resupply` returns a
+table-level grant error (`42501`), **not** a schema-exposure error
+(`PGRST106 "schema must be one of …"`). That confirms `resupply` is already
+in the exposed-schemas list. Grants on the new table match the other 43
+`resupply` tables — `service_role` has full privileges incl. `SELECT`, which
+is the role the app's readyz probe and `isFeatureEnabled()` use. (The `anon`
+role intentionally lacks access; the app never reads flags as `anon`.)
+
+So nothing to do here — left in the runbook only to document the check. If a
+future `/readyz` failure shows `db: "unavailable"`, re-run this probe to
+distinguish "schema not exposed" from "table missing / grant missing".
 
 ### 3. Set required env on the Railway service
 
