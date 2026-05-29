@@ -35,7 +35,10 @@ import {
   SESSION_COOKIE,
 } from "@workspace/resupply-auth";
 
-import { isAdminMutationRequest, isShopMutationRequest } from "./admin-path";
+import {
+  isAdminMutationRequest,
+  isStorefrontSessionMutationRequest,
+} from "./admin-path";
 
 function denyCsrf(req: Request, res: Response, reason?: string): void {
   // Best-effort structured log so ops can grep by reason without the
@@ -169,23 +172,31 @@ export const requireCsrfOnAdminMutations: RequestHandler = (
 };
 
 /**
- * App-level conditional CSRF gate for shop-tree mutations.
+ * App-level conditional CSRF gate for storefront-tree mutations (the
+ * shop tree AND the patient-portal `/me/*` tree).
  *
- * Difference from `requireCsrfOnAdminMutations`: the shop tree mixes
+ * Difference from `requireCsrfOnAdminMutations`: the storefront mixes
  * anonymous traffic (guest checkout, public product browse) with
- * signed-in customer traffic (`/shop/me/*`). Anonymous requests carry
- * no `pf_session` cookie to replay, so requiring CSRF on them would
- * block legitimate no-cookie callers without any security benefit.
+ * signed-in customer traffic (`/shop/me/*`, `/me/*`). Anonymous requests
+ * carry no `pf_session` cookie to replay, so requiring CSRF on them
+ * would block legitimate no-cookie callers without any security benefit.
  * `requireCsrfWhenSession` semantics handle both: pass-through when
  * no session cookie is present, enforce when one is.
  *
- * Mount once at app level *before* the shop routers so any future
- * `/shop/...` mutation is gated automatically. Both the cpap-fitter
- * storefront SPA's hand-rolled fetch helpers
- * (artifacts/cpap-fitter/src/lib/shop-api.ts) and the generated
- * client (lib/api-client-react/src/storefront/custom-fetch.ts) attach
- * the `X-PF-CSRF` header on every state-changing fetch, so this is a
- * server-only addition with no client coordination.
+ * Covers BOTH `/api/shop` and `/api/me` (see
+ * `isStorefrontSessionMutationRequest`): the patient-portal payment and
+ * sleep-coach routers are mounted at `/api/me/*`, NOT under `/api/shop`,
+ * so the original shop-only matcher left e.g.
+ * `POST /api/me/payments/checkout-session` as a cookie-authed mutation
+ * with no CSRF protection.
+ *
+ * Mount once at app level *before* the storefront routers so any future
+ * `/shop/...` or `/me/...` mutation is gated automatically. The
+ * cpap-fitter SPA's hand-rolled fetch helpers
+ * (artifacts/cpap-fitter/src/lib/shop-api.ts and me-billing-api.ts) and
+ * the generated client
+ * (lib/api-client-react/src/storefront/custom-fetch.ts) attach the
+ * `X-PF-CSRF` header on every state-changing fetch.
  *
  * Per-router `requireCsrf` calls remain — double-checking is harmless
  * because the middleware short-circuits on success.
@@ -195,7 +206,7 @@ export const requireCsrfWhenSessionOnShopMutations: RequestHandler = (
   res: Response,
   next: NextFunction,
 ): void => {
-  if (!isShopMutationRequest(req)) {
+  if (!isStorefrontSessionMutationRequest(req)) {
     next();
     return;
   }
