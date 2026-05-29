@@ -224,6 +224,8 @@ function stageSingleRecipientTick(opts: {
 
   // 1. Campaign SELECT
   stageDb("bulk_campaigns", "select", { data: campaign });
+  // 1b. Stale-'sending' reclaim UPDATE (recovers orphaned rows; no-op here)
+  stageDb("bulk_campaign_recipients", "update", { data: null });
   // 2. Pending recipients SELECT
   stageDb("bulk_campaign_recipients", "select", { data: [recipient] });
   // 3. Claim UPDATE (status → sending, RETURNING id + email + kind + id)
@@ -373,6 +375,7 @@ describe("processTick — compliance category bypasses opt-out gate", () => {
 
     // Stage only the calls that processTick makes when compliance bypasses the gate
     stageDb("bulk_campaigns", "select", { data: campaign });
+    stageDb("bulk_campaign_recipients", "update", { data: null }); // stale-'sending' reclaim (no-op)
     stageDb("bulk_campaign_recipients", "select", { data: [recipient] });
     stageDb("bulk_campaign_recipients", "update", { data: [recipient] });
     // NO patient/shop_customers SELECT — the opt-out check is skipped
@@ -397,6 +400,7 @@ describe("processTick — compliance category bypasses opt-out gate", () => {
     const recipient = makeRecipient();
 
     stageDb("bulk_campaigns", "select", { data: campaign });
+    stageDb("bulk_campaign_recipients", "update", { data: null }); // stale-'sending' reclaim (no-op)
     stageDb("bulk_campaign_recipients", "select", { data: [recipient] });
     stageDb("bulk_campaign_recipients", "update", { data: [recipient] });
     stageDb("bulk_campaign_recipients", "update", { data: null });
@@ -472,6 +476,7 @@ describe("processTick — opt-out DB error is fail-open", () => {
     const recipient = makeRecipient();
 
     stageDb("bulk_campaigns", "select", { data: campaign });
+    stageDb("bulk_campaign_recipients", "update", { data: null }); // stale-'sending' reclaim (no-op)
     stageDb("bulk_campaign_recipients", "select", { data: [recipient] });
     stageDb("bulk_campaign_recipients", "update", { data: [recipient] });
     // Throw on the patient opt-out check
@@ -535,7 +540,10 @@ describe("processTick — suppressedAtSend counter and pool.query", () => {
     // pending rows = 0 → drains immediately, no counters to update.
     const campaign = makeCampaign();
     stageDb("bulk_campaigns", "select", { data: campaign });
+    stageDb("bulk_campaign_recipients", "update", { data: null }); // stale-'sending' reclaim (no-op)
     stageDb("bulk_campaign_recipients", "select", { data: [] }); // no pending
+    // finalizeOrReschedule: 0 pending+sending remaining → mark sent
+    stageDb("bulk_campaign_recipients", "select", { data: null, count: 0 } as { data: null; count: number });
     stageDb("bulk_campaigns", "update", { data: [{ id: campaign.id }] }); // markSent
 
     await processTick(makeBoss() as never, { campaignId: "camp-1" }, testLog as never);
@@ -545,6 +553,7 @@ describe("processTick — suppressedAtSend counter and pool.query", () => {
   it("does NOT call pool.query when claim race is lost (winningIds empty)", async () => {
     const campaign = makeCampaign();
     stageDb("bulk_campaigns", "select", { data: campaign });
+    stageDb("bulk_campaign_recipients", "update", { data: null }); // stale-'sending' reclaim (no-op)
     stageDb("bulk_campaign_recipients", "select", {
       data: [makeRecipient()],
     }); // pendingRows has one row
@@ -622,6 +631,55 @@ describe("processTick — opt-out re-check scope: patient kind fails open", () =
       (u) => (u as Record<string, unknown>).status === "suppressed",
     );
     expect(suppressionUpdate).toBeUndefined();
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Orphaned-'sending' recovery (worker-crash safety)
+// ──────────────────────────────────────────────────────────────────────────────
+
+describe("processTick — orphaned 'sending' recovery", () => {
+  it("reclaims stale 'sending' rows to 'pending' at the start of every tick", async () => {
+    stageSingleRecipientTick({
+      campaign: { category: "marketing" },
+      patientPrefs: { emailMarketing: true },
+    });
+
+    await processTick(makeBoss() as never, { campaignId: "camp-1" }, testLog as never);
+
+    // The FIRST recipient UPDATE is the stale-'sending' reclaim. In the
+    // route it is scoped to status='sending' AND updated_at < lease; the
+    // mock ignores filters, but the payload pins that the reclaim fires
+    // and resets orphaned rows to 'pending' for re-send.
+    const updates = getWrites("bulk_campaign_recipients", "update") as Array<
+      Record<string, unknown>
+    >;
+    expect(updates[0]).toEqual({ status: "pending" });
+  });
+
+  it("does NOT mark the campaign 'sent' while recipients remain in 'sending'", async () => {
+    // Regression: previously the drain check counted only 'pending', so a
+    // campaign with rows orphaned in 'sending' (crashed mid-batch) was
+    // falsely marked 'sent' and those recipients never got the email.
+    const campaign = makeCampaign();
+    stageDb("bulk_campaigns", "select", { data: campaign });
+    stageDb("bulk_campaign_recipients", "update", { data: null }); // reclaim (nothing stale yet)
+    stageDb("bulk_campaign_recipients", "select", { data: [] }); // nothing 'pending' to claim
+    // finalizeOrReschedule: 2 recipients still in 'sending' → NOT done
+    stageDb("bulk_campaign_recipients", "select", { data: null, count: 2 } as {
+      data: null;
+      count: number;
+    });
+
+    const boss = makeBoss();
+    await processTick(boss as never, { campaignId: "camp-1" }, testLog as never);
+
+    // Must reschedule a follow-up tick, NOT complete the campaign.
+    expect(boss.send).toHaveBeenCalledTimes(1);
+    const campaignUpdates = getWrites("bulk_campaigns", "update") as Array<
+      Record<string, unknown>
+    >;
+    expect(campaignUpdates.find((u) => u.status === "sent")).toBeUndefined();
   });
 });
 

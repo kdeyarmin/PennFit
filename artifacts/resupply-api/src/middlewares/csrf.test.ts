@@ -493,6 +493,46 @@ describe("requireCsrfWhenSessionOnShopMutations", () => {
     expect(nextCalled).toBe(true);
     expect(res.statusCode).toBe(200);
   });
+
+  // Regression: the patient-portal payment/sleep-coach routers mount at
+  // /api/me/* (NOT /api/shop), so they were previously NOT gated. They
+  // are cookie-authed mutations and MUST require X-PF-CSRF now.
+  it("enforces CSRF on a signed-in /api/me/payments/checkout-session POST (no header)", () => {
+    const { res, nextCalled } = runPath(
+      makePathReq({
+        method: "POST",
+        path: "/api/me/payments/checkout-session",
+        sessionCookie: "session-token",
+        csrfCookie: "csrf-token",
+      }),
+    );
+    expect(nextCalled).toBe(false);
+    expect(res.statusCode).toBe(403);
+    expect(res.body).toMatchObject({ error: "csrf_failed" });
+  });
+
+  it("calls next() when CSRF cookie + header match on a signed-in /api/me POST", () => {
+    const token = "valid-csrf-token";
+    const { res, nextCalled } = runPath(
+      makePathReq({
+        method: "POST",
+        path: "/api/me/sleep-coach",
+        sessionCookie: "session-token",
+        csrfCookie: token,
+        header: token,
+      }),
+    );
+    expect(nextCalled).toBe(true);
+    expect(res.statusCode).toBe(200);
+  });
+
+  it("passes through anonymous /api/me POST (no pf_session cookie)", () => {
+    const { res, nextCalled } = runPath(
+      makePathReq({ method: "POST", path: "/api/me/sleep-coach" }),
+    );
+    expect(nextCalled).toBe(true);
+    expect(res.statusCode).toBe(200);
+  });
 });
 
 describe("requireCsrf — response envelope", () => {

@@ -68,6 +68,14 @@ type CampaignUpdate =
 
 const SYSTEM_ACTOR_EMAIL = "system:worker:bulk-campaigns";
 
+// A recipient claimed to 'sending' but never finalized is orphaned only
+// if it has sat there longer than a tick could possibly live. Ticks run
+// on VENDOR_SEND_QUEUE_OPTS (expireInMinutes: 15), so any 'sending' row
+// older than that cannot belong to a live tick and is safe to reclaim.
+// `bulk_campaign_recipients.updated_at` is auto-bumped by a DB trigger
+// (migration 0083) on every status change, so it's a reliable lease.
+const SENDING_LEASE_MS = 15 * 60_000;
+
 export async function registerBulkCampaignTickJob(
   boss: PgBoss,
 ): Promise<void> {
@@ -135,6 +143,33 @@ export async function processTick(
     return;
   }
 
+  // 1b. Recover orphaned recipients. A prior tick claims a batch
+  //     pending → sending in one update, then sends + finalizes each row.
+  //     If that worker crashed / was SIGKILL'd / the job expired
+  //     mid-batch, the un-finalized rows are stranded in 'sending'
+  //     forever — and because the drain check below counted only
+  //     'pending', the campaign was then falsely marked 'sent' while
+  //     those recipients never received the email (silent data loss).
+  //     Reclaim any 'sending' row older than the lease back to 'pending'
+  //     so a later tick re-sends it. Safe under concurrency: a live tick
+  //     finalizes its rows within seconds, far inside the 15-min lease.
+  const staleSendingBefore = new Date(
+    Date.now() - SENDING_LEASE_MS,
+  ).toISOString();
+  const { error: reclaimErr } = await supabase
+    .schema("resupply")
+    .from("bulk_campaign_recipients")
+    .update({ status: "pending" })
+    .eq("campaign_id", campaign.id)
+    .eq("status", "sending")
+    .lt("updated_at", staleSendingBefore);
+  if (reclaimErr) {
+    log.warn(
+      { err: reclaimErr, campaignId: campaign.id },
+      "bulk_campaigns.tick: stale 'sending' reclaim failed (continuing)",
+    );
+  }
+
   // 2. Claim a batch of pending recipients atomically.
   const batchSize = batchSizeForThrottle(campaign.throttle_per_minute);
   const { data: pendingRows, error: pErr } = await supabase
@@ -150,12 +185,10 @@ export async function processTick(
   }
 
   if (!pendingRows || pendingRows.length === 0) {
-    // No more pending → mark the campaign sent.
-    await markCampaignSent(supabase, campaign.id);
-    log.info(
-      { campaignId: campaign.id },
-      "bulk_campaigns.tick: drained — campaign marked sent",
-    );
+    // No more pending. Only finalize if nothing is mid-flight either —
+    // a non-stale 'sending' row (in-flight or not-yet-reclaimed orphan)
+    // means the campaign isn't actually done.
+    await finalizeOrReschedule(boss, supabase, campaign.id, log);
     return;
   }
 
@@ -394,23 +427,53 @@ export async function processTick(
     return;
   }
 
-  const { count: stillPending } = await supabase
+  await finalizeOrReschedule(boss, supabase, campaign.id, log);
+}
+
+/**
+ * Mark the campaign 'sent' ONLY when no recipients remain in either
+ * 'pending' OR 'sending'; otherwise enqueue another tick.
+ *
+ * Counting only 'pending' (the old behavior) marked a campaign 'sent'
+ * while recipients orphaned in 'sending' by a crashed tick had never
+ * been delivered. A 'sending' row is either (a) in-flight in a
+ * concurrent tick or (b) an orphan that the tick-entry stale-reclaim
+ * will recover once it ages past the lease — either way the campaign is
+ * NOT finished, so we reschedule (every TICK_INTERVAL_SECONDS = 10s)
+ * rather than report false completion. In the normal path a tick
+ * finalizes all of its own claimed rows before reaching here, so
+ * `remaining` is 0 and the campaign completes immediately.
+ */
+async function finalizeOrReschedule(
+  boss: PgBoss,
+  supabase: ReturnType<typeof getSupabaseServiceRoleClient>,
+  campaignId: string,
+  log: typeof logger,
+): Promise<void> {
+  const { count: remaining, error } = await supabase
     .schema("resupply")
     .from("bulk_campaign_recipients")
     .select("*", { count: "exact", head: true })
-    .eq("campaign_id", campaign.id)
-    .eq("status", "pending");
-
-  if (!stillPending || stillPending === 0) {
-    await markCampaignSent(supabase, campaign.id);
+    .eq("campaign_id", campaignId)
+    .in("status", ["pending", "sending"]);
+  if (error) {
+    // Be conservative: reschedule rather than risk a premature 'sent'.
+    log.error(
+      { err: error, campaignId },
+      "bulk_campaigns.tick: remaining-work count failed — rescheduling",
+    );
+    await enqueueNextTick(boss, campaignId);
+    return;
+  }
+  if (!remaining || remaining === 0) {
+    await markCampaignSent(supabase, campaignId);
     log.info(
-      { campaignId: campaign.id },
+      { campaignId },
       "bulk_campaigns.tick: drained — campaign marked sent",
     );
     return;
   }
-
-  await enqueueNextTick(boss, campaign.id);
+  await enqueueNextTick(boss, campaignId);
 }
 
 /**

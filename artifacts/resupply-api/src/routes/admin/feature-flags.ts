@@ -268,7 +268,15 @@ router.get(
   "/admin/feature-flags/activity",
   requirePermission("reports.read"),
   async (req, res) => {
-    const limit = activityQuerySchema.parse(req.query).limit;
+    // `safeParse` (not `.parse()`): a repeated query param
+    // (`?limit=1&limit=2`) makes `req.query.limit` an array, which
+    // fails `z.string()` and would throw a `ZodError` → unhandled 500.
+    // The schema already coerces bad limit values to the default, so a
+    // malformed shape should degrade the same way, not 5xx.
+    const parsedQuery = activityQuerySchema.safeParse(req.query);
+    const limit = parsedQuery.success
+      ? parsedQuery.data.limit
+      : ACTIVITY_DEFAULT_LIMIT;
 
     const supabase = getSupabaseServiceRoleClient();
     const { data, error } = await supabase
