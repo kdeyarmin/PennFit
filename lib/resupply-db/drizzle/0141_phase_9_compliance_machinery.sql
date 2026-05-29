@@ -136,7 +136,7 @@ CREATE TABLE IF NOT EXISTS "resupply"."oig_leie_screenings" (
   -- What we're screening. The optional FKs are SET NULL so a
   -- staff/provider/BAA delete doesn't break the screening history.
   "subject_kind" text NOT NULL,
-  "subject_admin_user_id" uuid
+  "subject_admin_user_id" text
     REFERENCES "resupply_auth"."users"("id") ON DELETE SET NULL,
   "subject_provider_id" uuid
     REFERENCES "resupply"."providers"("id") ON DELETE SET NULL,

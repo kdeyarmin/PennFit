@@ -15,6 +15,21 @@
 -- search_path + GRANT EXECUTE to service_role only. They are STABLE
 -- (read-only, no side effects) so the planner can optimize freely.
 
+-- Ensure the `service_role` role exists before the GRANTs below. On
+-- Supabase (and production) the platform provisions it, but a vanilla
+-- Postgres — CI's `postgres:14` service container and local
+-- from-scratch replays — has no such role and the GRANT would fail.
+-- Create it idempotently (NOLOGIN, no privileges); no-op where it
+-- already exists. Mirrors the guard in 0143.
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'service_role') THEN
+    CREATE ROLE service_role NOLOGIN;
+  END IF;
+END
+$$;
+--> statement-breakpoint
+
 -- ── billing denial-rate ────────────────────────────────────────────
 -- Per-payer decision + denial counts over claims whose decision_at is
 -- within the caller-supplied window and whose status is one of the
