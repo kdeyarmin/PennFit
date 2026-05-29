@@ -22,6 +22,17 @@ import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 const router: IRouter = Router();
 
+/**
+ * Map a storefront `shop_customers.customer_id` to a single patient record ID when the mapping is unambiguous.
+ *
+ * Looks up the customer's lowercase email from `resupply.shop_customers` and finds patients with a case-insensitive match.
+ * Returns a result only when exactly one patient record matches the customer's email; returns `null` when the email is missing,
+ * no patients match, or multiple patients match (to avoid ambiguous/PHI-leaking mappings).
+ *
+ * @param customerId - The storefront `shop_customers.customer_id` to resolve
+ * @returns `{ patientId: string }` with the matched patient id when exactly one patient matches, `null` otherwise
+ * @throws Error when a database query fails; the error message includes the underlying database error
+ */
 async function resolvePatientForCustomer(
   customerId: string,
 ): Promise<{ patientId: string } | null> {

@@ -122,6 +122,12 @@ async function resolveCustomer(req: Request): Promise<Resolved | null> {
   }
 }
 
+/**
+ * Populate the incoming request with customer identifiers and profile fields from a resolved session.
+ *
+ * @param req - The Express request to attach fields to; adds `userCustomerId`, `shopCustomerId`, `shopCustomerEmail`, and `shopCustomerDisplayName`.
+ * @param r - Resolved customer data providing `customerKey`, `email`, and `displayName` used to populate the request fields
+ */
 function attach(req: Request, r: Resolved): void {
   req.userCustomerId = r.customerKey;
   // Alias for the patient-portal routers that read `req.shopCustomerId`.

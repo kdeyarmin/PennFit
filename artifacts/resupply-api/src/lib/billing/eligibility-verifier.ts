@@ -69,6 +69,24 @@ export interface VerifyEligibilityResult {
   errorMessage: string | null;
 }
 
+/**
+ * Performs a round-trip electronic eligibility (HIPAA 270) submission for a patient's insurance coverage.
+ *
+ * Validates the coverage belongs to the patient and that the payer accepts electronic 270/271, builds the 270 transaction,
+ * uploads it to the configured clearinghouse (or outbox), and records an `eligibility_checks` row summarizing the submission.
+ *
+ * @param input - Parameters required to run the eligibility check (see `VerifyEligibilityInput`)
+ * @returns An object describing the recorded eligibility check and upload outcome
+ * @returns eligibilityCheckId - The `id` of the inserted `eligibility_checks` row
+ * @returns isaControlNumber - The allocated ISA interchange control number used for this submission
+ * @returns traceReference - The trace reference extracted from the built 270 payload
+ * @returns uploadOk - `true` if the transport upload succeeded, `false` otherwise
+ * @returns errorMessage - `null` when `uploadOk` is `true`; otherwise the transport error message
+ *
+ * @throws CoverageNotForPatientError when the specified coverage does not belong to the given patient
+ * @throws Error with message `"insurance_coverage not found"`, `"patient not found"`, or `"payer does not accept electronic 270/271"` for the corresponding validation failures
+ * @throws Error for other database or transport failures surfaced from the underlying services
+ */
 export async function verifyEligibility(
   input: VerifyEligibilityInput,
 ): Promise<VerifyEligibilityResult> {

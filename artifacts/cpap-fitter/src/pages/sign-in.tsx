@@ -21,7 +21,13 @@ const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
 //   ?reset=success    — user just set a new password (sessions revoked)
 //   ?verified=success — user just clicked the email verification link
 // Returning null when neither is present keeps the banner suppressed in
-// the steady-state sign-in view.
+/**
+ * Reads a short success flag from the current page's query string for UI banners.
+ *
+ * Checks the URL search params and returns a flag when a recognized success parameter is present.
+ *
+ * @returns `"reset"` if the query contains `reset=success`, `"verified"` if it contains `verified=success`, or `null` when neither is present or when not running in a browser (SSR).
+ */
 function readSuccessFlag(): "reset" | "verified" | null {
   if (typeof window === "undefined") return null;
   const params = new URLSearchParams(window.location.search);
@@ -37,7 +43,13 @@ function readSuccessFlag(): "reset" | "verified" | null {
 // We honor ONLY same-origin absolute paths: a single leading "/" (reject
 // "//" protocol-relative and absolute http(s) URLs so this can't be an
 // open redirect), and never bounce back into an auth page (avoids a
-// redirect loop). Falls back to /account.
+/**
+ * Determine a safe post-authentication redirect path from the URL `redirect` query parameter.
+ *
+ * Returns the sanitized path to use after sign-in; falls back to `/account` when executed outside the browser, when `redirect` is missing or empty, when it does not start with a single leading `/`, when it is protocol-relative (`//...`), or when it equals `/sign-in` or `/sign-up`.
+ *
+ * @returns The validated redirect path (a leading-slash path) or `"/account"` on invalid input or during SSR.
+ */
 function readRedirect(): string {
   if (typeof window === "undefined") return "/account";
   const raw = new URLSearchParams(window.location.search).get("redirect");
@@ -47,6 +59,15 @@ function readRedirect(): string {
   return raw;
 }
 
+/**
+ * Render the sign-in UI and handle the sign-in flow, including a sanitized post-login redirect.
+ *
+ * Reads the URL once on mount to capture an optional success flag (`reset` or `verified`) and a validated `redirect` target.
+ * When a success flag is present a corresponding success banner is shown and the query string is stripped from the URL.
+ * Submits credentials through the auth hook, displays submission errors, and navigates to the captured redirect target on successful sign-in.
+ *
+ * @returns The JSX element for the sign-in page and form
+ */
 export function SignInPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");

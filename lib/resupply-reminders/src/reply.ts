@@ -82,6 +82,21 @@ export type ReplyInConversationOutcome =
       vendorCode: string | null;
     };
 
+/**
+ * Append an admin-typed SMS or email reply to an existing conversation, send it via the conversation's channel vendor, and record delivery metadata.
+ *
+ * Performs validation of conversation and patient contact state, sends the outbound message through the configured vendor (Twilio for SMS, SendGrid for email), attempts to persist the new message and update the conversation state (best-effort), updates the latest-message projection (best-effort), and emits an audit record.
+ *
+ * @param input - Configuration and payload required to send the reply, including DB client, channel vendor configs, conversationId, reply body, and actor for auditing
+ * @returns On success: `{ status: "ok"; conversationId: string; messageId?: string; vendorRef: string }`. On failure: one of
+ * - `{ status: "conversation_not_found" }`
+ * - `{ status: "conversation_closed" }`
+ * - `{ status: "patient_missing_contact"; channel: "sms" | "email" }`
+ * - `{ status: "patient_opted_out" }`
+ * - `{ status: "patient_phone_unnormalizable" }`
+ * - `{ status: "unsupported_channel"; channel: string }`
+ * - `{ status: "vendor_api_error"; vendor: "sms_vendor" | "email_vendor"; vendorStatus: number | null; vendorCode: string | null }`
+ */
 export async function replyInConversation(
   input: ReplyInConversationInput,
 ): Promise<ReplyInConversationOutcome> {

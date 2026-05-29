@@ -175,7 +175,11 @@ export function detectMilestones(
 }
 
 /**
- * Run the daily milestone scan + send. Exported for testability.
+ * Evaluate patient therapy night histories to create any newly reached milestones and notify patients for milestones that have not yet been sent.
+ *
+ * This performs two phases: (1) scans recently active patients' nightly records and inserts missing milestone rows, and (2) claims pending milestone rows, sends celebration emails (and best-effort push notifications), and updates per-milestone notification state. Errors affecting individual patients or notifications are handled per-row so the overall run continues.
+ *
+ * @returns MilestoneStats containing counts for the run: `patientsScanned`, per-kind `inserted` totals, `sent`, `sendSkipped`, and `sendFailed`.
  */
 export async function runTherapyMilestones(): Promise<MilestoneStats> {
   const supabase = getSupabaseServiceRoleClient();

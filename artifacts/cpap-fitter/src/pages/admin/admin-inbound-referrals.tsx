@@ -432,7 +432,15 @@ function Section({
 
 // ────────────────────────────────────────────────────────────────────
 // Overview pane
-// ────────────────────────────────────────────────────────────────────
+/**
+ * Render a two-column overview of a referral's metadata, AI classification, procedure/diagnosis codes, and documents.
+ *
+ * Renders received/triaged/accepted timestamps, payer and ordering NPI, an AI summary block when available,
+ * HCPCS and ICD-10 entries, and a documents list where only `http(s)` URLs are rendered as external links.
+ *
+ * @param referral - Referral data used to populate the overview (timestamps, payer, ordering NPI, AI classification and confidence, documents, HCPCS items, and ICD-10 codes)
+ * @returns A JSX element containing the overview layout described above
+ */
 
 function OverviewPane({
   referral,

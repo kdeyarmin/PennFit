@@ -90,6 +90,17 @@ type Cycle = Pick<
   | "status"
 >;
 
+/**
+ * Advance a capped rental cycle by one month when its next monthly anniversary is due.
+ *
+ * Attempts to atomically claim the next month; if claimed, creates a draft insurance claim,
+ * a line item, and a claim event, then links the generated claim to the cycle. If the cycle
+ * has reached its maximum months the function marks ownership as transferred. If the cycle
+ * is not yet due or another worker already advanced it, no changes are made.
+ *
+ * @param cycle - The capped rental cycle record to evaluate and potentially advance
+ * @returns `"advanced"` when the month was claimed and a draft claim was created; `"transferred"` when the cycle reached its max months and ownership was transferred; `"noop"` when the cycle is not due or another worker already advanced it
+ */
 async function advanceCycle(
   supabase: SupabaseClient,
   cycle: Cycle,
@@ -236,6 +247,17 @@ async function advanceCycle(
   }
 }
 
+/**
+ * Selects the HCPCS modifier codes applicable for a given capped-rental month.
+ *
+ * Always includes `"RR"`. Adds `"KH"` for months 1–3. For months 4–13 it adds `"KI"`,
+ * and also adds `"KX"` when `isCompliant` is true and the `hcpcs` code is in the compliant set.
+ *
+ * @param hcpcs - The HCPCS code for the product or service
+ * @param month - The rental month number (1-based)
+ * @param isCompliant - Whether the patient meets the KX compliance criteria
+ * @returns An array of modifier codes to apply to the claim line item
+ */
 function pickModifiers(
   hcpcs: string,
   month: number,
