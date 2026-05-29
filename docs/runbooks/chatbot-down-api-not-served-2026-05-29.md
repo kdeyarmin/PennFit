@@ -3,11 +3,28 @@
 The customer-facing chatbot ("PennBot") errored for every message with
 _"Something went wrong reaching the chat service … connection issue"_.
 
-This runbook captures the root cause and the **operator-only** steps to
-restore it. The chatbot **code is healthy** — the problem is that the
-consolidated `resupply-api` server is not the thing answering at
-`pennfit.up.railway.app`; a stale **static-SPA-only** deploy is, so every
-API call (including `POST /api/chat`) 404s.
+> ## ✅ RESOLVED 2026-05-29
+> The chatbot (and the whole site's API) is live on `pennfit.up.railway.app`.
+> **Actual root cause:** the Railway project had **two services** —
+> `cpap-fitter` (running `vite preview`, a static SPA) and `resupply-api`
+> (the consolidated Express server). The customer domain
+> `pennfit.up.railway.app` was bound to **`cpap-fitter`**, so `/api/*`
+> (including `/api/chat`) 404'd. The consolidated `resupply-api` was healthy
+> the whole time but only reachable at `penn.up.railway.app`.
+> **Fixes applied:** (1) created `resupply.feature_flags` so `/readyz` passes;
+> (2) set `ANTHROPIC_API_KEY` on `resupply-api` + redeployed (bot answers for
+> real); (3) moved `pennfit.up.railway.app` onto `resupply-api` by renaming
+> service domains in place (`cpap-fitter`'s → `pennfit-legacy`, then
+> `resupply-api`'s `penn` → `pennfit`). Verified: `/`=SPA 200,
+> `/api/healthz`=JSON, `/readyz`=ready, `/api/chat`=real Claude reply.
+> **Follow-ups:** delete the now-orphaned `cpap-fitter` service
+> (`pennfit-legacy.up.railway.app`); reconcile the broader DB migration drift
+> (some worker jobs still log `*_select_failed` against missing tables).
+
+This runbook captures the root cause and the steps taken. The chatbot
+**code was healthy throughout** — the problem was purely deploy topology:
+the customer domain pointed at a static-SPA-only service, so every API
+call (including `POST /api/chat`) 404'd.
 
 | # | Step | Where it runs | Status |
 | - | ---- | ------------- | ------ |
