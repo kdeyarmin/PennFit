@@ -25,8 +25,9 @@
 //   * Read-only. Opens one connection, runs information_schema SELECTs, and
 //     never writes. Safe to point at production.
 //   * Honors an allowlist of KNOWN-INTENTIONAL absences (e.g. audit-log
-//     tamper columns retired by migration 0156) so the signal stays
-//     actionable instead of perpetually red.
+//     tamper columns whose feature was retired by 0156 — the columns
+//     themselves were never dropped) so the signal stays actionable
+//     instead of perpetually red.
 //
 // USAGE
 //   DATABASE_URL=postgres://… pnpm --filter @workspace/scripts check:schema-drift
@@ -61,13 +62,18 @@ const SCHEMAS = ["resupply", "resupply_auth"] as const;
 // PURPOSE. Each entry needs a reason so this list stays auditable. Keyed as
 // `schema.table` (whole-table intentional absence) or `schema.table.column`.
 const INTENTIONAL_ABSENCES: Record<string, string> = {
-  // Audit-log tamper-evidence retired by migration 0156 (see CLAUDE.md, "No
-  // HIPAA/DMEPOS/ACHC compliance machinery"). Current code has zero refs.
-  "resupply.audit_log.signature": "retired by 0156 (audit tamper-evidence)",
-  "resupply.audit_log.chain_seq": "retired by 0156 (audit tamper-evidence)",
+  // Audit-log tamper-evidence columns. Added by 0116 (signature/prev_signature/
+  // chain_seq) and 0101 (archived_at). 0156 retired the *feature* but explicitly
+  // RETAINED the audit_log table and these columns (it did NOT drop them). They
+  // are absent on prod because 0116/0101 were never applied there, and current
+  // code has zero refs, so the detector intentionally does not flag them (see
+  // CLAUDE.md, "No HIPAA/DMEPOS/ACHC compliance machinery").
+  "resupply.audit_log.signature": "added 0116; feature retired by 0156, unused",
+  "resupply.audit_log.chain_seq": "added 0116; feature retired by 0156, unused",
   "resupply.audit_log.prev_signature":
-    "retired by 0156 (audit tamper-evidence)",
-  "resupply.audit_log.archived_at": "retired by 0156 (audit tamper-evidence)",
+    "added 0116; feature retired by 0156, unused",
+  "resupply.audit_log.archived_at":
+    "added 0101; feature retired by 0156, unused",
 };
 
 interface Loc {
