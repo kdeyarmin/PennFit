@@ -28,6 +28,13 @@ const SECTIONS: ReadonlyArray<{
   icon: React.ComponentType<{ className?: string }>;
 }> = [
   {
+    href: "/admin/billing/config/organization",
+    label: "Organization identity",
+    description:
+      "Your DME billing identity — legal name, tax ID, organizational NPI, addresses, accreditation. Used on every claim (837P), eligibility request (270), and HCFA form. Set here instead of in global OFFICE_ALLY_BILLING_* env vars.",
+    icon: Building2,
+  },
+  {
     href: "/admin/billing/config/payers",
     label: "Payer profiles",
     description:
