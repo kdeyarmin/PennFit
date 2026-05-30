@@ -47,7 +47,7 @@ export function ErrorPanel({
   );
 }
 
-function describeError(error: unknown): {
+export function describeError(error: unknown): {
   detail: string;
   statusLabel: string | null;
 } {
@@ -92,8 +92,63 @@ function describeError(error: unknown): {
     };
   }
 
+  // Non-ApiError. Most hand-rolled admin API wrappers throw a plain Error
+  // whose message already encodes the failure (often with an HTTP status,
+  // e.g. "Failed to load analytics (500)" or "403 Forbidden"). Surface that
+  // real message instead of assuming a connection problem — and reserve the
+  // "check your connection" copy for genuine network-layer failures, where
+  // fetch rejects with a TypeError and no HTTP response was ever received.
+  if (isLikelyNetworkError(error)) {
+    return {
+      statusLabel: null,
+      detail: "Network error. Check your connection and retry.",
+    };
+  }
+  if (error instanceof Error && error.message.trim() !== "") {
+    return {
+      statusLabel: extractStatusLabel(error.message),
+      detail: truncate(error.message),
+    };
+  }
+
   return {
     statusLabel: null,
-    detail: "Network error. Check your connection and retry.",
+    detail: "Request failed. Wait a moment, then retry.",
   };
+}
+
+// A genuine network-layer failure surfaces as a TypeError from fetch (the
+// request never reached a server). Browsers vary the message, so match the
+// known phrasings as a fallback for environments where the TypeError brand
+// is lost (e.g. re-thrown across boundaries).
+function isLikelyNetworkError(error: unknown): boolean {
+  if (error instanceof TypeError) return true;
+  if (error instanceof Error) {
+    return /\b(failed to fetch|networkerror|network request failed|load failed)\b/i.test(
+      error.message,
+    );
+  }
+  return false;
+}
+
+// Best-effort HTTP status extraction from a plain Error message so the panel
+// can still show an "HTTP nnn" badge. Recognises "HTTP 500", "(500)",
+// "status 500", and a leading "500 …". Returns null when no plausible code
+// is present (avoids badging unrelated numbers).
+function extractStatusLabel(message: string): string | null {
+  const match =
+    message.match(/\bHTTP (\d{3})\b/) ??
+    message.match(/\((\d{3})\)/) ??
+    message.match(/\bstatus[:\s]+(\d{3})\b/i) ??
+    message.match(/^(\d{3})\b/);
+  if (!match) return null;
+  const code = Number(match[1]);
+  return code >= 100 && code <= 599 ? `HTTP ${code}` : null;
+}
+
+function truncate(text: string, maxLength = 200): string {
+  const trimmed = text.trim();
+  return trimmed.length > maxLength
+    ? `${trimmed.slice(0, maxLength - 1)}…`
+    : trimmed;
 }
