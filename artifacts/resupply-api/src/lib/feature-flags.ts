@@ -54,6 +54,7 @@ export const FEATURE_FLAG_KEYS = [
   "patient_onboarding.dispatcher",
   "fitter_supply_campaign.dispatcher",
   "resupply.entitlement_enforcement",
+  "reminder_escalation.dispatcher",
 ] as const;
 
 export type FeatureFlagKey = (typeof FEATURE_FLAG_KEYS)[number];
