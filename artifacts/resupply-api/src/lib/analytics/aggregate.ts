@@ -89,6 +89,100 @@ function isDropOut(s: string): s is EpisodeDropOutStatus {
   return (EPISODE_DROP_OUT_STATUSES as readonly string[]).includes(s);
 }
 
+// ── Resupply program KPIs ──────────────────────────────────────────
+
+/** Episode statuses that count as a confirmed resupply order. */
+const CONFIRMED_ORDER_STATUSES = new Set(["confirmed", "fulfilled"]);
+
+export interface EpisodeKpiRow {
+  status: string;
+  patientId: string;
+}
+
+export interface ResupplyKpiInput {
+  /** Episodes created in the window. */
+  episodes: EpisodeKpiRow[];
+  /** Resupply conversations (episode-linked) created in the window —
+   *  the denominator for connection rate. */
+  outreachCount: number;
+  /** Of those, how many received at least one inbound patient message. */
+  respondedCount: number;
+  /** Currently-active patients (orders-per-patient denominator). */
+  activePatientCount: number;
+  /** Analysis window in days (drives annualization). */
+  windowDays: number;
+}
+
+export interface ResupplyKpiResult {
+  totalEpisodes: number;
+  confirmedOrders: number;
+  fulfilledOrders: number;
+  uniquePatientsServed: number;
+  outreachCount: number;
+  respondedCount: number;
+  activePatientCount: number;
+  /** confirmedOrders / totalEpisodes. Null when no episodes. */
+  confirmationRate: number | null;
+  /** fulfilledOrders / confirmedOrders. Null when no confirmed orders. */
+  fulfillmentRate: number | null;
+  /** respondedCount / outreachCount. Null when no outreach. */
+  connectionRate: number | null;
+  /** confirmedOrders per active patient, annualized. Null when there
+   *  are no active patients or a zero window. */
+  ordersPerActivePatientAnnualized: number | null;
+}
+
+/**
+ * Roll up the resupply program's headline KPIs — the metrics DME
+ * operators benchmark a resupply program on: connection (response)
+ * rate, confirmation/conversion rate, fulfillment rate, and orders
+ * per active patient. Pure: the route supplies the counts it reads
+ * from Postgres.
+ */
+export function aggregateResupplyKpis(
+  input: ResupplyKpiInput,
+): ResupplyKpiResult {
+  const totalEpisodes = input.episodes.length;
+  let confirmedOrders = 0;
+  let fulfilledOrders = 0;
+  const patientIds = new Set<string>();
+  for (const ep of input.episodes) {
+    if (CONFIRMED_ORDER_STATUSES.has(ep.status)) confirmedOrders += 1;
+    if (ep.status === "fulfilled") fulfilledOrders += 1;
+    if (ep.patientId) patientIds.add(ep.patientId);
+  }
+
+  const confirmationRate =
+    totalEpisodes === 0 ? null : round4(confirmedOrders / totalEpisodes);
+  const fulfillmentRate =
+    confirmedOrders === 0 ? null : round4(fulfilledOrders / confirmedOrders);
+  const connectionRate =
+    input.outreachCount === 0
+      ? null
+      : round4(input.respondedCount / input.outreachCount);
+  const ordersPerActivePatientAnnualized =
+    input.activePatientCount === 0 || input.windowDays === 0
+      ? null
+      : round4(
+          (confirmedOrders / input.activePatientCount) *
+            (365 / input.windowDays),
+        );
+
+  return {
+    totalEpisodes,
+    confirmedOrders,
+    fulfilledOrders,
+    uniquePatientsServed: patientIds.size,
+    outreachCount: input.outreachCount,
+    respondedCount: input.respondedCount,
+    activePatientCount: input.activePatientCount,
+    confirmationRate,
+    fulfillmentRate,
+    connectionRate,
+    ordersPerActivePatientAnnualized,
+  };
+}
+
 // ── Compliance cohorts ─────────────────────────────────────────────
 
 /**
