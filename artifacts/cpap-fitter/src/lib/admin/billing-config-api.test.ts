@@ -143,8 +143,9 @@ describe("getJSON shared behaviour (via fetchPayerProfiles)", () => {
   test("throws ApiError carrying the status on non-OK response", async () => {
     fetchMock.mockResolvedValue(errorResponse(403, "Forbidden"));
 
-    await expect(fetchPayerProfiles()).rejects.toThrow("403");
-    await expect(fetchPayerProfiles()).rejects.toBeInstanceOf(ApiError);
+    const err = await fetchPayerProfiles().catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect(String(err)).toContain("403");
   });
 
   test("thrown ApiError exposes status and request URL", async () => {
