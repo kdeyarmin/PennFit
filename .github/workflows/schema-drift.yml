@@ -48,7 +48,9 @@ jobs:
     name: Live schema drift
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
 
       - name: Check for DB secret
         id: secret
@@ -62,19 +64,19 @@ jobs:
             echo "present=true" >> "$GITHUB_OUTPUT"
           fi
 
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        if: steps.secret.outputs.present == 'true'
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "pnpm"
+          cache-dependency-path: pnpm-lock.yaml
+
       - name: Install pnpm
         if: steps.secret.outputs.present == 'true'
         run: |
           corepack disable pnpm 2>/dev/null || true
           npm install -g pnpm@${{ env.PNPM_VERSION }}
           pnpm --version
-
-      - uses: actions/setup-node@v5
-        if: steps.secret.outputs.present == 'true'
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: "pnpm"
-          cache-dependency-path: pnpm-lock.yaml
 
       - run: pnpm install --frozen-lockfile
         if: steps.secret.outputs.present == 'true'

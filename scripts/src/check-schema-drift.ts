@@ -19,10 +19,8 @@
 //
 // WHAT IT IS / IS NOT
 //   * Heuristic textual DDL parsing — handles ADD COLUMN [IF NOT EXISTS],
-//     DROP COLUMN, RENAME COLUMN, CREATE TABLE (name only), DROP TABLE,
-//     ALTER TABLE ... RENAME TO. It does NOT extract columns declared inside
-//     CREATE TABLE bodies (those tables, when present, already carry their
-//     base columns; the historical drift risk is the later ALTERs). It is a
+//     DROP COLUMN, RENAME COLUMN, CREATE TABLE (including inline column
+//     declarations), DROP TABLE, ALTER TABLE ... RENAME TO. It is a
 //     monitoring signal, not a migration planner.
 //   * Read-only. Opens one connection, runs information_schema SELECTs, and
 //     never writes. Safe to point at production.
@@ -102,7 +100,7 @@ function key(schema: string, table: string, column?: string): string {
 }
 
 interface ParseResult {
-  // schema.table -> set of expected column names (from ADD COLUMN)
+  // schema.table -> set of expected column names (from CREATE TABLE / ADD COLUMN)
   expectedColumns: Map<string, Set<string>>;
   // schema.table for every CREATE TABLE not later dropped
   expectedTables: Set<string>;
@@ -121,7 +119,7 @@ function parseMigrations(dir: string): ParseResult {
   const reAlter =
     /ALTER\s+TABLE\s+(?:IF\s+EXISTS\s+)?("?\w+"?\s*\.\s*"?\w+"?)(.*?);/gis;
   const reCreate =
-    /CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?("?\w+"?\s*\.\s*"?\w+"?)/gi;
+    /CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?("?\w+"?\s*\.\s*"?\w+"?)\s*\(/gi;
   const reDropTable =
     /DROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?("?\w+"?\s*\.\s*"?\w+"?)/gi;
   const reAddCol =
@@ -140,7 +138,11 @@ function parseMigrations(dir: string): ParseResult {
       const k = key(loc.schema, loc.table);
       expectedTables.add(k);
       droppedTables.delete(k);
-      if (!expectedColumns.has(k)) expectedColumns.set(k, new Set());
+      const set = expectedColumns.get(k) ?? new Set<string>();
+      expectedColumns.set(k, set);
+      for (const column of extractCreateTableColumns(sql, m)) {
+        set.add(column);
+      }
     }
 
     for (const m of sql.matchAll(reDropTable)) {
@@ -188,6 +190,123 @@ function parseMigrations(dir: string): ParseResult {
   }
 
   return { expectedColumns, expectedTables, filesParsed: files.length };
+}
+
+function findMatchingParen(sql: string, openIndex: number): number {
+  let depth = 0;
+  let inSingleQuote = false;
+  let inDoubleQuote = false;
+
+  for (let i = openIndex; i < sql.length; i += 1) {
+    const char = sql[i];
+    const next = sql[i + 1];
+
+    if (inSingleQuote) {
+      if (char === "'" && next === "'") {
+        i += 1;
+        continue;
+      }
+      if (char === "'") inSingleQuote = false;
+      continue;
+    }
+
+    if (inDoubleQuote) {
+      if (char === '"') inDoubleQuote = false;
+      continue;
+    }
+
+    if (char === "'") {
+      inSingleQuote = true;
+      continue;
+    }
+    if (char === '"') {
+      inDoubleQuote = true;
+      continue;
+    }
+    if (char === "(") {
+      depth += 1;
+      continue;
+    }
+    if (char === ")") {
+      depth -= 1;
+      if (depth === 0) return i;
+    }
+  }
+
+  return -1;
+}
+
+function splitSqlDefinitions(body: string): string[] {
+  const defs: string[] = [];
+  let start = 0;
+  let depth = 0;
+  let inSingleQuote = false;
+  let inDoubleQuote = false;
+
+  for (let i = 0; i < body.length; i += 1) {
+    const char = body[i];
+    const next = body[i + 1];
+
+    if (inSingleQuote) {
+      if (char === "'" && next === "'") {
+        i += 1;
+        continue;
+      }
+      if (char === "'") inSingleQuote = false;
+      continue;
+    }
+
+    if (inDoubleQuote) {
+      if (char === '"') inDoubleQuote = false;
+      continue;
+    }
+
+    if (char === "'") {
+      inSingleQuote = true;
+      continue;
+    }
+    if (char === '"') {
+      inDoubleQuote = true;
+      continue;
+    }
+    if (char === "(") {
+      depth += 1;
+      continue;
+    }
+    if (char === ")") {
+      depth -= 1;
+      continue;
+    }
+    if (char === "," && depth === 0) {
+      defs.push(body.slice(start, i).trim());
+      start = i + 1;
+    }
+  }
+
+  const tail = body.slice(start).trim();
+  if (tail) defs.push(tail);
+  return defs;
+}
+
+function extractCreateTableColumns(sql: string, match: RegExpMatchArray): string[] {
+  const openIndex = match.index! + match[0].length - 1;
+  const closeIndex = findMatchingParen(sql, openIndex);
+  if (closeIndex === -1) return [];
+
+  const body = sql.slice(openIndex + 1, closeIndex);
+  const columns: string[] = [];
+
+  for (const def of splitSqlDefinitions(body)) {
+    if (!def) continue;
+    if (/^(?:constraint|primary|foreign|unique|check|exclude)\b/i.test(def)) {
+      continue;
+    }
+    const columnMatch = /^"?(?<column>[a-zA-Z_]\w*)"?\b/.exec(def);
+    const column = columnMatch?.groups?.column;
+    if (column) columns.push(column);
+  }
+
+  return columns;
 }
 
 interface DriftReport {
@@ -345,14 +464,23 @@ function main(): void {
             process.stdout.write(`    - ${c}\n`);
           }
         }
-        if (!report.missingTables.length && !report.missingColumns.length) {
+        if (!report.hasLedger && !report.missingTables.length && !report.missingColumns.length) {
+          process.stdout.write(
+            paint(
+              YELLOW,
+              "  Schema objects match migrations, but the migration ledger is absent.\n",
+            ),
+          );
+        } else if (!report.missingTables.length && !report.missingColumns.length) {
           process.stdout.write(
             paint(GREEN, "  OK — no schema drift detected.\n"),
           );
         }
       }
       const drift =
-        report.missingTables.length > 0 || report.missingColumns.length > 0;
+        !report.hasLedger ||
+        report.missingTables.length > 0 ||
+        report.missingColumns.length > 0;
       process.exit(drift ? 1 : 0);
     })
     .catch((err: unknown) => {
