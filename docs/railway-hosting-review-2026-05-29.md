@@ -65,7 +65,7 @@ Railway config-as-code reference confirms the fields used here are all valid:
 8. **Health endpoints** (`src/routes/health.ts`, `src/lib/readiness.ts`):
    `/resupply-api/healthz` returns `{status:"ok"}` with no DB call (correct
    deploy gate); `/resupply-api/readyz` probes Supabase (`feature_flags` HEAD)
-   + `isWorkerReady()`, 503 on failure — a monitoring signal, not the gate.
+   and `isWorkerReady()`, 503 on failure — a monitoring signal, not the gate.
 9. **`trust proxy = 1`** (`src/app.ts:42`): correct for Railway's single edge
    proxy so `req.ip` is honest for rate limiting and audit IP capture.
 10. **CORS** (`src/app.ts:67-94`): uses `RESUPPLY_ALLOWED_ORIGINS` **or**
