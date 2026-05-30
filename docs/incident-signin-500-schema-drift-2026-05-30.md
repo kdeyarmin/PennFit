@@ -131,6 +131,9 @@ check:schema-drift`) compares the migration DDL against any live DB and exits
    non-zero on drift; it also reports whether the `drizzle.resupply_migrations`
    ledger exists. Wired into `.github/workflows/schema-drift.yml` (daily cron +
    manual dispatch), gated on a read-only `SCHEMA_DRIFT_DATABASE_URL` secret.
+   The `drift_ro` role behind that secret — provisioning, connection string,
+   rotation, revocation — is documented in
+   [`docs/runbooks/schema-drift-detector.md`](./runbooks/schema-drift-detector.md).
 2. **Bucket A:** ✅ done — applied via `0178_reconcile_bucketA_column_drift.sql`
    (33 columns; retired `audit_log` columns and the `providers`-dependent
    `prescriptions.provider_id` deliberately excluded).

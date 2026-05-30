@@ -15,11 +15,17 @@ name: Schema drift (live DB)
 #   wrong (a PR doesn't change prod's applied state).
 #
 # CREDENTIALS:
-#   Set repository secret SCHEMA_DRIFT_DATABASE_URL to a *read-only* Postgres
-#   connection string for the environment you want monitored (e.g. the
-#   PennPaps Supabase session pooler). The tool only runs information_schema
-#   SELECTs; a read-only role is sufficient and recommended. If the secret is
-#   absent the job no-ops with a clear message instead of failing red.
+#   Set repository secret SCHEMA_DRIFT_DATABASE_URL to a read-only Postgres
+#   connection string for the environment you want monitored (the PennPaps
+#   Supabase *session* pooler). The tool only runs information_schema SELECTs.
+#   NOTE: "read-only" still means the role can read row data — information_schema
+#   only lists relations the role holds a privilege on, so the role must hold
+#   SELECT on every resupply / resupply_auth table (i.e. it CAN read PHI). Guard
+#   the secret accordingly. Provisioning the `drift_ro` role, the exact
+#   connection-string format (sslmode=no-verify, session pooler), rotation, and
+#   revocation are documented in docs/runbooks/schema-drift-detector.md.
+#   If the secret is absent the job no-ops with a clear message instead of
+#   failing red.
 
 on:
   schedule:
