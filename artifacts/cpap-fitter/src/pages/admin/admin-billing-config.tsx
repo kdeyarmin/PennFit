@@ -16,6 +16,7 @@ import {
   CircleSlash,
   DollarSign,
   ListChecks,
+  PlugZap,
   Sliders,
 } from "lucide-react";
 
@@ -33,6 +34,13 @@ const SECTIONS: ReadonlyArray<{
     description:
       "Your DME billing identity — legal name, tax ID, organizational NPI, addresses, accreditation. Used on every claim (837P), eligibility request (270), and HCFA form. Set here instead of in global OFFICE_ALLY_BILLING_* env vars.",
     icon: Building2,
+  },
+  {
+    href: "/admin/billing/config/clearinghouse",
+    label: "Clearinghouse connection",
+    description:
+      "Office Ally SFTP connection + submitter ETIN used to transmit claims (837P) and eligibility (270/271). DB-backed, preferred over OFFICE_ALLY_* env vars. Key files stay on the server — only their paths are stored here.",
+    icon: PlugZap,
   },
   {
     href: "/admin/billing/config/payers",
