@@ -113,15 +113,24 @@ features are meant to be live on this instance at all).
 1. **Restore a migration ledger / runner.** Decide how migrations are applied
    to this project going forward (`lib/resupply-db/scripts/migrate.mjs` against
    `DATABASE_URL`, or a tracked apply log). Without it, drift recurs silently
-   and the next missing column is the next outage.
+   and the next missing column is the next outage. **Interim detector shipped:**
+   `scripts/src/check-schema-drift.ts` (`pnpm --filter @workspace/scripts
+   check:schema-drift`) compares the migration DDL against any live DB and exits
+   non-zero on drift; it also reports whether the `drizzle.resupply_migrations`
+   ledger exists. Wired into `.github/workflows/schema-drift.yml` (daily cron +
+   manual dispatch), gated on a read-only `SCHEMA_DRIFT_DATABASE_URL` secret.
 2. **Bucket A:** ✅ done — applied via `0171_reconcile_bucketA_column_drift.sql`
    (33 columns; retired `audit_log` columns and the `providers`-dependent
    `prescriptions.provider_id` deliberately excluded).
 3. **Bucket B:** apply the table-creating migrations in dependency order in a
    maintenance window; verify the billing/integration workers boot cleanly
-   afterward.
-4. **Add a CI/preflight drift check** so migration-vs-live divergence is caught
-   before it reaches a user (extend `scripts/` preflight).
+   afterward. **Detailed plan written:**
+   [`bucket-b-remediation-plan-2026-05-30.md`](./bucket-b-remediation-plan-2026-05-30.md)
+   — 16+ absent tables across ~14 migration files (0071–0154), FK-ordered, with
+   the hidden `insurance_coverages` (0075) prerequisite called out and an open
+   product decision about whether these features should be live at all. **No
+   Bucket B DDL applied** — gated on owner sign-off + maintenance window.
+4. **CI drift check — shipped** (see item 1): `.github/workflows/schema-drift.yml`.
 
 ## Repro / audit tooling
 
