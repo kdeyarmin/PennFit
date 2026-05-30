@@ -1,12 +1,10 @@
-// Static guard for the three nav items added to AppShell.tsx in this PR:
-//   - /admin/appointment-requests  (Inbox group)
-//   - /admin/integrations          (Insights group)
-//   - /admin/accreditation-binder  (System group)
+// Static guards for AppShell.tsx nav items.
 //
 // NAV_GROUPS is not exported from AppShell.tsx, so we read the source file
 // directly and assert the expected route hrefs, labels, and hints are
-// present.  This mirrors the approach used in admin.scope.test.ts and gives
-// a quick, zero-rendering guard that route additions don't silently regress.
+// present — and that retired items stay removed.  This mirrors the approach
+// used in admin.scope.test.ts and gives a quick, zero-rendering guard that
+// nav changes don't silently regress.
 
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -73,29 +71,31 @@ describe("AppShell NAV_GROUPS — integrations entry (Insights group)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// New nav item: Accreditation binder (System group)
+// Retired: Audit Log, Compliance binder, and Accreditation binder.
+//
+// These three System-group items pointed at routes that were never mounted
+// (they 404'd to NotFound) and surfaced the in-app compliance machinery that
+// migration 0156 retired. They were removed from AppShell; these guards keep
+// them from being re-added (the re-add churn this file's history documents).
 // ---------------------------------------------------------------------------
-describe("AppShell NAV_GROUPS — accreditation-binder entry (System group)", () => {
-  it("registers the /admin/accreditation-binder href", () => {
-    expect(APPSHELL_SRC).toContain('href: "/admin/accreditation-binder"');
+describe("AppShell NAV_GROUPS — retired compliance/audit nav items absent", () => {
+  it("does not register the /admin/audit (Audit Log) nav item", () => {
+    expect(APPSHELL_SRC).not.toContain('href: "/admin/audit"');
+    expect(APPSHELL_SRC).not.toContain('label: "Audit Log"');
   });
 
-  it("uses 'Accreditation binder' as the label", () => {
-    expect(APPSHELL_SRC).toContain('label: "Accreditation binder"');
+  it("does not register the /admin/compliance (Compliance binder) nav item", () => {
+    expect(APPSHELL_SRC).not.toContain('href: "/admin/compliance"');
+    expect(APPSHELL_SRC).not.toContain('label: "Compliance binder"');
   });
 
-  it("uses /admin/accreditation-binder as the matchPrefix", () => {
-    expect(APPSHELL_SRC).toContain(
-      'matchPrefix: "/admin/accreditation-binder"',
-    );
+  it("does not register the /admin/accreditation-binder nav item", () => {
+    expect(APPSHELL_SRC).not.toContain('href: "/admin/accreditation-binder"');
+    expect(APPSHELL_SRC).not.toContain('label: "Accreditation binder"');
   });
 
-  it("includes a descriptive hint mentioning DMEPOS evidence rollup", () => {
-    expect(APPSHELL_SRC).toContain("Surveyor-facing DMEPOS evidence rollup");
-  });
-
-  it("imports ClipboardList from lucide-react (icon used by the new item)", () => {
-    expect(APPSHELL_SRC).toContain("ClipboardList");
+  it("no longer imports the ClipboardList icon (only the removed binder used it)", () => {
+    expect(APPSHELL_SRC).not.toContain("ClipboardList");
   });
 });
 
@@ -152,7 +152,6 @@ describe("AppShell NAV_GROUPS — pre-existing routes not removed by this PR", (
     "/admin/patients",
     "/admin/delivery-failures",
     "/admin/operations",
-    "/admin/compliance",
   ];
 
   for (const route of expectedRoutes) {
@@ -160,50 +159,6 @@ describe("AppShell NAV_GROUPS — pre-existing routes not removed by this PR", (
       expect(APPSHELL_SRC).toContain(`href: "${route}"`);
     });
   }
-});
-
-// ---------------------------------------------------------------------------
-// This PR: Audit Log nav item re-added to System group
-// ---------------------------------------------------------------------------
-describe("AppShell NAV_GROUPS — audit-log entry (System group)", () => {
-  it("registers the /admin/audit href", () => {
-    expect(APPSHELL_SRC).toContain('href: "/admin/audit"');
-  });
-
-  it("uses 'Audit Log' as the label", () => {
-    expect(APPSHELL_SRC).toContain('label: "Audit Log"');
-  });
-
-  it("uses /admin/audit as the matchPrefix", () => {
-    expect(APPSHELL_SRC).toContain('matchPrefix: "/admin/audit"');
-  });
-
-  it("includes a descriptive hint for the audit trail", () => {
-    expect(APPSHELL_SRC).toContain("Resupply admin activity trail");
-  });
-});
-
-// ---------------------------------------------------------------------------
-// This PR: Compliance binder nav item re-added to System group
-// ---------------------------------------------------------------------------
-describe("AppShell NAV_GROUPS — compliance-binder entry (System group)", () => {
-  it("registers the /admin/compliance href", () => {
-    expect(APPSHELL_SRC).toContain('href: "/admin/compliance"');
-  });
-
-  it("uses 'Compliance binder' as the label", () => {
-    expect(APPSHELL_SRC).toContain('label: "Compliance binder"');
-  });
-
-  it("uses /admin/compliance as the matchPrefix", () => {
-    expect(APPSHELL_SRC).toContain('matchPrefix: "/admin/compliance"');
-  });
-
-  it("includes a hint mentioning DMEPOS surveyors", () => {
-    expect(APPSHELL_SRC).toContain(
-      "Staff training records + patient grievances for DMEPOS surveyors",
-    );
-  });
 });
 
 // ---------------------------------------------------------------------------
@@ -296,14 +251,5 @@ describe("AppShell — SidebarNavBody renders collapsible group toggles", () => 
   it("still renders NavItem for each link within a group", () => {
     expect(APPSHELL_SRC).toContain("NavItem");
     expect(APPSHELL_SRC).toContain("group.items.map((link) =>");
-  });
-});
-
-// ---------------------------------------------------------------------------
-// This PR: imports ClipboardList (for accreditation-binder icon)
-// ---------------------------------------------------------------------------
-describe("AppShell — ClipboardList icon imported for accreditation-binder", () => {
-  it("imports ClipboardList from lucide-react", () => {
-    expect(APPSHELL_SRC).toContain("ClipboardList");
   });
 });

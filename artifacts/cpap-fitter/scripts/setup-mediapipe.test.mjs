@@ -210,9 +210,13 @@ test("error message says the deploy would ship a broken face-scan", () => {
 });
 
 test("process.exit(1) follows the strict-mode guard when model is absent", () => {
-  // strictMode && !hasCachedModel must lead to process.exit(1).
+  // strictMode + !hasCachedModel must lead to process.exit(1). Match the
+  // guard with a regex so it survives reformatting (e.g. an added
+  // "setupFailed ||" clause) rather than pinning the exact condition string.
   const exitOneIdx = SCRIPT_CODE.indexOf("process.exit(1)");
-  const strictModeIdx = SCRIPT_CODE.indexOf("if (strictMode && !hasCachedModel)");
+  const strictModeIdx = SCRIPT_CODE.search(
+    /if \(strictMode &&.*!hasCachedModel/,
+  );
   assert.ok(strictModeIdx > -1, "Could not find strictMode guard");
   assert.ok(exitOneIdx > -1, "Could not find process.exit(1)");
   assert.ok(
