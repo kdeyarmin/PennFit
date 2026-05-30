@@ -237,7 +237,7 @@ router.patch(
       typeof projected.stockCount === "number" && projected.stockCount > 0;
     if (wasOut && nowIn) {
       const baseUrl =
-        process.env.PUBLIC_SHOP_BASE_URL?.replace(/\/$/, "") ||
+        process.env.SHOP_PUBLIC_BASE_URL?.replace(/\/$/, "") ||
         "https://pennpaps.com";
       const priceLabel =
         typeof projected.price?.unitAmount === "number"

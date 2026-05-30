@@ -1250,3 +1250,59 @@ describe("STRIPE_WEBHOOK_SECRET vs STRIPE_WEBHOOK_SIGNING_SECRET name confusion"
     expect(legacyMention).toBe(false);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Office Ally clearinghouse readiness (270/271 + 837P)
+// ---------------------------------------------------------------------------
+
+const OFFICE_ALLY_FULL: Record<string, string> = {
+  OFFICE_ALLY_USERNAME: "pennpaps_submitter",
+  OFFICE_ALLY_PRIVATE_KEY_PATH: "/secrets/oa_id_ed25519",
+  OFFICE_ALLY_KNOWN_HOSTS_PATH: "/secrets/oa_known_hosts",
+  OFFICE_ALLY_ETIN: "123456",
+  OFFICE_ALLY_BILLING_NPI: "1234567893",
+  OFFICE_ALLY_BILLING_TAX_ID: "123456789",
+  OFFICE_ALLY_BILLING_ORG_NAME: "Penn Home Medical Supply",
+  OFFICE_ALLY_BILLING_ADDRESS_LINE1: "100 Market St",
+  OFFICE_ALLY_BILLING_CITY: "Philadelphia",
+  OFFICE_ALLY_BILLING_STATE: "PA",
+  OFFICE_ALLY_BILLING_ZIP: "19106",
+};
+
+describe("Office Ally readiness", () => {
+  it("passes (stub) when no OFFICE_ALLY_* vars are set", () => {
+    const { exitCode, stdout } = run(VALID_PROD_ENV);
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain("stub/outbox mode");
+  });
+
+  it("FAILS (exit 1) on a partial config that silently degrades to stub", () => {
+    const { exitCode, stdout } = run(
+      withEnv({ OFFICE_ALLY_USERNAME: "pennpaps_submitter" }),
+    );
+    expect(exitCode).toBe(1);
+    expect(stdout).toContain("partially configured");
+  });
+
+  it("passes when fully configured with production usage indicator P", () => {
+    const { exitCode, stdout } = run(
+      withEnv({ ...OFFICE_ALLY_FULL, OFFICE_ALLY_USAGE_INDICATOR: "P" }),
+    );
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain("transmit live");
+  });
+
+  it("warns (still exit 0) when fully configured but left in test mode", () => {
+    const { exitCode, stdout } = run(withEnv(OFFICE_ALLY_FULL));
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain("TEST environment");
+  });
+
+  it("passes (forced stub) when OFFICE_ALLY_STUB=1 even with full creds", () => {
+    const { exitCode, stdout } = run(
+      withEnv({ ...OFFICE_ALLY_FULL, OFFICE_ALLY_STUB: "1" }),
+    );
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain("stub mode forced");
+  });
+});

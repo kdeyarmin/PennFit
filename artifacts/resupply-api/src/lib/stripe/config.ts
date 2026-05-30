@@ -24,8 +24,11 @@ export interface StripeConfig {
   webhookSigningSecret: string | null;
   /**
    * Public origin used for Stripe Checkout success/cancel redirects.
-   * On Railway we synthesize from RAILWAY_PUBLIC_DOMAIN unless
-   * RESUPPLY_PUBLIC_BASE_URL is set explicitly.
+   * Read from RESUPPLY_VOICE_PUBLIC_BASE_URL — the canonical public base
+   * URL for the resupply-api, shared with the voice/Twilio callbacks and
+   * documented as the var Stripe callbacks use — then synthesized from
+   * RAILWAY_PUBLIC_DOMAIN. RESUPPLY_PUBLIC_BASE_URL is accepted as a
+   * deprecated back-compat alias.
    */
   publicBaseUrl: string;
 }
@@ -33,9 +36,12 @@ export interface StripeConfig {
 export function readPublicBaseUrl(
   env: NodeJS.ProcessEnv = process.env,
 ): string | null {
-  // Explicit override wins — useful for staging deploys with a
-  // custom domain that isn't yet in RAILWAY_PUBLIC_DOMAIN.
-  const explicit = env.RESUPPLY_PUBLIC_BASE_URL;
+  // Explicit override wins — useful for staging deploys with a custom
+  // domain that isn't yet in RAILWAY_PUBLIC_DOMAIN. Canonical name is
+  // RESUPPLY_VOICE_PUBLIC_BASE_URL (consistent with voice + the README);
+  // the older RESUPPLY_PUBLIC_BASE_URL stays as a deprecated alias.
+  const explicit =
+    env.RESUPPLY_VOICE_PUBLIC_BASE_URL || env.RESUPPLY_PUBLIC_BASE_URL;
   if (explicit) return explicit.replace(/\/$/, "");
 
   const railwayHost = env.RAILWAY_PUBLIC_DOMAIN?.trim();

@@ -209,6 +209,56 @@ describe("renderClickLanding", () => {
     expect(html).not.toContain("<script>");
     expect(html).toContain("&lt;script&gt;");
   });
+
+  it("renders due-item cards on the confirm action", () => {
+    const html = renderClickLanding({
+      practiceName: "Penn Sleep Center",
+      action: "confirm",
+      formActionUrl: "https://api.example/email/click?t=conf",
+      items: [
+        { name: "Nasal mask cushion", category: "cushion", quantity: 2 },
+        { name: "Disposable filter", category: "filter", quantity: 1 },
+      ],
+    });
+    expect(html).toContain("Your supplies due now");
+    expect(html).toContain("Nasal mask cushion");
+    expect(html).toContain("Qty 2");
+    expect(html).toContain("Disposable filter");
+  });
+
+  it("does NOT render the item list on edit/stop even if items are passed", () => {
+    const html = renderClickLanding({
+      practiceName: "Penn Sleep Center",
+      action: "stop",
+      formActionUrl: "https://api.example/email/click?t=stop",
+      items: [{ name: "Nasal mask cushion", category: "cushion", quantity: 2 }],
+    });
+    expect(html).not.toContain("Your supplies due now");
+    expect(html).not.toContain("Nasal mask cushion");
+  });
+
+  it("renders without the list when items are omitted (back-compat)", () => {
+    const html = renderClickLanding({
+      practiceName: "Penn Sleep Center",
+      action: "confirm",
+      formActionUrl: "https://api.example/email/click?t=conf",
+    });
+    expect(html).not.toContain("Your supplies due now");
+    expect(html).toContain("Confirm my order");
+  });
+
+  it("escapes item names to prevent XSS", () => {
+    const html = renderClickLanding({
+      practiceName: "Penn Sleep Center",
+      action: "confirm",
+      formActionUrl: "https://api.example/email/click?t=conf",
+      items: [
+        { name: "<img src=x onerror=alert(1)>", category: "mask", quantity: 1 },
+      ],
+    });
+    expect(html).not.toContain("<img src=x");
+    expect(html).toContain("&lt;img");
+  });
 });
 
 describe("renderClickConfirmation", () => {

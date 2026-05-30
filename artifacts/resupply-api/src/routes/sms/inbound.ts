@@ -912,6 +912,39 @@ async function dispatchIntent(input: DispatchInput): Promise<string> {
       if (result.status === "already_confirmed") {
         return "Got it — that order is already confirmed and on its way.";
       }
+      if (result.status === "not_eligible") {
+        // Entitlement guard blocked the reship (too soon / over the
+        // per-period cap). Do NOT reuse input.aiReply here — for a
+        // confirm intent it says "on its way", which would be wrong.
+        // The block already raised a CSR alert in order-flow. Also flip
+        // the conversation to awaiting_admin so it lands in the CSR
+        // queue alongside address-edit handoffs.
+        const { error: notEligErr } = await supabase
+          .schema("resupply")
+          .from("conversations")
+          .update({ status: "awaiting_admin", updated_at: nowIso })
+          .eq("id", input.conversationId);
+        if (notEligErr) throw notEligErr;
+        await safeAudit({
+          action: "messaging.order.blocked_not_eligible",
+          adminEmail: null,
+          adminUserId: null,
+          targetTable: "episodes",
+          targetId: result.episodeId,
+          metadata: {
+            channel: "sms",
+            conversation_id: input.conversationId,
+            patient_id: input.patientId,
+            episode_id: result.episodeId,
+            entitlement_status: result.entitlement.status,
+            hcpcs_code: result.entitlement.hcpcsCode,
+            days_until_eligible: result.entitlement.daysUntilEligible,
+          },
+          ip: input.ip,
+          userAgent: input.userAgent,
+        });
+        return "Thanks! It looks like it's a little early to reship this one under your plan, so a team member will review and follow up before anything ships.";
+      }
       return "Thanks — we'll review and follow up shortly.";
     }
     case "decline": {
