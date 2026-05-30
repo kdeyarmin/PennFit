@@ -165,6 +165,9 @@ if (
         return false;
       }
     })();
+    // Detect if this is a WASM/vendor setup failure (not just a missing model).
+    // Any error thrown from main() indicates a non-recoverable setup problem.
+    const setupFailed = true;
     // Strict on any real *production build* — fail the build loudly rather
     // than silently shipping a broken face-scan (see
     // docs/railway-hosting-review-2026-05-29.md, R1). Triggers when:
@@ -189,7 +192,7 @@ if (
       process.env.CI === "true" ||
       process.env.NODE_ENV === "production" ||
       isProductionBuild;
-    if (strictMode && !hasCachedModel) {
+    if (strictMode && (setupFailed || !hasCachedModel)) {
       console.error(
         "[setup-mediapipe] ERROR: No usable face_landmarker.task available in strict mode. " +
           "The deploy would ship a broken face-scan. Fix network access to " +

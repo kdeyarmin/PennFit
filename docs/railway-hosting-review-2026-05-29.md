@@ -173,22 +173,26 @@ fully reliable override is therefore:
   used by nvm/fnm for local dev); it is **not** a substitute for the above.
 
 ### R3 — Make host binding explicit — ✅ FIXED in this PR
+
 `src/index.ts` now binds `"::"` explicitly (dual-stack: serves Railway IPv4
 public **and** IPv6 private networking) instead of relying on Node's implicit
 default. Previously it relied on Node's implicit `::` dual-stack bind — correct,
 but now unambiguous and robust to a future Node default change.
 
 ### R4 — Unused drizzle deps (cleanup, not Railway)
+
 `lib/resupply-db/package.json:16-18` still lists `drizzle-orm`/`-kit`/`-zod`
 though CLAUDE.md says Drizzle was fully retired (migrations apply via raw `pg`).
 Dead install weight; out of scope for this review.
 
 ### R5 — `.dockerignore` not used by Railpack (info)
+
 A `.dockerignore` exists but the builder is `RAILPACK` (not `DOCKERFILE`), so it
 isn't consulted. Harmless. If build-context trimming is ever wanted, Railpack
 honors `.railwayignore`.
 
 ## Bottom line
+
 Config and app are Railway-appropriate and reflect real production hardening
 (single-process API+SPA+worker, liveness-only health gate, decoupled worker,
 trust-proxy, fail-closed CORS, graceful SIGTERM). **R1, R2, and R3 are now
