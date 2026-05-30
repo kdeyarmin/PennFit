@@ -91,7 +91,8 @@ const files = await walk(ROOT);
 
 const records = files.map((f) => {
   const buf = readFileSync(f);
-  const gzipped = categoryFor(f) === "image" ? buf.length : gzipSync(buf).length;
+  const gzipped =
+    categoryFor(f) === "image" ? buf.length : gzipSync(buf).length;
   const stat = statSync(f);
   return {
     relPath: path.relative(ROOT, f),
@@ -107,9 +108,7 @@ console.log(`\nbundle-report: ${ROOT}`);
 console.log(`(gzipped sizes for js/css; raw for images/fonts/wasm)\n`);
 
 console.log(`Top ${TOP_N} chunks by transfer size:`);
-console.log(
-  `${"size".padStart(11)}  ${"raw".padStart(11)}  type  path`,
-);
+console.log(`${"size".padStart(11)}  ${"raw".padStart(11)}  type  path`);
 console.log("-".repeat(80));
 for (const r of records.slice(0, TOP_N)) {
   console.log(
@@ -135,7 +134,9 @@ for (const [cat, agg] of totalsSorted) {
 }
 
 const grand = records.reduce((s, r) => s + r.gzipped, 0);
-console.log(`\nTotal transfer size: ${fmtKb(grand)} across ${records.length} files`);
+console.log(
+  `\nTotal transfer size: ${fmtKb(grand)} across ${records.length} files`,
+);
 
 // Bundle-size budget. A single JS chunk over `HEAVY_CHUNK_GZIP_KB`
 // gzipped is treated as a failure unless `--no-fail` is passed (or

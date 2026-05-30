@@ -10,7 +10,11 @@
 
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { Mock } from "vitest";
-import { submitFitterLead, submitFitterComplete, fetchShopProducts } from "./shop-api";
+import {
+  submitFitterLead,
+  submitFitterComplete,
+  fetchShopProducts,
+} from "./shop-api";
 
 const ORIGINAL_FETCH = globalThis.fetch;
 
@@ -243,8 +247,12 @@ describe("submitFitterComplete", () => {
     const body = JSON.parse(init.body as string) as Record<string, unknown>;
     expect(body.email).toBe(VALID_COMPLETE_INPUT.email);
     expect(body.recommendedMaskId).toBe(VALID_COMPLETE_INPUT.recommendedMaskId);
-    expect(body.recommendedMaskName).toBe(VALID_COMPLETE_INPUT.recommendedMaskName);
-    expect(body.recommendedMaskType).toBe(VALID_COMPLETE_INPUT.recommendedMaskType);
+    expect(body.recommendedMaskName).toBe(
+      VALID_COMPLETE_INPUT.recommendedMaskName,
+    );
+    expect(body.recommendedMaskType).toBe(
+      VALID_COMPLETE_INPUT.recommendedMaskType,
+    );
   });
 
   test("throws an Error with the JSON error code on a non-OK response", async () => {
@@ -370,17 +378,22 @@ describe("fetchShopProducts", () => {
     }
   });
 
-  // Regression: 404 previously returned { unavailable: true } (guarded by
-  // the removed `if (res.status === 404)` branch). After the PR, 404 is
-  // just another non-ok status and MUST throw.
-  test("throws on 404 instead of returning unavailable (regression guard)", async () => {
+  // A 404 means the JSON API call never reached a live API process: in a
+  // mis-routed deploy `/resupply-api/*` falls through to the SPA host's
+  // history fallback, which 404s a JSON `Accept` request. Retrying won't
+  // help, so fetchShopProducts degrades to the soft "unavailable" card
+  // (same as 503) rather than throwing an error at the patient. This was
+  // deliberately restored after an earlier "simplify" pass made it throw;
+  // keep this guard so the resilience isn't silently removed again.
+  test("degrades a 404 to unavailable instead of throwing", async () => {
     fetchMock.mockResolvedValue({
       ok: false,
       status: 404,
       json: async () => ({}),
     });
 
-    await expect(fetchShopProducts()).rejects.toThrow(/404/);
+    const result = await fetchShopProducts();
+    expect(result).toMatchObject({ unavailable: true });
   });
 
   test("throws on 500", async () => {
@@ -393,10 +406,12 @@ describe("fetchShopProducts", () => {
     await expect(fetchShopProducts()).rejects.toThrow(/500/);
   });
 
-  // Regression: a 200 with a non-JSON body previously returned
-  // { unavailable: true } via the removed try/catch guard. After the PR,
-  // res.json() throws directly (a SyntaxError).
-  test("throws SyntaxError when a 200 body is not JSON (regression guard)", async () => {
+  // A 200 whose body isn't JSON is the same mis-routed-deploy symptom as
+  // the 404 above: some static hosts answer an unknown path with the SPA
+  // HTML shell and a 200. fetchShopProducts guards the res.json() parse
+  // and degrades to the soft "unavailable" card rather than letting a
+  // SyntaxError escape to the patient.
+  test("degrades a non-JSON 200 body to unavailable instead of throwing", async () => {
     fetchMock.mockResolvedValue({
       ok: true,
       status: 200,
@@ -405,7 +420,8 @@ describe("fetchShopProducts", () => {
       },
     });
 
-    await expect(fetchShopProducts()).rejects.toThrow(SyntaxError);
+    const result = await fetchShopProducts();
+    expect(result).toMatchObject({ unavailable: true });
   });
 
   test("defaults previewMode to false when the field is absent", async () => {

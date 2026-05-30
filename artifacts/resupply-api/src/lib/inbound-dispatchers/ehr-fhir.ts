@@ -17,9 +17,7 @@
 // PHI posture: logger sees referral id + source slug + counts only.
 // Bundle bytes never reach the logger.
 
-import {
-  type Database,
-} from "@workspace/resupply-db";
+import { type Database } from "@workspace/resupply-db";
 import { parseFhirBundle } from "@workspace/resupply-integrations-ehr-fhir";
 
 import { landReferralFromOrder, type LandOutcome } from "./land-referral";

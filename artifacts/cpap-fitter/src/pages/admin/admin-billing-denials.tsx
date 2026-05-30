@@ -48,10 +48,9 @@ export function AdminBillingDenialsPage() {
           Denials & DSO
         </h1>
         <p className="text-sm" style={{ color: "hsl(var(--ink-2))" }}>
-          90-day denial-rate window plus 180-day average days-to-pay,
-          broken out by payer. Spike in one payer + steady overall =
-          payer policy change. Steady per-payer + rising overall =
-          mix shift.
+          90-day denial-rate window plus 180-day average days-to-pay, broken out
+          by payer. Spike in one payer + steady overall = payer policy change.
+          Steady per-payer + rising overall = mix shift.
         </p>
       </header>
 
@@ -102,10 +101,7 @@ export function AdminBillingDenialsPage() {
         {denials.isPending ? (
           <Spinner label="Loading denial rate…" />
         ) : (denials.data?.perPayer.length ?? 0) === 0 ? (
-          <p
-            className="text-sm py-1"
-            style={{ color: "hsl(var(--ink-3))" }}
-          >
+          <p className="text-sm py-1" style={{ color: "hsl(var(--ink-3))" }}>
             No decisions in the last 90 days.
           </p>
         ) : (
@@ -174,10 +170,7 @@ export function AdminBillingDenialsPage() {
         {dso.isPending ? (
           <Spinner label="Loading DSO…" />
         ) : (dso.data?.payers.length ?? 0) === 0 ? (
-          <p
-            className="text-sm py-1"
-            style={{ color: "hsl(var(--ink-3))" }}
-          >
+          <p className="text-sm py-1" style={{ color: "hsl(var(--ink-3))" }}>
             No paid claims in the last 180 days.
           </p>
         ) : (

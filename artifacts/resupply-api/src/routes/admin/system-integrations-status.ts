@@ -9,7 +9,10 @@ import { Router, type IRouter } from "express";
 
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
-import { resolveBillingIdentity, resolveClearinghouse } from "../../lib/billing/identity-resolver";
+import {
+  resolveBillingIdentity,
+  resolveClearinghouse,
+} from "../../lib/billing/identity-resolver";
 import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
@@ -65,8 +68,7 @@ router.get(
         configured: !!env.SENDGRID_API_KEY,
       },
       twilio: {
-        configured:
-          !!env.TWILIO_ACCOUNT_SID && !!env.TWILIO_AUTH_TOKEN,
+        configured: !!env.TWILIO_ACCOUNT_SID && !!env.TWILIO_AUTH_TOKEN,
         faxConfigured: !!env.TWILIO_FAX_FROM_NUMBER,
       },
       davinciPas: {
@@ -78,8 +80,7 @@ router.get(
         queuedDeliveries: queueDepth.count ?? 0,
         exhaustedDeliveries24h: recentWebhookFails.count ?? 0,
         healthy:
-          (queueDepth.count ?? 0) < 100 &&
-          (recentWebhookFails.count ?? 0) < 10,
+          (queueDepth.count ?? 0) < 100 && (recentWebhookFails.count ?? 0) < 10,
       },
       generatedAt: new Date().toISOString(),
     });

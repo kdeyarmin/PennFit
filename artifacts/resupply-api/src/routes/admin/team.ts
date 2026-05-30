@@ -521,11 +521,7 @@ router.patch(
         .limit(1)
         .maybeSingle();
       if (lookupErr) throw lookupErr;
-      if (
-        row &&
-        row.role === "admin" &&
-        row.auth_user_id === req.adminUserId
-      ) {
+      if (row && row.role === "admin" && row.auth_user_id === req.adminUserId) {
         res.status(409).json({
           error: "cannot_demote_self",
           message:
@@ -710,7 +706,7 @@ async function serializeWithAuthLookup(
     ? await fetchInviteCredentialMap(supabase, [row.auth_user_id])
     : null;
   const credential = row.auth_user_id
-    ? credentialMap?.get(row.auth_user_id) ?? null
+    ? (credentialMap?.get(row.auth_user_id) ?? null)
     : null;
   return serialize(row, emailVerifiedAt, credential);
 }

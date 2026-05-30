@@ -86,7 +86,9 @@ describe("admin/verify-email — token reading", () => {
 
   it("defines readTokenFromUrl that guards against SSR", () => {
     expect(SRC).toContain("function readTokenFromUrl()");
-    expect(SRC).toMatch(/readTokenFromUrl[\s\S]{0,200}typeof window === "undefined"/);
+    expect(SRC).toMatch(
+      /readTokenFromUrl[\s\S]{0,200}typeof window === "undefined"/,
+    );
   });
 
   it("reads the 'token' param from URLSearchParams", () => {

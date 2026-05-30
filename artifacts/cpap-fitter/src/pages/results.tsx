@@ -189,10 +189,15 @@ export function Results() {
   const topConfidencePct = Math.round(
     (data.topRecommendations[0]?.confidence ?? 0) * 100,
   );
-  const topMaskTypeLabel = (data.topRecommendations[0]?.type ?? "recommended")
-    .replace("_", " ");
+  const topMaskTypeLabel = (
+    data.topRecommendations[0]?.type ?? "recommended"
+  ).replace("_", " ");
   const confidenceBand =
-    topConfidencePct >= 85 ? "strong" : topConfidencePct >= 70 ? "moderate" : "low";
+    topConfidencePct >= 85
+      ? "strong"
+      : topConfidencePct >= 70
+        ? "moderate"
+        : "low";
 
   return (
     <div className="container max-w-4xl mx-auto px-4 py-12 animate-shimmer-in">
@@ -245,7 +250,8 @@ export function Results() {
           <span className="font-medium text-foreground">
             {topMaskTypeLabel}
           </span>{" "}
-          mask style with the best combined score from your facial measurements and sleep preferences.
+          mask style with the best combined score from your facial measurements
+          and sleep preferences.
         </p>
         <div className="flex justify-center pt-2">
           <ComfortGuarantee variant="badge" />

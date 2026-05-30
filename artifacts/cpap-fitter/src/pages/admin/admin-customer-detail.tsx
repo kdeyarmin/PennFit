@@ -414,7 +414,10 @@ function FacialMeasurementsAdminCard({
 }) {
   return (
     <Card>
-      <div style={{ padding: 16 }} data-testid="admin-customer-facial-measurements">
+      <div
+        style={{ padding: 16 }}
+        data-testid="admin-customer-facial-measurements"
+      >
         <div
           style={{
             display: "flex",

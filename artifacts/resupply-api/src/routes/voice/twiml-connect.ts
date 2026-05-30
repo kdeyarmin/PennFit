@@ -71,7 +71,11 @@ router.post("/voice/twiml-connect", signatureMiddleware, async (req, res) => {
     res
       .status(200)
       .type("text/xml")
-      .send(buildHangupTwiml("This service is temporarily unavailable. Please try again later."));
+      .send(
+        buildHangupTwiml(
+          "This service is temporarily unavailable. Please try again later.",
+        ),
+      );
     return;
   }
 

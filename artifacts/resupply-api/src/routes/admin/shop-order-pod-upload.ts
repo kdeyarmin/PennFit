@@ -370,10 +370,7 @@ router.post(
         if (err instanceof ObjectNotFoundError) {
           previousObjectDeleted = true;
         } else {
-          req.log.warn(
-            { err },
-            "shop_order_pod_replace_cleanup_failed",
-          );
+          req.log.warn({ err }, "shop_order_pod_replace_cleanup_failed");
           previousObjectDeleted = "errored";
         }
       }

@@ -15,10 +15,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const SRC = readFileSync(
-  path.join(__dirname, "admin-analytics.tsx"),
-  "utf8",
-);
+const SRC = readFileSync(path.join(__dirname, "admin-analytics.tsx"), "utf8");
 
 // ---------------------------------------------------------------------------
 // ProductivityBody — `unavailable` branch present
@@ -38,13 +35,13 @@ describe("admin-analytics ProductivityBody — unavailable branch present", () =
   });
 
   it("renders the 'no longer tracked' retirement notice text", () => {
-    expect(SRC).toContain(
-      "Per-operator productivity is no longer tracked",
-    );
+    expect(SRC).toContain("Per-operator productivity is no longer tracked");
   });
 
   it("mentions that the 'audit log was retired'", () => {
-    expect(SRC).toContain("audit log was retired");
+    // Whitespace-normalized so Prettier line-wrapping the JSX prose
+    // (e.g. "audit log\nwas retired") doesn't break the match.
+    expect(SRC.replace(/\s+/g, " ")).toContain("audit log was retired");
   });
 });
 

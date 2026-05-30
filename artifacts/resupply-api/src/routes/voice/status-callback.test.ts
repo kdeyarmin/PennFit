@@ -70,7 +70,9 @@ describe("POST /voice/status-callback", () => {
 
   it("acks malformed bodies with empty <Response/>", async () => {
     const res = await request(makeApp())
-      .post("/resupply-api/voice/status-callback?conversationId=11111111-1111-4111-8111-111111111111")
+      .post(
+        "/resupply-api/voice/status-callback?conversationId=11111111-1111-4111-8111-111111111111",
+      )
       .type("form")
       .send({});
     expect(res.status).toBe(200);
@@ -80,7 +82,9 @@ describe("POST /voice/status-callback", () => {
 
   it("acks non-terminal status without closing or auditing", async () => {
     const res = await request(makeApp())
-      .post("/resupply-api/voice/status-callback?conversationId=11111111-1111-4111-8111-111111111111")
+      .post(
+        "/resupply-api/voice/status-callback?conversationId=11111111-1111-4111-8111-111111111111",
+      )
       .type("form")
       .send({ CallSid: "CA1", CallStatus: "ringing" });
     expect(res.status).toBe(200);
@@ -98,7 +102,9 @@ describe("POST /voice/status-callback", () => {
       error: null,
     });
     const res = await request(makeApp())
-      .post("/resupply-api/voice/status-callback?conversationId=11111111-1111-4111-8111-111111111111")
+      .post(
+        "/resupply-api/voice/status-callback?conversationId=11111111-1111-4111-8111-111111111111",
+      )
       .type("form")
       .send({ CallSid: "CA1", CallStatus: "completed" });
     expect(res.status).toBe(200);
@@ -127,7 +133,9 @@ describe("POST /voice/status-callback", () => {
         error: null,
       });
       const res = await request(makeApp())
-        .post("/resupply-api/voice/status-callback?conversationId=11111111-1111-4111-8111-111111111111")
+        .post(
+          "/resupply-api/voice/status-callback?conversationId=11111111-1111-4111-8111-111111111111",
+        )
         .type("form")
         .send({ CallSid: "CA1", CallStatus: status });
       expect(res.status).toBe(200);
@@ -153,12 +161,17 @@ describe("POST /voice/status-callback — structured logging for malformed callb
 
   it("emits logger.warn with event=voice_status_callback_malformed when CallStatus is missing", async () => {
     await request(makeApp())
-      .post("/resupply-api/voice/status-callback?conversationId=11111111-1111-4111-8111-111111111111")
+      .post(
+        "/resupply-api/voice/status-callback?conversationId=11111111-1111-4111-8111-111111111111",
+      )
       .type("form")
       .send({ CallSid: "CA1" }); // no CallStatus
 
     expect(loggerWarnMock).toHaveBeenCalled();
-    const [ctx] = loggerWarnMock.mock.calls[0] as [Record<string, unknown>, string];
+    const [ctx] = loggerWarnMock.mock.calls[0] as [
+      Record<string, unknown>,
+      string,
+    ];
     expect(ctx.event).toBe("voice_status_callback_malformed");
     expect(ctx.hasCallStatus).toBe(false);
     expect(ctx.hasCallSid).toBe(true);
@@ -167,12 +180,17 @@ describe("POST /voice/status-callback — structured logging for malformed callb
 
   it("emits logger.warn with event=voice_status_callback_malformed when CallSid is missing", async () => {
     await request(makeApp())
-      .post("/resupply-api/voice/status-callback?conversationId=11111111-1111-4111-8111-111111111111")
+      .post(
+        "/resupply-api/voice/status-callback?conversationId=11111111-1111-4111-8111-111111111111",
+      )
       .type("form")
       .send({ CallStatus: "completed" }); // no CallSid
 
     expect(loggerWarnMock).toHaveBeenCalled();
-    const [ctx] = loggerWarnMock.mock.calls[0] as [Record<string, unknown>, string];
+    const [ctx] = loggerWarnMock.mock.calls[0] as [
+      Record<string, unknown>,
+      string,
+    ];
     expect(ctx.event).toBe("voice_status_callback_malformed");
     expect(ctx.hasCallStatus).toBe(true);
     expect(ctx.hasCallSid).toBe(false);
@@ -185,7 +203,10 @@ describe("POST /voice/status-callback — structured logging for malformed callb
       .send({ CallSid: "CA1", CallStatus: "completed" });
 
     expect(loggerWarnMock).toHaveBeenCalled();
-    const [ctx] = loggerWarnMock.mock.calls[0] as [Record<string, unknown>, string];
+    const [ctx] = loggerWarnMock.mock.calls[0] as [
+      Record<string, unknown>,
+      string,
+    ];
     expect(ctx.event).toBe("voice_status_callback_malformed");
     expect(ctx.hasConversationId).toBe(false);
   });
@@ -197,7 +218,10 @@ describe("POST /voice/status-callback — structured logging for malformed callb
       .send({ CallSid: "CA1", CallStatus: "completed" });
 
     expect(loggerWarnMock).toHaveBeenCalled();
-    const [ctx] = loggerWarnMock.mock.calls[0] as [Record<string, unknown>, string];
+    const [ctx] = loggerWarnMock.mock.calls[0] as [
+      Record<string, unknown>,
+      string,
+    ];
     expect(ctx.event).toBe("voice_status_callback_malformed");
     expect(ctx.conversationIdParseError).toBe("invalid_uuid");
     expect(ctx.hasConversationId).toBe(false);
@@ -210,7 +234,9 @@ describe("POST /voice/status-callback — structured logging for malformed callb
       error: null,
     });
     await request(makeApp())
-      .post("/resupply-api/voice/status-callback?conversationId=11111111-1111-4111-8111-111111111111")
+      .post(
+        "/resupply-api/voice/status-callback?conversationId=11111111-1111-4111-8111-111111111111",
+      )
       .type("form")
       .send({ CallSid: "CA1", CallStatus: "completed" });
 
@@ -219,7 +245,8 @@ describe("POST /voice/status-callback — structured logging for malformed callb
       (c: unknown[]) =>
         typeof c[0] === "object" &&
         c[0] !== null &&
-        (c[0] as Record<string, unknown>).event === "voice_status_callback_malformed",
+        (c[0] as Record<string, unknown>).event ===
+          "voice_status_callback_malformed",
     );
     expect(malformedCalls).toHaveLength(0);
   });
@@ -243,6 +270,8 @@ describe("POST /voice/status-callback — structured logging for malformed callb
     expect(loggerWarnMock).toHaveBeenCalled();
     const [, message] = loggerWarnMock.mock.calls[0] as [unknown, string];
     expect(typeof message).toBe("string");
-    expect(message).toMatch(/status-callback.*malformed|malformed.*status-callback/i);
+    expect(message).toMatch(
+      /status-callback.*malformed|malformed.*status-callback/i,
+    );
   });
 });

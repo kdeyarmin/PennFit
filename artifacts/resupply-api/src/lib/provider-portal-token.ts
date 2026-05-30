@@ -39,8 +39,7 @@ function base64urlEncode(buf: Buffer): string {
 function base64urlDecode(s: string): Buffer | null {
   if (!/^[A-Za-z0-9_-]*$/u.test(s)) return null;
   const pad = (4 - (s.length % 4)) % 4;
-  const standard =
-    s.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat(pad);
+  const standard = s.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat(pad);
   try {
     return Buffer.from(standard, "base64");
   } catch {
@@ -90,10 +89,7 @@ export function verifyProviderPortalToken(
   if (!sigBuf) return { valid: false };
 
   const expected = hmacSign(payloadEncoded);
-  if (
-    sigBuf.length !== expected.length ||
-    !timingSafeEqual(sigBuf, expected)
-  ) {
+  if (sigBuf.length !== expected.length || !timingSafeEqual(sigBuf, expected)) {
     return { valid: false };
   }
 
@@ -113,11 +109,7 @@ export function verifyProviderPortalToken(
   // shouldn't be able to read a smuggled `role:"admin"` or
   // `scope:"all"` that survived JSON.parse. Also tighten the
   // typeof checks and enforce UUID-shaped providerId.
-  if (
-    !parsed ||
-    typeof parsed !== "object" ||
-    Array.isArray(parsed)
-  ) {
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
     return { valid: false };
   }
   const p = parsed as Record<string, unknown>;
@@ -134,7 +126,9 @@ export function verifyProviderPortalToken(
     return { valid: false };
   }
   if (
-    !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(p.id)
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+      p.id,
+    )
   ) {
     return { valid: false };
   }

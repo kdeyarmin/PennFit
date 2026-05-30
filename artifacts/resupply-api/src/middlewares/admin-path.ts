@@ -45,10 +45,7 @@ export const ADMIN_PATH_PREFIXES = [
  *  signed-in customer traffic; the CSRF gate paired with this matcher
  *  is conditional (`requireCsrfWhenSession`) so anonymous callers stay
  *  unaffected. */
-export const SHOP_PATH_PREFIXES = [
-  "/api/shop",
-  "/resupply-api/shop",
-] as const;
+export const SHOP_PATH_PREFIXES = ["/api/shop", "/resupply-api/shop"] as const;
 
 /** Lowercase prefixes of the patient-portal (`/me/...`) mount tree.
  *  These routes (e.g. `POST /api/me/payments/checkout-session`,
@@ -58,10 +55,7 @@ export const SHOP_PATH_PREFIXES = [
  *  conditional-CSRF gate. They are mounted at `/api` (NOT under
  *  `/api/shop`), so `isShopMutationRequest` alone missed them, leaving
  *  cookie-authed state-changing endpoints with no CSRF protection. */
-export const ME_PATH_PREFIXES = [
-  "/api/me",
-  "/resupply-api/me",
-] as const;
+export const ME_PATH_PREFIXES = ["/api/me", "/resupply-api/me"] as const;
 
 /**
  * True iff `req` is a state-changing request to an admin-tree path.

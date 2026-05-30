@@ -46,7 +46,8 @@ router.get("/admin/ops-status", requireAdmin, async (_req, res) => {
       process.env.TWILIO_ACCOUNT_SID &&
       process.env.TWILIO_AUTH_TOKEN &&
       process.env.TWILIO_FAX_FROM_NUMBER &&
-      (process.env.RESUPPLY_VOICE_PUBLIC_BASE_URL || process.env.RAILWAY_PUBLIC_DOMAIN),
+      (process.env.RESUPPLY_VOICE_PUBLIC_BASE_URL ||
+        process.env.RAILWAY_PUBLIC_DOMAIN),
     ),
     stripe: Boolean(process.env.STRIPE_SECRET_KEY),
     objectStorage: Boolean(process.env.SUPABASE_STORAGE_BUCKET_PRIVATE),

@@ -52,48 +52,40 @@ const portalRateLimiter = rateLimit({
   message: { error: "too_many_requests" },
 });
 
-router.get(
-  "/portal/clinician/:token",
-  portalRateLimiter,
-  async (req, res) => {
-    const parsed = tokenParam.safeParse(req.params);
-    if (!parsed.success) {
-      res.status(404).json({ error: "not_found" });
-      return;
-    }
-    const verifyOutcome = verifyClinicianShareToken(parsed.data.token);
-    if (!verifyOutcome.valid) {
-      res.status(404).json({ error: "not_found" });
-      return;
-    }
-    const supabase = getSupabaseServiceRoleClient();
-    const { data: share } = await supabase
-      .schema("resupply")
-      .from("clinician_share_tokens")
-      .select(
-        "id, referral_id, expires_at, revoked_at, view_count",
-      )
-      .eq("id", verifyOutcome.shareRowId)
-      .limit(1)
-      .maybeSingle();
-    if (!share) {
-      res.status(404).json({ error: "not_found" });
-      return;
-    }
-    if (share.revoked_at !== null) {
-      res.status(410).json({ error: "revoked" });
-      return;
-    }
-    if (Date.parse(share.expires_at) <= Date.now()) {
-      res.status(410).json({ error: "expired" });
-      return;
-    }
+router.get("/portal/clinician/:token", portalRateLimiter, async (req, res) => {
+  const parsed = tokenParam.safeParse(req.params);
+  if (!parsed.success) {
+    res.status(404).json({ error: "not_found" });
+    return;
+  }
+  const verifyOutcome = verifyClinicianShareToken(parsed.data.token);
+  if (!verifyOutcome.valid) {
+    res.status(404).json({ error: "not_found" });
+    return;
+  }
+  const supabase = getSupabaseServiceRoleClient();
+  const { data: share } = await supabase
+    .schema("resupply")
+    .from("clinician_share_tokens")
+    .select("id, referral_id, expires_at, revoked_at, view_count")
+    .eq("id", verifyOutcome.shareRowId)
+    .limit(1)
+    .maybeSingle();
+  if (!share) {
+    res.status(404).json({ error: "not_found" });
+    return;
+  }
+  if (share.revoked_at !== null) {
+    res.status(410).json({ error: "revoked" });
+    return;
+  }
+  if (Date.parse(share.expires_at) <= Date.now()) {
+    res.status(410).json({ error: "expired" });
+    return;
+  }
 
-    const [
-      { data: referral },
-      { data: outboxRows },
-      { data: preflightChecks },
-    ] = await Promise.all([
+  const [{ data: referral }, { data: outboxRows }, { data: preflightChecks }] =
+    await Promise.all([
       supabase
         .schema("resupply")
         .from("inbound_referral_orders")
@@ -117,103 +109,102 @@ router.get(
         .order("created_at", { ascending: true }),
     ]);
 
-    if (!referral) {
-      // Referral was hard-deleted (FK cascades), token row was too.
-      // Defensive 404.
-      res.status(404).json({ error: "not_found" });
-      return;
-    }
+  if (!referral) {
+    // Referral was hard-deleted (FK cascades), token row was too.
+    // Defensive 404.
+    res.status(404).json({ error: "not_found" });
+    return;
+  }
 
-    // Stamp view + bump count. We await the UPDATE here (not the
-    // previous fire-and-forget) so we can read back the incremented
-    // count and stamp the audit row with what was actually written.
-    // Two concurrent views previously both read view_count=N and
-    // both wrote N+1 — losing one increment and recording an
-    // inconsistent count in the audit metadata.
-    //
-    // Note: PostgREST has no server-side "view_count = view_count +
-    // 1" expression, so a small race window remains between the
-    // SELECT above and the UPDATE here. The audit row reads the
-    // CONFLICT-free actual value via `select()` below, which at
-    // least keeps the recorded count consistent with the row.
-    const { data: bumped, error: bumpErr } = await supabase
-      .schema("resupply")
-      .from("clinician_share_tokens")
-      .update({
-        last_viewed_at: new Date().toISOString(),
-        last_viewed_ip: req.ip ?? null,
-        view_count: share.view_count + 1,
-      })
-      .eq("id", share.id)
-      .select("view_count")
-      .limit(1)
-      .maybeSingle();
-    // On bump failure, fall back to the PERSISTED value (no
-    // optimistic +1). Otherwise the audit row and the response
-    // claim a view we didn't actually record. Only use the +1
-    // fallback when the bump didn't error and the row simply
-    // didn't return a refreshed count (shouldn't happen with
-    // .select("view_count"), but defensive).
-    const observedCount = bumpErr
-      ? share.view_count
-      : bumped?.view_count ?? share.view_count + 1;
-    if (bumpErr) {
-      logger.warn(
-        { err: bumpErr },
-        "clinician_share_tokens view bump failed (continuing)",
-      );
-    }
+  // Stamp view + bump count. We await the UPDATE here (not the
+  // previous fire-and-forget) so we can read back the incremented
+  // count and stamp the audit row with what was actually written.
+  // Two concurrent views previously both read view_count=N and
+  // both wrote N+1 — losing one increment and recording an
+  // inconsistent count in the audit metadata.
+  //
+  // Note: PostgREST has no server-side "view_count = view_count +
+  // 1" expression, so a small race window remains between the
+  // SELECT above and the UPDATE here. The audit row reads the
+  // CONFLICT-free actual value via `select()` below, which at
+  // least keeps the recorded count consistent with the row.
+  const { data: bumped, error: bumpErr } = await supabase
+    .schema("resupply")
+    .from("clinician_share_tokens")
+    .update({
+      last_viewed_at: new Date().toISOString(),
+      last_viewed_ip: req.ip ?? null,
+      view_count: share.view_count + 1,
+    })
+    .eq("id", share.id)
+    .select("view_count")
+    .limit(1)
+    .maybeSingle();
+  // On bump failure, fall back to the PERSISTED value (no
+  // optimistic +1). Otherwise the audit row and the response
+  // claim a view we didn't actually record. Only use the +1
+  // fallback when the bump didn't error and the row simply
+  // didn't return a refreshed count (shouldn't happen with
+  // .select("view_count"), but defensive).
+  const observedCount = bumpErr
+    ? share.view_count
+    : (bumped?.view_count ?? share.view_count + 1);
+  if (bumpErr) {
+    logger.warn(
+      { err: bumpErr },
+      "clinician_share_tokens view bump failed (continuing)",
+    );
+  }
 
-    await logAudit({
-      action: "inbound_referral.clinician_share_viewed",
-      adminEmail: "system:portal:clinician",
-      adminUserId: null,
-      targetTable: "clinician_share_tokens",
-      targetId: share.id,
-      metadata: {
-        referral_id: share.referral_id,
-        view_count: observedCount,
-      },
-      ip: req.ip ?? null,
-      userAgent: req.get("user-agent") ?? null,
-    }).catch((err) => {
-      logger.warn(
-        { err },
-        "inbound_referral.clinician_share_viewed audit write failed",
-      );
-    });
+  await logAudit({
+    action: "inbound_referral.clinician_share_viewed",
+    adminEmail: "system:portal:clinician",
+    adminUserId: null,
+    targetTable: "clinician_share_tokens",
+    targetId: share.id,
+    metadata: {
+      referral_id: share.referral_id,
+      view_count: observedCount,
+    },
+    ip: req.ip ?? null,
+    userAgent: req.get("user-agent") ?? null,
+  }).catch((err) => {
+    logger.warn(
+      { err },
+      "inbound_referral.clinician_share_viewed audit write failed",
+    );
+  });
 
-    // Public response shape. Every field below was either sent TO
-    // us by the clinician's EHR (source order id, status) or is
-    // structural (event kind + outcome label). No patient PHI.
-    res.json({
-      sourceOrderId: referral.source_order_id,
-      source: referral.source,
-      status: referral.triage_status,
-      receivedAt: referral.received_at,
-      triagedAt: referral.triaged_at,
-      acceptedAt: referral.accepted_at,
-      acceptedOrderKind: referral.accepted_order_kind,
-      preflightCompletedAt: referral.preflight_completed_at,
-      preflightSummary: (preflightChecks ?? []).map((c) => ({
-        kind: c.check_kind,
-        status: c.outcome_status,
-        at: c.created_at,
-      })),
-      timeline: (outboxRows ?? []).map((o) => ({
-        eventType: o.event_type,
-        status: o.status,
-        deliveredAt: o.delivered_at,
-        at: o.created_at,
-      })),
-      // Footer: when this link expires + view count for transparency.
-      // Use observedCount (the actually-persisted value) instead of
-      // an optimistic +1 so the response stays consistent with the
-      // audit row and the stored count when the bump fails.
-      expiresAt: share.expires_at,
-      viewCount: observedCount,
-    });
-  },
-);
+  // Public response shape. Every field below was either sent TO
+  // us by the clinician's EHR (source order id, status) or is
+  // structural (event kind + outcome label). No patient PHI.
+  res.json({
+    sourceOrderId: referral.source_order_id,
+    source: referral.source,
+    status: referral.triage_status,
+    receivedAt: referral.received_at,
+    triagedAt: referral.triaged_at,
+    acceptedAt: referral.accepted_at,
+    acceptedOrderKind: referral.accepted_order_kind,
+    preflightCompletedAt: referral.preflight_completed_at,
+    preflightSummary: (preflightChecks ?? []).map((c) => ({
+      kind: c.check_kind,
+      status: c.outcome_status,
+      at: c.created_at,
+    })),
+    timeline: (outboxRows ?? []).map((o) => ({
+      eventType: o.event_type,
+      status: o.status,
+      deliveredAt: o.delivered_at,
+      at: o.created_at,
+    })),
+    // Footer: when this link expires + view count for transparency.
+    // Use observedCount (the actually-persisted value) instead of
+    // an optimistic +1 so the response stays consistent with the
+    // audit row and the stored count when the bump fails.
+    expiresAt: share.expires_at,
+    viewCount: observedCount,
+  });
+});
 
 export default router;

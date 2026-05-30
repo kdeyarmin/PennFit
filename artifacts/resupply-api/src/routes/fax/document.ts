@@ -67,8 +67,7 @@ router.get("/fax/document/:token", faxDocumentLimiter, async (req, res) => {
     return;
   }
 
-  const practiceName =
-    process.env.RESUPPLY_PRACTICE_NAME?.trim() || "PennPaps";
+  const practiceName = process.env.RESUPPLY_PRACTICE_NAME?.trim() || "PennPaps";
   const today = new Date().toLocaleDateString("en-US", {
     year: "numeric",
     month: "long",

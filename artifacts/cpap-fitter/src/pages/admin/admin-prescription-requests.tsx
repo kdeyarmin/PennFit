@@ -83,10 +83,7 @@ export function AdminPrescriptionRequestsPage() {
             <FileText className="h-6 w-6" />
             Prescription requests
           </h1>
-          <p
-            className="text-sm mt-1"
-            style={{ color: "hsl(var(--ink-3))" }}
-          >
+          <p className="text-sm mt-1" style={{ color: "hsl(var(--ink-3))" }}>
             Pre-populated, faxable prescriptions the physician can sign as-is
             and fax back. Patient ID:{" "}
             <span className="font-mono">{patientId}</span>
@@ -103,10 +100,7 @@ export function AdminPrescriptionRequestsPage() {
         ) : isError ? (
           <ErrorPanel error={error} onRetry={() => void refetch()} />
         ) : data.packets.length === 0 ? (
-          <p
-            className="text-sm py-3"
-            style={{ color: "hsl(var(--ink-3))" }}
-          >
+          <p className="text-sm py-3" style={{ color: "hsl(var(--ink-3))" }}>
             No prescription requests yet for this patient. Click &quot;Create
             new&quot; to draft one.
           </p>
@@ -193,21 +187,11 @@ function PacketTable({
             <td className="py-2 text-xs font-mono">
               {r.sentToFaxE164 ?? r.returnFaxE164 ?? "—"}
             </td>
-            <td
-              className="py-2 text-xs"
-              style={{ color: "hsl(var(--ink-3))" }}
-            >
-              {r.sentAt
-                ? new Date(r.sentAt).toLocaleDateString()
-                : "—"}
+            <td className="py-2 text-xs" style={{ color: "hsl(var(--ink-3))" }}>
+              {r.sentAt ? new Date(r.sentAt).toLocaleDateString() : "—"}
             </td>
-            <td
-              className="py-2 text-xs"
-              style={{ color: "hsl(var(--ink-3))" }}
-            >
-              {r.signedAt
-                ? new Date(r.signedAt).toLocaleDateString()
-                : "—"}
+            <td className="py-2 text-xs" style={{ color: "hsl(var(--ink-3))" }}>
+              {r.signedAt ? new Date(r.signedAt).toLocaleDateString() : "—"}
             </td>
           </tr>
         ))}
@@ -302,7 +286,9 @@ function CreateModal({
     { hcpcs: "E0601", description: "CPAP device", quantity: 1 },
   ]);
   const [icd10, setIcd10] = useState("G47.33");
-  const [deviceClass, setDeviceClass] = useState<PrescriptionDeviceClass | "none">("auto_cpap");
+  const [deviceClass, setDeviceClass] = useState<
+    PrescriptionDeviceClass | "none"
+  >("auto_cpap");
   const [pressureMin, setPressureMin] = useState("6");
   const [pressureMax, setPressureMax] = useState("16");
   const [pressureFixed, setPressureFixed] = useState("8");
@@ -339,7 +325,10 @@ function CreateModal({
     ]);
   }
 
-  function updateLine(idx: number, patch: Partial<PrescriptionRequestHcpcsLine>) {
+  function updateLine(
+    idx: number,
+    patch: Partial<PrescriptionRequestHcpcsLine>,
+  ) {
     setLines((rows) =>
       rows.map((r, i) => (i === idx ? { ...r, ...patch } : r)),
     );
@@ -445,7 +434,10 @@ function CreateModal({
         />
 
         <div className="space-y-2">
-          <label className="text-xs font-semibold block" style={{ color: "hsl(var(--penn-navy))" }}>
+          <label
+            className="text-xs font-semibold block"
+            style={{ color: "hsl(var(--penn-navy))" }}
+          >
             Preset
           </label>
           <div className="flex flex-wrap gap-2">
@@ -455,7 +447,10 @@ function CreateModal({
                 type="button"
                 onClick={() => applyPreset(p.label)}
                 className="rounded-full px-3 py-1 text-xs"
-                style={{ backgroundColor: "hsl(var(--line-2))", color: "hsl(var(--ink-2))" }}
+                style={{
+                  backgroundColor: "hsl(var(--line-2))",
+                  color: "hsl(var(--ink-2))",
+                }}
                 title={p.description}
               >
                 {p.label}
@@ -465,7 +460,10 @@ function CreateModal({
         </div>
 
         <div className="space-y-2">
-          <label className="text-xs font-semibold block" style={{ color: "hsl(var(--penn-navy))" }}>
+          <label
+            className="text-xs font-semibold block"
+            style={{ color: "hsl(var(--penn-navy))" }}
+          >
             Equipment lines
           </label>
           {lines.map((l, idx) => (
@@ -479,7 +477,9 @@ function CreateModal({
               <Input
                 className="col-span-6"
                 value={l.description}
-                onChange={(e) => updateLine(idx, { description: e.target.value })}
+                onChange={(e) =>
+                  updateLine(idx, { description: e.target.value })
+                }
                 placeholder="Description"
               />
               <Input
@@ -499,9 +499,7 @@ function CreateModal({
                 value={l.cadenceDays ? String(l.cadenceDays) : ""}
                 onChange={(e) =>
                   updateLine(idx, {
-                    cadenceDays: e.target.value
-                      ? Number(e.target.value)
-                      : null,
+                    cadenceDays: e.target.value ? Number(e.target.value) : null,
                   })
                 }
                 placeholder="days"
@@ -533,7 +531,10 @@ function CreateModal({
         />
 
         <div className="space-y-2">
-          <label className="text-xs font-semibold block" style={{ color: "hsl(var(--penn-navy))" }}>
+          <label
+            className="text-xs font-semibold block"
+            style={{ color: "hsl(var(--penn-navy))" }}
+          >
             Therapy mode + settings
           </label>
           <select
@@ -577,8 +578,18 @@ function CreateModal({
           )}
           {(deviceClass === "bipap" || deviceClass === "bipap_st") && (
             <div className="grid grid-cols-2 gap-2">
-              <Field label="IPAP" value={ipap} onChange={setIpap} type="number" />
-              <Field label="EPAP" value={epap} onChange={setEpap} type="number" />
+              <Field
+                label="IPAP"
+                value={ipap}
+                onChange={setIpap}
+                type="number"
+              />
+              <Field
+                label="EPAP"
+                value={epap}
+                onChange={setEpap}
+                type="number"
+              />
             </div>
           )}
           {(deviceClass === "bipap_st" || deviceClass === "asv") && (
@@ -631,7 +642,10 @@ function CreateModal({
         </div>
 
         <div>
-          <label className="text-xs font-semibold block mb-1" style={{ color: "hsl(var(--penn-navy))" }}>
+          <label
+            className="text-xs font-semibold block mb-1"
+            style={{ color: "hsl(var(--penn-navy))" }}
+          >
             Clinical notes (optional)
           </label>
           <textarea
@@ -723,7 +737,10 @@ function DetailModal({
       {detail.isPending ? (
         <Spinner />
       ) : detail.isError ? (
-        <ErrorPanel error={detail.error} onRetry={() => void detail.refetch()} />
+        <ErrorPanel
+          error={detail.error}
+          onRetry={() => void detail.refetch()}
+        />
       ) : (
         <div className="space-y-4">
           <Header packet={detail.data} />
@@ -748,7 +765,10 @@ function DetailModal({
 
 function Header({ packet }: { packet: PrescriptionRequestDetail }) {
   return (
-    <div className="flex items-center justify-between border-b pb-3" style={{ borderColor: "hsl(var(--line-1))" }}>
+    <div
+      className="flex items-center justify-between border-b pb-3"
+      style={{ borderColor: "hsl(var(--line-1))" }}
+    >
       <div>
         <p className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
           Packet ID: <span className="font-mono">{packet.id.slice(0, 8)}…</span>
@@ -778,7 +798,10 @@ function PdfPreviewPane({ packetId }: { packetId: string }) {
   return (
     <div
       className="border rounded h-[60vh] overflow-hidden"
-      style={{ borderColor: "hsl(var(--line-1))", backgroundColor: "hsl(var(--bg-2))" }}
+      style={{
+        borderColor: "hsl(var(--line-1))",
+        backgroundColor: "hsl(var(--bg-2))",
+      }}
     >
       <iframe
         src={prescriptionRequestPdfUrl(packetId)}
@@ -792,26 +815,44 @@ function PdfPreviewPane({ packetId }: { packetId: string }) {
 
 function SummaryPane({ packet }: { packet: PrescriptionRequestDetail }) {
   return (
-    <div className="space-y-2 text-sm overflow-y-auto" style={{ maxHeight: "60vh" }}>
+    <div
+      className="space-y-2 text-sm overflow-y-auto"
+      style={{ maxHeight: "60vh" }}
+    >
       <KV label="Created" value={new Date(packet.createdAt).toLocaleString()} />
       <KV label="Status" value={packet.status} />
       <KV
         label="Return fax"
         value={packet.sentToFaxE164 ?? packet.returnFaxE164 ?? "—"}
       />
-      <KV label="Sent" value={packet.sentAt ? new Date(packet.sentAt).toLocaleString() : "—"} />
+      <KV
+        label="Sent"
+        value={packet.sentAt ? new Date(packet.sentAt).toLocaleString() : "—"}
+      />
       <KV
         label="Delivered"
-        value={packet.deliveredAt ? new Date(packet.deliveredAt).toLocaleString() : "—"}
+        value={
+          packet.deliveredAt
+            ? new Date(packet.deliveredAt).toLocaleString()
+            : "—"
+        }
       />
       <KV
         label="Signed"
-        value={packet.signedAt ? new Date(packet.signedAt).toLocaleString() : "—"}
+        value={
+          packet.signedAt ? new Date(packet.signedAt).toLocaleString() : "—"
+        }
       />
-      <KV label="Length of need" value={`${packet.lengthOfNeedMonths} months`} />
+      <KV
+        label="Length of need"
+        value={`${packet.lengthOfNeedMonths} months`}
+      />
       <KV label="ICD-10" value={packet.icd10Codes.join(", ")} />
       <div className="text-xs">
-        <span className="font-semibold" style={{ color: "hsl(var(--penn-navy))" }}>
+        <span
+          className="font-semibold"
+          style={{ color: "hsl(var(--penn-navy))" }}
+        >
           Equipment lines:
         </span>
         <ul className="mt-1 space-y-0.5">
@@ -825,7 +866,10 @@ function SummaryPane({ packet }: { packet: PrescriptionRequestDetail }) {
       </div>
       {packet.settings && (
         <div className="text-xs">
-          <span className="font-semibold" style={{ color: "hsl(var(--penn-navy))" }}>
+          <span
+            className="font-semibold"
+            style={{ color: "hsl(var(--penn-navy))" }}
+          >
             Settings:
           </span>
           <pre className="mt-1 text-[10px] whitespace-pre-wrap font-mono">
@@ -848,7 +892,10 @@ function SummaryPane({ packet }: { packet: PrescriptionRequestDetail }) {
 function KV({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex gap-2 text-xs">
-      <span className="font-semibold w-28" style={{ color: "hsl(var(--penn-navy))" }}>
+      <span
+        className="font-semibold w-28"
+        style={{ color: "hsl(var(--penn-navy))" }}
+      >
         {label}
       </span>
       <span>{value}</span>
@@ -867,7 +914,9 @@ function LifecycleActions({
 }: {
   packet: PrescriptionRequestDetail;
   actionError: string | null;
-  send: ReturnType<typeof useMutation<{ status: "sent_fax"; vendorRef: string }, Error, void>>;
+  send: ReturnType<
+    typeof useMutation<{ status: "sent_fax"; vendorRef: string }, Error, void>
+  >;
   sign: ReturnType<typeof useMutation<{ status: "signed" }, Error, void>>;
   cancel: ReturnType<typeof useMutation<{ status: "void" }, Error, void>>;
   signedKey: string;
@@ -878,11 +927,13 @@ function LifecycleActions({
     packet.status === "sent_fax" ||
     packet.status === "delivered" ||
     packet.status === "draft";
-  const canVoid =
-    packet.status !== "signed" && packet.status !== "void";
+  const canVoid = packet.status !== "signed" && packet.status !== "void";
 
   return (
-    <div className="space-y-3 border-t pt-3" style={{ borderColor: "hsl(var(--line-1))" }}>
+    <div
+      className="space-y-3 border-t pt-3"
+      style={{ borderColor: "hsl(var(--line-1))" }}
+    >
       {actionError && (
         <div className="rounded border border-rose-200 bg-rose-50 p-2 text-xs text-rose-900">
           {actionError}
@@ -965,8 +1016,14 @@ function ModalShell({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="p-6 space-y-4">
-          <div className="flex items-center justify-between border-b pb-3" style={{ borderColor: "hsl(var(--line-1))" }}>
-            <h2 className="text-lg font-semibold" style={{ color: "hsl(var(--ink-1))" }}>
+          <div
+            className="flex items-center justify-between border-b pb-3"
+            style={{ borderColor: "hsl(var(--line-1))" }}
+          >
+            <h2
+              className="text-lg font-semibold"
+              style={{ color: "hsl(var(--ink-1))" }}
+            >
               {title}
             </h2>
             <Button intent="ghost" onClick={onClose}>
@@ -997,7 +1054,10 @@ function Field({
 }) {
   return (
     <div className={className}>
-      <label className="text-xs font-semibold block mb-1" style={{ color: "hsl(var(--penn-navy))" }}>
+      <label
+        className="text-xs font-semibold block mb-1"
+        style={{ color: "hsl(var(--penn-navy))" }}
+      >
         {label}
       </label>
       <Input

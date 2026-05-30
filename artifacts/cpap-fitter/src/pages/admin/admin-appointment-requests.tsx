@@ -43,13 +43,10 @@ export function AdminAppointmentRequestsPage() {
             <CalendarPlus className="h-6 w-6" />
             Appointment requests
           </h1>
-          <p
-            className="text-sm mt-1"
-            style={{ color: "hsl(var(--ink-3))" }}
-          >
-            Patient-initiated requests for fitting help, telehealth,
-            and general questions. New requests stay open until you
-            mark them contacted, scheduled, or declined.
+          <p className="text-sm mt-1" style={{ color: "hsl(var(--ink-3))" }}>
+            Patient-initiated requests for fitting help, telehealth, and general
+            questions. New requests stay open until you mark them contacted,
+            scheduled, or declined.
           </p>
         </div>
         <label className="text-xs flex items-center gap-1.5">
@@ -67,10 +64,7 @@ export function AdminAppointmentRequestsPage() {
         ) : isError ? (
           <ErrorPanel error={error} onRetry={() => void refetch()} />
         ) : data.requests.length === 0 ? (
-          <p
-            className="text-sm py-3"
-            style={{ color: "hsl(var(--ink-3))" }}
-          >
+          <p className="text-sm py-3" style={{ color: "hsl(var(--ink-3))" }}>
             {includeClosed
               ? "No appointment requests on file."
               : "No open requests — nice work."}
@@ -114,7 +108,9 @@ function RequestRow({ row }: { row: AppointmentRequest }) {
     mutationFn: (status: AppointmentRequestStatus) =>
       updateAppointmentRequest(row.id, { status }),
     onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ["admin", "appointment-requests"] });
+      void qc.invalidateQueries({
+        queryKey: ["admin", "appointment-requests"],
+      });
     },
     onError: (err) => {
       // Surface the failure so the CSR knows the row state didn't
@@ -131,7 +127,9 @@ function RequestRow({ row }: { row: AppointmentRequest }) {
   return (
     <tr className="border-b" style={{ borderColor: "hsl(var(--line-2))" }}>
       <td className="py-2 align-top">
-        <div className="font-medium">{row.requesterName ?? row.requesterEmail}</div>
+        <div className="font-medium">
+          {row.requesterName ?? row.requesterEmail}
+        </div>
         <div className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
           {row.requesterEmail}
         </div>
@@ -148,9 +146,7 @@ function RequestRow({ row }: { row: AppointmentRequest }) {
           </div>
         )}
       </td>
-      <td className="py-2 align-top text-xs">
-        {row.preferredWindow ?? "—"}
-      </td>
+      <td className="py-2 align-top text-xs">{row.preferredWindow ?? "—"}</td>
       <td className="py-2 align-top">
         <span className="inline-block px-1.5 py-0.5 rounded text-[10px] uppercase font-semibold tracking-wider bg-blue-100 text-blue-900">
           {STATUS_LABELS[row.status]}

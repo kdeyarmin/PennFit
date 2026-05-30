@@ -28,7 +28,9 @@ export interface AuthRateLimitOptions {
   name: string;
 }
 
-export function makeAuthRateLimiter(opts: AuthRateLimitOptions): RequestHandler {
+export function makeAuthRateLimiter(
+  opts: AuthRateLimitOptions,
+): RequestHandler {
   return expressRateLimit({
     windowMs: opts.windowMs,
     limit: opts.max,

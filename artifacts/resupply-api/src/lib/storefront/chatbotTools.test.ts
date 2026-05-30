@@ -136,7 +136,8 @@ describe("executeChatTool", () => {
       const data = result.data as {
         masks: Array<{ pressureRangeMax: number }>;
       };
-      for (const m of data.masks) expect(m.pressureRangeMax).toBeGreaterThanOrEqual(25);
+      for (const m of data.masks)
+        expect(m.pressureRangeMax).toBeGreaterThanOrEqual(25);
     });
 
     it("returns an empty list (not an error) when nothing matches", () => {
@@ -236,7 +237,10 @@ describe("executeChatTool", () => {
 
 describe("serializeToolResult", () => {
   it("produces compact JSON for ok results", () => {
-    const result = executeChatTool("find_masks", { type: "nasalPillow", limit: 1 });
+    const result = executeChatTool("find_masks", {
+      type: "nasalPillow",
+      limit: 1,
+    });
     const json = serializeToolResult(result);
     const parsed = JSON.parse(json);
     expect(parsed.masks).toBeDefined();

@@ -54,7 +54,13 @@ vi.mock("@workspace/resupply-db", () => ({
   getSupabaseServiceRoleClient: () => ({
     schema: () => ({
       from: () => ({
-        select: () => ({ eq: () => ({ limit: () => ({ maybeSingle: async () => ({ data: null, error: null }) }) }) }),
+        select: () => ({
+          eq: () => ({
+            limit: () => ({
+              maybeSingle: async () => ({ data: null, error: null }),
+            }),
+          }),
+        }),
         insert: async () => ({ data: null, error: null }),
         update: async () => ({ data: null, error: null }),
       }),
@@ -68,7 +74,8 @@ vi.mock("@workspace/resupply-db", () => ({
 vi.mock("@workspace/resupply-auth", async (importOriginal) => {
   // Keep the real checkCsrf / readCookie / SESSION_COOKIE so that
   // requireCsrf (the code under test) works correctly.
-  const real = await importOriginal<typeof import("@workspace/resupply-auth")>();
+  const real =
+    await importOriginal<typeof import("@workspace/resupply-auth")>();
   return {
     ...real,
     inviteTeamMember: vi.fn(),

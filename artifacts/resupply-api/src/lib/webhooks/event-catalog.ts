@@ -20,7 +20,10 @@ export interface WebhookEventDefinition {
   type: string;
   description: string;
   publisher: string;
-  payloadFields: Record<string, "string" | "number" | "boolean" | "uuid" | "iso_timestamp" | "json">;
+  payloadFields: Record<
+    string,
+    "string" | "number" | "boolean" | "uuid" | "iso_timestamp" | "json"
+  >;
   carriesPatientId: boolean;
 }
 
@@ -28,7 +31,8 @@ export const WEBHOOK_EVENT_CATALOG: readonly WebhookEventDefinition[] = [
   // ── Claim state transitions ──
   {
     type: "claim.submitted",
-    description: "Insurance claim transitioned to submitted (sent to clearinghouse).",
+    description:
+      "Insurance claim transitioned to submitted (sent to clearinghouse).",
     publisher:
       "routes/patients/insurance-claims.ts PATCH + lib/billing/office-ally-batch.ts",
     payloadFields: {

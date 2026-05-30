@@ -168,7 +168,9 @@ export function build270(input: Build270Input): Built270 {
 
   // 2000C — subscriber.
   segments.push(join(["HL", "3", "2", "22", "0"]));
-  segments.push(join(["TRN", "1", traceRef, sanitizeElement(input.submitter.etin)]));
+  segments.push(
+    join(["TRN", "1", traceRef, sanitizeElement(input.submitter.etin)]),
+  );
   segments.push(
     join([
       "NM1",
@@ -184,7 +186,12 @@ export function build270(input: Build270Input): Built270 {
     ]),
   );
   segments.push(
-    join(["DMG", "D8", toCcyymmdd(input.subscriber.dateOfBirth), input.subscriber.gender]),
+    join([
+      "DMG",
+      "D8",
+      toCcyymmdd(input.subscriber.dateOfBirth),
+      input.subscriber.gender,
+    ]),
   );
 
   const dateFrom = input.serviceDateFrom ?? isoToday();
@@ -197,18 +204,10 @@ export function build270(input: Build270Input): Built270 {
       `${toCcyymmdd(dateFrom)}-${toCcyymmdd(dateTo)}`,
     ]),
   );
-  segments.push(
-    join(["EQ", input.serviceTypeCode ?? "30"]),
-  );
+  segments.push(join(["EQ", input.serviceTypeCode ?? "30"]));
   if (input.hcpcsCode) {
     // III — health care service composite
-    segments.push(
-      join([
-        "III",
-        "HC",
-        `${sanitizeElement(input.hcpcsCode)}`,
-      ]),
-    );
+    segments.push(join(["III", "HC", `${sanitizeElement(input.hcpcsCode)}`]));
   }
 
   // SE counts ST..SE inclusive.

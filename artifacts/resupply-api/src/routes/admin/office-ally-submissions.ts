@@ -48,7 +48,8 @@ const bulkResubmitBody = z
   })
   .strict();
 
-type SubmissionRowFull = Database["resupply"]["Tables"]["office_ally_submissions"]["Row"];
+type SubmissionRowFull =
+  Database["resupply"]["Tables"]["office_ally_submissions"]["Row"];
 type SubmissionStatus = SubmissionRowFull["status"];
 
 const STATUS_VALUES = [
@@ -332,9 +333,7 @@ router.get(
     const { data, error } = await supabase
       .schema("resupply")
       .from("office_ally_submissions")
-      .select(
-        "status, submitted_at, ack_999_received_at, claim_count",
-      )
+      .select("status, submitted_at, ack_999_received_at, claim_count")
       .gte("submitted_at", since)
       .limit(5000);
     if (error) throw error;
@@ -351,17 +350,11 @@ router.get(
       totalClaims += r.claim_count;
       if (r.status === "accepted_999" || r.status === "accepted_277ca") {
         accepted += 1;
-      } else if (
-        r.status === "rejected_999" ||
-        r.status === "rejected_277ca"
-      ) {
+      } else if (r.status === "rejected_999" || r.status === "rejected_277ca") {
         rejected += 1;
       } else if (r.status === "transport_failed") {
         transportFailed += 1;
-      } else if (
-        r.status === "uploaded" &&
-        r.submitted_at < oneHourAgo
-      ) {
+      } else if (r.status === "uploaded" && r.submitted_at < oneHourAgo) {
         pendingAck += 1;
       }
       if (r.ack_999_received_at && r.submitted_at) {
@@ -484,9 +477,7 @@ router.get(
     const byPayer = new Map<string, Bucket>();
     for (const r of rows) {
       const firstClaimId = r.attempted_claim_ids?.[0];
-      const payerId = firstClaimId
-        ? claimToPayer.get(firstClaimId)
-        : undefined;
+      const payerId = firstClaimId ? claimToPayer.get(firstClaimId) : undefined;
       if (!payerId) continue;
       let b = byPayer.get(payerId);
       if (!b) {
@@ -504,10 +495,7 @@ router.get(
       b.claimCount += r.claim_count;
       if (r.status === "accepted_999" || r.status === "accepted_277ca") {
         b.accepted += 1;
-      } else if (
-        r.status === "rejected_999" ||
-        r.status === "rejected_277ca"
-      ) {
+      } else if (r.status === "rejected_999" || r.status === "rejected_277ca") {
         b.rejected += 1;
       } else if (r.status === "transport_failed") {
         b.transportFailed += 1;
@@ -558,9 +546,7 @@ router.get(
           transportFailedCount: b.transportFailed,
           pendingCount: b.pending,
           acceptanceRatePct:
-            decided > 0
-              ? Math.round((b.accepted / decided) * 1000) / 10
-              : null,
+            decided > 0 ? Math.round((b.accepted / decided) * 1000) / 10 : null,
         };
       }),
     });
@@ -686,12 +672,15 @@ router.get(
   requirePermission("admin.tools.manage"),
   async (req, res) => {
     const supabase = getSupabaseServiceRoleClient();
-    const daysRaw = typeof req.query.days === "string" ? Number(req.query.days) : 90;
+    const daysRaw =
+      typeof req.query.days === "string" ? Number(req.query.days) : 90;
     const days =
       Number.isFinite(daysRaw) && daysRaw > 0 && daysRaw <= 365
         ? Math.floor(daysRaw)
         : 90;
-    const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+    const since = new Date(
+      Date.now() - days * 24 * 60 * 60 * 1000,
+    ).toISOString();
     let query = supabase
       .schema("resupply")
       .from("office_ally_submissions")
@@ -729,10 +718,7 @@ router.get(
       .toISOString()
       .slice(0, 10)}.csv`;
     res.setHeader("Content-Type", "text/csv; charset=utf-8");
-    res.setHeader(
-      "Content-Disposition",
-      `attachment; filename="${filename}"`,
-    );
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
     res.setHeader("Cache-Control", "no-store");
     res.send(renderSubmissionsCsv(rows));
   },
@@ -780,10 +766,10 @@ router.get(
     const fallbackClaimIds =
       linkedClaims && linkedClaims.length > 0
         ? []
-        : submission.attempted_claim_ids ?? [];
+        : (submission.attempted_claim_ids ?? []);
     const fallbackClaims =
       fallbackClaimIds.length > 0
-        ? (
+        ? ((
             await supabase
               .schema("resupply")
               .from("insurance_claims")
@@ -791,11 +777,10 @@ router.get(
                 "id, patient_id, payer_name, claim_number, date_of_service, status, total_billed_cents",
               )
               .in("id", fallbackClaimIds)
-          ).data ?? []
+          ).data ?? [])
         : [];
-    const claims = linkedClaims && linkedClaims.length > 0
-      ? linkedClaims
-      : fallbackClaims;
+    const claims =
+      linkedClaims && linkedClaims.length > 0 ? linkedClaims : fallbackClaims;
 
     // Patient name lookup (single-statement batch via .in()).
     const patientIds = [...new Set(claims.map((c) => c.patient_id))];
@@ -1028,10 +1013,7 @@ router.post(
       userAgent: req.get("user-agent") ?? null,
     });
     if (!result.ok) {
-      const status =
-        result.kind === "no_claims_matched"
-          ? 404
-          : 409;
+      const status = result.kind === "no_claims_matched" ? 404 : 409;
       res.status(status).json({ error: result.kind, ...result.detail });
       return;
     }
@@ -1077,15 +1059,21 @@ router.patch(
       return;
     }
     const b = parsed.data;
-    const update: Database["resupply"]["Tables"]["office_ally_submissions"]["Update"] = {
-      updated_at: new Date().toISOString(),
-    };
+    const update: Database["resupply"]["Tables"]["office_ally_submissions"]["Update"] =
+      {
+        updated_at: new Date().toISOString(),
+      };
     if (b.status !== undefined) update.status = b.status;
-    if (b.ack999FileName !== undefined) update.ack_999_file_name = b.ack999FileName;
-    if (b.ack999ReceivedAt !== undefined) update.ack_999_received_at = b.ack999ReceivedAt;
-    if (b.ack277caFileName !== undefined) update.ack_277ca_file_name = b.ack277caFileName;
-    if (b.ack277caReceivedAt !== undefined) update.ack_277ca_received_at = b.ack277caReceivedAt;
-    if (b.rejectionReason !== undefined) update.rejection_reason = b.rejectionReason;
+    if (b.ack999FileName !== undefined)
+      update.ack_999_file_name = b.ack999FileName;
+    if (b.ack999ReceivedAt !== undefined)
+      update.ack_999_received_at = b.ack999ReceivedAt;
+    if (b.ack277caFileName !== undefined)
+      update.ack_277ca_file_name = b.ack277caFileName;
+    if (b.ack277caReceivedAt !== undefined)
+      update.ack_277ca_received_at = b.ack277caReceivedAt;
+    if (b.rejectionReason !== undefined)
+      update.rejection_reason = b.rejectionReason;
 
     const supabase = getSupabaseServiceRoleClient();
     const { error } = await supabase

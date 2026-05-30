@@ -106,9 +106,13 @@ describe("GET /shop/me/appointment-request", () => {
     expect(res.status).toBe(200);
     const ids = res.body.requests.map((r: { id: string }) => r.id);
     expect(ids).toEqual(["stale", "fresh", "unsched"]);
-    const stale = res.body.requests.find((r: { id: string }) => r.id === "stale");
+    const stale = res.body.requests.find(
+      (r: { id: string }) => r.id === "stale",
+    );
     expect(stale.meetingUrl).toBeNull();
-    const fresh = res.body.requests.find((r: { id: string }) => r.id === "fresh");
+    const fresh = res.body.requests.find(
+      (r: { id: string }) => r.id === "fresh",
+    );
     expect(fresh.meetingUrl).toBe("https://zoom.us/j/new");
     const unsched = res.body.requests.find(
       (r: { id: string }) => r.id === "unsched",

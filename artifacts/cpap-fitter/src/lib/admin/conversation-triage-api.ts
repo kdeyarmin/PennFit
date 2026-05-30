@@ -11,14 +11,11 @@ export const triageApi = {
       body: JSON.stringify({ snoozedUntil }),
     }),
   setTags: (id: string, tags: string[]) =>
-    jsonFetch<{ ok: true; tags: string[] }>(
-      `/admin/conversations/${id}/tags`,
-      {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tags }),
-      },
-    ),
+    jsonFetch<{ ok: true; tags: string[] }>(`/admin/conversations/${id}/tags`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tags }),
+    }),
   claim: (id: string) =>
     jsonFetch<{ ok: true }>(`/admin/conversations/${id}/claim`, {
       method: "POST",
@@ -32,7 +29,11 @@ async function jsonFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
   const res = await fetch(`/resupply-api${path}`, {
     ...restInit,
     credentials: "include",
-    headers: { Accept: "application/json", ...csrfHeader(), ...(initHeaders ?? {}) },
+    headers: {
+      Accept: "application/json",
+      ...csrfHeader(),
+      ...(initHeaders ?? {}),
+    },
   });
   if (!res.ok) {
     let message = `${res.status} ${res.statusText}`;

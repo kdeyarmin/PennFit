@@ -130,9 +130,7 @@ describe("sendDueAbandonedCarts — request shape", () => {
     await sendDueAbandonedCarts();
 
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe(
-      "/resupply-api/admin/shop/abandoned-carts/send-due",
-    );
+    expect(url).toBe("/resupply-api/admin/shop/abandoned-carts/send-due");
     expect(init.method).toBe("POST");
   });
 

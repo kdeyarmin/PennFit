@@ -62,10 +62,7 @@ export interface MedWatchSummary {
   html: string;
 }
 
-function computeAgeYears(
-  dateOfBirth: string | null,
-  asOf: Date,
-): string {
+function computeAgeYears(dateOfBirth: string | null, asOf: Date): string {
   if (!dateOfBirth) return "—";
   const dob = new Date(dateOfBirth);
   if (Number.isNaN(dob.getTime())) return "—";
@@ -85,15 +82,11 @@ export function buildMedWatchSummary(
   const { grievance, patient, asset, practiceName } = input;
   const patientInitials = `${patient.legalFirstName.slice(0, 1).toUpperCase()}${patient.legalLastName.slice(0, 1).toUpperCase()}`;
   const patientAge = computeAgeYears(patient.dateOfBirth, asOf);
-  const patientSex = patient.sex
-    ? patient.sex.slice(0, 1).toUpperCase()
-    : "—";
+  const patientSex = patient.sex ? patient.sex.slice(0, 1).toUpperCase() : "—";
   const eventDescription = [grievance.summary, grievance.description ?? ""]
     .filter((s) => s.length > 0)
     .join("\n\n");
-  const productName = asset
-    ? `${asset.manufacturer} ${asset.model}`
-    : "—";
+  const productName = asset ? `${asset.manufacturer} ${asset.model}` : "—";
   const lotSerial = asset?.serialNumber ?? "—";
   const productDispensedDate = asset?.dispensedAt ?? "—";
   const productCode = "—"; // FDA product code requires manual lookup

@@ -18,10 +18,7 @@ import {
 
 const supabaseMock = installSupabaseMock();
 
-import {
-  isFeatureEnabled,
-  invalidateFeatureFlagCache,
-} from "./feature-flags";
+import { isFeatureEnabled, invalidateFeatureFlagCache } from "./feature-flags";
 
 beforeEach(() => {
   supabaseMock.reset();
@@ -86,7 +83,9 @@ describe("isFeatureEnabled", () => {
       error: { message: "ENOTFOUND db.xyz.supabase.co" },
     });
     invalidateFeatureFlagCache();
-    expect(await isFeatureEnabled("fitter_supply_campaign.dispatcher")).toBe(true);
+    expect(await isFeatureEnabled("fitter_supply_campaign.dispatcher")).toBe(
+      true,
+    );
   });
 
   it("defaults to enabled when Supabase is unreachable (EAI_AGAIN)", async () => {

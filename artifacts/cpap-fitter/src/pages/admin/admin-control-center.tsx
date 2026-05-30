@@ -47,10 +47,10 @@ export function AdminControlCenterPage() {
           Control Center
         </h1>
         <p className="text-sm text-slate-600">
-          On/off switches for major features. Flipping a switch takes
-          effect within a few seconds — no deploy required. Use these
-          during incidents, vendor outages, or when you need to pause a
-          campaign without canceling it.
+          On/off switches for major features. Flipping a switch takes effect
+          within a few seconds — no deploy required. Use these during incidents,
+          vendor outages, or when you need to pause a campaign without canceling
+          it.
         </p>
       </header>
       <SummaryTiles />
@@ -94,8 +94,7 @@ function SummaryTiles() {
   const lastToggle =
     operatorTouched.length > 0
       ? operatorTouched.reduce((latest, f) =>
-          new Date(f.updatedAt).getTime() >
-          new Date(latest.updatedAt).getTime()
+          new Date(f.updatedAt).getTime() > new Date(latest.updatedAt).getTime()
             ? f
             : latest,
         )
@@ -109,9 +108,7 @@ function SummaryTiles() {
     >
       <Tile
         label="Features enabled"
-        value={
-          query.isPending ? "—" : `${enabled} of ${total}`
-        }
+        value={query.isPending ? "—" : `${enabled} of ${total}`}
         accent={disabled === 0 ? "ok" : "warn"}
         testId="tile-enabled"
       />
@@ -164,10 +161,7 @@ function Tile({
         : "border-slate-200 bg-white";
   return (
     <div
-      className={[
-        "rounded-lg border p-3 space-y-0.5",
-        accentClass,
-      ].join(" ")}
+      className={["rounded-lg border p-3 space-y-0.5", accentClass].join(" ")}
       data-testid={testId}
     >
       <div className="text-xs font-semibold uppercase tracking-wider text-slate-600">
@@ -243,8 +237,8 @@ function FlagsList() {
   if (grouped.length === 0) {
     return (
       <div className="text-sm text-slate-500">
-        No feature flags configured. (The seed migration may not have
-        run on this environment yet.)
+        No feature flags configured. (The seed migration may not have run on
+        this environment yet.)
       </div>
     );
   }
@@ -450,7 +444,9 @@ function ConfirmDisableModal({
           <p className="text-sm text-slate-700">{flag.description}</p>
         </div>
         <div className="rounded border border-rose-200 bg-rose-50 p-3 text-sm text-rose-900 space-y-1">
-          <p className="font-semibold">This change takes effect within seconds.</p>
+          <p className="font-semibold">
+            This change takes effect within seconds.
+          </p>
           <p>
             Type the flag key below to confirm. The disable button stays
             inactive until the key matches exactly.
@@ -588,13 +584,16 @@ function ActivityPanel() {
           </p>
         ) : (query.data?.activity ?? []).length === 0 ? (
           <p className="px-4 py-3 text-sm text-slate-500">
-            No toggle events recorded yet. Flipping a switch above will
-            show up here.
+            No toggle events recorded yet. Flipping a switch above will show up
+            here.
           </p>
         ) : (
           <ul className="divide-y divide-slate-200">
             {(query.data?.activity ?? []).map((row, i) => (
-              <ActivityRow key={`${row.occurredAt}-${row.key}-${i}`} row={row} />
+              <ActivityRow
+                key={`${row.occurredAt}-${row.key}-${i}`}
+                row={row}
+              />
             ))}
           </ul>
         )}
@@ -605,7 +604,12 @@ function ActivityPanel() {
 
 function ActivityRow({ row }: { row: FeatureFlagActivity }) {
   const when = new Date(row.occurredAt);
-  const directionLabel = row.from && !row.to ? "Disabled" : !row.from && row.to ? "Enabled" : "Changed";
+  const directionLabel =
+    row.from && !row.to
+      ? "Disabled"
+      : !row.from && row.to
+        ? "Enabled"
+        : "Changed";
   // Re-enables are green; disables are amber. "Changed" (the
   // theoretical from===to case) shouldn't show up because the
   // toggle handler skips no-op writes, but if it ever does we
@@ -623,7 +627,10 @@ function ActivityRow({ row }: { row: FeatureFlagActivity }) {
       data-testid={`activity-row-${row.key}`}
     >
       <span
-        className={["rounded px-1.5 py-0.5 text-xs font-semibold", chipClass].join(" ")}
+        className={[
+          "rounded px-1.5 py-0.5 text-xs font-semibold",
+          chipClass,
+        ].join(" ")}
       >
         {directionLabel}
       </span>

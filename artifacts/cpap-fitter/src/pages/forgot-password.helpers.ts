@@ -3,7 +3,10 @@
 // pulling React + JSX through the import graph. The page (.tsx) just
 // re-exports + calls them.
 
-import { AuthError, serverUnavailableMessage } from "@workspace/resupply-auth-react";
+import {
+  AuthError,
+  serverUnavailableMessage,
+} from "@workspace/resupply-auth-react";
 
 /**
  * Decide what the forgot-password form should do for a given thrown
@@ -23,9 +26,7 @@ import { AuthError, serverUnavailableMessage } from "@workspace/resupply-auth-re
  */
 export function decideForgotPasswordErrorOutcome(
   err: unknown,
-):
-  | { kind: "show-error"; message: string }
-  | { kind: "fold-to-success" } {
+): { kind: "show-error"; message: string } | { kind: "fold-to-success" } {
   if (err instanceof AuthError && err.status >= 500) {
     return {
       kind: "show-error",

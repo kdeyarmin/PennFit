@@ -74,8 +74,10 @@ describe("sw-push.js notificationclick — same-origin URL handling", () => {
   });
 
   it("still uses self.clients.matchAll to re-focus an existing tab", () => {
-    expect(SW_SRC).toContain(
-      "self.clients.matchAll({ type: \"window\", includeUncontrolled: true })",
+    // Regex tolerates Prettier breaking the fluent call across lines
+    // (`self.clients\n  .matchAll({ ... })`).
+    expect(SW_SRC).toMatch(
+      /self\.clients\s*\.matchAll\(\{\s*type:\s*"window",\s*includeUncontrolled:\s*true\s*\}\)/,
     );
   });
 
@@ -110,12 +112,8 @@ describe("sw-push.js pushsubscriptionchange — re-subscribe flow retained", () 
 
   it("still deletes the old endpoint when oldSubscription is present", () => {
     expect(SW_SRC).toContain("oldEndpoint");
-    expect(SW_SRC).toContain(
-      'method: "DELETE"',
-    );
-    expect(SW_SRC).toContain(
-      "/resupply-api/shop/me/push-subscriptions",
-    );
+    expect(SW_SRC).toContain('method: "DELETE"');
+    expect(SW_SRC).toContain("/resupply-api/shop/me/push-subscriptions");
   });
 
   it("fetches the VAPID public key from the server to re-subscribe", () => {
@@ -132,7 +130,9 @@ describe("sw-push.js pushsubscriptionchange — re-subscribe flow retained", () 
   it("POSTs the new subscription back to the server in pushsubscriptionchange", () => {
     // After re-subscribing, the new sub JSON is POSTed back so the server
     // can replace the rotated credentials.
-    const handlerStart = SW_SRC.indexOf('addEventListener("pushsubscriptionchange"');
+    const handlerStart = SW_SRC.indexOf(
+      'addEventListener("pushsubscriptionchange"',
+    );
     const handlerSrc = SW_SRC.slice(handlerStart);
     expect(handlerSrc).toContain('method: "POST"');
   });
@@ -162,8 +162,8 @@ describe("sw-push.js — urlBase64ToUint8Array retained", () => {
   it("performs the URL-safe base64-padding replacement", () => {
     // The function replaces `-` with `+` and `_` with `/` before atob so a
     // base64url VAPID key decodes correctly.
-    expect(SW_SRC).toContain(".replace(/-/g, \"+\")");
-    expect(SW_SRC).toContain(".replace(/_/g, \"/\")");
+    expect(SW_SRC).toContain('.replace(/-/g, "+")');
+    expect(SW_SRC).toContain('.replace(/_/g, "/")');
   });
 });
 

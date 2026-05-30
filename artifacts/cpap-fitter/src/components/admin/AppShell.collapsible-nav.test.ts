@@ -16,10 +16,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const APPSHELL_SRC = readFileSync(
-  path.join(__dirname, "AppShell.tsx"),
-  "utf8",
-);
+const APPSHELL_SRC = readFileSync(path.join(__dirname, "AppShell.tsx"), "utf8");
 
 // ---------------------------------------------------------------------------
 // Structural: imports required by the collapsible-nav feature
@@ -39,15 +36,11 @@ describe("AppShell — collapsible-nav imports", () => {
 // ---------------------------------------------------------------------------
 describe("AppShell — localStorage key constants", () => {
   it("defines NAV_EXPANDED_STORAGE_KEY", () => {
-    expect(APPSHELL_SRC).toContain(
-      '"pf-admin-nav-expanded-groups"',
-    );
+    expect(APPSHELL_SRC).toContain('"pf-admin-nav-expanded-groups"');
   });
 
   it("defines NAV_EXPLICIT_COLLAPSED_STORAGE_KEY", () => {
-    expect(APPSHELL_SRC).toContain(
-      '"pf-admin-nav-explicit-collapsed-groups"',
-    );
+    expect(APPSHELL_SRC).toContain('"pf-admin-nav-explicit-collapsed-groups"');
   });
 });
 
@@ -84,9 +77,7 @@ describe("groupDomId", () => {
   });
 
   it("produces a stable id for 'Orders & Shop'", () => {
-    expect(groupDomId("Orders & Shop")).toBe(
-      "admin-nav-section-orders-shop",
-    );
+    expect(groupDomId("Orders & Shop")).toBe("admin-nav-section-orders-shop");
   });
 
   it("uses the same slug pattern in APPSHELL_SRC for data-testid construction", () => {
@@ -100,8 +91,14 @@ describe("groupDomId", () => {
 // ---------------------------------------------------------------------------
 // findGroupForActiveHref — pure function, reimplemented for unit testing
 // ---------------------------------------------------------------------------
-interface NavItem { href: string; label: string; }
-interface NavGroup { label: string; items: NavItem[]; }
+interface NavItem {
+  href: string;
+  label: string;
+}
+interface NavGroup {
+  label: string;
+  items: NavItem[];
+}
 
 function findGroupForActiveHref(
   groups: ReadonlyArray<NavGroup>,
@@ -124,15 +121,11 @@ const SAMPLE_GROUPS: ReadonlyArray<NavGroup> = [
   },
   {
     label: "Customers",
-    items: [
-      { href: "/admin/patients", label: "Patients" },
-    ],
+    items: [{ href: "/admin/patients", label: "Patients" }],
   },
   {
     label: "System",
-    items: [
-      { href: "/admin/team", label: "Team" },
-    ],
+    items: [{ href: "/admin/team", label: "Team" }],
   },
 ];
 
@@ -163,7 +156,9 @@ describe("findGroupForActiveHref", () => {
 
   it("does exact match, not prefix match", () => {
     // /admin/followups/extra should NOT match /admin/followups
-    expect(findGroupForActiveHref(SAMPLE_GROUPS, "/admin/followups/extra")).toBeNull();
+    expect(
+      findGroupForActiveHref(SAMPLE_GROUPS, "/admin/followups/extra"),
+    ).toBeNull();
   });
 
   it("returns null for an empty groups array", () => {
@@ -239,9 +234,7 @@ describe("loadInitialExpandedGroups", () => {
   });
 
   it("returns the fallback when localStorage value is corrupt JSON", () => {
-    const store = new Map([
-      [NAV_EXPANDED_STORAGE_KEY, "{invalid json"],
-    ]);
+    const store = new Map([[NAV_EXPANDED_STORAGE_KEY, "{invalid json"]]);
     const result = loadInitialExpandedGroups("Inbox", store);
     expect(result).toEqual(new Set(["Inbox"]));
   });
@@ -256,9 +249,7 @@ describe("loadInitialExpandedGroups", () => {
   });
 
   it("returns an empty Set when storage has an empty array", () => {
-    const store = new Map([
-      [NAV_EXPANDED_STORAGE_KEY, JSON.stringify([])],
-    ]);
+    const store = new Map([[NAV_EXPANDED_STORAGE_KEY, JSON.stringify([])]]);
     const result = loadInitialExpandedGroups("Inbox", store);
     expect(result.size).toBe(0);
   });
@@ -301,7 +292,10 @@ describe("loadExplicitCollapsedGroups", () => {
 
   it("returns stored collapsed groups when data is a valid string array", () => {
     const store = new Map([
-      [NAV_EXPLICIT_COLLAPSED_STORAGE_KEY, JSON.stringify(["Inbox", "Billing"])],
+      [
+        NAV_EXPLICIT_COLLAPSED_STORAGE_KEY,
+        JSON.stringify(["Inbox", "Billing"]),
+      ],
     ]);
     expect(loadExplicitCollapsedGroups(store)).toEqual(
       new Set(["Inbox", "Billing"]),
@@ -451,9 +445,7 @@ describe("AppShell — collapsible group button aria attributes", () => {
     // The testId is built with the pattern used in groupDomId.
     expect(APPSHELL_SRC).toContain("admin-nav-group-");
     // Slug transformation present.
-    expect(APPSHELL_SRC).toContain(
-      `.replace(/[^a-z0-9]+/g, "-")`,
-    );
+    expect(APPSHELL_SRC).toContain(`.replace(/[^a-z0-9]+/g, "-")`);
   });
 });
 
@@ -472,7 +464,9 @@ describe("AppShell — rollup badge on collapsed groups", () => {
   });
 
   it("caps the badge display at 99+", () => {
-    expect(APPSHELL_SRC).toContain("rolledUpBadge > 99 ? \"99+\" : rolledUpBadge");
+    expect(APPSHELL_SRC).toContain(
+      'rolledUpBadge > 99 ? "99+" : rolledUpBadge',
+    );
   });
 
   it("includes a descriptive aria-label on the rollup badge", () => {
@@ -495,9 +489,7 @@ describe("AppShell — localStorage persistence side-effects", () => {
   });
 
   it("calls persistExplicitCollapsedGroups when collapsed state changes", () => {
-    expect(APPSHELL_SRC).toContain(
-      "persistExplicitCollapsedGroups(next)",
-    );
+    expect(APPSHELL_SRC).toContain("persistExplicitCollapsedGroups(next)");
   });
 
   it("skips the first persist via skipFirstNavPersist ref to avoid overwriting localStorage on mount", () => {
@@ -514,7 +506,9 @@ describe("AppShell — deep-link auto-expand logic", () => {
   });
 
   it("checks navExplicitCollapsedRef before auto-expanding", () => {
-    expect(APPSHELL_SRC).toContain("navExplicitCollapsedRef.current.has(activeGroup)");
+    expect(APPSHELL_SRC).toContain(
+      "navExplicitCollapsedRef.current.has(activeGroup)",
+    );
   });
 
   it("uses setNavExpanded to add the active group when not yet expanded", () => {
@@ -573,7 +567,9 @@ describe("persistExpandedGroups", () => {
     persistExpandedGroups(new Set(["Inbox", "System"]), store);
     const raw = store.get(NAV_EXPANDED_STORAGE_KEY);
     expect(raw).toBeDefined();
-    expect(JSON.parse(raw!)).toEqual(expect.arrayContaining(["Inbox", "System"]));
+    expect(JSON.parse(raw!)).toEqual(
+      expect.arrayContaining(["Inbox", "System"]),
+    );
   });
 
   it("overwrites a previous value when called again", () => {

@@ -11,7 +11,10 @@ import { fileURLToPath } from "node:url";
 import { describe, it, expect } from "vitest";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const SRC = readFileSync(path.join(__dirname, "cpap-masks-react-health.tsx"), "utf8");
+const SRC = readFileSync(
+  path.join(__dirname, "cpap-masks-react-health.tsx"),
+  "utf8",
+);
 
 // ---------------------------------------------------------------------------
 // Exports & document metadata

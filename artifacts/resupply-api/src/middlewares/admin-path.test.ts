@@ -12,9 +12,11 @@ import { describe, expect, it } from "vitest";
 import {
   ADMIN_PATH_PREFIXES,
   ADMIN_SAFE_HTTP_METHODS,
+  ME_PATH_PREFIXES,
   SHOP_PATH_PREFIXES,
   isAdminMutationRequest,
   isShopMutationRequest,
+  isStorefrontSessionMutationRequest,
 } from "./admin-path";
 
 function req(method: string, path: string): Request {
@@ -88,9 +90,9 @@ describe("isAdminMutationRequest", () => {
 
   it("does NOT match non-admin paths", () => {
     expect(isAdminMutationRequest(req("POST", "/api/orders"))).toBe(false);
-    expect(isAdminMutationRequest(req("POST", "/resupply-api/voice/inbound"))).toBe(
-      false,
-    );
+    expect(
+      isAdminMutationRequest(req("POST", "/resupply-api/voice/inbound")),
+    ).toBe(false);
   });
 });
 
@@ -109,9 +111,9 @@ describe("isShopMutationRequest", () => {
   it.each(["GET", "HEAD", "OPTIONS"])(
     "returns false for safe method %s on a shop path",
     (method) => {
-      expect(isShopMutationRequest(req(method, "/api/shop/me/cart-snapshot"))).toBe(
-        false,
-      );
+      expect(
+        isShopMutationRequest(req(method, "/api/shop/me/cart-snapshot")),
+      ).toBe(false);
     },
   );
 
@@ -152,35 +154,91 @@ describe("isShopMutationRequest", () => {
 
   it("does NOT match admin or webhook paths", () => {
     expect(isShopMutationRequest(req("POST", "/api/admin/users"))).toBe(false);
-    expect(isShopMutationRequest(req("POST", "/resupply-api/voice/inbound"))).toBe(
-      false,
-    );
+    expect(
+      isShopMutationRequest(req("POST", "/resupply-api/voice/inbound")),
+    ).toBe(false);
     expect(isShopMutationRequest(req("POST", "/api/orders"))).toBe(false);
   });
 
-  // Regression: the PR removed ME_PATH_PREFIXES and isStorefrontSessionMutationRequest.
-  // isShopMutationRequest must NOT match /api/me/* paths — those are no longer
-  // in the CSRF gate scope (they moved to per-router protection or are ungated).
-  it("does NOT match /api/me/* paths (ME_PATH_PREFIXES removed in PR)", () => {
-    expect(isShopMutationRequest(req("POST", "/api/me/payments/checkout-session"))).toBe(false);
-    expect(isShopMutationRequest(req("POST", "/api/me/sleep-coach"))).toBe(false);
-    expect(isShopMutationRequest(req("POST", "/resupply-api/me/payments/checkout-session"))).toBe(false);
-    expect(isShopMutationRequest(req("POST", "/api/me"))).toBe(false);
+  it("does NOT match the patient-portal /me tree (that's the storefront matcher)", () => {
+    // isShopMutationRequest is shop-only; /me coverage lives in
+    // isStorefrontSessionMutationRequest. This pins the boundary so a
+    // future edit can't silently collapse the two.
+    expect(
+      isShopMutationRequest(req("POST", "/api/me/payments/checkout-session")),
+    ).toBe(false);
   });
 });
 
-// Regression: ME_PATH_PREFIXES and isStorefrontSessionMutationRequest were
-// removed in this PR. Confirm they are NOT exported from admin-path.ts so
-// any import that tries to use them gets a compile error rather than a silent
-// undefined.
-describe("removed exports — ME_PATH_PREFIXES and isStorefrontSessionMutationRequest", () => {
-  it("ME_PATH_PREFIXES is not a named export from admin-path", async () => {
-    const mod = await import("./admin-path");
-    expect((mod as Record<string, unknown>)["ME_PATH_PREFIXES"]).toBeUndefined();
+describe("ME_PATH_PREFIXES", () => {
+  it("covers both mount trees, lowercase, no trailing slash", () => {
+    expect(ME_PATH_PREFIXES).toContain("/api/me");
+    expect(ME_PATH_PREFIXES).toContain("/resupply-api/me");
+    for (const prefix of ME_PATH_PREFIXES) {
+      expect(prefix).toBe(prefix.toLowerCase());
+      expect(prefix.endsWith("/")).toBe(false);
+    }
+  });
+});
+
+describe("isStorefrontSessionMutationRequest", () => {
+  it.each(["GET", "HEAD", "OPTIONS"])(
+    "returns false for safe method %s",
+    (method) => {
+      expect(
+        isStorefrontSessionMutationRequest(
+          req(method, "/api/me/payments/checkout-session"),
+        ),
+      ).toBe(false);
+    },
+  );
+
+  it.each([
+    // shop tree (delegates to isShopMutationRequest)
+    ["POST", "/api/shop/checkout"],
+    ["POST", "/api/shop/me/quick-checkout"],
+    ["POST", "/resupply-api/shop/checkout"],
+    // patient-portal /me tree (the regression this matcher fixes)
+    ["POST", "/api/me/payments/checkout-session"],
+    ["POST", "/api/me/payments/intent"],
+    ["POST", "/api/me/sleep-coach"],
+    ["POST", "/resupply-api/me/payments/checkout-session"],
+  ])("returns true for %s %s", (method, path) => {
+    expect(isStorefrontSessionMutationRequest(req(method, path))).toBe(true);
   });
 
-  it("isStorefrontSessionMutationRequest is not a named export from admin-path", async () => {
-    const mod = await import("./admin-path");
-    expect((mod as Record<string, unknown>)["isStorefrontSessionMutationRequest"]).toBeUndefined();
+  it.each(["/api/me", "/resupply-api/me"])(
+    "matches the bare /me path %s exactly",
+    (path) => {
+      expect(isStorefrontSessionMutationRequest(req("POST", path))).toBe(true);
+    },
+  );
+
+  it("matches mixed-case /me paths", () => {
+    expect(
+      isStorefrontSessionMutationRequest(
+        req("POST", "/API/Me/payments/checkout-session"),
+      ),
+    ).toBe(true);
+  });
+
+  it.each([
+    "/api/men",
+    "/api/membership",
+    "/api/mens-health",
+    "/resupply-api/metrics",
+  ])("does NOT match look-alike prefix %s", (path) => {
+    expect(isStorefrontSessionMutationRequest(req("POST", path))).toBe(false);
+  });
+
+  it("does NOT match admin or webhook paths", () => {
+    expect(
+      isStorefrontSessionMutationRequest(req("POST", "/api/admin/users")),
+    ).toBe(false);
+    expect(
+      isStorefrontSessionMutationRequest(
+        req("POST", "/resupply-api/voice/inbound"),
+      ),
+    ).toBe(false);
   });
 });

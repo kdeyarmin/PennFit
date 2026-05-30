@@ -104,7 +104,9 @@ describe("admin/reset-password — token reading", () => {
 
   it("defines readTokenFromUrl that returns empty string when window is undefined (SSR)", () => {
     expect(SRC).toContain("function readTokenFromUrl()");
-    expect(SRC).toMatch(/readTokenFromUrl[\s\S]{0,200}typeof window === "undefined"/);
+    expect(SRC).toMatch(
+      /readTokenFromUrl[\s\S]{0,200}typeof window === "undefined"/,
+    );
   });
 
   it("reads the 'token' query param from URLSearchParams", () => {

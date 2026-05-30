@@ -110,14 +110,23 @@ router.get(
       alertsResolved,
       followupsCompleted,
     ] = await Promise.all([
-      groupedCount(supabase, "conversations", "assigned_admin_user_id", adminIds, (q) =>
-        q.in("status", ["open", "awaiting_admin", "awaiting_patient"]),
+      groupedCount(
+        supabase,
+        "conversations",
+        "assigned_admin_user_id",
+        adminIds,
+        (q) => q.in("status", ["open", "awaiting_admin", "awaiting_patient"]),
       ),
-      groupedCount(supabase, "conversations", "assigned_admin_user_id", adminIds, (q) =>
-        q
-          .eq("status", "closed")
-          .gte("updated_at", from)
-          .lte("updated_at", to),
+      groupedCount(
+        supabase,
+        "conversations",
+        "assigned_admin_user_id",
+        adminIds,
+        (q) =>
+          q
+            .eq("status", "closed")
+            .gte("updated_at", from)
+            .lte("updated_at", to),
       ),
       groupedCount(supabase, "shop_returns", "admin_user_id", adminIds, (q) =>
         q.gte("approved_at", from).lte("approved_at", to),

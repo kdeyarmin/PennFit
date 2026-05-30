@@ -26,10 +26,7 @@ import { PatientResupplyTab } from "@/components/admin/PatientResupplyTab";
 import { PortalTab } from "@/components/admin/PortalTab";
 import { PrescriptionsTab } from "@/components/admin/PrescriptionsTab";
 import { SettingsCard } from "@/components/admin/SettingsCard";
-import {
-  openPdfInNewTab,
-  summarizePdfError,
-} from "@/lib/admin/pdf-download";
+import { openPdfInNewTab, summarizePdfError } from "@/lib/admin/pdf-download";
 import { Table, type Column } from "@/components/admin/Table";
 import {
   Badge,
@@ -277,10 +274,7 @@ export function PatientDetailPage({ id }: { id: string }) {
         >
           Activity
         </TabButton>
-        <TabButton
-          active={tab === "address"}
-          onClick={() => setTab("address")}
-        >
+        <TabButton active={tab === "address"} onClick={() => setTab("address")}>
           Address
         </TabButton>
         <TabButton
@@ -334,10 +328,7 @@ export function PatientDetailPage({ id }: { id: string }) {
         >
           Documents
         </TabButton>
-        <TabButton
-          active={tab === "portal"}
-          onClick={() => setTab("portal")}
-        >
+        <TabButton active={tab === "portal"} onClick={() => setTab("portal")}>
           Portal
         </TabButton>
         <TabButton
@@ -364,10 +355,7 @@ export function PatientDetailPage({ id }: { id: string }) {
         >
           Prior auths
         </TabButton>
-        <TabButton
-          active={tab === "billing"}
-          onClick={() => setTab("billing")}
-        >
+        <TabButton active={tab === "billing"} onClick={() => setTab("billing")}>
           Billing
         </TabButton>
         <TabButton
@@ -378,9 +366,7 @@ export function PatientDetailPage({ id }: { id: string }) {
         </TabButton>
         <TabButton
           active={false}
-          onClick={() =>
-            setLocation(`/admin/patients/${id}/insurance-claims`)
-          }
+          onClick={() => setLocation(`/admin/patients/${id}/insurance-claims`)}
         >
           Claims
         </TabButton>
@@ -390,10 +376,7 @@ export function PatientDetailPage({ id }: { id: string }) {
         >
           Equipment
         </TabButton>
-        <TabButton
-          active={tab === "forms"}
-          onClick={() => setTab("forms")}
-        >
+        <TabButton active={tab === "forms"} onClick={() => setTab("forms")}>
           Forms
         </TabButton>
       </div>
@@ -1714,9 +1697,9 @@ function IntegrationsTab({ patientId }: { patientId: string }) {
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-3">
         <p className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
-          Therapy data from each configured cloud. Refresh re-pulls
-          from the partner; the snapshot is cached for the dashboard
-          and the patient-facing adherence card.
+          Therapy data from each configured cloud. Refresh re-pulls from the
+          partner; the snapshot is cached for the dashboard and the
+          patient-facing adherence card.
         </p>
         <GenerateAttestationButton
           patientId={patientId}
@@ -2105,7 +2088,13 @@ function Term({ label, value }: { label: string; value: string | null }) {
 // reach this patient?"
 function OnboardingAttemptsView({ patientId }: { patientId: string }) {
   const { data, isPending, isError, error } = useQuery({
-    queryKey: ["admin", "patients", patientId, "onboarding", "attempts"] as const,
+    queryKey: [
+      "admin",
+      "patients",
+      patientId,
+      "onboarding",
+      "attempts",
+    ] as const,
     queryFn: () => fetchPatientOnboardingAttempts(patientId),
   });
   if (isPending) return null;
@@ -2154,9 +2143,7 @@ function OnboardingAttemptsView({ patientId }: { patientId: string }) {
                   key={a.id}
                   style={{
                     color:
-                      a.outcome === "sent"
-                        ? "hsl(var(--ink-2))"
-                        : "#92400e",
+                      a.outcome === "sent" ? "hsl(var(--ink-2))" : "#92400e",
                   }}
                 >
                   <span className="font-mono">{a.channel}</span> ·{" "}
@@ -2249,11 +2236,7 @@ function AddressHistoryTab({ patientId }: { patientId: string }) {
     <div className="space-y-3">
       <div className="flex items-baseline justify-between">
         <h3 className="text-sm font-semibold">Address changes</h3>
-        <Button
-          intent="ghost"
-          size="sm"
-          onClick={() => setShowForm((v) => !v)}
-        >
+        <Button intent="ghost" size="sm" onClick={() => setShowForm((v) => !v)}>
           {showForm ? "Cancel" : "Record change"}
         </Button>
       </div>
@@ -2394,16 +2377,11 @@ function FormAcksTab({ patientId }: { patientId: string }) {
   });
   if (isPending) return <Spinner />;
   if (isError) {
-    return (
-      <ErrorPanel error={error} onRetry={() => void refetch()} />
-    );
+    return <ErrorPanel error={error} onRetry={() => void refetch()} />;
   }
   if (data.acknowledgements.length === 0) {
     return (
-      <p
-        className="text-sm py-3"
-        style={{ color: "hsl(var(--ink-3))" }}
-      >
+      <p className="text-sm py-3" style={{ color: "hsl(var(--ink-3))" }}>
         No form acknowledgements on file for this patient.
       </p>
     );
@@ -2423,8 +2401,7 @@ function FormAcksTab({ patientId }: { patientId: string }) {
       </thead>
       <tbody>
         {data.acknowledgements.map((a) => {
-          const stale =
-            a.currentVersion && a.formVersion !== a.currentVersion;
+          const stale = a.currentVersion && a.formVersion !== a.currentVersion;
           return (
             <tr
               key={a.id}

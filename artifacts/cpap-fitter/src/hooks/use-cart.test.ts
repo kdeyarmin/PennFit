@@ -209,7 +209,6 @@ describe("cartStore.replaceItems", () => {
 
     const p1 = items.find((i) => i.priceId === "price_1")!;
     expect(p1.quantity).toBe(20); // 2 + 25, capped at 20
-
     const p2 = items.find((i) => i.priceId === "price_2")!;
     expect(p2.quantity).toBe(1); // 0 clamped up to the 1-item minimum
   });
@@ -317,7 +316,6 @@ describe("cartStore.setItemMode — additional edge cases", () => {
 describe("cartStore.removeItem — additional edge cases", () => {
   it("is a no-op when the priceId does not exist", () => {
     cartStore.addItem(baseItem());
-    const before = cartStore.getSnapshot();
     cartStore.removeItem("price_unknown");
     // Cart unchanged — still one item
     expect(cartStore.getSnapshot()).toHaveLength(1);

@@ -86,9 +86,7 @@ const bodySchema = z
       // customer to a patient record; without this normalization a
       // patient created with "Alice@Example.com" was invisible to
       // their own claims / billing pages.
-      .transform((v) =>
-        v === "" || v == null ? null : v.toLowerCase(),
-      ),
+      .transform((v) => (v === "" || v == null ? null : v.toLowerCase())),
     address: addressSchema.nullable().optional(),
     status: z.enum(["active", "paused", "closed"]).optional(),
     insurancePayer: z
@@ -193,8 +191,7 @@ router.post(
     if (body.email) populated.push("email");
     if (body.address) populated.push("address");
     if (body.insurancePayer) populated.push("insurancePayer");
-    if (body.cadenceOverrideDays != null)
-      populated.push("cadenceOverrideDays");
+    if (body.cadenceOverrideDays != null) populated.push("cadenceOverrideDays");
     if (body.channelPreference) populated.push("channelPreference");
 
     try {

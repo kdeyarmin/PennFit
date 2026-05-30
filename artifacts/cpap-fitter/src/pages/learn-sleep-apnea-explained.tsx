@@ -53,8 +53,8 @@ export function LearnSleepApneaExplained() {
           <span className="font-semibold text-foreground">30 million</span>{" "}
           American adults have obstructive sleep apnea — and an estimated{" "}
           <span className="font-semibold text-foreground">80% of them</span>{" "}
-          don&apos;t know it. Here&apos;s what&apos;s actually happening, who
-          it affects, and the warning signs worth listening to.
+          don&apos;t know it. Here&apos;s what&apos;s actually happening, who it
+          affects, and the warning signs worth listening to.
         </p>
       </header>
 
@@ -83,11 +83,11 @@ export function LearnSleepApneaExplained() {
               Obstructive (OSA)
             </h3>
             <p className="text-sm text-muted-foreground leading-relaxed">
-              Soft tissue in the back of the throat collapses inward when
-              muscle tone relaxes during sleep. The airway physically closes —
-              you keep trying to breathe, but no air moves until your brain
-              briefly wakes you up enough to reopen it. This cycle can repeat
-              30 times an hour or more.
+              Soft tissue in the back of the throat collapses inward when muscle
+              tone relaxes during sleep. The airway physically closes — you keep
+              trying to breathe, but no air moves until your brain briefly wakes
+              you up enough to reopen it. This cycle can repeat 30 times an hour
+              or more.
             </p>
           </div>
           <div className="glass-card rounded-2xl p-6">
@@ -101,8 +101,7 @@ export function LearnSleepApneaExplained() {
               The airway stays open, but the brain briefly stops sending the
               signal to breathe. Common in patients with congestive heart
               failure, stroke history, or long-term opioid use. Treatment
-              usually requires bilevel or ASV therapy rather than standard
-              CPAP.
+              usually requires bilevel or ASV therapy rather than standard CPAP.
             </p>
           </div>
           <div className="glass-card rounded-2xl p-6">
@@ -114,8 +113,8 @@ export function LearnSleepApneaExplained() {
             </h3>
             <p className="text-sm text-muted-foreground leading-relaxed">
               A combination — obstructive events plus emergent central events
-              that can appear once CPAP is started. Often managed with
-              adaptive servo-ventilation (ASV) or careful titration.
+              that can appear once CPAP is started. Often managed with adaptive
+              servo-ventilation (ASV) or careful titration.
             </p>
           </div>
         </div>
@@ -233,8 +232,8 @@ export function LearnSleepApneaExplained() {
           </h2>
         </div>
         <p className="text-muted-foreground leading-relaxed mb-5">
-          The two most reliable signs come from the people around you — not
-          from how you feel. By definition, you&apos;re asleep when the events
+          The two most reliable signs come from the people around you — not from
+          how you feel. By definition, you&apos;re asleep when the events
           happen.
         </p>
 
@@ -252,7 +251,9 @@ export function LearnSleepApneaExplained() {
                     strokeWidth={2}
                   />
                   <span className="text-sm text-foreground/85">
-                    <span className="font-semibold">Loud, habitual snoring</span>{" "}
+                    <span className="font-semibold">
+                      Loud, habitual snoring
+                    </span>{" "}
                     that&apos;s gotten worse over years
                   </span>
                 </li>
@@ -334,10 +335,10 @@ export function LearnSleepApneaExplained() {
               In-lab polysomnography
             </Badge>
             <p className="text-sm text-muted-foreground leading-relaxed mb-3">
-              An overnight study at a sleep lab with full instrumentation —
-              EEG, EKG, EMG, airflow, oxygen, video. The gold standard for
-              complex cases, central apnea, and titration of pressure for
-              hard-to-treat patients.
+              An overnight study at a sleep lab with full instrumentation — EEG,
+              EKG, EMG, airflow, oxygen, video. The gold standard for complex
+              cases, central apnea, and titration of pressure for hard-to-treat
+              patients.
             </p>
             <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               Best for: complex cases, central apnea, custom titration
@@ -351,10 +352,10 @@ export function LearnSleepApneaExplained() {
               Home sleep apnea test (HSAT)
             </Badge>
             <p className="text-sm text-muted-foreground leading-relaxed mb-3">
-              A small device you wear at home for one to three nights —
-              measures airflow, oxygen, heart rate, and effort. Increasingly
-              the first-line test for straightforward obstructive cases. Less
-              data, much less hassle.
+              A small device you wear at home for one to three nights — measures
+              airflow, oxygen, heart rate, and effort. Increasingly the
+              first-line test for straightforward obstructive cases. Less data,
+              much less hassle.
             </p>
             <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               Best for: typical OSA workups, follow-up screens

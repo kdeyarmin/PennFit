@@ -48,7 +48,13 @@ async function loadTypeScript() {
   // repo pins (catalog: typescript). Fall back to whatever Node can
   // resolve, so the script also works when invoked from a tarball /
   // self-test fixture without the full node_modules tree.
-  const rootCopy = path.join(REPO_ROOT, "node_modules", "typescript", "lib", "typescript.js");
+  const rootCopy = path.join(
+    REPO_ROOT,
+    "node_modules",
+    "typescript",
+    "lib",
+    "typescript.js",
+  );
   try {
     if (existsSync(rootCopy)) {
       return (await import(pathToFileURL(rootCopy).href)).default;
@@ -189,7 +195,10 @@ async function selfTest() {
       ].join("\n"),
     );
     const goodErrs = await checkFile(ts, goodFile);
-    assert(goodErrs.length === 0, "well-formed .tsx parses with zero syntax errors");
+    assert(
+      goodErrs.length === 0,
+      "well-formed .tsx parses with zero syntax errors",
+    );
 
     // Fixture 2: the exact bug from Task #81 — useGetX(params, { ... )
     // missing the closing `}` for the options object. This is the
@@ -222,13 +231,17 @@ async function selfTest() {
   }
 
   if (failures > 0) {
-    process.stderr.write(`\n[check-ts-syntax --self-test] ${failures} assertion(s) failed\n`);
+    process.stderr.write(
+      `\n[check-ts-syntax --self-test] ${failures} assertion(s) failed\n`,
+    );
     process.exit(1);
   }
   process.stdout.write("[check-ts-syntax --self-test] all assertions passed\n");
 }
 
 main(process.argv.slice(2)).catch((err) => {
-  process.stderr.write(`[check-ts-syntax] unexpected error: ${err?.stack ?? err}\n`);
+  process.stderr.write(
+    `[check-ts-syntax] unexpected error: ${err?.stack ?? err}\n`,
+  );
   process.exit(2);
 });

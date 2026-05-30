@@ -4,6 +4,7 @@ The customer-facing chatbot ("PennBot") errored for every message with
 _"Something went wrong reaching the chat service … connection issue"_.
 
 > ## ✅ RESOLVED 2026-05-29
+>
 > The chatbot (and the whole site's API) is live on `pennfit.up.railway.app`.
 > **Actual root cause:** the Railway project had **two services** —
 > `cpap-fitter` (running `vite preview`, a static SPA) and `resupply-api`
@@ -28,14 +29,14 @@ The chatbot **code was healthy throughout** — the issue was deploy topology.
 > For future incidents, use the checklist below as a **re-run procedure**.
 > For the 2026-05-29 incident specifically, steps 1–6 were completed to restore service.
 
-| # | Step | Where it runs | Status |
-| - | ---- | ------------- | ------ |
-| 1 | Create `resupply.feature_flags` (+ seed) in the prod DB | Supabase (PennPaps) | ✅ **Done 2026-05-29** (migration `0149`) |
-| 2 | Verify `resupply` exposed to PostgREST + `service_role` grants | Supabase | ✅ **Verified 2026-05-29** (no action needed) |
-| 3 | Set required env on the Railway service | Railway dashboard → Variables | ☐ Operator |
-| 4 | Redeploy current `main`; confirm `/readyz` 200 & deploy promotes | Railway dashboard → Redeploy | ☐ Operator |
-| 5 | Confirm the domain is bound to the consolidated service | Railway dashboard → Settings → Domains | ☐ Operator |
-| 6 | Smoke-test the chatbot end to end | Your laptop / browser | ☐ Operator |
+| #   | Step                                                             | Where it runs                          | Status                                        |
+| --- | ---------------------------------------------------------------- | -------------------------------------- | --------------------------------------------- |
+| 1   | Create `resupply.feature_flags` (+ seed) in the prod DB          | Supabase (PennPaps)                    | ✅ **Done 2026-05-29** (migration `0149`)     |
+| 2   | Verify `resupply` exposed to PostgREST + `service_role` grants   | Supabase                               | ✅ **Verified 2026-05-29** (no action needed) |
+| 3   | Set required env on the Railway service                          | Railway dashboard → Variables          | ☐ Operator                                    |
+| 4   | Redeploy current `main`; confirm `/readyz` 200 & deploy promotes | Railway dashboard → Redeploy           | ☐ Operator                                    |
+| 5   | Confirm the domain is bound to the consolidated service          | Railway dashboard → Settings → Domains | ☐ Operator                                    |
+| 6   | Smoke-test the chatbot end to end                                | Your laptop / browser                  | ☐ Operator                                    |
 
 > **DB side is fully ready.** Everything Supabase-side that gates the
 > healthcheck is done — the remaining steps (3–6) are all Railway dashboard

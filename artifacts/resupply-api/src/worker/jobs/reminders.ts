@@ -79,7 +79,11 @@ import {
 import { hasLinkHmacKey } from "@workspace/resupply-secrets";
 
 import { logger } from "../../lib/logger.js";
-import { createQueueWithDlq, CRON_SCAN_QUEUE_OPTS, VENDOR_SEND_QUEUE_OPTS } from "../lib/queue-options.js";
+import {
+  createQueueWithDlq,
+  CRON_SCAN_QUEUE_OPTS,
+  VENDOR_SEND_QUEUE_OPTS,
+} from "../lib/queue-options.js";
 
 export const SCAN_JOB = "reminders.scan";
 export const SEND_SMS_JOB = "reminders.send-sms";
@@ -336,9 +340,7 @@ function readWorkerMessagingConfig(env: NodeJS.ProcessEnv = process.env): {
   const practiceName = env.RESUPPLY_PRACTICE_NAME ?? "PennPaps";
   const publicBaseUrl = stripTrailingSlash(
     env.RESUPPLY_VOICE_PUBLIC_BASE_URL ??
-      (env.RAILWAY_PUBLIC_DOMAIN
-        ? `https://${env.RAILWAY_PUBLIC_DOMAIN}`
-        : ""),
+      (env.RAILWAY_PUBLIC_DOMAIN ? `https://${env.RAILWAY_PUBLIC_DOMAIN}` : ""),
   );
   // RESUPPLY_LINK_HMAC_KEY is needed for signed email-action links
   // (confirm/edit/stop). It's the only HMAC key the program still
@@ -911,7 +913,9 @@ export async function registerReminderJobs(boss: PgBoss): Promise<void> {
         outcome.status === "conversation_create_failed"
       ) {
         await releaseReminderDedupKey(supabase, dedupKey, j.id);
-        throw new Error(`reminders.send-sms: retryable failure: ${outcome.status}`);
+        throw new Error(
+          `reminders.send-sms: retryable failure: ${outcome.status}`,
+        );
       }
     }
   });
@@ -962,7 +966,9 @@ export async function registerReminderJobs(boss: PgBoss): Promise<void> {
         outcome.status === "conversation_create_failed"
       ) {
         await releaseReminderDedupKey(supabase, dedupKey, j.id);
-        throw new Error(`reminders.send-email: retryable failure: ${outcome.status}`);
+        throw new Error(
+          `reminders.send-email: retryable failure: ${outcome.status}`,
+        );
       }
     }
   });

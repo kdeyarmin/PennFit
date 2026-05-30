@@ -193,7 +193,12 @@ export function parseSmsIntent(
     // must not ship to the stale on-file address.
     if (CONFIRM_ACTION_VERBS.has(first)) {
       return mentionsAddressChange
-        ? { intent: "edit_address", raw, normalized, matched: "keyword-leading" }
+        ? {
+            intent: "edit_address",
+            raw,
+            normalized,
+            matched: "keyword-leading",
+          }
         : { intent: "confirm", raw, normalized, matched: "keyword-leading" };
     }
     if (DECLINE_LEADING.has(first)) {

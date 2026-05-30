@@ -324,9 +324,7 @@ function makeMfaProbe(): MfaProbe {
 function deriveMfaChallengeKey(): Buffer | undefined {
   try {
     const linkKey = getLinkHmacKey();
-    return createHmac("sha256", linkKey)
-      .update("mfa-challenge-v1")
-      .digest();
+    return createHmac("sha256", linkKey).update("mfa-challenge-v1").digest();
   } catch {
     // Boot env-check.ts requires RESUPPLY_LINK_HMAC_KEY for prod;
     // in test setups it's typically absent and that's fine.

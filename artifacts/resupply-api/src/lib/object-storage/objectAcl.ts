@@ -5,7 +5,10 @@
 // (ObjectAclPolicy, ObjectPermission, canAccessObject, set/get) is
 // unchanged so callers don't need to move.
 
-import { getSupabaseServiceRoleClient, type Json } from "@workspace/resupply-db";
+import {
+  getSupabaseServiceRoleClient,
+  type Json,
+} from "@workspace/resupply-db";
 
 // Can be flexibly defined according to the use case.
 //

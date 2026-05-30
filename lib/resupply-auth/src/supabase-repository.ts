@@ -63,7 +63,9 @@ function rowToUser(row: UserRow): AuthUser {
     displayName: row.display_name,
     role: row.role as AuthRole,
     status: row.status as AuthUserStatus,
-    emailVerifiedAt: row.email_verified_at ? new Date(row.email_verified_at) : null,
+    emailVerifiedAt: row.email_verified_at
+      ? new Date(row.email_verified_at)
+      : null,
     createdAt: new Date(row.created_at),
     updatedAt: new Date(row.updated_at),
   };
@@ -184,7 +186,11 @@ export function supabaseAuthRepository(
       if (readErr) throw readErr;
       if (!existing) return;
 
-      const updates: { email_verified_at?: string; status?: string; updated_at: string } = {
+      const updates: {
+        email_verified_at?: string;
+        status?: string;
+        updated_at: string;
+      } = {
         updated_at: iso,
       };
       if (existing.email_verified_at == null) updates.email_verified_at = iso;

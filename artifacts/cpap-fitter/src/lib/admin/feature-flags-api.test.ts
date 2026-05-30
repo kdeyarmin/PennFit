@@ -80,7 +80,9 @@ describe("listFeatureFlags", () => {
       json: async () => ({ message: "insufficient permissions" }),
     });
 
-    await expect(listFeatureFlags()).rejects.toThrow("insufficient permissions");
+    await expect(listFeatureFlags()).rejects.toThrow(
+      "insufficient permissions",
+    );
   });
 });
 
@@ -270,7 +272,9 @@ describe("listFeatureFlagActivity — return type has no `unavailable` field", (
   });
 
   it("listFeatureFlagActivity generic is typed as { activity: FeatureFlagActivity[] }", () => {
-    expect(activityDeclRegion()).toContain("{ activity: FeatureFlagActivity[] }");
+    expect(activityDeclRegion()).toContain(
+      "{ activity: FeatureFlagActivity[] }",
+    );
   });
 });
 
@@ -333,7 +337,9 @@ describe("listFeatureFlagActivity", () => {
       json: async () => ({ message: "not authenticated" }),
     });
 
-    await expect(listFeatureFlagActivity()).rejects.toThrow("not authenticated");
+    await expect(listFeatureFlagActivity()).rejects.toThrow(
+      "not authenticated",
+    );
   });
 
   // Boundary: an empty activity list (common on fresh environments)

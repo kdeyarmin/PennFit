@@ -118,12 +118,15 @@ const TABS_PQ = [
 ];
 
 const TAB_IDS_PQ: ReadonlySet<string> = new Set(TABS_PQ.map((t) => t.id));
-const isTabPQ = (
-  v: string,
-): v is AdminProductQuestionStatus => TAB_IDS_PQ.has(v);
+const isTabPQ = (v: string): v is AdminProductQuestionStatus =>
+  TAB_IDS_PQ.has(v);
 
 describe("admin-product-questions — isTab predicate (valid inputs)", () => {
-  const valid: AdminProductQuestionStatus[] = ["pending", "answered", "rejected"];
+  const valid: AdminProductQuestionStatus[] = [
+    "pending",
+    "answered",
+    "rejected",
+  ];
 
   it.each(valid)('accepts "%s"', (t) => {
     expect(isTabPQ(t)).toBe(true);
@@ -167,9 +170,11 @@ describe("admin-product-questions — TAB_IDS covers exactly 3 statuses", () => 
 
   it("TABS array has 3 entries matching TAB_IDS", () => {
     expect(TABS_PQ).toHaveLength(3);
-    expect(TABS_PQ.map((t) => t.id).sort()).toEqual(
-      ["answered", "pending", "rejected"],
-    );
+    expect(TABS_PQ.map((t) => t.id).sort()).toEqual([
+      "answered",
+      "pending",
+      "rejected",
+    ]);
   });
 });
 

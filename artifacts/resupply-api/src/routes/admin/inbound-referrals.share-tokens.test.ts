@@ -108,9 +108,7 @@ function makeApp(): Express {
   return app;
 }
 
-function stubAdmin(
-  granularRole: MockAdminCtx["granularRole"] = "admin",
-): void {
+function stubAdmin(granularRole: MockAdminCtx["granularRole"] = "admin"): void {
   mockAdmin.current = {
     userId: "user_op_1",
     email: ADMIN_EMAIL,

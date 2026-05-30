@@ -187,7 +187,9 @@ describe("GET /admin/delivery-failures — sinceDays query param (route)", () =>
     // This is the key regression: the old code propagated NaN into the query.
     stubAdmin();
     stageEmptyResponses();
-    const res = await request(makeApp()).get("/admin/delivery-failures?sinceDays=NaN");
+    const res = await request(makeApp()).get(
+      "/admin/delivery-failures?sinceDays=NaN",
+    );
     expect(res.status).toBe(200);
     expect(res.body.sinceDays).toBe(14);
   });
@@ -195,7 +197,9 @@ describe("GET /admin/delivery-failures — sinceDays query param (route)", () =>
   it("returns 200 with sinceDays=14 when sinceDays=Infinity is supplied", async () => {
     stubAdmin();
     stageEmptyResponses();
-    const res = await request(makeApp()).get("/admin/delivery-failures?sinceDays=Infinity");
+    const res = await request(makeApp()).get(
+      "/admin/delivery-failures?sinceDays=Infinity",
+    );
     expect(res.status).toBe(200);
     expect(res.body.sinceDays).toBe(14);
   });
@@ -203,7 +207,9 @@ describe("GET /admin/delivery-failures — sinceDays query param (route)", () =>
   it("returns 200 with sinceDays=30 when sinceDays=30 is supplied", async () => {
     stubAdmin();
     stageEmptyResponses();
-    const res = await request(makeApp()).get("/admin/delivery-failures?sinceDays=30");
+    const res = await request(makeApp()).get(
+      "/admin/delivery-failures?sinceDays=30",
+    );
     expect(res.status).toBe(200);
     expect(res.body.sinceDays).toBe(30);
   });
@@ -211,7 +217,9 @@ describe("GET /admin/delivery-failures — sinceDays query param (route)", () =>
   it("clamps sinceDays=0 to 1", async () => {
     stubAdmin();
     stageEmptyResponses();
-    const res = await request(makeApp()).get("/admin/delivery-failures?sinceDays=0");
+    const res = await request(makeApp()).get(
+      "/admin/delivery-failures?sinceDays=0",
+    );
     expect(res.status).toBe(200);
     expect(res.body.sinceDays).toBe(1);
   });
@@ -219,7 +227,9 @@ describe("GET /admin/delivery-failures — sinceDays query param (route)", () =>
   it("clamps sinceDays=999 to 90", async () => {
     stubAdmin();
     stageEmptyResponses();
-    const res = await request(makeApp()).get("/admin/delivery-failures?sinceDays=999");
+    const res = await request(makeApp()).get(
+      "/admin/delivery-failures?sinceDays=999",
+    );
     expect(res.status).toBe(200);
     expect(res.body.sinceDays).toBe(90);
   });

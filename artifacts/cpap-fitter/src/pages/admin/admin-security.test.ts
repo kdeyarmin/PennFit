@@ -17,10 +17,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const SRC = readFileSync(
-  path.join(__dirname, "admin-security.tsx"),
-  "utf8",
-);
+const SRC = readFileSync(path.join(__dirname, "admin-security.tsx"), "utf8");
 
 // ---------------------------------------------------------------------------
 // useConfirmDialog import
@@ -71,7 +68,7 @@ describe("admin-security EnrolledPanel — regenerate recovery codes", () => {
   it("marks the regenerate action as destructive:true", () => {
     // Extract the regenerate block and verify destructive flag is present
     const regenerateBlock = SRC.match(
-      /title: "Regenerate recovery codes\?"[\s\S]{0,300}destructive: true/
+      /title: "Regenerate recovery codes\?"[\s\S]{0,300}destructive: true/,
     );
     expect(regenerateBlock).not.toBeNull();
   });

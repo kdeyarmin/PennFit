@@ -156,7 +156,10 @@ export function parse271(input: string): Parsed271 {
   out.deductibleCents = deductibleTotalRaw;
   out.deductibleRemainingCents = deductibleRemainingRaw;
   if (deductibleTotalRaw !== null && deductibleRemainingRaw !== null) {
-    out.deductibleMetCents = Math.max(0, deductibleTotalRaw - deductibleRemainingRaw);
+    out.deductibleMetCents = Math.max(
+      0,
+      deductibleTotalRaw - deductibleRemainingRaw,
+    );
   }
   out.oopMaxCents = oopTotalRaw;
   out.oopRemainingCents = oopRemainingRaw;

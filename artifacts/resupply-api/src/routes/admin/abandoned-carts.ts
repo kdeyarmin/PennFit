@@ -44,7 +44,10 @@ import {
 } from "@workspace/resupply-db";
 
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
-import { requireAdmin, requirePermission } from "../../middlewares/requireAdmin";
+import {
+  requireAdmin,
+  requirePermission,
+} from "../../middlewares/requireAdmin";
 import { runCartAbandonmentDispatch } from "../../lib/cart-abandonment/run-dispatch";
 
 const router: IRouter = Router();

@@ -102,41 +102,37 @@ router.get("/patients/:id/timeline", requireAdmin, async (req, res) => {
   // (to filter messages by patient) and episodes → prescriptions (for
   // itemSku display). PostgREST has no JOIN, so we fetch the parent
   // collections first and resolve the join via JS Maps below.
-  const [
-    prescriptionsRes,
-    episodesRes,
-    conversationsRes,
-    fulfillmentsRes,
-  ] = await Promise.all([
-    supabase
-      .schema("resupply")
-      .from("prescriptions")
-      .select("id, item_sku, cadence_days, created_at")
-      .eq("patient_id", id)
-      .order("created_at", { ascending: false })
-      .limit(200),
-    supabase
-      .schema("resupply")
-      .from("episodes")
-      .select("id, prescription_id, status, due_at, created_at")
-      .eq("patient_id", id)
-      .order("created_at", { ascending: false })
-      .limit(200),
-    supabase
-      .schema("resupply")
-      .from("conversations")
-      .select("id, episode_id, channel")
-      .eq("patient_id", id),
-    supabase
-      .schema("resupply")
-      .from("fulfillments")
-      .select(
-        "id, episode_id, item_sku, quantity, status, submitted_at, shipped_at, delivered_at, created_at",
-      )
-      .eq("patient_id", id)
-      .order("created_at", { ascending: false })
-      .limit(200),
-  ]);
+  const [prescriptionsRes, episodesRes, conversationsRes, fulfillmentsRes] =
+    await Promise.all([
+      supabase
+        .schema("resupply")
+        .from("prescriptions")
+        .select("id, item_sku, cadence_days, created_at")
+        .eq("patient_id", id)
+        .order("created_at", { ascending: false })
+        .limit(200),
+      supabase
+        .schema("resupply")
+        .from("episodes")
+        .select("id, prescription_id, status, due_at, created_at")
+        .eq("patient_id", id)
+        .order("created_at", { ascending: false })
+        .limit(200),
+      supabase
+        .schema("resupply")
+        .from("conversations")
+        .select("id, episode_id, channel")
+        .eq("patient_id", id),
+      supabase
+        .schema("resupply")
+        .from("fulfillments")
+        .select(
+          "id, episode_id, item_sku, quantity, status, submitted_at, shipped_at, delivered_at, created_at",
+        )
+        .eq("patient_id", id)
+        .order("created_at", { ascending: false })
+        .limit(200),
+    ]);
   if (prescriptionsRes.error) throw prescriptionsRes.error;
   if (episodesRes.error) throw episodesRes.error;
   if (conversationsRes.error) throw conversationsRes.error;

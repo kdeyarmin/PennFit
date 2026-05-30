@@ -486,10 +486,7 @@ function PersonalEstimatePanel({
   );
   const oopRemaining =
     personal.oopMaxCents != null
-      ? Math.max(
-          0,
-          personal.oopMaxCents - (personal.oopMetCents ?? 0),
-        )
+      ? Math.max(0, personal.oopMaxCents - (personal.oopMetCents ?? 0))
       : null;
 
   return (
@@ -508,10 +505,7 @@ function PersonalEstimatePanel({
               Based on your actual plan benefits
               {personal.payerName ? ` with ${personal.payerName}` : ""}.
               {personal.asOf && (
-                <>
-                  {" "}Verified{" "}
-                  {new Date(personal.asOf).toLocaleDateString()}.
-                </>
+                <> Verified {new Date(personal.asOf).toLocaleDateString()}.</>
               )}
             </CardDescription>
           </div>
@@ -532,15 +526,15 @@ function PersonalEstimatePanel({
               {fmt(oweCents)}
             </p>
             <p className="text-xs text-muted-foreground mt-2">
-              On a typical {fmt(typicalAllowedCents)} payer-allowed
-              resupply pack.
+              On a typical {fmt(typicalAllowedCents)} payer-allowed resupply
+              pack.
             </p>
           </div>
         ) : (
           <p className="text-sm text-muted-foreground">
-            We have your eligibility verified but not enough financial
-            detail to estimate per-resupply cost. The form below will
-            send you a written conservative estimate.
+            We have your eligibility verified but not enough financial detail to
+            estimate per-resupply cost. The form below will send you a written
+            conservative estimate.
           </p>
         )}
 
@@ -555,8 +549,8 @@ function PersonalEstimatePanel({
             {personal.deductibleMetCents != null &&
               personal.deductibleCents != null && (
                 <dd className="text-xs text-muted-foreground">
-                  met {fmt(personal.deductibleMetCents)} (
-                  {fmt(dedRemaining)} left)
+                  met {fmt(personal.deductibleMetCents)} ({fmt(dedRemaining)}{" "}
+                  left)
                 </dd>
               )}
           </div>
@@ -569,8 +563,7 @@ function PersonalEstimatePanel({
             </dd>
             {oopRemaining != null && personal.oopMetCents != null && (
               <dd className="text-xs text-muted-foreground">
-                met {fmt(personal.oopMetCents)} ({fmt(oopRemaining)}{" "}
-                left)
+                met {fmt(personal.oopMetCents)} ({fmt(oopRemaining)} left)
               </dd>
             )}
           </div>
@@ -598,9 +591,8 @@ function PersonalEstimatePanel({
 
         {personal.requiresPriorAuth === true && (
           <p className="text-xs rounded-md bg-amber-50 border border-amber-200 text-amber-900 px-3 py-2">
-            Your plan requires prior authorization. We handle the
-            paperwork before any dispense — no action needed from you
-            today.
+            Your plan requires prior authorization. We handle the paperwork
+            before any dispense — no action needed from you today.
           </p>
         )}
       </CardContent>

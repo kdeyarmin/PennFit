@@ -600,9 +600,7 @@ function formatAccountContextSection(ctx: CustomerChatAccountContext): string {
     const trackingFragment = o.trackingNumber
       ? `${o.trackingCarrier ?? "carrier"} #${o.trackingNumber}`
       : "no tracking number yet";
-    const cityFragment = o.shipCityState
-      ? ` to ${o.shipCityState}`
-      : "";
+    const cityFragment = o.shipCityState ? ` to ${o.shipCityState}` : "";
     const dollars = (o.amountTotalCents / 100).toFixed(2);
     lines.push(
       `  Latest order: $${dollars}, status ${status}${cityFragment}, ${trackingFragment} (paid ${o.paidAt})`,
@@ -610,9 +608,7 @@ function formatAccountContextSection(ctx: CustomerChatAccountContext): string {
   } else {
     lines.push(`  Latest order: none on file`);
   }
-  lines.push(
-    `  Active subscriptions: ${ctx.activeSubscriptionCount}`,
-  );
+  lines.push(`  Active subscriptions: ${ctx.activeSubscriptionCount}`);
   if (ctx.device) {
     const pressure = ctx.device.pressureSetting
       ? ` at ${ctx.device.pressureSetting}`

@@ -39,7 +39,10 @@ import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 import { createTwilioSmsClient } from "@workspace/resupply-telecom";
 
 import { logger } from "../../lib/logger";
-import { createQueueWithDlq, VENDOR_SEND_QUEUE_OPTS } from "../lib/queue-options";
+import {
+  createQueueWithDlq,
+  VENDOR_SEND_QUEUE_OPTS,
+} from "../lib/queue-options";
 
 const SEND_JOB = "recall-notifications.send";
 const SEND_CRON = "23 4 * * *";
@@ -450,8 +453,5 @@ export async function registerRecallNotificationSendJob(
   });
 
   await boss.schedule(SEND_JOB, SEND_CRON);
-  logger.info(
-    { cron: SEND_CRON },
-    "recall-notifications.send scheduled",
-  );
+  logger.info({ cron: SEND_CRON }, "recall-notifications.send scheduled");
 }

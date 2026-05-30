@@ -63,7 +63,9 @@ function stubVerifiedAdmin(): void {
   };
 }
 
-function makeClaimRow(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+function makeClaimRow(
+  overrides: Record<string, unknown> = {},
+): Record<string, unknown> {
   return {
     id: CLAIM_ID,
     patient_id: PATIENT_ID,
@@ -88,7 +90,9 @@ function makeClaimRow(overrides: Record<string, unknown> = {}): Record<string, u
   };
 }
 
-function makeLineRow(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+function makeLineRow(
+  overrides: Record<string, unknown> = {},
+): Record<string, unknown> {
   return {
     id: LINE_ID,
     claim_id: CLAIM_ID,
@@ -107,7 +111,9 @@ function makeLineRow(overrides: Record<string, unknown> = {}): Record<string, un
   };
 }
 
-function makeEventRow(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+function makeEventRow(
+  overrides: Record<string, unknown> = {},
+): Record<string, unknown> {
   return {
     id: EVENT_ID,
     claim_id: CLAIM_ID,
@@ -504,7 +510,10 @@ describe("PATCH /patients/:id/insurance-claims/:claimId", () => {
       .send({ status: "submitted" });
 
     expect(getSupabaseCallCount("insurance_claim_events", "insert")).toBe(1);
-    const eventPayloads = getSupabaseWritePayloads("insurance_claim_events", "insert");
+    const eventPayloads = getSupabaseWritePayloads(
+      "insurance_claim_events",
+      "insert",
+    );
     expect((eventPayloads[0] as Record<string, unknown>).event_type).toBe(
       "submitted",
     );
@@ -854,7 +863,6 @@ describe("PATCH /patients/:id/insurance-claims/:claimId/lines/:lineId", () => {
     expect(res.status).toBe(500);
   });
 });
-
 
 // ── POST events ───────────────────────────────────────────────────────
 describe("POST /patients/:id/insurance-claims/:claimId/events", () => {

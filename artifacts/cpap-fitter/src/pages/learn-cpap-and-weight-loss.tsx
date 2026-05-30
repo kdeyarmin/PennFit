@@ -74,11 +74,11 @@ export function LearnCpapAndWeightLoss() {
           Why dieting hasn&apos;t worked.
         </h1>
         <p className="text-lg text-muted-foreground leading-relaxed">
-          Sleep apnea and weight have a circular relationship — extra
-          weight worsens apnea, untreated apnea makes weight loss
-          measurably harder. CPAP doesn&apos;t burn calories. What it does
-          is remove the metabolic and behavioral headwinds that were
-          sabotaging every weight-loss effort you&apos;ve made.
+          Sleep apnea and weight have a circular relationship — extra weight
+          worsens apnea, untreated apnea makes weight loss measurably harder.
+          CPAP doesn&apos;t burn calories. What it does is remove the metabolic
+          and behavioral headwinds that were sabotaging every weight-loss effort
+          you&apos;ve made.
         </p>
       </header>
 
@@ -101,10 +101,10 @@ export function LearnCpapAndWeightLoss() {
               meaningfully achievable for the first time.
             </p>
             <p className="text-sm text-muted-foreground leading-relaxed">
-              Patients commonly say they&apos;d been trying to lose
-              weight for years with mediocre results. After starting
-              CPAP, the same efforts start working. The diet is the
-              same; the body has finally stopped fighting it.
+              Patients commonly say they&apos;d been trying to lose weight for
+              years with mediocre results. After starting CPAP, the same efforts
+              start working. The diet is the same; the body has finally stopped
+              fighting it.
             </p>
           </div>
         </div>
@@ -152,29 +152,27 @@ export function LearnCpapAndWeightLoss() {
                 <span className="font-semibold text-white">
                   CPAP alone, no diet change:
                 </span>{" "}
-                Most patients see modest weight stability or slight loss
-                (0-5 lbs) in the first six months — driven by appetite
-                normalization and reduced midnight snacking, not by any
-                direct caloric effect.
+                Most patients see modest weight stability or slight loss (0-5
+                lbs) in the first six months — driven by appetite normalization
+                and reduced midnight snacking, not by any direct caloric effect.
               </p>
               <p>
                 <span className="font-semibold text-white">
                   CPAP + sustainable diet change:
                 </span>{" "}
-                The interventions compound. Patients combining adherent
-                therapy with a moderate caloric deficit typically lose
-                weight at 1.5–2× the rate they did before CPAP — same
-                diet, different metabolic backdrop.
+                The interventions compound. Patients combining adherent therapy
+                with a moderate caloric deficit typically lose weight at 1.5–2×
+                the rate they did before CPAP — same diet, different metabolic
+                backdrop.
               </p>
               <p>
                 <span className="font-semibold text-white">
                   CPAP + GLP-1 medication:
                 </span>{" "}
-                Increasingly common combination. Sleep apnea is one of
-                the conditions GLP-1s like semaglutide and tirzepatide
-                treat indirectly — but the apnea won&apos;t resolve from
-                weight loss alone in most patients. Treat both
-                concurrently.
+                Increasingly common combination. Sleep apnea is one of the
+                conditions GLP-1s like semaglutide and tirzepatide treat
+                indirectly — but the apnea won&apos;t resolve from weight loss
+                alone in most patients. Treat both concurrently.
               </p>
             </div>
           </div>
@@ -192,13 +190,12 @@ export function LearnCpapAndWeightLoss() {
               </div>
               <p className="text-sm text-foreground/85 leading-relaxed">
                 Sometimes — particularly for patients with primarily
-                weight-driven OSA who lose 10%+ of their body weight.
-                But don&apos;t plan around it. Most patients still need
-                CPAP at a lower weight (anatomy matters more than the
-                scale at the margin). If you do lose significant weight,
-                ask your sleep doctor about a repeat study to confirm
-                whether your prescription needs adjustment or whether
-                therapy can be discontinued.
+                weight-driven OSA who lose 10%+ of their body weight. But
+                don&apos;t plan around it. Most patients still need CPAP at a
+                lower weight (anatomy matters more than the scale at the
+                margin). If you do lose significant weight, ask your sleep
+                doctor about a repeat study to confirm whether your prescription
+                needs adjustment or whether therapy can be discontinued.
               </p>
             </div>
           </div>
@@ -306,9 +303,9 @@ export function LearnCpapAndWeightLoss() {
       </div>
 
       <p className="text-xs text-muted-foreground/80 leading-relaxed mt-12 max-w-2xl mx-auto text-center">
-        Educational content only. Weight-loss interventions — diet,
-        exercise, GLP-1 medications, bariatric surgery — should be
-        coordinated with your primary care or endocrinologist.
+        Educational content only. Weight-loss interventions — diet, exercise,
+        GLP-1 medications, bariatric surgery — should be coordinated with your
+        primary care or endocrinologist.
       </p>
     </div>
   );

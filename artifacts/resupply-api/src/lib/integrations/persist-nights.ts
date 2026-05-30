@@ -69,9 +69,7 @@ export async function persistTherapyNights(
           leak_rate_l_min:
             n.leakRateLMin == null ? null : String(n.leakRateLMin),
           pressure_p95_cmh2o:
-            n.pressureP95Cmh2o == null
-              ? null
-              : String(n.pressureP95Cmh2o),
+            n.pressureP95Cmh2o == null ? null : String(n.pressureP95Cmh2o),
         },
         { onConflict: "patient_id,night_date,source" },
       );

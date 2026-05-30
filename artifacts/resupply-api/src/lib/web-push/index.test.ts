@@ -167,8 +167,9 @@ describe("sendPushToCustomer", () => {
       body: "y",
     });
     expect(result).toEqual({ delivered: 0, expired: 1, transient: 0 });
-    expect(getSupabaseCallCount("shop_customer_push_subscriptions", "update"))
-      .toBe(1);
+    expect(
+      getSupabaseCallCount("shop_customer_push_subscriptions", "update"),
+    ).toBe(1);
   });
 
   it("marks rows expired on 410", async () => {
@@ -196,8 +197,9 @@ describe("sendPushToCustomer", () => {
       body: "y",
     });
     expect(result).toEqual({ delivered: 0, expired: 1, transient: 0 });
-    expect(getSupabaseCallCount("shop_customer_push_subscriptions", "update"))
-      .toBe(1);
+    expect(
+      getSupabaseCallCount("shop_customer_push_subscriptions", "update"),
+    ).toBe(1);
   });
 
   it("counts non-expiring failures as transient and does not mark expired", async () => {
@@ -222,17 +224,33 @@ describe("sendPushToCustomer", () => {
       body: "y",
     });
     expect(result).toEqual({ delivered: 0, expired: 0, transient: 1 });
-    expect(getSupabaseCallCount("shop_customer_push_subscriptions", "update"))
-      .toBe(0);
+    expect(
+      getSupabaseCallCount("shop_customer_push_subscriptions", "update"),
+    ).toBe(0);
   });
 
   it("mixes outcomes within a single fan-out", async () => {
     setVapidEnv();
     stageSupabaseResponse("shop_customer_push_subscriptions", "select", {
       data: [
-        { id: "ok", endpoint: "https://push.x/ok", auth_b64: "a", p256dh_b64: "p" },
-        { id: "g", endpoint: "https://push.x/g", auth_b64: "a", p256dh_b64: "p" },
-        { id: "t", endpoint: "https://push.x/t", auth_b64: "a", p256dh_b64: "p" },
+        {
+          id: "ok",
+          endpoint: "https://push.x/ok",
+          auth_b64: "a",
+          p256dh_b64: "p",
+        },
+        {
+          id: "g",
+          endpoint: "https://push.x/g",
+          auth_b64: "a",
+          p256dh_b64: "p",
+        },
+        {
+          id: "t",
+          endpoint: "https://push.x/t",
+          auth_b64: "a",
+          p256dh_b64: "p",
+        },
       ],
     });
     // Only the 410 row triggers an UPDATE (markExpired).
@@ -253,8 +271,9 @@ describe("sendPushToCustomer", () => {
       body: "y",
     });
     expect(result).toEqual({ delivered: 1, expired: 1, transient: 1 });
-    expect(getSupabaseCallCount("shop_customer_push_subscriptions", "update"))
-      .toBe(1);
+    expect(
+      getSupabaseCallCount("shop_customer_push_subscriptions", "update"),
+    ).toBe(1);
   });
 });
 
@@ -277,10 +296,7 @@ describe("sendPushToCustomerByEmail", () => {
 
     // Two shop_customers rows share the same email_lower → ambiguous.
     stageSupabaseResponse("shop_customers", "select", {
-      data: [
-        { customer_id: "cust_a" },
-        { customer_id: "cust_b" },
-      ],
+      data: [{ customer_id: "cust_a" }, { customer_id: "cust_b" }],
     });
 
     const result = await sendPushToCustomerByEmail("shared@example.com", {

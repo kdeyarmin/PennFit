@@ -221,10 +221,7 @@ router.get("/admin/today", requireAdmin, async (_req, res) => {
     faxesRes,
   ]) {
     if (r.error) {
-      logger.error(
-        { err: r.error.message },
-        "admin.today: queue read failed",
-      );
+      logger.error({ err: r.error.message }, "admin.today: queue read failed");
       res.status(503).json({ error: "queue_read_failed" });
       return;
     }

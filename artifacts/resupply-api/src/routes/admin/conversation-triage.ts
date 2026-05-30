@@ -247,10 +247,7 @@ router.get(
 
     const filename = `conversation-${params.data.id.slice(0, 8)}-transcript.csv`;
     res.setHeader("Content-Type", "text/csv; charset=utf-8");
-    res.setHeader(
-      "Content-Disposition",
-      `attachment; filename="${filename}"`,
-    );
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
     res.write(
       [
         "message_id",

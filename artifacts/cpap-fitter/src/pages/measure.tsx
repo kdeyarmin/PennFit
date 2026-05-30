@@ -77,12 +77,8 @@ const FAIL_HINTS: Record<ExtractionFailReason, string[]> = {
 export function Measure() {
   useDocumentTitle("Analyzing your measurements");
   const [, setLocation] = useLocation();
-  const {
-    capturedImage,
-    measurements,
-    setMeasurements,
-    setCapturedImage,
-  } = useFitterStore();
+  const { capturedImage, measurements, setMeasurements, setCapturedImage } =
+    useFitterStore();
   const [progress, setProgress] = useState(0);
   const [status, setStatus] = useState(
     "Initializing secure on-device processor…",
@@ -529,7 +525,10 @@ function MeasurementsReadout({
   // immediately see "this is my headgear size" and "this is my nasal
   // pillow size" instead of a flat list of clinical dimensions.
   const headgearRows = [
-    { label: "Face width (cheekbones)", value: measurements.faceWidthAtCheekbones },
+    {
+      label: "Face width (cheekbones)",
+      value: measurements.faceWidthAtCheekbones,
+    },
     { label: "Nose to chin", value: measurements.noseToChin },
     { label: "Mouth width", value: measurements.mouthWidth },
   ];

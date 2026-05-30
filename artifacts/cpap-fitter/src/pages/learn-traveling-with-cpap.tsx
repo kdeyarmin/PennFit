@@ -149,10 +149,10 @@ export function LearnTravelingWithCpap() {
         </h1>
         <p className="text-lg text-muted-foreground leading-relaxed">
           Don&apos;t skip therapy on travel nights. The one or two nights
-          patients leave the machine at home routinely show up in their data
-          as the worst nights of the month — and reset the adjustment clock
-          for the week that follows. Here&apos;s what actually works,
-          scenario by scenario.
+          patients leave the machine at home routinely show up in their data as
+          the worst nights of the month — and reset the adjustment clock for the
+          week that follows. Here&apos;s what actually works, scenario by
+          scenario.
         </p>
       </header>
 
@@ -165,11 +165,10 @@ export function LearnTravelingWithCpap() {
               The short version
             </div>
             <p className="text-base md:text-lg text-foreground/90 leading-relaxed">
-              Pack it in carry-on. It doesn&apos;t count toward your bag
-              limit. You don&apos;t need a doctor&apos;s note. Every modern
-              CPAP is auto-voltage — only the plug shape needs an adapter
-              abroad. Buy distilled water at your destination. And don&apos;t
-              skip nights.
+              Pack it in carry-on. It doesn&apos;t count toward your bag limit.
+              You don&apos;t need a doctor&apos;s note. Every modern CPAP is
+              auto-voltage — only the plug shape needs an adapter abroad. Buy
+              distilled water at your destination. And don&apos;t skip nights.
             </p>
           </div>
         </div>
@@ -244,9 +243,8 @@ export function LearnTravelingWithCpap() {
               </h2>
             </div>
             <p className="text-sm text-white/80 leading-relaxed mb-6">
-              Print or screenshot. The shorter the trip, the more you can
-              skip — but anything longer than three nights needs the full
-              list.
+              Print or screenshot. The shorter the trip, the more you can skip —
+              but anything longer than three nights needs the full list.
             </p>
             <div className="grid sm:grid-cols-2 gap-x-8 gap-y-2">
               {packingList.map((item, i) => (
@@ -277,11 +275,11 @@ export function LearnTravelingWithCpap() {
               </h3>
               <p className="text-sm text-muted-foreground leading-relaxed">
                 Probably not for most travelers. The ResMed AirMini and
-                Transcend Micro are genuinely smaller and lighter, but they
-                lack a humidifier reservoir — meaning you trade rainout for
+                Transcend Micro are genuinely smaller and lighter, but they lack
+                a humidifier reservoir — meaning you trade rainout for
                 dry-mouth. If you travel more than 6-8 weeks per year, the
-                trade-off is worth it. If you travel less than that, bring
-                your everyday machine.
+                trade-off is worth it. If you travel less than that, bring your
+                everyday machine.
               </p>
             </div>
           </div>
@@ -309,12 +307,12 @@ export function LearnTravelingWithCpap() {
                 One thing to know about insurance compliance
               </div>
               <p className="text-sm text-foreground/85 leading-relaxed">
-                Your machine&apos;s cellular modem reports usage data daily
-                to your DME. Travel doesn&apos;t pause that requirement.
-                Keeping your average above 4 hours/night across 70% of
-                nights is the Medicare adherence threshold — a skipped
-                travel night doesn&apos;t fail you, but a skipped week
-                might. Plug in and run it.
+                Your machine&apos;s cellular modem reports usage data daily to
+                your DME. Travel doesn&apos;t pause that requirement. Keeping
+                your average above 4 hours/night across 70% of nights is the
+                Medicare adherence threshold — a skipped travel night
+                doesn&apos;t fail you, but a skipped week might. Plug in and run
+                it.
               </p>
             </div>
           </div>
@@ -382,9 +380,9 @@ export function LearnTravelingWithCpap() {
       </div>
 
       <p className="text-xs text-muted-foreground/80 leading-relaxed mt-12 max-w-2xl mx-auto text-center">
-        Educational content only. Airline and TSA policies can change —
-        check your carrier&apos;s current medical-device rules within a
-        week of departure for international or charter flights.
+        Educational content only. Airline and TSA policies can change — check
+        your carrier&apos;s current medical-device rules within a week of
+        departure for international or charter flights.
       </p>
     </div>
   );

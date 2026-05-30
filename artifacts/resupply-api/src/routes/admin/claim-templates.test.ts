@@ -38,7 +38,8 @@ vi.mock("../../middlewares/requireAdmin", () =>
 
 // adminRateLimit: pass-through in tests
 vi.mock("../../middlewares/admin-rate-limit", () => ({
-  adminRateLimit: () => (_req: unknown, _res: unknown, next: () => void) => next(),
+  adminRateLimit: () => (_req: unknown, _res: unknown, next: () => void) =>
+    next(),
 }));
 
 // logAudit: no-op in tests
@@ -81,16 +82,18 @@ describe("GET /admin/claim-templates — payerProfileId UUID validation (PR chan
   });
 
   it("returns 401 when not authenticated", async () => {
-    const res = await request(makeApp())
-      .get("/resupply-api/admin/claim-templates");
+    const res = await request(makeApp()).get(
+      "/resupply-api/admin/claim-templates",
+    );
     expect(res.status).toBe(401);
   });
 
   it("returns 200 and an empty templates array when payerProfileId is absent", async () => {
     stubAdmin();
     stageEmptyTemplates();
-    const res = await request(makeApp())
-      .get("/resupply-api/admin/claim-templates");
+    const res = await request(makeApp()).get(
+      "/resupply-api/admin/claim-templates",
+    );
     expect(res.status).toBe(200);
     expect(res.body).toHaveProperty("templates");
     expect(Array.isArray(res.body.templates)).toBe(true);
@@ -99,8 +102,9 @@ describe("GET /admin/claim-templates — payerProfileId UUID validation (PR chan
   it("returns 200 when payerProfileId is a valid UUID", async () => {
     stubAdmin();
     stageEmptyTemplates();
-    const res = await request(makeApp())
-      .get(`/resupply-api/admin/claim-templates?payerProfileId=${VALID_UUID}`);
+    const res = await request(makeApp()).get(
+      `/resupply-api/admin/claim-templates?payerProfileId=${VALID_UUID}`,
+    );
     expect(res.status).toBe(200);
     expect(res.body).toHaveProperty("templates");
   });
@@ -108,26 +112,27 @@ describe("GET /admin/claim-templates — payerProfileId UUID validation (PR chan
   it("returns 200 when payerProfileId is another valid UUID", async () => {
     stubAdmin();
     stageEmptyTemplates();
-    const res = await request(makeApp())
-      .get(`/resupply-api/admin/claim-templates?payerProfileId=${VALID_UUID_2}`);
+    const res = await request(makeApp()).get(
+      `/resupply-api/admin/claim-templates?payerProfileId=${VALID_UUID_2}`,
+    );
     expect(res.status).toBe(200);
   });
 
   it("returns 400 with error: invalid_query for a plain non-UUID string", async () => {
     stubAdmin();
-    const res = await request(makeApp())
-      .get("/resupply-api/admin/claim-templates?payerProfileId=not-a-uuid");
+    const res = await request(makeApp()).get(
+      "/resupply-api/admin/claim-templates?payerProfileId=not-a-uuid",
+    );
     expect(res.status).toBe(400);
     expect(res.body).toMatchObject({ error: "invalid_query" });
   });
 
   it("returns 400 for a SQL-injection-style value", async () => {
     stubAdmin();
-    const res = await request(makeApp())
-      .get(
-        "/resupply-api/admin/claim-templates?payerProfileId=" +
-          encodeURIComponent("11111111-2222-4333-8444-555555555555,or(1=1)"),
-      );
+    const res = await request(makeApp()).get(
+      "/resupply-api/admin/claim-templates?payerProfileId=" +
+        encodeURIComponent("11111111-2222-4333-8444-555555555555,or(1=1)"),
+    );
     expect(res.status).toBe(400);
     expect(res.body).toMatchObject({ error: "invalid_query" });
   });
@@ -136,11 +141,10 @@ describe("GET /admin/claim-templates — payerProfileId UUID validation (PR chan
     // An attacker might try to append PostgREST filter operators after
     // an otherwise valid UUID.
     stubAdmin();
-    const res = await request(makeApp())
-      .get(
-        "/resupply-api/admin/claim-templates?payerProfileId=" +
-          encodeURIComponent(`${VALID_UUID},scoped_payer_profile_id.is.null`),
-      );
+    const res = await request(makeApp()).get(
+      "/resupply-api/admin/claim-templates?payerProfileId=" +
+        encodeURIComponent(`${VALID_UUID},scoped_payer_profile_id.is.null`),
+    );
     expect(res.status).toBe(400);
     expect(res.body).toMatchObject({ error: "invalid_query" });
   });
@@ -151,15 +155,17 @@ describe("GET /admin/claim-templates — payerProfileId UUID validation (PR chan
     // The route proceeds without a .or() filter.
     stubAdmin();
     stageEmptyTemplates();
-    const res = await request(makeApp())
-      .get("/resupply-api/admin/claim-templates?payerProfileId=");
+    const res = await request(makeApp()).get(
+      "/resupply-api/admin/claim-templates?payerProfileId=",
+    );
     expect(res.status).toBe(200);
   });
 
   it("returns 400 with a human-readable message field", async () => {
     stubAdmin();
-    const res = await request(makeApp())
-      .get("/resupply-api/admin/claim-templates?payerProfileId=NOT-A-UUID");
+    const res = await request(makeApp()).get(
+      "/resupply-api/admin/claim-templates?payerProfileId=NOT-A-UUID",
+    );
     expect(res.status).toBe(400);
     expect(res.body).toHaveProperty("message");
     expect(typeof res.body.message).toBe("string");
@@ -173,8 +179,9 @@ describe("GET /admin/claim-templates — payerProfileId UUID validation (PR chan
     // mock is never resolved. The 400 below is the observable contract;
     // `stageSupabaseResponse` is a plain staging helper (not a spy), so
     // asserting `.not.toHaveBeenCalled()` on it was a test bug.
-    const res = await request(makeApp())
-      .get("/resupply-api/admin/claim-templates?payerProfileId=invalid");
+    const res = await request(makeApp()).get(
+      "/resupply-api/admin/claim-templates?payerProfileId=invalid",
+    );
     expect(res.status).toBe(400);
   });
 });

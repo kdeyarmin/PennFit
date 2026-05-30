@@ -160,7 +160,8 @@ describe("suggestIcd10 — explicit apiKey short-circuits to OpenAI", () => {
     const result = await suggestIcd10({
       sleepStudyId: STUDY_ID,
       apiKey: "sk-explicit-key",
-      fetchImpl: async () => openAiIcd10Response("G47.33", 0.95, "AHI >= 15, PSG study."),
+      fetchImpl: async () =>
+        openAiIcd10Response("G47.33", 0.95, "AHI >= 15, PSG study."),
     });
     // selectLlmProvider should NOT be called when apiKey is explicit
     expect(mockSelectLlmProvider).not.toHaveBeenCalled();
@@ -188,7 +189,9 @@ describe("suggestIcd10 — explicit apiKey short-circuits to OpenAI", () => {
     const result = await suggestIcd10({
       sleepStudyId: STUDY_ID,
       apiKey: "sk-explicit-key",
-      fetchImpl: async () => { throw new TypeError("fetch failed"); },
+      fetchImpl: async () => {
+        throw new TypeError("fetch failed");
+      },
     });
     expect(result.icd10).toBeNull();
     expect(result.errorMessage).toBe("fetch failed");
@@ -200,7 +203,8 @@ describe("suggestIcd10 — explicit apiKey short-circuits to OpenAI", () => {
       sleepStudyId: STUDY_ID,
       apiKey: "sk-explicit-key",
       // Z99.89 is not in LCD_L33718
-      fetchImpl: async () => openAiIcd10Response("Z99.89", 0.5, "Other reason."),
+      fetchImpl: async () =>
+        openAiIcd10Response("Z99.89", 0.5, "Other reason."),
     });
     expect(result.icd10).toBeNull();
     expect(result.inAllowlist).toBe(false);
@@ -248,7 +252,11 @@ describe("suggestIcd10 — Anthropic provider path", () => {
     mockSelectLlmProvider.mockReturnValue({ provider: "anthropic" });
     mockGetAnthropicClient.mockReturnValue(mockClient);
 
-    const anthropicText = JSON.stringify({ icd10: "G47.33", confidence: 0.92, rationale: "AHI=18.5, PSG." });
+    const anthropicText = JSON.stringify({
+      icd10: "G47.33",
+      confidence: 0.92,
+      rationale: "AHI=18.5, PSG.",
+    });
     mockSendWithRetry.mockResolvedValue(anthropicOkResult(anthropicText));
     mockGetResponseText.mockReturnValue(anthropicText);
 
@@ -270,7 +278,11 @@ describe("suggestIcd10 — Anthropic provider path", () => {
     mockSelectLlmProvider.mockReturnValue({ provider: "anthropic" });
     mockGetAnthropicClient.mockReturnValue(mockClient);
 
-    const anthropicText = JSON.stringify({ icd10: "G47.30", confidence: 0.7, rationale: "RDI>AHI." });
+    const anthropicText = JSON.stringify({
+      icd10: "G47.30",
+      confidence: 0.7,
+      rationale: "RDI>AHI.",
+    });
     mockSendWithRetry.mockResolvedValue(anthropicOkResult(anthropicText));
     mockGetResponseText.mockReturnValue(anthropicText);
 
@@ -287,7 +299,11 @@ describe("suggestIcd10 — Anthropic provider path", () => {
     mockSelectLlmProvider.mockReturnValue({ provider: "anthropic" });
     mockGetAnthropicClient.mockReturnValue(mockClient);
 
-    const anthropicText = JSON.stringify({ icd10: "G47.33", confidence: 0.88, rationale: "Custom model." });
+    const anthropicText = JSON.stringify({
+      icd10: "G47.33",
+      confidence: 0.88,
+      rationale: "Custom model.",
+    });
     mockSendWithRetry.mockResolvedValue(anthropicOkResult(anthropicText));
     mockGetResponseText.mockReturnValue(anthropicText);
 
@@ -324,9 +340,7 @@ describe("suggestIcd10 — Anthropic provider path", () => {
       // (The Anthropic-specific cause is preserved in the
       // `ai_icd10_anthropic_fallback` warn log line that the dispatcher
       // emits before falling through — outside the scope of this test.)
-      expect(result.errorMessage).toMatch(
-        /no LLM provider configured/,
-      );
+      expect(result.errorMessage).toMatch(/no LLM provider configured/);
     } finally {
       if (prevOpenAi !== undefined) process.env.OPENAI_API_KEY = prevOpenAi;
     }
@@ -339,7 +353,11 @@ describe("suggestIcd10 — Anthropic provider path", () => {
     mockSelectLlmProvider.mockReturnValue({ provider: "anthropic" });
     mockGetAnthropicClient.mockReturnValue(mockClient);
 
-    const anthropicText = JSON.stringify({ icd10: "Z99.89", confidence: 0.5, rationale: "Outside allowlist." });
+    const anthropicText = JSON.stringify({
+      icd10: "Z99.89",
+      confidence: 0.5,
+      rationale: "Outside allowlist.",
+    });
     mockSendWithRetry.mockResolvedValue(anthropicOkResult(anthropicText));
     mockGetResponseText.mockReturnValue(anthropicText);
 
@@ -357,14 +375,22 @@ describe("suggestIcd10 — Anthropic provider path", () => {
     mockSelectLlmProvider.mockReturnValue({ provider: "anthropic" });
     mockGetAnthropicClient.mockReturnValue(mockClient);
 
-    const anthropicText = JSON.stringify({ icd10: "G47.33", confidence: 0.9, rationale: "OSA." });
+    const anthropicText = JSON.stringify({
+      icd10: "G47.33",
+      confidence: 0.9,
+      rationale: "OSA.",
+    });
     mockSendWithRetry.mockResolvedValue(anthropicOkResult(anthropicText));
     mockGetResponseText.mockReturnValue(anthropicText);
 
     await suggestIcd10({ sleepStudyId: STUDY_ID });
 
     const callArg = mockSendWithRetry.mock.calls[0][1] as {
-      system: Array<{ type: string; text: string; cache_control: { type: string } }>;
+      system: Array<{
+        type: string;
+        text: string;
+        cache_control: { type: string };
+      }>;
     };
     expect(callArg.system).toHaveLength(1);
     expect(callArg.system[0].type).toBe("text");
@@ -378,13 +404,19 @@ describe("suggestIcd10 — Anthropic provider path", () => {
     mockSelectLlmProvider.mockReturnValue({ provider: "anthropic" });
     mockGetAnthropicClient.mockReturnValue(mockClient);
 
-    const anthropicText = JSON.stringify({ icd10: "G47.33", confidence: 0.9, rationale: "OSA." });
+    const anthropicText = JSON.stringify({
+      icd10: "G47.33",
+      confidence: 0.9,
+      rationale: "OSA.",
+    });
     mockSendWithRetry.mockResolvedValue(anthropicOkResult(anthropicText));
     mockGetResponseText.mockReturnValue(anthropicText);
 
     await suggestIcd10({ sleepStudyId: STUDY_ID });
 
-    const callArg = mockSendWithRetry.mock.calls[0][1] as { temperature: number };
+    const callArg = mockSendWithRetry.mock.calls[0][1] as {
+      temperature: number;
+    };
     expect(callArg.temperature).toBe(0);
   });
 });
@@ -405,7 +437,8 @@ describe("suggestIcd10 — Anthropic selected but client null → fallback to Op
     try {
       const result = await suggestIcd10({
         sleepStudyId: STUDY_ID,
-        fetchImpl: async () => openAiIcd10Response("G47.33", 0.85, "Fallback OpenAI."),
+        fetchImpl: async () =>
+          openAiIcd10Response("G47.33", 0.85, "Fallback OpenAI."),
       });
       expect(result.icd10).toBe("G47.33");
       expect(result.errorMessage).toBeNull();
@@ -457,7 +490,8 @@ describe("suggestIcd10 — OpenAI provider path via selectLlmProvider", () => {
     try {
       const result = await suggestIcd10({
         sleepStudyId: STUDY_ID,
-        fetchImpl: async () => openAiIcd10Response("G47.33", 0.9, "OpenAI path."),
+        fetchImpl: async () =>
+          openAiIcd10Response("G47.33", 0.9, "OpenAI path."),
       });
       expect(mockSendWithRetry).not.toHaveBeenCalled();
       expect(result.icd10).toBe("G47.33");
@@ -536,7 +570,11 @@ describe("suggestIcd10 — SuggestOutput shape", () => {
     mockSelectLlmProvider.mockReturnValue({ provider: "anthropic" });
     mockGetAnthropicClient.mockReturnValue(mockClient);
 
-    const anthropicText = JSON.stringify({ icd10: "G47.33", confidence: 0.9, rationale: "AHI>=15." });
+    const anthropicText = JSON.stringify({
+      icd10: "G47.33",
+      confidence: 0.9,
+      rationale: "AHI>=15.",
+    });
     mockSendWithRetry.mockResolvedValue(anthropicOkResult(anthropicText));
     mockGetResponseText.mockReturnValue(anthropicText);
 
@@ -560,7 +598,8 @@ describe("suggestIcd10 — SuggestOutput shape", () => {
     const result = await suggestIcd10({
       sleepStudyId: STUDY_ID,
       apiKey: "sk-test",
-      fetchImpl: async () => openAiIcd10Response("Z99.89", 0.4, "Not in allowlist."),
+      fetchImpl: async () =>
+        openAiIcd10Response("Z99.89", 0.4, "Not in allowlist."),
     });
     expect(result.rationale).toBe("Not in allowlist.");
   });
@@ -573,7 +612,6 @@ describe("suggestIcd10 — SuggestOutput shape", () => {
 // PR change: the llm-provider mock was updated to export
 // DEFAULT_ANTHROPIC_MODEL_CLASSIFY so module load doesn't crash.
 // These tests pin the value and the usage contract.
-
 
 // ---------------------------------------------------------------------------
 // Anthropic rate-limit: env isolation — OPENAI_API_KEY present vs absent
@@ -626,7 +664,12 @@ describe("suggestIcd10 — Anthropic 429 + OPENAI_API_KEY environment isolation"
     try {
       const result = await suggestIcd10({
         sleepStudyId: STUDY_ID,
-        fetchImpl: async () => openAiIcd10Response("G47.33", 0.88, "OpenAI fallback after Anthropic 429."),
+        fetchImpl: async () =>
+          openAiIcd10Response(
+            "G47.33",
+            0.88,
+            "OpenAI fallback after Anthropic 429.",
+          ),
       });
       // OpenAI fallback succeeded → result should be ok
       expect(result.icd10).toBe("G47.33");

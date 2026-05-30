@@ -53,7 +53,11 @@ function hasRoute(src: string, routePath: string, component: string): boolean {
 }
 
 /** True when the source contains a lazy() declaration importing the given module. */
-function hasLazyImport(src: string, modulePath: string, exportName: string): boolean {
+function hasLazyImport(
+  src: string,
+  modulePath: string,
+  exportName: string,
+): boolean {
   return (
     src.includes(`import("@/pages/${modulePath}")`) &&
     src.includes(`m.${exportName}`)
@@ -80,31 +84,55 @@ describe("App.tsx — /stories route registered", () => {
 
 describe("App.tsx — /learn/reading-your-sleep-report route registered", () => {
   it("registers <Route path='/learn/reading-your-sleep-report' />", () => {
-    expect(hasRoute(SRC, "/learn/reading-your-sleep-report", "LearnReadingYourSleepReport")).toBe(true);
+    expect(
+      hasRoute(
+        SRC,
+        "/learn/reading-your-sleep-report",
+        "LearnReadingYourSleepReport",
+      ),
+    ).toBe(true);
   });
 
   it("lazy-imports LearnReadingYourSleepReport from @/pages/learn-reading-your-sleep-report", () => {
-    expect(hasLazyImport(SRC, "learn-reading-your-sleep-report", "LearnReadingYourSleepReport")).toBe(true);
+    expect(
+      hasLazyImport(
+        SRC,
+        "learn-reading-your-sleep-report",
+        "LearnReadingYourSleepReport",
+      ),
+    ).toBe(true);
   });
 });
 
 describe("App.tsx — /learn/sleep-hygiene route registered", () => {
   it("registers <Route path='/learn/sleep-hygiene' component={LearnSleepHygiene} />", () => {
-    expect(hasRoute(SRC, "/learn/sleep-hygiene", "LearnSleepHygiene")).toBe(true);
+    expect(hasRoute(SRC, "/learn/sleep-hygiene", "LearnSleepHygiene")).toBe(
+      true,
+    );
   });
 
   it("lazy-imports LearnSleepHygiene from @/pages/learn-sleep-hygiene", () => {
-    expect(hasLazyImport(SRC, "learn-sleep-hygiene", "LearnSleepHygiene")).toBe(true);
+    expect(hasLazyImport(SRC, "learn-sleep-hygiene", "LearnSleepHygiene")).toBe(
+      true,
+    );
   });
 });
 
 describe("App.tsx — /learn/cpap-and-weight-loss route registered", () => {
   it("registers <Route path='/learn/cpap-and-weight-loss' component={LearnCpapAndWeightLoss} />", () => {
-    expect(hasRoute(SRC, "/learn/cpap-and-weight-loss", "LearnCpapAndWeightLoss")).toBe(true);
+    expect(
+      hasRoute(SRC, "/learn/cpap-and-weight-loss", "LearnCpapAndWeightLoss"),
+    ).toBe(true);
   });
 
   it("lazy-imports LearnCpapAndWeightLoss from @/pages/learn-cpap-and-weight-loss", () => {
-    expect(hasLazyImport(SRC, "learn-cpap-and-weight-loss", "LearnCpapAndWeightLoss")).toBe(true);
+    expect(
+      hasLazyImport(
+        SRC,
+        "learn-cpap-and-weight-loss",
+        "LearnCpapAndWeightLoss",
+      ),
+    ).toBe(true);
   });
 });
 
@@ -118,7 +146,9 @@ describe("App.tsx — /cpap-masks routes registered", () => {
   });
 
   it("registers <Route path='/cpap-masks/react-health' component={CpapMasksReactHealth} />", () => {
-    expect(hasRoute(SRC, "/cpap-masks/react-health", "CpapMasksReactHealth")).toBe(true);
+    expect(
+      hasRoute(SRC, "/cpap-masks/react-health", "CpapMasksReactHealth"),
+    ).toBe(true);
   });
 
   it("registers <Route path='/cpap-masks/resmed' component={CpapMasksResmed} />", () => {
@@ -126,7 +156,9 @@ describe("App.tsx — /cpap-masks routes registered", () => {
   });
 
   it("registers <Route path='/cpap-masks/fisher-paykel' component={CpapMasksFisherPaykel} />", () => {
-    expect(hasRoute(SRC, "/cpap-masks/fisher-paykel", "CpapMasksFisherPaykel")).toBe(true);
+    expect(
+      hasRoute(SRC, "/cpap-masks/fisher-paykel", "CpapMasksFisherPaykel"),
+    ).toBe(true);
   });
 });
 
@@ -152,16 +184,24 @@ describe("App.tsx — /learn/* article routes registered", () => {
   });
 
   it("registers <Route path='/learn/how-pap-works' component={LearnHowPapWorks} />", () => {
-    expect(hasRoute(SRC, "/learn/how-pap-works", "LearnHowPapWorks")).toBe(true);
+    expect(hasRoute(SRC, "/learn/how-pap-works", "LearnHowPapWorks")).toBe(
+      true,
+    );
   });
 
   it("registers <Route path='/learn/therapy-types' component={LearnTherapyTypes} />", () => {
-    expect(hasRoute(SRC, "/learn/therapy-types", "LearnTherapyTypes")).toBe(true);
+    expect(hasRoute(SRC, "/learn/therapy-types", "LearnTherapyTypes")).toBe(
+      true,
+    );
   });
 
   it("registers <Route path='/learn/sleep-apnea-heart-health' component={LearnSleepApneaHeartHealth} />", () => {
     expect(
-      hasRoute(SRC, "/learn/sleep-apnea-heart-health", "LearnSleepApneaHeartHealth"),
+      hasRoute(
+        SRC,
+        "/learn/sleep-apnea-heart-health",
+        "LearnSleepApneaHeartHealth",
+      ),
     ).toBe(true);
   });
 });
@@ -182,7 +222,9 @@ describe("App.tsx — lazy() imports for brand pages", () => {
   });
 
   it("lazy-imports CpapMasksResmed from @/pages/cpap-masks-resmed", () => {
-    expect(hasLazyImport(SRC, "cpap-masks-resmed", "CpapMasksResmed")).toBe(true);
+    expect(hasLazyImport(SRC, "cpap-masks-resmed", "CpapMasksResmed")).toBe(
+      true,
+    );
   });
 
   it("lazy-imports CpapMasksFisherPaykel from @/pages/cpap-masks-fisher-paykel", () => {
@@ -215,7 +257,11 @@ describe("App.tsx — lazy() imports for educational article pages", () => {
 
   it("lazy-imports LearnPapTherapyBenefits from @/pages/learn-pap-therapy-benefits", () => {
     expect(
-      hasLazyImport(SRC, "learn-pap-therapy-benefits", "LearnPapTherapyBenefits"),
+      hasLazyImport(
+        SRC,
+        "learn-pap-therapy-benefits",
+        "LearnPapTherapyBenefits",
+      ),
     ).toBe(true);
   });
 
@@ -379,9 +425,7 @@ describe("App.tsx — sub-tree wildcards compile to deep matches", () => {
     // The broken `/admin/:rest*` (single-segment match) would miss
     // every multi-segment URL — documents WHY the fix was needed.
     const brokenNamedSplat = /^\/admin\/([^/]+?)\/?$/i;
-    const multiSegmentUrls = adminUrls.filter(
-      (u) => u.split("/").length > 3,
-    );
+    const multiSegmentUrls = adminUrls.filter((u) => u.split("/").length > 3);
     expect(multiSegmentUrls.length).toBeGreaterThan(0); // sanity
     for (const url of multiSegmentUrls) {
       expect(

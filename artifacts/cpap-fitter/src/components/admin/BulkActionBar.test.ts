@@ -61,7 +61,9 @@ describe("BulkActionBar — visibility rule", () => {
   it("does NOT return null when feedback is set but selectedCount === 0", () => {
     // Feedback alone keeps the bar visible — the admin needs to read
     // the result of the last bulk action even after selection is cleared.
-    const nullGuard = SRC.indexOf("if (selectedCount === 0 && !feedback) return null;");
+    const nullGuard = SRC.indexOf(
+      "if (selectedCount === 0 && !feedback) return null;",
+    );
     expect(nullGuard).toBeGreaterThan(-1);
     // Guard uses &&, so feedback alone won't satisfy it.
     expect(SRC).not.toMatch(/if \(!feedback\) return null/);

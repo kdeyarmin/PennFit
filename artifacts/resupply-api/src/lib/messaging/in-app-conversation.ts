@@ -33,8 +33,7 @@ import {
   type ResupplySupabaseClient,
 } from "@workspace/resupply-db";
 
-type ConversationRow =
-  Database["resupply"]["Tables"]["conversations"]["Row"];
+type ConversationRow = Database["resupply"]["Tables"]["conversations"]["Row"];
 
 /** Body length cap. Mirrors the existing SMS reply cap. */
 export const IN_APP_MESSAGE_BODY_MAX = 4000;
@@ -141,9 +140,11 @@ export async function fetchInAppThread(input: {
       // agent / system. We narrow to the in-app subset for the
       // public response. Patient-flow rows can't appear here because
       // we filtered conversations on channel=in_app + customer_id.
-      senderRole: (m.sender_role === "patient"
-        ? "customer"
-        : m.sender_role) as "customer" | "admin" | "agent" | "system",
+      senderRole: (m.sender_role === "patient" ? "customer" : m.sender_role) as
+        | "customer"
+        | "admin"
+        | "agent"
+        | "system",
       body: m.body ?? "",
       createdAt: m.created_at,
       deliveryStatus: m.delivery_status,

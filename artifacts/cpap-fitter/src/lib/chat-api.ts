@@ -82,9 +82,9 @@ export async function postChatMessage(
   }
 
   if (!res.ok) {
-    const body = (await res.json().catch(() => null)) as
-      | { error?: string }
-      | null;
+    const body = (await res.json().catch(() => null)) as {
+      error?: string;
+    } | null;
     throw new ChatApiError(
       res.status,
       body?.error ?? `Chat request failed (${res.status})`,

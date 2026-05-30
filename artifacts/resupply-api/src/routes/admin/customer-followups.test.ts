@@ -235,8 +235,7 @@ describe("POST /admin/shop/customers/:userId/followups", () => {
       },
     });
 
-    const body =
-      "Call Anna about her UPS claim — confirm replacement shipped.";
+    const body = "Call Anna about her UPS claim — confirm replacement shipped.";
     const res = await request(makeApp())
       .post(`/admin/shop/customers/${USER_ID}/followups`)
       .set("Cookie", CSRF_COOKIE)
@@ -286,9 +285,7 @@ describe("PATCH /admin/shop/customers/:userId/followups/:id/complete", () => {
   it("400s with malformed followup id", async () => {
     mockAdmin.current = ADMIN;
     const res = await request(makeApp())
-      .patch(
-        `/admin/shop/customers/${USER_ID}/followups/not-a-uuid/complete`,
-      )
+      .patch(`/admin/shop/customers/${USER_ID}/followups/not-a-uuid/complete`)
       .set("Cookie", CSRF_COOKIE)
       .set("x-pf-csrf", CSRF_TOKEN);
     expect(res.status).toBe(400);

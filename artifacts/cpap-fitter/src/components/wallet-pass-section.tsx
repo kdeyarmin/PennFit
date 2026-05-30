@@ -84,8 +84,8 @@ export function WalletPassSection() {
         </Button>
       </a>
       <p className="text-xs text-muted-foreground">
-        Open this on your iPhone for one-tap install. On other devices the
-        pass downloads as a file you can move to your phone.
+        Open this on your iPhone for one-tap install. On other devices the pass
+        downloads as a file you can move to your phone.
       </p>
     </section>
   );

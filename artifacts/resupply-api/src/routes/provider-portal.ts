@@ -36,89 +36,89 @@ router.get(
   "/provider-portal/:token",
   providerPortalRateLimiter,
   async (req, res) => {
-  const parsed = z.string().min(8).safeParse(req.params.token);
-  if (!parsed.success) {
-    res.status(404).json({ error: "not_found" });
-    return;
-  }
-  const v = verifyProviderPortalToken(parsed.data);
-  if (!v.valid) {
-    res.status(401).json({ error: "invalid_or_expired_token" });
-    return;
-  }
-  const supabase = getSupabaseServiceRoleClient();
-  const { data: provider, error: pErr } = await supabase
-    .schema("resupply")
-    .from("providers")
-    .select(
-      "id, npi, legal_name, practice_name, taxonomy_code, portal_link_version",
-    )
-    .eq("id", v.providerId)
-    .limit(1)
-    .maybeSingle();
-  if (pErr) throw pErr;
-  if (!provider) {
-    res.status(404).json({ error: "provider_not_found" });
-    return;
-  }
-  // Revocation check. The token embeds the provider's
-  // `portal_link_version` at mint time; if the row's current value is
-  // higher than the embedded value, every outstanding token was
-  // revoked (CSR clicked "Revoke portal link" in the admin UI, which
-  // increments the column). Without this check, the 30-day TTL was
-  // the only thing limiting access — a CSR couldn't actually cut a
-  // mis-issued link short.
-  const currentVersion = (provider.portal_link_version as number | null) ?? 0;
-  if (currentVersion > v.version) {
-    res.status(401).json({ error: "invalid_or_expired_token" });
-    return;
-  }
-  // Only ACTIVE, currently-valid prescriptions. The portal link
-  // is a 30-day capability; without this filter the provider sees
-  // every patient name they ever prescribed for (incl. expired
-  // and revoked Rx) — too much disclosure for a long-lived link.
-  // `valid_until is null` covers the "no end-of-life set" case.
-  const todayIso = new Date().toISOString().slice(0, 10);
-  const { data: rxs, error: rErr } = await supabase
-    .schema("resupply")
-    .from("prescriptions")
-    .select(
-      "id, item_sku, hcpcs_code, status, valid_from, valid_until, patients!inner(id, legal_first_name, legal_last_name)",
-    )
-    .eq("provider_id", v.providerId)
-    .eq("status", "active")
-    .or(`valid_until.is.null,valid_until.gte.${todayIso}`)
-    .order("valid_from", { ascending: false })
-    .limit(200);
-  if (rErr) throw rErr;
-  res.json({
-    provider: {
-      id: provider.id,
-      npi: provider.npi,
-      legalName: provider.legal_name,
-      practiceName: provider.practice_name,
-      taxonomyCode: provider.taxonomy_code,
-    },
-    prescriptions: (rxs ?? []).map((r) => {
-      const p = (r as { patients?: unknown }).patients as
-        | {
-            legal_first_name: string | null;
-            legal_last_name: string | null;
-          }
-        | null;
-      return {
-        id: r.id,
-        itemSku: r.item_sku,
-        hcpcsCode: r.hcpcs_code,
-        status: r.status,
-        validFrom: r.valid_from,
-        validUntil: r.valid_until,
-        patientName: [p?.legal_first_name, p?.legal_last_name]
-          .filter(Boolean)
-          .join(" ") || null,
-      };
-    }),
-  });
-});
+    const parsed = z.string().min(8).safeParse(req.params.token);
+    if (!parsed.success) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    const v = verifyProviderPortalToken(parsed.data);
+    if (!v.valid) {
+      res.status(401).json({ error: "invalid_or_expired_token" });
+      return;
+    }
+    const supabase = getSupabaseServiceRoleClient();
+    const { data: provider, error: pErr } = await supabase
+      .schema("resupply")
+      .from("providers")
+      .select(
+        "id, npi, legal_name, practice_name, taxonomy_code, portal_link_version",
+      )
+      .eq("id", v.providerId)
+      .limit(1)
+      .maybeSingle();
+    if (pErr) throw pErr;
+    if (!provider) {
+      res.status(404).json({ error: "provider_not_found" });
+      return;
+    }
+    // Revocation check. The token embeds the provider's
+    // `portal_link_version` at mint time; if the row's current value is
+    // higher than the embedded value, every outstanding token was
+    // revoked (CSR clicked "Revoke portal link" in the admin UI, which
+    // increments the column). Without this check, the 30-day TTL was
+    // the only thing limiting access — a CSR couldn't actually cut a
+    // mis-issued link short.
+    const currentVersion = (provider.portal_link_version as number | null) ?? 0;
+    if (currentVersion > v.version) {
+      res.status(401).json({ error: "invalid_or_expired_token" });
+      return;
+    }
+    // Only ACTIVE, currently-valid prescriptions. The portal link
+    // is a 30-day capability; without this filter the provider sees
+    // every patient name they ever prescribed for (incl. expired
+    // and revoked Rx) — too much disclosure for a long-lived link.
+    // `valid_until is null` covers the "no end-of-life set" case.
+    const todayIso = new Date().toISOString().slice(0, 10);
+    const { data: rxs, error: rErr } = await supabase
+      .schema("resupply")
+      .from("prescriptions")
+      .select(
+        "id, item_sku, hcpcs_code, status, valid_from, valid_until, patients!inner(id, legal_first_name, legal_last_name)",
+      )
+      .eq("provider_id", v.providerId)
+      .eq("status", "active")
+      .or(`valid_until.is.null,valid_until.gte.${todayIso}`)
+      .order("valid_from", { ascending: false })
+      .limit(200);
+    if (rErr) throw rErr;
+    res.json({
+      provider: {
+        id: provider.id,
+        npi: provider.npi,
+        legalName: provider.legal_name,
+        practiceName: provider.practice_name,
+        taxonomyCode: provider.taxonomy_code,
+      },
+      prescriptions: (rxs ?? []).map((r) => {
+        const p = (r as { patients?: unknown }).patients as {
+          legal_first_name: string | null;
+          legal_last_name: string | null;
+        } | null;
+        return {
+          id: r.id,
+          itemSku: r.item_sku,
+          hcpcsCode: r.hcpcs_code,
+          status: r.status,
+          validFrom: r.valid_from,
+          validUntil: r.valid_until,
+          patientName:
+            [p?.legal_first_name, p?.legal_last_name]
+              .filter(Boolean)
+              .join(" ") || null,
+        };
+      }),
+    });
+  },
+);
 
 export default router;

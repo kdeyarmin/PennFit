@@ -28,10 +28,10 @@ const CMS_WINDOW_DAYS = 30;
 
 // Heuristic weights. Each factor moves P(compliant) in one direction;
 // the floor + ceiling keep the score off the rails for edge cases.
-const W_WEEK1_USAGE_HIGH = 0.40; // bumps probability UP
+const W_WEEK1_USAGE_HIGH = 0.4; // bumps probability UP
 const W_WEEK1_USAGE_LOW = 0.45; // bumps probability DOWN
 const W_WEEK1_NO_DATA = 0.15;
-const W_WEEK1_HIGH_LEAK = 0.20;
+const W_WEEK1_HIGH_LEAK = 0.2;
 const W_FULL_FACE_MASK = 0.05; // small DOWN — published correlates
 
 const FLOOR = 0.05;
@@ -128,14 +128,14 @@ export async function scorePatientAdherence(
       positive = Math.max(positive, 0.9);
       factors.push({
         key: "recent_window_compliant",
-        weight: 0.40,
+        weight: 0.4,
         label: `Recent ${CMS_WINDOW_DAYS}-day window already CMS-compliant (${compliantNights}/${CMS_WINDOW_DAYS} nights >=4h).`,
       });
     } else if (compliantNights < CMS_COMPLIANT_NIGHTS / 2) {
       positive = Math.min(positive, 0.25);
       factors.push({
         key: "recent_window_low",
-        weight: -0.40,
+        weight: -0.4,
         label: `Recent ${CMS_WINDOW_DAYS}-day window only ${compliantNights}/${CMS_WINDOW_DAYS} compliant — coaching needed.`,
       });
     }
@@ -168,11 +168,13 @@ export async function scoreAndPersistAdherence(
       factors_json: score.factors as unknown as never,
       scored_at: score.scoredAt,
     })
-    .then(() => undefined, (err) =>
-      logger.warn(
-        { err: err instanceof Error ? err.message : String(err), patientId },
-        "adherence-predictor: persist failed (non-fatal)",
-      ),
+    .then(
+      () => undefined,
+      (err) =>
+        logger.warn(
+          { err: err instanceof Error ? err.message : String(err), patientId },
+          "adherence-predictor: persist failed (non-fatal)",
+        ),
     );
   return score;
 }

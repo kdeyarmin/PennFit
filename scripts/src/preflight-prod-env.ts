@@ -156,8 +156,15 @@ function requireHttpsUrl(name: string, forbidLocalhost: boolean): void {
     record(name, "fail", `must be https:// (got ${parsed.protocol}//)`);
     return;
   }
-  if (forbidLocalhost && (parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1")) {
-    record(name, "fail", `must not point at localhost (got ${parsed.hostname})`);
+  if (
+    forbidLocalhost &&
+    (parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1")
+  ) {
+    record(
+      name,
+      "fail",
+      `must not point at localhost (got ${parsed.hostname})`,
+    );
     return;
   }
   record(name, "pass", parsed.origin);
@@ -205,7 +212,11 @@ function requireBase64Bytes(name: string, minBytes: number): void {
     return;
   }
   if (decoded.length < minBytes) {
-    record(name, "fail", `decodes to ${decoded.length} bytes (need >= ${minBytes})`);
+    record(
+      name,
+      "fail",
+      `decodes to ${decoded.length} bytes (need >= ${minBytes})`,
+    );
     return;
   }
   record(name, "pass", `${decoded.length} bytes (base64)`);
@@ -221,7 +232,11 @@ function requireBase64Bytes(name: string, minBytes: number): void {
  * @param expected - Exact string value required for the variable
  * @param severity - Severity to record when the variable is missing or does not match; defaults to `"fail"`
  */
-function expectExactly(name: string, expected: string, severity: Severity = "fail"): void {
+function expectExactly(
+  name: string,
+  expected: string,
+  severity: Severity = "fail",
+): void {
   const value = getTrimmed(name);
   if (value === undefined) {
     record(name, severity, `unset or empty (expected "${expected}")`);
@@ -261,17 +276,25 @@ function requireNonEmptyList(
 ): void {
   const value = getTrimmed(name);
   const absentSeverity = options.absentSeverity ?? "fail";
-  const absentDetail = options.absentDetail ?? "must contain at least one entry";
+  const absentDetail =
+    options.absentDetail ?? "must contain at least one entry";
   if (value === undefined) {
     record(name, absentSeverity, absentDetail);
     return;
   }
-  const entries = value.split(",").map((e) => e.trim()).filter(Boolean);
+  const entries = value
+    .split(",")
+    .map((e) => e.trim())
+    .filter(Boolean);
   if (entries.length === 0) {
     record(name, absentSeverity, absentDetail);
     return;
   }
-  record(name, "pass", `${entries.length} entr${entries.length === 1 ? "y" : "ies"}`);
+  record(
+    name,
+    "pass",
+    `${entries.length} entr${entries.length === 1 ? "y" : "ies"}`,
+  );
 }
 
 // Forbids known placeholder values that ship in .env.example. Matching
@@ -355,12 +378,24 @@ function runChecks(): void {
   // 1. Boot-required vars — mirrors env-check.ts in resupply-api.
   requirePresent("PORT");
 
-  if (!refusePlaceholder("DATABASE_URL", "postgres://user:password@localhost:5432/pennpaps")) {
+  if (
+    !refusePlaceholder(
+      "DATABASE_URL",
+      "postgres://user:password@localhost:5432/pennpaps",
+    )
+  ) {
     const url = getTrimmed("DATABASE_URL");
     if (url === undefined) {
       record("DATABASE_URL", "fail", "unset or empty");
-    } else if (!url.startsWith("postgres://") && !url.startsWith("postgresql://")) {
-      record("DATABASE_URL", "fail", `must start with postgres:// or postgresql://`);
+    } else if (
+      !url.startsWith("postgres://") &&
+      !url.startsWith("postgresql://")
+    ) {
+      record(
+        "DATABASE_URL",
+        "fail",
+        `must start with postgres:// or postgresql://`,
+      );
     } else if (prodModeEarly && /@(localhost|127\.0\.0\.1)[:/]/.test(url)) {
       // Production must not point at a local Postgres. The migrator
       // and the app both consult DATABASE_URL directly; a stray
@@ -378,7 +413,12 @@ function runChecks(): void {
   if (!refusePlaceholder("SUPABASE_URL", "https://YOUR-PROJECT.supabase.co")) {
     requireHttpsUrl("SUPABASE_URL", /* forbidLocalhost */ false);
   }
-  if (!refusePlaceholder("SUPABASE_SERVICE_ROLE_KEY", "replace_me_with_service_role_key")) {
+  if (
+    !refusePlaceholder(
+      "SUPABASE_SERVICE_ROLE_KEY",
+      "replace_me_with_service_role_key",
+    )
+  ) {
     requirePresent("SUPABASE_SERVICE_ROLE_KEY");
   }
 
@@ -392,7 +432,12 @@ function runChecks(): void {
   // instead of from the crash loop.
   requirePresent("SUPABASE_STORAGE_BUCKET_PRIVATE");
 
-  if (!refusePlaceholder("RESUPPLY_LINK_HMAC_KEY", "replace_me_with_32_byte_secret")) {
+  if (
+    !refusePlaceholder(
+      "RESUPPLY_LINK_HMAC_KEY",
+      "replace_me_with_32_byte_secret",
+    )
+  ) {
     requireBase64Bytes("RESUPPLY_LINK_HMAC_KEY", 32);
   }
   // RESUPPLY_AUDIT_HMAC_KEY was retired with the HIPAA §164.312(b)
@@ -466,7 +511,11 @@ function runChecks(): void {
   if (!refusePlaceholder("STRIPE_SECRET_KEY", "sk_test_replace_me")) {
     const sk = getTrimmed("STRIPE_SECRET_KEY");
     if (sk === undefined) {
-      record("STRIPE_SECRET_KEY", prodSeverity, "unset (Stripe checkout will be disabled)");
+      record(
+        "STRIPE_SECRET_KEY",
+        prodSeverity,
+        "unset (Stripe checkout will be disabled)",
+      );
     } else if (prodMode && !STRIPE_LIVE_KEY_SHAPE.test(sk)) {
       // Distinguish the common-mistake case ("sk_test_ in production")
       // from the unexpected-shape case without leaking the actual key.
@@ -519,7 +568,11 @@ function runChecks(): void {
   } else {
     const from = getTrimmed("SENDGRID_FROM_EMAIL");
     if (from === undefined) {
-      record("SENDGRID_FROM_EMAIL", "warn", "unset (defaults break the One-From invariant)");
+      record(
+        "SENDGRID_FROM_EMAIL",
+        "warn",
+        "unset (defaults break the One-From invariant)",
+      );
     } else {
       record("SENDGRID_FROM_EMAIL", "pass", from);
     }
@@ -553,7 +606,12 @@ function runChecks(): void {
   // refuses to send.
   const tmsid = getTrimmed("TWILIO_MESSAGING_SERVICE_SID");
   const tnum = getTrimmed("TWILIO_PHONE_NUMBER");
-  if (prodMode && tsid !== undefined && tmsid === undefined && tnum === undefined) {
+  if (
+    prodMode &&
+    tsid !== undefined &&
+    tmsid === undefined &&
+    tnum === undefined
+  ) {
     record(
       "TWILIO_MESSAGING_SERVICE_SID / TWILIO_PHONE_NUMBER",
       "fail",
@@ -592,7 +650,11 @@ function runChecks(): void {
   // 4. Feature flag posture.
   const reengage = getTrimmed("RESUPPLY_FITTER_REENGAGE_ENABLED");
   if (reengage === "1") {
-    record("RESUPPLY_FITTER_REENGAGE_ENABLED", "pass", "= 1 (worker registered)");
+    record(
+      "RESUPPLY_FITTER_REENGAGE_ENABLED",
+      "pass",
+      "= 1 (worker registered)",
+    );
   } else if (prodMode) {
     record(
       "RESUPPLY_FITTER_REENGAGE_ENABLED",
@@ -658,7 +720,7 @@ function runChecks(): void {
         "unset (chatbot/sleep-coach/SMS will use OpenAI gpt-4o-mini fallback — set for warmer Claude replies)",
       );
     } else if (!anth.startsWith("sk-ant-")) {
-      record("ANTHROPIC_API_KEY", "fail", "must start with \"sk-ant-\"");
+      record("ANTHROPIC_API_KEY", "fail", 'must start with "sk-ant-"');
     } else {
       record("ANTHROPIC_API_KEY", "pass", "starts with sk-ant-");
     }
@@ -712,7 +774,11 @@ function runChecks(): void {
     const value = getTrimmed(name);
     if (value === undefined) continue;
     if (/@example\.(com|org|net)$/i.test(value)) {
-      record(name, "fail", `points at @example.* (placeholder domain): "${value}"`);
+      record(
+        name,
+        "fail",
+        `points at @example.* (placeholder domain): "${value}"`,
+      );
     }
   }
 
@@ -734,7 +800,10 @@ function runChecks(): void {
       "set but STRIPE_WEBHOOK_SIGNING_SECRET (the canonical name) is unset — " +
         "the webhook handler reads only the latter. Rename the env var.",
     );
-  } else if (legacyStripeWebhook !== undefined && realStripeWebhook !== undefined) {
+  } else if (
+    legacyStripeWebhook !== undefined &&
+    realStripeWebhook !== undefined
+  ) {
     record(
       "STRIPE_WEBHOOK_SECRET",
       "warn",
@@ -778,7 +847,9 @@ function report(): number {
   process.stdout.write(`\npreflight:prod — production env readiness\n`);
   process.stdout.write(`${paint(DIM, "─".repeat(48))}\n`);
   for (const r of results) {
-    process.stdout.write(`  ${symbolFor(r.severity)}  ${r.name}\n        ${paint(DIM, r.detail)}\n`);
+    process.stdout.write(
+      `  ${symbolFor(r.severity)}  ${r.name}\n        ${paint(DIM, r.detail)}\n`,
+    );
   }
   process.stdout.write(`${paint(DIM, "─".repeat(48))}\n`);
   process.stdout.write(

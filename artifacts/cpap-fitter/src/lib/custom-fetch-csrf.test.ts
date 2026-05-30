@@ -29,33 +29,31 @@ function setupMocks(cookie: string | null) {
     (globalThis as unknown as { document?: unknown }).document = { cookie };
   }
   const captured: CapturedRequest[] = [];
-  const fetchMock = vi.fn(
-    async (input: unknown, init: RequestInit = {}) => {
-      const headersObj: Record<string, string> = {};
-      if (init.headers instanceof Headers) {
-        init.headers.forEach((value, key) => {
-          headersObj[key.toLowerCase()] = value;
-        });
-      } else if (Array.isArray(init.headers)) {
-        for (const [k, v] of init.headers) headersObj[k.toLowerCase()] = v;
-      } else if (init.headers && typeof init.headers === "object") {
-        for (const [k, v] of Object.entries(
-          init.headers as Record<string, string>,
-        )) {
-          headersObj[k.toLowerCase()] = v;
-        }
+  const fetchMock = vi.fn(async (input: unknown, init: RequestInit = {}) => {
+    const headersObj: Record<string, string> = {};
+    if (init.headers instanceof Headers) {
+      init.headers.forEach((value, key) => {
+        headersObj[key.toLowerCase()] = value;
+      });
+    } else if (Array.isArray(init.headers)) {
+      for (const [k, v] of init.headers) headersObj[k.toLowerCase()] = v;
+    } else if (init.headers && typeof init.headers === "object") {
+      for (const [k, v] of Object.entries(
+        init.headers as Record<string, string>,
+      )) {
+        headersObj[k.toLowerCase()] = v;
       }
-      captured.push({
-        url: typeof input === "string" ? input : String(input),
-        method: (init.method ?? "GET").toUpperCase(),
-        headers: headersObj,
-      });
-      return new Response(JSON.stringify({ ok: true }), {
-        status: 200,
-        headers: { "content-type": "application/json" },
-      });
-    },
-  );
+    }
+    captured.push({
+      url: typeof input === "string" ? input : String(input),
+      method: (init.method ?? "GET").toUpperCase(),
+      headers: headersObj,
+    });
+    return new Response(JSON.stringify({ ok: true }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  });
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (globalThis as any).fetch = fetchMock;
   return { captured, fetchMock };

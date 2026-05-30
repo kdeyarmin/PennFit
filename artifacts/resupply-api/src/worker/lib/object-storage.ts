@@ -71,9 +71,7 @@ export async function listAttachmentObjects(
       .from(bucketName)
       .list("uploads", { limit: pageSize, offset });
     if (error) {
-      throw new Error(
-        `Failed to list ${bucketName}/uploads: ${error.message}`,
-      );
+      throw new Error(`Failed to list ${bucketName}/uploads: ${error.message}`);
     }
     if (!data || data.length === 0) break;
     for (const entry of data) {

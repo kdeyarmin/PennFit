@@ -67,14 +67,8 @@ describe("REPORTS", () => {
 
   it("every report includes csv and pdf formats (mandatory pair)", () => {
     for (const r of REPORTS) {
-      expect(
-        r.formats,
-        `'${r.slug}' must have csv`,
-      ).toContain("csv");
-      expect(
-        r.formats,
-        `'${r.slug}' must have pdf`,
-      ).toContain("pdf");
+      expect(r.formats, `'${r.slug}' must have csv`).toContain("csv");
+      expect(r.formats, `'${r.slug}' must have pdf`).toContain("pdf");
     }
   });
 
@@ -129,7 +123,10 @@ describe("REPORTS", () => {
     const validKeys = new Set<string>(["csv", "pdf", "iif", "qbo"]);
     for (const r of REPORTS) {
       for (const f of r.formats) {
-        expect(validKeys, `'${f}' in '${r.slug}' is not a valid FormatKey`).toContain(f);
+        expect(
+          validKeys,
+          `'${f}' in '${r.slug}' is not a valid FormatKey`,
+        ).toContain(f);
       }
     }
   });

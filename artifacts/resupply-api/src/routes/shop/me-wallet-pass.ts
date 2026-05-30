@@ -38,10 +38,7 @@ import {
   AppleWalletSignError,
   buildPkpass,
 } from "../../lib/apple-wallet/pkpass";
-import {
-  defaultIconPng,
-  defaultLogoPng,
-} from "../../lib/apple-wallet/assets";
+import { defaultIconPng, defaultLogoPng } from "../../lib/apple-wallet/assets";
 import { logger } from "../../lib/logger";
 
 // Branding constants — kept in sync with the cpap-fitter
@@ -145,8 +142,7 @@ router.get(
         // failures and hides the "Add to Wallet" CTA.
         res.status(503).json({
           error: "wallet_not_configured",
-          message:
-            "Apple Wallet passes are not enabled in this environment.",
+          message: "Apple Wallet passes are not enabled in this environment.",
         });
         return;
       }

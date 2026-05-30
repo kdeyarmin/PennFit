@@ -76,12 +76,16 @@ export function PushPromptBanner() {
           Get a ping when your supplies ship?
         </p>
         <p className="text-sm text-muted-foreground leading-relaxed">
-          We&apos;ll send a single notification when your order leaves
-          our warehouse and another when it arrives. No marketing — just
-          shipment status.
+          We&apos;ll send a single notification when your order leaves our
+          warehouse and another when it arrives. No marketing — just shipment
+          status.
         </p>
         {error && (
-          <p className="text-xs text-destructive" data-testid="push-prompt-error" role="alert">
+          <p
+            className="text-xs text-destructive"
+            data-testid="push-prompt-error"
+            role="alert"
+          >
             {error}
           </p>
         )}

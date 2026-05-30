@@ -58,9 +58,7 @@ router.get(
       return;
     }
     const { status, days = 30, limit = 100 } = parsed.data;
-    const cutoff = new Date(
-      Date.now() - days * 24 * 3600 * 1000,
-    ).toISOString();
+    const cutoff = new Date(Date.now() - days * 24 * 3600 * 1000).toISOString();
     const supabase = getSupabaseServiceRoleClient();
 
     let query = supabase

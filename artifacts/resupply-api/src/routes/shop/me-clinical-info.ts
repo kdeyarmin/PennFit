@@ -44,7 +44,8 @@ import { ensureShopCustomerRow } from "../../lib/stripe/customer";
 import { requireSignedIn } from "../../middlewares/requireSignedIn";
 import { logger } from "../../lib/logger";
 
-type ShopCustomersUpdate = Database["resupply"]["Tables"]["shop_customers"]["Update"];
+type ShopCustomersUpdate =
+  Database["resupply"]["Tables"]["shop_customers"]["Update"];
 
 const router: IRouter = Router();
 

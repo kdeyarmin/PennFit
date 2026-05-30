@@ -72,9 +72,7 @@ describe("runPaMcoSlaSweep", () => {
       data: [{ id: "cov-1", payer_name: "Highmark BCBS" }],
     });
     stageSupabaseResponse("payer_profiles", "select", {
-      data: [
-        { display_name: "Highmark BCBS", line_of_business: "commercial" },
-      ],
+      data: [{ display_name: "Highmark BCBS", line_of_business: "commercial" }],
     });
     const stats = await runPaMcoSlaSweep();
     expect(stats.scanned).toBe(1);

@@ -89,9 +89,7 @@ export function RemindersManage() {
       params.delete("token");
       const qs = params.toString();
       const next =
-        window.location.pathname +
-        (qs ? `?${qs}` : "") +
-        window.location.hash;
+        window.location.pathname + (qs ? `?${qs}` : "") + window.location.hash;
       window.history.replaceState(null, "", next);
     } catch {
       // History API not available: no-op.
@@ -126,43 +124,43 @@ export function RemindersManage() {
 
   if (!token) {
     return (
-        <main
-          id="main-content"
-          tabIndex={-1}
-          className="relative z-10 container max-w-xl mx-auto px-4 py-16"
-        >
-          <Card className="border-0 glass-card rounded-2xl">
-            <CardHeader className="text-center space-y-3">
-              <div className="mx-auto w-14 h-14 rounded-2xl icon-halo-navy flex items-center justify-center">
-                <ShieldOff className="w-6 h-6" />
-              </div>
-              <CardTitle>Manage link missing</CardTitle>
-              <CardDescription>
-                Use the manage link from your subscription confirmation
-                email to open this page.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="text-center">
-              <Link href="/reminders">
-                <Button>Go to signup</Button>
-              </Link>
-            </CardContent>
-          </Card>
-        </main>
+      <main
+        id="main-content"
+        tabIndex={-1}
+        className="relative z-10 container max-w-xl mx-auto px-4 py-16"
+      >
+        <Card className="border-0 glass-card rounded-2xl">
+          <CardHeader className="text-center space-y-3">
+            <div className="mx-auto w-14 h-14 rounded-2xl icon-halo-navy flex items-center justify-center">
+              <ShieldOff className="w-6 h-6" />
+            </div>
+            <CardTitle>Manage link missing</CardTitle>
+            <CardDescription>
+              Use the manage link from your subscription confirmation email to
+              open this page.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="text-center">
+            <Link href="/reminders">
+              <Button>Go to signup</Button>
+            </Link>
+          </CardContent>
+        </Card>
+      </main>
     );
   }
 
   if (isLoading) {
     return (
-        <main
-          id="main-content"
-          tabIndex={-1}
-          className="relative z-10 container max-w-3xl mx-auto px-4 py-10 space-y-4"
-        >
-          <Skeleton className="h-10 w-72" />
-          <Skeleton className="h-32 w-full" />
-          <Skeleton className="h-32 w-full" />
-        </main>
+      <main
+        id="main-content"
+        tabIndex={-1}
+        className="relative z-10 container max-w-3xl mx-auto px-4 py-10 space-y-4"
+      >
+        <Skeleton className="h-10 w-72" />
+        <Skeleton className="h-32 w-full" />
+        <Skeleton className="h-32 w-full" />
+      </main>
     );
   }
 
@@ -170,62 +168,62 @@ export function RemindersManage() {
     const apiError = error as ApiError | null;
     const status = apiError?.status ?? 0;
     return (
-        <main
-          id="main-content"
-          tabIndex={-1}
-          className="relative z-10 container max-w-xl mx-auto px-4 py-16"
-        >
-          <Card className="border-0 glass-card rounded-2xl">
-            <CardHeader className="text-center space-y-3">
-              <div className="mx-auto w-14 h-14 rounded-2xl icon-halo-navy flex items-center justify-center">
-                <ShieldOff className="w-6 h-6" />
-              </div>
-              <CardTitle>
-                {status === 404
-                  ? "Subscription not found"
-                  : "Could not load subscription"}
-              </CardTitle>
-              <CardDescription>
-                {status === 404
-                  ? "This link doesn't match an active subscription. It may have been used after unsubscribing — sign up again to start fresh."
-                  : "Try refreshing in a moment. If this keeps happening, sign up again."}
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="text-center">
-              <Link href="/reminders">
-                <Button>Go to signup</Button>
-              </Link>
-            </CardContent>
-          </Card>
-        </main>
+      <main
+        id="main-content"
+        tabIndex={-1}
+        className="relative z-10 container max-w-xl mx-auto px-4 py-16"
+      >
+        <Card className="border-0 glass-card rounded-2xl">
+          <CardHeader className="text-center space-y-3">
+            <div className="mx-auto w-14 h-14 rounded-2xl icon-halo-navy flex items-center justify-center">
+              <ShieldOff className="w-6 h-6" />
+            </div>
+            <CardTitle>
+              {status === 404
+                ? "Subscription not found"
+                : "Could not load subscription"}
+            </CardTitle>
+            <CardDescription>
+              {status === 404
+                ? "This link doesn't match an active subscription. It may have been used after unsubscribing — sign up again to start fresh."
+                : "Try refreshing in a moment. If this keeps happening, sign up again."}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="text-center">
+            <Link href="/reminders">
+              <Button>Go to signup</Button>
+            </Link>
+          </CardContent>
+        </Card>
+      </main>
     );
   }
 
   if (unsubscribed) {
     return (
-        <main
-          id="main-content"
-          tabIndex={-1}
-          className="relative z-10 container max-w-xl mx-auto px-4 py-16"
-        >
-          <Card className="border-0 glass-card rounded-2xl">
-            <CardHeader className="text-center space-y-3">
-              <div className="mx-auto w-14 h-14 rounded-2xl icon-halo-navy flex items-center justify-center">
-                <BellOff className="w-6 h-6" />
-              </div>
-              <CardTitle>You've been unsubscribed</CardTitle>
-              <CardDescription>
-                We won't send you any more reminders. Changed your mind? You can
-                sign up again any time.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="text-center space-y-2">
-              <Link href="/reminders">
-                <Button>Sign up again</Button>
-              </Link>
-            </CardContent>
-          </Card>
-        </main>
+      <main
+        id="main-content"
+        tabIndex={-1}
+        className="relative z-10 container max-w-xl mx-auto px-4 py-16"
+      >
+        <Card className="border-0 glass-card rounded-2xl">
+          <CardHeader className="text-center space-y-3">
+            <div className="mx-auto w-14 h-14 rounded-2xl icon-halo-navy flex items-center justify-center">
+              <BellOff className="w-6 h-6" />
+            </div>
+            <CardTitle>You've been unsubscribed</CardTitle>
+            <CardDescription>
+              We won't send you any more reminders. Changed your mind? You can
+              sign up again any time.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="text-center space-y-2">
+            <Link href="/reminders">
+              <Button>Sign up again</Button>
+            </Link>
+          </CardContent>
+        </Card>
+      </main>
     );
   }
 
@@ -300,173 +298,173 @@ export function RemindersManage() {
   }
 
   return (
-      <main
-        id="main-content"
-        tabIndex={-1}
-        className="relative z-10 container max-w-3xl mx-auto px-4 py-10 space-y-6"
-      >
-        <div>
-          <h1 className="text-3xl font-semibold tracking-tight">
-            Manage reminders
-          </h1>
-          <p className="text-muted-foreground mt-2">
-            Reminders for <span className="font-medium">{data.email}</span>.
-            Update your dates after you swap supplies so we don't ping you about
-            something you've already taken care of.
-          </p>
-        </div>
+    <main
+      id="main-content"
+      tabIndex={-1}
+      className="relative z-10 container max-w-3xl mx-auto px-4 py-10 space-y-6"
+    >
+      <div>
+        <h1 className="text-3xl font-semibold tracking-tight">
+          Manage reminders
+        </h1>
+        <p className="text-muted-foreground mt-2">
+          Reminders for <span className="font-medium">{data.email}</span>.
+          Update your dates after you swap supplies so we don't ping you about
+          something you've already taken care of.
+        </p>
+      </div>
 
-        {savedAt && !validationError && (
-          <Alert>
-            <CheckCircle2 className="w-4 h-4" />
-            <AlertTitle>Saved</AlertTitle>
-            <AlertDescription>Your reminders are up to date.</AlertDescription>
-          </Alert>
-        )}
+      {savedAt && !validationError && (
+        <Alert>
+          <CheckCircle2 className="w-4 h-4" />
+          <AlertTitle>Saved</AlertTitle>
+          <AlertDescription>Your reminders are up to date.</AlertDescription>
+        </Alert>
+      )}
 
-        {validationError && (
-          <Alert variant="destructive" data-testid="reminders-validation-error">
-            <ShieldOff className="w-4 h-4" />
-            <AlertTitle>Pick at least one supply</AlertTitle>
-            <AlertDescription>{validationError}</AlertDescription>
-          </Alert>
-        )}
+      {validationError && (
+        <Alert variant="destructive" data-testid="reminders-validation-error">
+          <ShieldOff className="w-4 h-4" />
+          <AlertTitle>Pick at least one supply</AlertTitle>
+          <AlertDescription>{validationError}</AlertDescription>
+        </Alert>
+      )}
 
-        <Card className="border-0 glass-card rounded-2xl">
-          <CardHeader>
-            <CardTitle className="text-xl">Your supplies</CardTitle>
-            <CardDescription>
-              Uncheck anything you no longer want reminders for.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              {REMINDER_ITEMS.map((def) => {
-                const state = items[def.sku];
-                return (
-                  <div
-                    key={def.sku}
-                    className="rounded-xl border bg-background/60 p-4 space-y-3"
-                  >
-                    <div className="flex items-start gap-3">
-                      <Checkbox
-                        id={`m-${def.sku}`}
-                        checked={state.enabled}
-                        onCheckedChange={(c) => toggleItem(def.sku, c === true)}
-                        data-testid={`checkbox-manage-${def.sku}`}
-                      />
-                      <div className="flex-1">
+      <Card className="border-0 glass-card rounded-2xl">
+        <CardHeader>
+          <CardTitle className="text-xl">Your supplies</CardTitle>
+          <CardDescription>
+            Uncheck anything you no longer want reminders for.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-3">
+            {REMINDER_ITEMS.map((def) => {
+              const state = items[def.sku];
+              return (
+                <div
+                  key={def.sku}
+                  className="rounded-xl border bg-background/60 p-4 space-y-3"
+                >
+                  <div className="flex items-start gap-3">
+                    <Checkbox
+                      id={`m-${def.sku}`}
+                      checked={state.enabled}
+                      onCheckedChange={(c) => toggleItem(def.sku, c === true)}
+                      data-testid={`checkbox-manage-${def.sku}`}
+                    />
+                    <div className="flex-1">
+                      <Label
+                        htmlFor={`m-${def.sku}`}
+                        className="text-base cursor-pointer"
+                      >
+                        {def.label}
+                      </Label>
+                      <p className="text-sm text-muted-foreground mt-0.5">
+                        {def.description}
+                      </p>
+                    </div>
+                  </div>
+                  {state.enabled && (
+                    <div className="grid sm:grid-cols-2 gap-3 pl-7">
+                      <div className="space-y-1">
                         <Label
-                          htmlFor={`m-${def.sku}`}
-                          className="text-base cursor-pointer"
+                          htmlFor={`m-last-${def.sku}`}
+                          className="text-xs text-muted-foreground"
                         >
-                          {def.label}
+                          Last replaced
                         </Label>
-                        <p className="text-sm text-muted-foreground mt-0.5">
-                          {def.description}
-                        </p>
+                        <Input
+                          id={`m-last-${def.sku}`}
+                          type="date"
+                          max={todayIso()}
+                          value={state.lastReplacedAt}
+                          onChange={(e) =>
+                            updateItemField(def.sku, {
+                              lastReplacedAt: e.target.value,
+                            })
+                          }
+                          data-testid={`input-manage-last-${def.sku}`}
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label
+                          htmlFor={`m-int-${def.sku}`}
+                          className="text-xs text-muted-foreground"
+                        >
+                          Remind every (days)
+                        </Label>
+                        <Input
+                          id={`m-int-${def.sku}`}
+                          type="number"
+                          min={1}
+                          max={365}
+                          value={state.intervalDays}
+                          onChange={(e) =>
+                            updateItemField(def.sku, {
+                              intervalDays: Math.max(
+                                1,
+                                Math.min(
+                                  365,
+                                  Number(e.target.value) ||
+                                    def.defaultIntervalDays,
+                                ),
+                              ),
+                            })
+                          }
+                          data-testid={`input-manage-interval-${def.sku}`}
+                        />
                       </div>
                     </div>
-                    {state.enabled && (
-                      <div className="grid sm:grid-cols-2 gap-3 pl-7">
-                        <div className="space-y-1">
-                          <Label
-                            htmlFor={`m-last-${def.sku}`}
-                            className="text-xs text-muted-foreground"
-                          >
-                            Last replaced
-                          </Label>
-                          <Input
-                            id={`m-last-${def.sku}`}
-                            type="date"
-                            max={todayIso()}
-                            value={state.lastReplacedAt}
-                            onChange={(e) =>
-                              updateItemField(def.sku, {
-                                lastReplacedAt: e.target.value,
-                              })
-                            }
-                            data-testid={`input-manage-last-${def.sku}`}
-                          />
-                        </div>
-                        <div className="space-y-1">
-                          <Label
-                            htmlFor={`m-int-${def.sku}`}
-                            className="text-xs text-muted-foreground"
-                          >
-                            Remind every (days)
-                          </Label>
-                          <Input
-                            id={`m-int-${def.sku}`}
-                            type="number"
-                            min={1}
-                            max={365}
-                            value={state.intervalDays}
-                            onChange={(e) =>
-                              updateItemField(def.sku, {
-                                intervalDays: Math.max(
-                                  1,
-                                  Math.min(
-                                    365,
-                                    Number(e.target.value) ||
-                                      def.defaultIntervalDays,
-                                  ),
-                                ),
-                              })
-                            }
-                            data-testid={`input-manage-interval-${def.sku}`}
-                          />
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
 
-            {update.error && (
-              <Alert variant="destructive" className="mt-4">
-                <AlertDescription>
-                  Could not save changes. Try again in a moment.
-                </AlertDescription>
-              </Alert>
-            )}
+          {update.error && (
+            <Alert variant="destructive" className="mt-4">
+              <AlertDescription>
+                Could not save changes. Try again in a moment.
+              </AlertDescription>
+            </Alert>
+          )}
 
-            {unsub.error && (
-              <Alert
-                variant="destructive"
-                className="mt-4"
-                data-testid="reminders-unsubscribe-error"
-              >
-                <AlertDescription>
-                  Could not unsubscribe. Try again in a moment, or contact
-                  support if it keeps failing.
-                </AlertDescription>
-              </Alert>
-            )}
+          {unsub.error && (
+            <Alert
+              variant="destructive"
+              className="mt-4"
+              data-testid="reminders-unsubscribe-error"
+            >
+              <AlertDescription>
+                Could not unsubscribe. Try again in a moment, or contact support
+                if it keeps failing.
+              </AlertDescription>
+            </Alert>
+          )}
 
-            <div className="flex flex-wrap items-center gap-3 mt-6">
-              <Button
-                onClick={onSave}
-                disabled={update.isPending}
-                data-testid="button-save-manage"
-              >
-                {update.isPending ? "Saving…" : "Save changes"}
-              </Button>
-              <Button
-                variant="outline"
-                onClick={onUnsubscribe}
-                disabled={unsub.isPending}
-                data-testid="button-unsubscribe"
-              >
-                {unsub.isPending
-                  ? "Unsubscribing…"
-                  : "Unsubscribe from all reminders"}
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-        {ConfirmDialogEl}
-      </main>
+          <div className="flex flex-wrap items-center gap-3 mt-6">
+            <Button
+              onClick={onSave}
+              disabled={update.isPending}
+              data-testid="button-save-manage"
+            >
+              {update.isPending ? "Saving…" : "Save changes"}
+            </Button>
+            <Button
+              variant="outline"
+              onClick={onUnsubscribe}
+              disabled={unsub.isPending}
+              data-testid="button-unsubscribe"
+            >
+              {unsub.isPending
+                ? "Unsubscribing…"
+                : "Unsubscribe from all reminders"}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+      {ConfirmDialogEl}
+    </main>
   );
 }

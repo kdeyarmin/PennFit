@@ -13,14 +13,7 @@
 // lib/resupply-reminders/. Repeating those scenarios here would
 // inflate test runtime without catching anything new.
 
-import {
-  describe,
-  it,
-  expect,
-  vi,
-  beforeEach,
-  afterEach,
-} from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import express, { type Express } from "express";
 import request from "supertest";
 

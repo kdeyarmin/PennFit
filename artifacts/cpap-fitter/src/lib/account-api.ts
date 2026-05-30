@@ -588,11 +588,7 @@ export const fetchTherapySummary = () =>
 // with last-completed + next-due + bucket.
 // ---------------------------------------------------------------------------
 
-export type MaintenanceCategory =
-  | "mask"
-  | "tubing"
-  | "humidifier"
-  | "filter";
+export type MaintenanceCategory = "mask" | "tubing" | "humidifier" | "filter";
 export type MaintenanceDueBucket = "due_now" | "due_soon" | "current";
 
 export interface MaintenanceTask {
@@ -650,11 +646,7 @@ export const fetchSubstitutions = () =>
 // Education feed — onboarding-stage-personalized articles.
 // ---------------------------------------------------------------------------
 
-export type EducationStage =
-  | "new"
-  | "habituating"
-  | "steady"
-  | "experienced";
+export type EducationStage = "new" | "habituating" | "steady" | "experienced";
 
 export type EducationCategory =
   | "comfort"
@@ -786,7 +778,7 @@ export async function uploadMyDocument(
     }),
   });
   if (!urlRes.ok) {
-    const body = await urlRes.json().catch(() => ({})) as { error?: string };
+    const body = (await urlRes.json().catch(() => ({}))) as { error?: string };
     throw new AccountApiError(urlRes.status, body);
   }
   const { uploadURL, objectPath } = (await urlRes.json()) as {

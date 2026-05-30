@@ -100,9 +100,9 @@ function makeBuilder() {
 }
 
 vi.mock("@workspace/resupply-db", async () => {
-  const actual = await vi.importActual<
-    typeof import("@workspace/resupply-db")
-  >("@workspace/resupply-db");
+  const actual = await vi.importActual<typeof import("@workspace/resupply-db")>(
+    "@workspace/resupply-db",
+  );
   return {
     ...actual,
     getSupabaseServiceRoleClient: () => ({
@@ -364,7 +364,9 @@ describe("withIdempotency middleware", () => {
       counter += 1;
       res
         .status(201)
-        .send(JSON.stringify({ id: `patient_send_${counter}`, source: "send" }));
+        .send(
+          JSON.stringify({ id: `patient_send_${counter}`, source: "send" }),
+        );
     });
     const key = "abcdef-12345-send-json";
 

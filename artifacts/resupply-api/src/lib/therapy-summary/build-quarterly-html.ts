@@ -35,9 +35,7 @@ export interface QuarterlySummary {
 
 const COMPLIANT_MIN = 4 * 60;
 
-export function buildQuarterlySummary(
-  input: QuarterlyInput,
-): QuarterlySummary {
+export function buildQuarterlySummary(input: QuarterlyInput): QuarterlySummary {
   // Dedup by night_date — first occurrence wins (most recent ingest
   // for a date, conventionally).
   const seen = new Set<string>();
@@ -121,10 +119,7 @@ function renderHtml(
         ? "—"
         : `${fields.avgUsageHours.toFixed(1)} hrs/night`,
     ),
-    row(
-      "Average AHI",
-      fields.avgAhi == null ? "—" : fields.avgAhi.toFixed(1),
-    ),
+    row("Average AHI", fields.avgAhi == null ? "—" : fields.avgAhi.toFixed(1)),
     row(
       "Average leak rate",
       fields.avgLeakLMin == null

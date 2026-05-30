@@ -85,7 +85,9 @@ router.post("/recommend", (req, res) => {
   // bypass the on-device measurement window. Zod enforces the shape;
   // this rejects numerically out-of-range values before they reach the
   // recommender.
-  for (const field of Object.keys(PLAUSIBILITY_BOUNDS) as BoundedMeasurement[]) {
+  for (const field of Object.keys(
+    PLAUSIBILITY_BOUNDS,
+  ) as BoundedMeasurement[]) {
     const [min, max] = PLAUSIBILITY_BOUNDS[field];
     const value = measurements[field];
     if (!Number.isFinite(value) || value < min || value > max) {

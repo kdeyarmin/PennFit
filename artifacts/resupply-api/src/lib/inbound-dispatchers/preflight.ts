@@ -248,9 +248,7 @@ async function checkPaRequirement(
       outcomeStatus: "warn",
       outcomeJson: {
         reason:
-          candidates.length === 0
-            ? "no_payer_match"
-            : "ambiguous_payer_match",
+          candidates.length === 0 ? "no_payer_match" : "ambiguous_payer_match",
         searched: referral.payer_name,
         candidate_count: candidates.length,
         candidate_slugs: candidates.map((c) => c.slug),

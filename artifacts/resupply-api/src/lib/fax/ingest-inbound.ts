@@ -133,7 +133,12 @@ export async function ingestInboundFax(
   rowId = insertRes.data.id;
 
   // Step 2: try to download the media bytes. Best-effort.
-  const mediaPersisted = await tryPersistMedia(input, rowId, logger, storageImpl);
+  const mediaPersisted = await tryPersistMedia(
+    input,
+    rowId,
+    logger,
+    storageImpl,
+  );
   return { kind: "inserted", id: rowId, mediaPersisted };
 }
 
@@ -143,11 +148,7 @@ async function tryPersistMedia(
   logger: Logger,
   storageImpl?: ObjectStorageService,
 ): Promise<boolean> {
-  if (
-    !input.mediaUrl ||
-    !input.twilioAccountSid ||
-    !input.twilioAuthToken
-  ) {
+  if (!input.mediaUrl || !input.twilioAccountSid || !input.twilioAuthToken) {
     return false;
   }
 
@@ -164,10 +165,7 @@ async function tryPersistMedia(
     );
     return false;
   }
-  if (
-    parsed.protocol !== "https:" ||
-    parsed.hostname !== "api.twilio.com"
-  ) {
+  if (parsed.protocol !== "https:" || parsed.hostname !== "api.twilio.com") {
     logger.warn(
       {
         twilio_fax_sid_first8: input.twilioFaxSid.slice(0, 8),

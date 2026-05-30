@@ -80,8 +80,13 @@ export function CaregiverSection() {
       setCurrent(r.caregiver);
       setEditing(false);
     } catch (err) {
-      if (err instanceof AccountApiError && err.payload?.error === "caregiver_is_self") {
-        setError("That's your account email. Use a different email for your contact.");
+      if (
+        err instanceof AccountApiError &&
+        err.payload?.error === "caregiver_is_self"
+      ) {
+        setError(
+          "That's your account email. Use a different email for your contact.",
+        );
       } else {
         setError("Something went wrong saving the contact. Please try again.");
       }
@@ -142,9 +147,9 @@ export function CaregiverSection() {
               </p>
             </div>
             <p className="text-xs text-muted-foreground leading-relaxed">
-              We&apos;ll send {active.name.split(" ")[0]} a separate email
-              when your supplies ship and when they arrive. Claims and billing
-              detail stay private to your account.
+              We&apos;ll send {active.name.split(" ")[0]} a separate email when
+              your supplies ship and when they arrive. Claims and billing detail
+              stay private to your account.
             </p>
             <Button
               variant="outline"
@@ -160,8 +165,8 @@ export function CaregiverSection() {
         ) : (
           <div className="space-y-3">
             <p className="text-sm text-muted-foreground leading-relaxed">
-              Add one person — a spouse, adult child, or home-health aide —
-              who should receive a copy of shipped &amp; delivered notifications
+              Add one person — a spouse, adult child, or home-health aide — who
+              should receive a copy of shipped &amp; delivered notifications
               along with you.
             </p>
             <Button
@@ -180,7 +185,11 @@ export function CaregiverSection() {
           </div>
         )
       ) : (
-        <form onSubmit={handleSave} className="space-y-3" data-testid="account-caregiver-form">
+        <form
+          onSubmit={handleSave}
+          className="space-y-3"
+          data-testid="account-caregiver-form"
+        >
           <div className="space-y-2">
             <Label htmlFor="caregiver-name">Their name</Label>
             <Input

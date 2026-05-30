@@ -48,7 +48,10 @@ import type { AuthDeps } from "./types";
 const VerifyBody = z
   .object({
     challengeToken: z.string().min(1).max(2048),
-    code: z.string().regex(/^\d{6}$/, "code must be 6 digits").optional(),
+    code: z
+      .string()
+      .regex(/^\d{6}$/, "code must be 6 digits")
+      .optional(),
     recoveryCode: z.string().min(1).max(64).optional(),
   })
   .refine(
@@ -345,14 +348,10 @@ export function makeVerifySignInMfaHandler(deps: AuthDeps) {
 
       let matched: { counter: number; secretId: string } | null = null;
       for (const cand of candidates) {
-        const result = verifyTotpCode(
-          cand.secretBase32,
-          parsed.data.code!,
-          {
-            window: 1,
-            minCounter: cand.lastUsedCounter ?? undefined,
-          },
-        );
+        const result = verifyTotpCode(cand.secretBase32, parsed.data.code!, {
+          window: 1,
+          minCounter: cand.lastUsedCounter ?? undefined,
+        });
         if (result.ok && result.counter != null) {
           matched = { counter: result.counter, secretId: cand.id };
           break;

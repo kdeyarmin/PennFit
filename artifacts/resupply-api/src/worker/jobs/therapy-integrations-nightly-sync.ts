@@ -30,15 +30,18 @@ import {
 import { getIntegrationAdapters } from "../../lib/integrations/registry.js";
 import { persistTherapyNights } from "../../lib/integrations/persist-nights.js";
 import { logger } from "../../lib/logger.js";
-import { createQueueWithDlq, VENDOR_SEND_QUEUE_OPTS } from "../lib/queue-options.js";
+import {
+  createQueueWithDlq,
+  VENDOR_SEND_QUEUE_OPTS,
+} from "../lib/queue-options.js";
 
-export const THERAPY_NIGHTLY_SYNC_JOB =
-  "therapy-integrations.nightly-sync";
+export const THERAPY_NIGHTLY_SYNC_JOB = "therapy-integrations.nightly-sync";
 
 const SYSTEM_ACTOR_EMAIL = "system:worker:therapy-sync";
 const THROTTLE_MS = 200;
 
-type Json = Database["resupply"]["Tables"]["patient_integration_snapshots"]["Row"]["payload"];
+type Json =
+  Database["resupply"]["Tables"]["patient_integration_snapshots"]["Row"]["payload"];
 
 async function sleep(ms: number): Promise<void> {
   await new Promise((r) => setTimeout(r, ms));
@@ -47,7 +50,11 @@ async function sleep(ms: number): Promise<void> {
 export async function registerTherapyNightlySyncJob(
   boss: PgBoss,
 ): Promise<void> {
-  await createQueueWithDlq(boss, THERAPY_NIGHTLY_SYNC_JOB, VENDOR_SEND_QUEUE_OPTS);
+  await createQueueWithDlq(
+    boss,
+    THERAPY_NIGHTLY_SYNC_JOB,
+    VENDOR_SEND_QUEUE_OPTS,
+  );
   await boss.work(THERAPY_NIGHTLY_SYNC_JOB, async () => {
     await runTherapyNightlySync();
   });

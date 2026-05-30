@@ -44,13 +44,10 @@ export function AdminAnalyticsPage() {
     <div className="p-6 space-y-6 max-w-6xl">
       <header>
         <h1 className="text-2xl font-semibold">Clinical analytics</h1>
-        <p
-          className="text-sm mt-1"
-          style={{ color: "hsl(var(--ink-3))" }}
-        >
-          Resupply throughput, patient adherence, and CSR productivity
-          for the clinical side of the business. Storefront analytics
-          (orders, email, mask popularity) live under PennPaps.
+        <p className="text-sm mt-1" style={{ color: "hsl(var(--ink-3))" }}>
+          Resupply throughput, patient adherence, and CSR productivity for the
+          clinical side of the business. Storefront analytics (orders, email,
+          mask popularity) live under PennPaps.
         </p>
       </header>
 
@@ -207,13 +204,9 @@ function StuckEpisodesPanel() {
               className="rounded-full px-2.5 py-1 text-xs font-semibold transition-colors"
               style={{
                 backgroundColor:
-                  stage === s
-                    ? "hsl(var(--penn-gold))"
-                    : "hsl(var(--line-2))",
+                  stage === s ? "hsl(var(--penn-gold))" : "hsl(var(--line-2))",
                 color:
-                  stage === s
-                    ? "hsl(var(--penn-navy))"
-                    : "hsl(var(--ink-2))",
+                  stage === s ? "hsl(var(--penn-navy))" : "hsl(var(--ink-2))",
               }}
             >
               {STUCK_STAGE_LABEL[s]}
@@ -285,9 +278,7 @@ function StuckEpisodesTable({ episodes }: { episodes: StuckEpisode[] }) {
               {new Date(e.createdAt).toLocaleDateString()}
             </td>
             <td className="py-1.5 text-xs">
-              {e.expiresAt
-                ? new Date(e.expiresAt).toLocaleDateString()
-                : "—"}
+              {e.expiresAt ? new Date(e.expiresAt).toLocaleDateString() : "—"}
             </td>
             <td className="py-1.5 text-right">
               <a
@@ -334,7 +325,10 @@ function FunnelBody({ data }: { data: ResupplyFunnelResponse }) {
     <div className="space-y-4">
       <div className="flex gap-6 text-sm">
         <Stat label="Total in window" value={data.total.toLocaleString()} />
-        <Stat label="Fulfilled" value={data.byStage.fulfilled.toLocaleString()} />
+        <Stat
+          label="Fulfilled"
+          value={data.byStage.fulfilled.toLocaleString()}
+        />
         <Stat label="Fulfillment rate" value={pct(data.fulfillmentRate)} />
       </div>
 
@@ -578,9 +572,9 @@ function ProductivityBody({ data }: { data: CsrProductivityResponse }) {
         style={{ color: "hsl(var(--ink-3))" }}
         data-testid="csr-productivity-unavailable"
       >
-        Per-operator productivity is no longer tracked. The underlying
-        audit log was retired; this panel will return when a replacement
-        event source is wired up.
+        Per-operator productivity is no longer tracked. The underlying audit log
+        was retired; this panel will return when a replacement event source is
+        wired up.
       </p>
     );
   }
@@ -594,7 +588,10 @@ function ProductivityBody({ data }: { data: CsrProductivityResponse }) {
   return (
     <div className="space-y-3">
       <div className="text-sm">
-        <Stat label="Total actions" value={data.totalActions.toLocaleString()} />
+        <Stat
+          label="Total actions"
+          value={data.totalActions.toLocaleString()}
+        />
       </div>
       <table className="w-full text-sm">
         <thead>

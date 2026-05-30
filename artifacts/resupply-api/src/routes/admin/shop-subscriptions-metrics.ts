@@ -144,9 +144,7 @@ router.get(
 
     const churnDenominator = activeNow + canceledLast30d;
     const churnRate30d =
-      churnDenominator > 0
-        ? (canceledLast30d / churnDenominator) * 100
-        : 0;
+      churnDenominator > 0 ? (canceledLast30d / churnDenominator) * 100 : 0;
 
     const cohort = Array.from(cohortBuckets.entries())
       .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))

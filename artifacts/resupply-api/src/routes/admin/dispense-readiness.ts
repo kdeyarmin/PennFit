@@ -72,10 +72,9 @@ const patchBody = z
     overrideReason: z.string().trim().min(10).max(2000).optional(),
   })
   .strict()
-  .refine(
-    (b) => b.reviewStatus !== "overridden" || !!b.overrideReason,
-    { message: "overrideReason required when reviewStatus='overridden'" },
-  );
+  .refine((b) => b.reviewStatus !== "overridden" || !!b.overrideReason, {
+    message: "overrideReason required when reviewStatus='overridden'",
+  });
 
 router.post(
   "/admin/patients/:id/dispense-readiness-reviews",
@@ -107,32 +106,33 @@ router.post(
       insuranceCoverageId: b.insuranceCoverageId ?? null,
     });
     const supabase = getSupabaseServiceRoleClient();
-    const insertRow: Database["resupply"]["Tables"]["dispense_readiness_reviews"]["Insert"] = {
-      patient_id: idParsed.data.id,
-      hcpcs_code: b.hcpcsCode,
-      fulfillment_id: b.fulfillmentId ?? null,
-      payer_profile_id: b.payerProfileId ?? null,
-      insurance_coverage_id: b.insuranceCoverageId ?? null,
-      ready_to_dispense: out.readyToDispense,
-      overall_verdict: out.overallVerdict,
-      estimated_days_to_ready: out.ai.estimatedDaysToReady,
-      deterministic_findings_json: out.findings as unknown as Json,
-      checks_total: out.counts.total,
-      checks_passed: out.counts.passed,
-      checks_warning: out.counts.warning,
-      checks_failed: out.counts.failed,
-      ai_summary: out.ai.summary,
-      ai_action_plan_json: out.ai.actionPlan as unknown as Json,
-      ai_model: "gpt-4o-mini",
-      ai_prompt_version: DISPENSE_PROMPT_VERSION,
-      ai_confidence: out.ai.confidence,
-      ai_latency_ms: out.ai.latencyMs,
-      ai_prompt_tokens: out.ai.promptTokens,
-      ai_completion_tokens: out.ai.completionTokens,
-      ai_error_message: out.ai.errorMessage,
-      review_status: "pending",
-      created_by_email: req.adminEmail ?? "unknown",
-    };
+    const insertRow: Database["resupply"]["Tables"]["dispense_readiness_reviews"]["Insert"] =
+      {
+        patient_id: idParsed.data.id,
+        hcpcs_code: b.hcpcsCode,
+        fulfillment_id: b.fulfillmentId ?? null,
+        payer_profile_id: b.payerProfileId ?? null,
+        insurance_coverage_id: b.insuranceCoverageId ?? null,
+        ready_to_dispense: out.readyToDispense,
+        overall_verdict: out.overallVerdict,
+        estimated_days_to_ready: out.ai.estimatedDaysToReady,
+        deterministic_findings_json: out.findings as unknown as Json,
+        checks_total: out.counts.total,
+        checks_passed: out.counts.passed,
+        checks_warning: out.counts.warning,
+        checks_failed: out.counts.failed,
+        ai_summary: out.ai.summary,
+        ai_action_plan_json: out.ai.actionPlan as unknown as Json,
+        ai_model: "gpt-4o-mini",
+        ai_prompt_version: DISPENSE_PROMPT_VERSION,
+        ai_confidence: out.ai.confidence,
+        ai_latency_ms: out.ai.latencyMs,
+        ai_prompt_tokens: out.ai.promptTokens,
+        ai_completion_tokens: out.ai.completionTokens,
+        ai_error_message: out.ai.errorMessage,
+        review_status: "pending",
+        created_by_email: req.adminEmail ?? "unknown",
+      };
     const { data: row, error } = await supabase
       .schema("resupply")
       .from("dispense_readiness_reviews")

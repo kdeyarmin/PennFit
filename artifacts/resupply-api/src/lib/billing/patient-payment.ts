@@ -18,10 +18,7 @@ import {
 } from "@workspace/resupply-db";
 import type Stripe from "stripe";
 
-import {
-  getStripeClient,
-  readStripeConfigOrNull,
-} from "../stripe/config";
+import { getStripeClient, readStripeConfigOrNull } from "../stripe/config";
 import { logger } from "../logger";
 
 type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
@@ -185,7 +182,8 @@ export async function createPaymentIntent(
     .from("patient_payments")
     .update({
       stripe_payment_intent_id: intent.id,
-      status: intent.status === "requires_action" ? "requires_action" : "pending",
+      status:
+        intent.status === "requires_action" ? "requires_action" : "pending",
     })
     .eq("id", row.id);
   if (updateErr) {
@@ -339,51 +337,52 @@ export async function createPaymentCheckoutSession(
   let session: Stripe.Checkout.Session;
   try {
     const stripe = getStripeClient(config);
-    session = await stripe.checkout.sessions.create({
-      mode: "payment",
-      payment_method_types: ["card"],
-      // We only have one synthetic line item: "Patient balance —
-      // $X.XX". The breakdown is in our DB via applied_claims_json;
-      // exposing per-claim line items here would leak PHI in the
-      // hosted page (claim IDs render in the receipt).
-      line_items: [
-        {
-          quantity: 1,
-          price_data: {
-            currency: "usd",
-            unit_amount: totalCents,
-            product_data: {
-              name: "Patient balance — PennPaps",
+    session = await stripe.checkout.sessions.create(
+      {
+        mode: "payment",
+        payment_method_types: ["card"],
+        // We only have one synthetic line item: "Patient balance —
+        // $X.XX". The breakdown is in our DB via applied_claims_json;
+        // exposing per-claim line items here would leak PHI in the
+        // hosted page (claim IDs render in the receipt).
+        line_items: [
+          {
+            quantity: 1,
+            price_data: {
+              currency: "usd",
+              unit_amount: totalCents,
+              product_data: {
+                name: "Patient balance — PennPaps",
+              },
             },
           },
-        },
-      ],
-      success_url: input.successUrl,
-      cancel_url: input.cancelUrl,
-      // The metadata.patient_payment_id key is what
-      // webhook-handler.ts looks for on payment_intent.* — keep
-      // both layers stamped so a refund webhook hitting the
-      // Session also resolves to our row.
-      metadata: {
-        patient_payment_id: row.id,
-        patient_id: input.patientId,
-        source: "portal",
-        initiator_email: input.initiatorEmail,
-      },
-      payment_intent_data: {
+        ],
+        success_url: input.successUrl,
+        cancel_url: input.cancelUrl,
+        // The metadata.patient_payment_id key is what
+        // webhook-handler.ts looks for on payment_intent.* — keep
+        // both layers stamped so a refund webhook hitting the
+        // Session also resolves to our row.
         metadata: {
           patient_payment_id: row.id,
           patient_id: input.patientId,
           source: "portal",
           initiator_email: input.initiatorEmail,
         },
+        payment_intent_data: {
+          metadata: {
+            patient_payment_id: row.id,
+            patient_id: input.patientId,
+            source: "portal",
+            initiator_email: input.initiatorEmail,
+          },
+        },
       },
-    },
-    // Idempotency-key namespaced to the patient_payment row id so
-    // a network retry collapses to one Checkout Session at Stripe.
-    // Each fresh row id (= each fresh patient checkout intent)
-    // still produces a new Session.
-    { idempotencyKey: `pennpaps-patient-checkout-${row.id}` },
+      // Idempotency-key namespaced to the patient_payment row id so
+      // a network retry collapses to one Checkout Session at Stripe.
+      // Each fresh row id (= each fresh patient checkout intent)
+      // still produces a new Session.
+      { idempotencyKey: `pennpaps-patient-checkout-${row.id}` },
     );
   } catch (err) {
     await supabase
@@ -455,7 +454,8 @@ export async function applySucceededPayment(
     claimId: string;
     amountAppliedCents: number;
   };
-  const allocations = (row.applied_claims_json as unknown as Allocation[]) ?? [];
+  const allocations =
+    (row.applied_claims_json as unknown as Allocation[]) ?? [];
   for (const a of allocations) {
     // Compare-and-swap decrement. The previous shape was read-then-
     // write: read patient_responsibility_cents into JS, subtract,

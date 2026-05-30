@@ -27,8 +27,7 @@ describe("createCareOrchestratorAdapter", () => {
   it("reports configured when all creds are present", () => {
     const adapter = createCareOrchestratorAdapter({
       CARE_ORCHESTRATOR_API_BASE_URL: "https://api.example.com",
-      CARE_ORCHESTRATOR_OAUTH_TOKEN_URL:
-        "https://api.example.com/oauth/token",
+      CARE_ORCHESTRATOR_OAUTH_TOKEN_URL: "https://api.example.com/oauth/token",
       CARE_ORCHESTRATOR_CLIENT_ID: "id",
       CARE_ORCHESTRATOR_CLIENT_SECRET: "secret",
       CARE_ORCHESTRATOR_PARTNER_ID: "partner",

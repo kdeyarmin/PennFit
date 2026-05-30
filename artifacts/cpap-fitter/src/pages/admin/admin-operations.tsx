@@ -336,10 +336,12 @@ function ResultPanel({
     if (result.scanned !== undefined) items.push(["Scanned", result.scanned]);
     if (result.attempted !== undefined)
       items.push(["Attempted", result.attempted]);
-    if (result.proposed !== undefined) items.push(["Proposed", result.proposed]);
+    if (result.proposed !== undefined)
+      items.push(["Proposed", result.proposed]);
     // Success counts
     if (result.sent !== undefined) items.push(["Sent", result.sent]);
-    if (result.inserted !== undefined) items.push(["Inserted", result.inserted]);
+    if (result.inserted !== undefined)
+      items.push(["Inserted", result.inserted]);
     // Failures / skips — only when non-zero to keep the panel tidy
     if (result.failed !== undefined && result.failed > 0)
       items.push(["Failed", result.failed]);

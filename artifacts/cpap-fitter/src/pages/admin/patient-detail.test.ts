@@ -62,12 +62,8 @@ describe("patient-detail — prescription-attachment helpers removed (PR change)
   });
 
   it("does NOT import from the prescription-attachment lib path", () => {
-    expect(SRC).not.toContain(
-      '"@/lib/admin/prescription-attachment"',
-    );
-    expect(SRC).not.toContain(
-      "'@/lib/admin/prescription-attachment'",
-    );
+    expect(SRC).not.toContain('"@/lib/admin/prescription-attachment"');
+    expect(SRC).not.toContain("'@/lib/admin/prescription-attachment'");
   });
 });
 
@@ -166,9 +162,7 @@ describe("patient-detail — regression: no duplicate identifier imports", () =>
 
   it("does not import PatientPrescription from multiple sources", () => {
     // Ensure type only comes from api-client-react/admin.
-    expect(SRC).toContain(
-      '"@workspace/api-client-react/admin"',
-    );
+    expect(SRC).toContain('"@workspace/api-client-react/admin"');
     const occurrences = (SRC.match(/type PatientPrescription/g) ?? []).length;
     // Only one declaration or import; a re-export from a second path would
     // indicate a stale copy.

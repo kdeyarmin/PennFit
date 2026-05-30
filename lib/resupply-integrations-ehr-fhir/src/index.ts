@@ -22,8 +22,5 @@ export type {
 } from "./verify-jwt";
 export { fetchJwks, verifySmartJwt } from "./verify-jwt";
 
-export type {
-  ParseBundleFailure,
-  ParseBundleOutcome,
-} from "./parse-bundle";
+export type { ParseBundleFailure, ParseBundleOutcome } from "./parse-bundle";
 export { parseFhirBundle } from "./parse-bundle";

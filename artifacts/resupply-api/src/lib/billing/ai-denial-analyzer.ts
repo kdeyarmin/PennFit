@@ -75,7 +75,7 @@ const SYSTEM_PROMPT = [
   '  "mapped_codes": [',
   '    { "code": "<carc/rarc>", "system": "carc"|"rarc",',
   '      "category": "<eligibility|authorization|documentation|medical_necessity|',
-  '                  duplicate|coverage_limit|coding|cob|patient_liability|',
+  "                  duplicate|coverage_limit|coding|cob|patient_liability|",
   '                  timely_filing|other>",',
   '      "explanation": "<one sentence>" }',
   "  ],",
@@ -263,35 +263,36 @@ async function assembleDenialContext(
     .maybeSingle();
   if (!claim) return null;
 
-  const [{ data: lines }, { data: events }, { data: payer }] = await Promise.all([
-    supabase
-      .schema("resupply")
-      .from("insurance_claim_line_items")
-      .select(
-        "hcpcs_code, modifier, billed_cents, allowed_cents, paid_cents, status, denial_reason, quantity",
-      )
-      .eq("claim_id", claim.id),
-    supabase
-      .schema("resupply")
-      .from("insurance_claim_events")
-      .select("event_type, amount_cents, payer_ref, note, occurred_at")
-      .eq("claim_id", claim.id)
-      .order("occurred_at", { ascending: false })
-      .limit(20),
-    claim.payer_profile_id
-      ? supabase
-          .schema("resupply")
-          .from("payer_profiles")
-          .select(
-            // Phase 13: timely-filing + modifier + referring-NPI fields
-            // help the analyzer pick the right "fix" recommendation.
-            "display_name, line_of_business, region, requires_prior_auth_dme, timely_filing_days, required_modifiers_dme, requires_referring_provider_npi",
-          )
-          .eq("id", claim.payer_profile_id)
-          .limit(1)
-          .maybeSingle()
-      : Promise.resolve({ data: null }),
-  ]);
+  const [{ data: lines }, { data: events }, { data: payer }] =
+    await Promise.all([
+      supabase
+        .schema("resupply")
+        .from("insurance_claim_line_items")
+        .select(
+          "hcpcs_code, modifier, billed_cents, allowed_cents, paid_cents, status, denial_reason, quantity",
+        )
+        .eq("claim_id", claim.id),
+      supabase
+        .schema("resupply")
+        .from("insurance_claim_events")
+        .select("event_type, amount_cents, payer_ref, note, occurred_at")
+        .eq("claim_id", claim.id)
+        .order("occurred_at", { ascending: false })
+        .limit(20),
+      claim.payer_profile_id
+        ? supabase
+            .schema("resupply")
+            .from("payer_profiles")
+            .select(
+              // Phase 13: timely-filing + modifier + referring-NPI fields
+              // help the analyzer pick the right "fix" recommendation.
+              "display_name, line_of_business, region, requires_prior_auth_dme, timely_filing_days, required_modifiers_dme, requires_referring_provider_npi",
+            )
+            .eq("id", claim.payer_profile_id)
+            .limit(1)
+            .maybeSingle()
+        : Promise.resolve({ data: null }),
+    ]);
 
   // Pull catalog rows for any CARC/RARC code we can extract from the
   // claim or its line items. Codes show up in two places:
@@ -301,8 +302,8 @@ async function assembleDenialContext(
   const extractedCodes = new Set<{ system: "carc" | "rarc"; code: string }>();
   for (const text of [
     claim.denial_reason ?? "",
-    ...((lines ?? []).map((l) => l.denial_reason ?? "")),
-    ...((events ?? []).map((e) => e.note ?? "")),
+    ...(lines ?? []).map((l) => l.denial_reason ?? ""),
+    ...(events ?? []).map((e) => e.note ?? ""),
   ]) {
     for (const m of text.matchAll(/(CARC|RARC)\s+([A-Z]?\d+)/gi)) {
       const system = m[1]!.toLowerCase() as "carc" | "rarc";
@@ -327,9 +328,7 @@ async function assembleDenialContext(
         codeList.map((c) => c.code),
       );
     catalogEntries = (data ?? []).filter((row) =>
-      codeList.some(
-        (c) => c.system === row.code_system && c.code === row.code,
-      ),
+      codeList.some((c) => c.system === row.code_system && c.code === row.code),
     );
   }
 
@@ -471,7 +470,8 @@ function parseMapped(raw: unknown): MappedDenialCode[] {
   if (!code) return [];
   const system =
     r.system === "carc" || r.system === "rarc" ? r.system : "unknown";
-  const category = typeof r.category === "string" ? r.category.slice(0, 40) : "other";
+  const category =
+    typeof r.category === "string" ? r.category.slice(0, 40) : "other";
   const explanation =
     typeof r.explanation === "string" ? r.explanation.slice(0, 400) : "";
   return [{ code, system, category, explanation }];
@@ -489,10 +489,10 @@ function parseFixStep(raw: unknown): FixStep[] {
   return [
     {
       step,
-      fieldPath: typeof r.field_path === "string" ? r.field_path.slice(0, 120) : null,
+      fieldPath:
+        typeof r.field_path === "string" ? r.field_path.slice(0, 120) : null,
       newValue:
-        typeof r.new_value === "string" ||
-        typeof r.new_value === "number"
+        typeof r.new_value === "string" || typeof r.new_value === "number"
           ? String(r.new_value).slice(0, 240)
           : null,
     },

@@ -114,7 +114,9 @@ export function AdminOfficeAllySubmissionDetailPage({
                 className="rounded bg-emerald-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-emerald-800 disabled:opacity-60"
                 data-testid="oa-detail-resubmit"
               >
-                {resubmitMutation.isPending ? "Resubmitting…" : "↻ Resubmit batch"}
+                {resubmitMutation.isPending
+                  ? "Resubmitting…"
+                  : "↻ Resubmit batch"}
               </button>
               {actionMsg && (
                 <p
@@ -167,7 +169,9 @@ function DetailSummary({ s }: { s: OaSubmission }) {
           <StatusBadge status={s.status} />
         </Field>
         <Field label="Claim count">{s.claimCount}</Field>
-        <Field label="File size">{(s.fileSizeBytes / 1024).toFixed(1)} KB</Field>
+        <Field label="File size">
+          {(s.fileSizeBytes / 1024).toFixed(1)} KB
+        </Field>
         <Field label="ISA control #">
           <code className="font-mono text-[12px]">{s.isaControlNumber}</code>
         </Field>
@@ -183,9 +187,7 @@ function DetailSummary({ s }: { s: OaSubmission }) {
           {new Date(s.submittedAt).toLocaleString()}
         </Field>
         <Field label="Submitted by">{s.submittedByEmail}</Field>
-        <Field label="Updated">
-          {new Date(s.updatedAt).toLocaleString()}
-        </Field>
+        <Field label="Updated">{new Date(s.updatedAt).toLocaleString()}</Field>
         <Field label="999 ack file">
           <code className="font-mono text-[11px]">
             {s.ack999FileName ?? "—"}
@@ -343,15 +345,23 @@ function ClaimsTable({ claims }: { claims: OaSubmissionLinkedClaim[] }) {
                   style={{ borderColor: "hsl(var(--line-1))" }}
                 >
                   <td className="p-2" style={{ color: "hsl(var(--ink-1))" }}>
-                    {c.patientName ?? <em style={{ color: "hsl(var(--ink-3))" }}>unknown</em>}
+                    {c.patientName ?? (
+                      <em style={{ color: "hsl(var(--ink-3))" }}>unknown</em>
+                    )}
                   </td>
                   <td className="p-2" style={{ color: "hsl(var(--ink-2))" }}>
                     {c.payerName}
                   </td>
-                  <td className="p-2 font-mono text-[12px]" style={{ color: "hsl(var(--ink-3))" }}>
+                  <td
+                    className="p-2 font-mono text-[12px]"
+                    style={{ color: "hsl(var(--ink-3))" }}
+                  >
                     {c.dateOfService}
                   </td>
-                  <td className="p-2 font-mono text-[12px]" style={{ color: "hsl(var(--ink-3))" }}>
+                  <td
+                    className="p-2 font-mono text-[12px]"
+                    style={{ color: "hsl(var(--ink-3))" }}
+                  >
                     {c.claimNumber ?? "—"}
                   </td>
                   <td className="p-2">
@@ -360,7 +370,10 @@ function ClaimsTable({ claims }: { claims: OaSubmissionLinkedClaim[] }) {
                   <td className="p-2">
                     <Ack277Cell ack={c.ack277ca} />
                   </td>
-                  <td className="p-2 text-right font-mono text-[12px]" style={{ color: "hsl(var(--ink-1))" }}>
+                  <td
+                    className="p-2 text-right font-mono text-[12px]"
+                    style={{ color: "hsl(var(--ink-1))" }}
+                  >
                     ${(c.totalBilledCents / 100).toFixed(2)}
                   </td>
                   <td className="p-2 text-right">
@@ -389,11 +402,31 @@ function StatusBadge({ status }: { status: OaSubmission["status"] }) {
   > = {
     queued: { bg: "rgba(100,116,139,0.16)", fg: "#475569", label: "queued" },
     uploaded: { bg: "rgba(2,132,199,0.16)", fg: "#0284c7", label: "uploaded" },
-    accepted_999: { bg: "rgba(21,128,61,0.14)", fg: "#15803d", label: "999 OK" },
-    rejected_999: { bg: "rgba(190,18,60,0.14)", fg: "#be123c", label: "999 REJECT" },
-    accepted_277ca: { bg: "rgba(21,128,61,0.14)", fg: "#15803d", label: "277CA OK" },
-    rejected_277ca: { bg: "rgba(190,18,60,0.14)", fg: "#be123c", label: "277CA REJECT" },
-    transport_failed: { bg: "rgba(180,83,9,0.18)", fg: "#b45309", label: "transport failed" },
+    accepted_999: {
+      bg: "rgba(21,128,61,0.14)",
+      fg: "#15803d",
+      label: "999 OK",
+    },
+    rejected_999: {
+      bg: "rgba(190,18,60,0.14)",
+      fg: "#be123c",
+      label: "999 REJECT",
+    },
+    accepted_277ca: {
+      bg: "rgba(21,128,61,0.14)",
+      fg: "#15803d",
+      label: "277CA OK",
+    },
+    rejected_277ca: {
+      bg: "rgba(190,18,60,0.14)",
+      fg: "#be123c",
+      label: "277CA REJECT",
+    },
+    transport_failed: {
+      bg: "rgba(180,83,9,0.18)",
+      fg: "#b45309",
+      label: "transport failed",
+    },
   };
   const c = map[status];
   return (
@@ -406,17 +439,10 @@ function StatusBadge({ status }: { status: OaSubmission["status"] }) {
   );
 }
 
-function Ack277Cell({
-  ack,
-}: {
-  ack: OaSubmissionLinkedClaim["ack277ca"];
-}) {
+function Ack277Cell({ ack }: { ack: OaSubmissionLinkedClaim["ack277ca"] }) {
   if (!ack) {
     return (
-      <span
-        className="text-[11px]"
-        style={{ color: "hsl(var(--ink-3))" }}
-      >
+      <span className="text-[11px]" style={{ color: "hsl(var(--ink-3))" }}>
         —
       </span>
     );
@@ -446,10 +472,7 @@ function Ack277Cell({
             : ack.reason}
         </p>
       )}
-      <p
-        className="text-[10px]"
-        style={{ color: "hsl(var(--ink-3))" }}
-      >
+      <p className="text-[10px]" style={{ color: "hsl(var(--ink-3))" }}>
         {new Date(ack.receivedAt).toLocaleDateString()}
       </p>
     </div>

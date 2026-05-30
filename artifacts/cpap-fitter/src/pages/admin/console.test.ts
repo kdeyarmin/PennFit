@@ -48,10 +48,7 @@ describe("ConsoleRoute — session-required gate still present", () => {
 // App.tsx — change-password route also removed
 // ---------------------------------------------------------------------------
 describe("App.tsx — AdminChangePasswordPage route removed", () => {
-  const APP_SRC = readFileSync(
-    path.join(__dirname, "../../App.tsx"),
-    "utf8",
-  );
+  const APP_SRC = readFileSync(path.join(__dirname, "../../App.tsx"), "utf8");
 
   it("does NOT lazy-import AdminChangePasswordPage", () => {
     expect(APP_SRC).not.toContain("AdminChangePasswordPage");

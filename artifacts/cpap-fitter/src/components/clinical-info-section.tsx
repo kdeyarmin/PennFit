@@ -257,7 +257,8 @@ function DeviceForm({
   // pre-selected. When no match is found (older free-text entry),
   // start in "Other" mode with the saved values pre-filled.
   const initialMatch = useMemo(
-    () => findCpapDeviceByManufacturerModel(initial?.manufacturer, initial?.model),
+    () =>
+      findCpapDeviceByManufacturerModel(initial?.manufacturer, initial?.model),
     [initial?.manufacturer, initial?.model],
   );
   const hadInitialDevice = Boolean(initial?.manufacturer && initial?.model);

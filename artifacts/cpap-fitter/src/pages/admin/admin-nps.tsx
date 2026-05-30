@@ -61,8 +61,8 @@ export function AdminNpsPage() {
             style={{ color: "hsl(var(--ink-3))" }}
           >
             Responses to the &ldquo;how likely are you to recommend us?&rdquo;
-            question on the post-delivery follow-up email. Most recent
-            rating per order; comments shown alongside.
+            question on the post-delivery follow-up email. Most recent rating
+            per order; comments shown alongside.
           </p>
         </div>
         <div className="flex gap-1">
@@ -129,8 +129,8 @@ function NpsContent({ data }: { data: NpsRecentResponse }) {
             Recent comments
           </p>
           <p className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
-            Latest {data.comments.length} responses with a written note.
-            Click an order id to open it.
+            Latest {data.comments.length} responses with a written note. Click
+            an order id to open it.
           </p>
         </div>
         {data.comments.length === 0 ? (
@@ -204,10 +204,7 @@ function Stat({
       </p>
       <p className="text-2xl font-semibold tabular-nums mt-0.5">{value}</p>
       {sub && (
-        <p
-          className="text-[11px] mt-1"
-          style={{ color: "hsl(var(--ink-3))" }}
-        >
+        <p className="text-[11px] mt-1" style={{ color: "hsl(var(--ink-3))" }}>
           {sub}
         </p>
       )}

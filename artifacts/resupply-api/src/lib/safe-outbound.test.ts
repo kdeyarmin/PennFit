@@ -5,6 +5,7 @@
 // checking the resulting addresses.
 
 import { describe, expect, it } from "vitest";
+import { Agent } from "undici";
 
 import {
   SsrfError,
@@ -98,12 +99,12 @@ describe("assertSafeOutboundUrlSync", () => {
   });
 
   it("rejects .internal / .local", () => {
-    expect(() =>
-      assertSafeOutboundUrlSync("https://api.internal/foo"),
-    ).toThrow(SsrfError);
-    expect(() => assertSafeOutboundUrlSync("https://printer.local/foo")).toThrow(
+    expect(() => assertSafeOutboundUrlSync("https://api.internal/foo")).toThrow(
       SsrfError,
     );
+    expect(() =>
+      assertSafeOutboundUrlSync("https://printer.local/foo"),
+    ).toThrow(SsrfError);
   });
 
   it("rejects AWS metadata IP literal", () => {
@@ -122,7 +123,9 @@ describe("assertSafeOutboundUrlSync", () => {
   });
 
   it("accepts public-looking hostnames and IPs", () => {
-    expect(() => assertSafeOutboundUrlSync("https://example.com/x")).not.toThrow();
+    expect(() =>
+      assertSafeOutboundUrlSync("https://example.com/x"),
+    ).not.toThrow();
     expect(() => assertSafeOutboundUrlSync("https://8.8.8.8/x")).not.toThrow();
   });
 
@@ -134,20 +137,19 @@ describe("assertSafeOutboundUrlSync", () => {
   });
 });
 
-// ── fetchWithPinnedIp — new HttpAgent/HttpsAgent implementation ──────────────
-// The PR replaced the undici-based dispatcher with node:http/https Agent
-// to remove the undici peer-dependency. The new implementation:
-//   - Rewrites the URL hostname to the pinned IP
-//   - Sets the Host header to the original hostname
-//   - Passes the agent option (not dispatcher)
-//   - No longer validates host mismatch (removed defense-in-depth check)
-
 describe("fetchWithPinnedIp", () => {
-  // A fetch stub that records call args and returns a fixed 200 response.
+  // A fetch stub that records the (url, init) it was called with and
+  // never touches the network — these tests assert the wiring, not a
+  // live request. The actual pinning behaviour (SNI=hostname + the
+  // connection forced to the pinned IP) is a property of undici's
+  // `connect.lookup` and is intentionally not exercised here to keep the
+  // suite network-free.
   function mockFetch() {
     const calls: Array<{
       url: unknown;
-      init: (RequestInit & { agent?: unknown; dispatcher?: unknown }) | undefined;
+      init:
+        | (RequestInit & { dispatcher?: unknown; agent?: unknown })
+        | undefined;
     }> = [];
     const fn = ((url: unknown, init?: RequestInit) => {
       calls.push({ url, init: init as never });
@@ -156,74 +158,56 @@ describe("fetchWithPinnedIp", () => {
     return { fn, calls };
   }
 
-  it("rewrites the URL hostname to the pinned IP (IPv4)", async () => {
-    const { fn, calls } = mockFetch();
-    await fetchWithPinnedIp(fn, "https://example.com/path?q=1", "93.184.216.34", "example.com");
-    expect(calls).toHaveLength(1);
-    // Must connect to the pinned IP, not the original hostname.
-    const called = calls[0]!.url as string;
-    expect(called).toContain("93.184.216.34");
-    expect(called).toContain("/path");
-    expect(called).toContain("?q=1");
-  });
-
-  it("wraps IPv6 pinned IP in brackets in the URL", async () => {
-    const { fn, calls } = mockFetch();
-    await fetchWithPinnedIp(fn, "https://example.com/", "2001:4860:4860::8888", "example.com");
-    expect(calls).toHaveLength(1);
-    const called = calls[0]!.url as string;
-    expect(called).toContain("[2001:4860:4860::8888]");
-  });
-
-  it("sets the Host header to the original hostname", async () => {
-    const { fn, calls } = mockFetch();
-    await fetchWithPinnedIp(fn, "https://example.com/x", "93.184.216.34", "example.com");
-    const headers = calls[0]!.init?.headers as Headers;
-    expect(headers.get("Host")).toBe("example.com");
-  });
-
-  it("passes an agent option (not dispatcher)", async () => {
-    const { fn, calls } = mockFetch();
-    await fetchWithPinnedIp(fn, "https://example.com/", "93.184.216.34", "example.com");
-    const init = calls[0]!.init as Record<string, unknown>;
-    expect(init.agent).toBeDefined();
-    expect(init.dispatcher).toBeUndefined();
-  });
-
-  it("preserves caller-supplied init options (method, body)", async () => {
+  it("fetches the ORIGINAL url (hostname preserved for TLS SNI), never the IP", async () => {
     const { fn, calls } = mockFetch();
     await fetchWithPinnedIp(
       fn,
-      "https://example.com/api",
+      "https://example.com/jwks?x=1",
       "93.184.216.34",
       "example.com",
-      { method: "POST", body: "hello" },
+      { method: "GET" },
     );
-    expect(calls[0]!.init?.method).toBe("POST");
-    expect(calls[0]!.init?.body).toBe("hello");
+    expect(calls).toHaveLength(1);
+    // The previous (broken) implementation rewrote the host to the IP,
+    // which broke TLS SNI. The url must stay verbatim.
+    expect(calls[0].url).toBe("https://example.com/jwks?x=1");
+    expect(calls[0].init?.method).toBe("GET");
   });
 
-  it("does not override a caller-supplied Host header", async () => {
+  it("passes an undici dispatcher (the working pin) and NOT the ignored `agent` option", async () => {
     const { fn, calls } = mockFetch();
     await fetchWithPinnedIp(
       fn,
-      "https://example.com/x",
+      "https://example.com/",
       "93.184.216.34",
       "example.com",
-      { headers: { Host: "custom.example.com" } },
     );
-    const headers = calls[0]!.init?.headers as Headers;
-    expect(headers.get("Host")).toBe("custom.example.com");
+    expect(calls[0].init?.dispatcher).toBeInstanceOf(Agent);
+    // node:http/https `agent` is silently ignored by undici — must be absent.
+    expect(calls[0].init?.agent).toBeUndefined();
   });
 
-  // Regression: the previous implementation refused when url host != originalHostname
-  // (threw SsrfError("pinned_host_mismatch")). That check was removed in the PR.
-  it("no longer throws when url host differs from originalHostname (check removed)", async () => {
+  it("refuses (SsrfError) when the pinned host does not match the url host", () => {
     const { fn, calls } = mockFetch();
-    // Should NOT throw — the host-mismatch guard was removed.
-    await expect(
-      fetchWithPinnedIp(fn, "https://example.com/", "93.184.216.34", "other.example.net"),
-    ).resolves.toBeDefined();
+    expect(() =>
+      fetchWithPinnedIp(
+        fn,
+        "https://example.com/",
+        "93.184.216.34",
+        "evil.example.net",
+      ),
+    ).toThrow(SsrfError);
+    expect(calls).toHaveLength(0);
+  });
+
+  it("host-match is case-insensitive (no false positive on cased hostnames)", async () => {
+    const { fn, calls } = mockFetch();
+    await fetchWithPinnedIp(
+      fn,
+      "https://API.Example.com/x",
+      "93.184.216.34",
+      "api.example.com",
+    );
     expect(calls).toHaveLength(1);
   });
 });

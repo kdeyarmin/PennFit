@@ -62,9 +62,7 @@ export function LossClaimsPanel({ orderId }: { orderId: string }) {
   }
   if (isError) {
     return (
-      <div
-        style={{ padding: "8px 0", fontSize: 12, color: "#b91c1c" }}
-      >
+      <div style={{ padding: "8px 0", fontSize: 12, color: "#b91c1c" }}>
         {(error as Error).message}
       </div>
     );
@@ -137,13 +135,7 @@ export function LossClaimsPanel({ orderId }: { orderId: string }) {
   );
 }
 
-function ClaimRow({
-  claim,
-  orderId,
-}: {
-  claim: LossClaim;
-  orderId: string;
-}) {
+function ClaimRow({ claim, orderId }: { claim: LossClaim; orderId: string }) {
   const qc = useQueryClient();
   const patch = useMutation({
     mutationFn: (status: LossClaimStatus) =>

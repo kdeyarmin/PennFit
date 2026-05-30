@@ -69,8 +69,11 @@ export function Reminders() {
   // The manage page resolves the row by session email, so the patient
   // never has to leave the SPA, open their inbox, or click a token
   // link to edit a list they just typed.
-  const { isSignedIn, isLoaded: identityLoaded, email: identityEmail } =
-    useShopIdentity();
+  const {
+    isSignedIn,
+    isLoaded: identityLoaded,
+    email: identityEmail,
+  } = useShopIdentity();
   const [email, setEmail] = useState(identityEmail ?? "");
 
   useEffect(() => {
@@ -152,42 +155,42 @@ export function Reminders() {
 
   if (success) {
     return (
-        <main
-          id="main-content"
-          tabIndex={-1}
-          className="relative z-10 container max-w-2xl mx-auto px-4 py-12"
-        >
-          <Card className="border-0 glass-card rounded-2xl">
-            <CardHeader className="text-center space-y-3">
-              <div className="mx-auto w-14 h-14 rounded-2xl icon-halo-navy flex items-center justify-center">
-                <CheckCircle2 className="w-6 h-6" />
-              </div>
-              <CardTitle className="text-2xl tracking-tight">
-                Check your inbox
-              </CardTitle>
-              <CardDescription>{success.message}</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {success.emailStatus !== "sent" && (
-                <Alert>
-                  <MailCheck className="w-4 h-4" />
-                  <AlertTitle>Could not send the manage email</AlertTitle>
-                  <AlertDescription>
-                    Email delivery isn't configured right now — please reach out
-                    to Penn Home Medical Supply directly so we can send you your
-                    manage link.
-                  </AlertDescription>
-                </Alert>
-              )}
+      <main
+        id="main-content"
+        tabIndex={-1}
+        className="relative z-10 container max-w-2xl mx-auto px-4 py-12"
+      >
+        <Card className="border-0 glass-card rounded-2xl">
+          <CardHeader className="text-center space-y-3">
+            <div className="mx-auto w-14 h-14 rounded-2xl icon-halo-navy flex items-center justify-center">
+              <CheckCircle2 className="w-6 h-6" />
+            </div>
+            <CardTitle className="text-2xl tracking-tight">
+              Check your inbox
+            </CardTitle>
+            <CardDescription>{success.message}</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {success.emailStatus !== "sent" && (
+              <Alert>
+                <MailCheck className="w-4 h-4" />
+                <AlertTitle>Could not send the manage email</AlertTitle>
+                <AlertDescription>
+                  Email delivery isn't configured right now — please reach out
+                  to Penn Home Medical Supply directly so we can send you your
+                  manage link.
+                </AlertDescription>
+              </Alert>
+            )}
 
-              <div className="flex flex-wrap gap-3">
-                <Link href="/">
-                  <Button variant="ghost">Back to PennPaps</Button>
-                </Link>
-              </div>
-            </CardContent>
-          </Card>
-        </main>
+            <div className="flex flex-wrap gap-3">
+              <Link href="/">
+                <Button variant="ghost">Back to PennPaps</Button>
+              </Link>
+            </div>
+          </CardContent>
+        </Card>
+      </main>
     );
   }
 
@@ -204,26 +207,26 @@ export function Reminders() {
     : null;
 
   return (
-      <main
-        id="main-content"
-        tabIndex={-1}
-        className="relative z-10 container max-w-3xl mx-auto px-4 py-10"
-      >
-        <div className="text-center space-y-3 mb-8">
-          <div className="mx-auto w-14 h-14 rounded-2xl icon-halo-gold flex items-center justify-center">
-            <Truck className="w-6 h-6" />
-          </div>
-          <h1 className="text-3xl md:text-4xl font-semibold tracking-tight text-[hsl(var(--penn-navy-deep))]">
-            Never run out of CPAP supplies
-          </h1>
-          <p className="text-muted-foreground max-w-xl mx-auto">
-            Subscribe and we'll auto-ship the right replacements on your
-            schedule. Same price as one-time. Pause or cancel anytime — no phone
-            calls, no insurance hoops.
-          </p>
+    <main
+      id="main-content"
+      tabIndex={-1}
+      className="relative z-10 container max-w-3xl mx-auto px-4 py-10"
+    >
+      <div className="text-center space-y-3 mb-8">
+        <div className="mx-auto w-14 h-14 rounded-2xl icon-halo-gold flex items-center justify-center">
+          <Truck className="w-6 h-6" />
         </div>
+        <h1 className="text-3xl md:text-4xl font-semibold tracking-tight text-[hsl(var(--penn-navy-deep))]">
+          Never run out of CPAP supplies
+        </h1>
+        <p className="text-muted-foreground max-w-xl mx-auto">
+          Subscribe and we'll auto-ship the right replacements on your schedule.
+          Same price as one-time. Pause or cancel anytime — no phone calls, no
+          insurance hoops.
+        </p>
+      </div>
 
-        {/*
+      {/*
           Primary CTA — Subscribe & ship. Per the /reminders restructure
           (item #5), auto-ship is the hero. The link sends the patient
           to /shop with a fragment so the shop page can scroll to or
@@ -232,228 +235,225 @@ export function Reminders() {
           if it's missing, and the toggles default to subscribe on
           consumables anyway.
         */}
-        <div
-          className="glass-card rounded-2xl p-6 mb-6 border-l-4 border-l-[hsl(var(--penn-gold))]"
-          data-testid="reminders-subscribe-hero"
-        >
-          <div className="flex items-start gap-4">
-            <div className="hidden sm:flex w-12 h-12 rounded-xl icon-halo-gold items-center justify-center shrink-0">
-              <Repeat className="w-5 h-5" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <h2 className="text-lg font-semibold text-[hsl(var(--penn-navy))]">
-                Subscribe &amp; ship
-              </h2>
-              <p className="text-sm text-muted-foreground mt-1">
-                Pick your supplies once, get them shipped on the schedule that
-                matches your insurance allowance. Cancel anytime from your
-                account.
+      <div
+        className="glass-card rounded-2xl p-6 mb-6 border-l-4 border-l-[hsl(var(--penn-gold))]"
+        data-testid="reminders-subscribe-hero"
+      >
+        <div className="flex items-start gap-4">
+          <div className="hidden sm:flex w-12 h-12 rounded-xl icon-halo-gold items-center justify-center shrink-0">
+            <Repeat className="w-5 h-5" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <h2 className="text-lg font-semibold text-[hsl(var(--penn-navy))]">
+              Subscribe &amp; ship
+            </h2>
+            <p className="text-sm text-muted-foreground mt-1">
+              Pick your supplies once, get them shipped on the schedule that
+              matches your insurance allowance. Cancel anytime from your
+              account.
+            </p>
+            <div className="mt-4 flex flex-wrap items-center gap-3">
+              <Button asChild size="lg" data-testid="reminders-subscribe-cta">
+                <Link href="/shop#autoship">
+                  <Truck className="w-4 h-4 mr-2" />
+                  Browse auto-ship supplies
+                </Link>
+              </Button>
+              <p className="text-xs text-muted-foreground">
+                Same price as one-time · no membership fee · cancel anytime
               </p>
-              <div className="mt-4 flex flex-wrap items-center gap-3">
-                <Button asChild size="lg" data-testid="reminders-subscribe-cta">
-                  <Link href="/shop#autoship">
-                    <Truck className="w-4 h-4 mr-2" />
-                    Browse auto-ship supplies
-                  </Link>
-                </Button>
-                <p className="text-xs text-muted-foreground">
-                  Same price as one-time · no membership fee · cancel anytime
-                </p>
-              </div>
             </div>
           </div>
         </div>
+      </div>
 
-        {/*
+      {/*
           Secondary path — email-only reminders. Demoted from hero to a
           collapsed expandable card so existing users can still get the
           old behaviour, but it's no longer competing with subscribe.
           Kept fully functional and untouched below so existing tests
           and Sendgrid plumbing still work.
         */}
-        <div
-          className="text-center mb-6"
-          data-testid="reminders-email-secondary"
-        >
-          <p className="text-sm text-muted-foreground inline-flex items-center gap-2">
-            <Bell className="w-3.5 h-3.5" />
-            Not ready to subscribe?{" "}
-            <a
-              href="#email-reminders"
-              className="font-medium text-primary hover:underline"
+      <div className="text-center mb-6" data-testid="reminders-email-secondary">
+        <p className="text-sm text-muted-foreground inline-flex items-center gap-2">
+          <Bell className="w-3.5 h-3.5" />
+          Not ready to subscribe?{" "}
+          <a
+            href="#email-reminders"
+            className="font-medium text-primary hover:underline"
+          >
+            Just remind me by email →
+          </a>
+        </p>
+      </div>
+
+      <Card
+        id="email-reminders"
+        className="border-0 glass-card rounded-2xl scroll-mt-24"
+      >
+        <CardHeader>
+          <CardTitle className="text-xl flex items-center gap-2">
+            <Sparkles className="w-5 h-5 text-[hsl(var(--penn-gold))]" />
+            Sign up for free reminders
+          </CardTitle>
+          <CardDescription>
+            Adjust the intervals if your insurance covers a different cadence —
+            you can always change them later.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={onSubmit} className="space-y-6" noValidate>
+            <div className="space-y-2">
+              <Label htmlFor="reminder-email">Email</Label>
+              <Input
+                id="reminder-email"
+                type="email"
+                required
+                autoComplete="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="you@example.com"
+                data-testid="input-reminder-email"
+              />
+            </div>
+
+            {/* Honeypot — visually hidden, not focusable, ignored by humans. */}
+            <div
+              aria-hidden="true"
+              className="absolute -left-[9999px] top-auto w-px h-px overflow-hidden"
             >
-              Just remind me by email →
-            </a>
-          </p>
-        </div>
+              <Label htmlFor="reminder-website">Website (leave blank)</Label>
+              <Input
+                id="reminder-website"
+                tabIndex={-1}
+                autoComplete="off"
+                value={website}
+                onChange={(e) => setWebsite(e.target.value)}
+              />
+            </div>
 
-        <Card
-          id="email-reminders"
-          className="border-0 glass-card rounded-2xl scroll-mt-24"
-        >
-          <CardHeader>
-            <CardTitle className="text-xl flex items-center gap-2">
-              <Sparkles className="w-5 h-5 text-[hsl(var(--penn-gold))]" />
-              Sign up for free reminders
-            </CardTitle>
-            <CardDescription>
-              Adjust the intervals if your insurance covers a different cadence
-              — you can always change them later.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={onSubmit} className="space-y-6" noValidate>
-              <div className="space-y-2">
-                <Label htmlFor="reminder-email">Email</Label>
-                <Input
-                  id="reminder-email"
-                  type="email"
-                  required
-                  autoComplete="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="you@example.com"
-                  data-testid="input-reminder-email"
-                />
-              </div>
-
-              {/* Honeypot — visually hidden, not focusable, ignored by humans. */}
-              <div
-                aria-hidden="true"
-                className="absolute -left-[9999px] top-auto w-px h-px overflow-hidden"
-              >
-                <Label htmlFor="reminder-website">Website (leave blank)</Label>
-                <Input
-                  id="reminder-website"
-                  tabIndex={-1}
-                  autoComplete="off"
-                  value={website}
-                  onChange={(e) => setWebsite(e.target.value)}
-                />
-              </div>
-
-              <fieldset className="space-y-4">
-                <legend className="text-sm font-medium mb-2">
-                  What should we remind you about?
-                </legend>
-                <div className="space-y-3">
-                  {REMINDER_ITEMS.map((def) => {
-                    const state = items[def.sku];
-                    return (
-                      <div
-                        key={def.sku}
-                        className="rounded-xl border bg-background/60 p-4 space-y-3"
-                      >
-                        <div className="flex items-start gap-3">
-                          <Checkbox
-                            id={`item-${def.sku}`}
-                            checked={state.enabled}
-                            onCheckedChange={(c) =>
-                              toggleItem(def.sku, c === true)
-                            }
-                            data-testid={`checkbox-${def.sku}`}
-                          />
-                          <div className="flex-1">
+            <fieldset className="space-y-4">
+              <legend className="text-sm font-medium mb-2">
+                What should we remind you about?
+              </legend>
+              <div className="space-y-3">
+                {REMINDER_ITEMS.map((def) => {
+                  const state = items[def.sku];
+                  return (
+                    <div
+                      key={def.sku}
+                      className="rounded-xl border bg-background/60 p-4 space-y-3"
+                    >
+                      <div className="flex items-start gap-3">
+                        <Checkbox
+                          id={`item-${def.sku}`}
+                          checked={state.enabled}
+                          onCheckedChange={(c) =>
+                            toggleItem(def.sku, c === true)
+                          }
+                          data-testid={`checkbox-${def.sku}`}
+                        />
+                        <div className="flex-1">
+                          <Label
+                            htmlFor={`item-${def.sku}`}
+                            className="text-base cursor-pointer"
+                          >
+                            {def.label}
+                          </Label>
+                          <p className="text-sm text-muted-foreground mt-0.5">
+                            {def.description}
+                          </p>
+                        </div>
+                      </div>
+                      {state.enabled && (
+                        <div className="grid sm:grid-cols-2 gap-3 pl-7">
+                          <div className="space-y-1">
                             <Label
-                              htmlFor={`item-${def.sku}`}
-                              className="text-base cursor-pointer"
+                              htmlFor={`last-${def.sku}`}
+                              className="text-xs text-muted-foreground"
                             >
-                              {def.label}
+                              Last replaced
                             </Label>
-                            <p className="text-sm text-muted-foreground mt-0.5">
-                              {def.description}
-                            </p>
+                            <Input
+                              id={`last-${def.sku}`}
+                              type="date"
+                              max={todayIso()}
+                              value={state.lastReplacedAt}
+                              onChange={(e) =>
+                                updateItem(def.sku, {
+                                  lastReplacedAt: e.target.value,
+                                })
+                              }
+                              data-testid={`input-last-${def.sku}`}
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <Label
+                              htmlFor={`interval-${def.sku}`}
+                              className="text-xs text-muted-foreground"
+                            >
+                              Remind every (days)
+                            </Label>
+                            <Input
+                              id={`interval-${def.sku}`}
+                              type="number"
+                              min={1}
+                              max={365}
+                              value={state.intervalDays}
+                              onChange={(e) =>
+                                updateItem(def.sku, {
+                                  intervalDays: Math.max(
+                                    1,
+                                    Math.min(
+                                      365,
+                                      Number(e.target.value) ||
+                                        def.defaultIntervalDays,
+                                    ),
+                                  ),
+                                })
+                              }
+                              data-testid={`input-interval-${def.sku}`}
+                            />
                           </div>
                         </div>
-                        {state.enabled && (
-                          <div className="grid sm:grid-cols-2 gap-3 pl-7">
-                            <div className="space-y-1">
-                              <Label
-                                htmlFor={`last-${def.sku}`}
-                                className="text-xs text-muted-foreground"
-                              >
-                                Last replaced
-                              </Label>
-                              <Input
-                                id={`last-${def.sku}`}
-                                type="date"
-                                max={todayIso()}
-                                value={state.lastReplacedAt}
-                                onChange={(e) =>
-                                  updateItem(def.sku, {
-                                    lastReplacedAt: e.target.value,
-                                  })
-                                }
-                                data-testid={`input-last-${def.sku}`}
-                              />
-                            </div>
-                            <div className="space-y-1">
-                              <Label
-                                htmlFor={`interval-${def.sku}`}
-                                className="text-xs text-muted-foreground"
-                              >
-                                Remind every (days)
-                              </Label>
-                              <Input
-                                id={`interval-${def.sku}`}
-                                type="number"
-                                min={1}
-                                max={365}
-                                value={state.intervalDays}
-                                onChange={(e) =>
-                                  updateItem(def.sku, {
-                                    intervalDays: Math.max(
-                                      1,
-                                      Math.min(
-                                        365,
-                                        Number(e.target.value) ||
-                                          def.defaultIntervalDays,
-                                      ),
-                                    ),
-                                  })
-                                }
-                                data-testid={`input-interval-${def.sku}`}
-                              />
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </fieldset>
-
-              {(validationError || apiErrorMessage) && (
-                <Alert variant="destructive">
-                  <AlertDescription>
-                    {validationError ?? apiErrorMessage}
-                  </AlertDescription>
-                </Alert>
-              )}
-
-              <div className="flex flex-wrap gap-3">
-                <Button
-                  type="submit"
-                  disabled={isPending}
-                  data-testid="button-subscribe"
-                >
-                  {isPending ? "Saving…" : "Sign me up"}
-                </Button>
-                <Link href="/">
-                  <Button type="button" variant="ghost">
-                    Cancel
-                  </Button>
-                </Link>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
+            </fieldset>
 
-              <p className="text-xs text-muted-foreground">
-                We'll only use your email to send these reminders and any
-                follow-ups about your supplies. Unsubscribe with one click any
-                time. We never sell your email.
-              </p>
-            </form>
-          </CardContent>
-        </Card>
-      </main>
+            {(validationError || apiErrorMessage) && (
+              <Alert variant="destructive">
+                <AlertDescription>
+                  {validationError ?? apiErrorMessage}
+                </AlertDescription>
+              </Alert>
+            )}
+
+            <div className="flex flex-wrap gap-3">
+              <Button
+                type="submit"
+                disabled={isPending}
+                data-testid="button-subscribe"
+              >
+                {isPending ? "Saving…" : "Sign me up"}
+              </Button>
+              <Link href="/">
+                <Button type="button" variant="ghost">
+                  Cancel
+                </Button>
+              </Link>
+            </div>
+
+            <p className="text-xs text-muted-foreground">
+              We'll only use your email to send these reminders and any
+              follow-ups about your supplies. Unsubscribe with one click any
+              time. We never sell your email.
+            </p>
+          </form>
+        </CardContent>
+      </Card>
+    </main>
   );
 }

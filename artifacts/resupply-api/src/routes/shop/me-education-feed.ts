@@ -44,75 +44,69 @@ async function resolveSinglePatientByEmail(
   return { id: rows[0]!.id, createdAt: rows[0]!.created_at };
 }
 
-router.get(
-  "/shop/me/education-feed",
-  requireSignedIn,
-  async (req, res) => {
-    const customerEmail = req.shopCustomerEmail;
-    if (!customerEmail) {
-      // Anonymous / no email match — still surface the "new" feed
-      // so the SPA doesn't render an empty hole. This is patient-
-      // education content, not PHI; serving the new-user list to
-      // anyone signed in is fine.
-      res.json({
-        patientLinked: false,
-        stage: "new",
-        daysOnTherapy: 0,
-        articles: articlesForStage("new"),
-      });
-      return;
-    }
-
-    const patient = await resolveSinglePatientByEmail(customerEmail);
-    if (!patient) {
-      res.json({
-        patientLinked: false,
-        stage: "new",
-        daysOnTherapy: 0,
-        articles: articlesForStage("new"),
-      });
-      return;
-    }
-
-    // Earliest therapy night = therapy start.
-    const supabase = getSupabaseServiceRoleClient();
-    const { data: firstNight, error } = await supabase
-      .schema("resupply")
-      .from("patient_therapy_nights")
-      .select("night_date")
-      .eq("patient_id", patient.id)
-      .order("night_date", { ascending: true })
-      .limit(1)
-      .maybeSingle();
-    if (error) throw error;
-
-    const startedAt = firstNight?.night_date
-      ? new Date(firstNight.night_date)
-      : new Date(patient.createdAt);
-    const daysOnTherapy = Math.max(
-      0,
-      Math.floor(
-        (Date.now() - startedAt.getTime()) / 86_400_000,
-      ),
-    );
-    const stage = stageForDays(daysOnTherapy);
-
-    logger.info(
-      {
-        event: "shop.me.education-feed.served",
-        stage,
-        daysOnTherapy,
-      },
-      "shop.me.education-feed: served",
-    );
-
+router.get("/shop/me/education-feed", requireSignedIn, async (req, res) => {
+  const customerEmail = req.shopCustomerEmail;
+  if (!customerEmail) {
+    // Anonymous / no email match — still surface the "new" feed
+    // so the SPA doesn't render an empty hole. This is patient-
+    // education content, not PHI; serving the new-user list to
+    // anyone signed in is fine.
     res.json({
-      patientLinked: true,
+      patientLinked: false,
+      stage: "new",
+      daysOnTherapy: 0,
+      articles: articlesForStage("new"),
+    });
+    return;
+  }
+
+  const patient = await resolveSinglePatientByEmail(customerEmail);
+  if (!patient) {
+    res.json({
+      patientLinked: false,
+      stage: "new",
+      daysOnTherapy: 0,
+      articles: articlesForStage("new"),
+    });
+    return;
+  }
+
+  // Earliest therapy night = therapy start.
+  const supabase = getSupabaseServiceRoleClient();
+  const { data: firstNight, error } = await supabase
+    .schema("resupply")
+    .from("patient_therapy_nights")
+    .select("night_date")
+    .eq("patient_id", patient.id)
+    .order("night_date", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+
+  const startedAt = firstNight?.night_date
+    ? new Date(firstNight.night_date)
+    : new Date(patient.createdAt);
+  const daysOnTherapy = Math.max(
+    0,
+    Math.floor((Date.now() - startedAt.getTime()) / 86_400_000),
+  );
+  const stage = stageForDays(daysOnTherapy);
+
+  logger.info(
+    {
+      event: "shop.me.education-feed.served",
       stage,
       daysOnTherapy,
-      articles: articlesForStage(stage),
-    });
-  },
-);
+    },
+    "shop.me.education-feed: served",
+  );
+
+  res.json({
+    patientLinked: true,
+    stage,
+    daysOnTherapy,
+    articles: articlesForStage(stage),
+  });
+});
 
 export default router;

@@ -229,8 +229,10 @@ export async function buildRtOverview(days: number): Promise<{
   // attention), then by usage so newly-onboarded patients land near
   // the top of the active section.
   rows.sort((a, b) => {
-    const aPriority = a.activeAlerts.length > 0 ? 0 : a.nightsInWindow === 0 ? 1 : 2;
-    const bPriority = b.activeAlerts.length > 0 ? 0 : b.nightsInWindow === 0 ? 1 : 2;
+    const aPriority =
+      a.activeAlerts.length > 0 ? 0 : a.nightsInWindow === 0 ? 1 : 2;
+    const bPriority =
+      b.activeAlerts.length > 0 ? 0 : b.nightsInWindow === 0 ? 1 : 2;
     if (aPriority !== bPriority) return aPriority - bPriority;
     // Same bucket: alphabetical by last name keeps lookups stable.
     return a.lastName.localeCompare(b.lastName);
@@ -329,10 +331,7 @@ router.get("/admin/rt-overview.csv", requireAdmin, async (req, res) => {
 
   const filename = `rt-overview-${overview.asOf.slice(0, 10)}-${days}d.csv`;
   res.setHeader("Content-Type", "text/csv; charset=utf-8");
-  res.setHeader(
-    "Content-Disposition",
-    `attachment; filename="${filename}"`,
-  );
+  res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
   res.send(lines.join("\n") + "\n");
 });
 

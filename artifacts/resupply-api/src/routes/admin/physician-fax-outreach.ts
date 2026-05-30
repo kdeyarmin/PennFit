@@ -102,9 +102,9 @@ export function getFaxPublicBaseUrl(): string | null {
 export function isFaxConfigured(): boolean {
   return Boolean(
     process.env.TWILIO_ACCOUNT_SID?.trim() &&
-      process.env.TWILIO_AUTH_TOKEN?.trim() &&
-      process.env.TWILIO_FAX_FROM_NUMBER?.trim() &&
-      getFaxPublicBaseUrl(),
+    process.env.TWILIO_AUTH_TOKEN?.trim() &&
+    process.env.TWILIO_FAX_FROM_NUMBER?.trim() &&
+    getFaxPublicBaseUrl(),
   );
 }
 
@@ -120,7 +120,10 @@ interface DispatchResult {
  * row in-place and returns the outcome. Shared between the POST
  * (create + dispatch) and the POST /:id/retry (re-dispatch) handlers.
  */
-async function dispatchFax(outreachId: string, to: string): Promise<DispatchResult> {
+async function dispatchFax(
+  outreachId: string,
+  to: string,
+): Promise<DispatchResult> {
   if (!isFaxConfigured()) {
     return { status: "pending", provider: "not_configured" };
   }
@@ -220,96 +223,104 @@ async function dispatchFax(outreachId: string, to: string): Promise<DispatchResu
 // configured, else pending). Writes per-patient outreach state, so
 // `patients.update` matches the rest of the patient-tier write
 // matrix.
-router.post("/admin/physician-fax-outreach", requirePermission("patients.update"), async (req, res) => {
-  const parsed = createBody.safeParse(req.body);
-  if (!parsed.success) {
-    res.status(400).json({
-      error: "invalid_body",
-      issues: parsed.error.issues.map((i) => ({
-        path: i.path.join("."),
-        message: i.message,
-      })),
-    });
-    return;
-  }
-  const data = parsed.data;
-  const supabase = getSupabaseServiceRoleClient();
-
-  const { data: patient, error: patientErr } = await supabase
-    .schema("resupply")
-    .from("patients")
-    .select("id")
-    .eq("id", data.patientId)
-    .limit(1)
-    .maybeSingle();
-  if (patientErr) throw patientErr;
-  if (!patient) {
-    res.status(404).json({ error: "patient_not_found" });
-    return;
-  }
-  if (data.prescriptionId) {
-    const { data: rx, error: rxErr } = await supabase
-      .schema("resupply")
-      .from("prescriptions")
-      .select("id, patient_id")
-      .eq("id", data.prescriptionId)
-      .limit(1)
-      .maybeSingle();
-    if (rxErr) throw rxErr;
-    if (!rx || rx.patient_id !== data.patientId) {
-      res.status(400).json({ error: "prescription_patient_mismatch" });
+router.post(
+  "/admin/physician-fax-outreach",
+  requirePermission("patients.update"),
+  async (req, res) => {
+    const parsed = createBody.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: "invalid_body",
+        issues: parsed.error.issues.map((i) => ({
+          path: i.path.join("."),
+          message: i.message,
+        })),
+      });
       return;
     }
-  }
+    const data = parsed.data;
+    const supabase = getSupabaseServiceRoleClient();
 
-  const { data: inserted, error: insertErr } = await supabase
-    .schema("resupply")
-    .from("physician_fax_outreach")
-    .insert({
-      patient_id: data.patientId,
-      prescription_id: data.prescriptionId ?? null,
-      physician_name: data.physicianName,
-      physician_fax_e164: data.physicianFaxE164,
-      cover_letter_text: data.coverLetterText,
-      created_by_email: req.adminEmail ?? "",
-    })
-    .select("id")
-    .limit(1)
-    .maybeSingle();
-  if (insertErr) throw insertErr;
-  if (!inserted) throw new Error("physician_fax_outreach insert returned no rows");
-  const id = inserted.id;
+    const { data: patient, error: patientErr } = await supabase
+      .schema("resupply")
+      .from("patients")
+      .select("id")
+      .eq("id", data.patientId)
+      .limit(1)
+      .maybeSingle();
+    if (patientErr) throw patientErr;
+    if (!patient) {
+      res.status(404).json({ error: "patient_not_found" });
+      return;
+    }
+    if (data.prescriptionId) {
+      const { data: rx, error: rxErr } = await supabase
+        .schema("resupply")
+        .from("prescriptions")
+        .select("id, patient_id")
+        .eq("id", data.prescriptionId)
+        .limit(1)
+        .maybeSingle();
+      if (rxErr) throw rxErr;
+      if (!rx || rx.patient_id !== data.patientId) {
+        res.status(400).json({ error: "prescription_patient_mismatch" });
+        return;
+      }
+    }
 
-  const dispatch = await dispatchFax(id, data.physicianFaxE164);
+    const { data: inserted, error: insertErr } = await supabase
+      .schema("resupply")
+      .from("physician_fax_outreach")
+      .insert({
+        patient_id: data.patientId,
+        prescription_id: data.prescriptionId ?? null,
+        physician_name: data.physicianName,
+        physician_fax_e164: data.physicianFaxE164,
+        cover_letter_text: data.coverLetterText,
+        created_by_email: req.adminEmail ?? "",
+      })
+      .select("id")
+      .limit(1)
+      .maybeSingle();
+    if (insertErr) throw insertErr;
+    if (!inserted)
+      throw new Error("physician_fax_outreach insert returned no rows");
+    const id = inserted.id;
 
-  await logAudit({
-    action: "physician_fax_outreach.created",
-    adminEmail: req.adminEmail ?? null,
-    adminUserId: req.adminUserId ?? null,
-    targetTable: "physician_fax_outreach",
-    targetId: id,
-    metadata: {
-      patient_id: data.patientId,
-      has_prescription:
-        data.prescriptionId !== undefined && data.prescriptionId !== null,
-      cover_letter_length: data.coverLetterText.length,
-      provider: dispatch.provider,
+    const dispatch = await dispatchFax(id, data.physicianFaxE164);
+
+    await logAudit({
+      action: "physician_fax_outreach.created",
+      adminEmail: req.adminEmail ?? null,
+      adminUserId: req.adminUserId ?? null,
+      targetTable: "physician_fax_outreach",
+      targetId: id,
+      metadata: {
+        patient_id: data.patientId,
+        has_prescription:
+          data.prescriptionId !== undefined && data.prescriptionId !== null,
+        cover_letter_length: data.coverLetterText.length,
+        provider: dispatch.provider,
+        status: dispatch.status,
+      },
+      ip: req.ip ?? null,
+      userAgent: req.get("user-agent") ?? null,
+    }).catch((auditErr: unknown) => {
+      logger.warn(
+        { err: auditErr },
+        "physician_fax_outreach.created audit write failed",
+      );
+    });
+
+    const response: Record<string, unknown> = {
+      id,
       status: dispatch.status,
-    },
-    ip: req.ip ?? null,
-    userAgent: req.get("user-agent") ?? null,
-  }).catch((auditErr: unknown) => {
-    logger.warn({ err: auditErr }, "physician_fax_outreach.created audit write failed");
-  });
-
-  const response: Record<string, unknown> = {
-    id,
-    status: dispatch.status,
-    provider: dispatch.provider,
-  };
-  if (dispatch.dispatchError) response.dispatchError = dispatch.dispatchError;
-  res.status(201).json(response);
-});
+      provider: dispatch.provider,
+    };
+    if (dispatch.dispatchError) response.dispatchError = dispatch.dispatchError;
+    res.status(201).json(response);
+  },
+);
 
 // ---------------------------------------------------------------------------
 // POST /admin/physician-fax-outreach/:id/retry — re-fire a failed/pending row
@@ -404,7 +415,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((auditErr: unknown) => {
-      logger.warn({ err: auditErr }, "physician_fax_outreach.retried audit write failed");
+      logger.warn(
+        { err: auditErr },
+        "physician_fax_outreach.retried audit write failed",
+      );
     });
 
     const response: Record<string, unknown> = {
@@ -423,43 +437,47 @@ router.post(
 
 // Per-CSR read of the queue. `patients.read` matches the rest of
 // the patient-tier read matrix (every current role holds it).
-router.get("/admin/physician-fax-outreach", requirePermission("patients.read"), async (req, res) => {
-  const parsed = listQuery.safeParse(req.query);
-  if (!parsed.success) {
-    res.status(400).json({ error: "invalid_query" });
-    return;
-  }
-  const supabase = getSupabaseServiceRoleClient();
-  const { data: rows, error } = await supabase
-    .schema("resupply")
-    .from("physician_fax_outreach")
-    .select(
-      "id, patient_id, prescription_id, physician_name, physician_fax_e164, status, vendor_ref, vendor_name, sent_at, delivered_at, failed_at, failure_reason, created_by_email, created_at",
-    )
-    .eq("patient_id", parsed.data.patientId)
-    .order("created_at", { ascending: false })
-    .limit(50);
-  if (error) throw error;
-  res.json({
-    outreach: (rows ?? []).map((r) => ({
-      id: r.id,
-      patientId: r.patient_id,
-      prescriptionId: r.prescription_id,
-      physicianName: r.physician_name,
-      physicianFaxE164: r.physician_fax_e164,
-      status: r.status,
-      vendorRef: r.vendor_ref,
-      vendorName: r.vendor_name,
-      // PostgREST returns timestamptz as ISO string already.
-      sentAt: r.sent_at,
-      deliveredAt: r.delivered_at,
-      failedAt: r.failed_at,
-      failureReason: r.failure_reason,
-      createdByEmail: r.created_by_email,
-      createdAt: r.created_at,
-    })),
-    providerConfigured: isFaxConfigured(),
-  });
-});
+router.get(
+  "/admin/physician-fax-outreach",
+  requirePermission("patients.read"),
+  async (req, res) => {
+    const parsed = listQuery.safeParse(req.query);
+    if (!parsed.success) {
+      res.status(400).json({ error: "invalid_query" });
+      return;
+    }
+    const supabase = getSupabaseServiceRoleClient();
+    const { data: rows, error } = await supabase
+      .schema("resupply")
+      .from("physician_fax_outreach")
+      .select(
+        "id, patient_id, prescription_id, physician_name, physician_fax_e164, status, vendor_ref, vendor_name, sent_at, delivered_at, failed_at, failure_reason, created_by_email, created_at",
+      )
+      .eq("patient_id", parsed.data.patientId)
+      .order("created_at", { ascending: false })
+      .limit(50);
+    if (error) throw error;
+    res.json({
+      outreach: (rows ?? []).map((r) => ({
+        id: r.id,
+        patientId: r.patient_id,
+        prescriptionId: r.prescription_id,
+        physicianName: r.physician_name,
+        physicianFaxE164: r.physician_fax_e164,
+        status: r.status,
+        vendorRef: r.vendor_ref,
+        vendorName: r.vendor_name,
+        // PostgREST returns timestamptz as ISO string already.
+        sentAt: r.sent_at,
+        deliveredAt: r.delivered_at,
+        failedAt: r.failed_at,
+        failureReason: r.failure_reason,
+        createdByEmail: r.created_by_email,
+        createdAt: r.created_at,
+      })),
+      providerConfigured: isFaxConfigured(),
+    });
+  },
+);
 
 export default router;

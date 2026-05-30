@@ -145,7 +145,9 @@ export function LearnFirstTwoWeeks() {
           Learn
         </Link>
         <span className="mx-2">/</span>
-        <span className="text-foreground/85">Surviving the first two weeks</span>
+        <span className="text-foreground/85">
+          Surviving the first two weeks
+        </span>
       </div>
 
       {/* Header */}
@@ -161,10 +163,10 @@ export function LearnFirstTwoWeeks() {
         </h1>
         <p className="text-lg text-muted-foreground leading-relaxed">
           The biggest predictor of whether someone is still on CPAP at the
-          one-year mark is whether they got through the first 14 nights.
-          Most of the people who quit do so silently in this window —
-          frustrated by problems that almost all have a five-minute fix.
-          Here&apos;s how to survive it.
+          one-year mark is whether they got through the first 14 nights. Most of
+          the people who quit do so silently in this window — frustrated by
+          problems that almost all have a five-minute fix. Here&apos;s how to
+          survive it.
         </p>
       </header>
 
@@ -182,16 +184,18 @@ export function LearnFirstTwoWeeks() {
               </h2>
             </div>
             <p className="text-lg text-foreground/90 leading-relaxed font-medium">
-              For the first 14 nights, the goal is <span className="text-gradient-brand font-bold">not</span> good sleep,
-              not a low AHI, not a glowing therapy report. The goal is to{" "}
-              <span className="text-gradient-brand font-bold">wear the mask every night</span>
+              For the first 14 nights, the goal is{" "}
+              <span className="text-gradient-brand font-bold">not</span> good
+              sleep, not a low AHI, not a glowing therapy report. The goal is to{" "}
+              <span className="text-gradient-brand font-bold">
+                wear the mask every night
+              </span>
               .
             </p>
             <p className="text-sm text-muted-foreground leading-relaxed mt-4">
               That&apos;s it. Everything else — the comfort tuning, the seal
-              fixes, the pressure adjustments — happens on top of the
-              foundation of nightly wear. Skip a night and the adjustment
-              clock restarts.
+              fixes, the pressure adjustments — happens on top of the foundation
+              of nightly wear. Skip a night and the adjustment clock restarts.
             </p>
           </div>
         </div>
@@ -283,8 +287,8 @@ export function LearnFirstTwoWeeks() {
           </h2>
         </div>
         <p className="text-muted-foreground leading-relaxed mb-6">
-          Every one of these is fixable — usually in a single call with us or
-          a single tweak to your setup. Suffering through them is the most
+          Every one of these is fixable — usually in a single call with us or a
+          single tweak to your setup. Suffering through them is the most
           expensive choice you can make in week one.
         </p>
         <div className="grid sm:grid-cols-2 gap-4">
@@ -351,10 +355,10 @@ export function LearnFirstTwoWeeks() {
                 Don&apos;t suffer in silence.
               </div>
               <p className="text-sm text-foreground/85 leading-relaxed">
-                If something hurts, leaks, dries you out, or wakes you up
-                more than once a night — call us. Fixing it on day 3 takes
-                ten minutes; trying to live with it for three weeks
-                permanently shapes your relationship with the therapy.
+                If something hurts, leaks, dries you out, or wakes you up more
+                than once a night — call us. Fixing it on day 3 takes ten
+                minutes; trying to live with it for three weeks permanently
+                shapes your relationship with the therapy.
               </p>
             </div>
           </div>

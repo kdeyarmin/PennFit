@@ -287,7 +287,9 @@ describe("share-article.tsx — buildCanonicalUrl implementation details", () =>
 
   it("treats a basePath of '/' as empty (canonicalBasePath = '')", () => {
     // The guard: `normalised === "/" ? "" : normalised`
-    expect(SRC).toContain('canonicalBasePath = basePath === "/" ? "" : basePath');
+    expect(SRC).toContain(
+      'canonicalBasePath = basePath === "/" ? "" : basePath',
+    );
   });
 
   it("reads BASE_URL from import.meta.env.BASE_URL", () => {

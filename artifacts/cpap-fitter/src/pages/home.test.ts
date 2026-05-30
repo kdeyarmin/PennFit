@@ -67,7 +67,7 @@ describe("home — h1 headline", () => {
   it("h1 does NOT use the legacy text-white class on the headline", () => {
     // Regression guard: ensure the dark-card era class is gone.
     const h1Match = SRC.match(/<h1[^>]*>([\s\S]*?)<\/h1>/);
-    expect(h1Match?.[0] ?? "").not.toContain("text-white\"");
+    expect(h1Match?.[0] ?? "").not.toContain('text-white"');
   });
 
   it("wraps 'simple' in a hero-headline-italic span", () => {
@@ -99,7 +99,7 @@ describe("home — hero body copy text colours", () => {
   it("'PennPaps.com' bold span uses text-foreground (was text-white)", () => {
     // Check that the span wrapping PennPaps.com uses text-foreground.
     const pennPapsMatch = SRC.match(
-      /className="font-semibold text-foreground"[^>]*>PennPaps\.com/,
+      /className="font-semibold text-foreground"[^>]*>\s*PennPaps\.com/,
     );
     expect(pennPapsMatch).not.toBeNull();
   });
@@ -165,9 +165,10 @@ describe("home — hero CTA buttons", () => {
 
 describe("home — 'Ask PennBot' tertiary button", () => {
   it("uses text-muted-foreground (was text-white/70)", () => {
-    const btnMatch = SRC.match(
-      /data-testid="home-ask-pennbot"[\s\S]{0,40}className="[^"]*text-muted-foreground/,
-    ) ??
+    const btnMatch =
+      SRC.match(
+        /data-testid="home-ask-pennbot"[\s\S]{0,40}className="[^"]*text-muted-foreground/,
+      ) ??
       SRC.match(
         /className="[^"]*text-muted-foreground[^"]*"[\s\S]{0,100}data-testid="home-ask-pennbot"/,
       );

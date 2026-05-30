@@ -69,7 +69,9 @@ export function DocumentsTab({ patientId }: { patientId: string }) {
       const rows = await listPatientDocuments(patientId);
       setDocs(rows);
     } catch (err) {
-      setLoadError(err instanceof Error ? err.message : "Couldn't load documents.");
+      setLoadError(
+        err instanceof Error ? err.message : "Couldn't load documents.",
+      );
     }
   }, [patientId]);
 
@@ -202,7 +204,9 @@ export function DocumentsTab({ patientId }: { patientId: string }) {
                 font: "inherit",
               }}
             >
-              {markingAll ? "Marking all…" : `Mark all ${unreviewedCount} reviewed`}
+              {markingAll
+                ? "Marking all…"
+                : `Mark all ${unreviewedCount} reviewed`}
             </button>
           )}
           <span className="text-xs text-muted-foreground">
@@ -248,7 +252,8 @@ export function DocumentsTab({ patientId }: { patientId: string }) {
                           color: "hsl(var(--ink-1))",
                         }}
                       >
-                        {DOCUMENT_TYPE_LABELS[doc.documentType] ?? doc.documentType}
+                        {DOCUMENT_TYPE_LABELS[doc.documentType] ??
+                          doc.documentType}
                       </span>
                       <a
                         href={patientDocumentDownloadUrl(patientId, doc.id)}
@@ -272,10 +277,13 @@ export function DocumentsTab({ patientId }: { patientId: string }) {
                         <span>
                           {" "}
                           · Reviewed{" "}
-                          {new Date(doc.reviewedAt).toLocaleDateString(undefined, {
-                            month: "short",
-                            day: "numeric",
-                          })}
+                          {new Date(doc.reviewedAt).toLocaleDateString(
+                            undefined,
+                            {
+                              month: "short",
+                              day: "numeric",
+                            },
+                          )}
                         </span>
                       )}
                     </p>
@@ -330,7 +338,7 @@ export function DocumentsTab({ patientId }: { patientId: string }) {
                     <textarea
                       value={noteText}
                       onChange={(e) => setNoteText(e.target.value)}
-                      placeholder="Optional note (e.g. &quot;Insurance card verified — expires 12/2026&quot;)"
+                      placeholder='Optional note (e.g. "Insurance card verified — expires 12/2026")'
                       aria-label="Review note"
                       maxLength={500}
                       rows={2}

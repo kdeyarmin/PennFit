@@ -46,7 +46,10 @@ import { buildQuarterlySummary } from "../../lib/therapy-summary/build-quarterly
 import { sendQuarterlySummaryEmail } from "../../lib/order-emails/send-quarterly-summary-email";
 import { shouldSendEmail } from "../../lib/comm-prefs";
 import { logger } from "../../lib/logger";
-import { createQueueWithDlq, VENDOR_SEND_QUEUE_OPTS } from "../lib/queue-options";
+import {
+  createQueueWithDlq,
+  VENDOR_SEND_QUEUE_OPTS,
+} from "../lib/queue-options";
 
 const JOB_NAME = "patients.quarterly-summary";
 const JOB_CRON = "17 6 * * *"; // Daily 06:17 UTC.

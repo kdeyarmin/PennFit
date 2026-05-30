@@ -256,9 +256,7 @@ async function runStatementPass(
     .gt("patient_responsibility_cents", 0)
     .order("decision_at", { ascending: false })
     .limit(2000);
-  const patientIds = [
-    ...new Set((candidates ?? []).map((c) => c.patient_id)),
-  ];
+  const patientIds = [...new Set((candidates ?? []).map((c) => c.patient_id))];
   if (patientIds.length === 0) return;
 
   // Sum patient_responsibility_cents per patient so the placeholder
@@ -295,8 +293,7 @@ async function runStatementPass(
       .insert({
         patient_id: patientId,
         line_items_json: [] as unknown as Json,
-        total_patient_responsibility_cents:
-          totalByPatient.get(patientId) ?? 0,
+        total_patient_responsibility_cents: totalByPatient.get(patientId) ?? 0,
         delivery_method: null,
         generated_by_email: "system:auto_workflow",
       });

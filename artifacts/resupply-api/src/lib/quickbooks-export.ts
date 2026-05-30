@@ -1,6 +1,5 @@
 import { createHash } from "node:crypto";
 
-
 //
 // Two emitter functions, sharing one input shape:
 
@@ -87,9 +86,7 @@ function escCsv(value: unknown): string {
 export function renderIif(input: QuickbooksExportInput): string {
   const lines: string[] = [];
   // Comment header — QuickBooks ignores `;`-prefixed lines.
-  lines.push(
-    `; PennPaps QuickBooks export — ${escIif(input.practiceName)}`,
-  );
+  lines.push(`; PennPaps QuickBooks export — ${escIif(input.practiceName)}`);
   lines.push(`; Range: ${escIif(input.from)} to ${escIif(input.to)}`);
   lines.push(`; Rows: ${input.rows.length}`);
   lines.push("");
@@ -107,15 +104,7 @@ export function renderIif(input: QuickbooksExportInput): string {
     ].join("\t"),
   );
   lines.push(
-    [
-      "!SPL",
-      "SPLID",
-      "TRNSTYPE",
-      "DATE",
-      "ACCNT",
-      "AMOUNT",
-      "MEMO",
-    ].join("\t"),
+    ["!SPL", "SPLID", "TRNSTYPE", "DATE", "ACCNT", "AMOUNT", "MEMO"].join("\t"),
   );
   lines.push("!ENDTRNS");
 
@@ -181,8 +170,7 @@ export function renderQboCsv(input: QuickbooksExportInput): string {
   const lines: string[] = [];
   lines.push(QBO_HEADERS.join(","));
   for (const r of input.rows) {
-    const type =
-      r.kind === "REFUND" ? "Credit Memo" : "Sales Receipt";
+    const type = r.kind === "REFUND" ? "Credit Memo" : "Sales Receipt";
     lines.push(
       [
         escCsv(r.date),

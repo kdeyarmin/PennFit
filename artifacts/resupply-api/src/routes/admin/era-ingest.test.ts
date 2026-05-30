@@ -40,7 +40,11 @@ vi.mock("../../middlewares/requireAdmin", () =>
 const adminRateLimitSpy = vi.hoisted(() =>
   vi.fn(
     (_opts: { name: string; preset?: string }) =>
-      (_req: import("express").Request, _res: import("express").Response, next: import("express").NextFunction) => {
+      (
+        _req: import("express").Request,
+        _res: import("express").Response,
+        next: import("express").NextFunction,
+      ) => {
         next();
       },
   ),
@@ -88,7 +92,8 @@ import eraIngestRouter from "./era-ingest";
 const ERA_FILE_UUID = "11111111-aaaa-4bbb-8000-000000000001";
 
 // Minimal valid 835 EDI payload (> 50 chars to pass the min length check).
-const VALID_PAYLOAD = "ISA*00*          *00*          *ZZ*SENDER         *ZZ*RECEIVER       *260115*1200*^*00501*000000001*0*P*:~";
+const VALID_PAYLOAD =
+  "ISA*00*          *00*          *ZZ*SENDER         *ZZ*RECEIVER       *260115*1200*^*00501*000000001*0*P*:~";
 
 function makeApp(): Express {
   const app = express();
@@ -130,9 +135,7 @@ beforeEach(() => {
 
 describe("POST /admin/billing/era-ingest — adminRateLimit removed", () => {
   it("adminRateLimit is NOT called (middleware was removed from this route)", async () => {
-    await request(makeApp())
-      .post("/admin/billing/era-ingest")
-      .send(validBody);
+    await request(makeApp()).post("/admin/billing/era-ingest").send(validBody);
     expect(adminRateLimitSpy).not.toHaveBeenCalled();
   });
 
@@ -154,7 +157,9 @@ describe("POST /admin/billing/era-ingest — adminRateLimit removed", () => {
   it("does NOT return 429 when authenticated (no rate limiter present)", async () => {
     stubAdmin();
     stageSupabaseResponse("era_files", "select", { data: null }); // no duplicate
-    stageSupabaseResponse("era_files", "insert", { data: { id: ERA_FILE_UUID } });
+    stageSupabaseResponse("era_files", "insert", {
+      data: { id: ERA_FILE_UUID },
+    });
     stageSupabaseResponse("era_files", "update", { data: null });
     const res = await request(makeApp())
       .post("/admin/billing/era-ingest")
@@ -165,7 +170,9 @@ describe("POST /admin/billing/era-ingest — adminRateLimit removed", () => {
   it("returns 201 with summary on successful ingest", async () => {
     stubAdmin();
     stageSupabaseResponse("era_files", "select", { data: null }); // no dup
-    stageSupabaseResponse("era_files", "insert", { data: { id: ERA_FILE_UUID } });
+    stageSupabaseResponse("era_files", "insert", {
+      data: { id: ERA_FILE_UUID },
+    });
     stageSupabaseResponse("era_files", "update", { data: null });
     const res = await request(makeApp())
       .post("/admin/billing/era-ingest")
@@ -224,7 +231,9 @@ describe("POST /admin/billing/era-ingest — adminRateLimit removed", () => {
   it("returns 'partial' status when some claims are unmatched", async () => {
     stubAdmin();
     stageSupabaseResponse("era_files", "select", { data: null });
-    stageSupabaseResponse("era_files", "insert", { data: { id: ERA_FILE_UUID } });
+    stageSupabaseResponse("era_files", "insert", {
+      data: { id: ERA_FILE_UUID },
+    });
     stageSupabaseResponse("era_files", "update", { data: null });
     reconcileEraMock.mockResolvedValueOnce({
       paidClaims: 2,

@@ -40,7 +40,9 @@ describe("Migration SQL content — 0060_updated_at_triggers_phase4", () => {
   });
 
   it("does NOT reference resupply.reminder_subscriptions as the trigger target", () => {
-    expect(sql).not.toMatch(/BEFORE UPDATE ON resupply\.reminder_subscriptions/);
+    expect(sql).not.toMatch(
+      /BEFORE UPDATE ON resupply\.reminder_subscriptions/,
+    );
   });
 
   it("still creates the password_credentials trigger on resupply_auth schema", () => {
@@ -146,7 +148,9 @@ describe("Migration SQL content — 0087_accreditation_policies", () => {
 
   it("declares staff_user_id in admin_policy_attestations as text (not uuid)", () => {
     // The relevant column definition line
-    expect(sql).toMatch(/"staff_user_id" text NOT NULL REFERENCES "resupply"\."admin_users"/);
+    expect(sql).toMatch(
+      /"staff_user_id" text NOT NULL REFERENCES "resupply"\."admin_users"/,
+    );
   });
 
   it("does NOT declare staff_user_id as uuid in admin_policy_attestations", () => {
@@ -224,9 +228,7 @@ describe("Migration SQL content — 0134_billing_wave_2_next_items (dwo_document
   });
 
   it("indexes expires_on column for expiry range scans", () => {
-    expect(sql).toMatch(
-      /ON "resupply"\."dwo_documents" \("expires_on"\)/,
-    );
+    expect(sql).toMatch(/ON "resupply"\."dwo_documents" \("expires_on"\)/);
   });
 });
 
@@ -264,7 +266,9 @@ describe("Migration SQL content — 0143_inventory_reconciliation_submit_fn (ser
 
   it("includes a DO block that creates service_role if it does not exist", () => {
     expect(sql).toMatch(/DO \$\$/);
-    expect(sql).toMatch(/IF NOT EXISTS \(SELECT 1 FROM pg_roles WHERE rolname = 'service_role'\)/);
+    expect(sql).toMatch(
+      /IF NOT EXISTS \(SELECT 1 FROM pg_roles WHERE rolname = 'service_role'\)/,
+    );
     expect(sql).toMatch(/CREATE ROLE service_role NOLOGIN/);
   });
 
@@ -294,7 +298,9 @@ describe("Migration SQL content — 0164_admin_aggregate_rpcs (service_role guar
 
   it("includes a DO block that creates service_role if it does not exist", () => {
     expect(sql).toMatch(/DO \$\$/);
-    expect(sql).toMatch(/IF NOT EXISTS \(SELECT 1 FROM pg_roles WHERE rolname = 'service_role'\)/);
+    expect(sql).toMatch(
+      /IF NOT EXISTS \(SELECT 1 FROM pg_roles WHERE rolname = 'service_role'\)/,
+    );
     expect(sql).toMatch(/CREATE ROLE service_role NOLOGIN/);
   });
 

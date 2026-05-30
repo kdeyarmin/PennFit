@@ -61,14 +61,10 @@ export function AdminCoachingPage() {
             <HeartPulse className="h-6 w-6" />
             Adherence coaching
           </h1>
-          <p
-            className="text-sm mt-1"
-            style={{ color: "hsl(var(--ink-3))" }}
-          >
-            Outreach plans for patients whose CPAP adherence has slipped.
-            Each plan layers a state machine on top of a compliance alert
-            so surveyors can see "what did we do" — not just "what did
-            we notice."
+          <p className="text-sm mt-1" style={{ color: "hsl(var(--ink-3))" }}>
+            Outreach plans for patients whose CPAP adherence has slipped. Each
+            plan layers a state machine on top of a compliance alert so
+            surveyors can see "what did we do" — not just "what did we notice."
           </p>
         </div>
         <label className="flex items-center gap-2 text-xs">
@@ -104,9 +100,10 @@ function NewPlanCard() {
     },
   });
 
-  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
-    patientId.trim(),
-  );
+  const isUuid =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+      patientId.trim(),
+    );
   return (
     <Card title="Open a new plan">
       <div className="flex flex-wrap gap-2 items-end">

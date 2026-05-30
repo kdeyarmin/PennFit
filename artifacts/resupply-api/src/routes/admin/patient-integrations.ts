@@ -142,9 +142,7 @@ router.get(
       supabase
         .schema("resupply")
         .from("patient_integration_snapshots")
-        .select(
-          "id, source, payload, fetch_status, fetch_error, fetched_at",
-        )
+        .select("id, source, payload, fetch_status, fetch_error, fetched_at")
         .eq("patient_id", patientId),
     ]);
     if (linksRes.error) throw linksRes.error;
@@ -325,9 +323,9 @@ router.post(
         .eq("source", source)
         .limit(1)
         .maybeSingle();
-      const priorPayload = prior?.payload as unknown as
-        | { settings?: typeof payload.settings }
-        | null;
+      const priorPayload = prior?.payload as unknown as {
+        settings?: typeof payload.settings;
+      } | null;
       priorSettings = priorPayload?.settings ?? null;
     }
 
@@ -350,9 +348,7 @@ router.post(
         },
         { onConflict: "patient_id,source" },
       )
-      .select(
-        "id, source, payload, fetch_status, fetch_error, fetched_at",
-      )
+      .select("id, source, payload, fetch_status, fetch_error, fetched_at")
       .limit(1)
       .maybeSingle();
     if (upsertErr) throw upsertErr;

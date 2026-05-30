@@ -72,7 +72,10 @@ import { analyzeDenial } from "../../lib/billing/ai-denial-analyzer";
 import { reconcileEra } from "../../lib/billing/era-reconciler";
 import { resolveClearinghouse } from "../../lib/billing/identity-resolver";
 import { logger } from "../../lib/logger";
-import { createQueueWithDlq, VENDOR_SEND_QUEUE_OPTS } from "../lib/queue-options";
+import {
+  createQueueWithDlq,
+  VENDOR_SEND_QUEUE_OPTS,
+} from "../lib/queue-options";
 
 const JOB = "office-ally.inbound-poll";
 const CRON = "*/15 * * * *";
@@ -125,8 +128,7 @@ export async function runOfficeAllyInboundPoll(): Promise<PollStats> {
     return stats;
   }
 
-  const outboundDir =
-    clearinghouse.row.remote_outbound_dir || "outbound";
+  const outboundDir = clearinghouse.row.remote_outbound_dir || "outbound";
   const list = await listOutboundFiles(clearinghouse.config, outboundDir);
   if (!list.ok) {
     logger.warn(
@@ -155,11 +157,13 @@ export async function runOfficeAllyInboundPoll(): Promise<PollStats> {
     .from("clearinghouse_credentials")
     .update({ last_polled_at: new Date().toISOString() })
     .eq("id", clearinghouse.row.id)
-    .then(() => undefined, (err) =>
-      logger.warn(
-        { err: err instanceof Error ? err.message : String(err) },
-        "office-ally.inbound-poll: last_polled_at update failed (non-fatal)",
-      ),
+    .then(
+      () => undefined,
+      (err) =>
+        logger.warn(
+          { err: err instanceof Error ? err.message : String(err) },
+          "office-ally.inbound-poll: last_polled_at update failed (non-fatal)",
+        ),
     );
 
   await logAudit({
@@ -184,7 +188,9 @@ export async function runOfficeAllyInboundPoll(): Promise<PollStats> {
 async function processRemoteFile(
   supabase: SupabaseClient,
   clearinghouseId: string,
-  config: NonNullable<Awaited<ReturnType<typeof resolveClearinghouse>>["config"]>,
+  config: NonNullable<
+    Awaited<ReturnType<typeof resolveClearinghouse>>["config"]
+  >,
   remotePath: string,
   fileName: string,
   stats: PollStats,
@@ -220,7 +226,9 @@ async function processRemoteFile(
 
   // 3. SHA-256 dedupe across remote paths (file redelivery may
   //    arrive at a different path).
-  const sha256 = createHash("sha256").update(download.content, "utf8").digest("hex");
+  const sha256 = createHash("sha256")
+    .update(download.content, "utf8")
+    .digest("hex");
   const { data: sameContent } = await supabase
     .schema("resupply")
     .from("clearinghouse_inbound_files")
@@ -245,7 +253,10 @@ async function processRemoteFile(
         dispatch_status: "skipped",
         error_message: `Redelivery of already-processed sha256 ${sha256}`,
       })
-      .then(() => undefined, () => undefined);
+      .then(
+        () => undefined,
+        () => undefined,
+      );
     stats.skippedDuplicates += 1;
     return false;
   }
@@ -338,7 +349,9 @@ async function processRemoteFile(
       .update({
         dispatch_status: "dispatch_failed",
         error_message:
-          err instanceof Error ? err.message.slice(0, 2000) : String(err).slice(0, 2000),
+          err instanceof Error
+            ? err.message.slice(0, 2000)
+            : String(err).slice(0, 2000),
       })
       .eq("id", row.id);
     return false;
@@ -378,9 +391,8 @@ export async function dispatch999(
             parsed.errors.length > 0
               ? parsed.errors
                   .slice(0, 5)
-                  .map(
-                    (e) =>
-                      `${e.segmentId ?? "?"}/${e.errorCode ?? "?"} ${e.errorText ?? ""}`.trim(),
+                  .map((e) =>
+                    `${e.segmentId ?? "?"}/${e.errorCode ?? "?"} ${e.errorText ?? ""}`.trim(),
                   )
                   .join("; ")
                   .slice(0, 2000)
@@ -418,9 +430,10 @@ export async function dispatch277ca(
       .maybeSingle();
     if (!claim) continue;
     // Capture the payer-assigned ref number on the claim.
-    const update: Database["resupply"]["Tables"]["insurance_claims"]["Update"] = {
-      updated_at: new Date().toISOString(),
-    };
+    const update: Database["resupply"]["Tables"]["insurance_claims"]["Update"] =
+      {
+        updated_at: new Date().toISOString(),
+      };
     if (block.payerClaimRef) update.claim_number = block.payerClaimRef;
     await supabase
       .schema("resupply")

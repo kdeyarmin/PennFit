@@ -142,9 +142,7 @@ export async function createPaymentCheckoutSession(input: {
     } catch {
       // ignore
     }
-    throw new Error(
-      detail || `Checkout session create failed (${res.status})`,
-    );
+    throw new Error(detail || `Checkout session create failed (${res.status})`);
   }
   return (await res.json()) as CheckoutSessionResponse;
 }

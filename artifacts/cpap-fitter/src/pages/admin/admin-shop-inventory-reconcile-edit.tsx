@@ -1,9 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import {
-  useMutation,
-  useQuery,
-  useQueryClient,
-} from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocation, useRoute } from "wouter";
 
 import {
@@ -69,9 +65,10 @@ export function AdminShopInventoryReconcileEditPage() {
   const id = params?.id ?? "";
   const queryClient = useQueryClient();
   const [, setLocation] = useLocation();
-  const QUERY_KEY = useMemo(() => ["inventory-reconciliation", id] as const, [
-    id,
-  ]);
+  const QUERY_KEY = useMemo(
+    () => ["inventory-reconciliation", id] as const,
+    [id],
+  );
 
   const { data, isLoading, isError, error } = useQuery({
     queryKey: QUERY_KEY,
@@ -188,7 +185,9 @@ export function AdminShopInventoryReconcileEditPage() {
             color: "hsl(var(--ink-1))",
           }}
         >
-          {data ? `Reconciliation — ${data.reconciliation.periodLabel}` : "Reconciliation"}
+          {data
+            ? `Reconciliation — ${data.reconciliation.periodLabel}`
+            : "Reconciliation"}
         </h1>
       </header>
 
@@ -219,9 +218,9 @@ export function AdminShopInventoryReconcileEditPage() {
           }}
         >
           The live Stripe catalog could not be loaded. The form needs the
-          current stock counts to compute variance — please retry in a
-          minute, or set <code>STRIPE_SECRET_KEY</code> if this is a
-          preview environment.
+          current stock counts to compute variance — please retry in a minute,
+          or set <code>STRIPE_SECRET_KEY</code> if this is a preview
+          environment.
         </div>
       ) : (
         <DraftView
@@ -261,8 +260,9 @@ function DraftView({
   submitError: string | null;
   onCancel: () => void;
 }) {
-  const filledCount = drafts.filter((d) => parseCounted(d.countedQty) !== null)
-    .length;
+  const filledCount = drafts.filter(
+    (d) => parseCounted(d.countedQty) !== null,
+  ).length;
 
   return (
     <>
@@ -275,9 +275,9 @@ function DraftView({
           lineHeight: 1.5,
         }}
       >
-        Enter the physical count for each SKU you counted. Leave a row blank
-        to skip it — only filled rows are recorded. Variance updates live as
-        you type.
+        Enter the physical count for each SKU you counted. Leave a row blank to
+        skip it — only filled rows are recorded. Variance updates live as you
+        type.
       </p>
 
       <div style={{ overflowX: "auto", marginBottom: 16 }}>
@@ -304,8 +304,7 @@ function DraftView({
             {drafts.map((d) => {
               const parsed = parseCounted(d.countedQty);
               const variance = computeVariance(d.systemCount, parsed);
-              const invalid =
-                d.countedQty.trim() !== "" && parsed === null;
+              const invalid = d.countedQty.trim() !== "" && parsed === null;
               return (
                 <tr
                   key={d.productId}
@@ -439,8 +438,7 @@ function DraftView({
             fontSize: 14,
             fontWeight: 600,
             borderRadius: 6,
-            cursor:
-              submitting || filledCount === 0 ? "not-allowed" : "pointer",
+            cursor: submitting || filledCount === 0 ? "not-allowed" : "pointer",
           }}
         >
           {submitting

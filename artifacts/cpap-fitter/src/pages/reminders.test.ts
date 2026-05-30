@@ -85,7 +85,9 @@ describe("reminders — willSkipTokenStep redirect logic (P5)", () => {
   it("compares emails case-insensitively (toLowerCase on both sides)", () => {
     // The Supabase email column stores lowercase; the identity cookie may
     // retain mixed case. Both sides must be lowercased for a reliable match.
-    expect(SRC).toMatch(/submittedEmail\.toLowerCase\(\)\s*===\s*identityEmail\.toLowerCase\(\)/);
+    expect(SRC).toMatch(
+      /submittedEmail\.toLowerCase\(\)\s*===\s*identityEmail\.toLowerCase\(\)/,
+    );
   });
 
   it("redirects to /reminders/manage via setLocation when willSkipTokenStep", () => {
@@ -188,7 +190,7 @@ describe("reminders — submittedEmail variable (P5 hygiene)", () => {
 describe("reminders — honeypot field still present", () => {
   it("renders a honeypot website input that is aria-hidden", () => {
     expect(SRC).toContain('aria-hidden="true"');
-    expect(SRC).toContain("id=\"reminder-website\"");
+    expect(SRC).toContain('id="reminder-website"');
   });
 
   it("passes honeypot value to the API (bot detector on server side)", () => {
@@ -213,13 +215,17 @@ describe("reminders — email pre-fill useEffect implementation detail", () => {
   it("the guard bails early when identityEmail is null (guest stays empty)", () => {
     // !identityEmail covers both null and empty-string, protecting against
     // a setEmail call with a null/empty value that would clear a typed email.
-    expect(SRC).toMatch(/if\s*\(\s*!identityLoaded\s*\|\|\s*!identityEmail\s*\)\s*return/);
+    expect(SRC).toMatch(
+      /if\s*\(\s*!identityLoaded\s*\|\|\s*!identityEmail\s*\)\s*return/,
+    );
   });
 
   it("setEmail uses a functional update to avoid overwriting user-typed input", () => {
     // setEmail((prev) => prev || identityEmail) means a user who has already
     // started typing their email won't have it replaced by the identity value.
-    expect(SRC).toMatch(/setEmail\(\(prev\)\s*=>\s*prev\s*\|\|\s*identityEmail\)/);
+    expect(SRC).toMatch(
+      /setEmail\(\(prev\)\s*=>\s*prev\s*\|\|\s*identityEmail\)/,
+    );
   });
 
   it("email state is initialised as empty string before the effect runs", () => {

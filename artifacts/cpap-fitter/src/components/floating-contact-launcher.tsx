@@ -55,10 +55,7 @@ import {
   SUPPORT_PHONE_DISPLAY,
   SUPPORT_PHONE_E164,
 } from "@/lib/contact";
-import {
-  streamChatMessage,
-  type ChatMessage,
-} from "@/lib/chat-api";
+import { streamChatMessage, type ChatMessage } from "@/lib/chat-api";
 import {
   PENNBOT_OPEN_EVENT,
   clearAskFromUrl,
@@ -441,9 +438,7 @@ export function FloatingContactLauncher() {
       const onChunk = (chunk: string) => {
         setMessages((prev) =>
           prev.map((m) =>
-            m.id === placeholder.id
-              ? { ...m, content: m.content + chunk }
-              : m,
+            m.id === placeholder.id ? { ...m, content: m.content + chunk } : m,
           ),
         );
       };
@@ -619,7 +614,8 @@ export function FloatingContactLauncher() {
     if (typeof window === "undefined") return undefined;
     function handler(e: Event) {
       const detail =
-        (e as CustomEvent<PennBotOpenDetail>).detail ?? ({} as PennBotOpenDetail);
+        (e as CustomEvent<PennBotOpenDetail>).detail ??
+        ({} as PennBotOpenDetail);
       setOpen(true);
       setTab(detail.contactTab ? "contact" : "chat");
       if (detail.prefill) {
@@ -690,214 +686,214 @@ export function FloatingContactLauncher() {
             aria-label="PennPaps support"
             data-testid="floating-contact-popover"
           >
-          <div className="px-4 py-3 bg-[hsl(var(--penn-navy))] text-white flex items-center justify-between shrink-0">
-            <div>
-              <div className="text-sm font-semibold">PennPaps support</div>
-              <div className="text-[11px] opacity-80">{SUPPORT_HOURS}</div>
-            </div>
-            <div className="flex items-center gap-1">
-              {tab === "chat" && !isFreshConversation && (
-                <button
-                  type="button"
-                  onClick={resetConversation}
-                  className="rounded-md hover:bg-white/10 px-2 py-1 text-[11px] uppercase tracking-wide opacity-80 hover:opacity-100"
-                  aria-label="Start a new conversation"
-                  data-testid="floating-contact-reset"
-                >
-                  New chat
-                </button>
-              )}
-              <button
-                type="button"
-                onClick={() => setOpen(false)}
-                className="rounded-md hover:bg-white/10 p-1"
-                aria-label="Close"
-                data-testid="floating-contact-close"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-          </div>
-
-          <div
-            role="tablist"
-            aria-label="Support channels"
-            className="flex border-b border-border shrink-0"
-          >
-            <TabButton
-              active={tab === "chat"}
-              onClick={() => setTab("chat")}
-              testId="floating-contact-tab-chat"
-            >
-              <Sparkles className="h-3.5 w-3.5" /> Ask PennBot
-            </TabButton>
-            <TabButton
-              active={tab === "contact"}
-              onClick={() => setTab("contact")}
-              testId="floating-contact-tab-contact"
-            >
-              <Phone className="h-3.5 w-3.5" /> Contact
-            </TabButton>
-          </div>
-
-          {tab === "chat" ? (
-            <div
-              role="tabpanel"
-              aria-label="Ask PennBot"
-              className="flex-1 flex flex-col min-h-0"
-            >
-              <div
-                ref={scrollRef}
-                onScroll={handleScroll}
-                className="flex-1 overflow-y-auto px-3 py-3 space-y-2 bg-secondary/20"
-                data-testid="floating-contact-messages"
-                aria-live="polite"
-                aria-busy={sending}
-              >
-                {messages.map((m) => (
-                  <ChatBubble
-                    key={m.id}
-                    message={m}
-                    onRetry={
-                      m.id === messages.at(-1)?.id ? retryLastTurn : undefined
-                    }
-                    onSwitchToContact={
-                      m.id === messages.at(-1)?.id
-                        ? () => setTab("contact")
-                        : undefined
-                    }
-                    onVote={voteOnMessage}
-                  />
-                ))}
+            <div className="px-4 py-3 bg-[hsl(var(--penn-navy))] text-white flex items-center justify-between shrink-0">
+              <div>
+                <div className="text-sm font-semibold">PennPaps support</div>
+                <div className="text-[11px] opacity-80">{SUPPORT_HOURS}</div>
               </div>
-
-              {isFreshConversation && !sending && (
-                <div
-                  className="px-3 py-2 border-t border-border/60 flex flex-wrap gap-1.5 shrink-0"
-                  data-testid="floating-contact-suggestions"
-                >
-                  {suggestions.map((p) => (
-                    <button
-                      key={p}
-                      type="button"
-                      onClick={() => void send(p, { suggested: true })}
-                      className="text-[11px] leading-tight px-2 py-1 rounded-full border border-border bg-background hover:border-[hsl(var(--penn-navy))]/60 hover:text-[hsl(var(--penn-navy))] transition-colors"
-                    >
-                      {p}
-                    </button>
-                  ))}
-                </div>
-              )}
-
-              <form
-                onSubmit={onSubmit}
-                className="border-t border-border p-2 flex items-end gap-2 shrink-0"
-              >
-                <label htmlFor="floating-contact-input" className="sr-only">
-                  Type a question for PennBot
-                </label>
-                <textarea
-                  id="floating-contact-input"
-                  ref={inputRef}
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  onKeyDown={onInputKeyDown}
-                  placeholder="Ask about masks, supplies, insurance…"
-                  rows={1}
-                  maxLength={1500}
-                  disabled={sending}
-                  data-testid="floating-contact-input"
-                  className="flex-1 resize-none rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[hsl(var(--penn-navy))]/30 disabled:opacity-60 max-h-24"
-                />
-                {sending ? (
+              <div className="flex items-center gap-1">
+                {tab === "chat" && !isFreshConversation && (
                   <button
                     type="button"
-                    onClick={stop}
-                    aria-label="Stop generating"
-                    data-testid="floating-contact-stop"
-                    className="h-9 w-9 rounded-md bg-[hsl(var(--penn-navy))] text-white flex items-center justify-center hover:bg-[hsl(var(--penn-navy-deep))] transition-colors"
+                    onClick={resetConversation}
+                    className="rounded-md hover:bg-white/10 px-2 py-1 text-[11px] uppercase tracking-wide opacity-80 hover:opacity-100"
+                    aria-label="Start a new conversation"
+                    data-testid="floating-contact-reset"
                   >
-                    <Square className="h-3.5 w-3.5" fill="currentColor" />
-                  </button>
-                ) : (
-                  <button
-                    type="submit"
-                    disabled={input.trim().length === 0}
-                    aria-label="Send"
-                    data-testid="floating-contact-send"
-                    className="h-9 w-9 rounded-md bg-[hsl(var(--penn-navy))] text-white flex items-center justify-center hover:bg-[hsl(var(--penn-navy-deep))] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                  >
-                    <Send className="h-4 w-4" />
+                    New chat
                   </button>
                 )}
-              </form>
-              <p className="text-[10px] text-muted-foreground px-3 pb-2 leading-tight shrink-0">
-                PennBot is an AI assistant. For clinical or account-specific
-                questions, please call us.
-              </p>
-            </div>
-          ) : (
-            <div
-              role="tabpanel"
-              aria-label="Contact options"
-              className="flex-1 overflow-y-auto p-2"
-            >
-              <a
-                href={`tel:${SUPPORT_PHONE_E164}`}
-                className="flex items-center gap-3 rounded-lg px-3 py-2 hover:bg-secondary/40"
-                data-testid="floating-contact-phone"
-              >
-                <span className="h-9 w-9 rounded-lg bg-[hsl(var(--penn-navy)/0.10)] flex items-center justify-center">
-                  <Phone className="h-4 w-4 text-[hsl(var(--penn-navy))]" />
-                </span>
-                <span className="flex-1 min-w-0">
-                  <span className="block text-sm font-medium text-foreground">
-                    Call us
-                  </span>
-                  <span className="block text-xs text-muted-foreground">
-                    {SUPPORT_PHONE_DISPLAY}
-                  </span>
-                </span>
-              </a>
-              <a
-                href={`mailto:${SUPPORT_EMAIL}`}
-                className="flex items-center gap-3 rounded-lg px-3 py-2 hover:bg-secondary/40"
-                data-testid="floating-contact-email"
-              >
-                <span className="h-9 w-9 rounded-lg bg-[hsl(var(--penn-navy)/0.10)] flex items-center justify-center">
-                  <Mail className="h-4 w-4 text-[hsl(var(--penn-navy))]" />
-                </span>
-                <span className="flex-1 min-w-0">
-                  <span className="block text-sm font-medium text-foreground">
-                    Email
-                  </span>
-                  <span className="block text-xs text-muted-foreground truncate">
-                    {SUPPORT_EMAIL}
-                  </span>
-                </span>
-              </a>
-              <SignedIn>
-                <Link
-                  href="/account#messages"
-                  className="flex items-center gap-3 rounded-lg px-3 py-2 hover:bg-secondary/40"
-                  data-testid="floating-contact-thread"
+                <button
+                  type="button"
+                  onClick={() => setOpen(false)}
+                  className="rounded-md hover:bg-white/10 p-1"
+                  aria-label="Close"
+                  data-testid="floating-contact-close"
                 >
-                  <span className="h-9 w-9 rounded-lg bg-[hsl(var(--penn-gold)/0.20)] flex items-center justify-center">
-                    <MessageCircle className="h-4 w-4 text-[hsl(var(--penn-navy))]" />
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+
+            <div
+              role="tablist"
+              aria-label="Support channels"
+              className="flex border-b border-border shrink-0"
+            >
+              <TabButton
+                active={tab === "chat"}
+                onClick={() => setTab("chat")}
+                testId="floating-contact-tab-chat"
+              >
+                <Sparkles className="h-3.5 w-3.5" /> Ask PennBot
+              </TabButton>
+              <TabButton
+                active={tab === "contact"}
+                onClick={() => setTab("contact")}
+                testId="floating-contact-tab-contact"
+              >
+                <Phone className="h-3.5 w-3.5" /> Contact
+              </TabButton>
+            </div>
+
+            {tab === "chat" ? (
+              <div
+                role="tabpanel"
+                aria-label="Ask PennBot"
+                className="flex-1 flex flex-col min-h-0"
+              >
+                <div
+                  ref={scrollRef}
+                  onScroll={handleScroll}
+                  className="flex-1 overflow-y-auto px-3 py-3 space-y-2 bg-secondary/20"
+                  data-testid="floating-contact-messages"
+                  aria-live="polite"
+                  aria-busy={sending}
+                >
+                  {messages.map((m) => (
+                    <ChatBubble
+                      key={m.id}
+                      message={m}
+                      onRetry={
+                        m.id === messages.at(-1)?.id ? retryLastTurn : undefined
+                      }
+                      onSwitchToContact={
+                        m.id === messages.at(-1)?.id
+                          ? () => setTab("contact")
+                          : undefined
+                      }
+                      onVote={voteOnMessage}
+                    />
+                  ))}
+                </div>
+
+                {isFreshConversation && !sending && (
+                  <div
+                    className="px-3 py-2 border-t border-border/60 flex flex-wrap gap-1.5 shrink-0"
+                    data-testid="floating-contact-suggestions"
+                  >
+                    {suggestions.map((p) => (
+                      <button
+                        key={p}
+                        type="button"
+                        onClick={() => void send(p, { suggested: true })}
+                        className="text-[11px] leading-tight px-2 py-1 rounded-full border border-border bg-background hover:border-[hsl(var(--penn-navy))]/60 hover:text-[hsl(var(--penn-navy))] transition-colors"
+                      >
+                        {p}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                <form
+                  onSubmit={onSubmit}
+                  className="border-t border-border p-2 flex items-end gap-2 shrink-0"
+                >
+                  <label htmlFor="floating-contact-input" className="sr-only">
+                    Type a question for PennBot
+                  </label>
+                  <textarea
+                    id="floating-contact-input"
+                    ref={inputRef}
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    onKeyDown={onInputKeyDown}
+                    placeholder="Ask about masks, supplies, insurance…"
+                    rows={1}
+                    maxLength={1500}
+                    disabled={sending}
+                    data-testid="floating-contact-input"
+                    className="flex-1 resize-none rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[hsl(var(--penn-navy))]/30 disabled:opacity-60 max-h-24"
+                  />
+                  {sending ? (
+                    <button
+                      type="button"
+                      onClick={stop}
+                      aria-label="Stop generating"
+                      data-testid="floating-contact-stop"
+                      className="h-9 w-9 rounded-md bg-[hsl(var(--penn-navy))] text-white flex items-center justify-center hover:bg-[hsl(var(--penn-navy-deep))] transition-colors"
+                    >
+                      <Square className="h-3.5 w-3.5" fill="currentColor" />
+                    </button>
+                  ) : (
+                    <button
+                      type="submit"
+                      disabled={input.trim().length === 0}
+                      aria-label="Send"
+                      data-testid="floating-contact-send"
+                      className="h-9 w-9 rounded-md bg-[hsl(var(--penn-navy))] text-white flex items-center justify-center hover:bg-[hsl(var(--penn-navy-deep))] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    >
+                      <Send className="h-4 w-4" />
+                    </button>
+                  )}
+                </form>
+                <p className="text-[10px] text-muted-foreground px-3 pb-2 leading-tight shrink-0">
+                  PennBot is an AI assistant. For clinical or account-specific
+                  questions, please call us.
+                </p>
+              </div>
+            ) : (
+              <div
+                role="tabpanel"
+                aria-label="Contact options"
+                className="flex-1 overflow-y-auto p-2"
+              >
+                <a
+                  href={`tel:${SUPPORT_PHONE_E164}`}
+                  className="flex items-center gap-3 rounded-lg px-3 py-2 hover:bg-secondary/40"
+                  data-testid="floating-contact-phone"
+                >
+                  <span className="h-9 w-9 rounded-lg bg-[hsl(var(--penn-navy)/0.10)] flex items-center justify-center">
+                    <Phone className="h-4 w-4 text-[hsl(var(--penn-navy))]" />
                   </span>
                   <span className="flex-1 min-w-0">
                     <span className="block text-sm font-medium text-foreground">
-                      Message your CSR
+                      Call us
                     </span>
                     <span className="block text-xs text-muted-foreground">
-                      Replies show up in your account
+                      {SUPPORT_PHONE_DISPLAY}
                     </span>
                   </span>
-                  <ArrowRight className="h-4 w-4 text-muted-foreground" />
-                </Link>
-              </SignedIn>
-            </div>
-          )}
+                </a>
+                <a
+                  href={`mailto:${SUPPORT_EMAIL}`}
+                  className="flex items-center gap-3 rounded-lg px-3 py-2 hover:bg-secondary/40"
+                  data-testid="floating-contact-email"
+                >
+                  <span className="h-9 w-9 rounded-lg bg-[hsl(var(--penn-navy)/0.10)] flex items-center justify-center">
+                    <Mail className="h-4 w-4 text-[hsl(var(--penn-navy))]" />
+                  </span>
+                  <span className="flex-1 min-w-0">
+                    <span className="block text-sm font-medium text-foreground">
+                      Email
+                    </span>
+                    <span className="block text-xs text-muted-foreground truncate">
+                      {SUPPORT_EMAIL}
+                    </span>
+                  </span>
+                </a>
+                <SignedIn>
+                  <Link
+                    href="/account#messages"
+                    className="flex items-center gap-3 rounded-lg px-3 py-2 hover:bg-secondary/40"
+                    data-testid="floating-contact-thread"
+                  >
+                    <span className="h-9 w-9 rounded-lg bg-[hsl(var(--penn-gold)/0.20)] flex items-center justify-center">
+                      <MessageCircle className="h-4 w-4 text-[hsl(var(--penn-navy))]" />
+                    </span>
+                    <span className="flex-1 min-w-0">
+                      <span className="block text-sm font-medium text-foreground">
+                        Message your CSR
+                      </span>
+                      <span className="block text-xs text-muted-foreground">
+                        Replies show up in your account
+                      </span>
+                    </span>
+                    <ArrowRight className="h-4 w-4 text-muted-foreground" />
+                  </Link>
+                </SignedIn>
+              </div>
+            )}
           </div>
         </>
       )}
@@ -1010,7 +1006,8 @@ function renderInlineMarkdown(text: string, keyPrefix: string): ReactNode[] {
 }
 
 function linkifyPaths(text: string, keyPrefix: string): ReactNode[] {
-  const pathPattern = /(\s|^)(\/[a-z][a-z0-9-]*(?:\/[a-z0-9-]+)*)(?=$|[\s.,;:!?)])/gi;
+  const pathPattern =
+    /(\s|^)(\/[a-z][a-z0-9-]*(?:\/[a-z0-9-]+)*)(?=$|[\s.,;:!?)])/gi;
   const out: ReactNode[] = [];
   let lastIndex = 0;
   let key = 0;
@@ -1107,8 +1104,7 @@ function ChatBubble({
   onVote?: (id: number, kind: "up" | "down") => void;
 }) {
   const isUser = message.role === "user";
-  const showTypingIndicator =
-    message.pending && message.content.length === 0;
+  const showTypingIndicator = message.pending && message.content.length === 0;
   const [copied, setCopied] = useState(false);
 
   async function copyContent() {
@@ -1134,10 +1130,7 @@ function ChatBubble({
 
   return (
     <div
-      className={cn(
-        "group flex",
-        isUser ? "justify-end" : "justify-start",
-      )}
+      className={cn("group flex", isUser ? "justify-end" : "justify-start")}
       data-testid={isUser ? "chat-bubble-user" : "chat-bubble-assistant"}
     >
       <div className="relative max-w-[88%]">

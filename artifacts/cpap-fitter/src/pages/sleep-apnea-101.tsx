@@ -36,8 +36,14 @@ const sections: Section[] = [
     title: "Sleep apnea: the disease.",
     body: "Sleep apnea is a sleep-disordered breathing condition where the airway repeatedly closes (obstructive), or the brain stops signaling breath (central). Affects ~30 million US adults — 80% of them undiagnosed.",
     links: [
-      { href: "/learn/sleep-apnea-explained", label: "What sleep apnea really is" },
-      { href: "/learn/sleep-apnea-quiz", label: "Take the STOP-BANG self-screener" },
+      {
+        href: "/learn/sleep-apnea-explained",
+        label: "What sleep apnea really is",
+      },
+      {
+        href: "/learn/sleep-apnea-quiz",
+        label: "Take the STOP-BANG self-screener",
+      },
       { href: "/learn/myths-debunked", label: "Common myths, debunked" },
     ],
   },
@@ -47,9 +53,18 @@ const sections: Section[] = [
     title: "Why treatment isn't optional.",
     body: "Untreated sleep apnea drives hypertension, AFib, stroke, type 2 diabetes, depression, and a 2.5× crash risk on the road. Most of it reverses with consistent therapy.",
     links: [
-      { href: "/learn/health-risks", label: "Hidden health costs of untreated apnea" },
-      { href: "/learn/sleep-apnea-heart-health", label: "Sleep apnea & your heart" },
-      { href: "/learn/pap-therapy-benefits", label: "What treatment actually feels like" },
+      {
+        href: "/learn/health-risks",
+        label: "Hidden health costs of untreated apnea",
+      },
+      {
+        href: "/learn/sleep-apnea-heart-health",
+        label: "Sleep apnea & your heart",
+      },
+      {
+        href: "/learn/pap-therapy-benefits",
+        label: "What treatment actually feels like",
+      },
     ],
   },
   {
@@ -69,9 +84,15 @@ const sections: Section[] = [
     title: "Living with therapy.",
     body: "The first two weeks are the hardest — and the biggest dropout window. Most patients who survive that adjustment are still on therapy a decade later.",
     links: [
-      { href: "/learn/first-two-weeks", label: "Surviving the first two weeks" },
+      {
+        href: "/learn/first-two-weeks",
+        label: "Surviving the first two weeks",
+      },
       { href: "/learn/device-setup", label: "Setting up your CPAP / BiPAP" },
-      { href: "/learn/cleaning-routine", label: "Daily, weekly, monthly cleaning" },
+      {
+        href: "/learn/cleaning-routine",
+        label: "Daily, weekly, monthly cleaning",
+      },
     ],
   },
   {
@@ -160,8 +181,8 @@ export function SleepApnea101() {
             <p className="text-base sm:text-lg md:text-xl text-white/85 leading-relaxed mb-9 max-w-2xl mx-auto">
               What sleep apnea is. Why it matters. How treatment works. What
               real life with a mask looks like. How to pay for it. Twenty
-              long-form articles and a clinical-grade fitter, organized for
-              the way new patients actually search.
+              long-form articles and a clinical-grade fitter, organized for the
+              way new patients actually search.
             </p>
 
             <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
@@ -207,8 +228,8 @@ export function SleepApnea101() {
             Where are you in this?
           </h2>
           <p className="text-muted-foreground leading-relaxed">
-            Patients arrive at this page in four different places. Jump
-            straight to the article that matches yours.
+            Patients arrive at this page in four different places. Jump straight
+            to the article that matches yours.
           </p>
         </div>
 
@@ -292,8 +313,8 @@ export function SleepApnea101() {
             Six topics. Twenty deep-dive articles.
           </h2>
           <p className="text-muted-foreground leading-relaxed">
-            Every section below maps to a primary explainer plus the
-            practical articles that surround it. Start anywhere.
+            Every section below maps to a primary explainer plus the practical
+            articles that surround it. Start anywhere.
           </p>
         </div>
 
@@ -417,9 +438,9 @@ export function SleepApnea101() {
           Reading isn&apos;t therapy. A mask is.
         </h2>
         <p className="text-muted-foreground leading-relaxed max-w-xl mx-auto mb-7">
-          Whenever you&apos;re ready to take the next step, the on-device
-          fitter matches you to a CPAP mask in three minutes. No images leave
-          your browser.
+          Whenever you&apos;re ready to take the next step, the on-device fitter
+          matches you to a CPAP mask in three minutes. No images leave your
+          browser.
         </p>
         <Button
           size="lg"

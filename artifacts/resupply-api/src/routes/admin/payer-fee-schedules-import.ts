@@ -19,7 +19,10 @@ const router: IRouter = Router();
 const body = z
   .object({
     payerProfileId: z.string().uuid(),
-    csv: z.string().min(20).max(1024 * 1024),
+    csv: z
+      .string()
+      .min(20)
+      .max(1024 * 1024),
   })
   .strict();
 

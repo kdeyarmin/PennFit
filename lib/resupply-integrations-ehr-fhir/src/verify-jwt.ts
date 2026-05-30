@@ -183,7 +183,15 @@ export function verifySmartJwt(input: VerifyJwtInput): VerifyJwtOutcome {
 
   return {
     ok: true,
-    claims: { iss, sub, aud: input.expectedAudience, exp, iat, jti, raw: payload },
+    claims: {
+      iss,
+      sub,
+      aud: input.expectedAudience,
+      exp,
+      iat,
+      jti,
+      raw: payload,
+    },
   };
 }
 

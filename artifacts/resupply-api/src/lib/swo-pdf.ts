@@ -115,9 +115,7 @@ export interface SwoValidationError {
  * so the CSR sees "fill in HCPCS code and link a provider" instead of
  * a confusing 500 from the PDF library.
  */
-export function validateSwoInputs(
-  inputs: SwoInputs,
-): SwoValidationError[] {
+export function validateSwoInputs(inputs: SwoInputs): SwoValidationError[] {
   const errors: SwoValidationError[] = [];
   if (!inputs.patient.legalFirstName || !inputs.patient.legalLastName) {
     errors.push({
@@ -141,7 +139,8 @@ export function validateSwoInputs(
   if (!inputs.provider.npi || !/^\d{10}$/.test(inputs.provider.npi)) {
     errors.push({
       field: "provider.npi",
-      message: "A provider with a 10-digit NPI must be linked to the prescription.",
+      message:
+        "A provider with a 10-digit NPI must be linked to the prescription.",
     });
   }
   if (!inputs.provider.legalName) {
@@ -235,10 +234,10 @@ export function renderSwo(doc: PDFKit.PDFDocument, inputs: SwoInputs): void {
     .fontSize(10)
     .font("Helvetica")
     .fillColor("#555555")
-    .text(
-      `${inputs.supplierName} · CMS-standardized DMEPOS order form`,
-      { align: "center", width: USABLE_WIDTH },
-    )
+    .text(`${inputs.supplierName} · CMS-standardized DMEPOS order form`, {
+      align: "center",
+      width: USABLE_WIDTH,
+    })
     .fillColor("#000000");
 
   doc.moveDown(1.2);
@@ -370,10 +369,7 @@ export function renderSwo(doc: PDFKit.PDFDocument, inputs: SwoInputs): void {
 
 // ── small layout helpers ─────────────────────────────────────────────
 
-function drawSectionHeader(
-  doc: PDFKit.PDFDocument,
-  label: string,
-): void {
+function drawSectionHeader(doc: PDFKit.PDFDocument, label: string): void {
   doc.fontSize(11).font("Helvetica-Bold").text(label, {
     width: USABLE_WIDTH,
   });

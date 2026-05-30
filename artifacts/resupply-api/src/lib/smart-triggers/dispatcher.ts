@@ -138,9 +138,7 @@ export async function runSmartTriggerSendDue(
   // per-channel SMS / email flags also gate the underlying send
   // step below; this top-level gate avoids the candidate scan
   // entirely when neither channel can send.
-  const triggerEnabled = await isFeatureEnabled(
-    "smart_triggers.dispatcher",
-  );
+  const triggerEnabled = await isFeatureEnabled("smart_triggers.dispatcher");
   if (!triggerEnabled) {
     return { status: "not_configured", channel };
   }
@@ -252,10 +250,7 @@ export async function runSmartTriggerSendDue(
       .in("email_lower", patientEmails);
     for (const c of custRows ?? []) {
       if (c.email_lower) {
-        prefsByEmail.set(
-          c.email_lower,
-          readPrefs(c.communication_preferences),
-        );
+        prefsByEmail.set(c.email_lower, readPrefs(c.communication_preferences));
       }
     }
   }
@@ -274,7 +269,9 @@ export async function runSmartTriggerSendDue(
       // policy: DND always blocks, explicit opt-out is honoured,
       // and DME-only patients without a shop_customers row default
       // to allowed (they couldn't have opted out yet).
-      const prefs = p.email ? prefsByEmail.get(p.email.toLowerCase()) ?? null : null;
+      const prefs = p.email
+        ? (prefsByEmail.get(p.email.toLowerCase()) ?? null)
+        : null;
       return smartTriggerChannelAllowed(prefs, channel, nowForGating);
     })
     .slice(0, PER_RUN_SEND_CAP);
@@ -463,6 +460,9 @@ export async function runSmartTriggerSendDue(
     sent,
     failed,
     skippedNoContact: 0, // contact filter is applied during candidate-eligibility
-    remaining: events.length > eligible.length || claimed.length >= PER_RUN_SEND_CAP ? 1 : 0,
+    remaining:
+      events.length > eligible.length || claimed.length >= PER_RUN_SEND_CAP
+        ? 1
+        : 0,
   };
 }

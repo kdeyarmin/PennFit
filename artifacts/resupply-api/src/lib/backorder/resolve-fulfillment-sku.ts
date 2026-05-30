@@ -96,9 +96,7 @@ export async function resolveFulfillmentSku(
     .in("sku", altSkus)
     .is("cleared_at", null);
   if (altErr) throw altErr;
-  const blocked = new Set(
-    (backorderedAlts ?? []).map((r) => r.sku),
-  );
+  const blocked = new Set((backorderedAlts ?? []).map((r) => r.sku));
 
   const pick = alternatives.find((a) => !blocked.has(a.alternative_sku));
   if (!pick) {

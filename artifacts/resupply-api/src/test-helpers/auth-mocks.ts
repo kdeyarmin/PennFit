@@ -33,10 +33,7 @@
 
 import type { NextFunction, Request, Response } from "express";
 
-import {
-  type Permission,
-  roleHasPermission,
-} from "@workspace/resupply-auth";
+import { type Permission, roleHasPermission } from "@workspace/resupply-auth";
 import type { AdminRole } from "@workspace/resupply-db";
 
 export interface MockAdminCtx {
