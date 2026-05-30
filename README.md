@@ -56,7 +56,13 @@ top-level structure is:
 ## Prerequisites
 
 - Node.js **v24** (matches CI; `engines.node` is pinned to `>=24`).
+  The repo ships `.nvmrc` and `.node-version` (both `24`), so
+  `nvm use` / `fnm use` / `asdf` auto-select the right major on
+  clone — run it before `pnpm install` to avoid an
+  `ERR_PNPM_UNSUPPORTED_ENGINE` mismatch.
 - pnpm **v11+** (pinned to `pnpm@11.4.0` via `packageManager`).
+  With Corepack enabled (`corepack enable`), the pinned pnpm is
+  selected automatically from the repo root.
 - Postgres **v14+** (we run v16). No extensions required — the
   active resupply schema only relies on `gen_random_uuid()`, which
   has been built into Postgres core since v13.
