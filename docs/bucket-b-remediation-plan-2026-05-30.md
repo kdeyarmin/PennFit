@@ -21,7 +21,7 @@ fitter routes. Those features are non-functional on this deployment today.
 Two findings make "write one ALTER script" the wrong approach:
 
 1. **The 16 tables are created across ~14 historical migration files** (0071 →
-   0154), several of which are *interleaved* with already-applied work — e.g.
+   0154), several of which are _interleaved_ with already-applied work — e.g.
    `0134_billing_wave_2_next_items.sql` both creates Bucket B tables AND adds
    the `shop_customers.membership_*` columns that `0171` already applied. The
    files are individually idempotent (`CREATE TABLE IF NOT EXISTS`,
@@ -43,7 +43,7 @@ numeric order, against the live DB** — do not improvise SQL.
 ## Prerequisites that already exist live (FK targets — verified 2026-05-30)
 
 `patients`, `patient_documents`, `fulfillments` are present, so Bucket B FKs
-into them resolve. Absent prerequisites that the run must create *before* their
+into them resolve. Absent prerequisites that the run must create _before_ their
 dependents: `insurance_coverages`, `providers`, `payer_profiles`,
 `office_ally_submissions`, `insurance_claims`, `prior_authorizations`,
 `inbound_webhooks`, `inbound_referral_orders`, `fitter_leads`.
@@ -54,27 +54,27 @@ The migrator applies by numeric prefix, and the historical numbering already
 respects the FK graph below. Bucket-B-relevant files, in apply order, with
 their cross-table FK references:
 
-| File | Creates (Bucket B) | FK refs that must pre-exist |
-| --- | --- | --- |
-| `0071_providers` | `providers` | (none) |
-| `0074_sleep_studies` | `sleep_studies` | `patients`✓, `providers`(0071) |
-| `0076_prior_authorizations` | `prior_authorizations` | `insurance_coverages`(⚠ see below), `patients`✓ |
-| `0104_appointment_requests` | `appointment_requests` | (none) |
-| `0114_fitter_leads` | `fitter_leads` | (none) |
-| `0118_insurance_claims` | `insurance_claims` (+2) | `fulfillments`✓, `insurance_coverages`(⚠), `patient_documents`✓, `patients`✓ |
-| `0128_pa_payer_profiles` | `payer_profiles`, `office_ally_submissions` | self |
-| `0129_billing_enhancements` | `era_files` (+2) | `insurance_coverages`(⚠), `office_ally_submissions`(0128), `payer_profiles`(0128), `providers`(0071) |
-| `0134_billing_wave_2_next_items` | `davinci_pas_submissions`, `eligibility_checks` (+5) | `insurance_claims`(0118), `insurance_coverages`(⚠), `patients`✓, `payer_profiles`(0128), `prior_authorizations`(0076), `providers`(0071) |
-| `0138_phase_6_payments_and_inbound` | `inbound_webhooks` (+2) | `patients`✓ |
-| `0144_inbound_referral_orders` | `inbound_referral_orders` (+1) | `inbound_webhooks`(0138), `patients`✓, `providers`(0071) |
-| `0147_ehr_fhir_tenants` | `ehr_fhir_tenants` | (none) |
-| `0151_fitter_completion_and_supply_campaign` | `fitter_campaign_touches` | `fitter_leads`(0114) |
-| `0154_fitter_campaign_clicks_and_csr_workflow` | `fitter_campaign_clicks` | `fitter_leads`(0114) |
+| File                                           | Creates (Bucket B)                                   | FK refs that must pre-exist                                                                                                              |
+| ---------------------------------------------- | ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `0071_providers`                               | `providers`                                          | (none)                                                                                                                                   |
+| `0074_sleep_studies`                           | `sleep_studies`                                      | `patients`✓, `providers`(0071)                                                                                                           |
+| `0076_prior_authorizations`                    | `prior_authorizations`                               | `insurance_coverages`(⚠ see below), `patients`✓                                                                                          |
+| `0104_appointment_requests`                    | `appointment_requests`                               | (none)                                                                                                                                   |
+| `0114_fitter_leads`                            | `fitter_leads`                                       | (none)                                                                                                                                   |
+| `0118_insurance_claims`                        | `insurance_claims` (+2)                              | `fulfillments`✓, `insurance_coverages`(⚠), `patient_documents`✓, `patients`✓                                                             |
+| `0128_pa_payer_profiles`                       | `payer_profiles`, `office_ally_submissions`          | self                                                                                                                                     |
+| `0129_billing_enhancements`                    | `era_files` (+2)                                     | `insurance_coverages`(⚠), `office_ally_submissions`(0128), `payer_profiles`(0128), `providers`(0071)                                     |
+| `0134_billing_wave_2_next_items`               | `davinci_pas_submissions`, `eligibility_checks` (+5) | `insurance_claims`(0118), `insurance_coverages`(⚠), `patients`✓, `payer_profiles`(0128), `prior_authorizations`(0076), `providers`(0071) |
+| `0138_phase_6_payments_and_inbound`            | `inbound_webhooks` (+2)                              | `patients`✓                                                                                                                              |
+| `0144_inbound_referral_orders`                 | `inbound_referral_orders` (+1)                       | `inbound_webhooks`(0138), `patients`✓, `providers`(0071)                                                                                 |
+| `0147_ehr_fhir_tenants`                        | `ehr_fhir_tenants`                                   | (none)                                                                                                                                   |
+| `0151_fitter_completion_and_supply_campaign`   | `fitter_campaign_touches`                            | `fitter_leads`(0114)                                                                                                                     |
+| `0154_fitter_campaign_clicks_and_csr_workflow` | `fitter_campaign_clicks`                             | `fitter_leads`(0114)                                                                                                                     |
 
 ⚠ **`insurance_coverages`** — absent live and referenced by 0076/0118/0129/0134.
 Created by **`0075_insurance_coverages.sql`** (numerically before its first
 consumer 0076), so a full ordered migrator run handles it automatically. It is
-called out here only because a *piecemeal* apply of the table list above would
+called out here only because a _piecemeal_ apply of the table list above would
 omit it and fail on the first FK into it.
 
 ## Recommended execution (in the maintenance window)
@@ -87,7 +87,7 @@ gap permanently. BUT note the CI comment in `.github/workflows/ci.yml`
 ordering/role failures, e.g. 0060 referencing `reminder_subscriptions` created
 unqualified in 0027). Production is NOT from-scratch — it already has the early
 schema — so the relevant question is whether the migrator, pointed at prod with
-a freshly-seeded ledger reflecting *what is actually already applied*, cleanly
+a freshly-seeded ledger reflecting _what is actually already applied_, cleanly
 applies only the pending Bucket A/B files.
 
 Sequence:

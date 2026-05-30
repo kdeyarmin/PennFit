@@ -65,7 +65,7 @@ A heuristic audit (parse all 190 `lib/resupply-db/drizzle/*.sql` for
 
 ~38 columns across 10 existing tables. These are the dangerous ones: the table
 is live and in use, but code that reads/writes the newer columns will 500 the
-same way sign-in did. Tables: `admin_users`, `audit_log`*, `conversations`,
+same way sign-in did. Tables: `admin_users`, `audit_log`\*, `conversations`,
 `fulfillments`, `patient_documents`, `patients`, `prescriptions`,
 `shop_customers`, `shop_orders`, `shop_returns`.
 
@@ -115,7 +115,7 @@ features are meant to be live on this instance at all).
    `DATABASE_URL`, or a tracked apply log). Without it, drift recurs silently
    and the next missing column is the next outage. **Interim detector shipped:**
    `scripts/src/check-schema-drift.ts` (`pnpm --filter @workspace/scripts
-   check:schema-drift`) compares the migration DDL against any live DB and exits
+check:schema-drift`) compares the migration DDL against any live DB and exits
    non-zero on drift; it also reports whether the `drizzle.resupply_migrations`
    ledger exists. Wired into `.github/workflows/schema-drift.yml` (daily cron +
    manual dispatch), gated on a read-only `SCHEMA_DRIFT_DATABASE_URL` secret.
