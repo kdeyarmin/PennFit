@@ -8,6 +8,8 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { Mock } from "vitest";
 
+import { ApiError } from "@workspace/api-client-react/admin";
+
 import {
   listAppointmentRequests,
   updateAppointmentRequest,
@@ -357,5 +359,69 @@ describe("updateAppointmentRequest", () => {
 
     await updateAppointmentRequest("req-1", { status: "contacted" });
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ApiError migration — jsonFetch now throws ApiError (not plain Error)
+// ---------------------------------------------------------------------------
+
+describe("appointment-requests-api — ApiError thrown on non-OK response", () => {
+  test("listAppointmentRequests throws ApiError instance on 403", async () => {
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 403,
+      statusText: "Forbidden",
+      headers: new Headers(),
+      url: "",
+      json: async () => ({}),
+    });
+    const err = await listAppointmentRequests().catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect((err as ApiError).status).toBe(403);
+  });
+
+  test("updateAppointmentRequest throws ApiError instance on 500", async () => {
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 500,
+      statusText: "Internal Server Error",
+      headers: new Headers(),
+      url: "",
+      json: async () => ({}),
+    });
+    const err = await updateAppointmentRequest("req-1", {
+      status: "contacted",
+    }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect((err as ApiError).status).toBe(500);
+  });
+
+  test("ApiError carries the request URL for listAppointmentRequests", async () => {
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 404,
+      statusText: "Not Found",
+      headers: new Headers(),
+      url: "",
+      json: async () => null,
+    });
+    const err = await listAppointmentRequests().catch((e: unknown) => e);
+    expect((err as ApiError).url).toContain("/admin/appointment-requests");
+  });
+
+  test("ApiError carries the request method for PATCH", async () => {
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 409,
+      statusText: "Conflict",
+      headers: new Headers(),
+      url: "",
+      json: async () => ({}),
+    });
+    const err = await updateAppointmentRequest("req-1", {
+      status: "cancelled",
+    }).catch((e: unknown) => e);
+    expect((err as ApiError).method).toBe("PATCH");
   });
 });

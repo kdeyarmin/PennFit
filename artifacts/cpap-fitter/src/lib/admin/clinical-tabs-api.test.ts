@@ -19,6 +19,8 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { Mock } from "vitest";
 
+import { ApiError } from "@workspace/api-client-react/admin";
+
 import {
   createInsuranceClaim,
   createInsuranceClaimEvent,
@@ -552,5 +554,73 @@ describe("createInsuranceClaimEvent", () => {
     await expect(
       createInsuranceClaimEvent(PATIENT_ID, CLAIM_ID, EVENT_BODY),
     ).rejects.toThrow("Event type is required");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ApiError migration — jsonFetch now throws ApiError (not plain Error)
+// ---------------------------------------------------------------------------
+
+describe("clinical-tabs-api — ApiError thrown on non-OK response", () => {
+  test("listInsuranceClaims throws ApiError instance on 403", async () => {
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 403,
+      statusText: "Forbidden",
+      headers: new Headers(),
+      url: "",
+      json: async () => ({}),
+    });
+    const err = await listInsuranceClaims(PATIENT_ID).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect((err as ApiError).status).toBe(403);
+  });
+
+  test("createInsuranceClaim throws ApiError with method POST", async () => {
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 422,
+      statusText: "Unprocessable Entity",
+      headers: new Headers(),
+      url: "",
+      json: async () => ({}),
+    });
+    const err = await createInsuranceClaim(PATIENT_ID, {
+      payerName: "Aetna",
+      dateOfService: "2026-02-01",
+      claimNumber: null,
+      notes: null,
+    }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect((err as ApiError).method).toBe("POST");
+  });
+
+  test("patchInsuranceClaim throws ApiError with method PATCH", async () => {
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 409,
+      statusText: "Conflict",
+      headers: new Headers(),
+      url: "",
+      json: async () => ({}),
+    });
+    const err = await patchInsuranceClaim(PATIENT_ID, CLAIM_ID, {
+      status: "submitted",
+    }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect((err as ApiError).method).toBe("PATCH");
+  });
+
+  test("ApiError carries the request URL", async () => {
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 500,
+      statusText: "ISE",
+      headers: new Headers(),
+      url: "",
+      json: async () => null,
+    });
+    const err = await listInsuranceClaims(PATIENT_ID).catch((e: unknown) => e);
+    expect((err as ApiError).url).toContain("/insurance-claims");
   });
 });

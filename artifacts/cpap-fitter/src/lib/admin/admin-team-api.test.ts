@@ -16,6 +16,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Mock } from "vitest";
 
+import { ApiError } from "@workspace/api-client-react/admin";
+
 import {
   inviteMember,
   listTeam,
@@ -628,5 +630,89 @@ describe("patchMember", () => {
 
     const result = await patchMember("m-1", { role: "admin" });
     expect(result.member.role).toBe("admin");
+  });
+});
+
+// ─── ApiError migration — error type guards ──────────────────────────────────
+//
+// This PR changed every `throw new Error(...)` in admin-team-api.ts to
+// `throw new ApiError(...)`. The following tests guard that regression.
+
+describe("listTeam — throws ApiError (not plain Error) on failure", () => {
+  it("throws an ApiError instance on non-OK response", async () => {
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 403,
+      statusText: "Forbidden",
+      headers: new Headers(),
+      url: "",
+      json: async () => ({}),
+    });
+    const err = await listTeam().catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect((err as ApiError).status).toBe(403);
+  });
+
+  it("ApiError carries the request URL", async () => {
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 500,
+      statusText: "Internal Server Error",
+      headers: new Headers(),
+      url: "",
+      json: async () => ({}),
+    });
+    const err = await listTeam().catch((e: unknown) => e);
+    expect((err as ApiError).url).toContain("/admin/team");
+  });
+});
+
+describe("resendInvite — throws ApiError (not plain Error) on failure", () => {
+  it("throws an ApiError instance on non-OK response", async () => {
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 404,
+      statusText: "Not Found",
+      headers: new Headers(),
+      url: "",
+      json: async () => null,
+    });
+    const err = await resendInvite("missing-id").catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect((err as ApiError).status).toBe(404);
+  });
+});
+
+describe("revokeMember — throws ApiError (not plain Error) on failure", () => {
+  it("throws an ApiError instance on non-OK response", async () => {
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 403,
+      statusText: "Forbidden",
+      headers: new Headers(),
+      url: "",
+      json: async () => ({ message: "not allowed" }),
+    });
+    const err = await revokeMember("m-1").catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect((err as ApiError).status).toBe(403);
+  });
+});
+
+describe("patchMember — throws ApiError (not plain Error) on failure", () => {
+  it("throws an ApiError instance on non-OK response", async () => {
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 422,
+      statusText: "Unprocessable Entity",
+      headers: new Headers(),
+      url: "",
+      json: async () => ({ error: "invalid_role" }),
+    });
+    const err = await patchMember("m-1", { role: "csr" }).catch(
+      (e: unknown) => e,
+    );
+    expect(err).toBeInstanceOf(ApiError);
+    expect((err as ApiError).status).toBe(422);
   });
 });
