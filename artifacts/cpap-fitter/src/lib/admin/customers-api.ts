@@ -7,6 +7,8 @@
 // Auth: the browser sends the `pf_session` cookie automatically on
 // same-origin requests, so no per-call auth header is needed.
 
+import { ApiError } from "@workspace/api-client-react/admin";
+
 export interface AdminCustomerSavedAddress {
   line1: string;
   line2?: string | null;
@@ -257,7 +259,13 @@ export async function listAdminCustomers(
     },
   );
   if (!res.ok) {
-    throw new Error(`Failed to load customers (${res.status})`);
+    let data: unknown = null;
+    try {
+      data = await res.json();
+    } catch {
+      // non-JSON error body — status alone is enough
+    }
+    throw new ApiError(res, data, { method: "GET", url: res.url });
   }
   return (await res.json()) as AdminCustomerListResponse;
 }
@@ -279,7 +287,13 @@ export async function getAdminCustomerDetail(
     throw new AdminCustomerNotFoundError();
   }
   if (!res.ok) {
-    throw new Error(`Failed to load customer (${res.status})`);
+    let data: unknown = null;
+    try {
+      data = await res.json();
+    } catch {
+      // non-JSON error body — status alone is enough
+    }
+    throw new ApiError(res, data, { method: "GET", url: res.url });
   }
   return (await res.json()) as AdminCustomerDetailResponse;
 }

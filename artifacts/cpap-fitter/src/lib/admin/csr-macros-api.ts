@@ -1,6 +1,8 @@
 // Hand-rolled fetch wrappers for the admin csr-macros endpoints.
 // Mirrors the shop-reviews/-returns pattern.
 
+import { ApiError } from "@workspace/api-client-react/admin";
+
 import { csrfHeader } from "../csrf";
 
 export type MacroChannel = "sms" | "email";
@@ -27,13 +29,19 @@ export async function listMacros(opts?: {
 }): Promise<{ macros: CsrMacro[] }> {
   const qs = new URLSearchParams();
   if (opts?.includeInactive) qs.set("includeInactive", "1");
-  const res = await fetch(
-    `${BASE}${qs.toString() ? `?${qs.toString()}` : ""}`,
-    {
-      headers: { Accept: "application/json" },
-    },
-  );
-  if (!res.ok) throw new Error(`Failed to load macros (${res.status})`);
+  const url = `${BASE}${qs.toString() ? `?${qs.toString()}` : ""}`;
+  const res = await fetch(url, {
+    headers: { Accept: "application/json" },
+  });
+  if (!res.ok) {
+    let data: unknown = null;
+    try {
+      data = await res.json();
+    } catch {
+      // body not JSON
+    }
+    throw new ApiError(res, data, { method: "GET", url });
+  }
   return (await res.json()) as { macros: CsrMacro[] };
 }
 
@@ -60,9 +68,7 @@ export async function createMacro(body: {
       error?: string;
       message?: string;
     } | null;
-    throw new Error(
-      json?.message ?? json?.error ?? `Create failed (${res.status})`,
-    );
+    throw new ApiError(res, json, { method: "POST", url: BASE });
   }
   return (await res.json()) as { macro: CsrMacro };
 }
@@ -78,7 +84,8 @@ export async function patchMacro(
     isActive: boolean;
   }>,
 ): Promise<{ macro: CsrMacro }> {
-  const res = await fetch(`${BASE}/${encodeURIComponent(id)}`, {
+  const url = `${BASE}/${encodeURIComponent(id)}`;
+  const res = await fetch(url, {
     method: "PATCH",
     credentials: "include",
     headers: {
@@ -93,16 +100,15 @@ export async function patchMacro(
       error?: string;
       message?: string;
     } | null;
-    throw new Error(
-      json?.message ?? json?.error ?? `Patch failed (${res.status})`,
-    );
+    throw new ApiError(res, json, { method: "PATCH", url });
   }
   return (await res.json()) as { macro: CsrMacro };
 }
 
 export async function deleteMacro(id: string, hard = false): Promise<void> {
   const qs = hard ? "?hard=1" : "";
-  const res = await fetch(`${BASE}/${encodeURIComponent(id)}${qs}`, {
+  const url = `${BASE}/${encodeURIComponent(id)}${qs}`;
+  const res = await fetch(url, {
     method: "DELETE",
     credentials: "include",
     headers: { Accept: "application/json", ...csrfHeader() },
@@ -112,8 +118,6 @@ export async function deleteMacro(id: string, hard = false): Promise<void> {
       error?: string;
       message?: string;
     } | null;
-    throw new Error(
-      json?.message ?? json?.error ?? `Delete failed (${res.status})`,
-    );
+    throw new ApiError(res, json, { method: "DELETE", url });
   }
 }

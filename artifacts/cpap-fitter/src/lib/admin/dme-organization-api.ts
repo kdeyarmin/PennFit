@@ -4,6 +4,8 @@
 // the identity-resolver prefers over the legacy OFFICE_ALLY_BILLING_*
 // env vars — so an operator can set it here instead of in global env.
 
+import { ApiError } from "@workspace/api-client-react/admin";
+
 import { csrfHeader } from "../csrf";
 
 const BASE = "/resupply-api";
@@ -118,16 +120,26 @@ export interface DmeOrganizationResponse {
 }
 
 async function getJSON<T>(path: string): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
+  const url = `${BASE}${path}`;
+  const res = await fetch(url, {
     credentials: "same-origin",
     headers: { Accept: "application/json" },
   });
-  if (!res.ok) throw new Error(`GET ${path} failed (${res.status})`);
+  if (!res.ok) {
+    let data: unknown = null;
+    try {
+      data = await res.json();
+    } catch {
+      // body not JSON
+    }
+    throw new ApiError(res, data, { method: "GET", url });
+  }
   return (await res.json()) as T;
 }
 
 async function putJSON<T>(path: string, body: unknown): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
+  const url = `${BASE}${path}`;
+  const res = await fetch(url, {
     method: "PUT",
     credentials: "same-origin",
     headers: {
@@ -138,15 +150,13 @@ async function putJSON<T>(path: string, body: unknown): Promise<T> {
     body: JSON.stringify(body),
   });
   if (!res.ok) {
-    let detail = "";
+    let data: unknown = null;
     try {
-      detail = JSON.stringify(await res.json());
+      data = await res.json();
     } catch {
-      /* non-JSON body */
+      // body not JSON
     }
-    throw new Error(
-      `PUT ${path} failed (${res.status})${detail ? `: ${detail}` : ""}`,
-    );
+    throw new ApiError(res, data, { method: "PUT", url });
   }
   return (await res.json()) as T;
 }

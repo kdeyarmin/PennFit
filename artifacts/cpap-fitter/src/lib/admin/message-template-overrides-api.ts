@@ -1,6 +1,8 @@
 // Hand-rolled fetch wrappers for the per-customer message-template
 // overrides admin endpoints. Sister to message-templates-api.ts.
 
+import { ApiError } from "@workspace/api-client-react/admin";
+
 import { csrfHeader } from "../csrf";
 import { TemplatePatchError } from "./message-templates-api";
 
@@ -34,7 +36,13 @@ export async function listOverrides(
     headers: { Accept: "application/json" },
   });
   if (!res.ok) {
-    throw new Error(`Failed to load overrides (${res.status})`);
+    let data: unknown = null;
+    try {
+      data = await res.json();
+    } catch {
+      // non-JSON error body — status alone is enough
+    }
+    throw new ApiError(res, data, { method: "GET", url: res.url });
   }
   return (await res.json()) as { overrides: MessageTemplateOverride[] };
 }

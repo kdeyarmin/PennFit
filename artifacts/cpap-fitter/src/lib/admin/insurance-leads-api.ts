@@ -9,6 +9,8 @@
 // Auth: the browser sends the `pf_session` cookie automatically on
 // same-origin requests, so no per-call auth header is needed.
 
+import { ApiError } from "@workspace/api-client-react/admin";
+
 import { csrfHeader } from "../csrf";
 
 export type InsuranceLeadStatus = "new" | "contacted" | "verified" | "closed";
@@ -43,11 +45,18 @@ export async function listInsuranceLeads(
   status: InsuranceLeadStatus | "all" = "all",
 ): Promise<ListInsuranceLeadsResponse> {
   const qs = status === "all" ? "" : `?status=${encodeURIComponent(status)}`;
-  const res = await fetch(`/resupply-api/admin/shop/insurance-leads${qs}`, {
+  const url = `/resupply-api/admin/shop/insurance-leads${qs}`;
+  const res = await fetch(url, {
     headers: { Accept: "application/json" },
   });
   if (!res.ok) {
-    throw new Error(`Failed to load insurance leads (${res.status})`);
+    let data: unknown = null;
+    try {
+      data = await res.json();
+    } catch {
+      // body not JSON
+    }
+    throw new ApiError(res, data, { method: "GET", url });
   }
   return (await res.json()) as ListInsuranceLeadsResponse;
 }
@@ -70,20 +79,24 @@ export async function updateInsuranceLead(
   id: string,
   body: UpdateInsuranceLeadInput,
 ): Promise<UpdateInsuranceLeadResponse> {
-  const res = await fetch(
-    `/resupply-api/admin/shop/insurance-leads/${encodeURIComponent(id)}`,
-    {
-      method: "PATCH",
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json",
-        ...csrfHeader(),
-      },
-      body: JSON.stringify(body),
+  const url = `/resupply-api/admin/shop/insurance-leads/${encodeURIComponent(id)}`;
+  const res = await fetch(url, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+      ...csrfHeader(),
     },
-  );
+    body: JSON.stringify(body),
+  });
   if (!res.ok) {
-    throw new Error(`Update failed (${res.status})`);
+    let data: unknown = null;
+    try {
+      data = await res.json();
+    } catch {
+      // body not JSON
+    }
+    throw new ApiError(res, data, { method: "PATCH", url });
   }
   return (await res.json()) as UpdateInsuranceLeadResponse;
 }

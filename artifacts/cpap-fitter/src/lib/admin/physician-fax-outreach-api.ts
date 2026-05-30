@@ -2,6 +2,7 @@
 // shipped in Phase G.6. Used by the patient-detail page's "Fax outreach"
 // tab to record + list outreach attempts.
 
+import { ApiError } from "@workspace/api-client-react/admin";
 import { csrfHeader } from "../csrf";
 
 export type PhysicianFaxOutreachStatus =
@@ -35,12 +36,19 @@ export interface ListPhysicianFaxOutreachResponse {
 export async function listPatientPhysicianFaxOutreach(
   patientId: string,
 ): Promise<ListPhysicianFaxOutreachResponse> {
-  const res = await fetch(
-    `/resupply-api/admin/physician-fax-outreach?patientId=${encodeURIComponent(patientId)}`,
-    { headers: { Accept: "application/json" }, credentials: "include" },
-  );
+  const url = `/resupply-api/admin/physician-fax-outreach?patientId=${encodeURIComponent(patientId)}`;
+  const res = await fetch(url, {
+    headers: { Accept: "application/json" },
+    credentials: "include",
+  });
   if (!res.ok) {
-    throw new Error(`Failed to load fax outreach (${res.status})`);
+    let data: unknown = null;
+    try {
+      data = await res.json();
+    } catch {
+      // body not JSON
+    }
+    throw new ApiError(res, data, { method: "GET", url });
   }
   return (await res.json()) as ListPhysicianFaxOutreachResponse;
 }
@@ -56,15 +64,16 @@ export interface CreatePhysicianFaxOutreachInput {
 export async function createPhysicianFaxOutreach(
   input: CreatePhysicianFaxOutreachInput,
 ): Promise<{ id: string; status: string; provider: string }> {
-  const res = await fetch(`/resupply-api/admin/physician-fax-outreach`, {
+  const url = `/resupply-api/admin/physician-fax-outreach`;
+  const res = await fetch(url, {
     method: "POST",
     credentials: "include",
     headers: { "Content-Type": "application/json", ...csrfHeader() },
     body: JSON.stringify(input),
   });
   if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(`Failed to record fax outreach (${res.status}): ${text}`);
+    const data = await res.text().catch(() => "");
+    throw new ApiError(res, data, { method: "POST", url });
   }
   return (await res.json()) as { id: string; status: string; provider: string };
 }

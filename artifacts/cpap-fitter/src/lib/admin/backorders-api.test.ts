@@ -14,6 +14,8 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { Mock } from "vitest";
 
+import { ApiError } from "@workspace/api-client-react/admin";
+
 import {
   listBackorders,
   markBackorder,
@@ -608,5 +610,66 @@ describe("deleteSubstitute", () => {
 
     await deleteSubstitute("sub-1");
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ApiError migration — jsonFetch now throws ApiError (not plain Error)
+// ---------------------------------------------------------------------------
+
+describe("backorders-api — ApiError thrown on non-OK response", () => {
+  test("listBackorders throws ApiError instance on 403", async () => {
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 403,
+      statusText: "Forbidden",
+      headers: new Headers(),
+      url: "",
+      json: async () => ({}),
+    });
+    const err = await listBackorders().catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect((err as ApiError).status).toBe(403);
+  });
+
+  test("markBackorder throws ApiError instance on 500", async () => {
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 500,
+      statusText: "Internal Server Error",
+      headers: new Headers(),
+      url: "",
+      json: async () => ({}),
+    });
+    const err = await markBackorder({ sku: "E0601" }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect((err as ApiError).status).toBe(500);
+  });
+
+  test("deleteSubstitute throws ApiError with correct method (DELETE)", async () => {
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 404,
+      statusText: "Not Found",
+      headers: new Headers(),
+      url: "",
+      json: async () => ({}),
+    });
+    const err = await deleteSubstitute("sub-ghost").catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect((err as ApiError).method).toBe("DELETE");
+  });
+
+  test("ApiError carries the request URL", async () => {
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 404,
+      statusText: "Not Found",
+      headers: new Headers(),
+      url: "",
+      json: async () => null,
+    });
+    const err = await listBackorders().catch((e: unknown) => e);
+    expect((err as ApiError).url).toContain("/admin/shop/backorders");
   });
 });

@@ -5,6 +5,8 @@
 // the `pf_session` cookie, sent automatically by the browser on
 // same-origin requests.
 
+import { ApiError } from "@workspace/api-client-react/admin";
+
 export interface AuditExportFilters {
   action?: string;
   targetTable?: string;
@@ -41,9 +43,7 @@ export async function downloadAuditExport(
     } catch {
       detail = "";
     }
-    throw new Error(
-      `Audit export failed (${res.status})${detail ? `: ${detail.slice(0, 200)}` : ""}`,
-    );
+    throw new ApiError(res, detail || null, { method: "GET", url });
   }
 
   const blob = await res.blob();

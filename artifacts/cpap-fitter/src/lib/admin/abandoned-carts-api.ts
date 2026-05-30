@@ -10,6 +10,8 @@
 // Auth: the browser sends the `pf_session` cookie automatically on
 // same-origin requests, so no per-call auth header is needed.
 
+import { ApiError } from "@workspace/api-client-react/admin";
+
 import { csrfHeader } from "../csrf";
 
 export interface AbandonedCartRow {
@@ -39,22 +41,36 @@ export interface SendDueResponse {
 }
 
 export async function listAdminAbandonedCarts(): Promise<ListAbandonedCartsResponse> {
-  const res = await fetch(`/resupply-api/admin/shop/abandoned-carts`, {
+  const url = `/resupply-api/admin/shop/abandoned-carts`;
+  const res = await fetch(url, {
     headers: { Accept: "application/json" },
   });
   if (!res.ok) {
-    throw new Error(`Failed to load abandoned carts (${res.status})`);
+    let data: unknown = null;
+    try {
+      data = await res.json();
+    } catch {
+      /* body not JSON */
+    }
+    throw new ApiError(res, data, { method: "GET", url });
   }
   return (await res.json()) as ListAbandonedCartsResponse;
 }
 
 export async function sendDueAbandonedCarts(): Promise<SendDueResponse> {
-  const res = await fetch(`/resupply-api/admin/shop/abandoned-carts/send-due`, {
+  const url = `/resupply-api/admin/shop/abandoned-carts/send-due`;
+  const res = await fetch(url, {
     method: "POST",
     headers: { Accept: "application/json", ...csrfHeader() },
   });
   if (!res.ok) {
-    throw new Error(`Send-due failed (${res.status})`);
+    let data: unknown = null;
+    try {
+      data = await res.json();
+    } catch {
+      /* body not JSON */
+    }
+    throw new ApiError(res, data, { method: "POST", url });
   }
   return (await res.json()) as SendDueResponse;
 }

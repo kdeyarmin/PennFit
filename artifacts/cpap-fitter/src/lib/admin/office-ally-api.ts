@@ -9,21 +9,32 @@
 // nothing on this path holds PHI in memory longer than the render
 // cycle.
 
+import { ApiError } from "@workspace/api-client-react/admin";
 import { csrfHeader } from "../csrf";
 
 const BASE = "/resupply-api";
 
 async function getJSON<T>(path: string): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
+  const url = `${BASE}${path}`;
+  const res = await fetch(url, {
     credentials: "same-origin",
     headers: { Accept: "application/json" },
   });
-  if (!res.ok) throw new Error(`GET ${path} failed (${res.status})`);
+  if (!res.ok) {
+    let data: unknown = null;
+    try {
+      data = await res.json();
+    } catch {
+      // body not JSON
+    }
+    throw new ApiError(res, data, { method: "GET", url });
+  }
   return (await res.json()) as T;
 }
 
 async function postJSON<T>(path: string, body?: unknown): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
+  const url = `${BASE}${path}`;
+  const res = await fetch(url, {
     method: "POST",
     credentials: "same-origin",
     headers: {
@@ -34,15 +45,13 @@ async function postJSON<T>(path: string, body?: unknown): Promise<T> {
     body: body ? JSON.stringify(body) : undefined,
   });
   if (!res.ok) {
-    let detail = "";
+    let data: unknown = null;
     try {
-      detail = JSON.stringify(await res.json());
+      data = await res.json();
     } catch {
-      // Body not JSON or unreadable — fall through.
+      // body not JSON
     }
-    throw new Error(
-      `POST ${path} failed (${res.status})${detail ? `: ${detail}` : ""}`,
-    );
+    throw new ApiError(res, data, { method: "POST", url });
   }
   return (await res.json()) as T;
 }
