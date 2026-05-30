@@ -100,16 +100,27 @@ explicit owner decision, not a defect.
 
 ### R1 — Build-time model download fails OPEN — ✅ FIXED in this PR
 
-> **Fixed:** `setup-mediapipe.mjs` now runs in **strict mode on any production
-> build** (`npm_lifecycle_event` = `prebuild`/`build`, any `RAILWAY_*` var, `CI`,
-> or `NODE_ENV=production`): a missing / un-downloadable model now **fails the
-> build** instead of shipping silently broken. `SKIP_MEDIAPIPE_MODEL_DOWNLOAD=1`
-> still opts out for intentional offline / preview builds. As a runtime net,
-> `app.ts` logs a loud `face_model_missing` error at boot if the model isn't in
-> the served build. **Residual operator step:** ensure the Railway build can
-> reach `storage.googleapis.com` (the build now fails loudly if it can't — set
-> `SKIP_MEDIAPIPE_MODEL_DOWNLOAD=1` to bypass deliberately), or vendor the model
-> to remove the build-time egress entirely.
+> **Fixed — two layers:**
+>
+> 1. **Vendored the model (primary fix).** `face_landmarker.task` (~3.6 MB,
+>    pinned v1/float16, `sha256 64184e22…0bc9ff`) is now **committed** at
+>    `artifacts/cpap-fitter/public/mediapipe/models/face_landmarker.task` and
+>    un-gitignored. The build no longer fetches it from
+>    `storage.googleapis.com` — **builds are hermetic** and a restricted-egress
+>    or down-CDN build can't break the deploy. (The regenerated WASM runtime
+>    stays gitignored; only the model is tracked.) `setup-mediapipe.mjs` treats
+>    the present model as the normal path and only downloads as a fallback if it
+>    is ever missing.
+> 2. **Fail-loud safety net (kept).** If the model is ever absent at build time,
+>    `setup-mediapipe.mjs` now **fails the build** on any production build
+>    (`npm_lifecycle_event` = `prebuild`/`build`, any `RAILWAY_*` var, `CI`, or
+>    `NODE_ENV=production`) instead of shipping silently broken;
+>    `SKIP_MEDIAPIPE_MODEL_DOWNLOAD=1` still opts out for deliberate offline
+>    builds. And `app.ts` logs a loud `face_model_missing` error at boot if the
+>    model isn't in the served build.
+>
+> **No residual operator step** — build-time egress to `storage.googleapis.com`
+> is no longer on the deploy path.
 
 _Original finding:_
 `artifacts/cpap-fitter/scripts/setup-mediapipe.mjs` runs as `prebuild` during
@@ -181,7 +192,8 @@ honors `.railwayignore`.
 Config and app are Railway-appropriate and reflect real production hardening
 (single-process API+SPA+worker, liveness-only health gate, decoupled worker,
 trust-proxy, fail-closed CORS, graceful SIGTERM). **R1, R2, and R3 are now
-addressed in this PR** (strict model build + runtime guard; Node pinned to
-`24.x` + `.node-version`; explicit `::` bind). The only remaining items are
-operator-side: set `RAILPACK_NODE_VERSION=24` in Railway → Variables, and
-confirm the build can reach `storage.googleapis.com` (or vendor the model).
+addressed in this PR**: the face model is **vendored** (hermetic build, no
+build-time egress) with a fail-loud guard + runtime check as backup; Node pinned
+to `24.x` + `.node-version`; explicit `::` bind. The only remaining item is
+operator-side and optional: set `RAILPACK_NODE_VERSION=24` in Railway →
+Variables as the authoritative Node pin.

@@ -8,11 +8,16 @@
  *
  *   1. Copies the MediaPipe Tasks Vision WASM bundle from node_modules
  *      into public/mediapipe/wasm/ so Vite serves it from our own origin.
- *   2. Downloads the face_landmarker.task model into public/mediapipe/models/
- *      once and caches it (skipped on re-runs).
+ *      The WASM is regenerated on every build and stays gitignored.
+ *   2. Ensures the face_landmarker.task model is present in
+ *      public/mediapipe/models/. The model is now VENDORED (committed to the
+ *      repo) so the build is hermetic — it never needs egress to
+ *      storage.googleapis.com at build time. This script therefore treats an
+ *      already-present model as the normal case and only falls back to a
+ *      download if it's somehow missing (e.g. a fresh checkout that hasn't
+ *      pulled the LFS-free binary, or a deliberate `rm`). Skipped on re-runs.
  *
- * Output is gitignored — the script runs as a `predev` and `prebuild` hook.
- * No need to commit large binaries.
+ * The script runs as a `predev` and `prebuild` hook.
  */
 import { mkdir, copyFile, readdir, writeFile, stat } from "node:fs/promises";
 import { existsSync, statSync } from "node:fs";
