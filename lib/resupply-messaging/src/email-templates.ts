@@ -169,6 +169,17 @@ export function renderResupplyReminder(
   return { subject, html, text };
 }
 
+export interface ClickLandingItem {
+  /** Friendly supply name, e.g. "Nasal mask cushion". */
+  name: string;
+  /** HCPCS category (mask | cushion | pillow | filter | tubing |
+   *  headgear | chinstrap | chamber | device | other) — drives the
+   *  color chip so the patient can recognize the item at a glance. */
+  category: string;
+  /** Quantity due. */
+  quantity: number;
+}
+
 export interface RenderClickLandingInput {
   /** Practice display name. Already admin-vetted. */
   practiceName: string;
@@ -179,6 +190,49 @@ export interface RenderClickLandingInput {
    * This is what the HTML form's `action` attribute is set to.
    */
   formActionUrl: string;
+  /**
+   * The supplies due on this order. Rendered as a card list on the
+   * `confirm` action so the patient sees exactly what's shipping before
+   * they tap — the single biggest lever on resupply confirmation rate.
+   * Omitted/empty → the page renders without the list (back-compat).
+   * NOT PHI: supply names + quantities are product references only.
+   */
+  items?: ClickLandingItem[];
+}
+
+/** Color chip per supply category for the landing-page item cards. */
+const CATEGORY_CHIP_COLOR: Record<string, string> = {
+  mask: "#0ea5e9",
+  cushion: "#14b8a6",
+  pillow: "#8b5cf6",
+  filter: "#f59e0b",
+  tubing: "#6366f1",
+  headgear: "#ec4899",
+  chinstrap: "#ec4899",
+  chamber: "#06b6d4",
+  device: "#64748b",
+  other: "#94a3b8",
+};
+
+function renderLandingItems(items: ClickLandingItem[]): string {
+  const rows = items
+    .map((it) => {
+      const color =
+        CATEGORY_CHIP_COLOR[it.category] ?? CATEGORY_CHIP_COLOR.other;
+      const qty = Number.isFinite(it.quantity) ? Math.max(1, it.quantity) : 1;
+      return `      <div style="display:flex;align-items:center;padding:12px 16px;border-bottom:1px solid #f1f5f9;text-align:left;">
+        <div style="flex:0 0 auto;width:8px;height:36px;border-radius:4px;background:${color};margin-right:14px;"></div>
+        <div style="flex:1 1 auto;">
+          <div style="font-size:15px;font-weight:600;color:#0f172a;">${escapeHtml(it.name)}</div>
+          <div style="font-size:13px;color:#64748b;">Qty ${qty}</div>
+        </div>
+      </div>`;
+    })
+    .join("\n");
+  return `    <div style="margin:0 0 28px;border:1px solid #e2e8f0;border-radius:10px;overflow:hidden;">
+      <div style="padding:10px 16px;background:#f8fafc;font-size:13px;font-weight:600;color:#475569;border-bottom:1px solid #e2e8f0;text-align:left;">Your supplies due now</div>
+${rows}
+    </div>`;
 }
 
 /**
@@ -191,7 +245,8 @@ export interface RenderClickLandingInput {
  * when they pre-fetch the link to check for malware.
  *
  * No PHI is included — we never echo the patient's name on a page that
- * could be forwarded or cached by an intermediary.
+ * could be forwarded or cached by an intermediary. Supply names and
+ * quantities (the item cards) are product references, not PHI.
  */
 export function renderClickLanding(input: RenderClickLandingInput): string {
   const safePractice = escapeHtml(input.practiceName);
@@ -203,9 +258,12 @@ export function renderClickLanding(input: RenderClickLandingInput): string {
         ? "Request an address change"
         : "Stop CPAP refill reminders";
 
+  const hasItems = !!input.items && input.items.length > 0;
   const description =
     input.action === "confirm"
-      ? "Click the button below to confirm your order and we'll ship your supplies right away."
+      ? hasItems
+        ? "Here's what's due. Tap the button below to confirm and we'll ship your supplies right away."
+        : "Tap the button below to confirm and we'll ship your supplies right away."
       : input.action === "edit"
         ? "Click the button below and a member of our team will reach out about your shipping address."
         : "Click the button below to unsubscribe from CPAP refill reminders. You can always reply to a future email to re-enroll.";
@@ -218,6 +276,11 @@ export function renderClickLanding(input: RenderClickLandingInput): string {
         : "Stop reminders";
 
   const buttonColor = input.action === "stop" ? "#dc2626" : "#0f766e";
+
+  const itemsBlock =
+    input.action === "confirm" && input.items && input.items.length > 0
+      ? renderLandingItems(input.items)
+      : "";
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -234,6 +297,7 @@ export function renderClickLanding(input: RenderClickLandingInput): string {
     <p style="margin:0 0 32px;font-size:15px;line-height:22px;color:#334155;">
       ${escapeHtml(description)}
     </p>
+${itemsBlock}
     <form method="POST" action="${escapeHtml(input.formActionUrl)}">
       <button type="submit" style="display:inline-block;padding:14px 28px;border-radius:6px;background:${buttonColor};color:#ffffff;text-decoration:none;font-weight:600;font-size:16px;border:none;cursor:pointer;">
         ${escapeHtml(buttonLabel)}
@@ -250,8 +314,10 @@ export function renderClickLanding(input: RenderClickLandingInput): string {
 export interface RenderClickConfirmationInput {
   /** Practice display name. Already admin-vetted. */
   practiceName: string;
-  /** What the patient just did. */
-  action: "confirm" | "edit" | "stop";
+  /** What the patient just did. `review` is the entitlement-guard
+   *  outcome: the reorder was received but isn't yet payable under the
+   *  replacement schedule, so a CSR will follow up before it ships. */
+  action: "confirm" | "edit" | "stop" | "review";
 }
 
 /**
@@ -264,18 +330,22 @@ export function renderClickConfirmation(
   input: RenderClickConfirmationInput,
 ): string {
   const safePractice = escapeHtml(input.practiceName);
-  const message =
-    input.action === "confirm"
-      ? "You're all set — your refill is on the way. We'll text or email tracking the moment it ships."
-      : input.action === "edit"
-        ? "Got it — someone from our team will be in touch about the address change shortly."
-        : "You're unsubscribed from CPAP refill reminders for now — no more emails from us on this. Reply to a past email any time and we'll turn them back on.";
-  const heading =
-    input.action === "confirm"
-      ? "Order confirmed"
-      : input.action === "edit"
-        ? "We'll be in touch"
-        : "Reminders paused";
+  const MESSAGES: Record<RenderClickConfirmationInput["action"], string> = {
+    confirm:
+      "You're all set — your refill is on the way. We'll text or email tracking the moment it ships.",
+    edit: "Got it — someone from our team will be in touch about the address change shortly.",
+    stop: "You're unsubscribed from CPAP refill reminders for now — no more emails from us on this. Reply to a past email any time and we'll turn them back on.",
+    review:
+      "Thanks! It looks like it's a little early to reship this item under your plan, so someone from our team will review and follow up before anything ships.",
+  };
+  const HEADINGS: Record<RenderClickConfirmationInput["action"], string> = {
+    confirm: "Order confirmed",
+    edit: "We'll be in touch",
+    stop: "Reminders paused",
+    review: "We'll be in touch",
+  };
+  const message = MESSAGES[input.action];
+  const heading = HEADINGS[input.action];
 
   return `<!DOCTYPE html>
 <html lang="en">

@@ -28,6 +28,7 @@
 import PgBoss from "pg-boss";
 import { logger } from "../lib/logger";
 import { registerReminderJobs } from "./jobs/reminders.js";
+import { registerReminderEscalationJob } from "./jobs/reminder-escalation.js";
 import { registerPrescriptionAttachmentSweepJob } from "./jobs/prescription-attachment-sweep.js";
 import { registerSmartTriggerEvaluatorJob } from "./jobs/smart-trigger-evaluator.js";
 import { registerSmartTriggerSendJob } from "./jobs/smart-trigger-send.js";
@@ -319,6 +320,10 @@ async function doStartWorker(): Promise<void> {
   // deploy doesn't fill the pg-boss retry queue with permanent
   // failures. See jobs/reminders.ts for the full rationale.
   await registerReminderJobs(boss);
+  // Daily multi-channel escalation for unanswered reminders (#7).
+  // Additive companion to the hourly scan; feature-flagged
+  // (reminder_escalation.dispatcher) and reuses the SEND_* queues.
+  await registerReminderEscalationJob(boss);
   await registerPrescriptionAttachmentSweepJob(boss);
   // Phase G.13 — daily smart-trigger evaluator scan. Idempotent
   // re-run; the partial-unique index on

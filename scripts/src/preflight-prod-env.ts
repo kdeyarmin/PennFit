@@ -811,6 +811,69 @@ function runChecks(): void {
         "consulted by the webhook handler. The legacy name can be deleted.",
     );
   }
+
+  // 8. Office Ally clearinghouse readiness (270/271 eligibility + 837P
+  // claims + inbound 999/277CA/835 poll). The integration runs in
+  // stub/outbox mode unless the FULL set below is present —
+  // readOfficeAllyConfigOrNull() returns null on ANY missing var. The
+  // dangerous state is a PARTIAL config: it looks set up but silently
+  // degrades to stub, so nothing ever transmits. Flag that as FAIL.
+  const OFFICE_ALLY_REQUIRED = [
+    "OFFICE_ALLY_USERNAME",
+    "OFFICE_ALLY_PRIVATE_KEY_PATH",
+    "OFFICE_ALLY_KNOWN_HOSTS_PATH",
+    "OFFICE_ALLY_ETIN",
+    "OFFICE_ALLY_BILLING_NPI",
+    "OFFICE_ALLY_BILLING_TAX_ID",
+    "OFFICE_ALLY_BILLING_ORG_NAME",
+    "OFFICE_ALLY_BILLING_ADDRESS_LINE1",
+    "OFFICE_ALLY_BILLING_CITY",
+    "OFFICE_ALLY_BILLING_STATE",
+    "OFFICE_ALLY_BILLING_ZIP",
+  ];
+  {
+    const forcedStub = getTrimmed("OFFICE_ALLY_STUB") === "1";
+    const present = OFFICE_ALLY_REQUIRED.filter(
+      (n) => getTrimmed(n) !== undefined,
+    );
+    const missing = OFFICE_ALLY_REQUIRED.filter(
+      (n) => getTrimmed(n) === undefined,
+    );
+    if (forcedStub) {
+      record(
+        "OFFICE_ALLY",
+        "pass",
+        "stub mode forced (OFFICE_ALLY_STUB=1) — eligibility/claims are written to the outbox, NOT transmitted to the clearinghouse",
+      );
+    } else if (present.length === 0) {
+      record(
+        "OFFICE_ALLY",
+        "pass",
+        "no OFFICE_ALLY_* env vars set — live only if the admin-UI config is set (Billing → Config → Organization identity + Clearinghouse connection), otherwise stub/outbox mode. This env check can't see the DB config; verify with the Clearinghouse connection page's Test button. See docs/runbooks/office-ally-go-live.md",
+      );
+    } else if (present.length < OFFICE_ALLY_REQUIRED.length) {
+      record(
+        "OFFICE_ALLY",
+        "fail",
+        `partially configured (${present.length}/${OFFICE_ALLY_REQUIRED.length} set) — readOfficeAllyConfigOrNull() returns null on ANY missing var, so it SILENTLY falls back to stub and nothing transmits. Missing: ${missing.join(", ")}`,
+      );
+    } else {
+      const usage = getTrimmed("OFFICE_ALLY_USAGE_INDICATOR");
+      if (usage === "P") {
+        record(
+          "OFFICE_ALLY",
+          "pass",
+          "fully configured, usage indicator P — 270/271 + 837P transmit live to Office Ally",
+        );
+      } else {
+        record(
+          "OFFICE_ALLY_USAGE_INDICATOR",
+          "warn",
+          `Office Ally is fully configured but usage indicator is "${usage ?? "T"}" (test) — claims/eligibility go to Office Ally's TEST environment. Set OFFICE_ALLY_USAGE_INDICATOR=P to go live`,
+        );
+      }
+    }
+  }
 }
 
 /**

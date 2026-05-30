@@ -65,7 +65,7 @@ Railway config-as-code reference confirms the fields used here are all valid:
 8. **Health endpoints** (`src/routes/health.ts`, `src/lib/readiness.ts`):
    `/resupply-api/healthz` returns `{status:"ok"}` with no DB call (correct
    deploy gate); `/resupply-api/readyz` probes Supabase (`feature_flags` HEAD)
-   - `isWorkerReady()`, 503 on failure — a monitoring signal, not the gate.
+   and `isWorkerReady()`, 503 on failure — a monitoring signal, not the gate.
 9. **`trust proxy = 1`** (`src/app.ts:42`): correct for Railway's single edge
    proxy so `req.ip` is honest for rate limiting and audit IP capture.
 10. **CORS** (`src/app.ts:67-94`): uses `RESUPPLY_ALLOWED_ORIGINS` **or**
@@ -77,7 +77,7 @@ Railway config-as-code reference confirms the fields used here are all valid:
     `cpap-fitter/dist/public/index.html` is missing — a missing SPA build can't
     silently ship.
 12. **Boot env validation** (`src/lib/env-check.ts`): `assertRequiredEnv()` runs
-    before side-effecting imports and lists _every_ missing required var at once
+    before side-effecting imports and lists *every* missing required var at once
     (`PORT`, `DATABASE_URL`, Supabase, link HMAC). Feature-gated vendors degrade
     gracefully — preview deploys don't need every credential.
 13. **Ephemeral filesystem respected:** runtime uploads (POD photos, Rx PDFs,
@@ -98,8 +98,31 @@ explicit owner decision, not a defect.
 
 ## Risks & recommendations
 
-### R1 — Build-time model download fails OPEN (top finding)
+### R1 — Build-time model download fails OPEN — ✅ FIXED in this PR
 
+> **Fixed — two layers:**
+>
+> 1. **Vendored the model (primary fix).** `face_landmarker.task` (~3.6 MB,
+>    pinned v1/float16, `sha256 64184e22…0bc9ff`) is now **committed** at
+>    `artifacts/cpap-fitter/public/mediapipe/models/face_landmarker.task` and
+>    un-gitignored. The build no longer fetches it from
+>    `storage.googleapis.com` — **builds are hermetic** and a restricted-egress
+>    or down-CDN build can't break the deploy. (The regenerated WASM runtime
+>    stays gitignored; only the model is tracked.) `setup-mediapipe.mjs` treats
+>    the present model as the normal path and only downloads as a fallback if it
+>    is ever missing.
+> 2. **Fail-loud safety net (kept).** If the model is ever absent at build time,
+>    `setup-mediapipe.mjs` now **fails the build** on any production build
+>    (`npm_lifecycle_event` = `prebuild`/`build`, any `RAILWAY_*` var, `CI`, or
+>    `NODE_ENV=production`) instead of shipping silently broken;
+>    `SKIP_MEDIAPIPE_MODEL_DOWNLOAD=1` still opts out for deliberate offline
+>    builds. And `app.ts` logs a loud `face_model_missing` error at boot if the
+>    model isn't in the served build.
+>
+> **No residual operator step** — build-time egress to `storage.googleapis.com`
+> is no longer on the deploy path.
+
+_Original finding:_
 `artifacts/cpap-fitter/scripts/setup-mediapipe.mjs` runs as `prebuild` during
 the Railway build. It copies the MediaPipe **WASM** from `node_modules` (no
 network) but **downloads the `face_landmarker.task` model from
@@ -111,7 +134,6 @@ feature ships **silently broken**. (Also: the `sha256` in `MODELS` is a
 placeholder and is not actually verified.)
 
 Implications / actions:
-
 - Ensure the Railway **build** environment's network policy allows outbound
   `storage.googleapis.com`. If egress is restricted, the model won't vendor.
 - Because it fails open, add monitoring or a post-deploy check that
@@ -121,8 +143,15 @@ Implications / actions:
   Both are owner tradeoffs (binary-in-git vs. deploy resilience) — flagged, not
   changed here.
 
-### R2 — Pin the Node version explicitly (range `">=24"` can fall back)
+### R2 — Pin the Node version explicitly — ✅ FIXED in this PR
 
+> **Fixed:** `engines.node` pinned `">=24"` → `"24.x"` (bounded major), plus a
+> `.node-version` (`24`). **Residual operator step (recommended):** set
+> `RAILPACK_NODE_VERSION=24` in Railway → Variables — it outranks `engines.node`
+> and is the only fully authoritative pin. Confirm the resolved Node major in
+> the next Railway build log.
+
+_Original finding:_
 Root `engines.node = ">=24"`; Railpack's documented default is **22**. Multiple
 Railway community reports describe Railpack **silently falling back to its
 default (or even Node 18)** when the requested major isn't in its package
@@ -136,7 +165,6 @@ default. Because `engines.node` is consulted **before** `.node-version`, the
 `.node-version` file this review adds only helps if Railpack falls through the
 `engines` range without resolving it — it may be ignored entirely. The only
 fully reliable override is therefore:
-
 - **Set `RAILPACK_NODE_VERSION=24` in Railway → Variables** (highest priority),
   and/or pin `engines.node` to a concrete value (e.g. `24.x`).
 - Confirm the actual Node major in the next Railway **build log** (Railpack
@@ -144,11 +172,12 @@ fully reliable override is therefore:
 - The `.node-version` (`24`) added here is a harmless secondary signal (also
   used by nvm/fnm for local dev); it is **not** a substitute for the above.
 
-### R3 — Make host binding explicit (optional, low)
+### R3 — Make host binding explicit — ✅ FIXED in this PR
 
-`src/index.ts:383` relies on Node's implicit `::` dual-stack bind. Functionally
-correct on Railway; passing `"::"` explicitly documents intent and is robust if
-a future Node default changes. Not required.
+`src/index.ts` now binds `"::"` explicitly (dual-stack: serves Railway IPv4
+public **and** IPv6 private networking) instead of relying on Node's implicit
+default. Previously it relied on Node's implicit `::` dual-stack bind — correct,
+but now unambiguous and robust to a future Node default change.
 
 ### R4 — Unused drizzle deps (cleanup, not Railway)
 
@@ -166,6 +195,9 @@ honors `.railwayignore`.
 
 Config and app are Railway-appropriate and reflect real production hardening
 (single-process API+SPA+worker, liveness-only health gate, decoupled worker,
-trust-proxy, fail-closed CORS, graceful SIGTERM). Address **R1** (the silent
-model download) and **R2** (pin Node) to remove the only non-obvious failure
-modes.
+trust-proxy, fail-closed CORS, graceful SIGTERM). **R1, R2, and R3 are now
+addressed in this PR**: the face model is **vendored** (hermetic build, no
+build-time egress) with a fail-loud guard + runtime check as backup; Node pinned
+to `24.x` + `.node-version`; explicit `::` bind. The only remaining item is
+operator-side and optional: set `RAILPACK_NODE_VERSION=24` in Railway →
+Variables as the authoritative Node pin.

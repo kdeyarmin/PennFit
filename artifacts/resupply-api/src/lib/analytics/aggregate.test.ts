@@ -12,7 +12,70 @@ import {
   aggregateComplianceCohorts,
   aggregateCsrProductivity,
   aggregateResupplyFunnel,
+  aggregateResupplyKpis,
+  type EpisodeKpiRow,
 } from "./aggregate";
+
+describe("aggregateResupplyKpis", () => {
+  const eps = (rows: Array<[string, string]>): EpisodeKpiRow[] =>
+    rows.map(([status, patientId]) => ({ status, patientId }));
+
+  it("computes the headline rates", () => {
+    const r = aggregateResupplyKpis({
+      episodes: eps([
+        ["fulfilled", "p1"],
+        ["confirmed", "p2"],
+        ["outreach_pending", "p3"],
+        ["declined", "p1"],
+      ]),
+      outreachCount: 10,
+      respondedCount: 4,
+      activePatientCount: 50,
+      windowDays: 30,
+    });
+    expect(r.totalEpisodes).toBe(4);
+    expect(r.confirmedOrders).toBe(2); // confirmed + fulfilled
+    expect(r.fulfilledOrders).toBe(1);
+    expect(r.uniquePatientsServed).toBe(3); // p1, p2, p3
+    expect(r.confirmationRate).toBe(0.5); // 2/4
+    expect(r.fulfillmentRate).toBe(0.5); // 1/2
+    expect(r.connectionRate).toBe(0.4); // 4/10
+    // 2 confirmed / 50 active * (365/30) ≈ 0.4867
+    expect(r.ordersPerActivePatientAnnualized).toBeCloseTo(0.4867, 3);
+  });
+
+  it("returns null rates instead of dividing by zero", () => {
+    const r = aggregateResupplyKpis({
+      episodes: [],
+      outreachCount: 0,
+      respondedCount: 0,
+      activePatientCount: 0,
+      windowDays: 30,
+    });
+    expect(r.confirmationRate).toBeNull();
+    expect(r.fulfillmentRate).toBeNull();
+    expect(r.connectionRate).toBeNull();
+    expect(r.ordersPerActivePatientAnnualized).toBeNull();
+    expect(r.totalEpisodes).toBe(0);
+  });
+
+  it("fulfillmentRate is null when there are no confirmed orders", () => {
+    const r = aggregateResupplyKpis({
+      episodes: eps([
+        ["outreach_pending", "p1"],
+        ["declined", "p2"],
+      ]),
+      outreachCount: 2,
+      respondedCount: 0,
+      activePatientCount: 10,
+      windowDays: 30,
+    });
+    expect(r.confirmedOrders).toBe(0);
+    expect(r.confirmationRate).toBe(0); // 0/2
+    expect(r.fulfillmentRate).toBeNull(); // 0 confirmed → null
+    expect(r.connectionRate).toBe(0);
+  });
+});
 
 describe("aggregateResupplyFunnel", () => {
   it("returns zeroed buckets for an empty list", () => {

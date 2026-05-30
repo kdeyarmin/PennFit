@@ -8,11 +8,16 @@
  *
  *   1. Copies the MediaPipe Tasks Vision WASM bundle from node_modules
  *      into public/mediapipe/wasm/ so Vite serves it from our own origin.
- *   2. Downloads the face_landmarker.task model into public/mediapipe/models/
- *      once and caches it (skipped on re-runs).
+ *      The WASM is regenerated on every build and stays gitignored.
+ *   2. Ensures the face_landmarker.task model is present in
+ *      public/mediapipe/models/. The model is now VENDORED (committed to the
+ *      repo) so the build is hermetic — it never needs egress to
+ *      storage.googleapis.com at build time. This script therefore treats an
+ *      already-present model as the normal case and only falls back to a
+ *      download if it's somehow missing (e.g. a fresh checkout that hasn't
+ *      pulled the LFS-free binary, or a deliberate `rm`). Skipped on re-runs.
  *
- * Output is gitignored — the script runs as a `predev` and `prebuild` hook.
- * No need to commit large binaries.
+ * The script runs as a `predev` and `prebuild` hook.
  */
 import { mkdir, copyFile, readdir, writeFile, stat } from "node:fs/promises";
 import { existsSync, statSync } from "node:fs";
@@ -160,11 +165,39 @@ if (
         return false;
       }
     })();
+    // Detect if this is a WASM/vendor setup failure (not just a missing model).
+    // Any error thrown from main() indicates a non-recoverable setup problem.
+    const setupFailed = true;
+    // Strict on any real *production build* — fail the build loudly rather
+    // than silently shipping a broken face-scan (see
+    // docs/railway-hosting-review-2026-05-29.md, R1). Triggers when:
+    //   - CI === "true" (GitHub Actions), or
+    //   - NODE_ENV === "production", or
+    //   - the script runs as the `prebuild`/`build` hook of `pnpm build`
+    //     (npm_lifecycle_event). This is what Railway's buildCommand
+    //     (`pnpm run build`) triggers and is platform-agnostic, so a
+    //     Railway/Railpack build can no longer fail open. The dev server
+    //     uses the separate `predev` hook and stays soft, and a manual
+    //     `pnpm setup-mediapipe` run is also soft.
+    //   - any RAILWAY_* var is present (belt-and-suspenders for Railway).
+    // The SKIP_MEDIAPIPE_MODEL_DOWNLOAD=1 escape hatch (handled in main()
+    // before the download is attempted) still lets genuinely offline /
+    // preview builds opt out — it returns before this catch ever runs.
+    const lifecycle = process.env.npm_lifecycle_event;
+    const isProductionBuild =
+      lifecycle === "prebuild" ||
+      lifecycle === "build" ||
+      Object.keys(process.env).some((k) => k.startsWith("RAILWAY_"));
     const strictMode =
-      process.env.CI === "true" || process.env.NODE_ENV === "production";
-    if (strictMode && !hasCachedModel) {
+      process.env.CI === "true" ||
+      process.env.NODE_ENV === "production" ||
+      isProductionBuild;
+    if (strictMode && (setupFailed || !hasCachedModel)) {
       console.error(
-        "[setup-mediapipe] ERROR: No usable face_landmarker.task available in strict mode.",
+        "[setup-mediapipe] ERROR: No usable face_landmarker.task available in strict mode. " +
+          "The deploy would ship a broken face-scan. Fix network access to " +
+          "storage.googleapis.com, vendor the model out-of-band, or set " +
+          "SKIP_MEDIAPIPE_MODEL_DOWNLOAD=1 to build without it intentionally.",
       );
       process.exit(1);
     }
