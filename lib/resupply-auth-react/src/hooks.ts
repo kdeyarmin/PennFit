@@ -15,6 +15,7 @@ import {
   useQuery,
   useQueryClient,
   type QueryClient,
+  type QueryKey,
   type UseMutationResult,
   type UseQueryResult,
 } from "@tanstack/react-query";
@@ -76,6 +77,17 @@ export interface CreateAuthHooksOptions {
    * needs an unconditional refetch.
    */
   staleTime?: number;
+  /**
+   * React Query key for the `/me` session probe. Defaults to
+   * `SESSION_QUERY_KEY` (`["auth","me"]`). Override when more than
+   * one auth surface (e.g. a customer storefront AND an admin
+   * console) share a single `QueryClient`: each must use a distinct
+   * key, or their sessions collide in the cache — a sign-in or
+   * sign-out on one surface would clobber the other's cached
+   * identity, and a gate watching the shared key would read the
+   * wrong session. Pass e.g. `["auth","me","admin"]`.
+   */
+  sessionQueryKey?: QueryKey;
 }
 
 export function createAuthHooks(
@@ -83,15 +95,16 @@ export function createAuthHooks(
   options: CreateAuthHooksOptions = {},
 ): AuthHooks {
   const staleTime = options.staleTime ?? 60_000;
+  const sessionQueryKey = options.sessionQueryKey ?? SESSION_QUERY_KEY;
 
   function invalidateMe(qc: QueryClient): void {
-    void qc.invalidateQueries({ queryKey: SESSION_QUERY_KEY });
+    void qc.invalidateQueries({ queryKey: sessionQueryKey });
   }
 
   return {
     useSession() {
       return useQuery({
-        queryKey: SESSION_QUERY_KEY,
+        queryKey: sessionQueryKey,
         queryFn: () => client.fetchMe(),
         staleTime,
         refetchOnWindowFocus: false,
@@ -137,7 +150,7 @@ export function createAuthHooks(
         onSuccess: () => {
           // Reset to null immediately so any gate watching
           // useSession redirects without a flicker.
-          qc.setQueryData(SESSION_QUERY_KEY, null);
+          qc.setQueryData(sessionQueryKey, null);
           invalidateMe(qc);
         },
       });
@@ -156,7 +169,7 @@ export function createAuthHooks(
         onSuccess: () => {
           // Server revoked all sessions for this user. Force the
           // SPA to re-fetch; it'll get null and route to sign-in.
-          qc.setQueryData(SESSION_QUERY_KEY, null);
+          qc.setQueryData(sessionQueryKey, null);
           invalidateMe(qc);
         },
       });
