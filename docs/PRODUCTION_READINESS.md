@@ -204,8 +204,9 @@ the `pf_session` cookie and respect `SameSite=Lax` / `Secure`.
       bootstrap succeeded).
 - [ ] An invited admin can accept their email invitation, set a
       password, sign in, and reach `/admin` with their assigned role.
-- [ ] An out-of-allowlist user signing in gets the
-      "not authorized" page (not the "transient" one).
+- [ ] A user without an admin role signing in gets the
+      "not authorized" page (not the "transient" one). The role gate
+      reads `auth.users.role` directly — there is no env-var allowlist.
 - [ ] The `/admin/operations` page shows GREEN dots for every
       vendor you intend to be configured.
 - [ ] One smoke purchase via the shop produces a Stripe
