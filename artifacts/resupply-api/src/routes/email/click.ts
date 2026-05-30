@@ -42,6 +42,8 @@ import {
   pausePatient,
   placeResupplyOrderForConversation,
 } from "../../lib/messaging/order-flow";
+import { buildResupplyDueItems } from "../../lib/messaging/resupply-due-items";
+import type { ClickLandingItem } from "@workspace/resupply-messaging";
 import { safeAudit } from "../../lib/messaging/safe-audit";
 
 const router: IRouter = Router();
@@ -126,7 +128,7 @@ router.get("/email/click", emailClickLimiter, async (req, res) => {
   const { data: convRow, error: convErr } = await supabase
     .schema("resupply")
     .from("conversations")
-    .select("id")
+    .select("id, episode_id")
     .eq("id", verified.conversationId)
     .limit(1)
     .maybeSingle();
@@ -163,6 +165,25 @@ router.get("/email/click", emailClickLimiter, async (req, res) => {
   // Build the form action URL so the POST carries the same signed token.
   const formActionUrl = `${cfg.email.publicBaseUrl}/resupply-api/email/click?t=${encodeURIComponent(typeof req.query.t === "string" ? req.query.t : "")}`;
 
+  // Enrich the confirm landing page with the supplies that are due so
+  // the patient sees exactly what's shipping before they tap. Fail
+  // soft: any lookup error renders the page without the list rather
+  // than 500-ing the patient's link.
+  let dueItems: ClickLandingItem[] = [];
+  if (verified.action === "confirm" && convRow.episode_id) {
+    try {
+      dueItems = await buildResupplyDueItems(supabase, convRow.episode_id);
+    } catch (err) {
+      logger.warn(
+        {
+          event: "email_click_due_items_failed",
+          err: serializeErr(err),
+        },
+        "email.click: due-items lookup failed; rendering landing without list",
+      );
+    }
+  }
+
   res
     .status(200)
     .type("text/html")
@@ -171,6 +192,7 @@ router.get("/email/click", emailClickLimiter, async (req, res) => {
         practiceName: cfg.practiceName,
         action: verified.action,
         formActionUrl,
+        items: dueItems,
       }),
     );
 });

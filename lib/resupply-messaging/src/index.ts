@@ -40,6 +40,7 @@ export {
   type RenderClickConfirmationInput,
   type RenderClickErrorInput,
   type RenderClickLandingInput,
+  type ClickLandingItem,
 } from "./email-templates";
 
 export {
