@@ -12,7 +12,10 @@ import "@/admin.css";
 import { useState, type FormEvent } from "react";
 import { Link } from "wouter";
 
-import { AuthError, serverUnavailableMessage } from "@workspace/resupply-auth-react";
+import {
+  AuthError,
+  serverUnavailableMessage,
+} from "@workspace/resupply-auth-react";
 
 import { authHooks } from "@/lib/admin/auth-hooks";
 import { AuthLayout } from "@/components/auth-layout";

@@ -2,7 +2,7 @@
 
 **Audience:** Product + Engineering leadership.
 **Purpose:** Identify the feature, regulatory, and platform gaps between PennFit and the dominant DME / CPAP-resupply software stack, and translate them into a prioritized roadmap.
-**Sources:** Capability inventory of the live repo + competitor marketing-page research (Brightree, Bonafide, TIMS, TeamDME, Fastrack, Noble*Direct, DMEworks, VGM ecosystem, Aeroflow, Apria, Lincare, CPAP.com, The CPAP Shop, Easy Breathe, ResMed AirView, Philips Care Orchestrator, React Health) + 2025-2026 regulatory / industry trend research (CMS, ONC, HHS HIPAA NPRM, HL7 Da Vinci, AAHomecare, KFF, sleep-industry trade press).
+**Sources:** Capability inventory of the live repo + competitor marketing-page research (Brightree, Bonafide, TIMS, TeamDME, Fastrack, Noble\*Direct, DMEworks, VGM ecosystem, Aeroflow, Apria, Lincare, CPAP.com, The CPAP Shop, Easy Breathe, ResMed AirView, Philips Care Orchestrator, React Health) + 2025-2026 regulatory / industry trend research (CMS, ONC, HHS HIPAA NPRM, HL7 Da Vinci, AAHomecare, KFF, sleep-industry trade press).
 
 ---
 
@@ -10,12 +10,12 @@
 
 PennFit today is a credible **mid-tier DME platform** with three areas of competitive strength and roughly twenty addressable feature / regulatory gaps versus the dominant CPAP-resupply tech stack. The gaps fall into four bands:
 
-| Band | Count | Impact |
-| --- | --- | --- |
-| **Critical / table-stakes** (every competitor has) | 8 | Lose deals / waste CSR cycles without these |
-| **Regulatory must-do** (2026-2028) | 7 | Compliance + survey + procurement risk |
-| **Competitive differentiation** | 9 | Beat the incumbents instead of matching |
-| **Emerging tech to watch** | 6 | 12-24 month bets |
+| Band                                               | Count | Impact                                      |
+| -------------------------------------------------- | ----- | ------------------------------------------- |
+| **Critical / table-stakes** (every competitor has) | 8     | Lose deals / waste CSR cycles without these |
+| **Regulatory must-do** (2026-2028)                 | 7     | Compliance + survey + procurement risk      |
+| **Competitive differentiation**                    | 9     | Beat the incumbents instead of matching     |
+| **Emerging tech to watch**                         | 6     | 12-24 month bets                            |
 
 The single biggest investment lever is **real-time eligibility + Same-or-Similar + PECOS** — every competitor has it, it cuts denial volume 90%+ in published benchmarks, and PennFit lacks all three.
 
@@ -25,15 +25,15 @@ The single biggest investment lever is **real-time eligibility + Same-or-Similar
 
 These are areas where the work in PRs #218-235 has already put us ahead of most competitors:
 
-| Capability | Why it's ahead |
-| --- | --- |
-| **AI claim scrubber + denial analyzer + auto-resubmit** | Brightree advertises "voice AI agents" and DME Flow advertises "AI auto-billing", but none of the seven billing-focused vendors publish a structured, audited LLM scrub + denial pipeline. Our patch-whitelist + can_auto_resubmit defensive gate is genuinely novel. |
-| **Tamper-evident HIPAA audit chain (HMAC §164.312(b))** | Most competitors satisfy the audit-log control with append-only logs. Our HMAC chain produces offline-verifiable tamper evidence — a HITRUST/SOC 2 examiner artifact most vendors don't have. |
-| **Four-vendor therapy cloud integration** (ResMed AirView, Philips Care Orchestrator, Health Connect, React Health) | Brightree is locked to ResMed. Most competitors integrate one cloud. We span every major CPAP manufacturer cloud + the Google interop platform. |
-| **Pennsylvania-specific payer catalog with seeded modifier rules** | Generic platforms ship empty catalogs. The 25-payer seed + Medicare DME modifier-rule engine + 50 CARC/RARC codes + 4 claim templates is a ready-to-bill experience out of the box. |
-| **Editable DME identity + clearinghouse credentials in DB** | Vendors with on-prem deployments edit these in flat files / regedit. The PennFit admin UI surface is closer to a multi-tenant SaaS shape. |
-| **Multi-clearinghouse architecture** | Brightree is Office Ally-coupled; Bonafide is Waystar-coupled. Our adapter shape (sftp transport interface + identity resolver) makes Change Healthcare / Availity additions a contained change. |
-| **Stripe storefront + Apple Wallet + push + i18n EN/ES + NPS** | The D2C side of the platform exceeds what most B2B DME vendors offer. We compete with CPAP.com / Easy Breathe / Aeroflow on the storefront UX axis. |
+| Capability                                                                                                          | Why it's ahead                                                                                                                                                                                                                                                        |
+| ------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **AI claim scrubber + denial analyzer + auto-resubmit**                                                             | Brightree advertises "voice AI agents" and DME Flow advertises "AI auto-billing", but none of the seven billing-focused vendors publish a structured, audited LLM scrub + denial pipeline. Our patch-whitelist + can_auto_resubmit defensive gate is genuinely novel. |
+| **Tamper-evident HIPAA audit chain (HMAC §164.312(b))**                                                             | Most competitors satisfy the audit-log control with append-only logs. Our HMAC chain produces offline-verifiable tamper evidence — a HITRUST/SOC 2 examiner artifact most vendors don't have.                                                                         |
+| **Four-vendor therapy cloud integration** (ResMed AirView, Philips Care Orchestrator, Health Connect, React Health) | Brightree is locked to ResMed. Most competitors integrate one cloud. We span every major CPAP manufacturer cloud + the Google interop platform.                                                                                                                       |
+| **Pennsylvania-specific payer catalog with seeded modifier rules**                                                  | Generic platforms ship empty catalogs. The 25-payer seed + Medicare DME modifier-rule engine + 50 CARC/RARC codes + 4 claim templates is a ready-to-bill experience out of the box.                                                                                   |
+| **Editable DME identity + clearinghouse credentials in DB**                                                         | Vendors with on-prem deployments edit these in flat files / regedit. The PennFit admin UI surface is closer to a multi-tenant SaaS shape.                                                                                                                             |
+| **Multi-clearinghouse architecture**                                                                                | Brightree is Office Ally-coupled; Bonafide is Waystar-coupled. Our adapter shape (sftp transport interface + identity resolver) makes Change Healthcare / Availity additions a contained change.                                                                      |
+| **Stripe storefront + Apple Wallet + push + i18n EN/ES + NPS**                                                      | The D2C side of the platform exceeds what most B2B DME vendors offer. We compete with CPAP.com / Easy Breathe / Aeroflow on the storefront UX axis.                                                                                                                   |
 
 Lean into these in the next iteration: they are the marketing leads ("we ship AI scrubbing with a defense-in-depth patch whitelist") and the natural anchors for the integrations to come.
 
@@ -45,7 +45,7 @@ Every competitor we surveyed ships these. Customers will ask about them in the f
 
 ### 3.1 Real-time eligibility verification (270/271)
 
-**What competitors do:** Brightree, Bonafide, TIMS, Noble*Direct, Easy Breathe (60-second), Aeroflow ("Easy Check"). Pulls active coverage, deductible YTD, OOP-max, copay, PA-required flags, COB order. Published benchmarks: 90-95% reduction in eligibility denials, ~$8.64 saved per transaction vs. manual ([Jindal HC 2026](https://www.jindalhc.com/thought-leadership/why-dme-providers-cant-risk-going-into-january-2026-without-ai-eligibility-verification)).
+**What competitors do:** Brightree, Bonafide, TIMS, Noble\*Direct, Easy Breathe (60-second), Aeroflow ("Easy Check"). Pulls active coverage, deductible YTD, OOP-max, copay, PA-required flags, COB order. Published benchmarks: 90-95% reduction in eligibility denials, ~$8.64 saved per transaction vs. manual ([Jindal HC 2026](https://www.jindalhc.com/thought-leadership/why-dme-providers-cant-risk-going-into-january-2026-without-ai-eligibility-verification)).
 **What we have:** `insurance_coverages` table is capture-only; no payer round-trip.
 **Recommendation:** Add `lib/resupply-integrations-eligibility` with X12 270 builder + 271 parser. Office Ally supports 270/271 over the same SFTP rails we already use for 837P. Wire to a `/admin/patients/:id/insurance-coverages/:id/verify-eligibility` route + background daily refresh of active coverages.
 **Effort:** Medium (1-2 weeks). The X12 EDI infrastructure exists.
@@ -73,14 +73,14 @@ Every competitor we surveyed ships these. Customers will ask about them in the f
 
 ### 3.5 Capped-rental lifecycle automation (13/36 month)
 
-**What competitors do:** Brightree, DMEworks, TIMS, Noble*Direct all auto-progress capped-rental claims through months 1-13 (CPAP, RAD, oxygen), apply the right modifier rotation (KH → KI/KX), generate the month-13 ownership transfer, and stop billing on month 14.
+**What competitors do:** Brightree, DMEworks, TIMS, Noble\*Direct all auto-progress capped-rental claims through months 1-13 (CPAP, RAD, oxygen), apply the right modifier rotation (KH → KI/KX), generate the month-13 ownership transfer, and stop billing on month 14.
 **What we have:** `insurance_coverages.capped_rental_status` enum and `payer_modifier_rules` for KH/KI/KX, but no automation engine that progresses a rental month-over-month.
 **Recommendation:** Add a `capped_rental_cycles` table tracking (patient, hcpcs, start_date, current_month, ownership_transferred_at). Cron job advances the month + emits a monthly fulfillment + claim with the right modifier. Wire to the existing claim builder so the CSR clicks once per cycle to confirm.
 **Effort:** Medium (2 weeks).
 
 ### 3.6 CMN / DMEPOS Order automation
 
-**What competitors do:** TeamDME, DMEworks, TIMS, Noble*Direct ship CMN-form generation (oxygen CMN, manual wheelchair CMN), the 5-element DWO/SWO for PAP devices, and refresh-cycle tracking. CMS-484 (oxygen) requires renewal every 12 months.
+**What competitors do:** TeamDME, DMEworks, TIMS, Noble\*Direct ship CMN-form generation (oxygen CMN, manual wheelchair CMN), the 5-element DWO/SWO for PAP devices, and refresh-cycle tracking. CMS-484 (oxygen) requires renewal every 12 months.
 **What we have:** SWO PDF generation for PAP. No DWO refresh tracking, no oxygen CMN.
 **Recommendation:** Generalize the SWO generator into a CMN/DWO renderer keyed on HCPCS family (PAP, oxygen, RAD, hospital bed, wheelchair). Add a `dwo_documents` table tracking signed-on + expires-on + signer NPI. Cron job alerts at T-60/T-30 before expiry.
 **Effort:** Medium (2-3 weeks).
@@ -299,7 +299,7 @@ Still early. Vector forward of our existing OpenAI Realtime voice work. Not yet 
 
 ## 8. Closing Thoughts
 
-PennFit's strongest play in 2026-2027 is **"the AI-native DME platform"**. The patch-whitelisted scrubber + denial analyzer + auto-resubmit pipeline shipped in PR #235 is something no competitor advertises with the same rigor. Pair that with the **PA-specific payer + modifier intelligence** seeded in 0128-0131 and the marketing position writes itself: *"the only DME platform with a HIPAA-compliant AI billing layer that's already trained on Pennsylvania payer rules."*
+PennFit's strongest play in 2026-2027 is **"the AI-native DME platform"**. The patch-whitelisted scrubber + denial analyzer + auto-resubmit pipeline shipped in PR #235 is something no competitor advertises with the same rigor. Pair that with the **PA-specific payer + modifier intelligence** seeded in 0128-0131 and the marketing position writes itself: _"the only DME platform with a HIPAA-compliant AI billing layer that's already trained on Pennsylvania payer rules."_
 
 The roadmap above closes the table-stakes gaps so the AI story doesn't get blown up by basic eligibility failures in a demo, satisfies the 2026-2027 regulatory wave (annual surveys, NPRM encryption, PAS, GFE), and adds the differentiated patient-experience layer (sleep coach chatbot, AI IVR, HSAT funnel, native mobile + Apple Health) that converts patient acquisition.
 
@@ -308,12 +308,14 @@ The roadmap above closes the table-stakes gaps so the AI story doesn't get blown
 ## Sources
 
 ### Capability inventory
+
 - `README.md`, `CLAUDE.md`
 - 139 SQL migrations in `lib/resupply-db/drizzle/`
 - 150+ Express routes in `artifacts/resupply-api/src/routes/`
 - 24 worker jobs in `artifacts/resupply-api/src/worker/jobs/`
 
 ### Competitor research
+
 - [Brightree Resupply / Sleep Therapy / ePrescribe / Analytics](https://www.brightree.com/)
 - [Brightree acquires SnapWorx (April 2025)](https://www.brightree.com/press-release/brightree-to-acquire-technology-provider-snapworx-expanding-cpap-resupply-offerings-for-hme-providers/)
 - [Bonafide DME/HME](https://www.bonafide.com/dme-hme-solutions/) (now WellSky)
@@ -321,7 +323,7 @@ The roadmap above closes the table-stakes gaps so the AI story doesn't get blown
 - [TeamDME](https://teamdme.com/)
 - [DMEworks features](https://www.dmeworks.com/features/) / [Universal Software HDMS](https://universalss.com/hme-dme-software/)
 - [Fastrack HME](http://www.fastrk.com/hme.htm)
-- [Noble*Direct + partners](https://nobledirect.com/)
+- [Noble\*Direct + partners](https://nobledirect.com/)
 - [VGM Vendor ecosystem](https://www.vgm.com/vendors/)
 - [Aeroflow Sleep + EnsoData](https://www.ensodata.com/case-study/discover-how-aeroflow-sleep-uses-cutting-edge-ai-technology-to-impact-patient-care-and-improve-outcomes/)
 - [Apria myApria + Supplies on Schedule](https://www.apria.com/onschedule)
@@ -336,6 +338,7 @@ The roadmap above closes the table-stakes gaps so the AI story doesn't get blown
 - [Sleep Review DTC CPAP](https://sleepreviewmag.com/practice-management/marketing/direct-to-consumer/)
 
 ### Regulatory + industry trends
+
 - [CMS DMEPOS Annual Survey Rule (Jan 1 2026)](https://www.vgm.com/services/government-relations/cms-changes-accreditation-requirements-for-all-dmepos-suppliers-effective-january-1-2026/)
 - [CMS LCD L33718 — PAP for OSA](https://www.cms.gov/medicare-coverage-database/view/lcd.aspx?LCDId=33718)
 - [HHS HIPAA Security Rule NPRM (Jan 2025)](https://www.hhs.gov/hipaa/for-professionals/security/hipaa-security-rule-nprm/factsheet/index.html)

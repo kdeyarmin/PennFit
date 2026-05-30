@@ -15,28 +15,27 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // vi.mock factory runs (Vitest hoists vi.mock calls to the top).
 // ---------------------------------------------------------------------------
 
-const {
-  dbStaged,
-  dbUpsertPayloads,
-  storageResults,
-  resetAll,
-} = vi.hoisted(() => {
-  const dbStaged: Map<string, Array<{ data: unknown; error: unknown }>> =
-    new Map();
-  const dbUpsertPayloads: unknown[] = [];
+const { dbStaged, dbUpsertPayloads, storageResults, resetAll } = vi.hoisted(
+  () => {
+    const dbStaged: Map<
+      string,
+      Array<{ data: unknown; error: unknown }>
+    > = new Map();
+    const dbUpsertPayloads: unknown[] = [];
 
-  // Storage operation results — keyed by "<method>:<bucket>:<path>"
-  // or just "<method>:<bucket>" for list/createSignedUploadUrl.
-  const storageResults: Map<string, unknown> = new Map();
+    // Storage operation results — keyed by "<method>:<bucket>:<path>"
+    // or just "<method>:<bucket>" for list/createSignedUploadUrl.
+    const storageResults: Map<string, unknown> = new Map();
 
-  function resetAll() {
-    dbStaged.clear();
-    dbUpsertPayloads.length = 0;
-    storageResults.clear();
-  }
+    function resetAll() {
+      dbStaged.clear();
+      dbUpsertPayloads.length = 0;
+      storageResults.clear();
+    }
 
-  return { dbStaged, dbUpsertPayloads, storageResults, resetAll };
-});
+    return { dbStaged, dbUpsertPayloads, storageResults, resetAll };
+  },
+);
 
 // ---------------------------------------------------------------------------
 // Inline mock of @workspace/resupply-db
@@ -57,7 +56,10 @@ vi.mock("@workspace/resupply-db", () => {
     let lockedOp: string | null = null;
 
     const chain: Record<string, (...args: unknown[]) => unknown> = {};
-    chain["select"] = () => { lockedOp ??= "select"; return chain; };
+    chain["select"] = () => {
+      lockedOp ??= "select";
+      return chain;
+    };
     chain["insert"] = (p: unknown) => {
       lockedOp ??= "insert";
       dbUpsertPayloads.push(p);
@@ -72,15 +74,16 @@ vi.mock("@workspace/resupply-db", () => {
       dbUpsertPayloads.push(p);
       return chain;
     };
-    chain["delete"] = () => { lockedOp ??= "delete"; return chain; };
+    chain["delete"] = () => {
+      lockedOp ??= "delete";
+      return chain;
+    };
     chain["eq"] = () => chain;
     chain["neq"] = () => chain;
     chain["in"] = () => chain;
     chain["is"] = () => chain;
-    chain["maybeSingle"] = async () =>
-      popDbStage(table, lockedOp ?? "select");
-    chain["single"] = async () =>
-      popDbStage(table, lockedOp ?? "select");
+    chain["maybeSingle"] = async () => popDbStage(table, lockedOp ?? "select");
+    chain["single"] = async () => popDbStage(table, lockedOp ?? "select");
     chain["then"] = (
       ok: (v: unknown) => unknown,
       fail?: (e: unknown) => unknown,
@@ -94,23 +97,39 @@ vi.mock("@workspace/resupply-db", () => {
     return {
       list: async (_dir: string, _opts?: unknown) => {
         const k = `list:${bucket}`;
-        return (storageResults.get(k) ?? { data: null, error: null });
+        return storageResults.get(k) ?? { data: null, error: null };
       },
       download: async (path: string) => {
         const k = `download:${bucket}:${path}`;
-        return (storageResults.get(k) ?? storageResults.get(`download:${bucket}`) ?? { data: null, error: { message: "not found" } });
+        return (
+          storageResults.get(k) ??
+          storageResults.get(`download:${bucket}`) ?? {
+            data: null,
+            error: { message: "not found" },
+          }
+        );
       },
       remove: async (_paths: string[]) => {
         const k = `remove:${bucket}`;
-        return (storageResults.get(k) ?? { data: null, error: null });
+        return storageResults.get(k) ?? { data: null, error: null };
       },
       createSignedUploadUrl: async (_path: string) => {
         const k = `createSignedUploadUrl:${bucket}`;
-        return (storageResults.get(k) ?? { data: null, error: { message: "not configured" } });
+        return (
+          storageResults.get(k) ?? {
+            data: null,
+            error: { message: "not configured" },
+          }
+        );
       },
       createSignedUrl: async (_path: string, _expiresIn: number) => {
         const k = `createSignedUrl:${bucket}`;
-        return (storageResults.get(k) ?? { data: null, error: { message: "not configured" } });
+        return (
+          storageResults.get(k) ?? {
+            data: null,
+            error: { message: "not configured" },
+          }
+        );
       },
     };
   }
@@ -213,7 +232,10 @@ describe("ObjectStorageService.getPublicBucket", () => {
 describe("ObjectStorageService.getObjectEntityUploadURL", () => {
   it("returns the signed upload URL from Supabase Storage", async () => {
     stageStorage("createSignedUploadUrl:attachments", {
-      data: { signedUrl: "https://project.supabase.co/storage/v1/object/upload/sign/attachments/uploads/uuid?token=abc" },
+      data: {
+        signedUrl:
+          "https://project.supabase.co/storage/v1/object/upload/sign/attachments/uploads/uuid?token=abc",
+      },
       error: null,
     });
 
@@ -227,7 +249,10 @@ describe("ObjectStorageService.getObjectEntityUploadURL", () => {
   it("converts relative signed upload URLs to absolute using SUPABASE_URL", async () => {
     vi.stubEnv("SUPABASE_URL", "https://project.supabase.co");
     stageStorage("createSignedUploadUrl:attachments", {
-      data: { signedUrl: "/storage/v1/object/upload/sign/attachments/uploads/uuid?token=abc" },
+      data: {
+        signedUrl:
+          "/storage/v1/object/upload/sign/attachments/uploads/uuid?token=abc",
+      },
       error: null,
     });
 
@@ -273,7 +298,10 @@ describe("ObjectStorageService.getObjectEntityUploadURL", () => {
   it("throws when signedUrl is relative and SUPABASE_URL is unset", async () => {
     vi.stubEnv("SUPABASE_URL", "");
     stageStorage("createSignedUploadUrl:attachments", {
-      data: { signedUrl: "/storage/v1/object/upload/sign/attachments/uploads/uuid?token=abc" },
+      data: {
+        signedUrl:
+          "/storage/v1/object/upload/sign/attachments/uploads/uuid?token=abc",
+      },
       error: null,
     });
 
@@ -291,23 +319,23 @@ describe("ObjectStorageService.getObjectEntityUploadURL", () => {
 describe("ObjectStorageService.getObjectEntityFile", () => {
   it("throws ObjectNotFoundError for paths not starting with /objects/", async () => {
     const svc = new ObjectStorageService();
-    await expect(
-      svc.getObjectEntityFile("uploads/some-id"),
-    ).rejects.toThrow(ObjectNotFoundError);
+    await expect(svc.getObjectEntityFile("uploads/some-id")).rejects.toThrow(
+      ObjectNotFoundError,
+    );
   });
 
   it("throws ObjectNotFoundError for /objects/ with no tail", async () => {
     const svc = new ObjectStorageService();
-    await expect(
-      svc.getObjectEntityFile("/objects/"),
-    ).rejects.toThrow(ObjectNotFoundError);
+    await expect(svc.getObjectEntityFile("/objects/")).rejects.toThrow(
+      ObjectNotFoundError,
+    );
   });
 
   it("throws ObjectNotFoundError for path-traversal with ..", async () => {
     const svc = new ObjectStorageService();
-    await expect(
-      svc.getObjectEntityFile("/objects/../secret"),
-    ).rejects.toThrow(ObjectNotFoundError);
+    await expect(svc.getObjectEntityFile("/objects/../secret")).rejects.toThrow(
+      ObjectNotFoundError,
+    );
   });
 
   it("throws ObjectNotFoundError for path with . segment", async () => {
@@ -338,7 +366,9 @@ describe("ObjectStorageService.getObjectEntityFile", () => {
 
   it("returns a StoredObjectHandle when the object exists", async () => {
     stageStorage("list:attachments", {
-      data: [{ name: "test-uuid", metadata: { size: 100, mimetype: "image/png" } }],
+      data: [
+        { name: "test-uuid", metadata: { size: 100, mimetype: "image/png" } },
+      ],
       error: null,
     });
 
@@ -350,7 +380,12 @@ describe("ObjectStorageService.getObjectEntityFile", () => {
 
   it("throws ObjectNotFoundError when only a prefix match exists", async () => {
     stageStorage("list:attachments", {
-      data: [{ name: "test-uuid-extra", metadata: { size: 100, mimetype: "image/png" } }],
+      data: [
+        {
+          name: "test-uuid-extra",
+          metadata: { size: 100, mimetype: "image/png" },
+        },
+      ],
       error: null,
     });
 
@@ -363,7 +398,12 @@ describe("ObjectStorageService.getObjectEntityFile", () => {
   it("handle.getMetadata() returns size and contentType from storage", async () => {
     // First list call for getObjectEntityFile existence check
     stageStorage("list:attachments", {
-      data: [{ name: "test-uuid", metadata: { size: 2048, mimetype: "application/pdf" } }],
+      data: [
+        {
+          name: "test-uuid",
+          metadata: { size: 2048, mimetype: "application/pdf" },
+        },
+      ],
       error: null,
     });
 
@@ -372,7 +412,12 @@ describe("ObjectStorageService.getObjectEntityFile", () => {
 
     // Second list call for getMetadata()
     stageStorage("list:attachments", {
-      data: [{ name: "test-uuid", metadata: { size: 2048, mimetype: "application/pdf" } }],
+      data: [
+        {
+          name: "test-uuid",
+          metadata: { size: 2048, mimetype: "application/pdf" },
+        },
+      ],
       error: null,
     });
     const [meta] = await handle.getMetadata();
@@ -406,7 +451,9 @@ describe("ObjectStorageService.getObjectEntityFile", () => {
       data: null,
       error: { message: "Object not found" },
     });
-    await expect(handle.delete({ ignoreNotFound: true })).resolves.toBeUndefined();
+    await expect(
+      handle.delete({ ignoreNotFound: true }),
+    ).resolves.toBeUndefined();
   });
 
   it("handle.delete() re-throws non-not-found errors", async () => {
@@ -455,7 +502,8 @@ describe("ObjectStorageService.normalizeObjectEntityPath", () => {
 
   it("returns the raw URL when the bucket is not in the pathname", () => {
     vi.stubEnv("SUPABASE_STORAGE_BUCKET_PRIVATE", "attachments");
-    const url = "https://project.supabase.co/storage/v1/object/upload/sign/other-bucket/uploads/uuid";
+    const url =
+      "https://project.supabase.co/storage/v1/object/upload/sign/other-bucket/uploads/uuid";
     // "attachments" is not in the segments, so we should get the raw URL back.
     expect(svc.normalizeObjectEntityPath(url)).toBe(url);
   });
@@ -569,7 +617,9 @@ describe("ObjectStorageService.downloadObject", () => {
 
     const svc = new ObjectStorageService();
     const response = await svc.downloadObject(FILE);
-    expect(response.headers.get("Content-Type")).toBe("application/octet-stream");
+    expect(response.headers.get("Content-Type")).toBe(
+      "application/octet-stream",
+    );
   });
 });
 
@@ -685,7 +735,9 @@ describe("StoredObjectHandle.getMetadata (readObjectMetadata)", () => {
   it("throws ObjectNotFoundError when only a prefix match exists", async () => {
     // First list call: existence check in getObjectEntityFile succeeds.
     stageStorage("list:attachments", {
-      data: [{ name: "test-uuid", metadata: { size: 100, mimetype: "image/png" } }],
+      data: [
+        { name: "test-uuid", metadata: { size: 100, mimetype: "image/png" } },
+      ],
       error: null,
     });
     const svc = new ObjectStorageService();
@@ -694,7 +746,12 @@ describe("StoredObjectHandle.getMetadata (readObjectMetadata)", () => {
     // Second list call (from readObjectMetadata): only a prefix match is
     // returned, so the exact-name lookup must fail.
     stageStorage("list:attachments", {
-      data: [{ name: "test-uuid-extra", metadata: { size: 999, mimetype: "image/png" } }],
+      data: [
+        {
+          name: "test-uuid-extra",
+          metadata: { size: 999, mimetype: "image/png" },
+        },
+      ],
       error: null,
     });
     await expect(handle.getMetadata()).rejects.toThrow(ObjectNotFoundError);
@@ -702,7 +759,9 @@ describe("StoredObjectHandle.getMetadata (readObjectMetadata)", () => {
 
   it("throws ObjectNotFoundError when data is null and no error is returned", async () => {
     stageStorage("list:attachments", {
-      data: [{ name: "test-uuid", metadata: { size: 100, mimetype: "image/png" } }],
+      data: [
+        { name: "test-uuid", metadata: { size: 100, mimetype: "image/png" } },
+      ],
       error: null,
     });
     const svc = new ObjectStorageService();
@@ -714,7 +773,9 @@ describe("StoredObjectHandle.getMetadata (readObjectMetadata)", () => {
 
   it("throws ObjectNotFoundError when storage returns an error on metadata read", async () => {
     stageStorage("list:attachments", {
-      data: [{ name: "test-uuid", metadata: { size: 100, mimetype: "image/png" } }],
+      data: [
+        { name: "test-uuid", metadata: { size: 100, mimetype: "image/png" } },
+      ],
       error: null,
     });
     const svc = new ObjectStorageService();
@@ -731,7 +792,9 @@ describe("StoredObjectHandle.getMetadata (readObjectMetadata)", () => {
     // Regression: the old code used data[0] which would return the wrong entry
     // if a prefix-named file appeared before the target in the list.
     stageStorage("list:attachments", {
-      data: [{ name: "test-uuid", metadata: { size: 100, mimetype: "image/png" } }],
+      data: [
+        { name: "test-uuid", metadata: { size: 100, mimetype: "image/png" } },
+      ],
       error: null,
     });
     const svc = new ObjectStorageService();
@@ -739,7 +802,10 @@ describe("StoredObjectHandle.getMetadata (readObjectMetadata)", () => {
 
     stageStorage("list:attachments", {
       data: [
-        { name: "test-uuid-prefix", metadata: { size: 9999, mimetype: "application/octet-stream" } },
+        {
+          name: "test-uuid-prefix",
+          metadata: { size: 9999, mimetype: "application/octet-stream" },
+        },
         { name: "test-uuid", metadata: { size: 512, mimetype: "image/jpeg" } },
       ],
       error: null,
@@ -768,14 +834,24 @@ describe("StoredObjectHandle.getMetadata (readObjectMetadata)", () => {
 
   it("parses string-valued size metadata correctly", async () => {
     stageStorage("list:attachments", {
-      data: [{ name: "test-uuid", metadata: { size: "1024", mimetype: "text/plain" } }],
+      data: [
+        {
+          name: "test-uuid",
+          metadata: { size: "1024", mimetype: "text/plain" },
+        },
+      ],
       error: null,
     });
     const svc = new ObjectStorageService();
     const handle = await svc.getObjectEntityFile("/objects/uploads/test-uuid");
 
     stageStorage("list:attachments", {
-      data: [{ name: "test-uuid", metadata: { size: "1024", mimetype: "text/plain" } }],
+      data: [
+        {
+          name: "test-uuid",
+          metadata: { size: "1024", mimetype: "text/plain" },
+        },
+      ],
       error: null,
     });
     const [meta] = await handle.getMetadata();
@@ -821,10 +897,12 @@ describe("ObjectStorageService.trySetObjectEntityAclPolicy", () => {
     // normalizeObjectEntityPath returns the raw path for non-URL non-/objects/ input
     const raw = "not-a-path";
     // The method returns rawPath when normalizedPath doesn't start with /
-    return expect(svc.trySetObjectEntityAclPolicy(raw, {
-      owner: "u",
-      visibility: "private",
-    })).resolves.toBe(raw);
+    return expect(
+      svc.trySetObjectEntityAclPolicy(raw, {
+        owner: "u",
+        visibility: "private",
+      }),
+    ).resolves.toBe(raw);
   });
 });
 
@@ -871,7 +949,10 @@ describe("createSignedDownloadUrl", () => {
 
   it("returns the signed URL on success", async () => {
     stageStorage("createSignedUrl:attachments", {
-      data: { signedUrl: "https://project.supabase.co/storage/v1/render/image/sign/attachments/uploads/doc.pdf?token=xyz" },
+      data: {
+        signedUrl:
+          "https://project.supabase.co/storage/v1/render/image/sign/attachments/uploads/doc.pdf?token=xyz",
+      },
       error: null,
     });
 

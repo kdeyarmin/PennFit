@@ -28,9 +28,15 @@ import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
 
-type Row = Database["resupply"]["Tables"]["medicare_same_or_similar_checks"]["Row"];
+type Row =
+  Database["resupply"]["Tables"]["medicare_same_or_similar_checks"]["Row"];
 
-const STATUS_VALUES = ["clear", "inactive", "active", "unknown"] as const satisfies readonly Row["status"][];
+const STATUS_VALUES = [
+  "clear",
+  "inactive",
+  "active",
+  "unknown",
+] as const satisfies readonly Row["status"][];
 
 const idParam = z.object({ id: z.string().uuid() });
 const body = z
@@ -95,7 +101,9 @@ router.post(
         status: b.status,
         last_dispense_on: b.lastDispenseOn ?? null,
         raw_response_json: b.notes
-          ? ({ note: b.notes } as unknown as Database["resupply"]["Tables"]["medicare_same_or_similar_checks"]["Row"]["raw_response_json"])
+          ? ({
+              note: b.notes,
+            } as unknown as Database["resupply"]["Tables"]["medicare_same_or_similar_checks"]["Row"]["raw_response_json"])
           : null,
         requested_by_email: req.adminEmail ?? "unknown",
       })

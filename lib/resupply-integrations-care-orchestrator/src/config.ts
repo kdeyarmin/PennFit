@@ -26,7 +26,13 @@ export function readCareOrchestratorConfigOrNull(
   const clientId = env.CARE_ORCHESTRATOR_CLIENT_ID;
   const clientSecret = env.CARE_ORCHESTRATOR_CLIENT_SECRET;
   const partnerId = env.CARE_ORCHESTRATOR_PARTNER_ID;
-  if (!apiBaseUrl || !oauthTokenUrl || !clientId || !clientSecret || !partnerId) {
+  if (
+    !apiBaseUrl ||
+    !oauthTokenUrl ||
+    !clientId ||
+    !clientSecret ||
+    !partnerId
+  ) {
     return null;
   }
   return { apiBaseUrl, oauthTokenUrl, clientId, clientSecret, partnerId };

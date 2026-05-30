@@ -313,7 +313,10 @@ export async function handleVoiceWsConnection(
   // `recommendsHandoff` CSR routing never ran (a distressed-patient
   // handoff would be dropped). The `closed` guard makes this run exactly
   // once regardless of how many paths fire.
-  const finalizeAndClose = (reason: string, opts: { forced: boolean }): void => {
+  const finalizeAndClose = (
+    reason: string,
+    opts: { forced: boolean },
+  ): void => {
     if (closed) return;
     closed = true;
     if (maxDurationTimer !== null) {
@@ -417,16 +420,18 @@ export async function handleVoiceWsConnection(
       turnHistory.shift();
     }
     turnHistory.push({ source: turn.source, text: turn.text });
-    void persistTranscript(supabase, pending.conversationId, turn).catch((err) => {
-      logger.error(
-        {
-          event: "voice_transcript_persist_failed",
-          err: serializeErr(err),
-          conversationId: pending.conversationId,
-        },
-        "voice transcript persist failed",
-      );
-    });
+    void persistTranscript(supabase, pending.conversationId, turn).catch(
+      (err) => {
+        logger.error(
+          {
+            event: "voice_transcript_persist_failed",
+            err: serializeErr(err),
+            conversationId: pending.conversationId,
+          },
+          "voice transcript persist failed",
+        );
+      },
+    );
   });
 
   bridge.on("tool.invoked", (invocation) => {

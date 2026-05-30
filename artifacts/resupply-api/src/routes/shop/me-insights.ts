@@ -251,7 +251,10 @@ const COPY: Record<
     body:
       "Your leak rate has trended up over the last two weeks — usually a sign your cushion seal is wearing out. " +
       "A fresh cushion is a 5-minute swap and typically clears the readings overnight.",
-    cta: { label: "Shop replacement cushions", url: "/shop#shop-section-cushion" },
+    cta: {
+      label: "Shop replacement cushions",
+      url: "/shop#shop-section-cushion",
+    },
   },
   usage_dropping: {
     headline: "We noticed a few harder nights",

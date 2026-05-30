@@ -155,7 +155,9 @@ describe("cpap-masks-fisher-paykel — cross-brand comparison rail", () => {
   });
 
   it("recommends React Health as the flagship for most new users", () => {
-    expect(SRC).toContain("React Health is our top recommendation for most new users");
+    expect(SRC).toContain(
+      "React Health is our top recommendation for most new users",
+    );
   });
 });
 

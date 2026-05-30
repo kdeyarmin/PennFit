@@ -1,18 +1,18 @@
 // @vitest-environment jsdom
 //
-// Tests for the csrfHeader() helper added in this PR and its integration
-// with createPaymentCheckoutSession.
+// Tests for createPaymentCheckoutSession after the PR removed csrfHeader()
+// and the X-PF-CSRF header injection. The function now posts to
+// /api/me/payments/checkout-session WITHOUT the X-PF-CSRF header.
 //
-// csrfHeader() reads the readable `pf_csrf` cookie and returns it as an
-// `X-PF-CSRF` header. The tests must run in jsdom so that
-// `document.cookie` exists; the function returns {} when `document` is
-// `undefined` (SSR / node env). We exercise the node-guard path via
-// a runtime spy on `typeof document`.
+// Also covers the formatMoneyCents utility.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Mock } from "vitest";
 
-import { createPaymentCheckoutSession, formatMoneyCents } from "./me-billing-api";
+import {
+  createPaymentCheckoutSession,
+  formatMoneyCents,
+} from "./me-billing-api";
 
 // ── fetch mock ──────────────────────────────────────────────────────────────
 
@@ -22,40 +22,23 @@ let fetchMock: Mock;
 beforeEach(() => {
   fetchMock = vi.fn();
   globalThis.fetch = fetchMock as unknown as typeof fetch;
-  // Start each test with a clean cookie jar.
-  clearCookies();
 });
 
 afterEach(() => {
   globalThis.fetch = ORIGINAL_FETCH;
-  clearCookies();
   vi.restoreAllMocks();
 });
 
-function clearCookies(): void {
-  // Expire every cookie visible to this document.
-  document.cookie.split(";").forEach((c) => {
-    const name = c.split("=")[0]!.trim();
-    document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/`;
-  });
-}
+// ── createPaymentCheckoutSession — request wiring ───────────────────────────
 
-function setCookie(name: string, value: string): void {
-  document.cookie = `${name}=${value}; path=/`;
-}
-
-// ── csrfHeader() behaviour (observed via createPaymentCheckoutSession) ──────
-
-describe("createPaymentCheckoutSession — CSRF header injection", () => {
+describe("createPaymentCheckoutSession — request wiring", () => {
   const VALID_RESPONSE = {
     paymentId: "pay_123",
     url: "https://checkout.stripe.com/test",
     amountCents: 10000,
   };
 
-  it("includes X-PF-CSRF header when pf_csrf cookie is present", async () => {
-    setCookie("pf_csrf", "my-csrf-token");
-
+  it("POSTs to /api/me/payments/checkout-session", async () => {
     fetchMock.mockResolvedValueOnce({
       ok: true,
       json: async () => VALID_RESPONSE,
@@ -63,77 +46,35 @@ describe("createPaymentCheckoutSession — CSRF header injection", () => {
 
     await createPaymentCheckoutSession({ allocations: [] });
 
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    const headers = init.headers as Record<string, string>;
-    expect(headers["X-PF-CSRF"]).toBe("my-csrf-token");
-  });
-
-  it("does NOT include X-PF-CSRF header when pf_csrf cookie is absent", async () => {
-    // No cookie set.
-    fetchMock.mockResolvedValueOnce({
-      ok: true,
-      json: async () => VALID_RESPONSE,
-    });
-
-    await createPaymentCheckoutSession({ allocations: [] });
-
-    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    const headers = init.headers as Record<string, string>;
-    expect(headers["X-PF-CSRF"]).toBeUndefined();
-  });
-
-  it("URL-decodes the pf_csrf cookie value before forwarding it", async () => {
-    // Tokens may be percent-encoded when set via Set-Cookie.
-    const raw = "tok%20with%20spaces";
-    setCookie("pf_csrf", raw);
-
-    fetchMock.mockResolvedValueOnce({
-      ok: true,
-      json: async () => VALID_RESPONSE,
-    });
-
-    await createPaymentCheckoutSession({ allocations: [] });
-
-    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    const headers = init.headers as Record<string, string>;
-    expect(headers["X-PF-CSRF"]).toBe("tok with spaces");
-  });
-
-  it("picks the pf_csrf cookie even when other cookies are present", async () => {
-    setCookie("unrelated_cookie", "unrelated_value");
-    setCookie("pf_csrf", "the-right-token");
-    setCookie("another_cookie", "another_value");
-
-    fetchMock.mockResolvedValueOnce({
-      ok: true,
-      json: async () => VALID_RESPONSE,
-    });
-
-    await createPaymentCheckoutSession({ allocations: [] });
-
-    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    const headers = init.headers as Record<string, string>;
-    expect(headers["X-PF-CSRF"]).toBe("the-right-token");
-  });
-
-  it("POSTs to /api/me/payments/checkout-session with credentials: include", async () => {
-    fetchMock.mockResolvedValueOnce({
-      ok: true,
-      json: async () => VALID_RESPONSE,
-    });
-
-    await createPaymentCheckoutSession({
-      allocations: [{ claimId: "claim_1", amountAppliedCents: 5000 }],
-    });
-
-    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const [url] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toBe("/api/me/payments/checkout-session");
+  });
+
+  it("uses method POST", async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => VALID_RESPONSE,
+    });
+
+    await createPaymentCheckoutSession({ allocations: [] });
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(init.method).toBe("POST");
+  });
+
+  it("sends credentials: include", async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => VALID_RESPONSE,
+    });
+
+    await createPaymentCheckoutSession({ allocations: [] });
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(init.credentials).toBe("include");
   });
 
-  it("sends Content-Type: application/json and Accept: application/json", async () => {
+  it("sends Content-Type: application/json", async () => {
     fetchMock.mockResolvedValueOnce({
       ok: true,
       json: async () => VALID_RESPONSE,
@@ -144,7 +85,35 @@ describe("createPaymentCheckoutSession — CSRF header injection", () => {
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     const headers = init.headers as Record<string, string>;
     expect(headers["Content-Type"]).toBe("application/json");
+  });
+
+  it("sends Accept: application/json", async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => VALID_RESPONSE,
+    });
+
+    await createPaymentCheckoutSession({ allocations: [] });
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const headers = init.headers as Record<string, string>;
     expect(headers["Accept"]).toBe("application/json");
+  });
+
+  // Regression: the PR removed csrfHeader() and X-PF-CSRF injection from
+  // createPaymentCheckoutSession. This test pins that it is GONE so no
+  // accidental re-introduction sends the header from this call.
+  it("does NOT send X-PF-CSRF header (csrfHeader removed in PR)", async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => VALID_RESPONSE,
+    });
+
+    await createPaymentCheckoutSession({ allocations: [] });
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const headers = init.headers as Record<string, string>;
+    expect(headers["X-PF-CSRF"]).toBeUndefined();
   });
 
   it("serialises the allocations in the request body", async () => {
@@ -163,7 +132,33 @@ describe("createPaymentCheckoutSession — CSRF header injection", () => {
     expect(JSON.parse(init.body as string)).toEqual({ allocations });
   });
 
-  it("throws when the server returns a non-ok response", async () => {
+  it("serialises an empty allocations array", async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => VALID_RESPONSE,
+    });
+
+    await createPaymentCheckoutSession({ allocations: [] });
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(JSON.parse(init.body as string)).toEqual({ allocations: [] });
+  });
+
+  it("returns the checkout session response on success", async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => VALID_RESPONSE,
+    });
+
+    const result = await createPaymentCheckoutSession({ allocations: [] });
+    expect(result).toEqual(VALID_RESPONSE);
+  });
+});
+
+// ── createPaymentCheckoutSession — error handling ───────────────────────────
+
+describe("createPaymentCheckoutSession — error handling", () => {
+  it("throws with the error field from the JSON body on non-ok response", async () => {
     fetchMock.mockResolvedValueOnce({
       ok: false,
       status: 403,
@@ -175,7 +170,19 @@ describe("createPaymentCheckoutSession — CSRF header injection", () => {
     ).rejects.toThrow("csrf_failed");
   });
 
-  it("throws with a generic message when the error body has no message/error", async () => {
+  it("throws with the message field from the JSON body on non-ok response", async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: false,
+      status: 400,
+      json: async () => ({ message: "missing allocations" }),
+    });
+
+    await expect(
+      createPaymentCheckoutSession({ allocations: [] }),
+    ).rejects.toThrow("missing allocations");
+  });
+
+  it("throws with a status-code message when error body has no message/error", async () => {
     fetchMock.mockResolvedValueOnce({
       ok: false,
       status: 500,
@@ -186,9 +193,23 @@ describe("createPaymentCheckoutSession — CSRF header injection", () => {
       createPaymentCheckoutSession({ allocations: [] }),
     ).rejects.toThrow(/500/);
   });
+
+  it("throws even when res.json() itself throws on a non-ok response", async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: false,
+      status: 502,
+      json: async () => {
+        throw new SyntaxError("no body");
+      },
+    });
+
+    await expect(
+      createPaymentCheckoutSession({ allocations: [] }),
+    ).rejects.toThrow(/502/);
+  });
 });
 
-// ── formatMoneyCents — unchanged helper, boundary checks ─────────────────────
+// ── formatMoneyCents ─────────────────────────────────────────────────────────
 
 describe("formatMoneyCents", () => {
   it("formats whole-dollar amounts", () => {

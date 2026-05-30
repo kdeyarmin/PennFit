@@ -41,7 +41,11 @@ vi.mock("../../middlewares/requireAdmin", () =>
 const adminRateLimitSpy = vi.hoisted(() =>
   vi.fn(
     (_opts: { name: string; preset?: string }) =>
-      (_req: import("express").Request, _res: import("express").Response, next: import("express").NextFunction) => {
+      (
+        _req: import("express").Request,
+        _res: import("express").Response,
+        next: import("express").NextFunction,
+      ) => {
         next();
       },
   ),

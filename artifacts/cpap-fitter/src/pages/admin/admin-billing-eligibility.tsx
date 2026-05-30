@@ -13,7 +13,12 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
-import { AlertCircle, CheckCircle2, ClipboardCheck, ShieldAlert } from "lucide-react";
+import {
+  AlertCircle,
+  CheckCircle2,
+  ClipboardCheck,
+  ShieldAlert,
+} from "lucide-react";
 
 import { Card } from "@/components/admin/Card";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
@@ -46,13 +51,29 @@ function statusTone(status: EligibilityStatus): {
 } {
   switch (status) {
     case "parsed":
-      return { color: "#15803d", bg: "rgba(21, 128, 61, 0.12)", label: "parsed" };
+      return {
+        color: "#15803d",
+        bg: "rgba(21, 128, 61, 0.12)",
+        label: "parsed",
+      };
     case "submitted":
-      return { color: "#1d4ed8", bg: "rgba(29, 78, 216, 0.12)", label: "submitted" };
+      return {
+        color: "#1d4ed8",
+        bg: "rgba(29, 78, 216, 0.12)",
+        label: "submitted",
+      };
     case "queued":
-      return { color: "#b45309", bg: "rgba(180, 83, 9, 0.12)", label: "queued" };
+      return {
+        color: "#b45309",
+        bg: "rgba(180, 83, 9, 0.12)",
+        label: "queued",
+      };
     case "rejected":
-      return { color: "#b91c1c", bg: "rgba(185, 28, 28, 0.12)", label: "rejected" };
+      return {
+        color: "#b91c1c",
+        bg: "rgba(185, 28, 28, 0.12)",
+        label: "rejected",
+      };
     case "transport_failed":
       return {
         color: "#b91c1c",
@@ -64,9 +85,8 @@ function statusTone(status: EligibilityStatus): {
 
 export function AdminBillingEligibilityPage() {
   const [statusFilter, setStatusFilter] = useState<"" | EligibilityStatus>("");
-  const [windowDays, setWindowDays] = useState<(typeof WINDOW_OPTIONS)[number]>(
-    30,
-  );
+  const [windowDays, setWindowDays] =
+    useState<(typeof WINDOW_OPTIONS)[number]>(30);
 
   const { data, isPending, isError, error, refetch } = useQuery({
     queryKey: [
@@ -99,9 +119,9 @@ export function AdminBillingEligibilityPage() {
           Eligibility worklist
         </h1>
         <p className="text-sm" style={{ color: "hsl(var(--ink-2))" }}>
-          Every 270/271 round-trip in the selected window. Rejected
-          and transport-failed checks are where the team's time pays
-          off — those are coverage rows about to bite us.
+          Every 270/271 round-trip in the selected window. Rejected and
+          transport-failed checks are where the team's time pays off — those are
+          coverage rows about to bite us.
         </p>
       </header>
 
@@ -202,10 +222,7 @@ export function AdminBillingEligibilityPage() {
         {isPending ? (
           <Spinner label="Loading eligibility…" />
         ) : checks.length === 0 ? (
-          <p
-            className="text-sm py-1"
-            style={{ color: "hsl(var(--ink-3))" }}
-          >
+          <p className="text-sm py-1" style={{ color: "hsl(var(--ink-3))" }}>
             No eligibility checks in this window.
           </p>
         ) : (
@@ -253,18 +270,12 @@ function EligibilityRow({ check }: { check: EligibilityCheck }) {
           {tone.label}
         </span>
         {check.errorMessage && (
-          <span
-            className="block text-[11px] mt-1"
-            style={{ color: "#b91c1c" }}
-          >
+          <span className="block text-[11px] mt-1" style={{ color: "#b91c1c" }}>
             {check.errorMessage}
           </span>
         )}
       </td>
-      <td
-        className="p-3 font-medium"
-        style={{ color: "hsl(var(--ink-1))" }}
-      >
+      <td className="p-3 font-medium" style={{ color: "hsl(var(--ink-1))" }}>
         {check.payerName ?? "—"}
       </td>
       <td className="p-3" style={{ color: "hsl(var(--ink-2))" }}>

@@ -106,14 +106,11 @@ export function AdminInboundReferralsPage() {
           <Inbox className="h-6 w-6" />
           Inbound referrals
         </h1>
-        <p
-          className="text-sm mt-1"
-          style={{ color: "hsl(var(--ink-3))" }}
-        >
-          Electronic DME orders landed from Parachute Health and connected
-          EHR partners. Auto-matched to the patient + provider where we
-          can, AI-classified by intent, and pre-flighted for payer PA,
-          eligibility, and doc gaps.
+        <p className="text-sm mt-1" style={{ color: "hsl(var(--ink-3))" }}>
+          Electronic DME orders landed from Parachute Health and connected EHR
+          partners. Auto-matched to the patient + provider where we can,
+          AI-classified by intent, and pre-flighted for payer PA, eligibility,
+          and doc gaps.
         </p>
       </header>
 
@@ -148,10 +145,7 @@ export function AdminInboundReferralsPage() {
         ) : isError ? (
           <ErrorPanel error={error} onRetry={() => void refetch()} />
         ) : data.referrals.length === 0 ? (
-          <p
-            className="text-sm py-3"
-            style={{ color: "hsl(var(--ink-3))" }}
-          >
+          <p className="text-sm py-3" style={{ color: "hsl(var(--ink-3))" }}>
             No referrals in this view.
           </p>
         ) : (
@@ -259,7 +253,7 @@ function ReferralTable({
                   : "—"}
               </td>
               <td className="py-2 text-xs">
-                {(r.patientMatchId ? "👤" : "·")} {(r.providerMatchId ? "🏥" : "·")}
+                {r.patientMatchId ? "👤" : "·"} {r.providerMatchId ? "🏥" : "·"}
               </td>
               <td
                 className="py-2 text-xs"
@@ -361,7 +355,10 @@ function DetailModal({
                 />
               </Section>
 
-              <Section title="Accept" defaultOpen={detail.data.triageStatus !== "accepted"}>
+              <Section
+                title="Accept"
+                defaultOpen={detail.data.triageStatus !== "accepted"}
+              >
                 <AcceptPane
                   referralId={referralId}
                   referral={detail.data}
@@ -383,13 +380,23 @@ function ModalHeader({
   referral,
   onClose,
 }: {
-  referral: { sourceOrderId: string; source: string; triageStatus: ReferralTriageStatus };
+  referral: {
+    sourceOrderId: string;
+    source: string;
+    triageStatus: ReferralTriageStatus;
+  };
   onClose: () => void;
 }) {
   return (
-    <div className="flex items-center justify-between border-b pb-3" style={{ borderColor: "hsl(var(--line-1))" }}>
+    <div
+      className="flex items-center justify-between border-b pb-3"
+      style={{ borderColor: "hsl(var(--line-1))" }}
+    >
       <div>
-        <h2 className="text-lg font-semibold" style={{ color: "hsl(var(--ink-1))" }}>
+        <h2
+          className="text-lg font-semibold"
+          style={{ color: "hsl(var(--ink-1))" }}
+        >
           Referral {referral.sourceOrderId}
         </h2>
         <p className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
@@ -418,7 +425,11 @@ function Section({
   defaultOpen?: boolean;
 }) {
   return (
-    <details className="border rounded" open={defaultOpen} style={{ borderColor: "hsl(var(--line-1))" }}>
+    <details
+      className="border rounded"
+      open={defaultOpen}
+      style={{ borderColor: "hsl(var(--line-1))" }}
+    >
       <summary
         className="cursor-pointer select-none px-3 py-2 text-sm font-semibold"
         style={{ backgroundColor: "hsl(var(--bg-2))" }}
@@ -446,14 +457,21 @@ function OverviewPane({
   referral,
 }: {
   referral: {
-    aiClassification: import("@/lib/admin/inbound-referrals-api").ReferralAiClassification | null;
+    aiClassification:
+      | import("@/lib/admin/inbound-referrals-api").ReferralAiClassification
+      | null;
     aiConfidence: number | null;
     payerName: string | null;
     orderingNpi: string | null;
     receivedAt: string;
     triagedAt: string | null;
     acceptedAt: string | null;
-    documents: Array<{ id: string; kind: string; filename: string | null; sourceUrl: string | null }>;
+    documents: Array<{
+      id: string;
+      kind: string;
+      filename: string | null;
+      sourceUrl: string | null;
+    }>;
     hcpcsItems: unknown;
     icd10Codes: unknown;
   };
@@ -463,15 +481,35 @@ function OverviewPane({
   return (
     <div className="grid grid-cols-2 gap-4 text-sm">
       <div className="space-y-2">
-        <KV label="Received" value={new Date(referral.receivedAt).toLocaleString()} />
-        <KV label="Triaged" value={referral.triagedAt ? new Date(referral.triagedAt).toLocaleString() : "—"} />
-        <KV label="Accepted" value={referral.acceptedAt ? new Date(referral.acceptedAt).toLocaleString() : "—"} />
+        <KV
+          label="Received"
+          value={new Date(referral.receivedAt).toLocaleString()}
+        />
+        <KV
+          label="Triaged"
+          value={
+            referral.triagedAt
+              ? new Date(referral.triagedAt).toLocaleString()
+              : "—"
+          }
+        />
+        <KV
+          label="Accepted"
+          value={
+            referral.acceptedAt
+              ? new Date(referral.acceptedAt).toLocaleString()
+              : "—"
+          }
+        />
         <KV label="Payer" value={referral.payerName ?? "—"} />
         <KV label="Ordering NPI" value={referral.orderingNpi ?? "—"} />
       </div>
       <div className="space-y-2">
         {referral.aiClassification && (
-          <div className="rounded border p-2 text-xs" style={{ borderColor: "hsl(var(--line-1))" }}>
+          <div
+            className="rounded border p-2 text-xs"
+            style={{ borderColor: "hsl(var(--line-1))" }}
+          >
             <div className="font-semibold mb-1">
               AI: {referral.aiClassification.intent} ·{" "}
               {referral.aiConfidence !== null
@@ -480,7 +518,10 @@ function OverviewPane({
             </div>
             <div className="mb-1">{referral.aiClassification.summary}</div>
             {referral.aiClassification.flags.length > 0 && (
-              <ul className="list-disc list-inside" style={{ color: "hsl(var(--ink-3))" }}>
+              <ul
+                className="list-disc list-inside"
+                style={{ color: "hsl(var(--ink-3))" }}
+              >
                 {referral.aiClassification.flags.map((f) => (
                   <li key={f}>{f}</li>
                 ))}
@@ -501,7 +542,10 @@ function OverviewPane({
                   .join(", ")
           }
         />
-        <KV label="ICD-10" value={icd10.length === 0 ? "—" : (icd10 as string[]).join(", ")} />
+        <KV
+          label="ICD-10"
+          value={icd10.length === 0 ? "—" : (icd10 as string[]).join(", ")}
+        />
         <KV
           label="Documents"
           value={
@@ -538,7 +582,10 @@ function OverviewPane({
 function KV({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex gap-2 text-xs">
-      <span className="font-semibold w-24" style={{ color: "hsl(var(--penn-navy))" }}>
+      <span
+        className="font-semibold w-24"
+        style={{ color: "hsl(var(--penn-navy))" }}
+      >
         {label}
       </span>
       <span>{value}</span>
@@ -586,7 +633,10 @@ function PatientMatchPane({
     <div className="space-y-3 text-sm">
       <div className="flex gap-2 items-end">
         <div className="flex-1">
-          <label className="text-xs font-semibold block mb-1" style={{ color: "hsl(var(--penn-navy))" }}>
+          <label
+            className="text-xs font-semibold block mb-1"
+            style={{ color: "hsl(var(--penn-navy))" }}
+          >
             Patient ID (UUID)
           </label>
           <Input
@@ -596,7 +646,9 @@ function PatientMatchPane({
             style={{ borderColor: valid ? undefined : "#dc2626" }}
           />
           {!valid && (
-            <p className="text-[10px] text-rose-700 mt-1">Must be a UUID or empty.</p>
+            <p className="text-[10px] text-rose-700 mt-1">
+              Must be a UUID or empty.
+            </p>
           )}
         </div>
         <Button
@@ -604,7 +656,9 @@ function PatientMatchPane({
           disabled={save.isPending || !valid}
           onClick={() => save.mutate()}
         >
-          {save.isPending ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
+          {save.isPending ? (
+            <Loader2 className="h-3 w-3 animate-spin mr-1" />
+          ) : null}
           Save match
         </Button>
       </div>
@@ -615,7 +669,10 @@ function PatientMatchPane({
       )}
       {current === null && sugg.data && sugg.data.candidates.length > 0 && (
         <div>
-          <p className="text-xs font-semibold mb-1" style={{ color: "hsl(var(--penn-navy))" }}>
+          <p
+            className="text-xs font-semibold mb-1"
+            style={{ color: "hsl(var(--penn-navy))" }}
+          >
             Suggested patients ({sugg.data.candidates.length})
           </p>
           <ul className="space-y-1 text-xs">
@@ -630,7 +687,9 @@ function PatientMatchPane({
                   <span>
                     {p.legalFirstName ?? ""} {p.legalLastName ?? ""}
                   </span>{" "}
-                  <span style={{ color: "hsl(var(--ink-3))" }}>{p.phoneE164 ?? ""}</span>
+                  <span style={{ color: "hsl(var(--ink-3))" }}>
+                    {p.phoneE164 ?? ""}
+                  </span>
                 </span>
                 <button
                   type="button"
@@ -735,7 +794,8 @@ function CallbacksPane({
   callbacks: ReferralStatusCallback[];
   onResent: () => void;
 }) {
-  const [eventType, setEventType] = useState<ReferralLifecycleEvent>("order.accepted");
+  const [eventType, setEventType] =
+    useState<ReferralLifecycleEvent>("order.accepted");
   const resend = useMutation({
     mutationFn: () => resendStatus(referralId, eventType),
     onSuccess: onResent,
@@ -747,7 +807,9 @@ function CallbacksPane({
           className="rounded border px-2 py-1 text-xs"
           style={{ borderColor: "hsl(var(--line-1))" }}
           value={eventType}
-          onChange={(e) => setEventType(e.target.value as ReferralLifecycleEvent)}
+          onChange={(e) =>
+            setEventType(e.target.value as ReferralLifecycleEvent)
+          }
         >
           <option value="order.accepted">order.accepted</option>
           <option value="order.rejected">order.rejected</option>
@@ -790,7 +852,9 @@ function CallbacksPane({
                 ) : c.status === "exhausted" ? (
                   <XCircle className="h-3 w-3 text-rose-600" />
                 ) : null}
-                <span className="text-[10px] uppercase font-semibold">{c.status}</span>
+                <span className="text-[10px] uppercase font-semibold">
+                  {c.status}
+                </span>
               </span>
             </li>
           ))}
@@ -853,7 +917,10 @@ function ShareTokensPane({
       {lastMinted && (
         <div
           className="rounded border p-2 text-xs space-y-1"
-          style={{ borderColor: "hsl(var(--penn-gold))", backgroundColor: "hsl(var(--bg-2))" }}
+          style={{
+            borderColor: "hsl(var(--penn-gold))",
+            backgroundColor: "hsl(var(--bg-2))",
+          }}
         >
           <div className="font-semibold flex items-center gap-1">
             <ShieldCheck className="h-3 w-3" />
@@ -903,8 +970,12 @@ function ShareTokensPane({
                   <span className="ml-2">
                     expires {new Date(t.expiresAt).toLocaleDateString()}
                   </span>
-                  {t.revokedAt && <span className="ml-2 text-rose-700">revoked</span>}
-                  {!t.revokedAt && expired && <span className="ml-2">expired</span>}
+                  {t.revokedAt && (
+                    <span className="ml-2 text-rose-700">revoked</span>
+                  )}
+                  {!t.revokedAt && expired && (
+                    <span className="ml-2">expired</span>
+                  )}
                 </span>
                 {!dead && (
                   <button
@@ -934,7 +1005,11 @@ function AcceptPane({
   onAccepted,
 }: {
   referralId: string;
-  referral: { triageStatus: ReferralTriageStatus; patientMatchId: string | null; providerMatchId: string | null };
+  referral: {
+    triageStatus: ReferralTriageStatus;
+    patientMatchId: string | null;
+    providerMatchId: string | null;
+  };
   onAccepted: () => void;
 }) {
   const [patientId, setPatientId] = useState(referral.patientMatchId ?? "");
@@ -973,7 +1048,12 @@ function AcceptPane({
       ) : (
         <>
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Patient UUID" value={patientId} onChange={setPatientId} invalid={!isUuid(patientId)} />
+            <Field
+              label="Patient UUID"
+              value={patientId}
+              onChange={setPatientId}
+              invalid={!isUuid(patientId)}
+            />
             <Field
               label="Provider UUID (optional)"
               value={providerId}
@@ -1032,7 +1112,10 @@ function Field({
 }) {
   return (
     <div>
-      <label className="text-xs font-semibold block mb-1" style={{ color: "hsl(var(--penn-navy))" }}>
+      <label
+        className="text-xs font-semibold block mb-1"
+        style={{ color: "hsl(var(--penn-navy))" }}
+      >
         {label}
       </label>
       <Input

@@ -88,8 +88,7 @@ export async function resolvePrescriptionRequestInputs(
       faxE164: provider.fax_e164 ?? null,
     },
     supplier: {
-      practiceName:
-        process.env.RESUPPLY_PRACTICE_NAME?.trim() || "PennPaps",
+      practiceName: process.env.RESUPPLY_PRACTICE_NAME?.trim() || "PennPaps",
       faxE164: supplierFax,
       email: process.env.RESUPPLY_SUPPLIER_RETURN_EMAIL?.trim() || null,
     },
@@ -127,8 +126,7 @@ function parseHcpcsLines(raw: unknown): PrescriptionRequestHcpcsLine[] {
     const r = entry as Record<string, unknown>;
     const hcpcs = typeof r.hcpcs === "string" ? r.hcpcs : null;
     if (!hcpcs) continue;
-    const description =
-      typeof r.description === "string" ? r.description : "—";
+    const description = typeof r.description === "string" ? r.description : "—";
     const quantity =
       typeof r.quantity === "number" && r.quantity > 0
         ? Math.trunc(r.quantity)

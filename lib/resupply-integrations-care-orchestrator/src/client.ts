@@ -61,7 +61,11 @@ async function fetchWithTimeout(
   } catch (err) {
     if (err instanceof Error) {
       const name = err.name;
-      if (name === "TimeoutError" || name === "AbortError" || name === "TypeError") {
+      if (
+        name === "TimeoutError" ||
+        name === "AbortError" ||
+        name === "TypeError"
+      ) {
         throw new ClientError("unavailable");
       }
     }
@@ -69,9 +73,7 @@ async function fetchWithTimeout(
   }
 }
 
-async function getAccessToken(
-  config: CareOrchestratorConfig,
-): Promise<string> {
+async function getAccessToken(config: CareOrchestratorConfig): Promise<string> {
   const key = configKey(config);
   if (
     cachedToken &&
@@ -230,7 +232,9 @@ function summariseCompliance(
     averageUsageMinutes:
       withData.length > 0 ? totalMins / withData.length : null,
     averageAhi:
-      ahiVals.length > 0 ? ahiVals.reduce((s, v) => s + v, 0) / ahiVals.length : null,
+      ahiVals.length > 0
+        ? ahiVals.reduce((s, v) => s + v, 0) / ahiVals.length
+        : null,
     meetsCmsCompliance: recentOverFour.length >= 21,
   };
 }

@@ -33,7 +33,10 @@ import {
 } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
-import { createQueueWithDlq, VENDOR_SEND_QUEUE_OPTS } from "../lib/queue-options";
+import {
+  createQueueWithDlq,
+  VENDOR_SEND_QUEUE_OPTS,
+} from "../lib/queue-options";
 
 type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
 type EnrollmentStatus =
@@ -58,7 +61,9 @@ export interface SyncStats {
   errors: number;
 }
 
-export async function runPecosSync(opts: { fetchImpl?: typeof fetch } = {}): Promise<SyncStats> {
+export async function runPecosSync(
+  opts: { fetchImpl?: typeof fetch } = {},
+): Promise<SyncStats> {
   const supabase = getSupabaseServiceRoleClient();
   const fetchImpl = opts.fetchImpl ?? fetch;
   const stats: SyncStats = {
@@ -95,9 +100,7 @@ export async function runPecosSync(opts: { fetchImpl?: typeof fetch } = {}): Pro
   return stats;
 }
 
-async function collectActiveNpis(
-  supabase: SupabaseClient,
-): Promise<string[]> {
+async function collectActiveNpis(supabase: SupabaseClient): Promise<string[]> {
   // Gather distinct NPIs from the providers table that have ever
   // been used as a rendering or referring provider on a claim.
   // Cap at 5000 (one full sync still fits inside a 30-minute window

@@ -157,9 +157,9 @@ export function AdminBillingCappedRentalsPage() {
           Capped-rental cycles
         </h1>
         <p className="text-sm" style={{ color: "hsl(var(--ink-2))" }}>
-          13- and 36-month CMS rental tracking. The advancer worker
-          runs nightly; this view surfaces who's where in the cycle
-          and lets an admin trigger the advance on-demand.
+          13- and 36-month CMS rental tracking. The advancer worker runs
+          nightly; this view surfaces who's where in the cycle and lets an admin
+          trigger the advance on-demand.
         </p>
       </header>
 
@@ -233,10 +233,7 @@ export function AdminBillingCappedRentalsPage() {
               {advanceNow.isPending ? "Advancing…" : "Advance now"}
             </Button>
             {advanceNow.data && (
-              <p
-                className="text-[11px]"
-                style={{ color: "hsl(var(--ink-3))" }}
-              >
+              <p className="text-[11px]" style={{ color: "hsl(var(--ink-3))" }}>
                 {advanceNow.data.stats.advanced} advanced ·{" "}
                 {advanceNow.data.stats.transferred} transferred ·{" "}
                 {advanceNow.data.stats.errored > 0 ? (
@@ -263,10 +260,7 @@ export function AdminBillingCappedRentalsPage() {
         {cycles.isPending ? (
           <Spinner label="Loading cycles…" />
         ) : (cycles.data?.cycles.length ?? 0) === 0 ? (
-          <p
-            className="text-sm py-1"
-            style={{ color: "hsl(var(--ink-3))" }}
-          >
+          <p className="text-sm py-1" style={{ color: "hsl(var(--ink-3))" }}>
             No cycles match the current filter.
           </p>
         ) : (

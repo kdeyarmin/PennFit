@@ -26,7 +26,10 @@ describe("runRecallBulkMatch", () => {
   it("throws when the recall row doesn't exist", async () => {
     stageSupabaseResponse("equipment_recalls", "select", { data: null });
     await expect(
-      runRecallBulkMatch(getSupabaseServiceRoleClient(), "00000000-0000-4000-8000-000000000000"),
+      runRecallBulkMatch(
+        getSupabaseServiceRoleClient(),
+        "00000000-0000-4000-8000-000000000000",
+      ),
     ).rejects.toThrow(/not found/);
   });
 

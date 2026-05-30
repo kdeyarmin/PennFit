@@ -93,10 +93,7 @@ export function stageSupabaseResponse(
   queues.set(key(table, op), list);
 }
 
-function popResponse(
-  table: string,
-  op: SupabaseOp,
-): StagedSupabaseResponse {
+function popResponse(table: string, op: SupabaseOp): StagedSupabaseResponse {
   const k = key(table, op);
   const list = queues.get(k);
   if (!list || list.length === 0) {
@@ -146,9 +143,7 @@ interface TableBuilder {
     onfulfilled?:
       | ((value: StagedSupabaseResponse) => TResult1 | PromiseLike<TResult1>)
       | null,
-    onrejected?:
-      | ((reason: unknown) => TResult2 | PromiseLike<TResult2>)
-      | null,
+    onrejected?: ((reason: unknown) => TResult2 | PromiseLike<TResult2>) | null,
   ) => Promise<TResult1 | TResult2>;
 }
 
@@ -273,16 +268,15 @@ function makeTableBuilder(table: string): TableBuilder {
   return builder;
 }
 
-
 // Keep this mock at module scope so Vitest hoists it within this helper
 // module once the helper has been loaded. Tests must still import this file
 // (or configure it in a Vitest setupFile) before importing any route/helper
 // that imports `@workspace/resupply-db`. `installSupabaseMock()` only manages
 // staged responses after the mock has been registered.
 vi.mock("@workspace/resupply-db", async () => {
-  const actual = await vi.importActual<
-    typeof import("@workspace/resupply-db")
-  >("@workspace/resupply-db");
+  const actual = await vi.importActual<typeof import("@workspace/resupply-db")>(
+    "@workspace/resupply-db",
+  );
   return {
     ...actual,
     getSupabaseServiceRoleClient: () => ({
@@ -338,11 +332,7 @@ export interface SupabaseMockHandle {
   /** Reset all staged responses + call counts. Call from `beforeEach`. */
   reset(): void;
   /** Stage a response. Equivalent to calling `stageSupabaseResponse`. */
-  stage(
-    table: string,
-    op: SupabaseOp,
-    result: StagedSupabaseResponse,
-  ): void;
+  stage(table: string, op: SupabaseOp, result: StagedSupabaseResponse): void;
   /**
    * How many times the route invoked `(table, op)` since the last
    * `reset()`. Useful for testing call-count invariants the legacy
@@ -415,10 +405,7 @@ export function installSupabaseMock(): SupabaseMockHandle {
 }
 
 /** Standalone alias for `installSupabaseMock().callCount(...)`. */
-export function getSupabaseCallCount(
-  table: string,
-  op: SupabaseOp,
-): number {
+export function getSupabaseCallCount(table: string, op: SupabaseOp): number {
   return callCounts.get(key(table, op)) ?? 0;
 }
 

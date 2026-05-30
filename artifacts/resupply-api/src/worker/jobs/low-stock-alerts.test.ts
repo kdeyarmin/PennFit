@@ -29,8 +29,8 @@ const supabaseMock = installSupabaseMock();
 // throwing `EmailConfigError` from the factory simulates an
 // unconfigured environment. Defined via vi.hoisted so it's available
 // during the hoisted mock factory.
-const { sendEmailMock, sendgridShouldThrow, FakeEmailConfigError } =
-  vi.hoisted(() => {
+const { sendEmailMock, sendgridShouldThrow, FakeEmailConfigError } = vi.hoisted(
+  () => {
     class FakeEmailConfigError extends Error {
       constructor(message: string) {
         super(message);
@@ -44,7 +44,8 @@ const { sendEmailMock, sendgridShouldThrow, FakeEmailConfigError } =
       sendgridShouldThrow: { current: false },
       FakeEmailConfigError,
     };
-  });
+  },
+);
 vi.mock("@workspace/resupply-email", () => ({
   EmailConfigError: FakeEmailConfigError,
   createSendgridClient: () => {
@@ -100,8 +101,7 @@ vi.mock("../../lib/stripe/products-meta", async () => {
         manufacturer: null,
         modelNumber: null,
         stockCount: stock === undefined ? null : Number(stock),
-        lowStockThreshold:
-          threshold === undefined ? null : Number(threshold),
+        lowStockThreshold: threshold === undefined ? null : Number(threshold),
         price: { id: "price_x", unitAmount: 1000, currency: "usd" },
         recurringPrice: null,
       };
@@ -270,7 +270,9 @@ describe("runLowStockAlerts: first-ever alert", () => {
   });
 
   it("skips SKUs whose stockCount is null (untracked)", async () => {
-    stageSingleStripePage([stripeProduct("prod_UNTRACKED", "Mystery", null, 5)]);
+    stageSingleStripePage([
+      stripeProduct("prod_UNTRACKED", "Mystery", null, 5),
+    ]);
     stageSupabaseResponse("low_stock_alert_state", "update", { data: [] });
 
     const stats = await runLowStockAlerts();
@@ -336,13 +338,15 @@ describe("runLowStockAlerts: cooldown + recovery", () => {
   });
 
   it("re-alerts after recovery + re-dip even when within the 24h window", async () => {
-    stageSingleStripePage([
-      stripeProduct("prod_REDIP", "Re-dipped SKU", 2, 5),
-    ]);
+    stageSingleStripePage([stripeProduct("prod_REDIP", "Re-dipped SKU", 2, 5)]);
     stageSupabaseResponse("low_stock_alert_state", "update", { data: [] });
     // last_resolved_at > last_alerted_at → fresh dip, bypasses cooldown.
-    const tenHoursAgo = new Date(Date.now() - 10 * 60 * 60 * 1000).toISOString();
-    const fiveHoursAgo = new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString();
+    const tenHoursAgo = new Date(
+      Date.now() - 10 * 60 * 60 * 1000,
+    ).toISOString();
+    const fiveHoursAgo = new Date(
+      Date.now() - 5 * 60 * 60 * 1000,
+    ).toISOString();
     stageSupabaseResponse("low_stock_alert_state", "select", {
       data: [
         {
@@ -386,8 +390,12 @@ describe("runLowStockAlerts: cooldown + recovery", () => {
     // so it is eligible immediately (no cooldown suppression).
     stageSingleStripePage([stripeProduct("prod_BOUNCE", "Bounce SKU", 1, 5)]);
     stageSupabaseResponse("low_stock_alert_state", "update", { data: [] });
-    const tenHoursAgo = new Date(Date.now() - 10 * 60 * 60 * 1000).toISOString();
-    const fiveHoursAgo = new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString();
+    const tenHoursAgo = new Date(
+      Date.now() - 10 * 60 * 60 * 1000,
+    ).toISOString();
+    const fiveHoursAgo = new Date(
+      Date.now() - 5 * 60 * 60 * 1000,
+    ).toISOString();
     stageSupabaseResponse("low_stock_alert_state", "select", {
       data: [
         {
@@ -411,7 +419,9 @@ describe("runLowStockAlerts: cooldown + recovery", () => {
     // but SHOULD be in `recoveredIds` so the worker can stamp
     // last_resolved_at. We assert the .update() call landed on the
     // state table.
-    stageSingleStripePage([stripeProduct("prod_RECOVERED", "Recovered SKU", 20, 5)]);
+    stageSingleStripePage([
+      stripeProduct("prod_RECOVERED", "Recovered SKU", 20, 5),
+    ]);
     stageSupabaseResponse("low_stock_alert_state", "update", {
       data: [{ product_id: "prod_RECOVERED" }],
     });

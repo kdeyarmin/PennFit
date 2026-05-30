@@ -29,9 +29,7 @@ describe("PrescriptionsTab — module structure", () => {
 
   it("imports ApiError from the api-client-react admin package", () => {
     expect(SRC).toContain("ApiError");
-    expect(SRC).toMatch(
-      /from\s+["']@workspace\/api-client-react\/admin["']/,
-    );
+    expect(SRC).toMatch(/from\s+["']@workspace\/api-client-react\/admin["']/);
   });
 
   it("imports useCreatePrescription for the AddPrescriptionModal", () => {
@@ -335,9 +333,7 @@ describe("PrescriptionsTab — AddPrescriptionModal validation error messages", 
   });
 
   it("shows cadence range error when cadence is out of bounds", () => {
-    expect(SRC).toContain(
-      "Cadence must be a whole number between 1 and 365.",
-    );
+    expect(SRC).toContain("Cadence must be a whole number between 1 and 365.");
   });
 
   it("shows date format error for invalid validFrom", () => {
@@ -368,7 +364,7 @@ describe("PrescriptionsTab — AddPrescriptionModal error handling", () => {
   });
 
   it("falls back to generic message when ApiError has no .message", () => {
-    expect(SRC).toContain("\"Couldn't create prescription.\"");
+    expect(SRC).toContain('"Couldn\'t create prescription."');
   });
 
   it("uses err.message when error is a plain Error", () => {
@@ -411,7 +407,7 @@ describe("PrescriptionsTab — handleUpload size guard", () => {
   });
 
   it("surfaces an error message when upload fails", () => {
-    expect(SRC).toContain("\"Couldn't attach document.\"");
+    expect(SRC).toContain('"Couldn\'t attach document."');
   });
 });
 
@@ -423,10 +419,8 @@ describe("PrescriptionsTab — handleRemoveAttachment", () => {
     // Migrated from window.confirm to the accessible useConfirmDialog
     // hook (which wraps Radix AlertDialog). The prompt text moved
     // into structured `title`/`description` fields.
-    expect(SRC).toContain("title: \"Remove attached document?\"");
-    expect(SRC).toContain(
-      "The patient's record will no longer link to it.",
-    );
+    expect(SRC).toContain('title: "Remove attached document?"');
+    expect(SRC).toContain("The patient's record will no longer link to it.");
   });
 
   it("calls removePrescriptionAttachment when confirmed", () => {
@@ -434,7 +428,7 @@ describe("PrescriptionsTab — handleRemoveAttachment", () => {
   });
 
   it("surfaces an error when remove fails", () => {
-    expect(SRC).toContain("\"Couldn't remove attachment.\"");
+    expect(SRC).toContain('"Couldn\'t remove attachment."');
   });
 });
 
@@ -467,7 +461,7 @@ describe("PrescriptionsTab — changeStatus (mark expired / revoke)", () => {
   });
 
   it("surfaces 'Couldn't update prescription.' on generic error", () => {
-    expect(SRC).toContain("\"Couldn't update prescription.\"");
+    expect(SRC).toContain('"Couldn\'t update prescription."');
   });
 
   it("does not proceed when user cancels the confirm dialog (early return)", () => {
@@ -502,9 +496,7 @@ describe("PrescriptionsTab — GenerateSwoButton disabled conditions", () => {
   });
 
   it("sets a title explaining the HCPCS requirement", () => {
-    expect(SRC).toContain(
-      "Add an HCPCS code on this prescription first",
-    );
+    expect(SRC).toContain("Add an HCPCS code on this prescription first");
   });
 
   it("sets a title explaining the provider requirement", () => {
@@ -522,13 +514,13 @@ describe("PrescriptionsTab — GenerateSwoButton disabled conditions", () => {
 // ---------------------------------------------------------------------------
 describe("PrescriptionsTab — GenerateSwoButton SWO URL", () => {
   it("constructs the SWO URL with the correct path prefix", () => {
-    expect(SRC).toContain(
-      "/resupply-api/admin/patients/",
-    );
+    expect(SRC).toContain("/resupply-api/admin/patients/");
   });
 
   it("URL-encodes the patientId to handle special characters", () => {
-    expect(SRC).toContain("encodeURIComponent(\n          patientId,\n        )");
+    expect(SRC).toContain(
+      "encodeURIComponent(\n          patientId,\n        )",
+    );
   });
 
   it("URL-encodes the prescription id in the SWO URL", () => {
@@ -544,7 +536,7 @@ describe("PrescriptionsTab — GenerateSwoButton SWO URL", () => {
   });
 
   it("calls onError with a SWO-prefixed message when the PDF request fails", () => {
-    expect(SRC).toContain('onError(`SWO: ${summarizePdfError(result.error)}`');
+    expect(SRC).toContain("onError(`SWO: ${summarizePdfError(result.error)}`");
   });
 });
 
@@ -623,7 +615,7 @@ describe("PrescriptionsTab — PrescriptionAttachmentCell with existing attachme
   });
 
   it("shows 'Remove' text when not busy", () => {
-    expect(SRC).toContain(": \"Remove\"");
+    expect(SRC).toContain(': "Remove"');
   });
 });
 
@@ -632,31 +624,31 @@ describe("PrescriptionsTab — PrescriptionAttachmentCell with existing attachme
 // ---------------------------------------------------------------------------
 describe("PrescriptionsTab — table column definitions", () => {
   it("includes an 'Item' column that renders itemSku", () => {
-    expect(SRC).toContain("header: \"Item\"");
+    expect(SRC).toContain('header: "Item"');
     expect(SRC).toContain("r.itemSku");
   });
 
   it("includes an 'HCPCS' column that falls back to em-dash for missing codes", () => {
-    expect(SRC).toContain("header: \"HCPCS\"");
+    expect(SRC).toContain('header: "HCPCS"');
     expect(SRC).toContain('r.hcpcsCode ?? "\u2014"');
   });
 
   it("includes a 'Cadence' column that appends ' days' to the value", () => {
-    expect(SRC).toContain("header: \"Cadence\"");
+    expect(SRC).toContain('header: "Cadence"');
     expect(SRC).toContain("`${r.cadenceDays} days`");
   });
 
   it("includes 'Valid from' and 'Valid until' date columns", () => {
-    expect(SRC).toContain("header: \"Valid from\"");
-    expect(SRC).toContain("header: \"Valid until\"");
+    expect(SRC).toContain('header: "Valid from"');
+    expect(SRC).toContain('header: "Valid until"');
   });
 
   it("includes a 'Status' column with a success badge for active prescriptions", () => {
-    expect(SRC).toContain("r.status === \"active\" ? \"success\" : \"muted\"");
+    expect(SRC).toContain('r.status === "active" ? "success" : "muted"');
   });
 
   it("includes a 'Document' column that renders PrescriptionAttachmentCell", () => {
-    expect(SRC).toContain("header: \"Document\"");
+    expect(SRC).toContain('header: "Document"');
     expect(SRC).toContain("PrescriptionAttachmentCell");
   });
 
@@ -727,9 +719,7 @@ describe("PrescriptionsTab — AddPrescriptionModal UX", () => {
   });
 
   it("shows an immutability note about clinical fields in the modal", () => {
-    expect(SRC).toContain(
-      "Clinical fields are immutable after save.",
-    );
+    expect(SRC).toContain("Clinical fields are immutable after save.");
   });
 
   it("shows the 'New prescription' heading", () => {
@@ -759,9 +749,7 @@ describe("PrescriptionsTab — AddPrescriptionModal default cadence", () => {
 // ---------------------------------------------------------------------------
 describe("PrescriptionsTab — tab header immutability notice", () => {
   it("includes a note that clinical fields are immutable after creation", () => {
-    expect(SRC).toContain(
-      "Clinical fields are immutable after creation",
-    );
+    expect(SRC).toContain("Clinical fields are immutable after creation");
   });
 
   it("instructs users to add a new prescription and mark the old one expired to edit", () => {

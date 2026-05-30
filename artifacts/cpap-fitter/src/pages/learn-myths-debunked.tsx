@@ -102,10 +102,10 @@ export function LearnMythsDebunked() {
           Ten things people get wrong.
         </h1>
         <p className="text-lg text-muted-foreground leading-relaxed">
-          The internet has a lot of confidently-stated CPAP advice that isn&apos;t
-          quite right — and a few myths that prevent people from getting
-          tested for years. Here are the ten we hear most often, and what
-          the honest answer is.
+          The internet has a lot of confidently-stated CPAP advice that
+          isn&apos;t quite right — and a few myths that prevent people from
+          getting tested for years. Here are the ten we hear most often, and
+          what the honest answer is.
         </p>
       </header>
 
@@ -181,11 +181,11 @@ export function LearnMythsDebunked() {
             </div>
             <p className="text-muted-foreground leading-relaxed">
               Most of these myths persist because the truth is slightly more
-              nuanced than a Reddit one-liner. Sleep apnea is more common
-              and more dangerous than most people think; the therapy is
-              more tolerable and more effective than most people assume.
-              The single biggest gap is between knowing you should get
-              tested and actually doing it.
+              nuanced than a Reddit one-liner. Sleep apnea is more common and
+              more dangerous than most people think; the therapy is more
+              tolerable and more effective than most people assume. The single
+              biggest gap is between knowing you should get tested and actually
+              doing it.
             </p>
           </div>
         </div>

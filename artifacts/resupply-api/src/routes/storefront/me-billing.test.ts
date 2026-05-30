@@ -75,9 +75,9 @@ describe("/api/me/billing-statements", () => {
     });
     stageSupabaseResponse("patients", "select", { data: null });
 
-    const res = await request(
-      makeApp({ shopCustomerId: CUSTOMER_ID }),
-    ).get("/api/me/billing-statements");
+    const res = await request(makeApp({ shopCustomerId: CUSTOMER_ID })).get(
+      "/api/me/billing-statements",
+    );
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ statements: [] });
@@ -88,9 +88,9 @@ describe("/api/me/billing-statements", () => {
       error: new Error("boom"),
     });
 
-    const res = await request(
-      makeApp({ shopCustomerId: CUSTOMER_ID }),
-    ).get("/api/me/billing-statements");
+    const res = await request(makeApp({ shopCustomerId: CUSTOMER_ID })).get(
+      "/api/me/billing-statements",
+    );
 
     expect(res.status).toBe(500);
     expect(res.body).toEqual({ error: "lookup_failed" });
@@ -121,9 +121,9 @@ describe("/api/me/billing-statements", () => {
       ],
     });
 
-    const res = await request(
-      makeApp({ shopCustomerId: CUSTOMER_ID }),
-    ).get("/api/me/billing-statements");
+    const res = await request(makeApp({ shopCustomerId: CUSTOMER_ID })).get(
+      "/api/me/billing-statements",
+    );
 
     expect(res.status).toBe(200);
     expect(res.body.statements).toHaveLength(1);
@@ -163,18 +163,18 @@ describe("/api/me/billing-statements/:id/pdf", () => {
       data: null,
     });
 
-    const res = await request(
-      makeApp({ shopCustomerId: CUSTOMER_ID }),
-    ).get(`/api/me/billing-statements/${STATEMENT}/pdf`);
+    const res = await request(makeApp({ shopCustomerId: CUSTOMER_ID })).get(
+      `/api/me/billing-statements/${STATEMENT}/pdf`,
+    );
 
     expect(res.status).toBe(404);
     expect(res.body).toEqual({ error: "not_found" });
   });
 
   it("404s on an invalid UUID in the path (rejects without leaking shape)", async () => {
-    const res = await request(
-      makeApp({ shopCustomerId: CUSTOMER_ID }),
-    ).get("/api/me/billing-statements/not-a-uuid/pdf");
+    const res = await request(makeApp({ shopCustomerId: CUSTOMER_ID })).get(
+      "/api/me/billing-statements/not-a-uuid/pdf",
+    );
     expect(res.status).toBe(404);
   });
 
@@ -183,9 +183,9 @@ describe("/api/me/billing-statements/:id/pdf", () => {
       error: new Error("boom"),
     });
 
-    const res = await request(
-      makeApp({ shopCustomerId: CUSTOMER_ID }),
-    ).get(`/api/me/billing-statements/${STATEMENT}/pdf`);
+    const res = await request(makeApp({ shopCustomerId: CUSTOMER_ID })).get(
+      `/api/me/billing-statements/${STATEMENT}/pdf`,
+    );
 
     expect(res.status).toBe(500);
     expect(res.body).toEqual({ error: "lookup_failed" });

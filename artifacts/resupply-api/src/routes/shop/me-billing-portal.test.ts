@@ -30,8 +30,7 @@ vi.mock("../../middlewares/requireSignedIn", () =>
 // We don't test the rate-limit logic here (it has its own tests). Mock
 // it to always call next() so it's invisible to these tests.
 vi.mock("../../middlewares/rate-limit", () => ({
-  rateLimit: () =>
-    (_req: unknown, _res: unknown, next: () => void) => next(),
+  rateLimit: () => (_req: unknown, _res: unknown, next: () => void) => next(),
 }));
 
 // ── Stripe config + customer mock ─────────────────────────────────────
@@ -93,7 +92,12 @@ function makeApp(): Express {
   return app;
 }
 
-function stubSignedIn(profile: MockSignedInProfile = { customerId: CUSTOMER_ID, email: CUSTOMER_EMAIL }): void {
+function stubSignedIn(
+  profile: MockSignedInProfile = {
+    customerId: CUSTOMER_ID,
+    email: CUSTOMER_EMAIL,
+  },
+): void {
   mockSignedIn.current = profile;
 }
 
@@ -327,8 +331,9 @@ describe("POST /shop/me/billing-portal", () => {
     stubSignedIn();
     stubStripeConfigured();
 
-    const res = await request(makeApp())
-      .post("/resupply-api/shop/me/billing-portal");
+    const res = await request(makeApp()).post(
+      "/resupply-api/shop/me/billing-portal",
+    );
     expect(res.status).toBe(200);
   });
 });

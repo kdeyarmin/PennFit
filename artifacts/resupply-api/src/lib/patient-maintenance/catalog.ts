@@ -22,11 +22,7 @@
 //   * Humidifier chamber: weekly, vinegar descale monthly.
 //   * Filter: monthly inspect / replace per device guidance.
 
-export type MaintenanceCategory =
-  | "mask"
-  | "tubing"
-  | "humidifier"
-  | "filter";
+export type MaintenanceCategory = "mask" | "tubing" | "humidifier" | "filter";
 
 export interface MaintenanceTask {
   key: string;
@@ -78,9 +74,7 @@ export const MAINTENANCE_CATALOG: ReadonlyArray<MaintenanceTask> = [
 ];
 
 /** Lookup by key (catalog is small; linear scan is fine). */
-export function findMaintenanceTask(
-  key: string,
-): MaintenanceTask | undefined {
+export function findMaintenanceTask(key: string): MaintenanceTask | undefined {
   return MAINTENANCE_CATALOG.find((t) => t.key === key);
 }
 

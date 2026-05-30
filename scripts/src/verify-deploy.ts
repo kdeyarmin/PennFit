@@ -241,15 +241,15 @@ async function main(): Promise<number> {
   // no dependency and returns {status:"ok"}. If THIS 404s for a JSON
   // request, the API isn't behind this domain at all.
   await checkApiJson(base, "/resupply-api/healthz", (json) =>
-    json["status"] === "ok" ? null : `status was ${JSON.stringify(json["status"])}`,
+    json["status"] === "ok"
+      ? null
+      : `status was ${JSON.stringify(json["status"])}`,
   );
 
   // The exact call the shop page makes. Reachability is what we assert;
   // an empty catalog (preview mode with no SKUs) is still a pass.
   await checkApiJson(base, "/resupply-api/shop/products", (json) =>
-    Array.isArray(json["products"])
-      ? null
-      : "body had no `products` array",
+    Array.isArray(json["products"]) ? null : "body had no `products` array",
   );
 
   await checkSpaShell(base);

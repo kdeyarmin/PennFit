@@ -30,9 +30,7 @@ describe("diffSettings", () => {
   it("detects pressure range changes", () => {
     const after = { ...base, pressureMaxCmh2o: 16 };
     const d = diffSettings(base, after);
-    expect(d).toEqual([
-      { field: "pressureMaxCmh2o", before: 14, after: 16 },
-    ]);
+    expect(d).toEqual([{ field: "pressureMaxCmh2o", before: 14, after: 16 }]);
   });
 
   it("detects mode + humidifier together", () => {

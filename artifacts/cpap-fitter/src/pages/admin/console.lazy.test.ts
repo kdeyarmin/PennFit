@@ -28,11 +28,15 @@ const SRC = readFileSync(path.join(__dirname, "console.tsx"), "utf8");
 
 describe("console.tsx — Suspense + lazy React imports", () => {
   it("imports Suspense from react", () => {
-    expect(SRC).toMatch(/import\s*\{[^}]*\bSuspense\b[^}]*\}\s*from\s*["']react["']/);
+    expect(SRC).toMatch(
+      /import\s*\{[^}]*\bSuspense\b[^}]*\}\s*from\s*["']react["']/,
+    );
   });
 
   it("imports lazy from react", () => {
-    expect(SRC).toMatch(/import\s*\{[^}]*\blazy\b[^}]*\}\s*from\s*["']react["']/);
+    expect(SRC).toMatch(
+      /import\s*\{[^}]*\blazy\b[^}]*\}\s*from\s*["']react["']/,
+    );
   });
 });
 
@@ -82,7 +86,9 @@ describe("console.tsx — core admin pages are lazy-loaded", () => {
   for (const [symbolName, modulePath] of lazyPages) {
     it(`${symbolName} is declared as a lazy() component`, () => {
       // Must appear as `const X = lazy(…)`
-      expect(SRC).toMatch(new RegExp(`const\\s+${symbolName}\\s*=\\s*lazy\\s*\\(`));
+      expect(SRC).toMatch(
+        new RegExp(`const\\s+${symbolName}\\s*=\\s*lazy\\s*\\(`),
+      );
       // The factory must import from the expected module path
       expect(SRC).toContain(`import("${modulePath}")`);
       // The .then() factory must set `default: m.<symbolName>` to re-export
@@ -102,14 +108,22 @@ describe("console.tsx — billing pages are lazy-loaded", () => {
     ["AdminBillingEligibilityPage", "@/pages/admin/admin-billing-eligibility"],
     ["AdminBillingPriorAuthsPage", "@/pages/admin/admin-billing-prior-auths"],
     ["AdminBillingConfigHubPage", "@/pages/admin/admin-billing-config"],
-    ["AdminBillingConfigPayersPage", "@/pages/admin/admin-billing-config-payers"],
-    ["AdminBillingCappedRentalsPage", "@/pages/admin/admin-billing-capped-rentals"],
+    [
+      "AdminBillingConfigPayersPage",
+      "@/pages/admin/admin-billing-config-payers",
+    ],
+    [
+      "AdminBillingCappedRentalsPage",
+      "@/pages/admin/admin-billing-capped-rentals",
+    ],
     ["AdminBillingOfficeAllyPage", "@/pages/admin/admin-billing-office-ally"],
   ];
 
   for (const [symbolName, modulePath] of billingLazyPages) {
     it(`${symbolName} is declared as a lazy() component`, () => {
-      expect(SRC).toMatch(new RegExp(`const\\s+${symbolName}\\s*=\\s*lazy\\s*\\(`));
+      expect(SRC).toMatch(
+        new RegExp(`const\\s+${symbolName}\\s*=\\s*lazy\\s*\\(`),
+      );
       expect(SRC).toContain(`import("${modulePath}")`);
       expect(SRC).toContain(`default: m.${symbolName}`);
     });
@@ -126,33 +140,25 @@ describe("console.tsx — billing pages are lazy-loaded", () => {
 
 describe("console.tsx — Pennpaps pages use renamed source exports", () => {
   it("PennpapsOrdersPage factory maps m.AdminOrders → default", () => {
-    expect(SRC).toMatch(
-      /const\s+PennpapsOrdersPage\s*=\s*lazy\s*\(/,
-    );
+    expect(SRC).toMatch(/const\s+PennpapsOrdersPage\s*=\s*lazy\s*\(/);
     expect(SRC).toContain('import("@/pages/admin/pennpaps-orders")');
     expect(SRC).toContain("default: m.AdminOrders");
   });
 
   it("PennpapsOrderDetailPage factory maps m.AdminOrderDetail → default", () => {
-    expect(SRC).toMatch(
-      /const\s+PennpapsOrderDetailPage\s*=\s*lazy\s*\(/,
-    );
+    expect(SRC).toMatch(/const\s+PennpapsOrderDetailPage\s*=\s*lazy\s*\(/);
     expect(SRC).toContain('import("@/pages/admin/pennpaps-order-detail")');
     expect(SRC).toContain("default: m.AdminOrderDetail");
   });
 
   it("PennpapsRemindersPage factory maps m.AdminReminders → default", () => {
-    expect(SRC).toMatch(
-      /const\s+PennpapsRemindersPage\s*=\s*lazy\s*\(/,
-    );
+    expect(SRC).toMatch(/const\s+PennpapsRemindersPage\s*=\s*lazy\s*\(/);
     expect(SRC).toContain('import("@/pages/admin/pennpaps-reminders")');
     expect(SRC).toContain("default: m.AdminReminders");
   });
 
   it("PennpapsAnalyticsPage factory maps m.AdminAnalytics → default", () => {
-    expect(SRC).toMatch(
-      /const\s+PennpapsAnalyticsPage\s*=\s*lazy\s*\(/,
-    );
+    expect(SRC).toMatch(/const\s+PennpapsAnalyticsPage\s*=\s*lazy\s*\(/);
     expect(SRC).toContain('import("@/pages/admin/pennpaps-analytics")');
     expect(SRC).toContain("default: m.AdminAnalytics");
   });

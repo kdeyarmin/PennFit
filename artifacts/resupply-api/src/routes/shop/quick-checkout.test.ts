@@ -47,8 +47,7 @@ vi.mock("../../middlewares/requireSignedIn", () =>
 
 // ── Rate-limit: always pass-through ──────────────────────────────────────────
 vi.mock("../../middlewares/rate-limit", () => ({
-  rateLimit: () =>
-    (_req: unknown, _res: unknown, next: () => void) => next(),
+  rateLimit: () => (_req: unknown, _res: unknown, next: () => void) => next(),
 }));
 
 // ── Stripe config + client mocks ──────────────────────────────────────────────
@@ -184,12 +183,10 @@ describe("POST /shop/me/quick-checkout — auth and config guards", () => {
     stubSignedIn();
     stubStripeConfigured();
 
-    const res = await request(makeApp())
-      .post("/shop/me/quick-checkout")
-      .send({
-        items: ONE_ITEM,
-        reorderSessionId: "cs_test_aaaaaaaaaaaaaaaaaaaaaa",
-      });
+    const res = await request(makeApp()).post("/shop/me/quick-checkout").send({
+      items: ONE_ITEM,
+      reorderSessionId: "cs_test_aaaaaaaaaaaaaaaaaaaaaa",
+    });
     expect(res.status).toBe(400);
     expect(res.body.error).toBe("invalid_body");
   });
@@ -239,7 +236,10 @@ describe("POST /shop/me/quick-checkout — idempotency key namespacing", () => {
   it("passes an idempotency key to stripe.checkout.sessions.create", async () => {
     const mock = await checkoutWithKey(CUSTOMER_A, "client-key-1");
     expect(mock).toHaveBeenCalledTimes(1);
-    const [, opts] = mock.mock.calls[0] as [unknown, { idempotencyKey?: string }];
+    const [, opts] = mock.mock.calls[0] as [
+      unknown,
+      { idempotencyKey?: string },
+    ];
     expect(typeof opts.idempotencyKey).toBe("string");
     expect(opts.idempotencyKey!.length).toBeGreaterThan(0);
   });
@@ -247,7 +247,10 @@ describe("POST /shop/me/quick-checkout — idempotency key namespacing", () => {
   it("does NOT forward the raw client Idempotency-Key header to Stripe", async () => {
     const rawClientKey = "my-raw-client-key-do-not-use";
     const mock = await checkoutWithKey(CUSTOMER_A, rawClientKey);
-    const [, opts] = mock.mock.calls[0] as [unknown, { idempotencyKey?: string }];
+    const [, opts] = mock.mock.calls[0] as [
+      unknown,
+      { idempotencyKey?: string },
+    ];
     // The effective key must be a hash, not the verbatim client key.
     expect(opts.idempotencyKey).not.toBe(rawClientKey);
   });
@@ -257,12 +260,18 @@ describe("POST /shop/me/quick-checkout — idempotency key namespacing", () => {
 
     // Customer A
     const mockA = await checkoutWithKey(CUSTOMER_A, sharedClientKey);
-    const [, optsA] = mockA.mock.calls[0] as [unknown, { idempotencyKey?: string }];
+    const [, optsA] = mockA.mock.calls[0] as [
+      unknown,
+      { idempotencyKey?: string },
+    ];
     const keyA = optsA.idempotencyKey;
 
     // Customer B — same client key
     const mockB = await checkoutWithKey(CUSTOMER_B, sharedClientKey);
-    const [, optsB] = mockB.mock.calls[0] as [unknown, { idempotencyKey?: string }];
+    const [, optsB] = mockB.mock.calls[0] as [
+      unknown,
+      { idempotencyKey?: string },
+    ];
     const keyB = optsB.idempotencyKey;
 
     expect(keyA).toBeDefined();
@@ -274,10 +283,16 @@ describe("POST /shop/me/quick-checkout — idempotency key namespacing", () => {
     const clientKey = "double-click-dedup";
 
     const mockFirst = await checkoutWithKey(CUSTOMER_A, clientKey, ONE_ITEM);
-    const [, optsFirst] = mockFirst.mock.calls[0] as [unknown, { idempotencyKey?: string }];
+    const [, optsFirst] = mockFirst.mock.calls[0] as [
+      unknown,
+      { idempotencyKey?: string },
+    ];
 
     const mockSecond = await checkoutWithKey(CUSTOMER_A, clientKey, ONE_ITEM);
-    const [, optsSecond] = mockSecond.mock.calls[0] as [unknown, { idempotencyKey?: string }];
+    const [, optsSecond] = mockSecond.mock.calls[0] as [
+      unknown,
+      { idempotencyKey?: string },
+    ];
 
     expect(optsFirst.idempotencyKey).toBe(optsSecond.idempotencyKey);
   });
@@ -289,10 +304,16 @@ describe("POST /shop/me/quick-checkout — idempotency key namespacing", () => {
     const itemsB = [{ priceId: "price_bbb222bbbccc333", quantity: 2 }];
 
     const mockFirst = await checkoutWithKey(CUSTOMER_A, clientKey, itemsA);
-    const [, optsFirst] = mockFirst.mock.calls[0] as [unknown, { idempotencyKey?: string }];
+    const [, optsFirst] = mockFirst.mock.calls[0] as [
+      unknown,
+      { idempotencyKey?: string },
+    ];
 
     const mockSecond = await checkoutWithKey(CUSTOMER_A, clientKey, itemsB);
-    const [, optsSecond] = mockSecond.mock.calls[0] as [unknown, { idempotencyKey?: string }];
+    const [, optsSecond] = mockSecond.mock.calls[0] as [
+      unknown,
+      { idempotencyKey?: string },
+    ];
 
     expect(optsFirst.idempotencyKey).not.toBe(optsSecond.idempotencyKey);
   });
@@ -303,21 +324,34 @@ describe("POST /shop/me/quick-checkout — idempotency key namespacing", () => {
     // One-time basket
     const oneTimeItems = [{ priceId: "price_onetimeaaa111", quantity: 1 }];
     const mockOt = await checkoutWithKey(CUSTOMER_A, clientKey, oneTimeItems);
-    const [, optsOt] = mockOt.mock.calls[0] as [unknown, { idempotencyKey?: string }];
+    const [, optsOt] = mockOt.mock.calls[0] as [
+      unknown,
+      { idempotencyKey?: string },
+    ];
 
     // Subscription basket (same priceId, same quantity, different mode)
     const subItems = [
-      { priceId: "price_onetimeaaa111", quantity: 1, mode: "subscription" as const },
+      {
+        priceId: "price_onetimeaaa111",
+        quantity: 1,
+        mode: "subscription" as const,
+      },
     ];
     const mockSub = await checkoutWithKey(CUSTOMER_A, clientKey, subItems);
-    const [, optsSub] = mockSub.mock.calls[0] as [unknown, { idempotencyKey?: string }];
+    const [, optsSub] = mockSub.mock.calls[0] as [
+      unknown,
+      { idempotencyKey?: string },
+    ];
 
     expect(optsOt.idempotencyKey).not.toBe(optsSub.idempotencyKey);
   });
 
   it("generates a key even when no Idempotency-Key header is sent (uses random UUID internally)", async () => {
     const mock = await checkoutWithKey(CUSTOMER_A, null /* no header */);
-    const [, opts] = mock.mock.calls[0] as [unknown, { idempotencyKey?: string }];
+    const [, opts] = mock.mock.calls[0] as [
+      unknown,
+      { idempotencyKey?: string },
+    ];
     expect(typeof opts.idempotencyKey).toBe("string");
     expect(opts.idempotencyKey!.length).toBeGreaterThan(0);
   });
@@ -331,7 +365,13 @@ describe("POST /shop/me/quick-checkout — cart validation", () => {
     stubStripeConfigured();
     validateCartItemsMock.mockResolvedValue({
       ok: false,
-      errors: [{ priceId: "price_abc123xyzabc", reason: "archived", message: "Price is archived" }],
+      errors: [
+        {
+          priceId: "price_abc123xyzabc",
+          reason: "archived",
+          message: "Price is archived",
+        },
+      ],
     });
 
     const res = await request(makeApp())

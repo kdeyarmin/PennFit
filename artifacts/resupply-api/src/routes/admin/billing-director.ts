@@ -152,10 +152,15 @@ router.get(
       .slice(0, 5);
 
     // Denial-rate trend across 0-30/30-60/60-90 day buckets.
-    const buckets = { d0_30: { dec: 0, den: 0 }, d30_60: { dec: 0, den: 0 }, d60_90: { dec: 0, den: 0 } };
+    const buckets = {
+      d0_30: { dec: 0, den: 0 },
+      d30_60: { dec: 0, den: 0 },
+      d60_90: { dec: 0, den: 0 },
+    };
     for (const c of denialRateRows ?? []) {
       if (!c.decision_at) continue;
-      const ageDays = (now - new Date(c.decision_at).getTime()) / (24 * 3600 * 1000);
+      const ageDays =
+        (now - new Date(c.decision_at).getTime()) / (24 * 3600 * 1000);
       const bucket =
         ageDays <= 30 ? "d0_30" : ageDays <= 60 ? "d30_60" : "d60_90";
       buckets[bucket].dec += 1;

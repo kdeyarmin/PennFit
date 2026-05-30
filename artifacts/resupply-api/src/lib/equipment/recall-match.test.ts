@@ -9,8 +9,16 @@ describe("recallMatchesAsset — manufacturer gate", () => {
   it("matches when manufacturer agrees (exact case)", () => {
     expect(
       recallMatchesAsset({
-        asset: { manufacturer: "Philips", model: "DreamStation", serialNumber: "S1" },
-        recall: { manufacturer: "Philips", modelMatch: null, serialMatch: null },
+        asset: {
+          manufacturer: "Philips",
+          model: "DreamStation",
+          serialNumber: "S1",
+        },
+        recall: {
+          manufacturer: "Philips",
+          modelMatch: null,
+          serialMatch: null,
+        },
       }),
     ).toBe(true);
   });
@@ -18,8 +26,16 @@ describe("recallMatchesAsset — manufacturer gate", () => {
   it("matches when manufacturer agrees case-insensitively", () => {
     expect(
       recallMatchesAsset({
-        asset: { manufacturer: "philips", model: "DreamStation", serialNumber: "S1" },
-        recall: { manufacturer: "PHILIPS", modelMatch: null, serialMatch: null },
+        asset: {
+          manufacturer: "philips",
+          model: "DreamStation",
+          serialNumber: "S1",
+        },
+        recall: {
+          manufacturer: "PHILIPS",
+          modelMatch: null,
+          serialMatch: null,
+        },
       }),
     ).toBe(true);
   });
@@ -27,8 +43,16 @@ describe("recallMatchesAsset — manufacturer gate", () => {
   it("rejects when manufacturer differs", () => {
     expect(
       recallMatchesAsset({
-        asset: { manufacturer: "ResMed", model: "AirSense 10", serialNumber: "R9" },
-        recall: { manufacturer: "Philips", modelMatch: null, serialMatch: null },
+        asset: {
+          manufacturer: "ResMed",
+          model: "AirSense 10",
+          serialNumber: "R9",
+        },
+        recall: {
+          manufacturer: "Philips",
+          modelMatch: null,
+          serialMatch: null,
+        },
       }),
     ).toBe(false);
   });
@@ -38,8 +62,16 @@ describe("recallMatchesAsset — model gate", () => {
   it("matches when modelMatch is null (any model)", () => {
     expect(
       recallMatchesAsset({
-        asset: { manufacturer: "Philips", model: "DreamStation 2", serialNumber: "S1" },
-        recall: { manufacturer: "Philips", modelMatch: null, serialMatch: null },
+        asset: {
+          manufacturer: "Philips",
+          model: "DreamStation 2",
+          serialNumber: "S1",
+        },
+        recall: {
+          manufacturer: "Philips",
+          modelMatch: null,
+          serialMatch: null,
+        },
       }),
     ).toBe(true);
   });
@@ -47,7 +79,11 @@ describe("recallMatchesAsset — model gate", () => {
   it("matches when model agrees (case-insensitive)", () => {
     expect(
       recallMatchesAsset({
-        asset: { manufacturer: "Philips", model: "DreamStation", serialNumber: "S1" },
+        asset: {
+          manufacturer: "Philips",
+          model: "DreamStation",
+          serialNumber: "S1",
+        },
         recall: {
           manufacturer: "Philips",
           modelMatch: "dreamstation",
@@ -60,7 +96,11 @@ describe("recallMatchesAsset — model gate", () => {
   it("rejects when model differs", () => {
     expect(
       recallMatchesAsset({
-        asset: { manufacturer: "Philips", model: "DreamStation 2", serialNumber: "S1" },
+        asset: {
+          manufacturer: "Philips",
+          model: "DreamStation 2",
+          serialNumber: "S1",
+        },
         recall: {
           manufacturer: "Philips",
           modelMatch: "DreamStation",

@@ -207,7 +207,10 @@ describe("parseFhirBundle", () => {
             reasonCode: [
               {
                 coding: [
-                  { system: "http://hl7.org/fhir/sid/icd-10-cm", code: "G47.33" },
+                  {
+                    system: "http://hl7.org/fhir/sid/icd-10-cm",
+                    code: "G47.33",
+                  },
                 ],
               },
             ],

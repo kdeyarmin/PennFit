@@ -93,7 +93,8 @@ function setMessagingEnv(): void {
   process.env.SENDGRID_FROM_EMAIL = "no-reply@penn.example";
   process.env.SENDGRID_FROM_NAME = "Penn Sleep";
   process.env.SENDGRID_EVENT_WEBHOOK_PUBLIC_KEY = "fake-pubkey";
-  process.env.RESUPPLY_LINK_HMAC_KEY = "QkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkI=";
+  process.env.RESUPPLY_LINK_HMAC_KEY =
+    "QkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkI=";
   process.env.RESUPPLY_VOICE_PUBLIC_BASE_URL = "https://test.example.com";
   process.env.RESUPPLY_ADMIN_EMAILS = ALLOWED_EMAIL;
   process.env.NODE_ENV = "test";
@@ -193,7 +194,10 @@ describe("POST /sms/send-reminder", () => {
     stubVerifiedAdmin();
     stageSupabaseResponse("patients", "select", { data: ACTIVE_PATIENT });
     stageSupabaseResponse("episodes", "select", {
-      data: { id: EPISODE_ID, patient_id: "44444444-4444-4444-8444-444444444444" },
+      data: {
+        id: EPISODE_ID,
+        patient_id: "44444444-4444-4444-8444-444444444444",
+      },
     });
     const res = await request(makeApp())
       .post("/resupply-api/sms/send-reminder")

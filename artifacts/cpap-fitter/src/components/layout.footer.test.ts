@@ -32,8 +32,14 @@ describe("layout.tsx — Patient stories link added to footer", () => {
     // The footer nav items are <li><Link ...>label</Link></li>
     const storiesIdx = SRC.indexOf('href="/stories"');
     expect(storiesIdx).toBeGreaterThanOrEqual(0);
-    // Check there is a <li> before the link in close proximity
-    const surrounding = SRC.slice(Math.max(0, storiesIdx - 50), storiesIdx + 100);
+    // Check there is a <li> before the link in close proximity.
+    // Lookback is generous so Prettier's multi-line JSX (the <li>,
+    // <Link>, and href land on separate indented lines) still falls
+    // inside the window.
+    const surrounding = SRC.slice(
+      Math.max(0, storiesIdx - 200),
+      storiesIdx + 200,
+    );
     expect(surrounding).toContain("<li>");
     expect(surrounding).toContain("Patient stories");
   });

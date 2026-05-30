@@ -76,18 +76,18 @@ const SYSTEM_PROMPT = [
   "EXAMPLES (intent → reply):",
   "   confirm → \"Got it! We'll ship today. You'll get tracking by text.\"",
   "   decline → \"No problem — we'll hold off. Reply YES anytime if you",
-  "             change your mind.\"",
+  '             change your mind."',
   "   edit_address → \"Sounds good — we'll text you a quick link to",
-  "                   update it.\"",
-  "   stop → \"You're unsubscribed. Reply START to opt back in anytime.\"",
-  "   help → \"Sure! A teammate will reach out shortly. Or call us at",
-  "           (814) 471-0627 Mon-Fri 9-5 ET.\"",
-  "   unknown → \"Thanks for writing — a teammate will follow up shortly.\"",
+  '                   update it."',
+  '   stop → "You\'re unsubscribed. Reply START to opt back in anytime."',
+  '   help → "Sure! A teammate will reach out shortly. Or call us at',
+  '           (814) 471-0627 Mon-Fri 9-5 ET."',
+  '   unknown → "Thanks for writing — a teammate will follow up shortly."',
   "",
   "3) REPORT YOUR CONFIDENCE in the classification as a number between",
   "   0 and 1. Use ~0.95+ when the patient's reply is unambiguous (\"yes",
-  "   ship it\", \"STOP\", a clean address). Use ~0.6 when the reply is",
-  "   plausible but ambiguous (\"sure I guess\", a one-word reply that",
+  '   ship it", "STOP", a clean address). Use ~0.6 when the reply is',
+  '   plausible but ambiguous ("sure I guess", a one-word reply that',
   "   could mean two things). Use ~0.3 when you're guessing. The action-",
   "   taking intents (confirm/decline/edit_address) are only honored when",
   "   confidence is high; low-confidence classifications get routed to a",
@@ -181,7 +181,10 @@ export function createOpenAiFallbackAdapter(
             );
             if (retryable && attempt < MAX_RETRIES) {
               await new Promise((r) =>
-                setTimeout(r, 200 * Math.pow(2, attempt) + Math.floor(Math.random() * 50)),
+                setTimeout(
+                  r,
+                  200 * Math.pow(2, attempt) + Math.floor(Math.random() * 50),
+                ),
               );
               continue;
             }
@@ -217,7 +220,10 @@ export function createOpenAiFallbackAdapter(
           );
           if (retryable && attempt < MAX_RETRIES) {
             await new Promise((r) =>
-              setTimeout(r, 200 * Math.pow(2, attempt) + Math.floor(Math.random() * 50)),
+              setTimeout(
+                r,
+                200 * Math.pow(2, attempt) + Math.floor(Math.random() * 50),
+              ),
             );
             continue;
           }
@@ -282,7 +288,11 @@ export function createAnthropicFallbackAdapter(
           // minute during a campaign send window). Mirrors the
           // chatbot / sleep-coach / post-call-summary pattern.
           system: [
-            { type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } },
+            {
+              type: "text",
+              text: SYSTEM_PROMPT,
+              cache_control: { type: "ephemeral" },
+            },
           ],
           messages: [{ role: "user", content: userPrompt }],
         });
@@ -370,7 +380,8 @@ function parseModelOutput(content: string): AiFallbackResult {
     // strictest interpretation (= dispatch only on the non-action
     // intents). Clamp to [0,1] in case the model overshoots.
     const confidence =
-      typeof parsed.confidence === "number" && Number.isFinite(parsed.confidence)
+      typeof parsed.confidence === "number" &&
+      Number.isFinite(parsed.confidence)
         ? Math.max(0, Math.min(1, parsed.confidence))
         : undefined;
     const base: AiFallbackResult = { intent };

@@ -7,10 +7,7 @@ import { useFitterStore } from "@/hooks/use-fitter-store";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { track } from "@/lib/track";
 import { useDocumentTitle } from "@/hooks/use-document-title";
-import {
-  getCaptureBlockers,
-  isCaptureReady,
-} from "@/lib/capture-readiness";
+import { getCaptureBlockers, isCaptureReady } from "@/lib/capture-readiness";
 import { useVisionRuntimeHealth } from "@/hooks/use-vision-runtime-health";
 
 export function Capture() {
@@ -59,7 +56,10 @@ export function Capture() {
       setHasPermission(true);
       return stream;
     } catch (err) {
-      console.error("Camera error:", err instanceof Error ? err.message : String(err));
+      console.error(
+        "Camera error:",
+        err instanceof Error ? err.message : String(err),
+      );
       setHasPermission(false);
       setVideoReady(false);
       const name = err instanceof Error ? err.name : "";
@@ -139,7 +139,10 @@ export function Capture() {
       setLocation("/measure");
       return true;
     } catch (err) {
-      console.error("Capture error:", err instanceof Error ? err.message : String(err));
+      console.error(
+        "Capture error:",
+        err instanceof Error ? err.message : String(err),
+      );
       const message = err instanceof Error ? err.message : "unknown error";
       setError("Failed to capture an image: " + message);
       return false;
@@ -266,7 +269,13 @@ export function Capture() {
         </div>
         <div className="mt-2 text-xs text-muted-foreground">
           Camera status:{" "}
-          <span className={videoReady ? "text-emerald-700 font-medium" : "text-amber-700 font-medium"}>
+          <span
+            className={
+              videoReady
+                ? "text-emerald-700 font-medium"
+                : "text-amber-700 font-medium"
+            }
+          >
             {videoReady ? "ready" : "warming up"}
           </span>
         </div>

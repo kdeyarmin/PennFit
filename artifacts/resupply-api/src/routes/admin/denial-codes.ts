@@ -25,7 +25,11 @@ const router: IRouter = Router();
 
 type DenialCodeRow = Database["resupply"]["Tables"]["denial_codes"]["Row"];
 
-const CODE_SYSTEM_VALUES = ["carc", "rarc", "custom"] as const satisfies readonly DenialCodeRow["code_system"][];
+const CODE_SYSTEM_VALUES = [
+  "carc",
+  "rarc",
+  "custom",
+] as const satisfies readonly DenialCodeRow["code_system"][];
 const CATEGORY_VALUES = [
   "eligibility",
   "authorization",
@@ -43,7 +47,12 @@ const CATEGORY_VALUES = [
 const upsertBody = z
   .object({
     codeSystem: z.enum(CODE_SYSTEM_VALUES),
-    code: z.string().trim().min(1).max(8).regex(/^[A-Za-z0-9]+$/),
+    code: z
+      .string()
+      .trim()
+      .min(1)
+      .max(8)
+      .regex(/^[A-Za-z0-9]+$/),
     description: z.string().trim().min(1).max(400),
     category: z.enum(CATEGORY_VALUES),
     recommendedAction: z.string().trim().max(2000).nullable().optional(),
@@ -73,35 +82,44 @@ router.get(
   "/admin/denial-codes",
   requirePermission("reports.read"),
   async (req, res) => {
-  const supabase = getSupabaseServiceRoleClient();
-  let query = supabase
-    .schema("resupply")
-    .from("denial_codes")
-    .select(
-      "id, code_system, code, description, category, recommended_action, is_terminal, created_at, updated_at",
-    )
-    .order("code_system", { ascending: true })
-    .order("code", { ascending: true })
-    .limit(500);
-  const codeSystem =
-    typeof req.query.codeSystem === "string" ? req.query.codeSystem : undefined;
-  if (codeSystem && (CODE_SYSTEM_VALUES as readonly string[]).includes(codeSystem)) {
-    query = query.eq("code_system", codeSystem as DenialCodeRow["code_system"]);
-  }
-  const category =
-    typeof req.query.category === "string" ? req.query.category : undefined;
-  if (category && (CATEGORY_VALUES as readonly string[]).includes(category)) {
-    query = query.eq("category", category as DenialCodeRow["category"]);
-  }
-  const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
-  if (q.length > 0 && q.length <= 80) {
-    const safe = q.replace(/[\\%_]/g, (m) => `\\${m}`);
-    query = query.ilike("description", `%${safe}%`);
-  }
-  const { data, error } = await query;
-  if (error) throw error;
-  res.json({ denialCodes: (data ?? []).map(rowToApi) });
-});
+    const supabase = getSupabaseServiceRoleClient();
+    let query = supabase
+      .schema("resupply")
+      .from("denial_codes")
+      .select(
+        "id, code_system, code, description, category, recommended_action, is_terminal, created_at, updated_at",
+      )
+      .order("code_system", { ascending: true })
+      .order("code", { ascending: true })
+      .limit(500);
+    const codeSystem =
+      typeof req.query.codeSystem === "string"
+        ? req.query.codeSystem
+        : undefined;
+    if (
+      codeSystem &&
+      (CODE_SYSTEM_VALUES as readonly string[]).includes(codeSystem)
+    ) {
+      query = query.eq(
+        "code_system",
+        codeSystem as DenialCodeRow["code_system"],
+      );
+    }
+    const category =
+      typeof req.query.category === "string" ? req.query.category : undefined;
+    if (category && (CATEGORY_VALUES as readonly string[]).includes(category)) {
+      query = query.eq("category", category as DenialCodeRow["category"]);
+    }
+    const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
+    if (q.length > 0 && q.length <= 80) {
+      const safe = q.replace(/[\\%_]/g, (m) => `\\${m}`);
+      query = query.ilike("description", `%${safe}%`);
+    }
+    const { data, error } = await query;
+    if (error) throw error;
+    res.json({ denialCodes: (data ?? []).map(rowToApi) });
+  },
+);
 
 router.get(
   "/admin/denial-codes/:codeSystem/:code",

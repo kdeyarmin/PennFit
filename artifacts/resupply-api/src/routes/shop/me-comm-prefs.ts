@@ -60,9 +60,8 @@ router.get("/shop/me/comm-prefs", requireSignedIn, async (req, res) => {
     .eq("customer_id", customerId)
     .limit(1)
     .maybeSingle();
-  const stored = (data?.communication_preferences ?? null) as
-    | CommunicationPreferences
-    | null;
+  const stored = (data?.communication_preferences ??
+    null) as CommunicationPreferences | null;
   res.json({ preferences: mergeWithDefaults(stored) });
 });
 
@@ -89,9 +88,7 @@ router.put("/shop/me/comm-prefs", requireSignedIn, async (req, res) => {
     .limit(1)
     .maybeSingle();
   const current = mergeWithDefaults(
-    (row?.communication_preferences ?? null) as
-      | CommunicationPreferences
-      | null,
+    (row?.communication_preferences ?? null) as CommunicationPreferences | null,
   );
   // Validate DND window: either both null or both set with start != end.
   const proposedDndStart =

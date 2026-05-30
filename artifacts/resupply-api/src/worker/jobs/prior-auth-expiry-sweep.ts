@@ -66,6 +66,11 @@ const SYSTEM_ACTOR_EMAIL = "system:cron:prior-auth-expiry-sweep";
 
 /** Heads-up windows, in days before approved_through. */
 const HEADS_UP_WINDOWS = [30, 14, 7] as const;
+// PostgREST caps a single response at ~1000 rows. Both the expire scan
+// and each heads-up window keyset-paginate at this size so a portfolio
+// larger than the cap is processed in full rather than silently
+// truncated to an arbitrary first page.
+const PA_PAGE_SIZE = 1000;
 
 export interface ExpirySweepStats {
   expired: number;
@@ -124,17 +129,44 @@ export async function runPriorAuthExpirySweep(
   // We do this in two passes so the audit-row write happens with
   // the previous status visible. Reading first, then updating, also
   // gives us patient_id + hcpcs_code for the CSR alert.
-  const { data: dueToExpire, error: dueErr } = await supabase
-    .schema("resupply")
-    .from("prior_authorizations")
-    .select(
-      "id, patient_id, hcpcs_code, payer_name, approved_through, auth_number",
-    )
-    .eq("status", "approved")
-    .lt("approved_through", todayIso);
-  if (dueErr) throw dueErr;
+  // Collect ALL overdue PAs across keyset pages BEFORE flipping any to
+  // 'expired'. Reading the full snapshot first (rather than fetch-then-
+  // mutate per page) keeps the cursor walk consistent — flips during the
+  // read would otherwise shift the `status='approved'` window under us
+  // and skip rows. Without paging, a backlog beyond PostgREST's ~1000
+  // cap wouldn't fully expire until enough daily ticks chipped at it.
+  const dueToExpire: Array<{
+    id: string;
+    patient_id: string;
+    hcpcs_code: string;
+    payer_name: string;
+    approved_through: string | null;
+    auth_number: string | null;
+  }> = [];
+  {
+    let cursor = "";
+    for (;;) {
+      let q = supabase
+        .schema("resupply")
+        .from("prior_authorizations")
+        .select(
+          "id, patient_id, hcpcs_code, payer_name, approved_through, auth_number",
+        )
+        .eq("status", "approved")
+        .lt("approved_through", todayIso)
+        .order("id", { ascending: true })
+        .limit(PA_PAGE_SIZE);
+      if (cursor) q = q.gt("id", cursor);
+      const { data, error: dueErr } = await q;
+      if (dueErr) throw dueErr;
+      if (!data || data.length === 0) break;
+      dueToExpire.push(...data);
+      cursor = data[data.length - 1]!.id;
+      if (data.length < PA_PAGE_SIZE) break;
+    }
+  }
 
-  for (const row of dueToExpire ?? []) {
+  for (const row of dueToExpire) {
     // The .eq("status","approved") predicate is the race-safe gate:
     // a concurrent worker that already flipped the row to "expired"
     // leaves this UPDATE with 0 affected rows + no error. We DO
@@ -216,23 +248,53 @@ export async function runPriorAuthExpirySweep(
   // even if the cron is re-run later in the day.
   for (const win of HEADS_UP_WINDOWS) {
     const target = isoDate(addDays(today, win));
-    const { data: upcoming, error: upErr } = await supabase
-      .schema("resupply")
-      .from("prior_authorizations")
-      .select(
-        "id, patient_id, hcpcs_code, payer_name, approved_through, auth_number",
-      )
-      .eq("status", "approved")
-      .eq("approved_through", target);
-    if (upErr) {
-      logger.warn(
-        { err: upErr.message, window: win },
-        "prior-auth.expiry-sweep: heads-up read failed",
-      );
-      continue;
+    // Keyset-paginate this window too. The read is exact-day
+    // (`approved_through == target`) and read-only, but a day with more
+    // than PA_PAGE_SIZE PAs expiring would otherwise drop everyone past
+    // the first page along with their heads-up alert — and unlike the
+    // expire step, a missed heads-up is NOT retried on a later tick (the
+    // window has moved on by then).
+    const upcoming: Array<{
+      id: string;
+      patient_id: string;
+      hcpcs_code: string;
+      payer_name: string;
+      approved_through: string | null;
+      auth_number: string | null;
+    }> = [];
+    let upReadFailed = false;
+    {
+      let cursor = "";
+      for (;;) {
+        let q = supabase
+          .schema("resupply")
+          .from("prior_authorizations")
+          .select(
+            "id, patient_id, hcpcs_code, payer_name, approved_through, auth_number",
+          )
+          .eq("status", "approved")
+          .eq("approved_through", target)
+          .order("id", { ascending: true })
+          .limit(PA_PAGE_SIZE);
+        if (cursor) q = q.gt("id", cursor);
+        const { data, error: upErr } = await q;
+        if (upErr) {
+          logger.warn(
+            { err: upErr.message, window: win },
+            "prior-auth.expiry-sweep: heads-up read failed",
+          );
+          upReadFailed = true;
+          break;
+        }
+        if (!data || data.length === 0) break;
+        upcoming.push(...data);
+        cursor = data[data.length - 1]!.id;
+        if (data.length < PA_PAGE_SIZE) break;
+      }
     }
+    if (upReadFailed) continue;
 
-    for (const row of upcoming ?? []) {
+    for (const row of upcoming) {
       // Idempotency: check if an alert with this priorAuthId + window
       // already exists in 'open' state. metric_snapshot is jsonb so we
       // use ->> to compare a specific field.
@@ -249,7 +311,8 @@ export async function runPriorAuthExpirySweep(
       if (existing && existing.length > 0) continue;
 
       // Severity escalates the closer we are to expiry.
-      const severity: "warning" | "critical" = win <= 7 ? "critical" : "warning";
+      const severity: "warning" | "critical" =
+        win <= 7 ? "critical" : "warning";
 
       await supabase
         .schema("resupply")

@@ -252,6 +252,8 @@ describe("ingestInboundFax — media content gates", () => {
       mediaPersisted: true,
     });
     expect(objectStorageStub.getObjectEntityUploadURL).toHaveBeenCalledOnce();
-    expect(objectStorageStub.trySetObjectEntityAclPolicy).toHaveBeenCalledOnce();
+    expect(
+      objectStorageStub.trySetObjectEntityAclPolicy,
+    ).toHaveBeenCalledOnce();
   });
 });

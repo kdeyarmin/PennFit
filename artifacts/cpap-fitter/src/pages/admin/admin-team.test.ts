@@ -122,7 +122,9 @@ describe("admin-team InviteCard — simplified onSuccess handler", () => {
   });
 
   it("still shows a warning when emailSent is false (invite link must be shared manually)", () => {
-    expect(SRC).toContain("We couldn't send the invitation email automatically");
+    expect(SRC).toContain(
+      "We couldn't send the invitation email automatically",
+    );
   });
 
   it("shows a success message confirming the invitation email was sent", () => {

@@ -82,9 +82,7 @@ describe("applySucceededPayment — allocation walk", () => {
         id: "p-1",
         status: "succeeded",
         patient_id: PATIENT,
-        applied_claims_json: [
-          { claimId: CLAIM1, amountAppliedCents: 4000 },
-        ],
+        applied_claims_json: [{ claimId: CLAIM1, amountAppliedCents: 4000 }],
       },
     });
     // 2. insurance_claims lookup
@@ -102,13 +100,11 @@ describe("applySucceededPayment — allocation walk", () => {
     stageSupabaseResponse("insurance_claim_events", "insert", { data: {} });
     void supabase;
     // Run.
-    const realSupabase = (await import("@workspace/resupply-db"))
-      .getSupabaseServiceRoleClient();
+    const realSupabase = (
+      await import("@workspace/resupply-db")
+    ).getSupabaseServiceRoleClient();
     await applySucceededPayment(realSupabase, "p-1");
-    const claimUpdates = getSupabaseWritePayloads(
-      "insurance_claims",
-      "update",
-    );
+    const claimUpdates = getSupabaseWritePayloads("insurance_claims", "update");
     expect(claimUpdates).toHaveLength(1);
     expect(
       (claimUpdates[0] as Record<string, unknown>).patient_responsibility_cents,
@@ -125,9 +121,7 @@ describe("applySucceededPayment — allocation walk", () => {
         id: "p-2",
         status: "succeeded",
         patient_id: PATIENT,
-        applied_claims_json: [
-          { claimId: CLAIM1, amountAppliedCents: 99999 },
-        ],
+        applied_claims_json: [{ claimId: CLAIM1, amountAppliedCents: 99999 }],
       },
     });
     stageSupabaseResponse("insurance_claims", "select", {
@@ -142,13 +136,11 @@ describe("applySucceededPayment — allocation walk", () => {
       data: [{ id: CLAIM1 }],
     });
     stageSupabaseResponse("insurance_claim_events", "insert", { data: {} });
-    const realSupabase = (await import("@workspace/resupply-db"))
-      .getSupabaseServiceRoleClient();
+    const realSupabase = (
+      await import("@workspace/resupply-db")
+    ).getSupabaseServiceRoleClient();
     await applySucceededPayment(realSupabase, "p-2");
-    const claimUpdates = getSupabaseWritePayloads(
-      "insurance_claims",
-      "update",
-    );
+    const claimUpdates = getSupabaseWritePayloads("insurance_claims", "update");
     expect(
       (claimUpdates[0] as Record<string, unknown>).patient_responsibility_cents,
     ).toBe(0);
@@ -156,12 +148,11 @@ describe("applySucceededPayment — allocation walk", () => {
 
   it("is a no-op when the payment row is missing", async () => {
     stageSupabaseResponse("patient_payments", "select", { data: null });
-    const realSupabase = (await import("@workspace/resupply-db"))
-      .getSupabaseServiceRoleClient();
+    const realSupabase = (
+      await import("@workspace/resupply-db")
+    ).getSupabaseServiceRoleClient();
     await applySucceededPayment(realSupabase, "missing");
-    expect(getSupabaseWritePayloads("insurance_claims", "update")).toEqual(
-      [],
-    );
+    expect(getSupabaseWritePayloads("insurance_claims", "update")).toEqual([]);
   });
 });
 
@@ -283,9 +274,14 @@ describe("createPaymentIntent — stripe_rejected (PR change)", () => {
       initiatorEmail: "patient@example.com",
     });
 
-    const updatePayloads = getSupabaseWritePayloads("patient_payments", "update");
+    const updatePayloads = getSupabaseWritePayloads(
+      "patient_payments",
+      "update",
+    );
     expect(updatePayloads.length).toBeGreaterThanOrEqual(1);
-    expect((updatePayloads[0] as Record<string, unknown>).status).toBe("failed");
+    expect((updatePayloads[0] as Record<string, unknown>).status).toBe(
+      "failed",
+    );
   });
 
   it("records the thrown error message in failure_reason", async () => {
@@ -302,10 +298,13 @@ describe("createPaymentIntent — stripe_rejected (PR change)", () => {
       initiatorEmail: "patient@example.com",
     });
 
-    const updatePayloads = getSupabaseWritePayloads("patient_payments", "update");
+    const updatePayloads = getSupabaseWritePayloads(
+      "patient_payments",
+      "update",
+    );
     const payload = updatePayloads[0] as Record<string, unknown>;
     expect(typeof payload.failure_reason).toBe("string");
-    expect((payload.failure_reason as string)).toContain("insufficient_funds");
+    expect(payload.failure_reason as string).toContain("insufficient_funds");
   });
 
   it("calls paymentIntents.create with the idempotency key derived from patient_payment.id", async () => {

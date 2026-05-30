@@ -112,7 +112,9 @@ describe("renderResupplyReminder", () => {
       confirmUrl: urlWithAmpersand,
     });
     // HTML body: & must be &amp; inside the href value.
-    expect(out.html).toContain('href="https://api.example/email/click?t=abc&amp;s=xyz&amp;v=1"');
+    expect(out.html).toContain(
+      'href="https://api.example/email/click?t=abc&amp;s=xyz&amp;v=1"',
+    );
     // HTML body: must NOT contain the raw & in the href context.
     expect(out.html).not.toContain(`href="${urlWithAmpersand}"`);
     // Plain-text body: raw URL is preserved exactly so email clients
@@ -180,7 +182,9 @@ describe("renderClickLanding", () => {
       action: "confirm",
       formActionUrl: urlWithAmp,
     });
-    expect(html).toContain('action="https://api.example/email/click?t=conf&amp;v=2"');
+    expect(html).toContain(
+      'action="https://api.example/email/click?t=conf&amp;v=2"',
+    );
     expect(html).not.toContain(`action="${urlWithAmp}"`);
   });
 
@@ -202,7 +206,7 @@ describe("renderClickLanding", () => {
       action: "edit",
       formActionUrl: "https://api.example/email/click?t=edit",
     });
-    expect(html).not.toContain('<script>');
+    expect(html).not.toContain("<script>");
     expect(html).toContain("&lt;script&gt;");
   });
 });

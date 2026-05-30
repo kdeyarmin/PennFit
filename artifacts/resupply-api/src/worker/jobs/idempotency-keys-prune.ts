@@ -56,10 +56,7 @@ export async function registerIdempotencyKeysPruneJob(
         .delete({ count: "exact" })
         .lte("expires_at", new Date().toISOString());
       if (error) throw error;
-      logger.info(
-        { deleted: count ?? 0 },
-        "idempotency-keys.prune: completed",
-      );
+      logger.info({ deleted: count ?? 0 }, "idempotency-keys.prune: completed");
     } catch (err) {
       logger.error(
         {

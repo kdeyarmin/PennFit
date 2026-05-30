@@ -360,7 +360,8 @@ export function recommendSize(
   if (sizes.length === 0) {
     return {
       size: null,
-      rationale: "This mask ships in a single universal size — no size choice needed.",
+      rationale:
+        "This mask ships in a single universal size — no size choice needed.",
     };
   }
   if (sizes.length === 1) {
@@ -813,7 +814,9 @@ export function recommend(
     // This is the patient-facing `confidence` — the manufacturer boost is
     // deliberately NOT folded in here (see MANUFACTURER_BOOST docstring).
     const clinicalScore =
-      (typeScore * 0.6 + fitScore * 0.4) * contraMultiplier * pressureMultiplier;
+      (typeScore * 0.6 + fitScore * 0.4) *
+      contraMultiplier *
+      pressureMultiplier;
     // Ranking score applies the manufacturer boost LAST (after the
     // contra/pressure penalties) so a viable preferred-line mask out-ranks
     // an otherwise-equivalent peer, while a contraindicated preferred mask

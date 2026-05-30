@@ -44,9 +44,9 @@ function sampleInput(): ReviewRequestEmailInput {
   };
 }
 
-function makeClient(
-  opts: { throws?: Error; messageId?: string } = {},
-): { sendEmail: ReturnType<typeof vi.fn> } {
+function makeClient(opts: { throws?: Error; messageId?: string } = {}): {
+  sendEmail: ReturnType<typeof vi.fn>;
+} {
   return {
     sendEmail: opts.throws
       ? vi.fn().mockRejectedValue(opts.throws)

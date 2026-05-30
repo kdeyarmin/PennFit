@@ -8,7 +8,7 @@ restart, done" — they don't affect any signed artifacts already in
 flight.
 
 This runbook covers `RESUPPLY_LINK_HMAC_KEY` rotation specifically,
-because that one is *not* a simple swap.
+because that one is _not_ a simple swap.
 
 ## What signs links
 
@@ -55,10 +55,10 @@ small library change first.
 3. Restart the API process (rolling restart in production).
 4. **Expect** outstanding signed links to fail. Communicate this in
    #ops if the blast radius matters (mid-outreach campaign, etc.):
-   * Reminder emails: re-issue the next scheduled wave; the
+   - Reminder emails: re-issue the next scheduled wave; the
      reminder cron will pick up the missed sends.
-   * Fax-document tokens: regenerate from the admin UI.
-   * Voice-callback links: customers will hit a "session expired"
+   - Fax-document tokens: regenerate from the admin UI.
+   - Voice-callback links: customers will hit a "session expired"
      screen — they can call back through the IVR root.
 5. Audit the access window the old key was exposed in. The HMAC is
    write-only: leakage doesn't expose patient data, but it does
@@ -94,19 +94,20 @@ the next routine rotation.
 These do **not** require this runbook — they're "rotate, restart,
 done":
 
-| Env var | Used for | Notes on rotation |
-| --- | --- | --- |
-| `DATABASE_URL` | Postgres connection | Standard credential rotation. |
-| `STRIPE_SECRET_KEY` | Stripe API | Coordinate with the webhook secret swap below. |
-| `STRIPE_WEBHOOK_SECRET` | Stripe webhook signature | Set as a comma-separated `secret1,secret2` to verify against either during rollover. |
-| `SENDGRID_API_KEY` | Outbound email | Rotate at SendGrid first, then deploy. |
-| `TWILIO_AUTH_TOKEN` | Inbound webhook signatures + outbound SMS/voice | Twilio supports token rollover via secondary auth tokens. |
-| `OPENAI_API_KEY` | Storefront chat | No signed artifacts in flight — rotate, restart. |
-| Object storage credentials | Supabase Storage (service-role JWT) | Same. |
+| Env var                    | Used for                                        | Notes on rotation                                                                    |
+| -------------------------- | ----------------------------------------------- | ------------------------------------------------------------------------------------ |
+| `DATABASE_URL`             | Postgres connection                             | Standard credential rotation.                                                        |
+| `STRIPE_SECRET_KEY`        | Stripe API                                      | Coordinate with the webhook secret swap below.                                       |
+| `STRIPE_WEBHOOK_SECRET`    | Stripe webhook signature                        | Set as a comma-separated `secret1,secret2` to verify against either during rollover. |
+| `SENDGRID_API_KEY`         | Outbound email                                  | Rotate at SendGrid first, then deploy.                                               |
+| `TWILIO_AUTH_TOKEN`        | Inbound webhook signatures + outbound SMS/voice | Twilio supports token rollover via secondary auth tokens.                            |
+| `OPENAI_API_KEY`           | Storefront chat                                 | No signed artifacts in flight — rotate, restart.                                     |
+| Object storage credentials | Supabase Storage (service-role JWT)             | Same.                                                                                |
 
 ## Documenting another secret
 
 When a new application secret lands, update this file with:
+
 1. What it signs / encrypts.
 2. The TTL of the longest in-flight artifact.
 3. Whether rotation is single-key (emergency posture) or supports

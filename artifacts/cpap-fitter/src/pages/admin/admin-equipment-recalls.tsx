@@ -66,15 +66,11 @@ export function AdminEquipmentRecallsPage() {
             <AlertTriangle className="h-6 w-6" />
             Equipment recalls
           </h1>
-          <p
-            className="text-sm mt-1"
-            style={{ color: "hsl(var(--ink-3))" }}
-          >
-            Manufacturer recall notices the supplier is tracking.
-            Scan a recall to surface every dispensed serial that
-            matches its criteria; transition affected devices to
-            &ldquo;recalled&rdquo; from each patient&apos;s Equipment
-            tab.
+          <p className="text-sm mt-1" style={{ color: "hsl(var(--ink-3))" }}>
+            Manufacturer recall notices the supplier is tracking. Scan a recall
+            to surface every dispensed serial that matches its criteria;
+            transition affected devices to &ldquo;recalled&rdquo; from each
+            patient&apos;s Equipment tab.
           </p>
         </div>
         <Button onClick={() => setShowAdd(true)}>
@@ -90,17 +86,12 @@ export function AdminEquipmentRecallsPage() {
           <ErrorPanel error={error} onRetry={() => void refetch()} />
         ) : data.recalls.length === 0 ? (
           <p className="text-sm py-3" style={{ color: "hsl(var(--ink-3))" }}>
-            No recalls on file. Add one when a manufacturer publishes
-            a notice.
+            No recalls on file. Add one when a manufacturer publishes a notice.
           </p>
         ) : (
           <ul className="space-y-3">
             {data.recalls.map((r) => (
-              <RecallRow
-                key={r.id}
-                recall={r}
-                onScanResult={setScanResult}
-              />
+              <RecallRow key={r.id} recall={r} onScanResult={setScanResult} />
             ))}
           </ul>
         )}
@@ -180,9 +171,7 @@ function RecallRow({
               · ref {recall.recallReference}
             </span>
             {recall.status === "closed" && (
-              <span className="text-xs text-muted-foreground">
-                · closed
-              </span>
+              <span className="text-xs text-muted-foreground">· closed</span>
             )}
           </div>
           <div className="text-xs text-muted-foreground">
@@ -300,8 +289,8 @@ function ScanResultModal({
 
           {result.affectedCount === 0 ? (
             <div className="rounded border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
-              No dispensed devices match this recall&apos;s criteria.
-              Nothing to action.
+              No dispensed devices match this recall&apos;s criteria. Nothing to
+              action.
             </div>
           ) : (
             <table className="w-full text-sm">
@@ -331,9 +320,7 @@ function ScanResultModal({
                         View patient →
                       </Link>
                     </td>
-                    <td className="py-2 font-mono text-xs">
-                      {a.serialNumber}
-                    </td>
+                    <td className="py-2 font-mono text-xs">{a.serialNumber}</td>
                     <td className="py-2">{a.model}</td>
                     <td className="py-2 text-xs">{a.status}</td>
                   </tr>
@@ -418,8 +405,7 @@ function AddRecallModal({
     onError: (e: Error) => setError(e.message),
   });
 
-  const canSave =
-    recallReference.trim() && title.trim() && manufacturer.trim();
+  const canSave = recallReference.trim() && title.trim() && manufacturer.trim();
 
   return (
     <div
@@ -514,7 +500,9 @@ function AddRecallModal({
                 className="w-full rounded border px-2 py-1.5 text-sm"
                 style={{ borderColor: "hsl(var(--line-1))" }}
               >
-                <option value="none">Every serial from this manufacturer</option>
+                <option value="none">
+                  Every serial from this manufacturer
+                </option>
                 <option value="range">Lexicographic range</option>
                 <option value="list">Explicit list</option>
               </select>
@@ -618,7 +606,8 @@ function Field({
         className="text-xs font-semibold block mb-1"
         style={{ color: "hsl(var(--penn-navy))" }}
       >
-        {label}{required && " *"}
+        {label}
+        {required && " *"}
       </label>
       {select ? (
         <select
@@ -649,14 +638,15 @@ function Field({
 
 // ── Roster modal — notifications + remediation log + log-action form
 
-const REMEDIATION_ACTIONS: Array<{ value: RemediationAction; label: string }> = [
-  { value: "returned_to_manufacturer", label: "Returned to manufacturer" },
-  { value: "destroyed", label: "Destroyed (requires evidence)" },
-  { value: "replaced", label: "Replaced" },
-  { value: "patient_declined", label: "Patient declined" },
-  { value: "lost", label: "Lost / no longer owned" },
-  { value: "unreachable", label: "Unreachable after attempts" },
-];
+const REMEDIATION_ACTIONS: Array<{ value: RemediationAction; label: string }> =
+  [
+    { value: "returned_to_manufacturer", label: "Returned to manufacturer" },
+    { value: "destroyed", label: "Destroyed (requires evidence)" },
+    { value: "replaced", label: "Replaced" },
+    { value: "patient_declined", label: "Patient declined" },
+    { value: "lost", label: "Lost / no longer owned" },
+    { value: "unreachable", label: "Unreachable after attempts" },
+  ];
 
 const NOTIFICATION_TONE: Record<string, string> = {
   queued: "bg-amber-100 text-amber-900",
@@ -749,7 +739,8 @@ function RecallRosterModal({
             />
           ) : (notifQuery.data?.notifications ?? []).length === 0 ? (
             <p className="text-sm py-2 text-muted-foreground">
-              No notifications yet. Run &quot;Match &amp; notify&quot; to populate.
+              No notifications yet. Run &quot;Match &amp; notify&quot; to
+              populate.
             </p>
           ) : (
             <table className="w-full text-sm">
@@ -845,10 +836,7 @@ function RosterRow({
   const [editing, setEditing] = useState(false);
   return (
     <>
-      <tr
-        className="border-b"
-        style={{ borderColor: "hsl(var(--line-2))" }}
-      >
+      <tr className="border-b" style={{ borderColor: "hsl(var(--line-2))" }}>
         <td className="py-1.5 font-mono text-xs">
           <a
             href={`/admin/patients/${notification.patientId}`}
@@ -861,7 +849,8 @@ function RosterRow({
         <td className="py-1.5">
           <span
             className={`inline-block px-1.5 py-0.5 rounded text-[10px] uppercase font-semibold tracking-wider ${
-              NOTIFICATION_TONE[notification.status] ?? "bg-slate-100 text-slate-700"
+              NOTIFICATION_TONE[notification.status] ??
+              "bg-slate-100 text-slate-700"
             }`}
           >
             {notification.status}
@@ -917,8 +906,9 @@ function LogActionForm({
   assetId: string;
   onSaved: () => void;
 }) {
-  const [action, setAction] =
-    useState<RemediationAction>("returned_to_manufacturer");
+  const [action, setAction] = useState<RemediationAction>(
+    "returned_to_manufacturer",
+  );
   const [evidenceUrl, setEvidenceUrl] = useState("");
   const [notes, setNotes] = useState("");
   const log = useMutation({

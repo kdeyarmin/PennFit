@@ -15,8 +15,7 @@ const supabaseMock = installSupabaseMock();
 // CI environments. Return a stable public IP for example.com so the
 // fetchWithPinnedIp URL-substitution path is still exercised.
 vi.mock("../../lib/safe-outbound", async (importOriginal) => {
-  const real =
-    await importOriginal<typeof import("../../lib/safe-outbound")>();
+  const real = await importOriginal<typeof import("../../lib/safe-outbound")>();
   return {
     ...real,
     assertSafeOutboundHost: vi.fn(async () => "93.184.216.34"),
@@ -25,13 +24,15 @@ vi.mock("../../lib/safe-outbound", async (importOriginal) => {
 
 import { runWebhookDispatcher } from "./webhook-dispatcher";
 
-function stageDispatchableDelivery(opts: {
-  attemptCount?: number;
-  maxRetries?: number;
-  subActive?: boolean;
-  targetUrl?: string;
-  signingSecret?: string;
-} = {}): void {
+function stageDispatchableDelivery(
+  opts: {
+    attemptCount?: number;
+    maxRetries?: number;
+    subActive?: boolean;
+    targetUrl?: string;
+    signingSecret?: string;
+  } = {},
+): void {
   const delivery = {
     id: "d-1",
     subscription_id: "s-1",
@@ -74,7 +75,9 @@ describe("runWebhookDispatcher", () => {
 
   it("returns zero counts when nothing is due", async () => {
     stageSupabaseResponse("webhook_deliveries", "select", { data: [] });
-    const stats = await runWebhookDispatcher({ fetchImpl: vi.fn() as unknown as typeof fetch });
+    const stats = await runWebhookDispatcher({
+      fetchImpl: vi.fn() as unknown as typeof fetch,
+    });
     expect(stats).toEqual({
       scanned: 0,
       delivered: 0,
@@ -92,7 +95,9 @@ describe("runWebhookDispatcher", () => {
         calls.push({ url, init });
         return new Response("ok", { status: 200 });
       });
-    await runWebhookDispatcher({ fetchImpl: fetchImpl as unknown as typeof fetch });
+    await runWebhookDispatcher({
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
     expect(calls).toHaveLength(1);
     const call = calls[0]!;
     // fetchWithPinnedIp provides SSRF defence by pinning the TCP
@@ -129,7 +134,9 @@ describe("runWebhookDispatcher", () => {
     const fetchImpl = vi
       .fn()
       .mockResolvedValue(new Response("ok", { status: 200 }));
-    const stats = await runWebhookDispatcher({ fetchImpl: fetchImpl as unknown as typeof fetch });
+    const stats = await runWebhookDispatcher({
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
     expect(stats.delivered).toBe(1);
     const subscriptionUpdates = getSupabaseWritePayloads(
       "webhook_subscriptions",
@@ -149,7 +156,9 @@ describe("runWebhookDispatcher", () => {
     const fetchImpl = vi
       .fn()
       .mockResolvedValue(new Response("err", { status: 503 }));
-    const stats = await runWebhookDispatcher({ fetchImpl: fetchImpl as unknown as typeof fetch });
+    const stats = await runWebhookDispatcher({
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
     expect(stats.retried).toBe(1);
     expect(stats.delivered).toBe(0);
     const update = lastDeliveryUpdate();
@@ -166,7 +175,9 @@ describe("runWebhookDispatcher", () => {
     const fetchImpl = vi
       .fn()
       .mockResolvedValue(new Response("err", { status: 500 }));
-    const stats = await runWebhookDispatcher({ fetchImpl: fetchImpl as unknown as typeof fetch });
+    const stats = await runWebhookDispatcher({
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
     expect(stats.exhausted).toBe(1);
     expect(lastDeliveryUpdate().status).toBe("exhausted");
   });
@@ -174,7 +185,9 @@ describe("runWebhookDispatcher", () => {
   it("rejects non-https target URLs", async () => {
     stageDispatchableDelivery({ targetUrl: "http://example.com/wh" });
     const fetchImpl = vi.fn();
-    const stats = await runWebhookDispatcher({ fetchImpl: fetchImpl as unknown as typeof fetch });
+    const stats = await runWebhookDispatcher({
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
     expect(fetchImpl).not.toHaveBeenCalled();
     expect(stats.exhausted).toBe(1);
   });
@@ -182,7 +195,9 @@ describe("runWebhookDispatcher", () => {
   it("classifies fetch-thrown errors as transport failures with a retry", async () => {
     stageDispatchableDelivery({ attemptCount: 0 });
     const fetchImpl = vi.fn().mockRejectedValue(new Error("ECONNREFUSED"));
-    const stats = await runWebhookDispatcher({ fetchImpl: fetchImpl as unknown as typeof fetch });
+    const stats = await runWebhookDispatcher({
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
     expect(stats.retried).toBe(1);
     const update = lastDeliveryUpdate();
     expect(update.last_http_status).toBeNull();

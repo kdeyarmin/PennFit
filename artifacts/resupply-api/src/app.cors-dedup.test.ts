@@ -47,10 +47,13 @@ function resolveAllowedOrigins(env: {
 describe("resolveAllowedOrigins — Set de-duplication", () => {
   it("de-dupes when the same origin appears in both RESUPPLY_ALLOWED_ORIGINS and RAILWAY_PUBLIC_DOMAIN", () => {
     const origins = resolveAllowedOrigins({
-      RESUPPLY_ALLOWED_ORIGINS: "https://shared.example.com,https://extra.example.com",
+      RESUPPLY_ALLOWED_ORIGINS:
+        "https://shared.example.com,https://extra.example.com",
       RAILWAY_PUBLIC_DOMAIN: "shared.example.com",
     });
-    const count = origins.filter((o) => o === "https://shared.example.com").length;
+    const count = origins.filter(
+      (o) => o === "https://shared.example.com",
+    ).length;
     expect(count).toBe(1);
   });
 

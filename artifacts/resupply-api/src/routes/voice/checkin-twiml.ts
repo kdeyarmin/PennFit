@@ -83,7 +83,7 @@ router.post(
     // parameters on the callback POST.
     const base = cfg?.publicBaseUrl ?? "";
     const pressActionUrl =
-      `${base}/voice/checkin-press?` +
+      `${base}/resupply-api/voice/checkin-press?` +
       [
         `patientId=${encodeURIComponent(patientId)}`,
         `journeyId=${encodeURIComponent(journeyId)}`,
@@ -256,10 +256,7 @@ router.post(
 );
 
 function escapeXmlText(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
 function escapeXmlAttr(s: string): string {

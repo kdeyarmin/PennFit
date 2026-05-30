@@ -115,9 +115,7 @@ describe("llm-provider — maybeLogProviderSelection (PR change)", () => {
   });
 
   it("returns early when lastLoggedProvider equals the current provider (no-op)", () => {
-    expect(SRC).toContain(
-      "if (lastLoggedProvider === provider) return;",
-    );
+    expect(SRC).toContain("if (lastLoggedProvider === provider) return;");
   });
 
   it("logs the 'llm_provider_selected' event with provider + previous fields", () => {

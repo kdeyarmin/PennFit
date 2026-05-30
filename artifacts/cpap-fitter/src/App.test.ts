@@ -60,7 +60,9 @@ describe("GuardedOrderSuccess — state machine", () => {
   });
 
   it("redirects to '/' while in the 'deny' state", () => {
-    expect(GUARDED_SRC).toContain('if (state === "deny") return <Redirect to="/" />');
+    expect(GUARDED_SRC).toContain(
+      'if (state === "deny") return <Redirect to="/" />',
+    );
   });
 });
 
@@ -74,7 +76,9 @@ describe("GuardedOrderSuccess — fast path (sessionStorage)", () => {
   });
 
   it("short-circuits to setState('ok') immediately when sessionStorage has the key", () => {
-    const storedIdx = GUARDED_SRC.indexOf('sessionStorage.getItem("fitter_order_confirmation")');
+    const storedIdx = GUARDED_SRC.indexOf(
+      'sessionStorage.getItem("fitter_order_confirmation")',
+    );
     const setOkIdx = GUARDED_SRC.indexOf('setState("ok")');
     expect(storedIdx).toBeGreaterThan(-1);
     expect(setOkIdx).toBeGreaterThan(-1);
@@ -108,12 +112,14 @@ describe("GuardedOrderSuccess — recovery path (URL params)", () => {
   it("wraps URLSearchParams construction in a try/catch", () => {
     // URL parse is generally safe but wrapping it prevents exotic
     // browser environments from crashing the component.
-    expect(GUARDED_SRC).toContain("new URLSearchParams(window.location.search)");
+    expect(GUARDED_SRC).toContain(
+      "new URLSearchParams(window.location.search)",
+    );
   });
 
   it("denies when ref or email are absent from the URL", () => {
     expect(GUARDED_SRC).toContain("if (!ref || !email)");
-    const denyIdx = GUARDED_SRC.indexOf('if (!ref || !email)');
+    const denyIdx = GUARDED_SRC.indexOf("if (!ref || !email)");
     const setDenyIdx = GUARDED_SRC.indexOf('setState("deny")', denyIdx);
     expect(setDenyIdx).toBeGreaterThan(denyIdx);
   });

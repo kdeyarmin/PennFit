@@ -25,7 +25,10 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 function textResponse(body: string, status: number): Response {
-  return new Response(body, { status, headers: { "content-type": "text/plain" } });
+  return new Response(body, {
+    status,
+    headers: { "content-type": "text/plain" },
+  });
 }
 
 function sseResponse(events: string[]): Response {
@@ -65,7 +68,9 @@ describe("createAnthropicClient", () => {
       expect(result.ok).toBe(true);
       if (result.ok) {
         expect(result.response.id).toBe("msg_01abc");
-        expect(getResponseText(result.response)).toBe("Hi there! How can I help?");
+        expect(getResponseText(result.response)).toBe(
+          "Hi there! How can I help?",
+        );
         expect(result.latencyMs).toBeGreaterThanOrEqual(0);
       }
     });
@@ -166,7 +171,8 @@ describe("createAnthropicClient", () => {
     it("returns empty when content blocks are missing", async () => {
       const client = createAnthropicClient({
         apiKey: VALID_KEY,
-        fetchImpl: async () => jsonResponse({ ...SAMPLE_RESPONSE, content: [] }),
+        fetchImpl: async () =>
+          jsonResponse({ ...SAMPLE_RESPONSE, content: [] }),
       });
       const result = await client.send({
         model: DEFAULT_ANTHROPIC_MODEL_CHAT,
@@ -211,7 +217,11 @@ describe("createAnthropicClient", () => {
       const events = [
         `data: ${JSON.stringify({
           type: "message_start",
-          message: { id: "msg_99", model: "claude-sonnet-4-6", usage: { input_tokens: 5, output_tokens: 0 } },
+          message: {
+            id: "msg_99",
+            model: "claude-sonnet-4-6",
+            usage: { input_tokens: 5, output_tokens: 0 },
+          },
         })}`,
         `data: ${JSON.stringify({
           type: "content_block_start",
@@ -263,7 +273,11 @@ describe("createAnthropicClient", () => {
         `data: ${JSON.stringify({
           type: "content_block_start",
           index: 0,
-          content_block: { type: "tool_use", id: "toolu_1", name: "find_masks" },
+          content_block: {
+            type: "tool_use",
+            id: "toolu_1",
+            name: "find_masks",
+          },
         })}`,
         `data: ${JSON.stringify({
           type: "content_block_delta",

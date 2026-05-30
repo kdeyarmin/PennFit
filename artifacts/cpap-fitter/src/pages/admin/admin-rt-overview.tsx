@@ -159,13 +159,10 @@ export function AdminRtOverviewPage() {
       <header className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-2xl font-semibold">RT overview</h1>
-          <p
-            className="text-sm mt-1"
-            style={{ color: "hsl(var(--ink-3))" }}
-          >
-            Daily clinical board for tracked patients across ResMed
-            AirView, Philips Care Orchestrator, React Health, and
-            Google Health Connect. Alerting rows sort to the top.
+          <p className="text-sm mt-1" style={{ color: "hsl(var(--ink-3))" }}>
+            Daily clinical board for tracked patients across ResMed AirView,
+            Philips Care Orchestrator, React Health, and Google Health Connect.
+            Alerting rows sort to the top.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -270,9 +267,8 @@ export function AdminRtOverviewPage() {
           )
         ) : (
           <p className="text-sm" style={{ color: "hsl(var(--ink-3))" }}>
-            No patients have an active therapy link yet. Once an
-            integration is connected and the nightly sync runs, rows
-            appear here automatically.
+            No patients have an active therapy link yet. Once an integration is
+            connected and the nightly sync runs, rows appear here automatically.
           </p>
         )}
       </Card>
@@ -302,9 +298,7 @@ function WindowSelector({
           style={{
             borderColor: "hsl(var(--line-1))",
             background:
-              value === opt.days
-                ? "hsl(var(--penn-mist))"
-                : "transparent",
+              value === opt.days ? "hsl(var(--penn-mist))" : "transparent",
             color:
               value === opt.days
                 ? "hsl(var(--penn-navy))"
@@ -425,12 +419,8 @@ function FilterChip({
       aria-pressed={active}
       className="px-2.5 py-1 text-xs rounded-full border transition-colors"
       style={{
-        borderColor: active
-          ? "hsl(var(--penn-navy))"
-          : "hsl(var(--line-1))",
-        background: active
-          ? "hsla(var(--penn-navy) / 0.1)"
-          : "transparent",
+        borderColor: active ? "hsl(var(--penn-navy))" : "hsl(var(--line-1))",
+        background: active ? "hsla(var(--penn-navy) / 0.1)" : "transparent",
         color: active ? "hsl(var(--penn-navy))" : "hsl(var(--ink-2))",
         fontWeight: active ? 600 : 400,
       }}
@@ -568,9 +558,7 @@ function SortableTh({
           isActive ? "font-semibold" : "font-medium"
         }`}
         style={{
-          color: isActive
-            ? "hsl(var(--penn-navy))"
-            : "hsl(var(--ink-3))",
+          color: isActive ? "hsl(var(--penn-navy))" : "hsl(var(--ink-3))",
         }}
         aria-sort={
           isActive ? (dir === "asc" ? "ascending" : "descending") : "none"
@@ -594,10 +582,7 @@ function PatientRow({
   const hasAlerts = row.activeAlerts.length > 0;
   const patientName = `${row.lastName}, ${row.firstName}`;
   return (
-    <tr
-      className="border-t"
-      style={{ borderColor: "hsl(var(--line-1))" }}
-    >
+    <tr className="border-t" style={{ borderColor: "hsl(var(--line-1))" }}>
       <Td>
         <Link
           href={`/admin/patients/${row.patientId}`}
@@ -622,9 +607,7 @@ function PatientRow({
           {isStale && !hasAlerts && (
             <Badge tone="muted">
               <CloudOff className="w-3 h-3" />
-              {row.staleDays === null
-                ? "No nights"
-                : `Stale ${row.staleDays}d`}
+              {row.staleDays === null ? "No nights" : `Stale ${row.staleDays}d`}
             </Badge>
           )}
           {!isStale && !hasAlerts && (
@@ -664,9 +647,7 @@ function Th({
   children: React.ReactNode;
   align?: "left" | "right";
 }) {
-  return (
-    <th className={`px-3 py-2 text-${align} font-medium`}>{children}</th>
-  );
+  return <th className={`px-3 py-2 text-${align} font-medium`}>{children}</th>;
 }
 
 function Td({

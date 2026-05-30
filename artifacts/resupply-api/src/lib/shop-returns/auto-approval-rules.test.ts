@@ -30,7 +30,9 @@ function input(
 
 describe("evaluateAutoApprovalRules — defective_within_7d", () => {
   it("auto-approves a fresh defective claim", () => {
-    expect(evaluateAutoApprovalRules(input({ reason: "defective", ageDays: 0 }))).toEqual({
+    expect(
+      evaluateAutoApprovalRules(input({ reason: "defective", ageDays: 0 })),
+    ).toEqual({
       autoApprove: true,
       rule: "defective_within_7d",
     });
@@ -97,12 +99,13 @@ describe("evaluateAutoApprovalRules — manual-queue reasons", () => {
   ];
   for (const reason of manualReasons) {
     it(`does NOT auto-approve reason="${reason}" regardless of age`, () => {
-      expect(
-        evaluateAutoApprovalRules(input({ reason, ageDays: 0 })),
-      ).toEqual({ autoApprove: false, rule: null });
-      expect(
-        evaluateAutoApprovalRules(input({ reason, ageDays: 30 })),
-      ).toEqual({ autoApprove: false, rule: null });
+      expect(evaluateAutoApprovalRules(input({ reason, ageDays: 0 }))).toEqual({
+        autoApprove: false,
+        rule: null,
+      });
+      expect(evaluateAutoApprovalRules(input({ reason, ageDays: 30 }))).toEqual(
+        { autoApprove: false, rule: null },
+      );
     });
   }
 });

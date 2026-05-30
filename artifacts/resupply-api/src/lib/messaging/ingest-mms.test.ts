@@ -90,8 +90,7 @@ function isTwilioMediaUrl(url: string): boolean {
   try {
     const parsedUrl = new URL(url);
     return (
-      parsedUrl.protocol === "https:" &&
-      parsedUrl.hostname === "api.twilio.com"
+      parsedUrl.protocol === "https:" && parsedUrl.hostname === "api.twilio.com"
     );
   } catch {
     return false;
@@ -103,10 +102,10 @@ function isTwilioMediaUrl(url: string): boolean {
 // would have written; we assert on filename / content_type / size /
 // object_key / twilio_media_sid here.
 function attachmentInserts(): Record<string, unknown>[] {
-  return getSupabaseWritePayloads(
-    "message_attachments",
-    "insert",
-  ) as Record<string, unknown>[];
+  return getSupabaseWritePayloads("message_attachments", "insert") as Record<
+    string,
+    unknown
+  >[];
 }
 
 describe("ingestInboundMmsMedia", () => {
@@ -744,14 +743,23 @@ describe("ingestInboundMmsMedia — outerSignal budget abort (PR change)", () =>
       const signal = (init as RequestInit | undefined)?.signal;
       // Track the abort signal so we can fire it from the test
       if (signal) {
-        fetchAbortController = () => (signal as AbortSignal).dispatchEvent(new Event("abort"));
+        fetchAbortController = () =>
+          (signal as AbortSignal).dispatchEvent(new Event("abort"));
       }
       // Return a response that never resolves (hangs until aborted)
       return new Promise<Response>((_resolve, reject) => {
         if (signal) {
-          signal.addEventListener("abort", () => {
-            reject(Object.assign(new Error("The operation was aborted"), { name: "AbortError" }));
-          }, { once: true });
+          signal.addEventListener(
+            "abort",
+            () => {
+              reject(
+                Object.assign(new Error("The operation was aborted"), {
+                  name: "AbortError",
+                }),
+              );
+            },
+            { once: true },
+          );
         }
       });
     });

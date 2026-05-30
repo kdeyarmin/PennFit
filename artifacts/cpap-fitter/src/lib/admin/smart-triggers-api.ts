@@ -66,7 +66,7 @@ export async function dismissSmartTrigger(
   );
   if (!res.ok) {
     if (res.status === 409) {
-      const body = await res.json().catch(() => ({})) as { error?: string };
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
       if (body.error === "already_dismissed") {
         throw new AlreadyDismissedError();
       }

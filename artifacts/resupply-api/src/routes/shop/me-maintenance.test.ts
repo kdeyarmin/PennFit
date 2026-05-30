@@ -83,13 +83,9 @@ describe("GET /shop/me/maintenance", () => {
       data: [{ id: PATIENT_ID }],
     });
     // 8 days ago — past weekly cadence → due_now for weekly tasks.
-    const eightDaysAgo = new Date(
-      Date.now() - 8 * 86_400_000,
-    ).toISOString();
+    const eightDaysAgo = new Date(Date.now() - 8 * 86_400_000).toISOString();
     stageSupabaseResponse("patient_maintenance_log", "select", {
-      data: [
-        { task_key: "tubing_wash", completed_at: eightDaysAgo },
-      ],
+      data: [{ task_key: "tubing_wash", completed_at: eightDaysAgo }],
     });
 
     const res = await request(makeApp()).get("/shop/me/maintenance");

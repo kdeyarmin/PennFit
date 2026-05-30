@@ -14,10 +14,7 @@
 
 import type { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
-import {
-  recallMatchesAsset,
-  type RecallSerialMatch,
-} from "./recall-match";
+import { recallMatchesAsset, type RecallSerialMatch } from "./recall-match";
 
 type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
 
@@ -106,9 +103,7 @@ export async function runRecallBulkMatch(
     .eq("recall_id", recallId)
     .in("asset_id", matchedIds);
   if (existingErr) throw existingErr;
-  const alreadyQueued = new Set(
-    (existing ?? []).map((r) => r.asset_id),
-  );
+  const alreadyQueued = new Set((existing ?? []).map((r) => r.asset_id));
   const toInsert = matched.filter((a) => !alreadyQueued.has(a.id));
 
   if (toInsert.length > 0) {
@@ -131,7 +126,6 @@ export async function runRecallBulkMatch(
     matchedCount: matched.length,
     newlyQueuedCount: toInsert.length,
     alreadyQueuedCount: alreadyQueued.size,
-    skippedNonMatchCount:
-      (candidates ?? []).length - matched.length,
+    skippedNonMatchCount: (candidates ?? []).length - matched.length,
   };
 }

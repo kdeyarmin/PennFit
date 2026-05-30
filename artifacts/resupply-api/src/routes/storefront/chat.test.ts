@@ -59,7 +59,10 @@ describe("POST /chat", () => {
       .post("/chat")
       .send({
         messages: [
-          { role: "user", content: "look at this: data:image/png;base64,iVBORw" },
+          {
+            role: "user",
+            content: "look at this: data:image/png;base64,iVBORw",
+          },
         ],
       });
     expect(res.status).toBe(400);
@@ -507,7 +510,11 @@ describe("POST /chat", () => {
       const toolNames = (payload.tools as Array<{ function: { name: string } }>)
         .map((t) => t.function.name)
         .sort();
-      expect(toolNames).toEqual(["compare_masks", "find_masks", "recommend_masks"]);
+      expect(toolNames).toEqual([
+        "compare_masks",
+        "find_masks",
+        "recommend_masks",
+      ]);
       expect(payload.tool_choice).toBe("auto");
     });
   });

@@ -95,7 +95,9 @@ export async function verifyEligibility(
   const { data: coverage, error: covErr } = await supabase
     .schema("resupply")
     .from("insurance_coverages")
-    .select("id, patient_id, payer_name, member_id, policyholder_name, policyholder_relationship")
+    .select(
+      "id, patient_id, payer_name, member_id, policyholder_name, policyholder_relationship",
+    )
     .eq("id", input.insuranceCoverageId)
     .limit(1)
     .maybeSingle();

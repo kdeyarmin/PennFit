@@ -65,7 +65,12 @@ describe("scoreClaim", () => {
     });
     stageSupabaseResponse("insurance_claim_line_items", "select", {
       data: [
-        { hcpcs_code: "E0601", modifier: "RR,KX", billed_cents: 24999, quantity: 1 },
+        {
+          hcpcs_code: "E0601",
+          modifier: "RR,KX",
+          billed_cents: 24999,
+          quantity: 1,
+        },
       ],
     });
     const r = await scoreClaim(CLAIM_ID);
@@ -86,16 +91,21 @@ describe("scoreClaim", () => {
     });
     stageSupabaseResponse("insurance_claim_line_items", "select", {
       data: [
-        { hcpcs_code: "E0601", modifier: "RR,KX", billed_cents: 24999, quantity: 1 },
+        {
+          hcpcs_code: "E0601",
+          modifier: "RR,KX",
+          billed_cents: 24999,
+          quantity: 1,
+        },
       ],
     });
     // prior_authorizations lookup returns no rows.
     stageSupabaseResponse("prior_authorizations", "select", { data: [] });
     const r = await scoreClaim(CLAIM_ID);
     expect(r!.probability).toBeGreaterThan(0.3);
-    expect(r!.factors.some((f) => f.key === "missing_prior_auth_required")).toBe(
-      true,
-    );
+    expect(
+      r!.factors.some((f) => f.key === "missing_prior_auth_required"),
+    ).toBe(true);
   });
 
   it("flags missing referring provider on Medicare-like LOB", async () => {
@@ -110,12 +120,19 @@ describe("scoreClaim", () => {
       },
     });
     stageSupabaseResponse("insurance_claim_line_items", "select", {
-      data: [{ hcpcs_code: "E0601", modifier: "RR", billed_cents: 24999, quantity: 1 }],
+      data: [
+        {
+          hcpcs_code: "E0601",
+          modifier: "RR",
+          billed_cents: 24999,
+          quantity: 1,
+        },
+      ],
     });
     const r = await scoreClaim(CLAIM_ID);
-    expect(r!.factors.some((f) => f.key === "missing_referring_provider_medicare")).toBe(
-      true,
-    );
+    expect(
+      r!.factors.some((f) => f.key === "missing_referring_provider_medicare"),
+    ).toBe(true);
   });
 
   it("flags PAP-without-OSA-diagnosis mismatch", async () => {
@@ -130,12 +147,19 @@ describe("scoreClaim", () => {
       },
     });
     stageSupabaseResponse("insurance_claim_line_items", "select", {
-      data: [{ hcpcs_code: "E0601", modifier: "RR", billed_cents: 24999, quantity: 1 }],
+      data: [
+        {
+          hcpcs_code: "E0601",
+          modifier: "RR",
+          billed_cents: 24999,
+          quantity: 1,
+        },
+      ],
     });
     const r = await scoreClaim(CLAIM_ID);
-    expect(
-      r!.factors.some((f) => f.key === "pap_without_osa_diagnosis"),
-    ).toBe(true);
+    expect(r!.factors.some((f) => f.key === "pap_without_osa_diagnosis")).toBe(
+      true,
+    );
   });
 
   it("never exceeds 0.95 even with every factor stacked", async () => {
@@ -177,11 +201,23 @@ describe("scoreClaim — fee-schedule date filtering (payer_fee_schedules)", () 
     });
     stageSupabaseResponse("patients", "select", {
       data: {
-        address: { line1: "1 Main", city: "Pittsburgh", state: "PA", zip: "15201" },
+        address: {
+          line1: "1 Main",
+          city: "Pittsburgh",
+          state: "PA",
+          zip: "15201",
+        },
       },
     });
     stageSupabaseResponse("insurance_claim_line_items", "select", {
-      data: [{ hcpcs_code: "E0601", modifier: "RR,KX", billed_cents: 24999, quantity: 1 }],
+      data: [
+        {
+          hcpcs_code: "E0601",
+          modifier: "RR,KX",
+          billed_cents: 24999,
+          quantity: 1,
+        },
+      ],
     });
     // Stage the fee schedule lookup
     stageSupabaseResponse("payer_fee_schedules", "select", {
@@ -205,11 +241,23 @@ describe("scoreClaim — fee-schedule date filtering (payer_fee_schedules)", () 
     });
     stageSupabaseResponse("patients", "select", {
       data: {
-        address: { line1: "1 Main", city: "Pittsburgh", state: "PA", zip: "15201" },
+        address: {
+          line1: "1 Main",
+          city: "Pittsburgh",
+          state: "PA",
+          zip: "15201",
+        },
       },
     });
     stageSupabaseResponse("insurance_claim_line_items", "select", {
-      data: [{ hcpcs_code: "E0601", modifier: "RR,KX", billed_cents: 24999, quantity: 1 }],
+      data: [
+        {
+          hcpcs_code: "E0601",
+          modifier: "RR,KX",
+          billed_cents: 24999,
+          quantity: 1,
+        },
+      ],
     });
     stageSupabaseResponse("payer_fee_schedules", "select", {
       data: { allowed_cents: 20000 },
@@ -232,11 +280,23 @@ describe("scoreClaim — fee-schedule date filtering (payer_fee_schedules)", () 
     });
     stageSupabaseResponse("patients", "select", {
       data: {
-        address: { line1: "1 Main", city: "Pittsburgh", state: "PA", zip: "15201" },
+        address: {
+          line1: "1 Main",
+          city: "Pittsburgh",
+          state: "PA",
+          zip: "15201",
+        },
       },
     });
     stageSupabaseResponse("insurance_claim_line_items", "select", {
-      data: [{ hcpcs_code: "E0601", modifier: "RR,KX", billed_cents: 24999, quantity: 1 }],
+      data: [
+        {
+          hcpcs_code: "E0601",
+          modifier: "RR,KX",
+          billed_cents: 24999,
+          quantity: 1,
+        },
+      ],
     });
     stageSupabaseResponse("payer_fee_schedules", "select", {
       data: { allowed_cents: 20000 },
@@ -261,18 +321,32 @@ describe("scoreClaim — fee-schedule date filtering (payer_fee_schedules)", () 
     });
     stageSupabaseResponse("patients", "select", {
       data: {
-        address: { line1: "1 Main", city: "Pittsburgh", state: "PA", zip: "15201" },
+        address: {
+          line1: "1 Main",
+          city: "Pittsburgh",
+          state: "PA",
+          zip: "15201",
+        },
       },
     });
     stageSupabaseResponse("insurance_claim_line_items", "select", {
-      data: [{ hcpcs_code: "E0601", modifier: "RR,KX", billed_cents: 50000, quantity: 1 }],
+      data: [
+        {
+          hcpcs_code: "E0601",
+          modifier: "RR,KX",
+          billed_cents: 50000,
+          quantity: 1,
+        },
+      ],
     });
     stageSupabaseResponse("payer_fee_schedules", "select", {
       data: { allowed_cents: 20000 },
     });
 
     const r = await scoreClaim(CLAIM_ID);
-    expect(r!.factors.some((f) => f.key === "billed_over_fee_schedule_2x")).toBe(true);
+    expect(
+      r!.factors.some((f) => f.key === "billed_over_fee_schedule_2x"),
+    ).toBe(true);
   });
 
   it("does NOT flag billed_over_fee_schedule_2x when billed_cents ≤ 2x allowed_cents", async () => {
@@ -284,18 +358,32 @@ describe("scoreClaim — fee-schedule date filtering (payer_fee_schedules)", () 
     });
     stageSupabaseResponse("patients", "select", {
       data: {
-        address: { line1: "1 Main", city: "Pittsburgh", state: "PA", zip: "15201" },
+        address: {
+          line1: "1 Main",
+          city: "Pittsburgh",
+          state: "PA",
+          zip: "15201",
+        },
       },
     });
     stageSupabaseResponse("insurance_claim_line_items", "select", {
-      data: [{ hcpcs_code: "E0601", modifier: "RR,KX", billed_cents: 30000, quantity: 1 }],
+      data: [
+        {
+          hcpcs_code: "E0601",
+          modifier: "RR,KX",
+          billed_cents: 30000,
+          quantity: 1,
+        },
+      ],
     });
     stageSupabaseResponse("payer_fee_schedules", "select", {
       data: { allowed_cents: 20000 },
     });
 
     const r = await scoreClaim(CLAIM_ID);
-    expect(r!.factors.some((f) => f.key === "billed_over_fee_schedule_2x")).toBe(false);
+    expect(
+      r!.factors.some((f) => f.key === "billed_over_fee_schedule_2x"),
+    ).toBe(false);
   });
 
   it("skips the fee schedule lookup entirely when claim has no payer_profile_id", async () => {
@@ -305,11 +393,23 @@ describe("scoreClaim — fee-schedule date filtering (payer_fee_schedules)", () 
     });
     stageSupabaseResponse("patients", "select", {
       data: {
-        address: { line1: "1 Main", city: "Pittsburgh", state: "PA", zip: "15201" },
+        address: {
+          line1: "1 Main",
+          city: "Pittsburgh",
+          state: "PA",
+          zip: "15201",
+        },
       },
     });
     stageSupabaseResponse("insurance_claim_line_items", "select", {
-      data: [{ hcpcs_code: "E0601", modifier: "RR", billed_cents: 24999, quantity: 1 }],
+      data: [
+        {
+          hcpcs_code: "E0601",
+          modifier: "RR",
+          billed_cents: 24999,
+          quantity: 1,
+        },
+      ],
     });
 
     await scoreClaim(CLAIM_ID);

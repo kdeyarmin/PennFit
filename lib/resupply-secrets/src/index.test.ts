@@ -1,10 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import {
-  LINK_HMAC_KEY_ENV,
-  getLinkHmacKey,
-  hasLinkHmacKey,
-} from "./index";
+import { LINK_HMAC_KEY_ENV, getLinkHmacKey, hasLinkHmacKey } from "./index";
 
 describe("resupply-secrets", () => {
   let saved: string | undefined;
@@ -38,9 +34,9 @@ describe("resupply-secrets", () => {
       // base64 check would reject this, but we treat it as raw bytes.
       process.env[LINK_HMAC_KEY_ENV] = "abc-def_ghi";
       expect(() => getLinkHmacKey()).not.toThrow();
-      expect(
-        getLinkHmacKey().equals(Buffer.from("abc-def_ghi", "utf8")),
-      ).toBe(true);
+      expect(getLinkHmacKey().equals(Buffer.from("abc-def_ghi", "utf8"))).toBe(
+        true,
+      );
     });
 
     it("does not enforce a minimum length at runtime (preflight is the gate)", () => {

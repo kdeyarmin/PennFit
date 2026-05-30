@@ -69,9 +69,9 @@ export function LearnCpapBloating() {
           The clinical term is{" "}
           <span className="font-semibold text-foreground">aerophagia</span> —
           swallowed air. It&apos;s common in the first month on therapy
-          (especially at higher pressures), it&apos;s harmless from a
-          long-term standpoint, and it&apos;s almost always fixable with
-          one or two small changes.
+          (especially at higher pressures), it&apos;s harmless from a long-term
+          standpoint, and it&apos;s almost always fixable with one or two small
+          changes.
         </p>
       </header>
 
@@ -89,14 +89,13 @@ export function LearnCpapBloating() {
               </h2>
             </div>
             <p className="text-sm text-muted-foreground leading-relaxed">
-              When the pressure delivered to your airway is higher than
-              what your throat muscles relax to handle, some of the
-              therapy air gets pushed into your esophagus and stomach
-              instead of (or in addition to) your lungs. Overnight that
-              air accumulates as belching, bloating, gas, and morning
-              stomach distension. Your body clears it normally during the
-              day — the question is how to make less of it in the first
-              place.
+              When the pressure delivered to your airway is higher than what
+              your throat muscles relax to handle, some of the therapy air gets
+              pushed into your esophagus and stomach instead of (or in addition
+              to) your lungs. Overnight that air accumulates as belching,
+              bloating, gas, and morning stomach distension. Your body clears it
+              normally during the day — the question is how to make less of it
+              in the first place.
             </p>
           </div>
         </div>
@@ -144,12 +143,11 @@ export function LearnCpapBloating() {
                 When to escalate to your sleep doctor
               </div>
               <p className="text-sm text-foreground/85 leading-relaxed">
-                Aerophagia that persists past 6-8 weeks despite the four
-                fixes above is a reason to discuss either a BiPAP
-                conversion (separate inhale/exhale pressures relieve the
-                throat pressure delta) or a pressure-range adjustment.
-                Don&apos;t change settings yourself — but absolutely
-                bring this up at your next sleep follow-up.
+                Aerophagia that persists past 6-8 weeks despite the four fixes
+                above is a reason to discuss either a BiPAP conversion (separate
+                inhale/exhale pressures relieve the throat pressure delta) or a
+                pressure-range adjustment. Don&apos;t change settings yourself —
+                but absolutely bring this up at your next sleep follow-up.
               </p>
             </div>
           </div>
@@ -198,8 +196,7 @@ export function LearnCpapBloating() {
               Surviving the first two weeks
             </h3>
             <p className="text-sm text-muted-foreground leading-relaxed">
-              Aerophagia is common in the adjustment window. The broader
-              guide.
+              Aerophagia is common in the adjustment window. The broader guide.
             </p>
           </div>
           <ArrowRight className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors mt-1" />
@@ -225,9 +222,9 @@ export function LearnCpapBloating() {
       </div>
 
       <p className="text-xs text-muted-foreground/80 leading-relaxed mt-10 max-w-2xl mx-auto text-center">
-        Educational content only. Persistent abdominal symptoms unrelated
-        to therapy timing should be evaluated by your physician — not
-        every stomach issue is aerophagia.
+        Educational content only. Persistent abdominal symptoms unrelated to
+        therapy timing should be evaluated by your physician — not every stomach
+        issue is aerophagia.
       </p>
     </div>
   );

@@ -36,7 +36,11 @@ vi.mock("../../middlewares/requireAdmin", () =>
 vi.mock("../../middlewares/admin-rate-limit", () => ({
   adminRateLimit:
     () =>
-    (_req: import("express").Request, _res: import("express").Response, next: import("express").NextFunction) =>
+    (
+      _req: import("express").Request,
+      _res: import("express").Response,
+      next: import("express").NextFunction,
+    ) =>
       next(),
 }));
 
@@ -241,9 +245,7 @@ describe("PATCH /admin/feature-flags/:key", () => {
 
 describe("GET /admin/feature-flags/activity", () => {
   it("returns 401 when not signed in", async () => {
-    const res = await request(makeApp()).get(
-      "/admin/feature-flags/activity",
-    );
+    const res = await request(makeApp()).get("/admin/feature-flags/activity");
     expect(res.status).toBe(401);
   });
 
@@ -272,9 +274,7 @@ describe("GET /admin/feature-flags/activity", () => {
       ],
     });
 
-    const res = await request(makeApp()).get(
-      "/admin/feature-flags/activity",
-    );
+    const res = await request(makeApp()).get("/admin/feature-flags/activity");
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({

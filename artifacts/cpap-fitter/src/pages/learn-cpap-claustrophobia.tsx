@@ -17,28 +17,23 @@ import { ShareArticle } from "@/components/share-article";
 const desensitizationSteps = [
   {
     day: "Day 0 (daytime)",
-    what:
-      "Just hold the mask up to your face. Don't strap it on. Breathe through it for 5-10 minutes. Watch TV. Read. Whatever — your only job is to let your nervous system register that you can still breathe normally with this thing on your face.",
+    what: "Just hold the mask up to your face. Don't strap it on. Breathe through it for 5-10 minutes. Watch TV. Read. Whatever — your only job is to let your nervous system register that you can still breathe normally with this thing on your face.",
   },
   {
     day: "Day 1 (daytime)",
-    what:
-      "Put the mask on with the headgear loose. Connect the hose; turn the machine on at the lowest pressure. Sit with it for 20 minutes during the day. Most patients describe this step as 'almost relaxing' — proof that the mask isn't the problem, the dark-and-trying-to-sleep context was.",
+    what: "Put the mask on with the headgear loose. Connect the hose; turn the machine on at the lowest pressure. Sit with it for 20 minutes during the day. Most patients describe this step as 'almost relaxing' — proof that the mask isn't the problem, the dark-and-trying-to-sleep context was.",
   },
   {
     day: "Day 2-3 (daytime + first sleep attempts)",
-    what:
-      "Daytime: 30+ minutes wearing the mask connected to the machine. Bedtime: put it on, then take it off whenever you want — no pressure to keep it on all night. Track how long you wore it. The number will climb.",
+    what: "Daytime: 30+ minutes wearing the mask connected to the machine. Bedtime: put it on, then take it off whenever you want — no pressure to keep it on all night. Track how long you wore it. The number will climb.",
   },
   {
     day: "Day 4-7",
-    what:
-      "Use the ramp feature so the machine starts at minimum pressure. Wear the mask falling asleep. If you take it off in the middle of the night, that's fine — write down what time, and tomorrow aim for 30 minutes longer.",
+    what: "Use the ramp feature so the machine starts at minimum pressure. Wear the mask falling asleep. If you take it off in the middle of the night, that's fine — write down what time, and tomorrow aim for 30 minutes longer.",
   },
   {
     day: "Week 2",
-    what:
-      "Full-night wear becomes routine. The mask stops registering as a foreign object. Most patients describe a turning point somewhere between night 10 and 18 where they stop noticing it consciously.",
+    what: "Full-night wear becomes routine. The mask stops registering as a foreign object. Most patients describe a turning point somewhere between night 10 and 18 where they stop noticing it consciously.",
   },
 ];
 
@@ -70,12 +65,12 @@ export function LearnCpapClaustrophobia() {
           When the mask feels suffocating.
         </h1>
         <p className="text-lg text-muted-foreground leading-relaxed">
-          About <span className="font-semibold text-foreground">15-20%</span>{" "}
-          of new CPAP patients describe at least some claustrophobia in
-          the first week — and a meaningful number nearly quit because of
-          it. The fix isn&apos;t willpower. It&apos;s a structured
-          desensitization protocol that takes about a week of daytime
-          practice. It works for almost everyone who tries it.
+          About <span className="font-semibold text-foreground">15-20%</span> of
+          new CPAP patients describe at least some claustrophobia in the first
+          week — and a meaningful number nearly quit because of it. The fix
+          isn&apos;t willpower. It&apos;s a structured desensitization protocol
+          that takes about a week of daytime practice. It works for almost
+          everyone who tries it.
         </p>
       </header>
 
@@ -93,17 +88,17 @@ export function LearnCpapClaustrophobia() {
               </h2>
             </div>
             <p className="text-sm text-muted-foreground leading-relaxed mb-3">
-              Claustrophobia in CPAP isn&apos;t a moral failing or a sign
-              that &ldquo;CPAP isn&apos;t for you.&rdquo; It&apos;s a
-              learned response — your nervous system has correctly
-              identified that there&apos;s something on your face and is
-              reacting accordingly. The fix is to let your nervous system
-              learn that the mask isn&apos;t a threat. That&apos;s exactly
-              what the desensitization steps below do.
+              Claustrophobia in CPAP isn&apos;t a moral failing or a sign that
+              &ldquo;CPAP isn&apos;t for you.&rdquo; It&apos;s a learned
+              response — your nervous system has correctly identified that
+              there&apos;s something on your face and is reacting accordingly.
+              The fix is to let your nervous system learn that the mask
+              isn&apos;t a threat. That&apos;s exactly what the desensitization
+              steps below do.
             </p>
             <p className="text-sm text-muted-foreground leading-relaxed">
-              You can do this on your own. Most patients who try the
-              protocol report a meaningful shift within 5-7 days.
+              You can do this on your own. Most patients who try the protocol
+              report a meaningful shift within 5-7 days.
             </p>
           </div>
         </div>
@@ -120,9 +115,9 @@ export function LearnCpapClaustrophobia() {
           </h2>
         </div>
         <p className="text-muted-foreground leading-relaxed mb-5">
-          One step per day. The key principle: build up daytime exposure
-          before adding the &ldquo;dark room, trying to sleep&rdquo;
-          variable. The 11pm panic doesn&apos;t happen at 3pm.
+          One step per day. The key principle: build up daytime exposure before
+          adding the &ldquo;dark room, trying to sleep&rdquo; variable. The 11pm
+          panic doesn&apos;t happen at 3pm.
         </p>
         <div className="space-y-3">
           {desensitizationSteps.map((s) => (
@@ -182,13 +177,12 @@ export function LearnCpapClaustrophobia() {
                 Mask choice matters more than you think
               </div>
               <p className="text-sm text-foreground/85 leading-relaxed">
-                Patients who feel claustrophobic in a full-face mask are
-                usually fine in a nasal pillow setup like the Rio II,
-                P10, or Brevida — much less hardware on the face, no
-                cushion across the bridge of the nose, and an open field
-                of vision. The comfort guarantee covers a one-time
-                exchange; if claustrophobia is your blocker, switching
-                mask types is usually the right move.
+                Patients who feel claustrophobic in a full-face mask are usually
+                fine in a nasal pillow setup like the Rio II, P10, or Brevida —
+                much less hardware on the face, no cushion across the bridge of
+                the nose, and an open field of vision. The comfort guarantee
+                covers a one-time exchange; if claustrophobia is your blocker,
+                switching mask types is usually the right move.
               </p>
             </div>
           </div>
@@ -219,8 +213,8 @@ export function LearnCpapClaustrophobia() {
               Surviving the first two weeks
             </h3>
             <p className="text-sm text-muted-foreground leading-relaxed">
-              The broader adjustment guide. Claustrophobia is one of
-              several common Week 1 challenges.
+              The broader adjustment guide. Claustrophobia is one of several
+              common Week 1 challenges.
             </p>
           </div>
           <ArrowRight className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors mt-1" />
@@ -258,10 +252,10 @@ export function LearnCpapClaustrophobia() {
       </div>
 
       <p className="text-xs text-muted-foreground/80 leading-relaxed mt-10 max-w-2xl mx-auto text-center">
-        Educational content only. Severe panic or anxiety should be
-        discussed with your physician and a mental health provider —
-        CPAP-related claustrophobia is treatable but doesn&apos;t replace
-        general anxiety care.
+        Educational content only. Severe panic or anxiety should be discussed
+        with your physician and a mental health provider — CPAP-related
+        claustrophobia is treatable but doesn&apos;t replace general anxiety
+        care.
       </p>
     </div>
   );

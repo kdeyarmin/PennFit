@@ -19,10 +19,12 @@ export interface NpsRecentResponse {
   }>;
 }
 
-export async function fetchRecentNps(opts: {
-  days?: number;
-  commentLimit?: number;
-} = {}): Promise<NpsRecentResponse> {
+export async function fetchRecentNps(
+  opts: {
+    days?: number;
+    commentLimit?: number;
+  } = {},
+): Promise<NpsRecentResponse> {
   const params = new URLSearchParams();
   if (opts.days != null) params.set("days", String(opts.days));
   if (opts.commentLimit != null) {

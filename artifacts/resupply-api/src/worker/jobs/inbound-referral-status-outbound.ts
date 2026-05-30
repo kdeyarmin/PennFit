@@ -47,7 +47,10 @@ import {
 import { signParachutePayload } from "@workspace/resupply-integrations-parachute";
 
 import { logger } from "../../lib/logger";
-import { createQueueWithDlq, VENDOR_SEND_QUEUE_OPTS } from "../lib/queue-options";
+import {
+  createQueueWithDlq,
+  VENDOR_SEND_QUEUE_OPTS,
+} from "../lib/queue-options";
 
 /** Thrown when the partner-supplied callback URL is permanently unsafe. */
 class OutboundUrlUnsafeError extends Error {
@@ -134,7 +137,10 @@ export async function runReferralStatusOutbound(
     .schema("resupply")
     .from("inbound_referral_status_outbox")
     .update({ next_attempt_at: leaseUntil, updated_at: nowIso })
-    .in("id", candidates.map((c) => c.id))
+    .in(
+      "id",
+      candidates.map((c) => c.id),
+    )
     .eq("status", "queued")
     .select(
       "id, referral_id, target_kind, event_type, payload_json, attempt_count, max_retries, status",
@@ -194,7 +200,12 @@ export async function runReferralStatusOutbound(
     const signature = signParachutePayload(rawBody, target.signingSecret);
 
     try {
-      const resp = await postWithTimeout(fetchImpl, target.url, rawBody, signature);
+      const resp = await postWithTimeout(
+        fetchImpl,
+        target.url,
+        rawBody,
+        signature,
+      );
       if (resp.ok) {
         await markDelivered(supabase, row.id, resp.status);
         stats.delivered += 1;
@@ -248,9 +259,8 @@ export async function runReferralStatusOutbound(
     }
   }
   await Promise.all(
-    Array.from(
-      { length: Math.min(MAX_PARALLEL, claimedRows.length) },
-      () => worker(),
+    Array.from({ length: Math.min(MAX_PARALLEL, claimedRows.length) }, () =>
+      worker(),
     ),
   );
   return stats;
@@ -332,15 +342,21 @@ async function postWithTimeout(
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   try {
-    return await fetchWithPinnedIp(fetchImpl, url, pinnedIp, parsedUrl.hostname, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-PennFit-Signature": signature,
+    return await fetchWithPinnedIp(
+      fetchImpl,
+      url,
+      pinnedIp,
+      parsedUrl.hostname,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-PennFit-Signature": signature,
+        },
+        body,
+        signal: controller.signal,
       },
-      body,
-      signal: controller.signal,
-    });
+    );
   } finally {
     clearTimeout(timer);
   }
@@ -422,6 +438,23 @@ async function markExhausted(
 export async function registerReferralStatusOutboundJob(
   boss: PgBoss,
 ): Promise<void> {
+  if (process.env.RESUPPLY_INBOUND_REFERRALS_ENABLED !== "1") {
+    // Inbound referral / EHR integration is not provisioned here — the
+    // inbound_referral_* / ehr_fhir_tenants tables only exist once that
+    // integration is set up (see docs/db-schema-drift-2026-05-29.md).
+    // Unschedule any cron a prior deploy left behind so it stops firing
+    // into missing tables, then skip worker registration. Set
+    // RESUPPLY_INBOUND_REFERRALS_ENABLED=1 once the schema + a partner
+    // tenant exist.
+    if (typeof boss.unschedule === "function") {
+      await boss.unschedule(JOB).catch(() => undefined);
+    }
+    logger.info(
+      { event: "inbound_referral_jobs_disabled", job: JOB },
+      `${JOB}: not registered (RESUPPLY_INBOUND_REFERRALS_ENABLED!=1); cleared any stale cron`,
+    );
+    return;
+  }
   await createQueueWithDlq(boss, JOB, VENDOR_SEND_QUEUE_OPTS);
   await boss.work(JOB, async () => {
     try {

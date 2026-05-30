@@ -29,11 +29,7 @@
 // be authored later without changing this catalog. Order within
 // a stage is the order shown — pick wisely.
 
-export type EducationStage =
-  | "new"
-  | "habituating"
-  | "steady"
-  | "experienced";
+export type EducationStage = "new" | "habituating" | "steady" | "experienced";
 
 export interface EducationArticle {
   slug: string;
@@ -47,22 +43,19 @@ const ARTICLES: Record<EducationStage, ReadonlyArray<EducationArticle>> = {
     {
       slug: "/learn/first-week-comfort",
       title: "Your first week on CPAP",
-      summary:
-        "What to expect — and which discomforts settle on their own.",
+      summary: "What to expect — and which discomforts settle on their own.",
       category: "comfort",
     },
     {
       slug: "/learn/ramp-and-pressure",
       title: "Ramp + pressure settings explained",
-      summary:
-        "Why your machine starts soft. When to ask us to adjust.",
+      summary: "Why your machine starts soft. When to ask us to adjust.",
       category: "comfort",
     },
     {
       slug: "/learn/mask-fit-basics",
       title: "Mask fit basics",
-      summary:
-        "Headgear tension, cushion position, the 30-second seal check.",
+      summary: "Headgear tension, cushion position, the 30-second seal check.",
       category: "troubleshooting",
     },
   ],
@@ -70,22 +63,19 @@ const ARTICLES: Record<EducationStage, ReadonlyArray<EducationArticle>> = {
     {
       slug: "/learn/persistent-leaks",
       title: "If your mask still leaks",
-      summary:
-        "Common causes in weeks 3–8 — most fix with a small adjustment.",
+      summary: "Common causes in weeks 3–8 — most fix with a small adjustment.",
       category: "troubleshooting",
     },
     {
       slug: "/learn/side-sleeping",
       title: "Sleeping on your side with CPAP",
-      summary:
-        "Pillow tricks + the masks that play nicest with side-sleepers.",
+      summary: "Pillow tricks + the masks that play nicest with side-sleepers.",
       category: "lifestyle",
     },
     {
       slug: "/learn/mouth-breathing",
       title: "Mouth breathing, dry mouth, chin straps",
-      summary:
-        "Why your mouth feels like a desert and what actually helps.",
+      summary: "Why your mouth feels like a desert and what actually helps.",
       category: "troubleshooting",
     },
   ],
@@ -100,15 +90,13 @@ const ARTICLES: Record<EducationStage, ReadonlyArray<EducationArticle>> = {
     {
       slug: "/learn/humidifier-tuning",
       title: "Tuning your humidifier for the season",
-      summary:
-        "Winter dry, summer warm — three settings worth knowing.",
+      summary: "Winter dry, summer warm — three settings worth knowing.",
       category: "comfort",
     },
     {
       slug: "/learn/traveling-with-cpap",
       title: "Traveling with your CPAP",
-      summary:
-        "TSA, hotel outlets, battery packs, and altitude.",
+      summary: "TSA, hotel outlets, battery packs, and altitude.",
       category: "lifestyle",
     },
   ],
@@ -116,22 +104,19 @@ const ARTICLES: Record<EducationStage, ReadonlyArray<EducationArticle>> = {
     {
       slug: "/learn/annual-review",
       title: "The annual sleep-medicine review",
-      summary:
-        "What to bring up at your next provider visit.",
+      summary: "What to bring up at your next provider visit.",
       category: "lifestyle",
     },
     {
       slug: "/learn/rx-renewal-checklist",
       title: "Renewing your prescription",
-      summary:
-        "Timing, documents, and what we file on your behalf.",
+      summary: "Timing, documents, and what we file on your behalf.",
       category: "maintenance",
     },
     {
       slug: "/learn/when-to-upgrade",
       title: "Knowing when to upgrade your machine",
-      summary:
-        "Five signs your unit's coasting toward retirement.",
+      summary: "Five signs your unit's coasting toward retirement.",
       category: "lifestyle",
     },
   ],
@@ -147,8 +132,6 @@ export function stageForDays(daysOnTherapy: number): EducationStage {
 }
 
 /** Articles for a stage (immutable copy so callers can't mutate). */
-export function articlesForStage(
-  stage: EducationStage,
-): EducationArticle[] {
+export function articlesForStage(stage: EducationStage): EducationArticle[] {
   return [...ARTICLES[stage]];
 }

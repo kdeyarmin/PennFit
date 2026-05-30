@@ -69,9 +69,7 @@ describe("ui-shims Select — aria-label forwarded to native <select>", () => {
     // The fallback expression is: ariaLabel ?? (trigger.placeholder || undefined)
     // This ensures every native select has an accessible label derived from
     // the SelectValue placeholder even when the consumer omits aria-label.
-    expect(SRC).toContain(
-      "ariaLabel ?? (trigger.placeholder || undefined)",
-    );
+    expect(SRC).toContain("ariaLabel ?? (trigger.placeholder || undefined)");
   });
 
   it("does NOT set a hard-coded empty aria-label on the native select", () => {

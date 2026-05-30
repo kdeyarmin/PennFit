@@ -243,17 +243,15 @@ export function PodSection({ orderId, parentQueryKey }: PodSectionProps) {
             Proof of delivery
           </h3>
           <p className="text-xs text-muted-foreground mt-0.5">
-            Doorstep photo + optional signature name. Surveyors ask for
-            POD evidence on audit and we use it to resolve "I never got
-            it" disputes.
+            Doorstep photo + optional signature name. Surveyors ask for POD
+            evidence on audit and we use it to resolve "I never got it"
+            disputes.
           </p>
         </div>
         {hasPhoto && (
           <span className="text-[11px] text-muted-foreground">
             Uploaded{" "}
-            {meta.uploadedAt
-              ? new Date(meta.uploadedAt).toLocaleString()
-              : "—"}
+            {meta.uploadedAt ? new Date(meta.uploadedAt).toLocaleString() : "—"}
             {meta.signedName ? ` · ${meta.signedName}` : ""}
           </span>
         )}
@@ -296,10 +294,7 @@ export function PodSection({ orderId, parentQueryKey }: PodSectionProps) {
       </div>
 
       {uploadError && (
-        <p
-          className="text-xs text-red-600"
-          data-testid="pod-upload-error"
-        >
+        <p className="text-xs text-red-600" data-testid="pod-upload-error">
           {uploadError}
         </p>
       )}

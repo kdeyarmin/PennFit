@@ -36,10 +36,7 @@ const router: IRouter = Router();
 // `orderId` is the shop_orders.id (text-typed UUID per migration 0001).
 // Validate it as a canonical UUID so this route stays consistent with
 // the existing shop-orders admin routes.
-const orderIdParam = z
-  .string()
-  .trim()
-  .uuid();
+const orderIdParam = z.string().trim().uuid();
 
 const bodySchema = z
   .object({

@@ -75,9 +75,7 @@ export function readSmsConfigOrNull(
 
   const publicBaseUrl = stripTrailingSlash(
     env.RESUPPLY_VOICE_PUBLIC_BASE_URL ??
-      (env.RAILWAY_PUBLIC_DOMAIN
-        ? `https://${env.RAILWAY_PUBLIC_DOMAIN}`
-        : ""),
+      (env.RAILWAY_PUBLIC_DOMAIN ? `https://${env.RAILWAY_PUBLIC_DOMAIN}` : ""),
   );
   if (!publicBaseUrl) return null;
 
@@ -108,9 +106,7 @@ export function readEmailConfigOrNull(
 
   const publicBaseUrl = stripTrailingSlash(
     env.RESUPPLY_VOICE_PUBLIC_BASE_URL ??
-      (env.RAILWAY_PUBLIC_DOMAIN
-        ? `https://${env.RAILWAY_PUBLIC_DOMAIN}`
-        : ""),
+      (env.RAILWAY_PUBLIC_DOMAIN ? `https://${env.RAILWAY_PUBLIC_DOMAIN}` : ""),
   );
   if (!publicBaseUrl) return null;
 

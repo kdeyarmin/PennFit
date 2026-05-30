@@ -91,11 +91,14 @@ describe("renderHcfa1500Pdf", () => {
   });
 
   it("renders the maximum 6 service lines per page", async () => {
-    const sixLines: Hcfa1500ServiceLine[] = Array.from({ length: 6 }, (_, i) => ({
-      ...SERVICE,
-      hcpcsCode: `A703${i}`,
-      chargesCents: 1000 * (i + 1),
-    }));
+    const sixLines: Hcfa1500ServiceLine[] = Array.from(
+      { length: 6 },
+      (_, i) => ({
+        ...SERVICE,
+        hcpcsCode: `A703${i}`,
+        chargesCents: 1000 * (i + 1),
+      }),
+    );
     const pdf = await renderHcfa1500Pdf({
       ...BASE,
       serviceLines: sixLines,

@@ -315,9 +315,7 @@ describe("POST /me/payments/intent — happy path", () => {
       amountCents: 2500,
     });
 
-    const allocations = [
-      { claimId: CLAIM_ID, amountAppliedCents: 2500 },
-    ];
+    const allocations = [{ claimId: CLAIM_ID, amountAppliedCents: 2500 }];
     await request(makeApp())
       .post("/resupply-api/me/payments/intent")
       .send({ allocations });

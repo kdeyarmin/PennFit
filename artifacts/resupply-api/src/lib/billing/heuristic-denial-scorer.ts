@@ -46,15 +46,15 @@ const SCORE_FLOOR = 0.02;
 // Chosen so a "fully-broken" claim lands around 0.85-0.92 and a
 // "looks clean" claim lands around 0.05-0.10. These can be tuned
 // once we have ~5k decided claims of historical ground truth.
-const W_NO_PAYER_PROFILE = 0.30;
+const W_NO_PAYER_PROFILE = 0.3;
 const W_NO_REFERRING_PROVIDER = 0.25;
 const W_NO_DIAGNOSIS = 0.35;
-const W_NO_PRIOR_AUTH_WHEN_REQUIRED = 0.40;
+const W_NO_PRIOR_AUTH_WHEN_REQUIRED = 0.4;
 const W_NO_PECOS_ENROLLMENT = 0.45; // Medicare auto-denial path
-const W_MISSING_KX_ON_CONTINUING_RENTAL = 0.30;
-const W_LINE_BILLED_OVER_FEE_SCHEDULE_2X = 0.10;
-const W_DIAGNOSIS_HCPCS_MISMATCH = 0.30;
-const W_SUBSCRIBER_ADDRESS_MISSING = 0.50;
+const W_MISSING_KX_ON_CONTINUING_RENTAL = 0.3;
+const W_LINE_BILLED_OVER_FEE_SCHEDULE_2X = 0.1;
+const W_DIAGNOSIS_HCPCS_MISMATCH = 0.3;
+const W_SUBSCRIBER_ADDRESS_MISSING = 0.5;
 
 const MEDICARE_LIKE_LOBS = new Set(["medicare_part_b", "medicare_advantage"]);
 const CAPPED_RENTAL_HCPCS = new Set(["E0601", "E0470", "E0471", "E0562"]);
@@ -79,18 +79,17 @@ export async function scoreClaim(claimId: string): Promise<DenialScore | null> {
     factors.push({
       key: "missing_payer_profile",
       weight: W_NO_PAYER_PROFILE,
-      label: "No payer_profile_id selected — clearinghouse cannot route the claim.",
+      label:
+        "No payer_profile_id selected — clearinghouse cannot route the claim.",
     });
   }
 
   // 2. Referring provider (Medicare DME hard requirement).
-  let payer:
-    | {
-        line_of_business: string;
-        requires_prior_auth_dme: boolean;
-        display_name: string;
-      }
-    | null = null;
+  let payer: {
+    line_of_business: string;
+    requires_prior_auth_dme: boolean;
+    display_name: string;
+  } | null = null;
   if (claim.payer_profile_id) {
     const { data } = await supabase
       .schema("resupply")
@@ -215,7 +214,10 @@ export async function scoreClaim(claimId: string): Promise<DenialScore | null> {
       const mods = ((line.modifier ?? "") as string)
         .split(",")
         .map((m: string) => m.trim().toUpperCase());
-      if (!mods.includes("KX") && rentalLikelyContinuing(claim.date_of_service)) {
+      if (
+        !mods.includes("KX") &&
+        rentalLikelyContinuing(claim.date_of_service)
+      ) {
         factors.push({
           key: "missing_kx_continuing_rental",
           weight: W_MISSING_KX_ON_CONTINUING_RENTAL,
@@ -322,7 +324,12 @@ export async function scoreAndPersist(
 
 function hasStructuredAddress(raw: unknown): boolean {
   if (!raw || typeof raw !== "object") return false;
-  const a = raw as { line1?: unknown; city?: unknown; state?: unknown; zip?: unknown };
+  const a = raw as {
+    line1?: unknown;
+    city?: unknown;
+    state?: unknown;
+    zip?: unknown;
+  };
   return (
     typeof a.line1 === "string" &&
     typeof a.city === "string" &&

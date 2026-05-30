@@ -79,9 +79,7 @@ describe("results — catalogById guards both hops with Array.isArray", () => {
 type MockMaskEntry = { id: string; name: string };
 type MockCatalog = { masks: MockMaskEntry[] } | undefined;
 
-function buildCatalogById(
-  catalog: MockCatalog,
-): Map<string, MockMaskEntry> {
+function buildCatalogById(catalog: MockCatalog): Map<string, MockMaskEntry> {
   // Mirrors the guarded form's observable behaviour:
   //   if (!catalog || !Array.isArray(catalog.masks)) return map;
   //   catalog.masks.forEach((m) => map.set(m.id, m));

@@ -102,7 +102,10 @@ router.post("/shop/insurance-estimates", async (req, res) => {
 
   // Honeypot — bots that filled `website` get a fake success.
   if (data.website && data.website.trim().length > 0) {
-    req.log?.info?.({ honeypot: true }, "shop/insurance-estimates: honeypot trip");
+    req.log?.info?.(
+      { honeypot: true },
+      "shop/insurance-estimates: honeypot trip",
+    );
     res.json({ ok: true });
     return;
   }

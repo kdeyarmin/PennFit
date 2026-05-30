@@ -27,16 +27,36 @@ const supabaseMock = installSupabaseMock();
 vi.mock("pdfkit", async () => {
   const { EventEmitter } = await import("node:events");
   class FakePDF extends EventEmitter {
-    fontSize() { return this; }
-    font() { return this; }
-    text() { return this; }
-    moveDown() { return this; }
-    moveTo() { return this; }
-    lineTo() { return this; }
-    stroke() { return this; }
-    fillColor() { return this; }
-    rect() { return this; }
-    fill() { return this; }
+    fontSize() {
+      return this;
+    }
+    font() {
+      return this;
+    }
+    text() {
+      return this;
+    }
+    moveDown() {
+      return this;
+    }
+    moveTo() {
+      return this;
+    }
+    lineTo() {
+      return this;
+    }
+    stroke() {
+      return this;
+    }
+    fillColor() {
+      return this;
+    }
+    rect() {
+      return this;
+    }
+    fill() {
+      return this;
+    }
     pipe(dest: NodeJS.WritableStream) {
       // Emit a tiny buffer so the response closes cleanly.
       dest.write(Buffer.from("%PDF-fake"));
@@ -81,9 +101,7 @@ describe("GET /fax/document/:token", () => {
 
   it("403s when token is expired", async () => {
     verifyTokenMock.mockReturnValueOnce({ valid: false });
-    const res = await request(makeApp()).get(
-      "/fax/document/expired.signature",
-    );
+    const res = await request(makeApp()).get("/fax/document/expired.signature");
     expect(res.status).toBe(403);
   });
 

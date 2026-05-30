@@ -36,9 +36,7 @@ router.get(
     const { data, error } = await supabase
       .schema("resupply")
       .from("patient_identity_verifications")
-      .select(
-        "id, method, result, notes, verified_by_user_id, created_at",
-      )
+      .select("id, method, result, notes, verified_by_user_id, created_at")
       .eq("patient_id", idParse.data)
       .order("created_at", { ascending: false })
       .limit(50);

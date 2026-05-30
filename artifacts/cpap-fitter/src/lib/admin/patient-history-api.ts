@@ -39,7 +39,11 @@ async function jsonFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
   const res = await fetch(`/resupply-api${path}`, {
     ...restInit,
     credentials: "include",
-    headers: { Accept: "application/json", ...csrfHeader(), ...(initHeaders ?? {}) },
+    headers: {
+      Accept: "application/json",
+      ...csrfHeader(),
+      ...(initHeaders ?? {}),
+    },
   });
   if (!res.ok) {
     let message = `${res.status} ${res.statusText}`;
@@ -76,11 +80,8 @@ export const postPatientAddressChange = (
     reason: string;
   },
 ) =>
-  jsonFetch<{ id: string }>(
-    `/admin/patients/${patientId}/address-history`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    },
-  );
+  jsonFetch<{ id: string }>(`/admin/patients/${patientId}/address-history`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });

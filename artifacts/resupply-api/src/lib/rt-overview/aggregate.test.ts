@@ -82,7 +82,12 @@ describe("aggregatePatientWindow", () => {
 
   it("ignores rows with unparseable dates", () => {
     const nights = [
-      { night_date: "not-a-date", usage_minutes: 300, ahi: "5", leak_rate_l_min: "20" },
+      {
+        night_date: "not-a-date",
+        usage_minutes: 300,
+        ahi: "5",
+        leak_rate_l_min: "20",
+      },
       night("2026-05-17", 400, "3.0", "12"),
     ];
     const r = aggregatePatientWindow(nights, ASOF, 7);
@@ -109,11 +114,36 @@ describe("aggregatePatientWindow", () => {
 describe("summarizeOverview", () => {
   it("counts active / alerting / stale buckets independently", () => {
     const rows = [
-      { nightsInWindow: 5, staleDays: 0, activeAlerts: [], hasTherapyLink: true },
-      { nightsInWindow: 3, staleDays: 0, activeAlerts: ["leak_rising"], hasTherapyLink: true },
-      { nightsInWindow: 0, staleDays: 20, activeAlerts: [], hasTherapyLink: true },
-      { nightsInWindow: 0, staleDays: null, activeAlerts: [], hasTherapyLink: false },
-      { nightsInWindow: 7, staleDays: 0, activeAlerts: ["usage_dropping", "leak_rising"], hasTherapyLink: true },
+      {
+        nightsInWindow: 5,
+        staleDays: 0,
+        activeAlerts: [],
+        hasTherapyLink: true,
+      },
+      {
+        nightsInWindow: 3,
+        staleDays: 0,
+        activeAlerts: ["leak_rising"],
+        hasTherapyLink: true,
+      },
+      {
+        nightsInWindow: 0,
+        staleDays: 20,
+        activeAlerts: [],
+        hasTherapyLink: true,
+      },
+      {
+        nightsInWindow: 0,
+        staleDays: null,
+        activeAlerts: [],
+        hasTherapyLink: false,
+      },
+      {
+        nightsInWindow: 7,
+        staleDays: 0,
+        activeAlerts: ["usage_dropping", "leak_rising"],
+        hasTherapyLink: true,
+      },
     ];
     expect(summarizeOverview(rows)).toEqual({
       totalActive: 3,

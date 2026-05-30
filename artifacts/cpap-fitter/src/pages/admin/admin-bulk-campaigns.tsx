@@ -11,11 +11,7 @@
 // template key). The UI surfaces those 400 responses inline.
 
 import { useState } from "react";
-import {
-  useMutation,
-  useQuery,
-  useQueryClient,
-} from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { Megaphone, Plus } from "lucide-react";
 
@@ -59,13 +55,9 @@ export function AdminBulkCampaignsPage() {
             <Megaphone className="h-6 w-6" />
             Bulk campaigns
           </h1>
-          <p
-            className="text-sm mt-1"
-            style={{ color: "hsl(var(--ink-3))" }}
-          >
-            Compose audience + template + preview recipient counts.
-            Phase A persists the draft; Phase B will add the worker
-            that actually sends.
+          <p className="text-sm mt-1" style={{ color: "hsl(var(--ink-3))" }}>
+            Compose audience + template + preview recipient counts. Phase A
+            persists the draft; Phase B will add the worker that actually sends.
           </p>
         </div>
         <Button onClick={() => setShowNew(true)}>
@@ -81,14 +73,11 @@ export function AdminBulkCampaignsPage() {
           <ErrorPanel error={error} onRetry={() => void refetch()} />
         ) : data.campaigns.length === 0 ? (
           <p className="text-sm py-3" style={{ color: "hsl(var(--ink-3))" }}>
-            No campaigns yet. Click <strong>New campaign</strong> to
-            compose one.
+            No campaigns yet. Click <strong>New campaign</strong> to compose
+            one.
           </p>
         ) : (
-          <CampaignsTable
-            rows={data.campaigns}
-            onSelect={setOpenId}
-          />
+          <CampaignsTable rows={data.campaigns} onSelect={setOpenId} />
         )}
       </Card>
 
@@ -102,10 +91,7 @@ export function AdminBulkCampaignsPage() {
         />
       )}
       {openId && (
-        <CampaignDetailModal
-          id={openId}
-          onClose={() => setOpenId(null)}
-        />
+        <CampaignDetailModal id={openId} onClose={() => setOpenId(null)} />
       )}
     </div>
   );
@@ -178,9 +164,7 @@ function CampaignsTable({
                 </span>
               )}
             </td>
-            <td className="py-1.5 text-xs">
-              {CATEGORY_LABEL[r.category]}
-            </td>
+            <td className="py-1.5 text-xs">{CATEGORY_LABEL[r.category]}</td>
             <td className="py-1.5 text-right tabular-nums">
               {r.totalRecipients}
             </td>
@@ -255,8 +239,7 @@ function NewCampaignModal({
     name.trim().length > 0 &&
     templateKey.trim().length > 0 &&
     (audienceKind !== "by_patient_payer" || audiencePayer.trim().length > 0) &&
-    (category !== "compliance" ||
-      complianceAttestation.trim().length >= 10);
+    (category !== "compliance" || complianceAttestation.trim().length >= 10);
 
   return (
     <ModalShell title="New bulk campaign" onClose={onClose}>
@@ -276,9 +259,7 @@ function NewCampaignModal({
           <Label>Audience</Label>
           <select
             value={audienceKind}
-            onChange={(e) =>
-              setAudienceKind(e.target.value as AudienceKind)
-            }
+            onChange={(e) => setAudienceKind(e.target.value as AudienceKind)}
             aria-label="Audience"
             className="w-full rounded border px-2 py-1.5 text-sm"
             style={{ borderColor: "hsl(var(--line-1))" }}
@@ -286,9 +267,7 @@ function NewCampaignModal({
             <option value="all_active_shop_customers">
               All shop customers
             </option>
-            <option value="all_active_patients">
-              All active patients
-            </option>
+            <option value="all_active_patients">All active patients</option>
             <option value="by_patient_payer">
               Patients by insurance payer
             </option>
@@ -346,8 +325,8 @@ function NewCampaignModal({
             aria-label="Template key"
           />
           <p className="text-[10px] text-muted-foreground mt-1">
-            From the Message Templates library — must already exist and
-            be active.
+            From the Message Templates library — must already exist and be
+            active.
           </p>
         </div>
 
@@ -365,8 +344,8 @@ function NewCampaignModal({
               aria-label="Compliance attestation"
             />
             <p className="text-[10px] text-rose-700 mt-1">
-              Compliance-category campaigns bypass marketing opt-out.
-              The attestation is logged with the campaign.
+              Compliance-category campaigns bypass marketing opt-out. The
+              attestation is logged with the campaign.
             </p>
           </div>
         )}
@@ -519,8 +498,7 @@ function CampaignDetailBody({
             color: "hsl(var(--ink-2))",
           }}
         >
-          <strong>Compliance attestation:</strong>{" "}
-          {data.complianceAttestation}
+          <strong>Compliance attestation:</strong> {data.complianceAttestation}
         </div>
       )}
 
@@ -529,10 +507,7 @@ function CampaignDetailBody({
           Recipient preview (first 200, suppressed first)
         </h3>
         {data.recipients.length === 0 ? (
-          <p
-            className="text-sm py-2"
-            style={{ color: "hsl(var(--ink-3))" }}
-          >
+          <p className="text-sm py-2" style={{ color: "hsl(var(--ink-3))" }}>
             No recipients resolved.
           </p>
         ) : (
@@ -636,17 +611,14 @@ function CampaignDetailBody({
                 Resume
               </Button>
             )}
-            <Button
-              intent="ghost"
-              onClick={onCancel}
-              disabled={actionsPending}
-            >
+            <Button intent="ghost" onClick={onCancel} disabled={actionsPending}>
               Cancel campaign
             </Button>
           </div>
           {data.status === "sending" && (
             <p className="text-[10px] text-muted-foreground">
-              Pause / cancel takes effect within {TICK_INTERVAL_SECONDS} seconds (next tick).
+              Pause / cancel takes effect within {TICK_INTERVAL_SECONDS} seconds
+              (next tick).
             </p>
           )}
         </div>

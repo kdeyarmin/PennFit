@@ -14,6 +14,22 @@
 -- passes each line's per-row `applied` flag in so the
 -- audit-of-record reflects what was actually pushed.
 
+-- Ensure the `service_role` role exists before the GRANT below. On
+-- Supabase (and production) this role is provisioned by the platform,
+-- but a vanilla Postgres — CI's `postgres:14` service container and
+-- local from-scratch replays — has no such role, so the GRANT would
+-- fail with a misleading error. Create it idempotently (NOLOGIN, no
+-- privileges) so `migrate.mjs` can replay the full history anywhere;
+-- this is a no-op where the role already exists.
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'service_role') THEN
+    CREATE ROLE service_role NOLOGIN;
+  END IF;
+END
+$$;
+--> statement-breakpoint
+
 CREATE OR REPLACE FUNCTION resupply.submit_inventory_reconciliation(
   p_id uuid,
   p_lines jsonb,

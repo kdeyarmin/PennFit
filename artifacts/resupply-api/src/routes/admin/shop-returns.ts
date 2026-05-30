@@ -195,105 +195,108 @@ router.get(
   "/admin/shop/returns",
   requirePermission("returns.read"),
   async (req, res) => {
-  const status = String(req.query.status ?? "open");
-  if (!STATUS_FILTER.has(status)) {
-    res.status(400).json({ error: "invalid_status" });
-    return;
-  }
-  const limit = Math.min(
-    Math.max(1, Number(req.query.limit ?? PAGE_SIZE_DEFAULT)),
-    PAGE_SIZE_MAX,
-  );
-  const cursor = typeof req.query.cursor === "string" ? req.query.cursor : null;
-
-  const supabase = getSupabaseServiceRoleClient();
-
-  // Cursor format: "<ISO timestamp>__<id>" (composite — same pattern as
-  // shop-reviews so paginating across rows that share createdAt is
-  // stable). shop_returns.id is a UUID; reject anything else so a
-  // hostile cursor can't smuggle PostgREST structural characters
-  // (`,`, `(`, `)`) into the `.or()` expression below.
-  //
-  // Any non-null cursor that fails to match the expected shape (missing
-  // delimiter, unparseable timestamp, non-UUID id) returns 400 rather
-  // than silently falling back to the first page — that matches the
-  // behavior of the other composite-cursor list endpoints and makes
-  // tampered cursors fail loudly.
-  const parsed = parseCompositeCursor(cursor ?? undefined);
-  if (!parsed.ok) {
-    res.status(400).json({ error: "invalid_cursor" });
-    return;
-  }
-  if (parsed.id !== null && !isUuidCursorId(parsed.id)) {
-    res.status(400).json({ error: "invalid_cursor" });
-    return;
-  }
-  const cursorTs = parsed.date;
-  const cursorId = parsed.id;
-
-  let listQuery = supabase
-    .schema("resupply")
-    .from("shop_returns")
-    .select(RETURN_COLUMNS)
-    .order("created_at", { ascending: false })
-    .order("id", { ascending: false })
-    .limit(limit + 1);
-  if (status === "open") {
-    listQuery = listQuery.in("status", [
-      "requested",
-      "approved",
-      "shipped_back",
-      "received",
-    ]);
-  } else if (status !== "all") {
-    listQuery = listQuery.eq("status", status);
-  }
-  if (cursorTs && cursorId) {
-    const cursorIso = cursorTs.toISOString();
-    listQuery = listQuery.or(
-      `created_at.lt.${cursorIso},and(created_at.eq.${cursorIso},id.lt.${cursorId})`,
+    const status = String(req.query.status ?? "open");
+    if (!STATUS_FILTER.has(status)) {
+      res.status(400).json({ error: "invalid_status" });
+      return;
+    }
+    const limit = Math.min(
+      Math.max(1, Number(req.query.limit ?? PAGE_SIZE_DEFAULT)),
+      PAGE_SIZE_MAX,
     );
-  }
-  const { data: rows, error } = await listQuery;
-  if (error) throw error;
+    const cursor =
+      typeof req.query.cursor === "string" ? req.query.cursor : null;
 
-  const all = rows ?? [];
-  const hasMore = all.length > limit;
-  const page = all.slice(0, limit);
-  const last = page[page.length - 1];
-  const nextCursor =
-    hasMore && last ? `${last.created_at}__${last.id}` : null;
+    const supabase = getSupabaseServiceRoleClient();
 
-  res.json({
-    returns: page.map(serializeReturnRow),
-    nextCursor,
-  });
-});
+    // Cursor format: "<ISO timestamp>__<id>" (composite — same pattern as
+    // shop-reviews so paginating across rows that share createdAt is
+    // stable). shop_returns.id is a UUID; reject anything else so a
+    // hostile cursor can't smuggle PostgREST structural characters
+    // (`,`, `(`, `)`) into the `.or()` expression below.
+    //
+    // Any non-null cursor that fails to match the expected shape (missing
+    // delimiter, unparseable timestamp, non-UUID id) returns 400 rather
+    // than silently falling back to the first page — that matches the
+    // behavior of the other composite-cursor list endpoints and makes
+    // tampered cursors fail loudly.
+    const parsed = parseCompositeCursor(cursor ?? undefined);
+    if (!parsed.ok) {
+      res.status(400).json({ error: "invalid_cursor" });
+      return;
+    }
+    if (parsed.id !== null && !isUuidCursorId(parsed.id)) {
+      res.status(400).json({ error: "invalid_cursor" });
+      return;
+    }
+    const cursorTs = parsed.date;
+    const cursorId = parsed.id;
+
+    let listQuery = supabase
+      .schema("resupply")
+      .from("shop_returns")
+      .select(RETURN_COLUMNS)
+      .order("created_at", { ascending: false })
+      .order("id", { ascending: false })
+      .limit(limit + 1);
+    if (status === "open") {
+      listQuery = listQuery.in("status", [
+        "requested",
+        "approved",
+        "shipped_back",
+        "received",
+      ]);
+    } else if (status !== "all") {
+      listQuery = listQuery.eq("status", status);
+    }
+    if (cursorTs && cursorId) {
+      const cursorIso = cursorTs.toISOString();
+      listQuery = listQuery.or(
+        `created_at.lt.${cursorIso},and(created_at.eq.${cursorIso},id.lt.${cursorId})`,
+      );
+    }
+    const { data: rows, error } = await listQuery;
+    if (error) throw error;
+
+    const all = rows ?? [];
+    const hasMore = all.length > limit;
+    const page = all.slice(0, limit);
+    const last = page[page.length - 1];
+    const nextCursor =
+      hasMore && last ? `${last.created_at}__${last.id}` : null;
+
+    res.json({
+      returns: page.map(serializeReturnRow),
+      nextCursor,
+    });
+  },
+);
 
 router.get(
   "/admin/shop/returns/:id",
   requirePermission("returns.read"),
   async (req, res) => {
-  const id = req.params.id;
-  if (!id || typeof id !== "string") {
-    res.status(400).json({ error: "missing_id" });
-    return;
-  }
-  const supabase = getSupabaseServiceRoleClient();
-  const { data: row, error } = await supabase
-    .schema("resupply")
-    .from("shop_returns")
-    .select(RETURN_COLUMNS)
-    .eq("id", id)
-    .limit(1)
-    .maybeSingle();
-  if (error) throw error;
-  if (!row) {
-    res.status(404).json({ error: "return_not_found" });
-    return;
-  }
-  res.json({ return: serializeReturnRow(row) });
-});
+    const id = req.params.id;
+    if (!id || typeof id !== "string") {
+      res.status(400).json({ error: "missing_id" });
+      return;
+    }
+    const supabase = getSupabaseServiceRoleClient();
+    const { data: row, error } = await supabase
+      .schema("resupply")
+      .from("shop_returns")
+      .select(RETURN_COLUMNS)
+      .eq("id", id)
+      .limit(1)
+      .maybeSingle();
+    if (error) throw error;
+    if (!row) {
+      res.status(404).json({ error: "return_not_found" });
+      return;
+    }
+    res.json({ return: serializeReturnRow(row) });
+  },
+);
 
 const approveBody = z
   .object({
@@ -491,7 +494,11 @@ router.post(
         shipped_back_at: nowIso,
         updated_at: nowIso,
         admin_user_id: adminId,
-        admin_note: appendNote(parsed.data.note, adminId, "Marked shipped back"),
+        admin_note: appendNote(
+          parsed.data.note,
+          adminId,
+          "Marked shipped back",
+        ),
       })
       .eq("id", id)
       .eq("status", "approved")
@@ -618,6 +625,22 @@ router.post(
       parsed.data.amountCents ?? orderRow.amount_total_cents ?? 0;
     if (!refundCents || refundCents <= 0) {
       res.status(400).json({ error: "missing_refund_amount" });
+      return;
+    }
+    // Cap the refund at the order total, mirroring the shop_orders
+    // refund gate (shop-orders.ts: "refund_exceeds_amount"). This
+    // money-out path previously had no upper bound, so an explicit
+    // oversized `amountCents` was sent straight to Stripe and only
+    // bounced there (surfaced as a 502). A clean 409 keeps the refund
+    // honest before we ever touch the payment processor.
+    if (
+      typeof orderRow.amount_total_cents === "number" &&
+      refundCents > orderRow.amount_total_cents
+    ) {
+      res.status(409).json({
+        error: "refund_exceeds_amount",
+        amountTotalCents: orderRow.amount_total_cents,
+      });
       return;
     }
 
@@ -879,54 +902,55 @@ router.post(
   "/admin/shop/returns/:id/note",
   requirePermission("returns.manage"),
   async (req, res) => {
-  const id = req.params.id;
-  if (!id || typeof id !== "string") {
-    res.status(400).json({ error: "missing_id" });
-    return;
-  }
-  const parsed = noteOnly.safeParse(req.body ?? {});
-  if (!parsed.success || !parsed.data.note) {
-    res.status(400).json({ error: "missing_note" });
-    return;
-  }
-  const supabase = getSupabaseServiceRoleClient();
-  const adminId = req.adminUserId ?? null;
-  const { data: ret, error: lookupErr } = await supabase
-    .schema("resupply")
-    .from("shop_returns")
-    .select(RETURN_COLUMNS)
-    .eq("id", id)
-    .limit(1)
-    .maybeSingle();
-  if (lookupErr) throw lookupErr;
-  if (!ret) {
-    res.status(404).json({ error: "return_not_found" });
-    return;
-  }
-  const { data: updated, error: updateErr } = await supabase
-    .schema("resupply")
-    .from("shop_returns")
-    .update({
-      admin_note: appendNote(
-        parsed.data.note,
-        adminId,
-        "Note added",
-        ret.admin_note,
-      ),
-      admin_user_id: adminId,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", id)
-    .select(RETURN_COLUMNS)
-    .limit(1)
-    .maybeSingle();
-  if (updateErr) throw updateErr;
-  if (!updated) {
-    res.status(404).json({ error: "return_not_found" });
-    return;
-  }
-  res.json({ return: serializeReturnRow(updated) });
-});
+    const id = req.params.id;
+    if (!id || typeof id !== "string") {
+      res.status(400).json({ error: "missing_id" });
+      return;
+    }
+    const parsed = noteOnly.safeParse(req.body ?? {});
+    if (!parsed.success || !parsed.data.note) {
+      res.status(400).json({ error: "missing_note" });
+      return;
+    }
+    const supabase = getSupabaseServiceRoleClient();
+    const adminId = req.adminUserId ?? null;
+    const { data: ret, error: lookupErr } = await supabase
+      .schema("resupply")
+      .from("shop_returns")
+      .select(RETURN_COLUMNS)
+      .eq("id", id)
+      .limit(1)
+      .maybeSingle();
+    if (lookupErr) throw lookupErr;
+    if (!ret) {
+      res.status(404).json({ error: "return_not_found" });
+      return;
+    }
+    const { data: updated, error: updateErr } = await supabase
+      .schema("resupply")
+      .from("shop_returns")
+      .update({
+        admin_note: appendNote(
+          parsed.data.note,
+          adminId,
+          "Note added",
+          ret.admin_note,
+        ),
+        admin_user_id: adminId,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", id)
+      .select(RETURN_COLUMNS)
+      .limit(1)
+      .maybeSingle();
+    if (updateErr) throw updateErr;
+    if (!updated) {
+      res.status(404).json({ error: "return_not_found" });
+      return;
+    }
+    res.json({ return: serializeReturnRow(updated) });
+  },
+);
 
 function appendNote(
   newText: string | null | undefined,

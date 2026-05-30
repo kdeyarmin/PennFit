@@ -302,15 +302,23 @@ async function validateSubscriptionItem(
   }
 
   // Mirror the storefront selection: cheapest active recurring price wins.
-  // If multiple prices share the minimum unit_amount, the first one from
-  // Stripe's list wins (same as the storefront's first-write-wins map).
+  // The tie-break MUST be deterministic and identical to /shop/products,
+  // because the two paths iterate DIFFERENT Stripe lists (this one is
+  // product-scoped; /shop/products lists prices globally) and Stripe does
+  // not guarantee the same ordering between them. A plain "first in the
+  // list wins" tie-break could therefore pick a different equal-priced
+  // price here than the storefront surfaced, rejecting a legitimate
+  // subscribe checkout with `price_not_storefront_approved`. Tie-break on
+  // the price id (lexicographically lowest) so the choice is independent
+  // of list order.
   const cheapest = recurringPrices
     .filter((p) => p.unit_amount != null)
     .reduce<Stripe.Price | null>((best, p) => {
       if (!best) return p;
-      return (p.unit_amount ?? Infinity) < (best.unit_amount ?? Infinity)
-        ? p
-        : best;
+      const pa = p.unit_amount ?? Infinity;
+      const ba = best.unit_amount ?? Infinity;
+      if (pa !== ba) return pa < ba ? p : best;
+      return p.id < best.id ? p : best;
     }, null);
 
   if (!cheapest || item.priceId !== cheapest.id) {

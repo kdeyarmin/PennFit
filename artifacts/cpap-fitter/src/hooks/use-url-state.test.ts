@@ -44,7 +44,8 @@ describe("use-url-state — uses replaceState, not pushState", () => {
     // The comment explains the design decision. We verify the word 'replaceState'
     // appears in the implementation (non-comment code) as well as documentation.
     const implementationLine = SRC.split("\n").find(
-      (line) => !line.trimStart().startsWith("//") && line.includes("replaceState"),
+      (line) =>
+        !line.trimStart().startsWith("//") && line.includes("replaceState"),
     );
     expect(implementationLine).toBeDefined();
   });
@@ -247,9 +248,9 @@ describe("useUrlState buildUrl logic — default value removes the param", () =>
 
 describe("useUrlState buildUrl logic — non-default value sets the param", () => {
   it("appends the key=value query string for a non-default value", () => {
-    expect(
-      buildUrl("tab", "open", "approved", "", "/admin/reviews", ""),
-    ).toBe("/admin/reviews?tab=approved");
+    expect(buildUrl("tab", "open", "approved", "", "/admin/reviews", "")).toBe(
+      "/admin/reviews?tab=approved",
+    );
   });
 
   it("replaces an existing value for the same key", () => {
@@ -265,14 +266,7 @@ describe("useUrlState buildUrl logic — non-default value sets the param", () =
   });
 
   it("preserves unrelated params when adding a new key", () => {
-    const result = buildUrl(
-      "tab",
-      "open",
-      "all",
-      "?page=3",
-      "/admin",
-      "",
-    );
+    const result = buildUrl("tab", "open", "all", "?page=3", "/admin", "");
     expect(result).toContain("tab=all");
     expect(result).toContain("page=3");
   });

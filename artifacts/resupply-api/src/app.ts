@@ -14,10 +14,7 @@ import storefrontRouter from "./routes/storefront";
 import { getAuthDeps } from "./lib/auth-deps";
 import { logger } from "./lib/logger";
 import { RATE_LIMITS } from "./lib/rate-limits-config";
-import {
-  getRequestId,
-  requestContextMiddleware,
-} from "./lib/request-context";
+import { getRequestId, requestContextMiddleware } from "./lib/request-context";
 import { errorHandler } from "./middlewares/errorHandler";
 import {
   requireCsrfOnAdminMutations,
@@ -325,15 +322,12 @@ const reminderSignupLimiter = expressRateLimit({
 // against the tight signup budget. `req.path` here is relative to
 // the mount point (`/api/reminders`), so `/manage` and
 // `/manage/unsubscribe` both match the prefix.
-app.use(
-  "/api/reminders",
-  (req: Request, res, next) => {
-    if (req.path.startsWith("/manage")) {
-      return reminderManageLimiter(req, res, next);
-    }
-    return reminderSignupLimiter(req, res, next);
-  },
-);
+app.use("/api/reminders", (req: Request, res, next) => {
+  if (req.path.startsWith("/manage")) {
+    return reminderManageLimiter(req, res, next);
+  }
+  return reminderSignupLimiter(req, res, next);
+});
 
 // Defense-in-depth: a single CSRF gate covering every admin-tree
 // mutation on both mount prefixes. Pass-through for safe methods and
@@ -451,7 +445,9 @@ if (existsSync(SPA_INDEX_HTML)) {
       { event: "spa_dist_missing", spa_dist: SPA_DIST },
       "cpap-fitter dist not found in production — refusing to start",
     );
-    throw new Error("Refusing to start: cpap-fitter dist/public/index.html missing");
+    throw new Error(
+      "Refusing to start: cpap-fitter dist/public/index.html missing",
+    );
   }
   logger.warn(
     { event: "spa_dist_missing", spa_dist: SPA_DIST },

@@ -133,9 +133,7 @@ router.get(
     // shouldn't clutter the queue.
     const filtered =
       wantBucket == null
-        ? rows.filter(
-            (r) => r.bucket === "due_now" || r.bucket === "due_soon",
-          )
+        ? rows.filter((r) => r.bucket === "due_now" || r.bucket === "due_soon")
         : wantBucket === "due_now"
           ? rows.filter((r) => r.bucket === "due_now")
           : wantBucket === "due_soon"
@@ -251,7 +249,7 @@ router.post(
       res.status(400).json({
         error: "invalid_body",
         message:
-          "Body must include {\"confirm\":\"DESTROY\"} — a deliberate confirmation guard.",
+          'Body must include {"confirm":"DESTROY"} — a deliberate confirmation guard.',
       });
       return;
     }

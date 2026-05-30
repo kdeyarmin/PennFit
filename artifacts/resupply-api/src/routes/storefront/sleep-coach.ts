@@ -87,10 +87,7 @@ router.post("/me/sleep-coach", async (req, res) => {
     thread: parsed.data.thread,
   });
   if (!result.reply) {
-    logger.warn(
-      { err: result.errorMessage },
-      "sleep-coach: empty reply",
-    );
+    logger.warn({ err: result.errorMessage }, "sleep-coach: empty reply");
     res.status(503).json({
       error: "coach_unavailable",
       message:

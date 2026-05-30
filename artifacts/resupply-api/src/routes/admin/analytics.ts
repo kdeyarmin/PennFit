@@ -143,9 +143,7 @@ router.get(
       const nights = nightsByPatient.get(patient.id) ?? [];
       let qualifies = false;
       if (nights.length > 0) {
-        const sorted = [...nights].sort((a, b) =>
-          a.date < b.date ? -1 : 1,
-        );
+        const sorted = [...nights].sort((a, b) => (a.date < b.date ? -1 : 1));
         const anchor = sorted[0]!.date;
         const result = findBestAdherenceWindow(sorted, anchor, asOfDate);
         qualifies = result.qualifies;
@@ -256,9 +254,7 @@ router.get(
           .in("id", patientIds)
       : { data: [], error: null };
     if (pErr) throw pErr;
-    const byId = new Map(
-      (patients ?? []).map((p) => [p.id, p] as const),
-    );
+    const byId = new Map((patients ?? []).map((p) => [p.id, p] as const));
 
     const now = Date.now();
     const episodes = (data ?? []).map((e) => {
@@ -321,10 +317,7 @@ router.get(
       .toISOString()
       .slice(0, 10)}.csv`;
     res.setHeader("Content-Type", "text/csv; charset=utf-8");
-    res.setHeader(
-      "Content-Disposition",
-      `attachment; filename="${filename}"`,
-    );
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
     res.write("stage,count,kind\n");
     for (const [stage, count] of Object.entries(agg.byStage)) {
       res.write(`${stage},${count},funnel\n`);
@@ -376,10 +369,7 @@ router.get(
       .toISOString()
       .slice(0, 10)}.csv`;
     res.setHeader("Content-Type", "text/csv; charset=utf-8");
-    res.setHeader(
-      "Content-Disposition",
-      `attachment; filename="${filename}"`,
-    );
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
     res.write("kind,group,patients,qualifying,rate\n");
 
     if (patientIds.length === 0) {
@@ -408,9 +398,7 @@ router.get(
       const nights = nightsByPatient.get(p.id) ?? [];
       let qualifies = false;
       if (nights.length > 0) {
-        const sorted = [...nights].sort((a, b) =>
-          a.date < b.date ? -1 : 1,
-        );
+        const sorted = [...nights].sort((a, b) => (a.date < b.date ? -1 : 1));
         const result = findBestAdherenceWindow(
           sorted,
           sorted[0]!.date,

@@ -153,9 +153,15 @@ function sniffContentType(bytes: Uint8Array): string | null {
       bytes[11] ?? 0,
     );
     if (
-      brand === "heic" || brand === "heix" || brand === "heim" ||
-      brand === "heis" || brand === "hevc" || brand === "hevx" ||
-      brand === "mif1" || brand === "msf1" || brand === "heif"
+      brand === "heic" ||
+      brand === "heix" ||
+      brand === "heim" ||
+      brand === "heis" ||
+      brand === "hevc" ||
+      brand === "hevx" ||
+      brand === "mif1" ||
+      brand === "msf1" ||
+      brand === "heif"
     ) {
       return "image/heic";
     }
@@ -394,10 +400,7 @@ async function downloadOneMedia(
     // arrayBuffer() if the body isn't a readable stream (older
     // runtimes).
     if (!resp.body) {
-      logger.warn(
-        { twilio_media_sid: twilioMediaSid },
-        "mms_ingest_no_body",
-      );
+      logger.warn({ twilio_media_sid: twilioMediaSid }, "mms_ingest_no_body");
       return null;
     }
     const chunks: Uint8Array[] = [];

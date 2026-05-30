@@ -675,10 +675,7 @@ function PatientRouter() {
             path="/learn/sleep-apnea-heart-health"
             component={LearnSleepApneaHeartHealth}
           />
-          <Route
-            path="/learn/first-two-weeks"
-            component={LearnFirstTwoWeeks}
-          />
+          <Route path="/learn/first-two-weeks" component={LearnFirstTwoWeeks} />
           <Route
             path="/learn/traveling-with-cpap"
             component={LearnTravelingWithCpap}
@@ -687,10 +684,7 @@ function PatientRouter() {
             path="/learn/cleaning-routine"
             component={LearnCleaningRoutine}
           />
-          <Route
-            path="/learn/myths-debunked"
-            component={LearnMythsDebunked}
-          />
+          <Route path="/learn/myths-debunked" component={LearnMythsDebunked} />
           <Route path="/learn/glossary" component={LearnGlossary} />
           <Route
             path="/learn/insurance-guide"
@@ -717,10 +711,7 @@ function PatientRouter() {
             path="/learn/sleep-apnea-seniors"
             component={LearnSleepApneaSeniors}
           />
-          <Route
-            path="/learn/partner-guide"
-            component={LearnPartnerGuide}
-          />
+          <Route path="/learn/partner-guide" component={LearnPartnerGuide} />
           <Route
             path="/learn/talking-to-a-loved-one"
             component={LearnTalkingToALovedOne}

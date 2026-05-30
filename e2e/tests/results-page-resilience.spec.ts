@@ -14,10 +14,30 @@
 // the SPA HTML — the same shape a deploy-window transient would
 // produce in production, which is exactly the regression we want
 // to lock in.
+//
+// HARNESS REQUIREMENT: this spec must run against the Vite **dev**
+// server (the documented `pnpm --filter @workspace/cpap-fitter dev`
+// + `pnpm test:e2e` flow). It stubs MediaPipe by intercepting the
+// `@mediapipe/tasks-vision` ES module *request* — which only exists
+// as a separate network fetch when modules are served unbundled
+// (dev). In a `vite preview` / production build the module is
+// bundled into the app chunk, so the stub can't replace it, the
+// real WASM-backed FaceLandmarker runs against the stubbed model
+// bytes, and /measure never advances. To avoid a confusing 15s
+// timeout in that harness, the test detects the bundled case (the
+// module request never fires) and skips with an explanatory note
+// instead of failing. CI runs the other two specs (a11y, smoke)
+// against `vite preview`; this one is a dev-server regression test.
 
 import { test, expect, Page } from "@playwright/test";
 
-async function mockCameraAndMediaPipe(page: Page) {
+/** Shared flag: did the MediaPipe ES *module* request get intercepted?
+ * (Distinct from the wasm/model files, which are fetched over the
+ * network even in a bundled build.) When false after reaching the
+ * capture step, the build is bundled and the stub can't take effect. */
+type InterceptState = { moduleIntercepted: boolean };
+
+async function mockCameraAndMediaPipe(page: Page, state: InterceptState) {
   await page.addInitScript(() => {
     // Camera stream stub built from a canvas captureStream — a
     // real MediaStream so HTMLMediaElement.srcObject's type check
@@ -83,6 +103,12 @@ async function mockCameraAndMediaPipe(page: Page) {
   //   mouthWidth ≈ 45 mm  – within [30, 80]
   //   faceWidth ≈ 140 mm  – within [110, 180]
   await page.route(/(tasks-vision|mediapipe)/, async (route) => {
+    // The JS module request (dev only) carries the package name
+    // "tasks-vision"; the wasm/model files carry "mediapipe" and are
+    // fetched in any build. Only the former proves the stub took.
+    if (/tasks-vision/.test(route.request().url())) {
+      state.moduleIntercepted = true;
+    }
     const stub = `
       export class FilesetResolver {
         static async forVisionTasks() { return {}; }
@@ -121,7 +147,8 @@ test("Results page never trips the ErrorBoundary when /api/masks returns non-JSO
     pageErrors.push(`${err.name}: ${err.message}`);
   });
 
-  await mockCameraAndMediaPipe(page);
+  const intercept: InterceptState = { moduleIntercepted: false };
+  await mockCameraAndMediaPipe(page, intercept);
 
   // Force /api/masks to return non-JSON HTML even when the API is
   // reachable. Reproduces the deploy-window scenario where the
@@ -141,7 +168,10 @@ test("Results page never trips the ErrorBoundary when /api/masks returns non-JSO
   // /consent — fill the email + opt-in gate.
   await page.goto("/consent");
   await page.getByLabel(/email/i).first().fill("repro@example.com");
-  await page.getByRole("checkbox", { name: /confirm|consent/i }).first().check();
+  await page
+    .getByRole("checkbox", { name: /confirm|consent/i })
+    .first()
+    .check();
   await page.getByRole("checkbox", { name: /email/i }).first().check();
   await page.getByRole("button", { name: /continue/i }).click();
 
@@ -152,8 +182,22 @@ test("Results page never trips the ErrorBoundary when /api/masks returns non-JSO
   await page.getByTestId("button-capture").click({ timeout: 10_000 });
 
   // /measure → /questionnaire — MediaPipe runs, measurements
-  // extract, the page auto-advances.
-  await page.waitForURL(/\/questionnaire/, { timeout: 15_000 });
+  // extract, the page auto-advances. If the MediaPipe module was
+  // never intercepted (a bundled `vite preview`/prod build), the
+  // real WASM landmarker runs against stubbed bytes and never
+  // advances — skip with a clear note rather than time out as a
+  // failure, since this spec requires the unbundled dev server.
+  try {
+    await page.waitForURL(/\/questionnaire/, { timeout: 15_000 });
+  } catch (err) {
+    test.skip(
+      !intercept.moduleIntercepted,
+      "Requires the Vite dev server: the @mediapipe/tasks-vision module " +
+        "is bundled in this build, so the test stub cannot replace it. " +
+        "Run `pnpm --filter @workspace/cpap-fitter dev` then `pnpm test:e2e`.",
+    );
+    throw err;
+  }
 
   // /questionnaire — click any visible radio option per question
   // until we land on /results. 13 iterations is enough for the
@@ -180,8 +224,6 @@ test("Results page never trips the ErrorBoundary when /api/masks returns non-JSO
   // API is up) or the in-page "Error Generating Recommendations"
   // alert renders (if it's not). Both are acceptable; the
   // ErrorBoundary is not.
-  await expect(
-    page.getByTestId("error-boundary-fallback"),
-  ).toBeHidden();
+  await expect(page.getByTestId("error-boundary-fallback")).toBeHidden();
   expect(pageErrors).toEqual([]);
 });

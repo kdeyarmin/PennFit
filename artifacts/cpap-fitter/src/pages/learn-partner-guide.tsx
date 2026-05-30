@@ -89,12 +89,12 @@ export function LearnPartnerGuide() {
           A letter to the bed partner.
         </h1>
         <p className="text-lg text-muted-foreground leading-relaxed">
-          If your partner snores loudly enough that you&apos;ve thought
-          about earplugs, separate bedrooms, or an elbow to the ribs at
-          2am — this article is for you. You&apos;re probably the first
-          person who&apos;ll notice the difference between snoring and
-          sleep apnea. You&apos;re also probably the most influential
-          person in whether they ever get tested.
+          If your partner snores loudly enough that you&apos;ve thought about
+          earplugs, separate bedrooms, or an elbow to the ribs at 2am — this
+          article is for you. You&apos;re probably the first person who&apos;ll
+          notice the difference between snoring and sleep apnea. You&apos;re
+          also probably the most influential person in whether they ever get
+          tested.
         </p>
       </header>
 
@@ -106,8 +106,8 @@ export function LearnPartnerGuide() {
               The honest framing
             </div>
             <p className="text-xl md:text-2xl text-white leading-relaxed font-medium max-w-2xl mx-auto">
-              The single biggest predictor of whether someone gets tested
-              for sleep apnea is{" "}
+              The single biggest predictor of whether someone gets tested for
+              sleep apnea is{" "}
               <span className="text-[hsl(var(--penn-gold))]">
                 whether a loved one goes to the doctor with them
               </span>
@@ -181,23 +181,19 @@ export function LearnPartnerGuide() {
               {[
                 {
                   when: "Tonight",
-                  what:
-                    "Record a one-minute audio clip of a typical night. Phone on the nightstand on voice memo. The witnessed pauses or choking sounds are what convince a doctor faster than any verbal description.",
+                  what: "Record a one-minute audio clip of a typical night. Phone on the nightstand on voice memo. The witnessed pauses or choking sounds are what convince a doctor faster than any verbal description.",
                 },
                 {
                   when: "This week",
-                  what:
-                    "Have the conversation — daytime, calm, framed around their health rather than the snoring. Send them this article if it helps you bring it up.",
+                  what: "Have the conversation — daytime, calm, framed around their health rather than the snoring. Send them this article if it helps you bring it up.",
                 },
                 {
                   when: "This month",
-                  what:
-                    "Offer to go with them to their primary care visit. Ask specifically about a home sleep apnea test referral. Most primary care offices can order one without a sleep specialist visit.",
+                  what: "Offer to go with them to their primary care visit. Ask specifically about a home sleep apnea test referral. Most primary care offices can order one without a sleep specialist visit.",
                 },
                 {
                   when: "Long term",
-                  what:
-                    "If they're diagnosed and start CPAP, your role is just being supportive during the 2-4 week adjustment. You'll know it's working when your own sleep improves — that's the marker patients sometimes notice last.",
+                  what: "If they're diagnosed and start CPAP, your role is just being supportive during the 2-4 week adjustment. You'll know it's working when your own sleep improves — that's the marker patients sometimes notice last.",
                 },
               ].map((s) => (
                 <div key={s.when} className="flex items-start gap-3">
@@ -224,14 +220,13 @@ export function LearnPartnerGuide() {
                 And about the mask in your bed
               </div>
               <p className="text-sm text-foreground/85 leading-relaxed">
-                The therapy isn&apos;t loud (modern machines are quieter
-                than a quiet conversation), the mask itself is small and
-                discreet, and intimacy isn&apos;t affected — most patients
-                take it off then put it back on, the same way they
-                wouldn&apos;t sleep with their phone in hand. Your partner
-                with treated sleep apnea is a more rested, more present,
-                more available version of the person who used to elbow
-                you at 2am. The trade is overwhelmingly worth it.
+                The therapy isn&apos;t loud (modern machines are quieter than a
+                quiet conversation), the mask itself is small and discreet, and
+                intimacy isn&apos;t affected — most patients take it off then
+                put it back on, the same way they wouldn&apos;t sleep with their
+                phone in hand. Your partner with treated sleep apnea is a more
+                rested, more present, more available version of the person who
+                used to elbow you at 2am. The trade is overwhelmingly worth it.
               </p>
             </div>
           </div>
@@ -262,8 +257,8 @@ export function LearnPartnerGuide() {
               Talking to a loved one
             </h3>
             <p className="text-sm text-muted-foreground leading-relaxed">
-              How to have the conversation with a parent, sibling, or
-              friend — not just a partner.
+              How to have the conversation with a parent, sibling, or friend —
+              not just a partner.
             </p>
           </div>
           <ArrowRight className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors mt-1" />
@@ -306,9 +301,9 @@ export function LearnPartnerGuide() {
       </div>
 
       <p className="text-xs text-muted-foreground/80 leading-relaxed mt-12 max-w-2xl mx-auto text-center">
-        Educational content only. The path to a sleep apnea diagnosis
-        goes through your partner&apos;s primary care provider — your
-        role is encouragement and information, not diagnosis.
+        Educational content only. The path to a sleep apnea diagnosis goes
+        through your partner&apos;s primary care provider — your role is
+        encouragement and information, not diagnosis.
       </p>
     </div>
   );

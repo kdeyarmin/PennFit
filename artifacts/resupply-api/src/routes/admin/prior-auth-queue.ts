@@ -85,9 +85,7 @@ router.get(
     }
     const { expiringWithinDays = 30, limit = 100 } = parsed.data;
     const now = Date.now();
-    const expiryCutoff = new Date(
-      now + expiringWithinDays * 24 * 3600 * 1000,
-    )
+    const expiryCutoff = new Date(now + expiringWithinDays * 24 * 3600 * 1000)
       .toISOString()
       .slice(0, 10); // approved_through is a DATE
     const todayIso = new Date(now).toISOString().slice(0, 10);

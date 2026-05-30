@@ -50,7 +50,10 @@ import {
 } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
-import { createQueueWithDlq, VENDOR_SEND_QUEUE_OPTS } from "../lib/queue-options";
+import {
+  createQueueWithDlq,
+  VENDOR_SEND_QUEUE_OPTS,
+} from "../lib/queue-options";
 import {
   sendTherapyMilestoneEmail,
   type MilestoneKind,
@@ -185,7 +188,7 @@ export async function runTherapyMilestones(): Promise<MilestoneStats> {
   const supabase = getSupabaseServiceRoleClient();
   const stats: MilestoneStats = {
     patientsScanned: 0,
-    inserted: { "100_nights": 0, "365_nights": 0, "first_adherence_month": 0 },
+    inserted: { "100_nights": 0, "365_nights": 0, first_adherence_month: 0 },
     sent: 0,
     sendSkipped: 0,
     sendFailed: 0,
@@ -370,12 +373,12 @@ export async function runTherapyMilestones(): Promise<MilestoneStats> {
 
     const metrics =
       (claimed.metric_snapshot as Record<string, unknown> | null) ?? {};
-    const totalNights = typeof metrics.totalNights === "number"
-      ? metrics.totalNights
-      : undefined;
-    const adherencePct = typeof metrics.adherencePct === "number"
-      ? metrics.adherencePct
-      : undefined;
+    const totalNights =
+      typeof metrics.totalNights === "number" ? metrics.totalNights : undefined;
+    const adherencePct =
+      typeof metrics.adherencePct === "number"
+        ? metrics.adherencePct
+        : undefined;
 
     try {
       const result = await sendTherapyMilestoneEmail({
@@ -410,7 +413,8 @@ export async function runTherapyMilestones(): Promise<MilestoneStats> {
       // never rolls back the email delivery state. Logged at INFO
       // for ops visibility on push activation; counts only.
       try {
-        const { sendPushToCustomerByEmail } = await import("../../lib/web-push");
+        const { sendPushToCustomerByEmail } =
+          await import("../../lib/web-push");
         const title =
           claimed.milestone_kind === "100_nights"
             ? "100 nights on therapy — congrats!"
@@ -448,7 +452,9 @@ export async function runTherapyMilestones(): Promise<MilestoneStats> {
   return stats;
 }
 
-export async function registerTherapyMilestonesJob(boss: PgBoss): Promise<void> {
+export async function registerTherapyMilestonesJob(
+  boss: PgBoss,
+): Promise<void> {
   await createQueueWithDlq(boss, JOB_NAME, VENDOR_SEND_QUEUE_OPTS);
 
   await boss.work(JOB_NAME, async () => {

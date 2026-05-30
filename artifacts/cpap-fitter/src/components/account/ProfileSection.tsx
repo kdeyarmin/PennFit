@@ -11,12 +11,7 @@
 
 import { useState } from "react";
 
-import {
-  CheckCircle2,
-  Loader2,
-  MapPin,
-  User as UserIcon,
-} from "lucide-react";
+import { CheckCircle2, Loader2, MapPin, User as UserIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { useUnsavedChangesWarning } from "@/hooks/use-unsaved-changes-warning";
@@ -123,7 +118,11 @@ export function ProfileSection({
             ok: boolean;
             reasons?: string[];
           };
-          if (!json.ok && Array.isArray(json.reasons) && json.reasons.length > 0) {
+          if (
+            !json.ok &&
+            Array.isArray(json.reasons) &&
+            json.reasons.length > 0
+          ) {
             setAddrWarnings(json.reasons);
             setSaving(false);
             return;

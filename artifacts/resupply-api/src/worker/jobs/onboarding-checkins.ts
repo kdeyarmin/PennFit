@@ -23,7 +23,11 @@ import type PgBoss from "pg-boss";
 import { dispatchDueCheckins } from "../../lib/checkin-dispatcher";
 import { scanCompliance } from "../../lib/compliance-scanner";
 import { logger } from "../../lib/logger";
-import { createQueueWithDlq, CRON_SCAN_QUEUE_OPTS, VENDOR_SEND_QUEUE_OPTS } from "../lib/queue-options";
+import {
+  createQueueWithDlq,
+  CRON_SCAN_QUEUE_OPTS,
+  VENDOR_SEND_QUEUE_OPTS,
+} from "../lib/queue-options";
 
 const DISPATCH_JOB = "onboarding-checkins.dispatch";
 const DISPATCH_CRON = "17 14 * * *";

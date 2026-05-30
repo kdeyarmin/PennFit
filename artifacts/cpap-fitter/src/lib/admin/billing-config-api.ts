@@ -58,7 +58,9 @@ async function sendJSON<T>(
     } catch {
       // Body not JSON or unreadable — fall through with empty detail.
     }
-    throw new Error(`${method} ${path} failed (${res.status})${detail ? `: ${detail}` : ""}`);
+    throw new Error(
+      `${method} ${path} failed (${res.status})${detail ? `: ${detail}` : ""}`,
+    );
   }
   return (await res.json()) as T;
 }

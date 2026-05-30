@@ -79,10 +79,7 @@ export function BulkActionBar({
       aria-label={ariaLabel}
     >
       <div className="flex items-center gap-3">
-        <span
-          className="font-semibold"
-          style={{ color: "hsl(var(--ink-1))" }}
-        >
+        <span className="font-semibold" style={{ color: "hsl(var(--ink-1))" }}>
           {selectedCount > 0
             ? `${selectedCount} selected on this page`
             : "Bulk action result"}

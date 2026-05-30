@@ -56,9 +56,9 @@ export function AdminBillingAgingPage() {
           A/R aging
         </h1>
         <p className="text-sm" style={{ color: "hsl(var(--ink-2))" }}>
-          Open claims (anything not paid or closed) by days since the
-          earlier of submitted-at or DOS. The 90+ bucket is where
-          collections work pays best.
+          Open claims (anything not paid or closed) by days since the earlier of
+          submitted-at or DOS. The 90+ bucket is where collections work pays
+          best.
         </p>
       </header>
 
@@ -95,9 +95,7 @@ export function AdminBillingAgingPage() {
                         className="py-2 font-medium"
                         style={{
                           color:
-                            key === "90_plus"
-                              ? "#b91c1c"
-                              : "hsl(var(--ink-1))",
+                            key === "90_plus" ? "#b91c1c" : "hsl(var(--ink-1))",
                         }}
                       >
                         {label}
@@ -109,9 +107,7 @@ export function AdminBillingAgingPage() {
                         className="py-2 text-right tabular-nums font-semibold"
                         style={{
                           color:
-                            key === "90_plus"
-                              ? "#b91c1c"
-                              : "hsl(var(--ink-1))",
+                            key === "90_plus" ? "#b91c1c" : "hsl(var(--ink-1))",
                         }}
                       >
                         {formatMoneyCents(data.overall[key].billedCents)}

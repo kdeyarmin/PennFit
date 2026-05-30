@@ -158,7 +158,10 @@ export function SignInPage() {
         </div>
 
         <div>
-          <label htmlFor="signin-password" className="block text-sm font-medium">
+          <label
+            htmlFor="signin-password"
+            className="block text-sm font-medium"
+          >
             Password
           </label>
           <PasswordInput

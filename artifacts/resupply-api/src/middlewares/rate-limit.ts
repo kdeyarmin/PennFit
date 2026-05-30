@@ -73,8 +73,7 @@ export function rateLimit(opts: RateLimitOptions): RequestHandler {
     // a defense-in-depth limiter.
     const rawKey = opts.keyFn ? opts.keyFn(req) : "";
     const key =
-      rawKey ||
-      `ip:${req.ip ?? req.socket.remoteAddress ?? "unknown"}`;
+      rawKey || `ip:${req.ip ?? req.socket.remoteAddress ?? "unknown"}`;
 
     let bucket = buckets.get(key);
     if (!bucket || bucket.resetAt <= now) {

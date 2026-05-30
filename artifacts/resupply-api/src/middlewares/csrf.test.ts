@@ -55,7 +55,8 @@ function makeReq(opts: {
   const cookieParts: string[] = [];
   if (opts.cookie) cookieParts.push(`pf_csrf=${opts.cookie}`);
   if (opts.session) cookieParts.push(`pf_session=${opts.session}`);
-  const cookieHeader = cookieParts.length > 0 ? cookieParts.join("; ") : undefined;
+  const cookieHeader =
+    cookieParts.length > 0 ? cookieParts.join("; ") : undefined;
   return {
     headers: {
       ...(cookieHeader ? { cookie: cookieHeader } : {}),
@@ -90,9 +91,7 @@ function runWhenSession(req: Request): {
 describe("requireCsrf", () => {
   it("calls next() when cookie and header match", () => {
     const token = "abc123def456ghi789";
-    const { res, nextCalled } = run(
-      makeReq({ cookie: token, header: token }),
-    );
+    const { res, nextCalled } = run(makeReq({ cookie: token, header: token }));
     expect(nextCalled).toBe(true);
     expect(res.statusCode).toBe(200);
     expect(res.body).toBeUndefined();
@@ -171,9 +170,7 @@ describe("requireCsrfWhenSession", () => {
   it("passes through anonymous requests even when the CSRF header is set", () => {
     // Some clients may attach the header regardless. Without a
     // session cookie, the header is irrelevant — still allow.
-    const { res, nextCalled } = runWhenSession(
-      makeReq({ header: "abc" }),
-    );
+    const { res, nextCalled } = runWhenSession(makeReq({ header: "abc" }));
     expect(nextCalled).toBe(true);
     expect(res.statusCode).toBe(200);
   });
@@ -351,9 +348,7 @@ describe("requireCsrfOnAdminMutations", () => {
     // arrives here with whatever casing the attacker chose. A
     // case-sensitive `startsWith` would silently bypass the gate —
     // verify the lowercase-normalized check holds.
-    const { res, nextCalled } = runPath(
-      makePathReq({ method: "POST", path }),
-    );
+    const { res, nextCalled } = runPath(makePathReq({ method: "POST", path }));
     expect(nextCalled).toBe(false);
     expect(res.statusCode).toBe(403);
     expect(res.body).toMatchObject({ error: "csrf_failed" });
@@ -467,19 +462,22 @@ describe("requireCsrfWhenSessionOnShopMutations", () => {
     ["PUT", "/api/shop/me/cart-snapshot"],
     ["DELETE", "/api/shop/me/caregiver"],
     ["PATCH", "/resupply-api/shop/me/comm-prefs"],
-  ])("enforces CSRF on signed-in %s %s with mismatched header", (method, path) => {
-    const { res, nextCalled } = runPath(
-      makePathReq({
-        method,
-        path,
-        sessionCookie: "s",
-        csrfCookie: "cookie-token",
-        header: "different-token",
-      }),
-    );
-    expect(nextCalled).toBe(false);
-    expect(res.statusCode).toBe(403);
-  });
+  ])(
+    "enforces CSRF on signed-in %s %s with mismatched header",
+    (method, path) => {
+      const { res, nextCalled } = runPath(
+        makePathReq({
+          method,
+          path,
+          sessionCookie: "s",
+          csrfCookie: "cookie-token",
+          header: "different-token",
+        }),
+      );
+      expect(nextCalled).toBe(false);
+      expect(res.statusCode).toBe(403);
+    },
+  );
 
   it("does not match look-alike prefixes like /api/shoppers", () => {
     const { res, nextCalled } = runPath(

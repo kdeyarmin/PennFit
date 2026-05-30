@@ -28,7 +28,10 @@ import {
   type MaintenanceTask,
 } from "../../lib/patient-maintenance/catalog";
 import { logger } from "../../lib/logger";
-import { createQueueWithDlq, VENDOR_SEND_QUEUE_OPTS } from "../lib/queue-options";
+import {
+  createQueueWithDlq,
+  VENDOR_SEND_QUEUE_OPTS,
+} from "../lib/queue-options";
 
 const NUDGE_JOB = "patient-maintenance.weekly-nudge";
 const NUDGE_CRON = "13 11 * * 0";
@@ -330,9 +333,7 @@ export async function runMaintenanceNudgeSweep(
   return stats;
 }
 
-export async function registerMaintenanceNudgeJob(
-  boss: PgBoss,
-): Promise<void> {
+export async function registerMaintenanceNudgeJob(boss: PgBoss): Promise<void> {
   await createQueueWithDlq(boss, NUDGE_JOB, VENDOR_SEND_QUEUE_OPTS);
   await boss.work(NUDGE_JOB, async () => {
     try {

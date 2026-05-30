@@ -99,10 +99,12 @@ function mergePrefs(stored: CommunicationPreferences | null) {
  * use real wall-clock time. `log` is best-effort — when omitted we
  * swallow warning paths silently (the worker passes its own logger).
  */
-export async function runCartAbandonmentDispatch(opts: {
-  now?: Date;
-  log?: CartAbandonmentLogger;
-} = {}): Promise<CartAbandonmentStats> {
+export async function runCartAbandonmentDispatch(
+  opts: {
+    now?: Date;
+    log?: CartAbandonmentLogger;
+  } = {},
+): Promise<CartAbandonmentStats> {
   // Control Center feature gate — admins can disable the nudge
   // dispatcher from /admin/control-center without a deploy. Returns
   // the same zeroed stats envelope as a no-eligible-rows scan, so

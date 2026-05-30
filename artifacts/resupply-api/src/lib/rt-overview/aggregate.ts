@@ -134,7 +134,9 @@ export function aggregatePatientWindow(
     nightsInWindow: inWindow.length,
     lastNightDate: latestNightDate,
     staleDays:
-      latestNightDate === null ? null : Math.max(0, daysBetween(asOf, latestNightDate)),
+      latestNightDate === null
+        ? null
+        : Math.max(0, daysBetween(asOf, latestNightDate)),
     ahiAvg: ahiAvg === null ? null : Math.round(ahiAvg * 10) / 10,
     leakAvg: leakAvg === null ? null : Math.round(leakAvg * 10) / 10,
     usageMinutesAvg:

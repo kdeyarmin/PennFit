@@ -72,7 +72,10 @@ import { analyzeDenial } from "../../lib/billing/ai-denial-analyzer";
 import { reconcileEra } from "../../lib/billing/era-reconciler";
 import { resolveClearinghouse } from "../../lib/billing/identity-resolver";
 import { logger } from "../../lib/logger";
-import { createQueueWithDlq, VENDOR_SEND_QUEUE_OPTS } from "../lib/queue-options";
+import {
+  createQueueWithDlq,
+  VENDOR_SEND_QUEUE_OPTS,
+} from "../lib/queue-options";
 
 const JOB = "office-ally.inbound-poll";
 const CRON = "*/15 * * * *";
@@ -125,8 +128,7 @@ export async function runOfficeAllyInboundPoll(): Promise<PollStats> {
     return stats;
   }
 
-  const outboundDir =
-    clearinghouse.row.remote_outbound_dir || "outbound";
+  const outboundDir = clearinghouse.row.remote_outbound_dir || "outbound";
   const list = await listOutboundFiles(clearinghouse.config, outboundDir);
   if (!list.ok) {
     logger.warn(
@@ -155,11 +157,13 @@ export async function runOfficeAllyInboundPoll(): Promise<PollStats> {
     .from("clearinghouse_credentials")
     .update({ last_polled_at: new Date().toISOString() })
     .eq("id", clearinghouse.row.id)
-    .then(() => undefined, (err) =>
-      logger.warn(
-        { err: err instanceof Error ? err.message : String(err) },
-        "office-ally.inbound-poll: last_polled_at update failed (non-fatal)",
-      ),
+    .then(
+      () => undefined,
+      (err) =>
+        logger.warn(
+          { err: err instanceof Error ? err.message : String(err) },
+          "office-ally.inbound-poll: last_polled_at update failed (non-fatal)",
+        ),
     );
 
   await logAudit({
@@ -184,7 +188,9 @@ export async function runOfficeAllyInboundPoll(): Promise<PollStats> {
 async function processRemoteFile(
   supabase: SupabaseClient,
   clearinghouseId: string,
-  config: NonNullable<Awaited<ReturnType<typeof resolveClearinghouse>>["config"]>,
+  config: NonNullable<
+    Awaited<ReturnType<typeof resolveClearinghouse>>["config"]
+  >,
   remotePath: string,
   fileName: string,
   stats: PollStats,
@@ -220,7 +226,9 @@ async function processRemoteFile(
 
   // 3. SHA-256 dedupe across remote paths (file redelivery may
   //    arrive at a different path).
-  const sha256 = createHash("sha256").update(download.content, "utf8").digest("hex");
+  const sha256 = createHash("sha256")
+    .update(download.content, "utf8")
+    .digest("hex");
   const { data: sameContent } = await supabase
     .schema("resupply")
     .from("clearinghouse_inbound_files")
@@ -245,7 +253,10 @@ async function processRemoteFile(
         dispatch_status: "skipped",
         error_message: `Redelivery of already-processed sha256 ${sha256}`,
       })
-      .then(() => undefined, () => undefined);
+      .then(
+        () => undefined,
+        () => undefined,
+      );
     stats.skippedDuplicates += 1;
     return false;
   }
@@ -338,7 +349,9 @@ async function processRemoteFile(
       .update({
         dispatch_status: "dispatch_failed",
         error_message:
-          err instanceof Error ? err.message.slice(0, 2000) : String(err).slice(0, 2000),
+          err instanceof Error
+            ? err.message.slice(0, 2000)
+            : String(err).slice(0, 2000),
       })
       .eq("id", row.id);
     return false;
@@ -378,9 +391,8 @@ export async function dispatch999(
             parsed.errors.length > 0
               ? parsed.errors
                   .slice(0, 5)
-                  .map(
-                    (e) =>
-                      `${e.segmentId ?? "?"}/${e.errorCode ?? "?"} ${e.errorText ?? ""}`.trim(),
+                  .map((e) =>
+                    `${e.segmentId ?? "?"}/${e.errorCode ?? "?"} ${e.errorText ?? ""}`.trim(),
                   )
                   .join("; ")
                   .slice(0, 2000)
@@ -418,9 +430,10 @@ export async function dispatch277ca(
       .maybeSingle();
     if (!claim) continue;
     // Capture the payer-assigned ref number on the claim.
-    const update: Database["resupply"]["Tables"]["insurance_claims"]["Update"] = {
-      updated_at: new Date().toISOString(),
-    };
+    const update: Database["resupply"]["Tables"]["insurance_claims"]["Update"] =
+      {
+        updated_at: new Date().toISOString(),
+      };
     if (block.payerClaimRef) update.claim_number = block.payerClaimRef;
     await supabase
       .schema("resupply")
@@ -610,6 +623,14 @@ async function runDenialAnalysisQuietly(
   }
 }
 
+/**
+ * Associates a parsed 271 eligibility response with the most recent matching eligibility check and updates stored records.
+ *
+ * Parses the provided 271 content, extracts the ISA control number from the trace reference (the second hyphen-delimited segment), looks up the latest eligibility_checks row with that `isa_control_number`, and if found updates that check with parsed eligibility fields, sets `status` to `"parsed"`, records `responded_at` and `applied_to_inbound_file_id`, and writes a compact `parse_summary_json` to the corresponding clearinghouse inbound file. If `traceReference` is missing, the derived ISA control number is empty, or no matching eligibility check exists, the function returns without making changes.
+ *
+ * @param inboundFileId - The id of the `resupply.clearinghouse_inbound_files` row to link the parsed summary to
+ * @param content - Raw 271 EDI payload to parse
+ */
 export async function dispatch271(
   supabase: SupabaseClient,
   inboundFileId: string,
@@ -617,10 +638,16 @@ export async function dispatch271(
 ): Promise<void> {
   const parsed = parse271(content);
   if (!parsed.traceReference) return;
-  // The trace reference echoes our TRN02 from the original 270;
-  // we built it as `<etin>-<isaCtl>` so the ISA-control suffix is
-  // the join key into eligibility_checks.
-  const isaCtl = parsed.traceReference.split("-").pop() ?? "";
+  // The trace reference echoes our TRN02 from the original 270.
+  // build270 constructs it as `<etin>-<isaCtl>-<stCtl>-<nonce>`
+  // (see lib/resupply-integrations-office-ally/src/edi/270.ts), so the
+  // SECOND hyphen-delimited segment is the 9-digit ISA control number
+  // stored on eligibility_checks.isa_control_number. (ETINs are
+  // alphanumeric trading-partner IDs with no hyphens, so index [1] is
+  // stable.) The previous `.pop()` grabbed the trailing random nonce,
+  // which never matched the ISA-control column — so every 271 was
+  // silently dropped.
+  const isaCtl = parsed.traceReference.split("-")[1] ?? "";
   if (!isaCtl) return;
   const { data: check } = await supabase
     .schema("resupply")

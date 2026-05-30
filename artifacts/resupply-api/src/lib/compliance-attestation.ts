@@ -159,10 +159,7 @@ export function findBestAdherenceWindow(
       firstQualifying = window;
       break; // Earliest qualifying window is the canonical answer.
     }
-    if (
-      !bestNonQualifying ||
-      window.ratio > bestNonQualifying.ratio
-    ) {
+    if (!bestNonQualifying || window.ratio > bestNonQualifying.ratio) {
       bestNonQualifying = window;
     }
   }
@@ -253,12 +250,10 @@ export function renderComplianceAttestation(
     .fontSize(9)
     .font("Helvetica-Bold")
     .fillColor("#cc0000")
-    .text(
-      "CONFIDENTIAL — HIPAA PROTECTED HEALTH INFORMATION",
-      MARGIN,
-      MARGIN,
-      { width: USABLE_WIDTH, align: "center" },
-    )
+    .text("CONFIDENTIAL — HIPAA PROTECTED HEALTH INFORMATION", MARGIN, MARGIN, {
+      width: USABLE_WIDTH,
+      align: "center",
+    })
     .fillColor("#000000");
   doc.moveDown(0.5);
   doc
@@ -268,18 +263,18 @@ export function renderComplianceAttestation(
   doc.moveDown(0.8);
 
   // ── Title ───────────────────────────────────────────────────────────
-  doc
-    .fontSize(18)
-    .font("Helvetica-Bold")
-    .text("CPAP Adherence Attestation", { align: "center", width: USABLE_WIDTH });
+  doc.fontSize(18).font("Helvetica-Bold").text("CPAP Adherence Attestation", {
+    align: "center",
+    width: USABLE_WIDTH,
+  });
   doc
     .fontSize(10)
     .font("Helvetica")
     .fillColor("#555555")
-    .text(
-      `${supplierName} · Medicare LCD L33718 90-day adherence trial`,
-      { align: "center", width: USABLE_WIDTH },
-    )
+    .text(`${supplierName} · Medicare LCD L33718 90-day adherence trial`, {
+      align: "center",
+      width: USABLE_WIDTH,
+    })
     .fillColor("#000000");
 
   doc.moveDown(1.2);
@@ -313,14 +308,17 @@ export function renderComplianceAttestation(
       })
       .fillColor("#000000");
     doc.moveDown(0.4);
-    doc.fontSize(10).font("Helvetica").text(
-      `The patient used the device ≥ ${COMPLIANT_MINUTES_PER_NIGHT / 60} hours on ` +
-        `${result.window.compliantNights} of ${WINDOW_DAYS} consecutive nights ` +
-        `(${Math.round(result.window.ratio * 100)}%) from ` +
-        `${formatIsoDate(result.window.startDate)} through ` +
-        `${formatIsoDate(result.window.endDate)}.`,
-      { width: USABLE_WIDTH, lineGap: 3 },
-    );
+    doc
+      .fontSize(10)
+      .font("Helvetica")
+      .text(
+        `The patient used the device ≥ ${COMPLIANT_MINUTES_PER_NIGHT / 60} hours on ` +
+          `${result.window.compliantNights} of ${WINDOW_DAYS} consecutive nights ` +
+          `(${Math.round(result.window.ratio * 100)}%) from ` +
+          `${formatIsoDate(result.window.startDate)} through ` +
+          `${formatIsoDate(result.window.endDate)}.`,
+        { width: USABLE_WIDTH, lineGap: 3 },
+      );
   } else if (result.window) {
     doc
       .fontSize(11)
@@ -334,16 +332,19 @@ export function renderComplianceAttestation(
       )
       .fillColor("#000000");
     doc.moveDown(0.4);
-    doc.fontSize(10).font("Helvetica").text(
-      `Best 30-day window observed: ` +
-        `${result.window.compliantNights} of ${WINDOW_DAYS} compliant nights ` +
-        `(${Math.round(result.window.ratio * 100)}%) from ` +
-        `${formatIsoDate(result.window.startDate)} through ` +
-        `${formatIsoDate(result.window.endDate)}. ` +
-        `Threshold is ${Math.round(COMPLIANCE_NIGHT_RATIO * 100)}% of nights ` +
-        `at ≥ ${COMPLIANT_MINUTES_PER_NIGHT / 60} hours.`,
-      { width: USABLE_WIDTH, lineGap: 3 },
-    );
+    doc
+      .fontSize(10)
+      .font("Helvetica")
+      .text(
+        `Best 30-day window observed: ` +
+          `${result.window.compliantNights} of ${WINDOW_DAYS} compliant nights ` +
+          `(${Math.round(result.window.ratio * 100)}%) from ` +
+          `${formatIsoDate(result.window.startDate)} through ` +
+          `${formatIsoDate(result.window.endDate)}. ` +
+          `Threshold is ${Math.round(COMPLIANCE_NIGHT_RATIO * 100)}% of nights ` +
+          `at ≥ ${COMPLIANT_MINUTES_PER_NIGHT / 60} hours.`,
+        { width: USABLE_WIDTH, lineGap: 3 },
+      );
   } else {
     doc
       .fontSize(11)
@@ -352,11 +353,14 @@ export function renderComplianceAttestation(
       .text("INSUFFICIENT DATA", { width: USABLE_WIDTH })
       .fillColor("#000000");
     doc.moveDown(0.4);
-    doc.fontSize(10).font("Helvetica").text(
-      "No therapy-night data is available within the 90-day window. " +
-        "Verify the patient's modem connection or schedule an SD card download.",
-      { width: USABLE_WIDTH, lineGap: 3 },
-    );
+    doc
+      .fontSize(10)
+      .font("Helvetica")
+      .text(
+        "No therapy-night data is available within the 90-day window. " +
+          "Verify the patient's modem connection or schedule an SD card download.",
+        { width: USABLE_WIDTH, lineGap: 3 },
+      );
   }
 
   if (result.window?.averageUsageHoursOnUsedNights != null) {
@@ -401,10 +405,9 @@ export function renderComplianceAttestation(
 
   // ── Signature block ────────────────────────────────────────────────
   doc.fontSize(10).font("Helvetica");
-  doc.text(
-    "Attesting representative: ____________________________________",
-    { width: USABLE_WIDTH },
-  );
+  doc.text("Attesting representative: ____________________________________", {
+    width: USABLE_WIDTH,
+  });
   doc.moveDown(0.4);
   doc.text("Date: __________________", { width: USABLE_WIDTH });
 

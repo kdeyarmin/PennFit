@@ -121,7 +121,10 @@ function tenureInDays(createdAt: Date, now: Date): number {
   // Clamp to 0: a future createdAt (clock skew / data migration artifact)
   // must not produce negative tenure, which would silently pass
   // maxTenureDays-only rules and schedule outreach for ineligible patients.
-  return Math.max(0, Math.floor((now.getTime() - createdAt.getTime()) / DAY_MS));
+  return Math.max(
+    0,
+    Math.floor((now.getTime() - createdAt.getTime()) / DAY_MS),
+  );
 }
 
 function ruleMatches(

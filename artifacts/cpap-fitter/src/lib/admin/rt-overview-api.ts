@@ -94,10 +94,7 @@ export function sortRtRows(
   return out;
 }
 
-function sortValue(
-  row: RtOverviewRow,
-  key: RtSortKey,
-): number | string | null {
+function sortValue(row: RtOverviewRow, key: RtSortKey): number | string | null {
   switch (key) {
     case "patient":
       return `${row.lastName} ${row.firstName}`.toLowerCase();
@@ -167,8 +164,7 @@ export function filterRtRows(
       if (!match) return false;
     }
     if (search.length > 0) {
-      const hay =
-        `${r.lastName} ${r.firstName} ${r.pacwareId}`.toLowerCase();
+      const hay = `${r.lastName} ${r.firstName} ${r.pacwareId}`.toLowerCase();
       if (!hay.includes(search)) return false;
     }
     return true;
@@ -225,10 +221,10 @@ export async function dismissSmartTrigger(
 ): Promise<void> {
   const csrfToken =
     typeof document !== "undefined"
-      ? document.cookie
+      ? (document.cookie
           .split("; ")
           .find((c) => c.startsWith("pf_csrf="))
-          ?.split("=")[1] ?? null
+          ?.split("=")[1] ?? null)
       : null;
   const res = await fetch(
     `/resupply-api/admin/smart-triggers/${encodeURIComponent(id)}/dismiss`,

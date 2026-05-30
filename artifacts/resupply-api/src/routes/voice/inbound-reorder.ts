@@ -61,113 +61,73 @@ const signatureMiddleware = requireTwilioSignature({
   },
 });
 
-router.post(
-  "/voice/inbound-reorder",
-  signatureMiddleware,
-  async (req, res) => {
-    const config = readVoiceConfigOrNull();
-    if (!config) {
-      res
-        .status(503)
-        .type("text/xml")
-        .send(buildHangupTwiml("Voice service unavailable."));
-      return;
-    }
-    const parsed = inboundBody.safeParse(req.body);
-    if (!parsed.success) {
-      res
-        .status(400)
-        .type("text/xml")
-        .send(buildHangupTwiml("Invalid call payload."));
-      return;
-    }
-    const { From, CallSid } = parsed.data;
-    const supabase = getSupabaseServiceRoleClient();
+router.post("/voice/inbound-reorder", signatureMiddleware, async (req, res) => {
+  const config = readVoiceConfigOrNull();
+  if (!config) {
+    res
+      .status(503)
+      .type("text/xml")
+      .send(buildHangupTwiml("Voice service unavailable."));
+    return;
+  }
+  const parsed = inboundBody.safeParse(req.body);
+  if (!parsed.success) {
+    res
+      .status(400)
+      .type("text/xml")
+      .send(buildHangupTwiml("Invalid call payload."));
+    return;
+  }
+  const { From, CallSid } = parsed.data;
+  const supabase = getSupabaseServiceRoleClient();
 
-    // 1. Identify the caller (best-effort).
-    const callerE164 = From ?? parsed.data.Caller ?? "";
-    const { patientId, shopCustomerId } = await identifyCaller(
-      supabase,
-      callerE164,
+  // 1. Identify the caller (best-effort).
+  const callerE164 = From ?? parsed.data.Caller ?? "";
+  const { patientId, shopCustomerId } = await identifyCaller(
+    supabase,
+    callerE164,
+  );
+
+  // 2. Persist session row.
+  const sessionStatus = patientId ? "in_progress" : "patient_not_identified";
+  const { data: session, error } = await supabase
+    .schema("resupply")
+    .from("voice_reorder_sessions")
+    .insert({
+      twilio_call_sid: CallSid,
+      from_e164: callerE164.slice(0, 20),
+      patient_id: patientId,
+      shop_customer_id: shopCustomerId,
+      status: sessionStatus,
+    })
+    .select("id")
+    .single();
+  if (error) {
+    logger.warn(
+      { err: error.message, callSid: CallSid },
+      "voice.inbound-reorder: session insert failed",
     );
-
-    // 2. Persist session row.
-    const sessionStatus = patientId ? "in_progress" : "patient_not_identified";
-    const { data: session, error } = await supabase
-      .schema("resupply")
-      .from("voice_reorder_sessions")
-      .insert({
-        twilio_call_sid: CallSid,
-        from_e164: callerE164.slice(0, 20),
-        patient_id: patientId,
-        shop_customer_id: shopCustomerId,
-        status: sessionStatus,
-      })
-      .select("id")
-      .single();
-    if (error) {
-      logger.warn(
-        { err: error.message, callSid: CallSid },
-        "voice.inbound-reorder: session insert failed",
+    res
+      .status(500)
+      .type("text/xml")
+      .send(
+        buildHangupTwiml(
+          "We're having trouble taking your call. Please try again in a few minutes.",
+        ),
       );
-      res
-        .status(500)
-        .type("text/xml")
-        .send(
-          buildHangupTwiml(
-            "We're having trouble taking your call. Please try again in a few minutes.",
-          ),
-        );
-      return;
-    }
+    return;
+  }
 
-    // 3a. Unknown caller → transfer to human.
-    if (!patientId) {
-      logger.info(
-        {
-          event: "voice.inbound-reorder.unidentified",
-          callSid: CallSid,
-          // Log only the digit-count to keep PHI out of logs.
-          fromDigits: callerE164.replace(/\D+/g, "").length,
-        },
-        "voice.inbound-reorder: caller not identified, transferring",
-      );
-      res
-        .status(200)
-        .type("text/xml")
-        .send(
-          [
-            '<?xml version="1.0" encoding="UTF-8"?>',
-            "<Response>",
-            "<Say>We couldn't match your phone number to an existing account.",
-            "Connecting you to our team now.</Say>",
-            "<Dial timeout=\"20\">+18144710627</Dial>",
-            "</Response>",
-          ].join(""),
-        );
-      return;
-    }
-
-    // 3b. Identified caller. The Realtime reorder bridge is not yet
-    // wired (the WS upgrade handler in index.ts only accepts the
-    // /resupply-api/voice/stream path with a pending-session
-    // conversationId; the reorder shape uses voice_reorder_sessions.id
-    // and there is no WS handler that consumes it yet). Until the
-    // bridge ships, transfer the identified caller to the human team
-    // — that's strictly better than greeting them and then dropping
-    // the call when the WS handshake fails.
-    //
-    // Once the reorder WS handler lands, swap this back to a Connect
-    // / Stream TwiML pointing at /resupply-api/voice/stream with the
-    // reorderSessionId param (and register the session via
-    // getPendingSessions() so the upgrade handler can claim it).
+  // 3a. Unknown caller → transfer to human.
+  if (!patientId) {
     logger.info(
       {
-        event: "voice.inbound-reorder.identified",
+        event: "voice.inbound-reorder.unidentified",
         callSid: CallSid,
-        sessionId: session.id,
+        // Log only the digit-count to keep PHI out of logs.
+        fromDigits: callerE164.replace(/\D+/g, "").length,
       },
-      "voice.inbound-reorder: caller identified, transferring (reorder bridge not yet wired)",
+      "voice.inbound-reorder: caller not identified, transferring",
     );
     res
       .status(200)
@@ -176,14 +136,50 @@ router.post(
         [
           '<?xml version="1.0" encoding="UTF-8"?>',
           "<Response>",
-          "<Say>Hi! Welcome to your PennPaps reorder line. ",
+          "<Say>We couldn't match your phone number to an existing account.",
           "Connecting you to our team now.</Say>",
-          "<Dial timeout=\"20\">+18144710627</Dial>",
+          '<Dial timeout="20">+18144710627</Dial>',
           "</Response>",
         ].join(""),
       );
-  },
-);
+    return;
+  }
+
+  // 3b. Identified caller. The Realtime reorder bridge is not yet
+  // wired (the WS upgrade handler in index.ts only accepts the
+  // /resupply-api/voice/stream path with a pending-session
+  // conversationId; the reorder shape uses voice_reorder_sessions.id
+  // and there is no WS handler that consumes it yet). Until the
+  // bridge ships, transfer the identified caller to the human team
+  // — that's strictly better than greeting them and then dropping
+  // the call when the WS handshake fails.
+  //
+  // Once the reorder WS handler lands, swap this back to a Connect
+  // / Stream TwiML pointing at /resupply-api/voice/stream with the
+  // reorderSessionId param (and register the session via
+  // getPendingSessions() so the upgrade handler can claim it).
+  logger.info(
+    {
+      event: "voice.inbound-reorder.identified",
+      callSid: CallSid,
+      sessionId: session.id,
+    },
+    "voice.inbound-reorder: caller identified, transferring (reorder bridge not yet wired)",
+  );
+  res
+    .status(200)
+    .type("text/xml")
+    .send(
+      [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        "<Response>",
+        "<Say>Hi! Welcome to your PennPaps reorder line. ",
+        "Connecting you to our team now.</Say>",
+        '<Dial timeout="20">+18144710627</Dial>',
+        "</Response>",
+      ].join(""),
+    );
+});
 
 interface IdentifyResult {
   patientId: string | null;

@@ -85,9 +85,7 @@ export const AUTO_APPROVE_ORDER_VALUE_CAP_CENTS = 50_000;
  * auditor can grep for the exact rule that approved a row. Keep
  * machine-readable — admin UI may special-case display later.
  */
-export type AutoApprovalRule =
-  | "defective_within_7d"
-  | "wrong_item_within_30d";
+export type AutoApprovalRule = "defective_within_7d" | "wrong_item_within_30d";
 
 export interface AutoApprovalDecision {
   autoApprove: boolean;

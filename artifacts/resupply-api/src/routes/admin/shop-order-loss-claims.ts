@@ -140,13 +140,7 @@ const patchBody = z
         "closed_unresolved",
       ])
       .optional(),
-    carrierClaimNumber: z
-      .string()
-      .trim()
-      .min(1)
-      .max(64)
-      .nullable()
-      .optional(),
+    carrierClaimNumber: z.string().trim().min(1).max(64).nullable().optional(),
     resolutionNote: z.string().trim().max(2000).nullable().optional(),
   })
   .strict();

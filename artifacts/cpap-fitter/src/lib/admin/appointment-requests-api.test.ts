@@ -318,7 +318,9 @@ describe("updateAppointmentRequest", () => {
       json: async () => ({ ok: true }),
     });
 
-    const result = await updateAppointmentRequest("req-1", { status: "contacted" });
+    const result = await updateAppointmentRequest("req-1", {
+      status: "contacted",
+    });
     expect(result).toEqual({ ok: true });
   });
 

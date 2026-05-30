@@ -8,7 +8,7 @@
 
 CREATE TABLE IF NOT EXISTS "resupply"."admin_mfa_secrets" (
   "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  "staff_user_id" uuid NOT NULL REFERENCES "resupply"."admin_users"("id") ON DELETE CASCADE,
+  "staff_user_id" text NOT NULL REFERENCES "resupply"."admin_users"("id") ON DELETE CASCADE,
   "secret_base32" text NOT NULL,
   "verified_at" timestamp with time zone,
   "last_used_at" timestamp with time zone,

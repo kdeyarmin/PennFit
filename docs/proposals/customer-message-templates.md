@@ -34,20 +34,20 @@ layer.
 Counted from the current tree. Roughly 30 distinct templates across
 ~15 files; the table below groups by call site.
 
-| File | Templates today | Channels |
-| --- | --- | --- |
-| `lib/checkin-dispatcher.ts` (onboarding day 3/7/30/60/90) | 5 days × subject + text + html + sms + voice = ~20 | email, sms, voice |
-| `lib/smart-triggers/renderers.ts` | per-trigger-kind: subject, text, html, sms, push | email, sms, push |
-| `lib/rx-renewal/renderers.ts` | subject, text, html, sms, push (parameterised by daysUntilExpiry) | email, sms, push |
-| `lib/order-emails/send-order-confirmation-email.ts` | subject + html + text inline | email |
-| `lib/order-emails/send-shipping-notification-email.ts` | subject + html + text inline | email |
-| `lib/cart-abandonment/send-cart-abandonment-email.ts` | subject + html + text inline | email |
-| `lib/back-in-stock-email.ts` | subject + html + text inline | email |
-| `lib/insurance-lead-email.ts` | two: customer ack + admin notify | email |
-| `lib/messaging/review-request-email.ts` | subject + html + text inline | email |
-| `lib/resupply-auth/src/http/email-templates.ts` | verify-email, password-reset, invite | email |
-| `lib/resupply-reminders` (signed-link tokens) | reminder body | email + sms |
-| **Existing in DB:** `csr_macros` | CSR canned replies | email, sms |
+| File                                                      | Templates today                                                   | Channels          |
+| --------------------------------------------------------- | ----------------------------------------------------------------- | ----------------- |
+| `lib/checkin-dispatcher.ts` (onboarding day 3/7/30/60/90) | 5 days × subject + text + html + sms + voice = ~20                | email, sms, voice |
+| `lib/smart-triggers/renderers.ts`                         | per-trigger-kind: subject, text, html, sms, push                  | email, sms, push  |
+| `lib/rx-renewal/renderers.ts`                             | subject, text, html, sms, push (parameterised by daysUntilExpiry) | email, sms, push  |
+| `lib/order-emails/send-order-confirmation-email.ts`       | subject + html + text inline                                      | email             |
+| `lib/order-emails/send-shipping-notification-email.ts`    | subject + html + text inline                                      | email             |
+| `lib/cart-abandonment/send-cart-abandonment-email.ts`     | subject + html + text inline                                      | email             |
+| `lib/back-in-stock-email.ts`                              | subject + html + text inline                                      | email             |
+| `lib/insurance-lead-email.ts`                             | two: customer ack + admin notify                                  | email             |
+| `lib/messaging/review-request-email.ts`                   | subject + html + text inline                                      | email             |
+| `lib/resupply-auth/src/http/email-templates.ts`           | verify-email, password-reset, invite                              | email             |
+| `lib/resupply-reminders` (signed-link tokens)             | reminder body                                                     | email + sms       |
+| **Existing in DB:** `csr_macros`                          | CSR canned replies                                                | email, sms        |
 
 Out of scope: anything that's not a customer-facing message
 (internal ops alerts, fax cover letters, audit log strings).
@@ -55,7 +55,7 @@ Out of scope: anything that's not a customer-facing message
 ## Constraints (do-not-break)
 
 - **PHI never enters template strings.** A template body is
-  *content* — it can contain placeholders (`{{patient_first_name}}`)
+  _content_ — it can contain placeholders (`{{patient_first_name}}`)
   but the resolved patient name lives only at render time, never in
   the persisted template row. The template editor never displays a
   rendered preview against a real patient.
@@ -95,7 +95,9 @@ The global library — one row per (template_key, channel) tuple.
 export const messageTemplates = resupplySchema.table(
   "message_templates",
   {
-    id: text("id").primaryKey().default(sql`gen_random_uuid()::text`),
+    id: text("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()::text`),
     // Stable identifier used by render call sites. Snake-case
     // domain.subject pattern: e.g. "onboarding.day_3",
     // "rx_renewal.30_day", "smart_trigger.usage_drop",
@@ -165,7 +167,9 @@ deliberately customises one template for one customer.
 export const shopCustomerMessageTemplateOverrides = resupplySchema.table(
   "shop_customer_message_template_overrides",
   {
-    id: text("id").primaryKey().default(sql`gen_random_uuid()::text`),
+    id: text("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()::text`),
     customerId: text("customer_id").notNull(), // shop_customers.customer_id
     templateKey: text("template_key").notNull(),
     channel: text("channel").notNull(),
@@ -284,13 +288,13 @@ Two surfaces in the existing admin SPA, both under the existing
 
 ## Phased delivery
 
-| Phase | Scope | Risk |
-| --- | --- | --- |
-| **0** (this doc) | Design + open questions + schema-deploy gate | None |
-| **1** | Schema migration + seed data + `renderMessage()` helper + `lib/resupply-templates` package + a SINGLE renderer migration (rx_renewal email) as proof | Adds a migration; gated on P0.1/P0.2 (see blocker) |
-| **2** | Migrate the remaining email renderers + admin UI list/edit page | Low — additive |
-| **3** | Per-customer overrides table + admin UI override pane | Medium — new surface area in customer detail |
-| **4** | SMS / voice / push template parity + version history | Low |
+| Phase            | Scope                                                                                                                                                | Risk                                               |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
+| **0** (this doc) | Design + open questions + schema-deploy gate                                                                                                         | None                                               |
+| **1**            | Schema migration + seed data + `renderMessage()` helper + `lib/resupply-templates` package + a SINGLE renderer migration (rx_renewal email) as proof | Adds a migration; gated on P0.1/P0.2 (see blocker) |
+| **2**            | Migrate the remaining email renderers + admin UI list/edit page                                                                                      | Low — additive                                     |
+| **3**            | Per-customer overrides table + admin UI override pane                                                                                                | Medium — new surface area in customer detail       |
+| **4**            | SMS / voice / push template parity + version history                                                                                                 | Low                                                |
 
 Each phase is its own PR; Phase 1 is the only one that touches
 schema.

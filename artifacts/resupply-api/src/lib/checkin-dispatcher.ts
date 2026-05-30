@@ -100,9 +100,40 @@ interface JourneyRow {
 const DEFAULT_CAP = 50;
 const ALL_CHANNELS: CheckinAttemptChannel[] = ["email", "sms", "voice"];
 
-export async function dispatchDueCheckins(
+// Single-flight guard for the whole scan-and-send pass.
+//
+// Two callers reach the dispatcher — the daily `onboarding-checkins`
+// cron job and the CSR-facing `POST /admin/onboarding/send-due` "Run
+// now" route — and the pg-boss worker runs IN-PROCESS with the API
+// (see CLAUDE.md), so both execute in the same Node process. Each
+// per-day send only stamps `dayN_sent_at` AFTER the vendor call, so two
+// overlapping runs could both pass the `IS NULL` check and double-send
+// the same check-in to a patient. Coalescing concurrent calls onto a
+// single in-flight run makes the scan-and-send happen exactly once; a
+// caller that arrives mid-run awaits and returns the same summary (its
+// `opts` are intentionally ignored — the work, and its audit
+// attribution, belong to the run already underway).
+//
+// Scope: this guards SAME-PROCESS concurrency, the realistic race on
+// the current single-instance deploy. It does NOT cover a multi-
+// instance (cross-process) deploy, nor a pg-boss retry that resumes
+// after a crash between the vendor send and the stamp write; those
+// remain bounded by the per-row `.is(dayN_sent_at, null)` stamp and are
+// tracked as a follow-up (a claim-before-send reorder).
+let inFlightDispatch: Promise<DispatchSummary> | null = null;
+
+export function dispatchDueCheckins(
   opts: DispatchOptions,
 ): Promise<DispatchSummary> {
+  if (inFlightDispatch) return inFlightDispatch;
+  const run = runDueCheckins(opts).finally(() => {
+    inFlightDispatch = null;
+  });
+  inFlightDispatch = run;
+  return run;
+}
+
+async function runDueCheckins(opts: DispatchOptions): Promise<DispatchSummary> {
   // Control Center feature gate. Returns the same zeroed envelope as
   // a no-active-journeys scan so the admin "send-due" route and the
   // cron worker both see "nothing to do" instead of an error.
@@ -192,7 +223,9 @@ export async function dispatchDueCheckins(
       email: p.email,
       phoneE164: p.phone_e164,
       channelPreference:
-        channelPref === "sms" || channelPref === "email" || channelPref === "voice"
+        channelPref === "sms" ||
+        channelPref === "email" ||
+        channelPref === "voice"
           ? channelPref
           : null,
     });
@@ -332,11 +365,7 @@ async function attemptChannel(input: AttemptInput): Promise<AttemptResult> {
 
   try {
     if (channel === "email") {
-      ({ outcome, vendorRef, errorCode } = await sendEmail(
-        clients,
-        row,
-        day,
-      ));
+      ({ outcome, vendorRef, errorCode } = await sendEmail(clients, row, day));
     } else if (channel === "sms") {
       ({ outcome, vendorRef, errorCode } = await sendSms(clients, row, day));
     } else {
@@ -532,6 +561,19 @@ async function sendSms(
   }
 }
 
+/**
+ * Places an automated onboarding voice call for the given patient when calling is permitted.
+ *
+ * This function respects quiet hours (evaluated in the America/New_York timezone) and will
+ * short-circuit if the patient has no phone number or if the voice vendor is not configured.
+ *
+ * @param day - The onboarding day label used to select call content and included as a query param to the TwiML endpoint
+ * @param asOf - The reference time used to evaluate the permitted call window (quiet-hours check uses America/New_York)
+ * @returns An object with:
+ *  - `outcome`: `"ok"` when the call was placed, `"no_contact"` when the patient has no phone, `"not_configured"` when the voice vendor is unavailable or calls are disallowed by quiet hours, or `"vendor_error"` when Twilio returns an error;
+ *  - `vendorRef`: the Twilio call SID on success, otherwise `null`;
+ *  - `errorCode`: a vendor-specific error code when applicable (e.g. `"twilio:<code>"`), otherwise `null`.
+ */
 async function placeVoiceCall(
   clients: BuiltClients,
   row: JourneyRow,
@@ -574,8 +616,8 @@ async function placeVoiceCall(
           // answers. We pass `day` AND `patientId` so the press-1 callback
           // can attribute the manual alert to the right patient without
           // touching the database first.
-          url: `${clients.voice!.publicBaseUrl}/voice/checkin-twiml?day=${encodeURIComponent(day)}&patientId=${encodeURIComponent(row.patientId)}&journeyId=${encodeURIComponent(row.journeyId)}`,
-          statusCallbackUrl: `${clients.voice!.publicBaseUrl}/voice/status-callback`,
+          url: `${clients.voice!.publicBaseUrl}/resupply-api/voice/checkin-twiml?day=${encodeURIComponent(day)}&patientId=${encodeURIComponent(row.patientId)}&journeyId=${encodeURIComponent(row.journeyId)}`,
+          statusCallbackUrl: `${clients.voice!.publicBaseUrl}/resupply-api/voice/status-callback`,
           record: false,
           timeLimit: 120,
         }),

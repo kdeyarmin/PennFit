@@ -139,100 +139,105 @@ router.get("/patients/:id/documents", requireAdmin, async (req, res) => {
   });
 });
 
-router.get(
-  "/patients/:id/documents/:docId",
-  requireAdmin,
-  async (req, res) => {
-    const ids = idsParam.safeParse(req.params);
-    if (!ids.success) {
+router.get("/patients/:id/documents/:docId", requireAdmin, async (req, res) => {
+  const ids = idsParam.safeParse(req.params);
+  if (!ids.success) {
+    res.status(404).json({ error: "not_found" });
+    return;
+  }
+
+  const supabase = getSupabaseServiceRoleClient();
+  const { data: doc, error } = await supabase
+    .schema("resupply")
+    .from("patient_documents")
+    .select("id, object_key, filename, reviewed_at")
+    .eq("id", ids.data.docId)
+    .eq("patient_id", ids.data.id)
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  if (!doc) {
+    res.status(404).json({ error: "not_found" });
+    return;
+  }
+
+  let file;
+  try {
+    file = await objectStorage.getObjectEntityFile(doc.object_key);
+  } catch (err) {
+    if (err instanceof ObjectNotFoundError) {
       res.status(404).json({ error: "not_found" });
       return;
     }
-
-    const supabase = getSupabaseServiceRoleClient();
-    const { data: doc, error } = await supabase
-      .schema("resupply")
-      .from("patient_documents")
-      .select("id, object_key, filename, reviewed_at")
-      .eq("id", ids.data.docId)
-      .eq("patient_id", ids.data.id)
-      .limit(1)
-      .maybeSingle();
-    if (error) throw error;
-    if (!doc) {
-      res.status(404).json({ error: "not_found" });
-      return;
-    }
-
-    let file;
-    try {
-      file = await objectStorage.getObjectEntityFile(doc.object_key);
-    } catch (err) {
-      if (err instanceof ObjectNotFoundError) {
-        res.status(404).json({ error: "not_found" });
-        return;
-      }
-      req.log.error({ err, doc_id: doc.id }, "admin_patient_document_lookup_failed");
-      res.status(500).json({ error: "download_failed" });
-      return;
-    }
-
-    // Auto-mark reviewed on download. Best-effort: failure never blocks the stream.
-    void markReviewedIfNeeded(doc.id, ids.data.id, req.adminUserId ?? null).catch(
-      (err) => {
-        logger.warn({ err, doc_id: doc.id }, "admin_patient_document_auto_review_failed");
-      },
+    req.log.error(
+      { err, doc_id: doc.id },
+      "admin_patient_document_lookup_failed",
     );
+    res.status(500).json({ error: "download_failed" });
+    return;
+  }
 
-    await logAudit({
-      action: "patient.document.admin_download",
-      adminEmail: req.adminEmail ?? null,
-      adminUserId: req.adminUserId ?? null,
-      targetTable: "patient_documents",
-      targetId: doc.id,
-      metadata: { patient_id: ids.data.id },
-      ip: req.ip ?? null,
-      userAgent: req.get("user-agent") ?? null,
-    }).catch((err) => {
-      logger.warn({ err }, "patient.document.admin_download audit write failed");
-    });
+  // Auto-mark reviewed on download. Best-effort: failure never blocks the stream.
+  void markReviewedIfNeeded(doc.id, ids.data.id, req.adminUserId ?? null).catch(
+    (err) => {
+      logger.warn(
+        { err, doc_id: doc.id },
+        "admin_patient_document_auto_review_failed",
+      );
+    },
+  );
 
-    try {
-      const response = await objectStorage.downloadObject(file, 0);
-      res.status(response.status);
-      response.headers.forEach((value, key) => res.setHeader(key, value));
-      if (doc.filename) {
-        // Strip non-printable / non-ASCII AND the quoting chars `"`
-        // and `\` so a filename like `evil"; attachment; filename="
-        // can't break out of the quoted string. encodeURIComponent
-        // handles the RFC 5987 form.
-        const safeAscii = doc.filename
-          .replace(/[^\x20-\x7E]/g, "_")
-          .replace(/["\\]/g, "_");
-        const encoded = encodeURIComponent(doc.filename);
-        res.setHeader(
-          "Content-Disposition",
-          `attachment; filename="${safeAscii}"; filename*=UTF-8''${encoded}`,
-        );
-      }
-      if (response.body) {
-        const nodeStream = Readable.fromWeb(
-          response.body as ReadableStream<Uint8Array>,
-        );
-        nodeStream.pipe(res);
-      } else {
-        res.end();
-      }
-    } catch (err) {
-      req.log.error({ err, doc_id: doc.id }, "admin_patient_document_stream_failed");
-      if (!res.headersSent) {
-        res.status(500).json({ error: "download_failed" });
-      } else {
-        res.end();
-      }
+  await logAudit({
+    action: "patient.document.admin_download",
+    adminEmail: req.adminEmail ?? null,
+    adminUserId: req.adminUserId ?? null,
+    targetTable: "patient_documents",
+    targetId: doc.id,
+    metadata: { patient_id: ids.data.id },
+    ip: req.ip ?? null,
+    userAgent: req.get("user-agent") ?? null,
+  }).catch((err) => {
+    logger.warn({ err }, "patient.document.admin_download audit write failed");
+  });
+
+  try {
+    const response = await objectStorage.downloadObject(file, 0);
+    res.status(response.status);
+    response.headers.forEach((value, key) => res.setHeader(key, value));
+    if (doc.filename) {
+      // Strip non-printable / non-ASCII AND the quoting chars `"`
+      // and `\` so a filename like `evil"; attachment; filename="
+      // can't break out of the quoted string. encodeURIComponent
+      // handles the RFC 5987 form.
+      const safeAscii = doc.filename
+        .replace(/[^\x20-\x7E]/g, "_")
+        .replace(/["\\]/g, "_");
+      const encoded = encodeURIComponent(doc.filename);
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="${safeAscii}"; filename*=UTF-8''${encoded}`,
+      );
     }
-  },
-);
+    if (response.body) {
+      const nodeStream = Readable.fromWeb(
+        response.body as ReadableStream<Uint8Array>,
+      );
+      nodeStream.pipe(res);
+    } else {
+      res.end();
+    }
+  } catch (err) {
+    req.log.error(
+      { err, doc_id: doc.id },
+      "admin_patient_document_stream_failed",
+    );
+    if (!res.headersSent) {
+      res.status(500).json({ error: "download_failed" });
+    } else {
+      res.end();
+    }
+  }
+});
 
 router.patch(
   "/patients/:id/documents/:docId/reviewed",
@@ -297,7 +302,10 @@ router.patch(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "patient.document.admin_reviewed audit write failed");
+      logger.warn(
+        { err },
+        "patient.document.admin_reviewed audit write failed",
+      );
     });
 
     res.status(200).json({ ok: true, alreadyReviewed: false });
@@ -331,14 +339,19 @@ router.delete(
 
     let bytesDeleted: boolean | "errored";
     try {
-      const objectFile = await objectStorage.getObjectEntityFile(doc.object_key);
+      const objectFile = await objectStorage.getObjectEntityFile(
+        doc.object_key,
+      );
       await objectFile.delete();
       bytesDeleted = true;
     } catch (err) {
       if (err instanceof ObjectNotFoundError) {
         bytesDeleted = true;
       } else {
-        req.log.warn({ err, doc_id: doc.id }, "admin_patient_document_delete_bytes_failed");
+        req.log.warn(
+          { err, doc_id: doc.id },
+          "admin_patient_document_delete_bytes_failed",
+        );
         bytesDeleted = "errored";
       }
     }

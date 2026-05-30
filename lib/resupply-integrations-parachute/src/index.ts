@@ -5,13 +5,8 @@
 // land via /integrations/inbound/parachute. The matching dispatcher
 // lives in artifacts/resupply-api/src/lib/inbound-dispatchers/parachute.ts.
 
-export type {
-  ParachuteConfig,
-} from "./config";
-export {
-  isParachuteStubMode,
-  readParachuteConfigOrNull,
-} from "./config";
+export type { ParachuteConfig } from "./config";
+export { isParachuteStubMode, readParachuteConfigOrNull } from "./config";
 
 export type {
   ParachuteDocument,

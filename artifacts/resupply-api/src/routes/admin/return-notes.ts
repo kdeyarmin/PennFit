@@ -29,10 +29,7 @@ const router: IRouter = Router();
 
 // `returnId` is the shop_returns.id (text-typed UUID per migration
 // 0016). Canonical UUID string stored as text.
-const returnIdParam = z
-  .string()
-  .trim()
-  .uuid();
+const returnIdParam = z.string().trim().uuid();
 
 const bodySchema = z
   .object({

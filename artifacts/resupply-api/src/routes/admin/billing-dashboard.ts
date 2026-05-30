@@ -94,9 +94,7 @@ router.get("/admin/billing/dashboard", requireAdmin, async (_req, res) => {
     supabase
       .schema("resupply")
       .from("fulfillments")
-      .select(
-        "id, patient_id, item_sku, quantity, shipped_at",
-      )
+      .select("id, patient_id, item_sku, quantity, shipped_at")
       .gte("shipped_at", fulfillmentCutoff)
       .order("shipped_at", { ascending: false })
       .limit(200),

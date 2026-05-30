@@ -39,7 +39,10 @@ import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 import { dispatchEhrFhir } from "../../lib/inbound-dispatchers/ehr-fhir";
 import { dispatchParachute } from "../../lib/inbound-dispatchers/parachute";
 import { logger } from "../../lib/logger";
-import { createQueueWithDlq, WEBHOOK_DISPATCH_QUEUE_OPTS } from "../lib/queue-options";
+import {
+  createQueueWithDlq,
+  WEBHOOK_DISPATCH_QUEUE_OPTS,
+} from "../lib/queue-options";
 
 const JOB = "integrations.inbound-webhook-dispatch";
 const CRON = "* * * * *"; // every minute
@@ -84,9 +87,7 @@ export async function runInboundWebhookDispatcher(): Promise<DispatchStats> {
   // OOM, restart mid-row). Flip it back to 'processing_failed' so
   // the regular claim path below re-picks it up. We don't error on
   // this — losing a recovery cycle just delays revive by 60s.
-  const leaseCutoff = new Date(
-    Date.now() - PROCESSING_LEASE_MS,
-  ).toISOString();
+  const leaseCutoff = new Date(Date.now() - PROCESSING_LEASE_MS).toISOString();
   const { error: leaseErr } = await supabase
     .schema("resupply")
     .from("inbound_webhooks")
@@ -181,11 +182,19 @@ export async function runInboundWebhookDispatcher(): Promise<DispatchStats> {
     }
 
     if (outcome === null) {
-      // No dispatcher for this source. Move the row back out of
-      // 'processing' so the admin dashboard surfaces it via the
-      // pending partial index — leaving it stuck in 'processing'
-      // would silently hide unknown-source rows from triage.
-      await markRetry(supabase, row.id, `no_dispatcher_for_source:${row.source}`);
+      // No dispatcher for this source — a PERMANENT condition (the
+      // source string is unrecognized; it will not become dispatchable
+      // on a retry). Mark it `rejected` (a terminal status excluded
+      // from the claim scan) rather than `processing_failed`, which the
+      // claim query re-selects every tick — that left unknown-source
+      // rows churning forever (claim → no-dispatcher → re-mark → repeat)
+      // and never reaching a settled state. Rejected rows still surface
+      // in admin triage via their status + processing_error.
+      await markRejected(
+        supabase,
+        row.id,
+        `no_dispatcher_for_source:${row.source}`,
+      );
       stats.skipped_unknown_source += 1;
       continue;
     }
@@ -308,6 +317,23 @@ async function markRetry(
 export async function registerInboundWebhookDispatchJob(
   boss: PgBoss,
 ): Promise<void> {
+  if (process.env.RESUPPLY_INBOUND_REFERRALS_ENABLED !== "1") {
+    // Inbound referral / EHR integration is not provisioned here — the
+    // inbound_webhooks / inbound_referral_* tables only exist once that
+    // integration is set up (see docs/db-schema-drift-2026-05-29.md).
+    // Unschedule any cron a prior deploy left behind so it stops firing
+    // into missing tables, then skip worker registration. Set
+    // RESUPPLY_INBOUND_REFERRALS_ENABLED=1 once the schema + a partner
+    // tenant exist.
+    if (typeof boss.unschedule === "function") {
+      await boss.unschedule(JOB).catch(() => undefined);
+    }
+    logger.info(
+      { event: "inbound_referral_jobs_disabled", job: JOB },
+      `${JOB}: not registered (RESUPPLY_INBOUND_REFERRALS_ENABLED!=1); cleared any stale cron`,
+    );
+    return;
+  }
   // Inbound webhook dispatching mirrors outbound delivery's posture
   // (generous retries, tight expiry, DLQ on exhaustion) since the
   // failure modes are the same shape — a downstream consumer briefly

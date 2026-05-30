@@ -36,11 +36,9 @@ describe("applyVariables", () => {
 
   it("leaves an unknown variable name literal so a typo is visible", () => {
     expect(
-      applyVariables(
-        "Hi {{first_nmae}}.",
-        { first_name: "Pat" },
-        ["first_name"],
-      ),
+      applyVariables("Hi {{first_nmae}}.", { first_name: "Pat" }, [
+        "first_name",
+      ]),
     ).toBe("Hi {{first_nmae}}.");
   });
 
@@ -56,31 +54,21 @@ describe("applyVariables", () => {
 
   it("rejects whitespace-padded tokens (no Handlebars-style)", () => {
     expect(
-      applyVariables(
-        "Hi {{ first_name }}.",
-        { first_name: "Pat" },
-        ["first_name"],
-      ),
+      applyVariables("Hi {{ first_name }}.", { first_name: "Pat" }, [
+        "first_name",
+      ]),
     ).toBe("Hi {{ first_name }}.");
   });
 
   it("rejects uppercase / camelCase tokens", () => {
     expect(
-      applyVariables(
-        "Hi {{FirstName}}.",
-        { FirstName: "Pat" },
-        ["FirstName"],
-      ),
+      applyVariables("Hi {{FirstName}}.", { FirstName: "Pat" }, ["FirstName"]),
     ).toBe("Hi {{FirstName}}.");
   });
 
   it("substitutes the same token multiple times", () => {
     expect(
-      applyVariables(
-        "{{name}} {{name}} {{name}}",
-        { name: "x" },
-        ["name"],
-      ),
+      applyVariables("{{name}} {{name}} {{name}}", { name: "x" }, ["name"]),
     ).toBe("x x x");
   });
 

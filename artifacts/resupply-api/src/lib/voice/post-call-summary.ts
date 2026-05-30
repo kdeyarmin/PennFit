@@ -95,19 +95,19 @@ const SYSTEM_PROMPT = [
   "context line. Your job is to read the WHOLE call and emit ONE strict",
   "JSON object with these fields:",
   "",
-  '  {',
+  "  {",
   '    "outcome": "one short factual sentence — what happened on the call",',
   '    "sentiment": "positive" | "neutral" | "concerned" | "distressed",',
   '    "concerns": [ "short bullet of any clinical-adjacent concern raised", ... ],',
   '    "followUps": [ "short bullet of any action the AGENT promised", ... ],',
   '    "recommendsHandoff": true | false',
-  '  }',
+  "  }",
   "",
   "Rules:",
   "- Output JSON ONLY. No markdown fences. No prose before or after.",
-  "- `outcome` is one sentence, factual, no editorializing. e.g. \"Patient",
-  "  verified identity and confirmed shipment of nasal pillow cushions.\"",
-  "  or \"Caller could not verify date of birth; agent ended the call.\"",
+  '- `outcome` is one sentence, factual, no editorializing. e.g. "Patient',
+  '  verified identity and confirmed shipment of nasal pillow cushions."',
+  '  or "Caller could not verify date of birth; agent ended the call."',
   "- `sentiment` is the PATIENT's overall tone:",
   "    positive   = engaged, happy, thankful",
   "    neutral    = transactional, no notable affect",
@@ -118,9 +118,9 @@ const SYSTEM_PROMPT = [
   "- `concerns` lists ANYTHING clinical-adjacent the patient mentioned:",
   "  mask leaks, daytime fatigue, breathing trouble, sleep quality, etc.",
   "  Use plain English. Empty array if the call was a routine refill.",
-  "- `followUps` lists actions the AGENT committed to: \"agent said the",
-  "  team would call back about the bill\", \"agent promised a label by",
-  "  email\". Empty array if the agent made no commitments beyond placing",
+  '- `followUps` lists actions the AGENT committed to: "agent said the',
+  '  team would call back about the bill", "agent promised a label by',
+  '  email". Empty array if the agent made no commitments beyond placing',
   "  the order.",
   "- `recommendsHandoff` is TRUE if a human teammate should follow up on",
   "  this call regardless of whether handoff was actually invoked during",
@@ -129,10 +129,10 @@ const SYSTEM_PROMPT = [
   "  legitimate, any safety signal.",
   "- NEVER include the patient's full name, full DOB, full address, full",
   "  phone, full email, member ID, SSN, or specific prescription details",
-  "  in any field. Reference data only as fragments (\"DOB ending in",
-  "  fifty-two\", \"mask cushion shipment\").",
+  '  in any field. Reference data only as fragments ("DOB ending in',
+  '  fifty-two", "mask cushion shipment").',
   "- If the call was too short or empty to summarize, set outcome to",
-  "  \"No meaningful interaction.\" sentiment to \"neutral\", and return",
+  '  "No meaningful interaction." sentiment to "neutral", and return',
   "  empty arrays + recommendsHandoff=false.",
 ].join("\n");
 
@@ -188,9 +188,10 @@ function buildTranscriptMessage(
   lines.push("Transcript (oldest first):");
   for (const t of turns) {
     const role = t.source === "input" ? "patient" : "agent";
-    const text = t.text.length > DEFAULT_TURN_TEXT_CAP
-      ? t.text.slice(0, DEFAULT_TURN_TEXT_CAP) + "…"
-      : t.text;
+    const text =
+      t.text.length > DEFAULT_TURN_TEXT_CAP
+        ? t.text.slice(0, DEFAULT_TURN_TEXT_CAP) + "…"
+        : t.text;
     lines.push(`${role}: ${text}`);
   }
   return lines.join("\n");
@@ -210,9 +211,11 @@ function parseSummary(raw: string): PostCallSummary | null {
   } catch {
     return null;
   }
-  const outcome = typeof parsed.outcome === "string" ? parsed.outcome.trim() : "";
+  const outcome =
+    typeof parsed.outcome === "string" ? parsed.outcome.trim() : "";
   if (outcome.length === 0) return null;
-  const sentimentRaw = typeof parsed.sentiment === "string" ? parsed.sentiment : "neutral";
+  const sentimentRaw =
+    typeof parsed.sentiment === "string" ? parsed.sentiment : "neutral";
   const sentiment: CallSentiment = (
     ["positive", "neutral", "concerned", "distressed"] as const
   ).includes(sentimentRaw as CallSentiment)
@@ -220,19 +223,21 @@ function parseSummary(raw: string): PostCallSummary | null {
     : "neutral";
   const toStringArr = (v: unknown): string[] => {
     if (!Array.isArray(v)) return [];
-    return v
-      .filter((x): x is string => typeof x === "string")
-      .map((s) => s.trim())
-      .filter((s) => s.length > 0)
-      // Per-item char cap before the array-length cap. Without this,
-      // a single 64KB-long "concern" would survive the slice(0, 20)
-      // and land in the audit log before its own sanitizer clips it.
-      .map((s) =>
-        s.length > DEFAULT_LIST_ITEM_CHAR_CAP
-          ? s.slice(0, DEFAULT_LIST_ITEM_CHAR_CAP) + "…"
-          : s,
-      )
-      .slice(0, 20);
+    return (
+      v
+        .filter((x): x is string => typeof x === "string")
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0)
+        // Per-item char cap before the array-length cap. Without this,
+        // a single 64KB-long "concern" would survive the slice(0, 20)
+        // and land in the audit log before its own sanitizer clips it.
+        .map((s) =>
+          s.length > DEFAULT_LIST_ITEM_CHAR_CAP
+            ? s.slice(0, DEFAULT_LIST_ITEM_CHAR_CAP) + "…"
+            : s,
+        )
+        .slice(0, 20)
+    );
   };
   return {
     outcome: outcome.slice(0, 500),
@@ -274,7 +279,11 @@ export async function summarizePostCall(
     // re-pays the full input cost. Mirrors the pattern already in
     // routes/storefront/chat.ts:879.
     system: [
-      { type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } },
+      {
+        type: "text",
+        text: SYSTEM_PROMPT,
+        cache_control: { type: "ephemeral" },
+      },
     ],
     messages: [{ role: "user", content: userMessage }],
   });

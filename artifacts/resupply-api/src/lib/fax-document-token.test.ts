@@ -19,7 +19,8 @@ import { describe, it, expect, vi } from "vitest";
 
 // Stub getLinkHmacKey so tests don't need RESUPPLY_LINK_HMAC_KEY in env.
 vi.mock("@workspace/resupply-secrets", () => ({
-  getLinkHmacKey: () => Buffer.from("test-hmac-key-32bytes-padded-xxxx", "utf8"),
+  getLinkHmacKey: () =>
+    Buffer.from("test-hmac-key-32bytes-padded-xxxx", "utf8"),
 }));
 
 import {
@@ -93,7 +94,10 @@ describe("verifyFaxDocumentToken — signature checks", () => {
     const parts = token.split(".");
     // Replace payload with a different base64url value
     const fakePayload = Buffer.from(
-      JSON.stringify({ id: "evil-id", e: Math.floor(Date.now() / 1000) + 9999 }),
+      JSON.stringify({
+        id: "evil-id",
+        e: Math.floor(Date.now() / 1000) + 9999,
+      }),
     )
       .toString("base64")
       .replace(/\+/g, "-")
@@ -139,22 +143,34 @@ describe("verifyFaxDocumentToken — payload structure", () => {
     // by checking that non-string id fails. Use fake payload + real signing:
     // Since getLinkHmacKey is mocked, we can import createHmac ourselves.
     const key = Buffer.from("test-hmac-key-32bytes-padded-xxxx", "utf8");
-    const payload = Buffer.from(JSON.stringify({ e: Math.floor(Date.now() / 1000) + 3600 })).toString("base64url");
-    const sig = createHmac("sha256", key).update(payload, "utf8").digest("base64url");
+    const payload = Buffer.from(
+      JSON.stringify({ e: Math.floor(Date.now() / 1000) + 3600 }),
+    ).toString("base64url");
+    const sig = createHmac("sha256", key)
+      .update(payload, "utf8")
+      .digest("base64url");
     expect(verifyFaxDocumentToken(`${payload}.${sig}`).valid).toBe(false);
   });
 
   it("rejects a payload where expiry is not a number", () => {
     const key = Buffer.from("test-hmac-key-32bytes-padded-xxxx", "utf8");
-    const payload = Buffer.from(JSON.stringify({ id: "out-1", e: "not-a-number" })).toString("base64url");
-    const sig = createHmac("sha256", key).update(payload, "utf8").digest("base64url");
+    const payload = Buffer.from(
+      JSON.stringify({ id: "out-1", e: "not-a-number" }),
+    ).toString("base64url");
+    const sig = createHmac("sha256", key)
+      .update(payload, "utf8")
+      .digest("base64url");
     expect(verifyFaxDocumentToken(`${payload}.${sig}`).valid).toBe(false);
   });
 
   it("rejects a payload where id is an empty string", () => {
     const key = Buffer.from("test-hmac-key-32bytes-padded-xxxx", "utf8");
-    const payload = Buffer.from(JSON.stringify({ id: "", e: Math.floor(Date.now() / 1000) + 3600 })).toString("base64url");
-    const sig = createHmac("sha256", key).update(payload, "utf8").digest("base64url");
+    const payload = Buffer.from(
+      JSON.stringify({ id: "", e: Math.floor(Date.now() / 1000) + 3600 }),
+    ).toString("base64url");
+    const sig = createHmac("sha256", key)
+      .update(payload, "utf8")
+      .digest("base64url");
     expect(verifyFaxDocumentToken(`${payload}.${sig}`).valid).toBe(false);
   });
 });

@@ -13,8 +13,10 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // ---------------------------------------------------------------------------
 
 const { staged, upsertPayloads, resetMockState } = vi.hoisted(() => {
-  const staged: Map<string, Array<{ data: unknown; error: unknown }>> =
-    new Map();
+  const staged: Map<
+    string,
+    Array<{ data: unknown; error: unknown }>
+  > = new Map();
   const upsertPayloads: unknown[] = [];
 
   function resetMockState() {
@@ -45,9 +47,13 @@ vi.mock("@workspace/resupply-db", () => {
 
     const chain: Record<string, (...args: unknown[]) => unknown> = {};
 
-    const resolve = () => Promise.resolve(popStage(table, lockedOp ?? "select"));
+    const resolve = () =>
+      Promise.resolve(popStage(table, lockedOp ?? "select"));
 
-    chain["select"] = () => { lockedOp ??= "select"; return chain; };
+    chain["select"] = () => {
+      lockedOp ??= "select";
+      return chain;
+    };
     chain["insert"] = (p: unknown) => {
       lockedOp ??= "insert";
       upsertPayloads.push(p);
@@ -62,7 +68,10 @@ vi.mock("@workspace/resupply-db", () => {
       upsertPayloads.push(p);
       return chain;
     };
-    chain["delete"] = () => { lockedOp ??= "delete"; return chain; };
+    chain["delete"] = () => {
+      lockedOp ??= "delete";
+      return chain;
+    };
     chain["eq"] = () => chain;
     chain["neq"] = () => chain;
     chain["in"] = () => chain;
@@ -280,9 +289,7 @@ describe("getObjectAclPolicy", () => {
       error: { message: "connection refused" },
     });
 
-    await expect(getObjectAclPolicy(OBJ)).rejects.toThrow(
-      "Failed to read ACL",
-    );
+    await expect(getObjectAclPolicy(OBJ)).rejects.toThrow("Failed to read ACL");
   });
 
   it("includes bucket and path in the error message", async () => {

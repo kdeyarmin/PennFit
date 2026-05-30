@@ -144,14 +144,16 @@ export function CpapMasksFisherPaykel() {
               <h1 className="text-display text-4xl md:text-5xl lg:text-6xl font-bold tracking-tight mb-5 leading-[1.05] text-white">
                 Fisher &amp; Paykel.
                 <br />
-                <span className="hero-headline-swoosh">A cushion that moves with you.</span>
+                <span className="hero-headline-swoosh">
+                  A cushion that moves with you.
+                </span>
               </h1>
 
               <p className="text-base md:text-lg text-white/85 leading-relaxed mb-7">
-                Five decades of respiratory engineering out of Auckland. F&amp;P&apos;s
-                RollFit XT and AirPillow cushions adjust as you shift through the
-                night — the best leak resistance we&apos;ve ever measured in side
-                and stomach sleepers.
+                Five decades of respiratory engineering out of Auckland.
+                F&amp;P&apos;s RollFit XT and AirPillow cushions adjust as you
+                shift through the night — the best leak resistance we&apos;ve
+                ever measured in side and stomach sleepers.
               </p>
 
               <div className="flex flex-col sm:flex-row gap-3">
@@ -325,10 +327,10 @@ export function CpapMasksFisherPaykel() {
             />
           </div>
           <blockquote className="text-display text-xl md:text-2xl font-semibold tracking-tight text-foreground/85 leading-relaxed mb-5">
-            &ldquo;I roll between side and stomach all night. Three masks
-            broke seal every time I moved. The F&amp;P Evora just&hellip; goes
-            with me. First mask I&apos;ve worn through a full night without
-            an alarm.&rdquo;
+            &ldquo;I roll between side and stomach all night. Three masks broke
+            seal every time I moved. The F&amp;P Evora just&hellip; goes with
+            me. First mask I&apos;ve worn through a full night without an
+            alarm.&rdquo;
           </blockquote>
           <div className="text-sm font-medium text-foreground/70">
             — Verified PennPaps patient · Bryn Mawr, PA
@@ -410,8 +412,8 @@ export function CpapMasksFisherPaykel() {
             </h3>
             <p className="text-sm text-muted-foreground leading-relaxed">
               If you&apos;re not specifically chasing the RollFit cushion or
-              AirPillow technology, our React Health line costs noticeably
-              less and is lighter overnight. Worth a side-by-side look.
+              AirPillow technology, our React Health line costs noticeably less
+              and is lighter overnight. Worth a side-by-side look.
             </p>
           </div>
           <Button
@@ -439,8 +441,8 @@ export function CpapMasksFisherPaykel() {
           Try Fisher &amp; Paykel with the fitter.
         </h2>
         <p className="text-muted-foreground leading-relaxed max-w-xl mx-auto mb-7">
-          Three minutes of face capture plus a short questionnaire returns
-          the best Evora, Brevida, or Vitera for your face geometry and sleep
+          Three minutes of face capture plus a short questionnaire returns the
+          best Evora, Brevida, or Vitera for your face geometry and sleep
           posture.
         </p>
         <Button

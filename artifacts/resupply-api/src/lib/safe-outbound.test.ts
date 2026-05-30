@@ -99,12 +99,12 @@ describe("assertSafeOutboundUrlSync", () => {
   });
 
   it("rejects .internal / .local", () => {
-    expect(() =>
-      assertSafeOutboundUrlSync("https://api.internal/foo"),
-    ).toThrow(SsrfError);
-    expect(() => assertSafeOutboundUrlSync("https://printer.local/foo")).toThrow(
+    expect(() => assertSafeOutboundUrlSync("https://api.internal/foo")).toThrow(
       SsrfError,
     );
+    expect(() =>
+      assertSafeOutboundUrlSync("https://printer.local/foo"),
+    ).toThrow(SsrfError);
   });
 
   it("rejects AWS metadata IP literal", () => {
@@ -123,7 +123,9 @@ describe("assertSafeOutboundUrlSync", () => {
   });
 
   it("accepts public-looking hostnames and IPs", () => {
-    expect(() => assertSafeOutboundUrlSync("https://example.com/x")).not.toThrow();
+    expect(() =>
+      assertSafeOutboundUrlSync("https://example.com/x"),
+    ).not.toThrow();
     expect(() => assertSafeOutboundUrlSync("https://8.8.8.8/x")).not.toThrow();
   });
 
@@ -145,7 +147,9 @@ describe("fetchWithPinnedIp", () => {
   function mockFetch() {
     const calls: Array<{
       url: unknown;
-      init: (RequestInit & { dispatcher?: unknown; agent?: unknown }) | undefined;
+      init:
+        | (RequestInit & { dispatcher?: unknown; agent?: unknown })
+        | undefined;
     }> = [];
     const fn = ((url: unknown, init?: RequestInit) => {
       calls.push({ url, init: init as never });
@@ -172,7 +176,12 @@ describe("fetchWithPinnedIp", () => {
 
   it("passes an undici dispatcher (the working pin) and NOT the ignored `agent` option", async () => {
     const { fn, calls } = mockFetch();
-    await fetchWithPinnedIp(fn, "https://example.com/", "93.184.216.34", "example.com");
+    await fetchWithPinnedIp(
+      fn,
+      "https://example.com/",
+      "93.184.216.34",
+      "example.com",
+    );
     expect(calls[0].init?.dispatcher).toBeInstanceOf(Agent);
     // node:http/https `agent` is silently ignored by undici — must be absent.
     expect(calls[0].init?.agent).toBeUndefined();
@@ -181,14 +190,24 @@ describe("fetchWithPinnedIp", () => {
   it("refuses (SsrfError) when the pinned host does not match the url host", () => {
     const { fn, calls } = mockFetch();
     expect(() =>
-      fetchWithPinnedIp(fn, "https://example.com/", "93.184.216.34", "evil.example.net"),
+      fetchWithPinnedIp(
+        fn,
+        "https://example.com/",
+        "93.184.216.34",
+        "evil.example.net",
+      ),
     ).toThrow(SsrfError);
     expect(calls).toHaveLength(0);
   });
 
   it("host-match is case-insensitive (no false positive on cased hostnames)", async () => {
     const { fn, calls } = mockFetch();
-    await fetchWithPinnedIp(fn, "https://API.Example.com/x", "93.184.216.34", "api.example.com");
+    await fetchWithPinnedIp(
+      fn,
+      "https://API.Example.com/x",
+      "93.184.216.34",
+      "api.example.com",
+    );
     expect(calls).toHaveLength(1);
   });
 });

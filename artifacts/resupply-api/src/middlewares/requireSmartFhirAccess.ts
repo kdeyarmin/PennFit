@@ -133,7 +133,9 @@ export const requireSmartFhirAccess: RequestHandler = async (
   const { data: tenant, error: tenantErr } = await supabase
     .schema("resupply")
     .from("ehr_fhir_tenants")
-    .select("id, slug, display_name, jwks_uri, audience, expected_issuer, expected_subject")
+    .select(
+      "id, slug, display_name, jwks_uri, audience, expected_issuer, expected_subject",
+    )
     .eq("expected_issuer", issClaim)
     .eq("is_active", true)
     .limit(1)
@@ -243,7 +245,11 @@ function peekIssClaim(token: string): string | null {
     const payload = JSON.parse(
       Buffer.from(parts[1]!, "base64url").toString("utf8"),
     );
-    if (payload && typeof payload === "object" && typeof payload.iss === "string") {
+    if (
+      payload &&
+      typeof payload === "object" &&
+      typeof payload.iss === "string"
+    ) {
       return payload.iss;
     }
   } catch {

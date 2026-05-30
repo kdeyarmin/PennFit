@@ -94,7 +94,13 @@ const providerSchema = z.object({
 
 const payloadSchema = z.object({
   order_id: z.string().trim().min(1).max(120),
-  event_type: z.string().trim().min(1).max(60).optional().default("order.created"),
+  event_type: z
+    .string()
+    .trim()
+    .min(1)
+    .max(60)
+    .optional()
+    .default("order.created"),
   occurred_at: z.string().trim().min(1).optional(),
   patient: patientSchema.optional().default({}),
   provider: providerSchema.optional().default({}),
@@ -160,7 +166,9 @@ export function parseParachuteOrder(input: unknown): ParseOutcome {
     payerName: p.payer_name ?? null,
     memberId: p.member_id ?? null,
     hcpcsLines: p.items.map(normaliseHcpcsLine),
-    icd10Codes: p.diagnoses.map((d) => d.toUpperCase().replace(/\s+/g, "")).filter((d) => d.length > 0),
+    icd10Codes: p.diagnoses
+      .map((d) => d.toUpperCase().replace(/\s+/g, ""))
+      .filter((d) => d.length > 0),
     documents: p.documents.map(normaliseDocument),
     clinicalNote: p.clinical_note ?? null,
   };
@@ -181,9 +189,7 @@ function normaliseHcpcsLine(
   line: z.infer<typeof hcpcsLineSchema>,
 ): ParachuteHcpcsLine {
   const q =
-    typeof line.quantity === "number"
-      ? line.quantity
-      : Number(line.quantity);
+    typeof line.quantity === "number" ? line.quantity : Number(line.quantity);
   return {
     code: line.code.toUpperCase().trim(),
     modifiers: (line.modifiers ?? [])

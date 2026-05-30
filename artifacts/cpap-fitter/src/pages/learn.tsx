@@ -538,8 +538,8 @@ export function Learn() {
             Where are you in this?
           </h2>
           <p className="text-sm md:text-base text-muted-foreground max-w-2xl mx-auto leading-relaxed">
-            Patients arrive at this page in four different places. Jump
-            straight to the article that matches yours.
+            Patients arrive at this page in four different places. Jump straight
+            to the article that matches yours.
           </p>
         </div>
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -730,10 +730,9 @@ export function Learn() {
           </h2>
           <p className="text-sm md:text-base text-muted-foreground max-w-2xl leading-relaxed mx-auto md:mx-0">
             Twelve in-depth articles on what sleep apnea is, what untreated
-            apnea costs your body, what treatment actually feels like, how
-            the therapy works, and real life with a mask. Each has a
-            built-in share button for passing to a partner, parent, or
-            friend.
+            apnea costs your body, what treatment actually feels like, how the
+            therapy works, and real life with a mask. Each has a built-in share
+            button for passing to a partner, parent, or friend.
           </p>
         </div>
         {/* Featured: the 101 mega-landing */}

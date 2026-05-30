@@ -460,8 +460,7 @@ export function Insurance() {
             size="sm"
             onClick={() =>
               openPennBot({
-                prefill:
-                  "Will my insurance cover a new mask and supplies?",
+                prefill: "Will my insurance cover a new mask and supplies?",
               })
             }
             className="rounded-full glass-panel border-border/60 gap-2 hidden sm:inline-flex"

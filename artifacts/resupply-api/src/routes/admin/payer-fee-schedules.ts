@@ -26,7 +26,12 @@ const router: IRouter = Router();
 
 type FeeRow = Database["resupply"]["Tables"]["payer_fee_schedules"]["Row"];
 
-const SOURCE_VALUES = ["manual", "cms_published", "payer_published", "observed"] as const satisfies readonly FeeRow["source"][];
+const SOURCE_VALUES = [
+  "manual",
+  "cms_published",
+  "payer_published",
+  "observed",
+] as const satisfies readonly FeeRow["source"][];
 
 const HCPCS_RE = /^[A-Z]\d{4}$/;
 const MODIFIER_RE = /^[A-Z0-9]{2}$/;
@@ -98,10 +103,14 @@ router.get(
       .order("effective_from", { ascending: false })
       .limit(500);
     const payerProfileId =
-      typeof req.query.payerProfileId === "string" ? req.query.payerProfileId : undefined;
+      typeof req.query.payerProfileId === "string"
+        ? req.query.payerProfileId
+        : undefined;
     if (payerProfileId) query = query.eq("payer_profile_id", payerProfileId);
     const hcpcs =
-      typeof req.query.hcpcs === "string" ? req.query.hcpcs.toUpperCase() : undefined;
+      typeof req.query.hcpcs === "string"
+        ? req.query.hcpcs.toUpperCase()
+        : undefined;
     if (hcpcs) query = query.eq("hcpcs_code", hcpcs);
     const { data, error } = await query;
     if (error) throw error;
@@ -119,7 +128,9 @@ router.get(
   requirePermission("reports.read"),
   async (req, res) => {
     const payerProfileId =
-      typeof req.query.payerProfileId === "string" ? req.query.payerProfileId : "";
+      typeof req.query.payerProfileId === "string"
+        ? req.query.payerProfileId
+        : "";
     const hcpcs =
       typeof req.query.hcpcs === "string" ? req.query.hcpcs.toUpperCase() : "";
     if (!payerProfileId || !hcpcs) {
@@ -131,7 +142,9 @@ router.get(
       return;
     }
     const modifier =
-      typeof req.query.modifier === "string" ? req.query.modifier.toUpperCase() : null;
+      typeof req.query.modifier === "string"
+        ? req.query.modifier.toUpperCase()
+        : null;
     const onDate =
       typeof req.query.onDate === "string" && ISO_DATE_RE.test(req.query.onDate)
         ? req.query.onDate
@@ -254,12 +267,14 @@ router.patch(
     const b = parsed.data;
     const update: Database["resupply"]["Tables"]["payer_fee_schedules"]["Update"] =
       { updated_at: new Date().toISOString() };
-    if (b.payerProfileId !== undefined) update.payer_profile_id = b.payerProfileId;
+    if (b.payerProfileId !== undefined)
+      update.payer_profile_id = b.payerProfileId;
     if (b.hcpcsCode !== undefined) update.hcpcs_code = b.hcpcsCode;
     if (b.modifier !== undefined) update.modifier = b.modifier;
     if (b.allowedCents !== undefined) update.allowed_cents = b.allowedCents;
     if (b.effectiveFrom !== undefined) update.effective_from = b.effectiveFrom;
-    if (b.effectiveThrough !== undefined) update.effective_through = b.effectiveThrough;
+    if (b.effectiveThrough !== undefined)
+      update.effective_through = b.effectiveThrough;
     if (b.source !== undefined) update.source = b.source;
     if (b.notes !== undefined) update.notes = b.notes;
     const supabase = getSupabaseServiceRoleClient();

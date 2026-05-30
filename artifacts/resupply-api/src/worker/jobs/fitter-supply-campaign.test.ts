@@ -199,10 +199,9 @@ describe("composeTouchpoint — branded HTML template", () => {
     for (const i of ALL_TOUCHES) {
       const out = composeTouchpoint({ ...BASE_OPTS, touchIndex: i });
       // Table-based layout for Outlook compatibility.
-      expect(
-        out.email.html,
-        `T${i} html should use table layout`,
-      ).toContain('<table role="presentation"');
+      expect(out.email.html, `T${i} html should use table layout`).toContain(
+        '<table role="presentation"',
+      );
       // Branded navy color band.
       expect(
         out.email.html.toLowerCase(),
@@ -228,9 +227,7 @@ describe("composeTouchpoint — branded HTML template", () => {
       // string), not just padding.
       // Find the preheader's actual text — between the opening and
       // closing tags of the display:none div.
-      const match = out.email.html.match(
-        /display:none[^>]*>([^<]+)</,
-      );
+      const match = out.email.html.match(/display:none[^>]*>([^<]+)</);
       expect(match, `T${i} preheader div should have content`).toBeTruthy();
       const content = (match?.[1] ?? "").trim();
       expect(
@@ -383,10 +380,9 @@ describe("composeTouchpoint — universal invariants", () => {
       const linksToShop =
         out.email.text.includes(BASE_OPTS.shopUrl) ||
         out.email.text.includes(BASE_OPTS.resumeUrl);
-      expect(
-        linksToShop,
-        `touch ${i} should link to /shop or /results`,
-      ).toBe(true);
+      expect(linksToShop, `touch ${i} should link to /shop or /results`).toBe(
+        true,
+      );
     }
   });
 

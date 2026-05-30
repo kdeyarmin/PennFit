@@ -142,10 +142,7 @@ const ALL_PERMISSIONS: ReadonlyArray<Permission> = [
  *                              and returns work; no money-out, no
  *                              compliance resolution.
  */
-export type EffectiveRole =
-  | "super_admin"
-  | "admin"
-  | "customer_service_rep";
+export type EffectiveRole = "super_admin" | "admin" | "customer_service_rep";
 
 /**
  * Normalize a DB-persisted role to the 3-bucket effective model.
@@ -229,10 +226,7 @@ const EFFECTIVE_ROLE_PERMISSIONS: Record<
  * Constant-time-ish lookup. Normalizes the DB role to the 3-bucket
  * effective role, then asks whether that bucket contains `perm`.
  */
-export function roleHasPermission(
-  role: AdminRole,
-  perm: Permission,
-): boolean {
+export function roleHasPermission(role: AdminRole, perm: Permission): boolean {
   const effective = toEffectiveRole(role);
   const set = EFFECTIVE_ROLE_PERMISSIONS[effective];
   return set.has(perm);

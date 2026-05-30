@@ -189,10 +189,9 @@ export interface ListFitterTouchVariantMetricsResponse {
 }
 
 export async function listFitterTouchVariantMetrics(): Promise<ListFitterTouchVariantMetricsResponse> {
-  const res = await fetch(
-    "/resupply-api/admin/fitter-leads/metrics/variants",
-    { headers: { Accept: "application/json" } },
-  );
+  const res = await fetch("/resupply-api/admin/fitter-leads/metrics/variants", {
+    headers: { Accept: "application/json" },
+  });
   if (!res.ok) {
     throw new Error(`Failed to load fitter variant metrics (${res.status})`);
   }

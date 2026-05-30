@@ -124,9 +124,8 @@ export function AdminBillingHubPage() {
           Billing Hub
         </h1>
         <p className="text-sm" style={{ color: "hsl(var(--ink-2))" }}>
-          Where the billing team starts the day. Real numbers, real
-          queues, no PHI — every tile drills into the worklist that
-          fixes the problem.
+          Where the billing team starts the day. Real numbers, real queues, no
+          PHI — every tile drills into the worklist that fixes the problem.
         </p>
       </header>
 
@@ -295,14 +294,14 @@ export function AdminBillingHubPage() {
           {isPending ? (
             <Spinner label="Loading payers…" />
           ) : (data?.topPayersByOpenDollars.length ?? 0) === 0 ? (
-            <p
-              className="text-sm py-2"
-              style={{ color: "hsl(var(--ink-3))" }}
-            >
+            <p className="text-sm py-2" style={{ color: "hsl(var(--ink-3))" }}>
               No open patient balances right now.
             </p>
           ) : (
-            <ul className="divide-y" style={{ borderColor: "hsl(var(--line-1))" }}>
+            <ul
+              className="divide-y"
+              style={{ borderColor: "hsl(var(--line-1))" }}
+            >
               {(data?.topPayersByOpenDollars ?? []).map((p) => (
                 <li
                   key={p.payerName}
@@ -372,10 +371,7 @@ export function AdminBillingHubPage() {
               >
                 Snapshot taken
               </dt>
-              <dd
-                className="text-xs"
-                style={{ color: "hsl(var(--ink-2))" }}
-              >
+              <dd className="text-xs" style={{ color: "hsl(var(--ink-2))" }}>
                 {data?.generatedAt
                   ? new Date(data.generatedAt).toLocaleString()
                   : "—"}
@@ -515,10 +511,7 @@ function DollarRow({
   return (
     <li className="flex items-baseline justify-between gap-3">
       <div>
-        <p
-          className="font-medium"
-          style={{ color: "hsl(var(--ink-1))" }}
-        >
+        <p className="font-medium" style={{ color: "hsl(var(--ink-1))" }}>
           {label}
         </p>
         <p

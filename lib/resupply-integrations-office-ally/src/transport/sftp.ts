@@ -80,7 +80,9 @@ const UPLOAD_RETRY_DELAYS_MS = [1000, 2000];
 
 function isRetryableUploadFailure(outcome: UploadOutcome): boolean {
   if (outcome.ok) return false;
-  return outcome.kind === "connect_failed" || outcome.kind === "transfer_failed";
+  return (
+    outcome.kind === "connect_failed" || outcome.kind === "transfer_failed"
+  );
 }
 
 export function createSftpTransport(
@@ -92,7 +94,8 @@ export function createSftpTransport(
       // Single-attempt closure — extracted so the retry loop below
       // can call it multiple times without duplicating the
       // tmp-file/batch-file dance.
-      const attempt = async (): Promise<UploadOutcome> => uploadOnce(config, req);
+      const attempt = async (): Promise<UploadOutcome> =>
+        uploadOnce(config, req);
 
       let lastOutcome: UploadOutcome = await attempt();
       for (let i = 1; i < MAX_UPLOAD_ATTEMPTS; i++) {
@@ -217,9 +220,15 @@ function classifyError(err: unknown): UploadOutcome {
       stderr,
     )
   ) {
-    return { ok: false, kind: "auth_failed", message: "sftp authentication failed" };
+    return {
+      ok: false,
+      kind: "auth_failed",
+      message: "sftp authentication failed",
+    };
   }
-  if (/Connection refused|No route to host|Connection timed out/i.test(stderr)) {
+  if (
+    /Connection refused|No route to host|Connection timed out/i.test(stderr)
+  ) {
     return {
       ok: false,
       kind: "connect_failed",

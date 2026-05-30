@@ -22,7 +22,11 @@ const router: IRouter = Router();
 const body = z
   .object({
     nightDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "YYYY-MM-DD"),
-    usageMinutes: z.number().int().min(0).max(24 * 60),
+    usageMinutes: z
+      .number()
+      .int()
+      .min(0)
+      .max(24 * 60),
     ahi: z.number().min(0).max(150).optional(),
     leakRateLMin: z.number().min(0).max(120).optional(),
     pressureP95Cmh2o: z.number().min(0).max(30).optional(),
@@ -62,8 +66,7 @@ router.post(
           source: "manual",
           source_event_id: `manual:${req.adminUserId ?? "unknown"}:${parsed.data.nightDate}`,
           usage_minutes: parsed.data.usageMinutes,
-          ahi:
-            parsed.data.ahi != null ? String(parsed.data.ahi) : null,
+          ahi: parsed.data.ahi != null ? String(parsed.data.ahi) : null,
           leak_rate_l_min:
             parsed.data.leakRateLMin != null
               ? String(parsed.data.leakRateLMin)

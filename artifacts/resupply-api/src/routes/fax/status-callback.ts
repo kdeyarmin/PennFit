@@ -30,7 +30,8 @@ import { requireTwilioSignature } from "@workspace/resupply-telecom";
 
 import { logger } from "../../lib/logger.js";
 
-type FaxOutreachUpdate = Database["resupply"]["Tables"]["physician_fax_outreach"]["Update"];
+type FaxOutreachUpdate =
+  Database["resupply"]["Tables"]["physician_fax_outreach"]["Update"];
 type RxPacketUpdate =
   Database["resupply"]["Tables"]["prescription_request_packets"]["Update"];
 
@@ -126,8 +127,11 @@ router.post("/fax/status-callback", signatureMiddleware, async (req, res) => {
     );
     return;
   }
-  const { FaxSid: faxSid, Status: twilioStatus, ErrorCode: errorCode } =
-    parsed.data;
+  const {
+    FaxSid: faxSid,
+    Status: twilioStatus,
+    ErrorCode: errorCode,
+  } = parsed.data;
   const dbStatus = mapTwilioStatus(twilioStatus);
 
   const supabase = getSupabaseServiceRoleClient();

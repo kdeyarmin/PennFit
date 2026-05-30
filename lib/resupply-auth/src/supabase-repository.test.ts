@@ -145,9 +145,7 @@ describe("supabaseAuthRepository.countRecentFailures — injection-safety regres
       sinceMs: 60_000,
     });
 
-    const ipEq = calls.find(
-      (c) => c.method === "eq" && c.args[0] === "ip",
-    );
+    const ipEq = calls.find((c) => c.method === "eq" && c.args[0] === "ip");
     expect(ipEq).toBeDefined();
     expect(ipEq!.args[1]).toBe("1.2.3.4");
   });
@@ -192,9 +190,7 @@ describe("supabaseAuthRepository.countRecentFailures — injection-safety regres
       sinceMs: 60_000,
     });
 
-    const ipEq = calls.find(
-      (c) => c.method === "eq" && c.args[0] === "ip",
-    );
+    const ipEq = calls.find((c) => c.method === "eq" && c.args[0] === "ip");
     expect(ipEq).toBeUndefined();
   });
 

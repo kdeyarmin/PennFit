@@ -48,15 +48,16 @@ export function SleepStudiesTab({ patientId }: { patientId: string }) {
   const [showAdd, setShowAdd] = useState(false);
 
   if (isPending) return <Spinner />;
-  if (isError) return <ErrorPanel error={error} onRetry={() => void refetch()} />;
+  if (isError)
+    return <ErrorPanel error={error} onRetry={() => void refetch()} />;
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">
           Diagnostic sleep-study records — AHI, RDI, lowest SpO2, sleep
-          efficiency. Drives Medicare LCD L33718 coverage decisions and
-          the 90-day adherence trial gate.
+          efficiency. Drives Medicare LCD L33718 coverage decisions and the
+          90-day adherence trial gate.
         </p>
         <Button onClick={() => setShowAdd(true)}>
           <Plus className="h-4 w-4 mr-1.5" />
@@ -147,7 +148,8 @@ function AddSleepStudyModal({
   });
 
   const ahiNum = Number(ahi);
-  const ahiValid = ahi !== "" && Number.isFinite(ahiNum) && ahiNum >= 0 && ahiNum <= 150;
+  const ahiValid =
+    ahi !== "" && Number.isFinite(ahiNum) && ahiNum >= 0 && ahiNum <= 150;
 
   return (
     <ModalShell title="Record sleep study" onClose={onClose}>
@@ -285,7 +287,8 @@ export function InsuranceCoveragesTab({ patientId }: { patientId: string }) {
   }, [checks.data]);
 
   if (isPending) return <Spinner />;
-  if (isError) return <ErrorPanel error={error} onRetry={() => void refetch()} />;
+  if (isError)
+    return <ErrorPanel error={error} onRetry={() => void refetch()} />;
 
   return (
     <div className="space-y-4">
@@ -293,8 +296,8 @@ export function InsuranceCoveragesTab({ patientId }: { patientId: string }) {
         <p className="text-sm text-muted-foreground">
           Verified payer coverage — primary, secondary, and any tertiary
           policies. Use the per-coverage Verify button to run a 270/271
-          eligibility round-trip; results render inline once the payer
-          responds (status moves queued → parsed).
+          eligibility round-trip; results render inline once the payer responds
+          (status moves queued → parsed).
         </p>
         <Button onClick={() => setShowAdd(true)}>
           <Plus className="h-4 w-4 mr-1.5" />
@@ -312,8 +315,8 @@ export function InsuranceCoveragesTab({ patientId }: { patientId: string }) {
       )}
       {data.coverages.length === 0 ? (
         <p className="text-sm text-muted-foreground py-2">
-          No coverage on file. Capture from the insurance lead form once
-          the verifications team has confirmed benefits.
+          No coverage on file. Capture from the insurance lead form once the
+          verifications team has confirmed benefits.
         </p>
       ) : (
         <ul className="space-y-3">
@@ -366,9 +369,7 @@ function CoverageRow({
     >
       <div className="flex items-center justify-between">
         <div>
-          <span
-            className="inline-block px-1.5 py-0.5 rounded text-[10px] uppercase font-semibold tracking-wider mr-2 bg-blue-100 text-blue-900"
-          >
+          <span className="inline-block px-1.5 py-0.5 rounded text-[10px] uppercase font-semibold tracking-wider mr-2 bg-blue-100 text-blue-900">
             {c.rank}
           </span>
           <span className="font-medium">{c.payerName}</span>
@@ -398,7 +399,9 @@ function CoverageRow({
         </div>
       </div>
       <div className="mt-2 grid grid-cols-3 gap-3 text-xs text-muted-foreground">
-        <div>Member ID: <span className="font-mono">{c.memberId}</span></div>
+        <div>
+          Member ID: <span className="font-mono">{c.memberId}</span>
+        </div>
         <div>Group: {c.groupNumber ?? "—"}</div>
         <div>
           Deductible:{" "}
@@ -410,9 +413,7 @@ function CoverageRow({
             : ""}
         </div>
       </div>
-      {latestCheck && (
-        <CoverageLatestCheck check={latestCheck} />
-      )}
+      {latestCheck && <CoverageLatestCheck check={latestCheck} />}
     </li>
   );
 }
@@ -614,15 +615,16 @@ export function PriorAuthorizationsTab({ patientId }: { patientId: string }) {
   const [showAdd, setShowAdd] = useState(false);
 
   if (isPending) return <Spinner />;
-  if (isError) return <ErrorPanel error={error} onRetry={() => void refetch()} />;
+  if (isError)
+    return <ErrorPanel error={error} onRetry={() => void refetch()} />;
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">
-          Payer authorizations to dispense a specific HCPCS for this
-          patient. Status: draft → submitted → approved/denied (→
-          appealed). Capture-only in this Tier-2a sprint.
+          Payer authorizations to dispense a specific HCPCS for this patient.
+          Status: draft → submitted → approved/denied (→ appealed). Capture-only
+          in this Tier-2a sprint.
         </p>
         <Button onClick={() => setShowAdd(true)}>
           <Plus className="h-4 w-4 mr-1.5" />
@@ -815,7 +817,10 @@ function LabeledInput({
 }) {
   return (
     <div>
-      <Label>{label}{required && " *"}</Label>
+      <Label>
+        {label}
+        {required && " *"}
+      </Label>
       <Input
         type={type}
         step={step}

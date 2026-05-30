@@ -121,7 +121,8 @@ router.post("/conversations/:id/claim", requireAdmin, async (req, res) => {
     assigned_at: nowIso,
     updated_at: nowIso,
   };
-  if (slaDueAt !== undefined) updates.sla_due_at = slaDueAt?.toISOString() ?? null;
+  if (slaDueAt !== undefined)
+    updates.sla_due_at = slaDueAt?.toISOString() ?? null;
   // Optimistic-concurrency precondition: the UPDATE only matches when
   // the row's current `assigned_admin_user_id` is exactly what we read
   // above (or `force=1` was supplied, in which case we already passed
@@ -143,7 +144,8 @@ router.post("/conversations/:id/claim", requireAdmin, async (req, res) => {
       );
     }
   }
-  const { data: updatedRows, error: updateErr } = await updateBuilder.select("id");
+  const { data: updatedRows, error: updateErr } =
+    await updateBuilder.select("id");
   if (updateErr) throw updateErr;
   if (!updatedRows || updatedRows.length === 0) {
     // Someone else won the race between our SELECT and our UPDATE.
@@ -166,7 +168,10 @@ router.post("/conversations/:id/claim", requireAdmin, async (req, res) => {
     metadata: {
       prior_assignee: row.assigned_admin_user_id,
       new_assignee: adminId,
-      forced: force && !!row.assigned_admin_user_id && row.assigned_admin_user_id !== adminId,
+      forced:
+        force &&
+        !!row.assigned_admin_user_id &&
+        row.assigned_admin_user_id !== adminId,
     },
     ip: req.ip ?? null,
     userAgent: req.get("user-agent") ?? null,
@@ -583,8 +588,11 @@ router.post("/conversations/:id/status", requireAdmin, async (req, res) => {
       sla_due_at:
         nextStatus === "closed"
           ? null
-          : computeSlaDueAt(existingPriority, nextStatus, new Date())?.toISOString() ??
-            null,
+          : (computeSlaDueAt(
+              existingPriority,
+              nextStatus,
+              new Date(),
+            )?.toISOString() ?? null),
       updated_at: new Date().toISOString(),
     })
     .eq("id", id);

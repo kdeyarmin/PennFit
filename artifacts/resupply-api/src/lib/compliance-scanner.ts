@@ -371,9 +371,7 @@ async function detectNoResponse(
   const journeys = journeyRows ?? [];
   if (journeys.length === 0) return [];
 
-  const patientIds = Array.from(
-    new Set(journeys.map((r) => r.patient_id)),
-  );
+  const patientIds = Array.from(new Set(journeys.map((r) => r.patient_id)));
   const { data: latestRows, error: latestErr } = await supabase
     .schema("resupply")
     .from("patient_latest_message")
@@ -392,7 +390,7 @@ async function detectNoResponse(
     //   - last inbound message is older than the gap window
     const lastInboundIso =
       latest?.last_message_direction === "inbound"
-        ? latest?.last_message_at ?? null
+        ? (latest?.last_message_at ?? null)
         : null;
     if (lastInboundIso && new Date(lastInboundIso).getTime() > cutoffMs) {
       continue;

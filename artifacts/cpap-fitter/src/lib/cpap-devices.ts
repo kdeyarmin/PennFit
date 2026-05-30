@@ -163,8 +163,7 @@ export function findCpapDeviceByManufacturerModel(
   const md = model.trim().toLowerCase();
   return (
     CPAP_DEVICE_CATALOG.find(
-      (d) =>
-        d.manufacturer.toLowerCase() === m && d.model.toLowerCase() === md,
+      (d) => d.manufacturer.toLowerCase() === m && d.model.toLowerCase() === md,
     ) ?? null
   );
 }

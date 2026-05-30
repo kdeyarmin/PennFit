@@ -101,10 +101,7 @@ export function verifyClinicianShareToken(
   if (!sigBuf) return { valid: false };
 
   const expected = hmacSign(payloadEncoded);
-  if (
-    sigBuf.length !== expected.length ||
-    !timingSafeEqual(sigBuf, expected)
-  ) {
+  if (sigBuf.length !== expected.length || !timingSafeEqual(sigBuf, expected)) {
     return { valid: false };
   }
 
@@ -119,12 +116,7 @@ export function verifyClinicianShareToken(
   }
 
   const p = parsed as SharePayload;
-  if (
-    !p ||
-    typeof p.id !== "string" ||
-    !p.id ||
-    typeof p.e !== "number"
-  ) {
+  if (!p || typeof p.id !== "string" || !p.id || typeof p.e !== "number") {
     return { valid: false };
   }
   if (p.e <= Math.floor(Date.now() / 1000)) return { valid: false };

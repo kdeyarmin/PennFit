@@ -224,8 +224,12 @@ export class RealtimeClient extends EventEmitter {
     // latency. The hard drop is preferable to the OOM-kill that
     // would otherwise take down every concurrent call.
     const MAX_OUTBOUND_BUFFER_BYTES = 256 * 1024;
-    const bufferedAmount = (this.ws as unknown as { bufferedAmount?: number }).bufferedAmount;
-    if (typeof bufferedAmount === "number" && bufferedAmount > MAX_OUTBOUND_BUFFER_BYTES) {
+    const bufferedAmount = (this.ws as unknown as { bufferedAmount?: number })
+      .bufferedAmount;
+    if (
+      typeof bufferedAmount === "number" &&
+      bufferedAmount > MAX_OUTBOUND_BUFFER_BYTES
+    ) {
       // Throttle to at most one error emission per second during a
       // sustained stall. Twilio sends ~50 media frames/sec, so without
       // throttling a 5s stall would flood the consumer with 250 warns

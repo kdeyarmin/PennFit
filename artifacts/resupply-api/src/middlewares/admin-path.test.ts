@@ -90,9 +90,9 @@ describe("isAdminMutationRequest", () => {
 
   it("does NOT match non-admin paths", () => {
     expect(isAdminMutationRequest(req("POST", "/api/orders"))).toBe(false);
-    expect(isAdminMutationRequest(req("POST", "/resupply-api/voice/inbound"))).toBe(
-      false,
-    );
+    expect(
+      isAdminMutationRequest(req("POST", "/resupply-api/voice/inbound")),
+    ).toBe(false);
   });
 });
 
@@ -111,9 +111,9 @@ describe("isShopMutationRequest", () => {
   it.each(["GET", "HEAD", "OPTIONS"])(
     "returns false for safe method %s on a shop path",
     (method) => {
-      expect(isShopMutationRequest(req(method, "/api/shop/me/cart-snapshot"))).toBe(
-        false,
-      );
+      expect(
+        isShopMutationRequest(req(method, "/api/shop/me/cart-snapshot")),
+      ).toBe(false);
     },
   );
 
@@ -154,9 +154,9 @@ describe("isShopMutationRequest", () => {
 
   it("does NOT match admin or webhook paths", () => {
     expect(isShopMutationRequest(req("POST", "/api/admin/users"))).toBe(false);
-    expect(isShopMutationRequest(req("POST", "/resupply-api/voice/inbound"))).toBe(
-      false,
-    );
+    expect(
+      isShopMutationRequest(req("POST", "/resupply-api/voice/inbound")),
+    ).toBe(false);
     expect(isShopMutationRequest(req("POST", "/api/orders"))).toBe(false);
   });
 
@@ -164,9 +164,9 @@ describe("isShopMutationRequest", () => {
     // isShopMutationRequest is shop-only; /me coverage lives in
     // isStorefrontSessionMutationRequest. This pins the boundary so a
     // future edit can't silently collapse the two.
-    expect(isShopMutationRequest(req("POST", "/api/me/payments/checkout-session"))).toBe(
-      false,
-    );
+    expect(
+      isShopMutationRequest(req("POST", "/api/me/payments/checkout-session")),
+    ).toBe(false);
   });
 });
 
@@ -222,19 +222,23 @@ describe("isStorefrontSessionMutationRequest", () => {
     ).toBe(true);
   });
 
-  it.each(["/api/men", "/api/membership", "/api/mens-health", "/resupply-api/metrics"])(
-    "does NOT match look-alike prefix %s",
-    (path) => {
-      expect(isStorefrontSessionMutationRequest(req("POST", path))).toBe(false);
-    },
-  );
+  it.each([
+    "/api/men",
+    "/api/membership",
+    "/api/mens-health",
+    "/resupply-api/metrics",
+  ])("does NOT match look-alike prefix %s", (path) => {
+    expect(isStorefrontSessionMutationRequest(req("POST", path))).toBe(false);
+  });
 
   it("does NOT match admin or webhook paths", () => {
-    expect(isStorefrontSessionMutationRequest(req("POST", "/api/admin/users"))).toBe(
-      false,
-    );
     expect(
-      isStorefrontSessionMutationRequest(req("POST", "/resupply-api/voice/inbound")),
+      isStorefrontSessionMutationRequest(req("POST", "/api/admin/users")),
+    ).toBe(false);
+    expect(
+      isStorefrontSessionMutationRequest(
+        req("POST", "/resupply-api/voice/inbound"),
+      ),
     ).toBe(false);
   });
 });

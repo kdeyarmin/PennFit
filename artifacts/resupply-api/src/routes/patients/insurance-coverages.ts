@@ -50,10 +50,7 @@ const baseBody = z.object({
   memberId: z.string().trim().min(1).max(64),
   groupNumber: z.string().trim().max(64).nullable().optional(),
   policyholderName: z.string().trim().max(160).nullable().optional(),
-  policyholderRelationship: z
-    .enum(RELATIONSHIP_VALUES)
-    .nullable()
-    .optional(),
+  policyholderRelationship: z.enum(RELATIONSHIP_VALUES).nullable().optional(),
   effectiveDate: z
     .string()
     .regex(ISO_DATE, "must be YYYY-MM-DD")
@@ -267,7 +264,8 @@ router.patch(
       updates.deductible_met_cents = fields.deductibleMetCents;
     if (fields.oopMaxCents !== undefined)
       updates.oop_max_cents = fields.oopMaxCents;
-    if (fields.copayCents !== undefined) updates.copay_cents = fields.copayCents;
+    if (fields.copayCents !== undefined)
+      updates.copay_cents = fields.copayCents;
     if (fields.cappedRentalStatus !== undefined)
       updates.capped_rental_status = fields.cappedRentalStatus;
     if (fields.notes !== undefined) updates.notes = fields.notes;

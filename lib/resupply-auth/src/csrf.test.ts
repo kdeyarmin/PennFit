@@ -102,7 +102,9 @@ describe("checkCsrf — dynamic PAD (PR change)", () => {
     // length 1. A 64-char string of these is 128 bytes (passes the PAD floor)
     // and must be treated as equal to itself.
     const token = "\u00e9".repeat(64); // 64 chars, 128 bytes
-    expect(checkCsrf(makeReq({ cookieValue: token, headerValue: token }))).toEqual({
+    expect(
+      checkCsrf(makeReq({ cookieValue: token, headerValue: token })),
+    ).toEqual({
       ok: true,
     });
   });
@@ -122,7 +124,9 @@ describe("checkCsrf — dynamic PAD (PR change)", () => {
     // Ensures the dynamic PAD floor of 128 doesn't break the common-case
     // short-token path that the original tests already validated.
     expect(
-      checkCsrf(makeReq({ cookieValue: "short-token-1", headerValue: "short-token-2" })),
+      checkCsrf(
+        makeReq({ cookieValue: "short-token-1", headerValue: "short-token-2" }),
+      ),
     ).toEqual({ ok: false, reason: "mismatch" });
   });
 });

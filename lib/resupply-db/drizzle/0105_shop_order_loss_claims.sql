@@ -3,7 +3,7 @@
 
 CREATE TABLE IF NOT EXISTS "resupply"."shop_order_loss_claims" (
   "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  "order_id" uuid NOT NULL
+  "order_id" text NOT NULL
     REFERENCES "resupply"."shop_orders"("id") ON DELETE CASCADE,
   "opened_by_user_id" text,
   "status" varchar(32) NOT NULL DEFAULT 'open',

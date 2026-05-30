@@ -40,7 +40,10 @@ import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { runReferralPreflight } from "../../lib/inbound-dispatchers/preflight";
 import { logger } from "../../lib/logger";
-import { createQueueWithDlq, VENDOR_SEND_QUEUE_OPTS } from "../lib/queue-options";
+import {
+  createQueueWithDlq,
+  VENDOR_SEND_QUEUE_OPTS,
+} from "../lib/queue-options";
 
 const JOB = "inbound-referral.preflight";
 const CRON = "*/5 * * * *"; // every 5 minutes
@@ -116,6 +119,22 @@ export async function runInboundReferralPreflightTick(): Promise<PreflightTickSt
 export async function registerInboundReferralPreflightJob(
   boss: PgBoss,
 ): Promise<void> {
+  if (process.env.RESUPPLY_INBOUND_REFERRALS_ENABLED !== "1") {
+    // Inbound referral / EHR integration is not provisioned here — the
+    // inbound_referral_* tables only exist once that integration is set up
+    // (see docs/db-schema-drift-2026-05-29.md). Unschedule any cron a prior
+    // deploy left behind so it stops firing into missing tables, then skip
+    // worker registration. Set RESUPPLY_INBOUND_REFERRALS_ENABLED=1 once the
+    // schema + a partner tenant exist.
+    if (typeof boss.unschedule === "function") {
+      await boss.unschedule(JOB).catch(() => undefined);
+    }
+    logger.info(
+      { event: "inbound_referral_jobs_disabled", job: JOB },
+      `${JOB}: not registered (RESUPPLY_INBOUND_REFERRALS_ENABLED!=1); cleared any stale cron`,
+    );
+    return;
+  }
   await createQueueWithDlq(boss, JOB, VENDOR_SEND_QUEUE_OPTS);
   await boss.work(JOB, async () => {
     try {

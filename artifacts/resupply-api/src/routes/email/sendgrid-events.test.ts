@@ -161,10 +161,10 @@ describe("POST /email/sendgrid-events", () => {
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ ok: true });
     expect(getSupabaseCallCount("messages", "update")).toBe(1);
-    const updates = getSupabaseWritePayloads(
-      "messages",
-      "update",
-    ) as Record<string, unknown>[];
+    const updates = getSupabaseWritePayloads("messages", "update") as Record<
+      string,
+      unknown
+    >[];
     expect(updates[0]?.delivery_status).toBe("delivered");
     // The 'delivered' branch also bumps delivered_at as an ISO string.
     expect(typeof updates[0]?.delivered_at).toBe("string");

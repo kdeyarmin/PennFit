@@ -37,7 +37,8 @@ import {
 
 import { logger } from "../../lib/logger";
 
-type FitterLeadsUpdate = Database["resupply"]["Tables"]["fitter_leads"]["Update"];
+type FitterLeadsUpdate =
+  Database["resupply"]["Tables"]["fitter_leads"]["Update"];
 
 const router: IRouter = Router();
 const clickTrackRateLimiter = rateLimit({
@@ -52,7 +53,6 @@ const unsubscribeRateLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
 });
-
 
 const openTrackingRateLimiter = rateLimit({
   windowMs: 60 * 1000,
@@ -170,10 +170,7 @@ export const SUBJECT_VARIANTS: Record<number, readonly string[]> = {
  *  gets the same variant for the same touch_index, evenly
  *  distributed across the available variants for that touch.
  *  Exported for tests. */
-export function pickSubjectVariant(
-  leadId: string,
-  touchIndex: number,
-): string {
+export function pickSubjectVariant(leadId: string, touchIndex: number): string {
   const variants = SUBJECT_VARIANTS[touchIndex] ?? ["A"];
   if (variants.length === 1) return variants[0];
   // Deterministic hash. SHA-256 → mod variants.length. Using the
@@ -239,7 +236,11 @@ function rateLimited(key: string): boolean {
   return false;
 }
 
-function callerIp(req: { ip?: string; socket?: { remoteAddress?: string }; headers: Record<string, unknown> }): string {
+function callerIp(req: {
+  ip?: string;
+  socket?: { remoteAddress?: string };
+  headers: Record<string, unknown>;
+}): string {
   return (
     req.ip ||
     req.socket?.remoteAddress ||
@@ -441,7 +442,10 @@ function getLinkHmacKey(): Buffer {
 
 /** Build an unsubscribe token bound to a lead_id. Exported so the
  *  dispatcher worker can mint one per outbound email. */
-export function signUnsubscribeToken(leadId: string, now: Date = new Date()): string {
+export function signUnsubscribeToken(
+  leadId: string,
+  now: Date = new Date(),
+): string {
   const expiresSec = Math.floor((now.getTime() + UNSUBSCRIBE_TTL_MS) / 1000);
   const payload = `${leadId}|${expiresSec}`;
   const payloadEncoded = base64urlEncode(Buffer.from(payload, "utf8"));
@@ -657,7 +661,12 @@ async function recordOpenEvent(
   if (writeErr) throw writeErr;
   if (shouldFlipHot) {
     logger.info(
-      { event: "fitter_lead.hot_lead_flipped", leadId, score: nextScore, touchIndex },
+      {
+        event: "fitter_lead.hot_lead_flipped",
+        leadId,
+        score: nextScore,
+        touchIndex,
+      },
       "shop/track/o: lead crossed hot-lead threshold",
     );
   }
@@ -875,10 +884,7 @@ router.get("/shop/track/c", clickTrackRateLimiter, async (req, res) => {
     verify.variantKey,
     submitterIp,
   ).catch((err) => {
-    logger.warn(
-      { err, leadId: verify.leadId },
-      "shop/track/c: record failed",
-    );
+    logger.warn({ err, leadId: verify.leadId }, "shop/track/c: record failed");
   });
 
   res.redirect(302, dest);
@@ -1023,68 +1029,70 @@ function verifyUnsubscribeToken(
   if (sepIdx <= 0) return { valid: false, reason: "malformed" };
   const leadId = payload.slice(0, sepIdx);
   const expiresSec = Number.parseInt(payload.slice(sepIdx + 1), 10);
-  if (!Number.isFinite(expiresSec)) return { valid: false, reason: "malformed" };
+  if (!Number.isFinite(expiresSec))
+    return { valid: false, reason: "malformed" };
   if (expiresSec * 1000 <= now.getTime()) {
     return { valid: false, reason: "expired" };
   }
   return { valid: true, leadId };
 }
 
-router.get("/shop/fitter-leads/unsubscribe", unsubscribeRateLimiter, async (req, res) => {
-  // Rate limit BEFORE the HMAC verify. The verify is constant-time
-  // so it doesn't leak per-attempt info, but capping by IP closes
-  // the CodeQL "authorization without rate limiting" finding and
-  // keeps an enumeration attacker out of the audit log.
-  const ipKey = `${callerIp(req)}:fitter-unsubscribe`;
-  if (rateLimited(ipKey)) {
-    res.status(429).type("text/html").send(unsubscribeHtml("rate_limited"));
-    return;
-  }
-  const token = typeof req.query.t === "string" ? req.query.t : "";
-  if (!token) {
-    res.status(400).type("text/html").send(unsubscribeHtml("invalid"));
-    return;
-  }
+router.get(
+  "/shop/fitter-leads/unsubscribe",
+  unsubscribeRateLimiter,
+  async (req, res) => {
+    // Rate limit BEFORE the HMAC verify. The verify is constant-time
+    // so it doesn't leak per-attempt info, but capping by IP closes
+    // the CodeQL "authorization without rate limiting" finding and
+    // keeps an enumeration attacker out of the audit log.
+    const ipKey = `${callerIp(req)}:fitter-unsubscribe`;
+    if (rateLimited(ipKey)) {
+      res.status(429).type("text/html").send(unsubscribeHtml("rate_limited"));
+      return;
+    }
+    const token = typeof req.query.t === "string" ? req.query.t : "";
+    if (!token) {
+      res.status(400).type("text/html").send(unsubscribeHtml("invalid"));
+      return;
+    }
 
-  let verify: UnsubscribeVerifyResult;
-  try {
-    verify = verifyUnsubscribeToken(token);
-  } catch (err) {
-    // RESUPPLY_LINK_HMAC_KEY missing → service misconfig. Return a
-    // friendly page rather than the raw error.
-    logger.warn(
-      { err },
-      "shop/fitter-leads/unsubscribe: verify threw",
-    );
-    res.status(500).type("text/html").send(unsubscribeHtml("error"));
-    return;
-  }
-  if (!verify.valid) {
-    res.status(400).type("text/html").send(unsubscribeHtml("invalid"));
-    return;
-  }
+    let verify: UnsubscribeVerifyResult;
+    try {
+      verify = verifyUnsubscribeToken(token);
+    } catch (err) {
+      // RESUPPLY_LINK_HMAC_KEY missing → service misconfig. Return a
+      // friendly page rather than the raw error.
+      logger.warn({ err }, "shop/fitter-leads/unsubscribe: verify threw");
+      res.status(500).type("text/html").send(unsubscribeHtml("error"));
+      return;
+    }
+    if (!verify.valid) {
+      res.status(400).type("text/html").send(unsubscribeHtml("invalid"));
+      return;
+    }
 
-  try {
-    const supabase = getSupabaseServiceRoleClient();
-    const { error } = await supabase
-      .schema("resupply")
-      .from("fitter_leads")
-      .update({
-        journey_stage: "unsubscribed",
-        unsubscribed_at: new Date().toISOString(),
-        next_campaign_touch_at: null,
-      })
-      .eq("id", verify.leadId);
-    if (error) throw error;
-    res.type("text/html").send(unsubscribeHtml("ok"));
-  } catch (err) {
-    logger.warn(
-      { err, leadId: verify.leadId },
-      "shop/fitter-leads/unsubscribe: db update failed",
-    );
-    res.status(500).type("text/html").send(unsubscribeHtml("error"));
-  }
-});
+    try {
+      const supabase = getSupabaseServiceRoleClient();
+      const { error } = await supabase
+        .schema("resupply")
+        .from("fitter_leads")
+        .update({
+          journey_stage: "unsubscribed",
+          unsubscribed_at: new Date().toISOString(),
+          next_campaign_touch_at: null,
+        })
+        .eq("id", verify.leadId);
+      if (error) throw error;
+      res.type("text/html").send(unsubscribeHtml("ok"));
+    } catch (err) {
+      logger.warn(
+        { err, leadId: verify.leadId },
+        "shop/fitter-leads/unsubscribe: db update failed",
+      );
+      res.status(500).type("text/html").send(unsubscribeHtml("error"));
+    }
+  },
+);
 
 function unsubscribeHtml(
   state: "ok" | "invalid" | "error" | "rate_limited",

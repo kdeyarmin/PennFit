@@ -69,10 +69,7 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn(
-        { err },
-        "insurance_claim.predict_denial audit write failed",
-      );
+      logger.warn({ err }, "insurance_claim.predict_denial audit write failed");
     });
     res.json({
       probability: score.probability,

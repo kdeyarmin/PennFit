@@ -180,7 +180,9 @@ describe("use-document-title — meta tag lifecycle (getOrCreateMeta helper)", (
   });
 
   it("getOrCreateMeta only creates an element if none is found by the selector", () => {
-    expect(SRC).toContain("document.head.querySelector<HTMLMetaElement>(selector)");
+    expect(SRC).toContain(
+      "document.head.querySelector<HTMLMetaElement>(selector)",
+    );
   });
 
   it("tracks metaUpdates array for cleanup", () => {
@@ -230,7 +232,9 @@ const CANONICAL_ORIGIN = "https://pennpaps.com";
 function buildCanonicalHref(basePath: string, rawPath: string): string {
   const base = basePath.replace(/\/$/, ""); // strip trailing slash
   const trimmedPath =
-    base && rawPath.startsWith(base) ? rawPath.slice(base.length) || "/" : rawPath;
+    base && rawPath.startsWith(base)
+      ? rawPath.slice(base.length) || "/"
+      : rawPath;
   const canonicalPath =
     trimmedPath.length > 1 ? trimmedPath.replace(/\/+$/, "") : "/";
   return `${CANONICAL_ORIGIN}${canonicalPath}`;
@@ -238,9 +242,9 @@ function buildCanonicalHref(basePath: string, rawPath: string): string {
 
 describe("canonical path computation — basePath stripping", () => {
   it("strips the basePath prefix when the pathname starts with it", () => {
-    expect(buildCanonicalHref("/cpap-fitter", "/cpap-fitter/learn/cpap-masks")).toBe(
-      "https://pennpaps.com/learn/cpap-masks",
-    );
+    expect(
+      buildCanonicalHref("/cpap-fitter", "/cpap-fitter/learn/cpap-masks"),
+    ).toBe("https://pennpaps.com/learn/cpap-masks");
   });
 
   it("does NOT strip when the pathname does not start with basePath", () => {
@@ -275,7 +279,9 @@ describe("canonical path computation — trailing slash normalisation", () => {
   });
 
   it("strips multiple consecutive trailing slashes", () => {
-    expect(buildCanonicalHref("", "/shop///")).toBe("https://pennpaps.com/shop");
+    expect(buildCanonicalHref("", "/shop///")).toBe(
+      "https://pennpaps.com/shop",
+    );
   });
 
   it("preserves the root '/' — does not produce an empty pathname", () => {
@@ -296,9 +302,9 @@ describe("canonical path computation — trailing slash normalisation", () => {
 
 describe("canonical path computation — edge cases", () => {
   it("handles a deeply nested path without mangling intermediate slashes", () => {
-    expect(buildCanonicalHref("/cpap-fitter", "/cpap-fitter/admin/billing/ai-queue")).toBe(
-      "https://pennpaps.com/admin/billing/ai-queue",
-    );
+    expect(
+      buildCanonicalHref("/cpap-fitter", "/cpap-fitter/admin/billing/ai-queue"),
+    ).toBe("https://pennpaps.com/admin/billing/ai-queue");
   });
 
   it("handles a path that is exactly the basePath plus trailing slash", () => {

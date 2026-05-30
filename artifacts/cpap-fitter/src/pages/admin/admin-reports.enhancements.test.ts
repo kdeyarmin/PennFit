@@ -15,10 +15,7 @@ import { describe, expect, it } from "vitest";
 import { DATE_PRESETS } from "./admin-reports-presets";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const SRC = readFileSync(
-  path.join(__dirname, "admin-reports.tsx"),
-  "utf8",
-);
+const SRC = readFileSync(path.join(__dirname, "admin-reports.tsx"), "utf8");
 
 // ─── Date presets ──────────────────────────────────────────────────────
 
@@ -96,7 +93,9 @@ describe("admin-reports — DATE_PRESETS", () => {
 
 describe("admin-reports — compare-to-prior wiring", () => {
   it("adds the ?compare=true query param when the option is on", () => {
-    expect(SRC).toMatch(/if\s*\(options\.compare\)\s*params\.set\("compare",\s*"true"\)/);
+    expect(SRC).toMatch(
+      /if\s*\(options\.compare\)\s*params\.set\("compare",\s*"true"\)/,
+    );
   });
 
   it("only revenue-summary.pdf opts into the compare badge", () => {
@@ -181,7 +180,9 @@ describe("admin-reports — SavedPresetsSection wiring", () => {
     // semantics ("always last month") stay current. When
     // 'absolute', it copies the pinned dates directly.
     expect(SRC).toMatch(/p\.rangeKind\s*===\s*"preset"/);
-    expect(SRC).toMatch(/DATE_PRESETS\.find\(\s*\(entry\)\s*=>\s*entry\.testId\s*===\s*p\.rangePreset/);
+    expect(SRC).toMatch(
+      /DATE_PRESETS\.find\(\s*\(entry\)\s*=>\s*entry\.testId\s*===\s*p\.rangePreset/,
+    );
   });
 
   it("New-preset modal posts via createReportPreset", () => {

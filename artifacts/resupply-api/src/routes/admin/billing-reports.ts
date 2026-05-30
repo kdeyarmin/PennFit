@@ -38,12 +38,17 @@ router.get("/admin/billing/aging-report", requireAdmin, async (_req, res) => {
   const { data, error } = await supabase
     .schema("resupply")
     .from("insurance_claims")
-    .select("id, payer_name, status, total_billed_cents, submitted_at, date_of_service")
+    .select(
+      "id, payer_name, status, total_billed_cents, submitted_at, date_of_service",
+    )
     .not("status", "in", "(paid,closed)")
     .limit(5000);
   if (error) throw error;
   const now = Date.now();
-  const buckets: Record<AgingBucket, { claimCount: number; billedCents: number }> = {
+  const buckets: Record<
+    AgingBucket,
+    { claimCount: number; billedCents: number }
+  > = {
     "0_30": { claimCount: 0, billedCents: 0 },
     "31_60": { claimCount: 0, billedCents: 0 },
     "61_90": { claimCount: 0, billedCents: 0 },
@@ -75,18 +80,14 @@ router.get("/admin/billing/aging-report", requireAdmin, async (_req, res) => {
     pay[bucket].claimCount++;
     pay[bucket].billedCents += row.total_billed_cents ?? 0;
   }
-  const totalOpenBilledCents = (Object.values(buckets) as { billedCents: number }[]).reduce(
-    (s, b) => s + b.billedCents,
-    0,
-  );
+  const totalOpenBilledCents = (
+    Object.values(buckets) as { billedCents: number }[]
+  ).reduce((s, b) => s + b.billedCents, 0);
   res.json({
     overall: buckets,
     perPayer: [...perPayer.entries()]
       .map(([payerName, buckets]) => ({ payerName, buckets }))
-      .sort(
-        (a, b) =>
-          totalBilled(b.buckets) - totalBilled(a.buckets),
-      ),
+      .sort((a, b) => totalBilled(b.buckets) - totalBilled(a.buckets)),
     totalOpenBilledCents,
     totalOpenClaimCount: (data ?? []).length,
     generatedAt: new Date().toISOString(),
@@ -109,7 +110,10 @@ router.get("/admin/billing/dso-by-payer", requireAdmin, async (_req, res) => {
     .not("paid_at", "is", null)
     .limit(5000);
   if (error) throw error;
-  const perPayer = new Map<string, { sumDays: number; sumPaidCents: number; count: number }>();
+  const perPayer = new Map<
+    string,
+    { sumDays: number; sumPaidCents: number; count: number }
+  >();
   for (const row of data ?? []) {
     if (!row.submitted_at || !row.paid_at) continue;
     const days =
@@ -117,7 +121,11 @@ router.get("/admin/billing/dso-by-payer", requireAdmin, async (_req, res) => {
       (24 * 3600 * 1000);
     if (!Number.isFinite(days) || days < 0) continue;
     const payer = row.payer_name || "unknown";
-    const cur = perPayer.get(payer) ?? { sumDays: 0, sumPaidCents: 0, count: 0 };
+    const cur = perPayer.get(payer) ?? {
+      sumDays: 0,
+      sumPaidCents: 0,
+      count: 0,
+    };
     cur.sumDays += days;
     cur.sumPaidCents += row.total_paid_cents ?? 0;
     cur.count += 1;
@@ -131,7 +139,11 @@ router.get("/admin/billing/dso-by-payer", requireAdmin, async (_req, res) => {
       averageDaysToPay: agg.count > 0 ? agg.sumDays / agg.count : null,
     }))
     .sort((a, b) => (b.totalPaidCents ?? 0) - (a.totalPaidCents ?? 0));
-  res.json({ payers: rows, windowDays: 180, generatedAt: new Date().toISOString() });
+  res.json({
+    payers: rows,
+    windowDays: 180,
+    generatedAt: new Date().toISOString(),
+  });
 });
 
 router.get("/admin/billing/denial-rate", requireAdmin, async (_req, res) => {
@@ -175,7 +187,8 @@ router.get("/admin/billing/denial-rate", requireAdmin, async (_req, res) => {
     overall: {
       decisions: totals.decisions,
       denials: totals.denials,
-      denialRate: totals.decisions > 0 ? totals.denials / totals.decisions : null,
+      denialRate:
+        totals.decisions > 0 ? totals.denials / totals.decisions : null,
     },
     perPayer: perPayerRows
       .map((agg) => ({

@@ -43,7 +43,9 @@ describe("parseClaimResponse", () => {
         },
       ],
       error: [
-        { code: { coding: [{ display: "Missing sleep study documentation" }] } },
+        {
+          code: { coding: [{ display: "Missing sleep study documentation" }] },
+        },
       ],
     });
     expect(r.decision).toBe("denied");
@@ -136,7 +138,10 @@ describe("parseClaimResponse", () => {
       item: [
         {
           adjudication: [
-            { category: { coding: [{ code: "submitted" }] }, amount: { value: 249.99 } },
+            {
+              category: { coding: [{ code: "submitted" }] },
+              amount: { value: 249.99 },
+            },
             { category: { coding: [{ code: "denied" }] } },
           ],
         },
@@ -152,7 +157,10 @@ describe("parseClaimResponse", () => {
       item: [
         {
           adjudication: [
-            { category: { coding: [{ code: "submitted" }] }, amount: { value: 100 } },
+            {
+              category: { coding: [{ code: "submitted" }] },
+              amount: { value: 100 },
+            },
           ],
         },
       ],

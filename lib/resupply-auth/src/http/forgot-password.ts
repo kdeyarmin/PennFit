@@ -162,8 +162,7 @@ export function makeForgotPasswordHandler(
         metadata: {
           // Avoid logging emailErr.message — it may contain the recipient
           // address or other PII if the mail provider includes it.
-          errorName:
-            emailErr instanceof Error ? emailErr.name : "UnknownError",
+          errorName: emailErr instanceof Error ? emailErr.name : "UnknownError",
           errorType: typeof emailErr,
         },
       });

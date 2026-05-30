@@ -29,16 +29,23 @@ const STUB_SECRET_BASE32 = "JBSWY3DPEHPK3PXP"; // well-known test secret
 
 interface RecoveryHarness {
   app: Express;
-  audit: AuditWriter & { events: Array<{ action: string; metadata?: Record<string, unknown> }> };
+  audit: AuditWriter & {
+    events: Array<{ action: string; metadata?: Record<string, unknown> }>;
+  };
   challengeToken: string;
   codeHash: string;
   userId: string;
 }
 
-function buildRecoveryHarness(mfaOverrides: Partial<MfaProbe> = {}): RecoveryHarness {
+function buildRecoveryHarness(
+  mfaOverrides: Partial<MfaProbe> = {},
+): RecoveryHarness {
   const repo = makeMemoryRepo();
   const userId = "u_alice";
-  const auditEvents: Array<{ action: string; metadata?: Record<string, unknown> }> = [];
+  const auditEvents: Array<{
+    action: string;
+    metadata?: Record<string, unknown>;
+  }> = [];
   const audit: AuditWriter & { events: typeof auditEvents } = Object.assign(
     (event: { action: string; metadata?: Record<string, unknown> }) => {
       auditEvents.push(event);
@@ -277,7 +284,10 @@ describe("verify-sign-in-mfa: legacy path (findRecoveryCodeMatch + markRecoveryC
 
     expect(res.status).toBe(200);
     expect(findSpy).toHaveBeenCalledOnce();
-    expect(findSpy).toHaveBeenCalledWith(h.userId, hashRecoveryCode("ABCDEFGH"));
+    expect(findSpy).toHaveBeenCalledWith(
+      h.userId,
+      hashRecoveryCode("ABCDEFGH"),
+    );
     expect(markSpy).toHaveBeenCalledOnce();
     expect(markSpy).toHaveBeenCalledWith("row-legacy", expect.anything());
   });

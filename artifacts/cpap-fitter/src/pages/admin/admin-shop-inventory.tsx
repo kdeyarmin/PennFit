@@ -723,188 +723,191 @@ export function AdminShopInventoryPage() {
             }}
           />
           <div style={{ overflowX: "auto" }}>
-          <table
-            style={{
-              width: "100%",
-              minWidth: 720,
-              borderCollapse: "collapse",
-              background: "#ffffff",
-              border: "1px solid #e5e7eb",
-              borderRadius: 6,
-              overflow: "hidden",
-            }}
-          >
-            <thead>
-              <tr style={{ background: "#f9fafb", textAlign: "left" }}>
-                <th
-                  style={{
-                    padding: "10px 12px",
-                    fontSize: 12,
-                    fontWeight: 600,
-                    color: "hsl(var(--ink-2))",
-                    width: 36,
-                  }}
-                >
-                  <input
-                    type="checkbox"
-                    aria-label="Select all"
-                    data-testid="inventory-select-all"
-                    checked={allVisibleSelected}
-                    ref={(el) => {
-                      if (el)
-                        el.indeterminate =
-                          !allVisibleSelected && someVisibleSelected;
-                    }}
-                    onChange={(e) => toggleAll(e.target.checked)}
-                  />
-                </th>
-                <th
-                  style={{
-                    padding: "10px 12px",
-                    fontSize: 12,
-                    fontWeight: 600,
-                    color: "hsl(var(--ink-2))",
-                  }}
-                >
-                  Product
-                </th>
-                <th
-                  style={{
-                    padding: "10px 12px",
-                    fontSize: 12,
-                    fontWeight: 600,
-                    color: "hsl(var(--ink-2))",
-                  }}
-                >
-                  Price
-                </th>
-                <th
-                  style={{
-                    padding: "10px 12px",
-                    fontSize: 12,
-                    fontWeight: 600,
-                    color: "hsl(var(--ink-2))",
-                  }}
-                >
-                  Stock
-                </th>
-                <th
-                  style={{
-                    padding: "10px 12px",
-                    fontSize: 12,
-                    fontWeight: 600,
-                    color: "hsl(var(--ink-2))",
-                  }}
-                >
-                  Edit stock
-                </th>
-                <th
-                  style={{
-                    padding: "10px 12px",
-                    fontSize: 12,
-                    fontWeight: 600,
-                    color: "hsl(var(--ink-2))",
-                  }}
-                >
-                  Low-stock threshold
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.products.map((p) => {
-                const checked = selectedIds.has(p.id);
-                return (
-                  <tr
-                    key={p.id}
+            <table
+              style={{
+                width: "100%",
+                minWidth: 720,
+                borderCollapse: "collapse",
+                background: "#ffffff",
+                border: "1px solid #e5e7eb",
+                borderRadius: 6,
+                overflow: "hidden",
+              }}
+            >
+              <thead>
+                <tr style={{ background: "#f9fafb", textAlign: "left" }}>
+                  <th
                     style={{
-                      borderTop: "1px solid #e5e7eb",
-                      background: checked ? "#f0f9ff" : "transparent",
+                      padding: "10px 12px",
+                      fontSize: 12,
+                      fontWeight: 600,
+                      color: "hsl(var(--ink-2))",
+                      width: 36,
                     }}
-                    data-testid={`inventory-row-${p.id}`}
                   >
-                    <td style={{ padding: "12px", verticalAlign: "top" }}>
-                      <input
-                        type="checkbox"
-                        aria-label={`Select ${p.name}`}
-                        data-testid={`inventory-select-${p.id}`}
-                        checked={checked}
-                        onChange={(e) => toggleRow(p.id, e.target.checked)}
-                      />
-                    </td>
-                    <td style={{ padding: "12px", verticalAlign: "top" }}>
-                      <div
-                        style={{ fontWeight: 500, color: "hsl(var(--ink-1))" }}
-                      >
-                        {p.name}
-                      </div>
-                      <div
-                        style={{
-                          fontSize: 12,
-                          color: "hsl(var(--ink-3))",
-                          marginTop: 2,
-                        }}
-                      >
-                        {p.category} · {p.id}
-                      </div>
-                    </td>
-                    <td style={{ padding: "12px", verticalAlign: "top" }}>
-                      {formatPrice(p.priceCents, p.currency)}
-                    </td>
-                    <td style={{ padding: "12px", verticalAlign: "top" }}>
-                      <StockBadge
-                        count={p.stockCount}
-                        threshold={p.lowStockThreshold}
-                      />
-                    </td>
-                    <td style={{ padding: "12px", verticalAlign: "top" }}>
-                      <StockCell
-                        product={p}
-                        onSaved={(next) => {
-                          const prev =
-                            queryClient.getQueryData<ListShopInventoryResponse>(
-                              QUERY_KEY,
-                            );
-                          if (prev) {
-                            queryClient.setQueryData<ListShopInventoryResponse>(
-                              QUERY_KEY,
-                              {
-                                ...prev,
-                                products: prev.products.map((row) =>
-                                  row.id === next.id ? next : row,
-                                ),
-                              },
-                            );
-                          }
-                        }}
-                      />
-                    </td>
-                    <td style={{ padding: "12px", verticalAlign: "top" }}>
-                      <ThresholdCell
-                        product={p}
-                        onSaved={(next) => {
-                          const prev =
-                            queryClient.getQueryData<ListShopInventoryResponse>(
-                              QUERY_KEY,
-                            );
-                          if (prev) {
-                            queryClient.setQueryData<ListShopInventoryResponse>(
-                              QUERY_KEY,
-                              {
-                                ...prev,
-                                products: prev.products.map((row) =>
-                                  row.id === next.id ? next : row,
-                                ),
-                              },
-                            );
-                          }
-                        }}
-                      />
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                    <input
+                      type="checkbox"
+                      aria-label="Select all"
+                      data-testid="inventory-select-all"
+                      checked={allVisibleSelected}
+                      ref={(el) => {
+                        if (el)
+                          el.indeterminate =
+                            !allVisibleSelected && someVisibleSelected;
+                      }}
+                      onChange={(e) => toggleAll(e.target.checked)}
+                    />
+                  </th>
+                  <th
+                    style={{
+                      padding: "10px 12px",
+                      fontSize: 12,
+                      fontWeight: 600,
+                      color: "hsl(var(--ink-2))",
+                    }}
+                  >
+                    Product
+                  </th>
+                  <th
+                    style={{
+                      padding: "10px 12px",
+                      fontSize: 12,
+                      fontWeight: 600,
+                      color: "hsl(var(--ink-2))",
+                    }}
+                  >
+                    Price
+                  </th>
+                  <th
+                    style={{
+                      padding: "10px 12px",
+                      fontSize: 12,
+                      fontWeight: 600,
+                      color: "hsl(var(--ink-2))",
+                    }}
+                  >
+                    Stock
+                  </th>
+                  <th
+                    style={{
+                      padding: "10px 12px",
+                      fontSize: 12,
+                      fontWeight: 600,
+                      color: "hsl(var(--ink-2))",
+                    }}
+                  >
+                    Edit stock
+                  </th>
+                  <th
+                    style={{
+                      padding: "10px 12px",
+                      fontSize: 12,
+                      fontWeight: 600,
+                      color: "hsl(var(--ink-2))",
+                    }}
+                  >
+                    Low-stock threshold
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.products.map((p) => {
+                  const checked = selectedIds.has(p.id);
+                  return (
+                    <tr
+                      key={p.id}
+                      style={{
+                        borderTop: "1px solid #e5e7eb",
+                        background: checked ? "#f0f9ff" : "transparent",
+                      }}
+                      data-testid={`inventory-row-${p.id}`}
+                    >
+                      <td style={{ padding: "12px", verticalAlign: "top" }}>
+                        <input
+                          type="checkbox"
+                          aria-label={`Select ${p.name}`}
+                          data-testid={`inventory-select-${p.id}`}
+                          checked={checked}
+                          onChange={(e) => toggleRow(p.id, e.target.checked)}
+                        />
+                      </td>
+                      <td style={{ padding: "12px", verticalAlign: "top" }}>
+                        <div
+                          style={{
+                            fontWeight: 500,
+                            color: "hsl(var(--ink-1))",
+                          }}
+                        >
+                          {p.name}
+                        </div>
+                        <div
+                          style={{
+                            fontSize: 12,
+                            color: "hsl(var(--ink-3))",
+                            marginTop: 2,
+                          }}
+                        >
+                          {p.category} · {p.id}
+                        </div>
+                      </td>
+                      <td style={{ padding: "12px", verticalAlign: "top" }}>
+                        {formatPrice(p.priceCents, p.currency)}
+                      </td>
+                      <td style={{ padding: "12px", verticalAlign: "top" }}>
+                        <StockBadge
+                          count={p.stockCount}
+                          threshold={p.lowStockThreshold}
+                        />
+                      </td>
+                      <td style={{ padding: "12px", verticalAlign: "top" }}>
+                        <StockCell
+                          product={p}
+                          onSaved={(next) => {
+                            const prev =
+                              queryClient.getQueryData<ListShopInventoryResponse>(
+                                QUERY_KEY,
+                              );
+                            if (prev) {
+                              queryClient.setQueryData<ListShopInventoryResponse>(
+                                QUERY_KEY,
+                                {
+                                  ...prev,
+                                  products: prev.products.map((row) =>
+                                    row.id === next.id ? next : row,
+                                  ),
+                                },
+                              );
+                            }
+                          }}
+                        />
+                      </td>
+                      <td style={{ padding: "12px", verticalAlign: "top" }}>
+                        <ThresholdCell
+                          product={p}
+                          onSaved={(next) => {
+                            const prev =
+                              queryClient.getQueryData<ListShopInventoryResponse>(
+                                QUERY_KEY,
+                              );
+                            if (prev) {
+                              queryClient.setQueryData<ListShopInventoryResponse>(
+                                QUERY_KEY,
+                                {
+                                  ...prev,
+                                  products: prev.products.map((row) =>
+                                    row.id === next.id ? next : row,
+                                  ),
+                                },
+                              );
+                            }
+                          }}
+                        />
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         </>
       )}

@@ -58,7 +58,7 @@ vi.mock("../../lib/observability", () => ({
 import shopReturnsRouter from "./shop-returns";
 
 const RETURN_ID = "aaaa1111-0000-4000-8000-000000000001";
-const ORDER_ID  = "bbbb2222-0000-4000-8000-000000000001";
+const ORDER_ID = "bbbb2222-0000-4000-8000-000000000001";
 
 function makeApp(): Express {
   const app = express();
@@ -105,7 +105,9 @@ function receivedReturnRow(
   };
 }
 
-function shopOrderRow(over: Record<string, unknown> = {}): Record<string, unknown> {
+function shopOrderRow(
+  over: Record<string, unknown> = {},
+): Record<string, unknown> {
   return {
     stripe_payment_intent_id: "pi_test_1",
     amount_total_cents: 4998,
@@ -345,8 +347,7 @@ describe("POST /admin/shop/returns/:id/refund — handler logic", () => {
       data: receivedReturnRow({
         refund_failure_count: 2,
         refund_last_failure_at: "2026-05-22T20:00:00Z",
-        refund_last_failure_reason:
-          "charge_already_refunded: prior attempt",
+        refund_last_failure_reason: "charge_already_refunded: prior attempt",
       }),
     });
     stageSupabaseResponse("shop_orders", "select", {

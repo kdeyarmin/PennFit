@@ -464,7 +464,9 @@ function InviteCard() {
   });
 
   const initialPasswordTooShort =
-    setPasswordMode && initialPassword.length > 0 && initialPassword.length < 12;
+    setPasswordMode &&
+    initialPassword.length > 0 &&
+    initialPassword.length < 12;
   const submitDisabled =
     invite.isPending ||
     !email ||
@@ -583,10 +585,9 @@ function InviteCard() {
               </div>
             )}
             <div className="text-[11px] text-slate-500 mt-1">
-              They&apos;ll be able to change it after signing in.
-              This temporary password expires in 7 days if they
-              never sign in — you&apos;ll need to re-invite them after
-              that.
+              They&apos;ll be able to change it after signing in. This temporary
+              password expires in 7 days if they never sign in — you&apos;ll
+              need to re-invite them after that.
             </div>
           </div>
         )}

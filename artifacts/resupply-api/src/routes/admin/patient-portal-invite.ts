@@ -97,15 +97,15 @@ const inviteBody = z
     phoneE164: z
       .string()
       .trim()
-      .regex(/^\+1\d{10}$/, "Must be E.164 format starting with +1, e.g. +12155551234")
+      .regex(
+        /^\+1\d{10}$/,
+        "Must be E.164 format starting with +1, e.g. +12155551234",
+      )
       .optional()
       .nullable(),
     address: addressSchema.optional().nullable(),
     insurancePayer: z.string().trim().min(1).max(200).optional().nullable(),
-    channelPreference: z
-      .enum(["sms", "email", "voice"])
-      .optional()
-      .nullable(),
+    channelPreference: z.enum(["sms", "email", "voice"]).optional().nullable(),
   })
   .strict();
 
@@ -195,7 +195,8 @@ router.post(
       fieldsUpdatedKeys.push("phoneE164");
     }
     if ("address" in bodyParsed.data) {
-      fieldUpdates.address = (bodyParsed.data.address ?? null) as unknown as Json;
+      fieldUpdates.address = (bodyParsed.data.address ??
+        null) as unknown as Json;
       fieldsUpdatedKeys.push("address");
     }
     if ("insurancePayer" in bodyParsed.data) {
@@ -301,7 +302,9 @@ router.post(
     // Issue a 7-day password_reset token. The hash column is bytea —
     // PostgREST round-trips bytea as `\x<hex>` JSON strings.
     const token = issueToken();
-    const expiresAtIso = new Date(Date.now() + INVITE_TOKEN_TTL_MS).toISOString();
+    const expiresAtIso = new Date(
+      Date.now() + INVITE_TOKEN_TTL_MS,
+    ).toISOString();
     const { error: tokenErr } = await supabase
       .schema("resupply_auth")
       .from("email_tokens")
@@ -421,7 +424,9 @@ router.post(
     }
 
     const token = issueToken();
-    const expiresAtIso = new Date(Date.now() + INVITE_TOKEN_TTL_MS).toISOString();
+    const expiresAtIso = new Date(
+      Date.now() + INVITE_TOKEN_TTL_MS,
+    ).toISOString();
     const { error: tokenErr } = await supabase
       .schema("resupply_auth")
       .from("email_tokens")
@@ -523,7 +528,9 @@ router.delete(
       return;
     }
     if (!patient.portal_auth_user_id) {
-      res.status(200).json({ portalStatus: "not_invited", alreadyRevoked: true });
+      res
+        .status(200)
+        .json({ portalStatus: "not_invited", alreadyRevoked: true });
       return;
     }
 
