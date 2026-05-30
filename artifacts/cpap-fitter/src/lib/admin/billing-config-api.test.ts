@@ -10,6 +10,7 @@
 //   fetchDenialCodes           — GET /admin/denial-codes
 //   fetchClaimTemplates        — GET /admin/claim-templates
 
+import { ApiError } from "@workspace/api-client-react/admin";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { Mock } from "vitest";
 
@@ -24,6 +25,23 @@ import {
 
 const ORIGINAL_FETCH = globalThis.fetch;
 let fetchMock: Mock;
+
+// Build a non-ok Response-like mock. The fetch wrappers read the body
+// via `.text()` to attach it to the thrown ApiError, so a stub needs a
+// `text()` method even when the body is empty.
+function errorResponse(
+  status: number,
+  statusText: string,
+  body = "",
+): Partial<Response> {
+  return {
+    ok: false,
+    status,
+    statusText,
+    headers: new Headers(),
+    text: async () => body,
+  };
+}
 
 beforeEach(() => {
   fetchMock = vi.fn();
@@ -122,24 +140,20 @@ describe("getJSON shared behaviour (via fetchPayerProfiles)", () => {
     expect(headers["Accept"]).toBe("application/json");
   });
 
-  test("throws Error with path and status on non-OK response", async () => {
-    fetchMock.mockResolvedValue({
-      ok: false,
-      status: 403,
-      statusText: "Forbidden",
-    });
+  test("throws ApiError carrying the status on non-OK response", async () => {
+    fetchMock.mockResolvedValue(errorResponse(403, "Forbidden"));
 
     await expect(fetchPayerProfiles()).rejects.toThrow("403");
+    await expect(fetchPayerProfiles()).rejects.toBeInstanceOf(ApiError);
   });
 
-  test("error message includes the path", async () => {
-    fetchMock.mockResolvedValue({
-      ok: false,
-      status: 404,
-      statusText: "Not Found",
-    });
+  test("thrown ApiError exposes status and request URL", async () => {
+    fetchMock.mockResolvedValue(errorResponse(404, "Not Found"));
 
-    await expect(fetchPayerProfiles()).rejects.toThrow("/admin/payer-profiles");
+    const err = await fetchPayerProfiles().catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect((err as ApiError).status).toBe(404);
+    expect((err as ApiError).url).toContain("/admin/payer-profiles");
   });
 
   test("calls fetch exactly once", async () => {
@@ -250,7 +264,7 @@ describe("fetchPayerProfiles", () => {
   });
 
   test("throws on non-OK response", async () => {
-    fetchMock.mockResolvedValue({ ok: false, status: 500, statusText: "ISE" });
+    fetchMock.mockResolvedValue(errorResponse(500, "ISE"));
     await expect(fetchPayerProfiles()).rejects.toThrow("500");
   });
 });
@@ -327,11 +341,7 @@ describe("fetchPayerFeeSchedules", () => {
   });
 
   test("throws on non-OK response", async () => {
-    fetchMock.mockResolvedValue({
-      ok: false,
-      status: 403,
-      statusText: "Forbidden",
-    });
+    fetchMock.mockResolvedValue(errorResponse(403, "Forbidden"));
     await expect(fetchPayerFeeSchedules()).rejects.toThrow("403");
   });
 });
@@ -397,7 +407,7 @@ describe("fetchPayerModifierRules", () => {
   });
 
   test("throws on non-OK response", async () => {
-    fetchMock.mockResolvedValue({ ok: false, status: 500, statusText: "ISE" });
+    fetchMock.mockResolvedValue(errorResponse(500, "ISE"));
     await expect(fetchPayerModifierRules()).rejects.toThrow("500");
   });
 });
@@ -472,11 +482,7 @@ describe("fetchDenialCodes", () => {
   });
 
   test("throws on non-OK response", async () => {
-    fetchMock.mockResolvedValue({
-      ok: false,
-      status: 401,
-      statusText: "Unauthorized",
-    });
+    fetchMock.mockResolvedValue(errorResponse(401, "Unauthorized"));
     await expect(fetchDenialCodes()).rejects.toThrow("401");
   });
 });
@@ -560,11 +566,7 @@ describe("fetchClaimTemplates", () => {
   });
 
   test("throws on non-OK response", async () => {
-    fetchMock.mockResolvedValue({
-      ok: false,
-      status: 503,
-      statusText: "Unavailable",
-    });
+    fetchMock.mockResolvedValue(errorResponse(503, "Unavailable"));
     await expect(fetchClaimTemplates()).rejects.toThrow("503");
   });
 
