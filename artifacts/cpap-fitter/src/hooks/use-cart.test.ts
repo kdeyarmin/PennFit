@@ -209,8 +209,117 @@ describe("cartStore.replaceItems", () => {
 
     const p1 = items.find((i) => i.priceId === "price_1")!;
     expect(p1.quantity).toBe(20); // 2 + 25, capped at 20
-
     const p2 = items.find((i) => i.priceId === "price_2")!;
     expect(p2.quantity).toBe(1); // 0 clamped up to the 1-item minimum
+  });
+
+  it("atomically replaces all existing lines and notifies subscribers once", () => {
+    cartStore.addItem(baseItem({ priceId: "price_old" }));
+    const spy = vi.fn();
+    cleanups.push(cartStore.subscribe(spy));
+
+    cartStore.replaceItems([
+      { ...baseItem({ priceId: "price_new", productId: "prod_new" }), quantity: 3 },
+    ]);
+
+    // One commit = one notification, not one per original line.
+    expect(spy).toHaveBeenCalledTimes(1);
+    const items = cartStore.getSnapshot();
+    expect(items).toHaveLength(1);
+    expect(items[0]!.priceId).toBe("price_new");
+  });
+
+  it("empties the cart when called with an empty array", () => {
+    cartStore.addItem(baseItem());
+    cartStore.replaceItems([]);
+    expect(cartStore.getSnapshot()).toHaveLength(0);
+  });
+});
+
+describe("cartStore.getServerSnapshot", () => {
+  it("returns the same stable EMPTY reference on every call", () => {
+    const a = cartStore.getServerSnapshot();
+    const b = cartStore.getServerSnapshot();
+    expect(a).toBe(b);
+    expect(a).toHaveLength(0);
+  });
+
+  it("EMPTY reference is unaffected by mutations", () => {
+    const serverSnap = cartStore.getServerSnapshot();
+    cartStore.addItem(baseItem());
+    // Server snapshot must stay empty and stable regardless of in-memory state.
+    expect(cartStore.getServerSnapshot()).toBe(serverSnap);
+    expect(serverSnap).toHaveLength(0);
+  });
+});
+
+describe("cartStore.addItem — additional edge cases", () => {
+  it("adds an item with stockCount of 1 (positive stock is available)", () => {
+    const res = cartStore.addItem(baseItem({ stockCount: 1 }));
+    expect(res).toEqual({ ok: true });
+    expect(cartStore.getSnapshot()).toHaveLength(1);
+  });
+
+  it("notifies subscribers on each successive mutation", () => {
+    const spy = vi.fn();
+    cleanups.push(cartStore.subscribe(spy));
+
+    cartStore.addItem(baseItem({ priceId: "price_1" }));
+    cartStore.addItem(baseItem({ priceId: "price_2", productId: "prod_2" }));
+    cartStore.addItem(baseItem({ priceId: "price_3", productId: "prod_3" }));
+
+    expect(spy).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe("cartStore.setQuantity — additional edge cases", () => {
+  it("leaves the cart unchanged for an unknown priceId", () => {
+    cartStore.addItem(baseItem(), 3);
+
+    cartStore.setQuantity("price_unknown", 5);
+
+    // The matching item is untouched — only the targeted priceId is affected.
+    expect(cartStore.getSnapshot()).toHaveLength(1);
+    expect(cartStore.getSnapshot()[0]!.quantity).toBe(3);
+  });
+
+  it("coerces Infinity to 0 and removes the line", () => {
+    cartStore.addItem(baseItem(), 3);
+    cartStore.setQuantity("price_1", Infinity);
+    // Infinity is not finite, so safeQty = 0, line removed
+    expect(cartStore.getSnapshot()).toHaveLength(0);
+  });
+
+  it("coerces -Infinity to 0 and removes the line", () => {
+    cartStore.addItem(baseItem(), 3);
+    cartStore.setQuantity("price_1", -Infinity);
+    expect(cartStore.getSnapshot()).toHaveLength(0);
+  });
+});
+
+describe("cartStore.setItemMode — additional edge cases", () => {
+  it("is a no-op for an unknown priceId", () => {
+    cartStore.addItem(baseItem({ mode: "one_time" }));
+    cartStore.setItemMode("price_unknown", "subscription");
+    expect(cartStore.getSnapshot()[0]!.mode).toBe("one_time");
+  });
+
+  it("setting one_time on a subscription line downgrades it", () => {
+    cartStore.addItem(baseItem({ recurringPriceId: "price_sub", mode: "one_time" }));
+    cartStore.setItemMode("price_1", "subscription");
+    expect(cartStore.getSnapshot()[0]!.mode).toBe("subscription");
+    cartStore.setItemMode("price_1", "one_time");
+    expect(cartStore.getSnapshot()[0]!.mode).toBe("one_time");
+  });
+});
+
+describe("cartStore.removeItem — additional edge cases", () => {
+  it("is a no-op when the priceId does not exist", () => {
+    cartStore.addItem(baseItem());
+    cartStore.removeItem("price_unknown");
+    // Cart unchanged — still one item
+    expect(cartStore.getSnapshot()).toHaveLength(1);
+    // Snapshot reference is replaced even on a structural no-op (filter
+    // always produces a new array), so we only assert the logical outcome.
   });
 });
