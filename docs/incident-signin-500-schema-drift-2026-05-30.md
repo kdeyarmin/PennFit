@@ -92,9 +92,9 @@ would resurrect dead schema.
 which is a Bucket B (entirely-absent) table. It cannot be added until
 `providers` exists, so it travels with the Bucket B remediation, not here.
 
-### Bucket B — entire table absent (un-migrated feature areas)
+### Bucket B — entire table absent (un-migrated feature areas) — RESOLVED
 
-16 migration-created tables do not exist at all on production, e.g.
+16+ migration-created tables did not exist at all on production, e.g.
 `insurance_claims`, `payer_profiles`, `office_ally_submissions`, `era_files`,
 `prior_authorizations`, `davinci_pas_submissions`, `ehr_fhir_tenants`,
 `eligibility_checks`, `inbound_referral_orders`, `inbound_webhooks`,
@@ -103,10 +103,22 @@ which is a Bucket B (entirely-absent) table. It cannot be added until
 
 Much of this is referenced by live billing/integration code
 (`artifacts/resupply-api/src/lib/billing/*`, `worker/jobs/office-ally-*`), so
-those features are non-functional on this deployment. This is a whole-feature
-migration gap, not a column patch, and needs a deliberate
-apply-in-dependency-order pass (and likely a decision about whether these
-features are meant to be live on this instance at all).
+those features were non-functional on this deployment.
+
+**Resolution (2026-05-30, owner-approved):** all **29** Bucket B tables (the 16
+above plus their in-file siblings — claim line-items/events, denial_codes,
+payer_fee_schedules, capped_rental_cycles, dwo_documents, etc.) were provisioned
+on `uppdjphagdildcgkvdsz` from the **verbatim** source migrations, with RLS
+enabled and seed data (26 PA payers, 49 denial codes) loaded. Verified
+column-by-column against the live schema. Full execution record — including a
+first-attempt fabrication error that was caught and corrected losslessly (tables
+were empty) — is in
+[`bucket-b-remediation-plan-2026-05-30.md`](./bucket-b-remediation-plan-2026-05-30.md).
+Applied via Supabase `apply_migration` (MCP), **not** the repo migrator, so the
+`drizzle.resupply_migrations` ledger still does not reflect them (see follow-up
+#1). Operational note: the worker's table-guarded jobs (office-ally poll,
+prior-auth sweep, inbound-referral, fitter campaigns) will self-activate on the
+next boot now that their tables exist.
 
 ## Recommended follow-ups (NOT yet done)
 
@@ -122,14 +134,12 @@ check:schema-drift`) compares the migration DDL against any live DB and exits
 2. **Bucket A:** ✅ done — applied via `0178_reconcile_bucketA_column_drift.sql`
    (33 columns; retired `audit_log` columns and the `providers`-dependent
    `prescriptions.provider_id` deliberately excluded).
-3. **Bucket B:** apply the table-creating migrations in dependency order in a
-   maintenance window; verify the billing/integration workers boot cleanly
-   afterward. **Detailed plan written:**
-   [`bucket-b-remediation-plan-2026-05-30.md`](./bucket-b-remediation-plan-2026-05-30.md)
-   — 16+ absent tables across ~14 migration files (0071–0154), FK-ordered, with
-   the hidden `insurance_coverages` (0075) prerequisite called out and an open
-   product decision about whether these features should be live at all. **No
-   Bucket B DDL applied** — gated on owner sign-off + maintenance window.
+3. **Bucket B:** ✅ done (2026-05-30, owner-approved) — all 29 tables
+   provisioned on prod from verbatim migrations, RLS enabled, seeds loaded,
+   verified. Full record in
+   [`bucket-b-remediation-plan-2026-05-30.md`](./bucket-b-remediation-plan-2026-05-30.md).
+   Applied via MCP `apply_migration`, so the ledger gap (#1) still stands;
+   worker jobs self-activate next boot and need env/flag review.
 4. **CI drift check — shipped** (see item 1): `.github/workflows/schema-drift.yml`.
 
 ## Repro / audit tooling
