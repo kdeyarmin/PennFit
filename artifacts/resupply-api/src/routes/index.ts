@@ -542,15 +542,6 @@ router.use(analyticsRouter);
 // Reads patient_therapy_links + patient_therapy_nights +
 // patient_smart_trigger_events for the daily clinical review.
 router.use(rtOverviewRouter);
-// /admin/compliance/* — accreditation-binder surfaces: per-staff
-// training records (HIPAA, OSHA, fit-test, infection-control,
-// orientation) and patient grievances (complaints + grievances +
-// adverse events under one typed row). Surveyors (ACHC, BOC, TJC)
-// query these exact artifacts during DMEPOS site visits.
-// /admin/accreditation/* — the policy catalog + per-staff
-// attestation surface + binder summary that ties the three
-// evidence sections (policies, training, grievances) together
-// for a single hand-off to a surveyor.
 // /admin/patient-documents/retention/* — HIPAA retention sweep
 // review queue, legal-hold toggle, and (admin-only) destruction.
 router.use(patientDocumentsRetentionRouter);
