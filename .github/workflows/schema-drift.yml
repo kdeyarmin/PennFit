@@ -1,0 +1,99 @@
+name: Schema drift (live DB)
+
+# Compares the checked-in migration DDL against the columns/tables that
+# actually exist in a live database, and fails when the DB is behind the
+# migrations. This is the durable detector for the class of incident in
+# docs/incident-signin-500-schema-drift-2026-05-30.md (sign-in 500'd because
+# migration 0142's column was never applied to prod).
+#
+# WHY THIS IS A SEPARATE WORKFLOW (not a job in ci.yml):
+#   The per-PR CI in ci.yml deliberately has NO live database — its "drift"
+#   job runs static checks against a syntactic DATABASE_URL. A live-DB
+#   comparison needs real credentials, which only make sense on a schedule
+#   (catch drift between deploys) or on demand (after a manual migration).
+#   Gating PRs on it would be both impossible (no creds in fork PRs) and
+#   wrong (a PR doesn't change prod's applied state).
+#
+# CREDENTIALS:
+#   Set repository secret SCHEMA_DRIFT_DATABASE_URL to a read-only Postgres
+#   connection string for the environment you want monitored (the PennPaps
+#   Supabase *session* pooler). The tool only runs information_schema SELECTs.
+#   NOTE: "read-only" still means the role can read row data — information_schema
+#   only lists relations the role holds a privilege on, so the role must hold
+#   SELECT on every resupply / resupply_auth table (i.e. it CAN read PHI). Guard
+#   the secret accordingly. Provisioning the `drift_ro` role, the exact
+#   connection-string format (sslmode=no-verify, session pooler), rotation, and
+#   revocation are documented in docs/runbooks/schema-drift-detector.md.
+#   If the secret is absent the job no-ops with a clear message instead of
+#   failing red.
+
+on:
+  schedule:
+    # 13:00 UTC daily (~08:00 US Eastern) — a drift signal each morning.
+    - cron: "0 13 * * *"
+  workflow_dispatch:
+    inputs:
+      json:
+        description: "Emit JSON report"
+        type: boolean
+        default: false
+
+concurrency:
+  group: schema-drift-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  PNPM_VERSION: "11.4.0"
+  NODE_VERSION: "24"
+
+jobs:
+  drift:
+    name: Live schema drift
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
+
+      - name: Check for DB secret
+        id: secret
+        env:
+          DB_URL: ${{ secrets.SCHEMA_DRIFT_DATABASE_URL }}
+        run: |
+          if [ -z "$DB_URL" ]; then
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::SCHEMA_DRIFT_DATABASE_URL is not set — skipping live drift check. Add a read-only DB URL secret to enable it."
+          else
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        if: steps.secret.outputs.present == 'true'
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "pnpm"
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install pnpm
+        if: steps.secret.outputs.present == 'true'
+        run: |
+          corepack disable pnpm 2>/dev/null || true
+          npm install -g pnpm@${{ env.PNPM_VERSION }}
+          pnpm --version
+
+      - run: pnpm install --frozen-lockfile
+        if: steps.secret.outputs.present == 'true'
+
+      - name: Run schema-drift check
+        if: steps.secret.outputs.present == 'true'
+        env:
+          DATABASE_URL: ${{ secrets.SCHEMA_DRIFT_DATABASE_URL }}
+        run: |
+          if [ "${{ inputs.json }}" = "true" ]; then
+            pnpm --filter @workspace/scripts check:schema-drift -- --json
+          else
+            pnpm --filter @workspace/scripts check:schema-drift
+          fi
