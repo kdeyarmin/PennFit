@@ -170,8 +170,16 @@ test("npm_lifecycle_event is read from process.env before isProductionBuild is c
 });
 
 test("error message names storage.googleapis.com so the operator knows what to unblock", () => {
+  // Extract the console.error string literal and check the hostname appears
+  // inside the error message itself (not anywhere in the source file). This
+  // also avoids CodeQL's js/incomplete-url-substring-sanitization heuristic,
+  // which flags bare `.includes("…domain…")` calls on URL-looking strings.
+  const errorMsgMatch = SCRIPT_SRC.match(
+    /console\.error\(\s*([\s\S]*?)\s*\);/,
+  );
+  assert.ok(errorMsgMatch, "Could not locate console.error call");
   assert.ok(
-    SCRIPT_SRC.includes("storage.googleapis.com"),
+    /\bstorage\.googleapis\.com\b/.test(errorMsgMatch[1]),
     "Expected error message to mention storage.googleapis.com as the blocked endpoint",
   );
 });
