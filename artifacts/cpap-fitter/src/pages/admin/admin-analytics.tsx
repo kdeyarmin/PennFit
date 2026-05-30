@@ -16,7 +16,14 @@
 
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Activity, AlertCircle, Download, Gauge, Users } from "lucide-react";
+import {
+  Activity,
+  AlertCircle,
+  Download,
+  Gauge,
+  TrendingUp,
+  Users,
+} from "lucide-react";
 
 import { Card } from "@/components/admin/Card";
 import { Spinner } from "@/components/admin/Spinner";
@@ -26,16 +33,19 @@ import {
   fetchComplianceCohorts,
   fetchCsrProductivity,
   fetchResupplyFunnel,
+  fetchResupplyKpis,
   fetchStuckEpisodes,
   resupplyFunnelCsvUrl,
   type ComplianceCohortsResponse,
   type CsrProductivityResponse,
   type ResupplyFunnelResponse,
+  type ResupplyKpisResponse,
   type StuckEpisode,
   type StuckEpisodeStage,
 } from "@/lib/admin/analytics-api";
 
 export function AdminAnalyticsPage() {
+  const [kpiDays, setKpiDays] = useState(30);
   const [funnelDays, setFunnelDays] = useState(30);
   const [cohortDays, setCohortDays] = useState(180);
   const [productivityDays, setProductivityDays] = useState(14);
@@ -51,6 +61,7 @@ export function AdminAnalyticsPage() {
         </p>
       </header>
 
+      <KpisPanel days={kpiDays} onDaysChange={setKpiDays} />
       <FunnelPanel days={funnelDays} onDaysChange={setFunnelDays} />
       <StuckEpisodesPanel />
       <CohortsPanel days={cohortDays} onDaysChange={setCohortDays} />
@@ -117,6 +128,110 @@ function WindowPicker({
 function pct(rate: number | null): string {
   if (rate == null) return "—";
   return `${Math.round(rate * 1000) / 10}%`;
+}
+
+// ── Resupply program KPIs ──────────────────────────────────────────
+
+function KpiTile({
+  label,
+  value,
+  hint,
+}: {
+  label: string;
+  value: string;
+  hint?: string;
+}) {
+  return (
+    <div
+      className="rounded-lg border p-3"
+      style={{ borderColor: "hsl(var(--line))" }}
+    >
+      <div className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
+        {label}
+      </div>
+      <div className="text-xl font-semibold mt-1">{value}</div>
+      {hint ? (
+        <div className="text-xs mt-0.5" style={{ color: "hsl(var(--ink-3))" }}>
+          {hint}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function KpisBody({ data }: { data: ResupplyKpisResponse }) {
+  const opp = data.ordersPerActivePatientAnnualized;
+  return (
+    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <KpiTile
+        label="Connection rate"
+        value={pct(data.connectionRate)}
+        hint={`${data.respondedCount}/${data.outreachCount} outreach replied`}
+      />
+      <KpiTile
+        label="Confirmation rate"
+        value={pct(data.confirmationRate)}
+        hint={`${data.confirmedOrders}/${data.totalEpisodes} episodes`}
+      />
+      <KpiTile
+        label="Fulfillment rate"
+        value={pct(data.fulfillmentRate)}
+        hint={`${data.fulfilledOrders}/${data.confirmedOrders} confirmed`}
+      />
+      <KpiTile
+        label="Orders / active patient / yr"
+        value={opp === null ? "—" : opp.toFixed(2)}
+        hint={`${data.activePatientCount} active patients`}
+      />
+      <KpiTile label="Total episodes" value={String(data.totalEpisodes)} />
+      <KpiTile label="Confirmed orders" value={String(data.confirmedOrders)} />
+      <KpiTile
+        label="Patients served"
+        value={String(data.uniquePatientsServed)}
+      />
+      <KpiTile label="Outreach cycles" value={String(data.outreachCount)} />
+    </div>
+  );
+}
+
+function KpisPanel({
+  days,
+  onDaysChange,
+}: {
+  days: number;
+  onDaysChange: (d: number) => void;
+}) {
+  const { data, isPending, isError, error, refetch } = useQuery({
+    queryKey: ["admin", "analytics", "kpis", days],
+    queryFn: () => fetchResupplyKpis(days),
+  });
+
+  return (
+    <Card
+      title={
+        <span className="flex items-center gap-2">
+          <TrendingUp className="h-4 w-4" />
+          Resupply program KPIs
+        </span>
+      }
+      subtitle="Connection, conversion, and fulfillment rates plus orders per patient — the numbers a resupply program is benchmarked on."
+      action={
+        <WindowPicker
+          value={days}
+          onChange={onDaysChange}
+          options={[7, 30, 90]}
+        />
+      }
+    >
+      {isPending ? (
+        <Spinner />
+      ) : isError ? (
+        <ErrorPanel error={error} onRetry={() => void refetch()} />
+      ) : (
+        <KpisBody data={data} />
+      )}
+    </Card>
+  );
 }
 
 // ── Resupply funnel ─────────────────────────────────────────────────

@@ -16,6 +16,21 @@ export interface ResupplyFunnelResponse {
   fulfillmentRate: number | null;
 }
 
+export interface ResupplyKpisResponse {
+  windowDays: number;
+  totalEpisodes: number;
+  confirmedOrders: number;
+  fulfilledOrders: number;
+  uniquePatientsServed: number;
+  outreachCount: number;
+  respondedCount: number;
+  activePatientCount: number;
+  confirmationRate: number | null;
+  fulfillmentRate: number | null;
+  connectionRate: number | null;
+  ordersPerActivePatientAnnualized: number | null;
+}
+
 export interface ComplianceCohortBucket {
   cohort: string;
   total: number;
@@ -73,6 +88,11 @@ async function jsonFetch<T>(path: string): Promise<T> {
 export const fetchResupplyFunnel = (days: number) =>
   jsonFetch<ResupplyFunnelResponse>(
     `/admin/analytics/resupply-funnel?days=${days}`,
+  );
+
+export const fetchResupplyKpis = (days: number) =>
+  jsonFetch<ResupplyKpisResponse>(
+    `/admin/analytics/resupply-kpis?days=${days}`,
   );
 
 export const fetchComplianceCohorts = (days: number) =>

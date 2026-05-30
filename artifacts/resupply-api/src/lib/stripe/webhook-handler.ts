@@ -63,6 +63,7 @@ import {
   sendOrderConfirmationEmail,
   type OrderConfirmationLineItem,
 } from "../order-emails/send-order-confirmation-email";
+import { tryAutoEnrollReminderFromOrder } from "../storefront/order-reminder-enrollment";
 
 /**
  * Pull our shop-customer id out of Stripe metadata. The mapping
@@ -417,6 +418,20 @@ export const stripeWebhookHandler: RequestHandler = async (
               },
               "stripe webhook: order confirmation email failed (non-fatal)",
             );
+          }
+        }
+        // Best-effort: enroll the buyer in replacement reminders for the
+        // consumables they purchased (#4 storefront↔resupply bridge).
+        // Feature-flagged + opt-out-respecting; never throws.
+        if (paidRow) {
+          const buyerEmail =
+            session.customer_details?.email ?? session.customer_email ?? null;
+          if (buyerEmail) {
+            await tryAutoEnrollReminderFromOrder({
+              email: buyerEmail,
+              lineItems: emailItems,
+              log,
+            });
           }
         }
         break;
