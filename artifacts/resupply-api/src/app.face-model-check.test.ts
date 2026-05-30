@@ -89,8 +89,11 @@ describe("app.ts — face model existence check behaviour (R1 safety net)", () =
 
   it("log message says face-scan will be unavailable, not that the server is refusing to start", () => {
     // Non-fatal: every other surface works; only face-scan is broken.
+    // The logger.error call passes a structured object first and the human
+    // message second, so skip past the object literal (up to its closing
+    // "}," ) before capturing the message string.
     const logMsgMatch = APP_SOURCE.match(
-      /face_model_missing[\s\S]*?"([^"]{10,})"/,
+      /face_model_missing[\s\S]*?\},\s*"([^"]{10,})"/,
     );
     expect(logMsgMatch).not.toBeNull();
     const logMsg = logMsgMatch![1].toLowerCase();
