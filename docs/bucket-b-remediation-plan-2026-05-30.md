@@ -10,7 +10,7 @@ maintenance window. Companion to
 The 2026-05-30 drift audit found **16+ entire tables** that the checked-in
 migrations create but which do **not** exist on the production project
 (`uppdjphagdildcgkvdsz`). Unlike Bucket A (additive columns on existing tables,
-already fixed in migration `0171`), these are whole un-migrated feature areas —
+already fixed in migration `0178`), these are whole un-migrated feature areas —
 primarily **insurance billing / claims / prior-auth** and **fitter lead
 campaigns** — referenced by live code under
 `artifacts/resupply-api/src/lib/billing/*`, `worker/jobs/office-ally-*`, and the
@@ -23,7 +23,7 @@ Two findings make "write one ALTER script" the wrong approach:
 1. **The 16 tables are created across ~14 historical migration files** (0071 →
    0154), several of which are _interleaved_ with already-applied work — e.g.
    `0134_billing_wave_2_next_items.sql` both creates Bucket B tables AND adds
-   the `shop_customers.membership_*` columns that `0171` already applied. The
+   the `shop_customers.membership_*` columns that `0178` already applied. The
    files are individually idempotent (`CREATE TABLE IF NOT EXISTS`,
    `ADD COLUMN IF NOT EXISTS`), so re-running them is safe; re-deriving their
    contents by hand is not.
@@ -97,7 +97,7 @@ Sequence:
    every one of the ~190 files as pending and will replay early historical
    migrations that assume a clean DB — exactly the broken-from-scratch path.
    The ledger must be seeded so only the genuinely-pending files (Bucket A,
-   already applied as 0171 + 0142 + 0143; and Bucket B) remain.
+   already applied as 0178 + 0142 + 0143; and Bucket B) remain.
 2. **Dry-run / inventory** against a staging copy or a Supabase branch
    (`mcp supabase create_branch`) restored from prod, and run the migrator
    there end to end. Fix any ordering/`insurance_coverages` issues on the

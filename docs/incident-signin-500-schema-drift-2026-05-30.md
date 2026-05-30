@@ -76,11 +76,11 @@ upload/proof-of-delivery was broken until these were added.
 
 **Resolution (2026-05-30):** the safe subset — 33 columns whose target table
 already exists AND which current code references — was consolidated into
-migration **`0171_reconcile_bucketA_column_drift.sql`** (faithful types/defaults,
+migration **`0178_reconcile_bucketA_column_drift.sql`** (faithful types/defaults,
 idempotent `ADD COLUMN IF NOT EXISTS`) and applied to `uppdjphagdildcgkvdsz`.
 Re-running the drift check afterward: 33/33 present, 0 missing.
 
-Two Bucket-A-shaped columns were **deliberately excluded** from 0171:
+Two Bucket-A-shaped columns were **deliberately excluded** from 0178:
 
 \* **`audit_log.signature / chain_seq / prev_signature / archived_at`** —
 flagged by the heuristic but **intentionally absent**: migration 0156 retired
@@ -119,7 +119,7 @@ check:schema-drift`) compares the migration DDL against any live DB and exits
    non-zero on drift; it also reports whether the `drizzle.resupply_migrations`
    ledger exists. Wired into `.github/workflows/schema-drift.yml` (daily cron +
    manual dispatch), gated on a read-only `SCHEMA_DRIFT_DATABASE_URL` secret.
-2. **Bucket A:** ✅ done — applied via `0171_reconcile_bucketA_column_drift.sql`
+2. **Bucket A:** ✅ done — applied via `0178_reconcile_bucketA_column_drift.sql`
    (33 columns; retired `audit_log` columns and the `providers`-dependent
    `prescriptions.provider_id` deliberately excluded).
 3. **Bucket B:** apply the table-creating migrations in dependency order in a

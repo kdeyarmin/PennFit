@@ -1,4 +1,4 @@
--- 0171_reconcile_bucketA_column_drift — backfill columns that earlier
+-- 0178_reconcile_bucketA_column_drift — backfill columns that earlier
 -- migrations added but which were never applied to the PennPaps
 -- production project (uppdjphagdildcgkvdsz).
 --
