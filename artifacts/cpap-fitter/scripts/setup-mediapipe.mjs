@@ -160,11 +160,36 @@ if (
         return false;
       }
     })();
+    // Strict on any real *production build* — fail the build loudly rather
+    // than silently shipping a broken face-scan (see
+    // docs/railway-hosting-review-2026-05-29.md, R1). Triggers when:
+    //   - CI === "true" (GitHub Actions), or
+    //   - NODE_ENV === "production", or
+    //   - the script runs as the `prebuild`/`build` hook of `pnpm build`
+    //     (npm_lifecycle_event). This is what Railway's buildCommand
+    //     (`pnpm run build`) triggers and is platform-agnostic, so a
+    //     Railway/Railpack build can no longer fail open. The dev server
+    //     uses the separate `predev` hook and stays soft, and a manual
+    //     `pnpm setup-mediapipe` run is also soft.
+    //   - any RAILWAY_* var is present (belt-and-suspenders for Railway).
+    // The SKIP_MEDIAPIPE_MODEL_DOWNLOAD=1 escape hatch (handled in main()
+    // before the download is attempted) still lets genuinely offline /
+    // preview builds opt out — it returns before this catch ever runs.
+    const lifecycle = process.env.npm_lifecycle_event;
+    const isProductionBuild =
+      lifecycle === "prebuild" ||
+      lifecycle === "build" ||
+      Object.keys(process.env).some((k) => k.startsWith("RAILWAY_"));
     const strictMode =
-      process.env.CI === "true" || process.env.NODE_ENV === "production";
+      process.env.CI === "true" ||
+      process.env.NODE_ENV === "production" ||
+      isProductionBuild;
     if (strictMode && !hasCachedModel) {
       console.error(
-        "[setup-mediapipe] ERROR: No usable face_landmarker.task available in strict mode.",
+        "[setup-mediapipe] ERROR: No usable face_landmarker.task available in strict mode. " +
+          "The deploy would ship a broken face-scan. Fix network access to " +
+          "storage.googleapis.com, vendor the model out-of-band, or set " +
+          "SKIP_MEDIAPIPE_MODEL_DOWNLOAD=1 to build without it intentionally.",
       );
       process.exit(1);
     }

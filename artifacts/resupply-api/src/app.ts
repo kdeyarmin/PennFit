@@ -435,6 +435,26 @@ if (existsSync(SPA_INDEX_HTML)) {
     res.sendFile(SPA_INDEX_HTML);
   });
 
+  // R1 safety net (docs/railway-hosting-review-2026-05-29.md): the face-scan
+  // model is vendored into the SPA build at
+  // `mediapipe/models/face_landmarker.task` by cpap-fitter's prebuild step.
+  // If it's absent here, the build shipped without it and the face-capture
+  // flow will be broken at runtime — surface that loudly at boot rather than
+  // letting customers discover it. Non-fatal: every other surface works, so
+  // we log instead of refusing to serve.
+  const FACE_MODEL = path.join(
+    SPA_DIST,
+    "mediapipe",
+    "models",
+    "face_landmarker.task",
+  );
+  if (!existsSync(FACE_MODEL)) {
+    logger.error(
+      { event: "face_model_missing", face_model: FACE_MODEL },
+      "face_landmarker.task missing from the SPA build — face-scan will be unavailable; rebuild with the model present (setup-mediapipe) or provide it out-of-band",
+    );
+  }
+
   logger.info(
     { event: "spa_mounted", spa_dist: SPA_DIST },
     "serving cpap-fitter SPA + history fallback from this process",

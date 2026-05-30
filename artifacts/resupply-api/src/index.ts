@@ -378,13 +378,21 @@ async function start(): Promise<void> {
   // just no longer hold the front door shut on it. (Railway's health
   // check is /healthz — liveness — so a worker hiccup can't blackhole
   // the deploy; see railway.json.)
+  // Bind the unspecified IPv6 address (`::`) explicitly. Node already
+  // defaults to `::` with dual-stack (IPv4-mapped) when a host is omitted,
+  // but stating it makes the intent unambiguous and robust to a future
+  // Node default change. On Railway this single bind serves BOTH the
+  // public network (IPv4 `0.0.0.0`) and the IPv6-only private network
+  // (`::`) — see docs/railway-hosting-review-2026-05-29.md (R3).
+  const HOST = "::";
   await new Promise<void>((resolve, reject) => {
     httpServer.once("error", reject);
-    httpServer.listen(port, () => {
+    httpServer.listen(port, HOST, () => {
       httpServer.off("error", reject);
       const voiceConfigured = readVoiceConfigOrNull() !== null;
       logger.info(
         {
+          host: HOST,
           port,
           voice_configured: voiceConfigured,
           voice_ws_path: VOICE_WS_PATH,
