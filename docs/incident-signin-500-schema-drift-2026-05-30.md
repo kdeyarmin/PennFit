@@ -61,7 +61,7 @@ A heuristic audit (parse all 190 `lib/resupply-db/drizzle/*.sql` for
 `resupply_auth`, then ask the live DB which expected objects are absent) found
 **129 expected columns absent**, which split into two very different buckets:
 
-### Bucket A — table exists, columns missing (real additive drift)
+### Bucket A — table exists, columns missing (real additive drift) — RESOLVED
 
 ~38 columns across 10 existing tables. These are the dangerous ones: the table
 is live and in use, but code that reads/writes the newer columns will 500 the
@@ -72,14 +72,25 @@ same way sign-in did. Tables: `admin_users`, `audit_log`*, `conversations`,
 Confirmed-live example: `shop_orders.pod_object_key / pod_uploaded_at /
 pod_signed_name` are referenced by 5 live route files
 (`routes/admin/shop-order-pod*.ts`, `routes/shop/order-pod.ts`, etc.) — POD
-upload/proof-of-delivery is broken until these are added.
+upload/proof-of-delivery was broken until these were added.
 
-\* **Known false positive:** `audit_log.signature / chain_seq / prev_signature`
-are flagged by the heuristic but are **intentionally absent** — migration 0156
-retired audit-log tamper-evidence (see `CLAUDE.md` "No HIPAA/DMEPOS/ACHC
-compliance machinery") and current code does not reference them. Do **not**
-"fix" these. Each Bucket A column must be confirmed against current code before
-applying — the audit is a starting point, not an apply list.
+**Resolution (2026-05-30):** the safe subset — 33 columns whose target table
+already exists AND which current code references — was consolidated into
+migration **`0171_reconcile_bucketA_column_drift.sql`** (faithful types/defaults,
+idempotent `ADD COLUMN IF NOT EXISTS`) and applied to `uppdjphagdildcgkvdsz`.
+Re-running the drift check afterward: 33/33 present, 0 missing.
+
+Two Bucket-A-shaped columns were **deliberately excluded** from 0171:
+
+\* **`audit_log.signature / chain_seq / prev_signature / archived_at`** —
+flagged by the heuristic but **intentionally absent**: migration 0156 retired
+audit-log tamper-evidence (see `CLAUDE.md` "No HIPAA/DMEPOS/ACHC compliance
+machinery") and current code has **0** references to them. Re-adding would
+resurrect dead schema.
+
+\* **`prescriptions.provider_id`** — it is a foreign key to `resupply.providers`,
+which is a Bucket B (entirely-absent) table. It cannot be added until
+`providers` exists, so it travels with the Bucket B remediation, not here.
 
 ### Bucket B — entire table absent (un-migrated feature areas)
 
@@ -103,9 +114,9 @@ features are meant to be live on this instance at all).
    to this project going forward (`lib/resupply-db/scripts/migrate.mjs` against
    `DATABASE_URL`, or a tracked apply log). Without it, drift recurs silently
    and the next missing column is the next outage.
-2. **Bucket A:** for each flagged column, confirm current code references it,
-   then apply the originating migration's `ADD COLUMN IF NOT EXISTS`. Skip the
-   retired `audit_log` tamper columns.
+2. **Bucket A:** ✅ done — applied via `0171_reconcile_bucketA_column_drift.sql`
+   (33 columns; retired `audit_log` columns and the `providers`-dependent
+   `prescriptions.provider_id` deliberately excluded).
 3. **Bucket B:** apply the table-creating migrations in dependency order in a
    maintenance window; verify the billing/integration workers boot cleanly
    afterward.
