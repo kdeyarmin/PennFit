@@ -89,11 +89,18 @@ describe("app.ts — face model existence check behaviour (R1 safety net)", () =
 
   it("log message says face-scan will be unavailable, not that the server is refusing to start", () => {
     // Non-fatal: every other surface works; only face-scan is broken.
+<<<<<<< HEAD
     // The human-readable message is the SECOND argument to the logger
     // call, after the structured `{ event: "face_model_missing", … }`
     // object — so skip past the object (to its closing `},`) before
     // capturing the message string. Matching the first quoted token
     // after the event key would grab the object body instead.
+=======
+    // Skip past the structured-log object literal ({ event: "face_model_missing",
+    // face_model: FACE_MODEL }) to the message argument that follows it, so the
+    // capture is the human-readable message string — not the gap between the
+    // object's own quoted values.
+>>>>>>> origin/main
     const logMsgMatch = APP_SOURCE.match(
       /face_model_missing[\s\S]*?\},\s*"([^"]{10,})"/,
     );

@@ -96,21 +96,21 @@ const SCRIPT_CODE = SCRIPT_SRC.replace(/(^|[^:])\/\/[^\n]*/gm, "$1");
 test("isProductionBuild triggers on npm_lifecycle_event === 'prebuild'", () => {
   assert.ok(
     SCRIPT_CODE.includes('lifecycle === "prebuild"'),
-    "Expected isProductionBuild to check lifecycle === \"prebuild\"",
+    'Expected isProductionBuild to check lifecycle === "prebuild"',
   );
 });
 
 test("isProductionBuild triggers on npm_lifecycle_event === 'build'", () => {
   assert.ok(
     SCRIPT_CODE.includes('lifecycle === "build"'),
-    "Expected isProductionBuild to check lifecycle === \"build\"",
+    'Expected isProductionBuild to check lifecycle === "build"',
   );
 });
 
 test("isProductionBuild checks for any RAILWAY_* environment variable via startsWith", () => {
   assert.ok(
     SCRIPT_CODE.includes('startsWith("RAILWAY_")'),
-    "Expected isProductionBuild to detect any RAILWAY_* env var via k.startsWith(\"RAILWAY_\")",
+    'Expected isProductionBuild to detect any RAILWAY_* env var via k.startsWith("RAILWAY_")',
   );
 });
 
@@ -142,7 +142,7 @@ test("strictMode still includes CI === 'true' as a trigger condition", () => {
   const strictExpr = strictModeMatch[1];
   assert.ok(
     strictExpr.includes('process.env.CI === "true"'),
-    "Expected strictMode to retain CI === \"true\" condition",
+    'Expected strictMode to retain CI === "true" condition',
   );
 });
 
@@ -154,7 +154,7 @@ test("strictMode still includes NODE_ENV === 'production' as a trigger condition
   const strictExpr = strictModeMatch[1];
   assert.ok(
     strictExpr.includes('process.env.NODE_ENV === "production"'),
-    "Expected strictMode to retain NODE_ENV === \"production\" condition",
+    'Expected strictMode to retain NODE_ENV === "production" condition',
   );
 });
 
@@ -174,9 +174,7 @@ test("error message names storage.googleapis.com so the operator knows what to u
   // inside the error message itself (not anywhere in the source file). This
   // also avoids CodeQL's js/incomplete-url-substring-sanitization heuristic,
   // which flags bare `.includes("…domain…")` calls on URL-looking strings.
-  const errorMsgMatch = SCRIPT_SRC.match(
-    /console\.error\(\s*([\s\S]*?)\s*\);/,
-  );
+  const errorMsgMatch = SCRIPT_SRC.match(/console\.error\(\s*([\s\S]*?)\s*\);/);
   assert.ok(errorMsgMatch, "Could not locate console.error call");
   assert.ok(
     /\bstorage\.googleapis\.com\b/.test(errorMsgMatch[1]),
@@ -187,9 +185,7 @@ test("error message names storage.googleapis.com so the operator knows what to u
 test("error message mentions SKIP_MEDIAPIPE_MODEL_DOWNLOAD=1 as the escape hatch", () => {
   // The operator should know how to opt out of strict mode without removing the guard.
   // Use raw source (not comment-stripped) to check the error string itself.
-  const errorMsgMatch = SCRIPT_SRC.match(
-    /console\.error\(\s*([\s\S]*?)\s*\);/,
-  );
+  const errorMsgMatch = SCRIPT_SRC.match(/console\.error\(\s*([\s\S]*?)\s*\);/);
   assert.ok(errorMsgMatch, "Could not locate console.error call");
   assert.ok(
     errorMsgMatch[1].includes("SKIP_MEDIAPIPE_MODEL_DOWNLOAD=1"),
@@ -198,9 +194,7 @@ test("error message mentions SKIP_MEDIAPIPE_MODEL_DOWNLOAD=1 as the escape hatch
 });
 
 test("error message says the deploy would ship a broken face-scan", () => {
-  const errorMsgMatch = SCRIPT_SRC.match(
-    /console\.error\(\s*([\s\S]*?)\s*\);/,
-  );
+  const errorMsgMatch = SCRIPT_SRC.match(/console\.error\(\s*([\s\S]*?)\s*\);/);
   assert.ok(errorMsgMatch, "Could not locate console.error call");
   const errorText = errorMsgMatch[1].toLowerCase();
   assert.ok(
@@ -210,6 +204,7 @@ test("error message says the deploy would ship a broken face-scan", () => {
 });
 
 test("process.exit(1) follows the strict-mode guard when model is absent", () => {
+<<<<<<< HEAD
   // The strict-mode guard must lead to process.exit(1). Match the guard
   // structurally (strictMode + hasCachedModel) rather than pinning its
   // exact phrasing, so a hardening such as `(setupFailed || !hasCachedModel)`
@@ -220,6 +215,16 @@ test("process.exit(1) follows the strict-mode guard when model is absent", () =>
   assert.ok(guardMatch, "Could not find strictMode guard");
   const strictModeIdx = guardMatch.index;
   const exitOneIdx = SCRIPT_CODE.indexOf("process.exit(1)");
+=======
+  // strictMode + !hasCachedModel must lead to process.exit(1). Match the
+  // guard with a regex so it survives reformatting (e.g. an added
+  // "setupFailed ||" clause) rather than pinning the exact condition string.
+  const exitOneIdx = SCRIPT_CODE.indexOf("process.exit(1)");
+  const strictModeIdx = SCRIPT_CODE.search(
+    /if \(strictMode &&.*!hasCachedModel/,
+  );
+  assert.ok(strictModeIdx > -1, "Could not find strictMode guard");
+>>>>>>> origin/main
   assert.ok(exitOneIdx > -1, "Could not find process.exit(1)");
   assert.ok(
     exitOneIdx > strictModeIdx,
