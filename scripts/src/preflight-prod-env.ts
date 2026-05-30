@@ -849,7 +849,7 @@ function runChecks(): void {
       record(
         "OFFICE_ALLY",
         "pass",
-        "not configured — runs in stub/outbox mode. Set the OFFICE_ALLY_* vars (see docs/runbooks/office-ally-go-live.md) to transmit 270/271 + 837P live",
+        "no OFFICE_ALLY_* env vars set — live only if the admin-UI config is set (Billing → Config → Organization identity + Clearinghouse connection), otherwise stub/outbox mode. This env check can't see the DB config; verify with the Clearinghouse connection page's Test button. See docs/runbooks/office-ally-go-live.md",
       );
     } else if (present.length < OFFICE_ALLY_REQUIRED.length) {
       record(
