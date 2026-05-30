@@ -144,15 +144,16 @@ export function CpapMasksResmed() {
               <h1 className="text-display text-4xl md:text-5xl lg:text-6xl font-bold tracking-tight mb-5 leading-[1.05] text-white">
                 ResMed.
                 <br />
-                <span className="hero-headline-swoosh">The category leader.</span>
+                <span className="hero-headline-swoosh">
+                  The category leader.
+                </span>
               </h1>
 
               <p className="text-base md:text-lg text-white/85 leading-relaxed mb-7">
-                The mask line your sleep lab almost certainly fit you in.
-                AirFit and AirTouch deliver the deepest sizing matrix in the
-                industry, the QuietAir vent that set the quiet-mask standard,
-                and a clinical record measured in tens of millions of patient
-                nights.
+                The mask line your sleep lab almost certainly fit you in. AirFit
+                and AirTouch deliver the deepest sizing matrix in the industry,
+                the QuietAir vent that set the quiet-mask standard, and a
+                clinical record measured in tens of millions of patient nights.
               </p>
 
               <div className="flex flex-col sm:flex-row gap-3">
@@ -213,8 +214,8 @@ export function CpapMasksResmed() {
             Why ResMed remains the gold standard.
           </h2>
           <p className="text-muted-foreground leading-relaxed">
-            We recommend ResMed when sizing complexity, sleep-lab continuity,
-            or pressure tolerance is the deciding factor.
+            We recommend ResMed when sizing complexity, sleep-lab continuity, or
+            pressure tolerance is the deciding factor.
           </p>
         </div>
 
@@ -245,8 +246,8 @@ export function CpapMasksResmed() {
             The three ResMed masks we stock most.
           </h2>
           <p className="text-muted-foreground leading-relaxed">
-            From the iconic AirFit P10 to the modern under-the-nose AirFit
-            F30i — the systems that cover the largest patient population.
+            From the iconic AirFit P10 to the modern under-the-nose AirFit F30i
+            — the systems that cover the largest patient population.
           </p>
         </div>
 
@@ -344,8 +345,8 @@ export function CpapMasksResmed() {
             ResMed questions, answered.
           </h2>
           <p className="text-sm text-muted-foreground">
-            The questions shoppers ask most when sticking with what their
-            sleep lab fit them in.
+            The questions shoppers ask most when sticking with what their sleep
+            lab fit them in.
           </p>
         </div>
         <div className="glass-card rounded-2xl p-5 md:p-7">

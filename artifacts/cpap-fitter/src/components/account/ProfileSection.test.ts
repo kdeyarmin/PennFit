@@ -356,7 +356,11 @@ describe("ProfileSection — dirty detection", () => {
       shippingAddress: null,
     };
     expect(
-      computeDirty("", { line1: "", line2: "", city: "", state: "", postalCode: "" }, noNameProfile),
+      computeDirty(
+        "",
+        { line1: "", line2: "", city: "", state: "", postalCode: "" },
+        noNameProfile,
+      ),
     ).toBe(false);
   });
 
@@ -366,7 +370,11 @@ describe("ProfileSection — dirty detection", () => {
       shippingAddress: null,
     };
     expect(
-      computeDirty("Alice", { line1: "", line2: "", city: "", state: "", postalCode: "" }, noNameProfile),
+      computeDirty(
+        "Alice",
+        { line1: "", line2: "", city: "", state: "", postalCode: "" },
+        noNameProfile,
+      ),
     ).toBe(true);
   });
 
@@ -376,7 +384,17 @@ describe("ProfileSection — dirty detection", () => {
       shippingAddress: null,
     };
     expect(
-      computeDirty("", { line1: "1 New St", line2: "", city: "Boston", state: "MA", postalCode: "02101" }, emptyProfile),
+      computeDirty(
+        "",
+        {
+          line1: "1 New St",
+          line2: "",
+          city: "Boston",
+          state: "MA",
+          postalCode: "02101",
+        },
+        emptyProfile,
+      ),
     ).toBe(true);
   });
 });
@@ -605,7 +623,14 @@ describe("ProfileSection — address partial-fill validation", () => {
 
   it("returns hasAnyField=false and allRequiredFilled=false for a truly blank address (boundary)", () => {
     // Regression: ensure a fully cleared address doesn't trigger partial-fill error.
-    const addr: CleanAddr = { line1: "", line2: null, city: "", state: "", postalCode: "", country: "US" };
+    const addr: CleanAddr = {
+      line1: "",
+      line2: null,
+      city: "",
+      state: "",
+      postalCode: "",
+      country: "US",
+    };
     const result = validateAddressFields(addr);
     expect(result.hasAnyField).toBe(false);
     expect(result.allRequiredFilled).toBe(false);

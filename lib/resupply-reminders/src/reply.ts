@@ -153,7 +153,10 @@ export async function replyInConversation(
     // Conversation is FK-cascaded to the patient, so a missing
     // patient here means the row was deleted between our read and
     // the helper call. Treat as missing contact.
-    return { status: "patient_missing_contact", channel: conv.channel as "sms" | "email" };
+    return {
+      status: "patient_missing_contact",
+      channel: conv.channel as "sms" | "email",
+    };
   }
 
   // Twilio's per-message body cap is 1600 characters (segmented across
@@ -312,10 +315,9 @@ export async function replyInConversation(
         // untouched `body`.
         body: conv.channel === "sms" ? smsBody : body,
         delivery_status: "queued",
-        vendor_metadata:
-          (conv.channel === "sms"
-            ? { twilio_message_sid: vendorRef }
-            : { sendgrid_message_id: vendorRef }) as unknown as Json,
+        vendor_metadata: (conv.channel === "sms"
+          ? { twilio_message_sid: vendorRef }
+          : { sendgrid_message_id: vendorRef }) as unknown as Json,
         sent_at: sentAtIso,
       })
       .select("id")

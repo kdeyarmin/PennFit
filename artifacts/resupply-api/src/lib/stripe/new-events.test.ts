@@ -28,7 +28,11 @@ import { describe, expect, it } from "vitest";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SRC = readFileSync(path.join(__dirname, "webhook-handler.ts"), "utf8");
 
-function sliceBetween(source: string, startToken: string, endToken: string): string {
+function sliceBetween(
+  source: string,
+  startToken: string,
+  endToken: string,
+): string {
   const start = source.indexOf(startToken);
   expect(start).toBeGreaterThanOrEqual(0);
   const end = source.indexOf(endToken, start + startToken.length);
@@ -172,39 +176,23 @@ describe("webhook-handler — charge.dispute.closed (PR change)", () => {
   });
 
   it("includes dispute_id in the dispute-closed log payload", () => {
-    const block = sliceBetween(
-      SRC,
-      '"stripe_dispute_closed"',
-      "default: {",
-    );
+    const block = sliceBetween(SRC, '"stripe_dispute_closed"', "default: {");
     expect(block).toContain("dispute_id");
   });
 
   it("includes outcome in the dispute-closed log payload", () => {
     // outcome maps to dispute.status (won/lost/warning_closed)
-    const block = sliceBetween(
-      SRC,
-      '"stripe_dispute_closed"',
-      "default: {",
-    );
+    const block = sliceBetween(SRC, '"stripe_dispute_closed"', "default: {");
     expect(block).toContain("outcome");
   });
 
   it("includes amount_cents in the dispute-closed log payload", () => {
-    const block = sliceBetween(
-      SRC,
-      '"stripe_dispute_closed"',
-      "default: {",
-    );
+    const block = sliceBetween(SRC, '"stripe_dispute_closed"', "default: {");
     expect(block).toContain("amount_cents");
   });
 
   it("includes reason in the dispute-closed log payload", () => {
-    const block = sliceBetween(
-      SRC,
-      '"stripe_dispute_closed"',
-      "default: {",
-    );
+    const block = sliceBetween(SRC, '"stripe_dispute_closed"', "default: {");
     expect(block).toContain("reason");
   });
 });
@@ -221,7 +209,14 @@ describe("webhook-handler — charge.dispute.closed (PR change)", () => {
 
 /** Mirror the subscription-id extraction logic from invoice.payment_failed */
 function extractSubscriptionId(
-  invoiceParent: { subscription_details?: { subscription?: string | { id: string } | null } | null } | null | undefined,
+  invoiceParent:
+    | {
+        subscription_details?: {
+          subscription?: string | { id: string } | null;
+        } | null;
+      }
+    | null
+    | undefined,
 ): string | null {
   const subRef = invoiceParent?.subscription_details?.subscription;
   return typeof subRef === "string" ? subRef : (subRef?.id ?? null);
@@ -236,11 +231,19 @@ function extractChargeId(
 
 describe("invoice.payment_failed — subscription_id extraction logic", () => {
   it("returns the string directly when parent.subscription_details.subscription is a string", () => {
-    expect(extractSubscriptionId({ subscription_details: { subscription: "sub_abc" } })).toBe("sub_abc");
+    expect(
+      extractSubscriptionId({
+        subscription_details: { subscription: "sub_abc" },
+      }),
+    ).toBe("sub_abc");
   });
 
   it("returns .id when parent.subscription_details.subscription is a Stripe object", () => {
-    expect(extractSubscriptionId({ subscription_details: { subscription: { id: "sub_obj" } } })).toBe("sub_obj");
+    expect(
+      extractSubscriptionId({
+        subscription_details: { subscription: { id: "sub_obj" } },
+      }),
+    ).toBe("sub_obj");
   });
 
   it("returns null when parent.subscription_details is absent", () => {
@@ -256,7 +259,9 @@ describe("invoice.payment_failed — subscription_id extraction logic", () => {
   });
 
   it("returns null when subscription field is null", () => {
-    expect(extractSubscriptionId({ subscription_details: { subscription: null } })).toBeNull();
+    expect(
+      extractSubscriptionId({ subscription_details: { subscription: null } }),
+    ).toBeNull();
   });
 });
 
@@ -280,14 +285,18 @@ describe("charge.dispute — charge_id extraction logic (shared by created and c
 
 describe("invoice.payment_failed — failure detail extraction", () => {
   it("extracts failure_code from last_finalization_error when present", () => {
-    const lastError = { code: "card_declined", message: "Your card was declined." };
+    const lastError = {
+      code: "card_declined",
+      message: "Your card was declined.",
+    };
     expect(lastError?.code ?? null).toBe("card_declined");
     expect(lastError?.message ?? null).toBe("Your card was declined.");
   });
 
   it("falls back to null when last_finalization_error is null", () => {
-    const getFailureCode = (error: { code?: string; message?: string } | null) =>
-      error?.code ?? null;
+    const getFailureCode = (
+      error: { code?: string; message?: string } | null,
+    ) => error?.code ?? null;
     const getFailureMessage = (
       error: { code?: string; message?: string } | null,
     ) => error?.message ?? null;
@@ -315,7 +324,9 @@ describe("invoice.payment_failed — log payload shape simulation", () => {
         message: "insufficient funds",
       },
       parent: {
-        subscription_details: { subscription: "sub_xyz" as string | { id: string } },
+        subscription_details: {
+          subscription: "sub_xyz" as string | { id: string },
+        },
       },
     };
 
@@ -328,7 +339,9 @@ describe("invoice.payment_failed — log payload shape simulation", () => {
         invoice_id: invoice.id,
         subscription_id: subscriptionId,
         customer_id:
-          typeof invoice.customer === "string" ? invoice.customer : (invoice.customer as { id: string } | null)?.id ?? null,
+          typeof invoice.customer === "string"
+            ? invoice.customer
+            : ((invoice.customer as { id: string } | null)?.id ?? null),
         amount_due_cents: invoice.amount_due,
         currency: invoice.currency,
         attempt_count: invoice.attempt_count,
@@ -365,21 +378,32 @@ describe("invoice.payment_failed — log payload shape simulation", () => {
       currency: "usd",
       attempt_count: 1,
       next_payment_attempt: null,
-      last_finalization_error: null as { code?: string; message?: string } | null,
+      last_finalization_error: null as {
+        code?: string;
+        message?: string;
+      } | null,
       parent: null,
     };
 
     const failureCode: string | null = null;
     const failureMessage: string | null = null;
-    const subRef = (invoice.parent as { subscription_details?: { subscription?: string | { id: string } | null } | null } | null)?.subscription_details?.subscription;
-    const subscriptionId = typeof subRef === "string" ? subRef : (subRef?.id ?? null);
+    const subRef = (
+      invoice.parent as {
+        subscription_details?: {
+          subscription?: string | { id: string } | null;
+        } | null;
+      } | null
+    )?.subscription_details?.subscription;
+    const subscriptionId =
+      typeof subRef === "string" ? subRef : (subRef?.id ?? null);
 
     log.warn(
       {
         event: "stripe_invoice_payment_failed",
         invoice_id: invoice.id,
         subscription_id: subscriptionId,
-        customer_id: typeof invoice.customer === "string" ? invoice.customer : null,
+        customer_id:
+          typeof invoice.customer === "string" ? invoice.customer : null,
         amount_due_cents: invoice.amount_due,
         currency: invoice.currency,
         attempt_count: invoice.attempt_count,
@@ -418,7 +442,10 @@ describe("charge.dispute.created — log payload shape simulation", () => {
       is_charge_refundable: true,
     };
 
-    const chargeId = typeof dispute.charge === "string" ? dispute.charge : (dispute.charge as { id: string } | null)?.id ?? null;
+    const chargeId =
+      typeof dispute.charge === "string"
+        ? dispute.charge
+        : ((dispute.charge as { id: string } | null)?.id ?? null);
 
     log.warn(
       {
@@ -535,7 +562,7 @@ describe("charge.dispute.closed — log payload shape simulation", () => {
     const chargeId =
       typeof dispute.charge === "string"
         ? dispute.charge
-        : (dispute.charge as { id: string } | null)?.id ?? null;
+        : ((dispute.charge as { id: string } | null)?.id ?? null);
 
     log.warn(
       {
@@ -577,7 +604,10 @@ describe("webhook-handler new events — optional log guard pattern", () => {
     // Each block must contain log?.warn?.(
     const invoiceBlock = SRC.slice(invoiceFailedIdx, disputeCreatedIdx);
     const disputeCreatedBlock = SRC.slice(disputeCreatedIdx, disputeClosedIdx);
-    const disputeClosedBlock = SRC.slice(disputeClosedIdx, SRC.indexOf("default:", disputeClosedIdx));
+    const disputeClosedBlock = SRC.slice(
+      disputeClosedIdx,
+      SRC.indexOf("default:", disputeClosedIdx),
+    );
 
     expect(invoiceBlock).toContain("log?.warn?.(");
     expect(disputeCreatedBlock).toContain("log?.warn?.(");

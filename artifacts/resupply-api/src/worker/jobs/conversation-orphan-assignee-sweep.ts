@@ -129,9 +129,7 @@ export async function runOrphanAssigneeSweep(): Promise<SweepStats> {
       .in("id", assigneeIds)
       .eq("status", "revoked");
     if (assigneeErr) throw assigneeErr;
-    const revokedIds = new Set(
-      (revokedAssignees ?? []).map((r) => r.id),
-    );
+    const revokedIds = new Set((revokedAssignees ?? []).map((r) => r.id));
 
     // 3. For every conversation whose assignee is in the revoked
     //    set, clear the assignment. We issue one UPDATE per row

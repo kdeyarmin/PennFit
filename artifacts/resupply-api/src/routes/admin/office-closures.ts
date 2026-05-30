@@ -239,8 +239,7 @@ router.get(
       .limit(500);
     if (error) throw error;
     const ics = buildClosuresIcal({
-      practiceName:
-        process.env.RESUPPLY_PRACTICE_NAME?.trim() || "PennPaps",
+      practiceName: process.env.RESUPPLY_PRACTICE_NAME?.trim() || "PennPaps",
       closures: (data ?? []).map((r) => ({
         id: r.id,
         label: r.label,
@@ -353,10 +352,7 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn(
-        { err },
-        "office_closure.recurring.created audit failed",
-      );
+      logger.warn({ err }, "office_closure.recurring.created audit failed");
     });
     res.status(201).json({ id: row.id });
   },
@@ -378,12 +374,7 @@ router.patch(
     const parsed = z
       .object({
         active: z.boolean().optional(),
-        autoReplyMessage: z
-          .string()
-          .trim()
-          .min(1)
-          .max(320)
-          .optional(),
+        autoReplyMessage: z.string().trim().min(1).max(320).optional(),
       })
       .strict()
       .safeParse(req.body);
@@ -397,8 +388,7 @@ router.patch(
       auto_reply_message?: string;
       updated_at: string;
     } = { updated_at: new Date().toISOString() };
-    if (parsed.data.active != null)
-      update.active = parsed.data.active ? 1 : 0;
+    if (parsed.data.active != null) update.active = parsed.data.active ? 1 : 0;
     if (parsed.data.autoReplyMessage != null)
       update.auto_reply_message = parsed.data.autoReplyMessage;
     const { error } = await supabase

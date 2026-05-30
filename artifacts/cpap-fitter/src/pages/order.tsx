@@ -40,14 +40,63 @@ import {
 import { useEffect } from "react";
 import { track } from "@/lib/track";
 import { FacialMeasurementsCard } from "@/components/facial-measurements-card";
-import { DOB_MIN, isPlausibleDob, todayLocalDateString } from "@/lib/dob-validation";
+import {
+  DOB_MIN,
+  isPlausibleDob,
+  todayLocalDateString,
+} from "@/lib/dob-validation";
 
 const US_STATES = [
-  "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA",
-  "HI", "ID", "IL", "IN", "IA", "KS", "KY", "LA", "ME", "MD",
-  "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ",
-  "NM", "NY", "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC",
-  "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY",
+  "AL",
+  "AK",
+  "AZ",
+  "AR",
+  "CA",
+  "CO",
+  "CT",
+  "DE",
+  "FL",
+  "GA",
+  "HI",
+  "ID",
+  "IL",
+  "IN",
+  "IA",
+  "KS",
+  "KY",
+  "LA",
+  "ME",
+  "MD",
+  "MA",
+  "MI",
+  "MN",
+  "MS",
+  "MO",
+  "MT",
+  "NE",
+  "NV",
+  "NH",
+  "NJ",
+  "NM",
+  "NY",
+  "NC",
+  "ND",
+  "OH",
+  "OK",
+  "OR",
+  "PA",
+  "RI",
+  "SC",
+  "SD",
+  "TN",
+  "TX",
+  "UT",
+  "VT",
+  "VA",
+  "WA",
+  "WV",
+  "WI",
+  "WY",
   "DC",
 ];
 
@@ -144,8 +193,12 @@ export function Order() {
   const [, setLocation] = useLocation();
   // The route-level <ProtectedRoute> in App.tsx already guarantees that
   // `chosenMask` is non-null by the time Order mounts.
-  const { chosenMask, setChosenMask, measurements, email: fitterEmail } =
-    useFitterStore();
+  const {
+    chosenMask,
+    setChosenMask,
+    measurements,
+    email: fitterEmail,
+  } = useFitterStore();
   const { mutate, isPending, error } = useSubmitOrder();
 
   const {
@@ -819,8 +872,8 @@ export function Order() {
                   insurance verification, shipping updates, and ongoing CPAP
                   resupply reminders, and to{" "}
                   <strong>store the order details above</strong> in their secure
-                  system for fulfillment and recordkeeping. The camera /
-                  email consent you gave on the previous step also applies.
+                  system for fulfillment and recordkeeping. The camera / email
+                  consent you gave on the previous step also applies.
                 </p>
                 <p className="text-xs text-muted-foreground leading-relaxed">
                   <strong>SMS terms:</strong> By providing your mobile number
@@ -1083,11 +1136,7 @@ function Field({
       </Label>
       {child}
       {error && (
-        <p
-          id={errorId}
-          role="alert"
-          className="text-xs text-destructive mt-1"
-        >
+        <p id={errorId} role="alert" className="text-xs text-destructive mt-1">
           {error}
         </p>
       )}

@@ -19,7 +19,11 @@ import { Lock, Loader2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { useBiometricLockPreference } from "@/hooks/use-biometric-lock-preference";
-import { isNativeApp, promptBiometric, getNativePlatform } from "@/lib/native-runtime";
+import {
+  isNativeApp,
+  promptBiometric,
+  getNativePlatform,
+} from "@/lib/native-runtime";
 
 const SESSION_FLAG = "pennpaps:biometric-unlocked";
 

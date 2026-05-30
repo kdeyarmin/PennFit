@@ -40,7 +40,11 @@ vi.mock("../../middlewares/requireAdmin", () =>
 const adminRateLimitSpy = vi.hoisted(() =>
   vi.fn(
     (_opts: { name: string; preset?: string }) =>
-      (_req: import("express").Request, _res: import("express").Response, next: import("express").NextFunction) => {
+      (
+        _req: import("express").Request,
+        _res: import("express").Response,
+        next: import("express").NextFunction,
+      ) => {
         next();
       },
   ),
@@ -184,7 +188,9 @@ describe("PATCH /admin/office-ally-submissions/:id — adminRateLimit removed", 
     ];
     for (const status of validStatuses) {
       stubAdmin();
-      stageSupabaseResponse("office_ally_submissions", "update", { data: null });
+      stageSupabaseResponse("office_ally_submissions", "update", {
+        data: null,
+      });
       const res = await request(makeApp())
         .patch(`/admin/office-ally-submissions/${SUBMISSION_UUID}`)
         .send({ status });

@@ -157,8 +157,8 @@ export function CpapMasksReactHealth() {
               <p className="text-base md:text-lg text-white/85 leading-relaxed mb-7">
                 US-engineered CPAP masks built for real-world adherence —
                 lighter, quieter, and meaningfully more affordable than every
-                comparable import-tier system. The mask we hand to most new
-                CPAP patients on day one.
+                comparable import-tier system. The mask we hand to most new CPAP
+                patients on day one.
               </p>
 
               <div className="flex flex-col sm:flex-row gap-3">
@@ -196,7 +196,9 @@ export function CpapMasksReactHealth() {
                   <div className="text-[10px] font-mono uppercase tracking-[0.22em] text-[hsl(var(--penn-gold))] mb-1">
                     Featured · 88g
                   </div>
-                  <div className="text-lg font-semibold">Rio II Nasal Pillow</div>
+                  <div className="text-lg font-semibold">
+                    Rio II Nasal Pillow
+                  </div>
                 </div>
               </div>
             </div>
@@ -220,8 +222,8 @@ export function CpapMasksReactHealth() {
             Six reasons it&apos;s our flagship line.
           </h2>
           <p className="text-muted-foreground leading-relaxed">
-            We don&apos;t sell what wins design awards. We sell what shows up
-            in our 90-day adherence data.
+            We don&apos;t sell what wins design awards. We sell what shows up in
+            our 90-day adherence data.
           </p>
         </div>
 
@@ -337,9 +339,9 @@ export function CpapMasksReactHealth() {
             />
           </div>
           <blockquote className="text-display text-xl md:text-2xl font-semibold tracking-tight text-foreground/85 leading-relaxed mb-5">
-            &ldquo;I&apos;d been on a ResMed P10 for two years and assumed
-            every nasal pillow felt the same. The Rio II is a third the price
-            and I genuinely sleep through to morning now.&rdquo;
+            &ldquo;I&apos;d been on a ResMed P10 for two years and assumed every
+            nasal pillow felt the same. The Rio II is a third the price and I
+            genuinely sleep through to morning now.&rdquo;
           </blockquote>
           <div className="text-sm font-medium text-foreground/70">
             — Verified PennPaps patient · West Chester, PA
@@ -424,9 +426,9 @@ export function CpapMasksReactHealth() {
             Run the fitter first
           </h3>
           <p className="text-sm text-muted-foreground leading-relaxed mb-5">
-            Three minutes of face capture plus a short questionnaire returns
-            the best-fit React Health mask for your face geometry and
-            breathing pattern.
+            Three minutes of face capture plus a short questionnaire returns the
+            best-fit React Health mask for your face geometry and breathing
+            pattern.
           </p>
           <Button
             className="self-start h-11 px-6 rounded-full btn-primary-glow group"

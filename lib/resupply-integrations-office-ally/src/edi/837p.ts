@@ -309,10 +309,7 @@ export function build837P(
   const hhmm = `${twoDigit(built.getUTCHours())}${twoDigit(built.getUTCMinutes())}`;
   const isaCtl = leftPadDigits(input.control.interchangeControlNumber, 9);
   const gsCtl = stripLeadingZeros(input.control.groupControlNumber) || "1";
-  const stCtl = leftPadDigits(
-    input.control.transactionSetControlNumber,
-    4,
-  );
+  const stCtl = leftPadDigits(input.control.transactionSetControlNumber, 4);
 
   // ISA — 16 fixed elements + segment terminator. Note ISA needs
   // fixed-length elements; we pad strictly.
@@ -439,7 +436,9 @@ export function build837P(
       sanitizeElement(bp.npi),
     ]),
   );
-  segments.push(joinSegment(["N3", padOrTrunc(sanitizeElement(bp.address.line1), 55)]));
+  segments.push(
+    joinSegment(["N3", padOrTrunc(sanitizeElement(bp.address.line1), 55)]),
+  );
   segments.push(
     joinSegment([
       "N4",
@@ -499,7 +498,9 @@ export function build837P(
         sanitizeElement(sub.memberId),
       ]),
     );
-    segments.push(joinSegment(["N3", padOrTrunc(sanitizeElement(sub.address.line1), 55)]));
+    segments.push(
+      joinSegment(["N3", padOrTrunc(sanitizeElement(sub.address.line1), 55)]),
+    );
     segments.push(
       joinSegment([
         "N4",
@@ -555,7 +556,11 @@ export function build837P(
 
     if (claim.priorAuthNumber) {
       segments.push(
-        joinSegment(["REF", "G1", sanitizeElement(claim.priorAuthNumber).slice(0, 50)]),
+        joinSegment([
+          "REF",
+          "G1",
+          sanitizeElement(claim.priorAuthNumber).slice(0, 50),
+        ]),
       );
     }
 
@@ -638,7 +643,10 @@ export function build837P(
           "CI",
         ]),
       );
-      if (oth.priorPayerPaidCents !== null && oth.priorPayerPaidCents !== undefined) {
+      if (
+        oth.priorPayerPaidCents !== null &&
+        oth.priorPayerPaidCents !== undefined
+      ) {
         segments.push(
           joinSegment(["AMT", "D", centsToMoney(oth.priorPayerPaidCents)]),
         );
@@ -661,7 +669,10 @@ export function build837P(
         ]),
       );
       segments.push(
-        joinSegment(["N3", padOrTrunc(sanitizeElement(oth.subscriber.address.line1), 55)]),
+        joinSegment([
+          "N3",
+          padOrTrunc(sanitizeElement(oth.subscriber.address.line1), 55),
+        ]),
       );
       segments.push(
         joinSegment([
@@ -700,9 +711,9 @@ export function build837P(
     claim.serviceLines.forEach((line, idx) => {
       const lx = String(idx + 1);
       segments.push(joinSegment(["LX", lx]));
-      const modifiers = line.modifiers.slice(0, 4).map((m) =>
-        sanitizeElement(m).slice(0, 2),
-      );
+      const modifiers = line.modifiers
+        .slice(0, 4)
+        .map((m) => sanitizeElement(m).slice(0, 2));
       const sv1Procedure = [
         "HC", // qualifier — HCPCS
         sanitizeElement(line.hcpcsCode).slice(0, 5),
@@ -750,9 +761,12 @@ export function build837P(
   segments.push(joinSegment(["IEA", "1", isaCtl]));
 
   const suffix = opts.segmentTerminatorSuffix ?? "";
-  const payload = suffix === ""
-    ? segments.join("")
-    : segments.map((s) => s + suffix.replace(SEGMENT_TERMINATOR, "")).join("");
+  const payload =
+    suffix === ""
+      ? segments.join("")
+      : segments
+          .map((s) => s + suffix.replace(SEGMENT_TERMINATOR, ""))
+          .join("");
 
   return {
     payload,

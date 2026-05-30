@@ -24,7 +24,10 @@ const supabaseMock = installSupabaseMock();
 
 const { mockSignedIn } = vi.hoisted(() => ({
   mockSignedIn: {
-    current: null as null | string | { customerId: string; email: string | null },
+    current: null as
+      | null
+      | string
+      | { customerId: string; email: string | null },
   },
 }));
 vi.mock("../../middlewares/requireSignedIn", () =>

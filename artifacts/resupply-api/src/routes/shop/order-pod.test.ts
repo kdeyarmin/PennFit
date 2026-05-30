@@ -36,9 +36,7 @@ vi.mock("../../lib/object-storage/objectStorage", () => ({
   ObjectNotFoundError: ObjectNotFoundErrorClass,
   ObjectStorageService: class {
     getObjectEntityFile = async (_path: string) => ({
-      getMetadata: async () => [
-        { size: "1024", contentType: "image/jpeg" },
-      ],
+      getMetadata: async () => [{ size: "1024", contentType: "image/jpeg" }],
       delete: async () => undefined,
     });
     downloadObject = async () => ({

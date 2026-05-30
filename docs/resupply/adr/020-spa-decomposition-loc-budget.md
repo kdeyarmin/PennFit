@@ -6,10 +6,10 @@ The customer-storefront + admin SPA (`artifacts/cpap-fitter`) is
 a Vite + React + Wouter app. Two files in it grew past the point
 where they could be read end-to-end in one sitting:
 
-| File | Pre-decomp LOC |
-| ---- | -------------: |
-| `pages/admin/patient-detail.tsx` | 4,556 |
-| `pages/account.tsx`              | 2,148 |
+| File                             | Pre-decomp LOC |
+| -------------------------------- | -------------: |
+| `pages/admin/patient-detail.tsx` |          4,556 |
+| `pages/account.tsx`              |          2,148 |
 
 In the period leading up to the
 [5/13 app review](../../app-review-2026-05-13.md), `patient-detail.tsx`
@@ -24,10 +24,10 @@ The May polish wave (PRs #254, #266, #267, #270, #271, #272, #274,
 six tabs from `patient-detail.tsx` and four sections from
 `account.tsx` — once those PRs land. Projected once that wave lands:
 
-| File | Post-decomp LOC | Reduction |
-| ---- | --------------: | --------: |
-| `pages/admin/patient-detail.tsx` | ~2,500 | 45% |
-| `pages/account.tsx`              | ~800   | 63% |
+| File                             | Post-decomp LOC | Reduction |
+| -------------------------------- | --------------: | --------: |
+| `pages/admin/patient-detail.tsx` |          ~2,500 |       45% |
+| `pages/account.tsx`              |            ~800 |       63% |
 
 This ADR codifies the budget that this work is intended to bring us
 into and the convention every future extract should follow, so the
@@ -37,11 +37,11 @@ next feature wave doesn't unwind it.
 
 ### LOC budgets
 
-| File | Soft budget | Hard ceiling |
-| ---- | ----------: | -----------: |
-| `pages/admin/patient-detail.tsx` | 3,000 LOC | 4,000 LOC |
-| `pages/account.tsx`              | 1,500 LOC | 1,800 LOC |
-| Any new SPA page                 | 1,500 LOC | 2,500 LOC |
+| File                             | Soft budget | Hard ceiling |
+| -------------------------------- | ----------: | -----------: |
+| `pages/admin/patient-detail.tsx` |   3,000 LOC |    4,000 LOC |
+| `pages/account.tsx`              |   1,500 LOC |    1,800 LOC |
+| Any new SPA page                 |   1,500 LOC |    2,500 LOC |
 
 The **soft budget** is the target — a PR that pushes the file past
 this gets a reviewer nudge ("consider extracting before adding").

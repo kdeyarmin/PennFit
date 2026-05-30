@@ -119,9 +119,7 @@ describe("isUuidCursorId", () => {
   });
 
   it("rejects a UUID with the wrong number of segments (extra dash)", () => {
-    expect(
-      isUuidCursorId("8c4c4c8e-0e8e-4c8e-8c4c-4c8e0e8e-4c8e"),
-    ).toBe(false);
+    expect(isUuidCursorId("8c4c4c8e-0e8e-4c8e-8c4c-4c8e0e8e-4c8e")).toBe(false);
   });
 
   it("rejects a UUID where one segment is too short", () => {
@@ -131,32 +129,24 @@ describe("isUuidCursorId", () => {
 
   it("rejects a UUID where one segment is too long", () => {
     // First segment has 9 chars instead of 8.
-    expect(isUuidCursorId("8c4c4c8ee-0e8e-4c8e-8c4c-4c8e0e8e4c8e")).toBe(
-      false,
-    );
+    expect(isUuidCursorId("8c4c4c8ee-0e8e-4c8e-8c4c-4c8e0e8e4c8e")).toBe(false);
   });
 
   it("rejects a UUID containing a non-hex character (g)", () => {
-    expect(isUuidCursorId("8c4c4c8g-0e8e-4c8e-8c4c-4c8e0e8e4c8e")).toBe(
-      false,
-    );
+    expect(isUuidCursorId("8c4c4c8g-0e8e-4c8e-8c4c-4c8e0e8e4c8e")).toBe(false);
   });
 
   it("rejects a UUID containing a space", () => {
-    expect(isUuidCursorId("8c4c4c8e-0e8e-4c8e-8c4c-4c8e0e8e4c8 ")).toBe(
+    expect(isUuidCursorId("8c4c4c8e-0e8e-4c8e-8c4c-4c8e0e8e4c8 ")).toBe(false);
+  });
+
+  it("rejects a UUID with a newline smuggled in", () => {
+    expect(isUuidCursorId("8c4c4c8e-0e8e-4c8e-8c4c-4c8e0e8e4c8e\n")).toBe(
       false,
     );
   });
 
-  it("rejects a UUID with a newline smuggled in", () => {
-    expect(
-      isUuidCursorId("8c4c4c8e-0e8e-4c8e-8c4c-4c8e0e8e4c8e\n"),
-    ).toBe(false);
-  });
-
   it("rejects a UUID prefixed with whitespace", () => {
-    expect(
-      isUuidCursorId(" 8c4c4c8e-0e8e-4c8e-8c4c-4c8e0e8e4c8e"),
-    ).toBe(false);
+    expect(isUuidCursorId(" 8c4c4c8e-0e8e-4c8e-8c4c-4c8e0e8e4c8e")).toBe(false);
   });
 });

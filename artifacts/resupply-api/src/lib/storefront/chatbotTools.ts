@@ -168,8 +168,7 @@ export const CHAT_TOOLS: OpenAiToolDescriptor[] = [
             type: "integer",
             minimum: 1,
             maximum: 5,
-            description:
-              "Maximum recommendations to return. Default 3.",
+            description: "Maximum recommendations to return. Default 3.",
           },
         },
       },
@@ -356,9 +355,7 @@ function resolveMask(reference: string): MaskEntry | null {
   if (exactById) return exactById;
   const lower = trimmed.toLowerCase();
   // Prefer exact-name match before substring to avoid "F20" matching "F20 Pro".
-  const exactByName = maskCatalog.find(
-    (m) => m.name.toLowerCase() === lower,
-  );
+  const exactByName = maskCatalog.find((m) => m.name.toLowerCase() === lower);
   if (exactByName) return exactByName;
   const substring = maskCatalog.find((m) =>
     m.name.toLowerCase().includes(lower),
@@ -401,7 +398,9 @@ function buildDifferences(a: MaskEntry, b: MaskEntry): string[] {
     );
   }
   if (a.priceTier !== b.priceTier) {
-    diffs.push(`${a.name} is ${a.priceTier} tier; ${b.name} is ${b.priceTier}.`);
+    diffs.push(
+      `${a.name} is ${a.priceTier} tier; ${b.name} is ${b.priceTier}.`,
+    );
   }
   if (a.hoseConnection !== b.hoseConnection) {
     diffs.push(

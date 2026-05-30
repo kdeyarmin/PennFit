@@ -146,7 +146,9 @@ function AccountBillingInner() {
     onMutate: () => setPayError(null),
     onSuccess: () => setPayError(null),
     onError: (err) => {
-      setPayError(err instanceof Error ? err.message : "Couldn't start checkout.");
+      setPayError(
+        err instanceof Error ? err.message : "Couldn't start checkout.",
+      );
     },
   });
 
@@ -171,9 +173,9 @@ function AccountBillingInner() {
         </Link>
         <h1 className="text-3xl font-bold tracking-tight">Billing</h1>
         <p className="text-slate-600">
-          Your open balance with PennPaps after insurance, plus past
-          statements and payments. Statements are also emailed when
-          generated; this page is the always-current view.
+          Your open balance with PennPaps after insurance, plus past statements
+          and payments. Statements are also emailed when generated; this page is
+          the always-current view.
         </p>
       </header>
 
@@ -188,8 +190,8 @@ function AccountBillingInner() {
               Payment received
             </p>
             <p className="text-xs text-emerald-800 mt-0.5">
-              Thanks — your payment is processing. The balance below
-              updates within a few seconds.
+              Thanks — your payment is processing. The balance below updates
+              within a few seconds.
             </p>
           </div>
           <button
@@ -213,8 +215,7 @@ function AccountBillingInner() {
               Payment cancelled
             </p>
             <p className="text-xs text-amber-800 mt-0.5">
-              No charge was made. You can retry below whenever you're
-              ready.
+              No charge was made. You can retry below whenever you're ready.
             </p>
           </div>
           <button
@@ -238,16 +239,20 @@ function AccountBillingInner() {
               Open balance
             </p>
             <p className="mt-1 text-4xl font-bold tabular-nums text-slate-900">
-              {balance.isPending || balance.isError ? "—" : formatMoneyCents(totalOpen)}
+              {balance.isPending || balance.isError
+                ? "—"
+                : formatMoneyCents(totalOpen)}
             </p>
             <p className="mt-1 text-sm text-slate-600">
               {balance.isPending
                 ? "Loading…"
                 : balance.isError
-                  ? (balance.error instanceof Error ? balance.error.message : "Failed to load balance.")
+                  ? balance.error instanceof Error
+                    ? balance.error.message
+                    : "Failed to load balance."
                   : claimCount === 0
-                  ? "No outstanding balance."
-                  : `${claimCount} claim${claimCount === 1 ? "" : "s"} with patient responsibility after insurance.`}
+                    ? "No outstanding balance."
+                    : `${claimCount} claim${claimCount === 1 ? "" : "s"} with patient responsibility after insurance.`}
             </p>
             {balance.isError && (
               <Button
@@ -301,9 +306,7 @@ function AccountBillingInner() {
                   className="flex items-center justify-between py-2 text-sm"
                 >
                   <div>
-                    <p className="font-medium text-slate-900">
-                      {c.payerName}
-                    </p>
+                    <p className="font-medium text-slate-900">{c.payerName}</p>
                     <p className="text-xs text-slate-500">
                       Date of service:{" "}
                       {c.dateOfService
@@ -330,8 +333,8 @@ function AccountBillingInner() {
           Past statements
         </h2>
         <p className="text-sm text-slate-600 mt-1">
-          PennPaps statements covering your claims with patient
-          responsibility. Click to view the PDF.
+          PennPaps statements covering your claims with patient responsibility.
+          Click to view the PDF.
         </p>
 
         {statements.isPending ? (
@@ -339,7 +342,9 @@ function AccountBillingInner() {
         ) : statements.isError ? (
           <div className="mt-4 flex items-center gap-3 flex-wrap">
             <p className="text-sm text-red-600">
-              {statements.error instanceof Error ? statements.error.message : "Failed to load statements."}
+              {statements.error instanceof Error
+                ? statements.error.message
+                : "Failed to load statements."}
             </p>
             <Button
               variant="outline"
@@ -407,7 +412,9 @@ function AccountBillingInner() {
         ) : payments.isError ? (
           <div className="mt-4 flex items-center gap-3 flex-wrap">
             <p className="text-sm text-red-600">
-              {payments.error instanceof Error ? payments.error.message : "Failed to load payments."}
+              {payments.error instanceof Error
+                ? payments.error.message
+                : "Failed to load payments."}
             </p>
             <Button
               variant="outline"

@@ -29,7 +29,8 @@ import {
   requireSignedIn,
 } from "../../middlewares/requireSignedIn";
 
-type ShopCustomersUpdate = Database["resupply"]["Tables"]["shop_customers"]["Update"];
+type ShopCustomersUpdate =
+  Database["resupply"]["Tables"]["shop_customers"]["Update"];
 
 const router: IRouter = Router();
 
@@ -59,7 +60,9 @@ router.get("/shop/me", attachSignedIn, async (req, res) => {
   const { data: recent, error: recentErr } = await supabase
     .schema("resupply")
     .from("shop_orders")
-    .select("id, stripe_session_id, status, amount_total_cents, currency, created_at")
+    .select(
+      "id, stripe_session_id, status, amount_total_cents, currency, created_at",
+    )
     .eq("customer_id", req.userCustomerId)
     .order("created_at", { ascending: false })
     .limit(RECENT_ORDERS_LIMIT);
@@ -147,11 +150,9 @@ router.put("/shop/me", requireSignedIn, async (req, res) => {
   };
   if (displayName !== undefined) updates.display_name = displayName;
   if (shippingAddress !== undefined) {
-    updates.shipping_address_json = (
-      shippingAddress
-        ? { ...shippingAddress, line2: shippingAddress.line2 ?? null }
-        : null
-    ) as unknown as Json;
+    updates.shipping_address_json = (shippingAddress
+      ? { ...shippingAddress, line2: shippingAddress.line2 ?? null }
+      : null) as unknown as Json;
   }
 
   const supabase = getSupabaseServiceRoleClient();

@@ -126,10 +126,7 @@ export function resolveAudience(
       continue;
     }
     const prefs = c.communicationPreferences ?? {};
-    if (
-      input.category === "marketing" &&
-      prefs.emailMarketing === false
-    ) {
+    if (input.category === "marketing" && prefs.emailMarketing === false) {
       recipients.push({
         recipientKind: "shop_customer",
         recipientId: c.id,

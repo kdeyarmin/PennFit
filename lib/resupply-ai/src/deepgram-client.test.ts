@@ -27,9 +27,7 @@ const SAMPLE_PRERECORDED = {
           {
             transcript: "hi this is the patient calling about my mask",
             confidence: 0.97,
-            words: [
-              { word: "hi", start: 0.0, end: 0.2, confidence: 0.98 },
-            ],
+            words: [{ word: "hi", start: 0.0, end: 0.2, confidence: 0.98 }],
           },
         ],
       },
@@ -54,7 +52,9 @@ describe("createDeepgramClient", () => {
       });
       expect(result.ok).toBe(true);
       if (result.ok) {
-        expect(result.transcript).toBe("hi this is the patient calling about my mask");
+        expect(result.transcript).toBe(
+          "hi this is the patient calling about my mask",
+        );
         expect(result.confidence).toBeCloseTo(0.97);
         expect(result.durationSeconds).toBe(4.2);
         expect(result.model).toBe("nova-3");

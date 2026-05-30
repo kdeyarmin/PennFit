@@ -147,7 +147,9 @@ export async function lookupNpi(
   return projectNppes(r);
 }
 
-function projectNppes(r: NonNullable<NppesResponse["results"]>[number]): NppesProviderProjection {
+function projectNppes(
+  r: NonNullable<NppesResponse["results"]>[number],
+): NppesProviderProjection {
   // Composite legal name: prefer organization_name (for clinics
   // registered as orgs), fall back to "First Last, Credential".
   const orgName = r.basic.organization_name?.trim();

@@ -43,16 +43,17 @@ export interface PatchInboundFaxRequest {
  * @returns The parsed JSON response as `T`.
  * @throws ApiError when the response has a non-OK HTTP status; the error includes the Response and any parsed JSON body when available.
  */
-async function jsonFetch<T>(
-  path: string,
-  init: RequestInit = {},
-): Promise<T> {
+async function jsonFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
   const method = (init.method ?? "GET").toUpperCase();
   const url = `/resupply-api${path}`;
   const { headers: initHeaders, ...restInit } = init;
   const res = await fetch(url, {
     ...restInit,
-    headers: { Accept: "application/json", ...csrfHeader(), ...(initHeaders ?? {}) },
+    headers: {
+      Accept: "application/json",
+      ...csrfHeader(),
+      ...(initHeaders ?? {}),
+    },
   });
   if (!res.ok) {
     // Throw ApiError (not plain Error) so <ErrorPanel> can decode the
@@ -72,9 +73,7 @@ async function jsonFetch<T>(
 export async function listInboundFaxes(
   status: "open" | InboundFaxStatus = "open",
 ): Promise<{ faxes: InboundFaxListItem[] }> {
-  return jsonFetch(
-    `/admin/inbound-faxes?status=${encodeURIComponent(status)}`,
-  );
+  return jsonFetch(`/admin/inbound-faxes?status=${encodeURIComponent(status)}`);
 }
 
 export async function patchInboundFax(

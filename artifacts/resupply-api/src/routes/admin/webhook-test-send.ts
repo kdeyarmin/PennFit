@@ -97,10 +97,7 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn(
-        { err },
-        "webhook_subscription.test_send audit write failed",
-      );
+      logger.warn({ err }, "webhook_subscription.test_send audit write failed");
     });
     res.status(202).json({
       ok: true,

@@ -80,11 +80,10 @@ export function LearnPediatricSleepApnea() {
           <span className="font-semibold text-foreground">
             1–5% of children
           </span>{" "}
-          have obstructive sleep apnea, and many more snore habitually in
-          ways that affect their daytime behavior, academic performance,
-          and growth. Pediatric OSA presents very differently than adult
-          OSA — and the parent is almost always the first to notice the
-          symptoms.
+          have obstructive sleep apnea, and many more snore habitually in ways
+          that affect their daytime behavior, academic performance, and growth.
+          Pediatric OSA presents very differently than adult OSA — and the
+          parent is almost always the first to notice the symptoms.
         </p>
       </header>
 
@@ -102,15 +101,15 @@ export function LearnPediatricSleepApnea() {
               </h2>
             </div>
             <p className="text-base md:text-lg text-foreground/90 leading-relaxed font-medium mb-3">
-              Adults with sleep apnea look <em>sleepy</em>. Children with
-              sleep apnea often look <em>wired</em>.
+              Adults with sleep apnea look <em>sleepy</em>. Children with sleep
+              apnea often look <em>wired</em>.
             </p>
             <p className="text-sm text-muted-foreground leading-relaxed">
-              Hyperactivity, irritability, and inattention are the
-              everyday presentation of pediatric OSA — not the heavy
-              daytime sleepiness adults report. If your child snores
-              loudly and seems to be struggling with attention or
-              behavior in school, the two might be the same problem.
+              Hyperactivity, irritability, and inattention are the everyday
+              presentation of pediatric OSA — not the heavy daytime sleepiness
+              adults report. If your child snores loudly and seems to be
+              struggling with attention or behavior in school, the two might be
+              the same problem.
             </p>
           </div>
         </div>
@@ -154,10 +153,10 @@ export function LearnPediatricSleepApnea() {
           </h2>
         </div>
         <p className="text-muted-foreground leading-relaxed mb-5">
-          Unlike adult OSA — which is driven by weight, anatomy, and
-          tissue relaxation — pediatric OSA is most commonly caused by
-          enlarged tonsils and adenoids physically narrowing the airway.
-          This is why the treatment pathway is different:
+          Unlike adult OSA — which is driven by weight, anatomy, and tissue
+          relaxation — pediatric OSA is most commonly caused by enlarged tonsils
+          and adenoids physically narrowing the airway. This is why the
+          treatment pathway is different:
         </p>
 
         <div className="space-y-3">
@@ -204,12 +203,11 @@ export function LearnPediatricSleepApnea() {
                 The ADHD overlap
               </div>
               <p className="text-sm text-foreground/85 leading-relaxed">
-                Some studies estimate a quarter to a third of children
-                diagnosed with ADHD also have undiagnosed OSA. This
-                doesn&apos;t mean ADHD is sleep apnea — it means the two
-                overlap, and treating OSA in a child with attention
-                problems can produce striking improvement when it&apos;s
-                contributing.
+                Some studies estimate a quarter to a third of children diagnosed
+                with ADHD also have undiagnosed OSA. This doesn&apos;t mean ADHD
+                is sleep apnea — it means the two overlap, and treating OSA in a
+                child with attention problems can produce striking improvement
+                when it&apos;s contributing.
               </p>
             </div>
           </div>
@@ -224,10 +222,10 @@ export function LearnPediatricSleepApnea() {
               </div>
               <p className="text-sm text-foreground/85 leading-relaxed">
                 Children with Down syndrome, craniofacial differences,
-                neuromuscular conditions, or severe obesity have much
-                higher OSA prevalence and should be screened proactively.
-                Talk to your pediatrician sooner rather than waiting for
-                symptoms to be obvious.
+                neuromuscular conditions, or severe obesity have much higher OSA
+                prevalence and should be screened proactively. Talk to your
+                pediatrician sooner rather than waiting for symptoms to be
+                obvious.
               </p>
             </div>
           </div>
@@ -292,8 +290,8 @@ export function LearnPediatricSleepApnea() {
               What sleep apnea really is
             </h3>
             <p className="text-sm text-muted-foreground leading-relaxed">
-              The adult primer — useful context for what the disease
-              actually does.
+              The adult primer — useful context for what the disease actually
+              does.
             </p>
           </div>
           <ArrowRight className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors mt-1" />
@@ -326,10 +324,9 @@ export function LearnPediatricSleepApnea() {
           <Heart className="w-3 h-3 mr-1.5" /> For pediatric patients
         </Badge>
         <p className="text-sm text-muted-foreground leading-relaxed max-w-xl mx-auto mb-5">
-          PennPaps is set up primarily for adult CPAP. For pediatric
-          equipment, we&apos;ll connect you with a partner DME with
-          pediatric sizing and fit experience. Call us and we&apos;ll route
-          you appropriately.
+          PennPaps is set up primarily for adult CPAP. For pediatric equipment,
+          we&apos;ll connect you with a partner DME with pediatric sizing and
+          fit experience. Call us and we&apos;ll route you appropriately.
         </p>
         <Button
           variant="outline"
@@ -344,9 +341,9 @@ export function LearnPediatricSleepApnea() {
       </div>
 
       <p className="text-xs text-muted-foreground/80 leading-relaxed mt-12 max-w-2xl mx-auto text-center">
-        Educational content only — not pediatric medical advice. Children
-        with sleep concerns should be evaluated by a pediatrician or
-        pediatric sleep specialist.
+        Educational content only — not pediatric medical advice. Children with
+        sleep concerns should be evaluated by a pediatrician or pediatric sleep
+        specialist.
       </p>
     </div>
   );

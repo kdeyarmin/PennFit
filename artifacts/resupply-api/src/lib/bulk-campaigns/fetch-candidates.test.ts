@@ -11,7 +11,6 @@
 import { describe, expect, it } from "vitest";
 
 import { fetchAudienceCandidates } from "./fetch-candidates";
-import type { FetchCandidatesInput } from "./fetch-candidates";
 
 // ── Minimal Supabase fluent-builder mock ────────────────────────────────────
 // fetchAudienceCandidates receives a supabase client directly, so we mock it
@@ -28,17 +27,21 @@ function makeSupabaseMock(result: QueryResult) {
     order: (_col: string, _opts?: unknown) => builder,
     range: (_from: number, _to: number) => builder,
     in: (_col: string, _vals: unknown[]) => builder,
-    then: (
-      resolve: (r: QueryResult) => unknown,
-    ) => Promise.resolve(resolve(result)),
+    then: (resolve: (r: QueryResult) => unknown) =>
+      Promise.resolve(resolve(result)),
   };
   return builder as unknown as ReturnType<
-    () => ReturnType<typeof import("@workspace/resupply-db").getSupabaseServiceRoleClient>
+    () => ReturnType<
+      typeof import("@workspace/resupply-db").getSupabaseServiceRoleClient
+    >
   >;
 }
 
 // A mock that captures filter calls so we can assert on .eq() usage.
-interface Call { method: string; args: unknown[] }
+interface Call {
+  method: string;
+  args: unknown[];
+}
 
 function makeCapturingMock(result: QueryResult) {
   const calls: Call[] = [];
@@ -62,13 +65,14 @@ function makeCapturingMock(result: QueryResult) {
       calls.push({ method: "in", args: [col, vals] });
       return builder;
     },
-    then: (
-      resolve: (r: QueryResult) => unknown,
-    ) => Promise.resolve(resolve(result)),
+    then: (resolve: (r: QueryResult) => unknown) =>
+      Promise.resolve(resolve(result)),
   };
   return {
     client: builder as unknown as ReturnType<
-      () => ReturnType<typeof import("@workspace/resupply-db").getSupabaseServiceRoleClient>
+      () => ReturnType<
+        typeof import("@workspace/resupply-db").getSupabaseServiceRoleClient
+      >
     >,
     calls,
   };
@@ -122,7 +126,7 @@ describe("fetchAudienceCandidates — all_active_shop_customers", () => {
     expect(result.shopCandidates).toHaveLength(0);
   });
 
-  it("does NOT use .range() or .order() (no pagination)", async () => {
+  it("uses .range() and .order() pagination (batched)", async () => {
     const { client, calls } = makeCapturingMock({
       data: [],
       error: null,
@@ -132,9 +136,9 @@ describe("fetchAudienceCandidates — all_active_shop_customers", () => {
       audienceKind: "all_active_shop_customers",
     });
 
-    // Pagination was removed: no .range() calls, no .order() calls.
-    expect(calls.some((c) => c.method === "range")).toBe(false);
-    expect(calls.some((c) => c.method === "order")).toBe(false);
+    // Pagination is batched: the query uses .order() + .range().
+    expect(calls.some((c) => c.method === "range")).toBe(true);
+    expect(calls.some((c) => c.method === "order")).toBe(true);
   });
 
   it("throws when the query returns an error", async () => {
@@ -181,7 +185,7 @@ describe("fetchAudienceCandidates — all_active_patients", () => {
     expect(result.shopCandidates).toHaveLength(0);
   });
 
-  it("does NOT use .range() pagination", async () => {
+  it("uses .range() pagination (batched)", async () => {
     const { client, calls } = makeCapturingMock({
       data: [],
       error: null,
@@ -191,7 +195,7 @@ describe("fetchAudienceCandidates — all_active_patients", () => {
       audienceKind: "all_active_patients",
     });
 
-    expect(calls.some((c) => c.method === "range")).toBe(false);
+    expect(calls.some((c) => c.method === "range")).toBe(true);
   });
 
   it("throws when the query returns an error", async () => {
@@ -251,7 +255,7 @@ describe("fetchAudienceCandidates — by_patient_payer", () => {
     expect(payerEq?.args[1]).toBe("");
   });
 
-  it("does NOT use .range() pagination", async () => {
+  it("uses .range() pagination (batched)", async () => {
     const { client, calls } = makeCapturingMock({
       data: [],
       error: null,
@@ -262,7 +266,7 @@ describe("fetchAudienceCandidates — by_patient_payer", () => {
       audiencePayer: "UHC",
     });
 
-    expect(calls.some((c) => c.method === "range")).toBe(false);
+    expect(calls.some((c) => c.method === "range")).toBe(true);
   });
 });
 
@@ -349,7 +353,9 @@ describe("fetchAudienceCandidates — manual_list", () => {
         );
       },
     } as unknown as ReturnType<
-      () => ReturnType<typeof import("@workspace/resupply-db").getSupabaseServiceRoleClient>
+      () => ReturnType<
+        typeof import("@workspace/resupply-db").getSupabaseServiceRoleClient
+      >
     >;
 
     const result = await fetchAudienceCandidates(builder, {

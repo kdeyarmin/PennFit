@@ -138,7 +138,11 @@ router.post(
     }).catch((err) => {
       logger.warn({ err }, "supplies_refreshed audit failed");
     });
-    res.json({ refreshed: refreshedSources.length, sources: refreshedSources, failed });
+    res.json({
+      refreshed: refreshedSources.length,
+      sources: refreshedSources,
+      failed,
+    });
   },
 );
 

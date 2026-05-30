@@ -54,10 +54,7 @@ const addressSchema = z
 
 const createBody = z
   .object({
-    npi: z
-      .string()
-      .trim()
-      .regex(NPI_RE, "NPI must be a 10-digit number"),
+    npi: z.string().trim().regex(NPI_RE, "NPI must be a 10-digit number"),
     legalName: z.string().trim().min(1).max(200),
     taxonomyCode: z.string().trim().max(16).nullable().optional(),
     phoneE164: z
@@ -82,97 +79,102 @@ const createBody = z
 
 const lookupBody = z
   .object({
-    npi: z
-      .string()
-      .trim()
-      .regex(NPI_RE, "NPI must be a 10-digit number"),
+    npi: z.string().trim().regex(NPI_RE, "NPI must be a 10-digit number"),
   })
   .strict();
 
 // Central physician/NP registry. Reads gate on `patients.read`
 // (clinical reference data — every role with patient-tier read
 // access needs the registry). Writes gate on `patients.update`.
-router.get("/admin/providers", requirePermission("patients.read"), async (req, res) => {
-  const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
-  const supabase = getSupabaseServiceRoleClient();
+router.get(
+  "/admin/providers",
+  requirePermission("patients.read"),
+  async (req, res) => {
+    const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
+    const supabase = getSupabaseServiceRoleClient();
 
-  let query = supabase
-    .schema("resupply")
-    .from("providers")
-    .select(
-      "id, npi, legal_name, taxonomy_code, phone_e164, fax_e164, email, practice_name, source, verified_at, created_at",
-    )
-    .order("legal_name", { ascending: true })
-    .limit(50);
+    let query = supabase
+      .schema("resupply")
+      .from("providers")
+      .select(
+        "id, npi, legal_name, taxonomy_code, phone_e164, fax_e164, email, practice_name, source, verified_at, created_at",
+      )
+      .order("legal_name", { ascending: true })
+      .limit(50);
 
-  if (q.length > 0) {
-    // If the query is 10 digits, treat it as an NPI exact match. The
-    // partial-search UX is "scan-as-you-type"; an NPI in hand should
-    // never fan out to a name-prefix search.
-    if (NPI_RE.test(q)) {
-      query = query.eq("npi", q);
-    } else {
-      const escaped = q.replace(/[\\%_]/g, (c) => `\\${c}`);
-      query = query.ilike("legal_name", `%${escaped}%`);
+    if (q.length > 0) {
+      // If the query is 10 digits, treat it as an NPI exact match. The
+      // partial-search UX is "scan-as-you-type"; an NPI in hand should
+      // never fan out to a name-prefix search.
+      if (NPI_RE.test(q)) {
+        query = query.eq("npi", q);
+      } else {
+        const escaped = q.replace(/[\\%_]/g, (c) => `\\${c}`);
+        query = query.ilike("legal_name", `%${escaped}%`);
+      }
     }
-  }
 
-  const { data, error } = await query;
-  if (error) throw error;
+    const { data, error } = await query;
+    if (error) throw error;
 
-  res.json({
-    providers: (data ?? []).map((r) => ({
-      id: r.id,
-      npi: r.npi,
-      legalName: r.legal_name,
-      taxonomyCode: r.taxonomy_code,
-      phoneE164: r.phone_e164,
-      faxE164: r.fax_e164,
-      email: r.email,
-      practiceName: r.practice_name,
-      source: r.source,
-      verifiedAt: r.verified_at,
-      createdAt: r.created_at,
-    })),
-  });
-});
+    res.json({
+      providers: (data ?? []).map((r) => ({
+        id: r.id,
+        npi: r.npi,
+        legalName: r.legal_name,
+        taxonomyCode: r.taxonomy_code,
+        phoneE164: r.phone_e164,
+        faxE164: r.fax_e164,
+        email: r.email,
+        practiceName: r.practice_name,
+        source: r.source,
+        verifiedAt: r.verified_at,
+        createdAt: r.created_at,
+      })),
+    });
+  },
+);
 
-router.get("/admin/providers/:id", requirePermission("patients.read"), async (req, res) => {
-  const idParse = z.string().uuid().safeParse(req.params.id);
-  if (!idParse.success) {
-    res.status(404).json({ error: "not_found" });
-    return;
-  }
-  const supabase = getSupabaseServiceRoleClient();
-  const { data, error } = await supabase
-    .schema("resupply")
-    .from("providers")
-    .select("*")
-    .eq("id", idParse.data)
-    .limit(1)
-    .maybeSingle();
-  if (error) throw error;
-  if (!data) {
-    res.status(404).json({ error: "not_found" });
-    return;
-  }
-  res.json({
-    id: data.id,
-    npi: data.npi,
-    legalName: data.legal_name,
-    taxonomyCode: data.taxonomy_code,
-    phoneE164: data.phone_e164,
-    faxE164: data.fax_e164,
-    email: data.email,
-    practiceName: data.practice_name,
-    practiceAddress: data.practice_address,
-    source: data.source,
-    verifiedAt: data.verified_at,
-    notes: data.notes,
-    createdAt: data.created_at,
-    updatedAt: data.updated_at,
-  });
-});
+router.get(
+  "/admin/providers/:id",
+  requirePermission("patients.read"),
+  async (req, res) => {
+    const idParse = z.string().uuid().safeParse(req.params.id);
+    if (!idParse.success) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    const supabase = getSupabaseServiceRoleClient();
+    const { data, error } = await supabase
+      .schema("resupply")
+      .from("providers")
+      .select("*")
+      .eq("id", idParse.data)
+      .limit(1)
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    res.json({
+      id: data.id,
+      npi: data.npi,
+      legalName: data.legal_name,
+      taxonomyCode: data.taxonomy_code,
+      phoneE164: data.phone_e164,
+      faxE164: data.fax_e164,
+      email: data.email,
+      practiceName: data.practice_name,
+      practiceAddress: data.practice_address,
+      source: data.source,
+      verifiedAt: data.verified_at,
+      notes: data.notes,
+      createdAt: data.created_at,
+      updatedAt: data.updated_at,
+    });
+  },
+);
 
 router.post(
   "/admin/providers",
@@ -211,7 +213,8 @@ router.post(
       return;
     }
 
-    const verifiedAt = body.source === "nppes" ? new Date().toISOString() : null;
+    const verifiedAt =
+      body.source === "nppes" ? new Date().toISOString() : null;
 
     const { data: row, error } = await supabase
       .schema("resupply")
@@ -299,16 +302,14 @@ router.get(
     for (const r of data ?? []) {
       if (seen.has(r.patient_id)) continue;
       seen.add(r.patient_id);
-      const p = (r as { patients?: unknown }).patients as
-        | {
-            id: string;
-            legal_first_name: string | null;
-            legal_last_name: string | null;
-            email: string | null;
-            phone_e164: string | null;
-            status: string | null;
-          }
-        | null;
+      const p = (r as { patients?: unknown }).patients as {
+        id: string;
+        legal_first_name: string | null;
+        legal_last_name: string | null;
+        email: string | null;
+        phone_e164: string | null;
+        status: string | null;
+      } | null;
       patients.push({
         patientId: r.patient_id,
         legalFirstName: p?.legal_first_name ?? null,
@@ -360,9 +361,8 @@ router.post(
       res.status(404).json({ error: "provider_not_found" });
       return;
     }
-    const { signProviderPortalToken } = await import(
-      "../../lib/provider-portal-token"
-    );
+    const { signProviderPortalToken } =
+      await import("../../lib/provider-portal-token");
     const token = signProviderPortalToken(idParse.data, undefined, {
       portalLinkVersion: existing.portal_link_version,
     });
@@ -405,7 +405,10 @@ router.delete(
     const { error: updErr } = await supabase
       .schema("resupply")
       .from("providers")
-      .update({ portal_link_version: nextVersion, updated_at: new Date().toISOString() })
+      .update({
+        portal_link_version: nextVersion,
+        updated_at: new Date().toISOString(),
+      })
       .eq("id", idParse.data);
     if (updErr) throw updErr;
     res.json({ ok: true, portalLinkVersion: nextVersion });

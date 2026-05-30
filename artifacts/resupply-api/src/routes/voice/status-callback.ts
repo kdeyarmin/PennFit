@@ -67,7 +67,10 @@ router.post("/voice/status-callback", signatureMiddleware, async (req, res) => {
   // appear if the auth token leaked — but a malformed value would
   // still flow into our DB query as a no-op; matching SMS callback's
   // validation here keeps audit metadata consistently UUID-shaped.
-  const conversationIdParse = z.string().uuid().safeParse(req.query.conversationId);
+  const conversationIdParse = z
+    .string()
+    .uuid()
+    .safeParse(req.query.conversationId);
   const conversationId = conversationIdParse.success
     ? conversationIdParse.data
     : null;

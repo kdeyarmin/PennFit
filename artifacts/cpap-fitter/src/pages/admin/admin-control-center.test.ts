@@ -85,7 +85,9 @@ describe("admin-control-center — SummaryTiles wiring", () => {
 
 describe("admin-control-center — high-risk confirmation modal", () => {
   it("imports isHighRiskFlag from the feature-flags-api lib", () => {
-    expect(SRC).toMatch(/import\s*{[^}]*isHighRiskFlag[^}]*}\s*from\s*"@\/lib\/admin\/feature-flags-api"/s);
+    expect(SRC).toMatch(
+      /import\s*{[^}]*isHighRiskFlag[^}]*}\s*from\s*"@\/lib\/admin\/feature-flags-api"/s,
+    );
   });
 
   it("defines a ConfirmDisableModal component", () => {
@@ -161,9 +163,7 @@ describe("admin-control-center ActivityPanel — unavailable branch removed", ()
   });
 
   it("does not render the 'no longer tracked' retirement notice", () => {
-    expect(SRC).not.toContain(
-      "Toggle activity is no longer tracked",
-    );
+    expect(SRC).not.toContain("Toggle activity is no longer tracked");
   });
 });
 

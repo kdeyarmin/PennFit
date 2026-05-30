@@ -60,9 +60,7 @@ function submitResetForm() {
   fireEvent.change(screen.getByTestId("reset-confirm-password-input"), {
     target: { value: "newpassword12345" },
   });
-  fireEvent.click(
-    screen.getByRole("button", { name: /set new password/i }),
-  );
+  fireEvent.click(screen.getByRole("button", { name: /set new password/i }));
 }
 
 describe("ResetPasswordPage — 5xx server-trouble alert renders into the DOM", () => {

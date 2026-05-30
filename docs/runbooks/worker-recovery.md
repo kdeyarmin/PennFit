@@ -17,18 +17,18 @@ All times UTC. pg-boss schema: `pgboss_resupply` (separate from app
 tables on purpose; the `/readyz` health check probes
 `pgboss_resupply.version`).
 
-| Queue | Schedule | Side-effects |
-| --- | --- | --- |
-| `reminders.scan` | `7 * * * *` (every hour at :07) | DB scan + fans out to `reminders.send-{sms,email}` |
-| `reminders.send-sms` | on-demand (fan-out) | Twilio SMS |
-| `reminders.send-email` | on-demand (fan-out) | SendGrid email |
-| `prescriptions.attachment.sweep` | `13 3 * * 0` (Sunday 03:13) | App Storage object delete |
-| `idempotency-keys.prune` | `7 2 * * *` (02:07) | DB DELETE on `idempotency_keys` rows past 24h TTL |
-| `onboarding-checkins.dispatch` | `17 14 * * *` (14:17) | Twilio SMS / SendGrid email / voice press-1 |
-| `onboarding-checkins.scan` | `47 14 * * *` (14:47) | Inserts CSR alert rows |
-| `smart-triggers.evaluate` | `23 3 * * *` (03:23) | Inserts `patient_smart_trigger_events` |
-| `smart-triggers.send-due` | `13 4 * * *` (04:13) | SendGrid + Twilio + push |
-| `rx-renewal.send-due` | `43 4 * * *` (04:43) | SendGrid + Twilio + push |
+| Queue                            | Schedule                        | Side-effects                                       |
+| -------------------------------- | ------------------------------- | -------------------------------------------------- |
+| `reminders.scan`                 | `7 * * * *` (every hour at :07) | DB scan + fans out to `reminders.send-{sms,email}` |
+| `reminders.send-sms`             | on-demand (fan-out)             | Twilio SMS                                         |
+| `reminders.send-email`           | on-demand (fan-out)             | SendGrid email                                     |
+| `prescriptions.attachment.sweep` | `13 3 * * 0` (Sunday 03:13)     | App Storage object delete                          |
+| `idempotency-keys.prune`         | `7 2 * * *` (02:07)             | DB DELETE on `idempotency_keys` rows past 24h TTL  |
+| `onboarding-checkins.dispatch`   | `17 14 * * *` (14:17)           | Twilio SMS / SendGrid email / voice press-1        |
+| `onboarding-checkins.scan`       | `47 14 * * *` (14:47)           | Inserts CSR alert rows                             |
+| `smart-triggers.evaluate`        | `23 3 * * *` (03:23)            | Inserts `patient_smart_trigger_events`             |
+| `smart-triggers.send-due`        | `13 4 * * *` (04:13)            | SendGrid + Twilio + push                           |
+| `rx-renewal.send-due`            | `43 4 * * *` (04:43)            | SendGrid + Twilio + push                           |
 
 The 30-minute spacing between the daily cluster (03:23 → 04:13 → 04:43)
 is intentional: it staggers vendor-quota burn so a transient SendGrid
@@ -55,9 +55,9 @@ The log envelope:
   "queue": "reminders.send-sms",
   "newly_failed": 1,
   "total_failed": 3,
-  "queue_size": 124,    // all states combined for this queue
-  "retry_pending": 0,   // jobs scheduled for a future retry
-  "active": 2           // jobs currently being processed
+  "queue_size": 124, // all states combined for this queue
+  "retry_pending": 0, // jobs scheduled for a future retry
+  "active": 2, // jobs currently being processed
 }
 ```
 
@@ -226,7 +226,7 @@ record of historic failures once the live `job` row is rotated out.
 ### `reminders.send-sms` / `reminders.send-email`
 
 - **Twilio 4xx / SendGrid 4xx**: vendor rejected the message.
-  *Replay only after fixing the underlying data* (e.g. invalid phone
+  _Replay only after fixing the underlying data_ (e.g. invalid phone
   number on the patient row).
 - **Twilio 5xx / SendGrid 5xx**: vendor outage. Replay once vendor
   status is green.
@@ -263,12 +263,12 @@ record of historic failures once the live `job` row is rotated out.
 
 ## When to escalate
 
-| Signal | Action |
-| --- | --- |
-| `pgboss_jobs_failed` for a single job, replayable | Replay; close. |
-| Same queue alerting > 3 times / hour | Likely a regression. Open an incident; do not blanket-replay. |
-| Worker boot log missing `"in-process worker ready"` after a restart | Page the on-call. pg-boss failed to start; the API is up but no jobs run. |
-| `pg-boss error` event in logs | Check DB connectivity; pg-boss can't recover from a closed connection without a process restart. |
+| Signal                                                              | Action                                                                                           |
+| ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `pgboss_jobs_failed` for a single job, replayable                   | Replay; close.                                                                                   |
+| Same queue alerting > 3 times / hour                                | Likely a regression. Open an incident; do not blanket-replay.                                    |
+| Worker boot log missing `"in-process worker ready"` after a restart | Page the on-call. pg-boss failed to start; the API is up but no jobs run.                        |
+| `pg-boss error` event in logs                                       | Check DB connectivity; pg-boss can't recover from a closed connection without a process restart. |
 
 ---
 

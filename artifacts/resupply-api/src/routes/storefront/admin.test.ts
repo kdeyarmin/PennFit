@@ -41,8 +41,7 @@ vi.mock("@workspace/resupply-db", () => ({
         select: (_c: string, _opts?: unknown) =>
           Promise.resolve({ data: [], error: null }),
         update: (_v: unknown) => ({
-          eq: (_col: string, _val: unknown) =>
-            Promise.resolve({ error: null }),
+          eq: (_col: string, _val: unknown) => Promise.resolve({ error: null }),
         }),
         insert: (_v: unknown) => Promise.resolve({ error: null }),
       }),
@@ -67,7 +66,8 @@ vi.mock("../../lib/auth-deps", () => ({
 }));
 
 vi.mock("@workspace/resupply-auth", async (importOriginal) => {
-  const real = await importOriginal<typeof import("@workspace/resupply-auth")>();
+  const real =
+    await importOriginal<typeof import("@workspace/resupply-auth")>();
   return {
     ...real,
     inviteTeamMember: vi.fn(),

@@ -77,8 +77,17 @@ export function readOfficeAllyConfigOrNull(
   const state = env.OFFICE_ALLY_BILLING_STATE;
   const zip = env.OFFICE_ALLY_BILLING_ZIP;
   if (
-    !username || !privateKeyPath || !knownHostsPath || !etin ||
-    !npi || !taxId || !orgName || !line1 || !city || !state || !zip
+    !username ||
+    !privateKeyPath ||
+    !knownHostsPath ||
+    !etin ||
+    !npi ||
+    !taxId ||
+    !orgName ||
+    !line1 ||
+    !city ||
+    !state ||
+    !zip
   ) {
     return null;
   }
@@ -95,7 +104,8 @@ export function readOfficeAllyConfigOrNull(
       etin,
       organizationName: orgName,
       contactName: env.OFFICE_ALLY_CONTACT_NAME?.trim() || "BILLING",
-      contactPhoneE164: env.OFFICE_ALLY_CONTACT_PHONE_E164?.trim() || "+10000000000",
+      contactPhoneE164:
+        env.OFFICE_ALLY_CONTACT_PHONE_E164?.trim() || "+10000000000",
     },
     billingProvider: {
       organizationName: orgName,
@@ -113,9 +123,7 @@ export function isOfficeAllyStubMode(
   return env.OFFICE_ALLY_STUB === "1";
 }
 
-export function resolveOutboxDir(
-  env: NodeJS.ProcessEnv = process.env,
-): string {
+export function resolveOutboxDir(env: NodeJS.ProcessEnv = process.env): string {
   const raw = env.OFFICE_ALLY_FILE_OUTBOX_DIR?.trim();
   return raw ? resolve(raw) : resolve(process.cwd(), "outputs", "office-ally");
 }

@@ -46,7 +46,8 @@ const payers: Payer[] = [
   {
     Icon: Building2,
     name: "Medicaid",
-    oneLiner: "State-by-state; broadly similar to Medicare but with state-specific quirks.",
+    oneLiner:
+      "State-by-state; broadly similar to Medicare but with state-specific quirks.",
     body: "Medicaid CPAP coverage exists in every state but the documentation requirements, prior authorization process, and replacement cadences vary considerably. Pennsylvania Medicaid covers CPAP for diagnosed OSA with limited copay; some states require additional clinical notes or face-to-face evaluations.",
     covered: [
       "Coverage roughly mirrors Medicare in most states",
@@ -88,7 +89,8 @@ const payers: Payer[] = [
   {
     Icon: CreditCard,
     name: "Cash-pay",
-    oneLiner: "Transparent pricing. Sometimes cheaper than insurance after the math.",
+    oneLiner:
+      "Transparent pricing. Sometimes cheaper than insurance after the math.",
     body: "Direct purchase without going through insurance. Useful when (a) your deductible is high and unmet, (b) you want a brand insurance won't cover, (c) the prior-auth paperwork is delaying urgent equipment, or (d) you don't have insurance. Every machine and supply we list is available cash-pay with transparent pricing.",
     covered: [
       "Everything we stock, no prior-auth required",
@@ -131,10 +133,10 @@ export function LearnInsuranceGuide() {
           The honest insurance guide.
         </h1>
         <p className="text-lg text-muted-foreground leading-relaxed">
-          CPAP coverage isn&apos;t mysterious — but it&apos;s also not
-          uniform. Five different paths exist, the cheapest one depends on
-          your specific plan + deductible state, and most DMEs won&apos;t do
-          the math with you. Here&apos;s how it actually works.
+          CPAP coverage isn&apos;t mysterious — but it&apos;s also not uniform.
+          Five different paths exist, the cheapest one depends on your specific
+          plan + deductible state, and most DMEs won&apos;t do the math with
+          you. Here&apos;s how it actually works.
         </p>
       </header>
 
@@ -150,8 +152,8 @@ export function LearnInsuranceGuide() {
               <span className="text-[hsl(var(--penn-gold))]">
                 covers CPAP therapy
               </span>{" "}
-              for diagnosed sleep apnea. The variance is in the deductible,
-              the adherence rules, and the resupply cadence — not whether
+              for diagnosed sleep apnea. The variance is in the deductible, the
+              adherence rules, and the resupply cadence — not whether
               you&apos;re covered.
             </p>
           </div>
@@ -233,9 +235,9 @@ export function LearnInsuranceGuide() {
           </h2>
         </div>
         <p className="text-muted-foreground leading-relaxed mb-5">
-          For prior authorization on a new machine, almost every plan wants
-          the same four things. We handle this for you — but knowing what
-          your sleep doctor needs to send is useful.
+          For prior authorization on a new machine, almost every plan wants the
+          same four things. We handle this for you — but knowing what your sleep
+          doctor needs to send is useful.
         </p>
         <div className="grid sm:grid-cols-2 gap-4">
           {[
@@ -282,23 +284,21 @@ export function LearnInsuranceGuide() {
               </h2>
             </div>
             <p className="text-muted-foreground leading-relaxed mb-3">
-              The single most important insurance number you&apos;ll
-              encounter is the{" "}
+              The single most important insurance number you&apos;ll encounter
+              is the{" "}
               <span className="font-semibold text-foreground/90">
                 Medicare adherence threshold
               </span>{" "}
               — and most commercial plans use the same rule.
             </p>
             <p className="text-base font-semibold text-foreground/90 leading-relaxed mb-3">
-              4+ hours/night on 70% of nights, across any rolling 30-day
-              window.
+              4+ hours/night on 70% of nights, across any rolling 30-day window.
             </p>
             <p className="text-muted-foreground leading-relaxed">
-              Hit it and you keep coverage. Miss it during your initial
-              90-day trial and insurance can deny ongoing rental coverage,
-              billing you back for the machine. We track this for you and
-              call before it happens — the data is sent from your CPAP
-              modem to us nightly.
+              Hit it and you keep coverage. Miss it during your initial 90-day
+              trial and insurance can deny ongoing rental coverage, billing you
+              back for the machine. We track this for you and call before it
+              happens — the data is sent from your CPAP modem to us nightly.
             </p>
           </div>
         </div>
@@ -372,10 +372,10 @@ export function LearnInsuranceGuide() {
       </div>
 
       <p className="text-xs text-muted-foreground/80 leading-relaxed mt-12 max-w-2xl mx-auto text-center">
-        Educational content only — not benefit verification. The honest
-        benefit number for your specific plan, deductible state, and
-        diagnosis code comes from running benefits live, which we&apos;re
-        happy to do over the phone in five minutes.
+        Educational content only — not benefit verification. The honest benefit
+        number for your specific plan, deductible state, and diagnosis code
+        comes from running benefits live, which we&apos;re happy to do over the
+        phone in five minutes.
       </p>
     </div>
   );

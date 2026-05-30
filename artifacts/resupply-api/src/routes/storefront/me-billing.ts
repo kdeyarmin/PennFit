@@ -224,15 +224,13 @@ router.get("/me/billing-statements/:id/pdf", async (req, res) => {
     },
   );
 
-  const address = patient.address as
-    | {
-        line1?: string;
-        line2?: string;
-        city?: string;
-        state?: string;
-        zip?: string;
-      }
-    | null;
+  const address = patient.address as {
+    line1?: string;
+    line2?: string;
+    city?: string;
+    state?: string;
+    zip?: string;
+  } | null;
   const { pdf } = await renderStatementPdf({
     patient: {
       name: `${patient.legal_first_name} ${patient.legal_last_name}`,

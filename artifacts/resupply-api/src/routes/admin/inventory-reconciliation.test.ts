@@ -138,9 +138,7 @@ function stageStripeCatalog(
       id: p.id,
       name: p.name,
       metadata:
-        p.stockCount === null
-          ? {}
-          : { stock_count: String(p.stockCount) },
+        p.stockCount === null ? {} : { stock_count: String(p.stockCount) },
     })),
     has_more: false,
   });
@@ -375,7 +373,10 @@ describe("POST /admin/shop/inventory/reconciliations/:id/submit", () => {
   it("401s without admin", async () => {
     const res = await request(makeApp())
       .post(`/admin/shop/inventory/reconciliations/${RECON_ID}/submit`)
-      .send({ lines: [{ productId: "prod_A", countedQty: 1 }], applyToStripe: false });
+      .send({
+        lines: [{ productId: "prod_A", countedQty: 1 }],
+        applyToStripe: false,
+      });
     expect(res.status).toBe(401);
   });
 
@@ -383,7 +384,10 @@ describe("POST /admin/shop/inventory/reconciliations/:id/submit", () => {
     mockAdmin.current = ADMIN;
     const res = await request(makeApp())
       .post("/admin/shop/inventory/reconciliations/not-a-uuid/submit")
-      .send({ lines: [{ productId: "prod_A", countedQty: 1 }], applyToStripe: false });
+      .send({
+        lines: [{ productId: "prod_A", countedQty: 1 }],
+        applyToStripe: false,
+      });
     expect(res.status).toBe(400);
     expect(res.body.error).toBe("invalid_id");
   });
@@ -530,7 +534,9 @@ describe("POST /admin/shop/inventory/reconciliations/:id/submit", () => {
     // (the order flip means applied flags are stamped AFTER the RPC, in a
     // follow-up UPDATE).
     expect(getSupabaseRpcCallCount("submit_inventory_reconciliation")).toBe(1);
-    const rpcArgs = getSupabaseRpcArgs("submit_inventory_reconciliation")[0] as {
+    const rpcArgs = getSupabaseRpcArgs(
+      "submit_inventory_reconciliation",
+    )[0] as {
       p_id: string;
       p_applied_to_stripe: boolean;
       p_total_variance_units: number;
@@ -555,10 +561,7 @@ describe("POST /admin/shop/inventory/reconciliations/:id/submit", () => {
     });
     // applyToStripe=false: no follow-up update on the lines table either.
     expect(
-      getSupabaseWritePayloads(
-        "inventory_reconciliation_lines",
-        "update",
-      ),
+      getSupabaseWritePayloads("inventory_reconciliation_lines", "update"),
     ).toHaveLength(0);
   });
 
@@ -597,7 +600,9 @@ describe("POST /admin/shop/inventory/reconciliations/:id/submit", () => {
     });
     // RPC's lines all carry applied=false; the applied=true stamps land
     // via the follow-up UPDATE on inventory_reconciliation_lines.
-    const rpcArgs = getSupabaseRpcArgs("submit_inventory_reconciliation")[0] as {
+    const rpcArgs = getSupabaseRpcArgs(
+      "submit_inventory_reconciliation",
+    )[0] as {
       p_lines: Array<{ product_id: string; applied: boolean }>;
     };
     expect(rpcArgs.p_lines.every((l) => l.applied === false)).toBe(true);
@@ -652,10 +657,7 @@ describe("POST /admin/shop/inventory/reconciliations/:id/submit", () => {
     // successful SKU's row should be flipped to applied=true. Filter
     // verbs on the chain carry the `.in("product_id", [...])` arg.
     expect(
-      getSupabaseWritePayloads(
-        "inventory_reconciliation_lines",
-        "update",
-      ),
+      getSupabaseWritePayloads("inventory_reconciliation_lines", "update"),
     ).toHaveLength(1);
   });
 
@@ -681,10 +683,7 @@ describe("POST /admin/shop/inventory/reconciliations/:id/submit", () => {
     expect(res.body.stripeApplyFailures).toBe(1);
     // No SKUs reached Stripe → no UPDATE call (nothing to flip).
     expect(
-      getSupabaseWritePayloads(
-        "inventory_reconciliation_lines",
-        "update",
-      ),
+      getSupabaseWritePayloads("inventory_reconciliation_lines", "update"),
     ).toHaveLength(0);
   });
 
@@ -714,10 +713,7 @@ describe("POST /admin/shop/inventory/reconciliations/:id/submit", () => {
     expect(stripeUpdateMock).not.toHaveBeenCalled();
     // No applied-flag UPDATE either.
     expect(
-      getSupabaseWritePayloads(
-        "inventory_reconciliation_lines",
-        "update",
-      ),
+      getSupabaseWritePayloads("inventory_reconciliation_lines", "update"),
     ).toHaveLength(0);
   });
 

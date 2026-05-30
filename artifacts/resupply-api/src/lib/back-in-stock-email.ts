@@ -116,9 +116,7 @@ function renderText(p: BackInStockEmailPayload): string {
  * the template author chooses the right one for each context. Same
  * pattern we'd use for any future HTML template wrap.
  */
-function buildVariables(
-  p: BackInStockEmailPayload,
-): Record<string, string> {
+function buildVariables(p: BackInStockEmailPayload): Record<string, string> {
   return {
     product_name: p.productName,
     product_name_html: escapeHtml(p.productName),
@@ -196,4 +194,3 @@ export const __forTests = {
   renderText,
   buildVariables,
 };
-

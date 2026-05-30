@@ -28,24 +28,25 @@ router.get(
   // patient-facing read tier.
   requirePermission("patients.read"),
   async (req, res) => {
-  const supabase = getSupabaseServiceRoleClient();
-  const stale = req.query.stale === "true";
-  let query = supabase
-    .schema("resupply")
-    .from("providers_pecos_status")
-    .select(
-      "npi, enrollment_status, enrollment_type, first_approved_date, specialty_description, last_synced_at",
-    )
-    .order("last_synced_at", { ascending: true })
-    .limit(200);
-  if (stale) {
-    const cutoff = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString();
-    query = query.lte("last_synced_at", cutoff);
-  }
-  const { data, error } = await query;
-  if (error) throw error;
-  res.json({ rows: data ?? [] });
-});
+    const supabase = getSupabaseServiceRoleClient();
+    const stale = req.query.stale === "true";
+    let query = supabase
+      .schema("resupply")
+      .from("providers_pecos_status")
+      .select(
+        "npi, enrollment_status, enrollment_type, first_approved_date, specialty_description, last_synced_at",
+      )
+      .order("last_synced_at", { ascending: true })
+      .limit(200);
+    if (stale) {
+      const cutoff = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString();
+      query = query.lte("last_synced_at", cutoff);
+    }
+    const { data, error } = await query;
+    if (error) throw error;
+    res.json({ rows: data ?? [] });
+  },
+);
 
 router.get(
   "/admin/providers-pecos/:npi",

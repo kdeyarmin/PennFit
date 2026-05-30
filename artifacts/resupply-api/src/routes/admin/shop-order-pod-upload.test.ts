@@ -90,8 +90,8 @@ vi.mock("../../middlewares/requireAdmin", () =>
 // adminRateLimit is a no-op pass-through in tests — bypassing the
 // 429 logic keeps these focused on the handler's behaviour.
 vi.mock("../../middlewares/admin-rate-limit", () => ({
-  adminRateLimit:
-    () => (_req: unknown, _res: unknown, next: () => void) => next(),
+  adminRateLimit: () => (_req: unknown, _res: unknown, next: () => void) =>
+    next(),
 }));
 
 import shopOrderPodUploadRouter from "./shop-order-pod-upload";
@@ -208,9 +208,9 @@ describe("/admin/shop/orders/:orderId/pod (finalize)", () => {
   beforeEach(() => {
     supabaseMock.reset();
     mockAdmin.current = null;
-    getMetadataMock.mockReset().mockResolvedValue([
-      { size: "12345", contentType: "image/jpeg" },
-    ]);
+    getMetadataMock
+      .mockReset()
+      .mockResolvedValue([{ size: "12345", contentType: "image/jpeg" }]);
     deleteObjectMock.mockReset().mockResolvedValue(undefined);
   });
 

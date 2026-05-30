@@ -61,7 +61,9 @@ function stubAdmin(userId = "u_admin_1") {
 // the supabase mock.
 const PRESET_ID = "11111111-1111-4111-8111-111111111111";
 
-function makePresetRow(over: Record<string, unknown> = {}): Record<string, unknown> {
+function makePresetRow(
+  over: Record<string, unknown> = {},
+): Record<string, unknown> {
   return {
     id: PRESET_ID,
     user_id: "u_admin_1",
@@ -149,15 +151,13 @@ describe("POST /admin/reports/presets", () => {
       data: makePresetRow(),
     });
 
-    const res = await request(makeApp())
-      .post("/admin/reports/presets")
-      .send({
-        name: "Monthly close — last month IIF",
-        slug: "orders",
-        format: "iif",
-        rangeKind: "preset",
-        rangePreset: "preset-last-month",
-      });
+    const res = await request(makeApp()).post("/admin/reports/presets").send({
+      name: "Monthly close — last month IIF",
+      slug: "orders",
+      format: "iif",
+      rangeKind: "preset",
+      rangePreset: "preset-last-month",
+    });
 
     expect(res.status).toBe(201);
     expect(res.body.preset.id).toBe(PRESET_ID);
@@ -175,16 +175,14 @@ describe("POST /admin/reports/presets", () => {
       }),
     });
 
-    const res = await request(makeApp())
-      .post("/admin/reports/presets")
-      .send({
-        name: "April orders",
-        slug: "orders",
-        format: "csv",
-        rangeKind: "absolute",
-        rangeFrom: "2026-04-01",
-        rangeTo: "2026-04-30",
-      });
+    const res = await request(makeApp()).post("/admin/reports/presets").send({
+      name: "April orders",
+      slug: "orders",
+      format: "csv",
+      rangeKind: "absolute",
+      rangeFrom: "2026-04-01",
+      rangeTo: "2026-04-30",
+    });
 
     expect(res.status).toBe(201);
     expect(res.body.preset.rangeKind).toBe("absolute");
@@ -194,31 +192,27 @@ describe("POST /admin/reports/presets", () => {
 
   it("rejects invalid format with 400", async () => {
     stubAdmin();
-    const res = await request(makeApp())
-      .post("/admin/reports/presets")
-      .send({
-        name: "X",
-        slug: "orders",
-        format: "xlsx", // not in the catalog
-        rangeKind: "preset",
-        rangePreset: "preset-7d",
-      });
+    const res = await request(makeApp()).post("/admin/reports/presets").send({
+      name: "X",
+      slug: "orders",
+      format: "xlsx", // not in the catalog
+      rangeKind: "preset",
+      rangePreset: "preset-7d",
+    });
     expect(res.status).toBe(400);
     expect(res.body.error).toBe("invalid_body");
   });
 
   it("rejects absolute range with rangeFrom > rangeTo (400)", async () => {
     stubAdmin();
-    const res = await request(makeApp())
-      .post("/admin/reports/presets")
-      .send({
-        name: "Bad range",
-        slug: "orders",
-        format: "csv",
-        rangeKind: "absolute",
-        rangeFrom: "2026-04-30",
-        rangeTo: "2026-04-01",
-      });
+    const res = await request(makeApp()).post("/admin/reports/presets").send({
+      name: "Bad range",
+      slug: "orders",
+      format: "csv",
+      rangeKind: "absolute",
+      rangeFrom: "2026-04-30",
+      rangeTo: "2026-04-01",
+    });
     expect(res.status).toBe(400);
     expect(res.body.error).toBe("invalid_body");
     const issues = res.body.issues as Array<{ path: string }>;
@@ -227,17 +221,15 @@ describe("POST /admin/reports/presets", () => {
 
   it("rejects mixing absolute + rangePreset (zod discriminated union)", async () => {
     stubAdmin();
-    const res = await request(makeApp())
-      .post("/admin/reports/presets")
-      .send({
-        name: "Hybrid",
-        slug: "orders",
-        format: "csv",
-        rangeKind: "absolute",
-        rangeFrom: "2026-04-01",
-        rangeTo: "2026-04-30",
-        rangePreset: "preset-last-month", // not allowed when absolute
-      });
+    const res = await request(makeApp()).post("/admin/reports/presets").send({
+      name: "Hybrid",
+      slug: "orders",
+      format: "csv",
+      rangeKind: "absolute",
+      rangeFrom: "2026-04-01",
+      rangeTo: "2026-04-30",
+      rangePreset: "preset-last-month", // not allowed when absolute
+    });
     expect(res.status).toBe(400);
   });
 

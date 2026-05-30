@@ -24,7 +24,12 @@ const router: IRouter = Router();
 
 type Row = Database["resupply"]["Tables"]["capped_rental_cycles"]["Row"];
 
-const STATUS_VALUES = ["active", "paused", "transferred", "cancelled"] as const satisfies readonly Row["status"][];
+const STATUS_VALUES = [
+  "active",
+  "paused",
+  "transferred",
+  "cancelled",
+] as const satisfies readonly Row["status"][];
 const MAX_MONTHS_VALUES = [13, 15, 36] as const;
 
 const createBody = z
@@ -34,7 +39,10 @@ const createBody = z
     payerProfileId: z.string().uuid().nullable().optional(),
     insuranceCoverageId: z.string().uuid().nullable().optional(),
     startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-    maxMonths: z.number().int().refine((n) => (MAX_MONTHS_VALUES as readonly number[]).includes(n)),
+    maxMonths: z
+      .number()
+      .int()
+      .refine((n) => (MAX_MONTHS_VALUES as readonly number[]).includes(n)),
     notes: z.string().trim().max(2000).nullable().optional(),
   })
   .strict();
@@ -56,20 +64,22 @@ router.get(
   "/admin/capped-rental-cycles",
   requirePermission("patients.read"),
   async (req, res) => {
-  const supabase = getSupabaseServiceRoleClient();
-  let query = supabase
-    .schema("resupply")
-    .from("capped_rental_cycles")
-    .select("*")
-    .order("start_date", { ascending: false })
-    .limit(200);
-  const status = typeof req.query.status === "string" ? req.query.status : undefined;
-  if (status && (STATUS_VALUES as readonly string[]).includes(status)) {
-    query = query.eq("status", status as Row["status"]);
-  }
-  const { data } = await query;
-  res.json({ cycles: data ?? [] });
-});
+    const supabase = getSupabaseServiceRoleClient();
+    let query = supabase
+      .schema("resupply")
+      .from("capped_rental_cycles")
+      .select("*")
+      .order("start_date", { ascending: false })
+      .limit(200);
+    const status =
+      typeof req.query.status === "string" ? req.query.status : undefined;
+    if (status && (STATUS_VALUES as readonly string[]).includes(status)) {
+      query = query.eq("status", status as Row["status"]);
+    }
+    const { data } = await query;
+    res.json({ cycles: data ?? [] });
+  },
+);
 
 router.post(
   "/admin/capped-rental-cycles",
@@ -137,9 +147,10 @@ router.patch(
       return;
     }
     const b = parsed.data;
-    const update: Database["resupply"]["Tables"]["capped_rental_cycles"]["Update"] = {
-      updated_at: new Date().toISOString(),
-    };
+    const update: Database["resupply"]["Tables"]["capped_rental_cycles"]["Update"] =
+      {
+        updated_at: new Date().toISOString(),
+      };
     if (b.status !== undefined) update.status = b.status;
     if (b.ownershipTransferredOn !== undefined)
       update.ownership_transferred_on = b.ownershipTransferredOn;

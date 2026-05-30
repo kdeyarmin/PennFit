@@ -160,10 +160,7 @@ describe("POST /admin/patients/:id/therapy-links", () => {
     expect(res.status).toBe(201);
     expect(res.body.link.id).toBe(LINK_ID);
 
-    const inserts = getSupabaseWritePayloads(
-      "patient_therapy_links",
-      "insert",
-    );
+    const inserts = getSupabaseWritePayloads("patient_therapy_links", "insert");
     expect(inserts).toHaveLength(1);
     expect(inserts[0]).toMatchObject({
       patient_id: PATIENT_ID,
@@ -264,10 +261,7 @@ describe("PATCH /admin/patients/:id/therapy-links/:linkId", () => {
 
     expect(res.status).toBe(200);
     expect(res.body.link.status).toBe("paused");
-    const updates = getSupabaseWritePayloads(
-      "patient_therapy_links",
-      "update",
-    );
+    const updates = getSupabaseWritePayloads("patient_therapy_links", "update");
     expect(updates[0]).toEqual({ status: "paused" });
 
     const audit = logAuditMock.mock.calls[0]?.[0] as {
@@ -315,10 +309,7 @@ describe("DELETE /admin/patients/:id/therapy-links/:linkId", () => {
 
     expect(res.status).toBe(200);
     expect(res.body.link.status).toBe("revoked");
-    const updates = getSupabaseWritePayloads(
-      "patient_therapy_links",
-      "update",
-    );
+    const updates = getSupabaseWritePayloads("patient_therapy_links", "update");
     expect(updates[0]).toEqual({ status: "revoked" });
 
     const audit = logAuditMock.mock.calls[0]?.[0] as { action: string };

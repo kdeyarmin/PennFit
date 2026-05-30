@@ -40,14 +40,13 @@ export async function scanRecallsForAsset(
     .maybeSingle();
   if (aErr) throw aErr;
   if (!asset) return { matchedRecallIds: [], notificationsQueued: 0 };
-  if (asset.status !== "active") return { matchedRecallIds: [], notificationsQueued: 0 };
+  if (asset.status !== "active")
+    return { matchedRecallIds: [], notificationsQueued: 0 };
 
   const { data: recalls, error: rErr } = await supabase
     .schema("resupply")
     .from("equipment_recalls")
-    .select(
-      "id, manufacturer, model_match, serial_match, status",
-    )
+    .select("id, manufacturer, model_match, serial_match, status")
     .eq("status", "active")
     .ilike("manufacturer", asset.manufacturer);
   if (rErr) throw rErr;

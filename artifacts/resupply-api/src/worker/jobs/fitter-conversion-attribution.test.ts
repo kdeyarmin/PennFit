@@ -44,7 +44,13 @@ function makeLead(
   journey_stage = "campaign_active",
   first_order_id: string | null = null,
 ) {
-  return { id, email, journey_stage, first_order_id, created_at: "2025-01-01T00:00:00Z" };
+  return {
+    id,
+    email,
+    journey_stage,
+    first_order_id,
+    created_at: "2025-01-01T00:00:00Z",
+  };
 }
 
 describe("runFitterConversionAttribution", () => {
@@ -66,7 +72,10 @@ describe("runFitterConversionAttribution", () => {
 
     stageSupabaseResponse("orders", "select", { data: [order] });
     stageSupabaseResponse("fitter_leads", "select", { data: [lead] });
-    stageSupabaseResponse("fitter_leads", "update", { data: null, error: null });
+    stageSupabaseResponse("fitter_leads", "update", {
+      data: null,
+      error: null,
+    });
 
     const stats = await runFitterConversionAttribution();
 
@@ -77,12 +86,19 @@ describe("runFitterConversionAttribution", () => {
   });
 
   it("writes first_order_id, first_order_placed_at, and journey_stage='reorder_active' on attribution", async () => {
-    const order = makeOrder("order-abc", "bob@example.com", "2025-01-15T10:00:00Z");
+    const order = makeOrder(
+      "order-abc",
+      "bob@example.com",
+      "2025-01-15T10:00:00Z",
+    );
     const lead = makeLead("lead-bob", "bob@example.com");
 
     stageSupabaseResponse("orders", "select", { data: [order] });
     stageSupabaseResponse("fitter_leads", "select", { data: [lead] });
-    stageSupabaseResponse("fitter_leads", "update", { data: null, error: null });
+    stageSupabaseResponse("fitter_leads", "update", {
+      data: null,
+      error: null,
+    });
 
     await runFitterConversionAttribution();
 
@@ -105,7 +121,10 @@ describe("runFitterConversionAttribution", () => {
 
     stageSupabaseResponse("orders", "select", { data: [order] });
     stageSupabaseResponse("fitter_leads", "select", { data: [lead] });
-    stageSupabaseResponse("fitter_leads", "update", { data: null, error: null });
+    stageSupabaseResponse("fitter_leads", "update", {
+      data: null,
+      error: null,
+    });
 
     const stats = await runFitterConversionAttribution();
 
@@ -173,7 +192,10 @@ describe("runFitterConversionAttribution", () => {
 
     stageSupabaseResponse("orders", "select", { data: orders });
     stageSupabaseResponse("fitter_leads", "select", { data: [lead] });
-    stageSupabaseResponse("fitter_leads", "update", { data: null, error: null });
+    stageSupabaseResponse("fitter_leads", "update", {
+      data: null,
+      error: null,
+    });
 
     const stats = await runFitterConversionAttribution();
 
@@ -204,7 +226,10 @@ describe("runFitterConversionAttribution", () => {
 
     stageSupabaseResponse("orders", "select", { data: orders });
     stageSupabaseResponse("fitter_leads", "select", { data: [lead] });
-    stageSupabaseResponse("fitter_leads", "update", { data: null, error: null });
+    stageSupabaseResponse("fitter_leads", "update", {
+      data: null,
+      error: null,
+    });
 
     const stats = await runFitterConversionAttribution();
 
@@ -221,7 +246,11 @@ describe("runFitterConversionAttribution", () => {
 
   it("handles orders with null patient_email gracefully (skips, no error)", async () => {
     const orders = [
-      { id: "order-null", patient_email: null, created_at: "2025-01-10T00:00:00Z" },
+      {
+        id: "order-null",
+        patient_email: null,
+        created_at: "2025-01-10T00:00:00Z",
+      },
     ];
 
     stageSupabaseResponse("orders", "select", { data: orders });

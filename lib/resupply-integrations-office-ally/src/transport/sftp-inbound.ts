@@ -60,11 +60,7 @@ export interface DownloadResult {
 
 export interface DownloadFailure {
   ok: false;
-  kind:
-    | "auth_failed"
-    | "connect_failed"
-    | "download_failed"
-    | "unavailable";
+  kind: "auth_failed" | "connect_failed" | "download_failed" | "unavailable";
   message: string;
 }
 
@@ -251,7 +247,10 @@ function classify(err: unknown): { kind: string; message: string } {
         ? e.stderr.toString("utf8")
         : "";
   if (e?.killed && e?.signal) {
-    return { kind: "unavailable", message: `sftp killed by signal ${e.signal}` };
+    return {
+      kind: "unavailable",
+      message: `sftp killed by signal ${e.signal}`,
+    };
   }
   if (e?.code === "ENOENT") {
     return { kind: "unavailable", message: "sftp binary not found on PATH" };
@@ -259,7 +258,9 @@ function classify(err: unknown): { kind: string; message: string } {
   if (/Permission denied|Authentication failed/i.test(stderr)) {
     return { kind: "auth_failed", message: "sftp authentication failed" };
   }
-  if (/Connection refused|No route to host|Connection timed out/i.test(stderr)) {
+  if (
+    /Connection refused|No route to host|Connection timed out/i.test(stderr)
+  ) {
     return { kind: "connect_failed", message: "sftp connect failed" };
   }
   return {

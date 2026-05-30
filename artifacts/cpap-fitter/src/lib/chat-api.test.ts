@@ -215,7 +215,9 @@ describe("streamChatMessage", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
     // Second call must be the JSON path — no Accept: text/event-stream.
     const secondInit = fetchMock.mock.calls[1]?.[1] as RequestInit;
-    expect((secondInit.headers as Record<string, string>).Accept).toBeUndefined();
+    expect(
+      (secondInit.headers as Record<string, string>).Accept,
+    ).toBeUndefined();
   });
 
   test("falls back to the JSON endpoint when the streaming fetch throws", async () => {

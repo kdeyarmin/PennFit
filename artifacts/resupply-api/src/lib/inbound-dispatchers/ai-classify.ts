@@ -62,12 +62,12 @@ const SYSTEM_PROMPT = [
   "CPAP-resupply company. You receive a JSON summary of an inbound",
   "electronic order and emit ONE strict JSON object:",
   "",
-  '  {',
+  "  {",
   '    "intent": "new_patient" | "refill" | "replacement" | "resupply" | "unknown",',
   '    "confidence": <number 0..1>,',
   '    "summary": "one short factual sentence",',
   '    "flags": ["short bullet", ...]',
-  '  }',
+  "  }",
   "",
   "Definitions:",
   "  new_patient — first ever PAP setup; expect E0601 + mask + tubing + filters.",
@@ -83,7 +83,7 @@ const SYSTEM_PROMPT = [
   "  the HCPCS codes + patient/provider match status make this an obvious call.",
   "  Use 0.5 or lower when the codes are ambiguous or the matchers struck out.",
   "- `summary` is ONE plain English sentence. Reference HCPCS counts, not",
-  "  individual codes. e.g. \"Refill for 2 mask cushions and 1 filter.\"",
+  '  individual codes. e.g. "Refill for 2 mask cushions and 1 filter."',
   "- `flags` lists ANYTHING a CSR should notice: missing diagnosis,",
   "  unmatched provider NPI, payer not in our common list, suspicious code",
   "  combination. Empty array when everything looks routine.",
@@ -177,13 +177,7 @@ export function parseClassification(
   const intentRaw =
     typeof parsed.intent === "string" ? parsed.intent : "unknown";
   const intent: ReferralIntent = (
-    [
-      "new_patient",
-      "refill",
-      "replacement",
-      "resupply",
-      "unknown",
-    ] as const
+    ["new_patient", "refill", "replacement", "resupply", "unknown"] as const
   ).includes(intentRaw as ReferralIntent)
     ? (intentRaw as ReferralIntent)
     : "unknown";

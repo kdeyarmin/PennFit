@@ -44,7 +44,10 @@ import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { buildPrescriptionRequestPacketFromRx } from "../../lib/prescription-request-builder";
 import { logger } from "../../lib/logger";
-import { createQueueWithDlq, VENDOR_SEND_QUEUE_OPTS } from "../lib/queue-options";
+import {
+  createQueueWithDlq,
+  VENDOR_SEND_QUEUE_OPTS,
+} from "../lib/queue-options";
 
 const JOB = "prescription-request.auto-draft";
 const CRON = "43 13 * * *"; // 13:43 UTC daily
@@ -100,7 +103,10 @@ export async function runPrescriptionRequestAutoDraft(): Promise<AutoDraftStats>
     .order("valid_until", { ascending: true })
     .limit(BATCH_SIZE);
   if (error) {
-    logger.error({ err: error }, "prescription-request.auto-draft.select_failed");
+    logger.error(
+      { err: error },
+      "prescription-request.auto-draft.select_failed",
+    );
     throw error;
   }
   if (!candidates || candidates.length === 0) return stats;

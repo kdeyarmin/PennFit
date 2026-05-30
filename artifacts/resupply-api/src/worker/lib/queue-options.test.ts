@@ -62,7 +62,10 @@ describe("buildQueueConfig", () => {
   });
 
   it("works with WEBHOOK_DISPATCH_QUEUE_OPTS preset", () => {
-    const cfg = buildQueueConfig("webhooks.dispatch", WEBHOOK_DISPATCH_QUEUE_OPTS);
+    const cfg = buildQueueConfig(
+      "webhooks.dispatch",
+      WEBHOOK_DISPATCH_QUEUE_OPTS,
+    );
     expect(cfg.name).toBe("webhooks.dispatch");
     expect(cfg.deadLetter).toBe("webhooks.dispatch.dlq");
     expect(cfg.retryLimit).toBe(WEBHOOK_DISPATCH_QUEUE_OPTS.retryLimit);
@@ -181,7 +184,7 @@ describe("buildQueueConfig — deadLetter ordering invariant (regression)", () =
       retryLimit: 1,
       deadLetter: "some.other.dlq",
     } as never);
-    expect(cfg.retryLimit).toBe(1);           // override applied
+    expect(cfg.retryLimit).toBe(1); // override applied
     expect(cfg.deadLetter).toBe("my.queue.dlq"); // DLQ name wins
   });
 
@@ -271,7 +274,9 @@ describe("createQueueWithDlq", () => {
     expect(mainCallOpts.retryLimit).toBe(VENDOR_SEND_QUEUE_OPTS.retryLimit);
     expect(mainCallOpts.retryBackoff).toBe(VENDOR_SEND_QUEUE_OPTS.retryBackoff);
     expect(mainCallOpts.retryDelay).toBe(VENDOR_SEND_QUEUE_OPTS.retryDelay);
-    expect(mainCallOpts.expireInMinutes).toBe(VENDOR_SEND_QUEUE_OPTS.expireInMinutes);
+    expect(mainCallOpts.expireInMinutes).toBe(
+      VENDOR_SEND_QUEUE_OPTS.expireInMinutes,
+    );
   });
 
   it("applies overrides onto the main queue config", async () => {
@@ -321,9 +326,15 @@ describe("createQueueWithDlq", () => {
 
   it("works with WEBHOOK_DISPATCH_QUEUE_OPTS preset", async () => {
     const { boss, calls } = makeBossSpy();
-    await createQueueWithDlq(boss, "webhook.dispatch", WEBHOOK_DISPATCH_QUEUE_OPTS);
+    await createQueueWithDlq(
+      boss,
+      "webhook.dispatch",
+      WEBHOOK_DISPATCH_QUEUE_OPTS,
+    );
     const mainCallOpts = calls[1]?.opts as Record<string, unknown>;
-    expect(mainCallOpts.retryLimit).toBe(WEBHOOK_DISPATCH_QUEUE_OPTS.retryLimit);
+    expect(mainCallOpts.retryLimit).toBe(
+      WEBHOOK_DISPATCH_QUEUE_OPTS.retryLimit,
+    );
     expect(mainCallOpts.expireInMinutes).toBe(
       WEBHOOK_DISPATCH_QUEUE_OPTS.expireInMinutes,
     );

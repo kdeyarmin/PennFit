@@ -28,7 +28,15 @@
 // prefix and we DELETE only those rows in afterAll. We never
 // truncate the tables — other suites may be running in parallel.
 
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 
 // IMPORTANT: mock SendGrid BEFORE importing the worker module, so the
 // dynamic `createSendgridClient` call inside the sweep resolves to
@@ -263,13 +271,9 @@ describeIfDb("invite-password-expiry-notify (live db)", () => {
     // parallel suites don't pollute the assertion.
     const ourCalls = sendEmailMock.mock.calls.filter((call) => {
       const arg = call[0] as { to?: string } | undefined;
-      return (
-        typeof arg?.to === "string" && arg.to.startsWith(`${runTag}+`)
-      );
+      return typeof arg?.to === "string" && arg.to.startsWith(`${runTag}+`);
     });
-    const toAddresses = ourCalls.map(
-      (c) => (c[0] as { to: string }).to,
-    );
+    const toAddresses = ourCalls.map((c) => (c[0] as { to: string }).to);
     expect(toAddresses).toEqual(
       expect.arrayContaining([
         emailFor("reminder"),
@@ -296,9 +300,7 @@ describeIfDb("invite-password-expiry-notify (live db)", () => {
       )
       .in("user_id", ids);
     expect(error).toBeNull();
-    const byId = new Map(
-      (data ?? []).map((r) => [r.user_id as string, r]),
-    );
+    const byId = new Map((data ?? []).map((r) => [r.user_id as string, r]));
 
     // young — no stamps should be set.
     const young = byId.get(userIdBySlot.get("young")!)!;
@@ -355,9 +357,7 @@ describeIfDb("invite-password-expiry-notify (live db)", () => {
     const claimedStampMs = new Date(
       claimed.expiry_reminder_sent_at as string,
     ).getTime();
-    const claimedSetMs = new Date(
-      claimed.set_by_admin_at as string,
-    ).getTime();
+    const claimedSetMs = new Date(claimed.set_by_admin_at as string).getTime();
     const diffMs = claimedStampMs - claimedSetMs;
     // The seed put the stamp at exactly +1h; allow ±5min for
     // clock skew between Date.now() in seed() and the DB write.
@@ -418,13 +418,9 @@ describeIfDb("invite-password-expiry-notify (live db)", () => {
     // The good row in the same batch was processed normally.
     const ourSends = sendEmailMock.mock.calls.filter((call) => {
       const arg = call[0] as { to?: string } | undefined;
-      return (
-        typeof arg?.to === "string" && arg.to.startsWith(`${runTag}+`)
-      );
+      return typeof arg?.to === "string" && arg.to.startsWith(`${runTag}+`);
     });
-    const ourToAddresses = ourSends.map(
-      (c) => (c[0] as { to: string }).to,
-    );
+    const ourToAddresses = ourSends.map((c) => (c[0] as { to: string }).to);
     // sendEmail() WAS invoked for all three — proving the sweep
     // attempted delivery for every claimed row, including the
     // good one in the same batch as the failing sends.
@@ -457,9 +453,7 @@ describeIfDb("invite-password-expiry-notify (live db)", () => {
       )
       .in("user_id", newSlotIds);
     expect(error).toBeNull();
-    const byUserId = new Map(
-      (rows ?? []).map((r) => [r.user_id as string, r]),
-    );
+    const byUserId = new Map((rows ?? []).map((r) => [r.user_id as string, r]));
 
     // sendfail-reminder — reminder stamp set DESPITE the send
     // throwing; expired stamp untouched (wrong window).

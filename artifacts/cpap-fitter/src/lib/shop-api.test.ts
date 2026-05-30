@@ -10,7 +10,11 @@
 
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { Mock } from "vitest";
-import { submitFitterLead, submitFitterComplete, fetchShopProducts } from "./shop-api";
+import {
+  submitFitterLead,
+  submitFitterComplete,
+  fetchShopProducts,
+} from "./shop-api";
 
 const ORIGINAL_FETCH = globalThis.fetch;
 
@@ -243,8 +247,12 @@ describe("submitFitterComplete", () => {
     const body = JSON.parse(init.body as string) as Record<string, unknown>;
     expect(body.email).toBe(VALID_COMPLETE_INPUT.email);
     expect(body.recommendedMaskId).toBe(VALID_COMPLETE_INPUT.recommendedMaskId);
-    expect(body.recommendedMaskName).toBe(VALID_COMPLETE_INPUT.recommendedMaskName);
-    expect(body.recommendedMaskType).toBe(VALID_COMPLETE_INPUT.recommendedMaskType);
+    expect(body.recommendedMaskName).toBe(
+      VALID_COMPLETE_INPUT.recommendedMaskName,
+    );
+    expect(body.recommendedMaskType).toBe(
+      VALID_COMPLETE_INPUT.recommendedMaskType,
+    );
   });
 
   test("throws an Error with the JSON error code on a non-OK response", async () => {

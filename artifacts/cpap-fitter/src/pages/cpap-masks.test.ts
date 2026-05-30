@@ -35,7 +35,9 @@ describe("cpap-masks — exports", () => {
 describe("cpap-masks — brands array completeness", () => {
   it("defines three brand entries (react-health, resmed, fisher-paykel)", () => {
     const slugMatches = SRC.match(/slug:\s*"([^"]+)"/g) ?? [];
-    const slugs = slugMatches.map((m) => m.replace(/^slug:\s*"/, "").replace(/"$/, ""));
+    const slugs = slugMatches.map((m) =>
+      m.replace(/^slug:\s*"/, "").replace(/"$/, ""),
+    );
     expect(slugs).toContain("react-health");
     expect(slugs).toContain("resmed");
     expect(slugs).toContain("fisher-paykel");

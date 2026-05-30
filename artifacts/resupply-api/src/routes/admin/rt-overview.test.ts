@@ -264,7 +264,9 @@ describe("GET /admin/rt-overview.csv", () => {
 
     expect(res.status).toBe(200);
     expect(res.headers["content-type"]).toContain("text/csv");
-    expect(res.headers["content-disposition"]).toMatch(/attachment; filename="rt-overview-/);
+    expect(res.headers["content-disposition"]).toMatch(
+      /attachment; filename="rt-overview-/,
+    );
     const lines = (res.text as string).split("\n").filter((l) => l.length);
     expect(lines).toHaveLength(2);
     expect(lines[0]).toBe(

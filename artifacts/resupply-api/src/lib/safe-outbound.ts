@@ -232,8 +232,12 @@ function isReservedIpv6(ip: string): boolean {
       const high = Number.parseInt(groups[0], 16);
       const low = Number.parseInt(groups[1], 16);
       if (
-        !Number.isFinite(high) || !Number.isFinite(low) ||
-        high < 0 || high > 0xffff || low < 0 || low > 0xffff
+        !Number.isFinite(high) ||
+        !Number.isFinite(low) ||
+        high < 0 ||
+        high > 0xffff ||
+        low < 0 ||
+        low > 0xffff
       ) {
         return true;
       }

@@ -49,8 +49,7 @@ const PATTERNS: Array<{
   // parens, and dash / dot / space separators.
   {
     kind: "phone",
-    pattern:
-      /(?:\+?1[-.\s]?)?\(?\b[2-9]\d{2}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b/g,
+    pattern: /(?:\+?1[-.\s]?)?\(?\b[2-9]\d{2}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b/g,
   },
   // Date of birth in common spellings:
   //   12/03/1965, 12-03-1965, 12.03.1965, 1965/03/12

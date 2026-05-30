@@ -12,7 +12,7 @@ provisioned with only a **core subset** of the application schema. It has
   `hipaa_*`, `oig_*`, `patient_disclosure_log`, `business_associate_agreements`,
   etc.) are correctly **excluded** from this list. None of the 84 are
   "retired-on-purpose."
-- Every table prod *does* have is an expected one — no rogue or renamed
+- Every table prod _does_ have is an expected one — no rogue or renamed
   tables. It's a clean subset, just incomplete.
 - This DB was built by **8 Supabase-native migrations**, not the repo's
   migration runner (`drizzle.resupply_migrations` history is absent).
@@ -45,14 +45,14 @@ indexes, and FKs that a bare `CREATE TABLE` would miss.
 These are referenced by code that runs today, so their absence likely causes
 real (often silent) failures, not just dormant-feature no-ops.
 
-| Table | Used by | Impact if missing |
-| ----- | ------- | ----------------- |
-| `worker_dedup_keys` | `worker/jobs/reminders.ts` | Reminder **idempotency** — dispatcher may error or risk duplicate/again-skipped sends. Reminders are a core feature. |
-| `stripe_webhook_events` | `lib/stripe/webhook-handler.ts` | Stripe webhook **dedup/idempotency** — payment/subscription events may double-process or error. |
-| `patient_payments` | `routes/storefront/me-payments.ts`, `lib/billing/patient-payment.ts` | Recording patient card payments fails. |
-| `patient_billing_statements` | `routes/storefront/me-billing.ts` | Patient statement history/PDF re-render fails. |
-| `admin_mfa_secrets`, `admin_mfa_recovery_codes` | `lib/auth-deps.ts`, `routes/admin/mfa.ts` | Admin MFA enrollment/verification fails. Verify whether MFA is enforced on sign-in. |
-| `feature_flag_events` | `routes/admin/feature-flags.ts` | Admin Control Center toggle-audit writes fail (the flag still flips, but the activity log errors). |
+| Table                                           | Used by                                                              | Impact if missing                                                                                                    |
+| ----------------------------------------------- | -------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `worker_dedup_keys`                             | `worker/jobs/reminders.ts`                                           | Reminder **idempotency** — dispatcher may error or risk duplicate/again-skipped sends. Reminders are a core feature. |
+| `stripe_webhook_events`                         | `lib/stripe/webhook-handler.ts`                                      | Stripe webhook **dedup/idempotency** — payment/subscription events may double-process or error.                      |
+| `patient_payments`                              | `routes/storefront/me-payments.ts`, `lib/billing/patient-payment.ts` | Recording patient card payments fails.                                                                               |
+| `patient_billing_statements`                    | `routes/storefront/me-billing.ts`                                    | Patient statement history/PDF re-render fails.                                                                       |
+| `admin_mfa_secrets`, `admin_mfa_recovery_codes` | `lib/auth-deps.ts`, `routes/admin/mfa.ts`                            | Admin MFA enrollment/verification fails. Verify whether MFA is enforced on sign-in.                                  |
+| `feature_flag_events`                           | `routes/admin/feature-flags.ts`                                      | Admin Control Center toggle-audit writes fail (the flag still flips, but the activity log errors).                   |
 
 **Status — created 2026-05-29.** All 7 tables backfilled (DDL taken faithfully
 from repo migrations `0160`/`0158`/`0163`/`0084`+`0091`/`0085`/`0137`/`0138`,
@@ -66,11 +66,11 @@ admin MFA, and feature-flag toggle-audit paths no longer hit missing tables.
 > production's `resupply.admin_users.id` is **`text`**, but the repo's
 > migrations declare it `uuid`. The two `admin_mfa_*` tables were therefore
 > created with `staff_user_id` **`text`** (not `uuid`) to satisfy the FK.
-> **Lesson:** existing prod tables differ from the repo not just in *presence*
-> but in column *types*. Any FK in a backfilled table must be matched to
+> **Lesson:** existing prod tables differ from the repo not just in _presence_
+> but in column _types_. Any FK in a backfilled table must be matched to
 > production's **actual** target-column type — confirm via
 > `information_schema.columns`, don't assume the repo DDL. (`patients.id`
-> *is* `uuid`, so the `patient_*` FKs matched as-is.) This also means a naive
+> _is_ `uuid`, so the `patient_*` FKs matched as-is.) This also means a naive
 > "apply the repo migrations" reconciliation would fail; the clean-DB-diff
 > approach must account for these pre-existing type differences.
 
@@ -173,7 +173,7 @@ feature truly works.
   active-code drift (reminders dedup, Stripe dedup, patient payments,
   admin MFA, feature-flag audit) is resolved. Tiers 1–3 remain a per-feature
   decision.
-- **`worker_run_summary` created** — the PHI/attachment-sweep (a *core* job,
+- **`worker_run_summary` created** — the PHI/attachment-sweep (a _core_ job,
   not a dormant feature) writes a run row here, and the ops dashboard's
   "last run" tile reads it. Additive, no FK.
 - **Dormant cron jobs auto-gated.** A self-healing table-existence guard

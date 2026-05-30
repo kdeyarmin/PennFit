@@ -177,7 +177,9 @@ const EMAIL_CFG = {
   practiceName: "Test Practice",
 };
 
-function makeInput(overrides?: Partial<Parameters<typeof replyInConversation>[0]>) {
+function makeInput(
+  overrides?: Partial<Parameters<typeof replyInConversation>[0]>,
+) {
   return {
     supabase: makeSupabase(),
     smsCfg: SMS_CFG,
@@ -217,10 +219,14 @@ describe("replyInConversation — early exits", () => {
   });
 
   it("throws when conversations SELECT returns a Supabase error", async () => {
-    const dbErr = Object.assign(new Error("PostgREST error"), { code: "PGRST" });
+    const dbErr = Object.assign(new Error("PostgREST error"), {
+      code: "PGRST",
+    });
     convReadMock.mockResolvedValue({ data: null, error: dbErr });
 
-    await expect(replyInConversation(makeInput())).rejects.toThrow("PostgREST error");
+    await expect(replyInConversation(makeInput())).rejects.toThrow(
+      "PostgREST error",
+    );
     expect(sendSmsMock).not.toHaveBeenCalled();
   });
 
@@ -401,7 +407,12 @@ describe("replyInConversation — SMS success path", () => {
       error: null,
     });
     patientReadMock.mockResolvedValue({
-      data: { id: PATIENT_ID, status: "active", phone_e164: "+12155551212", email: null },
+      data: {
+        id: PATIENT_ID,
+        status: "active",
+        phone_e164: "+12155551212",
+        email: null,
+      },
       error: null,
     });
     sendSmsMock.mockResolvedValue({ messageSid: "SM_TEST_123" });
@@ -495,14 +506,21 @@ describe("replyInConversation — SMS vendor errors", () => {
       error: null,
     });
     patientReadMock.mockResolvedValue({
-      data: { id: PATIENT_ID, status: "active", phone_e164: "+12155551212", email: null },
+      data: {
+        id: PATIENT_ID,
+        status: "active",
+        phone_e164: "+12155551212",
+        email: null,
+      },
       error: null,
     });
   });
 
   it("returns vendor_api_error and audits twilio_error on TwilioApiError", async () => {
     const { TwilioApiError } = await import("@workspace/resupply-telecom");
-    sendSmsMock.mockRejectedValue(new TwilioApiError("Undeliverable", 400, "21610"));
+    sendSmsMock.mockRejectedValue(
+      new TwilioApiError("Undeliverable", 400, "21610"),
+    );
 
     const result = await replyInConversation(makeInput());
 
@@ -564,7 +582,12 @@ describe("replyInConversation — email channel", () => {
 
   it("returns ok and audits status=ok on email success", async () => {
     patientReadMock.mockResolvedValue({
-      data: { id: PATIENT_ID, status: "active", phone_e164: null, email: "joan@example.com" },
+      data: {
+        id: PATIENT_ID,
+        status: "active",
+        phone_e164: null,
+        email: "joan@example.com",
+      },
       error: null,
     });
     sendEmailMock.mockResolvedValue({ messageId: "SG_MSG_999" });
@@ -593,7 +616,12 @@ describe("replyInConversation — email channel", () => {
 
   it("returns vendor_api_error and audits sendgrid_error on EmailApiError", async () => {
     patientReadMock.mockResolvedValue({
-      data: { id: PATIENT_ID, status: "active", phone_e164: null, email: "joan@example.com" },
+      data: {
+        id: PATIENT_ID,
+        status: "active",
+        phone_e164: null,
+        email: "joan@example.com",
+      },
       error: null,
     });
     const { EmailApiError } = await import("@workspace/resupply-email");
@@ -609,16 +637,25 @@ describe("replyInConversation — email channel", () => {
     expect(msgInsertMock).not.toHaveBeenCalled();
 
     expect(safeAuditMock).toHaveBeenCalledTimes(1);
-    expect(safeAuditMock.mock.calls[0][0].metadata.status).toBe("sendgrid_error");
+    expect(safeAuditMock.mock.calls[0][0].metadata.status).toBe(
+      "sendgrid_error",
+    );
   });
 
   it("re-throws EmailConfigError (must not be swallowed)", async () => {
     patientReadMock.mockResolvedValue({
-      data: { id: PATIENT_ID, status: "active", phone_e164: null, email: "joan@example.com" },
+      data: {
+        id: PATIENT_ID,
+        status: "active",
+        phone_e164: null,
+        email: "joan@example.com",
+      },
       error: null,
     });
     const { EmailConfigError } = await import("@workspace/resupply-email");
-    sendEmailMock.mockRejectedValue(new EmailConfigError("missing SENDGRID_API_KEY"));
+    sendEmailMock.mockRejectedValue(
+      new EmailConfigError("missing SENDGRID_API_KEY"),
+    );
 
     await expect(replyInConversation(makeInput())).rejects.toBeInstanceOf(
       EmailConfigError,
@@ -627,7 +664,12 @@ describe("replyInConversation — email channel", () => {
 
   it("email subject includes practice name", async () => {
     patientReadMock.mockResolvedValue({
-      data: { id: PATIENT_ID, status: "active", phone_e164: null, email: "joan@example.com" },
+      data: {
+        id: PATIENT_ID,
+        status: "active",
+        phone_e164: null,
+        email: "joan@example.com",
+      },
       error: null,
     });
     sendEmailMock.mockResolvedValue({ messageId: "SG_SUBJ" });
@@ -658,7 +700,12 @@ describe("replyInConversation — PHI scrubbing in audit metadata", () => {
       error: null,
     });
     patientReadMock.mockResolvedValue({
-      data: { id: PATIENT_ID, status: "active", phone_e164: "+12155551212", email: null },
+      data: {
+        id: PATIENT_ID,
+        status: "active",
+        phone_e164: "+12155551212",
+        email: null,
+      },
       error: null,
     });
     sendSmsMock.mockResolvedValue({ messageSid: "SM_PHI_TEST" });

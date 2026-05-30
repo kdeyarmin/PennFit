@@ -57,9 +57,7 @@ export async function runSmartTriggerEvaluator(
   // selectDistinct + no `now() - interval`, so we compute the cutoff
   // JS-side and de-dupe via a Set. Per-patient night history comes
   // inside the loop below.
-  const cutoffIso = new Date(
-    Date.now() - 60 * 24 * 60 * 60 * 1000,
-  )
+  const cutoffIso = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000)
     .toISOString()
     .slice(0, 10);
   // Page the FULL recent-night roster. PostgREST caps a single response
@@ -130,7 +128,8 @@ export async function runSmartTriggerEvaluator(
           // PostgREST returns numeric columns as strings (preserves
           // precision). Convert to Number for the evaluator.
           ahi: n.ahi !== null ? Number(n.ahi) : null,
-          leakRateLMin: n.leak_rate_l_min !== null ? Number(n.leak_rate_l_min) : null,
+          leakRateLMin:
+            n.leak_rate_l_min !== null ? Number(n.leak_rate_l_min) : null,
           pressureP95Cmh2o:
             n.pressure_p95_cmh2o !== null ? Number(n.pressure_p95_cmh2o) : null,
         })),

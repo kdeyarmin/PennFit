@@ -25,9 +25,7 @@ import {
 
 const supabaseMock = installSupabaseMock();
 
-import {
-  getSupabaseServiceRoleClient,
-} from "@workspace/resupply-db";
+import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { buildOneDetail } from "./office-ally-batch";
 
@@ -62,7 +60,12 @@ function makeClaimRow(overrides: Record<string, unknown> = {}) {
 // 3. insurance_claim_line_items
 // (sleep_studies, providers: optional → unstaged default returns null)
 function stageMinimalDetail(
-  lines: Array<{ hcpcs_code: string; modifier: string | null; billed_cents: number; quantity: number }>,
+  lines: Array<{
+    hcpcs_code: string;
+    modifier: string | null;
+    billed_cents: number;
+    quantity: number;
+  }>,
 ) {
   stageSupabaseResponse("insurance_coverages", "select", {
     data: { member_id: "MBR-001", policyholder_relationship: "self" },
@@ -101,7 +104,12 @@ describe("buildOneDetail — serviceLines billedCents = billed_cents × quantity
 
     const claim = makeClaimRow({ total_billed_cents: 3198 });
     const supabase = getSupabaseServiceRoleClient();
-    const detail = await buildOneDetail(supabase, claim as never, "Highmark Blue Cross", "00700");
+    const detail = await buildOneDetail(
+      supabase,
+      claim as never,
+      "Highmark Blue Cross",
+      "00700",
+    );
 
     expect(detail).not.toBeNull();
     expect(detail!.serviceLines).toHaveLength(1);
@@ -111,12 +119,22 @@ describe("buildOneDetail — serviceLines billedCents = billed_cents × quantity
 
   it("treats quantity=1 as the pass-through case (billedCents equals billed_cents)", async () => {
     stageMinimalDetail([
-      { hcpcs_code: "E0601", modifier: "RR,KX", billed_cents: 24999, quantity: 1 },
+      {
+        hcpcs_code: "E0601",
+        modifier: "RR,KX",
+        billed_cents: 24999,
+        quantity: 1,
+      },
     ]);
 
     const claim = makeClaimRow({ total_billed_cents: 24999 });
     const supabase = getSupabaseServiceRoleClient();
-    const detail = await buildOneDetail(supabase, claim as never, "Aetna", "60054");
+    const detail = await buildOneDetail(
+      supabase,
+      claim as never,
+      "Aetna",
+      "60054",
+    );
 
     expect(detail!.serviceLines[0]!.billedCents).toBe(24999); // 24999 × 1
     expect(detail!.serviceLines[0]!.units).toBe(1);
@@ -132,7 +150,12 @@ describe("buildOneDetail — serviceLines billedCents = billed_cents × quantity
 
     const claim = makeClaimRow({ total_billed_cents: 8000 });
     const supabase = getSupabaseServiceRoleClient();
-    const detail = await buildOneDetail(supabase, claim as never, "UHC", "87726");
+    const detail = await buildOneDetail(
+      supabase,
+      claim as never,
+      "UHC",
+      "87726",
+    );
 
     expect(detail!.serviceLines).toHaveLength(2);
     expect(detail!.serviceLines[0]!.billedCents).toBe(5000); // 5000 × 1
@@ -141,12 +164,22 @@ describe("buildOneDetail — serviceLines billedCents = billed_cents × quantity
 
   it("carries the hcpcs code and modifiers through unchanged", async () => {
     stageMinimalDetail([
-      { hcpcs_code: "E0601", modifier: "rr,kx", billed_cents: 24999, quantity: 1 },
+      {
+        hcpcs_code: "E0601",
+        modifier: "rr,kx",
+        billed_cents: 24999,
+        quantity: 1,
+      },
     ]);
 
     const claim = makeClaimRow({ total_billed_cents: 24999 });
     const supabase = getSupabaseServiceRoleClient();
-    const detail = await buildOneDetail(supabase, claim as never, "BCBS", "00790");
+    const detail = await buildOneDetail(
+      supabase,
+      claim as never,
+      "BCBS",
+      "00790",
+    );
 
     const line = detail!.serviceLines[0]!;
     expect(line.hcpcsCode).toBe("E0601");
@@ -162,7 +195,12 @@ describe("buildOneDetail — serviceLines billedCents = billed_cents × quantity
 
     const claim = makeClaimRow({ date_of_service: "2026-05-15" });
     const supabase = getSupabaseServiceRoleClient();
-    const detail = await buildOneDetail(supabase, claim as never, "BCBS", "00790");
+    const detail = await buildOneDetail(
+      supabase,
+      claim as never,
+      "BCBS",
+      "00790",
+    );
 
     expect(detail!.serviceLines[0]!.serviceDate).toBe("2026-05-15");
   });
@@ -176,7 +214,12 @@ describe("buildOneDetail — null guard paths", () => {
   it("returns null when insurance_coverage_id is missing from claim", async () => {
     const claim = makeClaimRow({ insurance_coverage_id: null });
     const supabase = getSupabaseServiceRoleClient();
-    const detail = await buildOneDetail(supabase, claim as never, "BCBS", "00790");
+    const detail = await buildOneDetail(
+      supabase,
+      claim as never,
+      "BCBS",
+      "00790",
+    );
     expect(detail).toBeNull();
   });
 
@@ -190,7 +233,12 @@ describe("buildOneDetail — null guard paths", () => {
         legal_first_name: "John",
         legal_last_name: "Smith",
         date_of_birth: "1975-05-10",
-        address: { line1: "5 Oak Ave", city: "Erie", state: "PA", zip: "16501" },
+        address: {
+          line1: "5 Oak Ave",
+          city: "Erie",
+          state: "PA",
+          zip: "16501",
+        },
       },
       error: null,
     });
@@ -201,7 +249,12 @@ describe("buildOneDetail — null guard paths", () => {
 
     const claim = makeClaimRow();
     const supabase = getSupabaseServiceRoleClient();
-    const detail = await buildOneDetail(supabase, claim as never, "BCBS", "00790");
+    const detail = await buildOneDetail(
+      supabase,
+      claim as never,
+      "BCBS",
+      "00790",
+    );
     expect(detail).toBeNull();
   });
 
@@ -220,13 +273,25 @@ describe("buildOneDetail — null guard paths", () => {
       error: null,
     });
     stageSupabaseResponse("insurance_claim_line_items", "select", {
-      data: [{ hcpcs_code: "E0601", modifier: "RR", billed_cents: 24999, quantity: 1 }],
+      data: [
+        {
+          hcpcs_code: "E0601",
+          modifier: "RR",
+          billed_cents: 24999,
+          quantity: 1,
+        },
+      ],
       error: null,
     });
 
     const claim = makeClaimRow();
     const supabase = getSupabaseServiceRoleClient();
-    const detail = await buildOneDetail(supabase, claim as never, "BCBS", "00790");
+    const detail = await buildOneDetail(
+      supabase,
+      claim as never,
+      "BCBS",
+      "00790",
+    );
     expect(detail).toBeNull();
   });
 
@@ -240,13 +305,25 @@ describe("buildOneDetail — null guard paths", () => {
       error: null,
     });
     stageSupabaseResponse("insurance_claim_line_items", "select", {
-      data: [{ hcpcs_code: "E0601", modifier: "RR", billed_cents: 24999, quantity: 1 }],
+      data: [
+        {
+          hcpcs_code: "E0601",
+          modifier: "RR",
+          billed_cents: 24999,
+          quantity: 1,
+        },
+      ],
       error: null,
     });
 
     const claim = makeClaimRow();
     const supabase = getSupabaseServiceRoleClient();
-    const detail = await buildOneDetail(supabase, claim as never, "BCBS", "00790");
+    const detail = await buildOneDetail(
+      supabase,
+      claim as never,
+      "BCBS",
+      "00790",
+    );
     expect(detail).toBeNull();
   });
 });
@@ -263,7 +340,12 @@ describe("buildOneDetail — claim-level fields", () => {
 
     const claim = makeClaimRow({ total_billed_cents: 99999 });
     const supabase = getSupabaseServiceRoleClient();
-    const detail = await buildOneDetail(supabase, claim as never, "BCBS", "00790");
+    const detail = await buildOneDetail(
+      supabase,
+      claim as never,
+      "BCBS",
+      "00790",
+    );
 
     // totalBilledCents comes from claim.total_billed_cents, not from line sum.
     expect(detail!.totalBilledCents).toBe(99999);
@@ -278,7 +360,12 @@ describe("buildOneDetail — claim-level fields", () => {
       id: "00000000-0000-4000-8000-000000000001",
     });
     const supabase = getSupabaseServiceRoleClient();
-    const detail = await buildOneDetail(supabase, claim as never, "BCBS", "00790");
+    const detail = await buildOneDetail(
+      supabase,
+      claim as never,
+      "BCBS",
+      "00790",
+    );
 
     expect(detail!.internalClaimId.length).toBeLessThanOrEqual(38);
   });
@@ -290,7 +377,12 @@ describe("buildOneDetail — claim-level fields", () => {
 
     const claim = makeClaimRow();
     const supabase = getSupabaseServiceRoleClient();
-    const detail = await buildOneDetail(supabase, claim as never, "Aetna", "60054");
+    const detail = await buildOneDetail(
+      supabase,
+      claim as never,
+      "Aetna",
+      "60054",
+    );
 
     expect(detail!.placeOfServiceCode).toBe("12");
   });
@@ -305,12 +397,24 @@ describe("buildOneDetail — claim-level fields", () => {
         legal_first_name: "Bob",
         legal_last_name: "Lee",
         date_of_birth: "1970-01-01",
-        address: { line1: "99 Pine", city: "Harrisburg", state: "PA", zip: "17101" },
+        address: {
+          line1: "99 Pine",
+          city: "Harrisburg",
+          state: "PA",
+          zip: "17101",
+        },
       },
       error: null,
     });
     stageSupabaseResponse("insurance_claim_line_items", "select", {
-      data: [{ hcpcs_code: "E0601", modifier: "RR", billed_cents: 24999, quantity: 1 }],
+      data: [
+        {
+          hcpcs_code: "E0601",
+          modifier: "RR",
+          billed_cents: 24999,
+          quantity: 1,
+        },
+      ],
       error: null,
     });
     stageSupabaseResponse("sleep_studies", "select", {
@@ -320,7 +424,12 @@ describe("buildOneDetail — claim-level fields", () => {
 
     const claim = makeClaimRow();
     const supabase = getSupabaseServiceRoleClient();
-    const detail = await buildOneDetail(supabase, claim as never, "BCBS", "00790");
+    const detail = await buildOneDetail(
+      supabase,
+      claim as never,
+      "BCBS",
+      "00790",
+    );
 
     expect(detail!.diagnosisCodes).toContain("G47.30");
   });
@@ -335,19 +444,36 @@ describe("buildOneDetail — claim-level fields", () => {
         legal_first_name: "Carol",
         legal_last_name: "Kim",
         date_of_birth: "1985-07-04",
-        address: { line1: "8 River Rd", city: "Scranton", state: "PA", zip: "18503" },
+        address: {
+          line1: "8 River Rd",
+          city: "Scranton",
+          state: "PA",
+          zip: "18503",
+        },
       },
       error: null,
     });
     stageSupabaseResponse("insurance_claim_line_items", "select", {
-      data: [{ hcpcs_code: "E0601", modifier: "RR", billed_cents: 24999, quantity: 1 }],
+      data: [
+        {
+          hcpcs_code: "E0601",
+          modifier: "RR",
+          billed_cents: 24999,
+          quantity: 1,
+        },
+      ],
       error: null,
     });
     // sleep_studies unstaged → returns null
 
     const claim = makeClaimRow();
     const supabase = getSupabaseServiceRoleClient();
-    const detail = await buildOneDetail(supabase, claim as never, "BCBS", "00790");
+    const detail = await buildOneDetail(
+      supabase,
+      claim as never,
+      "BCBS",
+      "00790",
+    );
 
     expect(detail!.diagnosisCodes).toContain("G47.33");
   });

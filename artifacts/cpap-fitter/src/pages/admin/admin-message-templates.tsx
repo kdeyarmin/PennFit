@@ -52,15 +52,14 @@ export function AdminMessageTemplatesPage() {
           Message templates
         </h1>
         <p className="text-sm text-slate-600">
-          Edit the copy that customer-facing automated messages use.
-          Templates support placeholders like{" "}
+          Edit the copy that customer-facing automated messages use. Templates
+          support placeholders like{" "}
           <code className="rounded bg-slate-100 px-1 py-0.5 text-xs">
             {"{{first_name}}"}
           </code>
-          ; only the variables listed under each row are substituted.
-          Edits take effect within 5 minutes (the render path caches
-          lookups). Deactivate a row to fall back to the hard-coded
-          baseline shipped with the code.
+          ; only the variables listed under each row are substituted. Edits take
+          effect within 5 minutes (the render path caches lookups). Deactivate a
+          row to fall back to the hard-coded baseline shipped with the code.
         </p>
       </header>
       <TemplateList />
@@ -98,10 +97,7 @@ function TemplateList() {
     return (
       <div className="text-sm text-rose-700" role="alert">
         Couldn&apos;t load templates:{" "}
-        {query.error instanceof Error
-          ? query.error.message
-          : "unknown error"}
-        .
+        {query.error instanceof Error ? query.error.message : "unknown error"}.
       </div>
     );
   }
@@ -142,9 +138,9 @@ function TemplateList() {
 
       {grouped.length === 0 ? (
         <div className="text-sm text-slate-500">
-          No templates match. Templates are seeded by code; if the
-          list is empty, the migration may not have been applied yet
-          (the render path falls back to baselines in that case — see
+          No templates match. Templates are seeded by code; if the list is
+          empty, the migration may not have been applied yet (the render path
+          falls back to baselines in that case — see
           docs/migration-state-investigation-2026-05-08.md).
         </div>
       ) : (
@@ -168,9 +164,7 @@ function TemplateGroup({
   return (
     <li className="rounded-lg border border-slate-200 bg-white">
       <div className="border-b border-slate-100 px-4 py-2">
-        <code className="text-sm font-mono text-slate-900">
-          {templateKey}
-        </code>
+        <code className="text-sm font-mono text-slate-900">{templateKey}</code>
         <span className="ml-2 text-xs text-slate-500">
           {rows.length} channel{rows.length === 1 ? "" : "s"}
         </span>
@@ -299,9 +293,9 @@ function TemplateForm({
   const [subject, setSubject] = useState(initial.subject ?? "");
   const [bodyText, setBodyText] = useState(initial.bodyText);
   const [bodyHtml, setBodyHtml] = useState(initial.bodyHtml ?? "");
-  const lastFocusedRef = useRef<
-    HTMLInputElement | HTMLTextAreaElement | null
-  >(null);
+  const lastFocusedRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(
+    null,
+  );
 
   const isEmail = initial.channel === "email";
   const hasHtml = initial.bodyHtml !== null;
@@ -339,7 +333,7 @@ function TemplateForm({
   function handleSubmit(e: React.FormEvent): void {
     e.preventDefault();
     const body: PatchTemplateBody = {};
-    const subjectVal = isEmail ? (subject || null) : null;
+    const subjectVal = isEmail ? subject || null : null;
     if (subjectVal !== initial.subject) body.subject = subjectVal;
     if (bodyText !== initial.bodyText) body.bodyText = bodyText;
     if (hasHtml && bodyHtml !== initial.bodyHtml) {

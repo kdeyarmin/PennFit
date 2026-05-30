@@ -277,10 +277,7 @@ router.patch(
         ip: req.ip ?? null,
         userAgent: req.get("user-agent") ?? null,
       }).catch((err) => {
-        logger.warn(
-          { err },
-          "coaching.plan.transitioned audit failed",
-        );
+        logger.warn({ err }, "coaching.plan.transitioned audit failed");
       });
     }
 

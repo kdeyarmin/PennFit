@@ -41,10 +41,10 @@ patient flow) are unaffected — they do not call `/auth/me`.
   "userId": "<uuid of the user whose /me failed>",
   "err": {
     "type": "Error",
-    "message": "...",      // PostgREST / Supabase error message
-    "stack": "..."
+    "message": "...", // PostgREST / Supabase error message
+    "stack": "...",
   },
-  "msg": "auth.me: credential lookup failed; failing closed with 500"
+  "msg": "auth.me: credential lookup failed; failing closed with 500",
 }
 ```
 
@@ -56,7 +56,7 @@ Paired audit row (written to `audit_events` via `deps.audit`):
   "adminEmail": "<email_lower of the affected user>",
   "adminUserId": "<same uuid as userId above>",
   "ip": "<request ip or null>",
-  "metadata": { "err": "<error message, no stack>" }
+  "metadata": { "err": "<error message, no stack>" },
 }
 ```
 
@@ -75,18 +75,21 @@ out, when) — logs are short-retention, the audit table is durable.
    in failure mode A.
 3. **Try the same query from `psql` / Supabase SQL editor** as the
    service-role user:
+
    ```sql
    SELECT user_id, must_change, updated_at
    FROM resupply_auth.password_credentials
    LIMIT 1;
    ```
+
    - 200 with rows → it is not a Supabase outage and not a missing
      role. You are in failure mode C (migration drift / column
      rename).
    - `permission denied for schema resupply_auth` or `relation does
-     not exist` → failure mode B (role / schema not granted).
+not exist` → failure mode B (role / schema not granted).
    - Connection error / timeout / 5xx from PostgREST → failure
      mode A (Supabase outage).
+
 4. **Decide**: wait it out (A), grant the missing privilege (B), or
    roll the migration forward/back (C). See the per-mode sections
    below.
@@ -155,7 +158,7 @@ Supabase project settings.
 **Symptoms:** `err.message` contains `column ... does not exist` or
 `could not find the 'must_change' column of 'password_credentials' in
 the schema cache`. Every affected `userId` fails the same way. SQL
-against `password_credentials` succeeds for *some* columns but not
+against `password_credentials` succeeds for _some_ columns but not
 the ones the repository selects (see `CRED_COLS` in
 `supabase-repository.ts`: `user_id, password_hash, algo, must_change,
 set_by_admin_at, updated_at`).
@@ -214,12 +217,12 @@ wasn't applied, or a column rename that landed in app code first.
 
 ## When to escalate
 
-| Signal | Action |
-| --- | --- |
-| Single burst, Supabase status green, single `userId` | Likely a one-off PostgREST hiccup. Close once the alert clears. |
-| Multiple `userId`s, identical `err.message` | Treat as a production incident — failure mode B or C. Open an incident, do not just silence the alert. |
+| Signal                                                            | Action                                                                                                                                                                                                |
+| ----------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Single burst, Supabase status green, single `userId`              | Likely a one-off PostgREST hiccup. Close once the alert clears.                                                                                                                                       |
+| Multiple `userId`s, identical `err.message`                       | Treat as a production incident — failure mode B or C. Open an incident, do not just silence the alert.                                                                                                |
 | Alert co-fires with `event=resupply_admin_in_house_lookup_failed` | Both auth read paths are failing. Almost certainly a Supabase-wide outage (failure mode A) or a `resupply_auth` schema grant problem (failure mode B) affecting every auth surface. Page the on-call. |
-| `/readyz` also failing | Treat as full API outage; follow the deploy/rollback playbook, not this runbook. |
+| `/readyz` also failing                                            | Treat as full API outage; follow the deploy/rollback playbook, not this runbook.                                                                                                                      |
 
 ---
 

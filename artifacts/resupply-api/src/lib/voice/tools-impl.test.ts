@@ -29,10 +29,8 @@ function buildStubSupabase(row: StubRow | null) {
     update: () => builder,
     eq: () => builder,
     limit: () => builder,
-    maybeSingle: () =>
-      Promise.resolve({ data: row, error: null }),
-    single: () =>
-      Promise.resolve({ data: row, error: null }),
+    maybeSingle: () => Promise.resolve({ data: row, error: null }),
+    single: () => Promise.resolve({ data: row, error: null }),
     then: (
       onfulfilled: (v: unknown) => unknown,
       onrejected?: (e: unknown) => unknown,
@@ -104,8 +102,7 @@ describe("VoiceToolDispatcher — identity attempt cap", () => {
             update: () => builder,
             eq: () => builder,
             limit: () => builder,
-            maybeSingle: () =>
-              Promise.resolve({ data: stubRow, error: null }),
+            maybeSingle: () => Promise.resolve({ data: stubRow, error: null }),
             then: (
               onfulfilled: (v: unknown) => unknown,
               onrejected?: (e: unknown) => unknown,
@@ -290,10 +287,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname2 = path.dirname(fileURLToPath(import.meta.url));
-const TOOLS_SRC = readFileSync(
-  path.join(__dirname2, "tools-impl.ts"),
-  "utf8",
-);
+const TOOLS_SRC = readFileSync(path.join(__dirname2, "tools-impl.ts"), "utf8");
 
 describe("tools-impl — prescriptions query filters by status='active' (PR change)", () => {
   it("includes .eq('status', 'active') in the prescriptions select chain", () => {
@@ -397,10 +391,8 @@ function buildStubSupabaseWithEpisode(
     update: () => builder,
     eq: () => builder,
     limit: () => builder,
-    maybeSingle: () =>
-      Promise.resolve({ data: patientRow, error: null }),
-    single: () =>
-      Promise.resolve({ data: patientRow, error: null }),
+    maybeSingle: () => Promise.resolve({ data: patientRow, error: null }),
+    single: () => Promise.resolve({ data: patientRow, error: null }),
     then: (
       onfulfilled: (v: unknown) => unknown,
       onrejected?: (e: unknown) => unknown,
@@ -449,7 +441,11 @@ describe("VoiceToolDispatcher — place_resupply_order episode status gate (PR c
       name: "place_resupply_order",
       args: { skus: ["A7030"], address_confirmed: true },
     });
-    expect(result.result).toEqual({ ok: false, order_id: "", accepted_skus: [] });
+    expect(result.result).toEqual({
+      ok: false,
+      order_id: "",
+      accepted_skus: [],
+    });
   });
 
   it("returns ok:false when episode update result is null (DB returned no rows)", async () => {
@@ -468,7 +464,11 @@ describe("VoiceToolDispatcher — place_resupply_order episode status gate (PR c
       name: "place_resupply_order",
       args: { skus: ["A7030"], address_confirmed: true },
     });
-    expect(result.result).toEqual({ ok: false, order_id: "", accepted_skus: [] });
+    expect(result.result).toEqual({
+      ok: false,
+      order_id: "",
+      accepted_skus: [],
+    });
   });
 
   it("returns ok:true with accepted_skus when episode update confirms a pending episode", async () => {
@@ -492,7 +492,9 @@ describe("VoiceToolDispatcher — place_resupply_order episode status gate (PR c
       args: { skus: ["A7030", "A7034"], address_confirmed: true },
     });
     expect(result.result.ok).toBe(true);
-    expect((result.result as { ok: boolean; accepted_skus: string[] }).accepted_skus).toEqual(["A7030", "A7034"]);
+    expect(
+      (result.result as { ok: boolean; accepted_skus: string[] }).accepted_skus,
+    ).toEqual(["A7030", "A7034"]);
   });
 
   it("returns ok:false when address_confirmed is false (pre-existing guard, unaffected by PR)", async () => {
@@ -522,6 +524,10 @@ describe("VoiceToolDispatcher — place_resupply_order episode status gate (PR c
       },
     });
     // address_confirmed:false short-circuits before the DB update
-    expect(result.result).toEqual({ ok: false, order_id: "", accepted_skus: [] });
+    expect(result.result).toEqual({
+      ok: false,
+      order_id: "",
+      accepted_skus: [],
+    });
   });
 });

@@ -42,8 +42,7 @@ export function MaskLeakWizardSection() {
     therapy?.patientLinked && therapy.avgLeakLMin != null
       ? therapy.avgLeakLMin
       : null;
-  const elevated =
-    recentLeak != null && recentLeak >= HIGH_LEAK_THRESHOLD;
+  const elevated = recentLeak != null && recentLeak >= HIGH_LEAK_THRESHOLD;
 
   return (
     <section
@@ -59,9 +58,7 @@ export function MaskLeakWizardSection() {
         <div
           className="rounded-xl border p-3 text-sm"
           style={{
-            borderColor: elevated
-              ? "hsl(0 70% 80%)"
-              : "hsl(var(--line-1))",
+            borderColor: elevated ? "hsl(0 70% 80%)" : "hsl(var(--line-1))",
             backgroundColor: elevated ? "hsl(0 70% 97%)" : undefined,
           }}
         >
@@ -75,13 +72,12 @@ export function MaskLeakWizardSection() {
           {elevated ? (
             <p className="text-xs mt-1" style={{ color: "hsl(0 70% 35%)" }}>
               That's above the 24 L/min threshold most masks flag as "high
-              leak." Walk through the questions below — most fixes are
-              quick.
+              leak." Walk through the questions below — most fixes are quick.
             </p>
           ) : (
             <p className="text-xs mt-1 text-muted-foreground">
-              That's within the typical range, but if you've noticed a
-              change recently, the questions below help narrow it down.
+              That's within the typical range, but if you've noticed a change
+              recently, the questions below help narrow it down.
             </p>
           )}
         </div>
@@ -103,8 +99,8 @@ function WizardBody({
     return (
       <div className="space-y-3">
         <p className="text-sm">
-          Answer two or three questions and we'll land on the most likely
-          cause. Most leaks come down to fit, age, or sleep position.
+          Answer two or three questions and we'll land on the most likely cause.
+          Most leaks come down to fit, age, or sleep position.
         </p>
         <button
           type="button"

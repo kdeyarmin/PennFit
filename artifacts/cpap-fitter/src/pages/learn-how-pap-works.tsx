@@ -74,13 +74,13 @@ export function LearnHowPapWorks() {
               when the soft tissues around it would otherwise collapse.
             </p>
             <p className="text-sm text-muted-foreground leading-relaxed">
-              That&apos;s the entire therapy. The machine is not pushing
-              breaths into your lungs. It&apos;s not delivering oxygen.
-              It&apos;s not medicated. It&apos;s simply maintaining enough
-              pressure in your upper airway to act as a{" "}
-              <span className="font-semibold">pneumatic splint</span> —
-              keeping the tube open by the same physics that keeps a bouncy
-              castle inflated.
+              That&apos;s the entire therapy. The machine is not pushing breaths
+              into your lungs. It&apos;s not delivering oxygen. It&apos;s not
+              medicated. It&apos;s simply maintaining enough pressure in your
+              upper airway to act as a{" "}
+              <span className="font-semibold">pneumatic splint</span> — keeping
+              the tube open by the same physics that keeps a bouncy castle
+              inflated.
             </p>
           </div>
         </div>
@@ -97,10 +97,11 @@ export function LearnHowPapWorks() {
           </h2>
         </div>
         <p className="text-muted-foreground leading-relaxed mb-5">
-          Your prescription will list a number in <code className="font-mono">cmH₂O</code> —
-          centimeters of water — the pressure unit used in respiratory medicine.
-          For context, atmospheric pressure at sea level is about 1,033 cmH₂O.
-          Therapy pressures are a tiny fraction of that.
+          Your prescription will list a number in{" "}
+          <code className="font-mono">cmH₂O</code> — centimeters of water — the
+          pressure unit used in respiratory medicine. For context, atmospheric
+          pressure at sea level is about 1,033 cmH₂O. Therapy pressures are a
+          tiny fraction of that.
         </p>
         <div className="grid md:grid-cols-4 gap-3">
           {[
@@ -139,10 +140,10 @@ export function LearnHowPapWorks() {
           ))}
         </div>
         <p className="text-xs text-muted-foreground leading-relaxed mt-5">
-          Your physician sets your pressure based on a sleep study titration,
-          or your auto-titrating machine learns it overnight within a
-          prescribed range. Either way — the number isn&apos;t arbitrary and
-          isn&apos;t something to change on your own.
+          Your physician sets your pressure based on a sleep study titration, or
+          your auto-titrating machine learns it overnight within a prescribed
+          range. Either way — the number isn&apos;t arbitrary and isn&apos;t
+          something to change on your own.
         </p>
       </section>
 
@@ -156,8 +157,8 @@ export function LearnHowPapWorks() {
             Exhalation relief
           </h3>
           <p className="text-sm text-muted-foreground leading-relaxed mb-3">
-            The single feature that determines whether a new patient sticks
-            with therapy. Every modern machine briefly drops pressure during
+            The single feature that determines whether a new patient sticks with
+            therapy. Every modern machine briefly drops pressure during
             exhalation so you aren&apos;t breathing out against a wall of air.
           </p>
           <ul className="space-y-1.5 text-xs text-foreground/85">
@@ -187,8 +188,8 @@ export function LearnHowPapWorks() {
                 strokeWidth={2.5}
               />
               <span>
-                <span className="font-semibold">SmartFlex</span> on React
-                Health Luna
+                <span className="font-semibold">SmartFlex</span> on React Health
+                Luna
               </span>
             </li>
           </ul>
@@ -201,9 +202,9 @@ export function LearnHowPapWorks() {
             Humidification
           </h3>
           <p className="text-sm text-muted-foreground leading-relaxed mb-3">
-            Therapy air is drier than room air because it moves faster. A
-            heated humidifier adds moisture back so you don&apos;t wake up with
-            a desert mouth or a bloody nose.
+            Therapy air is drier than room air because it moves faster. A heated
+            humidifier adds moisture back so you don&apos;t wake up with a
+            desert mouth or a bloody nose.
           </p>
           <ul className="space-y-1.5 text-xs text-foreground/85">
             <li className="flex items-start gap-2">
@@ -233,8 +234,8 @@ export function LearnHowPapWorks() {
               />
               <span>
                 Fill with{" "}
-                <span className="font-semibold">distilled water only</span>{" "}
-                — tap water leaves mineral deposits
+                <span className="font-semibold">distilled water only</span> —
+                tap water leaves mineral deposits
               </span>
             </li>
           </ul>
@@ -252,9 +253,9 @@ export function LearnHowPapWorks() {
           </h2>
         </div>
         <p className="text-muted-foreground leading-relaxed mb-5">
-          Every modern PAP machine logs detailed therapy data and uploads it
-          via cellular modem or SD card. Your sleep medicine provider reviews
-          it; you can see most of it in your machine&apos;s companion app.
+          Every modern PAP machine logs detailed therapy data and uploads it via
+          cellular modem or SD card. Your sleep medicine provider reviews it;
+          you can see most of it in your machine&apos;s companion app.
         </p>
 
         <div className="space-y-4">
@@ -328,35 +329,34 @@ export function LearnHowPapWorks() {
             <li className="flex items-start gap-2.5">
               <span className="font-semibold w-4 shrink-0">×</span>
               <span>
-                Not a ventilator. The machine doesn&apos;t breathe for you —
-                you breathe normally; it just keeps your airway open.
+                Not a ventilator. The machine doesn&apos;t breathe for you — you
+                breathe normally; it just keeps your airway open.
               </span>
             </li>
             <li className="flex items-start gap-2.5">
               <span className="font-semibold w-4 shrink-0">×</span>
               <span>
                 Not oxygen therapy. PAP machines deliver room air. (Oxygen
-                concentrators are separate devices and can be combined with
-                PAP only under physician direction.)
+                concentrators are separate devices and can be combined with PAP
+                only under physician direction.)
               </span>
             </li>
             <li className="flex items-start gap-2.5">
               <span className="font-semibold w-4 shrink-0">×</span>
               <span>
                 Not addictive. Your airway doesn&apos;t become dependent on
-                pressure — your tolerance for sleeping well does. Stop
-                therapy and the original apnea returns; that&apos;s the
-                disease, not the device.
+                pressure — your tolerance for sleeping well does. Stop therapy
+                and the original apnea returns; that&apos;s the disease, not the
+                device.
               </span>
             </li>
             <li className="flex items-start gap-2.5">
               <span className="font-semibold w-4 shrink-0">×</span>
               <span>
                 Not a cure. PAP treats sleep apnea while you&apos;re using it.
-                Weight loss, anatomical surgery, or oral appliances may
-                reduce the underlying disease severity — but for most
-                patients, nightly PAP remains the most effective long-term
-                option.
+                Weight loss, anatomical surgery, or oral appliances may reduce
+                the underlying disease severity — but for most patients, nightly
+                PAP remains the most effective long-term option.
               </span>
             </li>
           </ul>
@@ -387,8 +387,8 @@ export function LearnHowPapWorks() {
               CPAP vs APAP vs BiPAP vs ASV
             </h3>
             <p className="text-sm text-muted-foreground leading-relaxed">
-              The four common therapy modes — and the patient profile each
-              one was designed for.
+              The four common therapy modes — and the patient profile each one
+              was designed for.
             </p>
           </div>
           <ArrowRight className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors mt-1" />
@@ -405,8 +405,8 @@ export function LearnHowPapWorks() {
               Set up your CPAP or BiPAP
             </h3>
             <p className="text-sm text-muted-foreground leading-relaxed">
-              The new-patient walkthrough — unboxing, first night, daily
-              care, common first-week issues.
+              The new-patient walkthrough — unboxing, first night, daily care,
+              common first-week issues.
             </p>
           </div>
           <ArrowRight className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors mt-1" />

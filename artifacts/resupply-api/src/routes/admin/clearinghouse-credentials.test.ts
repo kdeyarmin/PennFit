@@ -47,7 +47,10 @@ vi.mock("../../middlewares/requireAdmin", () =>
 const rateLimitBlocked = vi.hoisted(() => ({ current: false }));
 const adminRateLimitSpy = vi.hoisted(() =>
   vi.fn<
-    (opts: { name: string; preset?: string }) => (
+    (opts: {
+      name: string;
+      preset?: string;
+    }) => (
       req: import("express").Request,
       res: import("express").Response,
       next: import("express").NextFunction,
@@ -84,7 +87,11 @@ vi.mock("../../worker/jobs/office-ally-inbound-poll", () => ({
 }));
 
 vi.mock("../../lib/billing/identity-resolver", () => ({
-  resolveClearinghouse: vi.fn(async () => ({ config: null, source: "none", row: null })),
+  resolveClearinghouse: vi.fn(async () => ({
+    config: null,
+    source: "none",
+    row: null,
+  })),
 }));
 
 import clearinghouseCredentialsRouter from "./clearinghouse-credentials";
@@ -159,13 +166,17 @@ beforeEach(() => {
 
 describe("GET /admin/clearinghouse-credentials — requirePermission('admin.tools.manage')", () => {
   it("returns 401 when no admin session is present", async () => {
-    const res = await request(makeApp()).get("/admin/clearinghouse-credentials");
+    const res = await request(makeApp()).get(
+      "/admin/clearinghouse-credentials",
+    );
     expect(res.status).toBe(401);
   });
 
   it("returns 403 for an agent (customer_service_rep lacks admin.tools.manage)", async () => {
     stubAgent();
-    const res = await request(makeApp()).get("/admin/clearinghouse-credentials");
+    const res = await request(makeApp()).get(
+      "/admin/clearinghouse-credentials",
+    );
     expect(res.status).toBe(403);
     expect(res.body.error).toBe("permission_denied");
     expect(res.body.requiredPermission).toBe("admin.tools.manage");
@@ -176,7 +187,9 @@ describe("GET /admin/clearinghouse-credentials — requirePermission('admin.tool
     stageSupabaseResponse("clearinghouse_credentials", "select", {
       data: [fakeRow],
     });
-    const res = await request(makeApp()).get("/admin/clearinghouse-credentials");
+    const res = await request(makeApp()).get(
+      "/admin/clearinghouse-credentials",
+    );
     expect(res.status).toBe(200);
     expect(res.body.clearinghouses).toBeInstanceOf(Array);
     expect(res.body.clearinghouses[0].id).toBe(CRED_ID);
@@ -186,7 +199,9 @@ describe("GET /admin/clearinghouse-credentials — requirePermission('admin.tool
   it("returns 200 for a supervisor (admin effective role carries admin.tools.manage)", async () => {
     stubSupervisor();
     stageSupabaseResponse("clearinghouse_credentials", "select", { data: [] });
-    const res = await request(makeApp()).get("/admin/clearinghouse-credentials");
+    const res = await request(makeApp()).get(
+      "/admin/clearinghouse-credentials",
+    );
     expect(res.status).toBe(200);
     expect(res.body.clearinghouses).toEqual([]);
   });
@@ -196,7 +211,9 @@ describe("GET /admin/clearinghouse-credentials — requirePermission('admin.tool
     stageSupabaseResponse("clearinghouse_credentials", "select", {
       data: null,
     });
-    const res = await request(makeApp()).get("/admin/clearinghouse-credentials");
+    const res = await request(makeApp()).get(
+      "/admin/clearinghouse-credentials",
+    );
     expect(res.status).toBe(200);
     expect(res.body.clearinghouses).toEqual([]);
   });
@@ -206,7 +223,9 @@ describe("GET /admin/clearinghouse-credentials — requirePermission('admin.tool
     stageSupabaseResponse("clearinghouse_credentials", "select", {
       data: [fakeRow],
     });
-    const res = await request(makeApp()).get("/admin/clearinghouse-credentials");
+    const res = await request(makeApp()).get(
+      "/admin/clearinghouse-credentials",
+    );
     const ch = res.body.clearinghouses[0];
     expect(ch).toHaveProperty("displayName", "Test Clearinghouse");
     expect(ch).toHaveProperty("usageIndicator", "P");

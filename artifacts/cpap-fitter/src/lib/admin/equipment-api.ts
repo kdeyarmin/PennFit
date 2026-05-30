@@ -13,11 +13,7 @@ export type DeviceClass =
   | "oximeter"
   | "other";
 
-export type EquipmentStatus =
-  | "active"
-  | "returned"
-  | "recalled"
-  | "retired";
+export type EquipmentStatus = "active" | "returned" | "recalled" | "retired";
 
 export interface EquipmentAsset {
   id: string;
@@ -116,7 +112,11 @@ async function jsonFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
   const { headers: initHeaders, ...restInit } = init;
   const res = await fetch(`/resupply-api${path}`, {
     ...restInit,
-    headers: { Accept: "application/json", ...csrfHeader(), ...(initHeaders ?? {}) },
+    headers: {
+      Accept: "application/json",
+      ...csrfHeader(),
+      ...(initHeaders ?? {}),
+    },
   });
   if (!res.ok) {
     let message = `${res.status} ${res.statusText}`;
@@ -223,9 +223,7 @@ export const listRecallNotifications = (recallId: string) =>
   jsonFetch<{
     counts: Record<string, number>;
     notifications: RecallNotification[];
-  }>(
-    `/admin/equipment-recalls/${encodeURIComponent(recallId)}/notifications`,
-  );
+  }>(`/admin/equipment-recalls/${encodeURIComponent(recallId)}/notifications`);
 
 export type RemediationAction =
   | "returned_to_manufacturer"
@@ -249,9 +247,7 @@ export const listRecallRemediation = (recallId: string) =>
   jsonFetch<{
     counts: Record<string, number>;
     actions: RemediationLogEntry[];
-  }>(
-    `/admin/equipment-recalls/${encodeURIComponent(recallId)}/remediation`,
-  );
+  }>(`/admin/equipment-recalls/${encodeURIComponent(recallId)}/remediation`);
 
 export const logRecallRemediation = (
   recallId: string,

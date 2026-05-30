@@ -75,7 +75,10 @@ const adminMfaIpRateLimiter = expressRateLimit({
 
 const verifyBody = z
   .object({
-    code: z.string().trim().regex(/^\d{6}$/, "must be 6 digits"),
+    code: z
+      .string()
+      .trim()
+      .regex(/^\d{6}$/, "must be 6 digits"),
   })
   .strict();
 
@@ -120,9 +123,7 @@ router.get("/admin/mfa/status", requireAdmin, async (req, res) => {
   const { data: rows, error } = await supabase
     .schema("resupply")
     .from("admin_mfa_secrets")
-    .select(
-      "id, verified_at, last_used_at, created_at, device_label",
-    )
+    .select("id, verified_at, last_used_at, created_at, device_label")
     .eq("staff_user_id", adminUserId)
     .order("created_at", { ascending: true });
   if (error) throw error;
@@ -467,99 +468,105 @@ router.post(
   },
 );
 
-router.post("/admin/mfa/disable", adminMfaIpRateLimiter, requireAdmin, adminMfaCodeAttemptLimiter, async (req, res) => {
-  const adminUserId = req.adminUserId;
-  const adminEmail = req.adminEmail;
-  if (!adminUserId || !adminEmail) {
-    res.status(500).json({ error: "admin_context_missing" });
-    return;
-  }
-  const parsed = verifyBody.safeParse(req.body);
-  if (!parsed.success) {
-    res.status(400).json({
-      error: "invalid_body",
-      message:
-        "A valid current TOTP code is required to disable MFA. This protects against accidental or unauthorized disable.",
+router.post(
+  "/admin/mfa/disable",
+  adminMfaIpRateLimiter,
+  requireAdmin,
+  adminMfaCodeAttemptLimiter,
+  async (req, res) => {
+    const adminUserId = req.adminUserId;
+    const adminEmail = req.adminEmail;
+    if (!adminUserId || !adminEmail) {
+      res.status(500).json({ error: "admin_context_missing" });
+      return;
+    }
+    const parsed = verifyBody.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: "invalid_body",
+        message:
+          "A valid current TOTP code is required to disable MFA. This protects against accidental or unauthorized disable.",
+      });
+      return;
+    }
+    const supabase = getSupabaseServiceRoleClient();
+    // Multi-device: pull ALL verified secrets and accept any code
+    // that matches. A user disabling MFA after losing one device
+    // shouldn't have to know WHICH device is still working — they
+    // just type a code.
+    const { data: rows, error } = await supabase
+      .schema("resupply")
+      .from("admin_mfa_secrets")
+      .select("id, secret_base32, verified_at, last_used_counter")
+      .eq("staff_user_id", adminUserId)
+      .not("verified_at", "is", null);
+    if (error) throw error;
+    if (!rows || rows.length === 0) {
+      res.status(404).json({
+        error: "not_enrolled",
+        message: "MFA is not active on this account; nothing to disable.",
+      });
+      return;
+    }
+
+    const matched = rows.some((r) => {
+      const res = verifyTotpCode(r.secret_base32, parsed.data.code, {
+        window: 1,
+        minCounter: r.last_used_counter ?? undefined,
+      });
+      return res.ok;
     });
-    return;
-  }
-  const supabase = getSupabaseServiceRoleClient();
-  // Multi-device: pull ALL verified secrets and accept any code
-  // that matches. A user disabling MFA after losing one device
-  // shouldn't have to know WHICH device is still working — they
-  // just type a code.
-  const { data: rows, error } = await supabase
-    .schema("resupply")
-    .from("admin_mfa_secrets")
-    .select("id, secret_base32, verified_at, last_used_counter")
-    .eq("staff_user_id", adminUserId)
-    .not("verified_at", "is", null);
-  if (error) throw error;
-  if (!rows || rows.length === 0) {
-    res.status(404).json({
-      error: "not_enrolled",
-      message: "MFA is not active on this account; nothing to disable.",
+    if (!matched) {
+      res.status(400).json({
+        error: "invalid_code",
+        message: "Code didn't match — refusing to disable.",
+      });
+      return;
+    }
+    // Synthetic "row" used by the downstream audit log so the
+    // existing single-row logging stays sensible. Disable wipes
+    // every device for the admin.
+    const row = { id: rows[0]!.id } as { id: string };
+
+    const { error: delErr } = await supabase
+      .schema("resupply")
+      .from("admin_mfa_secrets")
+      .delete()
+      .eq("staff_user_id", adminUserId);
+    if (delErr) throw delErr;
+
+    // Best-effort: wipe outstanding recovery codes too. They're
+    // useless after the secret row is gone (the sign-in verify
+    // refuses on `mfa_not_enrolled` first), but leaving them in the
+    // table inflates the table and confuses the audit picture.
+    const { error: delCodesErr } = await supabase
+      .schema("resupply")
+      .from("admin_mfa_recovery_codes")
+      .delete()
+      .eq("staff_user_id", adminUserId);
+    if (delCodesErr) {
+      logger.warn(
+        { err: delCodesErr },
+        "auth.mfa.disable: recovery-code cleanup failed (non-fatal)",
+      );
+    }
+
+    await logAudit({
+      action: "auth.mfa.disabled",
+      adminEmail,
+      adminUserId,
+      targetTable: "admin_mfa_secrets",
+      targetId: row.id,
+      metadata: {},
+      ip: req.ip ?? null,
+      userAgent: req.get("user-agent") ?? null,
+    }).catch((err) => {
+      logger.warn({ err }, "auth.mfa.disabled audit failed");
     });
-    return;
-  }
 
-  const matched = rows.some((r) => {
-    const res = verifyTotpCode(r.secret_base32, parsed.data.code, {
-      window: 1,
-      minCounter: r.last_used_counter ?? undefined,
-    });
-    return res.ok;
-  });
-  if (!matched) {
-    res.status(400).json({
-      error: "invalid_code",
-      message: "Code didn't match — refusing to disable.",
-    });
-    return;
-  }
-  // Synthetic "row" used by the downstream audit log so the
-  // existing single-row logging stays sensible. Disable wipes
-  // every device for the admin.
-  const row = { id: rows[0]!.id } as { id: string };
-
-  const { error: delErr } = await supabase
-    .schema("resupply")
-    .from("admin_mfa_secrets")
-    .delete()
-    .eq("staff_user_id", adminUserId);
-  if (delErr) throw delErr;
-
-  // Best-effort: wipe outstanding recovery codes too. They're
-  // useless after the secret row is gone (the sign-in verify
-  // refuses on `mfa_not_enrolled` first), but leaving them in the
-  // table inflates the table and confuses the audit picture.
-  const { error: delCodesErr } = await supabase
-    .schema("resupply")
-    .from("admin_mfa_recovery_codes")
-    .delete()
-    .eq("staff_user_id", adminUserId);
-  if (delCodesErr) {
-    logger.warn(
-      { err: delCodesErr },
-      "auth.mfa.disable: recovery-code cleanup failed (non-fatal)",
-    );
-  }
-
-  await logAudit({
-    action: "auth.mfa.disabled",
-    adminEmail,
-    adminUserId,
-    targetTable: "admin_mfa_secrets",
-    targetId: row.id,
-    metadata: {},
-    ip: req.ip ?? null,
-    userAgent: req.get("user-agent") ?? null,
-  }).catch((err) => {
-    logger.warn({ err }, "auth.mfa.disabled audit failed");
-  });
-
-  res.json({ ok: true, enrolled: false });
-});
+    res.json({ ok: true, enrolled: false });
+  },
+);
 
 // ────────────────────────────────────────────────────────────────
 // POST /admin/mfa/devices/:id/disable — remove a SINGLE enrolled
@@ -591,8 +598,7 @@ router.post(
     if (!parsed.success) {
       res.status(400).json({
         error: "invalid_body",
-        message:
-          "A valid current TOTP code is required to remove a device.",
+        message: "A valid current TOTP code is required to remove a device.",
       });
       return;
     }
@@ -731,8 +737,7 @@ router.post(
     if (!row || !row.verified_at) {
       res.status(404).json({
         error: "not_enrolled",
-        message:
-          "MFA is not active on this account; nothing to regenerate.",
+        message: "MFA is not active on this account; nothing to regenerate.",
       });
       return;
     }
@@ -794,10 +799,7 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn(
-        { err },
-        "auth.mfa.recovery_codes_regenerated audit failed",
-      );
+      logger.warn({ err }, "auth.mfa.recovery_codes_regenerated audit failed");
     });
 
     res.json({

@@ -47,9 +47,8 @@ export function AdminBillingAiQueuePage() {
           AI billing queue
         </h1>
         <p className="text-sm" style={{ color: "hsl(var(--ink-2))" }}>
-          Scrubber and denial-analyzer output. Each row links to the
-          patient's claim workbench where you can apply the patch or
-          resubmit.
+          Scrubber and denial-analyzer output. Each row links to the patient's
+          claim workbench where you can apply the patch or resubmit.
         </p>
       </header>
 
@@ -124,10 +123,7 @@ function ClaimSection({
       }
     >
       {items.length === 0 ? (
-        <p
-          className="text-sm py-1"
-          style={{ color: "hsl(var(--ink-3))" }}
-        >
+        <p className="text-sm py-1" style={{ color: "hsl(var(--ink-3))" }}>
           {emptyLabel}
         </p>
       ) : (
@@ -197,10 +193,7 @@ function AutoResubmitSection({ items }: { items: AutoResubmitReadyItem[] }) {
       }
     >
       {items.length === 0 ? (
-        <p
-          className="text-sm py-1"
-          style={{ color: "hsl(var(--ink-3))" }}
-        >
+        <p className="text-sm py-1" style={{ color: "hsl(var(--ink-3))" }}>
           No claims queued for auto-resubmit.
         </p>
       ) : (
@@ -217,43 +210,43 @@ function AutoResubmitSection({ items }: { items: AutoResubmitReadyItem[] }) {
               ? `/admin/patients/${a.patientId}/insurance-claims`
               : null;
             return (
-            <li key={a.analysisId} className="py-2.5 text-sm space-y-1">
-              <div className="flex items-center justify-between gap-3">
-                {linkTarget ? (
-                  <Link
-                    href={linkTarget}
-                    className="font-medium underline"
-                    style={{ color: "hsl(var(--ink-1))" }}
-                  >
-                    {a.recommendation}
-                  </Link>
-                ) : (
+              <li key={a.analysisId} className="py-2.5 text-sm space-y-1">
+                <div className="flex items-center justify-between gap-3">
+                  {linkTarget ? (
+                    <Link
+                      href={linkTarget}
+                      className="font-medium underline"
+                      style={{ color: "hsl(var(--ink-1))" }}
+                    >
+                      {a.recommendation}
+                    </Link>
+                  ) : (
+                    <span
+                      className="font-medium"
+                      style={{ color: "hsl(var(--ink-1))" }}
+                    >
+                      {a.recommendation}
+                    </span>
+                  )}
                   <span
-                    className="font-medium"
-                    style={{ color: "hsl(var(--ink-1))" }}
+                    className="text-[11px] tabular-nums shrink-0 px-2 py-0.5 rounded-full"
+                    style={{
+                      backgroundColor: "rgba(201, 162, 74, 0.16)",
+                      color: "hsl(var(--penn-gold-deep))",
+                    }}
                   >
-                    {a.recommendation}
+                    conf {formatPercent(a.confidence ?? null, 0)}
                   </span>
+                </div>
+                {a.rootCauseSummary && (
+                  <p
+                    className="text-[12px] leading-snug"
+                    style={{ color: "hsl(var(--ink-3))" }}
+                  >
+                    {a.rootCauseSummary}
+                  </p>
                 )}
-                <span
-                  className="text-[11px] tabular-nums shrink-0 px-2 py-0.5 rounded-full"
-                  style={{
-                    backgroundColor: "rgba(201, 162, 74, 0.16)",
-                    color: "hsl(var(--penn-gold-deep))",
-                  }}
-                >
-                  conf {formatPercent(a.confidence ?? null, 0)}
-                </span>
-              </div>
-              {a.rootCauseSummary && (
-                <p
-                  className="text-[12px] leading-snug"
-                  style={{ color: "hsl(var(--ink-3))" }}
-                >
-                  {a.rootCauseSummary}
-                </p>
-              )}
-            </li>
+              </li>
             );
           })}
         </ul>

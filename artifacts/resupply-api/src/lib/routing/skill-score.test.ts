@@ -51,9 +51,7 @@ describe("scoreCandidates", () => {
   it("case-insensitive + trims whitespace", () => {
     const r = scoreCandidates({
       requiredSkills: ["  Spanish "],
-      candidates: [
-        { adminUserId: "a", skills: ["spanish"], openQueueSize: 0 },
-      ],
+      candidates: [{ adminUserId: "a", skills: ["spanish"], openQueueSize: 0 }],
     });
     expect(r[0]!.matchedSkillCount).toBe(1);
     expect(r[0]!.coversAll).toBe(true);
@@ -63,7 +61,11 @@ describe("scoreCandidates", () => {
     const r = scoreCandidates({
       requiredSkills: ["spanish", "clinical", "billing_basics"],
       candidates: [
-        { adminUserId: "a_two", skills: ["spanish", "clinical"], openQueueSize: 1 },
+        {
+          adminUserId: "a_two",
+          skills: ["spanish", "clinical"],
+          openQueueSize: 1,
+        },
         { adminUserId: "a_one", skills: ["spanish"], openQueueSize: 0 },
       ],
     });

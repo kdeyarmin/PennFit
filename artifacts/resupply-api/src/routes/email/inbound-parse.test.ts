@@ -182,9 +182,11 @@ describe("POST /email/inbound-parse", () => {
     expect(res.status).toBe(200);
     expect(getSupabaseCallCount("messages", "insert")).toBe(0);
     expect(safeAuditMock).toHaveBeenCalledTimes(1);
-    const auditMeta = (safeAuditMock.mock.calls[0]![0] as {
-      metadata: Record<string, unknown>;
-    }).metadata;
+    const auditMeta = (
+      safeAuditMock.mock.calls[0]![0] as {
+        metadata: Record<string, unknown>;
+      }
+    ).metadata;
     expect(auditMeta.channel).toBe("email");
     expect(auditMeta.outcome).toBe("unknown_email");
   });
@@ -237,10 +239,7 @@ describe("POST /email/inbound-parse", () => {
 
     // persistInboundAttachment was called with the attachment bytes.
     expect(persistMock).toHaveBeenCalledTimes(1);
-    const persistArg = persistMock.mock.calls[0]![0] as Record<
-      string,
-      unknown
-    >;
+    const persistArg = persistMock.mock.calls[0]![0] as Record<string, unknown>;
     expect(persistArg.messageId).toBe("msg-1");
     expect(persistArg.contentType).toBe("image/png");
     expect(persistArg.filename).toBe("card.png");
@@ -253,9 +252,7 @@ describe("POST /email/inbound-parse", () => {
       "conversations",
       "update",
     ) as Record<string, unknown>[];
-    expect(
-      updates.some((u) => u.status === "awaiting_admin"),
-    ).toBe(true);
+    expect(updates.some((u) => u.status === "awaiting_admin")).toBe(true);
 
     // Inbound + media-ingested audits both fired.
     const actions = safeAuditMock.mock.calls.map(

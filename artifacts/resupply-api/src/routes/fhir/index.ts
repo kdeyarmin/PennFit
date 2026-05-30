@@ -71,7 +71,9 @@ router.get("/fhir/r4/metadata", (_req, res) => {
             {
               type: "Patient",
               interaction: [{ code: "read" }],
-              operation: [{ name: "everything", definition: "Patient-$everything" }],
+              operation: [
+                { name: "everything", definition: "Patient-$everything" },
+              ],
             },
             { type: "Coverage", interaction: [{ code: "read" }] },
             { type: "Condition", interaction: [{ code: "read" }] },
@@ -110,49 +112,53 @@ router.get(
   requireAdmin,
   fhirAdminReadLimiter,
   async (req, res) => {
-  const parsed = idParam.safeParse(req.params);
-  if (!parsed.success) {
-    res.status(404).type("application/fhir+json").json(notFound("Patient"));
-    return;
-  }
-  const supabase = getSupabaseServiceRoleClient();
-  const { data: patient } = await supabase
-    .schema("resupply")
-    .from("patients")
-    .select("id, legal_first_name, legal_last_name, date_of_birth, phone_e164, email, address")
-    .eq("id", parsed.data.id)
-    .limit(1)
-    .maybeSingle();
-  if (!patient) {
-    res.status(404).type("application/fhir+json").json(notFound("Patient"));
-    return;
-  }
-  res
-    .status(200)
-    .type("application/fhir+json")
-    .json(patientToFhir(patient));
-  // PHI-view audit. Mirrors the `patient.view` row that
-  // `routes/patients/detail.ts` writes for the admin console read
-  // path. The FHIR Patient endpoint returns the same PHI (legal name,
-  // DOB, phone, email, address); without this audit an admin could
-  // pull patient records via FHIR invisibly.
-  try {
-    await logAudit({
-      action: "patient.view",
-      adminEmail: req.adminEmail ?? null,
-      adminUserId: req.adminUserId ?? null,
-      targetTable: "patients",
-      targetId: patient.id,
-      ip: req.ip ?? null,
-      userAgent: req.get("user-agent") ?? null,
-      metadata: { source: "fhir.patient.read" },
-    });
-  } catch (err) {
-    logger.error(
-      { err: err instanceof Error ? { name: err.name, message: err.message } : err },
-      "fhir: patient.view audit failed",
-    );
-  }
+    const parsed = idParam.safeParse(req.params);
+    if (!parsed.success) {
+      res.status(404).type("application/fhir+json").json(notFound("Patient"));
+      return;
+    }
+    const supabase = getSupabaseServiceRoleClient();
+    const { data: patient } = await supabase
+      .schema("resupply")
+      .from("patients")
+      .select(
+        "id, legal_first_name, legal_last_name, date_of_birth, phone_e164, email, address",
+      )
+      .eq("id", parsed.data.id)
+      .limit(1)
+      .maybeSingle();
+    if (!patient) {
+      res.status(404).type("application/fhir+json").json(notFound("Patient"));
+      return;
+    }
+    res.status(200).type("application/fhir+json").json(patientToFhir(patient));
+    // PHI-view audit. Mirrors the `patient.view` row that
+    // `routes/patients/detail.ts` writes for the admin console read
+    // path. The FHIR Patient endpoint returns the same PHI (legal name,
+    // DOB, phone, email, address); without this audit an admin could
+    // pull patient records via FHIR invisibly.
+    try {
+      await logAudit({
+        action: "patient.view",
+        adminEmail: req.adminEmail ?? null,
+        adminUserId: req.adminUserId ?? null,
+        targetTable: "patients",
+        targetId: patient.id,
+        ip: req.ip ?? null,
+        userAgent: req.get("user-agent") ?? null,
+        metadata: { source: "fhir.patient.read" },
+      });
+    } catch (err) {
+      logger.error(
+        {
+          err:
+            err instanceof Error
+              ? { name: err.name, message: err.message }
+              : err,
+        },
+        "fhir: patient.view audit failed",
+      );
+    }
   },
 );
 
@@ -170,7 +176,9 @@ router.get(
     const { data: patient } = await supabase
       .schema("resupply")
       .from("patients")
-      .select("id, legal_first_name, legal_last_name, date_of_birth, phone_e164, email, address")
+      .select(
+        "id, legal_first_name, legal_last_name, date_of_birth, phone_e164, email, address",
+      )
       .eq("id", parsed.data.id)
       .limit(1)
       .maybeSingle();
@@ -178,31 +186,44 @@ router.get(
       res.status(404).type("application/fhir+json").json(notFound("Patient"));
       return;
     }
-    const [{ data: coverages }, { data: studies }, { data: rxs }, { data: equipment }] =
-      await Promise.all([
-        supabase
-          .schema("resupply")
-          .from("insurance_coverages")
-          .select("id, rank, payer_name, plan_name, member_id, effective_date, termination_date, in_network")
-          .eq("patient_id", patient.id),
-        supabase
-          .schema("resupply")
-          .from("sleep_studies")
-          .select("id, study_date, diagnosis_icd10, ahi, study_type")
-          .eq("patient_id", patient.id),
-        supabase
-          .schema("resupply")
-          .from("prescriptions")
-          .select("id, hcpcs_code, item_sku, valid_from, valid_until, status, provider_id")
-          .eq("patient_id", patient.id),
-        supabase
-          .schema("resupply")
-          .from("equipment_assets")
-          .select("id, device_class, serial_number, model, manufacturer, dispensed_at")
-          .eq("patient_id", patient.id),
-      ]);
+    const [
+      { data: coverages },
+      { data: studies },
+      { data: rxs },
+      { data: equipment },
+    ] = await Promise.all([
+      supabase
+        .schema("resupply")
+        .from("insurance_coverages")
+        .select(
+          "id, rank, payer_name, plan_name, member_id, effective_date, termination_date, in_network",
+        )
+        .eq("patient_id", patient.id),
+      supabase
+        .schema("resupply")
+        .from("sleep_studies")
+        .select("id, study_date, diagnosis_icd10, ahi, study_type")
+        .eq("patient_id", patient.id),
+      supabase
+        .schema("resupply")
+        .from("prescriptions")
+        .select(
+          "id, hcpcs_code, item_sku, valid_from, valid_until, status, provider_id",
+        )
+        .eq("patient_id", patient.id),
+      supabase
+        .schema("resupply")
+        .from("equipment_assets")
+        .select(
+          "id, device_class, serial_number, model, manufacturer, dispensed_at",
+        )
+        .eq("patient_id", patient.id),
+    ]);
 
-    const entries: Array<{ fullUrl: string; resource: Record<string, unknown> }> = [];
+    const entries: Array<{
+      fullUrl: string;
+      resource: Record<string, unknown>;
+    }> = [];
     entries.push({
       fullUrl: `Patient/${patient.id}`,
       resource: patientToFhir(patient),
@@ -233,15 +254,12 @@ router.get(
       });
     }
 
-    res
-      .status(200)
-      .type("application/fhir+json")
-      .json({
-        resourceType: "Bundle",
-        type: "searchset",
-        total: entries.length,
-        entry: entries,
-      });
+    res.status(200).type("application/fhir+json").json({
+      resourceType: "Bundle",
+      type: "searchset",
+      total: entries.length,
+      entry: entries,
+    });
     logger.info(
       {
         event: "fhir.patient.everything",
@@ -271,7 +289,12 @@ router.get(
       });
     } catch (err) {
       logger.error(
-        { err: err instanceof Error ? { name: err.name, message: err.message } : err },
+        {
+          err:
+            err instanceof Error
+              ? { name: err.name, message: err.message }
+              : err,
+        },
         "fhir: patient.view audit failed",
       );
     }
@@ -289,15 +312,23 @@ function patientToFhir(p: {
   email: string | null;
   address: unknown;
 }): Record<string, unknown> {
-  const addr = (p.address && typeof p.address === "object")
-    ? (p.address as { line1?: string; city?: string; state?: string; zip?: string })
-    : null;
+  const addr =
+    p.address && typeof p.address === "object"
+      ? (p.address as {
+          line1?: string;
+          city?: string;
+          state?: string;
+          zip?: string;
+        })
+      : null;
   return {
     resourceType: "Patient",
     id: p.id,
     name: [{ family: p.legal_last_name, given: [p.legal_first_name] }],
     telecom: [
-      p.phone_e164 ? { system: "phone", value: p.phone_e164, use: "home" } : null,
+      p.phone_e164
+        ? { system: "phone", value: p.phone_e164, use: "home" }
+        : null,
       p.email ? { system: "email", value: p.email } : null,
     ].filter(Boolean),
     birthDate: p.date_of_birth,
@@ -332,9 +363,11 @@ function coverageToFhir(
   return {
     resourceType: "Coverage",
     id: c.id,
-    status: c.termination_date && c.termination_date < new Date().toISOString().slice(0, 10)
-      ? "cancelled"
-      : "active",
+    status:
+      c.termination_date &&
+      c.termination_date < new Date().toISOString().slice(0, 10)
+        ? "cancelled"
+        : "active",
     subscriberId: c.member_id,
     beneficiary: { reference: `Patient/${patientId}` },
     period: {
@@ -343,7 +376,9 @@ function coverageToFhir(
     },
     payor: [{ display: c.payer_name }],
     order: c.rank === "primary" ? 1 : c.rank === "secondary" ? 2 : 3,
-    class: c.plan_name ? [{ type: { text: "plan" }, value: c.plan_name }] : undefined,
+    class: c.plan_name
+      ? [{ type: { text: "plan" }, value: c.plan_name }]
+      : undefined,
   };
 }
 
@@ -389,11 +424,17 @@ function medicationRequestToFhir(
     status: rx.status === "active" ? "active" : "completed",
     intent: "order",
     subject: { reference: `Patient/${patientId}` },
-    requester: rx.provider_id ? { reference: `Practitioner/${rx.provider_id}` } : undefined,
+    requester: rx.provider_id
+      ? { reference: `Practitioner/${rx.provider_id}` }
+      : undefined,
     medicationCodeableConcept: {
       coding: [
         rx.hcpcs_code
-          ? { system: "https://www.cms.gov/Medicare/Coding/HCPCSReleaseCodeSets", code: rx.hcpcs_code }
+          ? {
+              system:
+                "https://www.cms.gov/Medicare/Coding/HCPCSReleaseCodeSets",
+              code: rx.hcpcs_code,
+            }
           : { display: rx.item_sku },
       ],
     },
@@ -423,7 +464,9 @@ function deviceToFhir(
     serialNumber: e.serial_number,
     modelNumber: e.model,
     manufacturer: e.manufacturer,
-    note: e.dispensed_at ? [{ text: `Dispensed: ${e.dispensed_at}` }] : undefined,
+    note: e.dispensed_at
+      ? [{ text: `Dispensed: ${e.dispensed_at}` }]
+      : undefined,
   };
 }
 

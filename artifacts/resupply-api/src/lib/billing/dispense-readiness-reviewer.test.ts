@@ -167,7 +167,9 @@ describe("reviewDispenseReadiness", () => {
   });
 
   it("flags incomplete patient address as a blocking error", async () => {
-    stageHappyPath({ address: { line1: "100 Main", city: "", state: "PA", zip: "16801" } });
+    stageHappyPath({
+      address: { line1: "100 Main", city: "", state: "PA", zip: "16801" },
+    });
     const r = await reviewDispenseReadiness({
       patientId: PATIENT,
       hcpcsCode: "E0601",

@@ -47,7 +47,11 @@ vi.mock("@workspace/resupply-audit", () => ({
 const adminRateLimitSpy = vi.hoisted(() =>
   vi.fn(
     (_opts: { name: string; preset?: string }) =>
-      (_req: import("express").Request, _res: import("express").Response, next: import("express").NextFunction) => {
+      (
+        _req: import("express").Request,
+        _res: import("express").Response,
+        next: import("express").NextFunction,
+      ) => {
         next();
       },
   ),
@@ -205,8 +209,9 @@ describe("POST /admin/patients/:id/therapy-nights/sync", () => {
       .post(`/admin/patients/${PATIENT_ID}/therapy-nights/sync`)
       .send({ source: "resmed_airview", partnerPatientId: "abc" });
     expect(res.status).toBe(502);
-    expect(getSupabaseWritePayloads("patient_therapy_nights", "upsert"))
-      .toEqual([]);
+    expect(
+      getSupabaseWritePayloads("patient_therapy_nights", "upsert"),
+    ).toEqual([]);
   });
 
   it("imports + audits with non-PHI envelope", async () => {

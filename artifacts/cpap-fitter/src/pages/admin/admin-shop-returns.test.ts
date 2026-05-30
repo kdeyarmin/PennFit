@@ -37,7 +37,9 @@ describe("admin-shop-returns — markShipped API import", () => {
   it("imports markShipped alongside the other action functions", () => {
     // The import block should include markShipped between markReceived and
     // the other actions so it follows the alphabetical/logical ordering.
-    expect(SRC).toMatch(/markReceived[\s\S]{0,50}markShipped|markShipped[\s\S]{0,50}markReceived/);
+    expect(SRC).toMatch(
+      /markReceived[\s\S]{0,50}markShipped|markShipped[\s\S]{0,50}markReceived/,
+    );
   });
 });
 
@@ -315,11 +317,18 @@ function buildTabUrl(
 
 describe("setTab URL building — 'open' removes the param", () => {
   it("produces a clean pathname when next is 'open' and no other params", () => {
-    expect(buildTabUrl("open", "", "/admin/returns", "")).toBe("/admin/returns");
+    expect(buildTabUrl("open", "", "/admin/returns", "")).toBe(
+      "/admin/returns",
+    );
   });
 
   it("removes only the tab param, preserving other params", () => {
-    const url = buildTabUrl("open", "?tab=approved&page=2", "/admin/returns", "");
+    const url = buildTabUrl(
+      "open",
+      "?tab=approved&page=2",
+      "/admin/returns",
+      "",
+    );
     expect(url).not.toContain("tab=");
     expect(url).toContain("page=2");
   });

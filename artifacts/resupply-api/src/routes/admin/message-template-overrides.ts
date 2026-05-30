@@ -364,7 +364,9 @@ router.patch(
     if (globalErr) throw globalErr;
     const allowed = globalRow?.allowed_variables ?? [];
     const nextSubject =
-      parsed.data.subject !== undefined ? parsed.data.subject : existing.subject;
+      parsed.data.subject !== undefined
+        ? parsed.data.subject
+        : existing.subject;
     const nextBodyHtml =
       parsed.data.bodyHtml !== undefined
         ? parsed.data.bodyHtml

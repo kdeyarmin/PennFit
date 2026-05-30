@@ -45,7 +45,9 @@ function todayUtc(isoDate: string): Date {
   return new Date(`${isoDate}T12:00:00Z`);
 }
 
-function makeExpiredPaRow(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+function makeExpiredPaRow(
+  overrides: Record<string, unknown> = {},
+): Record<string, unknown> {
   return {
     id: PA_ID_1,
     patient_id: PATIENT_ID,

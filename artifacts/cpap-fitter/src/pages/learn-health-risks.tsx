@@ -85,7 +85,9 @@ export function LearnHealthRisks() {
           Learn
         </Link>
         <span className="mx-2">/</span>
-        <span className="text-foreground/85">Health risks of untreated apnea</span>
+        <span className="text-foreground/85">
+          Health risks of untreated apnea
+        </span>
       </div>
 
       {/* Article header */}
@@ -100,10 +102,10 @@ export function LearnHealthRisks() {
           The hidden cost of leaving it alone.
         </h1>
         <p className="text-lg text-muted-foreground leading-relaxed">
-          Untreated sleep apnea isn't just a sleep problem. It's a
-          slow-burn cardiovascular, metabolic, and cognitive risk — and one of
-          the few that's genuinely reversible with consistent therapy.
-          Here's what the data actually says.
+          Untreated sleep apnea isn't just a sleep problem. It's a slow-burn
+          cardiovascular, metabolic, and cognitive risk — and one of the few
+          that's genuinely reversible with consistent therapy. Here's what the
+          data actually says.
         </p>
       </header>
 
@@ -181,15 +183,15 @@ export function LearnHealthRisks() {
               <span className="font-semibold text-foreground/90">
                 meaningfully reverses or reduces it
               </span>{" "}
-              in months, not years. Blood pressure begins to drop within
-              weeks. A1C trends down by the first quarterly check. Cognitive
-              and mood scores recover. Crash risk falls back to baseline.
+              in months, not years. Blood pressure begins to drop within weeks.
+              A1C trends down by the first quarterly check. Cognitive and mood
+              scores recover. Crash risk falls back to baseline.
             </p>
             <p className="text-muted-foreground leading-relaxed mb-2">
               The biggest predictor of whether someone gets those benefits is
               simply <span className="font-semibold">comfort</span> — whether
-              the mask is wearable enough to use every night. That's the
-              whole reason PennPaps exists.
+              the mask is wearable enough to use every night. That's the whole
+              reason PennPaps exists.
             </p>
           </div>
         </div>
@@ -213,11 +215,10 @@ export function LearnHealthRisks() {
             <div className="text-sm text-foreground/85 leading-relaxed">
               <span className="font-semibold">A word of caution:</span> the
               statistics above are population-level. Your individual risk
-              depends on apnea severity (AHI), how long you've had it,
-              your overall cardiovascular profile, and other factors. Talk to
-              your physician before drawing any personal conclusion — and
-              don't stop or change any medication based on a single
-              article.
+              depends on apnea severity (AHI), how long you've had it, your
+              overall cardiovascular profile, and other factors. Talk to your
+              physician before drawing any personal conclusion — and don't stop
+              or change any medication based on a single article.
             </div>
           </div>
         </div>
@@ -255,8 +256,8 @@ export function LearnHealthRisks() {
               Am I at risk?
             </h3>
             <p className="text-sm text-muted-foreground leading-relaxed">
-              The validated STOP-BANG screener — eight questions, two
-              minutes, clear next step.
+              The validated STOP-BANG screener — eight questions, two minutes,
+              clear next step.
             </p>
           </div>
           <ArrowRight className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors mt-1" />
@@ -278,8 +279,8 @@ export function LearnHealthRisks() {
       <p className="text-xs text-muted-foreground/80 leading-relaxed mt-12 max-w-2xl mx-auto text-center">
         Educational content only — not medical advice. Sources include the
         American Academy of Sleep Medicine, AHA scientific statements on OSA,
-        and peer-reviewed literature. Specific numbers vary by study
-        population; the magnitudes cited reflect commonly-reported ranges.
+        and peer-reviewed literature. Specific numbers vary by study population;
+        the magnitudes cited reflect commonly-reported ranges.
       </p>
     </div>
   );

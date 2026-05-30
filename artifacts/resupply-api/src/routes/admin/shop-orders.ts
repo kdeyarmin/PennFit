@@ -473,9 +473,8 @@ async function sendShippingNotificationIfNew(args: {
     // cannot retro-actively roll back the patient's email outcome.
     if (activeCaregiver) {
       try {
-        const { sendCaregiverNotificationEmail } = await import(
-          "../../lib/order-emails/send-caregiver-notification-email"
-        );
+        const { sendCaregiverNotificationEmail } =
+          await import("../../lib/order-emails/send-caregiver-notification-email");
         await sendCaregiverNotificationEmail({
           toEmail: activeCaregiver.email,
           caregiverName: activeCaregiver.name,
@@ -943,7 +942,9 @@ router.post(
           stripe.refunds.create(
             {
               payment_intent: paymentIntentId,
-              ...(typeof amountCents === "number" ? { amount: amountCents } : {}),
+              ...(typeof amountCents === "number"
+                ? { amount: amountCents }
+                : {}),
               ...(reason ? { reason } : {}),
               metadata: {
                 // Records WHO issued the refund directly on the Stripe

@@ -44,7 +44,10 @@ import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 import { ADMIN_PASSWORD_TTL_MS } from "@workspace/resupply-auth";
 
 import { logger } from "../../lib/logger";
-import { createQueueWithDlq, VENDOR_SEND_QUEUE_OPTS } from "../lib/queue-options";
+import {
+  createQueueWithDlq,
+  VENDOR_SEND_QUEUE_OPTS,
+} from "../lib/queue-options";
 
 const NOTIFY_JOB = "invite-password.expiry-notify";
 // Hourly at :23 — staggered off the top-of-hour bursts the reminders
@@ -204,11 +207,7 @@ export async function runInvitePasswordExpiryNotifySweep(
     skippedAlreadyClaimed: 0,
     errors: 0,
   };
-  if (
-    !cfg.sendgridApiKey ||
-    !cfg.sendgridFromEmail ||
-    !cfg.sendgridFromName
-  ) {
+  if (!cfg.sendgridApiKey || !cfg.sendgridFromEmail || !cfg.sendgridFromName) {
     stats.skippedNoConfig = 1;
     logger.warn(
       { event: "invite-password.expiry-notify.skipped_no_config" },
@@ -248,8 +247,7 @@ export async function runInvitePasswordExpiryNotifySweep(
   const reminderCandidates = (reminderRows ?? [])
     .filter(
       (r): r is CandidateRow =>
-        typeof r.set_by_admin_at === "string" &&
-        typeof r.user_id === "string",
+        typeof r.set_by_admin_at === "string" && typeof r.user_id === "string",
     )
     .filter((r) => {
       if (!r.expiry_reminder_sent_at) return true;
@@ -278,8 +276,7 @@ export async function runInvitePasswordExpiryNotifySweep(
   const expiredCandidates = (expiredRows ?? [])
     .filter(
       (r): r is CandidateRow =>
-        typeof r.set_by_admin_at === "string" &&
-        typeof r.user_id === "string",
+        typeof r.set_by_admin_at === "string" && typeof r.user_id === "string",
     )
     .filter((r) => {
       if (!r.expired_notice_sent_at) return true;
@@ -352,9 +349,8 @@ export async function runInvitePasswordExpiryNotifySweep(
     const claimQuery = row.expiry_reminder_sent_at
       ? claim.eq("expiry_reminder_sent_at", row.expiry_reminder_sent_at)
       : claim.is("expiry_reminder_sent_at", null);
-    const { data: claimResult, error: claimErr } = await claimQuery.select(
-      "user_id",
-    );
+    const { data: claimResult, error: claimErr } =
+      await claimQuery.select("user_id");
 
     if (claimErr) {
       logger.warn(
@@ -419,9 +415,8 @@ export async function runInvitePasswordExpiryNotifySweep(
     const claimQuery = row.expired_notice_sent_at
       ? claim.eq("expired_notice_sent_at", row.expired_notice_sent_at)
       : claim.is("expired_notice_sent_at", null);
-    const { data: claimResult, error: claimErr } = await claimQuery.select(
-      "user_id",
-    );
+    const { data: claimResult, error: claimErr } =
+      await claimQuery.select("user_id");
 
     if (claimErr) {
       logger.warn(

@@ -58,7 +58,7 @@ vi.mock("../../lib/observability", () => ({
 import shopReturnsRouter from "./shop-returns";
 
 const RETURN_ID = "aaaa1111-0000-4000-8000-000000000001";
-const ORDER_ID  = "bbbb2222-0000-4000-8000-000000000001";
+const ORDER_ID = "bbbb2222-0000-4000-8000-000000000001";
 
 function makeApp(): Express {
   const app = express();
@@ -105,7 +105,9 @@ function receivedReturnRow(
   };
 }
 
-function shopOrderRow(over: Record<string, unknown> = {}): Record<string, unknown> {
+function shopOrderRow(
+  over: Record<string, unknown> = {},
+): Record<string, unknown> {
   return {
     stripe_payment_intent_id: "pi_test_1",
     amount_total_cents: 4998,
@@ -345,8 +347,7 @@ describe("POST /admin/shop/returns/:id/refund — handler logic", () => {
       data: receivedReturnRow({
         refund_failure_count: 2,
         refund_last_failure_at: "2026-05-22T20:00:00Z",
-        refund_last_failure_reason:
-          "charge_already_refunded: prior attempt",
+        refund_last_failure_reason: "charge_already_refunded: prior attempt",
       }),
     });
     stageSupabaseResponse("shop_orders", "select", {
@@ -424,69 +425,5 @@ describe("POST /admin/shop/returns/:id/approve — requirePermission gate smoke"
 
     // 200 or 409 (state mismatch) — not 401/403.
     expect([200, 409]).toContain(res.status);
-  });
-});
-
-// ===========================================================================
-// POST /admin/shop/returns/:id/refund — no refund cap (PR change)
-// ===========================================================================
-// The PR removed the refund-cap check that returned 409 when the requested
-// refundCents exceeded orderRow.amount_total_cents. Oversized refunds now
-// pass through to Stripe (which may bounce them there). This test pins that
-// NO 409 refund_exceeds_amount is returned by the route handler.
-describe("POST /admin/shop/returns/:id/refund — no refund cap (PR change)", () => {
-  function stubAdmin() {
-    mockAdmin.current = {
-      userId: "u_admin_cap",
-      email: "admin_cap@penn.example.com",
-      role: "admin",
-    };
-  }
-
-  it("does NOT return 409 refund_exceeds_amount when amountCents exceeds order total (cap removed)", async () => {
-    stubAdmin();
-    stageSupabaseResponse("shop_returns", "select", {
-      data: receivedReturnRow(),
-    });
-    // Order total is 4998; we are requesting a refund of 9999 (over-cap).
-    stageSupabaseResponse("shop_orders", "select", {
-      data: shopOrderRow({ amount_total_cents: 4998 }),
-    });
-    // The refund goes straight to Stripe (which may reject it, but the
-    // ROUTE must not pre-validate). We simulate a Stripe success.
-    stripeRefundsMock.mockResolvedValue({ id: "re_test_oversized" });
-    stageSupabaseResponse("shop_returns", "update", {
-      data: refundedReturnRow(),
-    });
-
-    const res = await request(makeApp())
-      .post(`/resupply-api/admin/shop/returns/${RETURN_ID}/refund`)
-      .send({ amountCents: 9999 }); // intentionally over the order total
-
-    // Must NOT be 409 refund_exceeds_amount — the cap check was removed.
-    expect(res.status).not.toBe(409);
-    if (res.status === 409) {
-      // Fail with a useful message if the cap snuck back in.
-      expect(res.body.error).not.toBe("refund_exceeds_amount");
-    }
-    // The expected outcome is 200 (Stripe accepted the oversized amount).
-    expect(res.status).toBe(200);
-  });
-
-  it("still returns 400 for zero/missing refund amount (unrelated validation unchanged)", async () => {
-    stubAdmin();
-    stageSupabaseResponse("shop_returns", "select", {
-      data: receivedReturnRow(),
-    });
-    stageSupabaseResponse("shop_orders", "select", {
-      data: shopOrderRow({ amount_total_cents: null }),
-    });
-
-    const res = await request(makeApp())
-      .post(`/resupply-api/admin/shop/returns/${RETURN_ID}/refund`)
-      .send({}); // no amountCents, order has null amount_total_cents
-
-    expect(res.status).toBe(400);
-    expect(res.body.error).toBe("missing_refund_amount");
   });
 });

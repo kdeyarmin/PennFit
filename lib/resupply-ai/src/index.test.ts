@@ -72,12 +72,16 @@ describe("resupply-ai index — Anthropic exports still present", () => {
 
   it("exports DEFAULT_ANTHROPIC_MODEL_CLASSIFY as a non-empty string", () => {
     expect(typeof resupplyAi.DEFAULT_ANTHROPIC_MODEL_CLASSIFY).toBe("string");
-    expect(resupplyAi.DEFAULT_ANTHROPIC_MODEL_CLASSIFY.length).toBeGreaterThan(0);
+    expect(resupplyAi.DEFAULT_ANTHROPIC_MODEL_CLASSIFY.length).toBeGreaterThan(
+      0,
+    );
   });
 
   it("exports DEFAULT_ANTHROPIC_MODEL_REASONING as a non-empty string", () => {
     expect(typeof resupplyAi.DEFAULT_ANTHROPIC_MODEL_REASONING).toBe("string");
-    expect(resupplyAi.DEFAULT_ANTHROPIC_MODEL_REASONING.length).toBeGreaterThan(0);
+    expect(resupplyAi.DEFAULT_ANTHROPIC_MODEL_REASONING.length).toBeGreaterThan(
+      0,
+    );
   });
 });
 
@@ -170,7 +174,9 @@ describe("resupply-ai index — functional smoke tests", () => {
       usage: { input_tokens: 5, output_tokens: 2 },
     };
     // Cast to the expected type to call the function
-    const text = resupplyAi.getResponseText(fakeResponse as Parameters<typeof resupplyAi.getResponseText>[0]);
+    const text = resupplyAi.getResponseText(
+      fakeResponse as Parameters<typeof resupplyAi.getResponseText>[0],
+    );
     expect(text).toBe("Hello world");
   });
 

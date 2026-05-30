@@ -233,9 +233,8 @@ export function PatientBillingTab({ patientId }: { patientId: string }) {
   // "everything available" defaults). Per-document selection lives
   // on the existing /documents tab; this is for the most-common
   // case where billing just wants the standard packet.
-  const [packetKind, setPacketKind] = useState<PacketKind>(
-    "prior_auth_support",
-  );
+  const [packetKind, setPacketKind] =
+    useState<PacketKind>("prior_auth_support");
   const [packetWindow, setPacketWindow] = useState(30);
   const [packetError, setPacketError] = useState<string | null>(null);
   const generatePacket = useMutation({
@@ -306,7 +305,9 @@ export function PatientBillingTab({ patientId }: { patientId: string }) {
         <Tile
           icon={<ShieldAlert className="h-4 w-4" />}
           label="Prior auths"
-          value={(priorAuths.data?.priorAuthorizations.length ?? 0).toLocaleString()}
+          value={(
+            priorAuths.data?.priorAuthorizations.length ?? 0
+          ).toLocaleString()}
         />
       </div>
 
@@ -352,17 +353,13 @@ export function PatientBillingTab({ patientId }: { patientId: string }) {
         {claims.isPending ? (
           <Spinner label="Loading claims…" />
         ) : claims.isError ? (
-          <p
-            className="text-sm py-1"
-            style={{ color: "#b91c1c" }}
-          >
-            {claims.error instanceof Error ? claims.error.message : "Failed to load claims."}
+          <p className="text-sm py-1" style={{ color: "#b91c1c" }}>
+            {claims.error instanceof Error
+              ? claims.error.message
+              : "Failed to load claims."}
           </p>
         ) : (claims.data?.claims.length ?? 0) === 0 ? (
-          <p
-            className="text-sm py-1"
-            style={{ color: "hsl(var(--ink-3))" }}
-          >
+          <p className="text-sm py-1" style={{ color: "hsl(var(--ink-3))" }}>
             No claims on file.
           </p>
         ) : (
@@ -437,17 +434,13 @@ export function PatientBillingTab({ patientId }: { patientId: string }) {
         {eligibility.isPending ? (
           <Spinner label="Loading eligibility…" />
         ) : eligibility.isError ? (
-          <p
-            className="text-sm py-1"
-            style={{ color: "#b91c1c" }}
-          >
-            {eligibility.error instanceof Error ? eligibility.error.message : "Failed to load eligibility checks."}
+          <p className="text-sm py-1" style={{ color: "#b91c1c" }}>
+            {eligibility.error instanceof Error
+              ? eligibility.error.message
+              : "Failed to load eligibility checks."}
           </p>
         ) : (eligibility.data?.checks.length ?? 0) === 0 ? (
-          <p
-            className="text-sm py-1"
-            style={{ color: "hsl(var(--ink-3))" }}
-          >
+          <p className="text-sm py-1" style={{ color: "hsl(var(--ink-3))" }}>
             No eligibility checks on file yet.
           </p>
         ) : (
@@ -491,10 +484,7 @@ export function PatientBillingTab({ patientId }: { patientId: string }) {
                       <span style={{ color: "#b91c1c" }}>inactive</span>
                     )}
                     {c.requires_prior_auth === true && (
-                      <span style={{ color: "#b45309" }}>
-                        {" "}
-                        · PA required
-                      </span>
+                      <span style={{ color: "#b45309" }}> · PA required</span>
                     )}
                     {c.deductible_cents != null && (
                       <>
@@ -540,17 +530,13 @@ export function PatientBillingTab({ patientId }: { patientId: string }) {
         {priorAuths.isPending ? (
           <Spinner label="Loading prior auths…" />
         ) : priorAuths.isError ? (
-          <p
-            className="text-sm py-1"
-            style={{ color: "#b91c1c" }}
-          >
-            {priorAuths.error instanceof Error ? priorAuths.error.message : "Failed to load prior authorizations."}
+          <p className="text-sm py-1" style={{ color: "#b91c1c" }}>
+            {priorAuths.error instanceof Error
+              ? priorAuths.error.message
+              : "Failed to load prior authorizations."}
           </p>
         ) : (priorAuths.data?.priorAuthorizations.length ?? 0) === 0 ? (
-          <p
-            className="text-sm py-1"
-            style={{ color: "hsl(var(--ink-3))" }}
-          >
+          <p className="text-sm py-1" style={{ color: "hsl(var(--ink-3))" }}>
             No prior authorizations on file.
           </p>
         ) : (
@@ -599,8 +585,7 @@ export function PatientBillingTab({ patientId }: { patientId: string }) {
                     </span>
                     {p.approvedThrough && (
                       <span style={{ color: "hsl(var(--ink-3))" }}>
-                        thru{" "}
-                        {new Date(p.approvedThrough).toLocaleDateString()}
+                        thru {new Date(p.approvedThrough).toLocaleDateString()}
                       </span>
                     )}
                   </div>
@@ -617,11 +602,10 @@ export function PatientBillingTab({ patientId }: { patientId: string }) {
         {statements.isPending ? (
           <Spinner label="Loading statements…" />
         ) : statements.isError ? (
-          <p
-            className="text-sm py-1"
-            style={{ color: "#b91c1c" }}
-          >
-            {statements.error instanceof Error ? statements.error.message : "Failed to load statements."}
+          <p className="text-sm py-1" style={{ color: "#b91c1c" }}>
+            {statements.error instanceof Error
+              ? statements.error.message
+              : "Failed to load statements."}
           </p>
         ) : (statements.data?.statements.length ?? 0) === 0 ? (
           <div className="flex items-start gap-2 text-sm">
@@ -751,17 +735,13 @@ export function PatientBillingTab({ patientId }: { patientId: string }) {
         {packets.isPending ? (
           <Spinner label="Loading packets…" />
         ) : packets.isError ? (
-          <p
-            className="text-sm py-1"
-            style={{ color: "#b91c1c" }}
-          >
-            {packets.error instanceof Error ? packets.error.message : "Failed to load packets."}
+          <p className="text-sm py-1" style={{ color: "#b91c1c" }}>
+            {packets.error instanceof Error
+              ? packets.error.message
+              : "Failed to load packets."}
           </p>
         ) : (packets.data?.packets.length ?? 0) === 0 ? (
-          <p
-            className="text-sm py-1"
-            style={{ color: "hsl(var(--ink-3))" }}
-          >
+          <p className="text-sm py-1" style={{ color: "hsl(var(--ink-3))" }}>
             No packets generated yet.
           </p>
         ) : (

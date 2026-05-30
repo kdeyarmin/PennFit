@@ -28,7 +28,10 @@ interface Harness {
 
 function buildHarness(overrides: Partial<AuthDeps> = {}): Harness {
   const repo = makeMemoryRepo();
-  const auditEvents: Array<{ action: string; metadata?: Record<string, unknown> }> = [];
+  const auditEvents: Array<{
+    action: string;
+    metadata?: Record<string, unknown>;
+  }> = [];
   const audit: AuditWriter & { events: typeof auditEvents } = Object.assign(
     (event: { action: string }) => {
       auditEvents.push(event);
@@ -645,7 +648,9 @@ describe("rateLimitOnError — sign-in handler", () => {
     // The rateLimitOnError hook must have been called at least once.
     expect(rateLimitOnError).toHaveBeenCalled();
     expect(errorCalls[0]?.err).toBeInstanceOf(Error);
-    expect((errorCalls[0]?.err as Error).message).toContain("rate-limit table unavailable");
+    expect((errorCalls[0]?.err as Error).message).toContain(
+      "rate-limit table unavailable",
+    );
   });
 
   it("sets rateLimitOnError on AuthDeps correctly (type-level smoke)", () => {

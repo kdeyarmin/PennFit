@@ -85,7 +85,9 @@ export function InsightsSection() {
 
         const next = [...curr];
         const insertAt =
-          dismissedIndex >= 0 ? Math.min(dismissedIndex, next.length) : next.length;
+          dismissedIndex >= 0
+            ? Math.min(dismissedIndex, next.length)
+            : next.length;
         next.splice(insertAt, 0, dismissedItem);
         return next;
       });

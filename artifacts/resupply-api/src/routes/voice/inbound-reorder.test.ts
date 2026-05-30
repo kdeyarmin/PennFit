@@ -147,9 +147,7 @@ describe("POST /voice/inbound-reorder — E.164 normalisation (regression guard)
     // normalized +12155551212, NOT the naive +2155551212 from the old code.
     const filterCalls = supabaseMock.filterCalls("patients", "select");
     const eqCalls = filterCalls.filter((c) => c.verb === "eq");
-    const phoneFilter = eqCalls.find(
-      (c) => c.args[0] === "phone_e164",
-    );
+    const phoneFilter = eqCalls.find((c) => c.args[0] === "phone_e164");
     expect(phoneFilter).toBeDefined();
     expect(phoneFilter!.args[1]).toBe("+12155551212");
   });
@@ -276,9 +274,10 @@ describe("POST /voice/inbound-reorder — identified caller path", () => {
       .type("form")
       .send({ From: "+12155550001", CallSid: "CA_known_sid" });
 
-    const inserts = supabaseMock.writePayloads("voice_reorder_sessions", "insert") as Array<
-      Record<string, unknown>
-    >;
+    const inserts = supabaseMock.writePayloads(
+      "voice_reorder_sessions",
+      "insert",
+    ) as Array<Record<string, unknown>>;
     expect(inserts).toHaveLength(1);
     expect(inserts[0]).toMatchObject({
       twilio_call_sid: "CA_known_sid",

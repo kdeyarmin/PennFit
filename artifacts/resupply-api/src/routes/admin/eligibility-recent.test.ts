@@ -212,9 +212,9 @@ describe("/admin/billing/eligibility-recent", () => {
     expect(res.status).toBe(200);
     const calls = getSupabaseFilterCalls("eligibility_checks", "select");
     const eqCalls = calls.filter((c) => c.verb === "eq");
-    expect(eqCalls.some((c) => c.args[0] === "status" && c.args[1] === "rejected")).toBe(
-      true,
-    );
+    expect(
+      eqCalls.some((c) => c.args[0] === "status" && c.args[1] === "rejected"),
+    ).toBe(true);
   });
 
   it("propagates a payer_profiles lookup error rather than returning partial data", async () => {

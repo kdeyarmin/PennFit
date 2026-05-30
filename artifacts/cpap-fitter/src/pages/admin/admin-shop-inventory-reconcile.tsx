@@ -35,9 +35,9 @@ function defaultPeriodLabel(): string {
 function formatDate(iso: string): string {
   try {
     return new Date(iso).toLocaleDateString(undefined, {
-      "year": "numeric",
-      "month": "short",
-      "day": "numeric",
+      year: "numeric",
+      month: "short",
+      day: "numeric",
     });
   } catch {
     return iso;
@@ -51,7 +51,11 @@ export function AdminShopInventoryReconcilePage() {
   const [notes, setNotes] = useState("");
   const [error, setError] = useState<string | null>(null);
 
-  const { data: items, isLoading, isError } = useQuery({
+  const {
+    data: items,
+    isLoading,
+    isError,
+  } = useQuery({
     queryKey: QUERY_KEY,
     queryFn: listReconciliations,
     staleTime: 30_000,
@@ -116,9 +120,9 @@ export function AdminShopInventoryReconcilePage() {
           }}
         >
           Start a new reconciliation to enter physical counts SKU-by-SKU.
-          Variance against the system count is recorded for the audit log;
-          you can optionally push the new counts back to Stripe at submit
-          time. Reconciliations are append-only after submission.
+          Variance against the system count is recorded for the audit log; you
+          can optionally push the new counts back to Stripe at submit time.
+          Reconciliations are append-only after submission.
         </p>
       </header>
 

@@ -28,7 +28,7 @@ collected first, and the coordinated rewrite procedure live in
 2. **The journal stops at `0049_physician_fax_outreach_status_pending_idx`.**
    Every SQL file from `0049_patient_documents.sql` through `0066_*` is
    present on disk but **not journaled** — meaning the schema state these
-   files encode is *not* applied by a fresh `migrate.mjs` run from this
+   files encode is _not_ applied by a fresh `migrate.mjs` run from this
    tree. (Production may or may not have applied them via a different
    path; that is one of the open questions.)
 3. **Six prefixes collide:** `0016`, `0017`, `0049`, `0050`, `0052`,
@@ -38,9 +38,9 @@ collected first, and the coordinated rewrite procedure live in
 
 ## The rule (enforced by `scripts/check-resupply-migration-prefix.sh`)
 
-Any migration file *added* under `lib/resupply-db/drizzle/` must have a
+Any migration file _added_ under `lib/resupply-db/drizzle/` must have a
 4-digit prefix **strictly greater than `0066`** (i.e. `0067` or higher).
-The pre-commit hook fails the commit otherwise. This applies to *added*
+The pre-commit hook fails the commit otherwise. This applies to _added_
 files only — modifying existing migrations is already prohibited by
 ADR 003 and caught in review.
 
@@ -94,14 +94,14 @@ in a way that leaves the deploy migrator a no-op.
 
 ## Duplicate-prefix inventory
 
-| Prefix | File A                                                | File B                                                            |
-| ------ | ----------------------------------------------------- | ----------------------------------------------------------------- |
-| `0016` | `0016_shop_orders_email_tracking.sql`                 | `0016_shop_returns.sql`                                           |
-| `0017` | `0017_csr_macros.sql`                                 | `0017_shop_orders_customer_email.sql`                             |
-| `0049` | `0049_patient_documents.sql`                          | `0049_physician_fax_outreach_status_pending_idx.sql`              |
-| `0050` | _two `0050_*` files — see `ls drizzle/0050_*.sql`_    |                                                                   |
-| `0052` | _two `0052_*` files — see `ls drizzle/0052_*.sql`_    |                                                                   |
-| `0065` | _two `0065_*` files — see `ls drizzle/0065_*.sql`_    |                                                                   |
+| Prefix | File A                                              | File B                                               |
+| ------ | --------------------------------------------------- | ---------------------------------------------------- |
+| `0016` | `0016_shop_orders_email_tracking.sql`               | `0016_shop_returns.sql`                              |
+| `0017` | `0017_csr_macros.sql`                               | `0017_shop_orders_customer_email.sql`                |
+| `0049` | `0049_patient_documents.sql`                        | `0049_physician_fax_outreach_status_pending_idx.sql` |
+| `0050` | \_two `0050__`files — see`ls drizzle/0050\__.sql`\_ |                                                      |
+| `0052` | \_two `0052__`files — see`ls drizzle/0052\__.sql`\_ |                                                      |
+| `0065` | \_two `0065__`files — see`ls drizzle/0065\__.sql`\_ |                                                      |
 
 (Tabulated dynamically rather than statically pinned to keep the README
 honest if a file is renamed during the eventual rewrite.)

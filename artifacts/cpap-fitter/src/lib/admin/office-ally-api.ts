@@ -22,10 +22,7 @@ async function getJSON<T>(path: string): Promise<T> {
   return (await res.json()) as T;
 }
 
-async function postJSON<T>(
-  path: string,
-  body?: unknown,
-): Promise<T> {
+async function postJSON<T>(path: string, body?: unknown): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     method: "POST",
     credentials: "same-origin",
@@ -90,9 +87,7 @@ export function fetchOaSubmissions(filters?: {
   if (filters?.status) qs.set("status", filters.status);
   if (filters?.q) qs.set("q", filters.q);
   const tail = qs.toString();
-  return getJSON(
-    `/admin/office-ally-submissions${tail ? `?${tail}` : ""}`,
-  );
+  return getJSON(`/admin/office-ally-submissions${tail ? `?${tail}` : ""}`);
 }
 
 // ─── Operations summary + health (KPI tiles + outage banner) ─────
@@ -179,9 +174,7 @@ export interface OaSubmissionLineage {
   children: OaSubmission[];
 }
 
-export function fetchOaSubmissionDetail(
-  id: string,
-): Promise<{
+export function fetchOaSubmissionDetail(id: string): Promise<{
   submission: OaSubmission;
   claims: OaSubmissionLinkedClaim[];
   lineage: OaSubmissionLineage;
@@ -376,9 +369,7 @@ export function fetchInboundFiles(filters?: {
   if (filters?.fileKind) qs.set("fileKind", filters.fileKind);
   if (filters?.dispatchStatus) qs.set("dispatchStatus", filters.dispatchStatus);
   const tail = qs.toString();
-  return getJSON(
-    `/admin/clearinghouse-inbound-files${tail ? `?${tail}` : ""}`,
-  );
+  return getJSON(`/admin/clearinghouse-inbound-files${tail ? `?${tail}` : ""}`);
 }
 
 export interface UploadAckResponse {

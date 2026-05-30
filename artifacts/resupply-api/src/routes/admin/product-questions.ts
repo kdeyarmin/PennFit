@@ -73,80 +73,84 @@ const patchBody = z.union([answerBody, rejectBody]);
 // CSR-tier inbox work — every role that handles inbound questions
 // uses this surface. `conversations.manage` matches the access
 // matrix on the rest of the customer-facing inbox.
-router.get("/admin/shop/product-questions", requirePermission("conversations.manage"), async (req, res) => {
-  const parse = listQuery.safeParse(req.query);
-  if (!parse.success) {
-    res.status(400).json({ error: "invalid_query" });
-    return;
-  }
-  const { status, cursor, limit } = parse.data;
+router.get(
+  "/admin/shop/product-questions",
+  requirePermission("conversations.manage"),
+  async (req, res) => {
+    const parse = listQuery.safeParse(req.query);
+    if (!parse.success) {
+      res.status(400).json({ error: "invalid_query" });
+      return;
+    }
+    const { status, cursor, limit } = parse.data;
 
-  const parsedCursor = parseCompositeCursor(cursor);
-  if (!parsedCursor.ok) {
-    res.status(400).json({ error: "invalid_cursor" });
-    return;
-  }
-  // shop_product_questions.id is a UUID. Anything else would smuggle
-  // PostgREST structural characters (`,`, `(`, `)`) into the `.or()`
-  // expression below, which could mutate the surrounding filter.
-  if (parsedCursor.id !== null && !isUuidCursorId(parsedCursor.id)) {
-    res.status(400).json({ error: "invalid_cursor" });
-    return;
-  }
+    const parsedCursor = parseCompositeCursor(cursor);
+    if (!parsedCursor.ok) {
+      res.status(400).json({ error: "invalid_cursor" });
+      return;
+    }
+    // shop_product_questions.id is a UUID. Anything else would smuggle
+    // PostgREST structural characters (`,`, `(`, `)`) into the `.or()`
+    // expression below, which could mutate the surrounding filter.
+    if (parsedCursor.id !== null && !isUuidCursorId(parsedCursor.id)) {
+      res.status(400).json({ error: "invalid_cursor" });
+      return;
+    }
 
-  const supabase = getSupabaseServiceRoleClient();
+    const supabase = getSupabaseServiceRoleClient();
 
-  // Cursor is composite (created_at, id) so we get strict ordering
-  // even when many rows share a created_at. PostgREST `.or()` supports
-  // this with `created_at.lt.<iso>,and(created_at.eq.<iso>,id.lt.<id>)`.
-  // The cursor id half is UUID-validated above so PostgREST cannot
-  // mis-parse the embedded filter expression.
-  let questionsQuery = supabase
-    .schema("resupply")
-    .from("shop_product_questions")
-    .select(
-      "id, product_id, asker_display_name, asker_email, question_body, answer_body, answered_by_email, answered_at, moderation_note, moderated_at, status, created_at",
-    )
-    .eq("status", status)
-    .order("created_at", { ascending: false })
-    .order("id", { ascending: false })
-    .limit(limit + 1);
-  if (parsedCursor.date && parsedCursor.id) {
-    const cursorIso = parsedCursor.date.toISOString();
-    questionsQuery = questionsQuery.or(
-      `created_at.lt.${cursorIso},and(created_at.eq.${cursorIso},id.lt.${parsedCursor.id})`,
-    );
-  }
-  const { data: rows, error } = await questionsQuery;
-  if (error) throw error;
+    // Cursor is composite (created_at, id) so we get strict ordering
+    // even when many rows share a created_at. PostgREST `.or()` supports
+    // this with `created_at.lt.<iso>,and(created_at.eq.<iso>,id.lt.<id>)`.
+    // The cursor id half is UUID-validated above so PostgREST cannot
+    // mis-parse the embedded filter expression.
+    let questionsQuery = supabase
+      .schema("resupply")
+      .from("shop_product_questions")
+      .select(
+        "id, product_id, asker_display_name, asker_email, question_body, answer_body, answered_by_email, answered_at, moderation_note, moderated_at, status, created_at",
+      )
+      .eq("status", status)
+      .order("created_at", { ascending: false })
+      .order("id", { ascending: false })
+      .limit(limit + 1);
+    if (parsedCursor.date && parsedCursor.id) {
+      const cursorIso = parsedCursor.date.toISOString();
+      questionsQuery = questionsQuery.or(
+        `created_at.lt.${cursorIso},and(created_at.eq.${cursorIso},id.lt.${parsedCursor.id})`,
+      );
+    }
+    const { data: rows, error } = await questionsQuery;
+    if (error) throw error;
 
-  const all = rows ?? [];
-  const hasMore = all.length > limit;
-  const trimmed = hasMore ? all.slice(0, limit) : all;
-  const lastRow = trimmed[trimmed.length - 1];
-  const nextCursor =
-    hasMore && lastRow
-      ? encodeCompositeCursor(new Date(lastRow.created_at), lastRow.id)
-      : null;
+    const all = rows ?? [];
+    const hasMore = all.length > limit;
+    const trimmed = hasMore ? all.slice(0, limit) : all;
+    const lastRow = trimmed[trimmed.length - 1];
+    const nextCursor =
+      hasMore && lastRow
+        ? encodeCompositeCursor(new Date(lastRow.created_at), lastRow.id)
+        : null;
 
-  res.json({
-    items: trimmed.map((r) => ({
-      id: r.id,
-      productId: r.product_id,
-      askerDisplayName: r.asker_display_name,
-      askerEmail: r.asker_email,
-      questionBody: r.question_body,
-      answerBody: r.answer_body,
-      answeredByEmail: r.answered_by_email,
-      answeredAt: r.answered_at,
-      moderationNote: r.moderation_note,
-      moderatedAt: r.moderated_at,
-      status: r.status,
-      createdAt: r.created_at,
-    })),
-    nextCursor,
-  });
-});
+    res.json({
+      items: trimmed.map((r) => ({
+        id: r.id,
+        productId: r.product_id,
+        askerDisplayName: r.asker_display_name,
+        askerEmail: r.asker_email,
+        questionBody: r.question_body,
+        answerBody: r.answer_body,
+        answeredByEmail: r.answered_by_email,
+        answeredAt: r.answered_at,
+        moderationNote: r.moderation_note,
+        moderatedAt: r.moderated_at,
+        status: r.status,
+        createdAt: r.created_at,
+      })),
+      nextCursor,
+    });
+  },
+);
 
 router.patch(
   "/admin/shop/product-questions/:id",

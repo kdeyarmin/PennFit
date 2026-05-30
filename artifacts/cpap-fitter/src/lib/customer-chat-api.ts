@@ -59,9 +59,9 @@ export async function postCustomerChatMessage(
   }
 
   if (res.status === 429) {
-    const body = (await res.json().catch(() => null)) as
-      | CustomerChatResponse
-      | null;
+    const body = (await res
+      .json()
+      .catch(() => null)) as CustomerChatResponse | null;
     return {
       reply:
         body?.reply ??
@@ -71,9 +71,9 @@ export async function postCustomerChatMessage(
   }
 
   if (!res.ok) {
-    const body = (await res.json().catch(() => null)) as
-      | { error?: string }
-      | null;
+    const body = (await res.json().catch(() => null)) as {
+      error?: string;
+    } | null;
     throw new CustomerChatApiError(
       res.status,
       body?.error ?? `Chat request failed (${res.status})`,
@@ -134,9 +134,9 @@ export async function streamCustomerChatMessage(
   }
 
   if (res.status === 429) {
-    const body = (await res.json().catch(() => null)) as
-      | CustomerChatResponse
-      | null;
+    const body = (await res
+      .json()
+      .catch(() => null)) as CustomerChatResponse | null;
     onChunk(
       body?.reply ??
         "You're sending messages too quickly. Please wait a minute and try again.",

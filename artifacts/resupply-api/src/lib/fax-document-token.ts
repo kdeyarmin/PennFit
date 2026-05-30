@@ -33,8 +33,7 @@ function base64urlEncode(buf: Buffer): string {
 function base64urlDecode(s: string): Buffer | null {
   if (!/^[A-Za-z0-9_-]*$/u.test(s)) return null;
   const pad = (4 - (s.length % 4)) % 4;
-  const standard =
-    s.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat(pad);
+  const standard = s.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat(pad);
   try {
     return Buffer.from(standard, "base64");
   } catch {
@@ -80,10 +79,7 @@ export function verifyFaxDocumentToken(
   if (!sigBuf) return { valid: false };
 
   const expected = hmacSign(payloadEncoded);
-  if (
-    sigBuf.length !== expected.length ||
-    !timingSafeEqual(sigBuf, expected)
-  ) {
+  if (sigBuf.length !== expected.length || !timingSafeEqual(sigBuf, expected)) {
     return { valid: false };
   }
 
@@ -98,12 +94,7 @@ export function verifyFaxDocumentToken(
   }
 
   const p = parsed as FaxDocumentPayload;
-  if (
-    !p ||
-    typeof p.id !== "string" ||
-    !p.id ||
-    typeof p.e !== "number"
-  ) {
+  if (!p || typeof p.id !== "string" || !p.id || typeof p.e !== "number") {
     return { valid: false };
   }
 

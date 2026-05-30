@@ -100,9 +100,7 @@ describe("runInvitePasswordExpiryNotifySweep", () => {
   });
 
   it("sends one reminder and one expired email per eligible row and stamps the matching columns", async () => {
-    const setRecent = new Date(
-      Date.now() - 5.5 * 86_400_000,
-    ).toISOString();
+    const setRecent = new Date(Date.now() - 5.5 * 86_400_000).toISOString();
     const setOld = new Date(Date.now() - TTL_MS - 86_400_000).toISOString();
 
     // reminder candidate query
@@ -176,12 +174,8 @@ describe("runInvitePasswordExpiryNotifySweep", () => {
   it("re-invites get a fresh reminder even when an older stamp exists", async () => {
     // Stamp from a previous invite, now older than the brand-new
     // set_by_admin_at.
-    const setRecent = new Date(
-      Date.now() - 5.5 * 86_400_000,
-    ).toISOString();
-    const oldStamp = new Date(
-      Date.now() - 30 * 86_400_000,
-    ).toISOString();
+    const setRecent = new Date(Date.now() - 5.5 * 86_400_000).toISOString();
+    const oldStamp = new Date(Date.now() - 30 * 86_400_000).toISOString();
 
     stageSupabaseResponse("password_credentials", "select", {
       data: [
@@ -214,9 +208,7 @@ describe("runInvitePasswordExpiryNotifySweep", () => {
   });
 
   it("skips rows whose reminder stamp is newer than the current set_by_admin_at", async () => {
-    const setRecent = new Date(
-      Date.now() - 5.5 * 86_400_000,
-    ).toISOString();
+    const setRecent = new Date(Date.now() - 5.5 * 86_400_000).toISOString();
     const freshStamp = new Date(Date.now() - 3_600_000).toISOString();
 
     stageSupabaseResponse("password_credentials", "select", {
@@ -238,9 +230,7 @@ describe("runInvitePasswordExpiryNotifySweep", () => {
   });
 
   it("skips revoked users", async () => {
-    const setRecent = new Date(
-      Date.now() - 5.5 * 86_400_000,
-    ).toISOString();
+    const setRecent = new Date(Date.now() - 5.5 * 86_400_000).toISOString();
     stageSupabaseResponse("password_credentials", "select", {
       data: [
         {

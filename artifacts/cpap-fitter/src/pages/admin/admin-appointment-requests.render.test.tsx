@@ -20,11 +20,7 @@ import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 
 // ── Hoisted state — accessible inside vi.mock() factories ────────────────────
 
-const {
-  toastSpy,
-  mutateSpy,
-  capturedCallbacks,
-} = vi.hoisted(() => {
+const { toastSpy, mutateSpy, capturedCallbacks } = vi.hoisted(() => {
   const capturedCallbacks: {
     onSuccess?: () => void;
     onError?: (err: unknown) => void;

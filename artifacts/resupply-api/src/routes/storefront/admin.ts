@@ -259,18 +259,12 @@ router.get("/admin/analytics", async (_req, res) => {
         .schema("public")
         .from("orders")
         .select("*", { count: "exact", head: true }),
-      supabase
-        .schema("public")
-        .from("orders")
-        .select("email_status"),
+      supabase.schema("public").from("orders").select("email_status"),
       supabase
         .schema("public")
         .from("orders")
         .select("mask_name, mask_manufacturer"),
-      supabase
-        .schema("public")
-        .from("usage_events")
-        .select("step"),
+      supabase.schema("public").from("usage_events").select("step"),
       supabase
         .schema("public")
         .from("orders")
@@ -433,12 +427,12 @@ router.get("/admin/reminders", async (_req, res) => {
   const today = new Date().toISOString().slice(0, 10);
   res.json({
     subscribers: (rows ?? []).map((r) => {
-      const items = ((r.items ?? []) as unknown as Array<{
+      const items = (r.items ?? []) as unknown as Array<{
         sku: string;
         lastReplacedAt: string;
         intervalDays: number;
         nextDueAt: string;
-      }>);
+      }>;
       const dueItems = items.filter((i) => i.nextDueAt <= today);
       return {
         id: r.id,
@@ -491,7 +485,7 @@ router.post("/admin/reminders/send-due", requireCsrf, async (req, res) => {
   const errors: Array<{ id: string; error: string }> = [];
 
   for (const row of candidates ?? []) {
-    const items = ((row.items ?? []) as unknown as ReminderItemForEmail[]);
+    const items = (row.items ?? []) as unknown as ReminderItemForEmail[];
     const dueItems = items.filter((i) => i.nextDueAt <= today);
 
     if (dueItems.length === 0) {

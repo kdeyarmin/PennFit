@@ -7,7 +7,15 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Filter, Wind, Weight, Ruler, Activity, Tag, Sparkles } from "lucide-react";
+import {
+  Filter,
+  Wind,
+  Weight,
+  Ruler,
+  Activity,
+  Tag,
+  Sparkles,
+} from "lucide-react";
 import { getMaskImage, formatMaskType } from "@/lib/mask-images";
 import { useDocumentTitle } from "@/hooks/use-document-title";
 import { openPennBot } from "@/lib/chat-events";

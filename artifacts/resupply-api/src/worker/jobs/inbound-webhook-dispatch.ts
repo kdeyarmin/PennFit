@@ -39,7 +39,10 @@ import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 import { dispatchEhrFhir } from "../../lib/inbound-dispatchers/ehr-fhir";
 import { dispatchParachute } from "../../lib/inbound-dispatchers/parachute";
 import { logger } from "../../lib/logger";
-import { createQueueWithDlq, WEBHOOK_DISPATCH_QUEUE_OPTS } from "../lib/queue-options";
+import {
+  createQueueWithDlq,
+  WEBHOOK_DISPATCH_QUEUE_OPTS,
+} from "../lib/queue-options";
 
 const JOB = "integrations.inbound-webhook-dispatch";
 const CRON = "* * * * *"; // every minute
@@ -84,9 +87,7 @@ export async function runInboundWebhookDispatcher(): Promise<DispatchStats> {
   // OOM, restart mid-row). Flip it back to 'processing_failed' so
   // the regular claim path below re-picks it up. We don't error on
   // this — losing a recovery cycle just delays revive by 60s.
-  const leaseCutoff = new Date(
-    Date.now() - PROCESSING_LEASE_MS,
-  ).toISOString();
+  const leaseCutoff = new Date(Date.now() - PROCESSING_LEASE_MS).toISOString();
   const { error: leaseErr } = await supabase
     .schema("resupply")
     .from("inbound_webhooks")

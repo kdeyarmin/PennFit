@@ -58,7 +58,10 @@ import {
   TwilioConfigError,
 } from "@workspace/resupply-telecom";
 import { logger } from "../../lib/logger";
-import { createQueueWithDlq, VENDOR_SEND_QUEUE_OPTS } from "../lib/queue-options";
+import {
+  createQueueWithDlq,
+  VENDOR_SEND_QUEUE_OPTS,
+} from "../lib/queue-options";
 
 const FOLLOWUP_JOB = "shop-order.delivery-followup";
 const FOLLOWUP_CRON = "23 14 * * *";
@@ -157,9 +160,7 @@ export async function runDeliveryFollowupSweep(): Promise<FollowupSweepStats> {
   const { data: candidates, error } = await supabase
     .schema("resupply")
     .from("shop_orders")
-    .select(
-      "id, stripe_session_id, customer_id, customer_email, delivered_at",
-    )
+    .select("id, stripe_session_id, customer_id, customer_email, delivered_at")
     .eq("status", "paid")
     .is("delivery_followup_sent_at", null)
     .gte("delivered_at", lower)
@@ -183,9 +184,7 @@ export async function runDeliveryFollowupSweep(): Promise<FollowupSweepStats> {
       })
       .eq("id", candidate.id)
       .is("delivery_followup_sent_at", null)
-      .select(
-        "id, stripe_session_id, customer_id, customer_email",
-      )
+      .select("id, stripe_session_id, customer_id, customer_email")
       .limit(1)
       .maybeSingle();
     if (claimErr) {
@@ -377,5 +376,8 @@ export async function registerShopOrderDeliveryFollowupJob(
   });
 
   await boss.schedule(FOLLOWUP_JOB, FOLLOWUP_CRON);
-  logger.info({ cron: FOLLOWUP_CRON }, "shop-order.delivery-followup scheduled");
+  logger.info(
+    { cron: FOLLOWUP_CRON },
+    "shop-order.delivery-followup scheduled",
+  );
 }

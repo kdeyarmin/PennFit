@@ -36,7 +36,8 @@ import {
   getSupabaseServiceRoleClient,
 } from "@workspace/resupply-db";
 
-type SleepStudyUpdate = Database["resupply"]["Tables"]["sleep_studies"]["Update"];
+type SleepStudyUpdate =
+  Database["resupply"]["Tables"]["sleep_studies"]["Update"];
 
 import { logger } from "../../lib/logger";
 import { requireAdmin } from "../../middlewares/requireAdmin";

@@ -19,10 +19,7 @@ import {
   installSupabaseMock,
   stageSupabaseResponse,
 } from "../../test-helpers/supabase-mock";
-import {
-  aiPatchSchema,
-  applyAiPatches,
-} from "./ai-patch";
+import { aiPatchSchema, applyAiPatches } from "./ai-patch";
 
 describe("aiPatchSchema", () => {
   it("accepts a well-formed set_line_modifier patch", () => {
@@ -108,7 +105,12 @@ const CLAIM_ID = "00000000-0000-4000-8000-000000000001";
 // Helper: stage the two supabase calls that recomputeTotals makes after
 // every applyAiPatches invocation.
 function stageRecompute(
-  lines: Array<{ billed_cents: number; quantity: number; allowed_cents: number; paid_cents: number }> = [],
+  lines: Array<{
+    billed_cents: number;
+    quantity: number;
+    allowed_cents: number;
+    paid_cents: number;
+  }> = [],
 ) {
   stageSupabaseResponse("insurance_claim_line_items", "select", {
     data: lines,
@@ -143,7 +145,10 @@ describe("applyAiPatches — set_prior_auth_number (appendPriorAuthNote)", () =>
     expect(outcomes[0]!.status).toBe("applied");
 
     // The update payload must contain notes with the [ai-pa:…] marker.
-    const updatePayloads = supabaseMock.writePayloads("insurance_claims", "update");
+    const updatePayloads = supabaseMock.writePayloads(
+      "insurance_claims",
+      "update",
+    );
     // updatePayloads[0] is the appendPriorAuthNote update, [1] is recomputeTotals
     const notesPayload = updatePayloads[0] as Record<string, unknown>;
     expect(typeof notesPayload.notes).toBe("string");
@@ -167,9 +172,14 @@ describe("applyAiPatches — set_prior_auth_number (appendPriorAuthNote)", () =>
       { kind: "set_prior_auth_number", authNumber: "PA-456" },
     ]);
 
-    const updatePayloads = supabaseMock.writePayloads("insurance_claims", "update");
+    const updatePayloads = supabaseMock.writePayloads(
+      "insurance_claims",
+      "update",
+    );
     const notesPayload = updatePayloads[0] as Record<string, unknown>;
-    expect(notesPayload.notes as string).toBe("Initial claim notes [ai-pa:PA-456]");
+    expect(notesPayload.notes as string).toBe(
+      "Initial claim notes [ai-pa:PA-456]",
+    );
   });
 
   it("returns skipped when the same authNumber marker already exists in notes (idempotent)", async () => {
@@ -244,7 +254,10 @@ describe("applyAiPatches — recomputeTotals uses extended charge (billed_cents 
       { kind: "set_claim_field", field: "denial_reason", value: "test" },
     ]);
 
-    const updatePayloads = supabaseMock.writePayloads("insurance_claims", "update");
+    const updatePayloads = supabaseMock.writePayloads(
+      "insurance_claims",
+      "update",
+    );
     // updatePayloads[0] = the field patch, updatePayloads[1] = recomputeTotals
     const recomputePayload = updatePayloads[1] as Record<string, unknown>;
     // 1599 × 2 = 3198, not 1599 (the old per-unit sum would have been 1599).
@@ -252,21 +265,40 @@ describe("applyAiPatches — recomputeTotals uses extended charge (billed_cents 
   });
 
   it("writes total_billed_cents = sum of per-unit amounts when quantity is 1", async () => {
-    stageSupabaseResponse("insurance_claims", "update", { data: null, error: null });
+    stageSupabaseResponse("insurance_claims", "update", {
+      data: null,
+      error: null,
+    });
     stageSupabaseResponse("insurance_claim_line_items", "select", {
       data: [
-        { billed_cents: 5000, quantity: 1, allowed_cents: 4000, paid_cents: 3500 },
-        { billed_cents: 2000, quantity: 1, allowed_cents: 1800, paid_cents: 1800 },
+        {
+          billed_cents: 5000,
+          quantity: 1,
+          allowed_cents: 4000,
+          paid_cents: 3500,
+        },
+        {
+          billed_cents: 2000,
+          quantity: 1,
+          allowed_cents: 1800,
+          paid_cents: 1800,
+        },
       ],
       error: null,
     });
-    stageSupabaseResponse("insurance_claims", "update", { data: null, error: null });
+    stageSupabaseResponse("insurance_claims", "update", {
+      data: null,
+      error: null,
+    });
 
     await applyAiPatches(CLAIM_ID, [
       { kind: "set_claim_field", field: "denial_reason", value: null },
     ]);
 
-    const updatePayloads = supabaseMock.writePayloads("insurance_claims", "update");
+    const updatePayloads = supabaseMock.writePayloads(
+      "insurance_claims",
+      "update",
+    );
     const recomputePayload = updatePayloads[1] as Record<string, unknown>;
     expect(recomputePayload.total_billed_cents).toBe(7000);
     expect(recomputePayload.total_allowed_cents).toBe(5800);
@@ -274,21 +306,35 @@ describe("applyAiPatches — recomputeTotals uses extended charge (billed_cents 
   });
 
   it("treats null quantity as 1 (fallback) in the extended-charge computation", async () => {
-    stageSupabaseResponse("insurance_claims", "update", { data: null, error: null });
+    stageSupabaseResponse("insurance_claims", "update", {
+      data: null,
+      error: null,
+    });
     stageSupabaseResponse("insurance_claim_line_items", "select", {
       data: [
         // quantity is null → should default to 1
-        { billed_cents: 1000, quantity: null, allowed_cents: 900, paid_cents: 800 },
+        {
+          billed_cents: 1000,
+          quantity: null,
+          allowed_cents: 900,
+          paid_cents: 800,
+        },
       ],
       error: null,
     });
-    stageSupabaseResponse("insurance_claims", "update", { data: null, error: null });
+    stageSupabaseResponse("insurance_claims", "update", {
+      data: null,
+      error: null,
+    });
 
     await applyAiPatches(CLAIM_ID, [
       { kind: "set_claim_field", field: "denial_reason", value: null },
     ]);
 
-    const updatePayloads = supabaseMock.writePayloads("insurance_claims", "update");
+    const updatePayloads = supabaseMock.writePayloads(
+      "insurance_claims",
+      "update",
+    );
     const recomputePayload = updatePayloads[1] as Record<string, unknown>;
     expect(recomputePayload.total_billed_cents).toBe(1000);
   });

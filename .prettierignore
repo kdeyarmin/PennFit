@@ -10,6 +10,12 @@ artifacts/resupply-api/src/lib/api-zod/generated/**
 # Lockfile is owned by pnpm.
 pnpm-lock.yaml
 
+# Claude Code tooling config (skills, hooks, settings, vendored plugin
+# manifests) — agent/editor configuration, not authored product source.
+# Reformatting it is pointless churn and risks breaking JSON/MD that the
+# tooling parses, so keep prettier out of it.
+.claude/**
+
 # Build output captured for diagnostic, not authored.
 **/dist-profile/**
 

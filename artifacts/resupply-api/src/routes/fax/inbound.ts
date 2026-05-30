@@ -110,9 +110,10 @@ router.post("/fax/inbound", signatureMiddleware, async (req, res) => {
   await logAudit({
     action: "fax.inbound_received",
     targetTable: "inbound_faxes",
-    targetId: outcome.kind === "inserted" || outcome.kind === "already_recorded"
-      ? outcome.id
-      : null,
+    targetId:
+      outcome.kind === "inserted" || outcome.kind === "already_recorded"
+        ? outcome.id
+        : null,
     metadata: {
       twilio_fax_sid: FaxSid,
       num_pages: NumPages ?? null,

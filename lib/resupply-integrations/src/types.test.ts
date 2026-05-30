@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  INTEGRATION_SOURCES,
-  integrationSnapshotSchema,
-} from "./index";
+import { INTEGRATION_SOURCES, integrationSnapshotSchema } from "./index";
 
 describe("INTEGRATION_SOURCES", () => {
   it("includes the expected target vendors", () => {
@@ -31,7 +28,7 @@ describe("INTEGRATION_SOURCES", () => {
   it("lists react_health as the last entry", () => {
     // Order regression: the unified-package relies on stable ordering.
     expect(INTEGRATION_SOURCES[INTEGRATION_SOURCES.length - 1]).toBe(
-      "react_health"
+      "react_health",
     );
   });
 });

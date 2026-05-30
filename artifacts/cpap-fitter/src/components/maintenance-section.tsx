@@ -135,9 +135,7 @@ function MaintenanceRow({
         className="h-7 w-7 rounded-full border flex items-center justify-center shrink-0 transition-colors"
         style={{
           borderColor: tone.border,
-          backgroundColor: justLogged
-            ? "hsl(var(--penn-gold))"
-            : "transparent",
+          backgroundColor: justLogged ? "hsl(var(--penn-gold))" : "transparent",
         }}
         aria-label={`Mark ${task.label} done`}
       >

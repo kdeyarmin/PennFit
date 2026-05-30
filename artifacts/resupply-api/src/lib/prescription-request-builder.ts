@@ -80,9 +80,7 @@ export async function buildPrescriptionRequestPacketFromRx(
   // ("g47.30") even when the format is otherwise valid.
   const rawIcd = study?.diagnosis_icd10?.toUpperCase() ?? null;
   const icd10 =
-    rawIcd && /^[A-Z]\d{2}(\.\d{1,4})?$/.test(rawIcd)
-      ? [rawIcd]
-      : ["G47.33"];
+    rawIcd && /^[A-Z]\d{2}(\.\d{1,4})?$/.test(rawIcd) ? [rawIcd] : ["G47.33"];
 
   const { data: provider } = await supabase
     .schema("resupply")

@@ -43,12 +43,14 @@ export function parseClaimResponse(payload: unknown): ParsedClaimResponse {
       requestIdentifier: null,
     };
   }
-  const dispositionText = typeof cr.disposition === "string" ? cr.disposition : null;
-  const authNumber = typeof cr.preAuthRef === "string"
-    ? cr.preAuthRef
-    : Array.isArray(cr.preAuthRef) && typeof cr.preAuthRef[0] === "string"
-      ? (cr.preAuthRef[0] as string)
-      : null;
+  const dispositionText =
+    typeof cr.disposition === "string" ? cr.disposition : null;
+  const authNumber =
+    typeof cr.preAuthRef === "string"
+      ? cr.preAuthRef
+      : Array.isArray(cr.preAuthRef) && typeof cr.preAuthRef[0] === "string"
+        ? (cr.preAuthRef[0] as string)
+        : null;
 
   // Per Da Vinci PAS IG: payer echoes back the original Claim
   // identifier in ClaimResponse.request.identifier.value AND/OR
@@ -71,7 +73,9 @@ export function parseClaimResponse(payload: unknown): ParsedClaimResponse {
 
   // Walk item[].adjudication looking for the first concrete decision code.
   let decision: ParsedClaimResponse["decision"] = "pended";
-  const items = Array.isArray(cr.item) ? (cr.item as Record<string, unknown>[]) : [];
+  const items = Array.isArray(cr.item)
+    ? (cr.item as Record<string, unknown>[])
+    : [];
   for (const item of items) {
     const adjs = Array.isArray(item.adjudication)
       ? (item.adjudication as Record<string, unknown>[])
@@ -94,7 +98,9 @@ export function parseClaimResponse(payload: unknown): ParsedClaimResponse {
 
   // Denial reason: walk error[] when present; fall back to disposition.
   let denialReason: string | null = null;
-  const errors = Array.isArray(cr.error) ? (cr.error as Record<string, unknown>[]) : [];
+  const errors = Array.isArray(cr.error)
+    ? (cr.error as Record<string, unknown>[])
+    : [];
   if (errors.length > 0) {
     denialReason = errors
       .map((e) => extractCodingDisplay(e.code) ?? null)
@@ -115,7 +121,9 @@ export function parseClaimResponse(payload: unknown): ParsedClaimResponse {
   };
 }
 
-function extractClaimResponse(payload: unknown): Record<string, unknown> | null {
+function extractClaimResponse(
+  payload: unknown,
+): Record<string, unknown> | null {
   if (!payload || typeof payload !== "object") return null;
   const p = payload as Record<string, unknown>;
   if (p.resourceType === "ClaimResponse") return p;

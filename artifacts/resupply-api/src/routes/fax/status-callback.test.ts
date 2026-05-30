@@ -28,18 +28,14 @@ const supabaseMock = installSupabaseMock();
 // Stub Twilio signature middleware — validate that it's called but skip
 // the actual HMAC check so tests don't need real Twilio credentials.
 vi.mock("@workspace/resupply-telecom", async () => {
-  const actual =
-    await vi.importActual<typeof import("@workspace/resupply-telecom")>(
-      "@workspace/resupply-telecom",
-    );
+  const actual = await vi.importActual<
+    typeof import("@workspace/resupply-telecom")
+  >("@workspace/resupply-telecom");
   return {
     ...actual,
-    requireTwilioSignature: () =>
-      (
-        _req: unknown,
-        _res: unknown,
-        next: () => void,
-      ) => next(),
+    requireTwilioSignature:
+      () => (_req: unknown, _res: unknown, next: () => void) =>
+        next(),
   };
 });
 

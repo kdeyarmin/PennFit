@@ -26,7 +26,11 @@ beforeEach(() => supabaseMock.reset());
 
 describe("matchPatient", () => {
   it("returns kind='none' when no phone / dob / lastName provided", async () => {
-    const r = await matchPatient({ phoneE164: null, dob: null, lastName: null });
+    const r = await matchPatient({
+      phoneE164: null,
+      dob: null,
+      lastName: null,
+    });
     expect(r).toEqual({ patientId: null, kind: "none" });
   });
 

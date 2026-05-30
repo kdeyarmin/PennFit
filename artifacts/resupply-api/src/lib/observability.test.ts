@@ -26,10 +26,7 @@ describe("withMetrics", () => {
   }
 
   it("returns the fn's resolved value unchanged", async () => {
-    const result = await withMetrics(
-      { name: "test.success" },
-      async () => 42,
-    );
+    const result = await withMetrics({ name: "test.success" }, async () => 42);
     expect(result).toBe(42);
   });
 
@@ -74,7 +71,9 @@ describe("withMetrics", () => {
   });
 
   it("does NOT log the thrown error — caller's job", async () => {
-    const errSpy = vi.spyOn(logger, "error").mockImplementation(() => undefined);
+    const errSpy = vi
+      .spyOn(logger, "error")
+      .mockImplementation(() => undefined);
     try {
       await withMetrics({ name: "x" }, async () => {
         throw new Error("nope");

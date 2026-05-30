@@ -36,7 +36,11 @@ vi.mock("../../middlewares/requireAdmin", () =>
 vi.mock("../../middlewares/admin-rate-limit", () => ({
   adminRateLimit:
     () =>
-    (_req: import("express").Request, _res: import("express").Response, next: import("express").NextFunction) =>
+    (
+      _req: import("express").Request,
+      _res: import("express").Response,
+      next: import("express").NextFunction,
+    ) =>
       next(),
 }));
 
@@ -241,9 +245,7 @@ describe("PATCH /admin/feature-flags/:key", () => {
 
 describe("GET /admin/feature-flags/activity", () => {
   it("returns 401 when not signed in", async () => {
-    const res = await request(makeApp()).get(
-      "/admin/feature-flags/activity",
-    );
+    const res = await request(makeApp()).get("/admin/feature-flags/activity");
     expect(res.status).toBe(401);
   });
 
@@ -272,9 +274,7 @@ describe("GET /admin/feature-flags/activity", () => {
       ],
     });
 
-    const res = await request(makeApp()).get(
-      "/admin/feature-flags/activity",
-    );
+    const res = await request(makeApp()).get("/admin/feature-flags/activity");
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({
@@ -316,21 +316,21 @@ describe("GET /admin/feature-flags/activity", () => {
     expect(res.body).toEqual({ activity: [] });
   });
 
-  // Regression: the PR changed safeParse to .parse(). A repeated query param
-  // (?limit=1&limit=2) makes req.query.limit an array, which fails z.string()
-  // and now throws a ZodError → unhandled 500 instead of falling back to the
-  // default limit. This test pins the NEW behavior (500, not 200).
-  it("throws (500) when ?limit is a repeated (array) query param — .parse() not .safeParse()", async () => {
+  // Regression guard: a repeated query param (?limit=1&limit=2) makes
+  // req.query.limit an array, which fails z.string() and previously
+  // caused an unhandled ZodError → 500. safeParse must degrade to the
+  // default limit (20) rather than 5xx.
+  it("falls back to default limit when ?limit is a repeated (array) query param", async () => {
     stubAdmin();
     stageSupabaseResponse("feature_flag_events", "select", { data: [] });
 
+    // Supertest allows passing the same param twice to force an array.
     const res = await request(makeApp()).get(
       "/admin/feature-flags/activity?limit=1&limit=2",
     );
 
-    // The route now uses .parse(), so an array limit throws a ZodError which
-    // Express's default error handler turns into a 500.
-    expect(res.status).toBe(500);
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ activity: [] });
   });
 
   it("uses the default limit (20) when the limit param is absent", async () => {
@@ -358,7 +358,7 @@ describe("GET /admin/feature-flags/activity", () => {
     });
   });
 
-  it("uses the default limit (20) when limit is a non-numeric string", async () => {
+  it("falls back to default limit when limit is a non-numeric string", async () => {
     stubAdmin();
     stageSupabaseResponse("feature_flag_events", "select", { data: [] });
 

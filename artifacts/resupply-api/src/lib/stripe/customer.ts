@@ -35,8 +35,7 @@ import {
 
 import { getStripeClient, type StripeConfig } from "./config";
 
-type ShopCustomerRow =
-  Database["resupply"]["Tables"]["shop_customers"]["Row"];
+type ShopCustomerRow = Database["resupply"]["Tables"]["shop_customers"]["Row"];
 
 export interface CustomerMapping {
   stripeCustomerId: string;

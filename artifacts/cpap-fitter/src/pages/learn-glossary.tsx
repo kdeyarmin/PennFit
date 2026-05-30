@@ -2,12 +2,7 @@ import React, { useMemo, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import {
-  ArrowRight,
-  BookOpen,
-  Search,
-  Sparkles,
-} from "lucide-react";
+import { ArrowRight, BookOpen, Search, Sparkles } from "lucide-react";
 import { useDocumentTitle } from "@/hooks/use-document-title";
 import { ShareArticle } from "@/components/share-article";
 
@@ -224,16 +219,14 @@ const terms: Term[] = [
   },
 ];
 
-const categoryMeta: Record<
-  Term["category"],
-  { label: string; color: string }
-> = {
-  diagnosis: { label: "Diagnosis", color: "chip-tier-budget" },
-  therapy: { label: "Therapy", color: "chip-tier-standard" },
-  equipment: { label: "Equipment", color: "chip-tier-premium" },
-  billing: { label: "Billing", color: "chip-tier-budget" },
-  anatomy: { label: "Anatomy", color: "chip-tier-standard" },
-};
+const categoryMeta: Record<Term["category"], { label: string; color: string }> =
+  {
+    diagnosis: { label: "Diagnosis", color: "chip-tier-budget" },
+    therapy: { label: "Therapy", color: "chip-tier-standard" },
+    equipment: { label: "Equipment", color: "chip-tier-premium" },
+    billing: { label: "Billing", color: "chip-tier-budget" },
+    anatomy: { label: "Anatomy", color: "chip-tier-standard" },
+  };
 
 export function LearnGlossary() {
   useDocumentTitle(
@@ -277,9 +270,9 @@ export function LearnGlossary() {
           The CPAP glossary.
         </h1>
         <p className="text-lg text-muted-foreground leading-relaxed">
-          Every acronym, abbreviation, and clinical term you&apos;ll
-          encounter on a sleep report, a machine screen, an insurance
-          letter, or a forum thread — defined in plain English.
+          Every acronym, abbreviation, and clinical term you&apos;ll encounter
+          on a sleep report, a machine screen, an insurance letter, or a forum
+          thread — defined in plain English.
         </p>
       </header>
 
@@ -387,8 +380,8 @@ export function LearnGlossary() {
           Pick a starting topic.
         </h2>
         <p className="text-muted-foreground leading-relaxed max-w-xl mx-auto mb-7">
-          Vocabulary down — the deeper guides give you context for every
-          term you just read.
+          Vocabulary down — the deeper guides give you context for every term
+          you just read.
         </p>
         <div className="flex flex-col sm:flex-row gap-3 justify-center">
           <Button
@@ -411,9 +404,8 @@ export function LearnGlossary() {
       </div>
 
       <p className="text-xs text-muted-foreground/80 leading-relaxed mt-12 max-w-2xl mx-auto text-center">
-        Educational reference only — not a substitute for the definitions
-        your sleep medicine provider or insurance company uses on
-        documentation.
+        Educational reference only — not a substitute for the definitions your
+        sleep medicine provider or insurance company uses on documentation.
       </p>
     </div>
   );

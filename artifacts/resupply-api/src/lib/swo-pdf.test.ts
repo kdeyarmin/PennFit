@@ -5,11 +5,7 @@
 
 import { describe, it, expect } from "vitest";
 
-import {
-  describeHcpcs,
-  validateSwoInputs,
-  type SwoInputs,
-} from "./swo-pdf";
+import { describeHcpcs, validateSwoInputs, type SwoInputs } from "./swo-pdf";
 
 const baseInputs = (): SwoInputs => ({
   patient: {
@@ -97,7 +93,9 @@ describe("describeHcpcs", () => {
   it("maps known HCPCS codes to a human description", () => {
     expect(describeHcpcs("E0601", "CPAP-01")).toContain("CPAP device");
     expect(describeHcpcs("A7030", "MASK-FULL")).toContain("Full face mask");
-    expect(describeHcpcs("A7038", "FILTER-DISP")).toContain("Disposable filter");
+    expect(describeHcpcs("A7038", "FILTER-DISP")).toContain(
+      "Disposable filter",
+    );
   });
 
   it("strips modifiers before lookup", () => {

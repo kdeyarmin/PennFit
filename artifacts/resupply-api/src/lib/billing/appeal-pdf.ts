@@ -111,13 +111,10 @@ function drawAppeal(doc: PDFKit.PDFDocument, input: AppealInput): void {
   doc.moveDown(1);
 
   // Body.
-  doc
-    .font("Helvetica")
-    .fontSize(11)
-    .text(input.letterBody, {
-      align: "left",
-      lineGap: 3,
-    });
+  doc.font("Helvetica").fontSize(11).text(input.letterBody, {
+    align: "left",
+    lineGap: 3,
+  });
   doc.moveDown(2);
 
   // Signer block.

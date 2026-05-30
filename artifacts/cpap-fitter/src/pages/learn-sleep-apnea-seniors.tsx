@@ -79,10 +79,10 @@ export function LearnSleepApneaSeniors() {
           <span className="font-semibold text-foreground">
             25% and 50% of adults
           </span>{" "}
-          meet criteria for at least mild OSA. And in older patients,
-          treatment matters more than ever: untreated apnea contributes to
-          cognitive decline, falls, atrial fibrillation, and heart failure
-          in ways that are reversible with adherent therapy.
+          meet criteria for at least mild OSA. And in older patients, treatment
+          matters more than ever: untreated apnea contributes to cognitive
+          decline, falls, atrial fibrillation, and heart failure in ways that
+          are reversible with adherent therapy.
         </p>
       </header>
 
@@ -122,17 +122,17 @@ export function LearnSleepApneaSeniors() {
               </h2>
             </div>
             <p className="text-muted-foreground leading-relaxed mb-3">
-              Daytime fatigue, brain fog, frequent nighttime bathroom
-              trips, morning headaches, and unrefreshing sleep are not
-              normal parts of aging — even when they&apos;re common in
-              your peer group. The most likely single explanation in an
-              adult over 60 is undiagnosed sleep apnea.
+              Daytime fatigue, brain fog, frequent nighttime bathroom trips,
+              morning headaches, and unrefreshing sleep are not normal parts of
+              aging — even when they&apos;re common in your peer group. The most
+              likely single explanation in an adult over 60 is undiagnosed sleep
+              apnea.
             </p>
             <p className="text-muted-foreground leading-relaxed">
-              The reason older adults are often told otherwise is that
-              the symptoms look similar to what people <em>expect</em>{" "}
-              from aging. A sleep study (often a home test) is the only
-              way to actually find out.
+              The reason older adults are often told otherwise is that the
+              symptoms look similar to what people <em>expect</em> from aging. A
+              sleep study (often a home test) is the only way to actually find
+              out.
             </p>
           </div>
         </div>
@@ -179,20 +179,18 @@ export function LearnSleepApneaSeniors() {
                 If you&apos;re caring for a parent or partner
               </div>
               <p className="text-sm text-foreground/85 leading-relaxed mb-3">
-                Caregivers notice the snoring, the witnessed pauses, and
-                the daytime changes long before the patient does. Take a
-                one-minute audio recording of a typical night of
-                sleeping and bring it to the next primary care visit —
-                this is often the catalyst that gets a sleep study
-                ordered.
+                Caregivers notice the snoring, the witnessed pauses, and the
+                daytime changes long before the patient does. Take a one-minute
+                audio recording of a typical night of sleeping and bring it to
+                the next primary care visit — this is often the catalyst that
+                gets a sleep study ordered.
               </p>
               <p className="text-sm text-foreground/85 leading-relaxed">
-                Once therapy starts, your role becomes mostly logistical
-                — refilling distilled water, helping with the daily
-                cushion wipe, and being the second set of eyes on
-                cushion fit and skin integrity. Most older adults adapt
-                to CPAP just as well as younger patients given the
-                support and the right mask.
+                Once therapy starts, your role becomes mostly logistical —
+                refilling distilled water, helping with the daily cushion wipe,
+                and being the second set of eyes on cushion fit and skin
+                integrity. Most older adults adapt to CPAP just as well as
+                younger patients given the support and the right mask.
               </p>
             </div>
           </div>
@@ -256,8 +254,8 @@ export function LearnSleepApneaSeniors() {
               Insurance &amp; Medicare guide
             </h3>
             <p className="text-sm text-muted-foreground leading-relaxed">
-              Exactly what Medicare covers, the 4-hour adherence rule, and
-              how supplies are billed.
+              Exactly what Medicare covers, the 4-hour adherence rule, and how
+              supplies are billed.
             </p>
           </div>
           <ArrowRight className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors mt-1" />
@@ -300,9 +298,9 @@ export function LearnSleepApneaSeniors() {
       </div>
 
       <p className="text-xs text-muted-foreground/80 leading-relaxed mt-12 max-w-2xl mx-auto text-center">
-        Educational content only. Talk to your primary care physician
-        about medications that could be worsening sleep apnea — don&apos;t
-        stop or change any prescriptions on your own.
+        Educational content only. Talk to your primary care physician about
+        medications that could be worsening sleep apnea — don&apos;t stop or
+        change any prescriptions on your own.
       </p>
     </div>
   );

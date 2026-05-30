@@ -56,7 +56,9 @@ export function makeMeHandler(deps: AuthDeps) {
       // Error object to pino (which serializes it with stack) rather
       // than embedding any user fields beyond the user id — logs are
       // treated as world-readable, so no email/PII.
-      const log = (req as Request & { log?: { error?: (...args: unknown[]) => void } }).log;
+      const log = (
+        req as Request & { log?: { error?: (...args: unknown[]) => void } }
+      ).log;
       log?.error?.(
         { event: "auth_me_credential_lookup_failed", err, userId: user.id },
         "auth.me: credential lookup failed; failing closed with 500",

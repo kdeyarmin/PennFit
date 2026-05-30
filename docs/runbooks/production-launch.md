@@ -8,14 +8,14 @@ catalogues every gate; this one is the procedure.
 Five items, all operator-only. Code can't execute them — they all need
 production secret-store access and live database credentials.
 
-| # | Step                                                                      | Where it runs                          | Section |
-| - | ------------------------------------------------------------------------- | -------------------------------------- | ------- |
-| 0 | Generate fresh HMAC keys                                                  | Your laptop                            | [§1](#1-generate-fresh-hmac-keys-2-min)              |
-| 1 | Set every production secret in the deploy target's secret store           | Railway dashboard → service → Variables | [§2](#2-set-every-production-secret-5-min)              |
-| 2 | Run `preflight:prod` against the loaded env                               | A shell inside the deploy target       | [§3](#3-run-preflightprod-90-s)              |
-| 3 | Apply pending migrations against the production Supabase database         | Your laptop, pointed at prod creds     | [§4](#4-apply-migrations-against-the-production-db-5-min)              |
-| 4 | Bootstrap the first admin user                                            | Your laptop, pointed at prod creds     | [§5](#5-bootstrap-the-first-admin-3-min)              |
-| 5 | Restart the API + run post-deploy smoke tests                             | Railway dashboard → service → Redeploy | [§6](#6-restart-and-smoke-test-5-min)              |
+| #   | Step                                                              | Where it runs                           | Section                                                   |
+| --- | ----------------------------------------------------------------- | --------------------------------------- | --------------------------------------------------------- |
+| 0   | Generate fresh HMAC keys                                          | Your laptop                             | [§1](#1-generate-fresh-hmac-keys-2-min)                   |
+| 1   | Set every production secret in the deploy target's secret store   | Railway dashboard → service → Variables | [§2](#2-set-every-production-secret-5-min)                |
+| 2   | Run `preflight:prod` against the loaded env                       | A shell inside the deploy target        | [§3](#3-run-preflightprod-90-s)                           |
+| 3   | Apply pending migrations against the production Supabase database | Your laptop, pointed at prod creds      | [§4](#4-apply-migrations-against-the-production-db-5-min) |
+| 4   | Bootstrap the first admin user                                    | Your laptop, pointed at prod creds      | [§5](#5-bootstrap-the-first-admin-3-min)                  |
+| 5   | Restart the API + run post-deploy smoke tests                     | Railway dashboard → service → Redeploy  | [§6](#6-restart-and-smoke-test-5-min)                     |
 
 Total wall-clock once you have the credentials in hand: ~20 minutes.
 
@@ -59,13 +59,13 @@ launch brief.
 
 ### Required at boot — `resupply-api` will not start without these
 
-| Variable                     | Production value                                                                  |
-| ---------------------------- | --------------------------------------------------------------------------------- |
-| `PORT`                       | The port the deployment listens on (Railway sets this automatically).             |
-| `DATABASE_URL`               | `postgres://…` pointing at the production Supabase database, NOT a test branch.  |
-| `SUPABASE_URL`               | The production project's API URL from Supabase → Project Settings → API.          |
-| `SUPABASE_SERVICE_ROLE_KEY`  | Service-role JWT from the same page. Bypasses RLS — never expose client-side.    |
-| `RESUPPLY_LINK_HMAC_KEY`     | `openssl` output from §1.                                                          |
+| Variable                                                  | Production value                                                                                                                                                                                                                                                                                                                                       |
+| --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `PORT`                                                    | The port the deployment listens on (Railway sets this automatically).                                                                                                                                                                                                                                                                                  |
+| `DATABASE_URL`                                            | `postgres://…` pointing at the production Supabase database, NOT a test branch.                                                                                                                                                                                                                                                                        |
+| `SUPABASE_URL`                                            | The production project's API URL from Supabase → Project Settings → API.                                                                                                                                                                                                                                                                               |
+| `SUPABASE_SERVICE_ROLE_KEY`                               | Service-role JWT from the same page. Bypasses RLS — never expose client-side.                                                                                                                                                                                                                                                                          |
+| `RESUPPLY_LINK_HMAC_KEY`                                  | `openssl` output from §1.                                                                                                                                                                                                                                                                                                                              |
 | `RESUPPLY_ALLOWED_ORIGINS` **or** `RAILWAY_PUBLIC_DOMAIN` | Comma-separated hostnames (origin form for the first, bare-host for the second) that the CORS allowlist trusts. On Railway deployments `RAILWAY_PUBLIC_DOMAIN` is auto-populated; on any other host you must set `RESUPPLY_ALLOWED_ORIGINS`. With both empty in `NODE_ENV=production` the API throws at boot — `artifacts/resupply-api/src/app.ts:85`. |
 
 These five (plus the CORS-allowlist gate) are what
@@ -85,30 +85,30 @@ Settings → API → "Exposed schemas"**, confirm both `resupply` and
 
 ### Vendor secrets — production credentials, not test
 
-| Variable                          | Production value                                                          |
-| --------------------------------- | ------------------------------------------------------------------------- |
-| `STRIPE_SECRET_KEY`               | `sk_live_…` (NOT `sk_test_…`). Stripe Dashboard → Developers → API keys → live mode. |
-| `STRIPE_WEBHOOK_SIGNING_SECRET`   | `whsec_…` from the production webhook endpoint (`https://pennpaps.com/resupply-api/webhooks/stripe`). |
-| `SENDGRID_API_KEY`                | Production `SG.…` key with Mail Send + Event Webhook scopes.              |
-| `TWILIO_ACCOUNT_SID`              | Production `AC…` SID (not the trial account).                             |
-| `TWILIO_AUTH_TOKEN`               | Production auth token from the same Twilio sub-account.                   |
+| Variable                        | Production value                                                                                      |
+| ------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `STRIPE_SECRET_KEY`             | `sk_live_…` (NOT `sk_test_…`). Stripe Dashboard → Developers → API keys → live mode.                  |
+| `STRIPE_WEBHOOK_SIGNING_SECRET` | `whsec_…` from the production webhook endpoint (`https://pennpaps.com/resupply-api/webhooks/stripe`). |
+| `SENDGRID_API_KEY`              | Production `SG.…` key with Mail Send + Event Webhook scopes.                                          |
+| `TWILIO_ACCOUNT_SID`            | Production `AC…` SID (not the trial account).                                                         |
+| `TWILIO_AUTH_TOKEN`             | Production auth token from the same Twilio sub-account.                                               |
 
 ### Public URLs — every URL is HTTPS and points at `pennpaps.com`
 
-| Variable                              | Production value                                                          |
-| ------------------------------------- | ------------------------------------------------------------------------- |
-| `SHOP_PUBLIC_BASE_URL`                | `https://pennpaps.com`                                                    |
-| `REMINDER_PUBLIC_BASE_URL`            | `https://pennpaps.com` (or a subdomain if the reminder host is separate). |
-| `RESUPPLY_VOICE_PUBLIC_BASE_URL`      | `https://pennpaps.com` — Twilio webhook target.                           |
-| `RESUPPLY_DASHBOARD_PUBLIC_BASE_URL`  | `https://pennpaps.com` (admin SPA is co-located with the storefront).     |
-| `PENN_ADMIN_PUBLIC_BASE_URL`          | `https://pennpaps.com`                                                    |
-| `SENDGRID_FROM_EMAIL`                 | `info@pennpaps.com` — the only From address (CLAUDE.md "One From" invariant). |
+| Variable                             | Production value                                                              |
+| ------------------------------------ | ----------------------------------------------------------------------------- |
+| `SHOP_PUBLIC_BASE_URL`               | `https://pennpaps.com`                                                        |
+| `REMINDER_PUBLIC_BASE_URL`           | `https://pennpaps.com` (or a subdomain if the reminder host is separate).     |
+| `RESUPPLY_VOICE_PUBLIC_BASE_URL`     | `https://pennpaps.com` — Twilio webhook target.                               |
+| `RESUPPLY_DASHBOARD_PUBLIC_BASE_URL` | `https://pennpaps.com` (admin SPA is co-located with the storefront).         |
+| `PENN_ADMIN_PUBLIC_BASE_URL`         | `https://pennpaps.com`                                                        |
+| `SENDGRID_FROM_EMAIL`                | `info@pennpaps.com` — the only From address (CLAUDE.md "One From" invariant). |
 
 ### Feature flag — turn the abandoned-fitter nudge ON
 
-| Variable                              | Production value                                                          |
-| ------------------------------------- | ------------------------------------------------------------------------- |
-| `RESUPPLY_FITTER_REENGAGE_ENABLED`    | `1`. Default is `0` so a credentialed staging deploy can't email production patients; flip to `1` at launch. The check lives at `artifacts/resupply-api/src/worker/jobs/fitter-lead-reengage.ts:300`. |
+| Variable                           | Production value                                                                                                                                                                                      |
+| ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `RESUPPLY_FITTER_REENGAGE_ENABLED` | `1`. Default is `0` so a credentialed staging deploy can't email production patients; flip to `1` at launch. The check lives at `artifacts/resupply-api/src/worker/jobs/fitter-lead-reengage.ts:300`. |
 
 ### Stale secrets — remove if present
 
@@ -116,12 +116,12 @@ These are no longer read by any code path. If your secret store still
 carries them from a previous deploy, delete the entries so future
 on-call doesn't think they're load-bearing.
 
-| Variable                       | Why it's stale                                                       |
-| ------------------------------ | -------------------------------------------------------------------- |
-| `AUTH_PASSWORD_PEPPER`         | Task #38 removed the server-side pepper. Stale value silently ignored. |
-| `RESUPPLY_MASTER_KEY`          | Migration 0025 stripped pgcrypto encryption. Stale value silently ignored. |
-| `RESUPPLY_DATA_KEY`            | Migration 0025 stripped pgcrypto encryption. Stale value silently ignored. |
-| `RESUPPLY_PHONE_HMAC_KEY`      | Migration 0025 dropped `phone_lookup`. Stale value silently ignored.   |
+| Variable                  | Why it's stale                                                             |
+| ------------------------- | -------------------------------------------------------------------------- |
+| `AUTH_PASSWORD_PEPPER`    | Task #38 removed the server-side pepper. Stale value silently ignored.     |
+| `RESUPPLY_MASTER_KEY`     | Migration 0025 stripped pgcrypto encryption. Stale value silently ignored. |
+| `RESUPPLY_DATA_KEY`       | Migration 0025 stripped pgcrypto encryption. Stale value silently ignored. |
+| `RESUPPLY_PHONE_HMAC_KEY` | Migration 0025 dropped `phone_lookup`. Stale value silently ignored.       |
 
 The full env catalogue (including the optional / feature-gated vars that
 degrade gracefully) is in [`.env.example`](../../.env.example) and

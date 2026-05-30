@@ -532,7 +532,6 @@ function KeepShoppingCard() {
   );
 }
 
-
 // Re-export for App.tsx import consistency.
 export default AccountPage;
 // Reference basePath so unused-var lint stays clean even if a future

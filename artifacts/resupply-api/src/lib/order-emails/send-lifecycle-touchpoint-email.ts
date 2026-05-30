@@ -70,7 +70,10 @@ interface Copy {
   body: string;
 }
 
-function copyFor(kind: LifecycleKind, yearsOnTherapy: number | undefined): Copy {
+function copyFor(
+  kind: LifecycleKind,
+  yearsOnTherapy: number | undefined,
+): Copy {
   if (kind === "birthday") {
     return {
       subject: "Happy birthday from PennPaps",

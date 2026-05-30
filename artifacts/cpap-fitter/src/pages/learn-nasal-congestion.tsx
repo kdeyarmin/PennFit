@@ -79,10 +79,10 @@ export function LearnNasalCongestion() {
           Stuffy on therapy.
         </h1>
         <p className="text-lg text-muted-foreground leading-relaxed">
-          Nasal congestion on CPAP is the second-most-common complaint
-          after dry mouth — and it&apos;s sometimes the same problem
-          wearing a different costume. Four causes drive almost every
-          case. Here&apos;s how to walk through them.
+          Nasal congestion on CPAP is the second-most-common complaint after dry
+          mouth — and it&apos;s sometimes the same problem wearing a different
+          costume. Four causes drive almost every case. Here&apos;s how to walk
+          through them.
         </p>
       </header>
 
@@ -100,13 +100,13 @@ export function LearnNasalCongestion() {
               </h2>
             </div>
             <p className="text-base md:text-lg text-foreground/90 leading-relaxed font-medium mb-2">
-              Most CPAP-related congestion is caused by air that&apos;s too
-              dry, not too humid.
+              Most CPAP-related congestion is caused by air that&apos;s too dry,
+              not too humid.
             </p>
             <p className="text-sm text-muted-foreground leading-relaxed">
-              Patients often turn their humidifier off thinking it&apos;ll
-              help — and the dry-air rebound makes the problem worse.
-              Start by going UP on humidification, not down.
+              Patients often turn their humidifier off thinking it&apos;ll help
+              — and the dry-air rebound makes the problem worse. Start by going
+              UP on humidification, not down.
             </p>
           </div>
         </div>
@@ -177,12 +177,11 @@ export function LearnNasalCongestion() {
                 your nose
               </div>
               <p className="text-sm text-foreground/85 leading-relaxed">
-                If chronic congestion makes nasal therapy impossible —
-                even after addressing humidification and allergies — a
-                full-face mask routes around the problem entirely. You
-                breathe through your mouth, the seal covers both,
-                therapy continues. Our comfort guarantee covers the
-                exchange.
+                If chronic congestion makes nasal therapy impossible — even
+                after addressing humidification and allergies — a full-face mask
+                routes around the problem entirely. You breathe through your
+                mouth, the seal covers both, therapy continues. Our comfort
+                guarantee covers the exchange.
               </p>
             </div>
           </div>
@@ -230,8 +229,8 @@ export function LearnNasalCongestion() {
               Mask leaks
             </h3>
             <p className="text-sm text-muted-foreground leading-relaxed">
-              A bridge leak can mimic congestion — diagnose by where
-              air&apos;s actually going.
+              A bridge leak can mimic congestion — diagnose by where air&apos;s
+              actually going.
             </p>
           </div>
           <ArrowRight className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors mt-1" />
@@ -257,9 +256,9 @@ export function LearnNasalCongestion() {
       </div>
 
       <p className="text-xs text-muted-foreground/80 leading-relaxed mt-10 max-w-2xl mx-auto text-center">
-        Educational content only. Persistent congestion warrants an ENT
-        or allergy consult — CPAP-related fixes don&apos;t replace
-        evaluation of an underlying nasal condition.
+        Educational content only. Persistent congestion warrants an ENT or
+        allergy consult — CPAP-related fixes don&apos;t replace evaluation of an
+        underlying nasal condition.
       </p>
     </div>
   );

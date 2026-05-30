@@ -36,7 +36,10 @@ function sampleInput(rowCount: number): PdfReportInput {
       { label: "Tracking", width: 230 },
     ],
     rows,
-    summaryLines: [`Total orders: ${rowCount}`, `Gross: $${(rowCount * 250).toFixed(2)}`],
+    summaryLines: [
+      `Total orders: ${rowCount}`,
+      `Gross: $${(rowCount * 250).toFixed(2)}`,
+    ],
   };
 }
 

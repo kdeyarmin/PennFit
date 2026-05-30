@@ -63,47 +63,51 @@ const statusBody = z
   })
   .strict();
 
-router.get("/admin/patients/:id/onboarding", requirePermission("patients.read"), async (req, res) => {
-  const idCheck = patientIdParam.safeParse(req.params.id);
-  if (!idCheck.success) {
-    res.status(404).json({ error: "patient_not_found" });
-    return;
-  }
-  const patientId = idCheck.data;
+router.get(
+  "/admin/patients/:id/onboarding",
+  requirePermission("patients.read"),
+  async (req, res) => {
+    const idCheck = patientIdParam.safeParse(req.params.id);
+    if (!idCheck.success) {
+      res.status(404).json({ error: "patient_not_found" });
+      return;
+    }
+    const patientId = idCheck.data;
 
-  const supabase = getSupabaseServiceRoleClient();
-  const { data: row, error } = await supabase
-    .schema("resupply")
-    .from("patient_onboarding_journeys")
-    .select(
-      "id, started_at, day1_sent_at, day3_sent_at, day7_sent_at, day30_sent_at, day60_sent_at, day90_sent_at, status, enrolled_by_email, created_at",
-    )
-    .eq("patient_id", patientId)
-    .limit(1)
-    .maybeSingle();
-  if (error) throw error;
+    const supabase = getSupabaseServiceRoleClient();
+    const { data: row, error } = await supabase
+      .schema("resupply")
+      .from("patient_onboarding_journeys")
+      .select(
+        "id, started_at, day1_sent_at, day3_sent_at, day7_sent_at, day30_sent_at, day60_sent_at, day90_sent_at, status, enrolled_by_email, created_at",
+      )
+      .eq("patient_id", patientId)
+      .limit(1)
+      .maybeSingle();
+    if (error) throw error;
 
-  if (!row) {
-    res.json({ journey: null });
-    return;
-  }
-  res.json({
-    journey: {
-      id: row.id,
-      // PostgREST returns timestamptz as ISO string already.
-      startedAt: row.started_at,
-      day1SentAt: row.day1_sent_at,
-      day3SentAt: row.day3_sent_at,
-      day7SentAt: row.day7_sent_at,
-      day30SentAt: row.day30_sent_at,
-      day60SentAt: row.day60_sent_at,
-      day90SentAt: row.day90_sent_at,
-      status: row.status,
-      enrolledByEmail: row.enrolled_by_email,
-      createdAt: row.created_at,
-    },
-  });
-});
+    if (!row) {
+      res.json({ journey: null });
+      return;
+    }
+    res.json({
+      journey: {
+        id: row.id,
+        // PostgREST returns timestamptz as ISO string already.
+        startedAt: row.started_at,
+        day1SentAt: row.day1_sent_at,
+        day3SentAt: row.day3_sent_at,
+        day7SentAt: row.day7_sent_at,
+        day30SentAt: row.day30_sent_at,
+        day60SentAt: row.day60_sent_at,
+        day90SentAt: row.day90_sent_at,
+        status: row.status,
+        enrolledByEmail: row.enrolled_by_email,
+        createdAt: row.created_at,
+      },
+    });
+  },
+);
 
 router.post(
   "/admin/patients/:id/onboarding/enroll",

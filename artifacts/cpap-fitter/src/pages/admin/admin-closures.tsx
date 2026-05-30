@@ -31,14 +31,11 @@ export function AdminClosuresPage() {
           <CalendarOff className="h-6 w-6" />
           Office closures
         </h1>
-        <p
-          className="text-sm mt-1"
-          style={{ color: "hsl(var(--ink-3))" }}
-        >
-          Schedule closure windows (federal holidays, weather, offsites).
-          During an active window, inbound SMS gets the auto-reply you set
-          here; the normal conversation dispatcher is bypassed for that
-          inbound. STOP / HELP are always honored.
+        <p className="text-sm mt-1" style={{ color: "hsl(var(--ink-3))" }}>
+          Schedule closure windows (federal holidays, weather, offsites). During
+          an active window, inbound SMS gets the auto-reply you set here; the
+          normal conversation dispatcher is bypassed for that inbound. STOP /
+          HELP are always honored.
         </p>
       </header>
 
@@ -62,7 +59,7 @@ function ActiveClosureBanner() {
     <div className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
       <div className="font-semibold mb-1">Closure in effect: {c.label}</div>
       <div className="text-xs">
-        From {new Date(c.startsAt).toLocaleString()} → {" "}
+        From {new Date(c.startsAt).toLocaleString()} →{" "}
         {new Date(c.endsAt).toLocaleString()}
       </div>
       <div className="text-xs mt-2 italic">"{c.autoReplyMessage}"</div>
@@ -144,9 +141,7 @@ function NewClosureCard() {
           </label>
           <textarea
             value={autoReplyMessage}
-            onChange={(e) =>
-              setAutoReplyMessage(e.target.value.slice(0, 320))
-            }
+            onChange={(e) => setAutoReplyMessage(e.target.value.slice(0, 320))}
             rows={3}
             className="w-full rounded border px-2 py-1.5 text-sm"
             style={{ borderColor: "hsl(var(--line-1))" }}
@@ -283,13 +278,9 @@ function ClosureRow({
   const now = Date.now();
   const start = new Date(row.startsAt).getTime();
   const end = new Date(row.endsAt).getTime();
-  const state =
-    end <= now ? "past" : start <= now ? "active" : "upcoming";
+  const state = end <= now ? "past" : start <= now ? "active" : "upcoming";
   return (
-    <tr
-      className="border-b"
-      style={{ borderColor: "hsl(var(--line-2))" }}
-    >
+    <tr className="border-b" style={{ borderColor: "hsl(var(--line-2))" }}>
       <td className="py-1.5">
         <div className="font-medium">{row.label}</div>
         <div className="text-[10px] text-muted-foreground italic">

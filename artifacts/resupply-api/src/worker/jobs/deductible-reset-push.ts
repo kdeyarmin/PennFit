@@ -46,7 +46,10 @@ import {
 import { sendDeductibleResetEmail } from "../../lib/order-emails/send-deductible-reset-email";
 import { shouldSendEmail } from "../../lib/comm-prefs";
 import { logger } from "../../lib/logger";
-import { createQueueWithDlq, VENDOR_SEND_QUEUE_OPTS } from "../lib/queue-options";
+import {
+  createQueueWithDlq,
+  VENDOR_SEND_QUEUE_OPTS,
+} from "../lib/queue-options";
 
 const JOB_NAME = "shop-customers.deductible-reset";
 const JOB_CRON = "53 14 * * *"; // Daily 14:53 UTC.
@@ -185,7 +188,7 @@ export async function runDeductibleResetPush(
         .eq("customer_id", row.customer_id);
       if (releaseErr) {
         throw new Error(
-          `Failed to release deductible_reset_year claim for customer ${row.customer_id}: ${releaseErr.message}`
+          `Failed to release deductible_reset_year claim for customer ${row.customer_id}: ${releaseErr.message}`,
         );
       }
     };

@@ -98,7 +98,9 @@ export async function buildClaimFromFulfillment(
     .maybeSingle();
   if (fErr) throw fErr;
   if (!fulfillment) {
-    throw new Error(`buildClaimFromFulfillment: fulfillment ${input.fulfillmentId} not found`);
+    throw new Error(
+      `buildClaimFromFulfillment: fulfillment ${input.fulfillmentId} not found`,
+    );
   }
 
   const dateOfService =
@@ -373,7 +375,9 @@ async function buildLineForSku(
   const { data: mapped } = await supabase
     .schema("resupply")
     .from("product_hcpcs_map")
-    .select("id, hcpcs_code, default_modifiers, units_per_dispense, default_billed_cents, description")
+    .select(
+      "id, hcpcs_code, default_modifiers, units_per_dispense, default_billed_cents, description",
+    )
     .eq("lookup_kind", "item_sku")
     .eq("lookup_value", itemSku)
     .eq("is_active", true)
@@ -451,9 +455,7 @@ async function resolveRuleContext(
   }
 
   // Compliance — sum of qualifying nights in the last 30 days.
-  const since = new Date(
-    Date.now() - COMPLIANCE_DAYS_WINDOW * 24 * 3600 * 1000,
-  )
+  const since = new Date(Date.now() - COMPLIANCE_DAYS_WINDOW * 24 * 3600 * 1000)
     .toISOString()
     .slice(0, 10);
   const { data: nights } = await supabase

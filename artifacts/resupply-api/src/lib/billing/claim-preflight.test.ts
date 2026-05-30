@@ -58,7 +58,12 @@ describe("preflightClaim", () => {
         fulfillment_id: null,
       },
     });
-    stagePayerProfile({ paper_only: false, office_ally_payer_id: "54771", is_active: true, requires_prior_auth_dme: false });
+    stagePayerProfile({
+      paper_only: false,
+      office_ally_payer_id: "54771",
+      is_active: true,
+      requires_prior_auth_dme: false,
+    });
     stagePatientHappy();
     stageDiagnosisHappy();
     stageLineItemsHappy();
@@ -107,8 +112,12 @@ describe("preflightClaim", () => {
       },
     );
     const out = await preflightClaim(CLAIM_ID);
-    expect(out.items.find((i) => i.key === "referring_provider")?.severity).toBe("ok");
-    expect(out.items.find((i) => i.key === "payer_referring_provider")?.severity).toBe("ok");
+    expect(
+      out.items.find((i) => i.key === "referring_provider")?.severity,
+    ).toBe("ok");
+    expect(
+      out.items.find((i) => i.key === "payer_referring_provider")?.severity,
+    ).toBe("ok");
     expect(out.readyToSubmit).toBe(true);
   });
 
@@ -162,7 +171,13 @@ describe("preflightClaim", () => {
       { total_billed_cents: 3198 },
       {
         linesOverride: [
-          { id: LINE_ID, hcpcs_code: "A7038", modifier: "NU", billed_cents: 1599, quantity: 2 },
+          {
+            id: LINE_ID,
+            hcpcs_code: "A7038",
+            modifier: "NU",
+            billed_cents: 1599,
+            quantity: 2,
+          },
         ],
       },
     );
@@ -178,7 +193,13 @@ describe("preflightClaim", () => {
       { total_billed_cents: 1599 },
       {
         linesOverride: [
-          { id: LINE_ID, hcpcs_code: "A7038", modifier: "NU", billed_cents: 1599, quantity: 2 },
+          {
+            id: LINE_ID,
+            hcpcs_code: "A7038",
+            modifier: "NU",
+            billed_cents: 1599,
+            quantity: 2,
+          },
         ],
       },
     );
@@ -188,7 +209,17 @@ describe("preflightClaim", () => {
   });
 
   it("flags paper-only payer as a warning", async () => {
-    stageHappyPath({}, { payerOverride: { paper_only: true, office_ally_payer_id: null, requires_prior_auth_dme: false, is_active: true } });
+    stageHappyPath(
+      {},
+      {
+        payerOverride: {
+          paper_only: true,
+          office_ally_payer_id: null,
+          requires_prior_auth_dme: false,
+          is_active: true,
+        },
+      },
+    );
     const out = await preflightClaim(CLAIM_ID);
     const item = out.items.find((i) => i.key === "payer_profile");
     expect(item?.severity).toBe("warning");
@@ -379,7 +410,13 @@ interface ClaimOverrides {
 interface DataOverrides {
   addressOverride?: typeof FULL_PATIENT_ADDRESS | null;
   diagnosisOverride?: string | null;
-  linesOverride?: Array<{ id: string; hcpcs_code: string; modifier: string | null; billed_cents: number; quantity: number }>;
+  linesOverride?: Array<{
+    id: string;
+    hcpcs_code: string;
+    modifier: string | null;
+    billed_cents: number;
+    quantity: number;
+  }>;
   payerOverride?: {
     paper_only: boolean;
     office_ally_payer_id: string | null;
@@ -503,7 +540,9 @@ function stagePatientHappy(
   });
 }
 
-function stageDiagnosisHappy(diagnosisOverride: string | null = "G47.33"): void {
+function stageDiagnosisHappy(
+  diagnosisOverride: string | null = "G47.33",
+): void {
   stageSupabaseResponse("sleep_studies", "select", {
     data: diagnosisOverride
       ? { diagnosis_icd10: diagnosisOverride, study_date: "2025-12-01" }
@@ -521,7 +560,13 @@ function stageLineItemsHappy(
         quantity: number;
       }>
     | undefined = [
-    { id: LINE_ID, hcpcs_code: "E0601", modifier: "RR,KX", billed_cents: 24999, quantity: 1 },
+    {
+      id: LINE_ID,
+      hcpcs_code: "E0601",
+      modifier: "RR,KX",
+      billed_cents: 24999,
+      quantity: 1,
+    },
   ],
 ): void {
   stageSupabaseResponse("insurance_claim_line_items", "select", {

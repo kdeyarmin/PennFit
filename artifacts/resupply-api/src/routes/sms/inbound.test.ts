@@ -90,7 +90,8 @@ function setMessagingEnv(): void {
   process.env.SENDGRID_FROM_EMAIL = "no-reply@penn.example";
   process.env.SENDGRID_FROM_NAME = "Penn Sleep";
   process.env.SENDGRID_EVENT_WEBHOOK_PUBLIC_KEY = "fake-pubkey";
-  process.env.RESUPPLY_LINK_HMAC_KEY = "QkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkI=";
+  process.env.RESUPPLY_LINK_HMAC_KEY =
+    "QkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkI=";
   process.env.RESUPPLY_VOICE_PUBLIC_BASE_URL = "https://test.example.com";
 }
 
@@ -328,13 +329,11 @@ describe("POST /sms/inbound", () => {
     // requires confidence >= 0.7 before an action intent (confirm /
     // decline / edit_address) is honoured. 0.95 reflects the model
     // being very sure.
-    const classifyMock = vi
-      .fn()
-      .mockResolvedValue({
-        intent: "confirm",
-        reply: "Got it!",
-        confidence: 0.95,
-      });
+    const classifyMock = vi.fn().mockResolvedValue({
+      intent: "confirm",
+      reply: "Got it!",
+      confidence: 0.95,
+    });
     __setAiFallbackAdapterForTests({ classify: classifyMock });
 
     const res = await request(makeApp())
@@ -398,13 +397,11 @@ describe("POST /sms/inbound", () => {
     // side-effects on the order pipeline, so they are NOT gated even
     // at low confidence. This ensures the safety gate doesn't hide
     // legitimate handoff signals from a slightly-uncertain model.
-    const classifyMock = vi
-      .fn()
-      .mockResolvedValue({
-        intent: "unknown",
-        reply: "Thanks — a teammate will reach out.",
-        confidence: 0.5,
-      });
+    const classifyMock = vi.fn().mockResolvedValue({
+      intent: "unknown",
+      reply: "Thanks — a teammate will reach out.",
+      confidence: 0.5,
+    });
     __setAiFallbackAdapterForTests({ classify: classifyMock });
 
     // "what is this" is two tokens — confirm `parseSmsIntent` returns

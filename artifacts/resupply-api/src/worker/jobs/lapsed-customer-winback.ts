@@ -45,7 +45,10 @@ import {
 import { sendWinbackEmail } from "../../lib/order-emails/send-winback-email";
 import { shouldSendEmail } from "../../lib/comm-prefs";
 import { logger } from "../../lib/logger";
-import { createQueueWithDlq, VENDOR_SEND_QUEUE_OPTS } from "../lib/queue-options";
+import {
+  createQueueWithDlq,
+  VENDOR_SEND_QUEUE_OPTS,
+} from "../lib/queue-options";
 
 const JOB_NAME = "shop-customers.winback";
 const JOB_CRON = "17 13 * * 1"; // Mondays at 13:17 UTC.
@@ -97,7 +100,7 @@ function readPrefs(raw: Json | null): CommunicationPreferences {
  */
 async function rollbackWinbackStamp(
   customerId: string,
-  winbackSentAt: string | null
+  winbackSentAt: string | null,
 ): Promise<void> {
   const supabase = getSupabaseServiceRoleClient();
   const { error } = await supabase
@@ -107,7 +110,7 @@ async function rollbackWinbackStamp(
     .eq("customer_id", customerId);
   if (error) {
     throw new Error(
-      `Failed to rollback winback_sent_at for customer ${customerId}: ${error.message}`
+      `Failed to rollback winback_sent_at for customer ${customerId}: ${error.message}`,
     );
   }
 }
@@ -140,9 +143,7 @@ export async function runLapsedCustomerWinback(): Promise<WinbackStats> {
     .select(
       "customer_id, email_lower, display_name, communication_preferences, winback_sent_at",
     )
-    .or(
-      `winback_sent_at.is.null,winback_sent_at.lt.${cooldownThreshold}`,
-    )
+    .or(`winback_sent_at.is.null,winback_sent_at.lt.${cooldownThreshold}`)
     .not("email_lower", "is", null)
     .limit(PER_RUN_MAX * 2);
   if (error) throw error;
@@ -196,8 +197,7 @@ export async function runLapsedCustomerWinback(): Promise<WinbackStats> {
     const monthsSince = Math.max(
       6,
       Math.floor(
-        (Date.now() - new Date(last).getTime()) /
-          (1000 * 60 * 60 * 24 * 30),
+        (Date.now() - new Date(last).getTime()) / (1000 * 60 * 60 * 24 * 30),
       ),
     );
 
@@ -211,9 +211,7 @@ export async function runLapsedCustomerWinback(): Promise<WinbackStats> {
       .from("shop_customers")
       .update({ winback_sent_at: claimIso })
       .eq("customer_id", row.customer_id)
-      .or(
-        `winback_sent_at.is.null,winback_sent_at.lt.${cooldownThreshold}`,
-      )
+      .or(`winback_sent_at.is.null,winback_sent_at.lt.${cooldownThreshold}`)
       .select("customer_id");
     if (claimErr) {
       logger.warn(

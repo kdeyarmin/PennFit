@@ -76,15 +76,30 @@ describe("sortRtRows", () => {
       row({
         patientId: "p1",
         activeAlerts: [
-          { id: "a1", kind: "leak_rising", label: "Leak rising", detectedAt: "" },
+          {
+            id: "a1",
+            kind: "leak_rising",
+            label: "Leak rising",
+            detectedAt: "",
+          },
         ],
       }),
       row({ patientId: "p2", activeAlerts: [] }),
       row({
         patientId: "p3",
         activeAlerts: [
-          { id: "a2", kind: "leak_rising", label: "Leak rising", detectedAt: "" },
-          { id: "a3", kind: "usage_dropping", label: "Usage dropping", detectedAt: "" },
+          {
+            id: "a2",
+            kind: "leak_rising",
+            label: "Leak rising",
+            detectedAt: "",
+          },
+          {
+            id: "a3",
+            kind: "usage_dropping",
+            label: "Usage dropping",
+            detectedAt: "",
+          },
         ],
       }),
     ];
@@ -383,9 +398,7 @@ describe("filterRtRows — additional edge cases", () => {
   });
 
   it("returns empty array when no rows satisfy an active filter", () => {
-    const rows = [
-      row({ patientId: "p1", activeAlerts: [], therapyLinks: [] }),
-    ];
+    const rows = [row({ patientId: "p1", activeAlerts: [], therapyLinks: [] })];
     expect(
       filterRtRows(rows, { ...defaultFilter(), alertingOnly: true }),
     ).toEqual([]);
@@ -464,8 +477,18 @@ describe("filterRtRows — additional edge cases", () => {
 
   it("search matches partial pacware id fragment (e.g. only the numeric part)", () => {
     const rows = [
-      row({ patientId: "p1", pacwareId: "PW-001", lastName: "Zulu", firstName: "Zara" }),
-      row({ patientId: "p2", pacwareId: "PW-999", lastName: "Zulu", firstName: "Zara" }),
+      row({
+        patientId: "p1",
+        pacwareId: "PW-001",
+        lastName: "Zulu",
+        firstName: "Zara",
+      }),
+      row({
+        patientId: "p2",
+        pacwareId: "PW-999",
+        lastName: "Zulu",
+        firstName: "Zara",
+      }),
     ];
     const out = filterRtRows(rows, { ...defaultFilter(), search: "999" });
     expect(out.map((r) => r.patientId)).toEqual(["p2"]);
@@ -481,17 +504,24 @@ describe("filterRtRows — additional edge cases", () => {
   });
 
   it("search with whitespace-only string is treated as no search filter", () => {
-    const rows = [
-      row({ patientId: "p1" }),
-      row({ patientId: "p2" }),
-    ];
+    const rows = [row({ patientId: "p1" }), row({ patientId: "p2" })];
     const out = filterRtRows(rows, { ...defaultFilter(), search: "   " });
     expect(out).toHaveLength(2);
   });
 
   it("search returning no match gives empty array (not an error)", () => {
-    const rows = [row({ patientId: "p1", lastName: "Adams", firstName: "Alice", pacwareId: "PW-001" })];
-    const out = filterRtRows(rows, { ...defaultFilter(), search: "zzz_no_match" });
+    const rows = [
+      row({
+        patientId: "p1",
+        lastName: "Adams",
+        firstName: "Alice",
+        pacwareId: "PW-001",
+      }),
+    ];
+    const out = filterRtRows(rows, {
+      ...defaultFilter(),
+      search: "zzz_no_match",
+    });
     expect(out).toEqual([]);
   });
 

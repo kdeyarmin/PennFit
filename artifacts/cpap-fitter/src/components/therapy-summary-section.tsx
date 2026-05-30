@@ -55,8 +55,8 @@ export function TherapySummarySection() {
         <p className="text-sm text-muted-foreground">
           We&apos;ll surface your nightly usage, AHI and mask seal numbers here
           once your device starts sending data. If your CPAP isn&apos;t already
-          paired with us, message us from the chat below and we&apos;ll get
-          you connected.
+          paired with us, message us from the chat below and we&apos;ll get you
+          connected.
         </p>
       ) : (
         <>
@@ -155,23 +155,20 @@ function StatCard({
  * threshold and gray otherwise, so a patient sees their compliance
  * pattern at a glance without reading numbers.
  */
-function UsageBars({
-  nights,
-}: {
-  nights: TherapySummary["nights"];
-}) {
+function UsageBars({ nights }: { nights: TherapySummary["nights"] }) {
   if (nights.length === 0) return null;
   // Server returns newest-first; reverse for left-to-right oldest-to-newest.
   const ordered = [...nights].reverse();
-  const max = Math.max(
-    8,
-    ...ordered.map((n) => n.usageHours ?? 0),
-  );
+  const max = Math.max(8, ...ordered.map((n) => n.usageHours ?? 0));
   const barWidth = 100 / ordered.length;
 
   return (
     <div className="mt-2">
-      <div className="flex items-end gap-px h-24" role="img" aria-label="Nightly CPAP usage hours">
+      <div
+        className="flex items-end gap-px h-24"
+        role="img"
+        aria-label="Nightly CPAP usage hours"
+      >
         {ordered.map((n) => {
           const hours = n.usageHours ?? 0;
           const heightPct = (hours / max) * 100;

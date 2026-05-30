@@ -203,7 +203,12 @@ describe("listBulkCampaigns", () => {
   });
 
   test("throws on non-OK response", async () => {
-    fetchMock.mockResolvedValue({ ok: false, status: 500, statusText: "ISE", json: async () => ({}) });
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 500,
+      statusText: "ISE",
+      json: async () => ({}),
+    });
     await expect(listBulkCampaigns()).rejects.toThrow("500");
   });
 });
@@ -269,7 +274,12 @@ describe("getBulkCampaign", () => {
   });
 
   test("throws on non-OK response", async () => {
-    fetchMock.mockResolvedValue({ ok: false, status: 404, statusText: "Not Found", json: async () => ({}) });
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 404,
+      statusText: "Not Found",
+      json: async () => ({}),
+    });
     await expect(getBulkCampaign("ghost")).rejects.toThrow("404");
   });
 });
@@ -307,7 +317,10 @@ describe("createBulkCampaignDraft", () => {
     fetchMock.mockResolvedValue({
       ok: true,
       status: 201,
-      json: async () => ({ id: "camp-new", totals: { total: 0, pending: 0, suppressed: 0 } }),
+      json: async () => ({
+        id: "camp-new",
+        totals: { total: 0, pending: 0, suppressed: 0 },
+      }),
     });
 
     await createBulkCampaignDraft(DRAFT_INPUT);
@@ -321,7 +334,10 @@ describe("createBulkCampaignDraft", () => {
     fetchMock.mockResolvedValue({
       ok: true,
       status: 201,
-      json: async () => ({ id: "camp-new", totals: { total: 0, pending: 0, suppressed: 0 } }),
+      json: async () => ({
+        id: "camp-new",
+        totals: { total: 0, pending: 0, suppressed: 0 },
+      }),
     });
 
     await createBulkCampaignDraft(DRAFT_INPUT);
@@ -334,7 +350,10 @@ describe("createBulkCampaignDraft", () => {
     fetchMock.mockResolvedValue({
       ok: true,
       status: 201,
-      json: async () => ({ id: "camp-new", totals: { total: 0, pending: 0, suppressed: 0 } }),
+      json: async () => ({
+        id: "camp-new",
+        totals: { total: 0, pending: 0, suppressed: 0 },
+      }),
     });
 
     const body = {
@@ -371,7 +390,12 @@ describe("createBulkCampaignDraft", () => {
   });
 
   test("throws on non-OK response", async () => {
-    fetchMock.mockResolvedValue({ ok: false, status: 422, statusText: "Unprocessable", json: async () => ({}) });
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 422,
+      statusText: "Unprocessable",
+      json: async () => ({}),
+    });
     await expect(createBulkCampaignDraft(DRAFT_INPUT)).rejects.toThrow("422");
   });
 });
@@ -421,7 +445,12 @@ describe("cancelBulkCampaign", () => {
   });
 
   test("throws on non-OK response", async () => {
-    fetchMock.mockResolvedValue({ ok: false, status: 409, statusText: "Conflict", json: async () => ({}) });
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 409,
+      statusText: "Conflict",
+      json: async () => ({}),
+    });
     await expect(cancelBulkCampaign("camp-1")).rejects.toThrow("409");
   });
 });
@@ -457,8 +486,15 @@ describe("startBulkCampaign", () => {
   });
 
   test("throws on non-OK response", async () => {
-    fetchMock.mockResolvedValue({ ok: false, status: 409, statusText: "Conflict", json: async () => ({ message: "campaign already started" }) });
-    await expect(startBulkCampaign("camp-1")).rejects.toThrow("campaign already started");
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 409,
+      statusText: "Conflict",
+      json: async () => ({ message: "campaign already started" }),
+    });
+    await expect(startBulkCampaign("camp-1")).rejects.toThrow(
+      "campaign already started",
+    );
   });
 });
 
@@ -493,7 +529,12 @@ describe("pauseBulkCampaign", () => {
   });
 
   test("throws on non-OK response", async () => {
-    fetchMock.mockResolvedValue({ ok: false, status: 404, statusText: "Not Found", json: async () => ({}) });
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 404,
+      statusText: "Not Found",
+      json: async () => ({}),
+    });
     await expect(pauseBulkCampaign("ghost")).rejects.toThrow("404");
   });
 });
@@ -542,8 +583,15 @@ describe("resumeBulkCampaign", () => {
   });
 
   test("throws on non-OK response", async () => {
-    fetchMock.mockResolvedValue({ ok: false, status: 409, statusText: "Conflict", json: async () => ({ message: "campaign not in paused state" }) });
-    await expect(resumeBulkCampaign("camp-1")).rejects.toThrow("campaign not in paused state");
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 409,
+      statusText: "Conflict",
+      json: async () => ({ message: "campaign not in paused state" }),
+    });
+    await expect(resumeBulkCampaign("camp-1")).rejects.toThrow(
+      "campaign not in paused state",
+    );
   });
 
   test("calls fetch exactly once", async () => {

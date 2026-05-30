@@ -86,10 +86,7 @@ const serialMatchSchema = z.discriminatedUnion("kind", [
   z
     .object({
       kind: z.literal("list"),
-      serials: z
-        .array(z.string().trim().min(1).max(80))
-        .min(1)
-        .max(10_000),
+      serials: z.array(z.string().trim().min(1).max(80)).min(1).max(10_000),
     })
     .strict(),
 ]);
@@ -135,106 +132,109 @@ router.get(
   "/admin/equipment-recalls",
   requirePermission("returns.read"),
   async (_req, res) => {
-  const supabase = getSupabaseServiceRoleClient();
-  const { data, error } = await supabase
-    .schema("resupply")
-    .from("equipment_recalls")
-    .select("*")
-    // Active first, then severity (urgent > priority > advisory),
-    // then newest issued first.
-    .order("status", { ascending: true })
-    .order("severity", { ascending: false })
-    .order("issued_at", { ascending: false, nullsFirst: false });
-  if (error) throw error;
+    const supabase = getSupabaseServiceRoleClient();
+    const { data, error } = await supabase
+      .schema("resupply")
+      .from("equipment_recalls")
+      .select("*")
+      // Active first, then severity (urgent > priority > advisory),
+      // then newest issued first.
+      .order("status", { ascending: true })
+      .order("severity", { ascending: false })
+      .order("issued_at", { ascending: false, nullsFirst: false });
+    if (error) throw error;
 
-  res.json({
-    recalls: (data ?? []).map((r) => ({
-      id: r.id,
-      recallReference: r.recall_reference,
-      title: r.title,
-      manufacturer: r.manufacturer,
-      modelMatch: r.model_match,
-      serialMatch: r.serial_match as RecallSerialMatch,
-      severity: r.severity,
-      status: r.status,
-      issuedAt: r.issued_at,
-      deadlineAt: r.deadline_at,
-      referenceUrl: r.reference_url,
-      description: r.description,
-      createdAt: r.created_at,
-      updatedAt: r.updated_at,
-    })),
-  });
-});
+    res.json({
+      recalls: (data ?? []).map((r) => ({
+        id: r.id,
+        recallReference: r.recall_reference,
+        title: r.title,
+        manufacturer: r.manufacturer,
+        modelMatch: r.model_match,
+        serialMatch: r.serial_match as RecallSerialMatch,
+        severity: r.severity,
+        status: r.status,
+        issuedAt: r.issued_at,
+        deadlineAt: r.deadline_at,
+        referenceUrl: r.reference_url,
+        description: r.description,
+        createdAt: r.created_at,
+        updatedAt: r.updated_at,
+      })),
+    });
+  },
+);
 
 router.post(
   "/admin/equipment-recalls",
   requirePermission("returns.manage"),
   adminRateLimit({ name: "equipment_recalls.create", preset: "sensitive" }),
   async (req, res) => {
-  const parsed = createBody.safeParse(req.body);
-  if (!parsed.success) {
-    res.status(400).json({
-      error: "invalid_body",
-      issues: parsed.error.issues.map((i) => ({
-        path: i.path.join("."),
-        message: i.message,
-      })),
-    });
-    return;
-  }
-  const b = parsed.data;
-  const supabase = getSupabaseServiceRoleClient();
-
-  const { data: row, error } = await supabase
-    .schema("resupply")
-    .from("equipment_recalls")
-    .insert({
-      recall_reference: b.recallReference,
-      title: b.title,
-      manufacturer: b.manufacturer,
-      model_match: b.modelMatch ?? null,
-      serial_match: (b.serialMatch ?? null) as Database["resupply"]["Tables"]["equipment_recalls"]["Insert"]["serial_match"],
-      severity: b.severity,
-      issued_at: b.issuedAt ?? null,
-      deadline_at: b.deadlineAt ?? null,
-      reference_url: b.referenceUrl ?? null,
-      description: b.description ?? null,
-    })
-    .select("id")
-    .single();
-  if (error) {
-    const code = (error as { code?: string }).code;
-    if (code === "23505") {
-      res.status(409).json({
-        error: "recall_reference_taken",
-        message:
-          "A recall with this reference is already on file. Edit the existing one instead of re-creating it.",
+    const parsed = createBody.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: "invalid_body",
+        issues: parsed.error.issues.map((i) => ({
+          path: i.path.join("."),
+          message: i.message,
+        })),
       });
       return;
     }
-    throw error;
-  }
+    const b = parsed.data;
+    const supabase = getSupabaseServiceRoleClient();
 
-  await logAudit({
-    action: "equipment_recall.create",
-    adminEmail: req.adminEmail ?? null,
-    adminUserId: req.adminUserId ?? null,
-    targetTable: "equipment_recalls",
-    targetId: row.id,
-    metadata: {
-      recall_reference: b.recallReference,
-      manufacturer: b.manufacturer,
-      severity: b.severity,
-    },
-    ip: req.ip ?? null,
-    userAgent: req.get("user-agent") ?? null,
-  }).catch((err) => {
-    logger.warn({ err }, "equipment_recall.create audit write failed");
-  });
+    const { data: row, error } = await supabase
+      .schema("resupply")
+      .from("equipment_recalls")
+      .insert({
+        recall_reference: b.recallReference,
+        title: b.title,
+        manufacturer: b.manufacturer,
+        model_match: b.modelMatch ?? null,
+        serial_match: (b.serialMatch ??
+          null) as Database["resupply"]["Tables"]["equipment_recalls"]["Insert"]["serial_match"],
+        severity: b.severity,
+        issued_at: b.issuedAt ?? null,
+        deadline_at: b.deadlineAt ?? null,
+        reference_url: b.referenceUrl ?? null,
+        description: b.description ?? null,
+      })
+      .select("id")
+      .single();
+    if (error) {
+      const code = (error as { code?: string }).code;
+      if (code === "23505") {
+        res.status(409).json({
+          error: "recall_reference_taken",
+          message:
+            "A recall with this reference is already on file. Edit the existing one instead of re-creating it.",
+        });
+        return;
+      }
+      throw error;
+    }
 
-  res.status(201).json({ id: row.id });
-});
+    await logAudit({
+      action: "equipment_recall.create",
+      adminEmail: req.adminEmail ?? null,
+      adminUserId: req.adminUserId ?? null,
+      targetTable: "equipment_recalls",
+      targetId: row.id,
+      metadata: {
+        recall_reference: b.recallReference,
+        manufacturer: b.manufacturer,
+        severity: b.severity,
+      },
+      ip: req.ip ?? null,
+      userAgent: req.get("user-agent") ?? null,
+    }).catch((err) => {
+      logger.warn({ err }, "equipment_recall.create audit write failed");
+    });
+
+    res.status(201).json({ id: row.id });
+  },
+);
 
 router.patch(
   "/admin/equipment-recalls/:id",
@@ -437,10 +437,7 @@ router.post(
     try {
       result = await runRecallBulkMatch(supabase, idCheck.data);
     } catch (err) {
-      if (
-        err instanceof Error &&
-        /recall .* not found/.test(err.message)
-      ) {
+      if (err instanceof Error && /recall .* not found/.test(err.message)) {
         res.status(404).json({ error: "recall_not_found" });
         return;
       }
@@ -567,10 +564,7 @@ router.post(
     }
     // Destroyed actions require evidence — surveyors specifically
     // ask for the destruction certificate on Class I recalls.
-    if (
-      parsed.data.action === "destroyed" &&
-      !parsed.data.evidenceUrl
-    ) {
+    if (parsed.data.action === "destroyed" && !parsed.data.evidenceUrl) {
       res.status(400).json({
         error: "evidence_required",
         message:
@@ -638,10 +632,7 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn(
-        { err },
-        "equipment_recall.remediation.logged audit failed",
-      );
+      logger.warn({ err }, "equipment_recall.remediation.logged audit failed");
     });
 
     res.status(201).json({ id: row.id });
@@ -777,10 +768,7 @@ router.get(
 
     const filename = `recall-${(recall.recall_reference ?? recall.id).replace(/[^A-Za-z0-9_-]/g, "_")}-roster.csv`;
     res.setHeader("Content-Type", "text/csv; charset=utf-8");
-    res.setHeader(
-      "Content-Disposition",
-      `attachment; filename="${filename}"`,
-    );
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
     res.write(
       [
         "asset_id",

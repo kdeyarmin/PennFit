@@ -159,9 +159,8 @@ router.patch("/patients/:id", requireAdmin, async (req, res) => {
   if (expectedUpdatedAt) {
     updateQuery = updateQuery.eq("updated_at", expectedUpdatedAt);
   }
-  const { data: result, error: updErr } = await updateQuery.select(
-    "id, updated_at",
-  );
+  const { data: result, error: updErr } =
+    await updateQuery.select("id, updated_at");
   if (updErr) throw updErr;
 
   if (!result || result.length === 0) {

@@ -56,7 +56,10 @@ describe("fetchWithTimeout → TimeoutError (CareOrchestrator)", () => {
       name: "TimeoutError",
     });
 
-    vi.stubGlobal("fetch", mockFetch(() => Promise.reject(timeoutErr)));
+    vi.stubGlobal(
+      "fetch",
+      mockFetch(() => Promise.reject(timeoutErr)),
+    );
 
     const result = await fetchCareOrchestratorSnapshot(CONFIG, {
       partnerPatientId: "p1",
@@ -101,7 +104,10 @@ describe("fetchWithTimeout → AbortError (CareOrchestrator)", () => {
       name: "AbortError",
     });
 
-    vi.stubGlobal("fetch", mockFetch(() => Promise.reject(abortErr)));
+    vi.stubGlobal(
+      "fetch",
+      mockFetch(() => Promise.reject(abortErr)),
+    );
 
     const result = await fetchCareOrchestratorSnapshot(CONFIG, {
       partnerPatientId: "p3",
@@ -123,7 +129,10 @@ describe("fetchWithTimeout → TypeError (CareOrchestrator)", () => {
       name: "TypeError",
     });
 
-    vi.stubGlobal("fetch", mockFetch(() => Promise.reject(netErr)));
+    vi.stubGlobal(
+      "fetch",
+      mockFetch(() => Promise.reject(netErr)),
+    );
 
     const result = await fetchCareOrchestratorSnapshot(CONFIG, {
       partnerPatientId: "p4",
@@ -145,7 +154,10 @@ describe("fetchWithTimeout → unknown error type (CareOrchestrator)", () => {
       name: "CustomError",
     });
 
-    vi.stubGlobal("fetch", mockFetch(() => Promise.reject(weirdErr)));
+    vi.stubGlobal(
+      "fetch",
+      mockFetch(() => Promise.reject(weirdErr)),
+    );
 
     const result = await fetchCareOrchestratorSnapshot(CONFIG, {
       partnerPatientId: "p5",
@@ -188,13 +200,15 @@ describe("fetchWithTimeout → successful request (CareOrchestrator)", () => {
       { status: 200, headers: { "Content-Type": "application/json" } },
     );
     const therapyResp = new Response(
-      JSON.stringify({ sessions: [{ sessionDate: "2024-01-01", usageMinutes: 300, ahi: 1.5 }] }),
+      JSON.stringify({
+        sessions: [{ sessionDate: "2024-01-01", usageMinutes: 300, ahi: 1.5 }],
+      }),
       { status: 200, headers: { "Content-Type": "application/json" } },
     );
-    const suppliesResp = new Response(
-      JSON.stringify({ supplies: [] }),
-      { status: 200, headers: { "Content-Type": "application/json" } },
-    );
+    const suppliesResp = new Response(JSON.stringify({ supplies: [] }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
 
     vi.stubGlobal(
       "fetch",
@@ -256,10 +270,10 @@ describe("configKey secret rotation — CareOrchestrator cache invalidation (PR 
             { status: 200, headers: { "Content-Type": "application/json" } },
           );
         }
-        return new Response(
-          JSON.stringify({ error: "not_found" }),
-          { status: 404, headers: { "Content-Type": "application/json" } },
-        );
+        return new Response(JSON.stringify({ error: "not_found" }), {
+          status: 404,
+          headers: { "Content-Type": "application/json" },
+        });
       }),
     );
 
@@ -292,7 +306,9 @@ describe("configKey secret rotation — CareOrchestrator cache invalidation (PR 
     const tokenFetchCountAfterRotation = tokenFetchUrls.filter((u) =>
       u.includes("/oauth/token"),
     ).length;
-    expect(tokenFetchCountAfterRotation).toBeGreaterThan(tokenFetchCountAfterRepeat);
+    expect(tokenFetchCountAfterRotation).toBeGreaterThan(
+      tokenFetchCountAfterRepeat,
+    );
   });
 
   it("uses the same cached token for repeated calls with the same config", async () => {
@@ -308,10 +324,10 @@ describe("configKey secret rotation — CareOrchestrator cache invalidation (PR 
             { status: 200, headers: { "Content-Type": "application/json" } },
           );
         }
-        return new Response(
-          JSON.stringify({}),
-          { status: 404, headers: { "Content-Type": "application/json" } },
-        );
+        return new Response(JSON.stringify({}), {
+          status: 404,
+          headers: { "Content-Type": "application/json" },
+        });
       }),
     );
 

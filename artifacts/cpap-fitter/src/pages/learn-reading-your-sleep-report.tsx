@@ -111,10 +111,10 @@ export function LearnReadingYourSleepReport() {
           Your sleep report, decoded.
         </h1>
         <p className="text-lg text-muted-foreground leading-relaxed">
-          Sleep study reports are dense — three pages of acronyms, indices,
-          and graphs with very little plain-English summary. Here&apos;s
-          what each major number actually means, what the normal range is,
-          and the specific patterns worth flagging to your sleep doctor.
+          Sleep study reports are dense — three pages of acronyms, indices, and
+          graphs with very little plain-English summary. Here&apos;s what each
+          major number actually means, what the normal range is, and the
+          specific patterns worth flagging to your sleep doctor.
         </p>
       </header>
 
@@ -127,10 +127,22 @@ export function LearnReadingYourSleepReport() {
             </div>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
               {[
-                { range: "< 5", label: "Normal", caption: "No treatment indicated absent symptoms" },
-                { range: "5-15", label: "Mild", caption: "Treat if symptomatic" },
+                {
+                  range: "< 5",
+                  label: "Normal",
+                  caption: "No treatment indicated absent symptoms",
+                },
+                {
+                  range: "5-15",
+                  label: "Mild",
+                  caption: "Treat if symptomatic",
+                },
                 { range: "15-30", label: "Moderate", caption: "Treat" },
-                { range: "≥ 30", label: "Severe", caption: "Treat — high cardiovascular stakes" },
+                {
+                  range: "≥ 30",
+                  label: "Severe",
+                  caption: "Treat — high cardiovascular stakes",
+                },
               ].map((b) => (
                 <div key={b.label}>
                   <div className="text-display text-3xl font-bold text-white mb-1">
@@ -275,8 +287,8 @@ export function LearnReadingYourSleepReport() {
               CPAP vs APAP vs BiPAP vs ASV
             </h3>
             <p className="text-sm text-muted-foreground leading-relaxed">
-              How your report's findings map to the therapy mode you&apos;ll
-              be prescribed.
+              How your report's findings map to the therapy mode you&apos;ll be
+              prescribed.
             </p>
           </div>
           <ArrowRight className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors mt-1" />
@@ -296,9 +308,9 @@ export function LearnReadingYourSleepReport() {
       </div>
 
       <p className="text-xs text-muted-foreground/80 leading-relaxed mt-12 max-w-2xl mx-auto text-center">
-        Educational content only. Sleep report interpretation is your
-        sleep medicine provider&apos;s job — this article helps you ask
-        better questions, not diagnose yourself.
+        Educational content only. Sleep report interpretation is your sleep
+        medicine provider&apos;s job — this article helps you ask better
+        questions, not diagnose yourself.
       </p>
     </div>
   );

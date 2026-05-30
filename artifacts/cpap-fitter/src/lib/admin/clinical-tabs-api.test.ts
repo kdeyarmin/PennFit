@@ -81,9 +81,7 @@ describe("listInsuranceClaims", () => {
     await listInsuranceClaims(PATIENT_ID);
 
     const [url] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe(
-      `/resupply-api/patients/${PATIENT_ID}/insurance-claims`,
-    );
+    expect(url).toBe(`/resupply-api/patients/${PATIENT_ID}/insurance-claims`);
   });
 
   test("uses GET method (default)", async () => {
@@ -249,9 +247,7 @@ describe("createInsuranceClaim", () => {
     await createInsuranceClaim(PATIENT_ID, CREATE_BODY);
 
     const [url] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe(
-      `/resupply-api/patients/${PATIENT_ID}/insurance-claims`,
-    );
+    expect(url).toBe(`/resupply-api/patients/${PATIENT_ID}/insurance-claims`);
   });
 
   test("uses POST method", async () => {
@@ -313,9 +309,9 @@ describe("createInsuranceClaim", () => {
       json: async () => ({ error: "invalid_body" }),
     });
 
-    await expect(
-      createInsuranceClaim(PATIENT_ID, CREATE_BODY),
-    ).rejects.toThrow("invalid_body");
+    await expect(createInsuranceClaim(PATIENT_ID, CREATE_BODY)).rejects.toThrow(
+      "invalid_body",
+    );
   });
 });
 
@@ -429,7 +425,11 @@ describe("createInsuranceClaimLine", () => {
       json: async () => ({ id: LINE_ID }),
     });
 
-    const result = await createInsuranceClaimLine(PATIENT_ID, CLAIM_ID, LINE_BODY);
+    const result = await createInsuranceClaimLine(
+      PATIENT_ID,
+      CLAIM_ID,
+      LINE_BODY,
+    );
     expect(result.id).toBe(LINE_ID);
   });
 
@@ -500,7 +500,11 @@ describe("createInsuranceClaimEvent", () => {
       json: async () => ({ id: EVENT_ID }),
     });
 
-    const result = await createInsuranceClaimEvent(PATIENT_ID, CLAIM_ID, EVENT_BODY);
+    const result = await createInsuranceClaimEvent(
+      PATIENT_ID,
+      CLAIM_ID,
+      EVENT_BODY,
+    );
     expect(result.id).toBe(EVENT_ID);
   });
 

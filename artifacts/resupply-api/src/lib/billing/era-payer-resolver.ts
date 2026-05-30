@@ -36,7 +36,11 @@ export interface EraPayerHints {
 
 export interface ResolvedEraPayer {
   payerProfileId: string;
-  matchReason: "era_payer_id" | "office_ally_payer_id" | "edi_5010_payer_id" | "name_ilike";
+  matchReason:
+    | "era_payer_id"
+    | "office_ally_payer_id"
+    | "edi_5010_payer_id"
+    | "name_ilike";
 }
 
 export async function resolvePayerProfileForEra(

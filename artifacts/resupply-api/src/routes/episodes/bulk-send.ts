@@ -75,172 +75,180 @@ interface ItemResult {
 
 const router: IRouter = Router();
 
-router.post("/episodes/bulk-send", requireAdmin, bulkSendLimiter, async (req, res) => {
-  const cfg = readMessagingConfigOrNull();
-  if (!cfg) {
-    res.status(503).json({
-      error: "messaging_not_configured",
-      message:
-        "SMS+Email reminders are disabled because one or more required env " +
-        "vars are missing.",
-    });
-    return;
-  }
-
-  const parsed = bulkBody.safeParse(req.body);
-  if (!parsed.success) {
-    res.status(400).json({
-      error: "invalid_body",
-      issues: parsed.error.issues.map((i) => ({
-        path: i.path.join("."),
-        message: i.message,
-      })),
-    });
-    return;
-  }
-  const { episodeIds, channel } = parsed.data;
-
-  // Single round-trip lookup of (id → patient_id). Episodes whose
-  // ids don't appear in the result will be reported as
-  // `episode_not_found` per-id below — the bulk endpoint deliberately
-  // does NOT 404 the whole request just because one id was bogus.
-  const supabase = getSupabaseServiceRoleClient();
-  const { data: lookupRows, error: lookupErr } = await supabase
-    .schema("resupply")
-    .from("episodes")
-    .select("id, patient_id")
-    .in("id", episodeIds);
-  if (lookupErr) throw lookupErr;
-  const patientByEpisode = new Map<string, string>();
-  for (const row of lookupRows ?? []) {
-    patientByEpisode.set(row.id, row.patient_id);
-  }
-
-  const actor = {
-    kind: "admin" as const,
-    adminEmail: req.adminEmail ?? null,
-    adminUserId: req.adminUserId ?? null,
-    ip: req.ip ?? null,
-    userAgent: req.get("user-agent") ?? null,
-  };
-
-  const results: ItemResult[] = [];
-
-  for (const episodeId of episodeIds) {
-    const patientId = patientByEpisode.get(episodeId);
-    if (!patientId) {
-      results.push({
-        episodeId,
-        status: "error",
-        error: "episode_not_found",
-        message: "No episode row matched this id.",
+router.post(
+  "/episodes/bulk-send",
+  requireAdmin,
+  bulkSendLimiter,
+  async (req, res) => {
+    const cfg = readMessagingConfigOrNull();
+    if (!cfg) {
+      res.status(503).json({
+        error: "messaging_not_configured",
+        message:
+          "SMS+Email reminders are disabled because one or more required env " +
+          "vars are missing.",
       });
-      continue;
+      return;
     }
 
-    let outcome: SendReminderOutcome;
-    try {
-      if (channel === "sms") {
-        outcome = await sendReminderSms({
-          supabase,
-          cfg: {
-            twilioAccountSid: cfg.sms.twilioAccountSid,
-            twilioAuthToken: cfg.sms.twilioAuthToken,
-            twilioPhoneNumber: cfg.sms.twilioPhoneNumber,
-            twilioMessagingServiceSid: cfg.sms.twilioMessagingServiceSid,
-            publicBaseUrl: cfg.sms.publicBaseUrl,
-            practiceName: cfg.practiceName,
-          },
-          patientId,
-          episodeId,
-          actor,
-        });
-      } else {
-        outcome = await sendReminderEmail({
-          supabase,
-          cfg: {
-            sendgridApiKey: cfg.email.sendgridApiKey,
-            sendgridFromEmail: cfg.email.sendgridFromEmail,
-            sendgridFromName: cfg.email.sendgridFromName,
-            publicBaseUrl: cfg.email.publicBaseUrl,
-            practiceName: cfg.practiceName,
-          },
-          patientId,
-          episodeId,
-          actor,
-        });
-      }
-    } catch (err) {
-      // Vendor config errors are NOT going to suddenly start working
-      // mid-batch, so we abort the rest of the queue and return what
-      // we have. Mark every remaining episode as `vendor_config_error`
-      // so the dispatcher can re-queue them after the env var fix.
-      if (err instanceof TwilioConfigError || err instanceof EmailConfigError) {
-        const code =
-          err instanceof TwilioConfigError
-            ? "twilio_config_error"
-            : "sendgrid_config_error";
-        logger.error(
-          { err: { name: err.name, message: err.message } },
-          `episodes.bulk-send: ${code} — aborting remaining ids`,
-        );
+    const parsed = bulkBody.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: "invalid_body",
+        issues: parsed.error.issues.map((i) => ({
+          path: i.path.join("."),
+          message: i.message,
+        })),
+      });
+      return;
+    }
+    const { episodeIds, channel } = parsed.data;
+
+    // Single round-trip lookup of (id → patient_id). Episodes whose
+    // ids don't appear in the result will be reported as
+    // `episode_not_found` per-id below — the bulk endpoint deliberately
+    // does NOT 404 the whole request just because one id was bogus.
+    const supabase = getSupabaseServiceRoleClient();
+    const { data: lookupRows, error: lookupErr } = await supabase
+      .schema("resupply")
+      .from("episodes")
+      .select("id, patient_id")
+      .in("id", episodeIds);
+    if (lookupErr) throw lookupErr;
+    const patientByEpisode = new Map<string, string>();
+    for (const row of lookupRows ?? []) {
+      patientByEpisode.set(row.id, row.patient_id);
+    }
+
+    const actor = {
+      kind: "admin" as const,
+      adminEmail: req.adminEmail ?? null,
+      adminUserId: req.adminUserId ?? null,
+      ip: req.ip ?? null,
+      userAgent: req.get("user-agent") ?? null,
+    };
+
+    const results: ItemResult[] = [];
+
+    for (const episodeId of episodeIds) {
+      const patientId = patientByEpisode.get(episodeId);
+      if (!patientId) {
         results.push({
           episodeId,
           status: "error",
-          error: code,
-          message: "Vendor configuration error. Remaining items skipped.",
+          error: "episode_not_found",
+          message: "No episode row matched this id.",
         });
-        const seen = new Set(results.map((r) => r.episodeId));
-        for (const remaining of episodeIds) {
-          if (!seen.has(remaining)) {
-            results.push({
-              episodeId: remaining,
-              status: "error",
-              error: code,
-              message: "Skipped due to vendor configuration error.",
-            });
-          }
-        }
-        break;
+        continue;
       }
-      // Genuinely unexpected — bubble to the global error handler.
-      throw err;
-    }
 
-    if (outcome.status === "ok") {
+      let outcome: SendReminderOutcome;
+      try {
+        if (channel === "sms") {
+          outcome = await sendReminderSms({
+            supabase,
+            cfg: {
+              twilioAccountSid: cfg.sms.twilioAccountSid,
+              twilioAuthToken: cfg.sms.twilioAuthToken,
+              twilioPhoneNumber: cfg.sms.twilioPhoneNumber,
+              twilioMessagingServiceSid: cfg.sms.twilioMessagingServiceSid,
+              publicBaseUrl: cfg.sms.publicBaseUrl,
+              practiceName: cfg.practiceName,
+            },
+            patientId,
+            episodeId,
+            actor,
+          });
+        } else {
+          outcome = await sendReminderEmail({
+            supabase,
+            cfg: {
+              sendgridApiKey: cfg.email.sendgridApiKey,
+              sendgridFromEmail: cfg.email.sendgridFromEmail,
+              sendgridFromName: cfg.email.sendgridFromName,
+              publicBaseUrl: cfg.email.publicBaseUrl,
+              practiceName: cfg.practiceName,
+            },
+            patientId,
+            episodeId,
+            actor,
+          });
+        }
+      } catch (err) {
+        // Vendor config errors are NOT going to suddenly start working
+        // mid-batch, so we abort the rest of the queue and return what
+        // we have. Mark every remaining episode as `vendor_config_error`
+        // so the dispatcher can re-queue them after the env var fix.
+        if (
+          err instanceof TwilioConfigError ||
+          err instanceof EmailConfigError
+        ) {
+          const code =
+            err instanceof TwilioConfigError
+              ? "twilio_config_error"
+              : "sendgrid_config_error";
+          logger.error(
+            { err: { name: err.name, message: err.message } },
+            `episodes.bulk-send: ${code} — aborting remaining ids`,
+          );
+          results.push({
+            episodeId,
+            status: "error",
+            error: code,
+            message: "Vendor configuration error. Remaining items skipped.",
+          });
+          const seen = new Set(results.map((r) => r.episodeId));
+          for (const remaining of episodeIds) {
+            if (!seen.has(remaining)) {
+              results.push({
+                episodeId: remaining,
+                status: "error",
+                error: code,
+                message: "Skipped due to vendor configuration error.",
+              });
+            }
+          }
+          break;
+        }
+        // Genuinely unexpected — bubble to the global error handler.
+        throw err;
+      }
+
+      if (outcome.status === "ok") {
+        results.push({
+          episodeId,
+          status: "ok",
+          conversationId: outcome.conversationId,
+          vendorRef: outcome.vendorRef,
+        });
+        continue;
+      }
+
+      // Translate the helper's tagged outcome into the bulk response's
+      // stable error vocabulary (mirrors single-send's MessagingError).
+      const error = outcome.status;
+      const message = errorMessageFor(outcome);
       results.push({
         episodeId,
-        status: "ok",
-        conversationId: outcome.conversationId,
-        vendorRef: outcome.vendorRef,
+        status: "error",
+        error,
+        message,
       });
-      continue;
     }
 
-    // Translate the helper's tagged outcome into the bulk response's
-    // stable error vocabulary (mirrors single-send's MessagingError).
-    const error = outcome.status;
-    const message = errorMessageFor(outcome);
-    results.push({
-      episodeId,
-      status: "error",
-      error,
-      message,
+    const sent = results.filter((r) => r.status === "ok").length;
+    const failed = results.length - sent;
+
+    res.status(200).json({
+      summary: {
+        total: results.length,
+        sent,
+        failed,
+      },
+      results,
     });
-  }
-
-  const sent = results.filter((r) => r.status === "ok").length;
-  const failed = results.length - sent;
-
-  res.status(200).json({
-    summary: {
-      total: results.length,
-      sent,
-      failed,
-    },
-    results,
-  });
-});
+  },
+);
 
 function errorMessageFor(outcome: SendReminderOutcome): string {
   switch (outcome.status) {

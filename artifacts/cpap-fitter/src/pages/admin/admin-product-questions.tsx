@@ -10,7 +10,11 @@
 // is in flight so a moderator can't double-submit.
 
 import { useCallback, useState } from "react";
-import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import {
+  useInfiniteQuery,
+  useMutation,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { CheckCircle2, XCircle, MessageSquare } from "lucide-react";
 
 import { Button } from "@/components/admin/Button";
@@ -128,7 +132,10 @@ function QuestionList({ status }: { status: AdminProductQuestionStatus }) {
     );
   }
   return (
-    <div className="space-y-3" data-testid={`admin-product-questions-list-${status}`}>
+    <div
+      className="space-y-3"
+      data-testid={`admin-product-questions-list-${status}`}
+    >
       <ul className="space-y-3">
         {allItems.map((q) => (
           <QuestionCard key={q.id} q={q} />

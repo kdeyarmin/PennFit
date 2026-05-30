@@ -85,7 +85,10 @@ function stageFullAdvance({
   });
   // 3. payer_profiles (optional lookup in advanceCycle)
   stageSupabaseResponse("payer_profiles", "select", {
-    data: { display_name: "Highmark BCBS", payer_legal_name: "Highmark Blue Cross" },
+    data: {
+      display_name: "Highmark BCBS",
+      payer_legal_name: "Highmark Blue Cross",
+    },
     error: null,
   });
   // 4. payer_fee_schedules
@@ -154,9 +157,10 @@ describe("runCappedRentalAdvance — defaultBilledForHcpcs date filtering", () =
     await runCappedRentalAdvance();
 
     // The claim insert payload must carry the same DOS the filter used.
-    const [claimPayload] = supabaseMock.writePayloads("insurance_claims", "insert") as Array<
-      Record<string, unknown>
-    >;
+    const [claimPayload] = supabaseMock.writePayloads(
+      "insurance_claims",
+      "insert",
+    ) as Array<Record<string, unknown>>;
     expect(claimPayload).toBeDefined();
     expect(claimPayload!.date_of_service).toBe(EXPECTED_DOS);
 
@@ -170,9 +174,10 @@ describe("runCappedRentalAdvance — defaultBilledForHcpcs date filtering", () =
     stageFullAdvance({ feeScheduleData: { allowed_cents: 25000 } });
     await runCappedRentalAdvance();
 
-    const [claimPayload] = supabaseMock.writePayloads("insurance_claims", "insert") as Array<
-      Record<string, unknown>
-    >;
+    const [claimPayload] = supabaseMock.writePayloads(
+      "insurance_claims",
+      "insert",
+    ) as Array<Record<string, unknown>>;
     expect(claimPayload!.total_billed_cents).toBe(25000);
   });
 });
@@ -231,9 +236,10 @@ describe("runCappedRentalAdvance — defaultBilledForHcpcs fallback paths", () =
     const stats = await runCappedRentalAdvance();
     expect(stats.advanced).toBe(1);
 
-    const [claimPayload] = supabaseMock.writePayloads("insurance_claims", "insert") as Array<
-      Record<string, unknown>
-    >;
+    const [claimPayload] = supabaseMock.writePayloads(
+      "insurance_claims",
+      "insert",
+    ) as Array<Record<string, unknown>>;
     expect(claimPayload!.total_billed_cents).toBe(19999);
   });
 
@@ -280,9 +286,10 @@ describe("runCappedRentalAdvance — defaultBilledForHcpcs fallback paths", () =
     // payer_fee_schedules must not be queried when there's no payer profile.
     expect(supabaseMock.callCount("payer_fee_schedules", "select")).toBe(0);
 
-    const [claimPayload] = supabaseMock.writePayloads("insurance_claims", "insert") as Array<
-      Record<string, unknown>
-    >;
+    const [claimPayload] = supabaseMock.writePayloads(
+      "insurance_claims",
+      "insert",
+    ) as Array<Record<string, unknown>>;
     expect(claimPayload!.total_billed_cents).toBe(18000);
   });
 
@@ -333,9 +340,10 @@ describe("runCappedRentalAdvance — defaultBilledForHcpcs fallback paths", () =
     const stats = await runCappedRentalAdvance();
     expect(stats.advanced).toBe(1);
 
-    const [claimPayload] = supabaseMock.writePayloads("insurance_claims", "insert") as Array<
-      Record<string, unknown>
-    >;
+    const [claimPayload] = supabaseMock.writePayloads(
+      "insurance_claims",
+      "insert",
+    ) as Array<Record<string, unknown>>;
     // defaultBilledForHcpcs returns 0 when no fee schedule or map entry found.
     expect(claimPayload!.total_billed_cents).toBe(0);
   });

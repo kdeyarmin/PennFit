@@ -278,38 +278,38 @@ function buildStoredZip(entries: ZipEntry[]): Buffer {
     // ── Local file header ───────────────────────────────────────
     const local = Buffer.alloc(30);
     local.writeUInt32LE(0x04034b50, 0); // local file signature
-    local.writeUInt16LE(20, 4);          // version needed
-    local.writeUInt16LE(0, 6);           // general purpose flag
-    local.writeUInt16LE(0, 8);           // compression method (0 = stored)
-    local.writeUInt16LE(0, 10);          // last mod time
-    local.writeUInt16LE(0, 12);          // last mod date
-    local.writeUInt32LE(crc, 14);        // crc-32
-    local.writeUInt32LE(size, 18);       // compressed size
-    local.writeUInt32LE(size, 22);       // uncompressed size
+    local.writeUInt16LE(20, 4); // version needed
+    local.writeUInt16LE(0, 6); // general purpose flag
+    local.writeUInt16LE(0, 8); // compression method (0 = stored)
+    local.writeUInt16LE(0, 10); // last mod time
+    local.writeUInt16LE(0, 12); // last mod date
+    local.writeUInt32LE(crc, 14); // crc-32
+    local.writeUInt32LE(size, 18); // compressed size
+    local.writeUInt32LE(size, 22); // uncompressed size
     local.writeUInt16LE(nameBuf.length, 26); // file name length
-    local.writeUInt16LE(0, 28);          // extra field length
+    local.writeUInt16LE(0, 28); // extra field length
 
     localParts.push(local, nameBuf, entry.data);
 
     // ── Central directory header ────────────────────────────────
     const central = Buffer.alloc(46);
     central.writeUInt32LE(0x02014b50, 0); // central file signature
-    central.writeUInt16LE(20, 4);          // version made by
-    central.writeUInt16LE(20, 6);          // version needed
-    central.writeUInt16LE(0, 8);           // general purpose flag
-    central.writeUInt16LE(0, 10);          // compression method
-    central.writeUInt16LE(0, 12);          // last mod time
-    central.writeUInt16LE(0, 14);          // last mod date
-    central.writeUInt32LE(crc, 16);        // crc-32
-    central.writeUInt32LE(size, 20);       // compressed size
-    central.writeUInt32LE(size, 24);       // uncompressed size
+    central.writeUInt16LE(20, 4); // version made by
+    central.writeUInt16LE(20, 6); // version needed
+    central.writeUInt16LE(0, 8); // general purpose flag
+    central.writeUInt16LE(0, 10); // compression method
+    central.writeUInt16LE(0, 12); // last mod time
+    central.writeUInt16LE(0, 14); // last mod date
+    central.writeUInt32LE(crc, 16); // crc-32
+    central.writeUInt32LE(size, 20); // compressed size
+    central.writeUInt32LE(size, 24); // uncompressed size
     central.writeUInt16LE(nameBuf.length, 28); // file name length
-    central.writeUInt16LE(0, 30);          // extra field length
-    central.writeUInt16LE(0, 32);          // file comment length
-    central.writeUInt16LE(0, 34);          // disk number start
-    central.writeUInt16LE(0, 36);          // internal attrs
-    central.writeUInt32LE(0, 38);          // external attrs
-    central.writeUInt32LE(offset, 42);     // relative offset of local header
+    central.writeUInt16LE(0, 30); // extra field length
+    central.writeUInt16LE(0, 32); // file comment length
+    central.writeUInt16LE(0, 34); // disk number start
+    central.writeUInt16LE(0, 36); // internal attrs
+    central.writeUInt32LE(0, 38); // external attrs
+    central.writeUInt32LE(offset, 42); // relative offset of local header
 
     centralParts.push(central, nameBuf);
 
@@ -320,14 +320,14 @@ function buildStoredZip(entries: ZipEntry[]): Buffer {
 
   // ── End of central directory record ───────────────────────────
   const eocd = Buffer.alloc(22);
-  eocd.writeUInt32LE(0x06054b50, 0);       // end of central dir signature
-  eocd.writeUInt16LE(0, 4);                 // disk number
-  eocd.writeUInt16LE(0, 6);                 // disk with central dir start
-  eocd.writeUInt16LE(entries.length, 8);    // disk entries
-  eocd.writeUInt16LE(entries.length, 10);   // total entries
-  eocd.writeUInt32LE(centralSize, 12);      // size of central directory
-  eocd.writeUInt32LE(offset, 16);           // offset of central directory
-  eocd.writeUInt16LE(0, 20);                // comment length
+  eocd.writeUInt32LE(0x06054b50, 0); // end of central dir signature
+  eocd.writeUInt16LE(0, 4); // disk number
+  eocd.writeUInt16LE(0, 6); // disk with central dir start
+  eocd.writeUInt16LE(entries.length, 8); // disk entries
+  eocd.writeUInt16LE(entries.length, 10); // total entries
+  eocd.writeUInt32LE(centralSize, 12); // size of central directory
+  eocd.writeUInt32LE(offset, 16); // offset of central directory
+  eocd.writeUInt16LE(0, 20); // comment length
 
   return Buffer.concat([...localParts, ...centralParts, eocd]);
 }

@@ -94,7 +94,9 @@ router.get("/conversations/:id", requireAdmin, async (req, res) => {
       ? supabase
           .schema("resupply")
           .from("message_attachments")
-          .select("id, message_id, filename, content_type, size_bytes, created_at")
+          .select(
+            "id, message_id, filename, content_type, size_bytes, created_at",
+          )
           .in("message_id", messageIds)
           .order("created_at", { ascending: true })
           .order("id", { ascending: true })

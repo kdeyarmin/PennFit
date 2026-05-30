@@ -102,16 +102,13 @@ export function AdminBillingEraPage() {
         </h1>
         <p className="text-sm" style={{ color: "hsl(var(--ink-2))" }}>
           Upload an 835 from your clearinghouse to auto-post payer
-          adjudications. The file body is not stored — only the
-          SHA-256 + parser summary — so PHI stays out of the DB. A
-          repeat upload of the same file is rejected by hash.
+          adjudications. The file body is not stored — only the SHA-256 + parser
+          summary — so PHI stays out of the DB. A repeat upload of the same file
+          is rejected by hash.
         </p>
       </header>
 
-      <Card
-        title="Upload an 835"
-        subtitle="Plain EDI text, up to 4 MB"
-      >
+      <Card title="Upload an 835" subtitle="Plain EDI text, up to 4 MB">
         <div className="flex flex-wrap items-center gap-3">
           <input
             ref={fileInputRef}
@@ -145,56 +142,57 @@ export function AdminBillingEraPage() {
           </p>
         )}
 
-        {lastResult && (() => {
-          const s = lastResult.summary;
-          // Sum paidCents from per-claim outcomes — the reconciler
-          // doesn't return a single totalPaidCents field, so we
-          // derive it here for the headline.
-          const totalPaidCents = s.outcomes.reduce(
-            (acc, o) => acc + (o.paidCents ?? 0),
-            0,
-          );
-          return (
-            <div
-              className="mt-4 rounded-md border p-3 text-sm space-y-1"
-              style={{
-                borderColor: "rgba(21, 128, 61, 0.32)",
-                backgroundColor: "rgba(21, 128, 61, 0.06)",
-                color: "hsl(var(--ink-1))",
-              }}
-              data-testid="era-upload-result"
-            >
-              <p>
-                <strong>Posted</strong> — status{" "}
-                <span style={{ color: statusTone(lastResult.status) }}>
-                  {lastResult.status}
-                </span>
-                , {s.linesUpdated} line(s) updated.
-              </p>
-              <p>
-                Posted{" "}
-                <strong>{formatMoneyCents(totalPaidCents)}</strong> across{" "}
-                {s.matchedClaims} matched claim(s)
-                {s.paidClaims > 0 && (
-                  <>
-                    {" "}({s.paidClaims} paid
-                    {s.deniedClaims > 0 ? `, ${s.deniedClaims} denied` : ""})
-                  </>
-                )}
-                .
-                {s.unmatchedClaims > 0 && (
-                  <>
-                    {" "}
-                    <span style={{ color: "#b45309" }}>
-                      {s.unmatchedClaims} unmatched
-                    </span>{" "}
-                    need manual link.
-                  </>
-                )}
-              </p>
-            </div>
-          );
-        })()}
+        {lastResult &&
+          (() => {
+            const s = lastResult.summary;
+            // Sum paidCents from per-claim outcomes — the reconciler
+            // doesn't return a single totalPaidCents field, so we
+            // derive it here for the headline.
+            const totalPaidCents = s.outcomes.reduce(
+              (acc, o) => acc + (o.paidCents ?? 0),
+              0,
+            );
+            return (
+              <div
+                className="mt-4 rounded-md border p-3 text-sm space-y-1"
+                style={{
+                  borderColor: "rgba(21, 128, 61, 0.32)",
+                  backgroundColor: "rgba(21, 128, 61, 0.06)",
+                  color: "hsl(var(--ink-1))",
+                }}
+                data-testid="era-upload-result"
+              >
+                <p>
+                  <strong>Posted</strong> — status{" "}
+                  <span style={{ color: statusTone(lastResult.status) }}>
+                    {lastResult.status}
+                  </span>
+                  , {s.linesUpdated} line(s) updated.
+                </p>
+                <p>
+                  Posted <strong>{formatMoneyCents(totalPaidCents)}</strong>{" "}
+                  across {s.matchedClaims} matched claim(s)
+                  {s.paidClaims > 0 && (
+                    <>
+                      {" "}
+                      ({s.paidClaims} paid
+                      {s.deniedClaims > 0 ? `, ${s.deniedClaims} denied` : ""})
+                    </>
+                  )}
+                  .
+                  {s.unmatchedClaims > 0 && (
+                    <>
+                      {" "}
+                      <span style={{ color: "#b45309" }}>
+                        {s.unmatchedClaims} unmatched
+                      </span>{" "}
+                      need manual link.
+                    </>
+                  )}
+                </p>
+              </div>
+            );
+          })()}
       </Card>
 
       {history.isError && (
@@ -204,17 +202,11 @@ export function AdminBillingEraPage() {
         />
       )}
 
-      <Card
-        title="Recent ERA files"
-        subtitle="Last 200 uploads, newest first"
-      >
+      <Card title="Recent ERA files" subtitle="Last 200 uploads, newest first">
         {history.isPending ? (
           <Spinner label="Loading history…" />
         ) : (history.data?.eraFiles.length ?? 0) === 0 ? (
-          <p
-            className="text-sm py-1"
-            style={{ color: "hsl(var(--ink-3))" }}
-          >
+          <p className="text-sm py-1" style={{ color: "hsl(var(--ink-3))" }}>
             No ERA files ingested yet.
           </p>
         ) : (
@@ -255,10 +247,7 @@ export function AdminBillingEraPage() {
                         </span>
                       )}
                     </td>
-                    <td
-                      className="p-3"
-                      style={{ color: "hsl(var(--ink-2))" }}
-                    >
+                    <td className="p-3" style={{ color: "hsl(var(--ink-2))" }}>
                       {f.payerCheckNumber ?? "—"}
                     </td>
                     <td

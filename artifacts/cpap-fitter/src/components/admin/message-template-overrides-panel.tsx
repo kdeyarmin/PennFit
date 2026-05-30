@@ -44,11 +44,7 @@ const CHANNEL_LABEL: Record<TemplateChannel, string> = {
   push: "Push",
 };
 
-export function MessageTemplateOverridesPanel({
-  userId,
-}: {
-  userId: string;
-}) {
+export function MessageTemplateOverridesPanel({ userId }: { userId: string }) {
   return (
     <section
       className="rounded-lg border border-slate-200 bg-white p-4"
@@ -60,8 +56,8 @@ export function MessageTemplateOverridesPanel({
             Message overrides
           </h2>
           <p className="text-xs text-slate-500">
-            Per-customer customisation of automated messages. Inherits
-            from the global library; this lists only deviations.
+            Per-customer customisation of automated messages. Inherits from the
+            global library; this lists only deviations.
           </p>
         </div>
       </header>
@@ -94,8 +90,8 @@ function OverridesList({ userId }: { userId: string }) {
   if (list.length === 0) {
     return (
       <div className="text-sm text-slate-500">
-        No overrides for this customer — every automated message uses the
-        global template.
+        No overrides for this customer — every automated message uses the global
+        template.
       </div>
     );
   }
@@ -177,13 +173,9 @@ function OverrideRow({
             )}
           </div>
           {item.note && (
-            <p className="mt-1 text-xs italic text-slate-600">
-              {item.note}
-            </p>
+            <p className="mt-1 text-xs italic text-slate-600">{item.note}</p>
           )}
-          {(item.subject ||
-            item.bodyText ||
-            item.bodyHtml) && (
+          {(item.subject || item.bodyText || item.bodyHtml) && (
             <div className="mt-1.5 space-y-1 text-xs text-slate-700">
               {item.subject && (
                 <div>
@@ -255,7 +247,7 @@ function OverrideEditor({
   function handleSubmit(e: React.FormEvent): void {
     e.preventDefault();
     const body: PatchOverrideBody = {};
-    const subjectVal = isEmail ? (subject || null) : null;
+    const subjectVal = isEmail ? subject || null : null;
     if (subjectVal !== initial.subject) body.subject = subjectVal;
     const bodyTextVal = bodyText || null;
     if (bodyTextVal !== initial.bodyText) body.bodyText = bodyTextVal;
@@ -423,9 +415,7 @@ function NewOverrideForm({ userId }: { userId: string }) {
         <span className="text-xs font-medium text-slate-600">Channel</span>
         <select
           value={channel}
-          onChange={(e) =>
-            setChannel(e.currentTarget.value as TemplateChannel)
-          }
+          onChange={(e) => setChannel(e.currentTarget.value as TemplateChannel)}
           className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5 text-sm bg-white"
         >
           {CHANNELS.map((c) => (

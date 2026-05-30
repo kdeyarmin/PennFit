@@ -128,7 +128,9 @@ describe("analyzeDenial", () => {
                   },
                 ],
                 fix_steps: [
-                  { step: "Attach the approved PA number 'PA-9988' as REF*G1." },
+                  {
+                    step: "Attach the approved PA number 'PA-9988' as REF*G1.",
+                  },
                 ],
                 appeal_letter_sketch: null,
                 suggested_patches: [
@@ -173,7 +175,11 @@ describe("analyzeDenial", () => {
                 suggested_patches: [
                   // remove_line is NOT in the safe set
                   { kind: "remove_line", hcpcsCode: "E0601" },
-                  { kind: "set_line_modifier", hcpcsCode: "E0601", modifierCsv: "RR,KX" },
+                  {
+                    kind: "set_line_modifier",
+                    hcpcsCode: "E0601",
+                    modifierCsv: "RR,KX",
+                  },
                 ],
                 can_auto_resubmit: true,
               }),
@@ -205,7 +211,11 @@ describe("analyzeDenial", () => {
                 mapped_codes: [],
                 fix_steps: [],
                 suggested_patches: [
-                  { kind: "set_line_modifier", hcpcsCode: "E0601", modifierCsv: "RR,KX" },
+                  {
+                    kind: "set_line_modifier",
+                    hcpcsCode: "E0601",
+                    modifierCsv: "RR,KX",
+                  },
                 ],
                 can_auto_resubmit: true,
               }),
@@ -243,7 +253,9 @@ describe("analyzeDenial", () => {
                   },
                 ],
                 fix_steps: [
-                  { step: "Compile sleep study + compliance report; file appeal" },
+                  {
+                    step: "Compile sleep study + compliance report; file appeal",
+                  },
                 ],
                 appeal_letter_sketch:
                   "Dear payer review board, attached is the patient's sleep study...",

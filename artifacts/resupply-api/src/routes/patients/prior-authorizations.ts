@@ -301,7 +301,8 @@ router.patch(
       updates.approved_through = fields.approvedThrough;
     if (fields.denialReason !== undefined)
       updates.denial_reason = fields.denialReason;
-    if (fields.documentId !== undefined) updates.document_id = fields.documentId;
+    if (fields.documentId !== undefined)
+      updates.document_id = fields.documentId;
     if (fields.notes !== undefined) updates.notes = fields.notes;
 
     const { data: updated, error } = await supabase

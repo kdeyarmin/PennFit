@@ -57,7 +57,10 @@ export function LearnDryMouth() {
         <article className="min-w-0">
           {/* Breadcrumb */}
           <div className="mb-6 text-sm text-muted-foreground">
-            <Link href="/learn" className="hover:text-primary transition-colors">
+            <Link
+              href="/learn"
+              className="hover:text-primary transition-colors"
+            >
               Learn
             </Link>
             <span className="mx-2">/</span>
@@ -76,9 +79,9 @@ export function LearnDryMouth() {
               Waking up parched.
             </h1>
             <p className="text-lg text-muted-foreground leading-relaxed">
-              Dry mouth is the single most common CPAP comfort complaint —
-              and one of the easiest to fix. Three causes drive almost every
-              case. Here&apos;s how to walk through them in order.
+              Dry mouth is the single most common CPAP comfort complaint — and
+              one of the easiest to fix. Three causes drive almost every case.
+              Here&apos;s how to walk through them in order.
             </p>
           </header>
 
@@ -91,18 +94,17 @@ export function LearnDryMouth() {
               Why it happens.
             </h2>
             <p className="text-muted-foreground leading-relaxed mb-3">
-              CPAP air is drier than room air for two reasons: it moves
-              faster (any moving air evaporates moisture more aggressively),
-              and it&apos;s usually drawn through a fine-particle filter
-              that strips humidity. If your humidifier setting is too low
-              for the room you sleep in, or if you&apos;re leaking air out
-              your mouth all night, you&apos;ll wake up with sandpaper
-              tongue.
+              CPAP air is drier than room air for two reasons: it moves faster
+              (any moving air evaporates moisture more aggressively), and
+              it&apos;s usually drawn through a fine-particle filter that strips
+              humidity. If your humidifier setting is too low for the room you
+              sleep in, or if you&apos;re leaking air out your mouth all night,
+              you&apos;ll wake up with sandpaper tongue.
             </p>
             <p className="text-muted-foreground leading-relaxed">
-              Almost every fix falls into one of three buckets. Try them in
-              the order below — the cheapest, simplest one resolves most
-              cases in one or two nights.
+              Almost every fix falls into one of three buckets. Try them in the
+              order below — the cheapest, simplest one resolves most cases in
+              one or two nights.
             </p>
           </section>
 
@@ -161,11 +163,11 @@ export function LearnDryMouth() {
                   </div>
                   <p className="text-sm text-foreground/85 leading-relaxed">
                     If you&apos;ve maxed your humidifier, ruled out mouth
-                    breathing, added a heated tube, and you&apos;re still
-                    waking parched — talk to us about a mask change, or to
-                    your doctor about whether your prescribed pressure
-                    needs a look. Persistent dry mouth despite the standard
-                    fixes is worth a second pair of eyes.
+                    breathing, added a heated tube, and you&apos;re still waking
+                    parched — talk to us about a mask change, or to your doctor
+                    about whether your prescribed pressure needs a look.
+                    Persistent dry mouth despite the standard fixes is worth a
+                    second pair of eyes.
                   </p>
                 </div>
               </div>
@@ -242,8 +244,8 @@ export function LearnDryMouth() {
           </div>
 
           <p className="text-xs text-muted-foreground/80 leading-relaxed mt-10 max-w-2xl mx-auto text-center">
-            Educational content only. Don&apos;t change pressure settings
-            on your own; humidifier and tubing changes are safe to adjust.
+            Educational content only. Don&apos;t change pressure settings on
+            your own; humidifier and tubing changes are safe to adjust.
           </p>
         </article>
 
@@ -252,7 +254,10 @@ export function LearnDryMouth() {
             sticky right rail at lg+ via the component's own hidden /
             lg:block classes. */}
         <div className="hidden lg:block">
-          <TableOfContents items={tocItems} testIdPrefix="dry-mouth-toc-desktop" />
+          <TableOfContents
+            items={tocItems}
+            testIdPrefix="dry-mouth-toc-desktop"
+          />
         </div>
       </div>
     </div>

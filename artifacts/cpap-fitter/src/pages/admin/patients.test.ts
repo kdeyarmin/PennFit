@@ -49,7 +49,7 @@ describe("patients — bulk close confirm (destructive)", () => {
   });
 
   it("uses isClosing flag to branch between close and other titles", () => {
-    expect(SRC).toContain("const isClosing = targetStatus === \"closed\";");
+    expect(SRC).toContain('const isClosing = targetStatus === "closed";');
   });
 
   it("close title includes the patient count (singular)", () => {

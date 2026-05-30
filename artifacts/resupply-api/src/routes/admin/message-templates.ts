@@ -152,43 +152,50 @@ function disallowedTokens(
 // CSR-tool management" perm (admin / supervisor / compliance_officer
 // per the role catalog). CSRs USE the templates via the message
 // renderer; editing them is a tier above.
-router.get("/admin/message-templates", requirePermission("admin.tools.manage"), async (req, res) => {
-  const parsed = listQuery.safeParse(req.query);
-  if (!parsed.success) {
-    res.status(400).json({
-      error: "invalid_query",
-      issues: parsed.error.issues.map((i) => ({
-        path: i.path.join("."),
-        message: i.message,
-      })),
-    });
-    return;
-  }
-  const includeInactive = parsed.data.includeInactive === "1";
+router.get(
+  "/admin/message-templates",
+  requirePermission("admin.tools.manage"),
+  async (req, res) => {
+    const parsed = listQuery.safeParse(req.query);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: "invalid_query",
+        issues: parsed.error.issues.map((i) => ({
+          path: i.path.join("."),
+          message: i.message,
+        })),
+      });
+      return;
+    }
+    const includeInactive = parsed.data.includeInactive === "1";
 
-  const supabase = getSupabaseServiceRoleClient();
-  let templatesQuery = supabase
-    .schema("resupply")
-    .from("message_templates")
-    .select(
-      "id, template_key, channel, subject, body_html, body_text, allowed_variables, is_active, updated_at, updated_by, created_at, created_by",
-    )
-    .order("template_key", { ascending: true })
-    .order("channel", { ascending: true })
-    .limit(500);
-  if (parsed.data.templateKey) {
-    templatesQuery = templatesQuery.eq("template_key", parsed.data.templateKey);
-  }
-  if (parsed.data.channel) {
-    templatesQuery = templatesQuery.eq("channel", parsed.data.channel);
-  }
-  if (!includeInactive) {
-    templatesQuery = templatesQuery.eq("is_active", true);
-  }
-  const { data: rows, error } = await templatesQuery;
-  if (error) throw error;
-  res.json({ templates: (rows ?? []).map(serialize) });
-});
+    const supabase = getSupabaseServiceRoleClient();
+    let templatesQuery = supabase
+      .schema("resupply")
+      .from("message_templates")
+      .select(
+        "id, template_key, channel, subject, body_html, body_text, allowed_variables, is_active, updated_at, updated_by, created_at, created_by",
+      )
+      .order("template_key", { ascending: true })
+      .order("channel", { ascending: true })
+      .limit(500);
+    if (parsed.data.templateKey) {
+      templatesQuery = templatesQuery.eq(
+        "template_key",
+        parsed.data.templateKey,
+      );
+    }
+    if (parsed.data.channel) {
+      templatesQuery = templatesQuery.eq("channel", parsed.data.channel);
+    }
+    if (!includeInactive) {
+      templatesQuery = templatesQuery.eq("is_active", true);
+    }
+    const { data: rows, error } = await templatesQuery;
+    if (error) throw error;
+    res.json({ templates: (rows ?? []).map(serialize) });
+  },
+);
 
 router.get(
   "/admin/message-templates/:id",
@@ -261,7 +268,9 @@ router.patch(
     // the to-be-applied union (existing values + the patch overrides)
     // so an admin can't sneak in a non-allowlisted placeholder.
     const nextSubject =
-      parsed.data.subject !== undefined ? parsed.data.subject : existing.subject;
+      parsed.data.subject !== undefined
+        ? parsed.data.subject
+        : existing.subject;
     const nextBodyHtml =
       parsed.data.bodyHtml !== undefined
         ? parsed.data.bodyHtml

@@ -47,7 +47,15 @@
 //   * Cross-token replay (e.g. unsubscribe token → tracking endpoint)
 //     is rejected — the payload prefix scheme keeps them separate.
 
-import { describe, it, expect, vi, beforeEach, beforeAll, afterAll } from "vitest";
+import {
+  describe,
+  it,
+  expect,
+  vi,
+  beforeEach,
+  beforeAll,
+  afterAll,
+} from "vitest";
 import express, { type Express } from "express";
 import request from "supertest";
 
@@ -117,7 +125,8 @@ const LEAD_CONSENT = {
 };
 
 beforeEach(() => {
-  process.env.RESUPPLY_LINK_HMAC_KEY = "QkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkI=";
+  process.env.RESUPPLY_LINK_HMAC_KEY =
+    "QkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkI=";
   supabaseMock.reset();
   supabaseMockLegacy.mockReset();
   _resetFitterCompleteRateBucketForTests();
@@ -129,7 +138,9 @@ beforeEach(() => {
     schema: () => ({
       from: () => ({
         select: () => ({
-          eq: () => ({ maybeSingle: async () => ({ data: null, error: null }) }),
+          eq: () => ({
+            maybeSingle: async () => ({ data: null, error: null }),
+          }),
         }),
         update: () => ({ eq: async () => ({ error: null }) }),
       }),
@@ -218,7 +229,10 @@ describe("signUnsubscribeToken → route verify round-trip", () => {
   it("a freshly signed token produces a 200 'You're unsubscribed.' page", async () => {
     const token = signUnsubscribeToken(SAMPLE_LEAD_ID);
     // DB update returns success (no error)
-    stageSupabaseResponse("fitter_leads", "update", { data: null, error: null });
+    stageSupabaseResponse("fitter_leads", "update", {
+      data: null,
+      error: null,
+    });
 
     const res = await request(makeApp()).get(
       `/resupply-api/shop/fitter-leads/unsubscribe?t=${encodeURIComponent(token)}`,
@@ -278,7 +292,10 @@ describe("POST /shop/fitter-complete", () => {
     stageSupabaseResponse("fitter_leads", "select", {
       data: [LEAD_CONSENT],
     });
-    stageSupabaseResponse("fitter_leads", "update", { data: null, error: null });
+    stageSupabaseResponse("fitter_leads", "update", {
+      data: null,
+      error: null,
+    });
 
     const res = await request(makeApp())
       .post("/resupply-api/shop/fitter-complete")
@@ -292,18 +309,30 @@ describe("POST /shop/fitter-complete", () => {
     stageSupabaseResponse("fitter_leads", "select", {
       data: [LEAD_CONSENT],
     });
-    stageSupabaseResponse("fitter_leads", "update", { data: null, error: null });
+    stageSupabaseResponse("fitter_leads", "update", {
+      data: null,
+      error: null,
+    });
 
     await request(makeApp())
       .post("/resupply-api/shop/fitter-complete")
       .send(VALID_BODY);
 
-    const [updatePayload] = supabaseMock.writePayloads("fitter_leads", "update") as Array<Record<string, unknown>>;
+    const [updatePayload] = supabaseMock.writePayloads(
+      "fitter_leads",
+      "update",
+    ) as Array<Record<string, unknown>>;
     expect(updatePayload).toBeDefined();
     expect(updatePayload.journey_stage).toBe("campaign_active");
-    expect(updatePayload.recommended_mask_id).toBe(VALID_BODY.recommendedMaskId);
-    expect(updatePayload.recommended_mask_name).toBe(VALID_BODY.recommendedMaskName);
-    expect(updatePayload.recommended_mask_type).toBe(VALID_BODY.recommendedMaskType);
+    expect(updatePayload.recommended_mask_id).toBe(
+      VALID_BODY.recommendedMaskId,
+    );
+    expect(updatePayload.recommended_mask_name).toBe(
+      VALID_BODY.recommendedMaskName,
+    );
+    expect(updatePayload.recommended_mask_type).toBe(
+      VALID_BODY.recommendedMaskType,
+    );
     expect(updatePayload.next_campaign_touch_at).toBeTruthy();
   });
 
@@ -366,7 +395,10 @@ describe("POST /shop/fitter-complete", () => {
     stageSupabaseResponse("fitter_leads", "select", {
       data: [{ ...LEAD_CONSENT, marketing_opt_in: false }],
     });
-    stageSupabaseResponse("fitter_leads", "update", { data: null, error: null });
+    stageSupabaseResponse("fitter_leads", "update", {
+      data: null,
+      error: null,
+    });
 
     const res = await request(makeApp())
       .post("/resupply-api/shop/fitter-complete")
@@ -376,7 +408,10 @@ describe("POST /shop/fitter-complete", () => {
     expect(res.body.enrolled).toBe(false);
     expect(res.body.reason).toBe("no_marketing_opt_in");
 
-    const [updatePayload] = supabaseMock.writePayloads("fitter_leads", "update") as Array<Record<string, unknown>>;
+    const [updatePayload] = supabaseMock.writePayloads(
+      "fitter_leads",
+      "update",
+    ) as Array<Record<string, unknown>>;
     expect(updatePayload?.journey_stage).toBe("completed");
   });
 
@@ -484,7 +519,10 @@ describe("GET /shop/fitter-leads/unsubscribe", () => {
 
   it("returns 200 HTML 'You're unsubscribed.' on a valid token and successful DB update", async () => {
     const token = signUnsubscribeToken(SAMPLE_LEAD_ID);
-    stageSupabaseResponse("fitter_leads", "update", { data: null, error: null });
+    stageSupabaseResponse("fitter_leads", "update", {
+      data: null,
+      error: null,
+    });
 
     const res = await request(makeApp()).get(
       `/resupply-api/shop/fitter-leads/unsubscribe?t=${encodeURIComponent(token)}`,
@@ -495,7 +533,10 @@ describe("GET /shop/fitter-leads/unsubscribe", () => {
 
   it("updates the correct fitter_leads row (eq filter on id)", async () => {
     const token = signUnsubscribeToken(SAMPLE_LEAD_ID);
-    stageSupabaseResponse("fitter_leads", "update", { data: null, error: null });
+    stageSupabaseResponse("fitter_leads", "update", {
+      data: null,
+      error: null,
+    });
 
     await request(makeApp()).get(
       `/resupply-api/shop/fitter-leads/unsubscribe?t=${encodeURIComponent(token)}`,
@@ -510,13 +551,19 @@ describe("GET /shop/fitter-leads/unsubscribe", () => {
 
   it("sets journey_stage='unsubscribed' and clears next_campaign_touch_at on the DB update", async () => {
     const token = signUnsubscribeToken(SAMPLE_LEAD_ID);
-    stageSupabaseResponse("fitter_leads", "update", { data: null, error: null });
+    stageSupabaseResponse("fitter_leads", "update", {
+      data: null,
+      error: null,
+    });
 
     await request(makeApp()).get(
       `/resupply-api/shop/fitter-leads/unsubscribe?t=${encodeURIComponent(token)}`,
     );
 
-    const [payload] = supabaseMock.writePayloads("fitter_leads", "update") as Array<Record<string, unknown>>;
+    const [payload] = supabaseMock.writePayloads(
+      "fitter_leads",
+      "update",
+    ) as Array<Record<string, unknown>>;
     expect(payload?.journey_stage).toBe("unsubscribed");
     expect(payload?.next_campaign_touch_at).toBeNull();
   });
@@ -607,8 +654,7 @@ describe("GET /shop/track/o", () => {
     // Flip the last char of the signature segment.
     const idx = token.indexOf(".");
     const last = token.slice(-1);
-    const tampered =
-      token.slice(0, -1) + (last === "A" ? "B" : "A");
+    const tampered = token.slice(0, -1) + (last === "A" ? "B" : "A");
     expect(tampered.indexOf(".")).toBe(idx);
     const res = await request(makeApp())
       .get("/resupply-api/shop/track/o")
@@ -806,9 +852,8 @@ describe("pickSubjectVariant — A/B bucket assignment (mig 0157)", () => {
   });
 
   it("never returns a variant outside the registered set", async () => {
-    const { pickSubjectVariant, SUBJECT_VARIANTS } = await import(
-      "./fitter-complete"
-    );
+    const { pickSubjectVariant, SUBJECT_VARIANTS } =
+      await import("./fitter-complete");
     for (let i = 0; i < 50; i++) {
       const v = pickSubjectVariant(`lead-${i}`, 4);
       expect(SUBJECT_VARIANTS[4]).toContain(v);

@@ -37,7 +37,10 @@ import {
 } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
-import { createQueueWithDlq, VENDOR_SEND_QUEUE_OPTS } from "../lib/queue-options";
+import {
+  createQueueWithDlq,
+  VENDOR_SEND_QUEUE_OPTS,
+} from "../lib/queue-options";
 
 const NUDGE_JOB = "fitter-lead.reengage";
 const NUDGE_CRON = "37 9 * * *"; // 09:37 UTC daily

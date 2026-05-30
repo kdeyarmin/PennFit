@@ -67,9 +67,7 @@ router.get(
       supabase
         .schema("resupply")
         .from("patients")
-        .select(
-          "id, legal_first_name, legal_last_name, date_of_birth, address",
-        )
+        .select("id, legal_first_name, legal_last_name, date_of_birth, address")
         .eq("id", patientId)
         .limit(1)
         .maybeSingle(),
@@ -165,8 +163,8 @@ router.get(
       legalName: providerRes.data.legal_name,
       npi: providerRes.data.npi,
       practiceName: providerRes.data.practice_name,
-      practiceAddress: (providerRes.data
-        .practice_address ?? null) as SwoProvider["practiceAddress"],
+      practiceAddress: (providerRes.data.practice_address ??
+        null) as SwoProvider["practiceAddress"],
       phoneE164: providerRes.data.phone_e164,
       faxE164: providerRes.data.fax_e164,
     };

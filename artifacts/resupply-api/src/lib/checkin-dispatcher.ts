@@ -133,9 +133,7 @@ export function dispatchDueCheckins(
   return run;
 }
 
-async function runDueCheckins(
-  opts: DispatchOptions,
-): Promise<DispatchSummary> {
+async function runDueCheckins(opts: DispatchOptions): Promise<DispatchSummary> {
   // Control Center feature gate. Returns the same zeroed envelope as
   // a no-active-journeys scan so the admin "send-due" route and the
   // cron worker both see "nothing to do" instead of an error.
@@ -225,7 +223,9 @@ async function runDueCheckins(
       email: p.email,
       phoneE164: p.phone_e164,
       channelPreference:
-        channelPref === "sms" || channelPref === "email" || channelPref === "voice"
+        channelPref === "sms" ||
+        channelPref === "email" ||
+        channelPref === "voice"
           ? channelPref
           : null,
     });
@@ -365,11 +365,7 @@ async function attemptChannel(input: AttemptInput): Promise<AttemptResult> {
 
   try {
     if (channel === "email") {
-      ({ outcome, vendorRef, errorCode } = await sendEmail(
-        clients,
-        row,
-        day,
-      ));
+      ({ outcome, vendorRef, errorCode } = await sendEmail(clients, row, day));
     } else if (channel === "sms") {
       ({ outcome, vendorRef, errorCode } = await sendSms(clients, row, day));
     } else {

@@ -79,7 +79,9 @@ router.get(
         ? supabase
             .schema("resupply")
             .from("insurance_coverages")
-            .select("member_id, group_number, policyholder_name, policyholder_relationship")
+            .select(
+              "member_id, group_number, policyholder_name, policyholder_relationship",
+            )
             .eq("id", claim.insurance_coverage_id)
             .limit(1)
             .maybeSingle()
@@ -135,7 +137,8 @@ router.get(
     if (!patientAddress) {
       res.status(400).json({
         error: "missing_patient_address",
-        message: "patient must have a structured address before generating HCFA",
+        message:
+          "patient must have a structured address before generating HCFA",
       });
       return;
     }
@@ -143,8 +146,10 @@ router.get(
     // Read billing-provider identity from the OA config envs (the
     // same source the EDI builder uses; mirrors the "one source of
     // truth for our identity" contract).
-    const billingProviderName = process.env.OFFICE_ALLY_BILLING_ORG_NAME ?? "DME SUPPLIER";
-    const billingProviderNpi = process.env.OFFICE_ALLY_BILLING_NPI ?? "0000000000";
+    const billingProviderName =
+      process.env.OFFICE_ALLY_BILLING_ORG_NAME ?? "DME SUPPLIER";
+    const billingProviderNpi =
+      process.env.OFFICE_ALLY_BILLING_NPI ?? "0000000000";
     const taxId = process.env.OFFICE_ALLY_BILLING_TAX_ID ?? "000000000";
     const billingProviderAddress = {
       line1: process.env.OFFICE_ALLY_BILLING_ADDRESS_LINE1 ?? "—",
@@ -197,7 +202,8 @@ router.get(
         coverage.policyholder_name ??
         `${patient.legal_last_name}, ${patient.legal_first_name}`,
       patientAddress,
-      relationship: (coverage.policyholder_relationship ?? "self") as Hcfa1500Input["relationship"],
+      relationship: (coverage.policyholder_relationship ??
+        "self") as Hcfa1500Input["relationship"],
       insuredAddress: patientAddress,
       policyOrGroupNumber: coverage.group_number ?? coverage.member_id,
       payerName: payerProfile?.payer_legal_name ?? claim.payer_name,
@@ -266,7 +272,12 @@ function pickAddress(
   raw: unknown,
 ): { line1: string; city: string; state: string; zip: string } | null {
   if (!raw || typeof raw !== "object") return null;
-  const a = raw as { line1?: unknown; city?: unknown; state?: unknown; zip?: unknown };
+  const a = raw as {
+    line1?: unknown;
+    city?: unknown;
+    state?: unknown;
+    zip?: unknown;
+  };
   const line1 = typeof a.line1 === "string" ? a.line1 : "";
   const city = typeof a.city === "string" ? a.city : "";
   const state = typeof a.state === "string" ? a.state : "";

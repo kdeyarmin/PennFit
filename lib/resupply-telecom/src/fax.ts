@@ -158,10 +158,7 @@ async function defaultHttpSend(
   }
 
   if (typeof p["sid"] !== "string") {
-    throw new TwilioApiError(
-      "Twilio fax: response missing sid",
-      res.status,
-    );
+    throw new TwilioApiError("Twilio fax: response missing sid", res.status);
   }
 
   return {

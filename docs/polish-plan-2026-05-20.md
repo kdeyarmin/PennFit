@@ -27,20 +27,20 @@ cites the canonical finding so reviewers can drill in.
 
 ## Snapshot at start of plan (2026-05-20, post-verification)
 
-| Signal                                 | 5/8     | 5/13    | **5/20**    | Direction       |
-| -------------------------------------- | ------- | ------- | ----------- | --------------- |
-| SQL files vs `_journal.json` entries   | 119 / 51 (Δ 68) | 120 / 52 (Δ 68) | **148 / 52 (Δ 96)** | **Worse**       |
-| `patient-detail.tsx` LOC               | 3,948   | 4,522   | **4,556**   | Worse           |
-| `account.tsx` LOC                      | 1,918   | 2,069   | **2,148**   | Worse           |
-| `patients.tsx` LOC                     | 1,694   | 1,694   | **1,694**   | Stable          |
-| `shop-product-detail.tsx` LOC          | 1,480   | 1,488   | **1,488**   | Stable          |
-| Admin routes using `requirePermission` | —       | 7 / 108 | **78 / 126** | **Better**     |
-| Admin routes wired to `adminRateLimit` middleware | — | — (middleware didn't exist) | **19 / 126** | New (middleware shipped; sweep open) |
-| Integration clients with `AbortSignal.timeout()` | — | 0 / 4 (per 5/13) | **3 / 3** (health-connect has no fetch) | **Fixed** |
-| Atomic MFA recovery-code consumption   | No      | No      | **Yes** (`auth-deps.ts:275`) | **Fixed** |
-| HIPAA retention sweep audit rows       | No      | No      | **Yes** (`patient-documents-retention-sweep.ts:129`) | **Fixed** |
-| Storefront CSRF on `/shop/orders`      | No      | No      | **Yes** (`routes/storefront/orders.ts:43`) | **Fixed** |
-| E2E specs                              | 2       | 2       | **2**       | Stable          |
+| Signal                                            | 5/8             | 5/13                        | **5/20**                                             | Direction                            |
+| ------------------------------------------------- | --------------- | --------------------------- | ---------------------------------------------------- | ------------------------------------ |
+| SQL files vs `_journal.json` entries              | 119 / 51 (Δ 68) | 120 / 52 (Δ 68)             | **148 / 52 (Δ 96)**                                  | **Worse**                            |
+| `patient-detail.tsx` LOC                          | 3,948           | 4,522                       | **4,556**                                            | Worse                                |
+| `account.tsx` LOC                                 | 1,918           | 2,069                       | **2,148**                                            | Worse                                |
+| `patients.tsx` LOC                                | 1,694           | 1,694                       | **1,694**                                            | Stable                               |
+| `shop-product-detail.tsx` LOC                     | 1,480           | 1,488                       | **1,488**                                            | Stable                               |
+| Admin routes using `requirePermission`            | —               | 7 / 108                     | **78 / 126**                                         | **Better**                           |
+| Admin routes wired to `adminRateLimit` middleware | —               | — (middleware didn't exist) | **19 / 126**                                         | New (middleware shipped; sweep open) |
+| Integration clients with `AbortSignal.timeout()`  | —               | 0 / 4 (per 5/13)            | **3 / 3** (health-connect has no fetch)              | **Fixed**                            |
+| Atomic MFA recovery-code consumption              | No              | No                          | **Yes** (`auth-deps.ts:275`)                         | **Fixed**                            |
+| HIPAA retention sweep audit rows                  | No              | No                          | **Yes** (`patient-documents-retention-sweep.ts:129`) | **Fixed**                            |
+| Storefront CSRF on `/shop/orders`                 | No              | No                          | **Yes** (`routes/storefront/orders.ts:43`)           | **Fixed**                            |
+| E2E specs                                         | 2               | 2                           | **2**                                                | Stable                               |
 
 The migration-journal gap widened by 28 files in the seven days since
 the last review. With Phase 1's S-effort security items already shipped
@@ -89,8 +89,7 @@ waits, the bigger the reconciliation surface.
   coordinate with the deploy-side operator before opening the PR.)
 - Backfill `_journal.json` with the 96 missing entries _in applied
   order_. Do not change SQL contents.
-- Resolve the 6 duplicate prefixes (0016, 0017, 0049, 0050, 0052,
-  0065) by renaming the **unapplied** member of each pair to the next
+- Resolve the 6 duplicate prefixes (0016, 0017, 0049, 0050, 0052, 0065) by renaming the **unapplied** member of each pair to the next
   free prefix; record the rename in the journal as a no-op tag rewrite.
 - Add `pnpm migrate:dry-run` script that diffs disk vs journal and
   exits non-zero on mismatch.
@@ -207,7 +206,7 @@ attempts are both visible in the application log + counter.
 
 - Add `rollup-plugin-visualizer` to
   `artifacts/cpap-fitter/vite.config.ts`, gated to `pnpm build
-  --report`.
+--report`.
 - Set `build.chunkSizeWarningLimit: 400` (kB) and pre-split obvious
   chunks (recharts, framer-motion, jspdf) via `manualChunks`.
 - Add a one-page Lighthouse CI run on the storefront homepage +
@@ -406,14 +405,14 @@ ADR; on-call has a runbook for every paged alert.
 
 ## Quick reference — phase totals (post-revision)
 
-| Phase | Theme                          | Duration   | PRs | Risk | Blocks                                  |
-| ----- | ------------------------------ | ---------- | --- | ---- | --------------------------------------- |
-| 1     | Stop the bleeding              | 1 week     | 1   | Med  | Production deploys (drift)              |
-| 2     | Security hardening             | 1–2 weeks  | 3   | Med  | External pen-test, RBAC promise         |
-| 3     | Reliability & observability    | 1–2 weeks  | 3   | Low  | Incident response time                  |
-| 4     | Code structure & DB integrity  | 2 weeks    | 4   | Med  | Feature velocity on patient-detail      |
-| 5     | UX, a11y, perf polish          | 2 weeks    | 5   | Low  | Customer NPS, accreditation review      |
-| 6     | DX, docs, coverage             | 1 week     | 3   | Low  | Cost of the next polish wave            |
+| Phase | Theme                         | Duration  | PRs | Risk | Blocks                             |
+| ----- | ----------------------------- | --------- | --- | ---- | ---------------------------------- |
+| 1     | Stop the bleeding             | 1 week    | 1   | Med  | Production deploys (drift)         |
+| 2     | Security hardening            | 1–2 weeks | 3   | Med  | External pen-test, RBAC promise    |
+| 3     | Reliability & observability   | 1–2 weeks | 3   | Low  | Incident response time             |
+| 4     | Code structure & DB integrity | 2 weeks   | 4   | Med  | Feature velocity on patient-detail |
+| 5     | UX, a11y, perf polish         | 2 weeks   | 5   | Low  | Customer NPS, accreditation review |
+| 6     | DX, docs, coverage            | 1 week    | 3   | Low  | Cost of the next polish wave       |
 
 **Total:** ~9 weeks, **~19 PRs** (down from 22 in the initial draft;
 3 already-shipped items removed). Phases 1–3 are the production-
@@ -422,12 +421,12 @@ the next quarter's velocity.
 
 ## Recommended starting order (post-revision)
 
-| # | Item                                              | Effort | Why                                                                                        |
-| - | ------------------------------------------------- | ------ | ------------------------------------------------------------------------------------------ |
-| 1 | Phase 4 PR 4.1 (extract Overview tab from `patient-detail.tsx`) | S | The file-growth trend is the most visible code-quality regression and the simplest stop.   |
-| 2 | Phase 2 PR 2.1 (`adminRateLimit` adoption sweep)  | M      | Middleware exists; sweep is mechanical batches. Closes the largest open P0 surface.        |
-| 3 | Phase 2 PR 2.2 (RBAC sweep finish)                | S–M    | 48 routes left; pairs naturally with PR 2.1's batches.                                     |
-| 4 | Phase 1 PR 1.2 (migration drift reconciliation)   | M      | Highest leverage but needs production DB inspection — schedule when operator is available. |
+| #   | Item                                                            | Effort | Why                                                                                        |
+| --- | --------------------------------------------------------------- | ------ | ------------------------------------------------------------------------------------------ |
+| 1   | Phase 4 PR 4.1 (extract Overview tab from `patient-detail.tsx`) | S      | The file-growth trend is the most visible code-quality regression and the simplest stop.   |
+| 2   | Phase 2 PR 2.1 (`adminRateLimit` adoption sweep)                | M      | Middleware exists; sweep is mechanical batches. Closes the largest open P0 surface.        |
+| 3   | Phase 2 PR 2.2 (RBAC sweep finish)                              | S–M    | 48 routes left; pairs naturally with PR 2.1's batches.                                     |
+| 4   | Phase 1 PR 1.2 (migration drift reconciliation)                 | M      | Highest leverage but needs production DB inspection — schedule when operator is available. |
 
 ---
 
@@ -437,14 +436,14 @@ Items removed from the active phases above because verification on
 2026-05-20 found them already in the tree. Citations point to the
 verifying evidence.
 
-| Original phase item                       | Shipped by | Evidence                                                                                        |
-| ----------------------------------------- | ---------- | ----------------------------------------------------------------------------------------------- |
-| Phase 1 PR 1.1 — integration HTTP timeouts | PR #204    | `lib/resupply-integrations-airview/src/client.ts:99-118` (`fetchWithTimeout` + env overrides). Same pattern in care-orchestrator and react-health. health-connect has no `fetch()`. |
-| Phase 1 PR 1.1 — atomic MFA recovery code | PR #204    | `artifacts/resupply-api/src/lib/auth-deps.ts:275-303` (`consumeRecoveryCode` runs UPDATE with `.is("used_at", null)` in the WHERE). |
-| Phase 1 PR 1.3 — HIPAA per-doc audit rows | (unconfirmed PR) | `artifacts/resupply-api/src/worker/jobs/patient-documents-retention-sweep.ts:38,123,129` (`logAuditBestEffort` imported and called per flagged batch). |
-| Phase 2 PR 2.3 — storefront CSRF          | (unconfirmed PR) | `artifacts/resupply-api/src/routes/storefront/orders.ts:43` (`requireCsrfWhenSession` imported and mounted).                              |
-| Phase 2 PR 2.1 (middleware only)          | (unconfirmed PR) | `artifacts/resupply-api/src/middlewares/admin-rate-limit.ts` + adjacent test exist with 4 presets. **Adoption sweep is still open** — see PR 2.1 above. |
-| Phase 2 PR 2.2 (partial)                  | (in flight) | `requirePermission` jumped from 7 → 78 admin route files since 5/13. **Remaining 48-file sweep is open** — see PR 2.2 above.            |
+| Original phase item                        | Shipped by       | Evidence                                                                                                                                                                            |
+| ------------------------------------------ | ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Phase 1 PR 1.1 — integration HTTP timeouts | PR #204          | `lib/resupply-integrations-airview/src/client.ts:99-118` (`fetchWithTimeout` + env overrides). Same pattern in care-orchestrator and react-health. health-connect has no `fetch()`. |
+| Phase 1 PR 1.1 — atomic MFA recovery code  | PR #204          | `artifacts/resupply-api/src/lib/auth-deps.ts:275-303` (`consumeRecoveryCode` runs UPDATE with `.is("used_at", null)` in the WHERE).                                                 |
+| Phase 1 PR 1.3 — HIPAA per-doc audit rows  | (unconfirmed PR) | `artifacts/resupply-api/src/worker/jobs/patient-documents-retention-sweep.ts:38,123,129` (`logAuditBestEffort` imported and called per flagged batch).                              |
+| Phase 2 PR 2.3 — storefront CSRF           | (unconfirmed PR) | `artifacts/resupply-api/src/routes/storefront/orders.ts:43` (`requireCsrfWhenSession` imported and mounted).                                                                        |
+| Phase 2 PR 2.1 (middleware only)           | (unconfirmed PR) | `artifacts/resupply-api/src/middlewares/admin-rate-limit.ts` + adjacent test exist with 4 presets. **Adoption sweep is still open** — see PR 2.1 above.                             |
+| Phase 2 PR 2.2 (partial)                   | (in flight)      | `requirePermission` jumped from 7 → 78 admin route files since 5/13. **Remaining 48-file sweep is open** — see PR 2.2 above.                                                        |
 
 **Lesson for future plan docs:** always run a tree spot-check against
 the source-of-truth review doc before sequencing — the codebase moves

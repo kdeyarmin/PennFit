@@ -124,7 +124,10 @@ export function CpapMasks() {
             <span className="font-semibold text-white">React Health</span> line,
             plus full-line support for{" "}
             <span className="font-semibold text-white">ResMed</span> and{" "}
-            <span className="font-semibold text-white">Fisher &amp; Paykel</span>.
+            <span className="font-semibold text-white">
+              Fisher &amp; Paykel
+            </span>
+            .
           </p>
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
@@ -592,8 +595,8 @@ export function CpapMasks() {
             Before you pick a brand.
           </h2>
           <p className="text-muted-foreground leading-relaxed">
-            The questions we hear most often when shoppers are comparing
-            React Health, ResMed, and Fisher &amp; Paykel.
+            The questions we hear most often when shoppers are comparing React
+            Health, ResMed, and Fisher &amp; Paykel.
           </p>
         </div>
 
@@ -694,7 +697,10 @@ export function CpapMasks() {
               halo: "icon-halo-gold",
             },
           ].map(({ Icon, title, body, halo }) => (
-            <div key={title} className="glass-card rounded-2xl p-6 lift-on-hover">
+            <div
+              key={title}
+              className="glass-card rounded-2xl p-6 lift-on-hover"
+            >
               <div
                 className={`relative h-11 w-11 rounded-xl flex items-center justify-center mb-4 ${halo}`}
               >
@@ -724,8 +730,8 @@ export function CpapMasks() {
         </h2>
         <p className="text-muted-foreground leading-relaxed max-w-xl mx-auto mb-7">
           Three minutes of on-device face capture plus a short sleep
-          questionnaire returns a ranked list across all three brands. No
-          images leave your browser.
+          questionnaire returns a ranked list across all three brands. No images
+          leave your browser.
         </p>
         <Button
           size="lg"

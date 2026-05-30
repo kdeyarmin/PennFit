@@ -35,7 +35,13 @@ const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 type OrgRow = Database["resupply"]["Tables"]["dme_organization"]["Row"];
 
-const ACCREDITATION_VALUES = ["achc", "boc", "tjc", "cap", "other"] as const satisfies readonly NonNullable<OrgRow["accreditation_body"]>[];
+const ACCREDITATION_VALUES = [
+  "achc",
+  "boc",
+  "tjc",
+  "cap",
+  "other",
+] as const satisfies readonly NonNullable<OrgRow["accreditation_body"]>[];
 const CONTACT_ROLES = [
   "billing_manager",
   "compliance_officer",
@@ -192,41 +198,42 @@ router.get(
   "/admin/dme-organization",
   requirePermission("admin.tools.manage"),
   async (_req, res) => {
-  const supabase = getSupabaseServiceRoleClient();
-  const { data: org } = await supabase
-    .schema("resupply")
-    .from("dme_organization")
-    .select("*")
-    .eq("singleton", true)
-    .limit(1)
-    .maybeSingle();
-  if (!org) {
-    res.json({ organization: null, contacts: [] });
-    return;
-  }
-  const { data: contacts } = await supabase
-    .schema("resupply")
-    .from("dme_organization_contacts")
-    .select("*")
-    .eq("organization_id", org.id)
-    .order("is_primary", { ascending: false })
-    .order("role", { ascending: true });
-  res.json({
-    organization: orgRowToApi(org),
-    contacts: (contacts ?? []).map((c) => ({
-      id: c.id,
-      role: c.role,
-      name: c.name,
-      title: c.title,
-      email: c.email,
-      phoneE164: c.phone_e164,
-      isPrimary: c.is_primary,
-      isActive: c.is_active,
-      createdAt: c.created_at,
-      updatedAt: c.updated_at,
-    })),
-  });
-});
+    const supabase = getSupabaseServiceRoleClient();
+    const { data: org } = await supabase
+      .schema("resupply")
+      .from("dme_organization")
+      .select("*")
+      .eq("singleton", true)
+      .limit(1)
+      .maybeSingle();
+    if (!org) {
+      res.json({ organization: null, contacts: [] });
+      return;
+    }
+    const { data: contacts } = await supabase
+      .schema("resupply")
+      .from("dme_organization_contacts")
+      .select("*")
+      .eq("organization_id", org.id)
+      .order("is_primary", { ascending: false })
+      .order("role", { ascending: true });
+    res.json({
+      organization: orgRowToApi(org),
+      contacts: (contacts ?? []).map((c) => ({
+        id: c.id,
+        role: c.role,
+        name: c.name,
+        title: c.title,
+        email: c.email,
+        phoneE164: c.phone_e164,
+        isPrimary: c.is_primary,
+        isActive: c.is_active,
+        createdAt: c.created_at,
+        updatedAt: c.updated_at,
+      })),
+    });
+  },
+);
 
 router.put(
   "/admin/dme-organization",
@@ -246,51 +253,52 @@ router.put(
     }
     const b = parsed.data;
     const supabase = getSupabaseServiceRoleClient();
-    const payload: Database["resupply"]["Tables"]["dme_organization"]["Insert"] = {
-      singleton: true,
-      legal_name: b.legalName,
-      dba_name: b.dbaName ?? null,
-      tax_id: b.taxId,
-      organizational_npi: b.organizationalNpi,
-      taxonomy_code: b.taxonomyCode,
-      medicare_ptan: b.medicarePtan ?? null,
-      physical_address_line1: b.physicalAddressLine1,
-      physical_address_line2: b.physicalAddressLine2 ?? null,
-      physical_city: b.physicalCity,
-      physical_state: b.physicalState,
-      physical_zip: b.physicalZip,
-      mailing_address_line1: b.mailingAddressLine1 ?? null,
-      mailing_address_line2: b.mailingAddressLine2 ?? null,
-      mailing_city: b.mailingCity ?? null,
-      mailing_state: b.mailingState ?? null,
-      mailing_zip: b.mailingZip ?? null,
-      pay_to_address_line1: b.payToAddressLine1 ?? null,
-      pay_to_address_line2: b.payToAddressLine2 ?? null,
-      pay_to_city: b.payToCity ?? null,
-      pay_to_state: b.payToState ?? null,
-      pay_to_zip: b.payToZip ?? null,
-      phone_e164: b.phoneE164,
-      fax_e164: b.faxE164 ?? null,
-      billing_email: b.billingEmail,
-      general_email: b.generalEmail ?? null,
-      website_url: b.websiteUrl ?? null,
-      accreditation_body: b.accreditationBody ?? null,
-      accreditation_number: b.accreditationNumber ?? null,
-      accreditation_expires_on: b.accreditationExpiresOn ?? null,
-      state_license_number: b.stateLicenseNumber ?? null,
-      state_license_state: b.stateLicenseState ?? null,
-      state_license_expires_on: b.stateLicenseExpiresOn ?? null,
-      liability_carrier: b.liabilityCarrier ?? null,
-      liability_policy_number: b.liabilityPolicyNumber ?? null,
-      liability_expires_on: b.liabilityExpiresOn ?? null,
-      surety_bond_carrier: b.suretyBondCarrier ?? null,
-      surety_bond_amount_cents: b.suretyBondAmountCents ?? null,
-      surety_bond_expires_on: b.suretyBondExpiresOn ?? null,
-      authorized_signer_name: b.authorizedSignerName ?? null,
-      authorized_signer_title: b.authorizedSignerTitle ?? null,
-      notes: b.notes ?? null,
-      updated_at: new Date().toISOString(),
-    };
+    const payload: Database["resupply"]["Tables"]["dme_organization"]["Insert"] =
+      {
+        singleton: true,
+        legal_name: b.legalName,
+        dba_name: b.dbaName ?? null,
+        tax_id: b.taxId,
+        organizational_npi: b.organizationalNpi,
+        taxonomy_code: b.taxonomyCode,
+        medicare_ptan: b.medicarePtan ?? null,
+        physical_address_line1: b.physicalAddressLine1,
+        physical_address_line2: b.physicalAddressLine2 ?? null,
+        physical_city: b.physicalCity,
+        physical_state: b.physicalState,
+        physical_zip: b.physicalZip,
+        mailing_address_line1: b.mailingAddressLine1 ?? null,
+        mailing_address_line2: b.mailingAddressLine2 ?? null,
+        mailing_city: b.mailingCity ?? null,
+        mailing_state: b.mailingState ?? null,
+        mailing_zip: b.mailingZip ?? null,
+        pay_to_address_line1: b.payToAddressLine1 ?? null,
+        pay_to_address_line2: b.payToAddressLine2 ?? null,
+        pay_to_city: b.payToCity ?? null,
+        pay_to_state: b.payToState ?? null,
+        pay_to_zip: b.payToZip ?? null,
+        phone_e164: b.phoneE164,
+        fax_e164: b.faxE164 ?? null,
+        billing_email: b.billingEmail,
+        general_email: b.generalEmail ?? null,
+        website_url: b.websiteUrl ?? null,
+        accreditation_body: b.accreditationBody ?? null,
+        accreditation_number: b.accreditationNumber ?? null,
+        accreditation_expires_on: b.accreditationExpiresOn ?? null,
+        state_license_number: b.stateLicenseNumber ?? null,
+        state_license_state: b.stateLicenseState ?? null,
+        state_license_expires_on: b.stateLicenseExpiresOn ?? null,
+        liability_carrier: b.liabilityCarrier ?? null,
+        liability_policy_number: b.liabilityPolicyNumber ?? null,
+        liability_expires_on: b.liabilityExpiresOn ?? null,
+        surety_bond_carrier: b.suretyBondCarrier ?? null,
+        surety_bond_amount_cents: b.suretyBondAmountCents ?? null,
+        surety_bond_expires_on: b.suretyBondExpiresOn ?? null,
+        authorized_signer_name: b.authorizedSignerName ?? null,
+        authorized_signer_title: b.authorizedSignerTitle ?? null,
+        notes: b.notes ?? null,
+        updated_at: new Date().toISOString(),
+      };
 
     const { data: existing } = await supabase
       .schema("resupply")
@@ -339,7 +347,10 @@ router.put(
 router.post(
   "/admin/dme-organization/contacts",
   requireAdminOnly,
-  adminRateLimit({ name: "dme_organization_contacts.create", preset: "mutation" }),
+  adminRateLimit({
+    name: "dme_organization_contacts.create",
+    preset: "mutation",
+  }),
   async (req, res) => {
     const parsed = contactBody.safeParse(req.body);
     if (!parsed.success) {
@@ -394,7 +405,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "dme_organization.contact_create audit write failed");
+      logger.warn(
+        { err },
+        "dme_organization.contact_create audit write failed",
+      );
     });
     res.status(201).json({ id: data.id });
   },
@@ -403,7 +417,10 @@ router.post(
 router.patch(
   "/admin/dme-organization/contacts/:id",
   requireAdminOnly,
-  adminRateLimit({ name: "dme_organization_contacts.update", preset: "mutation" }),
+  adminRateLimit({
+    name: "dme_organization_contacts.update",
+    preset: "mutation",
+  }),
   async (req, res) => {
     const idParsed = idParam.safeParse(req.params);
     if (!idParsed.success) {
@@ -422,9 +439,10 @@ router.patch(
       return;
     }
     const b = parsed.data;
-    const update: Database["resupply"]["Tables"]["dme_organization_contacts"]["Update"] = {
-      updated_at: new Date().toISOString(),
-    };
+    const update: Database["resupply"]["Tables"]["dme_organization_contacts"]["Update"] =
+      {
+        updated_at: new Date().toISOString(),
+      };
     if (b.role !== undefined) update.role = b.role;
     if (b.name !== undefined) update.name = b.name;
     if (b.title !== undefined) update.title = b.title;
@@ -451,7 +469,10 @@ router.patch(
 router.delete(
   "/admin/dme-organization/contacts/:id",
   requireAdminOnly,
-  adminRateLimit({ name: "dme_organization_contacts.delete", preset: "destroy" }),
+  adminRateLimit({
+    name: "dme_organization_contacts.delete",
+    preset: "destroy",
+  }),
   async (req, res) => {
     const idParsed = idParam.safeParse(req.params);
     if (!idParsed.success) {

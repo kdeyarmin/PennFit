@@ -69,7 +69,8 @@ const renderQboCsvMock = vi.hoisted(() =>
 vi.mock("../../lib/quickbooks-export", () => ({
   renderIif: renderIifMock,
   renderQboCsv: renderQboCsvMock,
-  customerKeyForId: (id: string | null) => (id ? `cust-${id.slice(0, 6)}` : "cust-unknown"),
+  customerKeyForId: (id: string | null) =>
+    id ? `cust-${id.slice(0, 6)}` : "cust-unknown",
 }));
 
 // ─── Stub SendGrid + audit for the email-this-report endpoint ────────────
@@ -153,7 +154,9 @@ function stubAdmin(role: "admin" | "agent" = "admin") {
 }
 
 // Minimal order row matching the OrderRow interface in reports.ts.
-function makeOrderRow(over: Record<string, unknown> = {}): Record<string, unknown> {
+function makeOrderRow(
+  over: Record<string, unknown> = {},
+): Record<string, unknown> {
   return {
     id: "order-abc123",
     stripe_session_id: "cs_test_session",
@@ -173,7 +176,9 @@ function makeOrderRow(over: Record<string, unknown> = {}): Record<string, unknow
 }
 
 // Minimal return row.
-function makeReturnRow(over: Record<string, unknown> = {}): Record<string, unknown> {
+function makeReturnRow(
+  over: Record<string, unknown> = {},
+): Record<string, unknown> {
   return {
     id: "return-def456",
     order_id: "order-abc123",
@@ -240,8 +245,9 @@ describe("GET /admin/reports/orders.pdf", () => {
     stubAdmin();
     stageSupabaseResponse("shop_orders", "select", { data: [makeOrderRow()] });
 
-    const res = await request(makeApp())
-      .get(`/admin/reports/orders.pdf?from=${FROM}&to=${TO}`);
+    const res = await request(makeApp()).get(
+      `/admin/reports/orders.pdf?from=${FROM}&to=${TO}`,
+    );
 
     expect(res.status).toBe(200);
     expect(res.headers["content-type"]).toContain("application/pdf");
@@ -251,8 +257,9 @@ describe("GET /admin/reports/orders.pdf", () => {
     stubAdmin();
     stageSupabaseResponse("shop_orders", "select", { data: [] });
 
-    const res = await request(makeApp())
-      .get(`/admin/reports/orders.pdf?from=${FROM}&to=${TO}`);
+    const res = await request(makeApp()).get(
+      `/admin/reports/orders.pdf?from=${FROM}&to=${TO}`,
+    );
 
     expect(res.headers["content-disposition"]).toContain("attachment");
     expect(res.headers["content-disposition"]).toContain(".pdf");
@@ -264,8 +271,9 @@ describe("GET /admin/reports/orders.pdf", () => {
     const fakeBuffer = Buffer.from("%PDF-1.4 fake pdf");
     renderTablePdfMock.mockResolvedValueOnce(fakeBuffer);
 
-    const res = await request(makeApp())
-      .get(`/admin/reports/orders.pdf?from=${FROM}&to=${TO}`);
+    const res = await request(makeApp()).get(
+      `/admin/reports/orders.pdf?from=${FROM}&to=${TO}`,
+    );
 
     const cl = parseInt(res.headers["content-length"] ?? "0", 10);
     expect(cl).toBe(fakeBuffer.length);
@@ -276,8 +284,9 @@ describe("GET /admin/reports/orders.pdf", () => {
     const order = makeOrderRow();
     stageSupabaseResponse("shop_orders", "select", { data: [order] });
 
-    await request(makeApp())
-      .get(`/admin/reports/orders.pdf?from=${FROM}&to=${TO}`);
+    await request(makeApp()).get(
+      `/admin/reports/orders.pdf?from=${FROM}&to=${TO}`,
+    );
 
     expect(renderTablePdfMock).toHaveBeenCalledOnce();
     const call = renderTablePdfMock.mock.calls[0]![0] as { title: string };
@@ -292,8 +301,9 @@ describe("GET /admin/reports/orders.iif", () => {
     stubAdmin();
     stageSupabaseResponse("shop_orders", "select", { data: [makeOrderRow()] });
 
-    const res = await request(makeApp())
-      .get(`/admin/reports/orders.iif?from=${FROM}&to=${TO}`);
+    const res = await request(makeApp()).get(
+      `/admin/reports/orders.iif?from=${FROM}&to=${TO}`,
+    );
 
     expect(res.status).toBe(200);
     expect(res.headers["content-type"]).toContain("application/octet-stream");
@@ -303,8 +313,9 @@ describe("GET /admin/reports/orders.iif", () => {
     stubAdmin();
     stageSupabaseResponse("shop_orders", "select", { data: [] });
 
-    const res = await request(makeApp())
-      .get(`/admin/reports/orders.iif?from=${FROM}&to=${TO}`);
+    const res = await request(makeApp()).get(
+      `/admin/reports/orders.iif?from=${FROM}&to=${TO}`,
+    );
 
     expect(res.headers["content-disposition"]).toContain("attachment");
     expect(res.headers["content-disposition"]).toContain(".iif");
@@ -316,8 +327,9 @@ describe("GET /admin/reports/orders.iif", () => {
       data: [makeOrderRow({ status: "paid" })],
     });
 
-    await request(makeApp())
-      .get(`/admin/reports/orders.iif?from=${FROM}&to=${TO}`);
+    await request(makeApp()).get(
+      `/admin/reports/orders.iif?from=${FROM}&to=${TO}`,
+    );
 
     expect(renderIifMock).toHaveBeenCalledOnce();
     const call = renderIifMock.mock.calls[0]![0] as {
@@ -336,8 +348,9 @@ describe("GET /admin/reports/orders.iif", () => {
       ],
     });
 
-    await request(makeApp())
-      .get(`/admin/reports/orders.iif?from=${FROM}&to=${TO}`);
+    await request(makeApp()).get(
+      `/admin/reports/orders.iif?from=${FROM}&to=${TO}`,
+    );
 
     const call = renderIifMock.mock.calls[0]![0] as {
       rows: Array<{ kind: string }>;
@@ -354,8 +367,9 @@ describe("GET /admin/reports/orders.qbo.csv", () => {
     stubAdmin();
     stageSupabaseResponse("shop_orders", "select", { data: [] });
 
-    const res = await request(makeApp())
-      .get(`/admin/reports/orders.qbo.csv?from=${FROM}&to=${TO}`);
+    const res = await request(makeApp()).get(
+      `/admin/reports/orders.qbo.csv?from=${FROM}&to=${TO}`,
+    );
 
     expect(res.status).toBe(200);
     expect(res.headers["content-type"]).toContain("text/csv");
@@ -365,8 +379,9 @@ describe("GET /admin/reports/orders.qbo.csv", () => {
     stubAdmin();
     stageSupabaseResponse("shop_orders", "select", { data: [] });
 
-    const res = await request(makeApp())
-      .get(`/admin/reports/orders.qbo.csv?from=${FROM}&to=${TO}`);
+    const res = await request(makeApp()).get(
+      `/admin/reports/orders.qbo.csv?from=${FROM}&to=${TO}`,
+    );
 
     expect(res.headers["content-disposition"]).toContain("attachment");
     expect(res.headers["content-disposition"]).toContain(".csv");
@@ -378,8 +393,9 @@ describe("GET /admin/reports/orders.qbo.csv", () => {
       data: [makeOrderRow()],
     });
 
-    await request(makeApp())
-      .get(`/admin/reports/orders.qbo.csv?from=${FROM}&to=${TO}`);
+    await request(makeApp()).get(
+      `/admin/reports/orders.qbo.csv?from=${FROM}&to=${TO}`,
+    );
 
     expect(renderQboCsvMock).toHaveBeenCalledOnce();
   });
@@ -394,8 +410,9 @@ describe("GET /admin/reports/returns.pdf", () => {
       data: [makeReturnRow()],
     });
 
-    const res = await request(makeApp())
-      .get(`/admin/reports/returns.pdf?from=${FROM}&to=${TO}`);
+    const res = await request(makeApp()).get(
+      `/admin/reports/returns.pdf?from=${FROM}&to=${TO}`,
+    );
 
     expect(res.status).toBe(200);
     expect(res.headers["content-type"]).toContain("application/pdf");
@@ -405,8 +422,9 @@ describe("GET /admin/reports/returns.pdf", () => {
     stubAdmin();
     stageSupabaseResponse("shop_returns", "select", { data: [] });
 
-    await request(makeApp())
-      .get(`/admin/reports/returns.pdf?from=${FROM}&to=${TO}`);
+    await request(makeApp()).get(
+      `/admin/reports/returns.pdf?from=${FROM}&to=${TO}`,
+    );
 
     expect(renderTablePdfMock).toHaveBeenCalledOnce();
     const call = renderTablePdfMock.mock.calls[0]![0] as { title: string };
@@ -421,8 +439,9 @@ describe("GET /admin/reports/returns.iif", () => {
     stubAdmin();
     stageSupabaseResponse("shop_returns", "select", { data: [] });
 
-    const res = await request(makeApp())
-      .get(`/admin/reports/returns.iif?from=${FROM}&to=${TO}`);
+    const res = await request(makeApp()).get(
+      `/admin/reports/returns.iif?from=${FROM}&to=${TO}`,
+    );
 
     expect(res.status).toBe(200);
     expect(res.headers["content-type"]).toContain("application/octet-stream");
@@ -434,8 +453,9 @@ describe("GET /admin/reports/returns.iif", () => {
       data: [makeReturnRow({ refund_cents: 7500 })],
     });
 
-    await request(makeApp())
-      .get(`/admin/reports/returns.iif?from=${FROM}&to=${TO}`);
+    await request(makeApp()).get(
+      `/admin/reports/returns.iif?from=${FROM}&to=${TO}`,
+    );
 
     expect(renderIifMock).toHaveBeenCalledOnce();
     const call = renderIifMock.mock.calls[0]![0] as {
@@ -456,8 +476,9 @@ describe("GET /admin/reports/returns.iif", () => {
       ],
     });
 
-    await request(makeApp())
-      .get(`/admin/reports/returns.iif?from=${FROM}&to=${TO}`);
+    await request(makeApp()).get(
+      `/admin/reports/returns.iif?from=${FROM}&to=${TO}`,
+    );
 
     const call = renderIifMock.mock.calls[0]![0] as {
       rows: Array<{ kind: string }>;
@@ -473,8 +494,9 @@ describe("GET /admin/reports/returns.qbo.csv", () => {
     stubAdmin();
     stageSupabaseResponse("shop_returns", "select", { data: [] });
 
-    const res = await request(makeApp())
-      .get(`/admin/reports/returns.qbo.csv?from=${FROM}&to=${TO}`);
+    const res = await request(makeApp()).get(
+      `/admin/reports/returns.qbo.csv?from=${FROM}&to=${TO}`,
+    );
 
     expect(res.status).toBe(200);
     expect(res.headers["content-type"]).toContain("text/csv");
@@ -489,8 +511,9 @@ describe("GET /admin/reports/revenue-summary.csv", () => {
     stageSupabaseResponse("shop_orders", "select", { data: [] });
     stageSupabaseResponse("shop_returns", "select", { data: [] });
 
-    const res = await request(makeApp())
-      .get(`/admin/reports/revenue-summary.csv?from=${FROM}&to=${TO}`);
+    const res = await request(makeApp()).get(
+      `/admin/reports/revenue-summary.csv?from=${FROM}&to=${TO}`,
+    );
 
     expect(res.status).toBe(200);
     expect(res.headers["content-type"]).toContain("text/csv");
@@ -501,8 +524,9 @@ describe("GET /admin/reports/revenue-summary.csv", () => {
     stageSupabaseResponse("shop_orders", "select", { data: [] });
     stageSupabaseResponse("shop_returns", "select", { data: [] });
 
-    const res = await request(makeApp())
-      .get(`/admin/reports/revenue-summary.csv?from=${FROM}&to=${TO}`);
+    const res = await request(makeApp()).get(
+      `/admin/reports/revenue-summary.csv?from=${FROM}&to=${TO}`,
+    );
 
     expect(res.headers["content-disposition"]).toContain("revenue");
   });
@@ -512,8 +536,9 @@ describe("GET /admin/reports/revenue-summary.csv", () => {
     stageSupabaseResponse("shop_orders", "select", { data: [] });
     stageSupabaseResponse("shop_returns", "select", { data: [] });
 
-    const res = await request(makeApp())
-      .get(`/admin/reports/revenue-summary.csv?from=${FROM}&to=${TO}`);
+    const res = await request(makeApp()).get(
+      `/admin/reports/revenue-summary.csv?from=${FROM}&to=${TO}`,
+    );
 
     const csv = res.text;
     const header = csv.split("\n")[0]!;
@@ -528,14 +553,24 @@ describe("GET /admin/reports/revenue-summary.csv", () => {
     stubAdmin();
     stageSupabaseResponse("shop_orders", "select", {
       data: [
-        makeOrderRow({ status: "paid", paid_at: "2026-04-10T10:00:00Z", amount_total_cents: 10000 }),
-        makeOrderRow({ id: "ord-2", status: "shipped", paid_at: "2026-04-10T12:00:00Z", amount_total_cents: 20000 }),
+        makeOrderRow({
+          status: "paid",
+          paid_at: "2026-04-10T10:00:00Z",
+          amount_total_cents: 10000,
+        }),
+        makeOrderRow({
+          id: "ord-2",
+          status: "shipped",
+          paid_at: "2026-04-10T12:00:00Z",
+          amount_total_cents: 20000,
+        }),
       ],
     });
     stageSupabaseResponse("shop_returns", "select", { data: [] });
 
-    const res = await request(makeApp())
-      .get(`/admin/reports/revenue-summary.csv?from=${FROM}&to=${TO}`);
+    const res = await request(makeApp()).get(
+      `/admin/reports/revenue-summary.csv?from=${FROM}&to=${TO}`,
+    );
 
     // Should have the header + 1 data row (both orders are on 2026-04-10).
     const lines = res.text.split("\n").filter((l) => l.trim().length > 0);
@@ -552,8 +587,9 @@ describe("GET /admin/reports/revenue-summary.pdf", () => {
     stageSupabaseResponse("shop_orders", "select", { data: [] });
     stageSupabaseResponse("shop_returns", "select", { data: [] });
 
-    const res = await request(makeApp())
-      .get(`/admin/reports/revenue-summary.pdf?from=${FROM}&to=${TO}`);
+    const res = await request(makeApp()).get(
+      `/admin/reports/revenue-summary.pdf?from=${FROM}&to=${TO}`,
+    );
 
     expect(res.status).toBe(200);
     expect(res.headers["content-type"]).toContain("application/pdf");
@@ -564,8 +600,9 @@ describe("GET /admin/reports/revenue-summary.pdf", () => {
     stageSupabaseResponse("shop_orders", "select", { data: [] });
     stageSupabaseResponse("shop_returns", "select", { data: [] });
 
-    await request(makeApp())
-      .get(`/admin/reports/revenue-summary.pdf?from=${FROM}&to=${TO}`);
+    await request(makeApp()).get(
+      `/admin/reports/revenue-summary.pdf?from=${FROM}&to=${TO}`,
+    );
 
     expect(renderTablePdfMock).toHaveBeenCalledOnce();
     const call = renderTablePdfMock.mock.calls[0]![0] as { title: string };
@@ -580,8 +617,9 @@ describe("GET /admin/reports/refunds-journal.csv", () => {
     stubAdmin();
     stageSupabaseResponse("shop_returns", "select", { data: [] });
 
-    const res = await request(makeApp())
-      .get(`/admin/reports/refunds-journal.csv?from=${FROM}&to=${TO}`);
+    const res = await request(makeApp()).get(
+      `/admin/reports/refunds-journal.csv?from=${FROM}&to=${TO}`,
+    );
 
     expect(res.status).toBe(200);
     expect(res.headers["content-type"]).toContain("text/csv");
@@ -591,8 +629,9 @@ describe("GET /admin/reports/refunds-journal.csv", () => {
     stubAdmin();
     stageSupabaseResponse("shop_returns", "select", { data: [] });
 
-    const res = await request(makeApp())
-      .get(`/admin/reports/refunds-journal.csv?from=${FROM}&to=${TO}`);
+    const res = await request(makeApp()).get(
+      `/admin/reports/refunds-journal.csv?from=${FROM}&to=${TO}`,
+    );
 
     const header = res.text.split("\n")[0]!;
     expect(header).toContain("return_id");
@@ -611,8 +650,9 @@ describe("GET /admin/reports/refunds-journal.csv", () => {
       ],
     });
 
-    const res = await request(makeApp())
-      .get(`/admin/reports/refunds-journal.csv?from=${FROM}&to=${TO}`);
+    const res = await request(makeApp()).get(
+      `/admin/reports/refunds-journal.csv?from=${FROM}&to=${TO}`,
+    );
 
     // Header + 1 data row (the one with 5000 cents).
     const lines = res.text.split("\n").filter((l) => l.trim().length > 0);
@@ -629,8 +669,9 @@ describe("GET /admin/reports/refunds-journal.pdf", () => {
       data: [makeReturnRow()],
     });
 
-    const res = await request(makeApp())
-      .get(`/admin/reports/refunds-journal.pdf?from=${FROM}&to=${TO}`);
+    const res = await request(makeApp()).get(
+      `/admin/reports/refunds-journal.pdf?from=${FROM}&to=${TO}`,
+    );
 
     expect(res.status).toBe(200);
     expect(res.headers["content-type"]).toContain("application/pdf");
@@ -640,8 +681,9 @@ describe("GET /admin/reports/refunds-journal.pdf", () => {
     stubAdmin();
     stageSupabaseResponse("shop_returns", "select", { data: [] });
 
-    await request(makeApp())
-      .get(`/admin/reports/refunds-journal.pdf?from=${FROM}&to=${TO}`);
+    await request(makeApp()).get(
+      `/admin/reports/refunds-journal.pdf?from=${FROM}&to=${TO}`,
+    );
 
     expect(renderTablePdfMock).toHaveBeenCalledOnce();
     const call = renderTablePdfMock.mock.calls[0]![0] as { title: string };
@@ -658,8 +700,9 @@ describe("GET /admin/reports/orders.csv (regression)", () => {
     stubAdmin();
     stageSupabaseResponse("shop_orders", "select", { data: [] });
 
-    const res = await request(makeApp())
-      .get(`/admin/reports/orders.csv?from=${FROM}&to=${TO}`);
+    const res = await request(makeApp()).get(
+      `/admin/reports/orders.csv?from=${FROM}&to=${TO}`,
+    );
 
     expect(res.status).toBe(200);
     expect(res.headers["content-type"]).toContain("text/csv");
@@ -674,8 +717,9 @@ describe("GET /admin/reports/returns.csv (regression)", () => {
     stubAdmin();
     stageSupabaseResponse("shop_returns", "select", { data: [] });
 
-    const res = await request(makeApp())
-      .get(`/admin/reports/returns.csv?from=${FROM}&to=${TO}`);
+    const res = await request(makeApp()).get(
+      `/admin/reports/returns.csv?from=${FROM}&to=${TO}`,
+    );
 
     expect(res.status).toBe(200);
     expect(res.headers["content-type"]).toContain("text/csv");
@@ -711,8 +755,9 @@ describe("GET /admin/reports/insurance-claims.csv", () => {
     stubAdmin();
     stageSupabaseResponse("insurance_claims", "select", { data: [] });
 
-    const res = await request(makeApp())
-      .get(`/admin/reports/insurance-claims.csv?from=${FROM}&to=${TO}`);
+    const res = await request(makeApp()).get(
+      `/admin/reports/insurance-claims.csv?from=${FROM}&to=${TO}`,
+    );
 
     expect(res.status).toBe(200);
     expect(res.headers["content-type"]).toContain("text/csv");
@@ -724,8 +769,9 @@ describe("GET /admin/reports/insurance-claims.csv", () => {
       data: [makeClaimRow()],
     });
 
-    const res = await request(makeApp())
-      .get(`/admin/reports/insurance-claims.csv?from=${FROM}&to=${TO}`);
+    const res = await request(makeApp()).get(
+      `/admin/reports/insurance-claims.csv?from=${FROM}&to=${TO}`,
+    );
 
     const header = res.text.split("\n")[0]!;
     expect(header).toContain("patient_key");
@@ -740,8 +786,9 @@ describe("GET /admin/reports/insurance-claims.csv", () => {
       data: [makeClaimRow()],
     });
 
-    const res = await request(makeApp())
-      .get(`/admin/reports/insurance-claims.csv?from=${FROM}&to=${TO}`);
+    const res = await request(makeApp()).get(
+      `/admin/reports/insurance-claims.csv?from=${FROM}&to=${TO}`,
+    );
 
     const header = res.text.split("\n")[0]!;
     expect(header).not.toContain("notes");
@@ -754,8 +801,9 @@ describe("GET /admin/reports/insurance-claims.pdf", () => {
     stubAdmin();
     stageSupabaseResponse("insurance_claims", "select", { data: [] });
 
-    const res = await request(makeApp())
-      .get(`/admin/reports/insurance-claims.pdf?from=${FROM}&to=${TO}`);
+    const res = await request(makeApp()).get(
+      `/admin/reports/insurance-claims.pdf?from=${FROM}&to=${TO}`,
+    );
 
     expect(res.status).toBe(200);
     expect(res.headers["content-type"]).toContain("application/pdf");
@@ -765,8 +813,9 @@ describe("GET /admin/reports/insurance-claims.pdf", () => {
     stubAdmin();
     stageSupabaseResponse("insurance_claims", "select", { data: [] });
 
-    await request(makeApp())
-      .get(`/admin/reports/insurance-claims.pdf?from=${FROM}&to=${TO}`);
+    await request(makeApp()).get(
+      `/admin/reports/insurance-claims.pdf?from=${FROM}&to=${TO}`,
+    );
 
     expect(renderTablePdfMock).toHaveBeenCalledOnce();
     const call = renderTablePdfMock.mock.calls[0]![0] as { title: string };
@@ -779,13 +828,12 @@ describe("GET /admin/reports/insurance-claims.iif", () => {
     stubAdmin();
     stageSupabaseResponse("insurance_claims", "select", { data: [] });
 
-    const res = await request(makeApp())
-      .get(`/admin/reports/insurance-claims.iif?from=${FROM}&to=${TO}`);
+    const res = await request(makeApp()).get(
+      `/admin/reports/insurance-claims.iif?from=${FROM}&to=${TO}`,
+    );
 
     expect(res.status).toBe(200);
-    expect(res.headers["content-type"]).toContain(
-      "application/octet-stream",
-    );
+    expect(res.headers["content-type"]).toContain("application/octet-stream");
   });
 
   it("includes only paid-status claims in the QB row stream", async () => {
@@ -806,8 +854,9 @@ describe("GET /admin/reports/insurance-claims.iif", () => {
       ],
     });
 
-    await request(makeApp())
-      .get(`/admin/reports/insurance-claims.iif?from=${FROM}&to=${TO}`);
+    await request(makeApp()).get(
+      `/admin/reports/insurance-claims.iif?from=${FROM}&to=${TO}`,
+    );
 
     expect(renderIifMock).toHaveBeenCalledOnce();
     const call = renderIifMock.mock.calls[0]![0] as {
@@ -823,8 +872,9 @@ describe("GET /admin/reports/insurance-claims.qbo.csv", () => {
     stubAdmin();
     stageSupabaseResponse("insurance_claims", "select", { data: [] });
 
-    const res = await request(makeApp())
-      .get(`/admin/reports/insurance-claims.qbo.csv?from=${FROM}&to=${TO}`);
+    const res = await request(makeApp()).get(
+      `/admin/reports/insurance-claims.qbo.csv?from=${FROM}&to=${TO}`,
+    );
 
     expect(res.status).toBe(200);
     expect(res.headers["content-type"]).toContain("text/csv");
@@ -839,8 +889,9 @@ describe("GET /admin/reports/customer-activity.csv", () => {
     stageSupabaseResponse("shop_customers", "select", { data: [] });
     stageSupabaseResponse("shop_orders", "select", { data: [] });
 
-    const res = await request(makeApp())
-      .get(`/admin/reports/customer-activity.csv?from=${FROM}&to=${TO}`);
+    const res = await request(makeApp()).get(
+      `/admin/reports/customer-activity.csv?from=${FROM}&to=${TO}`,
+    );
 
     expect(res.status).toBe(200);
     expect(res.headers["content-type"]).toContain("text/csv");
@@ -851,8 +902,9 @@ describe("GET /admin/reports/customer-activity.csv", () => {
     stageSupabaseResponse("shop_customers", "select", { data: [] });
     stageSupabaseResponse("shop_orders", "select", { data: [] });
 
-    const res = await request(makeApp())
-      .get(`/admin/reports/customer-activity.csv?from=${FROM}&to=${TO}`);
+    const res = await request(makeApp()).get(
+      `/admin/reports/customer-activity.csv?from=${FROM}&to=${TO}`,
+    );
 
     const header = res.text.split("\n")[0]!;
     expect(header).toContain("new_customers");
@@ -882,8 +934,9 @@ describe("GET /admin/reports/customer-activity.csv", () => {
       ],
     });
 
-    const res = await request(makeApp())
-      .get(`/admin/reports/customer-activity.csv?from=${FROM}&to=${TO}`);
+    const res = await request(makeApp()).get(
+      `/admin/reports/customer-activity.csv?from=${FROM}&to=${TO}`,
+    );
 
     // header + one data row for the 2026-04-10 bucket
     const lines = res.text.split("\n").filter((l) => l.trim().length > 0);
@@ -903,8 +956,9 @@ describe("GET /admin/reports/customer-activity.pdf", () => {
     stageSupabaseResponse("shop_customers", "select", { data: [] });
     stageSupabaseResponse("shop_orders", "select", { data: [] });
 
-    const res = await request(makeApp())
-      .get(`/admin/reports/customer-activity.pdf?from=${FROM}&to=${TO}`);
+    const res = await request(makeApp()).get(
+      `/admin/reports/customer-activity.pdf?from=${FROM}&to=${TO}`,
+    );
 
     expect(res.status).toBe(200);
     expect(res.headers["content-type"]).toContain("application/pdf");
@@ -933,15 +987,13 @@ describe("permission gate — new reports", () => {
 
 describe("POST /admin/reports/email — auth + validation", () => {
   it("returns 401 when not signed in", async () => {
-    const res = await request(makeApp())
-      .post("/admin/reports/email")
-      .send({
-        slug: "orders",
-        format: "csv",
-        from: FROM,
-        to: TO,
-        recipient: "accounting@example.com",
-      });
+    const res = await request(makeApp()).post("/admin/reports/email").send({
+      slug: "orders",
+      format: "csv",
+      from: FROM,
+      to: TO,
+      recipient: "accounting@example.com",
+    });
     expect(res.status).toBe(401);
   });
 
@@ -1024,7 +1076,9 @@ describe("POST /admin/reports/email — happy path", () => {
     };
     expect(sendCall.to).toBe("accounting@example.com");
     expect(sendCall.attachments).toHaveLength(1);
-    expect(sendCall.attachments![0]!.filename).toMatch(/^pennpaps-orders-.*\.csv$/);
+    expect(sendCall.attachments![0]!.filename).toMatch(
+      /^pennpaps-orders-.*\.csv$/,
+    );
 
     expect(logAuditMock).toHaveBeenCalledOnce();
     const audit = logAuditMock.mock.calls[0]![0] as {

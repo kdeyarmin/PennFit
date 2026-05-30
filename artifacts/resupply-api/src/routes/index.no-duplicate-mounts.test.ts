@@ -20,10 +20,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const ROUTES_INDEX = readFileSync(
-  path.join(__dirname, "index.ts"),
-  "utf8",
-);
+const ROUTES_INDEX = readFileSync(path.join(__dirname, "index.ts"), "utf8");
 
 function stripComments(src: string): string {
   return src

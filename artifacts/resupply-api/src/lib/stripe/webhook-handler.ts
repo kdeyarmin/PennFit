@@ -42,8 +42,7 @@ import {
 
 import type { SavedShippingAddress } from "@workspace/resupply-db";
 
-type ShopOrderUpdate =
-  Database["resupply"]["Tables"]["shop_orders"]["Update"];
+type ShopOrderUpdate = Database["resupply"]["Tables"]["shop_orders"]["Update"];
 type ShopOrderItemInsert =
   Database["resupply"]["Tables"]["shop_order_items"]["Insert"];
 type ShopCustomerInsert =
@@ -225,10 +224,7 @@ export async function tryDeleteWebhookEventRecord(
       "stripe webhook: failed to release dedup record after handler error",
     );
   } catch {
-    log?.warn?.(
-      { eventId },
-      "stripe webhook: dedup record cleanup threw",
-    );
+    log?.warn?.({ eventId }, "stripe webhook: dedup record cleanup threw");
   }
 }
 
@@ -515,15 +511,17 @@ export const stripeWebhookHandler: RequestHandler = async (
           event.type === "payment_intent.payment_failed"
             ? (intent.last_payment_error?.message ?? "payment failed")
             : null;
-        const { markPaymentStatus } = await import(
-          "../billing/patient-payment.js"
-        );
+        const { markPaymentStatus } =
+          await import("../billing/patient-payment.js");
         await markPaymentStatus({
           paymentId: patientPaymentId,
           status,
           failureReason,
         });
-        log?.info?.({ patientPaymentId, status }, "patient_payment: status updated by webhook");
+        log?.info?.(
+          { patientPaymentId, status },
+          "patient_payment: status updated by webhook",
+        );
         break;
       }
       case "payment_method.detached": {
@@ -1144,7 +1142,10 @@ async function upsertSubscription(
     // shop_subscriptions table. Operators can backfill from Stripe
     // by event id if the subscription is genuinely ours.
     log?.warn?.(
-      { subscriptionId: subscription.id, stripeCustomerId: subscription.customer },
+      {
+        subscriptionId: subscription.id,
+        stripeCustomerId: subscription.customer,
+      },
       "stripe subscription event missing customer_id metadata — dropping (no synthetic placeholder)",
     );
     return;
@@ -1223,9 +1224,7 @@ async function upsertSubscription(
   // INSERT first; on 23505 we fall back to a conditional UPDATE
   // guarded by `last_stripe_event_at IS NULL OR <= eventCreatedAt`.
   const eventCreatedAtIso = eventCreatedAt.toISOString();
-  const periodEndIso = currentPeriodEnd
-    ? currentPeriodEnd.toISOString()
-    : null;
+  const periodEndIso = currentPeriodEnd ? currentPeriodEnd.toISOString() : null;
   const canceledAtIso = canceledAt ? canceledAt.toISOString() : null;
   const itemsJson = items as unknown as Json;
 
@@ -1280,7 +1279,9 @@ async function upsertSubscription(
     .from("shop_subscriptions")
     .update(update)
     .eq("stripe_subscription_id", subscription.id)
-    .or(`last_stripe_event_at.is.null,last_stripe_event_at.lte.${eventCreatedAtIso}`)
+    .or(
+      `last_stripe_event_at.is.null,last_stripe_event_at.lte.${eventCreatedAtIso}`,
+    )
     .select("id");
   if (updateErr) throw updateErr;
 
@@ -1371,7 +1372,9 @@ async function markStatusByPaymentIntent(
       amountRefundedCents: ctx.amountRefundedCents,
       orderTotalCents,
     },
-    isFullRefund ? "shop order marked refunded (full)" : "shop order partial-refund recorded (status unchanged)",
+    isFullRefund
+      ? "shop order marked refunded (full)"
+      : "shop order partial-refund recorded (status unchanged)",
   );
   if (!updated || updated.length === 0) return;
 
@@ -1565,8 +1568,7 @@ export async function sendOrderConfirmationIfFirst(args: {
       toEmail,
       stripeSessionId: claimed.stripe_session_id,
       items,
-      amountTotalCents:
-        claimed.amount_total_cents ?? session.amount_total ?? 0,
+      amountTotalCents: claimed.amount_total_cents ?? session.amount_total ?? 0,
       currency: claimed.currency ?? session.currency ?? "usd",
       shippingAddress:
         (claimed.shipping_address_json as unknown as SavedShippingAddress | null) ??

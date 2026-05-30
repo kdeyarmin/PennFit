@@ -160,7 +160,10 @@ export async function suggestIcd10(
       // through to the OpenAI branch so dual-provider deployments stay
       // available even when Anthropic is degraded or misconfigured.
       logger.warn(
-        { event: "ai_icd10_anthropic_fallback", errorMessage: result.errorMessage },
+        {
+          event: "ai_icd10_anthropic_fallback",
+          errorMessage: result.errorMessage,
+        },
         "ai-icd10: anthropic failed; falling back to openai",
       );
     }
@@ -172,7 +175,9 @@ export async function suggestIcd10(
     const openAiKey = process.env.OPENAI_API_KEY;
     if (openAiKey) return runOpenAi(input, userPrompt, openAiKey);
   }
-  return errored("no LLM provider configured (set ANTHROPIC_API_KEY or OPENAI_API_KEY)");
+  return errored(
+    "no LLM provider configured (set ANTHROPIC_API_KEY or OPENAI_API_KEY)",
+  );
 }
 
 async function runOpenAi(
@@ -251,7 +256,11 @@ async function runAnthropic(
       // cache_control: ephemeral — the system prompt is identical on
       // every suggestIcd10() call; caching trims the input cost ~95%
       // on bursts (e.g. when a CSR batches several unscored sleep studies).
-      { type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } },
+      {
+        type: "text",
+        text: SYSTEM_PROMPT,
+        cache_control: { type: "ephemeral" },
+      },
     ],
     messages: [{ role: "user", content: userPrompt }],
   });
@@ -316,8 +325,7 @@ function parseOutput(
       typeof parsed.rationale === "string"
         ? parsed.rationale.slice(0, 500)
         : "";
-    const inAllowlist =
-      code !== null && LCD_L33718_ALLOWLIST.includes(code);
+    const inAllowlist = code !== null && LCD_L33718_ALLOWLIST.includes(code);
     return {
       icd10: inAllowlist ? code : null,
       confidence: inAllowlist ? confidence : 0,

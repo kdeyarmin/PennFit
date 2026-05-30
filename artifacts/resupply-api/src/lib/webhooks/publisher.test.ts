@@ -21,7 +21,9 @@ describe("publishEvent", () => {
         { id: "sub-3", event_types: ["era.ingested"] },
       ],
     });
-    stageSupabaseResponse("webhook_deliveries", "insert", { data: { id: "d1" } });
+    stageSupabaseResponse("webhook_deliveries", "insert", {
+      data: { id: "d1" },
+    });
     await publishEvent({
       eventType: "claim.paid",
       payload: { claim_id: "c-1", amount_cents: 12500 },
@@ -33,7 +35,10 @@ describe("publishEvent", () => {
     const subIds = rows.map((r) => r.subscription_id).sort();
     expect(subIds).toEqual(["sub-1", "sub-2"]);
     for (const row of rows) {
-      const payload = row.event_payload as { type: string; data: Record<string, unknown> };
+      const payload = row.event_payload as {
+        type: string;
+        data: Record<string, unknown>;
+      };
       expect(payload.type).toBe("claim.paid");
       expect(payload.data.claim_id).toBe("c-1");
     }
@@ -47,9 +52,9 @@ describe("publishEvent", () => {
       eventType: "claim.paid",
       payload: { claim_id: "c-1" },
     });
-    expect(
-      getSupabaseWritePayloads("webhook_deliveries", "insert"),
-    ).toEqual([]);
+    expect(getSupabaseWritePayloads("webhook_deliveries", "insert")).toEqual(
+      [],
+    );
   });
 
   it("does NOT throw when supabase select returns an error", async () => {

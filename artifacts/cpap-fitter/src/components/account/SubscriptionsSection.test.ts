@@ -17,10 +17,7 @@ const srcPath = path.join(__dirname, "SubscriptionsSection.tsx");
 if (!existsSync(srcPath)) {
   throw new Error(`Source file not found: ${srcPath}`);
 }
-const SRC = readFileSync(
-  srcPath,
-  "utf8",
-);
+const SRC = readFileSync(srcPath, "utf8");
 
 // ---------------------------------------------------------------------------
 // useConfirmDialog import
@@ -28,9 +25,7 @@ const SRC = readFileSync(
 
 describe("SubscriptionsSection — useConfirmDialog import", () => {
   it("imports useConfirmDialog from @/hooks/use-confirm-dialog", () => {
-    expect(SRC).toContain(
-      'from "@/hooks/use-confirm-dialog"',
-    );
+    expect(SRC).toContain('from "@/hooks/use-confirm-dialog"');
     expect(SRC).toContain("useConfirmDialog");
   });
 });
@@ -73,9 +68,7 @@ describe("SubscriptionsSection — handlePause confirm options", () => {
   it("does NOT set destructive:true (pausing is reversible)", () => {
     // The confirm call for pause should not use destructive styling —
     // pause is a reversible action unlike delete or close.
-    const pauseBlock = SRC.match(
-      /handlePause[\s\S]{0,600}?return;/,
-    )?.[0] ?? "";
+    const pauseBlock = SRC.match(/handlePause[\s\S]{0,600}?return;/)?.[0] ?? "";
     expect(pauseBlock).not.toContain("destructive: true");
   });
 

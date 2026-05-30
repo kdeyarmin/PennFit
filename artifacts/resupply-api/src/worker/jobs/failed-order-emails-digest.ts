@@ -59,7 +59,10 @@ import {
 } from "@workspace/resupply-email";
 
 import { logger } from "../../lib/logger";
-import { createQueueWithDlq, VENDOR_SEND_QUEUE_OPTS } from "../lib/queue-options";
+import {
+  createQueueWithDlq,
+  VENDOR_SEND_QUEUE_OPTS,
+} from "../lib/queue-options";
 
 type OrderRow = Database["public"]["Tables"]["orders"]["Row"];
 
@@ -88,10 +91,7 @@ export interface FailedEmailDigestResult {
    */
   sent: boolean;
   /** When `sent: false`, this carries the reason for ops triage. */
-  skippedReason?:
-    | "no_failures"
-    | "no_recipient"
-    | "sendgrid_not_configured";
+  skippedReason?: "no_failures" | "no_recipient" | "sendgrid_not_configured";
 }
 
 interface FailedRow {
@@ -167,9 +167,11 @@ ${overflowHtml}
  *
  * `now` is injectable for tests; production callers omit it.
  */
-export async function runFailedEmailDigest(opts: {
-  now?: Date;
-} = {}): Promise<FailedEmailDigestResult> {
+export async function runFailedEmailDigest(
+  opts: {
+    now?: Date;
+  } = {},
+): Promise<FailedEmailDigestResult> {
   const recipient = process.env.RESUPPLY_ADMIN_ALERTS_EMAIL?.trim();
   if (!recipient) {
     return { failedCount: 0, sent: false, skippedReason: "no_recipient" };
@@ -260,7 +262,11 @@ export async function registerFailedEmailDigestJob(
     );
     return;
   }
-  await createQueueWithDlq(boss, FAILED_EMAIL_DIGEST_JOB, VENDOR_SEND_QUEUE_OPTS);
+  await createQueueWithDlq(
+    boss,
+    FAILED_EMAIL_DIGEST_JOB,
+    VENDOR_SEND_QUEUE_OPTS,
+  );
   await boss.work(FAILED_EMAIL_DIGEST_JOB, async () => {
     try {
       const result = await runFailedEmailDigest();
