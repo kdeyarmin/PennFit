@@ -17,3 +17,11 @@ export {
   type ResolveOutreachPlanInput,
   type OutreachPlan,
 } from "./outreach-plan";
+
+export {
+  resolveResupplyEntitlement,
+  ENTITLEMENT_STATUSES,
+  type EntitlementStatus,
+  type ResupplyEntitlementInput,
+  type ResupplyEntitlementResult,
+} from "./entitlement";

@@ -310,6 +310,16 @@ const AdminBillingConfigPayersPage = lazy(() =>
     default: m.AdminBillingConfigPayersPage,
   })),
 );
+const AdminBillingConfigOrganizationPage = lazy(() =>
+  import("@/pages/admin/admin-billing-config-organization").then((m) => ({
+    default: m.AdminBillingConfigOrganizationPage,
+  })),
+);
+const AdminBillingConfigClearinghousePage = lazy(() =>
+  import("@/pages/admin/admin-billing-config-clearinghouse").then((m) => ({
+    default: m.AdminBillingConfigClearinghousePage,
+  })),
+);
 const AdminBillingConfigFeeSchedulesPage = lazy(() =>
   import("@/pages/admin/admin-billing-config-fee-schedules").then((m) => ({
     default: m.AdminBillingConfigFeeSchedulesPage,
@@ -481,6 +491,14 @@ function AdminConsole() {
             <Route
               path="/admin/billing/config/payers"
               component={AdminBillingConfigPayersPage}
+            />
+            <Route
+              path="/admin/billing/config/organization"
+              component={AdminBillingConfigOrganizationPage}
+            />
+            <Route
+              path="/admin/billing/config/clearinghouse"
+              component={AdminBillingConfigClearinghousePage}
             />
             <Route
               path="/admin/billing/config/fee-schedules"

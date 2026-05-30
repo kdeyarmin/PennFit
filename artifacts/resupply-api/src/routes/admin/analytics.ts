@@ -26,6 +26,8 @@ import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 import {
   aggregateComplianceCohorts,
   aggregateResupplyFunnel,
+  aggregateResupplyKpis,
+  type EpisodeKpiRow,
   type EpisodeRow,
   type PatientCohortPoint,
 } from "../../lib/analytics/aggregate";
@@ -63,6 +65,91 @@ router.get(
     if (error) throw error;
 
     const result = aggregateResupplyFunnel((data ?? []) as EpisodeRow[]);
+    res.json({ windowDays: days, ...result });
+  },
+);
+
+// Headline resupply-program KPIs: connection (response) rate,
+// confirmation/conversion rate, fulfillment rate, and orders per
+// active patient — the numbers DME operators benchmark a resupply
+// program on. Read-only aggregation over episodes + conversations +
+// inbound messages. The conversation/message reads are window-bounded
+// and capped; on a very high-volume window the connection rate is an
+// approximation over the cap (still representative).
+router.get(
+  "/admin/analytics/resupply-kpis",
+  requirePermission("reports.read"),
+  async (req, res) => {
+    const parsed = windowSchema.safeParse(req.query);
+    if (!parsed.success) {
+      res.status(400).json({ error: "invalid_query" });
+      return;
+    }
+    const days = parsed.data.days;
+    const cutoff = isoDaysAgo(days);
+    const supabase = getSupabaseServiceRoleClient();
+
+    // Episodes created in the window → confirmation/fulfillment + unique patients.
+    const { data: episodeRows, error: epErr } = await supabase
+      .schema("resupply")
+      .from("episodes")
+      .select("status, patient_id")
+      .gte("created_at", cutoff);
+    if (epErr) throw epErr;
+    const episodes: EpisodeKpiRow[] = (episodeRows ?? []).map((r) => ({
+      status: r.status,
+      patientId: r.patient_id,
+    }));
+
+    // Episode-linked (resupply) conversations opened in the window =
+    // outreach denominator. episode_id IS NOT NULL excludes in-app
+    // shop threads. Capped for safety on very large windows.
+    const { data: convRows, error: convErr } = await supabase
+      .schema("resupply")
+      .from("conversations")
+      .select("id")
+      .not("episode_id", "is", null)
+      .gte("created_at", cutoff)
+      .limit(20000);
+    if (convErr) throw convErr;
+    const outreachIds = new Set((convRows ?? []).map((r) => r.id));
+
+    // Inbound patient messages in the window → which of those
+    // conversations actually got a reply (distinct).
+    let respondedCount = 0;
+    if (outreachIds.size > 0) {
+      const { data: msgRows, error: msgErr } = await supabase
+        .schema("resupply")
+        .from("messages")
+        .select("conversation_id")
+        .eq("direction", "inbound")
+        .gte("created_at", cutoff)
+        .limit(50000);
+      if (msgErr) throw msgErr;
+      const responded = new Set<string>();
+      for (const m of msgRows ?? []) {
+        if (m.conversation_id && outreachIds.has(m.conversation_id)) {
+          responded.add(m.conversation_id);
+        }
+      }
+      respondedCount = responded.size;
+    }
+
+    // Active-patient count for the orders-per-patient denominator.
+    const { count: activePatientCount, error: patErr } = await supabase
+      .schema("resupply")
+      .from("patients")
+      .select("*", { count: "exact", head: true })
+      .eq("status", "active");
+    if (patErr) throw patErr;
+
+    const result = aggregateResupplyKpis({
+      episodes,
+      outreachCount: outreachIds.size,
+      respondedCount,
+      activePatientCount: activePatientCount ?? 0,
+      windowDays: days,
+    });
     res.json({ windowDays: days, ...result });
   },
 );

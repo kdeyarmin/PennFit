@@ -49,7 +49,21 @@ import {
 } from "@workspace/resupply-db";
 
 import { resolveFulfillmentSku } from "../backorder/resolve-fulfillment-sku";
+import {
+  resolveSkuEntitlement,
+  type SkuEntitlement,
+} from "../entitlement/resolve-sku-entitlement";
+import { isFeatureEnabled } from "../feature-flags";
 import { logger } from "../logger";
+
+export interface NotEligibleEntitlement {
+  status: string;
+  reason: string;
+  /** ISO timestamp of the earliest payable date. */
+  eligibleOn: string;
+  daysUntilEligible: number;
+  hcpcsCode: string;
+}
 
 export type PlaceOrderResult =
   | {
@@ -59,6 +73,12 @@ export type PlaceOrderResult =
       fulfillmentIds: string[];
     }
   | { status: "already_confirmed"; patientId: string; episodeId: string }
+  | {
+      status: "not_eligible";
+      patientId: string;
+      episodeId: string;
+      entitlement: NotEligibleEntitlement;
+    }
   | { status: "conversation_not_found" }
   | { status: "episode_not_found" }
   | { status: "no_active_prescription" };
@@ -127,6 +147,48 @@ export async function placeResupplyOrderForConversation(
     .maybeSingle();
   if (rxErr) throw rxErr;
   if (!rx) return { status: "no_active_prescription" };
+
+  // 3b. Entitlement guard (feature-flagged). Block a reorder that
+  // isn't yet payable under the replacement schedule — too soon since
+  // the last dispense, or over the per-period quantity cap — so we
+  // don't ship a claim that denies and leaves the patient with the
+  // bill. FAIL OPEN: an unmapped SKU (resolveSkuEntitlement → null) or
+  // ANY lookup error allows the confirmation through. We never strand
+  // a legitimate reorder on our own eligibility bug. The guard runs
+  // before the atomic claim so a blocked episode is left untouched
+  // (stays pending) for the CSR to work.
+  if (await isFeatureEnabled("resupply.entitlement_enforcement")) {
+    try {
+      const entitlement = await resolveSkuEntitlement(supabase, {
+        patientId: episode.patient_id,
+        itemSku: rx.item_sku,
+      });
+      if (entitlement && !entitlement.eligible) {
+        await raiseTooSoonAlert(supabase, episode.patient_id, entitlement);
+        return {
+          status: "not_eligible",
+          patientId: episode.patient_id,
+          episodeId: episode.id,
+          entitlement: {
+            status: entitlement.status,
+            reason: entitlement.reason,
+            eligibleOn: entitlement.eligibleOn.toISOString(),
+            daysUntilEligible: entitlement.daysUntilEligible,
+            hcpcsCode: entitlement.hcpcsCode,
+          },
+        };
+      }
+    } catch (err) {
+      logger.warn(
+        {
+          event: "resupply.entitlement.check_failed",
+          episodeId: episode.id,
+          errName: err instanceof Error ? err.name : "unknown",
+        },
+        "resupply: entitlement check failed; allowing confirmation (fail open)",
+      );
+    }
+  }
 
   // 4. Atomic claim: flip status from any non-terminal value to
   // `confirmed`, ONLY when it isn't already confirmed/fulfilled.
@@ -250,6 +312,59 @@ async function ensureFulfillments(
     .select("id");
   if (insertErr) throw insertErr;
   return (inserted ?? []).map((r) => r.id);
+}
+
+/**
+ * Best-effort CSR alert when the entitlement guard blocks a reorder.
+ * Centralized here so every caller of placeResupplyOrderForConversation
+ * gets the same work-queue row without duplicating the logic. NEVER
+ * throws into the caller — a failed alert must not turn a clean
+ * "not_eligible" return into a 500 on the patient's confirm. The
+ * `(patient_id, alert_type) WHERE status='open'` partial unique index
+ * collapses repeats, so we check for an existing open alert first to
+ * avoid a 23505 on the insert.
+ */
+async function raiseTooSoonAlert(
+  supabase: ResupplySupabaseClient,
+  patientId: string,
+  entitlement: SkuEntitlement,
+): Promise<void> {
+  try {
+    const { data: existing } = await supabase
+      .schema("resupply")
+      .from("csr_compliance_alerts")
+      .select("id")
+      .eq("patient_id", patientId)
+      .eq("alert_type", "resupply_too_soon")
+      .eq("status", "open")
+      .limit(1)
+      .maybeSingle();
+    if (existing) return;
+    await supabase
+      .schema("resupply")
+      .from("csr_compliance_alerts")
+      .insert({
+        patient_id: patientId,
+        alert_type: "resupply_too_soon",
+        severity: "warning",
+        summary: `Reorder blocked — ${entitlement.hcpcsCode} not yet payable. ${entitlement.reason}`,
+        metric_snapshot: {
+          hcpcsCode: entitlement.hcpcsCode,
+          skuPrefix: entitlement.skuPrefix,
+          status: entitlement.status,
+          daysUntilEligible: entitlement.daysUntilEligible,
+          eligibleOn: entitlement.eligibleOn.toISOString(),
+        } as unknown as Json,
+      });
+  } catch (err) {
+    logger.warn(
+      {
+        event: "resupply.entitlement.alert_failed",
+        errName: err instanceof Error ? err.name : "unknown",
+      },
+      "resupply: failed to raise too-soon CSR alert",
+    );
+  }
 }
 
 /**
