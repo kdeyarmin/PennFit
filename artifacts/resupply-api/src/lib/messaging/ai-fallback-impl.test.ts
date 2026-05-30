@@ -100,7 +100,9 @@ describe("createOpenAiFallbackAdapter — happy path", () => {
     const adapter = createOpenAiFallbackAdapter({
       apiKey: "sk-test",
       fetchImpl: async () =>
-        jsonResponse(openAiSuccessBody("decline", "No problem, we'll hold off.")),
+        jsonResponse(
+          openAiSuccessBody("decline", "No problem, we'll hold off."),
+        ),
     });
     const result = await adapter.classify({ body: "I don't need it" });
     expect(result.intent).toBe("decline");
@@ -112,7 +114,9 @@ describe("createOpenAiFallbackAdapter — happy path", () => {
       apiKey: "sk-test",
       fetchImpl: async () =>
         jsonResponse({
-          choices: [{ message: { content: JSON.stringify({ intent: "banana" }) } }],
+          choices: [
+            { message: { content: JSON.stringify({ intent: "banana" }) } },
+          ],
         }),
     });
     const result = await adapter.classify({ body: "???" });
@@ -320,7 +324,10 @@ describe("createAnthropicFallbackAdapter — happy path", () => {
       fetchImpl: async () =>
         jsonResponse(
           anthropicSuccessResponse(
-            JSON.stringify({ intent: "confirm", reply: "Got it, shipping today!" }),
+            JSON.stringify({
+              intent: "confirm",
+              reply: "Got it, shipping today!",
+            }),
           ),
         ),
     });
@@ -364,7 +371,10 @@ describe("createAnthropicFallbackAdapter — retry via sendWithRetry (PR change)
         if (calls === 1) {
           // Anthropic 429 body
           return new Response(
-            JSON.stringify({ type: "error", error: { type: "rate_limit_error", message: "rate limit" } }),
+            JSON.stringify({
+              type: "error",
+              error: { type: "rate_limit_error", message: "rate limit" },
+            }),
             { status: 429, headers: { "content-type": "application/json" } },
           );
         }
@@ -563,7 +573,11 @@ describe("parseModelOutput — confidence field (PR change)", () => {
       content: [
         {
           type: "text",
-          text: JSON.stringify({ intent: "decline", reply: "No worries!", confidence: 0.88 }),
+          text: JSON.stringify({
+            intent: "decline",
+            reply: "No worries!",
+            confidence: 0.88,
+          }),
         },
       ],
       stop_reason: "end_turn",
@@ -663,7 +677,10 @@ describe("_makeMultiFetch — renamed stub helper (PR change)", () => {
 
   it("sticks on the last response when the list is exhausted (over-call does not crash)", async () => {
     const last = new Response("last", { status: 503 });
-    const fetchFn = _makeMultiFetch([new Response("first", { status: 200 }), last]);
+    const fetchFn = _makeMultiFetch([
+      new Response("first", { status: 200 }),
+      last,
+    ]);
     await fetchFn("https://example.com", {}); // first
     const r2 = await fetchFn("https://example.com", {}); // last
     const r3 = await fetchFn("https://example.com", {}); // still last (exhausted)

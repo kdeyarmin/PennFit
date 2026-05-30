@@ -48,10 +48,7 @@ import crypto from "node:crypto";
 
 import type { NextFunction, Request, Response } from "express";
 
-import {
-  bufferToHexBytea,
-  hexByteaToBuffer,
-} from "@workspace/resupply-auth";
+import { bufferToHexBytea, hexByteaToBuffer } from "@workspace/resupply-auth";
 import {
   getSupabaseServiceRoleClient,
   type Json,

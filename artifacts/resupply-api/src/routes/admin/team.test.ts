@@ -67,7 +67,9 @@ describe("team.ts invite response — includes signInReady", () => {
   });
 
   it("invite response includes inviteLink field (null when emailSent)", () => {
-    expect(SRC).toContain("inviteLink: invite.emailSent ? null : invite.inviteLink");
+    expect(SRC).toContain(
+      "inviteLink: invite.emailSent ? null : invite.inviteLink",
+    );
   });
 });
 

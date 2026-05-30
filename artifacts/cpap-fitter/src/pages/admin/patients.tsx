@@ -85,17 +85,8 @@ export function PatientsPage() {
   // Filter + offset state. useFilteredList owns the "reset offset to
   // 0 on any filter change" invariant — pagination state still lives
   // here, but the page can never forget to reset it.
-  const {
-    filters,
-    setFilter,
-    clearFilters,
-    offset,
-    setOffset,
-    pageSize,
-  } = useFilteredList(
-    { status: "", search: "" },
-    { pageSize: PAGE_SIZE },
-  );
+  const { filters, setFilter, clearFilters, offset, setOffset, pageSize } =
+    useFilteredList({ status: "", search: "" }, { pageSize: PAGE_SIZE });
   const { status: statusFilter, search } = filters;
   // Search-input is debounced into filters.search so we don't hammer
   // the API while the admin is mid-type. The input value is pure UI

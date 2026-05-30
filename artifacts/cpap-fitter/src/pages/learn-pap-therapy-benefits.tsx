@@ -144,9 +144,9 @@ export function LearnPapTherapyBenefits() {
         </h1>
         <p className="text-lg text-muted-foreground leading-relaxed">
           PAP therapy isn&apos;t a one-night fix and it isn&apos;t a six-month
-          slog. The benefits arrive in distinct waves over the first year —
-          some within hours, some that take quarters to settle in. Here&apos;s
-          what the published literature and our own patient cohort consistently
+          slog. The benefits arrive in distinct waves over the first year — some
+          within hours, some that take quarters to settle in. Here&apos;s what
+          the published literature and our own patient cohort consistently
           report.
         </p>
       </header>
@@ -249,8 +249,8 @@ export function LearnPapTherapyBenefits() {
               </span>{" "}
               — most nights, most of the night. Patients who average four or
               more hours per night, five-plus nights a week, get the
-              cardiovascular and metabolic outcomes the studies report.
-              Patients who can&apos;t tolerate their mask don&apos;t.
+              cardiovascular and metabolic outcomes the studies report. Patients
+              who can&apos;t tolerate their mask don&apos;t.
             </p>
             <p className="text-muted-foreground leading-relaxed">
               That&apos;s why fit matters. A mask that wakes you up at 3am
@@ -326,9 +326,9 @@ export function LearnPapTherapyBenefits() {
       </div>
 
       <p className="text-xs text-muted-foreground/80 leading-relaxed mt-12 max-w-2xl mx-auto text-center">
-        Educational content only — not medical advice. Individual results
-        vary. Specific medication and treatment decisions should always
-        involve your physician.
+        Educational content only — not medical advice. Individual results vary.
+        Specific medication and treatment decisions should always involve your
+        physician.
       </p>
     </div>
   );

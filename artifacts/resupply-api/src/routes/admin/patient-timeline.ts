@@ -72,9 +72,7 @@ router.get(
       supabase
         .schema("resupply")
         .from("fulfillments")
-        .select(
-          "id, item_sku, status, shipped_at, delivered_at, created_at",
-        )
+        .select("id, item_sku, status, shipped_at, delivered_at, created_at")
         .eq("patient_id", patientId)
         .order("created_at", { ascending: false })
         .limit(50),

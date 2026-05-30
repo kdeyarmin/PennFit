@@ -51,8 +51,8 @@ router.get("/shop/me/dashboard", requireSignedIn, async (req, res) => {
 
   // All four reads run concurrently — they're independent and indexed
   // on customer_id.
-  const [subsRes, latestOrderRes, pendingOrdersRes, cartRes] = await Promise.all(
-    [
+  const [subsRes, latestOrderRes, pendingOrdersRes, cartRes] =
+    await Promise.all([
       supabase
         .schema("resupply")
         .from("shop_subscriptions")
@@ -83,8 +83,7 @@ router.get("/shop/me/dashboard", requireSignedIn, async (req, res) => {
         .eq("customer_id", customerId)
         .limit(1)
         .maybeSingle(),
-    ],
-  );
+    ]);
   if (subsRes.error) throw subsRes.error;
   if (latestOrderRes.error) throw latestOrderRes.error;
   if (pendingOrdersRes.error) throw pendingOrdersRes.error;

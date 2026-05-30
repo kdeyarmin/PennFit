@@ -54,9 +54,13 @@ afterEach(() => {
 
 describe("messageTemplateLookup", () => {
   it("returns the global as-is when there's no override", async () => {
-    stageSupabaseResponse("shop_customer_message_template_overrides", "select", {
-      data: null,
-    });
+    stageSupabaseResponse(
+      "shop_customer_message_template_overrides",
+      "select",
+      {
+        data: null,
+      },
+    );
     stageSupabaseResponse("message_templates", "select", {
       data: SAMPLE_GLOBAL,
     });
@@ -76,23 +80,27 @@ describe("messageTemplateLookup", () => {
   });
 
   it("layers an active override per-field over the global", async () => {
-    stageSupabaseResponse("shop_customer_message_template_overrides", "select", {
-      data: {
-        id: "o_1",
-        customer_id: "cust_a",
-        template_key: "rx_renewal.30_day",
-        channel: "email",
-        subject: "Personalised renewal note",
-        body_html: null,
-        body_text: null,
-        is_active: true,
-        note: "patient asked for friendlier subject",
-        created_at: new Date().toISOString(),
-        created_by: null,
-        updated_at: new Date().toISOString(),
-        updated_by: null,
+    stageSupabaseResponse(
+      "shop_customer_message_template_overrides",
+      "select",
+      {
+        data: {
+          id: "o_1",
+          customer_id: "cust_a",
+          template_key: "rx_renewal.30_day",
+          channel: "email",
+          subject: "Personalised renewal note",
+          body_html: null,
+          body_text: null,
+          is_active: true,
+          note: "patient asked for friendlier subject",
+          created_at: new Date().toISOString(),
+          created_by: null,
+          updated_at: new Date().toISOString(),
+          updated_by: null,
+        },
       },
-    });
+    );
     stageSupabaseResponse("message_templates", "select", {
       data: SAMPLE_GLOBAL,
     });
@@ -112,23 +120,27 @@ describe("messageTemplateLookup", () => {
   });
 
   it("disabled override returns an empty-body synthetic (suppress)", async () => {
-    stageSupabaseResponse("shop_customer_message_template_overrides", "select", {
-      data: {
-        id: "o_1",
-        customer_id: "cust_a",
-        template_key: "rx_renewal.30_day",
-        channel: "email",
-        subject: null,
-        body_html: null,
-        body_text: null,
-        is_active: false,
-        note: "opted out of email rx renewals",
-        created_at: new Date().toISOString(),
-        created_by: null,
-        updated_at: new Date().toISOString(),
-        updated_by: null,
+    stageSupabaseResponse(
+      "shop_customer_message_template_overrides",
+      "select",
+      {
+        data: {
+          id: "o_1",
+          customer_id: "cust_a",
+          template_key: "rx_renewal.30_day",
+          channel: "email",
+          subject: null,
+          body_html: null,
+          body_text: null,
+          is_active: false,
+          note: "opted out of email rx renewals",
+          created_at: new Date().toISOString(),
+          created_by: null,
+          updated_at: new Date().toISOString(),
+          updated_by: null,
+        },
       },
-    });
+    );
     stageSupabaseResponse("message_templates", "select", {
       data: SAMPLE_GLOBAL,
     });
@@ -148,9 +160,13 @@ describe("messageTemplateLookup", () => {
   });
 
   it("disabled global is treated as missing (fallback path will run)", async () => {
-    stageSupabaseResponse("shop_customer_message_template_overrides", "select", {
-      data: null,
-    });
+    stageSupabaseResponse(
+      "shop_customer_message_template_overrides",
+      "select",
+      {
+        data: null,
+      },
+    );
     stageSupabaseResponse("message_templates", "select", {
       data: { ...SAMPLE_GLOBAL, is_active: false },
     });
@@ -163,9 +179,13 @@ describe("messageTemplateLookup", () => {
   });
 
   it("returns null when both tables are empty", async () => {
-    stageSupabaseResponse("shop_customer_message_template_overrides", "select", {
-      data: null,
-    });
+    stageSupabaseResponse(
+      "shop_customer_message_template_overrides",
+      "select",
+      {
+        data: null,
+      },
+    );
     stageSupabaseResponse("message_templates", "select", { data: null });
     const result = await messageTemplateLookup(
       "rx_renewal.30_day",
@@ -176,9 +196,13 @@ describe("messageTemplateLookup", () => {
   });
 
   it("returns null when the lookup throws (DB outage / missing table)", async () => {
-    stageSupabaseResponse("shop_customer_message_template_overrides", "select", {
-      data: null,
-    });
+    stageSupabaseResponse(
+      "shop_customer_message_template_overrides",
+      "select",
+      {
+        data: null,
+      },
+    );
     stageSupabaseResponse("message_templates", "select", {
       error: new Error('relation "message_templates" does not exist'),
     });
@@ -203,7 +227,10 @@ describe("messageTemplateLookup", () => {
       null,
     );
     expect(
-      getSupabaseCallCount("shop_customer_message_template_overrides", "select"),
+      getSupabaseCallCount(
+        "shop_customer_message_template_overrides",
+        "select",
+      ),
     ).toBe(0);
     expect(result?.bodyText).toBe("Renew your Rx");
   });

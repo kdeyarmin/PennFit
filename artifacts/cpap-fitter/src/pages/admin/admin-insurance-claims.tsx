@@ -112,22 +112,12 @@ const VALID_TRANSITIONS: Record<
  *
  * @returns The React element for the admin insurance claims page scoped to the given patient ID.
  */
-export function AdminInsuranceClaimsPage({
-  patientId,
-}: {
-  patientId: string;
-}) {
+export function AdminInsuranceClaimsPage({ patientId }: { patientId: string }) {
   const [, setLocation] = useLocation();
   const [showCreate, setShowCreate] = useState(false);
   const [openClaimId, setOpenClaimId] = useState<string | null>(null);
 
-  const {
-    data,
-    isPending,
-    isError,
-    error,
-    refetch,
-  } = useQuery({
+  const { data, isPending, isError, error, refetch } = useQuery({
     queryKey: ["admin", "insurance-claims", patientId],
     queryFn: () => listInsuranceClaims(patientId),
   });
@@ -152,9 +142,9 @@ export function AdminInsuranceClaimsPage({
             className="text-sm mt-1 max-w-2xl"
             style={{ color: "hsl(var(--ink-3))" }}
           >
-            Every payer claim filed for this patient, with totals, EOB
-            history, and per-HCPCS line accounting. Open a row to
-            review line items or post an EOB receipt.
+            Every payer claim filed for this patient, with totals, EOB history,
+            and per-HCPCS line accounting. Open a row to review line items or
+            post an EOB receipt.
           </p>
         </div>
         <Button onClick={() => setShowCreate(true)}>
@@ -174,8 +164,8 @@ export function AdminInsuranceClaimsPage({
             style={{ color: "hsl(var(--ink-3))" }}
             data-testid="insurance-claims-empty"
           >
-            No claims on file. Start a draft above when you dispense
-            equipment that will be billed to insurance.
+            No claims on file. Start a draft above when you dispense equipment
+            that will be billed to insurance.
           </p>
         ) : (
           <ul className="space-y-3">
@@ -243,10 +233,7 @@ function ClaimRow({
                 {STATUS_LABEL[claim.status]}
               </span>
             </div>
-            <p
-              className="text-xs"
-              style={{ color: "hsl(var(--ink-3))" }}
-            >
+            <p className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
               DOS {claim.dateOfService}
               {claim.claimNumber ? ` · #${claim.claimNumber}` : ""}
             </p>
@@ -322,19 +309,13 @@ function CreateClaimDialog({
         <h2 id="create-claim-title" className="text-lg font-semibold">
           New insurance claim
         </h2>
-        <p
-          className="text-sm"
-          style={{ color: "hsl(var(--ink-3))" }}
-        >
-          Capture the payer + date of service. The claim opens in draft
-          state; add HCPCS line items and transition to submitted from
-          the row.
+        <p className="text-sm" style={{ color: "hsl(var(--ink-3))" }}>
+          Capture the payer + date of service. The claim opens in draft state;
+          add HCPCS line items and transition to submitted from the row.
         </p>
         <div className="space-y-3">
           <label className="block">
-            <span className="text-xs font-medium block mb-1">
-              Payer name
-            </span>
+            <span className="text-xs font-medium block mb-1">Payer name</span>
             <Input
               value={payerName}
               onChange={(e) => setPayerName(e.target.value)}
@@ -380,9 +361,7 @@ function CreateClaimDialog({
             />
           </label>
         </div>
-        {error && (
-          <p className="text-sm text-rose-600">{error}</p>
-        )}
+        {error && <p className="text-sm text-rose-600">{error}</p>}
         <div className="flex justify-end gap-2 pt-2">
           <Button intent="ghost" onClick={onClose}>
             Cancel
@@ -570,10 +549,7 @@ function ClaimDrawerContent({
   preflightLoading: boolean;
   submitting: boolean;
   submitResult: SubmitClaimToOfficeAllyResponse | { error: string } | null;
-  onTransition: (
-    to: InsuranceClaimStatus,
-    denialReason: string | null,
-  ) => void;
+  onTransition: (to: InsuranceClaimStatus, denialReason: string | null) => void;
   onAddLine: (body: CreateInsuranceClaimLineRequest) => void;
   onAddEvent: (body: CreateInsuranceClaimEventRequest) => void;
   onSubmitToOfficeAlly: () => void;
@@ -661,7 +637,10 @@ function ClaimDrawerContent({
                     {l.modifier ? ` ${l.modifier}` : ""}
                     {l.quantity > 1 ? ` ×${l.quantity}` : ""}
                   </span>
-                  <span className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
+                  <span
+                    className="text-xs"
+                    style={{ color: "hsl(var(--ink-3))" }}
+                  >
                     {l.status}
                   </span>
                 </div>
@@ -787,10 +766,7 @@ function OfficeAllySubmitPanel({
       ) : preflight ? (
         <PreflightChecklist items={preflight.items} />
       ) : (
-        <p
-          className="text-[12px]"
-          style={{ color: "hsl(var(--ink-3))" }}
-        >
+        <p className="text-[12px]" style={{ color: "hsl(var(--ink-3))" }}>
           Preflight unavailable.
         </p>
       )}
@@ -805,21 +781,16 @@ function OfficeAllySubmitPanel({
           {submitting ? "Submitting…" : "Submit to Office Ally"}
         </Button>
         {preflight && !ready && (
-          <p
-            className="text-[12px]"
-            style={{ color: "#be123c" }}
-          >
+          <p className="text-[12px]" style={{ color: "#be123c" }}>
             {preflight.errorCount}{" "}
             {preflight.errorCount === 1 ? "blocker" : "blockers"} above.
           </p>
         )}
         {preflight && ready && preflight.warningCount > 0 && (
-          <p
-            className="text-[12px]"
-            style={{ color: "#b45309" }}
-          >
+          <p className="text-[12px]" style={{ color: "#b45309" }}>
             {preflight.warningCount}{" "}
-            {preflight.warningCount === 1 ? "warning" : "warnings"} — review before submit.
+            {preflight.warningCount === 1 ? "warning" : "warnings"} — review
+            before submit.
           </p>
         )}
       </div>
@@ -881,11 +852,7 @@ function PreflightChecklist({ items }: { items: PreflightItem[] }) {
   );
 }
 
-function PreflightIcon({
-  severity,
-}: {
-  severity: PreflightItem["severity"];
-}) {
+function PreflightIcon({ severity }: { severity: PreflightItem["severity"] }) {
   const map = {
     ok: { fg: "#15803d", glyph: "✓" },
     warning: { fg: "#b45309", glyph: "!" },

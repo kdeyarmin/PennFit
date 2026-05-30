@@ -18,11 +18,7 @@
 
 import { useState } from "react";
 import { Link } from "wouter";
-import {
-  useMutation,
-  useQuery,
-  useQueryClient,
-} from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { Card } from "@/components/admin/Card";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
@@ -67,7 +63,8 @@ export function AdminBillingOfficeAllyPage() {
           Office Ally Operations
         </h1>
         <p className="text-sm" style={{ color: "hsl(var(--ink-2))" }}>
-          Outbound 837P submissions, inbound acks (999 / 277CA / 835 / 271), and clearinghouse connection — all in one place.
+          Outbound 837P submissions, inbound acks (999 / 277CA / 835 / 271), and
+          clearinghouse connection — all in one place.
         </p>
       </header>
 
@@ -157,7 +154,8 @@ function PayerStatsCard() {
                   <td
                     className="p-2 text-right tabular-nums"
                     style={{
-                      color: p.rejectedCount > 0 ? "#be123c" : "hsl(var(--ink-3))",
+                      color:
+                        p.rejectedCount > 0 ? "#be123c" : "hsl(var(--ink-3))",
                     }}
                   >
                     {p.rejectedCount}
@@ -165,7 +163,10 @@ function PayerStatsCard() {
                   <td
                     className="p-2 text-right tabular-nums"
                     style={{
-                      color: p.transportFailedCount > 0 ? "#b45309" : "hsl(var(--ink-3))",
+                      color:
+                        p.transportFailedCount > 0
+                          ? "#b45309"
+                          : "hsl(var(--ink-3))",
                     }}
                   >
                     {p.transportFailedCount}
@@ -191,12 +192,9 @@ function PayerStatsCard() {
 
 function AcceptanceCell({ pct }: { pct: number | null }) {
   if (pct == null) {
-    return (
-      <span style={{ color: "hsl(var(--ink-3))" }}>—</span>
-    );
+    return <span style={{ color: "hsl(var(--ink-3))" }}>—</span>;
   }
-  const color =
-    pct >= 95 ? "#15803d" : pct >= 85 ? "#b45309" : "#be123c";
+  const color = pct >= 95 ? "#15803d" : pct >= 85 ? "#b45309" : "#be123c";
   return <span style={{ color }}>{pct}%</span>;
 }
 
@@ -232,10 +230,7 @@ function HealthBanner() {
       <p className="text-sm font-semibold" style={{ color: tone.fg }}>
         {headline}
       </p>
-      <p
-        className="text-[12px] mt-0.5"
-        style={{ color: "hsl(var(--ink-2))" }}
-      >
+      <p className="text-[12px] mt-0.5" style={{ color: "hsl(var(--ink-2))" }}>
         {body}
       </p>
     </div>
@@ -301,8 +296,16 @@ function KpiRow() {
       className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6"
       data-testid="oa-kpi-row"
     >
-      <KpiTile label="Submissions (30d)" value={data?.counts.totalSubmissions} loading={isPending} />
-      <KpiTile label="Claims (30d)" value={data?.counts.totalClaims} loading={isPending} />
+      <KpiTile
+        label="Submissions (30d)"
+        value={data?.counts.totalSubmissions}
+        loading={isPending}
+      />
+      <KpiTile
+        label="Claims (30d)"
+        value={data?.counts.totalClaims}
+        loading={isPending}
+      />
       <KpiTile
         label="Acceptance"
         value={
@@ -312,7 +315,8 @@ function KpiRow() {
         }
         loading={isPending}
         tone={
-          data?.rates.acceptanceRatePct != null && data.rates.acceptanceRatePct < 90
+          data?.rates.acceptanceRatePct != null &&
+          data.rates.acceptanceRatePct < 90
             ? "alert"
             : "ok"
         }
@@ -333,7 +337,8 @@ function KpiRow() {
         value={data?.counts.transportFailed}
         loading={isPending}
         tone={
-          data?.counts.transportFailed != null && data.counts.transportFailed > 0
+          data?.counts.transportFailed != null &&
+          data.counts.transportFailed > 0
             ? "alert"
             : "neutral"
         }
@@ -422,16 +427,17 @@ function EnrollmentWatchlistBanner() {
       data-testid="oa-enrollment-watchlist-banner"
     >
       <p className="text-sm font-semibold" style={{ color: "#b45309" }}>
-        ⚠ {payers.length}{" "}
-        {payers.length === 1 ? "payer is" : "payers are"} awaiting Office Ally enrollment
+        ⚠ {payers.length} {payers.length === 1 ? "payer is" : "payers are"}{" "}
+        awaiting Office Ally enrollment
       </p>
       <p
         className="text-[12px] mt-0.5 mb-2"
         style={{ color: "hsl(var(--ink-2))" }}
       >
-        Claims to these payers will be blocked at preflight until the enrollment status is updated to{" "}
-        <code className="font-mono text-[11px]">enrolled</code>{" "}
-        in the payer catalog.
+        Claims to these payers will be blocked at preflight until the enrollment
+        status is updated to{" "}
+        <code className="font-mono text-[11px]">enrolled</code> in the payer
+        catalog.
       </p>
       <ul className="text-[12px] space-y-0.5">
         {payers.slice(0, 8).map((p) => (
@@ -518,9 +524,7 @@ function SubmissionsSection() {
 
   // Drop selections that no longer match the current view (filter
   // changed, refresh evicted, etc) so the bulk bar stays accurate.
-  const visibleIds = new Set(
-    (data?.submissions ?? []).map((s) => s.id),
-  );
+  const visibleIds = new Set((data?.submissions ?? []).map((s) => s.id));
   const activeSelections = new Set(
     [...selectedIds].filter((id) => visibleIds.has(id)),
   );
@@ -620,10 +624,7 @@ function SubmissionsSection() {
         >
           ↓ CSV (90d)
         </a>
-        <p
-          className="text-xs ml-auto"
-          style={{ color: "hsl(var(--ink-3))" }}
-        >
+        <p className="text-xs ml-auto" style={{ color: "hsl(var(--ink-3))" }}>
           {data?.submissions.length ?? 0} shown
         </p>
       </div>
@@ -723,7 +724,10 @@ function BulkActionBar({
       }}
       data-testid="oa-submissions-bulk-bar"
     >
-      <p className="text-sm font-semibold" style={{ color: "hsl(var(--ink-1))" }}>
+      <p
+        className="text-sm font-semibold"
+        style={{ color: "hsl(var(--ink-1))" }}
+      >
         {selectedCount} selected
       </p>
       <button
@@ -855,10 +859,7 @@ function SubmissionRow({
       <td className="p-2">
         <SubmissionStatusBadge status={s.status} />
         {s.rejectionReason && (
-          <p
-            className="mt-1 text-[10px] max-w-xs"
-            style={{ color: "#be123c" }}
-          >
+          <p className="mt-1 text-[10px] max-w-xs" style={{ color: "#be123c" }}>
             {s.rejectionReason.slice(0, 200)}
           </p>
         )}
@@ -891,21 +892,22 @@ function SubmissionRow({
           >
             ↓ Raw 837P
           </a>
-          {s.status === "transport_failed" && s.attemptedClaimIds.length > 0 && (
-            <button
-              type="button"
-              onClick={() => {
-                setActionMsg(null);
-                resubmitMutation.mutate();
-              }}
-              disabled={resubmitMutation.isPending}
-              className="text-[12px] font-semibold hover:underline disabled:opacity-60 whitespace-nowrap"
-              style={{ color: "#15803d" }}
-              data-testid={`oa-submission-resubmit-${s.id}`}
-            >
-              {resubmitMutation.isPending ? "Resubmitting…" : "↻ Resubmit"}
-            </button>
-          )}
+          {s.status === "transport_failed" &&
+            s.attemptedClaimIds.length > 0 && (
+              <button
+                type="button"
+                onClick={() => {
+                  setActionMsg(null);
+                  resubmitMutation.mutate();
+                }}
+                disabled={resubmitMutation.isPending}
+                className="text-[12px] font-semibold hover:underline disabled:opacity-60 whitespace-nowrap"
+                style={{ color: "#15803d" }}
+                data-testid={`oa-submission-resubmit-${s.id}`}
+              >
+                {resubmitMutation.isPending ? "Resubmitting…" : "↻ Resubmit"}
+              </button>
+            )}
           {actionMsg && (
             <p
               className="text-[10px] max-w-[160px] text-right"
@@ -966,14 +968,15 @@ function SubmissionStatusBadge({ status }: { status: OaSubmissionStatus }) {
 
 // ── Inbound ack files ──────────────────────────────────────────────
 
-const FILE_KIND_OPTIONS: Array<{ value: "" | InboundFileKind; label: string }> = [
-  { value: "", label: "All kinds" },
-  { value: "999", label: "999 (sync ack)" },
-  { value: "277ca", label: "277CA (claim status)" },
-  { value: "835", label: "835 (ERA)" },
-  { value: "271", label: "271 (eligibility)" },
-  { value: "unknown", label: "Unknown" },
-];
+const FILE_KIND_OPTIONS: Array<{ value: "" | InboundFileKind; label: string }> =
+  [
+    { value: "", label: "All kinds" },
+    { value: "999", label: "999 (sync ack)" },
+    { value: "277ca", label: "277CA (claim status)" },
+    { value: "835", label: "835 (ERA)" },
+    { value: "271", label: "271 (eligibility)" },
+    { value: "unknown", label: "Unknown" },
+  ];
 
 function InboundFilesSection() {
   const [kind, setKind] = useState<"" | InboundFileKind>("");
@@ -1022,10 +1025,7 @@ function InboundFilesSection() {
         >
           ↑ Upload ack file
         </button>
-        <p
-          className="text-xs ml-auto"
-          style={{ color: "hsl(var(--ink-3))" }}
-        >
+        <p className="text-xs ml-auto" style={{ color: "hsl(var(--ink-3))" }}>
           {data?.files.length ?? 0} shown
         </p>
       </div>
@@ -1042,7 +1042,8 @@ function InboundFilesSection() {
         <Spinner label="Loading inbound files…" />
       ) : (data?.files.length ?? 0) === 0 ? (
         <p className="text-sm" style={{ color: "hsl(var(--ink-3))" }}>
-          No inbound files. The poller runs every 15 minutes; use Poll now below to fetch on demand.
+          No inbound files. The poller runs every 15 minutes; use Poll now below
+          to fetch on demand.
         </p>
       ) : (
         <div className="overflow-x-auto">
@@ -1155,7 +1156,12 @@ function UploadAckModal({
   const [content, setContent] = useState("");
   const [fileName, setFileName] = useState("");
   const [result, setResult] = useState<
-    | { ok: true; inboundFileId: string; fileKind: string; fileSizeBytes: number }
+    | {
+        ok: true;
+        inboundFileId: string;
+        fileKind: string;
+        fileSizeBytes: number;
+      }
     | { error: string }
     | null
   >(null);
@@ -1230,11 +1236,10 @@ function UploadAckModal({
             >
               Upload Office Ally ack file
             </h2>
-            <p
-              className="text-[12px]"
-              style={{ color: "hsl(var(--ink-3))" }}
-            >
-              Drop a 999 / 277CA / 835 / 271 file we received out-of-band (email, support ticket, manual SFTP grab). The backend classifies + dispatches it the same way the cron poller does.
+            <p className="text-[12px]" style={{ color: "hsl(var(--ink-3))" }}>
+              Drop a 999 / 277CA / 835 / 271 file we received out-of-band
+              (email, support ticket, manual SFTP grab). The backend classifies
+              + dispatches it the same way the cron poller does.
             </p>
           </div>
           <button
@@ -1260,7 +1265,9 @@ function UploadAckModal({
             </p>
             <p className="text-[12px]" style={{ color: "hsl(var(--ink-2))" }}>
               {result.fileSizeBytes} bytes · inbound file id{" "}
-              <code className="font-mono text-[11px]">{result.inboundFileId}</code>
+              <code className="font-mono text-[11px]">
+                {result.inboundFileId}
+              </code>
             </p>
             <button
               type="button"
@@ -1328,7 +1335,8 @@ function UploadAckModal({
                 className="mt-1 block text-[10px]"
                 style={{ color: "hsl(var(--ink-3))" }}
               >
-                Must start with ISA and contain ST*999, ST*277, ST*835, or ST*271 in the first 4 KB.
+                Must start with ISA and contain ST*999, ST*277, ST*835, or
+                ST*271 in the first 4 KB.
               </span>
             </label>
 
@@ -1369,21 +1377,15 @@ function UploadAckModal({
   );
 }
 
-function DispatchBadge({
-  status,
-}: {
-  status: InboundFile["dispatchStatus"];
-}) {
-  const map: Record<
-    InboundFile["dispatchStatus"],
-    { bg: string; fg: string }
-  > = {
-    pending: { bg: "rgba(100,116,139,0.16)", fg: "#475569" },
-    parsed: { bg: "rgba(2,132,199,0.16)", fg: "#0284c7" },
-    dispatched: { bg: "rgba(21,128,61,0.14)", fg: "#15803d" },
-    dispatch_failed: { bg: "rgba(190,18,60,0.14)", fg: "#be123c" },
-    skipped: { bg: "rgba(180,83,9,0.18)", fg: "#b45309" },
-  };
+function DispatchBadge({ status }: { status: InboundFile["dispatchStatus"] }) {
+  const map: Record<InboundFile["dispatchStatus"], { bg: string; fg: string }> =
+    {
+      pending: { bg: "rgba(100,116,139,0.16)", fg: "#475569" },
+      parsed: { bg: "rgba(2,132,199,0.16)", fg: "#0284c7" },
+      dispatched: { bg: "rgba(21,128,61,0.14)", fg: "#15803d" },
+      dispatch_failed: { bg: "rgba(190,18,60,0.14)", fg: "#be123c" },
+      skipped: { bg: "rgba(180,83,9,0.18)", fg: "#b45309" },
+    };
   const c = map[status];
   return (
     <span
@@ -1429,25 +1431,16 @@ function ClearinghousesSection() {
         >
           {pollMutation.isPending ? "Polling…" : "↓ Poll Office Ally now"}
         </button>
-        <p
-          className="text-xs"
-          style={{ color: "hsl(var(--ink-3))" }}
-        >
+        <p className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
           Manually fires the inbound poller (cron also runs it every 15 min).
         </p>
         {pollMutation.data && (
-          <p
-            className="text-xs ml-auto"
-            style={{ color: "#15803d" }}
-          >
+          <p className="text-xs ml-auto" style={{ color: "#15803d" }}>
             Last poll: {JSON.stringify(pollMutation.data.stats)}
           </p>
         )}
         {pollMutation.error && (
-          <p
-            className="text-xs ml-auto"
-            style={{ color: "#be123c" }}
-          >
+          <p className="text-xs ml-auto" style={{ color: "#be123c" }}>
             Poll failed: {String(pollMutation.error)}
           </p>
         )}
@@ -1459,8 +1452,10 @@ function ClearinghousesSection() {
         <Spinner label="Loading clearinghouses…" />
       ) : (data?.clearinghouses.length ?? 0) === 0 ? (
         <p className="text-sm" style={{ color: "hsl(var(--ink-3))" }}>
-          No clearinghouse credentials configured. Add one via the
-          {" "}<code className="font-mono text-[11px]">POST /admin/clearinghouse-credentials</code>{" "}
+          No clearinghouse credentials configured. Add one via the{" "}
+          <code className="font-mono text-[11px]">
+            POST /admin/clearinghouse-credentials
+          </code>{" "}
           backend route (or set the OFFICE_ALLY_* env vars for stub mode).
         </p>
       ) : (
@@ -1564,11 +1559,7 @@ function ClearinghouseCard({ c }: { c: ClearinghouseRow }) {
   );
 }
 
-function ConnectionResultBadge({
-  result,
-}: {
-  result: ConnectionTestResult;
-}) {
+function ConnectionResultBadge({ result }: { result: ConnectionTestResult }) {
   if (result.ok) {
     return (
       <p className="text-[11px]" style={{ color: "#15803d" }}>

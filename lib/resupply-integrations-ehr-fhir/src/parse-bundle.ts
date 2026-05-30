@@ -192,15 +192,12 @@ export function parseFhirBundle(input: unknown): ParseBundleOutcome {
     (resources[r.resourceType] ??= []).push(r);
   }
 
-  const sr = (resources.ServiceRequest?.[0] ?? null) as FhirServiceRequest | null;
+  const sr = (resources.ServiceRequest?.[0] ??
+    null) as FhirServiceRequest | null;
   if (!sr) return { ok: false, reason: "no_service_request" };
   if (!sr.id) return { ok: false, reason: "service_request_missing_id" };
 
-  const patient = pickReferenced<FhirPatient>(
-    resources,
-    "Patient",
-    sr.subject,
-  );
+  const patient = pickReferenced<FhirPatient>(resources, "Patient", sr.subject);
   if (!patient) return { ok: false, reason: "no_subject_patient" };
 
   const practitioner = pickReferenced<FhirPractitioner>(
@@ -209,8 +206,7 @@ export function parseFhirBundle(input: unknown): ParseBundleOutcome {
     sr.requester,
   );
   const coverage = (resources.Coverage?.[0] ?? null) as FhirCoverage | null;
-  const conditions =
-    (resources.Condition as FhirCondition[] | undefined) ?? [];
+  const conditions = (resources.Condition as FhirCondition[] | undefined) ?? [];
   const docs =
     (resources.DocumentReference as FhirDocumentReference[] | undefined) ?? [];
 
@@ -245,7 +241,8 @@ export function parseFhirBundle(input: unknown): ParseBundleOutcome {
 
   // Provider NPI.
   const npi =
-    practitioner?.identifier?.find((i) => i.system === NPI_SYSTEM)?.value ?? null;
+    practitioner?.identifier?.find((i) => i.system === NPI_SYSTEM)?.value ??
+    null;
 
   // Documents.
   const documents = docs.map((d): ParachuteOrder["documents"][number] => {
@@ -316,7 +313,9 @@ function pickReferenced<T extends FhirResource>(
   );
 }
 
-function collectHcpcsLines(sr: FhirServiceRequest): ParachuteOrder["hcpcsLines"] {
+function collectHcpcsLines(
+  sr: FhirServiceRequest,
+): ParachuteOrder["hcpcsLines"] {
   const lines: ParachuteOrder["hcpcsLines"] = [];
   const primary = extractHcpcs(sr.code);
   if (primary) {
@@ -332,7 +331,12 @@ function collectHcpcsLines(sr: FhirServiceRequest): ParachuteOrder["hcpcsLines"]
   }
   for (const detail of sr.orderDetail ?? []) {
     const extra = extractHcpcs(detail);
-    if (extra && !lines.some((l: ParachuteOrder["hcpcsLines"][number]) => l.code === extra.code)) {
+    if (
+      extra &&
+      !lines.some(
+        (l: ParachuteOrder["hcpcsLines"][number]) => l.code === extra.code,
+      )
+    ) {
       lines.push({
         code: extra.code,
         modifiers: [],

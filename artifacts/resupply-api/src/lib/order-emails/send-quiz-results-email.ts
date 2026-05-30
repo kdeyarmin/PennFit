@@ -77,23 +77,20 @@ function copyForBand(band: QuizRiskBand, score: number): BandCopy {
     return {
       subject: `Your sleep apnea quiz results: ${score}/8 (lower risk)`,
       headline: "Lower likelihood of moderate-to-severe sleep apnea",
-      body:
-        "Most people who score in this range don't have moderate-to-severe sleep apnea — but if you're still tired during the day or your bed partner notices anything unusual, it's worth a quick conversation with your primary care doctor.",
+      body: "Most people who score in this range don't have moderate-to-severe sleep apnea — but if you're still tired during the day or your bed partner notices anything unusual, it's worth a quick conversation with your primary care doctor.",
     };
   }
   if (band === "intermediate") {
     return {
       subject: `Your sleep apnea quiz results: ${score}/8 (intermediate risk)`,
       headline: "Intermediate risk — worth a physician conversation",
-      body:
-        "A score in this range is worth flagging with your primary care doctor. Many insurers cover at-home sleep testing, which is far less involved than a sleep lab study.",
+      body: "A score in this range is worth flagging with your primary care doctor. Many insurers cover at-home sleep testing, which is far less involved than a sleep lab study.",
     };
   }
   return {
     subject: `Your sleep apnea quiz results: ${score}/8 (higher risk)`,
     headline: "Higher risk — please schedule a physician visit",
-    body:
-      "A score in this range is strongly associated with moderate-to-severe sleep apnea. Untreated sleep apnea is a real cardiovascular risk; we encourage you to bring this score to your primary care doctor or a sleep medicine specialist.",
+    body: "A score in this range is strongly associated with moderate-to-severe sleep apnea. Untreated sleep apnea is a real cardiovascular risk; we encourage you to bring this score to your primary care doctor or a sleep medicine specialist.",
   };
 }
 

@@ -65,7 +65,7 @@ Railway config-as-code reference confirms the fields used here are all valid:
 8. **Health endpoints** (`src/routes/health.ts`, `src/lib/readiness.ts`):
    `/resupply-api/healthz` returns `{status:"ok"}` with no DB call (correct
    deploy gate); `/resupply-api/readyz` probes Supabase (`feature_flags` HEAD)
-   + `isWorkerReady()`, 503 on failure — a monitoring signal, not the gate.
+   - `isWorkerReady()`, 503 on failure — a monitoring signal, not the gate.
 9. **`trust proxy = 1`** (`src/app.ts:42`): correct for Railway's single edge
    proxy so `req.ip` is honest for rate limiting and audit IP capture.
 10. **CORS** (`src/app.ts:67-94`): uses `RESUPPLY_ALLOWED_ORIGINS` **or**
@@ -77,7 +77,7 @@ Railway config-as-code reference confirms the fields used here are all valid:
     `cpap-fitter/dist/public/index.html` is missing — a missing SPA build can't
     silently ship.
 12. **Boot env validation** (`src/lib/env-check.ts`): `assertRequiredEnv()` runs
-    before side-effecting imports and lists *every* missing required var at once
+    before side-effecting imports and lists _every_ missing required var at once
     (`PORT`, `DATABASE_URL`, Supabase, link HMAC). Feature-gated vendors degrade
     gracefully — preview deploys don't need every credential.
 13. **Ephemeral filesystem respected:** runtime uploads (POD photos, Rx PDFs,
@@ -99,6 +99,7 @@ explicit owner decision, not a defect.
 ## Risks & recommendations
 
 ### R1 — Build-time model download fails OPEN (top finding)
+
 `artifacts/cpap-fitter/scripts/setup-mediapipe.mjs` runs as `prebuild` during
 the Railway build. It copies the MediaPipe **WASM** from `node_modules` (no
 network) but **downloads the `face_landmarker.task` model from
@@ -110,6 +111,7 @@ feature ships **silently broken**. (Also: the `sha256` in `MODELS` is a
 placeholder and is not actually verified.)
 
 Implications / actions:
+
 - Ensure the Railway **build** environment's network policy allows outbound
   `storage.googleapis.com`. If egress is restricted, the model won't vendor.
 - Because it fails open, add monitoring or a post-deploy check that
@@ -120,6 +122,7 @@ Implications / actions:
   changed here.
 
 ### R2 — Pin the Node version explicitly (range `">=24"` can fall back)
+
 Root `engines.node = ">=24"`; Railpack's documented default is **22**. Multiple
 Railway community reports describe Railpack **silently falling back to its
 default (or even Node 18)** when the requested major isn't in its package
@@ -133,6 +136,7 @@ default. Because `engines.node` is consulted **before** `.node-version`, the
 `.node-version` file this review adds only helps if Railpack falls through the
 `engines` range without resolving it — it may be ignored entirely. The only
 fully reliable override is therefore:
+
 - **Set `RAILPACK_NODE_VERSION=24` in Railway → Variables** (highest priority),
   and/or pin `engines.node` to a concrete value (e.g. `24.x`).
 - Confirm the actual Node major in the next Railway **build log** (Railpack
@@ -141,21 +145,25 @@ fully reliable override is therefore:
   used by nvm/fnm for local dev); it is **not** a substitute for the above.
 
 ### R3 — Make host binding explicit (optional, low)
+
 `src/index.ts:383` relies on Node's implicit `::` dual-stack bind. Functionally
 correct on Railway; passing `"::"` explicitly documents intent and is robust if
 a future Node default changes. Not required.
 
 ### R4 — Unused drizzle deps (cleanup, not Railway)
+
 `lib/resupply-db/package.json:16-18` still lists `drizzle-orm`/`-kit`/`-zod`
 though CLAUDE.md says Drizzle was fully retired (migrations apply via raw `pg`).
 Dead install weight; out of scope for this review.
 
 ### R5 — `.dockerignore` not used by Railpack (info)
+
 A `.dockerignore` exists but the builder is `RAILPACK` (not `DOCKERFILE`), so it
 isn't consulted. Harmless. If build-context trimming is ever wanted, Railpack
 honors `.railwayignore`.
 
 ## Bottom line
+
 Config and app are Railway-appropriate and reflect real production hardening
 (single-process API+SPA+worker, liveness-only health gate, decoupled worker,
 trust-proxy, fail-closed CORS, graceful SIGTERM). Address **R1** (the silent

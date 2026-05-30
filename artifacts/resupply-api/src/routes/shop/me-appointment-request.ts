@@ -72,7 +72,9 @@ router.get(
         preferredWindow: r.preferred_window,
         status: r.status,
         scheduledFor: r.scheduled_for,
-        meetingUrl: isMeetingUrlStillFresh(r.scheduled_for) ? r.meeting_url : null,
+        meetingUrl: isMeetingUrlStillFresh(r.scheduled_for)
+          ? r.meeting_url
+          : null,
         meetingProvider: r.meeting_provider,
         createdAt: r.created_at,
       })),

@@ -16,9 +16,9 @@ Two unrelated token types share the key (intentionally — neither carries
 enough secrecy budget to justify a second key, and ops only has one
 secret to rotate when something goes wrong).
 
-| Caller | TTL | What in-flight rotation breaks |
-| --- | --- | --- |
-| `lib/resupply-messaging/src/signed-link-tokens.ts` — email CTA tokens (`confirm` / `edit` / `stop` actions on reminder emails) | 7 days | Every reminder email sent in the rolling 7-day window: the patient clicking "Confirm order" or "Stop reminders" lands on a "this link is no longer valid" page. They CAN re-request via the storefront. |
+| Caller                                                                                                                                                     | TTL    | What in-flight rotation breaks                                                                                                                                                                                                |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `lib/resupply-messaging/src/signed-link-tokens.ts` — email CTA tokens (`confirm` / `edit` / `stop` actions on reminder emails)                             | 7 days | Every reminder email sent in the rolling 7-day window: the patient clicking "Confirm order" or "Stop reminders" lands on a "this link is no longer valid" page. They CAN re-request via the storefront.                       |
 | `artifacts/resupply-api/src/lib/fax-document-token.ts` — fax cover-letter document URLs that Twilio fetches when dispatching `physician_fax_outreach` rows | 1 hour | Any `physician_fax_outreach` job scheduled before the rotation but dispatched after will fail to fetch the cover sheet from `/fax/document/:token`. The retry queue surfaces this; the operator re-dispatches after rotation. |
 
 Both readers go through `getLinkHmacKey()` in `lib/resupply-secrets`.
@@ -130,7 +130,7 @@ Concretely, at the moment the new key takes effect on a process:
   `getLinkHmacKey()` calls `Buffer.from(trimmedValue, "utf8")`.
   Stray newlines or wrapping quotes change the byte sequence and
   every verify fails. Re-store the value carefully (`echo -n
-  "<value>"` to suppress the trailing newline).
+"<value>"` to suppress the trailing newline).
 - **One replica missed the restart** — that replica still uses
   the old key; tokens it issues won't verify on the new replicas
   and vice versa. Force-restart all replicas; the workflow

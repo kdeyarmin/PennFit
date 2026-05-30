@@ -116,7 +116,10 @@ describe("fetchWithTimeout → AbortError on API call", () => {
       name: "AbortError",
     });
 
-    vi.stubGlobal("fetch", mockFetch(() => Promise.reject(abortErr)));
+    vi.stubGlobal(
+      "fetch",
+      mockFetch(() => Promise.reject(abortErr)),
+    );
 
     const result = await fetchAirviewSnapshot(CONFIG, {
       partnerPatientId: "p3",
@@ -138,7 +141,10 @@ describe("fetchWithTimeout → TypeError on API call", () => {
       name: "TypeError",
     });
 
-    vi.stubGlobal("fetch", mockFetch(() => Promise.reject(netErr)));
+    vi.stubGlobal(
+      "fetch",
+      mockFetch(() => Promise.reject(netErr)),
+    );
 
     const result = await fetchAirviewSnapshot(CONFIG, {
       partnerPatientId: "p4",
@@ -162,7 +168,10 @@ describe("fetchWithTimeout → unknown error type", () => {
       name: "CustomError",
     });
 
-    vi.stubGlobal("fetch", mockFetch(() => Promise.reject(weirdErr)));
+    vi.stubGlobal(
+      "fetch",
+      mockFetch(() => Promise.reject(weirdErr)),
+    );
 
     const result = await fetchAirviewSnapshot(CONFIG, {
       partnerPatientId: "p5",
@@ -362,13 +371,15 @@ describe("fetchWithTimeout → successful request", () => {
       { status: 200, headers: { "Content-Type": "application/json" } },
     );
     const therapyResp = new Response(
-      JSON.stringify({ nights: [{ date: "2024-01-01", usageMinutes: 360, ahi: 2 }] }),
+      JSON.stringify({
+        nights: [{ date: "2024-01-01", usageMinutes: 360, ahi: 2 }],
+      }),
       { status: 200, headers: { "Content-Type": "application/json" } },
     );
-    const suppliesResp = new Response(
-      JSON.stringify({ items: [] }),
-      { status: 200, headers: { "Content-Type": "application/json" } },
-    );
+    const suppliesResp = new Response(JSON.stringify({ items: [] }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
 
     vi.stubGlobal(
       "fetch",
@@ -432,10 +443,10 @@ describe("configKey secret rotation — cache invalidation (PR change)", () => {
           );
         }
         // API call returns empty/error so we can focus on token calls
-        return new Response(
-          JSON.stringify({ error: "not_found" }),
-          { status: 404, headers: { "Content-Type": "application/json" } },
-        );
+        return new Response(JSON.stringify({ error: "not_found" }), {
+          status: 404,
+          headers: { "Content-Type": "application/json" },
+        });
       }),
     );
 
@@ -469,7 +480,9 @@ describe("configKey secret rotation — cache invalidation (PR change)", () => {
     const tokenFetchCountAfterRotation = tokenFetchUrls.filter((u) =>
       u.includes("/oauth/token"),
     ).length;
-    expect(tokenFetchCountAfterRotation).toBeGreaterThan(tokenFetchCountAfterRepeat);
+    expect(tokenFetchCountAfterRotation).toBeGreaterThan(
+      tokenFetchCountAfterRepeat,
+    );
   });
 
   it("uses the same cached token for repeated calls with the same config", async () => {
@@ -485,10 +498,10 @@ describe("configKey secret rotation — cache invalidation (PR change)", () => {
             { status: 200, headers: { "Content-Type": "application/json" } },
           );
         }
-        return new Response(
-          JSON.stringify({}),
-          { status: 404, headers: { "Content-Type": "application/json" } },
-        );
+        return new Response(JSON.stringify({}), {
+          status: 404,
+          headers: { "Content-Type": "application/json" },
+        });
       }),
     );
 

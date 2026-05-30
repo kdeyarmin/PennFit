@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { createAnthropicClient, type AnthropicResponse } from "@workspace/resupply-ai";
+import {
+  createAnthropicClient,
+  type AnthropicResponse,
+} from "@workspace/resupply-ai";
 
 import { summarizePostCall, type TurnForSummary } from "./post-call-summary";
 
@@ -30,16 +33,28 @@ function makeErrorClient(status: number) {
   return createAnthropicClient({
     apiKey: VALID_KEY,
     fetchImpl: async () =>
-      new Response("error", { status, headers: { "content-type": "text/plain" } }),
+      new Response("error", {
+        status,
+        headers: { "content-type": "text/plain" },
+      }),
   });
 }
 
 const SAMPLE_TURNS: TurnForSummary[] = [
-  { source: "output", text: "Hi there, this is the resupply line. Is this a good time?" },
+  {
+    source: "output",
+    text: "Hi there, this is the resupply line. Is this a good time?",
+  },
   { source: "input", text: "yes" },
-  { source: "output", text: "Great, can I grab your date of birth to pull up your account?" },
+  {
+    source: "output",
+    text: "Great, can I grab your date of birth to pull up your account?",
+  },
   { source: "input", text: "January 12th 1952" },
-  { source: "output", text: "Got it. Looks like you're due for replacement cushions." },
+  {
+    source: "output",
+    text: "Got it. Looks like you're due for replacement cushions.",
+  },
   { source: "input", text: "Yes please ship them" },
   { source: "output", text: "Done — they'll go out today. Take care!" },
 ];
@@ -240,7 +255,10 @@ describe("summarizePostCall", () => {
             role: "assistant",
             model: "x",
             content: [
-              { type: "text", text: '{"outcome":"ok","sentiment":"neutral","concerns":[],"followUps":[],"recommendsHandoff":false}' },
+              {
+                type: "text",
+                text: '{"outcome":"ok","sentiment":"neutral","concerns":[],"followUps":[],"recommendsHandoff":false}',
+              },
             ],
             stop_reason: "end_turn",
             usage: { input_tokens: 1, output_tokens: 1 },

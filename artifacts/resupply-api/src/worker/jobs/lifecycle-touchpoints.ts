@@ -46,7 +46,10 @@ import {
 import { sendLifecycleTouchpointEmail } from "../../lib/order-emails/send-lifecycle-touchpoint-email";
 import { shouldSendEmail } from "../../lib/comm-prefs";
 import { logger } from "../../lib/logger";
-import { createQueueWithDlq, VENDOR_SEND_QUEUE_OPTS } from "../lib/queue-options";
+import {
+  createQueueWithDlq,
+  VENDOR_SEND_QUEUE_OPTS,
+} from "../lib/queue-options";
 
 const JOB_NAME = "patients.lifecycle-touchpoints";
 const JOB_CRON = "33 13 * * *";
@@ -102,8 +105,7 @@ function birthdayPatternsForToday(now: Date = new Date()): string[] {
   const patterns = [today];
   if (today === "02-28") {
     const year = now.getUTCFullYear();
-    const isLeapYear =
-      (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+    const isLeapYear = (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
     if (!isLeapYear) {
       patterns.push("02-29");
     }

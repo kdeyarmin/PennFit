@@ -98,7 +98,8 @@ export async function executeOfficeAllyBatchSubmit(
       ok: false,
       kind: "batch_payer_mismatch",
       detail: {
-        message: "all claims in a batch must reference the same payer_profile_id",
+        message:
+          "all claims in a batch must reference the same payer_profile_id",
       },
     };
   }
@@ -273,10 +274,7 @@ export async function executeOfficeAllyBatchSubmit(
     ip: input.ip ?? null,
     userAgent: input.userAgent ?? null,
   }).catch((err) => {
-    logger.warn(
-      { err },
-      "insurance_claim.batch_submit audit write failed",
-    );
+    logger.warn({ err }, "insurance_claim.batch_submit audit write failed");
   });
 
   return {
@@ -310,9 +308,7 @@ export async function buildEdiPayloadForSubmission(
   const { data: sub } = await supabase
     .schema("resupply")
     .from("office_ally_submissions")
-    .select(
-      "id, isa_control_number, gs_control_number, attempted_claim_ids",
-    )
+    .select("id, isa_control_number, gs_control_number, attempted_claim_ids")
     .eq("id", submissionId)
     .limit(1)
     .maybeSingle();
@@ -441,9 +437,12 @@ export async function buildOneDetail(
       : Promise.resolve({ data: null }),
   ]);
   if (!coverage || !patient || !lines || lines.length === 0) return null;
-  const addr = patient.address as
-    | { line1?: string; city?: string; state?: string; zip?: string }
-    | null;
+  const addr = patient.address as {
+    line1?: string;
+    city?: string;
+    state?: string;
+    zip?: string;
+  } | null;
   if (!addr?.line1 || !addr.city || !addr.state || !addr.zip) return null;
   const primaryDx = sleep?.diagnosis_icd10 ?? "G47.33";
   const subscriberAddress = {
@@ -531,7 +530,9 @@ export async function buildOneDetail(
   };
 }
 
-function relationshipFor(r: string | null | undefined): "18" | "01" | "19" | "G8" {
+function relationshipFor(
+  r: string | null | undefined,
+): "18" | "01" | "19" | "G8" {
   return r === "self"
     ? "18"
     : r === "spouse"

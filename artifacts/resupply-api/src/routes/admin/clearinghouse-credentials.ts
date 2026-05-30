@@ -25,9 +25,7 @@ import {
 } from "@workspace/resupply-db";
 import { listOutboundFiles } from "@workspace/resupply-integrations-office-ally";
 
-import {
-  runOfficeAllyInboundPoll,
-} from "../../worker/jobs/office-ally-inbound-poll";
+import { runOfficeAllyInboundPoll } from "../../worker/jobs/office-ally-inbound-poll";
 import { resolveClearinghouse } from "../../lib/billing/identity-resolver";
 import { logger } from "../../lib/logger";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
@@ -44,7 +42,12 @@ const E164_RE = /^\+[1-9]\d{1,14}$/;
 
 const upsertBody = z
   .object({
-    slug: z.string().trim().regex(/^[a-z0-9_]+$/).min(2).max(40),
+    slug: z
+      .string()
+      .trim()
+      .regex(/^[a-z0-9_]+$/)
+      .min(2)
+      .max(40),
     displayName: z.string().trim().min(1).max(160),
     usageIndicator: z.enum(["P", "T"]),
     sftpHost: z.string().trim().min(1).max(160),
@@ -190,11 +193,18 @@ router.post(
       adminUserId: req.adminUserId ?? null,
       targetTable: "clearinghouse_credentials",
       targetId: data.id,
-      metadata: { slug: b.slug, usage_indicator: b.usageIndicator, sftp_host: b.sftpHost },
+      metadata: {
+        slug: b.slug,
+        usage_indicator: b.usageIndicator,
+        sftp_host: b.sftpHost,
+      },
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "clearinghouse_credentials.create audit write failed");
+      logger.warn(
+        { err },
+        "clearinghouse_credentials.create audit write failed",
+      );
     });
     res.status(201).json({ id: data.id });
   },
@@ -225,24 +235,33 @@ router.patch(
       return;
     }
     const b = parsed.data;
-    const update: Database["resupply"]["Tables"]["clearinghouse_credentials"]["Update"] = {
-      updated_at: new Date().toISOString(),
-    };
+    const update: Database["resupply"]["Tables"]["clearinghouse_credentials"]["Update"] =
+      {
+        updated_at: new Date().toISOString(),
+      };
     if (b.slug !== undefined) update.slug = b.slug;
     if (b.displayName !== undefined) update.display_name = b.displayName;
-    if (b.usageIndicator !== undefined) update.usage_indicator = b.usageIndicator;
+    if (b.usageIndicator !== undefined)
+      update.usage_indicator = b.usageIndicator;
     if (b.sftpHost !== undefined) update.sftp_host = b.sftpHost;
     if (b.sftpPort !== undefined) update.sftp_port = b.sftpPort;
     if (b.sftpUsername !== undefined) update.sftp_username = b.sftpUsername;
-    if (b.privateKeyPath !== undefined) update.private_key_path = b.privateKeyPath;
-    if (b.knownHostsPath !== undefined) update.known_hosts_path = b.knownHostsPath;
-    if (b.remoteInboxDir !== undefined) update.remote_inbox_dir = b.remoteInboxDir;
-    if (b.remoteOutboundDir !== undefined) update.remote_outbound_dir = b.remoteOutboundDir;
-    if (b.remoteArchiveDir !== undefined) update.remote_archive_dir = b.remoteArchiveDir;
+    if (b.privateKeyPath !== undefined)
+      update.private_key_path = b.privateKeyPath;
+    if (b.knownHostsPath !== undefined)
+      update.known_hosts_path = b.knownHostsPath;
+    if (b.remoteInboxDir !== undefined)
+      update.remote_inbox_dir = b.remoteInboxDir;
+    if (b.remoteOutboundDir !== undefined)
+      update.remote_outbound_dir = b.remoteOutboundDir;
+    if (b.remoteArchiveDir !== undefined)
+      update.remote_archive_dir = b.remoteArchiveDir;
     if (b.etin !== undefined) update.etin = b.etin;
-    if (b.submitterOrganizationName !== undefined) update.submitter_organization_name = b.submitterOrganizationName;
+    if (b.submitterOrganizationName !== undefined)
+      update.submitter_organization_name = b.submitterOrganizationName;
     if (b.contactName !== undefined) update.contact_name = b.contactName;
-    if (b.contactPhoneE164 !== undefined) update.contact_phone_e164 = b.contactPhoneE164;
+    if (b.contactPhoneE164 !== undefined)
+      update.contact_phone_e164 = b.contactPhoneE164;
     if (b.isActive !== undefined) update.is_active = b.isActive;
     if (b.notes !== undefined) update.notes = b.notes;
     const supabase = getSupabaseServiceRoleClient();
@@ -264,7 +283,10 @@ router.patch(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "clearinghouse_credentials.update audit write failed");
+      logger.warn(
+        { err },
+        "clearinghouse_credentials.update audit write failed",
+      );
     });
     res.json({ ok: true });
   },
@@ -315,7 +337,9 @@ router.post(
       targetId: row.id,
       metadata: {
         ok: result.ok,
-        ...(result.ok ? { file_count: result.files.length } : { kind: result.kind }),
+        ...(result.ok
+          ? { file_count: result.files.length }
+          : { kind: result.kind }),
       },
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
@@ -416,8 +440,10 @@ router.get(
   },
 );
 
-type FileKind = Database["resupply"]["Tables"]["clearinghouse_inbound_files"]["Row"]["file_kind"];
-type DispatchStatus = Database["resupply"]["Tables"]["clearinghouse_inbound_files"]["Row"]["dispatch_status"];
+type FileKind =
+  Database["resupply"]["Tables"]["clearinghouse_inbound_files"]["Row"]["file_kind"];
+type DispatchStatus =
+  Database["resupply"]["Tables"]["clearinghouse_inbound_files"]["Row"]["dispatch_status"];
 
 function isFileKind(v: string): v is FileKind {
   return (["999", "277ca", "835", "unknown"] as readonly string[]).includes(v);

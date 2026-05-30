@@ -137,10 +137,7 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn(
-        { err },
-        "webhook_subscription.create audit write failed",
-      );
+      logger.warn({ err }, "webhook_subscription.create audit write failed");
     });
     // ONE TIME response with the signing secret. The admin UI must
     // copy it now — the GET endpoint never returns it again.
@@ -164,9 +161,10 @@ router.patch(
       return;
     }
     const b = parsed.data;
-    const update: Database["resupply"]["Tables"]["webhook_subscriptions"]["Update"] = {
-      updated_at: new Date().toISOString(),
-    };
+    const update: Database["resupply"]["Tables"]["webhook_subscriptions"]["Update"] =
+      {
+        updated_at: new Date().toISOString(),
+      };
     if (b.name !== undefined) update.name = b.name;
     if (b.targetUrl !== undefined) update.target_url = b.targetUrl;
     if (b.eventTypes !== undefined) update.event_types = b.eventTypes;

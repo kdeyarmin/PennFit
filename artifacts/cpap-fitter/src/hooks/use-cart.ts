@@ -201,7 +201,8 @@ export function useCart(): {
       initialDroppedRef.current = 0;
       toast({
         title: "Some cart items were removed",
-        description: "Some cart items were removed because they couldn't be added to your cart.",
+        description:
+          "Some cart items were removed because they couldn't be added to your cart.",
       });
       track("cart_items_dropped", { count });
     }

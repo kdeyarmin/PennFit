@@ -66,13 +66,7 @@ router.patch(
     const parsed = z
       .object({
         status: z
-          .enum([
-            "new",
-            "contacted",
-            "scheduled",
-            "declined",
-            "cancelled",
-          ])
+          .enum(["new", "contacted", "scheduled", "declined", "cancelled"])
           .optional(),
         attachedPatientId: z.string().uuid().nullable().optional(),
         assignedAdminUserId: z.string().min(1).max(64).nullable().optional(),
@@ -88,12 +82,7 @@ router.patch(
       return;
     }
     const update: {
-      status?:
-        | "new"
-        | "contacted"
-        | "scheduled"
-        | "declined"
-        | "cancelled";
+      status?: "new" | "contacted" | "scheduled" | "declined" | "cancelled";
       attached_patient_id?: string | null;
       assigned_admin_user_id?: string | null;
       scheduled_for?: string | null;

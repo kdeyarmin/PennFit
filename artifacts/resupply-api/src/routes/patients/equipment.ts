@@ -72,20 +72,14 @@ const DEVICE_CLASS_VALUES = [
   "other",
 ] as const;
 
-const STATUS_VALUES = [
-  "active",
-  "returned",
-  "recalled",
-  "retired",
-] as const;
+const STATUS_VALUES = ["active", "returned", "recalled", "retired"] as const;
 
-const VALID_TRANSITIONS: Record<EquipmentStatus, readonly EquipmentStatus[]> =
-  {
-    active: ["returned", "recalled", "retired"],
-    returned: ["active", "retired"],
-    recalled: ["returned", "active"],
-    retired: ["active"],
-  };
+const VALID_TRANSITIONS: Record<EquipmentStatus, readonly EquipmentStatus[]> = {
+  active: ["returned", "recalled", "retired"],
+  returned: ["active", "retired"],
+  recalled: ["returned", "active"],
+  retired: ["active"],
+};
 
 const createBody = z
   .object({
@@ -258,7 +252,7 @@ router.post("/patients/:id/equipment", requireAdmin, async (req, res) => {
         // Only return existingId for same-patient conflicts; an
         // attacker enumerating serials must not learn other
         // patients' equipment row ids.
-        existingId: sameOwner ? existing?.id ?? null : null,
+        existingId: sameOwner ? (existing?.id ?? null) : null,
       });
       return;
     }

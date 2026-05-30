@@ -80,7 +80,8 @@ function publicBaseUrl(override?: string): string {
 }
 
 function subjectFor(kind: EobEventKind): string {
-  if (kind === "paid") return "Insurance paid your claim — here's the breakdown";
+  if (kind === "paid")
+    return "Insurance paid your claim — here's the breakdown";
   if (kind === "partial_pay") return "Update on your insurance claim";
   return "Your insurance claim was denied — next steps";
 }

@@ -83,7 +83,9 @@ describe("resolveBillingIdentity", () => {
 
   it("returns source='env' when DB rows are absent but env is complete", async () => {
     stageSupabaseResponse("dme_organization", "select", { data: null });
-    stageSupabaseResponse("clearinghouse_credentials", "select", { data: null });
+    stageSupabaseResponse("clearinghouse_credentials", "select", {
+      data: null,
+    });
     const result = await resolveBillingIdentity({ env: { ...FULL_ENV } });
     expect(result.source).toBe("env");
     expect(result.billingProvider.organizationName).toBe("EnvDME LLC");
@@ -93,7 +95,9 @@ describe("resolveBillingIdentity", () => {
 
   it("uses P usage indicator when OFFICE_ALLY_USAGE_INDICATOR='P'", async () => {
     stageSupabaseResponse("dme_organization", "select", { data: null });
-    stageSupabaseResponse("clearinghouse_credentials", "select", { data: null });
+    stageSupabaseResponse("clearinghouse_credentials", "select", {
+      data: null,
+    });
     const result = await resolveBillingIdentity({
       env: { ...FULL_ENV, OFFICE_ALLY_USAGE_INDICATOR: "P" },
     });
@@ -102,7 +106,9 @@ describe("resolveBillingIdentity", () => {
 
   it("returns source='stub' with sentinel NPI when neither DB nor env present", async () => {
     stageSupabaseResponse("dme_organization", "select", { data: null });
-    stageSupabaseResponse("clearinghouse_credentials", "select", { data: null });
+    stageSupabaseResponse("clearinghouse_credentials", "select", {
+      data: null,
+    });
     const result = await resolveBillingIdentity({ env: {} });
     expect(result.source).toBe("stub");
     // Sentinel NPI must be all zeros so a deploy never silently bills
@@ -139,7 +145,9 @@ describe("resolveClearinghouse", () => {
   });
 
   it("returns source='env' with parsed SFTP config when DB row missing", async () => {
-    stageSupabaseResponse("clearinghouse_credentials", "select", { data: null });
+    stageSupabaseResponse("clearinghouse_credentials", "select", {
+      data: null,
+    });
     const result = await resolveClearinghouse({ env: { ...FULL_ENV } });
     expect(result.source).toBe("env");
     expect(result.config?.host).toBe("sftp10.officeally.com");
@@ -148,14 +156,18 @@ describe("resolveClearinghouse", () => {
   });
 
   it("returns null config and source='stub' when neither DB nor env set", async () => {
-    stageSupabaseResponse("clearinghouse_credentials", "select", { data: null });
+    stageSupabaseResponse("clearinghouse_credentials", "select", {
+      data: null,
+    });
     const result = await resolveClearinghouse({ env: {} });
     expect(result.source).toBe("stub");
     expect(result.config).toBeNull();
   });
 
   it("falls back to default port 22 on malformed OFFICE_ALLY_PORT", async () => {
-    stageSupabaseResponse("clearinghouse_credentials", "select", { data: null });
+    stageSupabaseResponse("clearinghouse_credentials", "select", {
+      data: null,
+    });
     const result = await resolveClearinghouse({
       env: { ...FULL_ENV, OFFICE_ALLY_PORT: "not-a-port" },
     });

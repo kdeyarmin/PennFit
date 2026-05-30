@@ -36,7 +36,10 @@
 import type PgBoss from "pg-boss";
 
 import { logger } from "../../lib/logger";
-import { createQueueWithDlq, VENDOR_SEND_QUEUE_OPTS } from "../lib/queue-options";
+import {
+  createQueueWithDlq,
+  VENDOR_SEND_QUEUE_OPTS,
+} from "../lib/queue-options";
 import { runSmartTriggerSendDue } from "../../lib/smart-triggers/dispatcher";
 import {
   htmlBody,

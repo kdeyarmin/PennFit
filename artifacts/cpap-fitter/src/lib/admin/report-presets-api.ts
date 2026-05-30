@@ -39,10 +39,7 @@ export type ReportPresetCreate =
       recipient?: string | null;
     };
 
-async function jsonFetch<T>(
-  path: string,
-  init: RequestInit = {},
-): Promise<T> {
+async function jsonFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
   const res = await fetch(`/resupply-api${path}`, {
     credentials: "include",
     headers: { Accept: "application/json", ...(init.headers ?? {}) },

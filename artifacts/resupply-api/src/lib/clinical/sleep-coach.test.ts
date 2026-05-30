@@ -102,7 +102,9 @@ function makeClient(
 describe("askSleepCoach — Anthropic path, no tool call", () => {
   it("returns the model's text directly when no tool_use blocks are emitted", async () => {
     stageEmptyContext();
-    const client = makeClient([textResponse("Try loosening the top strap one notch tonight.")]);
+    const client = makeClient([
+      textResponse("Try loosening the top strap one notch tonight."),
+    ]);
     const result = await askSleepCoach({
       patientId: "pt_1",
       question: "What can I try to stop the mask leaking?",
@@ -132,8 +134,13 @@ describe("askSleepCoach — Anthropic path, single tool call", () => {
           const last = req.messages[req.messages.length - 1];
           if (last && last.role === "user" && Array.isArray(last.content)) {
             const tr = last.content.find(
-              (c): c is { type: "tool_result"; tool_use_id: string; content: string } =>
-                (c as { type?: unknown }).type === "tool_result",
+              (
+                c,
+              ): c is {
+                type: "tool_result";
+                tool_use_id: string;
+                content: string;
+              } => (c as { type?: unknown }).type === "tool_result",
             );
             receivedToolResultPayload = tr?.content ?? null;
           }

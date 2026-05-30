@@ -168,11 +168,11 @@ export function Stories() {
             <span className="hero-headline-swoosh">In their words.</span>
           </h1>
           <p className="text-base sm:text-lg md:text-xl text-white/85 leading-relaxed max-w-2xl mx-auto">
-            Four composite PennPaps stories, based on real patient
-            experiences, on what therapy actually changed — the cardiology
-            numbers, the mood, the working hours, the bedroom. Identifying
-            details have been changed for privacy, while the outcomes and
-            mask types reflect real therapy experiences.
+            Four composite PennPaps stories, based on real patient experiences,
+            on what therapy actually changed — the cardiology numbers, the mood,
+            the working hours, the bedroom. Identifying details have been
+            changed for privacy, while the outcomes and mask types reflect real
+            therapy experiences.
           </p>
         </div>
       </section>
@@ -306,11 +306,11 @@ export function Stories() {
               </div>
               <p className="text-sm text-foreground/85 leading-relaxed">
                 These are composite narratives drawn from PennPaps patient
-                experiences. Initials, ages, and identifying details have
-                been altered for privacy. The clinical outcomes, masks,
-                and before/after metrics reflect patterns we actually see
-                in our cohort and in the peer-reviewed literature on
-                adherent PAP therapy. Individual results always vary.
+                experiences. Initials, ages, and identifying details have been
+                altered for privacy. The clinical outcomes, masks, and
+                before/after metrics reflect patterns we actually see in our
+                cohort and in the peer-reviewed literature on adherent PAP
+                therapy. Individual results always vary.
               </p>
             </div>
           </div>
@@ -359,8 +359,8 @@ export function Stories() {
               The masks they wear
             </h3>
             <p className="text-sm text-muted-foreground leading-relaxed">
-              React Health, ResMed, Fisher &amp; Paykel — the three brands
-              we stock, compared.
+              React Health, ResMed, Fisher &amp; Paykel — the three brands we
+              stock, compared.
             </p>
           </div>
           <ArrowRight className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors mt-1" />
@@ -386,10 +386,9 @@ export function Stories() {
       </div>
 
       <p className="text-xs text-muted-foreground/80 leading-relaxed mt-12 max-w-2xl mx-auto text-center">
-        Educational content. Composite stories drawn from PennPaps
-        patient experiences with privacy-altered identifying details;
-        clinical outcomes reflect real cohort patterns. Individual
-        results vary.
+        Educational content. Composite stories drawn from PennPaps patient
+        experiences with privacy-altered identifying details; clinical outcomes
+        reflect real cohort patterns. Individual results vary.
       </p>
     </div>
   );

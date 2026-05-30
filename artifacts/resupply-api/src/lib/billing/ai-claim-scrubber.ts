@@ -88,7 +88,7 @@ const SYSTEM_PROMPT = [
   "    }",
   "  ],",
   '  "suggested_patches": [',
-  '    // Each entry MUST match one of these shapes:',
+  "    // Each entry MUST match one of these shapes:",
   '    { "kind": "set_claim_field", "field": "<one of denial_reason|claim_number|date_of_service|patient_responsibility_cents>", "value": <string|number|null>, "rationale": "<why>" },',
   '    { "kind": "set_line_modifier", "hcpcsCode": "<HCPCS>", "modifierCsv": "<CSV>", "rationale": "<why>" },',
   '    { "kind": "set_line_billed_cents", "hcpcsCode": "<HCPCS>", "billedCents": <int>, "rationale": "<why>" },',
@@ -344,10 +344,7 @@ async function assembleClaimContext(
     },
     patient: patient
       ? {
-          initials: initials(
-            patient.legal_first_name,
-            patient.legal_last_name,
-          ),
+          initials: initials(patient.legal_first_name, patient.legal_last_name),
           dobYear: yearOf(patient.date_of_birth),
         }
       : null,
@@ -411,7 +408,10 @@ function fingerprint(s: string | null | undefined): string | null {
 
 function parseScrubOutput(
   content: string,
-): Omit<ScrubOutput, "latencyMs" | "promptTokens" | "completionTokens" | "errorMessage"> {
+): Omit<
+  ScrubOutput,
+  "latencyMs" | "promptTokens" | "completionTokens" | "errorMessage"
+> {
   try {
     const parsed = JSON.parse(content) as {
       verdict?: unknown;
@@ -472,8 +472,7 @@ function parseFinding(raw: unknown): ScrubFinding[] {
     r.severity === "ok" || r.severity === "warning" || r.severity === "error"
       ? r.severity
       : "warning";
-  const problem =
-    typeof r.problem === "string" ? r.problem.slice(0, 400) : "";
+  const problem = typeof r.problem === "string" ? r.problem.slice(0, 400) : "";
   const recommendedFix =
     typeof r.recommended_fix === "string"
       ? r.recommended_fix.slice(0, 400)

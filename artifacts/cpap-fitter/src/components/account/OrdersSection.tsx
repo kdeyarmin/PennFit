@@ -13,10 +13,7 @@ import { Loader2, RefreshCw, ShoppingBag } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { useCart, type CartItem } from "@/hooks/use-cart";
-import {
-  AccountApiError,
-  type ShopRecentOrder,
-} from "@/lib/account-api";
+import { AccountApiError, type ShopRecentOrder } from "@/lib/account-api";
 import { fetchOrderSummary, formatMoneyCents } from "@/lib/shop-api";
 
 // sessionStorage breadcrumb shape. /shop/cart reads this once on
@@ -179,9 +176,7 @@ export function OrdersSection({
                 >
                   Details
                 </Link>
-                {o.status === "paid" && (
-                  <ReportLostLink orderId={o.id} />
-                )}
+                {o.status === "paid" && <ReportLostLink orderId={o.id} />}
                 {o.status === "paid" && (
                   <Button
                     size="sm"
@@ -230,17 +225,14 @@ function ReportLostLink({ orderId }: { orderId: string }) {
   const [note, setNote] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<
-    | { kind: "ok" }
-    | { kind: "error"; message: string }
-    | null
+    { kind: "ok" } | { kind: "error"; message: string } | null
   >(null);
   async function submit() {
     setSubmitting(true);
     setResult(null);
     try {
-      const { reportLostShipment } = await import(
-        "@/lib/account/self-service-api"
-      );
+      const { reportLostShipment } =
+        await import("@/lib/account/self-service-api");
       await reportLostShipment(orderId, note.trim());
       setResult({ kind: "ok" });
     } catch (err) {
@@ -254,7 +246,9 @@ function ReportLostLink({ orderId }: { orderId: string }) {
   }
   if (result?.kind === "ok") {
     return (
-      <span className="text-xs text-emerald-700">Reported — we&apos;ll follow up</span>
+      <span className="text-xs text-emerald-700">
+        Reported — we&apos;ll follow up
+      </span>
     );
   }
   if (!open) {
@@ -288,9 +282,7 @@ function ReportLostLink({ orderId }: { orderId: string }) {
         Cancel
       </button>
       {result?.kind === "error" && (
-        <span className="text-xs text-destructive ml-1">
-          {result.message}
-        </span>
+        <span className="text-xs text-destructive ml-1">{result.message}</span>
       )}
     </div>
   );

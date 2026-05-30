@@ -72,9 +72,7 @@ router.get(
       .limit(200);
     if (itemsErr) throw itemsErr;
 
-    const orderIds = Array.from(
-      new Set((items ?? []).map((i) => i.order_id)),
-    );
+    const orderIds = Array.from(new Set((items ?? []).map((i) => i.order_id)));
     let paidOrderIds = new Set<string>();
     if (orderIds.length > 0) {
       const { data: orders, error: ordersErr } = await supabase

@@ -26,10 +26,7 @@ import { fileURLToPath } from "node:url";
 import { beforeEach, describe, expect, it } from "vitest";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const APPSHELL_SRC = readFileSync(
-  path.join(__dirname, "AppShell.tsx"),
-  "utf8",
-);
+const APPSHELL_SRC = readFileSync(path.join(__dirname, "AppShell.tsx"), "utf8");
 
 // ---------------------------------------------------------------------------
 // SECTION 1 — Static source-string guards
@@ -50,9 +47,7 @@ describe("AppShell — collapsible nav infrastructure", () => {
 
   it("defines NAV_EXPLICIT_COLLAPSED_STORAGE_KEY separately from the expanded key", () => {
     expect(APPSHELL_SRC).toContain("NAV_EXPLICIT_COLLAPSED_STORAGE_KEY");
-    expect(APPSHELL_SRC).toContain(
-      '"pf-admin-nav-explicit-collapsed-groups"',
-    );
+    expect(APPSHELL_SRC).toContain('"pf-admin-nav-explicit-collapsed-groups"');
   });
 
   it("defines the four localStorage helpers (load/persist for both keys)", () => {
@@ -250,12 +245,12 @@ describe("findGroupForActiveHref", () => {
   });
 
   it("returns the group label that owns the active href", () => {
-    expect(
-      findGroupForActiveHref(SAMPLE_GROUPS, "/admin/conversations"),
-    ).toBe("Inbox");
-    expect(
-      findGroupForActiveHref(SAMPLE_GROUPS, "/admin/billing/aging"),
-    ).toBe("Billing");
+    expect(findGroupForActiveHref(SAMPLE_GROUPS, "/admin/conversations")).toBe(
+      "Inbox",
+    );
+    expect(findGroupForActiveHref(SAMPLE_GROUPS, "/admin/billing/aging")).toBe(
+      "Billing",
+    );
   });
 
   it("returns null when no group owns the href", () => {

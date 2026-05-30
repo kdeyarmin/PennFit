@@ -125,7 +125,9 @@ router.patch(
     const { data: priorRow, error: priorErr } = await supabase
       .schema("resupply")
       .from("feature_flags")
-      .select("key, enabled, description, category, updated_by_email, updated_at")
+      .select(
+        "key, enabled, description, category, updated_by_email, updated_at",
+      )
       .eq("key", key)
       .maybeSingle();
     if (priorErr) throw priorErr;
@@ -282,7 +284,9 @@ router.get(
     const { data, error } = await supabase
       .schema("resupply")
       .from("feature_flag_events")
-      .select("occurred_at, operator_email, key, previous_enabled, next_enabled")
+      .select(
+        "occurred_at, operator_email, key, previous_enabled, next_enabled",
+      )
       .order("occurred_at", { ascending: false })
       .limit(limit);
     if (error) throw error;

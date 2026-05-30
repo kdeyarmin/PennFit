@@ -124,8 +124,8 @@ export function ReferralProgramSection() {
         <div className="flex-1">
           <h2 className="text-lg font-semibold">Refer a friend</h2>
           <p className="text-sm text-muted-foreground">
-            Share PennPaps with another CPAP user. We&apos;ll thank you
-            once they place their first order.
+            Share PennPaps with another CPAP user. We&apos;ll thank you once
+            they place their first order.
           </p>
         </div>
         {stats && (
@@ -160,11 +160,7 @@ export function ReferralProgramSection() {
           />
         </div>
       </div>
-      <Button
-        onClick={() => mint.mutate()}
-        disabled={mint.isPending}
-        size="sm"
-      >
+      <Button onClick={() => mint.mutate()} disabled={mint.isPending} size="sm">
         {mint.isPending ? "Generating…" : "Generate referral link"}
       </Button>
       {data.referrals.length > 0 && (
@@ -227,8 +223,8 @@ export function EquipmentRegistrySection() {
         <div>
           <h2 className="text-lg font-semibold">My equipment</h2>
           <p className="text-sm text-muted-foreground">
-            Register your CPAP, BiPAP, or accessory device so we can
-            reach you if there&apos;s ever a manufacturer recall.
+            Register your CPAP, BiPAP, or accessory device so we can reach you
+            if there&apos;s ever a manufacturer recall.
           </p>
         </div>
       </header>

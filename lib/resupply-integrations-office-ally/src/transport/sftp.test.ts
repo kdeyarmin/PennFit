@@ -45,7 +45,9 @@ import { createSftpTransport } from "./sftp";
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
-function makeConfig(over: Partial<Parameters<typeof createSftpTransport>[0]> = {}) {
+function makeConfig(
+  over: Partial<Parameters<typeof createSftpTransport>[0]> = {},
+) {
   return {
     host: "sftp10.officeally.com",
     port: 22,
@@ -145,7 +147,9 @@ describe("createSftpTransport — happy path", () => {
 
   it("sanitizes the file name — replaces unsafe characters with underscores", async () => {
     const transport = createSftpTransport(makeConfig());
-    const outcome = await transport.upload(makeRequest({ fileName: "claim 2026/01/01.837p" }));
+    const outcome = await transport.upload(
+      makeRequest({ fileName: "claim 2026/01/01.837p" }),
+    );
     expect(outcome.ok).toBe(true);
     if (outcome.ok) {
       // spaces and slashes become underscores; dots and alphanumerics survive
@@ -173,8 +177,9 @@ describe("createSftpTransport — happy path", () => {
     // execFile's full signature is (file, args, opts, cb) — a 4-tuple.
     // Use the mock's own Parameters<> so TypeScript catches tuple-
     // signature drift instead of getting masked by `unknown`.
-    const [binary, args] =
-      execFileMock.mock.calls[0] as Parameters<typeof execFileMock>;
+    const [binary, args] = execFileMock.mock.calls[0] as Parameters<
+      typeof execFileMock
+    >;
     expect(binary).toBe("sftp");
     expect(args).toContain("-i");
     expect(args).toContain("/home/alice/.ssh/id_ed25519");
@@ -196,8 +201,11 @@ describe("createSftpTransport — happy path", () => {
     // satisfies TS strict tuple-element-count without changing runtime
     // behavior.
     type WriteFileCall = readonly [unknown, unknown, ...unknown[]];
-    const batchWriteCall = (writeFileMock.mock.calls as unknown as WriteFileCall[]).find(
-      (call) => typeof call[1] === "string" && (call[1] as string).includes("put "),
+    const batchWriteCall = (
+      writeFileMock.mock.calls as unknown as WriteFileCall[]
+    ).find(
+      (call) =>
+        typeof call[1] === "string" && (call[1] as string).includes("put "),
     );
     expect(batchWriteCall).toBeDefined();
     const batchContent = batchWriteCall![1] as string;
@@ -307,7 +315,11 @@ describe("createSftpTransport — error classification", () => {
   });
 
   it("returns connect_failed on 'Connection refused' in stderr", async () => {
-    failExecFileSticky({ stderr: "ssh: connect to host sftp10.officeally.com port 22: Connection refused", code: 255 });
+    failExecFileSticky({
+      stderr:
+        "ssh: connect to host sftp10.officeally.com port 22: Connection refused",
+      code: 255,
+    });
     const transport = createSftpTransport(makeConfig());
     const p = transport.upload(makeRequest());
     await vi.runAllTimersAsync();
@@ -331,7 +343,11 @@ describe("createSftpTransport — error classification", () => {
   });
 
   it("returns connect_failed on 'Connection timed out' in stderr", async () => {
-    failExecFileSticky({ stderr: "ssh: connect to host sftp10.officeally.com port 22: Connection timed out", code: 255 });
+    failExecFileSticky({
+      stderr:
+        "ssh: connect to host sftp10.officeally.com port 22: Connection timed out",
+      code: 255,
+    });
     const transport = createSftpTransport(makeConfig());
     const p = transport.upload(makeRequest());
     await vi.runAllTimersAsync();
@@ -645,7 +661,9 @@ describe("test helpers — failExecFile (once) vs failExecFileSticky (all)", () 
 describe("createSftpTransport — filename sanitisation", () => {
   it("preserves alphanumerics, dots, underscores, and dashes", async () => {
     const transport = createSftpTransport(makeConfig());
-    const outcome = await transport.upload(makeRequest({ fileName: "claim-2026.A1_v2.837p" }));
+    const outcome = await transport.upload(
+      makeRequest({ fileName: "claim-2026.A1_v2.837p" }),
+    );
 
     expect(outcome.ok).toBe(true);
     if (outcome.ok) {
@@ -655,7 +673,9 @@ describe("createSftpTransport — filename sanitisation", () => {
 
   it("converts spaces to underscores", async () => {
     const transport = createSftpTransport(makeConfig());
-    const outcome = await transport.upload(makeRequest({ fileName: "my claim.837p" }));
+    const outcome = await transport.upload(
+      makeRequest({ fileName: "my claim.837p" }),
+    );
     expect(outcome.ok).toBe(true);
     if (outcome.ok) {
       expect(outcome.remotePath).toContain("my_claim.837p");

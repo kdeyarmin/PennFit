@@ -124,11 +124,11 @@ export function LearnSleepApneaDiabetes() {
                 OSA → Diabetes
               </div>
               <p>
-                Untreated sleep apnea drives daytime insulin resistance
-                through repeated sympathetic activation, inflammation, and
-                hormone dysregulation. Even non-diabetic patients with OSA
-                show measurably impaired glucose tolerance on the morning
-                after a poor night.
+                Untreated sleep apnea drives daytime insulin resistance through
+                repeated sympathetic activation, inflammation, and hormone
+                dysregulation. Even non-diabetic patients with OSA show
+                measurably impaired glucose tolerance on the morning after a
+                poor night.
               </p>
             </div>
             <div>
@@ -137,10 +137,9 @@ export function LearnSleepApneaDiabetes() {
               </div>
               <p>
                 Type 2 diabetes drives weight gain, particularly central
-                adiposity that compresses the upper airway. Diabetic
-                autonomic neuropathy can also affect the muscle tone that
-                keeps the airway open during sleep, increasing apnea
-                frequency.
+                adiposity that compresses the upper airway. Diabetic autonomic
+                neuropathy can also affect the muscle tone that keeps the airway
+                open during sleep, increasing apnea frequency.
               </p>
             </div>
             <div>
@@ -148,11 +147,11 @@ export function LearnSleepApneaDiabetes() {
                 The compounding effect
               </div>
               <p>
-                Patients with both conditions have worse outcomes on either
-                axis than patients with only one. Untreated OSA + diabetes
-                roughly doubles the risk of cardiovascular events compared
-                to either condition alone — and treating just one of the two
-                doesn&apos;t fully break the cycle.
+                Patients with both conditions have worse outcomes on either axis
+                than patients with only one. Untreated OSA + diabetes roughly
+                doubles the risk of cardiovascular events compared to either
+                condition alone — and treating just one of the two doesn&apos;t
+                fully break the cycle.
               </p>
             </div>
           </div>
@@ -201,8 +200,8 @@ export function LearnSleepApneaDiabetes() {
             </div>
             <p className="text-muted-foreground leading-relaxed mb-4">
               Across multiple randomized trials and observational cohorts,
-              adherent PAP therapy in patients with co-existing OSA and
-              type 2 diabetes produces:
+              adherent PAP therapy in patients with co-existing OSA and type 2
+              diabetes produces:
             </p>
             <ul className="space-y-2 mb-4">
               {[
@@ -226,9 +225,9 @@ export function LearnSleepApneaDiabetes() {
             </ul>
             <p className="text-sm text-muted-foreground leading-relaxed">
               The effect requires real adherence — typical thresholds are 4+
-              hours/night across most nights. Patients who can&apos;t
-              tolerate their mask don&apos;t see these benefits, which is
-              the entire reason mask comfort matters as much as it does.
+              hours/night across most nights. Patients who can&apos;t tolerate
+              their mask don&apos;t see these benefits, which is the entire
+              reason mask comfort matters as much as it does.
             </p>
           </div>
         </div>
@@ -284,9 +283,11 @@ export function LearnSleepApneaDiabetes() {
           <div className="flex items-start gap-3">
             <AlertTriangle className="w-5 h-5 text-[hsl(var(--penn-gold-deep))] mt-0.5 shrink-0" />
             <div className="text-sm text-foreground/85 leading-relaxed">
-              <span className="font-semibold">Don&apos;t change diabetes medications</span> based
-              on starting PAP therapy. Coordinate any adjustments with your
-              endocrinologist — they&apos;ll want to see post-treatment
+              <span className="font-semibold">
+                Don&apos;t change diabetes medications
+              </span>{" "}
+              based on starting PAP therapy. Coordinate any adjustments with
+              your endocrinologist — they&apos;ll want to see post-treatment
               labs before reducing dosing.
             </div>
           </div>
@@ -345,9 +346,8 @@ export function LearnSleepApneaDiabetes() {
 
       <p className="text-xs text-muted-foreground/80 leading-relaxed mt-12 max-w-2xl mx-auto text-center">
         Educational content only. A1C reductions cited reflect commonly-
-        reported magnitudes from peer-reviewed cohorts; individual results
-        vary with adherence, baseline glycemic control, and concurrent
-        therapies.
+        reported magnitudes from peer-reviewed cohorts; individual results vary
+        with adherence, baseline glycemic control, and concurrent therapies.
       </p>
     </div>
   );

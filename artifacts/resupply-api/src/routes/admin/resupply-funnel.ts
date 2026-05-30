@@ -50,8 +50,7 @@ router.get(
     }
     const to = parsed.data.to ?? new Date().toISOString();
     const from =
-      parsed.data.from ??
-      new Date(Date.now() - 30 * 86400_000).toISOString();
+      parsed.data.from ?? new Date(Date.now() - 30 * 86400_000).toISOString();
     const supabase = getSupabaseServiceRoleClient();
 
     // One head-count query per status. Cheaper and safer than
@@ -70,9 +69,7 @@ router.get(
     }
     const total = Object.values(counts).reduce((a, b) => a + (b ?? 0), 0);
     const confirmDenom =
-      (counts.confirmed ?? 0) +
-      (counts.declined ?? 0) +
-      (counts.expired ?? 0);
+      (counts.confirmed ?? 0) + (counts.declined ?? 0) + (counts.expired ?? 0);
     const confirmRate =
       confirmDenom > 0 ? (counts.confirmed ?? 0) / confirmDenom : null;
     const fulfillmentRate =

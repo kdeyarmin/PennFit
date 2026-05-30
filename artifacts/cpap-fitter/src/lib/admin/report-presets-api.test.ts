@@ -80,9 +80,7 @@ describe("createReportPreset", () => {
     const [, init] = fetchMock.mock.calls[0]!;
     expect((init as RequestInit).method).toBe("POST");
     expect(
-      ((init as RequestInit).headers as Record<string, string>)[
-        "Content-Type"
-      ],
+      ((init as RequestInit).headers as Record<string, string>)["Content-Type"],
     ).toBe("application/json");
     const body = JSON.parse((init as RequestInit).body as string);
     expect(body.rangeKind).toBe("preset");
@@ -111,9 +109,7 @@ describe("deleteReportPreset", () => {
     fetchMock.mockResolvedValue({ ok: true, status: 204 });
     await deleteReportPreset("../etc/passwd");
     const [url] = fetchMock.mock.calls[0]!;
-    expect(url).toBe(
-      "/resupply-api/admin/reports/presets/..%2Fetc%2Fpasswd",
-    );
+    expect(url).toBe("/resupply-api/admin/reports/presets/..%2Fetc%2Fpasswd");
   });
 });
 
@@ -128,9 +124,7 @@ describe("error handling", () => {
         error: "machine_code",
       }),
     });
-    await expect(listReportPresets()).rejects.toThrow(
-      "human-readable message",
-    );
+    await expect(listReportPresets()).rejects.toThrow("human-readable message");
   });
 
   it("falls back to '<status> <statusText>' when the body has no useful field", async () => {

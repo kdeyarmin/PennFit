@@ -48,11 +48,23 @@ export async function sendPortalInvite(
   });
   const json = (await res.json()) as
     | InviteResponse
-    | { error?: string; message?: string; issues?: { path: string; message: string }[] };
+    | {
+        error?: string;
+        message?: string;
+        issues?: { path: string; message: string }[];
+      };
   if (!res.ok) {
-    const err = json as { error?: string; message?: string; issues?: { path: string; message: string }[] };
-    const issueText = err.issues?.map((i) => `${i.path}: ${i.message}`).join("; ");
-    throw new Error(issueText ?? err.message ?? err.error ?? `Invite failed (${res.status})`);
+    const err = json as {
+      error?: string;
+      message?: string;
+      issues?: { path: string; message: string }[];
+    };
+    const issueText = err.issues
+      ?.map((i) => `${i.path}: ${i.message}`)
+      .join("; ");
+    throw new Error(
+      issueText ?? err.message ?? err.error ?? `Invite failed (${res.status})`,
+    );
   }
   return json as InviteResponse;
 }
@@ -70,7 +82,9 @@ export async function resendPortalInvite(
     | { error?: string; message?: string };
   if (!res.ok) {
     const err = json as { error?: string; message?: string };
-    throw new Error(err.message ?? err.error ?? `Resend failed (${res.status})`);
+    throw new Error(
+      err.message ?? err.error ?? `Resend failed (${res.status})`,
+    );
   }
   return json as InviteResponse;
 }
@@ -88,7 +102,9 @@ export async function revokePortalInvite(
     | { error?: string; message?: string };
   if (!res.ok) {
     const err = json as { error?: string; message?: string };
-    throw new Error(err.message ?? err.error ?? `Revoke failed (${res.status})`);
+    throw new Error(
+      err.message ?? err.error ?? `Revoke failed (${res.status})`,
+    );
   }
   return json as { portalStatus: PortalStatus };
 }

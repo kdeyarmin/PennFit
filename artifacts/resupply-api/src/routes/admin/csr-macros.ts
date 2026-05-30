@@ -17,7 +17,10 @@ import {
   getSupabaseServiceRoleClient,
 } from "@workspace/resupply-db";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
-import { requireAdmin, requirePermission } from "../../middlewares/requireAdmin";
+import {
+  requireAdmin,
+  requirePermission,
+} from "../../middlewares/requireAdmin";
 
 type CsrMacroUpdate = Database["resupply"]["Tables"]["csr_macros"]["Update"];
 
@@ -169,7 +172,8 @@ router.patch(
       updateRow.category = parsed.data.category;
     if (parsed.data.body !== undefined) updateRow.body = parsed.data.body;
     if (parsed.data.channels !== undefined)
-      updateRow.channels = parsed.data.channels as Database["resupply"]["Tables"]["csr_macros"]["Row"]["channels"];
+      updateRow.channels = parsed.data
+        .channels as Database["resupply"]["Tables"]["csr_macros"]["Row"]["channels"];
     if (parsed.data.sortOrder !== undefined)
       updateRow.sort_order = parsed.data.sortOrder;
     if (parsed.data.isActive !== undefined)

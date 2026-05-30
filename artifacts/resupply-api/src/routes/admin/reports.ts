@@ -203,7 +203,11 @@ function rollupRevenue(
     return v;
   }
   for (const o of orders) {
-    if (o.status !== "paid" && o.status !== "shipped" && o.status !== "delivered") {
+    if (
+      o.status !== "paid" &&
+      o.status !== "shipped" &&
+      o.status !== "delivered"
+    ) {
       continue;
     }
     const day = (o.paid_at ?? o.created_at).slice(0, 10);
@@ -232,7 +236,10 @@ function rollupRevenue(
 // CSV writers
 // ─────────────────────────────────────────────────────────────────
 
-function writeOrdersCsv(res: import("express").Response, orders: OrderRow[]): void {
+function writeOrdersCsv(
+  res: import("express").Response,
+  orders: OrderRow[],
+): void {
   const headers = [
     "order_id",
     "stripe_session_id",
@@ -636,7 +643,7 @@ async function fetchCustomerActivity(
     const b = bucket(day);
     b.totalOrders += 1;
     const firstSeen = o.customer_id
-      ? firstSeenByCustomer.get(o.customer_id) ?? null
+      ? (firstSeenByCustomer.get(o.customer_id) ?? null)
       : null;
     // If we have no record of the customer's first-seen date OR the
     // first-seen is BEFORE this order's day, this order is from a
@@ -665,12 +672,7 @@ function writeCustomerActivityCsv(
   res.write(headers.join(",") + "\n");
   for (const r of rows) {
     res.write(
-      [
-        r.day,
-        r.newCustomers,
-        r.returningCustomerOrders,
-        r.totalOrders,
-      ]
+      [r.day, r.newCustomers, r.returningCustomerOrders, r.totalOrders]
         .map(escapeCsv)
         .join(",") + "\n",
     );
@@ -1009,9 +1011,7 @@ router.get(
       const priorRows = rollupRevenue(priorOrders, priorReturns);
       const priorTotals = totalsFromRevenueRows(priorRows);
       summaryLines.push("");
-      summaryLines.push(
-        `Compared to ${rangeLabel(priorFrom, priorTo)}:`,
-      );
+      summaryLines.push(`Compared to ${rangeLabel(priorFrom, priorTo)}:`);
       summaryLines.push(
         `  Prior orders: ${priorTotals.orders} (${deltaPercent(totals.orders, priorTotals.orders)} vs prior)`,
       );
@@ -1084,10 +1084,7 @@ router.get(
     const rows = allReturns.filter(
       (r) => r.refund_cents != null && r.refund_cents > 0,
     );
-    const total = rows.reduce(
-      (s, r) => s + centsToDollars(r.refund_cents),
-      0,
-    );
+    const total = rows.reduce((s, r) => s + centsToDollars(r.refund_cents), 0);
     const pdf = await renderTablePdf({
       title: "Refunds journal",
       range: rangeLabel(from, to),
@@ -1152,8 +1149,7 @@ router.get(
       (acc, r) => ({
         billed: acc.billed + r.total_billed_cents / 100,
         paid: acc.paid + r.total_paid_cents / 100,
-        patientResp:
-          acc.patientResp + r.patient_responsibility_cents / 100,
+        patientResp: acc.patientResp + r.patient_responsibility_cents / 100,
       }),
       { billed: 0, paid: 0, patientResp: 0 },
     );
@@ -1420,9 +1416,15 @@ async function buildReportArtifact(
   if (format === "csv") {
     const { res, collect } = bufferedRes();
     if (slug === "orders") {
-      writeOrdersCsv(res as unknown as import("express").Response, await fetchOrders(from, to));
+      writeOrdersCsv(
+        res as unknown as import("express").Response,
+        await fetchOrders(from, to),
+      );
     } else if (slug === "returns") {
-      writeReturnsCsv(res as unknown as import("express").Response, await fetchReturns(from, to));
+      writeReturnsCsv(
+        res as unknown as import("express").Response,
+        await fetchReturns(from, to),
+      );
     } else if (slug === "revenue-summary") {
       const [orders, returns] = await Promise.all([
         fetchOrders(from, to),
@@ -1494,7 +1496,11 @@ async function buildReportArtifact(
           `Gross revenue (all statuses): $${totalUsd.toFixed(2)}`,
         ],
       });
-      return { buffer: pdf, contentType: "application/pdf", filenameExt: "pdf" };
+      return {
+        buffer: pdf,
+        contentType: "application/pdf",
+        filenameExt: "pdf",
+      };
     }
     // The other PDFs are simpler — each slug below pulls its data
     // and hands it to renderTablePdf with a slug-specific column
@@ -1536,7 +1542,11 @@ async function buildReportArtifact(
           `Total refunded: $${refunded.toFixed(2)}`,
         ],
       });
-      return { buffer: pdf, contentType: "application/pdf", filenameExt: "pdf" };
+      return {
+        buffer: pdf,
+        contentType: "application/pdf",
+        filenameExt: "pdf",
+      };
     }
     if (slug === "revenue-summary") {
       const [orders, returns] = await Promise.all([
@@ -1570,7 +1580,11 @@ async function buildReportArtifact(
           `Net: $${totals.net.toFixed(2)}`,
         ],
       });
-      return { buffer: pdf, contentType: "application/pdf", filenameExt: "pdf" };
+      return {
+        buffer: pdf,
+        contentType: "application/pdf",
+        filenameExt: "pdf",
+      };
     }
     if (slug === "refunds-journal") {
       const allReturns = await fetchReturns(from, to);
@@ -1602,7 +1616,11 @@ async function buildReportArtifact(
           `Total refunded: $${totalUsd.toFixed(2)}`,
         ],
       });
-      return { buffer: pdf, contentType: "application/pdf", filenameExt: "pdf" };
+      return {
+        buffer: pdf,
+        contentType: "application/pdf",
+        filenameExt: "pdf",
+      };
     }
     if (slug === "insurance-claims") {
       const rows = await fetchInsuranceClaims(from, to);
@@ -1610,8 +1628,7 @@ async function buildReportArtifact(
         (acc, r) => ({
           billed: acc.billed + r.total_billed_cents / 100,
           paid: acc.paid + r.total_paid_cents / 100,
-          patientResp:
-            acc.patientResp + r.patient_responsibility_cents / 100,
+          patientResp: acc.patientResp + r.patient_responsibility_cents / 100,
         }),
         { billed: 0, paid: 0, patientResp: 0 },
       );
@@ -1646,7 +1663,11 @@ async function buildReportArtifact(
           `Patient responsibility: $${totals.patientResp.toFixed(2)}`,
         ],
       });
-      return { buffer: pdf, contentType: "application/pdf", filenameExt: "pdf" };
+      return {
+        buffer: pdf,
+        contentType: "application/pdf",
+        filenameExt: "pdf",
+      };
     }
     if (slug === "customer-activity") {
       const rows = await fetchCustomerActivity(from, to);
@@ -1691,7 +1712,11 @@ async function buildReportArtifact(
             : "Returning-customer share: n/a (no orders)",
         ],
       });
-      return { buffer: pdf, contentType: "application/pdf", filenameExt: "pdf" };
+      return {
+        buffer: pdf,
+        contentType: "application/pdf",
+        filenameExt: "pdf",
+      };
     }
   }
 
@@ -1784,18 +1809,11 @@ router.post(
     // else.
     const days = (to.getTime() - from.getTime()) / 86400_000;
     const effectiveTo =
-      days > MAX_DAYS
-        ? new Date(from.getTime() + MAX_DAYS * 86400_000)
-        : to;
+      days > MAX_DAYS ? new Date(from.getTime() + MAX_DAYS * 86400_000) : to;
 
     let artifact;
     try {
-      artifact = await buildReportArtifact(
-        slug,
-        format,
-        from,
-        effectiveTo,
-      );
+      artifact = await buildReportArtifact(slug, format, from, effectiveTo);
     } catch (err) {
       if (err instanceof ReportEmailValidationError) {
         res.status(400).json({
@@ -1824,9 +1842,7 @@ router.post(
 
     const filename = `pennpaps-${slug}-${rangeSlug(from, effectiveTo)}.${artifact.filenameExt}`;
     const subject = `[${PRACTICE_NAME}] ${slug} report — ${rangeLabel(from, effectiveTo)}`;
-    const notePara = note
-      ? `<p>${escapeHtml(note)}</p>`
-      : "";
+    const notePara = note ? `<p>${escapeHtml(note)}</p>` : "";
     const html = [
       `<p>Hi,</p>`,
       `<p>Attached is the <strong>${escapeHtml(slug)}</strong> report for the period <strong>${escapeHtml(rangeLabel(from, effectiveTo))}</strong>, generated as <strong>${escapeHtml(format)}</strong>.</p>`,

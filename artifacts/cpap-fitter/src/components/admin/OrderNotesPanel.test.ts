@@ -10,10 +10,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const SRC = readFileSync(
-  path.join(__dirname, "OrderNotesPanel.tsx"),
-  "utf8",
-);
+const SRC = readFileSync(path.join(__dirname, "OrderNotesPanel.tsx"), "utf8");
 
 // ---------------------------------------------------------------------------
 // a11y: aria-label on the note textarea

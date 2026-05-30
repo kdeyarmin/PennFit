@@ -114,8 +114,7 @@ export function PrescriptionsTab({
     if (
       !(await confirm({
         title: "Remove attached document?",
-        description:
-          "The patient's record will no longer link to it.",
+        description: "The patient's record will no longer link to it.",
         confirmLabel: "Remove",
         destructive: true,
       }))
@@ -257,8 +256,8 @@ export function PrescriptionsTab({
     <div className="space-y-3">
       <div className="flex items-center justify-between gap-3">
         <p className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
-          Clinical fields are immutable after creation — to edit, add a new
-          one and mark the old one expired.
+          Clinical fields are immutable after creation — to edit, add a new one
+          and mark the old one expired.
         </p>
         <div className="flex items-center gap-2">
           <a

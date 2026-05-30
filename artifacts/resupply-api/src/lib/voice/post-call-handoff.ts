@@ -159,7 +159,9 @@ export async function routeVoiceHandoffToCsrQueue(
     // membership check tolerates a row whose tags column is null or
     // a non-array shape (defensive).
     const existingTags = Array.isArray(row.tags)
-      ? (row.tags as unknown[]).filter((t): t is string => typeof t === "string")
+      ? (row.tags as unknown[]).filter(
+          (t): t is string => typeof t === "string",
+        )
       : [];
     const nextTags = existingTags.includes(VOICE_HANDOFF_TAG)
       ? existingTags

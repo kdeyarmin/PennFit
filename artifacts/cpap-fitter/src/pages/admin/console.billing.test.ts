@@ -45,9 +45,9 @@ function expectPageWired(symbolName: string, modulePath: string): void {
   const lazyPattern = new RegExp(
     `import\\("${modulePath}"\\)[\\s\\S]{0,100}default: m\\.${symbolName}`,
   );
-  expect(
-    eagerPattern.test(CONSOLE_SRC) || lazyPattern.test(CONSOLE_SRC),
-  ).toBe(true);
+  expect(eagerPattern.test(CONSOLE_SRC) || lazyPattern.test(CONSOLE_SRC)).toBe(
+    true,
+  );
 }
 
 describe("console.tsx — billing page imports", () => {
@@ -105,11 +105,7 @@ describe("console.tsx — billing route declarations", () => {
 // Regression: pre-existing routes are undisturbed
 // ---------------------------------------------------------------------------
 describe("console.tsx — pre-existing routes not removed by this PR", () => {
-  const expectedRoutes = [
-    "/admin/patients",
-    "/admin",
-    "/admin/dashboard",
-  ];
+  const expectedRoutes = ["/admin/patients", "/admin", "/admin/dashboard"];
 
   for (const route of expectedRoutes) {
     it(`retains the ${route} route`, () => {

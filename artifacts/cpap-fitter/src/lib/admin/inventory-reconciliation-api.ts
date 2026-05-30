@@ -59,9 +59,7 @@ export interface ReconciliationDetail {
 
 export class ReconciliationUnavailableError extends Error {
   constructor(
-    public readonly reason:
-      | "stripe_not_configured"
-      | "stripe_list_failed",
+    public readonly reason: "stripe_not_configured" | "stripe_list_failed",
   ) {
     super(reason);
     this.name = "ReconciliationUnavailableError";

@@ -5,14 +5,17 @@ This review maps the four requested areas to concrete code paths and prioritized
 ## 1) Conversion instrumentation and iteration speed
 
 ### Current strengths
+
 - Core funnel events already exist around store interactions and checkout funnel transitions.
 - Admin and storefront routes are reasonably modular, making targeted instrumentation feasible.
 
 ### Gaps observed
+
 - Funnel events are not consistently correlated with backend outcomes (e.g., reorder intent vs. reorder completion).
 - Some failure modes (archived pricing, auth expiry during cart sync) reduce conversion but are not surfaced as explicit product analytics signals.
 
 ### Recommended improvements
+
 1. **Adopt a canonical conversion event schema** shared across frontend + API.
    - Include: `event_name`, `session_id`, `user_id?`, `correlation_id`, `route`, `sku_ids`, `order_id?`, `error_code?`, `latency_ms`.
 2. **Instrument “intent → outcome” pairs for reorder flows**.
@@ -25,12 +28,14 @@ This review maps the four requested areas to concrete code paths and prioritized
 ## 2) Security/reliability consistency on critical mutation/auth paths
 
 ### Gaps observed
+
 - Missing/uneven rate limiting on auth recovery endpoints.
 - CSRF constant-time comparison edge-case previously identified.
 - Idempotency middleware coverage is incomplete for non-JSON response paths.
 - Some admin write paths lack abuse throttles and blast-radius controls.
 
 ### Recommended improvements
+
 1. **Standardize a “critical mutation policy” middleware stack** for all write endpoints:
    - authn/authz check
    - CSRF validation
@@ -49,11 +54,13 @@ This review maps the four requested areas to concrete code paths and prioritized
 ## 3) Lifecycle retention automation (reorder and reminder outcomes)
 
 ### Gaps observed
+
 - Reminder scheduling has known invalid-date edge cases.
 - Reorder experiences can silently degrade (e.g., archived prices disappearing) without clear user feedback.
 - Outcome metrics are not fully closed-loop from reminder send → click → reorder completion.
 
 ### Recommended improvements
+
 1. **Enforce defensive date validation before reminder eligibility math**.
    - Invalid or missing baseline dates should be quarantined with explicit reason codes.
 2. **Surface reorder blockers explicitly to users and analytics**.
@@ -70,11 +77,13 @@ This review maps the four requested areas to concrete code paths and prioritized
 ## 4) Operational safety and observability for admin-heavy workflows
 
 ### Gaps observed
+
 - Admin mutation paths are high-power and need stronger abuse/safety controls.
 - UI failure handling in admin areas can be brittle without consistent boundaries.
 - Alerting and SLO-like visibility for admin operations is not uniformly defined.
 
 ### Recommended improvements
+
 1. **Apply role-scoped rate limits and quotas on admin writes**.
    - Separate controls by operation class: patient data edits, outreach dispatches, billing/reorder actions.
 2. **Require step-up confirmation for high-risk actions**.
@@ -91,6 +100,7 @@ This review maps the four requested areas to concrete code paths and prioritized
    - duplicate mutation detection rate.
 
 ## Suggested sequencing
+
 1. **Week 1–2**: security/reliability baseline hardening on auth + mutation policies.
 2. **Week 2–3**: lifecycle and reorder correctness fixes with explicit user-facing errors.
 3. **Week 3–4**: conversion instrumentation unification and admin observability dashboards.

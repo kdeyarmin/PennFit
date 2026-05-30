@@ -156,7 +156,9 @@ const AdminShopSubscriptionsPage = lazy(() =>
   })),
 );
 const AdminTeamPage = lazy(() =>
-  import("@/pages/admin/admin-team").then((m) => ({ default: m.AdminTeamPage })),
+  import("@/pages/admin/admin-team").then((m) => ({
+    default: m.AdminTeamPage,
+  })),
 );
 const AdminOperationsPage = lazy(() =>
   import("@/pages/admin/admin-operations").then((m) => ({
@@ -446,221 +448,221 @@ function AdminConsole() {
             consistent across both kinds of pending state. */}
         <Suspense fallback={<Spinner label="Loading page…" />}>
           <Switch>
-          <Route path="/admin" component={DashboardPage} />
-          <Route path="/admin/dashboard">
-            <Redirect to="/admin" replace />
-          </Route>
-          <Route path="/admin/billing" component={AdminBillingHubPage} />
-          <Route
-            path="/admin/billing/ai-queue"
-            component={AdminBillingAiQueuePage}
-          />
-          <Route
-            path="/admin/billing/aging"
-            component={AdminBillingAgingPage}
-          />
-          <Route
-            path="/admin/billing/denials"
-            component={AdminBillingDenialsPage}
-          />
-          <Route
-            path="/admin/billing/era"
-            component={AdminBillingEraPage}
-          />
-          <Route
-            path="/admin/billing/eligibility"
-            component={AdminBillingEligibilityPage}
-          />
-          <Route
-            path="/admin/billing/prior-auths"
-            component={AdminBillingPriorAuthsPage}
-          />
-          <Route
-            path="/admin/billing/config"
-            component={AdminBillingConfigHubPage}
-          />
-          <Route
-            path="/admin/billing/config/payers"
-            component={AdminBillingConfigPayersPage}
-          />
-          <Route
-            path="/admin/billing/config/fee-schedules"
-            component={AdminBillingConfigFeeSchedulesPage}
-          />
-          <Route
-            path="/admin/billing/config/modifier-rules"
-            component={AdminBillingConfigModifierRulesPage}
-          />
-          <Route
-            path="/admin/billing/config/denial-codes"
-            component={AdminBillingConfigDenialCodesPage}
-          />
-          <Route
-            path="/admin/billing/config/claim-templates"
-            component={AdminBillingConfigClaimTemplatesPage}
-          />
-          <Route
-            path="/admin/billing/capped-rentals"
-            component={AdminBillingCappedRentalsPage}
-          />
-          <Route
-            path="/admin/billing/office-ally"
-            component={AdminBillingOfficeAllyPage}
-          />
-          <Route path="/admin/billing/office-ally/:submissionId">
-            {(params) => (
-              <AdminOfficeAllySubmissionDetailPage
-                submissionId={params.submissionId}
-              />
-            )}
-          </Route>
-          <Route path="/admin/patients" component={PatientsPage} />
-          <Route path="/admin/patients/:patientId/insurance-claims">
-            {(params) => (
-              <AdminInsuranceClaimsPage patientId={params.patientId} />
-            )}
-          </Route>
-          <Route path="/admin/patients/:id">
-            {(params) => <PatientDetailPage id={params.id} />}
-          </Route>
-          <Route path="/admin/conversations" component={ConversationsPage} />
-          <Route path="/admin/conversations/:id">
-            {(params) => <ConversationDetailPage id={params.id} />}
-          </Route>
-          <Route path="/admin/episodes" component={EpisodesPage} />
-          <Route path="/admin/rules" component={RulesPage} />
-          <Route path="/admin/shop/reviews" component={AdminShopReviewsPage} />
-          <Route
-            path="/admin/shop/product-questions"
-            component={AdminProductQuestionsPage}
-          />
-          <Route
-            path="/admin/shop/inventory"
-            component={AdminShopInventoryPage}
-          />
-          <Route
-            path="/admin/shop/inventory/new"
-            component={AdminShopProductNewPage}
-          />
-          <Route
-            path="/admin/shop/inventory/reconcile"
-            component={AdminShopInventoryReconcilePage}
-          />
-          <Route
-            path="/admin/shop/inventory/reconcile/:id"
-            component={AdminShopInventoryReconcileEditPage}
-          />
-          <Route
-            path="/admin/shop/abandoned-carts"
-            component={AdminShopAbandonedCartsPage}
-          />
-          <Route
-            path="/admin/shop/back-in-stock"
-            component={AdminShopBackInStockPage}
-          />
-          <Route
-            path="/admin/shop/insurance-leads"
-            component={AdminInsuranceLeadsPage}
-          />
-          <Route
-            path="/admin/fitter-leads"
-            component={AdminFitterLeadsPage}
-          />
-          <Route
-            path="/admin/shop/customers"
-            component={AdminShopCustomersPage}
-          />
-          <Route path="/admin/shop/customers/:userId">
-            {(params) => <AdminCustomerDetailPage userId={params.userId} />}
-          </Route>
-          <Route path="/admin/shop/returns" component={AdminShopReturnsPage} />
-          <Route path="/admin/followups" component={AdminFollowupsPage} />
-          <Route path="/admin/today" component={AdminTodayPage} />
-          <Route path="/admin/providers" component={AdminProvidersPage} />
-          <Route
-            path="/admin/inbound-faxes"
-            component={AdminInboundFaxesPage}
-          />
-          <Route
-            path="/admin/inbound-referrals"
-            component={AdminInboundReferralsPage}
-          />
-          <Route
-            path="/admin/patients/:patientId/prescription-requests"
-            component={AdminPrescriptionRequestsPage}
-          />
-          <Route
-            path="/admin/equipment-recalls"
-            component={AdminEquipmentRecallsPage}
-          />
-          <Route path="/admin/analytics" component={AdminAnalyticsPage} />
-          <Route path="/admin/rt-overview" component={AdminRtOverviewPage} />
-          <Route
-            path="/admin/bulk-campaigns"
-            component={AdminBulkCampaignsPage}
-          />
-          <Route path="/admin/security" component={AdminSecurityPage} />
-          <Route path="/admin/macros" component={AdminMacrosPage} />
-          <Route
-            path="/admin/templates"
-            component={AdminMessageTemplatesPage}
-          />
-          <Route
-            path="/admin/shop/subscriptions"
-            component={AdminShopSubscriptionsPage}
-          />
-          <Route path="/admin/team" component={AdminTeamPage} />
-          <Route path="/admin/operations" component={AdminOperationsPage} />
-          <Route path="/admin/reports" component={AdminReportsPage} />
-          <Route
-            path="/admin/control-center"
-            component={AdminControlCenterPage}
-          />
-          <Route path="/admin/nps" component={AdminNpsPage} />
-          <Route
-            path="/admin/productivity"
-            component={AdminProductivityPage}
-          />
-          <Route
-            path="/admin/shop/backorders"
-            component={AdminBackordersPage}
-          />
-          <Route
-            path="/admin/closures"
-            component={AdminClosuresPage}
-          />
-          <Route
-            path="/admin/appointment-requests"
-            component={AdminAppointmentRequestsPage}
-          />
-          <Route
-            path="/admin/integrations"
-            component={AdminIntegrationsPage}
-          />
-          <Route
-            path="/admin/coaching"
-            component={AdminCoachingPage}
-          />
-          <Route
-            path="/admin/delivery-failures"
-            component={AdminDeliveryFailuresPage}
-          />
-          <Route path="/admin/rule-tester" component={AdminRuleTesterPage} />
-          <Route path="/admin/settings" component={AdminSettingsPage} />
-          <Route path="/admin/pennpaps/orders" component={PennpapsOrdersPage} />
-          <Route
-            path="/admin/pennpaps/orders/:id"
-            component={PennpapsOrderDetailPage}
-          />
-          <Route
-            path="/admin/pennpaps/reminders"
-            component={PennpapsRemindersPage}
-          />
-          <Route
-            path="/admin/pennpaps/analytics"
-            component={PennpapsAnalyticsPage}
-          />
-          <Route component={NotFound} />
+            <Route path="/admin" component={DashboardPage} />
+            <Route path="/admin/dashboard">
+              <Redirect to="/admin" replace />
+            </Route>
+            <Route path="/admin/billing" component={AdminBillingHubPage} />
+            <Route
+              path="/admin/billing/ai-queue"
+              component={AdminBillingAiQueuePage}
+            />
+            <Route
+              path="/admin/billing/aging"
+              component={AdminBillingAgingPage}
+            />
+            <Route
+              path="/admin/billing/denials"
+              component={AdminBillingDenialsPage}
+            />
+            <Route path="/admin/billing/era" component={AdminBillingEraPage} />
+            <Route
+              path="/admin/billing/eligibility"
+              component={AdminBillingEligibilityPage}
+            />
+            <Route
+              path="/admin/billing/prior-auths"
+              component={AdminBillingPriorAuthsPage}
+            />
+            <Route
+              path="/admin/billing/config"
+              component={AdminBillingConfigHubPage}
+            />
+            <Route
+              path="/admin/billing/config/payers"
+              component={AdminBillingConfigPayersPage}
+            />
+            <Route
+              path="/admin/billing/config/fee-schedules"
+              component={AdminBillingConfigFeeSchedulesPage}
+            />
+            <Route
+              path="/admin/billing/config/modifier-rules"
+              component={AdminBillingConfigModifierRulesPage}
+            />
+            <Route
+              path="/admin/billing/config/denial-codes"
+              component={AdminBillingConfigDenialCodesPage}
+            />
+            <Route
+              path="/admin/billing/config/claim-templates"
+              component={AdminBillingConfigClaimTemplatesPage}
+            />
+            <Route
+              path="/admin/billing/capped-rentals"
+              component={AdminBillingCappedRentalsPage}
+            />
+            <Route
+              path="/admin/billing/office-ally"
+              component={AdminBillingOfficeAllyPage}
+            />
+            <Route path="/admin/billing/office-ally/:submissionId">
+              {(params) => (
+                <AdminOfficeAllySubmissionDetailPage
+                  submissionId={params.submissionId}
+                />
+              )}
+            </Route>
+            <Route path="/admin/patients" component={PatientsPage} />
+            <Route path="/admin/patients/:patientId/insurance-claims">
+              {(params) => (
+                <AdminInsuranceClaimsPage patientId={params.patientId} />
+              )}
+            </Route>
+            <Route path="/admin/patients/:id">
+              {(params) => <PatientDetailPage id={params.id} />}
+            </Route>
+            <Route path="/admin/conversations" component={ConversationsPage} />
+            <Route path="/admin/conversations/:id">
+              {(params) => <ConversationDetailPage id={params.id} />}
+            </Route>
+            <Route path="/admin/episodes" component={EpisodesPage} />
+            <Route path="/admin/rules" component={RulesPage} />
+            <Route
+              path="/admin/shop/reviews"
+              component={AdminShopReviewsPage}
+            />
+            <Route
+              path="/admin/shop/product-questions"
+              component={AdminProductQuestionsPage}
+            />
+            <Route
+              path="/admin/shop/inventory"
+              component={AdminShopInventoryPage}
+            />
+            <Route
+              path="/admin/shop/inventory/new"
+              component={AdminShopProductNewPage}
+            />
+            <Route
+              path="/admin/shop/inventory/reconcile"
+              component={AdminShopInventoryReconcilePage}
+            />
+            <Route
+              path="/admin/shop/inventory/reconcile/:id"
+              component={AdminShopInventoryReconcileEditPage}
+            />
+            <Route
+              path="/admin/shop/abandoned-carts"
+              component={AdminShopAbandonedCartsPage}
+            />
+            <Route
+              path="/admin/shop/back-in-stock"
+              component={AdminShopBackInStockPage}
+            />
+            <Route
+              path="/admin/shop/insurance-leads"
+              component={AdminInsuranceLeadsPage}
+            />
+            <Route
+              path="/admin/fitter-leads"
+              component={AdminFitterLeadsPage}
+            />
+            <Route
+              path="/admin/shop/customers"
+              component={AdminShopCustomersPage}
+            />
+            <Route path="/admin/shop/customers/:userId">
+              {(params) => <AdminCustomerDetailPage userId={params.userId} />}
+            </Route>
+            <Route
+              path="/admin/shop/returns"
+              component={AdminShopReturnsPage}
+            />
+            <Route path="/admin/followups" component={AdminFollowupsPage} />
+            <Route path="/admin/today" component={AdminTodayPage} />
+            <Route path="/admin/providers" component={AdminProvidersPage} />
+            <Route
+              path="/admin/inbound-faxes"
+              component={AdminInboundFaxesPage}
+            />
+            <Route
+              path="/admin/inbound-referrals"
+              component={AdminInboundReferralsPage}
+            />
+            <Route
+              path="/admin/patients/:patientId/prescription-requests"
+              component={AdminPrescriptionRequestsPage}
+            />
+            <Route
+              path="/admin/equipment-recalls"
+              component={AdminEquipmentRecallsPage}
+            />
+            <Route path="/admin/analytics" component={AdminAnalyticsPage} />
+            <Route path="/admin/rt-overview" component={AdminRtOverviewPage} />
+            <Route
+              path="/admin/bulk-campaigns"
+              component={AdminBulkCampaignsPage}
+            />
+            <Route path="/admin/security" component={AdminSecurityPage} />
+            <Route path="/admin/macros" component={AdminMacrosPage} />
+            <Route
+              path="/admin/templates"
+              component={AdminMessageTemplatesPage}
+            />
+            <Route
+              path="/admin/shop/subscriptions"
+              component={AdminShopSubscriptionsPage}
+            />
+            <Route path="/admin/team" component={AdminTeamPage} />
+            <Route path="/admin/operations" component={AdminOperationsPage} />
+            <Route path="/admin/reports" component={AdminReportsPage} />
+            <Route
+              path="/admin/control-center"
+              component={AdminControlCenterPage}
+            />
+            <Route path="/admin/nps" component={AdminNpsPage} />
+            <Route
+              path="/admin/productivity"
+              component={AdminProductivityPage}
+            />
+            <Route
+              path="/admin/shop/backorders"
+              component={AdminBackordersPage}
+            />
+            <Route path="/admin/closures" component={AdminClosuresPage} />
+            <Route
+              path="/admin/appointment-requests"
+              component={AdminAppointmentRequestsPage}
+            />
+            <Route
+              path="/admin/integrations"
+              component={AdminIntegrationsPage}
+            />
+            <Route path="/admin/coaching" component={AdminCoachingPage} />
+            <Route
+              path="/admin/delivery-failures"
+              component={AdminDeliveryFailuresPage}
+            />
+            <Route path="/admin/rule-tester" component={AdminRuleTesterPage} />
+            <Route path="/admin/settings" component={AdminSettingsPage} />
+            <Route
+              path="/admin/pennpaps/orders"
+              component={PennpapsOrdersPage}
+            />
+            <Route
+              path="/admin/pennpaps/orders/:id"
+              component={PennpapsOrderDetailPage}
+            />
+            <Route
+              path="/admin/pennpaps/reminders"
+              component={PennpapsRemindersPage}
+            />
+            <Route
+              path="/admin/pennpaps/analytics"
+              component={PennpapsAnalyticsPage}
+            />
+            <Route component={NotFound} />
           </Switch>
         </Suspense>
       </ErrorBoundary>

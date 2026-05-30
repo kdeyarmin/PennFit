@@ -65,7 +65,8 @@ export function Consent() {
   const emailValid = EMAIL_RE.test(trimmedEmail);
   const phoneDigits = phone.replace(/[^\d]/g, "");
   // Phone is optional → either empty (skip block) or 10/11 US digits.
-  const phoneValid = phoneDigits.length === 0 || PHONE_DIGIT_RE.test(phoneDigits);
+  const phoneValid =
+    phoneDigits.length === 0 || PHONE_DIGIT_RE.test(phoneDigits);
   const phoneFilled = phoneDigits.length > 0;
   const canContinue = agreed && emailValid && emailOptIn && phoneValid;
 
@@ -94,8 +95,7 @@ export function Consent() {
       // Emit a structured event so ops can graph the rate and a
       // creeping problem doesn't hide as a slow drop in fitter-
       // funnel volume.
-      const raw =
-        err instanceof Error ? err.message : String(err ?? "unknown");
+      const raw = err instanceof Error ? err.message : String(err ?? "unknown");
       const httpMatch = /^http_(\d{3})$/.exec(raw);
       const httpStatus = httpMatch ? Number(httpMatch[1]) : null;
       let category: "http_4xx" | "http_5xx" | "network" | "other";
@@ -293,10 +293,7 @@ export function Consent() {
               aria-invalid={email.length > 0 && !emailValid}
               aria-describedby="fitter-email-help"
             />
-            <p
-              id="fitter-email-help"
-              className="text-sm text-muted-foreground"
-            >
+            <p id="fitter-email-help" className="text-sm text-muted-foreground">
               We need an email on file so we can send you the mask
               recommendation and any follow-up about your order.
             </p>
@@ -307,9 +304,7 @@ export function Consent() {
               <Checkbox
                 id="email-consent"
                 checked={emailOptIn}
-                onCheckedChange={(checked) =>
-                  setEmailOptIn(checked as boolean)
-                }
+                onCheckedChange={(checked) => setEmailOptIn(checked as boolean)}
               />
               <div className="space-y-1 leading-none">
                 <label
@@ -319,8 +314,8 @@ export function Consent() {
                   I agree to receive emails from PennPaps
                 </label>
                 <p className="text-sm text-muted-foreground">
-                  Mask recommendation, fitting follow-ups, and product news.
-                  You can unsubscribe at any time.
+                  Mask recommendation, fitting follow-ups, and product news. You
+                  can unsubscribe at any time.
                 </p>
               </div>
             </div>
@@ -381,9 +376,7 @@ export function Consent() {
                   id="sms-consent"
                   checked={smsOptIn && phoneFilled && phoneValid}
                   disabled={!phoneFilled || !phoneValid}
-                  onCheckedChange={(checked) =>
-                    setSmsOptIn(checked as boolean)
-                  }
+                  onCheckedChange={(checked) => setSmsOptIn(checked as boolean)}
                 />
                 <div className="space-y-1 leading-none">
                   <label

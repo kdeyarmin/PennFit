@@ -21,7 +21,11 @@ async function jsonFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
   const res = await fetch(`/resupply-api${path}`, {
     ...restInit,
     credentials: "include",
-    headers: { Accept: "application/json", ...csrfHeader(), ...(initHeaders ?? {}) },
+    headers: {
+      Accept: "application/json",
+      ...csrfHeader(),
+      ...(initHeaders ?? {}),
+    },
   });
   if (!res.ok) {
     let message = `${res.status} ${res.statusText}`;
@@ -58,6 +62,4 @@ export const listTeamCoachingNotes = (userId: string) =>
   jsonFetch<{
     counts: Record<string, number>;
     notes: Array<Omit<CoachingNote, "targetUserId">>;
-  }>(
-    `/admin/team/${encodeURIComponent(userId)}/coaching-notes`,
-  );
+  }>(`/admin/team/${encodeURIComponent(userId)}/coaching-notes`);

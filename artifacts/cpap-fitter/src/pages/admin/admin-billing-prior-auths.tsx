@@ -70,14 +70,12 @@ function dayBadge(days: number | null, tone: "danger" | "warning" | "muted") {
 }
 
 export function AdminBillingPriorAuthsPage() {
-  const [expiringWithinDays, setExpiringWithinDays] = useState<
-    (typeof EXPIRY_WINDOWS)[number]
-  >(30);
+  const [expiringWithinDays, setExpiringWithinDays] =
+    useState<(typeof EXPIRY_WINDOWS)[number]>(30);
 
   const { data, isPending, isError, error, refetch } = useQuery({
     queryKey: ["admin-billing-prior-auth-queue", expiringWithinDays],
-    queryFn: () =>
-      fetchPriorAuthQueue({ expiringWithinDays, limit: 100 }),
+    queryFn: () => fetchPriorAuthQueue({ expiringWithinDays, limit: 100 }),
     staleTime: 30_000,
     refetchOnWindowFocus: true,
   });
@@ -107,11 +105,10 @@ export function AdminBillingPriorAuthsPage() {
           Prior auths
         </h1>
         <p className="text-sm" style={{ color: "hsl(var(--ink-2))" }}>
-          PA Medicaid MCOs run a 7-day SLA starting 2026-01-01. The
-          sweep job tags each PA every 6 hours; this view shows the
-          rows that need a human now. The expiring bucket is your
-          best defence against the "we got the order but no PA"
-          billing gap.
+          PA Medicaid MCOs run a 7-day SLA starting 2026-01-01. The sweep job
+          tags each PA every 6 hours; this view shows the rows that need a human
+          now. The expiring bucket is your best defence against the "we got the
+          order but no PA" billing gap.
         </p>
       </header>
 
@@ -313,10 +310,7 @@ function PaBucket({
       }
     >
       {rows.length === 0 ? (
-        <p
-          className="text-sm py-1"
-          style={{ color: "hsl(var(--ink-3))" }}
-        >
+        <p className="text-sm py-1" style={{ color: "hsl(var(--ink-3))" }}>
           {emptyLabel}
         </p>
       ) : (

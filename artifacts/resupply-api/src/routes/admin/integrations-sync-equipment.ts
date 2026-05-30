@@ -61,10 +61,7 @@ router.post(
         patientId,
         settings,
       );
-      if (
-        outcome.kind === "inserted" ||
-        outcome.kind === "matched"
-      ) {
+      if (outcome.kind === "inserted" || outcome.kind === "matched") {
         const scan = await scanRecallsForAsset(supabase, outcome.assetId);
         if (outcome.kind === "inserted") linked += 1;
         recallsQueued += scan.notificationsQueued;

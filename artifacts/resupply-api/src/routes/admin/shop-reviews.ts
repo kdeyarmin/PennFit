@@ -86,77 +86,81 @@ const noteBody = z
 // Customer-review moderation queue. Treated as inbox-tier work
 // alongside product-questions and customer-followups — every CSR
 // who handles inbound customer touchpoints uses this surface.
-router.get("/admin/shop/reviews", requirePermission("conversations.manage"), async (req, res) => {
-  const parse = reviewListQuery.safeParse(req.query);
-  if (!parse.success) {
-    res.status(400).json({ error: "invalid_query" });
-    return;
-  }
-  const { status, cursor, limit } = parse.data;
-  const parsedCursor = parseCompositeCursor(cursor);
-  if (!parsedCursor.ok) {
-    res.status(400).json({ error: "invalid_cursor" });
-    return;
-  }
-  // shop_reviews.id is a UUID. Reject anything else so a hostile
-  // cursor can't smuggle PostgREST structural characters into the
-  // `.or()` filter expression below.
-  if (parsedCursor.id !== null && !isUuidCursorId(parsedCursor.id)) {
-    res.status(400).json({ error: "invalid_cursor" });
-    return;
-  }
+router.get(
+  "/admin/shop/reviews",
+  requirePermission("conversations.manage"),
+  async (req, res) => {
+    const parse = reviewListQuery.safeParse(req.query);
+    if (!parse.success) {
+      res.status(400).json({ error: "invalid_query" });
+      return;
+    }
+    const { status, cursor, limit } = parse.data;
+    const parsedCursor = parseCompositeCursor(cursor);
+    if (!parsedCursor.ok) {
+      res.status(400).json({ error: "invalid_cursor" });
+      return;
+    }
+    // shop_reviews.id is a UUID. Reject anything else so a hostile
+    // cursor can't smuggle PostgREST structural characters into the
+    // `.or()` filter expression below.
+    if (parsedCursor.id !== null && !isUuidCursorId(parsedCursor.id)) {
+      res.status(400).json({ error: "invalid_cursor" });
+      return;
+    }
 
-  const supabase = getSupabaseServiceRoleClient();
-  let listQuery = supabase
-    .schema("resupply")
-    .from("shop_reviews")
-    .select(
-      "id, product_id, rating, title, body, author_display_name, author_email, status, moderation_note, moderated_at, created_at, updated_at",
-    )
-    .order("created_at", { ascending: false })
-    .order("id", { ascending: false })
-    .limit(limit + 1);
-  if (status !== "all") listQuery = listQuery.eq("status", status);
-  // Composite cursor predicate: `created_at < ts OR (created_at = ts
-  // AND id < cursorId)` — see lib/cursor.ts for why a timestamp-only
-  // cursor is unsafe at page boundaries when reviews share a created_at.
-  if (parsedCursor.date && parsedCursor.id) {
-    const cursorIso = parsedCursor.date.toISOString();
-    listQuery = listQuery.or(
-      `created_at.lt.${cursorIso},and(created_at.eq.${cursorIso},id.lt.${parsedCursor.id})`,
-    );
-  }
-  const { data: rows, error } = await listQuery;
-  if (error) throw error;
+    const supabase = getSupabaseServiceRoleClient();
+    let listQuery = supabase
+      .schema("resupply")
+      .from("shop_reviews")
+      .select(
+        "id, product_id, rating, title, body, author_display_name, author_email, status, moderation_note, moderated_at, created_at, updated_at",
+      )
+      .order("created_at", { ascending: false })
+      .order("id", { ascending: false })
+      .limit(limit + 1);
+    if (status !== "all") listQuery = listQuery.eq("status", status);
+    // Composite cursor predicate: `created_at < ts OR (created_at = ts
+    // AND id < cursorId)` — see lib/cursor.ts for why a timestamp-only
+    // cursor is unsafe at page boundaries when reviews share a created_at.
+    if (parsedCursor.date && parsedCursor.id) {
+      const cursorIso = parsedCursor.date.toISOString();
+      listQuery = listQuery.or(
+        `created_at.lt.${cursorIso},and(created_at.eq.${cursorIso},id.lt.${parsedCursor.id})`,
+      );
+    }
+    const { data: rows, error } = await listQuery;
+    if (error) throw error;
 
-  const all = rows ?? [];
-  const hasMore = all.length > limit;
-  const trimmed = hasMore ? all.slice(0, limit) : all;
-  const lastRow = trimmed[trimmed.length - 1];
-  const nextCursor =
-    hasMore && lastRow
-      ? encodeCompositeCursor(new Date(lastRow.created_at), lastRow.id)
-      : null;
+    const all = rows ?? [];
+    const hasMore = all.length > limit;
+    const trimmed = hasMore ? all.slice(0, limit) : all;
+    const lastRow = trimmed[trimmed.length - 1];
+    const nextCursor =
+      hasMore && lastRow
+        ? encodeCompositeCursor(new Date(lastRow.created_at), lastRow.id)
+        : null;
 
-  res.json({
-    items: trimmed.map((r) => ({
-      id: r.id,
-      productId: r.product_id,
-      rating: r.rating,
-      title: r.title,
-      body: r.body,
-      authorDisplayName: r.author_display_name,
-      authorEmail: r.author_email,
-      status: r.status,
-      moderationNote: r.moderation_note,
-      // PostgREST returns timestamptz as ISO string already.
-      moderatedAt: r.moderated_at,
-      createdAt: r.created_at,
-      updatedAt: r.updated_at,
-    })),
-    nextCursor,
-  });
-});
+    res.json({
+      items: trimmed.map((r) => ({
+        id: r.id,
+        productId: r.product_id,
+        rating: r.rating,
+        title: r.title,
+        body: r.body,
+        authorDisplayName: r.author_display_name,
+        authorEmail: r.author_email,
+        status: r.status,
+        moderationNote: r.moderation_note,
+        // PostgREST returns timestamptz as ISO string already.
+        moderatedAt: r.moderated_at,
+        createdAt: r.created_at,
+        updatedAt: r.updated_at,
+      })),
+      nextCursor,
+    });
+  },
+);
 
 router.post(
   "/admin/shop/reviews/:id/approve",

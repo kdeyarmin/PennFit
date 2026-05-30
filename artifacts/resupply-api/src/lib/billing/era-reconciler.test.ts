@@ -127,7 +127,9 @@ describe("era-reconciler — linesUpdated counter mechanics", () => {
   it("places linesUpdated++ after the supabase update call (not before)", () => {
     // Increment must follow the update, not precede it — so a DB error
     // that short-circuits doesn't inflate the counter.
-    const updateIdx = SRC.indexOf(".from(\"insurance_claim_line_items\")\n        .update(");
+    const updateIdx = SRC.indexOf(
+      '.from("insurance_claim_line_items")\n        .update(',
+    );
     const incrIdx = SRC.indexOf("linesUpdated++");
     expect(updateIdx).toBeGreaterThan(-1);
     expect(incrIdx).toBeGreaterThan(updateIdx);

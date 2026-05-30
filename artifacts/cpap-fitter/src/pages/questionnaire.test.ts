@@ -16,7 +16,7 @@ const SRC = readFileSync(path.join(__dirname, "questionnaire.tsx"), "utf8");
 
 describe("questionnaire — P4 'I'm not sure' tile", () => {
   it("renders a third tile with a stable data-testid suffix '-unsure'", () => {
-    expect(SRC).toContain('data-testid={`button-${currentQ.id}-unsure`}');
+    expect(SRC).toContain("data-testid={`button-${currentQ.id}-unsure`}");
   });
 
   it("the unsure tile dispatches the null value to handleAnswer", () => {
@@ -45,20 +45,18 @@ describe("questionnaire — P4 'I'm not sure' tile", () => {
     // The other two tiles compare against `true` / `false`; the
     // unsure tile compares against `null`. All three are mutually
     // exclusive at runtime.
-    expect(SRC).toMatch(
-      /aria-checked=\{answers\[currentQ\.id\] === null\}/,
-    );
+    expect(SRC).toMatch(/aria-checked=\{answers\[currentQ\.id\] === null\}/);
   });
 });
 
 describe("questionnaire — Yes/No tiles unchanged", () => {
   it("the Yes tile still dispatches true", () => {
     expect(SRC).toMatch(/onClick=\{\(\) => handleAnswer\(true\)\}/);
-    expect(SRC).toContain('data-testid={`button-${currentQ.id}-yes`}');
+    expect(SRC).toContain("data-testid={`button-${currentQ.id}-yes`}");
   });
 
   it("the No tile still dispatches false", () => {
     expect(SRC).toMatch(/onClick=\{\(\) => handleAnswer\(false\)\}/);
-    expect(SRC).toContain('data-testid={`button-${currentQ.id}-no`}');
+    expect(SRC).toContain("data-testid={`button-${currentQ.id}-no`}");
   });
 });

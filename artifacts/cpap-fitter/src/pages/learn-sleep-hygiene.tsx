@@ -92,11 +92,11 @@ export function LearnSleepHygiene() {
           CPAP isn&apos;t a substitute for sleep hygiene.
         </h1>
         <p className="text-lg text-muted-foreground leading-relaxed">
-          PAP therapy fixes the breathing problem that fragments your
-          sleep. It can&apos;t fix the second cup of espresso at 4pm, the
-          phone-in-bed habit, the warm bedroom, or the inconsistent
-          wake-time. Six evidence-based habits that compound with your
-          therapy and produce better sleep than either alone.
+          PAP therapy fixes the breathing problem that fragments your sleep. It
+          can&apos;t fix the second cup of espresso at 4pm, the phone-in-bed
+          habit, the warm bedroom, or the inconsistent wake-time. Six
+          evidence-based habits that compound with your therapy and produce
+          better sleep than either alone.
         </p>
       </header>
 
@@ -114,12 +114,11 @@ export function LearnSleepHygiene() {
               </h2>
             </div>
             <p className="text-sm text-muted-foreground leading-relaxed">
-              When sleep apnea was fragmenting your nights, sleep hygiene
-              barely mattered — the apneas dominated the data. Now that
-              the breathing problem is solved, every other variable
-              starts to matter again. Patients who pair CPAP with these
-              six habits consistently report deeper, more refreshing
-              sleep than CPAP alone delivers.
+              When sleep apnea was fragmenting your nights, sleep hygiene barely
+              mattered — the apneas dominated the data. Now that the breathing
+              problem is solved, every other variable starts to matter again.
+              Patients who pair CPAP with these six habits consistently report
+              deeper, more refreshing sleep than CPAP alone delivers.
             </p>
           </div>
         </div>
@@ -186,10 +185,10 @@ export function LearnSleepHygiene() {
               Don&apos;t try all six at once.
             </h2>
             <p className="text-sm text-white/85 leading-relaxed mb-5">
-              Layering six habit changes on top of starting CPAP is too
-              much. Pick the two that feel easiest, do them for two
-              weeks, then add the next two. Most patients land at all six
-              by the end of month three.
+              Layering six habit changes on top of starting CPAP is too much.
+              Pick the two that feel easiest, do them for two weeks, then add
+              the next two. Most patients land at all six by the end of month
+              three.
             </p>
             <div className="grid sm:grid-cols-3 gap-4">
               {[
@@ -242,8 +241,8 @@ export function LearnSleepHygiene() {
               What treatment feels like
             </h3>
             <p className="text-sm text-muted-foreground leading-relaxed">
-              The benefits timeline — paired with these habits, the
-              numbers move faster.
+              The benefits timeline — paired with these habits, the numbers move
+              faster.
             </p>
           </div>
           <ArrowRight className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors mt-1" />
@@ -260,8 +259,8 @@ export function LearnSleepHygiene() {
               First two weeks
             </h3>
             <p className="text-sm text-muted-foreground leading-relaxed">
-              Establish the CPAP routine first. Layer hygiene habits in
-              after the mask becomes automatic.
+              Establish the CPAP routine first. Layer hygiene habits in after
+              the mask becomes automatic.
             </p>
           </div>
           <ArrowRight className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors mt-1" />
@@ -287,9 +286,8 @@ export function LearnSleepHygiene() {
       </div>
 
       <p className="text-xs text-muted-foreground/80 leading-relaxed mt-10 max-w-2xl mx-auto text-center">
-        Educational content only. Sleep hygiene complements but does
-        not replace evaluation of sleep disorders by a sleep medicine
-        provider.
+        Educational content only. Sleep hygiene complements but does not replace
+        evaluation of sleep disorders by a sleep medicine provider.
       </p>
     </div>
   );

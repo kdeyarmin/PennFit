@@ -182,7 +182,12 @@ describe("listBackorders", () => {
   });
 
   test("throws on non-OK response", async () => {
-    fetchMock.mockResolvedValue({ ok: false, status: 500, statusText: "ISE", json: async () => ({}) });
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 500,
+      statusText: "ISE",
+      json: async () => ({}),
+    });
     await expect(listBackorders()).rejects.toThrow("500");
   });
 });
@@ -317,7 +322,12 @@ describe("clearBackorder", () => {
   });
 
   test("throws on non-OK response", async () => {
-    fetchMock.mockResolvedValue({ ok: false, status: 404, statusText: "Not Found", json: async () => ({}) });
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 404,
+      statusText: "Not Found",
+      json: async () => ({}),
+    });
     await expect(clearBackorder("bo-ghost")).rejects.toThrow("404");
   });
 });
@@ -393,7 +403,12 @@ describe("listSubstitutes", () => {
   });
 
   test("throws on non-OK response", async () => {
-    fetchMock.mockResolvedValue({ ok: false, status: 500, statusText: "ISE", json: async () => ({}) });
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 500,
+      statusText: "ISE",
+      json: async () => ({}),
+    });
     await expect(listSubstitutes()).rejects.toThrow("500");
   });
 });
@@ -443,7 +458,10 @@ describe("createSubstitute", () => {
       json: async () => ({ id: "sub-new" }),
     });
 
-    await createSubstitute({ ...CREATE_INPUT, notes: "Use when primary is OOS" });
+    await createSubstitute({
+      ...CREATE_INPUT,
+      notes: "Use when primary is OOS",
+    });
 
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(JSON.parse(init.body as string)).toMatchObject({
@@ -463,7 +481,12 @@ describe("createSubstitute", () => {
   });
 
   test("throws on non-OK response", async () => {
-    fetchMock.mockResolvedValue({ ok: false, status: 409, statusText: "Conflict", json: async () => ({}) });
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 409,
+      statusText: "Conflict",
+      json: async () => ({}),
+    });
     await expect(createSubstitute(CREATE_INPUT)).rejects.toThrow("409");
   });
 });
@@ -526,7 +549,12 @@ describe("patchSubstitute", () => {
   });
 
   test("throws on non-OK response", async () => {
-    fetchMock.mockResolvedValue({ ok: false, status: 404, statusText: "Not Found", json: async () => ({}) });
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 404,
+      statusText: "Not Found",
+      json: async () => ({}),
+    });
     await expect(patchSubstitute("no-such-sub", {})).rejects.toThrow("404");
   });
 });
@@ -546,9 +574,7 @@ describe("deleteSubstitute", () => {
     await deleteSubstitute("sub-to-delete");
 
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe(
-      "/resupply-api/admin/shop/sku-substitutes/sub-to-delete",
-    );
+    expect(url).toBe("/resupply-api/admin/shop/sku-substitutes/sub-to-delete");
     expect(init.method).toBe("DELETE");
   });
 
@@ -564,7 +590,12 @@ describe("deleteSubstitute", () => {
   });
 
   test("throws on non-OK response", async () => {
-    fetchMock.mockResolvedValue({ ok: false, status: 404, statusText: "Not Found", json: async () => ({}) });
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 404,
+      statusText: "Not Found",
+      json: async () => ({}),
+    });
     await expect(deleteSubstitute("sub-ghost")).rejects.toThrow("404");
   });
 

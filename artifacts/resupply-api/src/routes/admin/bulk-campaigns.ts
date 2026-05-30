@@ -54,7 +54,9 @@ const draftBody = z
   .object({
     name: z.string().trim().min(1).max(200),
     description: z.string().trim().max(5000).nullable().optional(),
-    audienceKind: z.enum(AUDIENCE_KIND_VALUES as [AudienceKind, ...AudienceKind[]]),
+    audienceKind: z.enum(
+      AUDIENCE_KIND_VALUES as [AudienceKind, ...AudienceKind[]],
+    ),
     audiencePayer: z.string().trim().max(120).nullable().optional(),
     /** Required when audienceKind='manual_list'. Each id is a UUID;
      *  recipientKind is determined by the order in shop/patient
@@ -62,12 +64,7 @@ const draftBody = z
     manualShopCustomerIds: z.array(z.string().uuid()).max(50_000).optional(),
     manualPatientIds: z.array(z.string().uuid()).max(50_000).optional(),
     category: z.enum(CATEGORY_VALUES as [Category, ...Category[]]),
-    complianceAttestation: z
-      .string()
-      .trim()
-      .max(2000)
-      .nullable()
-      .optional(),
+    complianceAttestation: z.string().trim().max(2000).nullable().optional(),
     templateKey: z.string().trim().min(1).max(120),
     throttlePerMinute: z
       .number()
@@ -90,8 +87,7 @@ const draftBody = z
   .refine(
     (b) =>
       b.category !== "compliance" ||
-      (b.complianceAttestation &&
-        b.complianceAttestation.trim().length >= 10),
+      (b.complianceAttestation && b.complianceAttestation.trim().length >= 10),
     {
       path: ["complianceAttestation"],
       message:
@@ -135,7 +131,10 @@ router.post(
       .limit(1)
       .maybeSingle();
     if (tplErr) {
-      logger.error({ err: tplErr }, "bulk_campaigns.draft.create: template lookup failed");
+      logger.error(
+        { err: tplErr },
+        "bulk_campaigns.draft.create: template lookup failed",
+      );
       res.status(500).json({
         error: "template_lookup_failed",
         message: "Failed to verify template — database error.",
@@ -158,13 +157,15 @@ router.post(
     }
 
     // ── Pull candidates ───────────────────────────────────────────
-    const { shopCandidates, patientCandidates } =
-      await fetchAudienceCandidates(supabase, {
+    const { shopCandidates, patientCandidates } = await fetchAudienceCandidates(
+      supabase,
+      {
         audienceKind: b.audienceKind,
         audiencePayer: b.audiencePayer,
         manualShopCustomerIds: b.manualShopCustomerIds,
         manualPatientIds: b.manualPatientIds,
-      });
+      },
+    );
     const resolved = resolveAudience({
       audienceKind: b.audienceKind,
       audiencePayer: b.audiencePayer ?? null,
@@ -249,40 +250,47 @@ router.post(
 // List + detail + recipients-CSV all gate on the same perm as the
 // send actions. Anyone who can send is the audience for these reads;
 // non-senders have no use case for the campaign console.
-router.get("/admin/bulk-campaigns", requirePermission("bulk_campaigns.send"), async (_req, res) => {
-  const supabase = getSupabaseServiceRoleClient();
-  const { data, error } = await supabase
-    .schema("resupply")
-    .from("bulk_campaigns")
-    .select("*")
-    .order("created_at", { ascending: false })
-    .limit(100);
-  if (error) throw error;
-  res.json({
-    campaigns: (data ?? []).map((r) => ({
-      id: r.id,
-      name: r.name,
-      description: r.description,
-      audienceKind: r.audience_kind,
-      audiencePayer: r.audience_payer,
-      channel: r.channel,
-      category: r.category,
-      templateKey: r.template_key,
-      throttlePerMinute: r.throttle_per_minute,
-      status: r.status,
-      totalRecipients: r.total_recipients,
-      pendingRecipients:
-        r.total_recipients - r.suppressed_count - r.sent_count - r.failed_count,
-      suppressedCount: r.suppressed_count,
-      sentCount: r.sent_count,
-      failedCount: r.failed_count,
-      createdAt: r.created_at,
-      startedAt: r.started_at,
-      completedAt: r.completed_at,
-      cancelledAt: r.cancelled_at,
-    })),
-  });
-});
+router.get(
+  "/admin/bulk-campaigns",
+  requirePermission("bulk_campaigns.send"),
+  async (_req, res) => {
+    const supabase = getSupabaseServiceRoleClient();
+    const { data, error } = await supabase
+      .schema("resupply")
+      .from("bulk_campaigns")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(100);
+    if (error) throw error;
+    res.json({
+      campaigns: (data ?? []).map((r) => ({
+        id: r.id,
+        name: r.name,
+        description: r.description,
+        audienceKind: r.audience_kind,
+        audiencePayer: r.audience_payer,
+        channel: r.channel,
+        category: r.category,
+        templateKey: r.template_key,
+        throttlePerMinute: r.throttle_per_minute,
+        status: r.status,
+        totalRecipients: r.total_recipients,
+        pendingRecipients:
+          r.total_recipients -
+          r.suppressed_count -
+          r.sent_count -
+          r.failed_count,
+        suppressedCount: r.suppressed_count,
+        sentCount: r.sent_count,
+        failedCount: r.failed_count,
+        createdAt: r.created_at,
+        startedAt: r.started_at,
+        completedAt: r.completed_at,
+        cancelledAt: r.cancelled_at,
+      })),
+    });
+  },
+);
 
 router.get(
   "/admin/bulk-campaigns/:id",
@@ -373,7 +381,9 @@ interface TransitionPlan {
   sideEffect?: (campaignId: string) => Promise<void>;
 }
 
-function planFor(action: "start" | "pause" | "resume" | "cancel"): TransitionPlan {
+function planFor(
+  action: "start" | "pause" | "resume" | "cancel",
+): TransitionPlan {
   switch (action) {
     case "start":
       return {
@@ -417,7 +427,10 @@ function planFor(action: "start" | "pause" | "resume" | "cancel"): TransitionPla
 function makeTransitionHandler(
   action: "start" | "pause" | "resume" | "cancel",
 ) {
-  return async (req: import("express").Request, res: import("express").Response) => {
+  return async (
+    req: import("express").Request,
+    res: import("express").Response,
+  ) => {
     const params = idParam.safeParse(req.params);
     if (!params.success) {
       res.status(404).json({ error: "not_found" });
@@ -655,11 +668,13 @@ router.post(
       return;
     }
 
-    const { shopCandidates, patientCandidates } =
-      await fetchAudienceCandidates(supabase, {
+    const { shopCandidates, patientCandidates } = await fetchAudienceCandidates(
+      supabase,
+      {
         audienceKind: campaign.audience_kind as AudienceKind,
         audiencePayer: campaign.audience_payer,
-      });
+      },
+    );
 
     const resolved = resolveAudience({
       audienceKind: campaign.audience_kind as AudienceKind,
@@ -728,10 +743,7 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn(
-        { err },
-        "bulk_campaign.audience.regenerated audit failed",
-      );
+      logger.warn({ err }, "bulk_campaign.audience.regenerated audit failed");
     });
 
     res.json({ ok: true, totals: resolved.totals });
@@ -766,10 +778,7 @@ router.get(
     }
     const filename = `bulk-campaign-${campaign.name.replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 40)}-${new Date().toISOString().slice(0, 10)}.csv`;
     res.setHeader("Content-Type", "text/csv; charset=utf-8");
-    res.setHeader(
-      "Content-Disposition",
-      `attachment; filename="${filename}"`,
-    );
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
     res.write(
       [
         "recipient_kind",

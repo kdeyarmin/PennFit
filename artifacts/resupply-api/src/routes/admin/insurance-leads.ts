@@ -34,7 +34,8 @@ import {
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
 
-type InsuranceLeadsUpdate = Database["resupply"]["Tables"]["insurance_leads"]["Update"];
+type InsuranceLeadsUpdate =
+  Database["resupply"]["Tables"]["insurance_leads"]["Update"];
 
 const router: IRouter = Router();
 
@@ -84,93 +85,97 @@ const patchBody = z
 
 // Insurance-lead admin queue. CSR contact workflow — matches the
 // rest of the inbox tier (`conversations.manage`).
-router.get("/admin/shop/insurance-leads", requirePermission("conversations.manage"), async (req, res) => {
-  const parsed = listQuery.safeParse(req.query);
-  if (!parsed.success) {
-    res.status(400).json({ error: "invalid_query" });
-    return;
-  }
-  const { status, limit } = parsed.data;
-  const supabase = getSupabaseServiceRoleClient();
+router.get(
+  "/admin/shop/insurance-leads",
+  requirePermission("conversations.manage"),
+  async (req, res) => {
+    const parsed = listQuery.safeParse(req.query);
+    if (!parsed.success) {
+      res.status(400).json({ error: "invalid_query" });
+      return;
+    }
+    const { status, limit } = parsed.data;
+    const supabase = getSupabaseServiceRoleClient();
 
-  let leadsQuery = supabase
-    .schema("resupply")
-    .from("insurance_leads")
-    .select("*")
-    .order("created_at", { ascending: false })
-    .limit(limit);
-  if (status !== "all") leadsQuery = leadsQuery.eq("status", status);
-  const { data: rows, error: listErr } = await leadsQuery;
-  if (listErr) throw listErr;
+    let leadsQuery = supabase
+      .schema("resupply")
+      .from("insurance_leads")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(limit);
+    if (status !== "all") leadsQuery = leadsQuery.eq("status", status);
+    const { data: rows, error: listErr } = await leadsQuery;
+    if (listErr) throw listErr;
 
-  // Status counts for the KPI strip above the table. PostgREST has
-  // no GROUP BY, so we run four parallel count(head=true) queries.
-  // Each is index-backed by the (status, created_at) partial index.
-  const [newCount, contactedCount, verifiedCount, closedCount] =
-    await Promise.all([
-      supabase
-        .schema("resupply")
-        .from("insurance_leads")
-        .select("*", { count: "exact", head: true })
-        .eq("status", "new"),
-      supabase
-        .schema("resupply")
-        .from("insurance_leads")
-        .select("*", { count: "exact", head: true })
-        .eq("status", "contacted"),
-      supabase
-        .schema("resupply")
-        .from("insurance_leads")
-        .select("*", { count: "exact", head: true })
-        .eq("status", "verified"),
-      supabase
-        .schema("resupply")
-        .from("insurance_leads")
-        .select("*", { count: "exact", head: true })
-        .eq("status", "closed"),
-    ]);
+    // Status counts for the KPI strip above the table. PostgREST has
+    // no GROUP BY, so we run four parallel count(head=true) queries.
+    // Each is index-backed by the (status, created_at) partial index.
+    const [newCount, contactedCount, verifiedCount, closedCount] =
+      await Promise.all([
+        supabase
+          .schema("resupply")
+          .from("insurance_leads")
+          .select("*", { count: "exact", head: true })
+          .eq("status", "new"),
+        supabase
+          .schema("resupply")
+          .from("insurance_leads")
+          .select("*", { count: "exact", head: true })
+          .eq("status", "contacted"),
+        supabase
+          .schema("resupply")
+          .from("insurance_leads")
+          .select("*", { count: "exact", head: true })
+          .eq("status", "verified"),
+        supabase
+          .schema("resupply")
+          .from("insurance_leads")
+          .select("*", { count: "exact", head: true })
+          .eq("status", "closed"),
+      ]);
 
-  if (newCount.error) throw newCount.error;
-  if (contactedCount.error) throw contactedCount.error;
-  if (verifiedCount.error) throw verifiedCount.error;
-  if (closedCount.error) throw closedCount.error;
+    if (newCount.error) throw newCount.error;
+    if (contactedCount.error) throw contactedCount.error;
+    if (verifiedCount.error) throw verifiedCount.error;
+    if (closedCount.error) throw closedCount.error;
 
-  const counts: Record<InsuranceLeadStatus, number> = {
-    new: newCount.count ?? 0,
-    contacted: contactedCount.count ?? 0,
-    verified: verifiedCount.count ?? 0,
-    closed: closedCount.count ?? 0,
-  };
+    const counts: Record<InsuranceLeadStatus, number> = {
+      new: newCount.count ?? 0,
+      contacted: contactedCount.count ?? 0,
+      verified: verifiedCount.count ?? 0,
+      closed: closedCount.count ?? 0,
+    };
 
-  req.log?.info?.(
-    { rowCount: rows?.length ?? 0, filter: status, counts },
-    "admin/shop/insurance-leads: list",
-  );
+    req.log?.info?.(
+      { rowCount: rows?.length ?? 0, filter: status, counts },
+      "admin/shop/insurance-leads: list",
+    );
 
-  res.json({
-    rows: (rows ?? []).map((r) => ({
-      id: r.id,
-      fullName: r.full_name,
-      email: r.email,
-      phone: r.phone,
-      dateOfBirth: r.date_of_birth,
-      insuranceCarrier: r.insurance_carrier,
-      memberId: r.member_id,
-      groupNumber: r.group_number,
-      prescribingPhysician: r.prescribing_physician,
-      notes: r.notes,
-      status: r.status,
-      csrNote: r.csr_note,
-      notificationEmailDelivered: r.notification_email_delivered,
-      confirmationEmailDelivered: r.confirmation_email_delivered,
-      moderatedAt: r.moderated_at,
-      moderatedBy: r.moderated_by,
-      createdAt: r.created_at,
-      updatedAt: r.updated_at,
-    })),
-    counts,
-  });
-});
+    res.json({
+      rows: (rows ?? []).map((r) => ({
+        id: r.id,
+        fullName: r.full_name,
+        email: r.email,
+        phone: r.phone,
+        dateOfBirth: r.date_of_birth,
+        insuranceCarrier: r.insurance_carrier,
+        memberId: r.member_id,
+        groupNumber: r.group_number,
+        prescribingPhysician: r.prescribing_physician,
+        notes: r.notes,
+        status: r.status,
+        csrNote: r.csr_note,
+        notificationEmailDelivered: r.notification_email_delivered,
+        confirmationEmailDelivered: r.confirmation_email_delivered,
+        moderatedAt: r.moderated_at,
+        moderatedBy: r.moderated_by,
+        createdAt: r.created_at,
+        updatedAt: r.updated_at,
+      })),
+      counts,
+    });
+  },
+);
 
 router.patch(
   "/admin/shop/insurance-leads/:id",
@@ -216,9 +221,7 @@ router.patch(
       .from("insurance_leads")
       .update(update)
       .eq("id", idParam)
-      .select(
-        "id, status, csr_note, moderated_at, moderated_by, updated_at",
-      )
+      .select("id, status, csr_note, moderated_at, moderated_by, updated_at")
       .maybeSingle();
     if (error) throw error;
     if (!row) {

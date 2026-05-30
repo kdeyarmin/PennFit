@@ -283,7 +283,14 @@ describe("formatDate — additional edge cases", () => {
   });
 
   it("always returns a string — never throws regardless of input", () => {
-    const inputs = ["", "garbage", "null", "undefined", "2026-13-45", "2026-00-00"];
+    const inputs = [
+      "",
+      "garbage",
+      "null",
+      "undefined",
+      "2026-13-45",
+      "2026-00-00",
+    ];
     for (const input of inputs) {
       expect(() => formatDate(input)).not.toThrow();
       expect(typeof formatDate(input)).toBe("string");

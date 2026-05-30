@@ -191,8 +191,7 @@ export async function applyAiPatches(
         patchIndex: i,
         kind: patch.kind,
         status: "errored",
-        message:
-          err instanceof Error ? err.message : String(err),
+        message: err instanceof Error ? err.message : String(err),
       });
     }
   }
@@ -264,8 +263,10 @@ async function applyClaimFieldPatch(
     updated_at: new Date().toISOString(),
   };
   if (field === "denial_reason") update.denial_reason = value as string | null;
-  else if (field === "claim_number") update.claim_number = value as string | null;
-  else if (field === "date_of_service") update.date_of_service = value as string;
+  else if (field === "claim_number")
+    update.claim_number = value as string | null;
+  else if (field === "date_of_service")
+    update.date_of_service = value as string;
   else if (field === "patient_responsibility_cents")
     update.patient_responsibility_cents = value as number;
 
@@ -304,11 +305,13 @@ async function applyLinePatch(
       message: `multiple line items with HCPCS ${hcpcsCode}; patch ambiguous`,
     };
   }
-  const update: Database["resupply"]["Tables"]["insurance_claim_line_items"]["Update"] = {
-    updated_at: new Date().toISOString(),
-  };
+  const update: Database["resupply"]["Tables"]["insurance_claim_line_items"]["Update"] =
+    {
+      updated_at: new Date().toISOString(),
+    };
   if (patch.modifier !== undefined) update.modifier = patch.modifier;
-  if (patch.billed_cents !== undefined) update.billed_cents = patch.billed_cents;
+  if (patch.billed_cents !== undefined)
+    update.billed_cents = patch.billed_cents;
   const { error } = await supabase
     .schema("resupply")
     .from("insurance_claim_line_items")

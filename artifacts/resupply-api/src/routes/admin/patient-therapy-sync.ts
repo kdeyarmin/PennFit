@@ -89,7 +89,8 @@ router.get(
         source: r.source,
         usageMinutes: r.usage_minutes,
         ahi: r.ahi !== null ? Number(r.ahi) : null,
-        leakRateLMin: r.leak_rate_l_min !== null ? Number(r.leak_rate_l_min) : null,
+        leakRateLMin:
+          r.leak_rate_l_min !== null ? Number(r.leak_rate_l_min) : null,
         pressureP95Cmh2o:
           r.pressure_p95_cmh2o !== null ? Number(r.pressure_p95_cmh2o) : null,
       })),

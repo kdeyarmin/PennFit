@@ -84,10 +84,7 @@ export async function renderTablePdf(input: PdfReportInput): Promise<Buffer> {
   });
 }
 
-function drawReport(
-  doc: PDFKit.PDFDocument,
-  input: PdfReportInput,
-): void {
+function drawReport(doc: PDFKit.PDFDocument, input: PdfReportInput): void {
   drawTitle(doc, input);
   drawHeaderRow(doc, input.columns);
   let y = doc.y;
@@ -130,10 +127,7 @@ function drawReport(
   drawFooter(doc, input);
 }
 
-function drawTitle(
-  doc: PDFKit.PDFDocument,
-  input: PdfReportInput,
-): void {
+function drawTitle(doc: PDFKit.PDFDocument, input: PdfReportInput): void {
   doc
     .font("Helvetica-Bold")
     .fontSize(16)
@@ -200,10 +194,7 @@ function drawDataRow(
   }
 }
 
-function drawFooter(
-  doc: PDFKit.PDFDocument,
-  input: PdfReportInput,
-): void {
+function drawFooter(doc: PDFKit.PDFDocument, input: PdfReportInput): void {
   const y = PAGE_HEIGHT - MARGIN - 12;
   doc
     .font("Helvetica")
@@ -215,12 +206,10 @@ function drawFooter(
       y,
       { width: USABLE_WIDTH, align: "left" },
     );
-  doc.text(
-    `Page ${doc.bufferedPageRange().count}`,
-    MARGIN,
-    y,
-    { width: USABLE_WIDTH, align: "right" },
-  );
+  doc.text(`Page ${doc.bufferedPageRange().count}`, MARGIN, y, {
+    width: USABLE_WIDTH,
+    align: "right",
+  });
   doc.fillColor("#000");
 }
 

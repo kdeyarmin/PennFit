@@ -70,13 +70,23 @@ import {
   getSupabaseServiceRoleClient,
 } from "@workspace/resupply-db";
 
-type FitterLeadsUpdate = Database["resupply"]["Tables"]["fitter_leads"]["Update"];
-import { createSendgridClient, EmailConfigError } from "@workspace/resupply-email";
-import { createTwilioSmsClient, TwilioConfigError } from "@workspace/resupply-telecom";
+type FitterLeadsUpdate =
+  Database["resupply"]["Tables"]["fitter_leads"]["Update"];
+import {
+  createSendgridClient,
+  EmailConfigError,
+} from "@workspace/resupply-email";
+import {
+  createTwilioSmsClient,
+  TwilioConfigError,
+} from "@workspace/resupply-telecom";
 
 import { isFeatureEnabled } from "../../lib/feature-flags";
 import { logger } from "../../lib/logger";
-import { createQueueWithDlq, VENDOR_SEND_QUEUE_OPTS } from "../lib/queue-options";
+import {
+  createQueueWithDlq,
+  VENDOR_SEND_QUEUE_OPTS,
+} from "../lib/queue-options";
 import {
   TOUCHPOINT_OFFSETS_MS,
   TOTAL_TOUCHPOINTS,
@@ -231,8 +241,13 @@ function renderBrandedHtml(opts: {
    *  configured. */
   trackingPixelUrl?: string | null;
 }): string {
-  const { practiceName, preheader, bodyHtml, unsubscribeUrl, trackingPixelUrl } =
-    opts;
+  const {
+    practiceName,
+    preheader,
+    bodyHtml,
+    unsubscribeUrl,
+    trackingPixelUrl,
+  } = opts;
   // Inbox-preview hidden text. Trailing zero-width-non-joiners
   // pushed in to keep Gmail from grabbing email-source text after
   // the preheader and showing it as part of the preview snippet.
@@ -450,7 +465,9 @@ export function composeTouchpoint(opts: {
   const greetingHtml = safeName
     ? `<p style="margin:0 0 14px 0;">Hi <strong>${escapeHtml(safeName)}</strong>,</p>`
     : `<p style="margin:0 0 14px 0;">Hi from <strong>${escapeHtml(practiceName)}</strong>,</p>`;
-  const greetingText = safeName ? `Hi ${safeName},` : `Hi from ${practiceName},`;
+  const greetingText = safeName
+    ? `Hi ${safeName},`
+    : `Hi from ${practiceName},`;
   const smsNamePrefix = safeName ? `${safeName} — ` : "";
 
   // FSA / HSA accounts reset Dec 31 every year for most plans. T3's
@@ -672,7 +689,10 @@ export function composeTouchpoint(opts: {
       // T7 — day 30 after order: cushion / pillow-insert replacement.
       const subject = `${nameSubjectPrefix}Time to replace your ${vocab.cushionTerm}`;
       const preheader = `30 days in — your seal is at the end of its prime life.`;
-      const sub = renderSubscriptionUpsell(shopUrl, ctaHref("subscribe", `${shopUrl}/subscribe`));
+      const sub = renderSubscriptionUpsell(
+        shopUrl,
+        ctaHref("subscribe", `${shopUrl}/subscribe`),
+      );
       const bodyText = [
         `It's been about 30 days since your mask shipped. ${vocab.cushionNote}`,
         "",
@@ -692,7 +712,10 @@ export function composeTouchpoint(opts: {
       // T8 — day 60 after order: filter check + mask-type cross-sell.
       const subject = `${nameSubjectPrefix}Check your filter — 60 days in`;
       const preheader = `Disposable filters expire every 30 days. You're overdue.`;
-      const sub = renderSubscriptionUpsell(shopUrl, ctaHref("subscribe", `${shopUrl}/subscribe`));
+      const sub = renderSubscriptionUpsell(
+        shopUrl,
+        ctaHref("subscribe", `${shopUrl}/subscribe`),
+      );
       const bodyText = [
         "Quick reminder: disposable inline filters need replacing every 30 days on most CPAP machines. If you've been on your new mask for 60 days, you're already overdue for at least one filter swap.",
         "",
@@ -718,7 +741,10 @@ export function composeTouchpoint(opts: {
       // T9 — day 90 after order: mask-type-aware headgear language.
       const subject = `${nameSubjectPrefix}Your ${vocab.headgearTerm} at 90 days`;
       const preheader = `Loose straps are the #1 cause of new leaks on a comfortable mask.`;
-      const sub = renderSubscriptionUpsell(shopUrl, ctaHref("subscribe", `${shopUrl}/subscribe`));
+      const sub = renderSubscriptionUpsell(
+        shopUrl,
+        ctaHref("subscribe", `${shopUrl}/subscribe`),
+      );
       const bodyText = [
         `If your mask is starting to feel loose or you're cranking the straps tighter than you used to, your ${vocab.headgearTerm} have reached the end of their useful life. Manufacturer guidance puts headgear at 90-180 days; loose straps are the #1 cause of new leaks on a previously-comfortable mask.`,
         "",
@@ -891,8 +917,7 @@ export async function runFitterSupplyCampaignSweep(): Promise<SupplyCampaignStat
   if (error) throw error;
 
   const candidates = (leads ?? []).filter(
-    (l): l is LeadRow =>
-      typeof l.email === "string" && l.email.length > 0,
+    (l): l is LeadRow => typeof l.email === "string" && l.email.length > 0,
   );
   if (candidates.length === 0) return stats;
 
@@ -1011,8 +1036,11 @@ export async function runFitterSupplyCampaignSweep(): Promise<SupplyCampaignStat
     // Compute next_campaign_touch_at and the post-send journey_stage
     // together — they're tightly coupled and clearer paired.
     let nextTouchAt: string | null = null;
-    let postSendStage: LeadRow["journey_stage"] | "expired" | "converted" | null =
-      null;
+    let postSendStage:
+      | LeadRow["journey_stage"]
+      | "expired"
+      | "converted"
+      | null = null;
 
     if (isFinalCallTouch) {
       // T11 is the only touch in this stage. Final.
@@ -1204,7 +1232,14 @@ export async function runFitterSupplyCampaignSweep(): Promise<SupplyCampaignStat
           },
         });
         stats.emailed += 1;
-        await recordTouch(lead.id, nextTouchIndex, "email", "sent", null, subjectVariantKey);
+        await recordTouch(
+          lead.id,
+          nextTouchIndex,
+          "email",
+          "sent",
+          null,
+          subjectVariantKey,
+        );
       } catch (err) {
         stats.errors += 1;
         logger.warn(
@@ -1216,13 +1251,22 @@ export async function runFitterSupplyCampaignSweep(): Promise<SupplyCampaignStat
           nextTouchIndex,
           "email",
           "failed",
-          err instanceof Error ? err.message.slice(0, 500) : String(err).slice(0, 500),
+          err instanceof Error
+            ? err.message.slice(0, 500)
+            : String(err).slice(0, 500),
           subjectVariantKey,
         );
       }
     } else {
       stats.skippedNoEmailConfig += 1;
-      await recordTouch(lead.id, nextTouchIndex, "email", "skipped", "no_sendgrid_config", subjectVariantKey);
+      await recordTouch(
+        lead.id,
+        nextTouchIndex,
+        "email",
+        "skipped",
+        "no_sendgrid_config",
+        subjectVariantKey,
+      );
     }
 
     // SMS leg — gated by both per-touch policy (SMS_TOUCH_INDEXES)
@@ -1240,7 +1284,14 @@ export async function runFitterSupplyCampaignSweep(): Promise<SupplyCampaignStat
             body: copy.sms,
           });
           stats.smsSent += 1;
-          await recordTouch(lead.id, nextTouchIndex, "sms", "sent", null, subjectVariantKey);
+          await recordTouch(
+            lead.id,
+            nextTouchIndex,
+            "sms",
+            "sent",
+            null,
+            subjectVariantKey,
+          );
         } catch (err) {
           stats.errors += 1;
           logger.warn(
@@ -1252,13 +1303,22 @@ export async function runFitterSupplyCampaignSweep(): Promise<SupplyCampaignStat
             nextTouchIndex,
             "sms",
             "failed",
-            err instanceof Error ? err.message.slice(0, 500) : String(err).slice(0, 500),
+            err instanceof Error
+              ? err.message.slice(0, 500)
+              : String(err).slice(0, 500),
             subjectVariantKey,
           );
         }
       } else {
         stats.skippedNoSmsConfig += 1;
-        await recordTouch(lead.id, nextTouchIndex, "sms", "skipped", "no_twilio_config", subjectVariantKey);
+        await recordTouch(
+          lead.id,
+          nextTouchIndex,
+          "sms",
+          "skipped",
+          "no_twilio_config",
+          subjectVariantKey,
+        );
       }
     }
   }

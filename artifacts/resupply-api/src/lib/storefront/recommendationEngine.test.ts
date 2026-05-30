@@ -218,7 +218,9 @@ describe("recommend — React Health manufacturer boost", () => {
     const ivolveP2Index = all.findIndex(
       (m) => m.maskId === "react-health-ivolve-p2",
     );
-    const airfitP10Index = all.findIndex((m) => m.maskId === "resmed-airfit-p10");
+    const airfitP10Index = all.findIndex(
+      (m) => m.maskId === "resmed-airfit-p10",
+    );
     expect(ivolveP2Index).toBeGreaterThanOrEqual(0);
     expect(airfitP10Index).toBeGreaterThanOrEqual(0);
     expect(ivolveP2Index).toBeLessThan(airfitP10Index);
@@ -402,8 +404,7 @@ describe("recommend — result shape", () => {
   it("always contains at least one mask for a reasonable measurement set", () => {
     // Belt-and-suspenders: the engine should never return empty lists.
     const result = recommend(PROFILE_MEASUREMENTS, answers());
-    const total =
-      result.topRecommendations.length + result.alternatives.length;
+    const total = result.topRecommendations.length + result.alternatives.length;
     expect(total).toBeGreaterThan(0);
   });
 });

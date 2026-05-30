@@ -34,36 +34,40 @@ const createBody = z
 // Schedule visibility — every CSR who handles the inbox wants to
 // know who else is on shift. `conversations.manage` matches the
 // rest of the CSR-tier coordination surface.
-router.get("/admin/csr-shifts", requirePermission("conversations.manage"), async (req, res) => {
-  const from =
-    (typeof req.query.from === "string" && req.query.from) || undefined;
-  const to = (typeof req.query.to === "string" && req.query.to) || undefined;
-  const supabase = getSupabaseServiceRoleClient();
-  let query = supabase
-    .schema("resupply")
-    .from("csr_shifts")
-    .select(
-      "id, staff_user_id, starts_at, ends_at, status, notes, created_at, updated_at",
-    )
-    .order("starts_at", { ascending: true })
-    .limit(500);
-  if (from) query = query.gte("ends_at", from);
-  if (to) query = query.lte("starts_at", to);
-  const { data, error } = await query;
-  if (error) throw error;
-  res.json({
-    shifts: (data ?? []).map((r) => ({
-      id: r.id,
-      staffUserId: r.staff_user_id,
-      startsAt: r.starts_at,
-      endsAt: r.ends_at,
-      status: r.status,
-      notes: r.notes,
-      createdAt: r.created_at,
-      updatedAt: r.updated_at,
-    })),
-  });
-});
+router.get(
+  "/admin/csr-shifts",
+  requirePermission("conversations.manage"),
+  async (req, res) => {
+    const from =
+      (typeof req.query.from === "string" && req.query.from) || undefined;
+    const to = (typeof req.query.to === "string" && req.query.to) || undefined;
+    const supabase = getSupabaseServiceRoleClient();
+    let query = supabase
+      .schema("resupply")
+      .from("csr_shifts")
+      .select(
+        "id, staff_user_id, starts_at, ends_at, status, notes, created_at, updated_at",
+      )
+      .order("starts_at", { ascending: true })
+      .limit(500);
+    if (from) query = query.gte("ends_at", from);
+    if (to) query = query.lte("starts_at", to);
+    const { data, error } = await query;
+    if (error) throw error;
+    res.json({
+      shifts: (data ?? []).map((r) => ({
+        id: r.id,
+        staffUserId: r.staff_user_id,
+        startsAt: r.starts_at,
+        endsAt: r.ends_at,
+        status: r.status,
+        notes: r.notes,
+        createdAt: r.created_at,
+        updatedAt: r.updated_at,
+      })),
+    });
+  },
+);
 
 router.get(
   "/admin/csr-shifts/on-now",
@@ -99,27 +103,28 @@ router.post(
   requireAdminOnly,
   adminRateLimit({ name: "csr_shifts.create", preset: "mutation" }),
   async (req, res) => {
-  const parsed = createBody.safeParse(req.body);
-  if (!parsed.success) {
-    res.status(400).json({ error: "invalid_body" });
-    return;
-  }
-  const supabase = getSupabaseServiceRoleClient();
-  const { data: row, error } = await supabase
-    .schema("resupply")
-    .from("csr_shifts")
-    .insert({
-      staff_user_id: parsed.data.staffUserId,
-      starts_at: parsed.data.startsAt,
-      ends_at: parsed.data.endsAt,
-      notes: parsed.data.notes ?? null,
-      created_by_user_id: req.adminUserId ?? null,
-    })
-    .select("id")
-    .single();
-  if (error) throw error;
-  res.status(201).json({ id: row.id });
-});
+    const parsed = createBody.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "invalid_body" });
+      return;
+    }
+    const supabase = getSupabaseServiceRoleClient();
+    const { data: row, error } = await supabase
+      .schema("resupply")
+      .from("csr_shifts")
+      .insert({
+        staff_user_id: parsed.data.staffUserId,
+        starts_at: parsed.data.startsAt,
+        ends_at: parsed.data.endsAt,
+        notes: parsed.data.notes ?? null,
+        created_by_user_id: req.adminUserId ?? null,
+      })
+      .select("id")
+      .single();
+    if (error) throw error;
+    res.status(201).json({ id: row.id });
+  },
+);
 
 router.patch(
   "/admin/csr-shifts/:id",

@@ -56,7 +56,10 @@ describe("fetchWithTimeout → TimeoutError (ReactHealth)", () => {
       name: "TimeoutError",
     });
 
-    vi.stubGlobal("fetch", mockFetch(() => Promise.reject(timeoutErr)));
+    vi.stubGlobal(
+      "fetch",
+      mockFetch(() => Promise.reject(timeoutErr)),
+    );
 
     const result = await fetchReactHealthSnapshot(CONFIG, {
       partnerPatientId: "p1",
@@ -101,7 +104,10 @@ describe("fetchWithTimeout → AbortError (ReactHealth)", () => {
       name: "AbortError",
     });
 
-    vi.stubGlobal("fetch", mockFetch(() => Promise.reject(abortErr)));
+    vi.stubGlobal(
+      "fetch",
+      mockFetch(() => Promise.reject(abortErr)),
+    );
 
     const result = await fetchReactHealthSnapshot(CONFIG, {
       partnerPatientId: "p3",
@@ -123,7 +129,10 @@ describe("fetchWithTimeout → TypeError (ReactHealth)", () => {
       name: "TypeError",
     });
 
-    vi.stubGlobal("fetch", mockFetch(() => Promise.reject(netErr)));
+    vi.stubGlobal(
+      "fetch",
+      mockFetch(() => Promise.reject(netErr)),
+    );
 
     const result = await fetchReactHealthSnapshot(CONFIG, {
       partnerPatientId: "p4",
@@ -145,7 +154,10 @@ describe("fetchWithTimeout → unknown error type (ReactHealth)", () => {
       name: "CustomError",
     });
 
-    vi.stubGlobal("fetch", mockFetch(() => Promise.reject(weirdErr)));
+    vi.stubGlobal(
+      "fetch",
+      mockFetch(() => Promise.reject(weirdErr)),
+    );
 
     const result = await fetchReactHealthSnapshot(CONFIG, {
       partnerPatientId: "p5",
@@ -188,13 +200,15 @@ describe("fetchWithTimeout → successful request (ReactHealth)", () => {
       { status: 200, headers: { "Content-Type": "application/json" } },
     );
     const therapyResp = new Response(
-      JSON.stringify({ nights: [{ date: "2024-01-01", usageMinutes: 420, ahi: 1.2 }] }),
+      JSON.stringify({
+        nights: [{ date: "2024-01-01", usageMinutes: 420, ahi: 1.2 }],
+      }),
       { status: 200, headers: { "Content-Type": "application/json" } },
     );
-    const suppliesResp = new Response(
-      JSON.stringify({ items: [] }),
-      { status: 200, headers: { "Content-Type": "application/json" } },
-    );
+    const suppliesResp = new Response(JSON.stringify({ items: [] }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
 
     vi.stubGlobal(
       "fetch",

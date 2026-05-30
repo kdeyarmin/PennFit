@@ -190,7 +190,11 @@ describe("PATCH /api/reminders/manage — session-auth fallback (P5)", () => {
       .patch("/api/reminders/manage")
       .send({
         items: [
-          { sku: "maskCushion", lastReplacedAt: "2026-05-01", intervalDays: 30 },
+          {
+            sku: "maskCushion",
+            lastReplacedAt: "2026-05-01",
+            intervalDays: 30,
+          },
         ],
       });
 
@@ -208,7 +212,11 @@ describe("PATCH /api/reminders/manage — session-auth fallback (P5)", () => {
       .patch("/api/reminders/manage")
       .send({
         items: [
-          { sku: "maskCushion", lastReplacedAt: "2026-05-01", intervalDays: 30 },
+          {
+            sku: "maskCushion",
+            lastReplacedAt: "2026-05-01",
+            intervalDays: 30,
+          },
         ],
       });
     expect(res.status).toBe(401);
@@ -263,7 +271,11 @@ describe("PATCH /api/reminders/manage — token-only flow regression (P5)", () =
       .query({ token: "abc123abc123abc123" })
       .send({
         items: [
-          { sku: "maskCushion", lastReplacedAt: "2026-05-01", intervalDays: 30 },
+          {
+            sku: "maskCushion",
+            lastReplacedAt: "2026-05-01",
+            intervalDays: 30,
+          },
         ],
       });
 
@@ -291,7 +303,11 @@ describe("PATCH /api/reminders/manage — token-only flow regression (P5)", () =
       .query({ token: "abc123abc123abc123" })
       .send({
         items: [
-          { sku: "maskCushion", lastReplacedAt: "2026-05-01", intervalDays: 30 },
+          {
+            sku: "maskCushion",
+            lastReplacedAt: "2026-05-01",
+            intervalDays: 30,
+          },
         ],
       });
 
@@ -322,16 +338,18 @@ describe("PATCH /api/reminders/manage — token-only flow regression (P5)", () =
         items: [
           // Feb 31 is not a real date — JS rolls over to March 3 without
           // strict validation; the route must reject it with 400.
-          { sku: "maskCushion", lastReplacedAt: "2026-02-31", intervalDays: 30 },
+          {
+            sku: "maskCushion",
+            lastReplacedAt: "2026-02-31",
+            intervalDays: 30,
+          },
         ],
       });
 
     expect(res.status).toBe(400);
     expect(res.body.error).toBe("Invalid update");
     expect(res.body.details).toEqual(
-      expect.arrayContaining([
-        expect.stringContaining("lastReplacedAt"),
-      ]),
+      expect.arrayContaining([expect.stringContaining("lastReplacedAt")]),
     );
   });
 });

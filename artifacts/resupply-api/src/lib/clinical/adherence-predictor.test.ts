@@ -37,9 +37,7 @@ describe("scorePatientAdherence", () => {
     stageSupabaseResponse("patient_therapy_nights", "select", { data: nights });
     const r = await scorePatientAdherence(PATIENT_ID);
     expect(r!.probabilityCompliant).toBeGreaterThan(0.6);
-    expect(
-      r!.factors.some((f) => f.key === "week1_usage_high"),
-    ).toBe(true);
+    expect(r!.factors.some((f) => f.key === "week1_usage_high")).toBe(true);
   });
 
   it("scores low when week-1 usage is < 180 min/night", async () => {
@@ -92,8 +90,8 @@ describe("scorePatientAdherence", () => {
     stageSupabaseResponse("patient_therapy_nights", "select", { data: nights });
     const r = await scorePatientAdherence(PATIENT_ID);
     expect(r!.probabilityCompliant).toBeGreaterThanOrEqual(0.9);
-    expect(
-      r!.factors.some((f) => f.key === "recent_window_compliant"),
-    ).toBe(true);
+    expect(r!.factors.some((f) => f.key === "recent_window_compliant")).toBe(
+      true,
+    );
   });
 });

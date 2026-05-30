@@ -26,9 +26,7 @@ import { AuthLayout } from "@/components/auth-layout";
 
 const basePath = "/admin";
 
-type Step =
-  | { kind: "password" }
-  | { kind: "mfa"; challengeToken: string };
+type Step = { kind: "password" } | { kind: "mfa"; challengeToken: string };
 
 export function SignInPage() {
   const [email, setEmail] = useState("");

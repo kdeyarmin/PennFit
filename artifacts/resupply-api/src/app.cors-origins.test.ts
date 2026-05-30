@@ -55,7 +55,9 @@ describe("app.ts CORS allowedOrigins — RAILWAY_PUBLIC_DOMAIN integration", () 
     expect(CODE).toContain("new Set(");
     // The spread puts explicit origins first, Railway origins second —
     // preserving priority order.
-    expect(CODE).toMatch(/new Set\(\s*\[\s*\.\.\.explicit\s*,\s*\.\.\.fromRailway\s*\]/);
+    expect(CODE).toMatch(
+      /new Set\(\s*\[\s*\.\.\.explicit\s*,\s*\.\.\.fromRailway\s*\]/,
+    );
   });
 
   it("places explicit RESUPPLY_ALLOWED_ORIGINS before Railway origins in the merge", () => {

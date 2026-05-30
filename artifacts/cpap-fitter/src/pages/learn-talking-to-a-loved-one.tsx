@@ -29,40 +29,35 @@ const scripts: ScriptPair[] = [
     bad: "Your snoring is keeping me up. You need to do something about it.",
     better:
       "I've been noticing something at night that I think might be more than snoring — I'm worried about it. Can we talk about it?",
-    why:
-      "The first framing centers the listener's annoyance. The second centers concern for the person you're talking to. The reaction is completely different.",
+    why: "The first framing centers the listener's annoyance. The second centers concern for the person you're talking to. The reaction is completely different.",
   },
   {
     context: "Describing what you've noticed",
     bad: "You snore so loud I can't sleep, and you stop breathing all the time.",
     better:
       "There are stretches of 10–20 seconds where you don't seem to be breathing — and then you gasp and start again. That's the part that concerns me, not the snoring itself.",
-    why:
-      "Specifics convince. A description of witnessed apnea events lands differently than a complaint about volume.",
+    why: "Specifics convince. A description of witnessed apnea events lands differently than a complaint about volume.",
   },
   {
     context: "Why it matters",
     bad: "You're going to die of a heart attack if you don't fix this.",
     better:
       "Untreated sleep apnea is linked to higher blood pressure, AFib, and cognitive decline. I want you around for a long time, and I want both of us to actually sleep.",
-    why:
-      "Catastrophizing produces defensiveness. Stating real risks calmly, paired with care, produces curiosity.",
+    why: "Catastrophizing produces defensiveness. Stating real risks calmly, paired with care, produces curiosity.",
   },
   {
     context: "Suggesting the next step",
     bad: "You should go to the doctor.",
     better:
       "Would you be willing to bring this up at your next primary care visit? I'd be happy to go with you. There's a take-home sleep test now — much easier than going to a sleep lab.",
-    why:
-      "A specific, low-friction next step is much more likely to be accepted than an open-ended directive.",
+    why: "A specific, low-friction next step is much more likely to be accepted than an open-ended directive.",
   },
   {
     context: "If they push back",
     bad: "Why won't you just take this seriously?",
     better:
       "I hear you. Can I share an article with you — and we revisit this conversation next week?",
-    why:
-      "Forcing a yes in the moment produces resentment. Planting the seed and giving space lets the patient arrive at the decision themselves — which is what actually predicts follow-through.",
+    why: "Forcing a yes in the moment produces resentment. Planting the seed and giving space lets the patient arrive at the decision themselves — which is what actually predicts follow-through.",
   },
 ];
 
@@ -119,10 +114,10 @@ export function LearnTalkingToALovedOne() {
           The conversation that&apos;s harder than it should be.
         </h1>
         <p className="text-lg text-muted-foreground leading-relaxed">
-          The hardest part of getting someone tested for sleep apnea is
-          usually getting them to admit it&apos;s worth testing. The good
-          news: there&apos;s a pattern to the conversations that work —
-          and a pattern to the ones that backfire. Here&apos;s both.
+          The hardest part of getting someone tested for sleep apnea is usually
+          getting them to admit it&apos;s worth testing. The good news:
+          there&apos;s a pattern to the conversations that work — and a pattern
+          to the ones that backfire. Here&apos;s both.
         </p>
       </header>
 
@@ -146,9 +141,9 @@ export function LearnTalkingToALovedOne() {
               what&apos;s &ldquo;wrong&rdquo; with them.
             </p>
             <p className="text-sm text-muted-foreground leading-relaxed">
-              The patient hears care, not complaint. They&apos;re much
-              more likely to take the next step when the conversation
-              feels like advocacy for them rather than relief for you.
+              The patient hears care, not complaint. They&apos;re much more
+              likely to take the next step when the conversation feels like
+              advocacy for them rather than relief for you.
             </p>
           </div>
         </div>
@@ -165,8 +160,8 @@ export function LearnTalkingToALovedOne() {
           </h2>
         </div>
         <p className="text-muted-foreground leading-relaxed mb-5">
-          The wording changes the outcome more than the truth value of
-          what you&apos;re saying. Same facts, different reception.
+          The wording changes the outcome more than the truth value of what
+          you&apos;re saying. Same facts, different reception.
         </p>
 
         <div className="space-y-5">
@@ -229,13 +224,16 @@ export function LearnTalkingToALovedOne() {
           </h2>
         </div>
         <p className="text-muted-foreground leading-relaxed mb-5">
-          The relationship changes the framing. A spouse takes a
-          different approach than an adult child, and a friend takes
-          another approach entirely.
+          The relationship changes the framing. A spouse takes a different
+          approach than an adult child, and a friend takes another approach
+          entirely.
         </p>
         <div className="grid sm:grid-cols-2 gap-4">
           {audiences.map((a) => (
-            <article key={a.relationship} className="glass-card rounded-2xl p-5">
+            <article
+              key={a.relationship}
+              className="glass-card rounded-2xl p-5"
+            >
               <div className="relative h-10 w-10 rounded-lg flex items-center justify-center mb-3 icon-halo-gold">
                 <a.Icon className="w-5 h-5" strokeWidth={2} />
               </div>
@@ -260,10 +258,10 @@ export function LearnTalkingToALovedOne() {
                 Don&apos;t be a doctor.
               </div>
               <p className="text-sm text-foreground/85 leading-relaxed">
-                Your job is to encourage them to see one — not to
-                diagnose them, prescribe a mask brand, or tell them
-                what pressure they should be on. The doctor handles all
-                of that. You handle the part where they actually go.
+                Your job is to encourage them to see one — not to diagnose them,
+                prescribe a mask brand, or tell them what pressure they should
+                be on. The doctor handles all of that. You handle the part where
+                they actually go.
               </p>
             </div>
           </div>
@@ -294,8 +292,8 @@ export function LearnTalkingToALovedOne() {
               The bed partner&apos;s guide
             </h3>
             <p className="text-sm text-muted-foreground leading-relaxed">
-              Specifically for partners — what you&apos;ve noticed, what
-              to do, what the first month looks like.
+              Specifically for partners — what you&apos;ve noticed, what to do,
+              what the first month looks like.
             </p>
           </div>
           <ArrowRight className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors mt-1" />
@@ -312,8 +310,8 @@ export function LearnTalkingToALovedOne() {
               Send them the self-screener
             </h3>
             <p className="text-sm text-muted-foreground leading-relaxed">
-              STOP-BANG — eight questions, two minutes, often the
-              gentle push that opens the next conversation.
+              STOP-BANG — eight questions, two minutes, often the gentle push
+              that opens the next conversation.
             </p>
           </div>
           <ArrowRight className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors mt-1" />
@@ -339,9 +337,9 @@ export function LearnTalkingToALovedOne() {
       </div>
 
       <p className="text-xs text-muted-foreground/80 leading-relaxed mt-12 max-w-2xl mx-auto text-center">
-        Educational content only. The route to diagnosis goes through
-        their physician — your role is encouragement, information, and
-        showing up to the appointment if you&apos;re invited.
+        Educational content only. The route to diagnosis goes through their
+        physician — your role is encouragement, information, and showing up to
+        the appointment if you&apos;re invited.
       </p>
     </div>
   );

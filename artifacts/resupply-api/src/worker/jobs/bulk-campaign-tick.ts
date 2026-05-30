@@ -53,7 +53,10 @@ import {
   TICK_INTERVAL_SECONDS,
 } from "../../lib/bulk-campaigns/dispatch-helpers.js";
 import { logger } from "../../lib/logger.js";
-import { createQueueWithDlq, VENDOR_SEND_QUEUE_OPTS } from "../lib/queue-options.js";
+import {
+  createQueueWithDlq,
+  VENDOR_SEND_QUEUE_OPTS,
+} from "../lib/queue-options.js";
 
 export const BULK_CAMPAIGN_TICK_JOB = "bulk-campaigns.send-tick";
 
@@ -61,8 +64,7 @@ export interface BulkCampaignTickPayload {
   campaignId: string;
 }
 
-type CampaignRow =
-  Database["resupply"]["Tables"]["bulk_campaigns"]["Row"];
+type CampaignRow = Database["resupply"]["Tables"]["bulk_campaigns"]["Row"];
 type CampaignUpdate =
   Database["resupply"]["Tables"]["bulk_campaigns"]["Update"];
 
@@ -76,14 +78,16 @@ const SYSTEM_ACTOR_EMAIL = "system:worker:bulk-campaigns";
 // (migration 0083) on every status change, so it's a reliable lease.
 const SENDING_LEASE_MS = 15 * 60_000;
 
-export async function registerBulkCampaignTickJob(
-  boss: PgBoss,
-): Promise<void> {
+export async function registerBulkCampaignTickJob(boss: PgBoss): Promise<void> {
   // Each tick is a vendor-call surface (SendGrid). Routes exhausted
   // retries to `<name>.dlq` so a deterministically-poison tick (e.g.
   // template render permanently broken) lands in ops review instead
   // of bouncing through pg-boss's silent-failure path.
-  await createQueueWithDlq(boss, BULK_CAMPAIGN_TICK_JOB, VENDOR_SEND_QUEUE_OPTS);
+  await createQueueWithDlq(
+    boss,
+    BULK_CAMPAIGN_TICK_JOB,
+    VENDOR_SEND_QUEUE_OPTS,
+  );
   await boss.work<BulkCampaignTickPayload>(
     BULK_CAMPAIGN_TICK_JOB,
     async (jobs) => {
@@ -98,7 +102,10 @@ export async function registerBulkCampaignTickJob(
       }
     },
   );
-  logger.info({ queue: BULK_CAMPAIGN_TICK_JOB }, "bulk campaign tick worker registered");
+  logger.info(
+    { queue: BULK_CAMPAIGN_TICK_JOB },
+    "bulk campaign tick worker registered",
+  );
 }
 
 /**
@@ -125,7 +132,10 @@ export async function processTick(
     .limit(1)
     .maybeSingle();
   if (cErr) {
-    log.error({ err: cErr.message }, "bulk_campaigns.tick: campaign read failed");
+    log.error(
+      { err: cErr.message },
+      "bulk_campaigns.tick: campaign read failed",
+    );
     throw cErr;
   }
   if (!campaign) {
@@ -180,7 +190,10 @@ export async function processTick(
     .eq("status", "pending")
     .limit(batchSize);
   if (pErr) {
-    log.error({ err: pErr.message }, "bulk_campaigns.tick: pending fetch failed");
+    log.error(
+      { err: pErr.message },
+      "bulk_campaigns.tick: pending fetch failed",
+    );
     throw pErr;
   }
 
@@ -205,7 +218,10 @@ export async function processTick(
     .eq("status", "pending")
     .select("id, recipient_email, recipient_kind, recipient_id");
   if (claimErr) {
-    log.error({ err: claimErr.message }, "bulk_campaigns.tick: claim update failed");
+    log.error(
+      { err: claimErr.message },
+      "bulk_campaigns.tick: claim update failed",
+    );
     throw claimErr;
   }
   const winningIds = new Set((claimed ?? []).map((r) => r.id));
@@ -337,7 +353,8 @@ export async function processTick(
       );
       const result = await client.sendEmail({
         to: email,
-        subject: renderable.subject ?? `(no subject for ${campaign.template_key})`,
+        subject:
+          renderable.subject ?? `(no subject for ${campaign.template_key})`,
         html: renderable.bodyHtml ?? renderable.bodyText,
         text: renderable.bodyText,
         customArgs: customArgsFor(campaign.id, row.id),
@@ -354,7 +371,9 @@ export async function processTick(
       sent += 1;
     } catch (err) {
       const message =
-        err instanceof Error ? err.message.slice(0, 500) : String(err).slice(0, 500);
+        err instanceof Error
+          ? err.message.slice(0, 500)
+          : String(err).slice(0, 500);
       await supabase
         .schema("resupply")
         .from("bulk_campaign_recipients")
@@ -368,7 +387,9 @@ export async function processTick(
   //    We use a raw UPDATE with column references to ensure concurrent
   //    ticks properly accumulate deltas instead of clobbering each other.
   if (sent > 0 || failed > 0 || suppressedAtSend > 0) {
-    const pool = await import("@workspace/resupply-db").then((m) => m.getDbPool());
+    const pool = await import("@workspace/resupply-db").then((m) =>
+      m.getDbPool(),
+    );
     // Use pg's `rowCount` instead of `rows.length`. The UPDATE has no
     // RETURNING, so `rows` is always [] and the prior length check
     // was dead code — operators got no log when a concurrent cancel

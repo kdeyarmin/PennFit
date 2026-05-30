@@ -21,11 +21,7 @@ export interface UploadResult {
 
 export interface UploadFailure {
   ok: false;
-  kind:
-    | "auth_failed"
-    | "connect_failed"
-    | "transfer_failed"
-    | "unavailable";
+  kind: "auth_failed" | "connect_failed" | "transfer_failed" | "unavailable";
   /** Caller-safe failure message. Never includes credentials. */
   message: string;
 }

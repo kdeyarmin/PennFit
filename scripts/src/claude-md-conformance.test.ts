@@ -143,11 +143,15 @@ describe("e2e/ Playwright suite", () => {
   });
 
   it("e2e/tests/storefront-loads.spec.ts exists", () => {
-    expect(existsSync(root("e2e", "tests", "storefront-loads.spec.ts"))).toBe(true);
+    expect(existsSync(root("e2e", "tests", "storefront-loads.spec.ts"))).toBe(
+      true,
+    );
   });
 
   it("e2e/tests/results-page-resilience.spec.ts exists", () => {
-    expect(existsSync(root("e2e", "tests", "results-page-resilience.spec.ts"))).toBe(true);
+    expect(
+      existsSync(root("e2e", "tests", "results-page-resilience.spec.ts")),
+    ).toBe(true);
   });
 });
 
@@ -163,7 +167,9 @@ describe("lib/resupply-integrations shared contract package", () => {
   });
 
   it("lib/resupply-integrations/src/adapter.ts exists (owns the IntegrationAdapter contract)", () => {
-    expect(existsSync(resolve(integrationsRoot, "src", "adapter.ts"))).toBe(true);
+    expect(existsSync(resolve(integrationsRoot, "src", "adapter.ts"))).toBe(
+      true,
+    );
   });
 
   it("adapter.ts exports the IntegrationAdapter interface with availability() method", () => {
@@ -199,9 +205,18 @@ describe("lib/resupply-integrations shared contract package", () => {
 describe("therapy-cloud integration adapter packages", () => {
   const therapyAdapters = [
     { pkg: "resupply-integrations-airview", vendor: "ResMed AirView" },
-    { pkg: "resupply-integrations-care-orchestrator", vendor: "Philips Care Orchestrator" },
-    { pkg: "resupply-integrations-react-health", vendor: "3B Medical React Health" },
-    { pkg: "resupply-integrations-health-connect", vendor: "Android Health Connect" },
+    {
+      pkg: "resupply-integrations-care-orchestrator",
+      vendor: "Philips Care Orchestrator",
+    },
+    {
+      pkg: "resupply-integrations-react-health",
+      vendor: "3B Medical React Health",
+    },
+    {
+      pkg: "resupply-integrations-health-connect",
+      vendor: "Android Health Connect",
+    },
   ];
 
   for (const { pkg, vendor } of therapyAdapters) {
@@ -222,8 +237,14 @@ describe("therapy-cloud integration adapter packages", () => {
 describe("inbound-DME and payer/claims adapter packages", () => {
   const inboundAdapters = [
     { pkg: "resupply-integrations-parachute", domain: "HMAC webhook" },
-    { pkg: "resupply-integrations-ehr-fhir", domain: "SMART-on-FHIR Backend Services" },
-    { pkg: "resupply-integrations-office-ally", domain: "837P/835/277CA clearinghouse" },
+    {
+      pkg: "resupply-integrations-ehr-fhir",
+      domain: "SMART-on-FHIR Backend Services",
+    },
+    {
+      pkg: "resupply-integrations-office-ally",
+      domain: "837P/835/277CA clearinghouse",
+    },
     { pkg: "resupply-integrations-davinci-pas", domain: "FHIR PAS prior auth" },
   ];
 
@@ -288,11 +309,15 @@ describe("lib/resupply-templates package", () => {
 
 describe("lib/api-client-react generated directories", () => {
   it("lib/api-client-react/src/admin/ directory exists", () => {
-    expect(existsSync(root("lib", "api-client-react", "src", "admin"))).toBe(true);
+    expect(existsSync(root("lib", "api-client-react", "src", "admin"))).toBe(
+      true,
+    );
   });
 
   it("lib/api-client-react/src/storefront/ directory exists", () => {
-    expect(existsSync(root("lib", "api-client-react", "src", "storefront"))).toBe(true);
+    expect(
+      existsSync(root("lib", "api-client-react", "src", "storefront")),
+    ).toBe(true);
   });
 });
 
@@ -314,7 +339,9 @@ describe("operator utility scripts under scripts/ (updated in this PR)", () => {
   });
 
   it("scripts/src/auth-set-admin-password.ts exists ('auth:set-admin-password')", () => {
-    expect(existsSync(root("scripts", "src", "auth-set-admin-password.ts"))).toBe(true);
+    expect(
+      existsSync(root("scripts", "src", "auth-set-admin-password.ts")),
+    ).toBe(true);
   });
 
   it("scripts package.json has 'auth:set-admin-password' script entry", () => {
@@ -329,11 +356,15 @@ describe("operator utility scripts under scripts/ (updated in this PR)", () => {
 
   it("scripts/src/preflight-prod-env.ts still exists (existing script, not removed)", () => {
     // Regression: ensure the new scripts did not displace the existing ones.
-    expect(existsSync(root("scripts", "src", "preflight-prod-env.ts"))).toBe(true);
+    expect(existsSync(root("scripts", "src", "preflight-prod-env.ts"))).toBe(
+      true,
+    );
   });
 
   it("scripts/src/auth-bootstrap-admin.ts still exists (existing script, not removed)", () => {
-    expect(existsSync(root("scripts", "src", "auth-bootstrap-admin.ts"))).toBe(true);
+    expect(existsSync(root("scripts", "src", "auth-bootstrap-admin.ts"))).toBe(
+      true,
+    );
   });
 });
 
@@ -344,7 +375,9 @@ describe("operator utility scripts under scripts/ (updated in this PR)", () => {
 
 describe("finer-grained auth gates (new in this PR's Conventions section)", () => {
   it("scripts/check-admin-route-gates.sh exists (audits every admin mutation at CI time)", () => {
-    expect(existsSync(root("scripts", "check-admin-route-gates.sh"))).toBe(true);
+    expect(existsSync(root("scripts", "check-admin-route-gates.sh"))).toBe(
+      true,
+    );
   });
 
   it("requirePermission is exported from requireAdmin.ts middleware", () => {

@@ -369,7 +369,10 @@ describe("createAuthClient", () => {
 
   it("forgotPassword throws AuthError on non-2xx", async () => {
     const { fetch } = makeFetch([
-      { status: 429, body: { error: "rate_limited", message: "Too many requests." } },
+      {
+        status: 429,
+        body: { error: "rate_limited", message: "Too many requests." },
+      },
     ]);
     const client = createAuthClient({ basePath: "/api/auth", fetch });
     const err = (await client
@@ -452,9 +455,7 @@ describe("createAuthClient", () => {
   });
 
   it("defaultMessageForStatus for 500 falls back to 'Something went wrong on our side.'", async () => {
-    const { fetch } = makeFetch([
-      { status: 500, body: { error: "internal" } },
-    ]);
+    const { fetch } = makeFetch([{ status: 500, body: { error: "internal" } }]);
     const client = createAuthClient({ basePath: "/api/auth", fetch });
     const err = (await client
       .forgotPassword({ email: "x@y.z" })

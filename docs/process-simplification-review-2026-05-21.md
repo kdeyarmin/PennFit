@@ -36,7 +36,7 @@ or sequencing belongs in a follow-up polish-plan revision.
 
 **Today.** The patient must consent to camera + email at
 `artifacts/cpap-fitter/src/pages/consent.tsx:70` (three checkboxes plus
-optional phone/SMS) and then *again* to a "contact me about my order"
+optional phone/SMS) and then _again_ to a "contact me about my order"
 block at `artifacts/cpap-fitter/src/pages/order.tsx:776-829` (the
 checkbox + label that drives the `consentToContact` field, which the
 form schema at `:95-97` refines to `=== true` and blocks submit on).
@@ -73,7 +73,7 @@ gate it.
 
 **Today.** `pages/order.tsx` is 1,011 lines and 18 required fields
 across 5 cards. Pre-fill is just `patient.email` from the in-memory
-fitter store (`order.tsx:163`). A *signed-in* shopper still types
+fitter store (`order.tsx:163`). A _signed-in_ shopper still types
 name, DOB, phone, address, and insurance from scratch — even if they
 have prior orders on file.
 
@@ -98,13 +98,13 @@ isn't — and the recommendation engine treats e.g. an un-answered
 which can recommend a nasal mask that won't seal.
 
 **Smarter.** Two changes at `questionnaire.tsx:163`:
-   (1) Add an explicit **"I'm not sure"** tile per boolean question
-       (same UI as the existing `unknown` option on `cpapPressureSetting`
-       at line 56), and
-   (2) Map `unknown`/`null` to a neutral weight in the scoring engine
-       (see `lib/resupply-domain` recommendation engine — drop the
-       answer from the weighted average rather than treating it as
-       false).
+(1) Add an explicit **"I'm not sure"** tile per boolean question
+(same UI as the existing `unknown` option on `cpapPressureSetting`
+at line 56), and
+(2) Map `unknown`/`null` to a neutral weight in the scoring engine
+(see `lib/resupply-domain` recommendation engine — drop the
+answer from the weighted average rather than treating it as
+false).
 Net: better recommendations, less guilt about skipping.
 
 ### P5. Reminder management is gated on an emailed token <a id="p5-reminders-manage-token"></a>
@@ -116,11 +116,11 @@ must open the email and click a single-use token link to reach
 `/account` for signed-in customers either.
 
 **Smarter.** Two paths, neither destructive:
-   (a) If the requester is signed in (`useShopIdentity().isSignedIn`),
-       skip the token email and SPA-route directly to
-       `/reminders/manage` with the new subscription pre-loaded.
-   (b) Add a "Replacement reminders" card to `pages/account.tsx`
-       that links to `/reminders/manage` for the signed-in user.
+(a) If the requester is signed in (`useShopIdentity().isSignedIn`),
+skip the token email and SPA-route directly to
+`/reminders/manage` with the new subscription pre-loaded.
+(b) Add a "Replacement reminders" card to `pages/account.tsx`
+that links to `/reminders/manage` for the signed-in user.
 Token email stays as the fallback for guest subscribers.
 
 ### P6. Email captured 2–3× across flows <a id="p6-email-everywhere"></a>
@@ -178,7 +178,7 @@ overview, but cadence is driven by replacement-reminder subscription
 account page suggests but doesn't push.
 
 **Smarter.** When `delivered_at + replacement_interval ≈ now()`,
-schedule a single in-app banner ("Time to reorder cushions?") *and*
+schedule a single in-app banner ("Time to reorder cushions?") _and_
 add the items to a "ready to checkout" cart in localStorage so a click
 finishes the order. Doesn't change the underlying reminder cadence —
 just makes the existing data actionable from the account page.
@@ -235,14 +235,14 @@ enough (N ≥ 20 say).
 captured but never fed back into mask scoring.
 
 **Smarter.** Two stages:
-   (a) **Short-term, no ML:** introduce a `mask_outcome_signals` table
-       written to on (i) return-with-fit-reason, (ii) NPS ≤ 6 with
-       fit-related verbatim, (iii) re-fit support ticket. A weekly job
-       degrades the `brandMultiplier`/`fitScore` of any (mask, size,
-       measurement-bucket) cell where outcome signal density exceeds
-       a threshold (e.g. >15 % return-for-fit at N ≥ 30).
-   (b) **Long-term:** the same table is the training set for a real
-       collaborative-filtering layer later.
+(a) **Short-term, no ML:** introduce a `mask_outcome_signals` table
+written to on (i) return-with-fit-reason, (ii) NPS ≤ 6 with
+fit-related verbatim, (iii) re-fit support ticket. A weekly job
+degrades the `brandMultiplier`/`fitScore` of any (mask, size,
+measurement-bucket) cell where outcome signal density exceeds
+a threshold (e.g. >15 % return-for-fit at N ≥ 30).
+(b) **Long-term:** the same table is the training set for a real
+collaborative-filtering layer later.
 Critical: this is a recommendation-quality lever, not a personalization
 play — same patient gets the same answer; the population of patients
 who came before them shapes it.
@@ -253,20 +253,21 @@ who came before them shapes it.
 workbench: every requested return waits for staff approve/deny.
 
 **Smarter.** Rule layer in front of the queue:
-   - **Auto-approve:** reason = `defective` AND age < 7 d AND order
-     value < $X cap → status jumps to `approved`, RMA email fires.
-   - **Auto-offer-replacement-only:** age 7–30 d, sealed packaging
-     attested → "replacement only, no refund" auto-offer.
-   - **Manual escalation:** everything else — high-dollar, repeat
-     returner, age > 30 d, partially-used.
-Cuts staff RMA volume substantially without exposing the company to
-fraud since the auto-paths are bounded.
+
+- **Auto-approve:** reason = `defective` AND age < 7 d AND order
+  value < $X cap → status jumps to `approved`, RMA email fires.
+- **Auto-offer-replacement-only:** age 7–30 d, sealed packaging
+  attested → "replacement only, no refund" auto-offer.
+- **Manual escalation:** everything else — high-dollar, repeat
+  returner, age > 30 d, partially-used.
+  Cuts staff RMA volume substantially without exposing the company to
+  fraud since the auto-paths are bounded.
 
 ### A5. Reminder opt-out is split across SMS and email <a id="a5-opt-out-split"></a>
 
 **Today.** Twilio's STOP handling globally opts out an SMS number, but
 the hourly reminder scan checks `communication_preferences.emailMarketing`
-for bulk campaigns *only* (per explore-agent summary of
+for bulk campaigns _only_ (per explore-agent summary of
 `lib/resupply-reminders/`) — a patient who set `emailMarketing = false`
 can still get scheduled prescription reminders unless they explicitly
 opted out via the magic-link `/reminders/manage` page.
@@ -287,13 +288,14 @@ customer.
 **Smarter.** At order-submit (or in a 5-minute follow-up job), call a
 270/271 eligibility check (the integration belongs in
 `artifacts/resupply-api/src/integrations/eligibility/`). Two outcomes:
-   - **Coverage confirmed:** annotate the order; nothing customer-visible
-     changes.
-   - **Coverage denied/missing:** raise an admin ticket *and* email the
-     customer: "we need a bit more info — can you confirm your member
-     ID or try a secondary plan?" *before* the order ships.
-Catches misspelled member IDs and plan-change-of-year issues at minute
-five instead of week three.
+
+- **Coverage confirmed:** annotate the order; nothing customer-visible
+  changes.
+- **Coverage denied/missing:** raise an admin ticket _and_ email the
+  customer: "we need a bit more info — can you confirm your member
+  ID or try a secondary plan?" _before_ the order ships.
+  Catches misspelled member IDs and plan-change-of-year issues at minute
+  five instead of week three.
 
 ### A7. Order failed-email rows have no retry/triage <a id="a7-failed-email-rows"></a>
 
@@ -311,15 +313,15 @@ with backoff (transient, not customer-data issues).
 
 ## Cross-cutting patterns
 
-| Pattern | Where it bites | Fix sketch |
-| --- | --- | --- |
-| **Email re-entry across flows** | `/consent`, `/order`, `/insurance/estimate`, `/reminders` | Cookie-backed `fitter_identity` (P6). |
-| **Two consent moments** | `/consent` + `/order.consentToContact` | One server-side consent record (P1). |
-| **Skipped answers scored as `false`** | `/questionnaire` → recommendation engine | Explicit "not sure" + neutral weight (P4). |
-| **Static lookup tables that should learn** | Insurance estimate, mask scoring | Quarterly batch backfills from real outcomes (A2, A3). |
-| **Admin queues that should be auto-actioned in obvious cases** | RMAs, abandoned carts, failed-email rows | Pre-filter with rules; escalate only edge cases (A4, A1, A7). |
-| **Token-emailed magic links for signed-in users** | `/reminders/manage` | Detect session; redirect in-app (P5). |
-| **Long single-page surfaces** | `/account` (2,148 LOC), `/order` (1,011 LOC) | In-page navigation / tab routing (C1). |
+| Pattern                                                        | Where it bites                                            | Fix sketch                                                    |
+| -------------------------------------------------------------- | --------------------------------------------------------- | ------------------------------------------------------------- |
+| **Email re-entry across flows**                                | `/consent`, `/order`, `/insurance/estimate`, `/reminders` | Cookie-backed `fitter_identity` (P6).                         |
+| **Two consent moments**                                        | `/consent` + `/order.consentToContact`                    | One server-side consent record (P1).                          |
+| **Skipped answers scored as `false`**                          | `/questionnaire` → recommendation engine                  | Explicit "not sure" + neutral weight (P4).                    |
+| **Static lookup tables that should learn**                     | Insurance estimate, mask scoring                          | Quarterly batch backfills from real outcomes (A2, A3).        |
+| **Admin queues that should be auto-actioned in obvious cases** | RMAs, abandoned carts, failed-email rows                  | Pre-filter with rules; escalate only edge cases (A4, A1, A7). |
+| **Token-emailed magic links for signed-in users**              | `/reminders/manage`                                       | Detect session; redirect in-app (P5).                         |
+| **Long single-page surfaces**                                  | `/account` (2,148 LOC), `/order` (1,011 LOC)              | In-page navigation / tab routing (C1).                        |
 
 ---
 

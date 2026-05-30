@@ -92,40 +92,37 @@ router.post(
       res.status(404).json({ error: "claim_not_found" });
       return;
     }
-    const [
-      { data: patient },
-      { data: coverage },
-      { data: payerProfile },
-    ] = await Promise.all([
-      supabase
-        .schema("resupply")
-        .from("patients")
-        .select("legal_first_name, legal_last_name")
-        .eq("id", claim.patient_id)
-        .limit(1)
-        .maybeSingle(),
-      claim.insurance_coverage_id
-        ? supabase
-            .schema("resupply")
-            .from("insurance_coverages")
-            .select("member_id")
-            .eq("id", claim.insurance_coverage_id)
-            .limit(1)
-            .maybeSingle()
-        : Promise.resolve({ data: null }),
-      // Phase 14 — pull the payer's appeals_mailing_address so the
-      // letter's "To:" block prints the actual destination instead
-      // of relying on the operator to look it up.
-      claim.payer_profile_id
-        ? supabase
-            .schema("resupply")
-            .from("payer_profiles")
-            .select("appeals_mailing_address")
-            .eq("id", claim.payer_profile_id)
-            .limit(1)
-            .maybeSingle()
-        : Promise.resolve({ data: null }),
-    ]);
+    const [{ data: patient }, { data: coverage }, { data: payerProfile }] =
+      await Promise.all([
+        supabase
+          .schema("resupply")
+          .from("patients")
+          .select("legal_first_name, legal_last_name")
+          .eq("id", claim.patient_id)
+          .limit(1)
+          .maybeSingle(),
+        claim.insurance_coverage_id
+          ? supabase
+              .schema("resupply")
+              .from("insurance_coverages")
+              .select("member_id")
+              .eq("id", claim.insurance_coverage_id)
+              .limit(1)
+              .maybeSingle()
+          : Promise.resolve({ data: null }),
+        // Phase 14 — pull the payer's appeals_mailing_address so the
+        // letter's "To:" block prints the actual destination instead
+        // of relying on the operator to look it up.
+        claim.payer_profile_id
+          ? supabase
+              .schema("resupply")
+              .from("payer_profiles")
+              .select("appeals_mailing_address")
+              .eq("id", claim.payer_profile_id)
+              .limit(1)
+              .maybeSingle()
+          : Promise.resolve({ data: null }),
+      ]);
     if (!patient) {
       res.status(404).json({ error: "patient_not_found" });
       return;
@@ -150,8 +147,7 @@ router.post(
       signerName:
         identity.organization?.authorized_signer_name ?? "Billing Team",
       signerTitle:
-        identity.organization?.authorized_signer_title ??
-        "Billing Department",
+        identity.organization?.authorized_signer_title ?? "Billing Department",
       dmeOrganization: {
         legalName:
           identity.organization?.legal_name ??
@@ -166,13 +162,14 @@ router.post(
       },
     });
 
-    const insertRow: Database["resupply"]["Tables"]["claim_appeal_letters"]["Insert"] = {
-      claim_id: claim.id,
-      denial_analysis_id: parsed.data.denialAnalysisId ?? null,
-      letter_body: parsed.data.letterBody,
-      delivery_method: parsed.data.deliveryMethod ?? null,
-      generated_by_email: req.adminEmail ?? "unknown",
-    };
+    const insertRow: Database["resupply"]["Tables"]["claim_appeal_letters"]["Insert"] =
+      {
+        claim_id: claim.id,
+        denial_analysis_id: parsed.data.denialAnalysisId ?? null,
+        letter_body: parsed.data.letterBody,
+        delivery_method: parsed.data.deliveryMethod ?? null,
+        generated_by_email: req.adminEmail ?? "unknown",
+      };
     const { data: row, error: insertErr } = await supabase
       .schema("resupply")
       .from("claim_appeal_letters")

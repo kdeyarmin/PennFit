@@ -25,9 +25,7 @@ import {
 
 import { scanCompliance } from "../../lib/compliance-scanner";
 import { logger } from "../../lib/logger";
-import {
-  requirePermission,
-} from "../../middlewares/requireAdmin";
+import { requirePermission } from "../../middlewares/requireAdmin";
 import { rateLimit } from "../../middlewares/rate-limit";
 
 type CsrComplianceAlertUpdate =
@@ -228,10 +226,9 @@ const patchBody = z
     note: z.string().max(500).optional(),
   })
   .strict()
-  .refine(
-    (b) => b.action !== "snooze" || !!b.snoozeUntil,
-    { message: "snoozeUntil required when action='snooze'" },
-  );
+  .refine((b) => b.action !== "snooze" || !!b.snoozeUntil, {
+    message: "snoozeUntil required when action='snooze'",
+  });
 
 router.patch(
   "/admin/csr-compliance-alerts/:id",
@@ -342,10 +339,7 @@ router.patch(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn(
-        { err, action },
-        "csr.compliance_alert audit write failed",
-      );
+      logger.warn({ err, action }, "csr.compliance_alert audit write failed");
     });
 
     res.json({ id: alertId, status: nextStatus });
@@ -414,9 +408,7 @@ router.post(
         "code" in insertErr &&
         (insertErr as { code: string }).code === "23505"
       ) {
-        res
-          .status(409)
-          .json({ error: "another_open_manual_alert_exists" });
+        res.status(409).json({ error: "another_open_manual_alert_exists" });
         return;
       }
       throw insertErr;

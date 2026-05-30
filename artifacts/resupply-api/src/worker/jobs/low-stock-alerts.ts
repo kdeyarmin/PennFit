@@ -32,7 +32,10 @@ import {
 } from "@workspace/resupply-email";
 
 import { logger } from "../../lib/logger";
-import { createQueueWithDlq, VENDOR_SEND_QUEUE_OPTS } from "../lib/queue-options";
+import {
+  createQueueWithDlq,
+  VENDOR_SEND_QUEUE_OPTS,
+} from "../lib/queue-options";
 import {
   getStripeClient,
   readStripeConfigOrNull,
@@ -271,7 +274,9 @@ export async function runLowStockAlerts(): Promise<LowStockAlertStats> {
     .select("product_id, last_alerted_at, last_resolved_at")
     .in("product_id", belowIds);
   if (stateErr) {
-    throw new Error(`low-stock-alerts state lookup failed: ${stateErr.message}`);
+    throw new Error(
+      `low-stock-alerts state lookup failed: ${stateErr.message}`,
+    );
   }
   const stateById = new Map(
     (stateRows ?? []).map((r) => [
@@ -291,10 +296,7 @@ export async function runLowStockAlerts(): Promise<LowStockAlertStats> {
       alertable.push(sku);
       continue;
     }
-    if (
-      state.lastResolvedAt &&
-      state.lastResolvedAt > state.lastAlertedAt
-    ) {
+    if (state.lastResolvedAt && state.lastResolvedAt > state.lastAlertedAt) {
       // Resolved since last alert; this is a fresh dip.
       alertable.push(sku);
       continue;
@@ -397,10 +399,7 @@ async function upsertAlertState(
     .from("low_stock_alert_state")
     .upsert(rows, { onConflict: "product_id" });
   if (error) {
-    logger.warn(
-      { err: error },
-      "low-stock-alerts: state upsert failed",
-    );
+    logger.warn({ err: error }, "low-stock-alerts: state upsert failed");
   }
 }
 

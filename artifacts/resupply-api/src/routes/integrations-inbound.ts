@@ -95,175 +95,187 @@ const inboundWebhookLimiter = expressRateLimit({
   message: { error: "too_many_requests", limiter: "integrations_inbound_ip" },
 });
 
-router.post("/integrations/inbound/:source", inboundWebhookLimiter, rawJson, async (req, res) => {
-  const parsed = sourceParam.safeParse(req.params);
-  if (!parsed.success) {
-    res.status(400).json({ error: "invalid_source" });
-    return;
-  }
-  const source = parsed.data.source;
-  if (!isSupportedSource(source)) {
-    res.status(404).json({ error: "unknown_source" });
-    return;
-  }
-  // req.body is a Buffer (express.raw). Parse it ourselves so we
-  // keep the exact-bytes string around for signature verification.
-  const rawBuffer = req.body;
-  if (!Buffer.isBuffer(rawBuffer) || rawBuffer.length === 0) {
-    res.status(400).json({ error: "invalid_payload" });
-    return;
-  }
-  const rawBodyString = rawBuffer.toString("utf8");
-  let payload: Record<string, unknown>;
-  try {
-    const parsed = JSON.parse(rawBodyString);
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+router.post(
+  "/integrations/inbound/:source",
+  inboundWebhookLimiter,
+  rawJson,
+  async (req, res) => {
+    const parsed = sourceParam.safeParse(req.params);
+    if (!parsed.success) {
+      res.status(400).json({ error: "invalid_source" });
+      return;
+    }
+    const source = parsed.data.source;
+    if (!isSupportedSource(source)) {
+      res.status(404).json({ error: "unknown_source" });
+      return;
+    }
+    // req.body is a Buffer (express.raw). Parse it ourselves so we
+    // keep the exact-bytes string around for signature verification.
+    const rawBuffer = req.body;
+    if (!Buffer.isBuffer(rawBuffer) || rawBuffer.length === 0) {
       res.status(400).json({ error: "invalid_payload" });
       return;
     }
-    payload = parsed as Record<string, unknown>;
-  } catch {
-    res.status(400).json({ error: "invalid_json" });
-    return;
-  }
-
-
-  // Build a dedupe key — prefer the source's delivery-id header,
-  // fall back to a sha256 of the body.
-  const headerKeys = [
-    "x-parachute-delivery-id",
-    "x-itamar-event-id",
-    "x-stripe-event-id",
-    "x-delivery-id",
-  ];
-  let dedupeKey = "";
-  for (const k of headerKeys) {
-    const v = req.headers[k];
-    if (typeof v === "string" && v.length > 0) {
-      dedupeKey = `${k}:${v.slice(0, 120)}`;
-      break;
-    }
-  }
-  if (!dedupeKey) {
-    const sha = createHash("sha256").update(rawBuffer).digest("hex");
-    dedupeKey = `sha256:${sha}`;
-  }
-  const sourceEventType =
-    typeof payload.type === "string"
-      ? (payload.type as string).slice(0, 120)
-      : typeof payload.event_type === "string"
-        ? (payload.event_type as string).slice(0, 120)
-        : null;
-  // Capture verification-relevant headers only (no Cookie, no Auth).
-  const verificationHeaders: Record<string, string> = {};
-  for (const k of headerKeys) {
-    const v = req.headers[k];
-    if (typeof v === "string") verificationHeaders[k] = v;
-  }
-  for (const k of [
-    "x-parachute-signature",
-    "x-itamar-signature",
-    "stripe-signature",
-  ]) {
-    const v = req.headers[k];
-    if (typeof v === "string") verificationHeaders[k] = v;
-  }
-
-  // Per-source inline signature verification. Failure is a 401 so
-  // forged payloads never land in inbound_webhooks at all. When the
-  // source's secret env var is unset we accept the payload with
-  // signature_verified=false — dev/preview deploys without partner
-  // credentials need to be able to receive test traffic.
-  const sigOutcome = verifyInlineSignature(source, rawBodyString, req.headers);
-  if (sigOutcome.outcome === "configured_bad") {
-    logger.warn(
-      { source, reason: sigOutcome.reason },
-      "integrations.inbound: signature rejected",
-    );
-    res.status(401).json({ error: "invalid_signature" });
-    return;
-  }
-  const signatureVerified = sigOutcome.outcome === "configured_ok";
-
-  // Production fail-closed: refuse to land unsigned rows in
-  // production. The dev/preview-friendly fallback (force sha256
-  // dedupe + signature_verified=false) is fine for staging where
-  // partner secrets aren't always plumbed, but on a live deploy
-  // accepting unsigned partner webhooks would let any internet
-  // caller seed our inbound queue with rows that could trip
-  // dispatcher heuristics. The dispatcher already checks the flag,
-  // but defense-in-depth: keep the row out of the table entirely.
-  if (
-    !signatureVerified &&
-    sigOutcome.outcome === "no_secret" &&
-    process.env.NODE_ENV === "production"
-  ) {
-    logger.warn(
-      { source },
-      "integrations.inbound: refusing unsigned webhook in production (no secret configured)",
-    );
-    res.status(503).json({
-      error: "signature_not_configured",
-      message:
-        "Inbound webhook rejected: no signing secret is configured for this source.",
-    });
-    return;
-  }
-
-  // Dedupe key safety: when the request is NOT signature-verified
-  // (dev/preview without partner secrets), we must NOT trust the
-  // partner-supplied delivery-id header for dedupe. Otherwise an
-  // unauthenticated attacker can pre-poison the dedupe slot for any
-  // future legitimate delivery id — every real later webhook for
-  // that id would 200-deduplicate without ever being processed.
-  // Force sha256(body) for unverified inserts so the attacker's
-  // poison row sits in a body-content slot that a real partner
-  // payload will never collide with.
-  if (!signatureVerified) {
-    const sha = createHash("sha256").update(rawBuffer).digest("hex");
-    dedupeKey = `sha256:${sha}`;
-  }
-
-  const supabase = getSupabaseServiceRoleClient();
-  const { error } = await supabase
-    .schema("resupply")
-    .from("inbound_webhooks")
-    .insert({
-      source,
-      source_event_type: sourceEventType,
-      payload_json: payload as unknown as Json,
-      verification_headers_json: verificationHeaders as unknown as Json,
-      signature_verified: signatureVerified,
-      dedupe_key: dedupeKey,
-      status: "received",
-    });
-  if (error) {
-    // Duplicate on (source, dedupe_key) → 200 + duplicate marker so
-    // the sender doesn't retry forever.
-    if (typeof error.code === "string" && error.code === "23505") {
-      logger.info(
-        { source, dedupeKey },
-        "integrations.inbound: duplicate, acked without re-processing",
-      );
-      res.status(200).json({ ok: true, deduped: true });
+    const rawBodyString = rawBuffer.toString("utf8");
+    let payload: Record<string, unknown>;
+    try {
+      const parsed = JSON.parse(rawBodyString);
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+        res.status(400).json({ error: "invalid_payload" });
+        return;
+      }
+      payload = parsed as Record<string, unknown>;
+    } catch {
+      res.status(400).json({ error: "invalid_json" });
       return;
     }
-    throw error;
-  }
-  await logAudit({
-    action: "integrations.inbound_received",
-    adminEmail: "system:integrations:inbound",
-    adminUserId: null,
-    targetTable: "inbound_webhooks",
-    targetId: null,
-    metadata: { source, source_event_type: sourceEventType, dedupe_key: dedupeKey },
-    ip: req.ip ?? null,
-    userAgent: req.get("user-agent") ?? null,
-  }).catch((err) => {
-    logger.warn({ err }, "integrations.inbound_received audit write failed");
-  });
-  res.status(202).json({ ok: true });
-});
+
+    // Build a dedupe key — prefer the source's delivery-id header,
+    // fall back to a sha256 of the body.
+    const headerKeys = [
+      "x-parachute-delivery-id",
+      "x-itamar-event-id",
+      "x-stripe-event-id",
+      "x-delivery-id",
+    ];
+    let dedupeKey = "";
+    for (const k of headerKeys) {
+      const v = req.headers[k];
+      if (typeof v === "string" && v.length > 0) {
+        dedupeKey = `${k}:${v.slice(0, 120)}`;
+        break;
+      }
+    }
+    if (!dedupeKey) {
+      const sha = createHash("sha256").update(rawBuffer).digest("hex");
+      dedupeKey = `sha256:${sha}`;
+    }
+    const sourceEventType =
+      typeof payload.type === "string"
+        ? (payload.type as string).slice(0, 120)
+        : typeof payload.event_type === "string"
+          ? (payload.event_type as string).slice(0, 120)
+          : null;
+    // Capture verification-relevant headers only (no Cookie, no Auth).
+    const verificationHeaders: Record<string, string> = {};
+    for (const k of headerKeys) {
+      const v = req.headers[k];
+      if (typeof v === "string") verificationHeaders[k] = v;
+    }
+    for (const k of [
+      "x-parachute-signature",
+      "x-itamar-signature",
+      "stripe-signature",
+    ]) {
+      const v = req.headers[k];
+      if (typeof v === "string") verificationHeaders[k] = v;
+    }
+
+    // Per-source inline signature verification. Failure is a 401 so
+    // forged payloads never land in inbound_webhooks at all. When the
+    // source's secret env var is unset we accept the payload with
+    // signature_verified=false — dev/preview deploys without partner
+    // credentials need to be able to receive test traffic.
+    const sigOutcome = verifyInlineSignature(
+      source,
+      rawBodyString,
+      req.headers,
+    );
+    if (sigOutcome.outcome === "configured_bad") {
+      logger.warn(
+        { source, reason: sigOutcome.reason },
+        "integrations.inbound: signature rejected",
+      );
+      res.status(401).json({ error: "invalid_signature" });
+      return;
+    }
+    const signatureVerified = sigOutcome.outcome === "configured_ok";
+
+    // Production fail-closed: refuse to land unsigned rows in
+    // production. The dev/preview-friendly fallback (force sha256
+    // dedupe + signature_verified=false) is fine for staging where
+    // partner secrets aren't always plumbed, but on a live deploy
+    // accepting unsigned partner webhooks would let any internet
+    // caller seed our inbound queue with rows that could trip
+    // dispatcher heuristics. The dispatcher already checks the flag,
+    // but defense-in-depth: keep the row out of the table entirely.
+    if (
+      !signatureVerified &&
+      sigOutcome.outcome === "no_secret" &&
+      process.env.NODE_ENV === "production"
+    ) {
+      logger.warn(
+        { source },
+        "integrations.inbound: refusing unsigned webhook in production (no secret configured)",
+      );
+      res.status(503).json({
+        error: "signature_not_configured",
+        message:
+          "Inbound webhook rejected: no signing secret is configured for this source.",
+      });
+      return;
+    }
+
+    // Dedupe key safety: when the request is NOT signature-verified
+    // (dev/preview without partner secrets), we must NOT trust the
+    // partner-supplied delivery-id header for dedupe. Otherwise an
+    // unauthenticated attacker can pre-poison the dedupe slot for any
+    // future legitimate delivery id — every real later webhook for
+    // that id would 200-deduplicate without ever being processed.
+    // Force sha256(body) for unverified inserts so the attacker's
+    // poison row sits in a body-content slot that a real partner
+    // payload will never collide with.
+    if (!signatureVerified) {
+      const sha = createHash("sha256").update(rawBuffer).digest("hex");
+      dedupeKey = `sha256:${sha}`;
+    }
+
+    const supabase = getSupabaseServiceRoleClient();
+    const { error } = await supabase
+      .schema("resupply")
+      .from("inbound_webhooks")
+      .insert({
+        source,
+        source_event_type: sourceEventType,
+        payload_json: payload as unknown as Json,
+        verification_headers_json: verificationHeaders as unknown as Json,
+        signature_verified: signatureVerified,
+        dedupe_key: dedupeKey,
+        status: "received",
+      });
+    if (error) {
+      // Duplicate on (source, dedupe_key) → 200 + duplicate marker so
+      // the sender doesn't retry forever.
+      if (typeof error.code === "string" && error.code === "23505") {
+        logger.info(
+          { source, dedupeKey },
+          "integrations.inbound: duplicate, acked without re-processing",
+        );
+        res.status(200).json({ ok: true, deduped: true });
+        return;
+      }
+      throw error;
+    }
+    await logAudit({
+      action: "integrations.inbound_received",
+      adminEmail: "system:integrations:inbound",
+      adminUserId: null,
+      targetTable: "inbound_webhooks",
+      targetId: null,
+      metadata: {
+        source,
+        source_event_type: sourceEventType,
+        dedupe_key: dedupeKey,
+      },
+      ip: req.ip ?? null,
+      userAgent: req.get("user-agent") ?? null,
+    }).catch((err) => {
+      logger.warn({ err }, "integrations.inbound_received audit write failed");
+    });
+    res.status(202).json({ ok: true });
+  },
+);
 
 type SigOutcome =
   | { outcome: "no_secret" }
@@ -278,7 +290,7 @@ type SigOutcome =
  * @param headers - The incoming request headers
  * @returns `{ outcome: "configured_ok" }` if a signing secret is configured and the signature matches,
  * `{ outcome: "configured_bad"; reason: string }` if a secret is configured but the signature check fails,
- * `{ outcome: "no_secret" }` if no signing secret is configured or inline verification is not implemented for the source. 
+ * `{ outcome: "no_secret" }` if no signing secret is configured or inline verification is not implemented for the source.
  */
 function verifyInlineSignature(
   source: string,

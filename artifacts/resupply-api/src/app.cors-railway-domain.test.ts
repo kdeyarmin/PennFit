@@ -196,9 +196,9 @@ describe("resolveAllowedOrigins — both sources, merged and de-duped", () => {
   });
 
   it("rejects an unlisted origin via the CORS callback", () => {
-    expect(
-      checkOrigin(origins, "https://unlisted.example.com"),
-    ).toBeInstanceOf(Error);
+    expect(checkOrigin(origins, "https://unlisted.example.com")).toBeInstanceOf(
+      Error,
+    );
   });
 });
 
@@ -207,9 +207,9 @@ describe("resolveAllowedOrigins — both sources, merged and de-duped", () => {
 // ---------------------------------------------------------------------------
 describe("resolveAllowedOrigins — production fail-closed", () => {
   it("throws when both vars are absent in production", () => {
-    expect(() =>
-      resolveAllowedOrigins({ NODE_ENV: "production" }),
-    ).toThrow(/RESUPPLY_ALLOWED_ORIGINS|RAILWAY_PUBLIC_DOMAIN/);
+    expect(() => resolveAllowedOrigins({ NODE_ENV: "production" })).toThrow(
+      /RESUPPLY_ALLOWED_ORIGINS|RAILWAY_PUBLIC_DOMAIN/,
+    );
   });
 
   it("throws when RESUPPLY_ALLOWED_ORIGINS is empty string and RAILWAY_PUBLIC_DOMAIN is absent", () => {
@@ -241,9 +241,9 @@ describe("resolveAllowedOrigins — production fail-closed", () => {
   });
 
   it("error message mentions both variable names", () => {
-    expect(() =>
-      resolveAllowedOrigins({ NODE_ENV: "production" }),
-    ).toThrow(/RESUPPLY_ALLOWED_ORIGINS.*RAILWAY_PUBLIC_DOMAIN|RAILWAY_PUBLIC_DOMAIN.*RESUPPLY_ALLOWED_ORIGINS/);
+    expect(() => resolveAllowedOrigins({ NODE_ENV: "production" })).toThrow(
+      /RESUPPLY_ALLOWED_ORIGINS.*RAILWAY_PUBLIC_DOMAIN|RAILWAY_PUBLIC_DOMAIN.*RESUPPLY_ALLOWED_ORIGINS/,
+    );
   });
 });
 
@@ -282,9 +282,9 @@ describe("resolveAllowedOrigins — dev localhost fallback", () => {
   });
 
   it("rejects a non-localhost attacker origin even in dev", () => {
-    expect(
-      checkOrigin(origins, "https://attacker.example.com"),
-    ).toBeInstanceOf(Error);
+    expect(checkOrigin(origins, "https://attacker.example.com")).toBeInstanceOf(
+      Error,
+    );
   });
 });
 
@@ -314,7 +314,8 @@ describe("resolveAllowedOrigins — whitespace and empty string handling", () =>
 
   it("trims whitespace from RESUPPLY_ALLOWED_ORIGINS entries", () => {
     const origins = resolveAllowedOrigins({
-      RESUPPLY_ALLOWED_ORIGINS: "  https://admin.example.com  , https://api.example.com ",
+      RESUPPLY_ALLOWED_ORIGINS:
+        "  https://admin.example.com  , https://api.example.com ",
       NODE_ENV: "development",
     });
     expect(origins).toContain("https://admin.example.com");

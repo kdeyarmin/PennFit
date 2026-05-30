@@ -31,7 +31,11 @@ import { describe, expect, it, vi } from "vitest";
 // does NOT affect whether requireCsrfWhenSession sees the pf_session cookie.
 vi.mock("../../middlewares/requireSignedIn", () => ({
   attachSignedIn: (_req: unknown, _res: unknown, next: () => void) => next(),
-  requireSignedIn: (_req: unknown, res: { status: (c: number) => { json: (b: unknown) => void } }, _next: () => void) => {
+  requireSignedIn: (
+    _req: unknown,
+    res: { status: (c: number) => { json: (b: unknown) => void } },
+    _next: () => void,
+  ) => {
     res.status(401).json({ error: "sign_in_required" });
   },
 }));
@@ -53,13 +57,15 @@ vi.mock("@workspace/resupply-db", () => ({
         insert: (_v: unknown) => ({
           select: (_c: string) => ({
             limit: (_n: number) => ({
-              maybeSingle: async () => ({ data: { id: "order-1" }, error: null }),
+              maybeSingle: async () => ({
+                data: { id: "order-1" },
+                error: null,
+              }),
             }),
           }),
         }),
         update: (_v: unknown) => ({
-          eq: (_col: string, _val: unknown) =>
-            Promise.resolve({ error: null }),
+          eq: (_col: string, _val: unknown) => Promise.resolve({ error: null }),
         }),
         select: (_c: string) => ({
           eq: (_col: string, _val: unknown) => ({
@@ -114,9 +120,7 @@ describe("POST /orders — requireCsrfWhenSession: anonymous pass-through", () =
     // allow this through, regardless of CSRF material presence.
     // The handler will receive the request and return some non-403 response
     // (likely 400 due to missing required body fields, or 503 if sendgrid not configured).
-    const res = await request(makeApp())
-      .post("/orders")
-      .send({});
+    const res = await request(makeApp()).post("/orders").send({});
 
     expect(res.status).not.toBe(403);
     expect(res.body?.error).not.toBe("csrf_failed");

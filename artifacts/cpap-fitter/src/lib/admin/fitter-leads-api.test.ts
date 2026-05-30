@@ -103,7 +103,9 @@ describe("listFitterLeads", () => {
     await listFitterLeads("all", "sleep_apnea_quiz");
 
     const [url] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe("/resupply-api/admin/fitter-leads?source=sleep_apnea_quiz");
+    expect(url).toBe(
+      "/resupply-api/admin/fitter-leads?source=sleep_apnea_quiz",
+    );
   });
 
   it("appends both stage and source filters when both are non-all", async () => {
@@ -200,9 +202,7 @@ describe("unsubscribeFitterLead", () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe(
-      `/resupply-api/admin/fitter-leads/${LEAD_ID}/unsubscribe`,
-    );
+    expect(url).toBe(`/resupply-api/admin/fitter-leads/${LEAD_ID}/unsubscribe`);
     expect(init.method).toBe("POST");
     expect(result).toEqual(UNSUB_RESPONSE);
   });

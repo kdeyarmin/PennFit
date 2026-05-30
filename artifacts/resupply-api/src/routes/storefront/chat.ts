@@ -320,10 +320,7 @@ router.post("/chat", chatRateLimit, async (req, res) => {
   // request and burn LLM budget even inside the per-IP rate limit.
   // Cap the total at MAX_USER_MESSAGE_CHARS × 4 so a normal
   // back-and-forth still fits; longer threads are likely abuse.
-  const aggregateChars = messages.reduce(
-    (sum, m) => sum + m.content.length,
-    0,
-  );
+  const aggregateChars = messages.reduce((sum, m) => sum + m.content.length, 0);
   if (aggregateChars > MAX_USER_MESSAGE_CHARS * 4) {
     res.status(400).json({
       error:
@@ -381,8 +378,7 @@ router.post("/chat", chatRateLimit, async (req, res) => {
     return;
   }
 
-  const { messages: initial, redactionCounts } =
-    buildInitialMessages(messages);
+  const { messages: initial, redactionCounts } = buildInitialMessages(messages);
   if (Object.keys(redactionCounts).length > 0) {
     logger.info(
       {
@@ -568,9 +564,7 @@ async function runStreamingRound(
   });
 
   if (!upstream.ok || !upstream.body) {
-    const detail = upstream.body
-      ? await upstream.text().catch(() => "")
-      : "";
+    const detail = upstream.body ? await upstream.text().catch(() => "") : "";
     logger.warn(
       {
         event: "chat_openai_http_error",
@@ -838,9 +832,10 @@ const ANTHROPIC_TOOLS: AnthropicTool[] = CHAT_TOOLS.map((t) => ({
  *     `tool_result` block (Anthropic's convention — tool results
  *     are framed as the "user" returning data to the assistant).
  */
-function convertOpenAiToAnthropicMessages(
-  openai: OpenAiMessage[],
-): { system: string; messages: AnthropicMessage[] } {
+function convertOpenAiToAnthropicMessages(openai: OpenAiMessage[]): {
+  system: string;
+  messages: AnthropicMessage[];
+} {
   const systemMsg = openai.find((m) => m.role === "system");
   const system =
     systemMsg && systemMsg.role === "system" ? systemMsg.content : "";
@@ -906,7 +901,11 @@ function convertOpenAiToAnthropicMessages(
 function appendAnthropicAssistantTurn(
   messages: OpenAiMessage[],
   text: string,
-  toolCalls: Array<{ id: string; name: string; input: Record<string, unknown> }>,
+  toolCalls: Array<{
+    id: string;
+    name: string;
+    input: Record<string, unknown>;
+  }>,
 ): OpenAiMessage[] {
   const openAiToolCalls = toolCalls.map((c) => ({
     id: c.id,
@@ -941,7 +940,9 @@ async function handleAnthropicJson(
         // cache_control on the system prompt — saves ~90% of input
         // token cost on the second and subsequent turns of any
         // conversation that uses the same system prompt prefix.
-        system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
+        system: [
+          { type: "text", text: system, cache_control: { type: "ephemeral" } },
+        ],
         messages: anthMessages,
         tools: ANTHROPIC_TOOLS,
       });
@@ -1072,7 +1073,11 @@ async function handleAnthropicStreaming(
           max_tokens: 600,
           temperature: 0.4,
           system: [
-            { type: "text", text: system, cache_control: { type: "ephemeral" } },
+            {
+              type: "text",
+              text: system,
+              cache_control: { type: "ephemeral" },
+            },
           ],
           messages: anthMessages,
           tools: ANTHROPIC_TOOLS,
@@ -1119,7 +1124,12 @@ async function handleAnthropicStreaming(
       // No more tool calls — round produced the final content.
       if (totalChars - startCharCount === 0) {
         logger.warn(
-          { event: "chat_empty_reply", vendor: "anthropic", streaming: true, round },
+          {
+            event: "chat_empty_reply",
+            vendor: "anthropic",
+            streaming: true,
+            round,
+          },
           "chat: anthropic stream returned no content",
         );
         safeEvent({ type: "chunk", text: DEGRADED_FALLBACK_REPLY });

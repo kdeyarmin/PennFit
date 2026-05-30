@@ -10,12 +10,13 @@ eventually want crash isolation from the request-serving API and its
 own scaling axis.
 
 The actual workload that landed turned out to be tiny:
-* `reminders.scan` — hourly outreach evaluator.
-* `prescription-attachment-sweep` — weekly orphan reaper.
-* `smart-trigger-evaluator` / `-send` — daily.
-* `rx-renewal-send` — daily.
-* `idempotency-keys-prune` — daily.
-* `onboarding-checkins.*` — daily.
+
+- `reminders.scan` — hourly outreach evaluator.
+- `prescription-attachment-sweep` — weekly orphan reaper.
+- `smart-trigger-evaluator` / `-send` — daily.
+- `rx-renewal-send` — daily.
+- `idempotency-keys-prune` — daily.
+- `onboarding-checkins.*` — daily.
 
 All of those are quiet (sub-second handlers, kicked by pg-boss
 schedules). The split process bought no measured isolation — it was
@@ -35,31 +36,34 @@ worker behind a clean module boundary
 back out is contained.
 
 Concretely:
-* `startWorker()` is invoked from `index.ts` after the HTTP server
+
+- `startWorker()` is invoked from `index.ts` after the HTTP server
   binds. Failure to start the worker takes the whole process down.
-* Every job handler is registered idempotently (pg-boss's
+- Every job handler is registered idempotently (pg-boss's
   `createQueue` + `schedule` are upsert-style).
-* Shutdown is one signal handler that gracefully stops both the
+- Shutdown is one signal handler that gracefully stops both the
   HTTP server and pg-boss.
-* The `/readyz` check still gates traffic on the
+- The `/readyz` check still gates traffic on the
   `pgboss_resupply.version` row, so a crash in `boss.start()`
   doesn't accept traffic that depends on the queue.
 
 ## Consequences
 
 Positive:
-* One artifact to deploy, one set of logs, one set of secrets.
-* Worker code can directly `import { logAudit } from
-  "@workspace/resupply-audit"` without an HTTP RPC.
-* `pgboss_resupply` schema and `drizzle.resupply_migrations`
+
+- One artifact to deploy, one set of logs, one set of secrets.
+- Worker code can directly `import { logAudit } from
+"@workspace/resupply-audit"` without an HTTP RPC.
+- `pgboss_resupply` schema and `drizzle.resupply_migrations`
   migrate together — no two-step deploy.
 
 Negative:
-* A long-running web request handler can starve job handlers
+
+- A long-running web request handler can starve job handlers
   inside the same Node event loop. Today every handler is short
   enough that this is theoretical; the moment it isn't, that's the
   signal to split out.
-* A boot-time crash in any cron-scheduling code (e.g. a malformed
+- A boot-time crash in any cron-scheduling code (e.g. a malformed
   `boss.schedule(...)` call) takes the whole API down. Mitigation:
   schedule registration is wrapped in
   `registerXxxJob(boss)` helpers that throw at module import only
@@ -69,6 +73,7 @@ Negative:
 ## Re-architecting hints
 
 If the workload ever stops being quiet, the right path is:
+
 1. Re-extract `artifacts/resupply-api/src/worker/` back into its
    own artifact (`artifacts/resupply-worker`).
 2. Keep `pgboss_resupply` schema / `boss.start()` semantics
@@ -92,6 +97,6 @@ full alert posture and triage procedures.
 
 ## Related ADRs
 
-* ADR 002 — pg-boss for v1, with a migration path to Temporal.
-* ADR 010 — No Docker, no Redis (the original argument for keeping
+- ADR 002 — pg-boss for v1, with a migration path to Temporal.
+- ADR 010 — No Docker, no Redis (the original argument for keeping
   infra Postgres-only).

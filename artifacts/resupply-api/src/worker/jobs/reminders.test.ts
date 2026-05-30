@@ -215,7 +215,10 @@ function isWithinQuietHoursReplica(now: Date, timezone: string): boolean {
       hour12: false,
     });
     const parts = fmt.formatToParts(now);
-    hour = Number.parseInt(parts.find((p) => p.type === "hour")?.value ?? "0", 10);
+    hour = Number.parseInt(
+      parts.find((p) => p.type === "hour")?.value ?? "0",
+      10,
+    );
   }
   return hour < QUIET_HOURS_START_REPLICA || hour >= QUIET_HOURS_END_REPLICA;
 }
@@ -238,7 +241,10 @@ function dateAtHourInTz(ianaTz: string, targetHour: number): Date {
       hour12: false,
     });
     const parts = fmt.formatToParts(d);
-    const h = Number.parseInt(parts.find((p) => p.type === "hour")?.value ?? "0", 10);
+    const h = Number.parseInt(
+      parts.find((p) => p.type === "hour")?.value ?? "0",
+      10,
+    );
     if (h === targetHour) return d;
     d = new Date(d.getTime() + 60_000);
   }
@@ -336,7 +342,10 @@ describe("tryClaimReminderDedupKey — source structural checks (PR change)", ()
     // The 23505 branch returns false so callers short-circuit.
     expect(SRC).toContain('error.code === "23505"');
     const block23505Idx = SRC.indexOf('error.code === "23505"');
-    const returnFalseIdx = SRC.indexOf("return { proceed: false, key }", block23505Idx);
+    const returnFalseIdx = SRC.indexOf(
+      "return { proceed: false, key }",
+      block23505Idx,
+    );
     expect(returnFalseIdx).toBeGreaterThan(block23505Idx);
   });
 
@@ -344,7 +353,10 @@ describe("tryClaimReminderDedupKey — source structural checks (PR change)", ()
     // The success branch returns true so the caller proceeds.
     const successComment = SRC.indexOf("won the race");
     expect(successComment).toBeGreaterThan(-1);
-    const returnTrueIdx = SRC.indexOf("return { proceed: true, key }", successComment);
+    const returnTrueIdx = SRC.indexOf(
+      "return { proceed: true, key }",
+      successComment,
+    );
     expect(returnTrueIdx).toBeGreaterThan(successComment);
   });
 

@@ -403,11 +403,7 @@ class Impl implements VoiceToolDispatcher {
         .map(normalizeSku),
     );
     const acceptedSkus = Array.from(
-      new Set(
-        args.skus
-          .map(normalizeSku)
-          .filter((s) => eligibleSkus.has(s)),
-      ),
+      new Set(args.skus.map(normalizeSku).filter((s) => eligibleSkus.has(s))),
     );
 
     // Mark the episode as `confirmed`. Actual order placement against

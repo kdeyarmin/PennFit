@@ -77,8 +77,7 @@ export async function withMetrics<T>(
     outcome = "failure";
     throw err;
   } finally {
-    const elapsedMs =
-      Number(process.hrtime.bigint() - startedAtNs) / 1_000_000;
+    const elapsedMs = Number(process.hrtime.bigint() - startedAtNs) / 1_000_000;
     // Round to 2 decimals to keep log lines compact. The histogram
     // consumer cares about distribution, not nanosecond precision.
     const rounded = Math.round(elapsedMs * 100) / 100;

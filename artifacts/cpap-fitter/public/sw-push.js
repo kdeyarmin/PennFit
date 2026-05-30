@@ -70,7 +70,8 @@ self.addEventListener("notificationclick", (event) => {
     targetUrl = "/account";
   }
   event.waitUntil(
-    self.clients.matchAll({ type: "window", includeUncontrolled: true })
+    self.clients
+      .matchAll({ type: "window", includeUncontrolled: true })
       .then((clientList) => {
         // Re-focus an existing PennPaps tab if one is open; otherwise
         // open a new one. This matches the standard W3C example and

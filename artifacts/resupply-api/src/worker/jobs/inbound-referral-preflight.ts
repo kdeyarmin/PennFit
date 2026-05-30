@@ -40,7 +40,10 @@ import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { runReferralPreflight } from "../../lib/inbound-dispatchers/preflight";
 import { logger } from "../../lib/logger";
-import { createQueueWithDlq, VENDOR_SEND_QUEUE_OPTS } from "../lib/queue-options";
+import {
+  createQueueWithDlq,
+  VENDOR_SEND_QUEUE_OPTS,
+} from "../lib/queue-options";
 
 const JOB = "inbound-referral.preflight";
 const CRON = "*/5 * * * *"; // every 5 minutes

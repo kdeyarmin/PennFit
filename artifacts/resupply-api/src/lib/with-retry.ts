@@ -112,10 +112,7 @@ export async function withRetry<T>(
       if (attempt === attempts || !isRetriable(err)) {
         throw err;
       }
-      const backoff = Math.min(
-        baseDelayMs * 2 ** (attempt - 1),
-        maxDelayMs,
-      );
+      const backoff = Math.min(baseDelayMs * 2 ** (attempt - 1), maxDelayMs);
       const jitter = Math.floor(Math.random() * baseDelayMs);
       const nextDelay = backoff + jitter;
       opts.onRetry?.(attempt, err, nextDelay);

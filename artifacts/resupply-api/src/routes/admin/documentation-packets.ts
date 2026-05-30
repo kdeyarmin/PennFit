@@ -102,7 +102,9 @@ router.post(
     const { data: patient } = await supabase
       .schema("resupply")
       .from("patients")
-      .select("legal_first_name, legal_last_name, date_of_birth, insurance_payer")
+      .select(
+        "legal_first_name, legal_last_name, date_of_birth, insurance_payer",
+      )
       .eq("id", idParsed.data.id)
       .limit(1)
       .maybeSingle();
@@ -158,9 +160,7 @@ router.post(
         .eq("patient_id", idParsed.data.id);
       sections.push({
         title: "Prescriptions",
-        paragraphs: [
-          `Active prescriptions on file (${rxs?.length ?? 0}).`,
-        ],
+        paragraphs: [`Active prescriptions on file (${rxs?.length ?? 0}).`],
         bullets: (rxs ?? []).map(
           (r) =>
             `${r.hcpcs_code ?? r.item_sku} — valid ${r.valid_from}${r.valid_until ? ` – ${r.valid_until}` : ""} (${r.status})`,
@@ -218,9 +218,7 @@ router.post(
         .eq("patient_id", idParsed.data.id);
       sections.push({
         title: "DWO / CMN Documents",
-        paragraphs: [
-          `DWO / CMN documents on file (${dwos?.length ?? 0}).`,
-        ],
+        paragraphs: [`DWO / CMN documents on file (${dwos?.length ?? 0}).`],
         bullets: (dwos ?? []).map(
           (d) =>
             `${d.form_type.toUpperCase()} for ${d.hcpcs_family} — signed ${d.signed_on}, expires ${d.expires_on}`,
@@ -261,19 +259,20 @@ router.post(
       signerTitle: identity.organization?.authorized_signer_title ?? null,
     });
 
-    const insertRow: Database["resupply"]["Tables"]["documentation_packets"]["Insert"] = {
-      patient_id: idParsed.data.id,
-      kind: b.kind,
-      included_docs_json: {
-        sleep_study_ids: b.includeSleepStudyIds,
-        prescription_ids: b.includePrescriptionIds,
-        dwo_document_ids: b.includeDwoDocumentIds,
-        compliance_window_days: b.includeComplianceWindowDays,
-      } as unknown as Json,
-      page_count: packet.pageCount,
-      notes: b.notes ?? null,
-      generated_by_email: req.adminEmail ?? "unknown",
-    };
+    const insertRow: Database["resupply"]["Tables"]["documentation_packets"]["Insert"] =
+      {
+        patient_id: idParsed.data.id,
+        kind: b.kind,
+        included_docs_json: {
+          sleep_study_ids: b.includeSleepStudyIds,
+          prescription_ids: b.includePrescriptionIds,
+          dwo_document_ids: b.includeDwoDocumentIds,
+          compliance_window_days: b.includeComplianceWindowDays,
+        } as unknown as Json,
+        page_count: packet.pageCount,
+        notes: b.notes ?? null,
+        generated_by_email: req.adminEmail ?? "unknown",
+      };
     const { data: row, error } = await supabase
       .schema("resupply")
       .from("documentation_packets")

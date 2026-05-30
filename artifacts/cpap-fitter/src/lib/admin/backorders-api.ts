@@ -29,7 +29,11 @@ async function jsonFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
   const res = await fetch(`/resupply-api${path}`, {
     ...restInit,
     credentials: "include",
-    headers: { Accept: "application/json", ...csrfHeader(), ...(initHeaders ?? {}) },
+    headers: {
+      Accept: "application/json",
+      ...csrfHeader(),
+      ...(initHeaders ?? {}),
+    },
   });
   if (!res.ok) {
     let message = `${res.status} ${res.statusText}`;
@@ -62,9 +66,7 @@ export const clearBackorder = (id: string, notes?: string) =>
   });
 
 export const listSubstitutes = (primarySku?: string) => {
-  const qs = primarySku
-    ? `?primary_sku=${encodeURIComponent(primarySku)}`
-    : "";
+  const qs = primarySku ? `?primary_sku=${encodeURIComponent(primarySku)}` : "";
   return jsonFetch<{ substitutes: SkuSubstitute[] }>(
     `/admin/shop/sku-substitutes${qs}`,
   );

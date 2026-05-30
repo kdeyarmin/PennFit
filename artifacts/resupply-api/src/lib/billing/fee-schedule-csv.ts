@@ -51,7 +51,11 @@ export function parseFeeScheduleCsv(input: ImportInput): {
   const lines = input.csvBody.split(/\r?\n/);
   if (lines.length === 0) return { rows, errors };
   // Pop the header row; reject if columns are wrong.
-  const header = lines[0]?.toLowerCase().split(",").map((s) => s.trim()) ?? [];
+  const header =
+    lines[0]
+      ?.toLowerCase()
+      .split(",")
+      .map((s) => s.trim()) ?? [];
   const expected = [
     "hcpcs_code",
     "modifier",

@@ -81,8 +81,12 @@ export interface Database {
           created_at: string;
           updated_at: string;
         };
-        Insert: Partial<Database["public"]["Tables"]["reminder_subscriptions"]["Row"]>;
-        Update: Partial<Database["public"]["Tables"]["reminder_subscriptions"]["Row"]>;
+        Insert: Partial<
+          Database["public"]["Tables"]["reminder_subscriptions"]["Row"]
+        >;
+        Update: Partial<
+          Database["public"]["Tables"]["reminder_subscriptions"]["Row"]
+        >;
         Relationships: [];
       };
       orders: {
@@ -179,8 +183,12 @@ export interface Database {
           attempted_at: string;
           created_at: string;
         };
-        Insert: Partial<Database["resupply"]["Tables"]["patient_checkin_attempts"]["Row"]>;
-        Update: Partial<Database["resupply"]["Tables"]["patient_checkin_attempts"]["Row"]>;
+        Insert: Partial<
+          Database["resupply"]["Tables"]["patient_checkin_attempts"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["patient_checkin_attempts"]["Row"]
+        >;
         Relationships: [];
       };
       idempotency_keys: {
@@ -194,8 +202,12 @@ export interface Database {
           created_at: string;
           expires_at: string;
         };
-        Insert: Partial<Database["resupply"]["Tables"]["idempotency_keys"]["Row"]>;
-        Update: Partial<Database["resupply"]["Tables"]["idempotency_keys"]["Row"]>;
+        Insert: Partial<
+          Database["resupply"]["Tables"]["idempotency_keys"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["idempotency_keys"]["Row"]
+        >;
         Relationships: [];
       };
       worker_dedup_keys: {
@@ -209,7 +221,9 @@ export interface Database {
           created_at?: string;
           expires_at: string;
         };
-        Update: Partial<Database["resupply"]["Tables"]["worker_dedup_keys"]["Row"]>;
+        Update: Partial<
+          Database["resupply"]["Tables"]["worker_dedup_keys"]["Row"]
+        >;
         Relationships: [];
       };
       worker_run_summary: {
@@ -229,7 +243,9 @@ export interface Database {
           counters?: Json;
           created_at?: string;
         };
-        Update: Partial<Database["resupply"]["Tables"]["worker_run_summary"]["Row"]>;
+        Update: Partial<
+          Database["resupply"]["Tables"]["worker_run_summary"]["Row"]
+        >;
         Relationships: [];
       };
       feature_flag_events: {
@@ -249,7 +265,9 @@ export interface Database {
           operator_email?: string | null;
           occurred_at?: string;
         };
-        Update: Partial<Database["resupply"]["Tables"]["feature_flag_events"]["Row"]>;
+        Update: Partial<
+          Database["resupply"]["Tables"]["feature_flag_events"]["Row"]
+        >;
         Relationships: [];
       };
       admin_users: {
@@ -303,7 +321,9 @@ export interface Database {
           created_at?: string;
           updated_at?: string;
         };
-        Update: Partial<Database["resupply"]["Tables"]["admin_users"]["Insert"]>;
+        Update: Partial<
+          Database["resupply"]["Tables"]["admin_users"]["Insert"]
+        >;
         Relationships: [];
       };
       audit_log: {
@@ -418,8 +438,12 @@ export interface Database {
           marked_by_user_id: string | null;
           created_at: string;
         };
-        Insert: Partial<Database["resupply"]["Tables"]["shop_backorders"]["Row"]>;
-        Update: Partial<Database["resupply"]["Tables"]["shop_backorders"]["Row"]>;
+        Insert: Partial<
+          Database["resupply"]["Tables"]["shop_backorders"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["shop_backorders"]["Row"]
+        >;
         Relationships: [];
       };
       shop_sku_substitutes: {
@@ -434,8 +458,12 @@ export interface Database {
           created_at: string;
           updated_at: string;
         };
-        Insert: Partial<Database["resupply"]["Tables"]["shop_sku_substitutes"]["Row"]>;
-        Update: Partial<Database["resupply"]["Tables"]["shop_sku_substitutes"]["Row"]>;
+        Insert: Partial<
+          Database["resupply"]["Tables"]["shop_sku_substitutes"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["shop_sku_substitutes"]["Row"]
+        >;
         Relationships: [];
       };
       patients: {
@@ -482,8 +510,12 @@ export interface Database {
           created_at: string;
           updated_at: string;
         };
-        Insert: Partial<Database["resupply"]["Tables"]["frequency_rules"]["Row"]>;
-        Update: Partial<Database["resupply"]["Tables"]["frequency_rules"]["Row"]>;
+        Insert: Partial<
+          Database["resupply"]["Tables"]["frequency_rules"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["frequency_rules"]["Row"]
+        >;
         Relationships: [];
       };
       // Minimal coverage for count-style queries; expand to full Row
@@ -565,8 +597,12 @@ export interface Database {
           destroyed_at: string | null;
           destroyed_by_admin_id: string | null;
         };
-        Insert: Partial<Database["resupply"]["Tables"]["patient_documents"]["Row"]>;
-        Update: Partial<Database["resupply"]["Tables"]["patient_documents"]["Row"]>;
+        Insert: Partial<
+          Database["resupply"]["Tables"]["patient_documents"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["patient_documents"]["Row"]
+        >;
         Relationships: [];
       };
       shop_customer_followups: {
@@ -582,8 +618,12 @@ export interface Database {
           created_by_user_id: string | null;
           created_at: string;
         };
-        Insert: Partial<Database["resupply"]["Tables"]["shop_customer_followups"]["Row"]>;
-        Update: Partial<Database["resupply"]["Tables"]["shop_customer_followups"]["Row"]>;
+        Insert: Partial<
+          Database["resupply"]["Tables"]["shop_customer_followups"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["shop_customer_followups"]["Row"]
+        >;
         Relationships: [];
       };
       insurance_leads: {
@@ -609,8 +649,12 @@ export interface Database {
           created_at: string;
           updated_at: string;
         };
-        Insert: Partial<Database["resupply"]["Tables"]["insurance_leads"]["Row"]>;
-        Update: Partial<Database["resupply"]["Tables"]["insurance_leads"]["Row"]>;
+        Insert: Partial<
+          Database["resupply"]["Tables"]["insurance_leads"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["insurance_leads"]["Row"]
+        >;
         Relationships: [];
       };
       fitter_leads: {
@@ -736,8 +780,12 @@ export interface Database {
           created_at: string;
           updated_at: string;
         };
-        Insert: Partial<Database["resupply"]["Tables"]["shop_product_questions"]["Row"]>;
-        Update: Partial<Database["resupply"]["Tables"]["shop_product_questions"]["Row"]>;
+        Insert: Partial<
+          Database["resupply"]["Tables"]["shop_product_questions"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["shop_product_questions"]["Row"]
+        >;
         Relationships: [];
       };
       shop_back_in_stock_notifications: {
@@ -752,8 +800,12 @@ export interface Database {
           delivery_error: string | null;
           created_at: string;
         };
-        Insert: Partial<Database["resupply"]["Tables"]["shop_back_in_stock_notifications"]["Row"]>;
-        Update: Partial<Database["resupply"]["Tables"]["shop_back_in_stock_notifications"]["Row"]>;
+        Insert: Partial<
+          Database["resupply"]["Tables"]["shop_back_in_stock_notifications"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["shop_back_in_stock_notifications"]["Row"]
+        >;
         Relationships: [];
       };
       message_attachments: {
@@ -767,8 +819,12 @@ export interface Database {
           twilio_media_sid: string | null;
           created_at: string;
         };
-        Insert: Partial<Database["resupply"]["Tables"]["message_attachments"]["Row"]>;
-        Update: Partial<Database["resupply"]["Tables"]["message_attachments"]["Row"]>;
+        Insert: Partial<
+          Database["resupply"]["Tables"]["message_attachments"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["message_attachments"]["Row"]
+        >;
         Relationships: [];
       };
       shop_customer_push_subscriptions: {
@@ -783,8 +839,12 @@ export interface Database {
           created_at: string;
           updated_at: string;
         };
-        Insert: Partial<Database["resupply"]["Tables"]["shop_customer_push_subscriptions"]["Row"]>;
-        Update: Partial<Database["resupply"]["Tables"]["shop_customer_push_subscriptions"]["Row"]>;
+        Insert: Partial<
+          Database["resupply"]["Tables"]["shop_customer_push_subscriptions"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["shop_customer_push_subscriptions"]["Row"]
+        >;
         Relationships: [];
       };
       csr_compliance_alerts: {
@@ -813,8 +873,12 @@ export interface Database {
           created_at: string;
           updated_at: string;
         };
-        Insert: Partial<Database["resupply"]["Tables"]["csr_compliance_alerts"]["Row"]>;
-        Update: Partial<Database["resupply"]["Tables"]["csr_compliance_alerts"]["Row"]>;
+        Insert: Partial<
+          Database["resupply"]["Tables"]["csr_compliance_alerts"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["csr_compliance_alerts"]["Row"]
+        >;
         Relationships: [];
       };
       shop_customer_message_template_overrides: {
@@ -833,8 +897,12 @@ export interface Database {
           created_at: string;
           updated_at: string;
         };
-        Insert: Partial<Database["resupply"]["Tables"]["shop_customer_message_template_overrides"]["Row"]>;
-        Update: Partial<Database["resupply"]["Tables"]["shop_customer_message_template_overrides"]["Row"]>;
+        Insert: Partial<
+          Database["resupply"]["Tables"]["shop_customer_message_template_overrides"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["shop_customer_message_template_overrides"]["Row"]
+        >;
         Relationships: [];
       };
       message_templates: {
@@ -852,8 +920,12 @@ export interface Database {
           created_at: string;
           created_by: string | null;
         };
-        Insert: Partial<Database["resupply"]["Tables"]["message_templates"]["Row"]>;
-        Update: Partial<Database["resupply"]["Tables"]["message_templates"]["Row"]>;
+        Insert: Partial<
+          Database["resupply"]["Tables"]["message_templates"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["message_templates"]["Row"]
+        >;
         Relationships: [];
       };
       patient_integration_snapshots: {
@@ -869,8 +941,12 @@ export interface Database {
           created_at: string;
           updated_at: string;
         };
-        Insert: Partial<Database["resupply"]["Tables"]["patient_integration_snapshots"]["Row"]>;
-        Update: Partial<Database["resupply"]["Tables"]["patient_integration_snapshots"]["Row"]>;
+        Insert: Partial<
+          Database["resupply"]["Tables"]["patient_integration_snapshots"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["patient_integration_snapshots"]["Row"]
+        >;
         Relationships: [];
       };
       patient_therapy_links: {
@@ -887,8 +963,12 @@ export interface Database {
           created_at: string;
           updated_at: string;
         };
-        Insert: Partial<Database["resupply"]["Tables"]["patient_therapy_links"]["Row"]>;
-        Update: Partial<Database["resupply"]["Tables"]["patient_therapy_links"]["Row"]>;
+        Insert: Partial<
+          Database["resupply"]["Tables"]["patient_therapy_links"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["patient_therapy_links"]["Row"]
+        >;
         Relationships: [];
       };
       patient_therapy_nights: {
@@ -905,8 +985,12 @@ export interface Database {
           created_at: string;
           updated_at: string;
         };
-        Insert: Partial<Database["resupply"]["Tables"]["patient_therapy_nights"]["Row"]>;
-        Update: Partial<Database["resupply"]["Tables"]["patient_therapy_nights"]["Row"]>;
+        Insert: Partial<
+          Database["resupply"]["Tables"]["patient_therapy_nights"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["patient_therapy_nights"]["Row"]
+        >;
         Relationships: [];
       };
       patient_onboarding_journeys: {
@@ -926,8 +1010,12 @@ export interface Database {
           created_at: string;
           updated_at: string;
         };
-        Insert: Partial<Database["resupply"]["Tables"]["patient_onboarding_journeys"]["Row"]>;
-        Update: Partial<Database["resupply"]["Tables"]["patient_onboarding_journeys"]["Row"]>;
+        Insert: Partial<
+          Database["resupply"]["Tables"]["patient_onboarding_journeys"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["patient_onboarding_journeys"]["Row"]
+        >;
         Relationships: [];
       };
       patient_smart_trigger_events: {
@@ -945,8 +1033,12 @@ export interface Database {
           created_at: string;
           updated_at: string;
         };
-        Insert: Partial<Database["resupply"]["Tables"]["patient_smart_trigger_events"]["Row"]>;
-        Update: Partial<Database["resupply"]["Tables"]["patient_smart_trigger_events"]["Row"]>;
+        Insert: Partial<
+          Database["resupply"]["Tables"]["patient_smart_trigger_events"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["patient_smart_trigger_events"]["Row"]
+        >;
         Relationships: [];
       };
       physician_fax_outreach: {
@@ -968,8 +1060,12 @@ export interface Database {
           created_at: string;
           updated_at: string;
         };
-        Insert: Partial<Database["resupply"]["Tables"]["physician_fax_outreach"]["Row"]>;
-        Update: Partial<Database["resupply"]["Tables"]["physician_fax_outreach"]["Row"]>;
+        Insert: Partial<
+          Database["resupply"]["Tables"]["physician_fax_outreach"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["physician_fax_outreach"]["Row"]
+        >;
         Relationships: [];
       };
       patient_followups: {
@@ -985,8 +1081,12 @@ export interface Database {
           created_by_user_id: string | null;
           created_at: string;
         };
-        Insert: Partial<Database["resupply"]["Tables"]["patient_followups"]["Row"]>;
-        Update: Partial<Database["resupply"]["Tables"]["patient_followups"]["Row"]>;
+        Insert: Partial<
+          Database["resupply"]["Tables"]["patient_followups"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["patient_followups"]["Row"]
+        >;
         Relationships: [];
       };
       prescriptions: {
@@ -1138,12 +1238,7 @@ export interface Database {
           notes: string | null;
           // PA Medicaid 7-day SLA tracking (migration 0133).
           mco_sla_target_date: string | null;
-          mco_sla_status:
-            | "on_track"
-            | "at_risk"
-            | "missed"
-            | "decided"
-            | null;
+          mco_sla_status: "on_track" | "at_risk" | "missed" | "decided" | null;
           created_at: string;
           updated_at: string;
         };
@@ -1348,8 +1443,12 @@ export interface Database {
           created_at: string;
           updated_at: string;
         };
-        Insert: Partial<Database["resupply"]["Tables"]["payer_profiles"]["Row"]>;
-        Update: Partial<Database["resupply"]["Tables"]["payer_profiles"]["Row"]>;
+        Insert: Partial<
+          Database["resupply"]["Tables"]["payer_profiles"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["payer_profiles"]["Row"]
+        >;
         Relationships: [];
       };
       denial_codes: {
@@ -1505,12 +1604,8 @@ export interface Database {
           created_at: string;
           updated_at: string;
         };
-        Insert: Partial<
-          Database["resupply"]["Tables"]["dwo_documents"]["Row"]
-        >;
-        Update: Partial<
-          Database["resupply"]["Tables"]["dwo_documents"]["Row"]
-        >;
+        Insert: Partial<Database["resupply"]["Tables"]["dwo_documents"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["dwo_documents"]["Row"]>;
         Relationships: [];
       };
       adherence_predictions: {
@@ -1665,12 +1760,7 @@ export interface Database {
           denial_analysis_id: string | null;
           letter_body: string;
           appeal_pdf_object_key: string | null;
-          delivery_method:
-            | "fax"
-            | "mail"
-            | "portal_upload"
-            | "email"
-            | null;
+          delivery_method: "fax" | "mail" | "portal_upload" | "email" | null;
           delivered_at: string | null;
           generated_by_email: string;
           created_at: string;
@@ -2578,12 +2668,8 @@ export interface Database {
           created_at: string;
           updated_at: string;
         };
-        Insert: Partial<
-          Database["resupply"]["Tables"]["inbound_faxes"]["Row"]
-        >;
-        Update: Partial<
-          Database["resupply"]["Tables"]["inbound_faxes"]["Row"]
-        >;
+        Insert: Partial<Database["resupply"]["Tables"]["inbound_faxes"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["inbound_faxes"]["Row"]>;
         Relationships: [];
       };
       equipment_assets: {
@@ -2794,12 +2880,7 @@ export interface Database {
           compliance_attestation: string | null;
           template_key: string;
           throttle_per_minute: number;
-          status:
-            | "draft"
-            | "sending"
-            | "sent"
-            | "paused"
-            | "cancelled";
+          status: "draft" | "sending" | "sent" | "paused" | "cancelled";
           started_at: string | null;
           completed_at: string | null;
           cancelled_at: string | null;
@@ -3003,12 +3084,8 @@ export interface Database {
           created_at: string;
           updated_at: string;
         };
-        Insert: Partial<
-          Database["resupply"]["Tables"]["feature_flags"]["Row"]
-        >;
-        Update: Partial<
-          Database["resupply"]["Tables"]["feature_flags"]["Row"]
-        >;
+        Insert: Partial<Database["resupply"]["Tables"]["feature_flags"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["feature_flags"]["Row"]>;
         Relationships: [];
       };
       report_presets: {
@@ -3043,12 +3120,7 @@ export interface Database {
           topic: string;
           preferred_window: string | null;
           notes: string | null;
-          status:
-            | "new"
-            | "contacted"
-            | "scheduled"
-            | "declined"
-            | "cancelled";
+          status: "new" | "contacted" | "scheduled" | "declined" | "cancelled";
           attached_patient_id: string | null;
           assigned_admin_user_id: string | null;
           triaged_at: string | null;
@@ -3301,8 +3373,12 @@ export interface Database {
           last_message_conversation_id: string | null;
           updated_at: string;
         };
-        Insert: Partial<Database["resupply"]["Tables"]["patient_latest_message"]["Row"]>;
-        Update: Partial<Database["resupply"]["Tables"]["patient_latest_message"]["Row"]>;
+        Insert: Partial<
+          Database["resupply"]["Tables"]["patient_latest_message"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["patient_latest_message"]["Row"]
+        >;
         Relationships: [];
       };
       patient_notes: {
@@ -3334,8 +3410,12 @@ export interface Database {
           created_at: string;
           updated_at: string;
         };
-        Insert: Partial<Database["resupply"]["Tables"]["shop_subscriptions"]["Row"]>;
-        Update: Partial<Database["resupply"]["Tables"]["shop_subscriptions"]["Row"]>;
+        Insert: Partial<
+          Database["resupply"]["Tables"]["shop_subscriptions"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["shop_subscriptions"]["Row"]
+        >;
         Relationships: [];
       };
       shop_customers: {
@@ -3373,8 +3453,12 @@ export interface Database {
           created_at: string;
           updated_at: string;
         };
-        Insert: Partial<Database["resupply"]["Tables"]["shop_customers"]["Row"]>;
-        Update: Partial<Database["resupply"]["Tables"]["shop_customers"]["Row"]>;
+        Insert: Partial<
+          Database["resupply"]["Tables"]["shop_customers"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["shop_customers"]["Row"]
+        >;
         Relationships: [];
       };
       shop_order_items: {
@@ -3391,8 +3475,12 @@ export interface Database {
           paid_at: string;
           created_at: string;
         };
-        Insert: Partial<Database["resupply"]["Tables"]["shop_order_items"]["Row"]>;
-        Update: Partial<Database["resupply"]["Tables"]["shop_order_items"]["Row"]>;
+        Insert: Partial<
+          Database["resupply"]["Tables"]["shop_order_items"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["shop_order_items"]["Row"]
+        >;
         Relationships: [];
       };
       shop_abandoned_carts: {
@@ -3409,8 +3497,12 @@ export interface Database {
           cleared_at: string | null;
           created_at: string;
         };
-        Insert: Partial<Database["resupply"]["Tables"]["shop_abandoned_carts"]["Row"]>;
-        Update: Partial<Database["resupply"]["Tables"]["shop_abandoned_carts"]["Row"]>;
+        Insert: Partial<
+          Database["resupply"]["Tables"]["shop_abandoned_carts"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["shop_abandoned_carts"]["Row"]
+        >;
         Relationships: [];
       };
       shop_orders: {
@@ -3449,10 +3541,7 @@ export interface Database {
         Row: {
           id: string;
           patient_id: string;
-          milestone_kind:
-            | "100_nights"
-            | "365_nights"
-            | "first_adherence_month";
+          milestone_kind: "100_nights" | "365_nights" | "first_adherence_month";
           achieved_on: string;
           metric_snapshot: Json | null;
           notified_at: string | null;
@@ -3476,8 +3565,12 @@ export interface Database {
           author_user_id: string | null;
           created_at: string;
         };
-        Insert: Partial<Database["resupply"]["Tables"]["shop_order_notes"]["Row"]>;
-        Update: Partial<Database["resupply"]["Tables"]["shop_order_notes"]["Row"]>;
+        Insert: Partial<
+          Database["resupply"]["Tables"]["shop_order_notes"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["shop_order_notes"]["Row"]
+        >;
         Relationships: [];
       };
       shop_order_nps_responses: {
@@ -3507,8 +3600,12 @@ export interface Database {
           author_user_id: string | null;
           created_at: string;
         };
-        Insert: Partial<Database["resupply"]["Tables"]["shop_customer_notes"]["Row"]>;
-        Update: Partial<Database["resupply"]["Tables"]["shop_customer_notes"]["Row"]>;
+        Insert: Partial<
+          Database["resupply"]["Tables"]["shop_customer_notes"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["shop_customer_notes"]["Row"]
+        >;
         Relationships: [];
       };
       inventory_reconciliations: {
@@ -3525,8 +3622,12 @@ export interface Database {
           total_variance_units: number;
           applied_to_stripe: boolean;
         };
-        Insert: Partial<Database["resupply"]["Tables"]["inventory_reconciliations"]["Row"]>;
-        Update: Partial<Database["resupply"]["Tables"]["inventory_reconciliations"]["Row"]>;
+        Insert: Partial<
+          Database["resupply"]["Tables"]["inventory_reconciliations"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["inventory_reconciliations"]["Row"]
+        >;
         Relationships: [];
       };
       inventory_reconciliation_lines: {
@@ -3541,8 +3642,12 @@ export interface Database {
           applied: boolean;
           created_at: string;
         };
-        Insert: Partial<Database["resupply"]["Tables"]["inventory_reconciliation_lines"]["Row"]>;
-        Update: Partial<Database["resupply"]["Tables"]["inventory_reconciliation_lines"]["Row"]>;
+        Insert: Partial<
+          Database["resupply"]["Tables"]["inventory_reconciliation_lines"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["inventory_reconciliation_lines"]["Row"]
+        >;
         Relationships: [];
       };
       low_stock_alert_state: {
@@ -3555,8 +3660,12 @@ export interface Database {
           created_at: string;
           updated_at: string;
         };
-        Insert: Partial<Database["resupply"]["Tables"]["low_stock_alert_state"]["Row"]>;
-        Update: Partial<Database["resupply"]["Tables"]["low_stock_alert_state"]["Row"]>;
+        Insert: Partial<
+          Database["resupply"]["Tables"]["low_stock_alert_state"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["low_stock_alert_state"]["Row"]
+        >;
         Relationships: [];
       };
       shop_product_compatibility: {
@@ -3569,8 +3678,12 @@ export interface Database {
           created_at: string;
           updated_at: string;
         };
-        Insert: Partial<Database["resupply"]["Tables"]["shop_product_compatibility"]["Row"]>;
-        Update: Partial<Database["resupply"]["Tables"]["shop_product_compatibility"]["Row"]>;
+        Insert: Partial<
+          Database["resupply"]["Tables"]["shop_product_compatibility"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["shop_product_compatibility"]["Row"]
+        >;
         Relationships: [];
       };
       csr_macros: {
@@ -3601,8 +3714,12 @@ export interface Database {
           author_user_id: string | null;
           created_at: string;
         };
-        Insert: Partial<Database["resupply"]["Tables"]["shop_return_notes"]["Row"]>;
-        Update: Partial<Database["resupply"]["Tables"]["shop_return_notes"]["Row"]>;
+        Insert: Partial<
+          Database["resupply"]["Tables"]["shop_return_notes"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["shop_return_notes"]["Row"]
+        >;
         Relationships: [];
       };
       business_associate_agreements: {
@@ -4141,7 +4258,9 @@ export interface Database {
           ip?: string | null;
           user_agent_hash?: string | null;
         };
-        Update: Partial<Database["resupply_auth"]["Tables"]["sessions"]["Insert"]>;
+        Update: Partial<
+          Database["resupply_auth"]["Tables"]["sessions"]["Insert"]
+        >;
         Relationships: [];
       };
       email_tokens: {

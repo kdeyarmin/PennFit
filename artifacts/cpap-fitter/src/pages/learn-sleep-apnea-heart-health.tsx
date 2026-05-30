@@ -99,8 +99,8 @@ export function LearnSleepApneaHeartHealth() {
               The American Heart Association
             </div>
             <p className="text-xl md:text-2xl text-white leading-relaxed font-medium max-w-2xl mx-auto">
-              In 2021, the AHA issued a formal scientific statement
-              recommending OSA screening in patients with{" "}
+              In 2021, the AHA issued a formal scientific statement recommending
+              OSA screening in patients with{" "}
               <span className="text-[hsl(var(--penn-gold))]">
                 hypertension, atrial fibrillation, heart failure, and stroke
               </span>{" "}
@@ -132,18 +132,17 @@ export function LearnSleepApneaHeartHealth() {
                 <span className="font-semibold text-foreground/90">
                   Oxygen falls.
                 </span>{" "}
-                Hemoglobin saturation drops — sometimes from 98% into the
-                70s — while you&apos;re still trying to breathe against a
-                closed airway.
+                Hemoglobin saturation drops — sometimes from 98% into the 70s —
+                while you&apos;re still trying to breathe against a closed
+                airway.
               </li>
               <li>
                 <span className="font-semibold text-foreground/90">
                   Pressure swings.
                 </span>{" "}
-                Inhaling forcefully against a blocked airway pulls
-                intrathoracic pressure deeply negative — mechanically
-                stretching the left atrium and afterloading the left
-                ventricle.
+                Inhaling forcefully against a blocked airway pulls intrathoracic
+                pressure deeply negative — mechanically stretching the left
+                atrium and afterloading the left ventricle.
               </li>
               <li>
                 <span className="font-semibold text-foreground/90">
@@ -156,9 +155,9 @@ export function LearnSleepApneaHeartHealth() {
             </ol>
             <p>
               Cumulative over years, this is what drives the cardiovascular
-              risks below. The good news: the damage is largely a function
-              of <em>ongoing exposure</em>. Stop the exposure with consistent
-              PAP therapy, and most of the risk recedes within months.
+              risks below. The good news: the damage is largely a function of{" "}
+              <em>ongoing exposure</em>. Stop the exposure with consistent PAP
+              therapy, and most of the risk recedes within months.
             </p>
           </div>
         </div>
@@ -207,15 +206,15 @@ export function LearnSleepApneaHeartHealth() {
               </h2>
             </div>
             <p className="text-muted-foreground leading-relaxed mb-4">
-              Among the modifiable cardiovascular risk factors — smoking,
-              diet, exercise, blood pressure, lipids — sleep apnea is one of
-              the only ones where{" "}
+              Among the modifiable cardiovascular risk factors — smoking, diet,
+              exercise, blood pressure, lipids — sleep apnea is one of the only
+              ones where{" "}
               <span className="font-semibold text-foreground/90">
                 the intervention works while you sleep
               </span>
-              . You don&apos;t have to change behavior at 6am or remember a
-              noon medication. You just have to wear a mask that&apos;s
-              comfortable enough to keep on.
+              . You don&apos;t have to change behavior at 6am or remember a noon
+              medication. You just have to wear a mask that&apos;s comfortable
+              enough to keep on.
             </p>
             <ul className="space-y-2 mb-4">
               {[
@@ -239,8 +238,8 @@ export function LearnSleepApneaHeartHealth() {
             </ul>
             <p className="text-sm text-muted-foreground leading-relaxed">
               The single biggest driver of whether someone reaches that
-              adherence threshold is mask comfort. Which is the entire
-              reason we built the fitter.
+              adherence threshold is mask comfort. Which is the entire reason we
+              built the fitter.
             </p>
           </div>
         </div>
@@ -262,12 +261,12 @@ export function LearnSleepApneaHeartHealth() {
           <div className="flex items-start gap-3">
             <AlertTriangle className="w-5 h-5 text-[hsl(var(--penn-gold-deep))] mt-0.5 shrink-0" />
             <div className="text-sm text-foreground/85 leading-relaxed">
-              <span className="font-semibold">Important:</span> if you have
-              an existing cardiovascular condition, talk to your cardiologist
-              and your sleep medicine provider together. Don&apos;t change
-              cardiac medications based on starting PAP therapy — let your
-              physicians titrate them as your blood pressure and rhythm
-              respond to treatment.
+              <span className="font-semibold">Important:</span> if you have an
+              existing cardiovascular condition, talk to your cardiologist and
+              your sleep medicine provider together. Don&apos;t change cardiac
+              medications based on starting PAP therapy — let your physicians
+              titrate them as your blood pressure and rhythm respond to
+              treatment.
             </div>
           </div>
         </div>
@@ -305,8 +304,8 @@ export function LearnSleepApneaHeartHealth() {
               What treatment feels like
             </h3>
             <p className="text-sm text-muted-foreground leading-relaxed">
-              The benefits of PAP therapy on a real timeline — week by
-              week, quarter by quarter.
+              The benefits of PAP therapy on a real timeline — week by week,
+              quarter by quarter.
             </p>
           </div>
           <ArrowRight className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors mt-1" />
@@ -327,9 +326,8 @@ export function LearnSleepApneaHeartHealth() {
 
       <p className="text-xs text-muted-foreground/80 leading-relaxed mt-12 max-w-2xl mx-auto text-center">
         Educational content only — not medical advice or a diagnosis. Risk
-        estimates reflect commonly-cited ranges from peer-reviewed
-        literature and the AHA 2021 scientific statement on OSA and
-        cardiovascular disease.
+        estimates reflect commonly-cited ranges from peer-reviewed literature
+        and the AHA 2021 scientific statement on OSA and cardiovascular disease.
       </p>
     </div>
   );

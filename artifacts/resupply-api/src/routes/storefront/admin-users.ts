@@ -140,71 +140,76 @@ function effectiveStatus(row: {
   return "pending";
 }
 
-router.get("/admin/users", requireAdminOnly, adminUsersReadLimiter, async (req, res) => {
-  // List every staff row in resupply_auth.users. Penn's staff is small
-  // (<200 in the foreseeable future), so we don't paginate.
-  const supabase = getSupabaseServiceRoleClient();
-  const { data, error } = await supabase
-    .schema("resupply_auth")
-    .from("users")
-    .select(
-      "id, email_lower, display_name, role, status, email_verified_at, created_at, updated_at",
-    )
-    .in("role", ["admin", "agent"])
-    .order("created_at", { ascending: false });
+router.get(
+  "/admin/users",
+  requireAdminOnly,
+  adminUsersReadLimiter,
+  async (req, res) => {
+    // List every staff row in resupply_auth.users. Penn's staff is small
+    // (<200 in the foreseeable future), so we don't paginate.
+    const supabase = getSupabaseServiceRoleClient();
+    const { data, error } = await supabase
+      .schema("resupply_auth")
+      .from("users")
+      .select(
+        "id, email_lower, display_name, role, status, email_verified_at, created_at, updated_at",
+      )
+      .in("role", ["admin", "agent"])
+      .order("created_at", { ascending: false });
 
-  if (error) {
-    logger.error(
-      { event: "admin_users_list_failed", err: error },
-      "Failed to list admin users",
-    );
-    res.status(500).json({ error: "Could not load the team list." });
-    return;
-  }
+    if (error) {
+      logger.error(
+        { event: "admin_users_list_failed", err: error },
+        "Failed to list admin users",
+      );
+      res.status(500).json({ error: "Could not load the team list." });
+      return;
+    }
 
-  const members: MemberRow[] = [];
-  const pendingInvitations: PendingInviteRow[] = [];
+    const members: MemberRow[] = [];
+    const pendingInvitations: PendingInviteRow[] = [];
 
-  for (const u of data ?? []) {
-    const role = u.role as "admin" | "agent";
-    const status = effectiveStatus(u);
-    const createdAtMs = new Date(u.created_at).getTime();
-    if (status === "pending") {
-      pendingInvitations.push({
+    for (const u of data ?? []) {
+      const role = u.role as "admin" | "agent";
+      const status = effectiveStatus(u);
+      const createdAtMs = new Date(u.created_at).getTime();
+      if (status === "pending") {
+        pendingInvitations.push({
+          id: u.id,
+          email: u.email_lower,
+          role,
+          createdAt: createdAtMs,
+        });
+        continue;
+      }
+      members.push({
         id: u.id,
         email: u.email_lower,
+        name: u.display_name,
         role,
+        isSelf: u.id === req.adminUserId,
         createdAt: createdAtMs,
+        status,
+        emailVerifiedAt: u.email_verified_at
+          ? new Date(u.email_verified_at).getTime()
+          : null,
       });
-      continue;
     }
-    members.push({
-      id: u.id,
-      email: u.email_lower,
-      name: u.display_name,
-      role,
-      isSelf: u.id === req.adminUserId,
-      createdAt: createdAtMs,
-      status,
-      emailVerifiedAt: u.email_verified_at
-        ? new Date(u.email_verified_at).getTime()
-        : null,
+
+    await writeAudit(req, "team.list");
+
+    res.json({
+      role: req.adminRole ?? "admin",
+      self: { email: req.adminEmail, userId: req.adminUserId },
+      members,
+      // Stage 5b retired the env-allowlist UI section. The vars
+      // (PENN_ADMIN_EMAILS / PENN_AGENT_EMAILS) no longer drive
+      // access; bootstrap is via the auth:bootstrap-admin CLI.
+      envAllowlist: [] as Array<{ email: string; role: "admin" | "agent" }>,
+      pendingInvitations,
     });
-  }
-
-  await writeAudit(req, "team.list");
-
-  res.json({
-    role: req.adminRole ?? "admin",
-    self: { email: req.adminEmail, userId: req.adminUserId },
-    members,
-    // Stage 5b retired the env-allowlist UI section. The vars
-    // (PENN_ADMIN_EMAILS / PENN_AGENT_EMAILS) no longer drive
-    // access; bootstrap is via the auth:bootstrap-admin CLI.
-    envAllowlist: [] as Array<{ email: string; role: "admin" | "agent" }>,
-    pendingInvitations,
-  });
-});
+  },
+);
 
 function buildInviteRedirectUrl(req: import("express").Request): string {
   const fromEnv = process.env.PENN_ADMIN_PUBLIC_BASE_URL?.trim();
@@ -216,67 +221,75 @@ function buildInviteRedirectUrl(req: import("express").Request): string {
   return `${proto}://${host}`;
 }
 
-router.post("/admin/users/invite", requireAdminOnly, requireCsrf, adminUsersWriteLimiter, async (req, res) => {
-  const parsed = inviteBody.safeParse(req.body);
-  if (!parsed.success) {
-    res.status(400).json({
-      error: "Please enter a valid email address and pick a role.",
-      details: parsed.error.issues.map((i) => i.message),
+router.post(
+  "/admin/users/invite",
+  requireAdminOnly,
+  requireCsrf,
+  adminUsersWriteLimiter,
+  async (req, res) => {
+    const parsed = inviteBody.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: "Please enter a valid email address and pick a role.",
+        details: parsed.error.issues.map((i) => i.message),
+      });
+      return;
+    }
+    const { email, role } = parsed.data;
+
+    // Block re-inviting an already-active member.
+    const supabase = getSupabaseServiceRoleClient();
+    const { data: existingRows, error: existingErr } = await supabase
+      .schema("resupply_auth")
+      .from("users")
+      .select("id, role, status, email_verified_at")
+      .eq("email_lower", email)
+      .limit(1);
+    if (existingErr) {
+      logger.error(
+        { event: "admin_invite_lookup_failed", err: existingErr },
+        "Failed to look up existing user",
+      );
+      res
+        .status(500)
+        .json({ error: "Could not check for an existing account." });
+      return;
+    }
+    const prior = existingRows?.[0];
+    if (
+      prior &&
+      prior.status === "active" &&
+      prior.email_verified_at &&
+      (prior.role === "admin" || prior.role === "agent")
+    ) {
+      res.status(409).json({
+        error:
+          "That person already has access. Use Change role on their existing entry instead of re-inviting.",
+      });
+      return;
+    }
+
+    const deps = getAuthDeps();
+    const invite = await inviteTeamMember(supabase, deps, {
+      emailLower: email,
+      role,
+      displayName: null,
+      productName: "PennFit",
+      publicBaseUrl: buildInviteRedirectUrl(req),
+      uiPathPrefix: "/admin",
     });
-    return;
-  }
-  const { email, role } = parsed.data;
 
-  // Block re-inviting an already-active member.
-  const supabase = getSupabaseServiceRoleClient();
-  const { data: existingRows, error: existingErr } = await supabase
-    .schema("resupply_auth")
-    .from("users")
-    .select("id, role, status, email_verified_at")
-    .eq("email_lower", email)
-    .limit(1);
-  if (existingErr) {
-    logger.error(
-      { event: "admin_invite_lookup_failed", err: existingErr },
-      "Failed to look up existing user",
-    );
-    res.status(500).json({ error: "Could not check for an existing account." });
-    return;
-  }
-  const prior = existingRows?.[0];
-  if (
-    prior &&
-    prior.status === "active" &&
-    prior.email_verified_at &&
-    (prior.role === "admin" || prior.role === "agent")
-  ) {
-    res.status(409).json({
-      error:
-        "That person already has access. Use Change role on their existing entry instead of re-inviting.",
+    await writeAudit(req, `team.invite role=${role} email=${email}`);
+    res.status(201).json({
+      id: invite.authUserId,
+      email,
+      role,
+      createdAt: Date.now(),
+      emailSent: invite.emailSent,
+      inviteLink: invite.emailSent ? null : invite.inviteLink,
     });
-    return;
-  }
-
-  const deps = getAuthDeps();
-  const invite = await inviteTeamMember(supabase, deps, {
-    emailLower: email,
-    role,
-    displayName: null,
-    productName: "PennFit",
-    publicBaseUrl: buildInviteRedirectUrl(req),
-    uiPathPrefix: "/admin",
-  });
-
-  await writeAudit(req, `team.invite role=${role} email=${email}`);
-  res.status(201).json({
-    id: invite.authUserId,
-    email,
-    role,
-    createdAt: Date.now(),
-    emailSent: invite.emailSent,
-    inviteLink: invite.emailSent ? null : invite.inviteLink,
-  });
-});
+  },
+);
 
 router.patch(
   "/admin/users/:userId/role",
@@ -325,35 +338,41 @@ router.patch(
   },
 );
 
-router.delete("/admin/users/:userId", requireAdminOnly, requireCsrf, adminUsersWriteLimiter, async (req, res) => {
-  const userId = req.params.userId;
-  if (!userId || typeof userId !== "string") {
-    res.status(400).json({ error: "Missing user id." });
-    return;
-  }
-  if (userId === req.adminUserId) {
-    res.status(400).json({
-      error:
-        "You can't remove yourself. Ask another admin to revoke your access if you really mean it.",
-    });
-    return;
-  }
+router.delete(
+  "/admin/users/:userId",
+  requireAdminOnly,
+  requireCsrf,
+  adminUsersWriteLimiter,
+  async (req, res) => {
+    const userId = req.params.userId;
+    if (!userId || typeof userId !== "string") {
+      res.status(400).json({ error: "Missing user id." });
+      return;
+    }
+    if (userId === req.adminUserId) {
+      res.status(400).json({
+        error:
+          "You can't remove yourself. Ask another admin to revoke your access if you really mean it.",
+      });
+      return;
+    }
 
-  const supabase = getSupabaseServiceRoleClient();
-  const { data: lookup } = await supabase
-    .schema("resupply_auth")
-    .from("users")
-    .select("email_lower")
-    .eq("id", userId)
-    .limit(1)
-    .maybeSingle();
-  const targetEmail = lookup?.email_lower ?? "(unknown)";
+    const supabase = getSupabaseServiceRoleClient();
+    const { data: lookup } = await supabase
+      .schema("resupply_auth")
+      .from("users")
+      .select("email_lower")
+      .eq("id", userId)
+      .limit(1)
+      .maybeSingle();
+    const targetEmail = lookup?.email_lower ?? "(unknown)";
 
-  await revokeTeamMember(supabase, userId);
+    await revokeTeamMember(supabase, userId);
 
-  await writeAudit(req, `team.revoke user=${targetEmail}`);
-  res.json({ ok: true, userId });
-});
+    await writeAudit(req, `team.revoke user=${targetEmail}`);
+    res.json({ ok: true, userId });
+  },
+);
 
 router.delete(
   "/admin/users/invitations/:invId",

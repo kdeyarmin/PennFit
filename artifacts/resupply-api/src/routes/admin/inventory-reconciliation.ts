@@ -113,7 +113,10 @@ const submitBodySchema = z
 router.post(
   "/admin/shop/inventory/reconciliations",
   requirePermission("admin.tools.manage"),
-  adminRateLimit({ name: "inventory_reconciliation.create", preset: "mutation" }),
+  adminRateLimit({
+    name: "inventory_reconciliation.create",
+    preset: "mutation",
+  }),
   async (req, res) => {
     const parsed = startBodySchema.safeParse(req.body);
     if (!parsed.success) {
@@ -521,7 +524,10 @@ router.post(
     // the dynamic shape.
     const rpc = rpcData as unknown as
       | { ok: true; total_lines: number; total_variance_units: number }
-      | { ok: false; error: "not_found" | "already_submitted" | "duplicate_line" };
+      | {
+          ok: false;
+          error: "not_found" | "already_submitted" | "duplicate_line";
+        };
     if (!rpc.ok) {
       if (rpc.error === "not_found") {
         res.status(404).json({ error: "not_found" });

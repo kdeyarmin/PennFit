@@ -139,11 +139,15 @@ describe("account — account-reorder-error no longer has role=alert", () => {
 
 describe("account — account-subscription-action-error no longer has role=alert", () => {
   it("still renders data-testid account-subscription-action-error", () => {
-    expect(SUBS_SRC).toContain('data-testid="account-subscription-action-error"');
+    expect(SUBS_SRC).toContain(
+      'data-testid="account-subscription-action-error"',
+    );
   });
 
   it("account-subscription-action-error element does not carry role=alert", () => {
-    const idx = SUBS_SRC.indexOf('data-testid="account-subscription-action-error"');
+    const idx = SUBS_SRC.indexOf(
+      'data-testid="account-subscription-action-error"',
+    );
     expect(idx).toBeGreaterThan(-1);
     const elementContext = SUBS_SRC.slice(idx - 150, idx + 50);
     expect(elementContext).not.toContain('role="alert"');
@@ -165,7 +169,10 @@ describe("account — cadenceLoadError paragraph no longer has role=alert", () =
     const errorText = "Couldn't load cadence options. Please try again.";
     const idx = SUBS_SRC.indexOf(errorText);
     expect(idx).toBeGreaterThan(-1);
-    const elementContext = SUBS_SRC.slice(idx - 80, idx + errorText.length + 20);
+    const elementContext = SUBS_SRC.slice(
+      idx - 80,
+      idx + errorText.length + 20,
+    );
     expect(elementContext).not.toContain('role="alert"');
   });
 });
@@ -218,7 +225,9 @@ describe("account — formatMoneyCents no longer imported from @/lib/shop-api", 
 
   it("shop-api import does not list formatMoneyCents alongside fetchShopProducts", () => {
     // Ensure the import declaration is a clean single-name import.
-    const shopApiImport = SRC.match(/import\s*\{[^}]*\}\s*from\s*["']@\/lib\/shop-api["']/);
+    const shopApiImport = SRC.match(
+      /import\s*\{[^}]*\}\s*from\s*["']@\/lib\/shop-api["']/,
+    );
     expect(shopApiImport).not.toBeNull();
     expect(shopApiImport![0]).not.toContain("formatMoneyCents");
   });
@@ -226,7 +235,9 @@ describe("account — formatMoneyCents no longer imported from @/lib/shop-api", 
   it("shop-api import contains exactly one exported name (fetchShopProducts only)", () => {
     // After the PR the brace-group must contain only fetchShopProducts —
     // no trailing comma or second identifier.
-    const shopApiImport = SRC.match(/import\s*\{([^}]*)\}\s*from\s*["']@\/lib\/shop-api["']/);
+    const shopApiImport = SRC.match(
+      /import\s*\{([^}]*)\}\s*from\s*["']@\/lib\/shop-api["']/,
+    );
     expect(shopApiImport).not.toBeNull();
     const names = shopApiImport![1]
       .split(",")
@@ -242,4 +253,3 @@ describe("account — formatMoneyCents no longer imported from @/lib/shop-api", 
     expect(SRC).not.toContain("formatMoneyCents");
   });
 });
-

@@ -21,10 +21,7 @@ import {
 } from "./use-bulk-selection";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const SRC = readFileSync(
-  path.join(__dirname, "use-bulk-selection.ts"),
-  "utf8",
-);
+const SRC = readFileSync(path.join(__dirname, "use-bulk-selection.ts"), "utf8");
 
 // ---------------------------------------------------------------------------
 // Structural checks — guard the React wiring layer.
@@ -93,18 +90,16 @@ describe("computeToggledAllVisible", () => {
     expect(Array.from(out).sort()).toEqual(["a", "b", "c"]);
   });
   it("clears the visible portion when all visible are selected", () => {
-    const out = computeToggledAllVisible(
-      new Set(["a", "b", "c"]),
-      ["a", "b", "c"],
-    );
+    const out = computeToggledAllVisible(new Set(["a", "b", "c"]), [
+      "a",
+      "b",
+      "c",
+    ]);
     expect(Array.from(out)).toEqual([]);
   });
   it("preserves selections that aren't on the visible page (clear branch)", () => {
     // "x" is selected but not visible — must survive the visible-clear.
-    const out = computeToggledAllVisible(
-      new Set(["a", "b", "x"]),
-      ["a", "b"],
-    );
+    const out = computeToggledAllVisible(new Set(["a", "b", "x"]), ["a", "b"]);
     expect(Array.from(out)).toEqual(["x"]);
   });
   it("preserves off-page selections in the select branch too", () => {

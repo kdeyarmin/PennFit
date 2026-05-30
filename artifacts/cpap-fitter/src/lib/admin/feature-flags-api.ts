@@ -44,7 +44,11 @@ async function jsonFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
   const { headers, ...rest } = init;
   const res = await fetch(`/resupply-api${path}`, {
     credentials: "include",
-    headers: { Accept: "application/json", ...csrfHeader(), ...(headers ?? {}) },
+    headers: {
+      Accept: "application/json",
+      ...csrfHeader(),
+      ...(headers ?? {}),
+    },
     ...rest,
   });
   if (!res.ok) {

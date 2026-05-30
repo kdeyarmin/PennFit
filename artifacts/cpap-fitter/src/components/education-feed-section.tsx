@@ -25,10 +25,8 @@ const STAGE_HEADLINE: Record<EducationStage, string> = {
 
 const STAGE_BLURB: Record<EducationStage, string> = {
   new: "Most of what you're feeling now is normal. Start here.",
-  habituating:
-    "Weeks 3–8 are where most patients fine-tune the setup.",
-  steady:
-    "You're past the hump — this is upkeep + tuning for the long haul.",
+  habituating: "Weeks 3–8 are where most patients fine-tune the setup.",
+  steady: "You're past the hump — this is upkeep + tuning for the long haul.",
   experienced:
     "Time for an annual look at your machine, mask, and prescription.",
 };
@@ -63,9 +61,7 @@ export function EducationFeedSection() {
           </span>
         )}
       </div>
-      <p className="text-sm text-muted-foreground">
-        {STAGE_BLURB[data.stage]}
-      </p>
+      <p className="text-sm text-muted-foreground">{STAGE_BLURB[data.stage]}</p>
       <ul className="grid sm:grid-cols-2 gap-3">
         {data.articles.map((a) => (
           <li key={a.slug}>

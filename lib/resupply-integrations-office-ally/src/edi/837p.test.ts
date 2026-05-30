@@ -177,8 +177,9 @@ describe("build837P", () => {
 
   it("rejects > 12 diagnoses", () => {
     const input = fixtureInput();
-    input.claims[0]!.diagnosisCodes = Array.from({ length: 13 }, (_, i) =>
-      `G47.${i.toString().padStart(2, "0")}`,
+    input.claims[0]!.diagnosisCodes = Array.from(
+      { length: 13 },
+      (_, i) => `G47.${i.toString().padStart(2, "0")}`,
     );
     expect(() => build837P(input)).toThrow(/> 12 diagnoses/);
   });

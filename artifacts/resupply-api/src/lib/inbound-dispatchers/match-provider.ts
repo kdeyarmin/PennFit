@@ -25,10 +25,7 @@ import {
 
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
-export type ProviderMatchKind =
-  | "exact_npi"
-  | "nppes_lookup"
-  | "none";
+export type ProviderMatchKind = "exact_npi" | "nppes_lookup" | "none";
 
 export interface ProviderMatchInput {
   /** 10 digits or null. Normalised by parse-order.ts. */
@@ -78,7 +75,10 @@ export async function matchProvider(
       );
     } else {
       logger.warn(
-        { npi: input.npi, error: err instanceof Error ? err.message : String(err) },
+        {
+          npi: input.npi,
+          error: err instanceof Error ? err.message : String(err),
+        },
         "inbound_referral.match_provider.nppes_unexpected_error",
       );
     }

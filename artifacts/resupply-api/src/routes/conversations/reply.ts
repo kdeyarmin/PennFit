@@ -400,9 +400,8 @@ async function tryNotifyCustomerOfReply(input: {
     email: customerRow.email_lower,
     displayName: customerRow.display_name,
     prefs:
-      (customerRow.communication_preferences as
-        | Partial<CommunicationPreferences>
-        | null) ?? null,
+      (customerRow.communication_preferences as Partial<CommunicationPreferences> | null) ??
+      null,
     lastNotifiedAt: convRow.last_in_app_notification_at
       ? new Date(convRow.last_in_app_notification_at)
       : null,

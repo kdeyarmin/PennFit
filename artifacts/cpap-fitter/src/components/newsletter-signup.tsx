@@ -56,7 +56,10 @@ export function NewsletterSignup({
 
   if (submitted) {
     return (
-      <div className="glass-card rounded-2xl p-6 md:p-7" data-testid={`${testIdPrefix}-success`}>
+      <div
+        className="glass-card rounded-2xl p-6 md:p-7"
+        data-testid={`${testIdPrefix}-success`}
+      >
         <div className="flex items-start gap-4">
           <div className="relative h-11 w-11 rounded-xl flex items-center justify-center shrink-0 icon-halo-gold">
             <CheckCircle2 className="w-5 h-5" strokeWidth={2} />
@@ -66,9 +69,9 @@ export function NewsletterSignup({
               You&apos;re on the list.
             </div>
             <p className="text-sm text-muted-foreground leading-relaxed">
-              Watch for the first article in your inbox soon. We send a
-              short, well-researched piece roughly once a week — and you
-              can unsubscribe from the footer of every email.
+              Watch for the first article in your inbox soon. We send a short,
+              well-researched piece roughly once a week — and you can
+              unsubscribe from the footer of every email.
             </p>
           </div>
         </div>

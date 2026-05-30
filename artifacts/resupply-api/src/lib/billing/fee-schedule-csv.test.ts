@@ -67,7 +67,9 @@ describe("parseFeeScheduleCsv", () => {
   });
 
   it("respects maxRows + warns when truncated", () => {
-    const lines = ["hcpcs_code,modifier,allowed_cents,effective_from,effective_through,source,notes"];
+    const lines = [
+      "hcpcs_code,modifier,allowed_cents,effective_from,effective_through,source,notes",
+    ];
     for (let i = 0; i < 12; i++) {
       lines.push("E0601,RR,12235,2026-01-01,,cms_published,row");
     }
@@ -81,7 +83,8 @@ describe("parseFeeScheduleCsv", () => {
   });
 
   it("returns empty rows with no errors on an all-blank body", () => {
-    const csv = "hcpcs_code,modifier,allowed_cents,effective_from,effective_through,source,notes\n\n\n";
+    const csv =
+      "hcpcs_code,modifier,allowed_cents,effective_from,effective_through,source,notes\n\n\n";
     const { rows, errors } = parseFeeScheduleCsv({
       payerProfileId: PAYER,
       csvBody: csv,

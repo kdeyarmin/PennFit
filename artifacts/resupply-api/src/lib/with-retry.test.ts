@@ -48,8 +48,7 @@ describe("withRetry", () => {
       withRetry(fn, {
         sleep,
         attempts: 5,
-        isRetriable: (err) =>
-          err instanceof Error && /^5/.test(err.message),
+        isRetriable: (err) => err instanceof Error && /^5/.test(err.message),
       }),
     ).rejects.toThrow("4xx");
     expect(fn).toHaveBeenCalledTimes(1);

@@ -59,19 +59,19 @@ const SYSTEM_PROMPT = [
   "",
   "You will be given their last 7 days of therapy data. Reference",
   "specific numbers when they help (\"your average is 5.2 hours — that's",
-  "right at the line\"); skip the numbers when emotional acknowledgement",
+  'right at the line"); skip the numbers when emotional acknowledgement',
   "is what they need.",
   "",
   "HOW TO WRITE:",
   "- Open with the answer, or with a single short empathy line if",
-  "  they're frustrated. Never with \"Great question!\" or \"I understand",
-  "  your concern.\"",
-  "- Use contractions (\"you're\", \"we'll\", \"don't\"). Avoid medical",
-  "  jargon — say \"how much you used it\" not \"compliance metric.\"",
+  '  they\'re frustrated. Never with "Great question!" or "I understand',
+  '  your concern."',
+  '- Use contractions ("you\'re", "we\'ll", "don\'t"). Avoid medical',
+  '  jargon — say "how much you used it" not "compliance metric."',
   "- One to three short paragraphs. No markdown, no headings, no",
   "  bullet points (the app renders plain text).",
-  "- Address them as \"you.\" Use \"I\" sparingly — only when offering a",
-  "  suggestion (\"I'd try loosening the top straps first\").",
+  '- Address them as "you." Use "I" sparingly — only when offering a',
+  '  suggestion ("I\'d try loosening the top straps first").',
   "- End with one concrete next step they can try tonight, or one",
   "  question that helps you give a better answer.",
   "",
@@ -91,7 +91,7 @@ const SYSTEM_PROMPT = [
   "  their physician — or 911 for anything emergent — and stop the",
   "  coaching there.",
   "- NEVER reveal patient PHI even though some context is provided.",
-  "  You may reference their data (\"your average usage is 5.2 hours\")",
+  '  You may reference their data ("your average usage is 5.2 hours")',
   "  but never their name, DOB, address, or member ID.",
   "",
   "LENGTH: maximum 200 words. Most replies are 60-120 words.",
@@ -160,12 +160,22 @@ interface OpenAiCoachToolCall {
 type OpenAiCoachMessage =
   | { role: "system"; content: string }
   | { role: "user"; content: string }
-  | { role: "assistant"; content: string | null; tool_calls?: OpenAiCoachToolCall[] }
+  | {
+      role: "assistant";
+      content: string | null;
+      tool_calls?: OpenAiCoachToolCall[];
+    }
   | { role: "tool"; tool_call_id: string; content: string };
 
-export async function askSleepCoach(input: SleepCoachInput): Promise<SleepCoachReply> {
+export async function askSleepCoach(
+  input: SleepCoachInput,
+): Promise<SleepCoachReply> {
   const context = await assembleContext(input.patientId);
-  const userMessage = buildUserMessage(input.question, input.thread ?? [], context);
+  const userMessage = buildUserMessage(
+    input.question,
+    input.thread ?? [],
+    context,
+  );
 
   // Prefer Claude (Sonnet 4.6) — its writing voice for empathetic
   // patient-facing copy is consistently warmer than gpt-4o-class
@@ -201,7 +211,11 @@ export async function askSleepCoach(input: SleepCoachInput): Promise<SleepCoachR
         // question re-pays that input cost. Mirrors
         // routes/storefront/chat.ts.
         system: [
-          { type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } },
+          {
+            type: "text",
+            text: SYSTEM_PROMPT,
+            cache_control: { type: "ephemeral" },
+          },
         ],
         messages,
         tools: ANTHROPIC_TOOLS,
@@ -236,7 +250,12 @@ export async function askSleepCoach(input: SleepCoachInput): Promise<SleepCoachR
         // before the tool calls + every tool_use block.
         const assistantContent: Array<
           | { type: "text"; text: string }
-          | { type: "tool_use"; id: string; name: string; input: Record<string, unknown> }
+          | {
+              type: "tool_use";
+              id: string;
+              name: string;
+              input: Record<string, unknown>;
+            }
         > = [];
         if (text.length > 0) {
           assistantContent.push({ type: "text", text });
@@ -317,8 +336,7 @@ export async function askSleepCoach(input: SleepCoachInput): Promise<SleepCoachR
   if (!apiKey) {
     return {
       reply: null,
-      errorMessage:
-        "neither ANTHROPIC_API_KEY nor OPENAI_API_KEY configured",
+      errorMessage: "neither ANTHROPIC_API_KEY nor OPENAI_API_KEY configured",
       latencyMs: null,
     };
   }
@@ -347,7 +365,10 @@ export async function askSleepCoach(input: SleepCoachInput): Promise<SleepCoachR
   ): Promise<
     | {
         ok: true;
-        message: { content?: string | null; tool_calls?: OpenAiCoachToolCall[] };
+        message: {
+          content?: string | null;
+          tool_calls?: OpenAiCoachToolCall[];
+        };
       }
     | { ok: false; errorMessage: string }
   > => {
@@ -394,7 +415,10 @@ export async function askSleepCoach(input: SleepCoachInput): Promise<SleepCoachR
           );
           if (retryable && attempt < MAX_RETRIES) {
             await new Promise((r) =>
-              setTimeout(r, 200 * Math.pow(2, attempt) + Math.floor(Math.random() * 50)),
+              setTimeout(
+                r,
+                200 * Math.pow(2, attempt) + Math.floor(Math.random() * 50),
+              ),
             );
             continue;
           }
@@ -425,7 +449,10 @@ export async function askSleepCoach(input: SleepCoachInput): Promise<SleepCoachR
             "sleep-coach: openai transport error (retrying)",
           );
           await new Promise((r) =>
-            setTimeout(r, 200 * Math.pow(2, attempt) + Math.floor(Math.random() * 50)),
+            setTimeout(
+              r,
+              200 * Math.pow(2, attempt) + Math.floor(Math.random() * 50),
+            ),
           );
           continue;
         }
@@ -506,14 +533,17 @@ async function assembleContext(
   const { data: nights } = await supabase
     .schema("resupply")
     .from("patient_therapy_nights")
-    .select("night_date, usage_minutes, ahi, leak_rate_l_min, pressure_p95_cmh2o")
+    .select(
+      "night_date, usage_minutes, ahi, leak_rate_l_min, pressure_p95_cmh2o",
+    )
     .eq("patient_id", patientId)
     .gte("night_date", since)
     .limit(14);
   const withData = (nights ?? []).filter((n) => n.usage_minutes !== null);
   const avgUsageMin = withData.length
     ? Math.round(
-        withData.reduce((s, n) => s + (n.usage_minutes ?? 0), 0) / withData.length,
+        withData.reduce((s, n) => s + (n.usage_minutes ?? 0), 0) /
+          withData.length,
       )
     : null;
   // ahi + leak_rate are stored as numeric → strings; parseFloat per-row.
@@ -524,9 +554,7 @@ async function assembleContext(
     ? Number((ahiVals.reduce((s, v) => s + v, 0) / ahiVals.length).toFixed(1))
     : null;
   const leakVals = withData
-    .map((n) =>
-      n.leak_rate_l_min ? Number.parseFloat(n.leak_rate_l_min) : 0,
-    )
+    .map((n) => (n.leak_rate_l_min ? Number.parseFloat(n.leak_rate_l_min) : 0))
     .filter((v) => Number.isFinite(v));
   const maxLeak = leakVals.length ? Math.round(Math.max(...leakVals)) : null;
   const compliantNights = withData.filter(
@@ -584,7 +612,10 @@ function buildUserMessage(
     lines.push("");
     lines.push("<prior_conversation>");
     for (const t of thread.slice(-6)) {
-      const safe = sanitizeForWrapper(t.body.slice(0, 400), "prior_conversation");
+      const safe = sanitizeForWrapper(
+        t.body.slice(0, 400),
+        "prior_conversation",
+      );
       lines.push(`- ${t.role}: ${safe}`);
     }
     lines.push("</prior_conversation>");

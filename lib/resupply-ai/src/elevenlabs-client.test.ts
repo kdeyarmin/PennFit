@@ -55,7 +55,9 @@ describe("createElevenLabsClient", () => {
       expect(capturedHeaders["xi-api-key"]).toBe(VALID_KEY);
       expect(capturedHeaders["Content-Type"]).toBe("application/json");
       expect(capturedBody).toContain(`"text":"Hi"`);
-      expect(capturedBody).toContain(`"model_id":"${DEFAULT_ELEVENLABS_MODEL}"`);
+      expect(capturedBody).toContain(
+        `"model_id":"${DEFAULT_ELEVENLABS_MODEL}"`,
+      );
     });
 
     it("uses default voice ID and includes output_format in URL when set", async () => {
@@ -71,7 +73,9 @@ describe("createElevenLabsClient", () => {
         text: "Hi",
         outputFormat: "ulaw_8000",
       });
-      expect(capturedUrl).toContain(`/text-to-speech/${DEFAULT_ELEVENLABS_VOICE_ID}`);
+      expect(capturedUrl).toContain(
+        `/text-to-speech/${DEFAULT_ELEVENLABS_VOICE_ID}`,
+      );
       expect(capturedUrl).toContain("output_format=ulaw_8000");
       expect(capturedUrl).not.toContain("/stream");
     });
@@ -150,9 +154,8 @@ describe("createElevenLabsClient", () => {
         },
       });
       const chunks: Uint8Array[] = [];
-      const result = await client.streamTextToSpeech(
-        { text: "Hi" },
-        (c) => chunks.push(c),
+      const result = await client.streamTextToSpeech({ text: "Hi" }, (c) =>
+        chunks.push(c),
       );
       expect(capturedUrl).toContain("/stream");
       expect(result.ok).toBe(true);
@@ -167,7 +170,10 @@ describe("createElevenLabsClient", () => {
         apiKey: VALID_KEY,
         fetchImpl: async () => textResponse("nope", 500),
       });
-      const result = await client.streamTextToSpeech({ text: "Hi" }, () => undefined);
+      const result = await client.streamTextToSpeech(
+        { text: "Hi" },
+        () => undefined,
+      );
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.errorCode).toBe("http");

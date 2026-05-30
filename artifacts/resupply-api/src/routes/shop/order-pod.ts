@@ -84,10 +84,7 @@ router.get("/shop/orders/:sessionId/pod", async (req, res) => {
       res.end();
     }
   } catch (err) {
-    req.log?.error(
-      { err, sessionId },
-      "shop_order_pod_patient_stream_failed",
-    );
+    req.log?.error({ err, sessionId }, "shop_order_pod_patient_stream_failed");
     if (!res.headersSent) {
       res.status(500).json({ error: "download_failed" });
     } else {

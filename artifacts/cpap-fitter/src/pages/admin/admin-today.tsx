@@ -66,13 +66,10 @@ export function AdminTodayPage() {
       <header className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold">Today</h1>
-          <p
-            className="text-sm mt-1"
-            style={{ color: "hsl(var(--ink-3))" }}
-          >
-            Top items across every queue. Cleared up to 5 per section
-            — refresh to pull the next batch, or click through to a
-            queue for the full list.
+          <p className="text-sm mt-1" style={{ color: "hsl(var(--ink-3))" }}>
+            Top items across every queue. Cleared up to 5 per section — refresh
+            to pull the next batch, or click through to a queue for the full
+            list.
           </p>
         </div>
         <Button
@@ -131,7 +128,10 @@ function SectionTitle({
 
 function EmptyState({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex items-center gap-2 text-xs py-2" style={{ color: "hsl(var(--ink-3))" }}>
+    <div
+      className="flex items-center gap-2 text-xs py-2"
+      style={{ color: "hsl(var(--ink-3))" }}
+    >
       <CheckCircle2 className="h-3.5 w-3.5" />
       {children}
     </div>
@@ -242,10 +242,7 @@ function FollowupsCard({ data }: { data: TodayResponse }) {
                   <span className="font-medium">
                     {relativeAge(f.due_at)} overdue
                   </span>
-                  <span
-                    className="ml-2"
-                    style={{ color: "hsl(var(--ink-3))" }}
-                  >
+                  <span className="ml-2" style={{ color: "hsl(var(--ink-3))" }}>
                     — {f.body.slice(0, 80)}
                     {f.body.length > 80 ? "…" : ""}
                   </span>
@@ -286,11 +283,10 @@ function ReturnsCard({ data }: { data: TodayResponse }) {
         <ul className="space-y-2">
           {items.map((r) => (
             <li key={r.id} className="text-sm">
-              <Link
-                href={`/admin/shop/returns`}
-                className="hover:underline"
-              >
-                <span className="font-medium">{humanizeReturnStatus(r.status)}</span>
+              <Link href={`/admin/shop/returns`} className="hover:underline">
+                <span className="font-medium">
+                  {humanizeReturnStatus(r.status)}
+                </span>
                 <span className="ml-2" style={{ color: "hsl(var(--ink-3))" }}>
                   — {r.reason} · opened {relativeAge(r.created_at)}
                 </span>
@@ -354,10 +350,7 @@ function ComplianceAlertRow({ alert }: { alert: TodayComplianceAlert }) {
           {humanizeAlertType(alert.alert_type)}
         </Link>
         {alert.summary && (
-          <span
-            className="ml-2"
-            style={{ color: "hsl(var(--ink-3))" }}
-          >
+          <span className="ml-2" style={{ color: "hsl(var(--ink-3))" }}>
             — {alert.summary.slice(0, 80)}
             {alert.summary.length > 80 ? "…" : ""}
           </span>
@@ -413,7 +406,10 @@ function RxRenewalsCard({ data }: { data: TodayResponse }) {
                   </span>
                   <span
                     className="ml-2"
-                    style={{ color: days <= 7 ? "hsl(var(--alert))" : "hsl(var(--ink-3))" }}
+                    style={{
+                      color:
+                        days <= 7 ? "hsl(var(--alert))" : "hsl(var(--ink-3))",
+                    }}
                   >
                     — expires in {days} day{days === 1 ? "" : "s"}
                   </span>
@@ -491,17 +487,13 @@ function InboundFaxesCard({ data }: { data: TodayResponse }) {
         <ul className="space-y-2">
           {items.map((f) => (
             <li key={f.id} className="text-sm">
-              <Link
-                href={`/admin/inbound-faxes`}
-                className="hover:underline"
-              >
+              <Link href={`/admin/inbound-faxes`} className="hover:underline">
                 <span className="font-medium">
                   {f.from_e164 ?? "Unknown sender"}
                 </span>
                 <span className="ml-2" style={{ color: "hsl(var(--ink-3))" }}>
-                  — {f.num_pages ?? "?"}{" "}
-                  {f.num_pages === 1 ? "page" : "pages"} ·{" "}
-                  {relativeAge(f.received_at)}
+                  — {f.num_pages ?? "?"} {f.num_pages === 1 ? "page" : "pages"}{" "}
+                  · {relativeAge(f.received_at)}
                 </span>
               </Link>
             </li>

@@ -107,7 +107,8 @@ async function advanceCycle(
 ): Promise<"advanced" | "transferred" | "noop"> {
   // Is the next month due? Anniversary = start + (current_month * 30 days).
   const start = new Date(`${cycle.start_date}T00:00:00Z`);
-  const nextDueMs = start.getTime() + cycle.current_month * 30 * 24 * 3600 * 1000;
+  const nextDueMs =
+    start.getTime() + cycle.current_month * 30 * 24 * 3600 * 1000;
   if (Date.now() < nextDueMs) return "noop";
 
   // Ownership transfer at month max+1.

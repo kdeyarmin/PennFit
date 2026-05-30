@@ -28,13 +28,13 @@ Medical Supply" without re-issuing DMARC records.
 
 Concretely:
 
-* `auth.password_reset` — sent from info@pennpaps.com.
-* Order confirmations + shipping notifications — same.
-* Resupply outreach (reminders, smart-triggers, Rx renewals) — same.
-* Insurance-lead patient confirmations — same.
-* Back-in-stock notifications — same.
-* Cart abandonment nudges — same.
-* Admin invites — same.
+- `auth.password_reset` — sent from info@pennpaps.com.
+- Order confirmations + shipping notifications — same.
+- Resupply outreach (reminders, smart-triggers, Rx renewals) — same.
+- Insurance-lead patient confirmations — same.
+- Back-in-stock notifications — same.
+- Cart abandonment nudges — same.
+- Admin invites — same.
 
 Reply-To CAN be overridden per send (`replyTo` option on
 `SendEmailInput`) — useful when an email should bounce-route to a
@@ -59,17 +59,17 @@ the From itself stays one value.
 
 ## What `createSendgridClient` enforces
 
-* Required env: `SENDGRID_API_KEY`, `SENDGRID_FROM_EMAIL`,
+- Required env: `SENDGRID_API_KEY`, `SENDGRID_FROM_EMAIL`,
   `SENDGRID_FROM_NAME`. Missing any throws `EmailConfigError` at
   construction.
-* Single From wired into every `sendEmail` call. Callers cannot
+- Single From wired into every `sendEmail` call. Callers cannot
   override `from`; the option is intentionally absent from
   `SendEmailInput`.
-* Sandbox mode opt-in (`mailSettings.sandbox.enable`) for
+- Sandbox mode opt-in (`mailSettings.sandbox.enable`) for
   preview/staging environments — emails are accepted by SendGrid
   but never actually delivered. Useful so QA flows don't email
   real patients.
-* Categorized error class (`EmailApiError`) carries the SendGrid
+- Categorized error class (`EmailApiError`) carries the SendGrid
   status code, so `withRetry` predicates at call sites can
   retry-on-5xx-only without parsing strings.
 
@@ -98,17 +98,17 @@ test fixtures that set the env so a downstream
 
 The decision should be reopened — not silently violated — if:
 
-* The product surfaces multiple distinct sender identities to the
+- The product surfaces multiple distinct sender identities to the
   patient (e.g. a CSR sending from their own work email). That
   sender flow already uses Reply-To not From; if a true-From
   switch is needed, the DMARC plan has to land first.
-* A multi-tenant deployment requires per-tenant From identity.
-* A jurisdiction-specific compliance regime requires a dedicated
+- A multi-tenant deployment requires per-tenant From identity.
+- A jurisdiction-specific compliance regime requires a dedicated
   noreply sender.
 
 ## Related
 
-* CLAUDE.md hard rule "One From address."
-* `lib/resupply-email/src/client.ts` — the chokepoint.
-* `scripts/check-resupply-architecture.sh` — the broader
+- CLAUDE.md hard rule "One From address."
+- `lib/resupply-email/src/client.ts` — the chokepoint.
+- `scripts/check-resupply-architecture.sh` — the broader
   cross-package enforcement pattern.

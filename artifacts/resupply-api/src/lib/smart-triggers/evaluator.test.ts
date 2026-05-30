@@ -66,8 +66,9 @@ describe("runSmartTriggerEvaluator", () => {
       inserted: 0,
       skippedExisting: 0,
     });
-    expect(getSupabaseWritePayloads("patient_smart_trigger_events", "insert"))
-      .toEqual([]);
+    expect(
+      getSupabaseWritePayloads("patient_smart_trigger_events", "insert"),
+    ).toEqual([]);
     expect(logAuditMock).not.toHaveBeenCalled();
   });
 
@@ -93,8 +94,9 @@ describe("runSmartTriggerEvaluator", () => {
       inserted: 0,
       skippedExisting: 0,
     });
-    expect(getSupabaseWritePayloads("patient_smart_trigger_events", "insert"))
-      .toEqual([]);
+    expect(
+      getSupabaseWritePayloads("patient_smart_trigger_events", "insert"),
+    ).toEqual([]);
   });
 
   it("inserts a new event + audits when a rule fires", async () => {
@@ -134,15 +136,16 @@ describe("runSmartTriggerEvaluator", () => {
       inserted: 1,
       skippedExisting: 0,
     });
-    expect(getSupabaseWritePayloads("patient_smart_trigger_events", "insert"))
-      .toEqual([
-        {
-          patient_id: "p_1",
-          kind: "leak_rising",
-          window_start_date: "2026-04-01",
-          window_end_date: "2026-04-14",
-        },
-      ]);
+    expect(
+      getSupabaseWritePayloads("patient_smart_trigger_events", "insert"),
+    ).toEqual([
+      {
+        patient_id: "p_1",
+        kind: "leak_rising",
+        window_start_date: "2026-04-01",
+        window_end_date: "2026-04-14",
+      },
+    ]);
     expect(logAuditMock).toHaveBeenCalledTimes(1);
     const audit = logAuditMock.mock.calls[0]?.[0] as {
       action: string;

@@ -24,16 +24,12 @@ describe("parseSmsIntent", () => {
       expect(parseSmsIntent("hi. STOP. thanks.").intent).toBe("stop");
     });
 
-    it.each([
-      "DETENER",
-      "detener",
-      "Cancelar",
-      "ALTO",
-      "fin",
-      "parar",
-    ])("classifies Spanish/Portuguese opt-out %j as stop", (body) => {
-      expect(parseSmsIntent(body).intent).toBe("stop");
-    });
+    it.each(["DETENER", "detener", "Cancelar", "ALTO", "fin", "parar"])(
+      "classifies Spanish/Portuguese opt-out %j as stop",
+      (body) => {
+        expect(parseSmsIntent(body).intent).toBe("stop");
+      },
+    );
   });
 
   describe("HELP family (carrier-mandated, anywhere in body)", () => {

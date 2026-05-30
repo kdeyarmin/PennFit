@@ -41,7 +41,10 @@ vi.mock("../../middlewares/requireAdmin", () =>
 const rateLimitBlocked = vi.hoisted(() => ({ current: false }));
 const adminRateLimitSpy = vi.hoisted(() =>
   vi.fn<
-    (opts: { name: string; preset?: string }) => (
+    (opts: {
+      name: string;
+      preset?: string;
+    }) => (
       req: import("express").Request,
       res: import("express").Response,
       next: import("express").NextFunction,
@@ -64,7 +67,9 @@ vi.mock("../../middlewares/admin-rate-limit", () => ({
 }));
 
 // ── Audit mock (side-effect, not under test here) ────────────────────────────
-vi.mock("@workspace/resupply-audit", () => ({ logAudit: vi.fn(async () => undefined) }));
+vi.mock("@workspace/resupply-audit", () => ({
+  logAudit: vi.fn(async () => undefined),
+}));
 
 import coachingRouter from "./coaching-plans";
 

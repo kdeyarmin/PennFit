@@ -101,18 +101,18 @@ which runs as part of the `resupply-check` validation step.
 
 ### Allowed dependency edges
 
-| Package                        | May import from                                                                 |
-| ------------------------------ | ------------------------------------------------------------------------------- |
-| `resupply-contracts`           | `zod` only                                                                      |
-| `resupply-domain`              | `resupply-contracts`, `zod`                                                     |
+| Package                        | May import from                                                                                                                                                                                                                                                                                                                 |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `resupply-contracts`           | `zod` only                                                                                                                                                                                                                                                                                                                      |
+| `resupply-domain`              | `resupply-contracts`, `zod`                                                                                                                                                                                                                                                                                                     |
 | `resupply-db`                  | `resupply-contracts`, `resupply-domain`, `@supabase/supabase-js`, `pg`, `zod` (`pg` is retained only for `scripts/migrate.mjs` and a small number of legacy worker callers; new runtime code uses `getSupabaseServiceRoleClient()`. `drizzle-orm` is forbidden — its package was removed when the Drizzle tooling was retired.) |
-| `resupply-audit`               | `resupply-contracts`, `resupply-db`, `zod`                                      |
-| `resupply-telecom`             | `resupply-contracts`, `resupply-domain`, `zod` (vendor SDKs added in Phase 3)   |
-| `resupply-ai`                  | `resupply-contracts`, `resupply-domain`, `zod` (Anthropic SDK added in Phase 6) |
-| `resupply-testing`             | `resupply-contracts`, `resupply-domain`, faker, `zod` — **devDeps only**        |
-| `artifacts/resupply-api`       | any `lib/resupply-*` package + Express stack                                    |
-| `artifacts/resupply-worker`    | any `lib/resupply-*` package + `pg-boss`                                        |
-| `artifacts/resupply-dashboard` | any `lib/resupply-*` package + React stack (no `resupply-db` at runtime)        |
+| `resupply-audit`               | `resupply-contracts`, `resupply-db`, `zod`                                                                                                                                                                                                                                                                                      |
+| `resupply-telecom`             | `resupply-contracts`, `resupply-domain`, `zod` (vendor SDKs added in Phase 3)                                                                                                                                                                                                                                                   |
+| `resupply-ai`                  | `resupply-contracts`, `resupply-domain`, `zod` (Anthropic SDK added in Phase 6)                                                                                                                                                                                                                                                 |
+| `resupply-testing`             | `resupply-contracts`, `resupply-domain`, faker, `zod` — **devDeps only**                                                                                                                                                                                                                                                        |
+| `artifacts/resupply-api`       | any `lib/resupply-*` package + Express stack                                                                                                                                                                                                                                                                                    |
+| `artifacts/resupply-worker`    | any `lib/resupply-*` package + `pg-boss`                                                                                                                                                                                                                                                                                        |
+| `artifacts/resupply-dashboard` | any `lib/resupply-*` package + React stack (no `resupply-db` at runtime)                                                                                                                                                                                                                                                        |
 
 ### Forbidden edges (these will fail the check script)
 

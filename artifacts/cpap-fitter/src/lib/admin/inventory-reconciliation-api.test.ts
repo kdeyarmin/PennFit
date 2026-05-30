@@ -96,24 +96,34 @@ describe("ReconciliationUnavailableError", () => {
 
 describe("startReconciliation — success", () => {
   it("sends POST to /resupply-api/admin/shop/inventory/reconciliations", async () => {
-    const fetchSpy = makeFetchOk({ id: "rec_1", startedAt: "2026-05-01T00:00:00Z" }, 201);
+    const fetchSpy = makeFetchOk(
+      { id: "rec_1", startedAt: "2026-05-01T00:00:00Z" },
+      201,
+    );
     vi.stubGlobal("fetch", fetchSpy);
 
     await startReconciliation({ periodLabel: "2026-05" });
 
     expect(fetchSpy).toHaveBeenCalledTimes(1);
-    const [url, opts] = (fetchSpy as ReturnType<typeof vi.fn>).mock.calls[0] as [string, RequestInit];
+    const [url, opts] = (fetchSpy as ReturnType<typeof vi.fn>).mock
+      .calls[0] as [string, RequestInit];
     expect(url).toBe("/resupply-api/admin/shop/inventory/reconciliations");
     expect(opts.method).toBe("POST");
   });
 
   it("serialises the body as JSON", async () => {
-    const fetchSpy = makeFetchOk({ id: "rec_1", startedAt: "2026-05-01T00:00:00Z" }, 201);
+    const fetchSpy = makeFetchOk(
+      { id: "rec_1", startedAt: "2026-05-01T00:00:00Z" },
+      201,
+    );
     vi.stubGlobal("fetch", fetchSpy);
 
     await startReconciliation({ periodLabel: "2026-05", notes: "spot check" });
 
-    const [, opts] = (fetchSpy as ReturnType<typeof vi.fn>).mock.calls[0] as [string, RequestInit];
+    const [, opts] = (fetchSpy as ReturnType<typeof vi.fn>).mock.calls[0] as [
+      string,
+      RequestInit,
+    ];
     expect(JSON.parse(opts.body as string)).toEqual({
       periodLabel: "2026-05",
       notes: "spot check",
@@ -128,7 +138,10 @@ describe("startReconciliation — success", () => {
 
     const result = await startReconciliation({ periodLabel: "2026-05" });
 
-    expect(result).toEqual({ id: "rec_abc", startedAt: "2026-05-01T12:00:00Z" });
+    expect(result).toEqual({
+      id: "rec_abc",
+      startedAt: "2026-05-01T12:00:00Z",
+    });
   });
 
   it("accepts null notes", async () => {
@@ -137,7 +150,10 @@ describe("startReconciliation — success", () => {
 
     await startReconciliation({ periodLabel: "2026-05", notes: null });
 
-    const [, opts] = (fetchSpy as ReturnType<typeof vi.fn>).mock.calls[0] as [string, RequestInit];
+    const [, opts] = (fetchSpy as ReturnType<typeof vi.fn>).mock.calls[0] as [
+      string,
+      RequestInit,
+    ];
     expect(JSON.parse(opts.body as string)).toMatchObject({ notes: null });
   });
 });
@@ -177,30 +193,27 @@ describe("startReconciliation — error handling", () => {
   });
 
   it("throws with error string when issues is absent", async () => {
-    vi.stubGlobal(
-      "fetch",
-      makeFetchFail(500, { error: "insert_failed" }),
-    );
+    vi.stubGlobal("fetch", makeFetchFail(500, { error: "insert_failed" }));
 
-    await expect(startReconciliation({ periodLabel: "2026-05" })).rejects.toThrow(
-      "insert_failed",
-    );
+    await expect(
+      startReconciliation({ periodLabel: "2026-05" }),
+    ).rejects.toThrow("insert_failed");
   });
 
   it("falls back to generic message when body is not parseable JSON", async () => {
     vi.stubGlobal("fetch", makeFetchFailNonJson(500));
 
-    await expect(startReconciliation({ periodLabel: "2026-05" })).rejects.toThrow(
-      "Start failed (500)",
-    );
+    await expect(
+      startReconciliation({ periodLabel: "2026-05" }),
+    ).rejects.toThrow("Start failed (500)");
   });
 
   it("uses generic message when body has no error or issues keys", async () => {
     vi.stubGlobal("fetch", makeFetchFail(503, {}));
 
-    await expect(startReconciliation({ periodLabel: "2026-05" })).rejects.toThrow(
-      "Start failed (503)",
-    );
+    await expect(
+      startReconciliation({ periodLabel: "2026-05" }),
+    ).rejects.toThrow("Start failed (503)");
   });
 });
 
@@ -215,7 +228,8 @@ describe("listReconciliations — success", () => {
 
     await listReconciliations();
 
-    const [url, opts] = (fetchSpy as ReturnType<typeof vi.fn>).mock.calls[0] as [string, RequestInit];
+    const [url, opts] = (fetchSpy as ReturnType<typeof vi.fn>).mock
+      .calls[0] as [string, RequestInit];
     expect(url).toBe("/resupply-api/admin/shop/inventory/reconciliations");
     expect(opts?.method).toBeUndefined(); // GET has no method override
   });
@@ -295,7 +309,9 @@ describe("getReconciliation — success", () => {
 
     await getReconciliation("rec-123");
 
-    const [url] = (fetchSpy as ReturnType<typeof vi.fn>).mock.calls[0] as [string];
+    const [url] = (fetchSpy as ReturnType<typeof vi.fn>).mock.calls[0] as [
+      string,
+    ];
     expect(url).toBe(
       "/resupply-api/admin/shop/inventory/reconciliations/rec-123",
     );
@@ -307,7 +323,9 @@ describe("getReconciliation — success", () => {
 
     await getReconciliation("id with spaces");
 
-    const [url] = (fetchSpy as ReturnType<typeof vi.fn>).mock.calls[0] as [string];
+    const [url] = (fetchSpy as ReturnType<typeof vi.fn>).mock.calls[0] as [
+      string,
+    ];
     expect(url).toContain("id%20with%20spaces");
   });
 
@@ -353,7 +371,8 @@ describe("submitReconciliation — success", () => {
 
     await submitReconciliation("rec-123", SUBMIT_INPUT);
 
-    const [url, opts] = (fetchSpy as ReturnType<typeof vi.fn>).mock.calls[0] as [string, RequestInit];
+    const [url, opts] = (fetchSpy as ReturnType<typeof vi.fn>).mock
+      .calls[0] as [string, RequestInit];
     expect(url).toBe(
       "/resupply-api/admin/shop/inventory/reconciliations/rec-123/submit",
     );
@@ -366,7 +385,9 @@ describe("submitReconciliation — success", () => {
 
     await submitReconciliation("id/tricky", SUBMIT_INPUT);
 
-    const [url] = (fetchSpy as ReturnType<typeof vi.fn>).mock.calls[0] as [string];
+    const [url] = (fetchSpy as ReturnType<typeof vi.fn>).mock.calls[0] as [
+      string,
+    ];
     expect(url).toContain("id%2Ftricky");
   });
 
@@ -376,7 +397,10 @@ describe("submitReconciliation — success", () => {
 
     await submitReconciliation("rec-123", SUBMIT_INPUT);
 
-    const [, opts] = (fetchSpy as ReturnType<typeof vi.fn>).mock.calls[0] as [string, RequestInit];
+    const [, opts] = (fetchSpy as ReturnType<typeof vi.fn>).mock.calls[0] as [
+      string,
+      RequestInit,
+    ];
     expect(JSON.parse(opts.body as string)).toEqual(SUBMIT_INPUT);
   });
 
@@ -391,7 +415,10 @@ describe("submitReconciliation — success", () => {
 
 describe("submitReconciliation — 503 → ReconciliationUnavailableError", () => {
   it("throws ReconciliationUnavailableError with reason stripe_not_configured on 503", async () => {
-    vi.stubGlobal("fetch", makeFetchFail(503, { error: "stripe_not_configured" }));
+    vi.stubGlobal(
+      "fetch",
+      makeFetchFail(503, { error: "stripe_not_configured" }),
+    );
 
     await expect(submitReconciliation("rec-123", SUBMIT_INPUT)).rejects.toThrow(
       ReconciliationUnavailableError,

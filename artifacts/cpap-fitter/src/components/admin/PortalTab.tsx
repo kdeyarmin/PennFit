@@ -25,7 +25,8 @@ import {
 
 function portalStatusBadge(status: PortalStatus) {
   if (status === "active") return <Badge variant="success">Active</Badge>;
-  if (status === "pending") return <Badge variant="warning">Invite pending</Badge>;
+  if (status === "pending")
+    return <Badge variant="warning">Invite pending</Badge>;
   return <Badge variant="muted">Not invited</Badge>;
 }
 
@@ -297,9 +298,9 @@ export function PortalTab({
         <form onSubmit={(e) => void handleSendInvite(e)} className="space-y-5">
           <p className="text-sm" style={{ color: "hsl(var(--ink-2))" }}>
             Send this patient a portal invite so they can self-serve orders,
-            upload insurance documents, and manage their CPAP supplies.
-            Fill in any missing onboarding fields before sending — the
-            patient will see this information when they log in.
+            upload insurance documents, and manage their CPAP supplies. Fill in
+            any missing onboarding fields before sending — the patient will see
+            this information when they log in.
           </p>
 
           <fieldset className="space-y-4">
@@ -456,8 +457,8 @@ export function PortalTab({
               {busy ? "Sending invite…" : "Send portal invite"}
             </Button>
             <p className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
-              The patient will receive a "Set up your portal" email with a
-              7-day link to create their password.
+              The patient will receive a "Set up your portal" email with a 7-day
+              link to create their password.
             </p>
           </div>
         </form>

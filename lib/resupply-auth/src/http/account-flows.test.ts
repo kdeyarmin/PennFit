@@ -460,8 +460,9 @@ describe("POST /auth/reset-password", () => {
         password: "brand new user-chosen password",
       });
     expect(signIn.status).toBe(200);
-    expect(getCookieValue(signIn.headers["set-cookie"], SESSION_COOKIE))
-      .toBeTruthy();
+    expect(
+      getCookieValue(signIn.headers["set-cookie"], SESSION_COOKIE),
+    ).toBeTruthy();
   });
 
   it("rejects a too-short new password (400, token NOT consumed)", async () => {
@@ -734,9 +735,10 @@ describe("rate-limit counter records on every early-return branch", () => {
       const before = h.repo.__failuresStartingWith("__reset:");
       // hashToken returns null for tokens that fail base64url decode.
       // A control character is guaranteed to be invalid base64url.
-      const res = await supertest(h.app)
-        .post("/auth/reset-password")
-        .send({ token: "not*valid*base64!", password: "brand new long password" });
+      const res = await supertest(h.app).post("/auth/reset-password").send({
+        token: "not*valid*base64!",
+        password: "brand new long password",
+      });
       expect(res.status).toBe(410);
       expect(h.repo.__failuresStartingWith("__reset:")).toBe(before + 1);
     });
@@ -797,9 +799,7 @@ describe("rate-limit counter records on every early-return branch", () => {
       const before = h.repo.__failuresStartingWith("__forgot:");
       // Missing email field → Zod parse fails. Endpoint still returns 200
       // (non-enumeration) but the counter must tick.
-      const res = await supertest(h.app)
-        .post("/auth/forgot-password")
-        .send({});
+      const res = await supertest(h.app).post("/auth/forgot-password").send({});
       expect(res.status).toBe(200);
       expect(h.repo.__failuresStartingWith("__forgot:")).toBe(before + 1);
     });

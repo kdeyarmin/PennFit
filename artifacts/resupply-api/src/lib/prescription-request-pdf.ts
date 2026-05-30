@@ -68,12 +68,7 @@ const MARGIN = 72;
 const PAGE_WIDTH = 612;
 const USABLE_WIDTH = PAGE_WIDTH - MARGIN * 2;
 
-export type DeviceClass =
-  | "cpap"
-  | "auto_cpap"
-  | "bipap"
-  | "bipap_st"
-  | "asv";
+export type DeviceClass = "cpap" | "auto_cpap" | "bipap" | "bipap_st" | "asv";
 
 export interface PrescriptionRequestHcpcsLine {
   hcpcs: string;
@@ -200,7 +195,11 @@ export function renderPrescriptionRequest(
     "Name",
     `${inputs.patient.legalLastName}, ${inputs.patient.legalFirstName}`,
   );
-  drawLabeledField(doc, "Date of birth", formatIsoDate(inputs.patient.dateOfBirth));
+  drawLabeledField(
+    doc,
+    "Date of birth",
+    formatIsoDate(inputs.patient.dateOfBirth),
+  );
   if (inputs.patient.address) {
     drawLabeledField(doc, "Address", formatAddress(inputs.patient.address));
   }
@@ -214,9 +213,12 @@ export function renderPrescriptionRequest(
   drawSectionHeader(doc, "Diagnosis");
   doc.fontSize(10).font("Helvetica");
   for (const code of inputs.icd10Codes) {
-    doc.text(`  • ${code}${describeIcd10(code) ? `  — ${describeIcd10(code)}` : ""}`, {
-      width: USABLE_WIDTH,
-    });
+    doc.text(
+      `  • ${code}${describeIcd10(code) ? `  — ${describeIcd10(code)}` : ""}`,
+      {
+        width: USABLE_WIDTH,
+      },
+    );
   }
   doc.moveDown(0.5);
   drawRule(doc);
@@ -237,12 +239,15 @@ export function renderPrescriptionRequest(
   }
 
   drawSectionHeader(doc, "Length of need");
-  doc.fontSize(10).font("Helvetica").text(
-    inputs.lengthOfNeedMonths >= 99
-      ? "99 months (lifetime / indefinite per CMS shorthand)"
-      : `${inputs.lengthOfNeedMonths} months`,
-    { width: USABLE_WIDTH },
-  );
+  doc
+    .fontSize(10)
+    .font("Helvetica")
+    .text(
+      inputs.lengthOfNeedMonths >= 99
+        ? "99 months (lifetime / indefinite per CMS shorthand)"
+        : `${inputs.lengthOfNeedMonths} months`,
+      { width: USABLE_WIDTH },
+    );
   doc.moveDown(0.5);
   drawRule(doc);
   doc.moveDown(0.6);
@@ -329,17 +334,20 @@ function drawSalutationParagraph(
   doc: PDFKit.PDFDocument,
   inputs: PrescriptionRequestInputs,
 ): void {
-  doc.fontSize(11).font("Helvetica").text(
-    `Dear Dr. ${inputs.provider.legalName},`,
-    { width: USABLE_WIDTH },
-  );
+  doc
+    .fontSize(11)
+    .font("Helvetica")
+    .text(`Dear Dr. ${inputs.provider.legalName},`, { width: USABLE_WIDTH });
   doc.moveDown(0.4);
-  doc.fontSize(10).font("Helvetica").text(
-    `We have prepared the prescription below for your patient and are requesting your signature ` +
-      `so we can dispense the equipment and bill the payer on file. Please review for accuracy, ` +
-      `sign in the signature block at the bottom, and fax the signed copy to ${inputs.supplier.faxE164}.`,
-    { width: USABLE_WIDTH, lineGap: 2 },
-  );
+  doc
+    .fontSize(10)
+    .font("Helvetica")
+    .text(
+      `We have prepared the prescription below for your patient and are requesting your signature ` +
+        `so we can dispense the equipment and bill the payer on file. Please review for accuracy, ` +
+        `sign in the signature block at the bottom, and fax the signed copy to ${inputs.supplier.faxE164}.`,
+      { width: USABLE_WIDTH, lineGap: 2 },
+    );
   doc.moveDown(0.6);
   drawRule(doc);
   doc.moveDown(0.6);
@@ -372,9 +380,10 @@ function drawEquipmentTable(
   doc.font("Helvetica");
   for (const line of lines) {
     const rowY = doc.y;
-    const hcpcs = line.modifiers && line.modifiers.length > 0
-      ? `${line.hcpcs} ${line.modifiers.join("/")}`
-      : line.hcpcs;
+    const hcpcs =
+      line.modifiers && line.modifiers.length > 0
+        ? `${line.hcpcs} ${line.modifiers.join("/")}`
+        : line.hcpcs;
     const cadence =
       typeof line.cadenceDays === "number" && line.cadenceDays > 0
         ? `Every ${line.cadenceDays} d`
@@ -419,7 +428,9 @@ function drawSettings(
   }
   if (typeof s.rampMinutes === "number" && s.rampMinutes > 0) {
     const from =
-      typeof s.rampStartCmh2o === "number" ? ` from ${s.rampStartCmh2o} cm H₂O` : "";
+      typeof s.rampStartCmh2o === "number"
+        ? ` from ${s.rampStartCmh2o} cm H₂O`
+        : "";
     drawLabeledField(doc, "Ramp", `${s.rampMinutes} minutes${from}`);
   }
   if (typeof s.humidifierSetting === "number") {
@@ -435,10 +446,13 @@ function drawAffirmationAndSignature(
   provider: PrescriptionRequestProvider,
 ): void {
   drawSectionHeader(doc, "Affirmation & signature");
-  doc.fontSize(9).font("Helvetica-Oblique").text(
-    "By signing below I certify the above prescription is medically necessary for the named patient.",
-    { width: USABLE_WIDTH },
-  );
+  doc
+    .fontSize(9)
+    .font("Helvetica-Oblique")
+    .text(
+      "By signing below I certify the above prescription is medically necessary for the named patient.",
+      { width: USABLE_WIDTH },
+    );
   doc.moveDown(0.6);
 
   doc.fontSize(10).font("Helvetica");

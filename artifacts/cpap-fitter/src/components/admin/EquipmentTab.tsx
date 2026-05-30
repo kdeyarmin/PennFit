@@ -73,16 +73,17 @@ export function EquipmentTab({ patientId }: { patientId: string }) {
   });
 
   if (isPending) return <Spinner />;
-  if (isError) return <ErrorPanel error={error} onRetry={() => void refetch()} />;
+  if (isError)
+    return <ErrorPanel error={error} onRetry={() => void refetch()} />;
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">
-          CPAP/BiPAP devices dispensed to this patient. Serial number
-          binds each row to the manufacturer-recall scan. Clinical
-          fields are immutable after save — if a serial was mistyped,
-          retire the row and add a new one.
+          CPAP/BiPAP devices dispensed to this patient. Serial number binds each
+          row to the manufacturer-recall scan. Clinical fields are immutable
+          after save — if a serial was mistyped, retire the row and add a new
+          one.
         </p>
         <Button onClick={() => setShowAdd(true)}>
           <Plus className="h-4 w-4 mr-1.5" />
@@ -128,15 +129,17 @@ export function EquipmentTab({ patientId }: { patientId: string }) {
                     )}
                   </div>
                   <div className="text-xs text-muted-foreground">
-                    {DEVICE_CLASS_LABELS[asset.deviceClass]} ·{" "}
-                    Serial <span className="font-mono">{asset.serialNumber}</span>
+                    {DEVICE_CLASS_LABELS[asset.deviceClass]} · Serial{" "}
+                    <span className="font-mono">{asset.serialNumber}</span>
                     {asset.dispensedAt && ` · Dispensed ${asset.dispensedAt}`}
                   </div>
                   {(asset.pressureSetting || asset.humidifierSetting) && (
                     <div className="text-xs text-muted-foreground">
                       {asset.pressureSetting &&
                         `Pressure: ${asset.pressureSetting}`}
-                      {asset.pressureSetting && asset.humidifierSetting && " · "}
+                      {asset.pressureSetting &&
+                        asset.humidifierSetting &&
+                        " · "}
                       {asset.humidifierSetting &&
                         `Humidifier: ${asset.humidifierSetting}`}
                     </div>
@@ -247,8 +250,7 @@ function AddEquipmentModal({
     onError: (e: Error) => setError(e.message),
   });
 
-  const canSave =
-    manufacturer.trim() && model.trim() && serialNumber.trim();
+  const canSave = manufacturer.trim() && model.trim() && serialNumber.trim();
 
   return (
     <div
@@ -271,8 +273,8 @@ function AddEquipmentModal({
             Record dispensed device
           </h2>
           <p className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
-            Serial-number identity is immutable after save. Verify
-            the manufacturer&apos;s sticker before submitting.
+            Serial-number identity is immutable after save. Verify the
+            manufacturer&apos;s sticker before submitting.
           </p>
 
           <div className="grid grid-cols-2 gap-3">
@@ -280,20 +282,18 @@ function AddEquipmentModal({
               <Label>Device class</Label>
               <select
                 value={deviceClass}
-                onChange={(e) =>
-                  setDeviceClass(e.target.value as DeviceClass)
-                }
+                onChange={(e) => setDeviceClass(e.target.value as DeviceClass)}
                 aria-label="Device class"
                 className="w-full rounded border px-2 py-1.5 text-sm"
                 style={{ borderColor: "hsl(var(--line-1))" }}
               >
-                {(
-                  Object.keys(DEVICE_CLASS_LABELS) as DeviceClass[]
-                ).map((c) => (
-                  <option key={c} value={c}>
-                    {DEVICE_CLASS_LABELS[c]}
-                  </option>
-                ))}
+                {(Object.keys(DEVICE_CLASS_LABELS) as DeviceClass[]).map(
+                  (c) => (
+                    <option key={c} value={c}>
+                      {DEVICE_CLASS_LABELS[c]}
+                    </option>
+                  ),
+                )}
               </select>
             </div>
             <LabeledInput
@@ -389,7 +389,10 @@ function LabeledInput({
 }) {
   return (
     <div>
-      <Label>{label}{required && " *"}</Label>
+      <Label>
+        {label}
+        {required && " *"}
+      </Label>
       <Input
         type={type}
         value={value}

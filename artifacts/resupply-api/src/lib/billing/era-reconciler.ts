@@ -49,7 +49,8 @@ import type {
 import { logger } from "../logger";
 
 type ClaimRow = Database["resupply"]["Tables"]["insurance_claims"]["Row"];
-type LineRow = Database["resupply"]["Tables"]["insurance_claim_line_items"]["Row"];
+type LineRow =
+  Database["resupply"]["Tables"]["insurance_claim_line_items"]["Row"];
 
 export interface ReconciliationSummary {
   /** How many claim blocks in the ERA we matched to a local claim. */
@@ -116,7 +117,10 @@ export async function reconcileEra(
     }
   }
 
-  summary.linesUpdated = summary.outcomes.reduce((s, o) => s + o.linesUpdated, 0);
+  summary.linesUpdated = summary.outcomes.reduce(
+    (s, o) => s + o.linesUpdated,
+    0,
+  );
 
   return summary;
 }
@@ -211,7 +215,10 @@ async function applyClaim(
   const denialReason = eraClaim.isDenied ? composeDenialReason(eraClaim) : null;
   if (eraClaim.isDenied && allowedTransition(claim.status, "denied")) {
     newStatus = "denied";
-  } else if (eraClaim.paidCents > 0 && allowedTransition(claim.status, "paid")) {
+  } else if (
+    eraClaim.paidCents > 0 &&
+    allowedTransition(claim.status, "paid")
+  ) {
     newStatus = "paid";
   }
 
@@ -248,11 +255,7 @@ async function applyClaim(
   // which tagged nearly every claim "partial_pay" because payers
   // reimburse the (lower) allowed amount, never the full billed charge.
   const eventType: Database["resupply"]["Tables"]["insurance_claim_events"]["Row"]["event_type"] =
-    eraClaim.isDenied
-      ? "denied"
-      : newPatientResp <= 0
-        ? "paid"
-        : "partial_pay";
+    eraClaim.isDenied ? "denied" : newPatientResp <= 0 ? "paid" : "partial_pay";
   await supabase
     .schema("resupply")
     .from("insurance_claim_events")
@@ -277,11 +280,15 @@ async function applyClaim(
 }
 
 function matchLine(
-  locals: Pick<LineRow, "id" | "hcpcs_code" | "modifier" | "allowed_cents" | "paid_cents" | "status">[],
+  locals: Pick<
+    LineRow,
+    "id" | "hcpcs_code" | "modifier" | "allowed_cents" | "paid_cents" | "status"
+  >[],
   era: Parsed835ServiceLine,
-):
-  | Pick<LineRow, "id" | "hcpcs_code" | "modifier" | "allowed_cents" | "paid_cents" | "status">
-  | null {
+): Pick<
+  LineRow,
+  "id" | "hcpcs_code" | "modifier" | "allowed_cents" | "paid_cents" | "status"
+> | null {
   if (!era.hcpcsCode) return null;
   // Match on HCPCS + ordered modifier set. The local row's modifier
   // column is a comma-joined string; we normalise both sides to a
@@ -361,9 +368,6 @@ function allowedTransition(
   if (allowed.includes(to)) return true;
   // Defensive logging without PHI — just the transition that was
   // rejected so we can audit ERA-driven state coherency.
-  logger.warn(
-    { from, to },
-    "era_reconciler: rejected status transition",
-  );
+  logger.warn({ from, to }, "era_reconciler: rejected status transition");
   return false;
 }

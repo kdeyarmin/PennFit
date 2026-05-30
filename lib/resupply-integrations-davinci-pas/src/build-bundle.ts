@@ -310,9 +310,7 @@ function buildOrganization(
   return {
     resourceType: "Organization",
     id: `dme-${o.npi}`,
-    identifier: [
-      { system: "http://hl7.org/fhir/sid/us-npi", value: o.npi },
-    ],
+    identifier: [{ system: "http://hl7.org/fhir/sid/us-npi", value: o.npi }],
     active: true,
     name: o.name,
     address: [
@@ -333,9 +331,7 @@ function buildPractitioner(
   return {
     resourceType: "Practitioner",
     id: `rx-${p.npi}`,
-    identifier: [
-      { system: "http://hl7.org/fhir/sid/us-npi", value: p.npi },
-    ],
+    identifier: [{ system: "http://hl7.org/fhir/sid/us-npi", value: p.npi }],
     active: true,
     name: [{ family: p.lastName, given: [p.firstName] }],
   };

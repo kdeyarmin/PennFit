@@ -254,28 +254,24 @@ async function recomputeTotals(
 }
 
 // ── LIST ────────────────────────────────────────────────────────────
-router.get(
-  "/patients/:id/insurance-claims",
-  requireAdmin,
-  async (req, res) => {
-    const idParsed = idParam.safeParse(req.params);
-    if (!idParsed.success) {
-      res.status(404).json({ error: "not_found" });
-      return;
-    }
-    const supabase = getSupabaseServiceRoleClient();
-    const { data, error } = await supabase
-      .schema("resupply")
-      .from("insurance_claims")
-      .select(
-        "id, insurance_coverage_id, payer_name, claim_number, date_of_service, fulfillment_id, status, total_billed_cents, total_allowed_cents, total_paid_cents, patient_responsibility_cents, submitted_at, decision_at, paid_at, denial_reason, notes, created_at, updated_at",
-      )
-      .eq("patient_id", idParsed.data.id)
-      .order("date_of_service", { ascending: false });
-    if (error) throw error;
-    res.json({ insuranceClaims: (data ?? []).map(rowToApi) });
-  },
-);
+router.get("/patients/:id/insurance-claims", requireAdmin, async (req, res) => {
+  const idParsed = idParam.safeParse(req.params);
+  if (!idParsed.success) {
+    res.status(404).json({ error: "not_found" });
+    return;
+  }
+  const supabase = getSupabaseServiceRoleClient();
+  const { data, error } = await supabase
+    .schema("resupply")
+    .from("insurance_claims")
+    .select(
+      "id, insurance_coverage_id, payer_name, claim_number, date_of_service, fulfillment_id, status, total_billed_cents, total_allowed_cents, total_paid_cents, patient_responsibility_cents, submitted_at, decision_at, paid_at, denial_reason, notes, created_at, updated_at",
+    )
+    .eq("patient_id", idParsed.data.id)
+    .order("date_of_service", { ascending: false });
+  if (error) throw error;
+  res.json({ insuranceClaims: (data ?? []).map(rowToApi) });
+});
 
 // ── DETAIL (claim + lines + events) ─────────────────────────────────
 router.get(
@@ -380,7 +376,10 @@ router.post(
       .limit(1)
       .maybeSingle();
     if (patientErr) {
-      logger.error({ err: patientErr.message, patientId: idParsed.data.id }, "insurance_claims.create: patient lookup failed");
+      logger.error(
+        { err: patientErr.message, patientId: idParsed.data.id },
+        "insurance_claims.create: patient lookup failed",
+      );
       throw patientErr;
     }
     if (!patient) {
@@ -459,7 +458,10 @@ router.patch(
       .limit(1)
       .maybeSingle();
     if (currentErr) {
-      logger.error({ err: currentErr.message, claimId: idParsed.data.claimId }, "insurance_claims.patch: claim lookup failed");
+      logger.error(
+        { err: currentErr.message, claimId: idParsed.data.claimId },
+        "insurance_claims.patch: claim lookup failed",
+      );
       throw currentErr;
     }
     if (!current) {
@@ -621,7 +623,10 @@ router.post(
       .limit(1)
       .maybeSingle();
     if (claimErr) {
-      logger.error({ err: claimErr.message, claimId: idParsed.data.claimId }, "insurance_claims.lines.create: claim lookup failed");
+      logger.error(
+        { err: claimErr.message, claimId: idParsed.data.claimId },
+        "insurance_claims.lines.create: claim lookup failed",
+      );
       throw claimErr;
     }
     if (!claim) {
@@ -708,7 +713,10 @@ router.patch(
       .limit(1)
       .maybeSingle();
     if (existingErr) {
-      logger.error({ err: existingErr.message, lineId: idParsed.data.lineId }, "insurance_claims.lines.patch: line lookup failed");
+      logger.error(
+        { err: existingErr.message, lineId: idParsed.data.lineId },
+        "insurance_claims.lines.patch: line lookup failed",
+      );
       throw existingErr;
     }
     if (!existing) {
@@ -792,7 +800,10 @@ router.post(
       .limit(1)
       .maybeSingle();
     if (claimErr) {
-      logger.error({ err: claimErr.message, claimId: idParsed.data.claimId }, "insurance_claims.events.create: claim lookup failed");
+      logger.error(
+        { err: claimErr.message, claimId: idParsed.data.claimId },
+        "insurance_claims.events.create: claim lookup failed",
+      );
       throw claimErr;
     }
     if (!claim) {
@@ -902,8 +913,7 @@ router.post(
         } catch (sendErr) {
           logger.warn(
             {
-              err:
-                sendErr instanceof Error ? sendErr.message : String(sendErr),
+              err: sendErr instanceof Error ? sendErr.message : String(sendErr),
               eventId: event.id,
             },
             "eob_explainer: send threw (non-fatal)",

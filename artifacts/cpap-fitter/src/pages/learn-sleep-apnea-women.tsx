@@ -142,11 +142,11 @@ export function LearnSleepApneaWomen() {
         </div>
         <p className="text-muted-foreground leading-relaxed mb-5">
           The classic OSA symptom triad — loud snoring, witnessed apneas,
-          daytime sleepiness — was characterized in male-dominated study
-          cohorts in the 1980s and 90s. Women express the same underlying
-          disease through a different symptom mix. When a primary care
-          provider screens for &ldquo;the snorer who falls asleep at the
-          wheel,&rdquo; women routinely don&apos;t fit that pattern.
+          daytime sleepiness — was characterized in male-dominated study cohorts
+          in the 1980s and 90s. Women express the same underlying disease
+          through a different symptom mix. When a primary care provider screens
+          for &ldquo;the snorer who falls asleep at the wheel,&rdquo; women
+          routinely don&apos;t fit that pattern.
         </p>
 
         <div className="glass-card rounded-2xl p-2 overflow-hidden">
@@ -164,10 +164,7 @@ export function LearnSleepApneaWomen() {
               </thead>
               <tbody>
                 {symptomComparison.map((row) => (
-                  <tr
-                    key={row.women}
-                    className="border-t border-border/30"
-                  >
+                  <tr key={row.women} className="border-t border-border/30">
                     <td className="p-4 text-sm text-foreground/85 bg-[hsl(var(--penn-gold-soft))]/15">
                       {row.women}
                     </td>
@@ -193,9 +190,9 @@ export function LearnSleepApneaWomen() {
           </h2>
         </div>
         <p className="text-muted-foreground leading-relaxed mb-5">
-          Female sex hormones are protective against airway collapse. The
-          loss of that protection — across menopause especially — is what
-          drives women&apos;s OSA prevalence toward male rates in mid-life.
+          Female sex hormones are protective against airway collapse. The loss
+          of that protection — across menopause especially — is what drives
+          women&apos;s OSA prevalence toward male rates in mid-life.
         </p>
 
         <div className="space-y-4">
@@ -238,16 +235,16 @@ export function LearnSleepApneaWomen() {
               </div>
               <p className="text-sm text-foreground/85 leading-relaxed mb-3">
                 OSA in pregnancy is increasingly recognized as a meaningful
-                obstetric risk factor. New-onset snoring, witnessed pauses,
-                or pronounced daytime sleepiness in the second or third
-                trimester are worth raising with your OB — especially if
-                you&apos;re also being monitored for gestational hypertension
-                or pre-existing diabetes.
+                obstetric risk factor. New-onset snoring, witnessed pauses, or
+                pronounced daytime sleepiness in the second or third trimester
+                are worth raising with your OB — especially if you&apos;re also
+                being monitored for gestational hypertension or pre-existing
+                diabetes.
               </p>
               <p className="text-sm text-foreground/85 leading-relaxed">
                 CPAP is safe in pregnancy and used routinely when OSA is
-                diagnosed. The therapy itself doesn&apos;t cross the
-                placenta — it just helps you breathe.
+                diagnosed. The therapy itself doesn&apos;t cross the placenta —
+                it just helps you breathe.
               </p>
             </div>
           </div>
@@ -312,8 +309,8 @@ export function LearnSleepApneaWomen() {
               Sleep apnea &amp; mental health
             </h3>
             <p className="text-sm text-muted-foreground leading-relaxed">
-              The overlap with depression, anxiety, and the brain-fog
-              symptom cluster.
+              The overlap with depression, anxiety, and the brain-fog symptom
+              cluster.
             </p>
           </div>
           <ArrowRight className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors mt-1" />
@@ -356,9 +353,9 @@ export function LearnSleepApneaWomen() {
       </div>
 
       <p className="text-xs text-muted-foreground/80 leading-relaxed mt-12 max-w-2xl mx-auto text-center">
-        Educational content only — not medical advice or a diagnosis.
-        Pregnancy, perimenopause, and hormonal changes all interact with
-        sleep in ways your physician should evaluate individually.
+        Educational content only — not medical advice or a diagnosis. Pregnancy,
+        perimenopause, and hormonal changes all interact with sleep in ways your
+        physician should evaluate individually.
       </p>
     </div>
   );

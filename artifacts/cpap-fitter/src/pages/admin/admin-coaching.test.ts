@@ -11,10 +11,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const SRC = readFileSync(
-  path.join(__dirname, "admin-coaching.tsx"),
-  "utf8",
-);
+const SRC = readFileSync(path.join(__dirname, "admin-coaching.tsx"), "utf8");
 
 // ---------------------------------------------------------------------------
 // a11y: aria-labels in NewPlanCard

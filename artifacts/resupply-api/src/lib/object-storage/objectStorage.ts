@@ -88,7 +88,9 @@ async function readObjectMetadata(
   if (error || !entry) {
     throw new ObjectNotFoundError();
   }
-  const md = (entry.metadata as { size?: number | string; mimetype?: string } | null) ?? null;
+  const md =
+    (entry.metadata as { size?: number | string; mimetype?: string } | null) ??
+    null;
   const sizeRaw = md?.size;
   let size = 0;
   if (typeof sizeRaw === "number" && Number.isFinite(sizeRaw)) {
@@ -108,11 +110,12 @@ async function deleteObject(
   opts: { ignoreNotFound?: boolean } = {},
 ): Promise<void> {
   const supabase = getSupabaseServiceRoleClient();
-  const { error } = await supabase.storage
-    .from(obj.bucket)
-    .remove([obj.path]);
+  const { error } = await supabase.storage.from(obj.bucket).remove([obj.path]);
   if (error) {
-    if (opts.ignoreNotFound && /not found|does not exist/i.test(error.message)) {
+    if (
+      opts.ignoreNotFound &&
+      /not found|does not exist/i.test(error.message)
+    ) {
       return;
     }
     throw new Error(

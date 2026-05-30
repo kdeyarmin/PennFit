@@ -16,7 +16,8 @@ import {
 import { logger } from "../../lib/logger";
 import { requireAdmin } from "../../middlewares/requireAdmin";
 
-type FrequencyRulesUpdate = Database["resupply"]["Tables"]["frequency_rules"]["Update"];
+type FrequencyRulesUpdate =
+  Database["resupply"]["Tables"]["frequency_rules"]["Update"];
 
 // camelCase request keys → snake_case DB columns. Keeping the body
 // shape the same as `create.ts` so the frontend doesn't need to know
@@ -124,10 +125,7 @@ router.patch("/rules/:id", requireAdmin, async (req, res) => {
   // partial picture from the request body, so we resolve against the
   // existing row.
   const supabase = getSupabaseServiceRoleClient();
-  if (
-    "minTenureDays" in body ||
-    "maxTenureDays" in body
-  ) {
+  if ("minTenureDays" in body || "maxTenureDays" in body) {
     const { data: existing } = await supabase
       .schema("resupply")
       .from("frequency_rules")
