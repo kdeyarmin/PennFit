@@ -83,10 +83,10 @@ Re-running the drift check afterward: 33/33 present, 0 missing.
 Two Bucket-A-shaped columns were **deliberately excluded** from 0178:
 
 \* **`audit_log.signature / chain_seq / prev_signature / archived_at`** —
-flagged by the heuristic but **intentionally absent**: migration 0156 retired
-audit-log tamper-evidence (see `CLAUDE.md` "No HIPAA/DMEPOS/ACHC compliance
-machinery") and current code has **0** references to them. Re-adding would
-resurrect dead schema.
+flagged by the heuristic but **intentionally absent**: current code has **0**
+references to these audit tamper/archive columns, and migration 0156 retired the
+broader compliance machinery while retaining `audit_log` itself. Re-adding them
+would resurrect dead schema.
 
 \* **`prescriptions.provider_id`** — it is a foreign key to `resupply.providers`,
 which is a Bucket B (entirely-absent) table. It cannot be added until
