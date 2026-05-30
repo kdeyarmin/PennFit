@@ -8,14 +8,22 @@
 //   buyer doesn't need. Cards in the cart are public price IDs —
 //   no PHI, no payment data; localStorage is fine.
 //
-// Cross-tab sync:
-//   The `storage` event fires on OTHER tabs when a tab writes to
-//   localStorage. We listen for it so opening the cart in a second
-//   tab shows the same items the first tab is editing. We do NOT
-//   broadcast on same-tab updates — those flow via React state.
+// Why a shared module-level store (not per-component useState):
+//   useCart() is read by MANY components at once — the always-mounted
+//   header MiniCart, the cart page, every product card, the quick-view
+//   dialog, and the signed-in snapshot sync. A plain `useState` inside
+//   the hook gives each of those an ISOLATED copy of the cart, so
+//   "Add to cart" in one component never re-renders the others — the
+//   header badge stayed empty even though the item was persisted. The
+//   browser `storage` event can't bridge them either: it fires only in
+//   OTHER tabs, never the tab that wrote the value. The fix is a single
+//   module-level store read through useSyncExternalStore: every
+//   consumer shares one snapshot and re-renders on any mutation, in the
+//   same tab. localStorage remains the durable backing store, and the
+//   `storage` event still syncs across tabs (handled once, below).
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { useToast } from "@/hooks/use-toast";
+import { useEffect, useSyncExternalStore } from "react";
+import { toast } from "@/hooks/use-toast";
 import { track } from "@/lib/track";
 
 const STORAGE_KEY = "pennpaps_cart_v1";
@@ -155,6 +163,202 @@ function writeStorage(items: CartItem[]): void {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Module-level store — the single source of truth shared by every
+// useCart() consumer. `state` is a stable reference that only changes
+// (to a brand-new array) on a mutation, so useSyncExternalStore's
+// getSnapshot can hand it back without tripping the "snapshot keeps
+// changing" guard.
+// ---------------------------------------------------------------------------
+
+// Initialised once, eagerly, at module load. Reading localStorage here
+// (rather than lazily inside getSnapshot) keeps getSnapshot pure and
+// side-effect-free during render.
+const initial = readStorage();
+let state: CartItem[] = initial.items;
+
+// Drops detected at load time (corrupted / mixed-currency rows). Surfaced
+// once, from the first mounted consumer's effect — see useCart below.
+let pendingDroppedCount = initial.droppedCount;
+
+// Stable empty reference for the SSR/non-browser snapshot. Returning a
+// fresh [] each call would make useSyncExternalStore loop.
+const EMPTY: CartItem[] = [];
+
+const listeners = new Set<() => void>();
+
+function emit(): void {
+  for (const listener of listeners) listener();
+}
+
+/** Apply a mutation: swap in the new array, persist, notify. */
+function commit(next: CartItem[]): void {
+  state = next;
+  writeStorage(next);
+  emit();
+}
+
+function notifyDropped(count: number): void {
+  if (count <= 0) return;
+  toast({
+    title: "Some cart items were removed",
+    description:
+      "Some cart items were removed because they couldn't be added to your cart.",
+  });
+  track("cart_items_dropped", { count });
+}
+
+// Cross-tab sync: when ANOTHER tab writes the cart, refresh from
+// storage. We adopt the new array directly (no writeStorage — it's
+// already in localStorage) and notify all in-tab consumers. Attached
+// once, on the first subscribe, and left for the app's lifetime.
+let storageListenerAttached = false;
+function onStorageEvent(e: StorageEvent): void {
+  if (e.key !== STORAGE_KEY) return;
+  const { items, droppedCount } = readStorage();
+  state = items;
+  emit();
+  notifyDropped(droppedCount);
+}
+
+function subscribe(listener: () => void): () => void {
+  listeners.add(listener);
+  if (!storageListenerAttached && typeof window !== "undefined") {
+    storageListenerAttached = true;
+    window.addEventListener("storage", onStorageEvent);
+  }
+  return () => {
+    listeners.delete(listener);
+  };
+}
+
+function getSnapshot(): CartItem[] {
+  return state;
+}
+
+function getServerSnapshot(): CartItem[] {
+  return EMPTY;
+}
+
+type AddResult =
+  | { ok: true }
+  | { ok: false; reason: "out_of_stock" | "currency_mismatch" };
+
+function addItem(item: Omit<CartItem, "quantity">, quantity = 1): AddResult {
+  // Defense in depth: the storefront cards / detail page should
+  // already hide the Add button at zero stock, but inventory can
+  // change between page load and click. Subscription mode is exempt
+  // — auto-ship inventory is replenished separately.
+  if (
+    item.mode !== "subscription" &&
+    typeof item.stockCount === "number" &&
+    item.stockCount <= 0
+  ) {
+    return { ok: false, reason: "out_of_stock" };
+  }
+  // Refuse to mix currencies inside one cart. totalCents sums
+  // unitAmountCents across all items regardless of currency, so a
+  // single non-USD price slipping into the catalog would silently
+  // produce a wrong checkout total. v1 is USD-only by policy; surface
+  // a typed reason instead of letting the bug through. `state` is
+  // always the freshest cart, so no stale-closure dance is needed.
+  if (state.some((i) => i.currency !== item.currency)) {
+    return { ok: false, reason: "currency_mismatch" };
+  }
+  const idx = state.findIndex((i) => i.priceId === item.priceId);
+  const next =
+    idx === -1
+      ? [...state, { ...item, quantity }]
+      : state.map((i, j) =>
+          j === idx
+            ? { ...i, quantity: Math.min(20, i.quantity + quantity) }
+            : i,
+        );
+  commit(next);
+  return { ok: true };
+}
+
+function setQuantity(priceId: string, quantity: number): void {
+  // Clamp + integerize. Math.floor guards against any caller that
+  // forwards a fractional input (e.g. a number-input change handler
+  // that briefly emits 1.5 mid-keystroke) — Stripe rejects fractional
+  // line-item quantities, so it's worth catching here on entry rather
+  // than failing at checkout.
+  const safeQty = Math.floor(
+    Math.max(0, Math.min(20, Number.isFinite(quantity) ? quantity : 0)),
+  );
+  const next = state
+    .map((i) => (i.priceId === priceId ? { ...i, quantity: safeQty } : i))
+    .filter((i) => i.quantity > 0);
+  commit(next);
+}
+
+// Toggle one cart line between one-time and subscription. We only
+// honor "subscription" if the line actually carries a
+// recurringPriceId — silently coercing a non-recurring SKU back to
+// "one_time" keeps the checkout payload always valid.
+function setItemMode(priceId: string, mode: "one_time" | "subscription"): void {
+  const next: CartItem[] = state.map((i) => {
+    if (i.priceId !== priceId) return i;
+    const nextMode: CartItem["mode"] =
+      mode === "subscription" && i.recurringPriceId
+        ? "subscription"
+        : "one_time";
+    return { ...i, mode: nextMode };
+  });
+  commit(next);
+}
+
+function removeItem(priceId: string): void {
+  commit(state.filter((i) => i.priceId !== priceId));
+}
+
+// Atomic swap of cart contents — used by "Buy this again" on the
+// account page to drop a past order's line items into the cart in one
+// go. Doing it as N sequential addItem() calls would trigger N
+// re-renders AND emit N cross-tab `storage` events. Defensively
+// dedupes by priceId (a malformed past order with two rows for the
+// same SKU would otherwise become a phantom doubled quantity).
+function replaceItems(next: CartItem[]): void {
+  const dedup = new Map<string, CartItem>();
+  for (const it of next) {
+    const existing = dedup.get(it.priceId);
+    if (existing) {
+      existing.quantity = Math.min(20, existing.quantity + it.quantity);
+    } else {
+      dedup.set(it.priceId, {
+        ...it,
+        quantity: Math.max(1, Math.min(20, it.quantity)),
+      });
+    }
+  }
+  commit(Array.from(dedup.values()));
+}
+
+function clear(): void {
+  commit([]);
+}
+
+/**
+ * Vanilla (non-React) handle on the shared cart store. Exposed so
+ * imperative callers outside the React tree can read and mutate the
+ * cart — e.g. sign-out clears it from `lib/identity.tsx` so a shared
+ * device doesn't bleed one user's cart into the next session — and so
+ * the store's behaviour is unit-testable without a DOM. React
+ * components should use the `useCart()` hook instead.
+ */
+export const cartStore = {
+  subscribe,
+  getSnapshot,
+  getServerSnapshot,
+  addItem,
+  setQuantity,
+  setItemMode,
+  removeItem,
+  replaceItems,
+  clear,
+};
+
 export function useCart(): {
   items: CartItem[];
   count: number;
@@ -167,203 +371,27 @@ export function useCart(): {
    * the return value remain valid — a successful add is still a
    * silent state mutation.
    */
-  addItem: (
-    item: Omit<CartItem, "quantity">,
-    quantity?: number,
-  ) =>
-    | { ok: true }
-    | { ok: false; reason: "out_of_stock" | "currency_mismatch" };
+  addItem: (item: Omit<CartItem, "quantity">, quantity?: number) => AddResult;
   setQuantity: (priceId: string, quantity: number) => void;
   setItemMode: (priceId: string, mode: "one_time" | "subscription") => void;
   removeItem: (priceId: string) => void;
   replaceItems: (items: CartItem[]) => void;
   clear: () => void;
 } {
-  const { toast } = useToast();
+  const items = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
 
-  // Capture the initial dropped count in a ref during the lazy state
-  // initializer so we can notify after mount without calling readStorage twice.
-  const initialDroppedRef = useRef(0);
-  const [items, setItems] = useState<CartItem[]>(() => {
-    const { items: stored, droppedCount } = readStorage();
-    initialDroppedRef.current = droppedCount;
-    return stored;
-  });
-
-  // Notify the user if any items were silently filtered on load.
-  // Reset the ref to 0 after firing so React 18 StrictMode's
-  // double-mount doesn't replay the toast twice on every dev page
-  // load — same behavior in production where the mount fires once,
-  // but quieter in dev.
+  // Surface any items dropped at load time (corrupted / mixed-currency
+  // rows). Drain the shared counter so exactly one consumer fires the
+  // toast — not once per mounted useCart() — and so React 19
+  // StrictMode's double-mount doesn't replay it. Cross-tab drops are
+  // surfaced separately, from onStorageEvent.
   useEffect(() => {
-    if (initialDroppedRef.current > 0) {
-      const count = initialDroppedRef.current;
-      initialDroppedRef.current = 0;
-      toast({
-        title: "Some cart items were removed",
-        description:
-          "Some cart items were removed because they couldn't be added to your cart.",
-      });
-      track("cart_items_dropped", { count });
+    if (pendingDroppedCount > 0) {
+      const count = pendingDroppedCount;
+      pendingDroppedCount = 0;
+      notifyDropped(count);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  // Cross-tab sync: refresh from storage when another tab writes.
-  useEffect(() => {
-    function onStorage(e: StorageEvent) {
-      if (e.key === STORAGE_KEY) {
-        const { items: next, droppedCount } = readStorage();
-        setItems(next);
-        if (droppedCount > 0) {
-          toast({
-            title: "Some cart items were removed",
-            description:
-              "Some cart items were removed because they couldn't be added to your cart.",
-          });
-          track("cart_items_dropped", { count: droppedCount });
-        }
-      }
-    }
-    window.addEventListener("storage", onStorage);
-    return () => window.removeEventListener("storage", onStorage);
-  }, [toast]);
-
-  const persist = useCallback((next: CartItem[]) => {
-    setItems(next);
-    writeStorage(next);
-  }, []);
-
-  const addItem = useCallback(
-    (item: Omit<CartItem, "quantity">, quantity = 1) => {
-      // Defense in depth: the storefront cards / detail page should
-      // already hide the Add button at zero stock, but inventory can
-      // change between page load and click. Subscription mode is
-      // exempt — auto-ship inventory is replenished separately
-      // (per the project lock note in the session plan).
-      if (
-        item.mode !== "subscription" &&
-        typeof item.stockCount === "number" &&
-        item.stockCount <= 0
-      ) {
-        return { ok: false as const, reason: "out_of_stock" as const };
-      }
-      // Refuse to mix currencies inside one cart. totalCents sums
-      // unitAmountCents across all items regardless of currency, so a
-      // single non-USD price slipping into the catalog would silently
-      // produce a wrong checkout total. v1 is USD-only by policy;
-      // surface a typed reason instead of silently letting the bug
-      // through if a future price lands on a different currency.
-      // Mismatch check uses the freshest items via the setter below.
-      let currencyMismatch = false;
-      setItems((current) => {
-        // Currency check uses the freshest `current` from React
-        // rather than a closure-captured snapshot. Refuse to add an
-        // item whose currency differs from any existing item.
-        if (current.some((i) => i.currency !== item.currency)) {
-          currencyMismatch = true;
-          return current;
-        }
-        const idx = current.findIndex((i) => i.priceId === item.priceId);
-        let next: CartItem[];
-        if (idx === -1) {
-          next = [...current, { ...item, quantity }];
-        } else {
-          next = current.map((i, j) =>
-            j === idx
-              ? { ...i, quantity: Math.min(20, i.quantity + quantity) }
-              : i,
-          );
-        }
-        writeStorage(next);
-        return next;
-      });
-      if (currencyMismatch) {
-        return { ok: false as const, reason: "currency_mismatch" as const };
-      }
-      return { ok: true as const };
-    },
-    [],
-  );
-
-  const setQuantity = useCallback((priceId: string, quantity: number) => {
-    // Clamp + integerize. Math.floor guards against any caller that
-    // forwards a fractional input (e.g. a number-input change handler
-    // that briefly emits 1.5 mid-keystroke) — Stripe rejects fractional
-    // line-item quantities, so it's worth catching here on entry rather
-    // than failing at checkout.
-    const safeQty = Math.floor(
-      Math.max(0, Math.min(20, Number.isFinite(quantity) ? quantity : 0)),
-    );
-    setItems((current) => {
-      const next = current
-        .map((i) => (i.priceId === priceId ? { ...i, quantity: safeQty } : i))
-        .filter((i) => i.quantity > 0);
-      writeStorage(next);
-      return next;
-    });
-  }, []);
-
-  // Toggle one cart line between one-time and subscription. We only
-  // honor "subscription" if the line actually carries a
-  // recurringPriceId — silently coercing a non-recurring SKU back to
-  // "one_time" keeps the checkout payload always valid.
-  const setItemMode = useCallback(
-    (priceId: string, mode: "one_time" | "subscription") => {
-      setItems((current) => {
-        const next: CartItem[] = current.map((i) => {
-          if (i.priceId !== priceId) return i;
-          const nextMode: CartItem["mode"] =
-            mode === "subscription" && i.recurringPriceId
-              ? "subscription"
-              : "one_time";
-          return { ...i, mode: nextMode };
-        });
-        writeStorage(next);
-        return next;
-      });
-    },
-    [],
-  );
-
-  const removeItem = useCallback((priceId: string) => {
-    setItems((current) => {
-      const next = current.filter((i) => i.priceId !== priceId);
-      writeStorage(next);
-      return next;
-    });
-  }, []);
-
-  // Atomic swap of cart contents — used by "Buy this again" on the
-  // account page to drop a past order's line items into the cart in
-  // one go. Doing it as N sequential addItem() calls would trigger N
-  // re-renders AND emit N cross-tab `storage` events, which other
-  // tabs would then re-read individually; one write keeps it sane.
-  // Defensively dedupes by priceId (a malformed past order with two
-  // rows for the same SKU would otherwise become a phantom doubled
-  // quantity in the cart).
-  const replaceItems = useCallback(
-    (next: CartItem[]) => {
-      const dedup = new Map<string, CartItem>();
-      for (const it of next) {
-        const existing = dedup.get(it.priceId);
-        if (existing) {
-          existing.quantity = Math.min(20, existing.quantity + it.quantity);
-        } else {
-          dedup.set(it.priceId, {
-            ...it,
-            quantity: Math.max(1, Math.min(20, it.quantity)),
-          });
-        }
-      }
-      persist(Array.from(dedup.values()));
-    },
-    [persist],
-  );
-
-  const clear = useCallback(() => {
-    persist([]);
-  }, [persist]);
 
   const totalCents = items.reduce(
     (sum, i) => sum + i.unitAmountCents * i.quantity,

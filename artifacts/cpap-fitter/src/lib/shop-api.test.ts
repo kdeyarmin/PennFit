@@ -378,24 +378,22 @@ describe("fetchShopProducts", () => {
     }
   });
 
-  // A 404 means the request never reached a live API process (the
-  // SPA host's history-fallback answers a JSON request with 404 in a
-  // misconfigured deploy). Retrying won't help, so fetchShopProducts
-  // degrades to the soft "unavailable" card rather than throwing a
-  // hard error at the patient — see the rationale in shop-api.ts and
-  // the "keep the public site + shop up" change (787a9eb). 5xx still
-  // throws so the caller's one-shot retry can ride out a transient
-  // server blip (covered by the 500 case below).
-  test("returns unavailable on 404 instead of throwing", async () => {
+  // A 404 means the JSON API call never reached a live API process: in a
+  // mis-routed deploy `/resupply-api/*` falls through to the SPA host's
+  // history fallback, which 404s a JSON `Accept` request. Retrying won't
+  // help, so fetchShopProducts degrades to the soft "unavailable" card
+  // (same as 503) rather than throwing an error at the patient. This was
+  // deliberately restored after an earlier "simplify" pass made it throw;
+  // keep this guard so the resilience isn't silently removed again.
+  test("degrades a 404 to unavailable instead of throwing", async () => {
     fetchMock.mockResolvedValue({
       ok: false,
       status: 404,
       json: async () => ({}),
     });
 
-    await expect(fetchShopProducts()).resolves.toMatchObject({
-      unavailable: true,
-    });
+    const result = await fetchShopProducts();
+    expect(result).toMatchObject({ unavailable: true });
   });
 
   test("throws on 500", async () => {
@@ -408,12 +406,12 @@ describe("fetchShopProducts", () => {
     await expect(fetchShopProducts()).rejects.toThrow(/500/);
   });
 
-  // A 200 whose body is the SPA HTML shell (some static hosts answer
-  // unknown paths with index.html and a 200) makes res.json() throw a
-  // SyntaxError. fetchShopProducts catches it and degrades to the soft
-  // "unavailable" card rather than surfacing the parse error — same
-  // rationale as the 404 path above.
-  test("returns unavailable when a 200 body is not JSON", async () => {
+  // A 200 whose body isn't JSON is the same mis-routed-deploy symptom as
+  // the 404 above: some static hosts answer an unknown path with the SPA
+  // HTML shell and a 200. fetchShopProducts guards the res.json() parse
+  // and degrades to the soft "unavailable" card rather than letting a
+  // SyntaxError escape to the patient.
+  test("degrades a non-JSON 200 body to unavailable instead of throwing", async () => {
     fetchMock.mockResolvedValue({
       ok: true,
       status: 200,
@@ -422,9 +420,8 @@ describe("fetchShopProducts", () => {
       },
     });
 
-    await expect(fetchShopProducts()).resolves.toMatchObject({
-      unavailable: true,
-    });
+    const result = await fetchShopProducts();
+    expect(result).toMatchObject({ unavailable: true });
   });
 
   test("defaults previewMode to false when the field is absent", async () => {
