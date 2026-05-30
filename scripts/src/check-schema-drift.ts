@@ -67,7 +67,8 @@ const INTENTIONAL_ABSENCES: Record<string, string> = {
   // HIPAA/DMEPOS/ACHC compliance machinery"). Current code has zero refs.
   "resupply.audit_log.signature": "retired by 0156 (audit tamper-evidence)",
   "resupply.audit_log.chain_seq": "retired by 0156 (audit tamper-evidence)",
-  "resupply.audit_log.prev_signature": "retired by 0156 (audit tamper-evidence)",
+  "resupply.audit_log.prev_signature":
+    "retired by 0156 (audit tamper-evidence)",
   "resupply.audit_log.archived_at": "retired by 0156 (audit tamper-evidence)",
 };
 
@@ -125,8 +126,7 @@ function parseMigrations(dir: string): ParseResult {
     /DROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?("?\w+"?\s*\.\s*"?\w+"?)/gi;
   const reAddCol =
     /ADD\s+COLUMN\s+(?:IF\s+NOT\s+EXISTS\s+)?"?([a-zA-Z_]\w*)"?/gi;
-  const reDropCol =
-    /DROP\s+COLUMN\s+(?:IF\s+EXISTS\s+)?"?([a-zA-Z_]\w*)"?/gi;
+  const reDropCol = /DROP\s+COLUMN\s+(?:IF\s+EXISTS\s+)?"?([a-zA-Z_]\w*)"?/gi;
   const reRenameCol =
     /RENAME\s+COLUMN\s+"?([a-zA-Z_]\w*)"?\s+TO\s+"?([a-zA-Z_]\w*)"?/gi;
   const reRenameTbl = /RENAME\s+TO\s+"?([a-zA-Z_]\w*)"?/i;
@@ -328,10 +328,7 @@ function main(): void {
         }
         if (report.missingTables.length) {
           process.stdout.write(
-            paint(
-              RED,
-              `  MISSING TABLES (${report.missingTables.length}):\n`,
-            ),
+            paint(RED, `  MISSING TABLES (${report.missingTables.length}):\n`),
           );
           for (const t of report.missingTables) {
             process.stdout.write(`    - ${t}\n`);
