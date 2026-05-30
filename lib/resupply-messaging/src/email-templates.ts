@@ -250,8 +250,10 @@ export function renderClickLanding(input: RenderClickLandingInput): string {
 export interface RenderClickConfirmationInput {
   /** Practice display name. Already admin-vetted. */
   practiceName: string;
-  /** What the patient just did. */
-  action: "confirm" | "edit" | "stop";
+  /** What the patient just did. `review` is the entitlement-guard
+   *  outcome: the reorder was received but isn't yet payable under the
+   *  replacement schedule, so a CSR will follow up before it ships. */
+  action: "confirm" | "edit" | "stop" | "review";
 }
 
 /**
@@ -264,18 +266,22 @@ export function renderClickConfirmation(
   input: RenderClickConfirmationInput,
 ): string {
   const safePractice = escapeHtml(input.practiceName);
-  const message =
-    input.action === "confirm"
-      ? "You're all set — your refill is on the way. We'll text or email tracking the moment it ships."
-      : input.action === "edit"
-        ? "Got it — someone from our team will be in touch about the address change shortly."
-        : "You're unsubscribed from CPAP refill reminders for now — no more emails from us on this. Reply to a past email any time and we'll turn them back on.";
-  const heading =
-    input.action === "confirm"
-      ? "Order confirmed"
-      : input.action === "edit"
-        ? "We'll be in touch"
-        : "Reminders paused";
+  const MESSAGES: Record<RenderClickConfirmationInput["action"], string> = {
+    confirm:
+      "You're all set — your refill is on the way. We'll text or email tracking the moment it ships.",
+    edit: "Got it — someone from our team will be in touch about the address change shortly.",
+    stop: "You're unsubscribed from CPAP refill reminders for now — no more emails from us on this. Reply to a past email any time and we'll turn them back on.",
+    review:
+      "Thanks! It looks like it's a little early to reship this item under your plan, so someone from our team will review and follow up before anything ships.",
+  };
+  const HEADINGS: Record<RenderClickConfirmationInput["action"], string> = {
+    confirm: "Order confirmed",
+    edit: "We'll be in touch",
+    stop: "Reminders paused",
+    review: "We'll be in touch",
+  };
+  const message = MESSAGES[input.action];
+  const heading = HEADINGS[input.action];
 
   return `<!DOCTYPE html>
 <html lang="en">

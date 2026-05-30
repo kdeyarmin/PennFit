@@ -303,6 +303,41 @@ router.post("/email/click", emailClickLimiter, async (req, res) => {
             );
           return;
         }
+        if (result.status === "not_eligible") {
+          // Entitlement guard blocked the reship (too soon / over the
+          // per-period cap). order-flow already raised a CSR alert and
+          // left the episode pending. Render a truthful "we'll review"
+          // page (200, not an error) and audit the block.
+          await safeAudit({
+            action: "messaging.order.blocked_not_eligible",
+            adminEmail: null,
+            adminUserId: null,
+            targetTable: "episodes",
+            targetId: result.episodeId,
+            metadata: {
+              channel: "email",
+              conversation_id: conversationId,
+              patient_id: result.patientId,
+              episode_id: result.episodeId,
+              entitlement_status: result.entitlement.status,
+              hcpcs_code: result.entitlement.hcpcsCode,
+              days_until_eligible: result.entitlement.daysUntilEligible,
+              via: "email_link",
+            },
+            ip: req.ip ?? null,
+            userAgent: req.get("user-agent") ?? null,
+          });
+          res
+            .status(200)
+            .type("text/html")
+            .send(
+              renderClickConfirmation({
+                practiceName: cfg.practiceName,
+                action: "review",
+              }),
+            );
+          return;
+        }
         res
           .status(400)
           .type("text/html")

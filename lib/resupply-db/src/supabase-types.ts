@@ -123,6 +123,61 @@ export interface Database {
   };
   resupply: {
     Tables: {
+      // Migration 0171: canonical HCPCS reference catalog for PAP
+      // resupply. min_interval_days + (max_quantity_per_period /
+      // period_days) express the Medicare LCD L33718 replacement
+      // frequency structurally for the entitlement engine.
+      hcpcs_codes: {
+        Row: {
+          code: string;
+          short_description: string;
+          category: string;
+          min_interval_days: number;
+          max_quantity_per_period: number;
+          period_days: number;
+          active: boolean;
+          notes: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          code: string;
+          short_description: string;
+          category: string;
+          min_interval_days: number;
+          max_quantity_per_period: number;
+          period_days: number;
+          active?: boolean;
+          notes?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<
+          Database["resupply"]["Tables"]["hcpcs_codes"]["Insert"]
+        >;
+        Relationships: [];
+      };
+      // Migration 0171: SKU-prefix → HCPCS bridge. Maps the
+      // uppercase-dashed supply-family prefix the resupply engine
+      // matches on (MASK, CUSHION, ...) to a representative HCPCS.
+      sku_hcpcs_map: {
+        Row: {
+          sku_prefix: string;
+          hcpcs_code: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          sku_prefix: string;
+          hcpcs_code: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<
+          Database["resupply"]["Tables"]["sku_hcpcs_map"]["Insert"]
+        >;
+        Relationships: [];
+      };
       // Migration 0165: per-object ACL policy for objects stored in
       // Supabase Storage. The policy JSON mirrors the in-memory
       // ObjectAclPolicy shape (`{ owner, visibility, aclRules }`)
