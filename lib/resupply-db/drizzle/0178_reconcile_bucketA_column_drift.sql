@@ -17,8 +17,10 @@
 --
 -- DELIBERATELY EXCLUDED (do not add here):
 --   * resupply.audit_log.{signature,chain_seq,prev_signature,archived_at} —
---     audit-log tamper-evidence was retired by migration 0156; current code
---     does not reference these. Adding them would re-introduce dead schema.
+--     these audit-log tamper-evidence columns are absent on prod because the
+--     migrations that introduced them were never applied; the tamper-evidence
+--     feature was since retired (compliance machinery removed) and current
+--     code has zero references, so they are intentionally NOT restored here.
 --   * resupply.prescriptions.provider_id — FK to resupply.providers, which
 --     does NOT exist on prod (Bucket B). Must be applied together with the
 --     providers table in the separate Bucket-B remediation, or it errors.
@@ -57,6 +59,13 @@ ALTER TABLE "resupply"."patient_documents"
   ADD COLUMN IF NOT EXISTS "destroyed_by_admin_id" text
     REFERENCES "resupply"."admin_users"("id") ON DELETE SET NULL;
 
+-- companion partial index for the nightly retention sweep (from 0089)
+CREATE INDEX IF NOT EXISTS "patient_documents_retention_sweep_idx"
+  ON "resupply"."patient_documents" ("retention_until_at")
+  WHERE retention_marked_at IS NULL
+    AND destroyed_at IS NULL
+    AND legal_hold = false;
+
 -- patients lifecycle email / timezone --------------------------------------
 ALTER TABLE "resupply"."patients"
   ADD COLUMN IF NOT EXISTS "timezone" text NOT NULL DEFAULT 'America/New_York';
@@ -93,6 +102,19 @@ ALTER TABLE "resupply"."shop_customers"
 ALTER TABLE "resupply"."shop_customers"
   ADD COLUMN IF NOT EXISTS "membership_stripe_subscription_id" varchar(80);
 
+-- companion partial indexes for shop_customers worker hot paths
+-- (caregiver from 0123, winback from 0122, membership from 0134 wave 2)
+CREATE INDEX IF NOT EXISTS "shop_customers_caregiver_active_idx"
+  ON "resupply"."shop_customers" ("customer_id")
+  WHERE "caregiver_consent_at" IS NOT NULL
+    AND "caregiver_revoked_at" IS NULL;
+CREATE INDEX IF NOT EXISTS "shop_customers_winback_eligible_idx"
+  ON "resupply"."shop_customers" ("winback_sent_at" NULLS FIRST);
+CREATE INDEX IF NOT EXISTS "shop_customers_membership_active_idx"
+  ON "resupply"."shop_customers" ("membership_tier", "membership_renews_at")
+  WHERE "membership_tier" IS NOT NULL
+    AND "membership_tier" <> 'payg';
+
 -- shop_orders proof-of-delivery + refunds + delivery follow-up -------------
 ALTER TABLE "resupply"."shop_orders"
   ADD COLUMN IF NOT EXISTS "pod_object_key" text;
@@ -104,6 +126,14 @@ ALTER TABLE "resupply"."shop_orders"
   ADD COLUMN IF NOT EXISTS "amount_refunded_cents" bigint NOT NULL DEFAULT 0;
 ALTER TABLE "resupply"."shop_orders"
   ADD COLUMN IF NOT EXISTS "delivery_followup_sent_at" timestamp with time zone;
+
+-- companion partial index for the delivery-followup dispatcher (from 0119).
+-- delivered_at predates this reconcile (base shop_orders table), so the
+-- predicate column already exists on every target DB.
+CREATE INDEX IF NOT EXISTS "shop_orders_delivery_followup_due_idx"
+  ON "resupply"."shop_orders" ("delivered_at" DESC)
+  WHERE "delivered_at" IS NOT NULL
+    AND "delivery_followup_sent_at" IS NULL;
 
 -- shop_returns refund retry bookkeeping ------------------------------------
 ALTER TABLE "resupply"."shop_returns"
