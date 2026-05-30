@@ -36,17 +36,17 @@ they all do, distilled:
 
 ### Core capabilities
 
-| Capability | What it does |
-| --- | --- |
+| Capability                                      | What it does                                                                                                                                                                                                                                                                                                                                                                |
+| ----------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Eligibility / replacement-schedule tracking** | Knows, per item and per payer, when a patient is next eligible (e.g. Medicare LCD: disposable filters 2×/mo, cushions 1–2×/mo, mask & tubing every 3 mo, headgear/chamber/non-disposable filter every 6 mo). Compliance checks (eligibility, utilization, documentation, authorization) typically begin **~28 days before** an order is due so exceptions get worked early. |
-| **Multi-channel outreach** | Reaches patients via the channel they'll answer: **SMS/text, email, IVR/automated voice, live call, mobile app, web portal**. Multi-channel beats single-channel decisively on connection rate. |
-| **Frictionless self-service confirmation** | The signature feature: a **secure "magic link"** via text/email — no app download, no password, no portal login. Patient sees their due items (often **with product images**) and taps to confirm. NikoHealth reports this lifted confirmation response from **5% → 20%**. |
-| **Order generation → fulfillment** | Confirmed orders flow straight into a fulfillment queue, deplete inventory, and auto-generate the invoice/claim — "the patient orders, it ships, it gets billed, without a human touch." |
-| **Real-time eligibility & benefits (270/271)** | Verifies active coverage, deductible/OOP, copay, PA-required flags before billing. Cuts eligibility denials **90–95%**; eligibility errors are ~22% of all DME denials. |
-| **Compliance / adherence monitoring** | Pulls device usage (ResMed AirView, Philips Care Orchestrator, etc.) to confirm the **Medicare 4hr-night / 70%-of-nights-in-30-days** adherence rule, and flags non-adherent patients. |
-| **Documentation & authorization** | Stores Rx/CMN/DWO, prior auths, sleep studies; tracks refresh cycles so claims are audit-ready. |
-| **Work queues + exception handling** | Staff get a **prioritized worklist** of only the orders that *need* a human (failed contact, eligibility miss, doc gap) — the routine 80% is automated. |
-| **Analytics / benchmarking** | Connection rate, conversion/order rate, items-per-order, average order value, orders-per-patient-per-year, retention, denial rate, DSO. |
+| **Multi-channel outreach**                      | Reaches patients via the channel they'll answer: **SMS/text, email, IVR/automated voice, live call, mobile app, web portal**. Multi-channel beats single-channel decisively on connection rate.                                                                                                                                                                             |
+| **Frictionless self-service confirmation**      | The signature feature: a **secure "magic link"** via text/email — no app download, no password, no portal login. Patient sees their due items (often **with product images**) and taps to confirm. NikoHealth reports this lifted confirmation response from **5% → 20%**.                                                                                                  |
+| **Order generation → fulfillment**              | Confirmed orders flow straight into a fulfillment queue, deplete inventory, and auto-generate the invoice/claim — "the patient orders, it ships, it gets billed, without a human touch."                                                                                                                                                                                    |
+| **Real-time eligibility & benefits (270/271)**  | Verifies active coverage, deductible/OOP, copay, PA-required flags before billing. Cuts eligibility denials **90–95%**; eligibility errors are ~22% of all DME denials.                                                                                                                                                                                                     |
+| **Compliance / adherence monitoring**           | Pulls device usage (ResMed AirView, Philips Care Orchestrator, etc.) to confirm the **Medicare 4hr-night / 70%-of-nights-in-30-days** adherence rule, and flags non-adherent patients.                                                                                                                                                                                      |
+| **Documentation & authorization**               | Stores Rx/CMN/DWO, prior auths, sleep studies; tracks refresh cycles so claims are audit-ready.                                                                                                                                                                                                                                                                             |
+| **Work queues + exception handling**            | Staff get a **prioritized worklist** of only the orders that _need_ a human (failed contact, eligibility miss, doc gap) — the routine 80% is automated.                                                                                                                                                                                                                     |
+| **Analytics / benchmarking**                    | Connection rate, conversion/order rate, items-per-order, average order value, orders-per-patient-per-year, retention, denial rate, DSO.                                                                                                                                                                                                                                     |
 
 ### How it helps the **DME company** (the business case)
 
@@ -83,9 +83,9 @@ they all do, distilled:
 
 - **Adherence dashboard.** Device-cloud data surfaces who is
   non-adherent (low hours, high AHI, high leak) so RTs spend clinical
-  time where it matters instead of reviewing compliant patients.
+  time when it matters instead of reviewing compliant patients.
 - **Targeted intervention.** Early-warning flags (e.g. week-1 usage
-  <4 hr) let RTs coach mask-fit, pressure, and dry-mouth issues *before*
+  <4 hr) let RTs coach mask-fit, pressure, and dry-mouth issues _before_
   the patient quits or fails the Medicare 90-day window.
 - **Documentation is automatic**, so RTs aren't chasing paperwork to
   prove medical necessity.
@@ -111,7 +111,7 @@ ElevenLabs). Highlights mapped from the code:
 - **Multi-touch fitter "supply campaign"** (migrations 0151–0156): a
   real journey state machine on `fitter_leads`
   (`consent → completed → campaign_active → reorder_active →
-  final_call_pending → converted/expired`), with per-touch
+final_call_pending → converted/expired`), with per-touch
   open/click/engagement tracking, **hot-lead detection**, CSR
   contact/notes workflow, and a cold-skip optimizer. This is genuinely
   sophisticated lifecycle marketing.
@@ -137,16 +137,20 @@ ElevenLabs). Highlights mapped from the code:
 
 ### The deliberate simplification (important context)
 
-Migration **`0156_drop_compliance_machinery.sql`** dropped **all eleven**
-in-app HIPAA/DMEPOS/ACHC compliance domains (audit-log tamper chain, BAA
-inventory, OIG LEIE screening, HIPAA risk assessments, patient
-rights/disclosure logs, contingency drills, ACHC QAPI, DME ownership
-disclosure, staff training, grievances) **plus the `audit_log` table
-itself**. The `@workspace/resupply-audit` package is now a no-op stub.
-**Compliance is handled out of band by the business owner.** Likewise,
-column-level PHI encryption (0025) and the password pepper (#38) were
-removed. **Recommendations below respect this — they do not propose
-rebuilding any of it.**
+Migration **`0156_drop_compliance_machinery.sql`** dropped the backing
+tables for eleven in-app HIPAA/DMEPOS/ACHC compliance domains (the
+audit-log HMAC **tamper-evidence chain**, BAA inventory, OIG LEIE
+screening, HIPAA risk assessments, patient rights/disclosure logs,
+contingency drills, ACHC QAPI, DME ownership disclosure, staff training,
+…). It **deliberately RETAINED** the surfaces live code still
+reads/writes — notably the **`audit_log` table** (the admin audit trail
+is still active; only the HMAC tamper-evidence chain was removed),
+**`patient_grievances`** (the grievance intake form + admin queue are
+live), and `accreditation_documents`. The `@workspace/resupply-audit`
+package is now a no-op stub. **Compliance is otherwise handled out of
+band by the business owner.** Likewise, column-level PHI encryption
+(0025) and the password pepper (#38) were removed. **Recommendations
+below respect this — they do not propose rebuilding any of it.**
 
 ### Where PennFit is **scaffolded but the loop isn't closed**
 
@@ -170,7 +174,7 @@ The biggest opportunities aren't missing data models — they're missing
 5. **Storefront orders ↔ resupply fulfillment are two disconnected
    flows** — a `public.orders` storefront order does not create a
    `resupply.episodes`/`fulfillments` row, so CSRs reconcile two systems.
-6. **HCPCS codes live in `frequency_rules` *names*, not a mapping table** —
+6. **HCPCS codes live in `frequency_rules` _names_, not a mapping table** —
    so eligibility (HCPCS-keyed), catalog (Stripe IDs / `item_sku`
    strings), and quantity entitlement can't be joined.
 7. **No rich self-service confirmation page** — outreach is SMS
@@ -204,44 +208,44 @@ the **market rationale** (what it matches/beats) and **who it helps**.
 
 ### Tier 1 — Close the loop on what's already scaffolded (highest ROI)
 
-These are mostly *wiring*, not new architecture, and each unlocks
+These are mostly _wiring_, not new architecture, and each unlocks
 revenue or kills denials directly.
 
-| # | Recommendation | Why / market tie-in | Helps |
-| - | --- | --- | --- |
-| 1 | **Wire real-time eligibility (270/271)** end-to-end on the existing Office Ally SFTP rails; surface results in the existing worklist; daily refresh of active coverages. | Table-stakes for *every* competitor; cuts eligibility denials 90–95% (~22% of all DME denials). | DME (cash), CSR |
-| 2 | **Enforce eligibility at order/confirm time.** Before creating a fulfillment (SMS `YES`, storefront, CSR), consult the cached 270/271 + Medicare **Same-or-Similar** result; if not covered / PA-required, raise a CSR ticket + message the patient *before* shipping. | "Checks begin 28 days early so exceptions are worked." Catches misspelled member IDs / plan-year changes at minute 5, not week 3. | DME, CSR |
-| 3 | **Automate the claims loop:** scheduler submits 837P when a claim is ready; **poller** ingests 999/277CA/835 into the existing tables and posts remits. | "Bills without a human touch"; faster DSO, fewer manual touches. | DME, CSR |
-| 4 | **Bridge storefront ↔ resupply.** A `public.orders` order should create an episode/fulfillment (or merge the models) so CSRs work one queue and reorder cadence is tracked for storefront buyers too. | One unified fulfillment queue is standard; eliminates double-entry. | CSR |
-| 5 | **Add a real HCPCS ↔ SKU/product mapping table.** Pull HCPCS out of `frequency_rules` names; key catalog, eligibility, claims, and quantity entitlement off it. | Foundational plumbing that unblocks 1, 2, and quantity rules. | DME, CSR |
+| #   | Recommendation                                                                                                                                                                                                                                                         | Why / market tie-in                                                                                                               | Helps           |
+| --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- | --------------- |
+| 1   | **Wire real-time eligibility (270/271)** end-to-end on the existing Office Ally SFTP rails; surface results in the existing worklist; daily refresh of active coverages.                                                                                               | Table-stakes for _every_ competitor; cuts eligibility denials 90–95% (~22% of all DME denials).                                   | DME (cash), CSR |
+| 2   | **Enforce eligibility at order/confirm time.** Before creating a fulfillment (SMS `YES`, storefront, CSR), consult the cached 270/271 + Medicare **Same-or-Similar** result; if not covered / PA-required, raise a CSR ticket + message the patient _before_ shipping. | "Checks begin 28 days early so exceptions are worked." Catches misspelled member IDs / plan-year changes at minute 5, not week 3. | DME, CSR        |
+| 3   | **Automate the claims loop:** scheduler submits 837P when a claim is ready; **poller** ingests 999/277CA/835 into the existing tables and posts remits.                                                                                                                | "Bills without a human touch"; faster DSO, fewer manual touches.                                                                  | DME, CSR        |
+| 4   | **Bridge storefront ↔ resupply.** A `public.orders` order should create an episode/fulfillment (or merge the models) so CSRs work one queue and reorder cadence is tracked for storefront buyers too.                                                                  | One unified fulfillment queue is standard; eliminates double-entry.                                                               | CSR             |
+| 5   | **Add a real HCPCS ↔ SKU/product mapping table.** Pull HCPCS out of `frequency_rules` names; key catalog, eligibility, claims, and quantity entitlement off it.                                                                                                        | Foundational plumbing that unblocks 1, 2, and quantity rules.                                                                     | DME, CSR        |
 
 ### Tier 2 — Resupply automation & patient self-service depth (the heart of the ask)
 
-| # | Recommendation | Why / market tie-in | Helps |
-| - | --- | --- | --- |
-| 6 | **Rich magic-link confirmation page.** Reminder SMS/email links to a no-login page showing the patient's due items **with product images**, address-on-file, and a one-tap **Confirm / Edit / Decline**. (Reuse `RESUPPLY_LINK_HMAC_KEY`.) | The single highest-leverage feature in the market — NikoHealth: response **5%→20%**; "no app, no password" is universal. | DME (revenue), patient |
-| 7 | **Multi-channel cadence with escalation.** If SMS goes unanswered → email → (opt-in) automated voice, with configurable quiet windows. Today it's one channel per scan. | Multi-channel is how vendors hit 45–50% connection vs ~15% single-channel IVR. | DME, CSR |
-| 8 | **Enforce quantity/frequency entitlement.** Use the cadence engine to block "too-soon" reorders (Medicare won't pay early) and right-size quantities. | Prevents the most common avoidable denial; protects the patient from a surprise bill. | DME, patient |
-| 9 | **AI inbound reorder IVR.** Add a `/voice/reorder-inbound` entry to the existing OpenAI Realtime bridge: identify by DOB+ZIP, read back due items, confirm — 24/7, zero CSR labor. | Brightree Voice Services / Apria 24/7 IVR. Most of the infra already exists. | DME, CSR, patient |
-| 10 | **Patient resupply self-service in `/account`.** Order history, tracking, one-tap reorder of due items, "manage my supplies" cadence view, and proactive in-app "time to reorder" nudge. | Parity with ResMed myAir / Apria myApria / Lincare SleepCircle. | patient, CSR |
-| 11 | **Smarter admin queues (auto-action the obvious).** Auto-approve low-risk RMAs; auto-send cart-abandonment; auto-retry/triage failed-email orders. (Already itemized in `process-simplification-review-2026-05-21.md` A1/A4/A7.) | "Let your team focus on exceptions, not repetitive tasks." | CSR |
+| #   | Recommendation                                                                                                                                                                                                                             | Why / market tie-in                                                                                                      | Helps                  |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------ | ---------------------- |
+| 6   | **Rich magic-link confirmation page.** Reminder SMS/email links to a no-login page showing the patient's due items **with product images**, address-on-file, and a one-tap **Confirm / Edit / Decline**. (Reuse `RESUPPLY_LINK_HMAC_KEY`.) | The single highest-leverage feature in the market — NikoHealth: response **5%→20%**; "no app, no password" is universal. | DME (revenue), patient |
+| 7   | **Multi-channel cadence with escalation.** If SMS goes unanswered → email → (opt-in) automated voice, with configurable quiet windows. Today it's one channel per scan.                                                                    | Multi-channel is how vendors hit 45–50% connection vs ~15% single-channel IVR.                                           | DME, CSR               |
+| 8   | **Enforce quantity/frequency entitlement.** Use the cadence engine to block "too-soon" reorders (Medicare won't pay early) and right-size quantities.                                                                                      | Prevents the most common avoidable denial; protects the patient from a surprise bill.                                    | DME, patient           |
+| 9   | **AI inbound reorder IVR.** Add a `/voice/reorder-inbound` entry to the existing OpenAI Realtime bridge: identify by DOB+ZIP, read back due items, confirm — 24/7, zero CSR labor.                                                         | Brightree Voice Services / Apria 24/7 IVR. Most of the infra already exists.                                             | DME, CSR, patient      |
+| 10  | **Patient resupply self-service in `/account`.** Order history, tracking, one-tap reorder of due items, "manage my supplies" cadence view, and proactive in-app "time to reorder" nudge.                                                   | Parity with ResMed myAir / Apria myApria / Lincare SleepCircle.                                                          | patient, CSR           |
+| 11  | **Smarter admin queues (auto-action the obvious).** Auto-approve low-risk RMAs; auto-send cart-abandonment; auto-retry/triage failed-email orders. (Already itemized in `process-simplification-review-2026-05-21.md` A1/A4/A7.)           | "Let your team focus on exceptions, not repetitive tasks."                                                               | CSR                    |
 
 ### Tier 3 — Clinical / RT-facing & AI differentiation
 
-| # | Recommendation | Why / market tie-in | Helps |
-| - | --- | --- | --- |
-| 12 | **Finish nightly therapy sync + real-time adherence alerts.** Confirm/implement the `therapy-integrations.nightly-sync` job across all four adapters; raise `csr_compliance_alerts` on usage drop / high AHI / high leak; feed the existing **RT Overview** board and auto-track the Medicare 30/90-day window. | Adherence monitoring is core RT value; protects the 90-day compliance gate. | RT, DME |
-| 13 | **Auto-enroll early-risk patients into coaching.** Heuristic first (week-1 avg usage <4 hr → 4× non-compliance risk → route to `coaching_plans`); ML later once data accrues (EnsoData-style). | Aeroflow/EnsoData differentiation; moves compliance toward 85%. | RT, patient |
-| 14 | **Patient-portal sleep-coach chatbot.** A PHI-safe Claude assistant that answers "why is my mask leaking at 2 a.m.?" using the patient's last 7-day therapy snapshot. (Reuse the existing AI plumbing.) | ResMed myAir shipped "Dawn" (2025–26); materially improves adherence. | patient, RT |
-| 15 | **Predictive denial scoring (heuristic).** Surface "payer X denies E0601 without KX 38% of the time" at claim preflight, feeding the existing AI billing queue. | Beats incumbents; 20–30% denial reduction in published programs. | DME, CSR |
+| #   | Recommendation                                                                                                                                                                                                                                                                                                  | Why / market tie-in                                                         | Helps       |
+| --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- | ----------- |
+| 12  | **Finish nightly therapy sync + real-time adherence alerts.** Confirm/implement the `therapy-integrations.nightly-sync` job across all four adapters; raise `csr_compliance_alerts` on usage drop / high AHI / high leak; feed the existing **RT Overview** board and auto-track the Medicare 30/90-day window. | Adherence monitoring is core RT value; protects the 90-day compliance gate. | RT, DME     |
+| 13  | **Auto-enroll early-risk patients into coaching.** Heuristic first (week-1 avg usage <4 hr → 4× non-compliance risk → route to `coaching_plans`); ML later once data accrues (EnsoData-style).                                                                                                                  | Aeroflow/EnsoData differentiation; moves compliance toward 85%.             | RT, patient |
+| 14  | **Patient-portal sleep-coach chatbot.** A PHI-safe Claude assistant that answers "why is my mask leaking at 2 a.m.?" using the patient's last 7-day therapy snapshot. (Reuse the existing AI plumbing.)                                                                                                         | ResMed myAir shipped "Dawn" (2025–26); materially improves adherence.       | patient, RT |
+| 15  | **Predictive denial scoring (heuristic).** Surface "payer X denies E0601 without KX 38% of the time" at claim preflight, feeding the existing AI billing queue.                                                                                                                                                 | Beats incumbents; 20–30% denial reduction in published programs.            | DME, CSR    |
 
 ### Tier 4 — Revenue & cleanup (smaller, high-confidence)
 
-| # | Recommendation | Why / market tie-in | Helps |
-| - | --- | --- | --- |
-| 16 | **Cash-pay membership/subscription tier** (free shipping + % off + included Rx-renewal) on `shop_customers`. | Lofta WorryFree / SoClean Easy Pay; removes the insurance-friction that drives D2C patients away. | DME, patient |
-| 17 | **Resupply analytics the industry expects.** Add connection rate, order/conversion rate, items-per-order, AOV, orders-per-patient-per-year, retention to the existing analytics surface (the per-touch metrics view is a head start). | "Measure it to manage it" — the standard resupply KPI set. | DME |
-| 18 | **Remove vestigial compliance UI/permissions** (`/admin/compliance`, `/admin/accreditation-binder`, `training.manage`, `grievances.*`, `audit.*`) left dangling after 0156. | Aligns the console with the "compliance out of band" decision; cleaner demos. | CSR, eng |
+| #   | Recommendation                                                                                                                                                                                                                                                                                                                                                                                    | Why / market tie-in                                                                               | Helps        |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- | ------------ |
+| 16  | **Cash-pay membership/subscription tier** (free shipping + % off + included Rx-renewal) on `shop_customers`.                                                                                                                                                                                                                                                                                      | Lofta WorryFree / SoClean Easy Pay; removes the insurance-friction that drives D2C patients away. | DME, patient |
+| 17  | **Resupply analytics the industry expects.** Add connection rate, order/conversion rate, items-per-order, AOV, orders-per-patient-per-year, retention to the existing analytics surface (the per-touch metrics view is a head start).                                                                                                                                                             | "Measure it to manage it" — the standard resupply KPI set.                                        | DME          |
+| 18  | **Audit (don't blanket-remove) the post-0156 RBAC/compliance surface.** 0156 RETAINED `audit_log` + `patient_grievances`, so `audit.*` and `grievances.*` still gate live routes (e.g. `/admin/patient-documents/retention`). Prune a permission only after confirming its domain table was actually dropped (e.g. `training.manage` → `staff_training_records`) and no role/route references it. | Avoids removing live access controls; keeps the console honest.                                   | eng          |
 
 ### Explicitly **not** recommended (respecting product direction)
 
@@ -290,5 +294,5 @@ up Tier 2/3 cleanly.
 (esp. 0070, 0118, 0128–0156); `artifacts/resupply-api/src/` routes +
 worker jobs; `artifacts/cpap-fitter/src/pages/{,admin/}`;
 `lib/resupply-{reminders,domain,ai,integrations*}`; prior internal docs
-`competitive-gap-analysis-2026-05-19.md` and
-`process-simplification-review-2026-05-21.md`.
+[`competitive-gap-analysis-2026-05-19.md`](./competitive-gap-analysis-2026-05-19.md) and
+[`process-simplification-review-2026-05-21.md`](./process-simplification-review-2026-05-21.md).

@@ -329,7 +329,17 @@ router.post("/email/click", emailClickLimiter, async (req, res) => {
           // Entitlement guard blocked the reship (too soon / over the
           // per-period cap). order-flow already raised a CSR alert and
           // left the episode pending. Render a truthful "we'll review"
-          // page (200, not an error) and audit the block.
+          // page (200, not an error), flip the conversation to
+          // awaiting_admin (lands in the CSR queue), and audit the block.
+          const { error: notEligErr } = await supabase
+            .schema("resupply")
+            .from("conversations")
+            .update({
+              status: "awaiting_admin",
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", conversationId);
+          if (notEligErr) throw notEligErr;
           await safeAudit({
             action: "messaging.order.blocked_not_eligible",
             adminEmail: null,

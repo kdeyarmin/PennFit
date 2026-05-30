@@ -916,7 +916,15 @@ async function dispatchIntent(input: DispatchInput): Promise<string> {
         // Entitlement guard blocked the reship (too soon / over the
         // per-period cap). Do NOT reuse input.aiReply here — for a
         // confirm intent it says "on its way", which would be wrong.
-        // The block already raised a CSR alert in order-flow.
+        // The block already raised a CSR alert in order-flow. Also flip
+        // the conversation to awaiting_admin so it lands in the CSR
+        // queue alongside address-edit handoffs.
+        const { error: notEligErr } = await supabase
+          .schema("resupply")
+          .from("conversations")
+          .update({ status: "awaiting_admin", updated_at: nowIso })
+          .eq("id", input.conversationId);
+        if (notEligErr) throw notEligErr;
         await safeAudit({
           action: "messaging.order.blocked_not_eligible",
           adminEmail: null,

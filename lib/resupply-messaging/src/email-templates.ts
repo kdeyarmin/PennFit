@@ -258,9 +258,12 @@ export function renderClickLanding(input: RenderClickLandingInput): string {
         ? "Request an address change"
         : "Stop CPAP refill reminders";
 
+  const hasItems = !!input.items && input.items.length > 0;
   const description =
     input.action === "confirm"
-      ? "Here's what's due. Tap the button below to confirm and we'll ship your supplies right away."
+      ? hasItems
+        ? "Here's what's due. Tap the button below to confirm and we'll ship your supplies right away."
+        : "Tap the button below to confirm and we'll ship your supplies right away."
       : input.action === "edit"
         ? "Click the button below and a member of our team will reach out about your shipping address."
         : "Click the button below to unsubscribe from CPAP refill reminders. You can always reply to a future email to re-enroll.";

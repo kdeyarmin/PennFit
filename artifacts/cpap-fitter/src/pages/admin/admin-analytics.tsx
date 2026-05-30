@@ -132,10 +132,6 @@ function pct(rate: number | null): string {
 
 // ── Resupply program KPIs ──────────────────────────────────────────
 
-function pctLabel(n: number | null): string {
-  return n === null ? "—" : `${(n * 100).toFixed(1)}%`;
-}
-
 function KpiTile({
   label,
   value,
@@ -169,17 +165,17 @@ function KpisBody({ data }: { data: ResupplyKpisResponse }) {
     <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
       <KpiTile
         label="Connection rate"
-        value={pctLabel(data.connectionRate)}
+        value={pct(data.connectionRate)}
         hint={`${data.respondedCount}/${data.outreachCount} outreach replied`}
       />
       <KpiTile
         label="Confirmation rate"
-        value={pctLabel(data.confirmationRate)}
+        value={pct(data.confirmationRate)}
         hint={`${data.confirmedOrders}/${data.totalEpisodes} episodes`}
       />
       <KpiTile
         label="Fulfillment rate"
-        value={pctLabel(data.fulfillmentRate)}
+        value={pct(data.fulfillmentRate)}
         hint={`${data.fulfilledOrders}/${data.confirmedOrders} confirmed`}
       />
       <KpiTile
