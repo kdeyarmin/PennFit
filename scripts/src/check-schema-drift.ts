@@ -41,7 +41,7 @@
 
 import { readFileSync, readdirSync, existsSync } from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { getDbPool } from "@workspace/resupply-db";
 
@@ -110,7 +110,22 @@ interface ParseResult {
 function parseMigrations(dir: string): ParseResult {
   const files = readdirSync(dir)
     .filter((f) => f.endsWith(".sql"))
-    .sort();
+    .sort()
+    .map((name) => ({ name, sql: readFileSync(path.join(dir, name), "utf8") }));
+  return parseMigrationsFromText(files);
+}
+
+// Pure, disk-free core of the migration parser. Accepts the raw SQL of each
+// migration file (read from disk by `parseMigrations`, or supplied directly by
+// unit tests) and returns the tables/columns the DDL textually expects,
+// accounting for later DROP/RENAME. Files are processed in name order so a
+// later migration's DROP/RENAME wins, mirroring on-disk apply order.
+export function parseMigrationsFromText(
+  files: ReadonlyArray<{ name: string; sql: string }>,
+): ParseResult {
+  const sorted = [...files].sort((a, b) =>
+    a.name < b.name ? -1 : a.name > b.name ? 1 : 0,
+  );
 
   const expectedColumns = new Map<string, Set<string>>();
   const expectedTables = new Set<string>();
@@ -129,8 +144,8 @@ function parseMigrations(dir: string): ParseResult {
     /RENAME\s+COLUMN\s+"?([a-zA-Z_]\w*)"?\s+TO\s+"?([a-zA-Z_]\w*)"?/gi;
   const reRenameTbl = /RENAME\s+TO\s+"?([a-zA-Z_]\w*)"?/i;
 
-  for (const file of files) {
-    const sql = stripComments(readFileSync(path.join(dir, file), "utf8"));
+  for (const file of sorted) {
+    const sql = stripComments(file.sql);
 
     for (const m of sql.matchAll(reCreate)) {
       const loc = normTable(m[1]);
@@ -288,7 +303,10 @@ function splitSqlDefinitions(body: string): string[] {
   return defs;
 }
 
-function extractCreateTableColumns(sql: string, match: RegExpMatchArray): string[] {
+function extractCreateTableColumns(
+  sql: string,
+  match: RegExpMatchArray,
+): string[] {
   const openIndex = match.index! + match[0].length - 1;
   const closeIndex = findMatchingParen(sql, openIndex);
   if (closeIndex === -1) return [];
@@ -464,14 +482,21 @@ function main(): void {
             process.stdout.write(`    - ${c}\n`);
           }
         }
-        if (!report.hasLedger && !report.missingTables.length && !report.missingColumns.length) {
+        if (
+          !report.hasLedger &&
+          !report.missingTables.length &&
+          !report.missingColumns.length
+        ) {
           process.stdout.write(
             paint(
               YELLOW,
               "  Schema objects match migrations, but the migration ledger is absent.\n",
             ),
           );
-        } else if (!report.missingTables.length && !report.missingColumns.length) {
+        } else if (
+          !report.missingTables.length &&
+          !report.missingColumns.length
+        ) {
           process.stdout.write(
             paint(GREEN, "  OK — no schema drift detected.\n"),
           );
@@ -493,4 +518,12 @@ function main(): void {
     });
 }
 
-main();
+// Only run as a CLI entrypoint. Importing this module (e.g. the unit tests for
+// parseMigrationsFromText) must NOT trigger the DB-touching run() or the
+// process.exit() calls inside main().
+if (
+  process.argv[1] &&
+  import.meta.url === pathToFileURL(process.argv[1]).href
+) {
+  main();
+}
