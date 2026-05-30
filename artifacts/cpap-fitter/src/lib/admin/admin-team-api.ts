@@ -2,6 +2,8 @@
 // Auth rides on the in-house `pf_session` cookie via
 // `credentials: "include"` — no bearer token bridge.
 
+import { ApiError } from "@workspace/api-client-react/admin";
+
 import { csrfHeader } from "../csrf";
 
 // RBAC Phase A: the team API now persists the granular role on
@@ -59,7 +61,15 @@ export async function listTeam(): Promise<{ members: TeamMember[] }> {
     credentials: "include",
     headers: { Accept: "application/json" },
   });
-  if (!res.ok) throw new Error(`Failed to load team (${res.status})`);
+  if (!res.ok) {
+    let data: unknown = null;
+    try {
+      data = await res.json();
+    } catch {
+      /* body not JSON */
+    }
+    throw new ApiError(res, data, { method: "GET", url: BASE });
+  }
   return (await res.json()) as { members: TeamMember[] };
 }
 
@@ -73,7 +83,8 @@ export async function inviteMember(body: {
    *  email is sent — admin tells the user out-of-band. */
   initialPassword?: string | null;
 }): Promise<InviteResponse> {
-  const res = await fetch(`${BASE}/invite`, {
+  const url = `${BASE}/invite`;
+  const res = await fetch(url, {
     method: "POST",
     credentials: "include",
     headers: {
@@ -86,7 +97,10 @@ export async function inviteMember(body: {
   const json = (await res.json()) as
     | InviteResponse
     | { error?: string; message?: string; memberId?: string };
-  if (!res.ok || !("member" in json)) {
+  if (!res.ok) {
+    throw new ApiError(res, json, { method: "POST", url });
+  }
+  if (!("member" in json)) {
     const errMsg =
       ("message" in json && json.message) ||
       ("error" in json && json.error) ||
@@ -97,7 +111,8 @@ export async function inviteMember(body: {
 }
 
 export async function resendInvite(id: string): Promise<InviteResponse> {
-  const res = await fetch(`${BASE}/${encodeURIComponent(id)}/resend`, {
+  const url = `${BASE}/${encodeURIComponent(id)}/resend`;
+  const res = await fetch(url, {
     method: "POST",
     credentials: "include",
     headers: { Accept: "application/json", ...csrfHeader() },
@@ -107,9 +122,7 @@ export async function resendInvite(id: string): Promise<InviteResponse> {
       error?: string;
       message?: string;
     } | null;
-    throw new Error(
-      json?.message ?? json?.error ?? `Resend failed (${res.status})`,
-    );
+    throw new ApiError(res, json, { method: "POST", url });
   }
   return (await res.json()) as InviteResponse;
 }
@@ -117,7 +130,8 @@ export async function resendInvite(id: string): Promise<InviteResponse> {
 export async function revokeMember(
   id: string,
 ): Promise<{ member: TeamMember }> {
-  const res = await fetch(`${BASE}/${encodeURIComponent(id)}/revoke`, {
+  const url = `${BASE}/${encodeURIComponent(id)}/revoke`;
+  const res = await fetch(url, {
     method: "POST",
     credentials: "include",
     headers: { Accept: "application/json", ...csrfHeader() },
@@ -127,9 +141,7 @@ export async function revokeMember(
       error?: string;
       message?: string;
     } | null;
-    throw new Error(
-      json?.message ?? json?.error ?? `Revoke failed (${res.status})`,
-    );
+    throw new ApiError(res, json, { method: "POST", url });
   }
   return (await res.json()) as { member: TeamMember };
 }
@@ -142,7 +154,8 @@ export async function patchMember(
     notes: string | null;
   }>,
 ): Promise<{ member: TeamMember }> {
-  const res = await fetch(`${BASE}/${encodeURIComponent(id)}`, {
+  const url = `${BASE}/${encodeURIComponent(id)}`;
+  const res = await fetch(url, {
     method: "PATCH",
     credentials: "include",
     headers: {
@@ -157,9 +170,7 @@ export async function patchMember(
       error?: string;
       message?: string;
     } | null;
-    throw new Error(
-      json?.message ?? json?.error ?? `Patch failed (${res.status})`,
-    );
+    throw new ApiError(res, json, { method: "PATCH", url });
   }
   return (await res.json()) as { member: TeamMember };
 }

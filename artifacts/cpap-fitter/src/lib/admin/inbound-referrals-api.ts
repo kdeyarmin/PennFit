@@ -5,6 +5,8 @@
 // Mirrors the shape of inbound-faxes-api.ts so the page can borrow
 // the same patterns (React Query, toast errors, optimistic invalidate).
 
+import { ApiError } from "@workspace/api-client-react/admin";
+
 export type ReferralTriageStatus =
   | "new"
   | "triaged"
@@ -130,19 +132,20 @@ export interface SuggestedPatient {
 }
 
 async function jsonFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const res = await fetch(`/resupply-api${path}`, {
+  const method = (init.method ?? "GET").toUpperCase();
+  const url = `/resupply-api${path}`;
+  const res = await fetch(url, {
     headers: { Accept: "application/json", ...(init.headers ?? {}) },
     ...init,
   });
   if (!res.ok) {
-    let message = `${res.status} ${res.statusText}`;
+    let data: unknown = null;
     try {
-      const body = (await res.json()) as { message?: string; error?: string };
-      message = body.message ?? body.error ?? message;
+      data = await res.json();
     } catch {
-      // ignore
+      // body not JSON
     }
-    throw new Error(message);
+    throw new ApiError(res, data, { method, url });
   }
   return (await res.json()) as T;
 }

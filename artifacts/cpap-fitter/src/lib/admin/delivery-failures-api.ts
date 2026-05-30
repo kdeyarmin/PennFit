@@ -1,5 +1,7 @@
 // Hand-rolled fetch wrapper for /admin/delivery-failures.
 
+import { ApiError } from "@workspace/api-client-react/admin";
+
 export interface MessageFailureEvent {
   kind: "message";
   id: string;
@@ -40,10 +42,16 @@ export interface DeliveryFailuresResponse {
 export async function fetchDeliveryFailures(
   sinceDays = 14,
 ): Promise<DeliveryFailuresResponse> {
-  const res = await fetch(
-    `/resupply-api/admin/delivery-failures?sinceDays=${sinceDays}`,
-    { headers: { Accept: "application/json" } },
-  );
-  if (!res.ok) throw new Error(`Failed to load failures (${res.status})`);
+  const url = `/resupply-api/admin/delivery-failures?sinceDays=${sinceDays}`;
+  const res = await fetch(url, { headers: { Accept: "application/json" } });
+  if (!res.ok) {
+    let data: unknown = null;
+    try {
+      data = await res.json();
+    } catch {
+      // body not JSON
+    }
+    throw new ApiError(res, data, { method: "GET", url });
+  }
   return (await res.json()) as DeliveryFailuresResponse;
 }

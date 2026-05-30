@@ -7,6 +7,8 @@
 // — `privateKeyPath` / `knownHostsPath` point at files on the server
 // (mode 0600); the key BYTES are never stored in the DB or sent here.
 
+import { ApiError } from "@workspace/api-client-react/admin";
+
 import { csrfHeader } from "../csrf";
 
 const BASE = "/resupply-api";
@@ -42,11 +44,20 @@ export interface Clearinghouse extends ClearinghouseBody {
 }
 
 async function getJSON<T>(path: string): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
+  const url = `${BASE}${path}`;
+  const res = await fetch(url, {
     credentials: "same-origin",
     headers: { Accept: "application/json" },
   });
-  if (!res.ok) throw new Error(`GET ${path} failed (${res.status})`);
+  if (!res.ok) {
+    let data: unknown = null;
+    try {
+      data = await res.json();
+    } catch {
+      /* non-JSON body */
+    }
+    throw new ApiError(res, data, { method: "GET", url });
+  }
   return (await res.json()) as T;
 }
 
@@ -55,7 +66,8 @@ async function sendJSON<T>(
   path: string,
   body: unknown,
 ): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
+  const url = `${BASE}${path}`;
+  const res = await fetch(url, {
     method,
     credentials: "same-origin",
     headers: {
@@ -66,15 +78,13 @@ async function sendJSON<T>(
     body: JSON.stringify(body),
   });
   if (!res.ok) {
-    let detail = "";
+    let data: unknown = null;
     try {
-      detail = JSON.stringify(await res.json());
+      data = await res.json();
     } catch {
       /* non-JSON body */
     }
-    throw new Error(
-      `${method} ${path} failed (${res.status})${detail ? `: ${detail}` : ""}`,
-    );
+    throw new ApiError(res, data, { method, url });
   }
   return (await res.json()) as T;
 }

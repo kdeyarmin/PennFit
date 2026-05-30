@@ -1,6 +1,8 @@
 // Hand-rolled fetch wrapper for the /admin/rt-overview surface.
 // Mirrors the analytics-api shape: a JSON list + a CSV download URL.
 
+import { ApiError } from "@workspace/api-client-react/admin";
+
 export interface RtOverviewAlert {
   /** patient_smart_trigger_events.id, used by dismissSmartTrigger. */
   id: string;
@@ -184,19 +186,19 @@ export function distinctSources(rows: RtOverviewRow[]): string[] {
 export async function fetchRtOverview(
   days: number,
 ): Promise<RtOverviewResponse> {
-  const res = await fetch(`/resupply-api/admin/rt-overview?days=${days}`, {
+  const url = `/resupply-api/admin/rt-overview?days=${days}`;
+  const res = await fetch(url, {
     headers: { Accept: "application/json" },
     credentials: "include",
   });
   if (!res.ok) {
-    let msg = `${res.status} ${res.statusText}`;
+    let data: unknown = null;
     try {
-      const body = (await res.json()) as { message?: string; error?: string };
-      msg = body.message ?? body.error ?? msg;
+      data = await res.json();
     } catch {
-      // keep status
+      // body not JSON
     }
-    throw new Error(msg);
+    throw new ApiError(res, data, { method: "GET", url });
   }
   return (await res.json()) as RtOverviewResponse;
 }
@@ -226,28 +228,25 @@ export async function dismissSmartTrigger(
           .find((c) => c.startsWith("pf_csrf="))
           ?.split("=")[1] ?? null)
       : null;
-  const res = await fetch(
-    `/resupply-api/admin/smart-triggers/${encodeURIComponent(id)}/dismiss`,
-    {
-      method: "POST",
-      credentials: "include",
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json",
-        ...(csrfToken ? { "X-PF-CSRF": csrfToken } : {}),
-      },
-      body: JSON.stringify({ reason: reason ?? null }),
+  const url = `/resupply-api/admin/smart-triggers/${encodeURIComponent(id)}/dismiss`;
+  const res = await fetch(url, {
+    method: "POST",
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+      ...(csrfToken ? { "X-PF-CSRF": csrfToken } : {}),
     },
-  );
+    body: JSON.stringify({ reason: reason ?? null }),
+  });
   if (res.status === 409) return;
   if (!res.ok) {
-    let msg = `${res.status} ${res.statusText}`;
+    let data: unknown = null;
     try {
-      const body = (await res.json()) as { error?: string; message?: string };
-      msg = body.message ?? body.error ?? msg;
+      data = await res.json();
     } catch {
-      // keep status
+      // body not JSON
     }
-    throw new Error(msg);
+    throw new ApiError(res, data, { method: "POST", url });
   }
 }

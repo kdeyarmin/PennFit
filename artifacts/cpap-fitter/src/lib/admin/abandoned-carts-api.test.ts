@@ -10,6 +10,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Mock } from "vitest";
 
+import { ApiError } from "@workspace/api-client-react/admin";
+
 import {
   listAdminAbandonedCarts,
   sendDueAbandonedCarts,
@@ -99,15 +101,29 @@ describe("listAdminAbandonedCarts", () => {
   });
 
   it("throws on non-OK status", async () => {
-    fetchMock.mockResolvedValue({ ok: false, status: 403 });
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 403,
+      statusText: "Forbidden",
+      headers: new Headers(),
+      text: async () => "",
+      json: async () => ({}),
+    });
     await expect(listAdminAbandonedCarts()).rejects.toThrow("403");
   });
 
-  it("error message includes the operation context", async () => {
-    fetchMock.mockResolvedValue({ ok: false, status: 500 });
-    await expect(listAdminAbandonedCarts()).rejects.toThrow(
-      "Failed to load abandoned carts",
-    );
+  it("throws an ApiError carrying the status", async () => {
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 500,
+      statusText: "Internal Server Error",
+      headers: new Headers(),
+      text: async () => "",
+      json: async () => ({}),
+    });
+    const err = await listAdminAbandonedCarts().catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect((err as ApiError).status).toBe(500);
   });
 });
 
@@ -220,12 +236,28 @@ describe("sendDueAbandonedCarts — response handling", () => {
   });
 
   it("throws on non-OK status", async () => {
-    fetchMock.mockResolvedValue({ ok: false, status: 503 });
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 503,
+      statusText: "Service Unavailable",
+      headers: new Headers(),
+      text: async () => "",
+      json: async () => ({}),
+    });
     await expect(sendDueAbandonedCarts()).rejects.toThrow("503");
   });
 
-  it("error message contains 'Send-due failed'", async () => {
-    fetchMock.mockResolvedValue({ ok: false, status: 500 });
-    await expect(sendDueAbandonedCarts()).rejects.toThrow("Send-due failed");
+  it("throws an ApiError carrying the status", async () => {
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 500,
+      statusText: "Internal Server Error",
+      headers: new Headers(),
+      text: async () => "",
+      json: async () => ({}),
+    });
+    const err = await sendDueAbandonedCarts().catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect((err as ApiError).status).toBe(500);
   });
 });

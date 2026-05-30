@@ -77,6 +77,8 @@ describe("listFeatureFlags", () => {
       ok: false,
       status: 403,
       statusText: "Forbidden",
+      headers: new Headers(),
+      text: async () => "",
       json: async () => ({ message: "insufficient permissions" }),
     });
 
@@ -152,6 +154,8 @@ describe("jsonFetch error handling", () => {
       ok: false,
       status: 422,
       statusText: "Unprocessable Entity",
+      headers: new Headers(),
+      text: async () => "",
       json: async () => ({ message: "body validation failed" }),
     });
 
@@ -163,6 +167,8 @@ describe("jsonFetch error handling", () => {
       ok: false,
       status: 404,
       statusText: "Not Found",
+      headers: new Headers(),
+      text: async () => "",
       json: async () => ({ error: "unknown_flag" }),
     });
 
@@ -174,6 +180,8 @@ describe("jsonFetch error handling", () => {
       ok: false,
       status: 500,
       statusText: "Internal Server Error",
+      headers: new Headers(),
+      text: async () => "",
       json: async () => ({ unexpected: "field" }),
     });
 
@@ -187,6 +195,8 @@ describe("jsonFetch error handling", () => {
       ok: false,
       status: 502,
       statusText: "Bad Gateway",
+      headers: new Headers(),
+      text: async () => "",
       json: async () => {
         throw new SyntaxError("Unexpected token");
       },
@@ -200,6 +210,8 @@ describe("jsonFetch error handling", () => {
       ok: false,
       status: 400,
       statusText: "Bad Request",
+      headers: new Headers(),
+      text: async () => "",
       json: async () => ({
         message: "the message field",
         error: "the error field",
@@ -334,6 +346,8 @@ describe("listFeatureFlagActivity", () => {
       ok: false,
       status: 401,
       statusText: "Unauthorized",
+      headers: new Headers(),
+      text: async () => "",
       json: async () => ({ message: "not authenticated" }),
     });
 

@@ -8,23 +8,33 @@
 // boundaries; per-patient drill-in still goes through the existing
 // /admin/patients/:id/insurance-claims surface.
 
+import { ApiError } from "@workspace/api-client-react/admin";
+
 import { csrfHeader } from "../csrf";
 
 const BASE = "/resupply-api";
 
 async function getJSON<T>(path: string): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
+  const url = `${BASE}${path}`;
+  const res = await fetch(url, {
     headers: { Accept: "application/json" },
     credentials: "same-origin",
   });
   if (!res.ok) {
-    throw new Error(`Failed to load ${path} (${res.status})`);
+    let data: unknown = null;
+    try {
+      data = await res.json();
+    } catch {
+      // body not JSON
+    }
+    throw new ApiError(res, data, { method: "GET", url });
   }
   return (await res.json()) as T;
 }
 
 async function postJSON<T>(path: string, body: unknown): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
+  const url = `${BASE}${path}`;
+  const res = await fetch(url, {
     method: "POST",
     headers: {
       Accept: "application/json",
@@ -35,36 +45,13 @@ async function postJSON<T>(path: string, body: unknown): Promise<T> {
     body: JSON.stringify(body),
   });
   if (!res.ok) {
-    let detail: string | undefined;
+    let data: unknown = null;
     try {
-      const json = (await res.json()) as {
-        message?: string;
-        error?: string;
-        issues?: Array<{ path?: string; message?: string }>;
-      };
-      // Field-level validation responses (`{ error: "invalid_body",
-      // issues: [...] }`) carry the actually-actionable detail in
-      // `issues`, not `message`. Surface the first issue (or all of
-      // them, comma-separated) so operators see "fileName: required"
-      // instead of "invalid_body".
-      if (Array.isArray(json.issues) && json.issues.length > 0) {
-        detail = json.issues
-          .map((i) =>
-            i.path ? `${i.path}: ${i.message ?? "invalid"}` : i.message,
-          )
-          .filter(Boolean)
-          .join("; ");
-      } else {
-        detail = json.message ?? json.error;
-      }
+      data = await res.json();
     } catch {
       // ignore — fall back to status text
     }
-    throw new Error(
-      detail
-        ? `${path} failed (${res.status}): ${detail}`
-        : `${path} failed (${res.status})`,
-    );
+    throw new ApiError(res, data, { method: "POST", url });
   }
   return (await res.json()) as T;
 }

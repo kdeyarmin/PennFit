@@ -4,6 +4,7 @@
 // pinning request shape (URL / method / Content-Type / body) and
 // error handling.
 
+import { ApiError } from "@workspace/api-client-react/admin";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Mock } from "vitest";
 
@@ -114,26 +115,36 @@ describe("deleteReportPreset", () => {
 });
 
 describe("error handling", () => {
-  it("surfaces message field over error field", async () => {
+  it("throws an ApiError that surfaces the message field over the error field", async () => {
     fetchMock.mockResolvedValue({
       ok: false,
       status: 400,
       statusText: "Bad Request",
+      headers: new Headers(),
+      text: async () => "",
       json: async () => ({
         message: "human-readable message",
         error: "machine_code",
       }),
     });
-    await expect(listReportPresets()).rejects.toThrow("human-readable message");
+    const err = await listReportPresets().catch((e) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect((err as ApiError).status).toBe(400);
+    expect((err as ApiError).message).toContain("human-readable message");
   });
 
-  it("falls back to '<status> <statusText>' when the body has no useful field", async () => {
+  it("throws an ApiError carrying the status when the body has no useful field", async () => {
     fetchMock.mockResolvedValue({
       ok: false,
       status: 502,
       statusText: "Bad Gateway",
+      headers: new Headers(),
+      text: async () => "",
       json: async () => ({}),
     });
-    await expect(listReportPresets()).rejects.toThrow("502 Bad Gateway");
+    const err = await listReportPresets().catch((e) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect((err as ApiError).status).toBe(502);
+    expect((err as ApiError).message).toContain("502 Bad Gateway");
   });
 });

@@ -12,6 +12,8 @@
 // Auth: the browser sends the `pf_session` cookie automatically on
 // same-origin requests, so no per-call auth header is needed.
 
+import { ApiError } from "@workspace/api-client-react/admin";
+
 import { csrfHeader } from "../csrf";
 
 // Subset of `ShopProductView` from products-meta.ts that the
@@ -48,7 +50,13 @@ export async function listShopInventory(): Promise<ListShopInventoryResponse> {
     // endpoint already handles by returning the preview catalog
     // (so we should never reach this branch in practice). Surface
     // a clear error if Stripe is down some other way.
-    throw new Error(`Failed to load inventory (${res.status})`);
+    let data: unknown = null;
+    try {
+      data = await res.json();
+    } catch {
+      // non-JSON error body — status alone is enough
+    }
+    throw new ApiError(res, data, { method: "GET", url: res.url });
   }
   // Field shapes mirror artifacts/resupply-api/src/lib/stripe/products-meta.ts
   // ShopProductView. The price object uses `unitAmount` (cents,
@@ -107,7 +115,13 @@ export async function patchShopProductStock(
     throw new InventoryUnavailableError("stripe_not_configured");
   }
   if (!res.ok) {
-    throw new Error(`Save failed (${res.status})`);
+    let data: unknown = null;
+    try {
+      data = await res.json();
+    } catch {
+      // non-JSON error body — status alone is enough
+    }
+    throw new ApiError(res, data, { method: "PATCH", url: res.url });
   }
   // Same shape as listShopInventory's response object (one product
   // here vs an array there). The API uses `price.unitAmount`
@@ -165,7 +179,13 @@ export async function patchShopProductThreshold(
     throw new InventoryUnavailableError("stripe_not_configured");
   }
   if (!res.ok) {
-    throw new Error(`Save failed (${res.status})`);
+    let data: unknown = null;
+    try {
+      data = await res.json();
+    } catch {
+      // non-JSON error body — status alone is enough
+    }
+    throw new ApiError(res, data, { method: "PATCH", url: res.url });
   }
   const json = (await res.json()) as {
     product: {

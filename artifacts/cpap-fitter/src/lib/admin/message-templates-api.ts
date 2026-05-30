@@ -6,6 +6,8 @@
 // with each renderer migration, so there's no POST or DELETE on
 // purpose. isActive=false is the soft-delete path.
 
+import { ApiError } from "@workspace/api-client-react/admin";
+
 import { csrfHeader } from "../csrf";
 
 export type TemplateChannel = "email" | "sms" | "voice" | "push";
@@ -45,7 +47,13 @@ export async function listTemplates(
     { credentials: "include", headers: { Accept: "application/json" } },
   );
   if (!res.ok) {
-    throw new Error(`Failed to load message templates (${res.status})`);
+    let data: unknown = null;
+    try {
+      data = await res.json();
+    } catch {
+      // non-JSON error body — status alone is enough
+    }
+    throw new ApiError(res, data, { method: "GET", url: res.url });
   }
   return (await res.json()) as { templates: MessageTemplate[] };
 }
@@ -58,7 +66,13 @@ export async function getTemplate(
     headers: { Accept: "application/json" },
   });
   if (!res.ok) {
-    throw new Error(`Failed to load message template (${res.status})`);
+    let data: unknown = null;
+    try {
+      data = await res.json();
+    } catch {
+      // non-JSON error body — status alone is enough
+    }
+    throw new ApiError(res, data, { method: "GET", url: res.url });
   }
   return (await res.json()) as { template: MessageTemplate };
 }

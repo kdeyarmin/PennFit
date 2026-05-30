@@ -20,6 +20,8 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { ApiError } from "@workspace/api-client-react/admin";
+
 import { fetchDeliveryFailures } from "./delivery-failures-api";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -174,17 +176,19 @@ describe("fetchDeliveryFailures", () => {
     expect(result).toEqual(payload);
   });
 
-  it("throws when the server returns a non-ok status", async () => {
+  it("throws an ApiError when the server returns a non-ok status", async () => {
     fetchMock.mockResolvedValue({
       ok: false,
       status: 403,
       statusText: "Forbidden",
+      headers: new Headers(),
+      text: async () => "",
       json: async () => ({}),
     });
 
-    await expect(fetchDeliveryFailures()).rejects.toThrow(
-      "Failed to load failures (403)",
-    );
+    const err = await fetchDeliveryFailures().catch((e) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect((err as ApiError).status).toBe(403);
   });
 
   // Negative / boundary: the response should work even when auditFailures

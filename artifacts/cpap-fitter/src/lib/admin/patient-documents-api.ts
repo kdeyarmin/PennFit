@@ -1,6 +1,8 @@
 // Admin-facing client wrappers for patient document endpoints.
 // CSRs use these to list, download, and delete documents uploaded by patients.
 
+import { ApiError } from "@workspace/api-client-react/admin";
+
 const API_PREFIX = "/resupply-api";
 
 export interface AdminPatientDocument {
@@ -28,12 +30,16 @@ export const DOCUMENT_TYPE_LABELS: Record<string, string> = {
 export async function listPatientDocuments(
   patientId: string,
 ): Promise<AdminPatientDocument[]> {
-  const res = await fetch(
-    `${API_PREFIX}/patients/${encodeURIComponent(patientId)}/documents`,
-    { credentials: "same-origin" },
-  );
+  const url = `${API_PREFIX}/patients/${encodeURIComponent(patientId)}/documents`;
+  const res = await fetch(url, { credentials: "same-origin" });
   if (!res.ok) {
-    throw new Error(`Failed to load documents (HTTP ${res.status}).`);
+    let data: unknown = null;
+    try {
+      data = await res.json();
+    } catch {
+      // body not JSON
+    }
+    throw new ApiError(res, data, { method: "GET", url });
   }
   const body = (await res.json()) as { documents: AdminPatientDocument[] };
   return body.documents;
@@ -50,12 +56,19 @@ export async function deletePatientDocument(
   patientId: string,
   docId: string,
 ): Promise<void> {
-  const res = await fetch(
-    `${API_PREFIX}/patients/${encodeURIComponent(patientId)}/documents/${encodeURIComponent(docId)}`,
-    { method: "DELETE", credentials: "same-origin" },
-  );
+  const url = `${API_PREFIX}/patients/${encodeURIComponent(patientId)}/documents/${encodeURIComponent(docId)}`;
+  const res = await fetch(url, {
+    method: "DELETE",
+    credentials: "same-origin",
+  });
   if (!res.ok) {
-    throw new Error(`Failed to delete document (HTTP ${res.status}).`);
+    let data: unknown = null;
+    try {
+      data = await res.json();
+    } catch {
+      // body not JSON
+    }
+    throw new ApiError(res, data, { method: "DELETE", url });
   }
 }
 
@@ -64,17 +77,21 @@ export async function markPatientDocumentReviewed(
   docId: string,
   note?: string,
 ): Promise<{ alreadyReviewed: boolean }> {
-  const res = await fetch(
-    `${API_PREFIX}/patients/${encodeURIComponent(patientId)}/documents/${encodeURIComponent(docId)}/reviewed`,
-    {
-      method: "PATCH",
-      credentials: "same-origin",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(note !== undefined ? { note } : {}),
-    },
-  );
+  const url = `${API_PREFIX}/patients/${encodeURIComponent(patientId)}/documents/${encodeURIComponent(docId)}/reviewed`;
+  const res = await fetch(url, {
+    method: "PATCH",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(note !== undefined ? { note } : {}),
+  });
   if (!res.ok) {
-    throw new Error(`Failed to mark document reviewed (HTTP ${res.status}).`);
+    let data: unknown = null;
+    try {
+      data = await res.json();
+    } catch {
+      // body not JSON
+    }
+    throw new ApiError(res, data, { method: "PATCH", url });
   }
   const body = (await res.json()) as { ok: true; alreadyReviewed: boolean };
   return { alreadyReviewed: body.alreadyReviewed };

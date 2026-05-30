@@ -3,6 +3,8 @@
 // envelope, no implicit retries, throws on non-OK so React Query
 // surfaces failure states naturally.
 
+import { ApiError } from "@workspace/api-client-react/admin";
+
 import { csrfHeader } from "../csrf";
 
 export type IntegrationSource =
@@ -116,7 +118,13 @@ export async function listPatientIntegrations(
     throw new PatientIntegrationsNotFoundError();
   }
   if (!res.ok) {
-    throw new Error(`Failed to load integrations (${res.status})`);
+    let data: unknown = null;
+    try {
+      data = await res.json();
+    } catch {
+      // non-JSON error body — status alone is enough
+    }
+    throw new ApiError(res, data, { method: "GET", url: res.url });
   }
   return (await res.json()) as PatientIntegrationsResponse;
 }
@@ -149,7 +157,14 @@ export async function refreshPatientIntegration(
     const body = (await res.json().catch(() => ({}))) as {
       message?: string;
     };
-    throw new Error(body.message ?? "No active link for this source.");
+    throw new ApiError(
+      res,
+      body.message ? body : { message: "No active link for this source." },
+      {
+        method: "POST",
+        url: res.url,
+      },
+    );
   }
   // 502 still returns a body with the cached snapshot — surface the
   // error to the UI but preserve the snapshot.
@@ -164,7 +179,13 @@ export async function refreshPatientIntegration(
     };
   }
   if (!res.ok) {
-    throw new Error(`Failed to refresh integration (${res.status})`);
+    let data: unknown = null;
+    try {
+      data = await res.json();
+    } catch {
+      // non-JSON error body — status alone is enough
+    }
+    throw new ApiError(res, data, { method: "POST", url: res.url });
   }
   const body = (await res.json()) as { snapshot: IntegrationSnapshot };
   return { snapshot: body.snapshot, fetchError: null };

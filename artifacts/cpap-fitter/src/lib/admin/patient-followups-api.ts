@@ -1,6 +1,8 @@
 // Hand-rolled fetch wrappers for the patient followups endpoints
 // (Phase 19). Mirrors customer-followups-api.ts.
 
+import { ApiError } from "@workspace/api-client-react/admin";
+
 export interface AdminPatientFollowup {
   id: string;
   body: string;
@@ -45,7 +47,13 @@ export async function listAdminPatientFollowups(
     throw new AdminPatientFollowupsNotFoundError();
   }
   if (!res.ok) {
-    throw new Error(`Failed to load followups (${res.status})`);
+    let data: unknown = null;
+    try {
+      data = await res.json();
+    } catch {
+      // non-JSON error body — status alone is enough
+    }
+    throw new ApiError(res, data, { method: "GET", url: res.url });
   }
   return (await res.json()) as AdminPatientFollowupsListResponse;
 }
@@ -71,7 +79,7 @@ export async function createAdminPatientFollowup(
   }
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    throw new Error(`Failed to create followup (${res.status}): ${text}`);
+    throw new ApiError(res, text || null, { method: "POST", url: res.url });
   }
   return (await res.json()) as CreateAdminPatientFollowupResponse;
 }
@@ -92,7 +100,7 @@ export async function completeAdminPatientFollowup(
   }
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    throw new Error(`Failed to complete followup (${res.status}): ${text}`);
+    throw new ApiError(res, text || null, { method: "PATCH", url: res.url });
   }
   return (await res.json()) as CompleteAdminPatientFollowupResponse;
 }

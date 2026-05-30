@@ -6,6 +6,7 @@
 // Auth: the browser sends the `pf_session` cookie automatically on
 // same-origin requests, so no per-call auth header is needed.
 
+import { ApiError } from "@workspace/api-client-react/admin";
 import { csrfHeader } from "../csrf";
 
 export interface BackInStockQueueRow {
@@ -41,11 +42,18 @@ export interface BackInStockDispatchResult {
 }
 
 export async function listBackInStockQueue(): Promise<BackInStockQueueResponse> {
-  const res = await fetch("/resupply-api/admin/shop/back-in-stock-queue", {
+  const url = "/resupply-api/admin/shop/back-in-stock-queue";
+  const res = await fetch(url, {
     headers: { Accept: "application/json" },
   });
   if (!res.ok) {
-    throw new Error(`Failed to load back-in-stock queue (${res.status})`);
+    let data: unknown = null;
+    try {
+      data = await res.json();
+    } catch {
+      // body not JSON
+    }
+    throw new ApiError(res, data, { method: "GET", url });
   }
   return (await res.json()) as BackInStockQueueResponse;
 }
@@ -53,29 +61,19 @@ export async function listBackInStockQueue(): Promise<BackInStockQueueResponse> 
 export async function dispatchBackInStockNow(
   productId: string,
 ): Promise<BackInStockDispatchResult> {
-  const res = await fetch(
-    `/resupply-api/admin/shop/back-in-stock-queue/${encodeURIComponent(productId)}/dispatch`,
-    {
-      method: "POST",
-      headers: { Accept: "application/json", ...csrfHeader() },
-    },
-  );
+  const url = `/resupply-api/admin/shop/back-in-stock-queue/${encodeURIComponent(productId)}/dispatch`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { Accept: "application/json", ...csrfHeader() },
+  });
   if (!res.ok) {
-    let detail = "";
+    let data: unknown = null;
     try {
-      const body = (await res.json()) as { error?: string };
-      detail = body?.error ?? "";
+      data = await res.json();
     } catch {
-      // ignore
+      // body not JSON
     }
-    if (res.status === 503 && detail === "stripe_not_configured") {
-      throw new Error(
-        "Stripe is not configured — set STRIPE_SECRET_KEY to dispatch.",
-      );
-    }
-    throw new Error(
-      `Dispatch failed (${res.status}${detail ? `: ${detail}` : ""})`,
-    );
+    throw new ApiError(res, data, { method: "POST", url });
   }
   return (await res.json()) as BackInStockDispatchResult;
 }
