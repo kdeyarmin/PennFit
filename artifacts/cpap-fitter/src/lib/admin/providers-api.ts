@@ -64,9 +64,10 @@ export interface CreateProviderResponse {
 async function jsonFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
   const method = (init.method ?? "GET").toUpperCase();
   const url = `/resupply-api${path}`;
+  const { headers: initHeaders, ...restInit } = init;
   const res = await fetch(url, {
-    headers: { Accept: "application/json", ...(init.headers ?? {}) },
-    ...init,
+    ...restInit,
+    headers: { Accept: "application/json", ...(initHeaders ?? {}) },
   });
   if (!res.ok) {
     let data: unknown = null;
