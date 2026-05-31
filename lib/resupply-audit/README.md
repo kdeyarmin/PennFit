@@ -5,12 +5,12 @@
 > `logAudit()` is retained as a no-op so the ~150 callsites do not need
 > to be rewritten, but no rows are written and no audit data is read.
 > Don't author new audit logic against this package; treat any new
-> `.from("audit_log")` call as a bug. The four historical readers
+> `.from("audit_log")` call as a bug. The three historical readers
 > (delivery-failures system-events, feature-flag activity, CSR
-> productivity, PHI-sweep status) have been short-circuited to return
-> their existing endpoint-specific "unavailable"/"no longer tracked"
-> stub shapes (for example, not every reader uses `{ unavailable: true }`)
-> so the SPA can render a notice instead of failing silently.
+> productivity) have been short-circuited to return their existing
+> endpoint-specific "unavailable"/"no longer tracked" stub shapes (for
+> example, not every reader uses `{ unavailable: true }`) so the SPA
+> can render a notice instead of failing silently.
 
 ## Historical reference
 

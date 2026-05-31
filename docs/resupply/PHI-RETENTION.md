@@ -120,13 +120,13 @@ attachment_object_key = $1 LIMIT 1`); if the recheck still
 Operational follow-ups:
 
 - Surface the counters on the admin dashboard's readiness section —
-  **shipped**. The most-recent `prescription.attachment.sweep` audit
-  row is projected onto `GET /dashboard/summary` as
-  `prescriptionAttachmentSweep` and rendered by
-  `PhiSweepStatusCard` on the admin home. Three states: never run /
-  healthy / needs attention. "Needs attention" fires on any
-  `deleteErrors`, any `orphansNoTimeCreated`, or `lastRunAt > 14
-days`.
+  **reverted**. This shipped as a `PhiSweepStatusCard` tile fed by a
+  `prescriptionAttachmentSweep` field on `GET /dashboard/summary`, but
+  the tile was removed (it carried no actionable signal for day-to-day
+  operators). The durable record of each run is the
+  `resupply.worker_run_summary` row
+  (`worker_kind = 'prescription_attachment_sweep'`), which operators
+  can query directly.
 - Promote to nightly cron if any single weekly run deletes >10
   objects, indicating volume has grown past the cheap-to-leave
   threshold.

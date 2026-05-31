@@ -435,8 +435,7 @@ export function buildProductionSweepDeps(
       // historical SOC tooling that filters by action — it's now a
       // no-op stub per CLAUDE.md (migration 0156 retired the audit
       // chain). The DURABLE record of "did the sweep run?" + the
-      // counters payload is the worker_run_summary INSERT below;
-      // sweep-status.ts reads from there now.
+      // counters payload is the worker_run_summary INSERT below.
       await logAudit({
         action: "prescription.attachment.sweep",
         // Stable system actor (matches the convention used by the
@@ -450,9 +449,10 @@ export function buildProductionSweepDeps(
         metadata: { ...counters },
       });
 
-      // Durable liveness + counters row for the ops dashboard. The
-      // dashboard tile (routes/dashboard/sweep-status.ts) reads the
-      // newest row with worker_kind='prescription_attachment_sweep'.
+      // Durable liveness + counters row for this cron worker, keyed by
+      // worker_kind='prescription_attachment_sweep'. Kept as an
+      // operational record operators can query directly (the sweep is
+      // no longer surfaced on the admin dashboard).
       // started_at/completed_at default to now() in the schema; this
       // single-INSERT call site treats the row's timestamp as "run
       // completed at" since the sweep doesn't currently track its own
@@ -471,7 +471,7 @@ export function buildProductionSweepDeps(
         if (error) {
           logger.warn(
             { err: error },
-            "attachment-sweep: worker_run_summary insert failed (dashboard liveness will lag)",
+            "attachment-sweep: worker_run_summary insert failed (liveness record will lag)",
           );
         }
       } catch (err) {
