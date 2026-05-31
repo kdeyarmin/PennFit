@@ -48,6 +48,9 @@ CREATE TABLE IF NOT EXISTS "resupply"."alert_message_overrides" (
     CHECK ("body_text" IS NULL OR length("body_text") <= 50000),
   CONSTRAINT "alert_message_overrides_note_max_length"
     CHECK ("note" IS NULL OR length("note") <= 2000),
+  CONSTRAINT "alert_message_overrides_patient_id_fk"
+    FOREIGN KEY ("patient_id") REFERENCES "resupply"."patients" ("id")
+    ON DELETE CASCADE,
   CONSTRAINT "alert_message_overrides_alert_key_fk"
     FOREIGN KEY ("alert_key") REFERENCES "resupply"."alert_definitions" ("key")
     ON DELETE CASCADE

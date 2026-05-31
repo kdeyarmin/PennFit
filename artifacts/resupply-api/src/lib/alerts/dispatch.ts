@@ -146,6 +146,15 @@ export interface DispatchAlertInput {
   supabase?: ResupplySupabaseClient;
 }
 
+function isMissingRelationError(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error as { code?: unknown }).code === "42P01"
+  );
+}
+
 /**
  * Send one alert to one patient over one channel. See the outcome
  * union for every distinguishable result.
@@ -167,6 +176,7 @@ export async function dispatchAlert(
     .limit(1)
     .maybeSingle();
   if (defErr) {
+    if (!isMissingRelationError(defErr)) throw defErr;
     logger.warn(
       { event: "alert_dispatch_def_lookup_failed", alertKey },
       "alert dispatch: alert_definitions lookup failed; treating as not found",
@@ -204,13 +214,17 @@ export async function dispatchAlert(
   // `message_not_configured`; a missing override table (0180) degrades
   // to the global message. Both keep the route forward-deploy-safe.
   if (globalRes.error) {
+    if (!isMissingRelationError(globalRes.error)) throw globalRes.error;
     logger.warn(
       { event: "alert_dispatch_message_lookup_failed", alertKey, channel },
       "alert dispatch: alert_messages lookup failed; treating as not configured",
     );
     return { status: "message_not_configured", channel };
   }
-  const override = overrideRes.error ? null : (overrideRes.data ?? null);
+  if (overrideRes.error && !isMissingRelationError(overrideRes.error)) {
+    throw overrideRes.error;
+  }
+  const override = overrideRes.data ?? null;
 
   const global = globalRes.data;
   if (!global || !global.is_active) {

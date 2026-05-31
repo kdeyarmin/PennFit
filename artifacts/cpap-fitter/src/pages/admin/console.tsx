@@ -431,6 +431,9 @@ function AdminConsole() {
       },
     },
   });
+  const canManageTools = (data?.permissions ?? []).includes(
+    "admin.tools.manage",
+  );
 
   if (isError) {
     const status = error instanceof ApiError ? error.status : 0;
@@ -637,7 +640,15 @@ function AdminConsole() {
               path="/admin/templates"
               component={AdminMessageTemplatesPage}
             />
-            <Route path="/admin/alerts" component={AdminAlertsPage} />
+            <Route path="/admin/alerts">
+              {() =>
+                canManageTools ? (
+                  <AdminAlertsPage />
+                ) : (
+                  <NotAuthorizedPage reason="not-authorized" />
+                )
+              }
+            </Route>
             <Route
               path="/admin/shop/subscriptions"
               component={AdminShopSubscriptionsPage}

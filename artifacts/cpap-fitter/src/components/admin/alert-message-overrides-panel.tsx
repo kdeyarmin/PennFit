@@ -246,6 +246,8 @@ function OverrideEditor({
 
   function handleSubmit(e: React.FormEvent): void {
     e.preventDefault();
+    const trimmedNote = note.trim();
+    if (trimmedNote.length < 3) return;
     const body: PatchAlertOverrideBody = {};
     const subjectVal = isEmail ? subject || null : null;
     if (subjectVal !== initial.subject) body.subject = subjectVal;
@@ -255,7 +257,7 @@ function OverrideEditor({
       const bodyHtmlVal = bodyHtml || null;
       if (bodyHtmlVal !== initial.bodyHtml) body.bodyHtml = bodyHtmlVal;
     }
-    if (note !== (initial.note ?? "")) body.note = note;
+    if (trimmedNote !== (initial.note ?? "")) body.note = trimmedNote;
     if (Object.keys(body).length === 0) {
       onCancel();
       return;
@@ -377,8 +379,9 @@ function NewOverrideForm({ patientId }: { patientId: string }) {
 
   function handleSubmit(e: React.FormEvent): void {
     e.preventDefault();
-    if (!alertKey || note.length < 3) return;
-    create.mutate({ alertKey, channel, note });
+    const trimmedNote = note.trim();
+    if (!alertKey || trimmedNote.length < 3) return;
+    create.mutate({ alertKey, channel, note: trimmedNote });
   }
 
   return (
@@ -433,7 +436,7 @@ function NewOverrideForm({ patientId }: { patientId: string }) {
       <div className="flex items-center gap-2">
         <button
           type="submit"
-          disabled={create.isPending || !alertKey || note.length < 3}
+          disabled={create.isPending || !alertKey || note.trim().length < 3}
           className="rounded bg-slate-900 px-3 py-1.5 text-sm text-white hover:bg-slate-800 disabled:opacity-60"
         >
           {create.isPending ? "Creating…" : "Create override"}

@@ -234,6 +234,13 @@ router.post(
       res.status(400).json({ error: "sms_body_text_must_be_ascii" });
       return;
     }
+    if (
+      parsed.data.channel === "email" &&
+      (parsed.data.subject?.trim() ?? "") === ""
+    ) {
+      res.status(400).json({ error: "email_subject_required" });
+      return;
+    }
 
     const adminId = req.adminUserId ?? null;
     const { data: inserted, error: insertErr } = await supabase
@@ -358,6 +365,10 @@ router.patch(
       !isAsciiOnly(parsed.data.bodyText)
     ) {
       res.status(400).json({ error: "sms_body_text_must_be_ascii" });
+      return;
+    }
+    if (existing.channel === "email" && (nextSubject?.trim() ?? "") === "") {
+      res.status(400).json({ error: "email_subject_required" });
       return;
     }
 
