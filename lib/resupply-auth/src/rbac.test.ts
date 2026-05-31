@@ -174,6 +174,16 @@ describe("roleHasPermission", () => {
     }
   });
 
+  it("targets.manage is management-gated (off the CSR tier)", () => {
+    expect(roleHasPermission("admin", "targets.manage")).toBe(true);
+    expect(roleHasPermission("supervisor", "targets.manage")).toBe(true);
+    expect(roleHasPermission("compliance_officer", "targets.manage")).toBe(
+      true,
+    );
+    expect(roleHasPermission("csr", "targets.manage")).toBe(false);
+    expect(roleHasPermission("agent", "targets.manage")).toBe(false);
+  });
+
   it("clinical permissions are rt + management, off the CSR tier", () => {
     for (const perm of [
       "clinical.read",
