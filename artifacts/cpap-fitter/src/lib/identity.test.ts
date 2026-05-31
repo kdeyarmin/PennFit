@@ -81,3 +81,34 @@ describe("identity.tsx — sign-out safety properties", () => {
     expect(cartClearPos).toBeGreaterThan(serverSignOutPos);
   });
 });
+
+describe("identity.tsx — SESSION_QUERY_KEY import (PR: namespaced cache key)", () => {
+  it("imports SESSION_QUERY_KEY from ./auth-hooks", () => {
+    // This PR introduced a namespaced SESSION_QUERY_KEY per auth surface.
+    // identity.tsx must import it from ./auth-hooks (not ./admin/auth-hooks)
+    // so it invalidates the correct storefront cache entry.
+    expect(SRC).toMatch(
+      /import\s*\{[^}]*SESSION_QUERY_KEY[^}]*\}\s*from\s*["']\.\/auth-hooks["']/,
+    );
+  });
+
+  it('uses SESSION_QUERY_KEY in invalidateQueries, not the literal ["auth","me"]', () => {
+    // Regression guard: the key must come from the import, not be hardcoded.
+    // A hardcoded ["auth","me"] would collide with the admin surface.
+    expect(SRC).toContain(
+      "queryClient.invalidateQueries({ queryKey: SESSION_QUERY_KEY })",
+    );
+    // Must NOT contain the old hardcoded key literal.
+    expect(SRC).not.toMatch(/queryKey:\s*\["auth",\s*"me"\]/);
+  });
+
+  it("SESSION_QUERY_KEY is referenced after authClient.signOut() call (invalidates on sign-out)", () => {
+    // Ensure the invalidation happens after the actual sign-out API call.
+    const signOutCallPos = SRC.indexOf("authClient.signOut()");
+    const invalidatePos = SRC.indexOf(
+      "queryClient.invalidateQueries({ queryKey: SESSION_QUERY_KEY })",
+    );
+    expect(signOutCallPos).toBeGreaterThan(-1);
+    expect(invalidatePos).toBeGreaterThan(signOutCallPos);
+  });
+});

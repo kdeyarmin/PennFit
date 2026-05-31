@@ -200,4 +200,35 @@ describe("downloadAuditExport — success path", () => {
     const { rowCountApprox } = await downloadAuditExport({});
     expect(rowCountApprox).toBe(0);
   });
+
+  // --- Edge cases for the new empty-line filtering behaviour ---
+
+  it("does not over-count when the CSV body ends with a trailing newline", async () => {
+    // Old code: "header\nrow1\nrow2\n".split("\n").length - 1 = 3 (over-count)
+    // New code: filters empty lines → ["header","row1","row2"] → 2 data rows
+    fetchMock.mockResolvedValue(makeOkResponse("header\nrow1\nrow2\n"));
+    const { rowCountApprox } = await downloadAuditExport({});
+    expect(rowCountApprox).toBe(2);
+  });
+
+  it("returns 0 for a completely empty CSV body", async () => {
+    fetchMock.mockResolvedValue(makeOkResponse(""));
+    const { rowCountApprox } = await downloadAuditExport({});
+    expect(rowCountApprox).toBe(0);
+  });
+
+  it("handles multiple consecutive trailing newlines without over-counting", async () => {
+    // Server that emits two trailing newlines after the last data row.
+    fetchMock.mockResolvedValue(makeOkResponse("header\nrow1\n\n"));
+    const { rowCountApprox } = await downloadAuditExport({});
+    expect(rowCountApprox).toBe(1);
+  });
+
+  it("header-only CSV with trailing newline still returns 0 (regression for old +1 bug)", async () => {
+    // Old behaviour: "date,action\n".split("\n").length - 1 = 1 (wrong)
+    // New behaviour: non-empty lines = ["date,action"], minus header = 0
+    fetchMock.mockResolvedValue(makeOkResponse("date,action\n"));
+    const { rowCountApprox } = await downloadAuditExport({});
+    expect(rowCountApprox).toBe(0);
+  });
 });
