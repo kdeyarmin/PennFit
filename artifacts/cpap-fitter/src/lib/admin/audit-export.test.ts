@@ -83,7 +83,9 @@ describe("downloadAuditExport — error handling", () => {
   });
 
   it("throws ApiError with status 500", async () => {
-    fetchMock.mockResolvedValue(makeErrorResponse(500, "Internal Server Error", "Server error"));
+    fetchMock.mockResolvedValue(
+      makeErrorResponse(500, "Internal Server Error", "Server error"),
+    );
     const err = await downloadAuditExport({}).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(ApiError);
     expect((err as ApiError).status).toBe(500);

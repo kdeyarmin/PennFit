@@ -22,7 +22,9 @@ const SRC = readFileSync(path.join(__dirname, "identity.tsx"), "utf8");
 describe("identity.tsx — cartStore integration (regression: cart stayed populated after sign-out)", () => {
   it("imports cartStore from @/hooks/use-cart", () => {
     // The store must be imported so sign-out can call cartStore.clear().
-    expect(SRC).toMatch(/import\s*\{[^}]*cartStore[^}]*\}\s*from\s*["']@\/hooks\/use-cart["']/);
+    expect(SRC).toMatch(
+      /import\s*\{[^}]*cartStore[^}]*\}\s*from\s*["']@\/hooks\/use-cart["']/,
+    );
   });
 
   it("calls cartStore.clear() during sign-out", () => {

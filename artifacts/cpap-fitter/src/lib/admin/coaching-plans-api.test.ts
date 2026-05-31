@@ -31,10 +31,7 @@ function okResponse(body: unknown): Partial<Response> {
   };
 }
 
-function errorResponse(
-  status: number,
-  statusText = "",
-): Partial<Response> {
+function errorResponse(status: number, statusText = ""): Partial<Response> {
   return {
     ok: false,
     status,
@@ -147,9 +144,7 @@ describe("createCoachingPlan", () => {
 
   test("throws ApiError with method POST on non-OK response", async () => {
     fetchMock.mockResolvedValue(errorResponse(422, "Unprocessable Entity"));
-    const err = await createCoachingPlan(CREATE_BODY).catch(
-      (e: unknown) => e,
-    );
+    const err = await createCoachingPlan(CREATE_BODY).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(ApiError);
     expect((err as ApiError).method).toBe("POST");
   });
@@ -170,7 +165,10 @@ describe("patchCoachingPlan", () => {
 
   test("serialises patch body as JSON", async () => {
     fetchMock.mockResolvedValue(okResponse({ ok: true }));
-    await patchCoachingPlan("plan-1", { status: "resolved", resolutionNote: "Improved" });
+    await patchCoachingPlan("plan-1", {
+      status: "resolved",
+      resolutionNote: "Improved",
+    });
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(JSON.parse(init.body as string)).toMatchObject({
       status: "resolved",
@@ -186,9 +184,9 @@ describe("patchCoachingPlan", () => {
 
   test("throws ApiError with method PATCH on non-OK response", async () => {
     fetchMock.mockResolvedValue(errorResponse(404, "Not Found"));
-    const err = await patchCoachingPlan("missing", { status: "resolved" }).catch(
-      (e: unknown) => e,
-    );
+    const err = await patchCoachingPlan("missing", {
+      status: "resolved",
+    }).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(ApiError);
     expect((err as ApiError).method).toBe("PATCH");
     expect((err as ApiError).status).toBe(404);
