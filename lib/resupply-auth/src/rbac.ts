@@ -70,6 +70,8 @@ import type { AdminRole } from "@workspace/resupply-db";
  *   audit.read              — view audit log entries in the UI
  *   admin_team.manage       — invite / revoke admin team members
  *   reports.read            — view operations-center dashboards
+ *   cost.read               — view unit cost / COGS / margin figures
+ *                              (finance-gated; off front-line CSRs)
  *   bulk_campaigns.send     — send bulk messaging campaigns
  *   fit_session.override    — override a recommended mask/size
  *   inventory.read          — view shop stock counts (Pacware
@@ -93,6 +95,7 @@ export type Permission =
   | "audit.read"
   | "admin_team.manage"
   | "reports.read"
+  | "cost.read"
   | "bulk_campaigns.send"
   | "fit_session.override"
   | "inventory.read"
@@ -117,6 +120,7 @@ const ALL_PERMISSIONS: ReadonlyArray<Permission> = [
   "audit.read",
   "admin_team.manage",
   "reports.read",
+  "cost.read",
   "bulk_campaigns.send",
   "fit_session.override",
   "inventory.read",
@@ -193,6 +197,7 @@ const EFFECTIVE_ROLE_PERMISSIONS: Record<
     "audit.read",
     "audit.export",
     "reports.read",
+    "cost.read",
     "bulk_campaigns.send",
     "fit_session.override",
     "inventory.read",

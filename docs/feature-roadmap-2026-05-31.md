@@ -116,6 +116,14 @@ high-value items in Phases 2–5 have nowhere to read from.
 - **Exit:** every new order/claim line carries a captured cost; a
   read-only `cost.read` permission exists; backfill script for historic
   rows (cost = null → "unknown", surfaced honestly).
+- **Status (2026-05-31):** ⏳ in progress. Landed: migration
+  `0186_cost_capture` (`product_costs` + nullable cost-snapshot columns
+  on `shop_order_items` / `insurance_claim_line_items` + order-level fee
+  columns on `shop_orders`), the finance-gated `cost.read` RBAC
+  permission, and the pure unknown-cost-aware margin/COGS math in
+  `@workspace/resupply-domain` (`computeMargin` / `aggregateMargin`).
+  Next: stamp snapshots at order/claim creation, then seed/backfill
+  `product_costs`.
 
 ### F2 · Metrics-snapshot + threshold-alert substrate — **M**
 

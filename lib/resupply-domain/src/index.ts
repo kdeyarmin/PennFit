@@ -25,3 +25,11 @@ export {
   type ResupplyEntitlementInput,
   type ResupplyEntitlementResult,
 } from "./entitlement";
+
+export {
+  computeMargin,
+  aggregateMargin,
+  type MarginInput,
+  type MarginResult,
+  type MarginAggregate,
+} from "./margin";
