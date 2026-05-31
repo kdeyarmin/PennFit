@@ -49,6 +49,7 @@ import { registerTherapyNightlySyncJob } from "./jobs/therapy-integrations-night
 import { registerTherapyFleetSnapshotJob } from "./jobs/therapy-fleet-daily-snapshot.js";
 import { registerMetricsSnapshotJob } from "./jobs/metrics-snapshot.js";
 import { registerMetricAlertsEvaluatorJob } from "./jobs/metric-alerts-evaluator.js";
+import { registerMetricAlertsNotifyJob } from "./jobs/metric-alerts-notify.js";
 import { registerTherapyFleetAlertsJob } from "./jobs/therapy-fleet-alerts-scan.js";
 import { registerCoachingProgressJob } from "./jobs/coaching-plan-progress.js";
 import { registerPriorAuthExpirySweepJob } from "./jobs/prior-auth-expiry-sweep.js";
@@ -446,6 +447,9 @@ async function doStartWorker(): Promise<void> {
   // Evaluate metric_thresholds against the fresh snapshot (06:45 UTC)
   // and write metric_alerts on a breach.
   await registerMetricAlertsEvaluatorJob(boss);
+
+  // Email a SendGrid digest of new KPI alerts to admins (06:50 UTC).
+  await registerMetricAlertsNotifyJob(boss);
 
   // Nightly therapy-fleet alerts scan (05:15 UTC): maintains the
   // internal alert feed and, when the (default-off) auto-outreach flag

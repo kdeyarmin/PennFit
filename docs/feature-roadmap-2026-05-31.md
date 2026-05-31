@@ -165,9 +165,13 @@ high-value items in Phases 2–5 have nowhere to read from.
   `metrics_daily`, idempotent on the `(date, key)` PK and extensible to
   more KPIs; and the **`metrics.alerts-evaluator`** job (06:45 UTC) that
   runs each enabled threshold's latest + 7-day-baseline values through
-  `evaluateThreshold` and writes idempotent `metric_alerts` on a breach.
-  Next: the email notifier (shared SendGrid digest of new alerts) + an
-  admin alert-feed endpoint. (F2 nearly complete.)
+  `evaluateThreshold` and writes idempotent `metric_alerts` on a breach;
+  the **`/admin/metric-alerts`** feed (GET + ack/resolve PATCH, gated on
+  the new `metrics.read` permission); and the **`metrics.alerts-notify`**
+  job (06:50 UTC) emailing a SendGrid digest of new alerts to
+  `RESUPPLY_ADMIN_EMAILS` (fail-soft; stamps `notified_at` only on a
+  successful send). **✅ F2 complete.** Next foundation: **F3 (clinical
+  encounters + RT role + clinician portal)**.
 
 ### F3 · Clinical encounters + RT role + clinician portal shell — **L**
 
