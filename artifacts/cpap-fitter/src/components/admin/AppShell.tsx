@@ -825,10 +825,17 @@ function SidebarNavBody({
   // silently — badges just don't render rather than blocking the nav.
   // Gated on `isAdminConfirmed` so we don't fire a request that will
   // 401 before the session check completes.
+  //
+  // Live refresh (#18): poll once a minute while the console is open so
+  // badges stay current during a long session without a focus change.
+  // refetchIntervalInBackground stays false (the TanStack default), so
+  // a hidden tab doesn't keep polling — work lands on the next focus
+  // refetch instead.
   const { data: counts } = useQuery({
     queryKey: ["admin-inbox-counts"],
     queryFn: fetchAdminInboxCounts,
     staleTime: 30_000,
+    refetchInterval: 60_000,
     refetchOnWindowFocus: true,
     retry: false,
     enabled: isAdminConfirmed,
