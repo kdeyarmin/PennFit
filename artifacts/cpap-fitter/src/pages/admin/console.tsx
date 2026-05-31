@@ -155,6 +155,11 @@ const AdminMessageTemplatesPage = lazy(() =>
     default: m.AdminMessageTemplatesPage,
   })),
 );
+const AdminAlertsPage = lazy(() =>
+  import("@/pages/admin/admin-alerts").then((m) => ({
+    default: m.AdminAlertsPage,
+  })),
+);
 const AdminShopSubscriptionsPage = lazy(() =>
   import("@/pages/admin/admin-shop-subscriptions").then((m) => ({
     default: m.AdminShopSubscriptionsPage,
@@ -446,6 +451,9 @@ function AdminConsole() {
       },
     },
   });
+  const canManageTools = (data?.permissions ?? []).includes(
+    "admin.tools.manage",
+  );
 
   if (isError) {
     const status = error instanceof ApiError ? error.status : 0;
@@ -467,7 +475,11 @@ function AdminConsole() {
   }
 
   return (
-    <AppShell adminEmail={data?.email} adminRole={data?.role}>
+    <AppShell
+      adminEmail={data?.email}
+      adminRole={data?.role}
+      adminPermissions={data?.permissions}
+    >
       <ErrorBoundary>
         {/* Suspense boundary for the per-page lazy chunks declared at
             the top of this file. Without it, a navigation to any
@@ -652,6 +664,15 @@ function AdminConsole() {
               path="/admin/templates"
               component={AdminMessageTemplatesPage}
             />
+            <Route path="/admin/alerts">
+              {() =>
+                canManageTools ? (
+                  <AdminAlertsPage />
+                ) : (
+                  <NotAuthorizedPage reason="not-authorized" />
+                )
+              }
+            </Route>
             <Route
               path="/admin/shop/subscriptions"
               component={AdminShopSubscriptionsPage}

@@ -18,6 +18,7 @@ import {
   PriorAuthorizationsTab,
   SleepStudiesTab,
 } from "@/components/admin/ClinicalTabs";
+import { AlertMessageOverridesPanel } from "@/components/admin/alert-message-overrides-panel";
 import { DocumentsTab } from "@/components/admin/DocumentsTab";
 import { EquipmentTab } from "@/components/admin/EquipmentTab";
 import { PatientActionBar } from "@/components/admin/PatientActionBar";
@@ -103,7 +104,8 @@ type Tab =
   | "billing"
   | "resupply"
   | "equipment"
-  | "forms";
+  | "forms"
+  | "alert-overrides";
 
 /**
  * Admin detail page for a patient, presenting header info, action controls, settings, and a tabbed view of related data.
@@ -379,6 +381,12 @@ export function PatientDetailPage({ id }: { id: string }) {
         <TabButton active={tab === "forms"} onClick={() => setTab("forms")}>
           Forms
         </TabButton>
+        <TabButton
+          active={tab === "alert-overrides"}
+          onClick={() => setTab("alert-overrides")}
+        >
+          Alert overrides
+        </TabButton>
       </div>
 
       <Card>
@@ -427,6 +435,9 @@ export function PatientDetailPage({ id }: { id: string }) {
         {tab === "resupply" && <PatientResupplyTab patientId={id} />}
         {tab === "equipment" && <EquipmentTab patientId={id} />}
         {tab === "forms" && <FormAcksTab patientId={id} />}
+        {tab === "alert-overrides" && (
+          <AlertMessageOverridesPanel patientId={id} />
+        )}
       </Card>
     </div>
   );
