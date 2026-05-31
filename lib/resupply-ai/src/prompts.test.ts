@@ -32,6 +32,18 @@ describe("buildSystemPrompt", () => {
     expect(prompt).toContain("Avery");
   });
 
+  it("uses the override greeting when supplied (inbound reorder IVR)", () => {
+    const inboundGreeting =
+      "Hi there, thanks for calling your CPAP resupply line!";
+    const prompt = buildSystemPrompt({
+      ...baseInput,
+      greeting: inboundGreeting,
+    });
+    expect(prompt).toContain(inboundGreeting);
+    // The outbound default greeting must NOT also appear.
+    expect(prompt).not.toContain(DEFAULT_GREETING);
+  });
+
   it("falls back to a generic agent self-description when callerName is omitted", () => {
     const prompt = buildSystemPrompt(baseInput);
     expect(prompt).toContain("CPAP resupply assistant");

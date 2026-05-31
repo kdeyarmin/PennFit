@@ -155,9 +155,15 @@ export async function handleVoiceWsConnection(
     apiKey: config.openaiApiKey,
     instructions: buildSystemPrompt({
       practiceName: config.practiceName ?? "PennPaps",
+      // Inbound calls (the reorder IVR) set their own context + greeting
+      // on the pending entry so the agent doesn't tell a caller who
+      // dialed in that we're calling them. Outbound (place-call) leaves
+      // both unset → the default check-in context + DEFAULT_GREETING.
       callContext:
+        pending.callContext ??
         "Outbound CPAP resupply check-in. Verify identity by date of birth, " +
-        "review supplies due, confirm shipping address, and place the order.",
+          "review supplies due, confirm shipping address, and place the order.",
+      ...(pending.greeting ? { greeting: pending.greeting } : {}),
     }),
     tools: OPENAI_TOOL_DESCRIPTORS,
     allowedToolNames: new Set(TOOL_NAMES),
