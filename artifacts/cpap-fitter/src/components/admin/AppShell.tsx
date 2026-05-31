@@ -437,6 +437,27 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         hint: "Therapy-cloud vendor connections and nightly sync status",
       },
       {
+        href: "/admin/therapy-fleet",
+        label: "Therapy Fleet",
+        icon: HeartPulse,
+        matchPrefix: "/admin/therapy-fleet",
+        hint: "Population compliance cohorts and clinical outreach worklist",
+      },
+      {
+        href: "/admin/therapy-resupply",
+        label: "Resupply Opportunities",
+        icon: PackageCheck,
+        matchPrefix: "/admin/therapy-resupply",
+        hint: "Device-reported supplies due for replacement — drives resupply orders",
+      },
+      {
+        href: "/admin/therapy-compliance",
+        label: "Setup Adherence",
+        icon: ClipboardCheck,
+        matchPrefix: "/admin/therapy-compliance",
+        hint: "CMS 90-day adherence tracker for new Medicare setups",
+      },
+      {
         href: "/admin/delivery-failures",
         label: "Delivery Failures",
         icon: TruckIcon,

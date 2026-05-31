@@ -56,23 +56,8 @@ export const FEATURE_FLAG_KEYS = [
   "resupply.entitlement_enforcement",
   "reminder_escalation.dispatcher",
   "storefront.auto_reminder_enrollment",
-export const FEATURE_FLAG_KEYS = [
-  "sms.reminders",
-  "email.reminders",
-  "voice.agent",
-  // ... other flags
-  "storefront.auto_reminder_enrollment",
   "alerts.auto_dispatch",
-] as const;
-
-export type FeatureFlagKey = (typeof FEATURE_FLAG_KEYS)[number];
-
-const FEATURE_FLAG_DEFAULTS: Partial<Record<FeatureFlagKey, boolean>> = {
-  "alerts.auto_dispatch": false,
-};
-
-// Later in the getFeatureFlag function:
-const value = data?.enabled ?? FEATURE_FLAG_DEFAULTS[key] ?? true;
+  "therapy_fleet.auto_outreach",
 ] as const;
 
 export type FeatureFlagKey = (typeof FEATURE_FLAG_KEYS)[number];
