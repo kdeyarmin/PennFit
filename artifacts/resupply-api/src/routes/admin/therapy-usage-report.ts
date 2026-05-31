@@ -260,13 +260,14 @@ async function buildGroupingMap(
     }
 
     for (const [patientId, ids] of providerIdsByPatient) {
-      const buckets: Bucket[] = [];
+      const buckets: GroupRef[] = [];
       for (const pid of ids) {
         const bucket = providerById.get(pid);
         if (bucket) buckets.push(bucket);
       }
       if (buckets.length > 0) map.set(patientId, buckets);
     }
+    fillUnattributed(map, patientIds, groupBy);
     return map;
   }
 
@@ -291,7 +292,23 @@ async function buildGroupingMap(
       buckets.push({ key, label: key, sublabel: null });
     }
   }
+  fillUnattributed(map, patientIds, groupBy);
   return map;
+}
+
+/** Every patient with night data must land in some bucket so the
+ *  headline summary (which counts all patients with nights) and the
+ *  cohort rows agree on the patient set. Patients with no prescriber /
+ *  no device on file fall into an explicit "Unattributed" bucket. */
+function fillUnattributed(
+  map: Map<string, GroupRef[]>,
+  patientIds: Set<string>,
+  groupBy: TherapyReportGrouping,
+): void {
+  const fallback = unattributedRef(groupBy);
+  for (const id of patientIds) {
+    if (!map.has(id)) map.set(id, [fallback]);
+  }
 }
 
 export default router;
