@@ -1,4 +1,4 @@
--- 0179_eligibility_enforcement_flag — feature flag + CSR alert type for
+-- 0185_eligibility_enforcement_flag — feature flag + CSR alert type for
 -- the order-time coverage guard that consults the cached 270/271 (#2).
 --
 -- Sibling to 0172 (the too-soon/over-quantity entitlement guard). The
