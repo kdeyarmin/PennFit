@@ -53,10 +53,9 @@ export async function downloadAuditExport(
   const match = /filename="([^"]+)"/i.exec(cd);
   const filename = match?.[1] ?? `audit-export-${Date.now()}.csv`;
 
-  // Approximate row count = non-empty lines minus 1 (the header).
-  // Filtering empty lines keeps this robust to the trailing newline
-  // the server emits at the end of the CSV; otherwise every export
-  // over-counts by one and a header-only export reports 1. Used
+  // Approximate row count = non-empty lines minus 1 (header). Filtering
+  // empty lines first avoids over-counting a trailing newline (or
+  // several) that servers commonly emit after the last data row. Used
   // purely for an end-of-export confirmation toast; the real number
   // lives in the file.
   let rowCountApprox: number;

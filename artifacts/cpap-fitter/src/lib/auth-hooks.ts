@@ -16,17 +16,16 @@ import {
   createAuthHooks,
 } from "@workspace/resupply-auth-react";
 
+/**
+ * Namespaced session cache key for the STOREFRONT surface. Distinct
+ * from the admin key (["auth","me","admin"]) so both surfaces can
+ * share one QueryClient without their session entries colliding.
+ */
+export const SESSION_QUERY_KEY = ["auth", "me", "storefront"] as const;
+
 export const authClient = createAuthClient({
   basePath: "/api/auth",
 });
-
-// Namespaced session cache key. The admin console (`lib/admin/auth-hooks`)
-// shares this SPA's single QueryClient but probes a DIFFERENT endpoint
-// (`/resupply-api/auth/me`). Without distinct keys the two `/me` queries
-// collide: an admin sign-in would surface as the storefront customer, and
-// vice-versa. Keep this distinct from `lib/admin/auth-hooks`'s key.
-// Exported so the identity shim invalidates the right cache entry.
-export const SESSION_QUERY_KEY = ["auth", "me", "storefront"] as const;
 
 export const authHooks = createAuthHooks(authClient, {
   sessionQueryKey: SESSION_QUERY_KEY,

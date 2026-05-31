@@ -79,14 +79,10 @@ export interface CreateAuthHooksOptions {
    */
   staleTime?: number;
   /**
-   * React Query key for the `/me` session probe. Defaults to
-   * `SESSION_QUERY_KEY` (`["auth","me"]`). Override when more than
-   * one auth surface (e.g. a customer storefront AND an admin
-   * console) share a single `QueryClient`: each must use a distinct
-   * key, or their sessions collide in the cache — a sign-in or
-   * sign-out on one surface would clobber the other's cached
-   * identity, and a gate watching the shared key would read the
-   * wrong session. Pass e.g. `["auth","me","admin"]`.
+   * Override for the session cache key. Lets multiple auth surfaces
+   * (admin + storefront) share one QueryClient without their session
+   * entries colliding. Defaults to ["auth","me"]; the admin SPA passes
+   * ["auth","me","admin"] and the storefront ["auth","me","storefront"].
    */
   sessionQueryKey?: QueryKey;
 }
