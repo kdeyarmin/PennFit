@@ -9,6 +9,7 @@ import shopOrdersAdminRouter from "./admin/shop-orders.js";
 import shopProductsAdminRouter from "./admin/shop-products.js";
 import inventoryReconciliationRouter from "./admin/inventory-reconciliation.js";
 import csrMacrosRouter from "./admin/csr-macros.js";
+import alertsRouter from "./admin/alerts.js";
 import messageTemplatesRouter from "./admin/message-templates.js";
 import messageTemplateOverridesRouter from "./admin/message-template-overrides.js";
 import shopReturnsAdminRouter from "./admin/shop-returns.js";

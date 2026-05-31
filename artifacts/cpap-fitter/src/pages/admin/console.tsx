@@ -150,6 +150,11 @@ const AdminMessageTemplatesPage = lazy(() =>
     default: m.AdminMessageTemplatesPage,
   })),
 );
+const AdminAlertsPage = lazy(() =>
+  import("@/pages/admin/admin-alerts").then((m) => ({
+    default: m.AdminAlertsPage,
+  })),
+);
 const AdminShopSubscriptionsPage = lazy(() =>
   import("@/pages/admin/admin-shop-subscriptions").then((m) => ({
     default: m.AdminShopSubscriptionsPage,
@@ -628,6 +633,7 @@ function AdminConsole() {
               path="/admin/templates"
               component={AdminMessageTemplatesPage}
             />
+            <Route path="/admin/alerts" component={AdminAlertsPage} />
             <Route
               path="/admin/shop/subscriptions"
               component={AdminShopSubscriptionsPage}
