@@ -209,9 +209,7 @@ describe("deEscalateConversation", () => {
 
   test("throws ApiError on non-OK response", async () => {
     fetchMock.mockResolvedValue(errorResponse(404, "Not Found"));
-    const err = await deEscalateConversation("conv-1").catch(
-      (e: unknown) => e,
-    );
+    const err = await deEscalateConversation("conv-1").catch((e: unknown) => e);
     expect(err).toBeInstanceOf(ApiError);
     expect((err as ApiError).status).toBe(404);
   });

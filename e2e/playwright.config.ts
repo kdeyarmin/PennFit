@@ -1,11 +1,12 @@
 // Playwright config for PennFit storefront/admin SPA E2E.
 //
-// Scope: This is a minimal scaffold added in the post-Phase-4
-// follow-up (AUDIT_REPORT.md #5). It contains one smoke test
-// (`tests/storefront-loads.spec.ts`) that confirms the cpap-fitter
-// SPA boots and renders its landing page.
+// Scope: Storefront/admin SPA E2E. Current specs under tests/:
+//   * storefront-loads.spec.ts      — SPA boots, landing nav renders
+//   * results-page-resilience.spec.ts — measure/results page degrades
+//                                       gracefully
+//   * a11y.spec.ts                  — axe a11y sweep of public routes
 //
-// Running the suite:
+// Running the suite locally:
 //   1. Install browser binaries once:
 //        pnpm exec playwright install chromium
 //   2. Start the dev server (it must be running on
@@ -14,12 +15,12 @@
 //   3. In another terminal:
 //        pnpm run test:e2e
 //
-// CI integration is intentionally NOT wired in this scaffold —
-// running Playwright in CI requires picking a runner image with the
-// browser binaries cached (or paying the ~500 MB cold-install cost
-// per run) and deciding whether to gate PRs on it. That decision is
-// out of scope for this audit; the scaffold is here so the next
-// step is purely operational (write more tests, wire CI).
+// CI integration is wired in .github/workflows/ci.yml: the `smoke`
+// job runs storefront-loads.spec.ts against a `vite preview` build
+// and is REQUIRED; the `a11y` job runs a11y.spec.ts and is currently
+// `continue-on-error` (non-gating) while baseline violations are
+// triaged. results-page-resilience.spec.ts is not yet wired into a
+// CI job.
 
 import { defineConfig, devices } from "@playwright/test";
 
