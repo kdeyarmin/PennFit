@@ -29,7 +29,7 @@ describe("admin/identity.ts — SESSION_QUERY_KEY import (PR: namespaced cache k
     );
   });
 
-  it("uses SESSION_QUERY_KEY in invalidateQueries, not a hardcoded [\"auth\",\"me\"]", () => {
+  it('uses SESSION_QUERY_KEY in invalidateQueries, not a hardcoded ["auth","me"]', () => {
     // Regression guard: the key must come from the import.
     // A hardcoded ["auth","me"] would invalidate the default key,
     // colliding with the storefront surface.

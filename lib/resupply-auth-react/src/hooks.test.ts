@@ -80,6 +80,19 @@ describe("createAuthHooks", () => {
     expect(typeof hooks.useSignUp).toBe("function");
   });
 
+  it("shared /me prefix invalidation marks all namespaced session caches stale", async () => {
+    const qc = new QueryClient();
+    const storefrontKey = ["auth", "me", "storefront"] as const;
+    const adminKey = ["auth", "me", "admin"] as const;
+    qc.setQueryData(storefrontKey, { id: "storefront" });
+    qc.setQueryData(adminKey, { id: "admin" });
+
+    await qc.invalidateQueries({ queryKey: SESSION_QUERY_KEY });
+
+    expect(qc.getQueryState(storefrontKey)?.isInvalidated).toBe(true);
+    expect(qc.getQueryState(adminKey)?.isInvalidated).toBe(true);
+  });
+
   it("client.fetchMe round-trip returns the typed payload that useSession consumers see", async () => {
     const me = {
       id: "u1",

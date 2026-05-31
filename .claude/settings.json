@@ -1,6 +1,7 @@
 {
   "env": {
-    "npm_config_user_agent": "pnpm/9.0.0 npm/? node/v20.0.0 linux x64"
+    "npm_config_engine_strict": "false",
+    "COREPACK_ENABLE_DOWNLOAD_PROMPT": "0"
   },
   "extraKnownMarketplaces": {
     "anthropics-skills": {
@@ -28,7 +29,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "cd \"${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}\" && pnpm install --frozen-lockfile 2>&1 | tail -3 && pnpm run build 2>&1 | tail -20; exit 0",
+            "command": "cd \"${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}\" && PNPM=$(corepack --version >/dev/null 2>&1 && echo 'corepack pnpm' || echo pnpm) && $PNPM install --frozen-lockfile 2>&1 | tail -3 && $PNPM run build 2>&1 | tail -20; exit 0",
             "timeout": 300,
             "statusMessage": "Building project..."
           }

@@ -150,9 +150,9 @@ describe("createMacro", () => {
     fetchMock.mockResolvedValue(okResponse({ macro: MACRO }));
     await createMacro(CREATE_BODY);
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(
-      (init.headers as Record<string, string>)["Content-Type"],
-    ).toBe("application/json");
+    expect((init.headers as Record<string, string>)["Content-Type"]).toBe(
+      "application/json",
+    );
   });
 
   test("serialises body as JSON", async () => {
