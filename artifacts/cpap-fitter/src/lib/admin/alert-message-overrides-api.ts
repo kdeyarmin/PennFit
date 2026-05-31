@@ -46,6 +46,8 @@ function base(patientId: string): string {
   return `/resupply-api/admin/patients/${encodeURIComponent(patientId)}/alert-message-overrides`;
 }
 
+const LIST_ENDPOINT = "/resupply-api/admin/patients/alert-message-overrides/list";
+
 async function readError(res: Response): Promise<never> {
   const json = (await res.json().catch(() => null)) as {
     error?: string;
@@ -64,9 +66,15 @@ async function readError(res: Response): Promise<never> {
 export async function listAlertOverrides(
   patientId: string,
 ): Promise<{ overrides: AlertMessageOverride[] }> {
-  const res = await fetch(base(patientId), {
+  const res = await fetch(LIST_ENDPOINT, {
+    method: "POST",
     credentials: "include",
-    headers: { Accept: "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+      ...csrfHeader(),
+    },
+    body: JSON.stringify({ patientId }),
   });
   if (!res.ok) await readError(res);
   return (await res.json()) as { overrides: AlertMessageOverride[] };

@@ -4,8 +4,8 @@
 // /admin/shop/customers/:userId/message-template-overrides).
 //
 // Endpoints:
-//   GET    /admin/patients/:patientId/alert-message-overrides
-//          — list every override for one patient.
+//   POST   /admin/patients/alert-message-overrides/list
+//          — list every override for one patient (patientId in body).
 //   POST   /admin/patients/:patientId/alert-message-overrides
 //          — create an override for (alert_key, channel). Required
 //            note explaining WHY.
@@ -60,6 +60,7 @@ const overrideMutationLimiter = adminRateLimit({
 const channelEnum = z.enum(["email", "sms", "voice"]);
 const patientIdParam = z.string().uuid();
 const overrideIdParam = z.string().uuid();
+const listBody = z.object({ patientId: z.string().uuid() }).strict();
 const alertKeyShape = z
   .string()
   .trim()
@@ -158,12 +159,12 @@ async function allowedVariablesForAlert(
   return { exists: true, allowed: data.allowed_variables ?? [] };
 }
 
-router.get(
-  "/admin/patients/:patientId/alert-message-overrides",
+router.post(
+  "/admin/patients/alert-message-overrides/list",
   requirePermission("admin.tools.manage"),
   async (req, res) => {
-    const idCheck = patientIdParam.safeParse(req.params.patientId);
-    if (!idCheck.success) {
+    const parsed = listBody.safeParse(req.body);
+    if (!parsed.success) {
       res.status(400).json({ error: "invalid_patient_id" });
       return;
     }
@@ -172,7 +173,7 @@ router.get(
       .schema("resupply")
       .from("alert_message_overrides")
       .select(OVERRIDE_COLUMNS)
-      .eq("patient_id", idCheck.data)
+      .eq("patient_id", parsed.data.patientId)
       .order("alert_key", { ascending: true })
       .order("channel", { ascending: true })
       .limit(200);
