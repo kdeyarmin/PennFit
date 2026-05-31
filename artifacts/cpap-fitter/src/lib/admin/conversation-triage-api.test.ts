@@ -28,10 +28,7 @@ function okResponse(body: unknown): Partial<Response> {
   };
 }
 
-function errorResponse(
-  status: number,
-  statusText = "",
-): Partial<Response> {
+function errorResponse(status: number, statusText = ""): Partial<Response> {
   return {
     ok: false,
     status,
@@ -67,9 +64,7 @@ describe("triageApi.setSnooze", () => {
     fetchMock.mockResolvedValue(okResponse({ ok: true }));
     await triageApi.setSnooze("conv-1", "2026-12-01T00:00:00Z");
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe(
-      "/resupply-api/admin/conversations/conv-1/snooze",
-    );
+    expect(url).toBe("/resupply-api/admin/conversations/conv-1/snooze");
     expect(init.method).toBe("PATCH");
   });
 
@@ -97,18 +92,18 @@ describe("triageApi.setSnooze", () => {
 
   test("throws ApiError on non-OK response", async () => {
     fetchMock.mockResolvedValue(errorResponse(403, "Forbidden"));
-    const err = await triageApi.setSnooze("conv-1", null).catch(
-      (e: unknown) => e,
-    );
+    const err = await triageApi
+      .setSnooze("conv-1", null)
+      .catch((e: unknown) => e);
     expect(err).toBeInstanceOf(ApiError);
     expect((err as ApiError).status).toBe(403);
   });
 
   test("ApiError carries method PATCH", async () => {
     fetchMock.mockResolvedValue(errorResponse(500, "ISE"));
-    const err = await triageApi.setSnooze("conv-1", null).catch(
-      (e: unknown) => e,
-    );
+    const err = await triageApi
+      .setSnooze("conv-1", null)
+      .catch((e: unknown) => e);
     expect((err as ApiError).method).toBe("PATCH");
   });
 });
@@ -141,9 +136,9 @@ describe("triageApi.setTags", () => {
 
   test("throws ApiError on non-OK response", async () => {
     fetchMock.mockResolvedValue(errorResponse(422, "Unprocessable"));
-    const err = await triageApi.setTags("conv-1", ["invalid-tag"]).catch(
-      (e: unknown) => e,
-    );
+    const err = await triageApi
+      .setTags("conv-1", ["invalid-tag"])
+      .catch((e: unknown) => e);
     expect(err).toBeInstanceOf(ApiError);
     expect((err as ApiError).status).toBe(422);
   });

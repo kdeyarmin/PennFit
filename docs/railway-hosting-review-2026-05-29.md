@@ -77,7 +77,7 @@ Railway config-as-code reference confirms the fields used here are all valid:
     `cpap-fitter/dist/public/index.html` is missing — a missing SPA build can't
     silently ship.
 12. **Boot env validation** (`src/lib/env-check.ts`): `assertRequiredEnv()` runs
-    before side-effecting imports and lists *every* missing required var at once
+    before side-effecting imports and lists _every_ missing required var at once
     (`PORT`, `DATABASE_URL`, Supabase, link HMAC). Feature-gated vendors degrade
     gracefully — preview deploys don't need every credential.
 13. **Ephemeral filesystem respected:** runtime uploads (POD photos, Rx PDFs,
@@ -134,6 +134,7 @@ feature ships **silently broken**. (Also: the `sha256` in `MODELS` is a
 placeholder and is not actually verified.)
 
 Implications / actions:
+
 - Ensure the Railway **build** environment's network policy allows outbound
   `storage.googleapis.com`. If egress is restricted, the model won't vendor.
 - Because it fails open, add monitoring or a post-deploy check that
@@ -165,6 +166,7 @@ default. Because `engines.node` is consulted **before** `.node-version`, the
 `.node-version` file this review adds only helps if Railpack falls through the
 `engines` range without resolving it — it may be ignored entirely. The only
 fully reliable override is therefore:
+
 - **Set `RAILPACK_NODE_VERSION=24` in Railway → Variables** (highest priority),
   and/or pin `engines.node` to a concrete value (e.g. `24.x`).
 - Confirm the actual Node major in the next Railway **build log** (Railpack

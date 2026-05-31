@@ -24,10 +24,12 @@ describe("lib/auth-hooks.ts — SESSION_QUERY_KEY (PR: namespaced cache key)", (
     expect(SRC).toContain("export const SESSION_QUERY_KEY");
   });
 
-  it("SESSION_QUERY_KEY is [\"auth\",\"me\",\"storefront\"]", () => {
+  it('SESSION_QUERY_KEY is ["auth","me","storefront"]', () => {
     // The third element distinguishes the storefront key from the admin key
     // (["auth","me","admin"]) so both can share a QueryClient without collision.
-    expect(SRC).toMatch(/SESSION_QUERY_KEY\s*=\s*\["auth",\s*"me",\s*"storefront"\]/);
+    expect(SRC).toMatch(
+      /SESSION_QUERY_KEY\s*=\s*\["auth",\s*"me",\s*"storefront"\]/,
+    );
   });
 
   it("passes sessionQueryKey to createAuthHooks", () => {
