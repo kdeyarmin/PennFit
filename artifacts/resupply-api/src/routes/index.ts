@@ -104,6 +104,7 @@ import denialCodesRouter from "./admin/denial-codes.js";
 import payerFeeSchedulesRouter from "./admin/payer-fee-schedules.js";
 import eraIngestRouter from "./admin/era-ingest.js";
 import billingReportsRouter from "./admin/billing-reports.js";
+import billingTimelyFilingRouter from "./admin/billing-timely-filing.js";
 import billingDashboardRouter from "./admin/billing-dashboard.js";
 import productHcpcsMapRouter from "./admin/product-hcpcs-map.js";
 import payerModifierRulesRouter from "./admin/payer-modifier-rules.js";
@@ -337,6 +338,10 @@ router.use(eraIngestRouter);
 // /admin/billing/denial-rate — read-only AR + reporting dashboards
 // for the billing team.
 router.use(billingReportsRouter);
+// /admin/billing/timely-filing — open-claim filing-deadline worklist,
+// ranked most-urgent-first (days left before the payer's timely-filing
+// window closes). Pure countdown core in @workspace/resupply-domain.
+router.use(billingTimelyFilingRouter);
 // /admin/billing/dashboard — single round-trip "what needs my
 // attention today" view for the billing CSR. Aggregate counts +
 // dollar amounts only; the UI deep-links by id.

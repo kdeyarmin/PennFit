@@ -399,6 +399,13 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         hint: "Open claims by 0/30/60/90 day bucket and by payer",
       },
       {
+        href: "/admin/billing/timely-filing",
+        label: "Filing deadlines",
+        icon: CalendarClock,
+        matchPrefix: "/admin/billing/timely-filing",
+        hint: "Open claims ranked by days left before the payer's timely-filing window closes",
+      },
+      {
         href: "/admin/billing/denials",
         label: "Denials & DSO",
         icon: TrendingDown,
