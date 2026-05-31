@@ -17,7 +17,10 @@ import { z } from "zod";
 import { logAudit } from "@workspace/resupply-audit";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
-import { buildClaimFromFulfillment } from "../../lib/billing/claim-builder";
+import {
+  buildClaimFromFulfillment,
+  buildClaimLineRows,
+} from "../../lib/billing/claim-builder";
 import { logger } from "../../lib/logger";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
@@ -105,17 +108,14 @@ router.post(
       .single();
     if (claimErr) throw claimErr;
 
-    // Insert the line items.
+    // Insert the line items (carrying the per-unit COGS snapshot the
+    // builder resolved from product_costs — migration 0186).
     if (proposed.lines.length > 0) {
-      const lineRows = proposed.lines.map((l) => ({
-        claim_id: claimRow.id,
-        hcpcs_code: l.hcpcsCode,
-        modifier: l.modifiers.join(",") || null,
-        description: l.description,
-        quantity: l.quantity,
-        billed_cents: l.billedCents,
-        status: "pending" as const,
-      }));
+      const lineRows = buildClaimLineRows(
+        claimRow.id,
+        proposed.lines,
+        new Date().toISOString(),
+      );
       const { error: lineErr } = await supabase
         .schema("resupply")
         .from("insurance_claim_line_items")

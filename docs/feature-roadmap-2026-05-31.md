@@ -129,8 +129,10 @@ high-value items in Phases 2–5 have nowhere to read from.
   Stripe webhook now stamps `unit_cost_cents` / `cost_source` /
   `cost_captured_at` onto `shop_order_items` from `product_costs` at
   paid-session ingest (SKU resolved from Stripe product metadata,
-  fail-soft). Next: stamp claim-line creation, then seed/backfill
-  `product_costs`.
+  fail-soft). **Claim-path capture** also landed — the claim builder
+  resolves cost from the fulfillment SKU and `buildClaimLineRows` stamps
+  it onto `insurance_claim_line_items` at fulfillment→claim persist.
+  Next: seed/backfill `product_costs` (closes F1).
 
 ### F2 · Metrics-snapshot + threshold-alert substrate — **M**
 
