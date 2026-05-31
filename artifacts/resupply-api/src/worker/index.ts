@@ -47,6 +47,7 @@ import { registerCartAbandonmentJob } from "./jobs/cart-abandonment-scan.js";
 import { registerFailedEmailDigestJob } from "./jobs/failed-order-emails-digest.js";
 import { registerTherapyNightlySyncJob } from "./jobs/therapy-integrations-nightly-sync.js";
 import { registerTherapyFleetSnapshotJob } from "./jobs/therapy-fleet-daily-snapshot.js";
+import { registerMetricsSnapshotJob } from "./jobs/metrics-snapshot.js";
 import { registerTherapyFleetAlertsJob } from "./jobs/therapy-fleet-alerts-scan.js";
 import { registerCoachingProgressJob } from "./jobs/coaching-plan-progress.js";
 import { registerPriorAuthExpirySweepJob } from "./jobs/prior-auth-expiry-sweep.js";
@@ -436,6 +437,10 @@ async function doStartWorker(): Promise<void> {
   // therapy_fleet_daily_metrics, 30 min after the nightly sync, so the
   // fleet trend / sparklines reflect freshly-synced nights.
   await registerTherapyFleetSnapshotJob(boss);
+
+  // Daily headline-KPI snapshot (06:30 UTC) into metrics_daily — the F2
+  // metrics substrate the threshold evaluator + owner digest read from.
+  await registerMetricsSnapshotJob(boss);
 
   // Nightly therapy-fleet alerts scan (05:15 UTC): maintains the
   // internal alert feed and, when the (default-off) auto-outreach flag

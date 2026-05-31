@@ -159,9 +159,12 @@ high-value items in Phases 2–5 have nowhere to read from.
   `0187_metrics_substrate` (`metrics_daily` keyed `(date, key)` rollup +
   `metric_thresholds` + `metric_alerts`, all RLS deny-all) and the pure
   `evaluateThreshold` logic in `@workspace/resupply-domain` (absolute /
-  `delta_7d` / `delta_pct_7d` modes, baseline-safe). Next: the nightly
-  `metrics-snapshot` worker job (persist KPIs the analytics endpoints
-  already compute), then the evaluator + email/in-app notifier.
+  `delta_7d` / `delta_pct_7d` modes, baseline-safe); and the nightly
+  **`metrics.daily-snapshot`** worker job (06:30 UTC) writing the first
+  KPI set (orders + gross/refunded/net revenue from `shop_orders`) into
+  `metrics_daily`, idempotent on the `(date, key)` PK and extensible to
+  more KPIs. Next: the evaluator job (`evaluateThreshold` over the
+  series) + the email/in-app notifier.
 
 ### F3 · Clinical encounters + RT role + clinician portal shell — **L**
 
