@@ -200,6 +200,21 @@ const AdminIntegrationsPage = lazy(() =>
     default: m.AdminIntegrationsPage,
   })),
 );
+const AdminTherapyFleetPage = lazy(() =>
+  import("@/pages/admin/admin-therapy-fleet").then((m) => ({
+    default: m.AdminTherapyFleetPage,
+  })),
+);
+const AdminTherapyResupplyPage = lazy(() =>
+  import("@/pages/admin/admin-therapy-resupply").then((m) => ({
+    default: m.AdminTherapyResupplyPage,
+  })),
+);
+const AdminTherapyCompliancePage = lazy(() =>
+  import("@/pages/admin/admin-therapy-compliance").then((m) => ({
+    default: m.AdminTherapyCompliancePage,
+  })),
+);
 const AdminCoachingPage = lazy(() =>
   import("@/pages/admin/admin-coaching").then((m) => ({
     default: m.AdminCoachingPage,
@@ -656,6 +671,18 @@ function AdminConsole() {
             <Route
               path="/admin/integrations"
               component={AdminIntegrationsPage}
+            />
+            <Route
+              path="/admin/therapy-fleet"
+              component={AdminTherapyFleetPage}
+            />
+            <Route
+              path="/admin/therapy-resupply"
+              component={AdminTherapyResupplyPage}
+            />
+            <Route
+              path="/admin/therapy-compliance"
+              component={AdminTherapyCompliancePage}
             />
             <Route path="/admin/coaching" component={AdminCoachingPage} />
             <Route
