@@ -69,9 +69,26 @@ the worker (so latent 500s / inactive jobs), e.g. `webhook_subscriptions` +
 
 Provisioning 56 tables with their FKs, indexes, RLS policies, triggers, and seed
 data on a live PHI database is the same class of change as the owner-approved
-2026-05-30 Bucket-B effort (29 tables) — it is **not** a safe additive backfill
-and was deliberately left for a deliberate, method-decided pass rather than
-applied autonomously.
+2026-05-30 Bucket-B effort (29 tables).
+
+**Status (owner-approved "provision all 56"):** the byte-exact canonical DDL +
+seed data is prepared, verified against the full-chain replay, and committed at
+[`scripts/prod-reconcile/2026-05-31-provision-missing-56-tables.sql`](../scripts/prod-reconcile/2026-05-31-provision-missing-56-tables.sql)
+(sha256 `07bc5792…ce1d`; 56 `CREATE TABLE`, 89 indexes, PK/FK constraints, RLS,
+1 trigger, 98 seed rows). It was **not applied from the preparing session**:
+that web session has **no `DATABASE_URL`** (so no direct `psql -f`), and the
+only prod-write path there is Supabase MCP inline-SQL — hand-transcribing 133 KB
+of DDL onto a live PHI database is neither reliable nor safe. Apply it via a
+DB connection (see
+[`scripts/prod-reconcile/README.md`](../scripts/prod-reconcile/README.md)):
+
+```bash
+psql "$PROD_DATABASE_URL" -v ON_ERROR_STOP=1 \
+  -f scripts/prod-reconcile/2026-05-31-provision-missing-56-tables.sql
+```
+
+It is one atomic transaction (rolls back untouched on any error), and prod's
+`ALTER DEFAULT PRIVILEGES` auto-grants `service_role` on the new tables.
 
 ## Recommended durable fix (incident follow-up #1, still open)
 
