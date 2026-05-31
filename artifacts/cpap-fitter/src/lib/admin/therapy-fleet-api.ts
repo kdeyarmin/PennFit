@@ -109,6 +109,28 @@ export const getFleetTrend = (days: number) =>
     `/admin/therapy-fleet/trend?days=${days}`,
   );
 
+export interface FleetAlert {
+  id: string;
+  patientId: string;
+  patientName: string | null;
+  alertType: string;
+  severity: "high" | "medium" | "low";
+  detail: Record<string, number | null>;
+  outreachSentAt: string | null;
+  createdAt: string;
+}
+
+export const getFleetAlerts = () =>
+  jsonFetch<{ count: number; alerts: FleetAlert[] }>(
+    "/admin/therapy-fleet/alerts",
+  );
+
+export const resolveFleetAlert = (id: string) =>
+  jsonFetch<{ id: string; status: string }>(
+    `/admin/therapy-fleet/alerts/${id}/resolve`,
+    { method: "POST" },
+  );
+
 export const getFleetWorklist = (params: {
   windowDays: number;
   limit?: number;

@@ -36,15 +36,27 @@ import { Button } from "@/components/admin/Button";
 import {
   getFleetOverview,
   getFleetTrend,
+  getFleetAlerts,
+  resolveFleetAlert,
   getFleetWorklist,
   fleetWorklistCsvUrl,
   setWorklistAction,
+  type FleetAlert,
   type FleetTrendPoint,
   type WorklistAction,
   type WorklistActionStatus,
   type WorklistEntry,
   type WorklistReason,
 } from "@/lib/admin/therapy-fleet-api";
+
+const ALERT_LABELS: Record<string, string> = {
+  compliance_risk: "Compliance risk",
+  no_recent_data: "Device silent",
+  high_ahi: "High AHI",
+  high_leak: "High leak",
+  usage_decline: "Usage decline",
+  setup_at_risk: "Setup at risk",
+};
 
 const WINDOW_OPTIONS = [7, 30, 60, 90] as const;
 
@@ -131,6 +143,20 @@ export function AdminTherapyFleetPage() {
     queryKey: ["admin", "therapy-fleet", "trend"],
     queryFn: () => getFleetTrend(90),
     refetchOnWindowFocus: false,
+  });
+
+  const alertsQ = useQuery({
+    queryKey: ["admin", "therapy-fleet", "alerts"],
+    queryFn: getFleetAlerts,
+    refetchOnWindowFocus: false,
+  });
+  const resolveMutation = useMutation({
+    mutationFn: (id: string) => resolveFleetAlert(id),
+    onSuccess: () => {
+      void qc.invalidateQueries({
+        queryKey: ["admin", "therapy-fleet", "alerts"],
+      });
+    },
   });
 
   const actionMutation = useMutation({
@@ -297,6 +323,28 @@ export function AdminTherapyFleetPage() {
         </>
       )}
 
+      {/* ── Automated alerts ──────────────────────────────────────── */}
+      {alertsQ.data && alertsQ.data.alerts.length > 0 && (
+        <Card
+          title={`Open alerts (${alertsQ.data.count})`}
+          subtitle="Auto-detected nightly. Clinical signals stay internal; adherence alerts may auto-text consented patients when enabled."
+        >
+          <div className="space-y-1">
+            {alertsQ.data.alerts.slice(0, 12).map((a) => (
+              <AlertRow
+                key={a.id}
+                alert={a}
+                onResolve={() => resolveMutation.mutate(a.id)}
+                resolving={
+                  resolveMutation.isPending &&
+                  resolveMutation.variables === a.id
+                }
+              />
+            ))}
+          </div>
+        </Card>
+      )}
+
       {/* ── Trend over time ───────────────────────────────────────── */}
       {trendQ.data && trendQ.data.points.length >= 2 && (
         <Card
@@ -392,6 +440,59 @@ export function AdminTherapyFleetPage() {
           />
         )}
       </Card>
+    </div>
+  );
+}
+
+function AlertRow({
+  alert,
+  onResolve,
+  resolving,
+}: {
+  alert: FleetAlert;
+  onResolve: () => void;
+  resolving: boolean;
+}) {
+  const sevVariant =
+    alert.severity === "high"
+      ? "danger"
+      : alert.severity === "medium"
+        ? "warning"
+        : "neutral";
+  return (
+    <div
+      className="flex items-center justify-between gap-3 py-1.5 border-b"
+      style={{ borderColor: "hsl(var(--line-2))" }}
+    >
+      <div className="flex items-center gap-2 min-w-0">
+        <Badge variant={sevVariant}>
+          {ALERT_LABELS[alert.alertType] ?? alert.alertType}
+        </Badge>
+        <Link
+          href={`/admin/patients/${alert.patientId}`}
+          className="text-sm font-medium hover:underline truncate"
+          style={{ color: "hsl(var(--penn-navy))" }}
+        >
+          {alert.patientName || alert.patientId.slice(0, 8)}
+        </Link>
+        {alert.outreachSentAt && (
+          <span className="text-[10px]" style={{ color: "hsl(var(--ink-3))" }}>
+            · texted
+          </span>
+        )}
+      </div>
+      <button
+        type="button"
+        onClick={onResolve}
+        disabled={resolving}
+        className="text-xs px-2 py-1 rounded border hover:bg-[hsl(var(--surface-2))] disabled:opacity-50"
+        style={{
+          borderColor: "hsl(var(--line-1))",
+          color: "hsl(var(--ink-2))",
+        }}
+      >
+        Resolve
+      </button>
     </div>
   );
 }

@@ -558,3 +558,96 @@ describe("GET /admin/therapy-fleet/trend", () => {
     expect(res.body.points[1].compliant).toBe(74);
   });
 });
+
+describe("GET /admin/therapy-fleet/alerts", () => {
+  it("401s without admin", async () => {
+    const res = await request(makeApp()).get("/admin/therapy-fleet/alerts");
+    expect(res.status).toBe(401);
+  });
+
+  it("returns open alerts high-severity first with patient names", async () => {
+    mockAdmin.current = ADMIN;
+    stageSupabaseResponse("therapy_fleet_alerts", "select", {
+      data: [
+        {
+          id: "a-low",
+          patient_id: P2,
+          alert_type: "usage_decline",
+          severity: "low",
+          detail: {},
+          outreach_sent_at: null,
+          created_at: "2026-05-30T00:00:00Z",
+        },
+        {
+          id: "a-high",
+          patient_id: P1,
+          alert_type: "compliance_risk",
+          severity: "high",
+          detail: { nights_over_4h: 8 },
+          outreach_sent_at: null,
+          created_at: "2026-05-29T00:00:00Z",
+        },
+      ],
+    });
+    stageSupabaseResponse("patients", "select", {
+      data: [
+        { id: P1, legal_first_name: "Ada", legal_last_name: "Lovelace" },
+        { id: P2, legal_first_name: "Grace", legal_last_name: "Hopper" },
+      ],
+    });
+    const res = await request(makeApp()).get("/admin/therapy-fleet/alerts");
+    expect(res.status).toBe(200);
+    expect(res.body.count).toBe(2);
+    // High severity sorts first despite older created_at.
+    expect(res.body.alerts[0]).toMatchObject({
+      id: "a-high",
+      severity: "high",
+      patientName: "Ada Lovelace",
+    });
+    expect(res.body.alerts[1].severity).toBe("low");
+  });
+});
+
+describe("POST /admin/therapy-fleet/alerts/:id/resolve", () => {
+  const ALERT = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+
+  it("401s without admin", async () => {
+    const res = await request(makeApp()).post(
+      `/admin/therapy-fleet/alerts/${ALERT}/resolve`,
+    );
+    expect(res.status).toBe(401);
+  });
+
+  it("404s on a non-uuid id", async () => {
+    mockAdmin.current = ADMIN;
+    const res = await request(makeApp()).post(
+      "/admin/therapy-fleet/alerts/not-a-uuid/resolve",
+    );
+    expect(res.status).toBe(404);
+  });
+
+  it("resolves an open alert + audits", async () => {
+    mockAdmin.current = ADMIN;
+    stageSupabaseResponse("therapy_fleet_alerts", "update", {
+      data: { id: ALERT },
+    });
+    const res = await request(makeApp()).post(
+      `/admin/therapy-fleet/alerts/${ALERT}/resolve`,
+    );
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ id: ALERT, status: "resolved" });
+    expect(logAuditMock).toHaveBeenCalledTimes(1);
+    expect((logAuditMock.mock.calls[0]?.[0] as { action: string }).action).toBe(
+      "therapy.fleet.alert.resolved",
+    );
+  });
+
+  it("404s when no open alert matched", async () => {
+    mockAdmin.current = ADMIN;
+    stageSupabaseResponse("therapy_fleet_alerts", "update", { data: null });
+    const res = await request(makeApp()).post(
+      `/admin/therapy-fleet/alerts/${ALERT}/resolve`,
+    );
+    expect(res.status).toBe(404);
+  });
+});

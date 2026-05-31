@@ -583,4 +583,130 @@ router.post(
   },
 );
 
+// ── Alert feed (maintained by the therapy-fleet.alerts-scan worker) ──
+
+const SEVERITY_RANK: Record<string, number> = { high: 0, medium: 1, low: 2 };
+
+interface AlertRow {
+  id: string;
+  patient_id: string;
+  alert_type: string;
+  severity: string;
+  detail: Record<string, unknown> | null;
+  outreach_sent_at: string | null;
+  created_at: string;
+}
+
+// GET /admin/therapy-fleet/alerts — open alerts (high severity first),
+// with patient names attached. Returns patient identity → patients.read.
+router.get(
+  "/admin/therapy-fleet/alerts",
+  requirePermission("patients.read"),
+  async (_req, res) => {
+    const supabase = getSupabaseServiceRoleClient();
+    const { data, error } = await supabase
+      .schema("resupply")
+      .from("therapy_fleet_alerts")
+      .select(
+        "id, patient_id, alert_type, severity, detail, outreach_sent_at, created_at",
+      )
+      .eq("status", "open")
+      .order("created_at", { ascending: false })
+      .limit(500);
+    if (error) throw error;
+
+    const rows = (data ?? []) as AlertRow[];
+    rows.sort((a, b) => {
+      const s =
+        (SEVERITY_RANK[a.severity] ?? 9) - (SEVERITY_RANK[b.severity] ?? 9);
+      return s !== 0 ? s : b.created_at.localeCompare(a.created_at);
+    });
+
+    const nameById = new Map<string, string>();
+    if (rows.length > 0) {
+      const ids = Array.from(new Set(rows.map((r) => r.patient_id)));
+      const { data: patientRows, error: pErr } = await supabase
+        .schema("resupply")
+        .from("patients")
+        .select("id, legal_first_name, legal_last_name")
+        .in("id", ids);
+      if (pErr) throw pErr;
+      for (const p of (patientRows ?? []) as Array<{
+        id: string;
+        legal_first_name: string | null;
+        legal_last_name: string | null;
+      }>) {
+        const name = [p.legal_first_name, p.legal_last_name]
+          .filter(Boolean)
+          .join(" ")
+          .trim();
+        nameById.set(p.id, name || "");
+      }
+    }
+
+    res.json({
+      count: rows.length,
+      alerts: rows.map((r) => ({
+        id: r.id,
+        patientId: r.patient_id,
+        patientName: nameById.get(r.patient_id) || null,
+        alertType: r.alert_type,
+        severity: r.severity,
+        detail: r.detail ?? {},
+        outreachSentAt: r.outreach_sent_at,
+        createdAt: r.created_at,
+      })),
+    });
+  },
+);
+
+// POST /admin/therapy-fleet/alerts/:id/resolve — manually clear an alert.
+router.post(
+  "/admin/therapy-fleet/alerts/:id/resolve",
+  requirePermission("patients.update"),
+  async (req, res) => {
+    const idCheck = z.string().uuid().safeParse(req.params.id);
+    if (!idCheck.success) {
+      res.status(404).json({ error: "alert_not_found" });
+      return;
+    }
+    const alertId = idCheck.data;
+    const supabase = getSupabaseServiceRoleClient();
+    const now = new Date().toISOString();
+    const { data, error } = await supabase
+      .schema("resupply")
+      .from("therapy_fleet_alerts")
+      .update({
+        status: "resolved",
+        resolved_at: now,
+        resolved_by_email: req.adminEmail ?? null,
+        updated_at: now,
+      })
+      .eq("id", alertId)
+      .eq("status", "open")
+      .select("id")
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) {
+      res.status(404).json({ error: "alert_not_found_or_already_resolved" });
+      return;
+    }
+
+    await logAudit({
+      action: "therapy.fleet.alert.resolved",
+      adminEmail: req.adminEmail ?? null,
+      adminUserId: req.adminUserId ?? null,
+      targetTable: "therapy_fleet_alerts",
+      targetId: alertId,
+      metadata: { alert_id: alertId },
+      ip: req.ip ?? null,
+      userAgent: req.get("user-agent") ?? null,
+    }).catch((err) => {
+      logger.warn({ err }, "therapy.fleet.alert.resolved audit write failed");
+    });
+
+    res.json({ id: alertId, status: "resolved" });
+  },
+);
+
 export default router;
