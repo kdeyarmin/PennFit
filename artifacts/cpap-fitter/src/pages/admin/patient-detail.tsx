@@ -1866,6 +1866,7 @@ function IntegrationSnapshotBody({
 }) {
   return (
     <div className="grid gap-4 md:grid-cols-2">
+      <TherapyTrendBlock nights={snapshot.recentNights} />
       <SettingsBlock settings={snapshot.settings} />
       <ComplianceBlock compliance={snapshot.compliance} />
       <SuppliesBlock supplies={snapshot.supplies} />
@@ -2015,6 +2016,177 @@ function SuppliesBlock({ supplies }: { supplies: SupplyItem[] }) {
         </ul>
       )}
     </div>
+  );
+}
+
+// Full-width therapy trend over the snapshot's recent nights — usage,
+// AHI, and leak sparklines with the clinical threshold drawn in. Gives
+// the CSR an at-a-glance "is this patient trending up or down?" read
+// that the 7-night table can't. Dependency-free SVG (no chart lib) so
+// it renders crisply inside the Device Data grid cell.
+function TherapyTrendBlock({ nights }: { nights: TherapyNight[] }) {
+  // Snapshot nights arrive newest-first; chart oldest → newest.
+  const chrono = [...nights].sort((a, b) =>
+    a.nightDate.localeCompare(b.nightDate),
+  );
+  if (chrono.length < 2) return null;
+  const usageHours = chrono.map((n) =>
+    n.usageMinutes !== null ? n.usageMinutes / 60 : null,
+  );
+  const ahi = chrono.map((n) => n.ahi);
+  const leak = chrono.map((n) => n.leakRateLMin);
+  return (
+    <div className="md:col-span-2">
+      <h4
+        className="text-xs uppercase tracking-wider font-semibold mb-2"
+        style={{ color: "hsl(var(--penn-gold-deep))" }}
+      >
+        Trend · last {chrono.length} nights
+      </h4>
+      <div className="grid gap-4 sm:grid-cols-3">
+        <TrendMini
+          label="Usage"
+          unit="h"
+          values={usageHours}
+          threshold={4}
+          color="hsl(var(--penn-navy))"
+          digits={1}
+        />
+        <TrendMini
+          label="AHI"
+          values={ahi}
+          threshold={5}
+          color="hsl(354 75% 50%)"
+          digits={1}
+        />
+        <TrendMini
+          label="Leak"
+          unit="L/min"
+          values={leak}
+          threshold={24}
+          color="hsl(38 95% 45%)"
+          digits={0}
+        />
+      </div>
+    </div>
+  );
+}
+
+function TrendMini({
+  label,
+  unit,
+  values,
+  threshold,
+  color,
+  digits,
+}: {
+  label: string;
+  unit?: string;
+  values: Array<number | null>;
+  threshold: number;
+  color: string;
+  digits: number;
+}) {
+  const present = values.filter((v): v is number => v !== null);
+  const latest = [...values].reverse().find((v): v is number => v !== null);
+  const avg =
+    present.length > 0
+      ? present.reduce((a, b) => a + b, 0) / present.length
+      : null;
+  return (
+    <div>
+      <div className="flex items-baseline justify-between mb-1">
+        <span className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
+          {label}
+        </span>
+        <span
+          className="text-sm font-semibold tabular-nums"
+          style={{ color: "hsl(var(--ink-1))" }}
+        >
+          {latest !== undefined ? latest.toFixed(digits) : "—"}
+          {unit ? <span className="text-xs font-normal"> {unit}</span> : null}
+        </span>
+      </div>
+      <Sparkline values={values} threshold={threshold} color={color} />
+      <p className="text-[10px] mt-0.5" style={{ color: "hsl(var(--ink-3))" }}>
+        avg {avg !== null ? avg.toFixed(digits) : "—"} · threshold {threshold}
+      </p>
+    </div>
+  );
+}
+
+// Minimal SVG sparkline. Plots non-null points (connecting across gaps),
+// scaled to fit, with a dashed reference line at `threshold`.
+// vector-effect keeps strokes crisp despite the responsive viewBox.
+function Sparkline({
+  values,
+  threshold,
+  color,
+  height = 40,
+}: {
+  values: Array<number | null>;
+  threshold?: number;
+  color: string;
+  height?: number;
+}) {
+  const width = 200;
+  const pad = 2;
+  const pts = values
+    .map((v, i) => ({ i, v }))
+    .filter((p): p is { i: number; v: number } => p.v !== null);
+  if (pts.length === 0) {
+    return (
+      <p className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
+        No data.
+      </p>
+    );
+  }
+  const span = values.length - 1 || 1;
+  const vals = pts.map((p) => p.v);
+  let lo = Math.min(...vals, threshold ?? Infinity);
+  let hi = Math.max(...vals, threshold ?? -Infinity);
+  if (hi === lo) hi = lo + 1;
+  const x = (i: number) => pad + (i / span) * (width - 2 * pad);
+  const y = (v: number) =>
+    height - pad - ((v - lo) / (hi - lo)) * (height - 2 * pad);
+  const d = pts
+    .map(
+      (p, k) =>
+        `${k === 0 ? "M" : "L"}${x(p.i).toFixed(1)},${y(p.v).toFixed(1)}`,
+    )
+    .join(" ");
+  const last = pts[pts.length - 1];
+  return (
+    <svg
+      className="w-full"
+      height={height}
+      viewBox={`0 0 ${width} ${height}`}
+      preserveAspectRatio="none"
+      role="img"
+      aria-label="therapy trend sparkline"
+    >
+      {threshold !== undefined && (
+        <line
+          x1={pad}
+          x2={width - pad}
+          y1={y(threshold)}
+          y2={y(threshold)}
+          stroke="hsl(var(--ink-3))"
+          strokeWidth={1}
+          strokeDasharray="3 3"
+          vectorEffect="non-scaling-stroke"
+          opacity={0.5}
+        />
+      )}
+      <path
+        d={d}
+        fill="none"
+        stroke={color}
+        strokeWidth={1.5}
+        vectorEffect="non-scaling-stroke"
+      />
+      <circle cx={x(last.i)} cy={y(last.v)} r={2.5} fill={color} />
+    </svg>
   );
 }
 
