@@ -35,9 +35,11 @@ import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { Button } from "@/components/admin/Button";
 import {
   getFleetOverview,
+  getFleetTrend,
   getFleetWorklist,
   fleetWorklistCsvUrl,
   setWorklistAction,
+  type FleetTrendPoint,
   type WorklistAction,
   type WorklistActionStatus,
   type WorklistEntry,
@@ -122,6 +124,12 @@ export function AdminTherapyFleetPage() {
         reason: reason ?? undefined,
         includeHandled,
       }),
+    refetchOnWindowFocus: false,
+  });
+
+  const trendQ = useQuery({
+    queryKey: ["admin", "therapy-fleet", "trend"],
+    queryFn: () => getFleetTrend(90),
     refetchOnWindowFocus: false,
   });
 
@@ -289,6 +297,43 @@ export function AdminTherapyFleetPage() {
         </>
       )}
 
+      {/* ── Trend over time ───────────────────────────────────────── */}
+      {trendQ.data && trendQ.data.points.length >= 2 && (
+        <Card
+          title="Fleet trend"
+          subtitle="Daily snapshot — is the work moving the numbers?"
+        >
+          <div className="grid gap-6 sm:grid-cols-3">
+            <TrendStat
+              label="Compliance rate"
+              points={trendQ.data.points}
+              value={(p) =>
+                p.patientsWithData > 0
+                  ? (p.compliant / p.patientsWithData) * 100
+                  : null
+              }
+              fmt={(v) => `${Math.round(v)}%`}
+              color="hsl(152 60% 38%)"
+              higherIsBetter
+            />
+            <TrendStat
+              label="At risk"
+              points={trendQ.data.points}
+              value={(p) => p.atRisk}
+              fmt={(v) => String(Math.round(v))}
+              color="hsl(354 75% 50%)"
+            />
+            <TrendStat
+              label="Setups at risk"
+              points={trendQ.data.points}
+              value={(p) => p.setupsAtRisk}
+              fmt={(v) => String(Math.round(v))}
+              color="hsl(38 95% 45%)"
+            />
+          </div>
+        </Card>
+      )}
+
       {/* ── Worklist ──────────────────────────────────────────────── */}
       <Card
         title="Outreach worklist"
@@ -348,6 +393,124 @@ export function AdminTherapyFleetPage() {
         )}
       </Card>
     </div>
+  );
+}
+
+// One metric's trend: latest value, delta vs the first point in the
+// window, and a sparkline. Dependency-free SVG, same approach as the
+// Device Data tab.
+function TrendStat({
+  label,
+  points,
+  value,
+  fmt,
+  color,
+  higherIsBetter,
+}: {
+  label: string;
+  points: FleetTrendPoint[];
+  value: (p: FleetTrendPoint) => number | null;
+  fmt: (v: number) => string;
+  color: string;
+  higherIsBetter?: boolean;
+}) {
+  const series = points.map(value);
+  const present = series.filter((v): v is number => v !== null);
+  const latest = [...series].reverse().find((v): v is number => v !== null);
+  const first = present[0];
+  const delta =
+    latest !== undefined && first !== undefined ? latest - first : null;
+  const deltaGood =
+    delta === null || delta === 0
+      ? null
+      : higherIsBetter
+        ? delta > 0
+        : delta < 0;
+  return (
+    <div>
+      <div className="flex items-baseline justify-between mb-1">
+        <span className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
+          {label}
+        </span>
+        <span className="text-sm font-semibold tabular-nums">
+          {latest !== undefined ? fmt(latest) : "—"}
+        </span>
+      </div>
+      <TrendSparkline values={series} color={color} />
+      {delta !== null && delta !== 0 && (
+        <p
+          className="text-[10px] mt-0.5"
+          style={{
+            color:
+              deltaGood === null
+                ? "hsl(var(--ink-3))"
+                : deltaGood
+                  ? "hsl(152 70% 30%)"
+                  : "hsl(354 75% 42%)",
+          }}
+        >
+          {delta > 0 ? "▲" : "▼"} {fmt(Math.abs(delta))} over {present.length}{" "}
+          days
+        </p>
+      )}
+    </div>
+  );
+}
+
+function TrendSparkline({
+  values,
+  color,
+  height = 36,
+}: {
+  values: Array<number | null>;
+  color: string;
+  height?: number;
+}) {
+  const width = 200;
+  const pad = 2;
+  const pts = values
+    .map((v, i) => ({ i, v }))
+    .filter((p): p is { i: number; v: number } => p.v !== null);
+  if (pts.length < 2) {
+    return (
+      <p className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
+        Not enough data yet.
+      </p>
+    );
+  }
+  const span = values.length - 1 || 1;
+  const vals = pts.map((p) => p.v);
+  let lo = Math.min(...vals);
+  let hi = Math.max(...vals);
+  if (hi === lo) hi = lo + 1;
+  const x = (i: number) => pad + (i / span) * (width - 2 * pad);
+  const y = (v: number) =>
+    height - pad - ((v - lo) / (hi - lo)) * (height - 2 * pad);
+  const d = pts
+    .map(
+      (p, k) =>
+        `${k === 0 ? "M" : "L"}${x(p.i).toFixed(1)},${y(p.v).toFixed(1)}`,
+    )
+    .join(" ");
+  const last = pts[pts.length - 1];
+  return (
+    <svg
+      className="w-full"
+      height={height}
+      viewBox={`0 0 ${width} ${height}`}
+      preserveAspectRatio="none"
+      role="img"
+      aria-label={`${color} trend`}
+    >
+      <path
+        d={d}
+        fill="none"
+        stroke={color}
+        strokeWidth={1.5}
+        vectorEffect="non-scaling-stroke"
+      />
+      <circle cx={x(last.i)} cy={y(last.v)} r={2.5} fill={color} />
+    </svg>
   );
 }
 

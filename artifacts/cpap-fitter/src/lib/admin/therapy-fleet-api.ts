@@ -87,9 +87,26 @@ export interface WorklistEntry {
   action: WorklistAction | null;
 }
 
+export interface FleetTrendPoint {
+  date: string;
+  patientsWithData: number;
+  compliant: number;
+  atRisk: number;
+  nonCompliant: number;
+  highLeak: number;
+  resupplyItemsDue: number;
+  setupsInWindow: number;
+  setupsAtRisk: number;
+}
+
 export const getFleetOverview = (windowDays: number) =>
   jsonFetch<{ windowDays: number; overview: FleetOverview }>(
     `/admin/therapy-fleet/overview?windowDays=${windowDays}`,
+  );
+
+export const getFleetTrend = (days: number) =>
+  jsonFetch<{ days: number; count: number; points: FleetTrendPoint[] }>(
+    `/admin/therapy-fleet/trend?days=${days}`,
   );
 
 export const getFleetWorklist = (params: {

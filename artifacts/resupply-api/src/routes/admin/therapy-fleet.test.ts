@@ -495,3 +495,66 @@ describe("POST /admin/therapy-fleet/worklist/:patientId/action", () => {
     });
   });
 });
+
+describe("GET /admin/therapy-fleet/trend", () => {
+  it("401s without admin", async () => {
+    const res = await request(makeApp()).get("/admin/therapy-fleet/trend");
+    expect(res.status).toBe(401);
+  });
+
+  it("400s on out-of-range days", async () => {
+    mockAdmin.current = ADMIN;
+    const res = await request(makeApp()).get(
+      "/admin/therapy-fleet/trend?days=5000",
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it("maps daily-metric rows to coerced trend points (oldest first)", async () => {
+    mockAdmin.current = ADMIN;
+    stageSupabaseResponse("therapy_fleet_daily_metrics", "select", {
+      data: [
+        {
+          metric_date: "2026-05-29",
+          patients_with_data: "120",
+          compliant: "70",
+          at_risk: "25",
+          non_compliant: "15",
+          high_leak: "12",
+          resupply_items_due: "40",
+          setups_in_window: "30",
+          setups_at_risk: "5",
+        },
+        {
+          metric_date: "2026-05-30",
+          patients_with_data: "122",
+          compliant: "74",
+          at_risk: "23",
+          non_compliant: "15",
+          high_leak: "10",
+          resupply_items_due: "38",
+          setups_in_window: "31",
+          setups_at_risk: "4",
+        },
+      ],
+    });
+    const res = await request(makeApp()).get(
+      "/admin/therapy-fleet/trend?days=30",
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.days).toBe(30);
+    expect(res.body.count).toBe(2);
+    expect(res.body.points[0]).toEqual({
+      date: "2026-05-29",
+      patientsWithData: 120,
+      compliant: 70,
+      atRisk: 25,
+      nonCompliant: 15,
+      highLeak: 12,
+      resupplyItemsDue: 40,
+      setupsInWindow: 30,
+      setupsAtRisk: 5,
+    });
+    expect(res.body.points[1].compliant).toBe(74);
+  });
+});

@@ -177,6 +177,68 @@ router.get(
   },
 );
 
+const trendQuery = z
+  .object({
+    days: z.coerce.number().int().min(7).max(365).optional().default(90),
+  })
+  .strict();
+
+interface DailyMetricRow {
+  metric_date: string;
+  patients_with_data: number | string;
+  compliant: number | string;
+  at_risk: number | string;
+  non_compliant: number | string;
+  high_leak: number | string;
+  resupply_items_due: number | string;
+  setups_in_window: number | string;
+  setups_at_risk: number | string;
+}
+
+// GET /admin/therapy-fleet/trend — daily fleet-metrics history captured
+// by the therapy-fleet.daily-snapshot worker. Pure aggregate counts, so
+// it gates on reports.read. Returns oldest → newest for charting.
+router.get(
+  "/admin/therapy-fleet/trend",
+  requirePermission("reports.read"),
+  async (req, res) => {
+    const parsed = trendQuery.safeParse(req.query);
+    if (!parsed.success) {
+      res.status(400).json({ error: "invalid_query" });
+      return;
+    }
+    const days = parsed.data.days;
+    const cutoff = new Date(Date.now() - days * 86400_000)
+      .toISOString()
+      .slice(0, 10);
+
+    const supabase = getSupabaseServiceRoleClient();
+    const { data, error } = await supabase
+      .schema("resupply")
+      .from("therapy_fleet_daily_metrics")
+      .select(
+        "metric_date, patients_with_data, compliant, at_risk, non_compliant, high_leak, resupply_items_due, setups_in_window, setups_at_risk",
+      )
+      .gte("metric_date", cutoff)
+      .order("metric_date", { ascending: true })
+      .limit(366);
+    if (error) throw error;
+
+    const points = ((data ?? []) as DailyMetricRow[]).map((r) => ({
+      date: r.metric_date,
+      patientsWithData: int(r.patients_with_data),
+      compliant: int(r.compliant),
+      atRisk: int(r.at_risk),
+      nonCompliant: int(r.non_compliant),
+      highLeak: int(r.high_leak),
+      resupplyItemsDue: int(r.resupply_items_due),
+      setupsInWindow: int(r.setups_in_window),
+      setupsAtRisk: int(r.setups_at_risk),
+    }));
+    res.json({ days, count: points.length, points });
+  },
+);
+
 interface WorklistRpcRow {
   patient_id: string;
   nights_with_data: number | string;
