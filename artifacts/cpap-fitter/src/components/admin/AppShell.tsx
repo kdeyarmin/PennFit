@@ -46,6 +46,7 @@ import {
   Settings,
   FileSearch,
   Plug,
+  Webhook,
   Menu,
   CircleDollarSign,
   Wallet,
@@ -471,6 +472,14 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         icon: TruckIcon,
         matchPrefix: "/admin/delivery-failures",
         hint: "Bounced messages and shipping exceptions",
+      },
+      {
+        href: "/admin/webhook-deliveries",
+        label: "Webhook Deliveries",
+        icon: Webhook,
+        matchPrefix: "/admin/webhook-deliveries",
+        hint: "Outbound event deliveries to partner endpoints — re-queue failed/exhausted sends",
+        requiredPermission: "admin.tools.manage",
       },
       {
         href: "/admin/reports",

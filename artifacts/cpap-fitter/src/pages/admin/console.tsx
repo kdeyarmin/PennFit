@@ -240,6 +240,11 @@ const AdminDeliveryFailuresPage = lazy(() =>
     default: m.AdminDeliveryFailuresPage,
   })),
 );
+const AdminWebhookDeliveriesPage = lazy(() =>
+  import("@/pages/admin/admin-webhook-deliveries").then((m) => ({
+    default: m.AdminWebhookDeliveriesPage,
+  })),
+);
 const AdminRuleTesterPage = lazy(() =>
   import("@/pages/admin/admin-rule-tester").then((m) => ({
     default: m.AdminRuleTesterPage,
@@ -724,6 +729,10 @@ function AdminConsole() {
             <Route
               path="/admin/delivery-failures"
               component={AdminDeliveryFailuresPage}
+            />
+            <Route
+              path="/admin/webhook-deliveries"
+              component={AdminWebhookDeliveriesPage}
             />
             <Route path="/admin/rule-tester" component={AdminRuleTesterPage} />
             <Route path="/admin/settings" component={AdminSettingsPage} />
