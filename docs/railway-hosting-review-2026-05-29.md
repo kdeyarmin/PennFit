@@ -15,7 +15,7 @@ a few defensive recommendations are below.
   `Dockerfile` / `nixpacks.toml` (confirmed absent). Railpack auto-detects the
   pnpm workspace from `pnpm-workspace.yaml` and `packageManager`/`engines` in
   the root `package.json`.
-- **Install:** Railpack runs `pnpm install` (corepack pins `pnpm@11.4.0` from
+- **Install:** Railpack runs `pnpm install` (corepack pins `pnpm@11.5.0` from
   the root `packageManager` field).
 - **Build:** `railway.json` → `build.buildCommand = "pnpm run build"` →
   root `package.json` `build` = `pnpm run typecheck && pnpm -r --if-present run build`.

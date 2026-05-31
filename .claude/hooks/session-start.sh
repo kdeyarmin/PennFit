@@ -34,7 +34,7 @@ cd "$PROJECT_DIR"
 # tests cleanly on Node 22, so we bridge the gap rather than fail setup:
 #
 #   1. Run pnpm via corepack, which honours the `packageManager` pin
-#      (pnpm@11.4.0). A bare `pnpm` resolves to the image's system pnpm
+#      (pnpm@11.5.0). A bare `pnpm` resolves to the image's system pnpm
 #      10.x, which trips ERR_PNPM_UNSUPPORTED_ENGINE against the
 #      `engines.pnpm: >=11` constraint AND would resolve the lockfile
 #      with the wrong major.
@@ -45,7 +45,7 @@ cd "$PROJECT_DIR"
 export COREPACK_ENABLE_DOWNLOAD_PROMPT=0
 export npm_config_engine_strict=false
 
-# Prefer corepack (gets pnpm 11.4.0 from the packageManager pin); fall
+# Prefer corepack (gets pnpm 11.5.0 from the packageManager pin); fall
 # back to a bare pnpm if corepack is somehow unavailable.
 if corepack --version >/dev/null 2>&1; then
   PNPM=(corepack pnpm)
