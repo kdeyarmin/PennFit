@@ -1,6 +1,6 @@
 // Cost & margin math — pure value-object helpers (ADR 008: no I/O).
 //
-// The data foundation for cost capture lands in migration 0186; these
+// The data foundation for cost capture lands in migration 0193; these
 // functions are the shared, side-effect-free core every owner-facing
 // margin surface (gross-margin dashboard, payer-mix profitability,
 // inventory turnover, the cash-flow forecast — see

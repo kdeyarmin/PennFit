@@ -178,7 +178,7 @@ export interface Database {
         >;
         Relationships: [];
       };
-      // Migration 0186: current unit cost (COGS) per shop SKU. Source for
+      // Migration 0193: current unit cost (COGS) per shop SKU. Source for
       // the per-transaction cost snapshots + every owner-facing margin
       // surface (computeMargin / aggregateMargin in resupply-domain).
       product_costs: {
@@ -1493,7 +1493,7 @@ export interface Database {
           billed_cents: number;
           allowed_cents: number;
           paid_cents: number;
-          // Migration 0186: point-in-time COGS snapshot, stamped at
+          // Migration 0193: point-in-time COGS snapshot, stamped at
           // claim-line creation from resupply.product_costs. Nullable —
           // null = "cost unknown" (never silently zero).
           unit_cost_cents: number | null;
@@ -3636,7 +3636,7 @@ export interface Database {
           quantity: number;
           unit_amount_cents: number | null;
           currency: string | null;
-          // Migration 0186: point-in-time COGS snapshot, stamped at
+          // Migration 0193: point-in-time COGS snapshot, stamped at
           // order-item creation from resupply.product_costs. Nullable —
           // null = "cost unknown" (never silently zero).
           unit_cost_cents: number | null;
@@ -3702,7 +3702,7 @@ export interface Database {
           created_at: string;
           updated_at: string;
           paid_at: string | null;
-          // Migration 0186: order-level cost-to-sell fees for true
+          // Migration 0193: order-level cost-to-sell fees for true
           // contribution margin (subtracted alongside COGS).
           stripe_fee_cents: number | null;
           shipping_cost_cents: number | null;

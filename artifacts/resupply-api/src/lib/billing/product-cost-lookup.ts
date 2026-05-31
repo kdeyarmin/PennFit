@@ -1,5 +1,5 @@
 // Batch unit-cost (COGS) lookup — the cost-capture foundation's read
-// side (migration 0186 / docs/feature-roadmap-2026-05-31.md F1).
+// side (migration 0193 / docs/feature-roadmap-2026-05-31.md F1).
 //
 // One place the order + claim write paths resolve "what does this SKU
 // cost us right now?" from resupply.product_costs, so the per-transaction

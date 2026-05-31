@@ -1,6 +1,6 @@
 // pg-boss job: evaluate enabled metric_thresholds against the latest
 // metrics_daily snapshot and write metric_alerts on a breach (migration
-// 0187 / roadmap F2).
+// 0194 / roadmap F2).
 //
 // Runs 15 min after the daily metrics-snapshot. For each enabled
 // threshold it reads the most-recent value for the metric (and, for a

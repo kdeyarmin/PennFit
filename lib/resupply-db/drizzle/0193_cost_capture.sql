@@ -1,4 +1,6 @@
--- 0186_cost_capture — Phase 0 / F1: cost & COGS capture foundation.
+-- 0193_cost_capture — Phase 0 / F1: cost & COGS capture foundation.
+-- (Renumbered from 0186 → 0193: main landed 0186_reconcile_prod_column_drift
+--  while this branch was open, so the original prefix collided.)
 --
 -- Why this exists
 -- ---------------

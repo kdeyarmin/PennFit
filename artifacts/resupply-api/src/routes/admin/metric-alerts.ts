@@ -1,4 +1,4 @@
-// /admin/metric-alerts — the in-app KPI alert feed (migration 0187 / F2).
+// /admin/metric-alerts — the in-app KPI alert feed (migration 0194 / F2).
 //
 //   GET   /admin/metric-alerts            — list (filter by status)
 //   PATCH /admin/metric-alerts/:id        — acknowledge / resolve

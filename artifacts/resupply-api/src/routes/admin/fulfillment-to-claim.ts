@@ -109,7 +109,7 @@ router.post(
     if (claimErr) throw claimErr;
 
     // Insert the line items (carrying the per-unit COGS snapshot the
-    // builder resolved from product_costs — migration 0186).
+    // builder resolved from product_costs — migration 0193).
     if (proposed.lines.length > 0) {
       const lineRows = buildClaimLineRows(
         claimRow.id,

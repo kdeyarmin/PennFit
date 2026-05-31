@@ -1,5 +1,5 @@
 // pg-boss job: persist a daily snapshot of headline KPIs into
-// resupply.metrics_daily (migration 0187 / roadmap F2).
+// resupply.metrics_daily (migration 0194 / roadmap F2).
 //
 // Runs nightly for the just-completed UTC day. The metrics substrate is
 // keyed (date, metric_key) so this job is the writer the evaluator job +

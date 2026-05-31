@@ -3,7 +3,7 @@
 //   GET /admin/product-costs        — list current costs (by SKU)
 //   PUT /admin/product-costs/:sku   — upsert the cost for one SKU
 //
-// Backs the cost-capture foundation (migration 0186). The figures here
+// Backs the cost-capture foundation (migration 0193). The figures here
 // are the source the per-transaction snapshot columns are stamped from,
 // and feed every owner-facing margin surface via the pure
 // computeMargin / aggregateMargin helpers in @workspace/resupply-domain.

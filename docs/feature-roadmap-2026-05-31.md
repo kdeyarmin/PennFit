@@ -40,12 +40,14 @@ These come straight from `CLAUDE.md`'s "Hard rules" and the service-boot
 contract. A violation is a correctness bug, not a style nit.
 
 1. **Migrations** are hand-written SQL in `lib/resupply-db/drizzle/`.
-   The next free prefix is **`0186`**; numbers are **collision-prone on
-   merge trains** (`0179`–`0181` already doubled up), so claim your
-   number in the PR that _lands_, not when you start, and rebase-bump if
-   you collide. **Never** hand-edit `drizzle/meta/_journal.json` (frozen
-   at 52 entries). `scripts/check-resupply-migration-prefix.sh` gates
-   this.
+   The next free prefix is **`0195`** (this branch uses `0188`–`0194`;
+   `main` landed `0186`/`0187` mid-flight, so the original cost/metrics
+   migrations were **rebase-bumped** from `0186`/`0187` → `0193`/`0194`);
+   numbers are **collision-prone on merge trains** (`0179`–`0181` already
+   doubled up), so claim your number in the PR that _lands_, not when you
+   start, and rebase-bump if you collide. **Never** hand-edit
+   `drizzle/meta/_journal.json` (frozen at 52 entries).
+   `scripts/check-resupply-migration-prefix.sh` gates this.
 2. **One data path: Supabase.** Read/write only through
    `getSupabaseServiceRoleClient()` from `@workspace/resupply-db`. No
    `drizzle-orm`, no direct `pg` outside `lib/resupply-db` (Rule 7 in
@@ -117,14 +119,14 @@ high-value items in Phases 2–5 have nowhere to read from.
   read-only `cost.read` permission exists; backfill script for historic
   rows (cost = null → "unknown", surfaced honestly).
 - **Status (2026-05-31):** ⏳ in progress. Landed: migration
-  `0186_cost_capture` (`product_costs` + nullable cost-snapshot columns
+  `0193_cost_capture` (`product_costs` + nullable cost-snapshot columns
   on `shop_order_items` / `insurance_claim_line_items` + order-level fee
   columns on `shop_orders`); the finance-gated `cost.read` / `cost.write`
   RBAC permissions; the pure unknown-cost-aware margin/COGS math in
   `@workspace/resupply-domain` (`computeMargin` / `aggregateMargin`); and
   the **`/admin/product-costs` API** (`GET` list on `cost.read`, `PUT`
   upsert on `cost.write`) so operators can enter and view per-SKU cost;
-  the `supabase-types.ts` schema mirror synced to 0186; the fail-soft
+  the `supabase-types.ts` schema mirror synced to 0193; the fail-soft
   `fetchUnitCostsBySku` batch helper; and **order-path capture** — the
   Stripe webhook now stamps `unit_cost_cents` / `cost_source` /
   `cost_captured_at` onto `shop_order_items` from `product_costs` at
@@ -156,7 +158,7 @@ high-value items in Phases 2–5 have nowhere to read from.
   "denial rate WoW +5pts") fires an email + in-app alert; **derives
   from event tables, never `audit_log`.**
 - **Status (2026-05-31):** ⏳ in progress. Landed: migration
-  `0187_metrics_substrate` (`metrics_daily` keyed `(date, key)` rollup +
+  `0194_metrics_substrate` (`metrics_daily` keyed `(date, key)` rollup +
   `metric_thresholds` + `metric_alerts`, all RLS deny-all) and the pure
   `evaluateThreshold` logic in `@workspace/resupply-domain` (absolute /
   `delta_7d` / `delta_pct_7d` modes, baseline-safe); and the nightly

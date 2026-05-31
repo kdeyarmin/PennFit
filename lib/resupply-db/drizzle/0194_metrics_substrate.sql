@@ -1,5 +1,7 @@
--- 0187_metrics_substrate — Phase 0 / F2: metrics snapshot + threshold-
+-- 0194_metrics_substrate — Phase 0 / F2: metrics snapshot + threshold-
 -- alert substrate.
+-- (Renumbered from 0187 → 0194: main landed 0187_fhir_jwt_jti_replay_store
+--  while this branch was open, so the original prefix collided.)
 --
 -- Why this exists
 -- ---------------

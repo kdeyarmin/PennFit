@@ -1,7 +1,7 @@
 // Metric threshold evaluation — pure value-object logic (ADR 008: no I/O).
 //
 // The shared, side-effect-free core the F2 alert-evaluator job runs
-// through (migration 0187 / docs/feature-roadmap-2026-05-31.md). Keeping
+// through (migration 0194 / docs/feature-roadmap-2026-05-31.md). Keeping
 // "did this metric breach its threshold?" in one tested place means the
 // worker job is just plumbing: read today's value (+ the 7-days-ago
 // baseline for delta modes), call evaluateThreshold, persist a

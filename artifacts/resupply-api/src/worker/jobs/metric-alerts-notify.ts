@@ -1,5 +1,5 @@
 // pg-boss job: email a digest of newly-fired KPI alerts to admin staff
-// (migration 0187 / roadmap F2 — the "push" half of the alert substrate).
+// (migration 0194 / roadmap F2 — the "push" half of the alert substrate).
 //
 // Runs a few minutes after the metrics.alerts-evaluator. Sweeps
 // metric_alerts that are still open AND not yet notified, emails ONE

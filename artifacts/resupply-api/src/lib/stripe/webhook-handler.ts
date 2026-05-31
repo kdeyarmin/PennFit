@@ -940,7 +940,7 @@ async function upsertOrderItemsFromSession(
     return emailItems;
   }
 
-  // Stamp the per-unit COGS snapshot (migration 0186) so a later cost
+  // Stamp the per-unit COGS snapshot (migration 0193) so a later cost
   // change never rewrites this order's margin. Fail-soft:
   // fetchUnitCostsBySku returns an empty map on any error, leaving cost
   // null ("unknown") — it must never block the order-items write.

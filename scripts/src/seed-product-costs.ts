@@ -1,6 +1,6 @@
 // seed-product-costs — bulk-load per-SKU unit cost (COGS) into
 // resupply.product_costs from an operator-maintained CSV cost sheet.
-// Closes the cost-capture foundation (migration 0186).
+// Closes the cost-capture foundation (migration 0193).
 //
 // Run with:
 //   pnpm --filter @workspace/scripts run seed:product-costs -- <costs.csv> [--dry-run]
