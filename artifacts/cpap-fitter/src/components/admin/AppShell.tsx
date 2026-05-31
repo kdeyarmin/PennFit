@@ -750,6 +750,7 @@ function SidebarNavBody({
   onToggleGroup,
   onItemClick,
   isAdminConfirmed,
+  permissions,
 }: {
   location: string;
   /** Shared nav-group expansion state, owned by the parent AppShell. */
@@ -761,6 +762,9 @@ function SidebarNavBody({
    *  Keeps the inbox-counts query from firing with a 401 during the
    *  initial access-check state before adminEmail is populated. */
   isAdminConfirmed: boolean;
+  /** Granular permission keys the caller holds (from /admin/me). Used
+   *  to hide nav entries whose `requiredPermission` they lack. */
+  permissions: ReadonlySet<string>;
 }) {
   // Phase 16 — actionable-work counts powering nav badges. Cached for
   // 30s so paging through the SPA doesn't hammer the endpoint, but
@@ -777,13 +781,26 @@ function SidebarNavBody({
     retry: false,
     enabled: isAdminConfirmed,
   });
+  // Hide nav entries whose `requiredPermission` the caller lacks, then
+  // drop any group left with no visible items. A link with no
+  // requiredPermission is always shown. The server-side
+  // `requirePermission(...)` is the real boundary; this only avoids
+  // showing a link that would 403.
+  const visibleGroups = NAV_GROUPS.map((group) => ({
+    ...group,
+    items: group.items.filter(
+      (link) =>
+        !link.requiredPermission || permissions.has(link.requiredPermission),
+    ),
+  })).filter((group) => group.items.length > 0);
+
   // Resolve "which nav link is active" once per render so a parent
   // and a child of the current location don't both highlight.
-  const activeHref = pickActiveHref(location, NAV_GROUPS);
+  const activeHref = pickActiveHref(location, visibleGroups);
 
   return (
     <div className="flex flex-col gap-2">
-      {NAV_GROUPS.map((group) => {
+      {visibleGroups.map((group) => {
         const isOpen = expanded.has(group.label);
         const rolledUpBadge = isOpen
           ? 0
@@ -1153,6 +1170,7 @@ export function AppShell({
                     onToggleGroup={toggleNavGroup}
                     onItemClick={() => setMobileNavOpen(false)}
                     isAdminConfirmed={!!adminEmail}
+                    permissions={navPermissions}
                   />
                 </nav>
               </SheetContent>
@@ -1185,6 +1203,7 @@ export function AppShell({
                 expanded={navExpanded}
                 onToggleGroup={toggleNavGroup}
                 isAdminConfirmed={!!adminEmail}
+                permissions={navPermissions}
               />
             </nav>
           </aside>
