@@ -13,6 +13,7 @@ import casesRouter from "./admin/cases.js";
 import workItemsRouter from "./admin/work-items.js";
 import businessTargetsRouter from "./admin/business-targets.js";
 import agentAvailabilityRouter from "./admin/agent-availability.js";
+import conversationsSearchRouter from "./admin/conversations-search.js";
 import shopOrdersAdminRouter from "./admin/shop-orders.js";
 import shopProductsAdminRouter from "./admin/shop-products.js";
 import inventoryReconciliationRouter from "./admin/inventory-reconciliation.js";
@@ -325,6 +326,9 @@ router.use(businessTargetsRouter);
 // /admin/agent-availability — CSR availability toggle (Phase 1); the
 // skill-router skips away / do-not-assign reps.
 router.use(agentAvailabilityRouter);
+// /admin/conversations-search — search conversations by message content
+// (Phase 1, CSR #13).
+router.use(conversationsSearchRouter);
 // /admin/billing/era-ingest + /admin/billing/era-files — upload a
 // 5010 835 remittance, parse it, auto-reconcile claim totals + line
 // items + insert paid/denied events.
