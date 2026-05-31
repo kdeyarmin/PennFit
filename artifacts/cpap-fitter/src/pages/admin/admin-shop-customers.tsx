@@ -309,7 +309,7 @@ export function AdminShopCustomersPage() {
                           border: "1px solid #fcd34d",
                         }}
                         data-testid={`admin-customers-awaiting-${c.userId}`}
-                        title="The customer's in-app conversation is in awaiting_admin status — a CSR owes them a reply."
+                        title="The customer's in-app conversation is awaiting a reply — a CSR owes them a response."
                       >
                         Awaiting reply
                       </span>

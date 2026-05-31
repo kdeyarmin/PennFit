@@ -9,10 +9,6 @@
 //      Last-run results display for each.
 //   3. Team summary — quick read-only counts (active admins, active
 //      agents, pending invites) deep-linking to /admin/team.
-//
-// The PHI sweep status card is rendered separately on the dashboard
-// home (PhiSweepStatusCard); this page focuses on the operator-action
-// surface.
 
 import { useMemo, useState } from "react";
 import { Link } from "wouter";
