@@ -207,9 +207,12 @@ high-value items in Phases 2–5 have nowhere to read from.
   `clinical.read` / `clinical.note.write` / `clinical.intervention.write`
   permissions in a new `clinician` RBAC bucket (`rt` → `clinician`;
   management tiers also hold them; off the front-line CSR bucket).
-  `rt`'s coarse `auth.users.role` stays `agent`. Next: the encounter API
-  (create/list, gated `clinical.note.write`/`clinical.read`), then the
-  clinician portal shell.
+  `rt`'s coarse `auth.users.role` stays `agent`; and the
+  **`/admin/patients/:id/clinical-encounters`** API (append-only `POST`
+  on `clinical.note.write` + `GET` on `clinical.read`; PHI-safe audit —
+  `patient_id` + `encounter_type` only, never the clinical content).
+  Next: the clinician portal shell (SPA — scoped patient list +
+  encounter form).
 
 ### F4 · Unified work-item model + lightweight case object — **L**
 

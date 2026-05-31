@@ -7,6 +7,7 @@ import followupsListRouter from "./admin/followups-list.js";
 import shopOrderNotesRouter from "./admin/order-notes.js";
 import productCostsRouter from "./admin/product-costs.js";
 import metricAlertsRouter from "./admin/metric-alerts.js";
+import clinicalEncountersRouter from "./admin/clinical-encounters.js";
 import shopOrdersAdminRouter from "./admin/shop-orders.js";
 import shopProductsAdminRouter from "./admin/shop-products.js";
 import inventoryReconciliationRouter from "./admin/inventory-reconciliation.js";
@@ -303,6 +304,9 @@ router.use(productCostsRouter);
 // /admin/metric-alerts/* — the in-app KPI alert feed (F2 metrics
 // substrate). Alerts written by the metrics.alerts-evaluator worker.
 router.use(metricAlertsRouter);
+// /admin/patients/:id/clinical-encounters — append-only clinician
+// documentation (F3). Read on clinical.read, write on clinical.note.write.
+router.use(clinicalEncountersRouter);
 // /admin/billing/era-ingest + /admin/billing/era-files — upload a
 // 5010 835 remittance, parse it, auto-reconcile claim totals + line
 // items + insert paid/denied events.
