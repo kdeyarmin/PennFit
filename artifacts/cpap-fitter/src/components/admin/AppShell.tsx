@@ -418,6 +418,13 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         hint: "Therapy-cloud vendor connections and nightly sync status",
       },
       {
+        href: "/admin/therapy-fleet",
+        label: "Therapy Fleet",
+        icon: HeartPulse,
+        matchPrefix: "/admin/therapy-fleet",
+        hint: "Population compliance cohorts and clinical outreach worklist",
+      },
+      {
         href: "/admin/delivery-failures",
         label: "Delivery Failures",
         icon: TruckIcon,

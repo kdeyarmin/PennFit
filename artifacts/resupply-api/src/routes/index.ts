@@ -54,6 +54,7 @@ import integrationsStatusRouter from "./admin/integrations-status.js";
 import integrationsNightlySyncRouter from "./admin/integrations-nightly-sync.js";
 import integrationsWebhooksRouter from "./integrations-webhooks.js";
 import integrationsErrorsRouter from "./admin/integrations-errors.js";
+import therapyFleetRouter from "./admin/therapy-fleet.js";
 import integrationsRefreshSuppliesRouter from "./admin/integrations-refresh-supplies.js";
 import integrationsSyncEquipmentRouter from "./admin/integrations-sync-equipment.js";
 import bulkCampaignsRouter from "./admin/bulk-campaigns.js";
@@ -627,6 +628,10 @@ router.use(integrationsNightlySyncRouter);
 router.use(integrationsWebhooksRouter);
 // /admin/integrations/errors — sync-failure triage queue + retry.
 router.use(integrationsErrorsRouter);
+// /admin/therapy-fleet/* — population-level therapy-cloud analytics:
+// compliance cohorts + prioritized clinical/compliance outreach
+// worklist (with CSV export) over the patient_therapy_nights rollup.
+router.use(therapyFleetRouter);
 // /admin/patients/:id/integrations/refresh-supplies — post-shipment
 // hook that re-fetches just the vendor supply roster (preserves
 // prior nights + settings).

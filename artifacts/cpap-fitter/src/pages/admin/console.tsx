@@ -200,6 +200,11 @@ const AdminIntegrationsPage = lazy(() =>
     default: m.AdminIntegrationsPage,
   })),
 );
+const AdminTherapyFleetPage = lazy(() =>
+  import("@/pages/admin/admin-therapy-fleet").then((m) => ({
+    default: m.AdminTherapyFleetPage,
+  })),
+);
 const AdminCoachingPage = lazy(() =>
   import("@/pages/admin/admin-coaching").then((m) => ({
     default: m.AdminCoachingPage,
@@ -656,6 +661,10 @@ function AdminConsole() {
             <Route
               path="/admin/integrations"
               component={AdminIntegrationsPage}
+            />
+            <Route
+              path="/admin/therapy-fleet"
+              component={AdminTherapyFleetPage}
             />
             <Route path="/admin/coaching" component={AdminCoachingPage} />
             <Route
