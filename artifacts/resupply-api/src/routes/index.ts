@@ -12,6 +12,7 @@ import setupChecklistRouter from "./admin/setup-checklist.js";
 import casesRouter from "./admin/cases.js";
 import workItemsRouter from "./admin/work-items.js";
 import businessTargetsRouter from "./admin/business-targets.js";
+import agentAvailabilityRouter from "./admin/agent-availability.js";
 import shopOrdersAdminRouter from "./admin/shop-orders.js";
 import shopProductsAdminRouter from "./admin/shop-products.js";
 import inventoryReconciliationRouter from "./admin/inventory-reconciliation.js";
@@ -321,6 +322,9 @@ router.use(casesRouter);
 router.use(workItemsRouter);
 // /admin/business-targets — owner goal / target tracking (Phase 1).
 router.use(businessTargetsRouter);
+// /admin/agent-availability — CSR availability toggle (Phase 1); the
+// skill-router skips away / do-not-assign reps.
+router.use(agentAvailabilityRouter);
 // /admin/billing/era-ingest + /admin/billing/era-files — upload a
 // 5010 835 remittance, parse it, auto-reconcile claim totals + line
 // items + insert paid/denied events.

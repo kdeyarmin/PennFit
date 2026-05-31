@@ -378,6 +378,7 @@ export interface Database {
           last_login_at: string | null;
           auth_user_id: string | null;
           skills: Json;
+          availability: string;
           created_at: string;
           updated_at: string;
         };
@@ -404,6 +405,7 @@ export interface Database {
           last_login_at?: string | null;
           auth_user_id?: string | null;
           skills?: Json;
+          availability?: string;
           created_at?: string;
           updated_at?: string;
         };
