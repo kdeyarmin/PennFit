@@ -296,15 +296,15 @@ async function buildGroupingMap(
       const label = e.manufacturer.trim();
       if (!label) continue;
       // Case-insensitive bucket key so "ResMed" and "resmed" collapse to
-      // one cohort; first-seen casing wins the display label.
-      const key = label.toLowerCase();
+      // one cohort; first-seen casing wins both the key and the display label.
+      const keyLower = label.toLowerCase();
       let buckets = map.get(e.patient_id);
       if (!buckets) {
         buckets = [];
         map.set(e.patient_id, buckets);
       }
-      if (!buckets.some((b) => b.key === key)) {
-        buckets.push({ key, label, sublabel: null });
+      if (!buckets.some((b) => b.key.toLowerCase() === keyLower)) {
+        buckets.push({ key: label, label, sublabel: null });
       }
     }
   }
