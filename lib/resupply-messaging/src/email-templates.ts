@@ -174,10 +174,49 @@ export interface ClickLandingItem {
   name: string;
   /** HCPCS category (mask | cushion | pillow | filter | tubing |
    *  headgear | chinstrap | chamber | device | other) — drives the
-   *  color chip so the patient can recognize the item at a glance. */
+   *  color + glyph so the patient can recognize the item at a glance. */
   category: string;
   /** Quantity due. */
   quantity: number;
+  /**
+   * Optional product photo URL. When present it's rendered as the item
+   * thumbnail; when absent (the common case today — resupply SKUs map to
+   * an HCPCS family, not a specific photographed product) a category
+   * glyph tile is shown instead. NOT PHI — a product reference only.
+   * Must be an https URL the patient's browser can load directly.
+   */
+  imageUrl?: string | null;
+}
+
+/**
+ * Simple, self-contained line glyphs per supply category, shown on a
+ * color-filled tile so each due item reads as a recognizable picture
+ * rather than a bare text row — the visual is the lever on confirmation
+ * rate. Inline SVG (no external fetch, no broken-image box, no privacy
+ * leak) and renders in every browser that opens the landing page.
+ * Stroke is white over the category color; viewBox is 24×24.
+ */
+const CATEGORY_ICON_PATHS: Record<string, string> = {
+  mask: '<path d="M3 9c0-1.1.9-2 2-2h14a2 2 0 0 1 2 2v2c0 4.4-4 7-9 7s-9-2.6-9-7V9z"/>',
+  cushion: '<rect x="3.5" y="7.5" width="17" height="9" rx="4.5"/>',
+  pillow: '<rect x="3.5" y="7.5" width="17" height="9" rx="4.5"/>',
+  filter:
+    '<rect x="5" y="5" width="14" height="14" rx="2"/><path d="M5 10h14M5 14h14"/>',
+  tubing: '<path d="M4 13c2-5 6-5 8 0s6 4 8-1"/>',
+  headgear:
+    '<rect x="4" y="9" width="16" height="6" rx="3"/><path d="M9 9v6M15 9v6"/>',
+  chinstrap:
+    '<rect x="4" y="9" width="16" height="6" rx="3"/><path d="M9 9v6M15 9v6"/>',
+  chamber: '<path d="M12 4s6 6 6 10a6 6 0 0 1-12 0c0-4 6-10 6-10z"/>',
+  device:
+    '<rect x="4" y="7" width="16" height="11" rx="2"/><circle cx="9" cy="12.5" r="1.6"/>',
+  other:
+    '<path d="M4 8l8-4 8 4v8l-8 4-8-4V8z"/><path d="M4 8l8 4 8-4M12 12v8"/>',
+};
+
+function iconSvgFor(category: string): string {
+  const path = CATEGORY_ICON_PATHS[category] ?? CATEGORY_ICON_PATHS.other;
+  return `<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#ffffff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${path}</svg>`;
 }
 
 export interface RenderClickLandingInput {
@@ -220,8 +259,14 @@ function renderLandingItems(items: ClickLandingItem[]): string {
       const color =
         CATEGORY_CHIP_COLOR[it.category] ?? CATEGORY_CHIP_COLOR.other;
       const qty = Number.isFinite(it.quantity) ? Math.max(1, it.quantity) : 1;
+      // A real product photo when we have one, else a category glyph
+      // on a color tile. Both render at 40×40 so rows stay aligned.
+      const thumb =
+        typeof it.imageUrl === "string" && it.imageUrl.length > 0
+          ? `<img src="${escapeHtml(it.imageUrl)}" alt="" width="40" height="40" style="flex:0 0 auto;width:40px;height:40px;border-radius:8px;object-fit:cover;margin-right:14px;border:1px solid #e2e8f0;" />`
+          : `<div style="flex:0 0 auto;width:40px;height:40px;border-radius:8px;background:${color};margin-right:14px;display:flex;align-items:center;justify-content:center;">${iconSvgFor(it.category)}</div>`;
       return `      <div style="display:flex;align-items:center;padding:12px 16px;border-bottom:1px solid #f1f5f9;text-align:left;">
-        <div style="flex:0 0 auto;width:8px;height:36px;border-radius:4px;background:${color};margin-right:14px;"></div>
+        ${thumb}
         <div style="flex:1 1 auto;">
           <div style="font-size:15px;font-weight:600;color:#0f172a;">${escapeHtml(it.name)}</div>
           <div style="font-size:13px;color:#64748b;">Qty ${qty}</div>
