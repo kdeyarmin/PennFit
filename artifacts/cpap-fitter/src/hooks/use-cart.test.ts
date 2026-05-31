@@ -219,7 +219,10 @@ describe("cartStore.replaceItems", () => {
     cleanups.push(cartStore.subscribe(spy));
 
     cartStore.replaceItems([
-      { ...baseItem({ priceId: "price_new", productId: "prod_new" }), quantity: 3 },
+      {
+        ...baseItem({ priceId: "price_new", productId: "prod_new" }),
+        quantity: 3,
+      },
     ]);
 
     // One commit = one notification, not one per original line.
@@ -305,7 +308,9 @@ describe("cartStore.setItemMode — additional edge cases", () => {
   });
 
   it("setting one_time on a subscription line downgrades it", () => {
-    cartStore.addItem(baseItem({ recurringPriceId: "price_sub", mode: "one_time" }));
+    cartStore.addItem(
+      baseItem({ recurringPriceId: "price_sub", mode: "one_time" }),
+    );
     cartStore.setItemMode("price_1", "subscription");
     expect(cartStore.getSnapshot()[0]!.mode).toBe("subscription");
     cartStore.setItemMode("price_1", "one_time");

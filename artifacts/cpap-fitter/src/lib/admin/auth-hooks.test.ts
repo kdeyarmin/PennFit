@@ -23,10 +23,12 @@ describe("lib/admin/auth-hooks.ts — SESSION_QUERY_KEY (PR: namespaced cache ke
     expect(SRC).toContain("export const SESSION_QUERY_KEY");
   });
 
-  it("SESSION_QUERY_KEY is [\"auth\",\"me\",\"admin\"]", () => {
+  it('SESSION_QUERY_KEY is ["auth","me","admin"]', () => {
     // The third element distinguishes the admin key from the storefront key
     // (["auth","me","storefront"]) so both surfaces share a QueryClient safely.
-    expect(SRC).toMatch(/SESSION_QUERY_KEY\s*=\s*\["auth",\s*"me",\s*"admin"\]/);
+    expect(SRC).toMatch(
+      /SESSION_QUERY_KEY\s*=\s*\["auth",\s*"me",\s*"admin"\]/,
+    );
   });
 
   it("passes sessionQueryKey to createAuthHooks", () => {
@@ -42,7 +44,9 @@ describe("lib/admin/auth-hooks.ts — SESSION_QUERY_KEY (PR: namespaced cache ke
 
   it("SESSION_QUERY_KEY is distinct from the storefront key", () => {
     // The admin key must NOT be the storefront key value.
-    expect(SRC).not.toMatch(/SESSION_QUERY_KEY\s*=\s*\["auth",\s*"me",\s*"storefront"\]/);
+    expect(SRC).not.toMatch(
+      /SESSION_QUERY_KEY\s*=\s*\["auth",\s*"me",\s*"storefront"\]/,
+    );
   });
 
   it("exports authHooks", () => {

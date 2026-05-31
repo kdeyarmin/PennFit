@@ -85,6 +85,15 @@ allowlists. The dev-mode fallback (no allowlist
 configured, NODE_ENV=development) returns `admin`.
  */
   role: AdminIdentityRole;
+  /**
+   * The caller's granular RBAC permission keys (e.g.
+   * `admin.tools.manage`), computed server-side from the same catalog
+   * that `requirePermission(...)` gates on. The dashboard reads this to
+   * hide nav entries / affordances the backend would 403. Optional for
+   * back-compat with older server builds; a missing value is treated as
+   * "no extra permissions" (fail-closed).
+   */
+  permissions?: string[];
 }
 
 /**

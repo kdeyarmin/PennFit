@@ -117,9 +117,7 @@ describe("listAdminCustomerFollowups", () => {
   });
 
   test("throws AdminCustomerFollowupsNotFoundError on 404", async () => {
-    fetchMock.mockResolvedValue(
-      errorResponse(404, "Not Found"),
-    );
+    fetchMock.mockResolvedValue(errorResponse(404, "Not Found"));
     const err = await listAdminCustomerFollowups("user-1").catch(
       (e: unknown) => e,
     );
@@ -155,7 +153,11 @@ describe("createAdminCustomerFollowup", () => {
 
   test("POSTs to /admin/shop/customers/:id/followups", async () => {
     fetchMock.mockResolvedValue(
-      okResponse({ id: "fu-new", dueAt: DUE_AT.toISOString(), createdAt: "2026-01-01T00:00:00Z" }),
+      okResponse({
+        id: "fu-new",
+        dueAt: DUE_AT.toISOString(),
+        createdAt: "2026-01-01T00:00:00Z",
+      }),
     );
     await createAdminCustomerFollowup("user-1", "Check in", DUE_AT);
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
@@ -165,7 +167,11 @@ describe("createAdminCustomerFollowup", () => {
 
   test("serialises body and dueAt in the request body", async () => {
     fetchMock.mockResolvedValue(
-      okResponse({ id: "fu-new", dueAt: DUE_AT.toISOString(), createdAt: "2026-01-01T00:00:00Z" }),
+      okResponse({
+        id: "fu-new",
+        dueAt: DUE_AT.toISOString(),
+        createdAt: "2026-01-01T00:00:00Z",
+      }),
     );
     await createAdminCustomerFollowup("user-1", "Check in", DUE_AT);
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
@@ -191,9 +197,7 @@ describe("createAdminCustomerFollowup", () => {
   });
 
   test("throws AdminCustomerFollowupsNotFoundError on 404", async () => {
-    fetchMock.mockResolvedValue(
-      errorResponse(404, "Not Found"),
-    );
+    fetchMock.mockResolvedValue(errorResponse(404, "Not Found"));
     const err = await createAdminCustomerFollowup(
       "missing-user",
       "note",
@@ -206,11 +210,9 @@ describe("createAdminCustomerFollowup", () => {
     fetchMock.mockResolvedValue(
       errorResponse(422, "Unprocessable Entity", "validation failed"),
     );
-    const err = await createAdminCustomerFollowup(
-      "user-1",
-      "x",
-      DUE_AT,
-    ).catch((e: unknown) => e);
+    const err = await createAdminCustomerFollowup("user-1", "x", DUE_AT).catch(
+      (e: unknown) => e,
+    );
     expect(err).toBeInstanceOf(ApiError);
     expect((err as ApiError).status).toBe(422);
     expect((err as ApiError).method).toBe("POST");
@@ -241,13 +243,10 @@ describe("completeAdminCustomerFollowup", () => {
   });
 
   test("throws AdminCustomerFollowupsNotFoundError on 404", async () => {
-    fetchMock.mockResolvedValue(
-      errorResponse(404, "Not Found"),
+    fetchMock.mockResolvedValue(errorResponse(404, "Not Found"));
+    const err = await completeAdminCustomerFollowup("user-1", "missing").catch(
+      (e: unknown) => e,
     );
-    const err = await completeAdminCustomerFollowup(
-      "user-1",
-      "missing",
-    ).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(AdminCustomerFollowupsNotFoundError);
   });
 
@@ -264,9 +263,7 @@ describe("completeAdminCustomerFollowup", () => {
   });
 
   test("URL-encodes both userId and followupId", async () => {
-    fetchMock.mockResolvedValue(
-      okResponse({ id: "fu/1", completedAt: null }),
-    );
+    fetchMock.mockResolvedValue(okResponse({ id: "fu/1", completedAt: null }));
     await completeAdminCustomerFollowup("user/1", "fu/1");
     const [url] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toContain("user%2F1");

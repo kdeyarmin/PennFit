@@ -31,10 +31,7 @@ function okResponse(body: unknown): Partial<Response> {
   };
 }
 
-function errorResponse(
-  status: number,
-  statusText = "",
-): Partial<Response> {
+function errorResponse(status: number, statusText = ""): Partial<Response> {
   return {
     ok: false,
     status,
@@ -80,9 +77,7 @@ describe("listConversationCoachingNotes", () => {
     fetchMock.mockResolvedValue(okResponse({ notes: [] }));
     await listConversationCoachingNotes("conv-1");
     const [url] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe(
-      "/resupply-api/admin/conversations/conv-1/coaching-notes",
-    );
+    expect(url).toBe("/resupply-api/admin/conversations/conv-1/coaching-notes");
   });
 
   test("URL-encodes the conversationId", async () => {
@@ -124,9 +119,7 @@ describe("createConversationCoachingNote", () => {
     fetchMock.mockResolvedValue(okResponse({ id: "note-new" }));
     await createConversationCoachingNote("conv-1", CREATE_BODY);
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe(
-      "/resupply-api/admin/conversations/conv-1/coaching-notes",
-    );
+    expect(url).toBe("/resupply-api/admin/conversations/conv-1/coaching-notes");
     expect(init.method).toBe("POST");
   });
 
@@ -161,9 +154,7 @@ describe("createConversationCoachingNote", () => {
 
 describe("listTeamCoachingNotes", () => {
   test("GETs /resupply-api/admin/team/:id/coaching-notes", async () => {
-    fetchMock.mockResolvedValue(
-      okResponse({ counts: {}, notes: [] }),
-    );
+    fetchMock.mockResolvedValue(okResponse({ counts: {}, notes: [] }));
     await listTeamCoachingNotes("user-1");
     const [url] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toBe("/resupply-api/admin/team/user-1/coaching-notes");
@@ -183,9 +174,7 @@ describe("listTeamCoachingNotes", () => {
 
   test("throws ApiError on non-OK response", async () => {
     fetchMock.mockResolvedValue(errorResponse(404, "Not Found"));
-    const err = await listTeamCoachingNotes("missing").catch(
-      (e: unknown) => e,
-    );
+    const err = await listTeamCoachingNotes("missing").catch((e: unknown) => e);
     expect(err).toBeInstanceOf(ApiError);
     expect((err as ApiError).status).toBe(404);
   });

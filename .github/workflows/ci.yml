@@ -108,30 +108,26 @@ jobs:
     name: Tests
     runs-on: ubuntu-latest
 
-    # Unit-only run (safe interim). The vitest suites mock the DB layer
-    # with fluent stubs, so the bulk of the tests need no real Postgres.
-    # The two DB-backed suites self-skip when their env is absent:
+    # The vitest suites mock the DB layer with fluent stubs, so the bulk
+    # of the tests need no real Postgres and run here. The DB-backed
+    # suites self-skip when their env is absent:
     #   * lib/resupply-db/scripts/migrate.test.ts  -> describe.skipIf(!DATABASE_URL)
+    #   * lib/resupply-db/scripts/migration-pr-changes.test.ts -> same
     #   * .../invite-password-expiry-notify.integration.test.ts
     #       -> skips unless DATABASE_URL + SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY
-    # Those vars are intentionally NOT set here, so both skip cleanly.
+    # DATABASE_URL is intentionally NOT set here, so those skip cleanly.
     #
-    # Why the Postgres + migrate + PostgREST harness was removed (this is
-    # NOT a silent coverage cut): the harness existed only to run a
-    # from-scratch `node migrate.mjs` so those suites could hit a live
-    # schema. That full replay is currently broken from scratch (~17
-    # ordering/schema/role failures; e.g. 0060 references
-    # resupply.reminder_subscriptions but 0027 creates it unqualified), so
-    # the job was dying at the "Apply resupply migrations" SETUP step and
-    # these suites never actually ran here anyway. Production is also NOT
-    # migrated by migrate.mjs -- prod has no drizzle.resupply_migrations
-    # table and is managed by a separate Supabase-native migration lineage
-    # -- so the from-scratch replay does not reflect prod either.
-    #
-    # Re-enabling the DB-backed integration tests is gated on reconciling
-    # the repo migration history with production (a separate operational
-    # effort). Until then, a green unit-only run is honest; the prior
-    # state was a red check that was routinely merged past.
+    # The migration-replay suites now run for real in the dedicated
+    # `migrations` job below (Postgres service container). The earlier
+    # claim that the from-scratch replay was "broken (~17 ordering/role
+    # failures)" turned out to be stale: the only gap was that the
+    # GRANT/REVOKE migrations (0169+) target the Supabase-provided roles
+    # anon/authenticated/service_role, which exist on managed Supabase
+    # but not on a vanilla Postgres — create those three roles first and
+    # the full 0000..latest chain applies cleanly. The PostgREST-backed
+    # invite-password-expiry-notify suite still needs a full Supabase
+    # stack (PostgREST + GoTrue), not just a Postgres container, so it
+    # remains skipped pending a local-Supabase harness.
 
     steps:
       - uses: actions/checkout@v5
@@ -161,6 +157,155 @@ jobs:
           docker ps -a --format 'table {{.Names}}\t{{.Status}}' 2>&1 | head -10 || true
           # Look for crashed worker logs vitest leaves behind.
           find . -maxdepth 4 -name '*.log' -newer /tmp/runtime-marker 2>/dev/null | head -20 || true
+
+  migrations:
+    name: Migration replay (Postgres)
+    runs-on: ubuntu-latest
+
+    # Runs the DB-backed migration suites against a real Postgres:
+    #   * migrate.test.ts            — full 0000..latest from-scratch
+    #                                  replay + idempotence on re-run
+    #   * migration-pr-changes.test.ts — post-migration schema assertions
+    # Both gate on DATABASE_URL (skipIf), so they run here and skip in the
+    # unit-only `test` job above. This is the harness that was previously
+    # removed; it works once the Supabase platform roles exist (see the
+    # "Create Supabase platform roles" step).
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: resupply_ci
+        ports:
+          - 5432:5432
+        # Wait until Postgres accepts connections before the steps run.
+        options: >-
+          --health-cmd "pg_isready -U postgres -d resupply_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/resupply_ci
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install pnpm
+        run: |
+          corepack disable pnpm 2>/dev/null || true
+          npm install -g pnpm@${{ env.PNPM_VERSION }}
+          pnpm --version
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "pnpm"
+          cache-dependency-path: pnpm-lock.yaml
+
+      - run: pnpm install --frozen-lockfile
+
+      # Supabase provisions anon/authenticated/service_role as managed
+      # platform roles; the resupply migrations GRANT/REVOKE against them
+      # (0169+). A vanilla Postgres service container has none, so create
+      # the three before any replay. (migrate.test.ts also creates them
+      # idempotently in beforeAll, but the explicit migrate step below
+      # runs outside vitest and needs them first.)
+      - name: Create Supabase platform roles
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 \
+            -c "CREATE ROLE anon NOLOGIN;" \
+            -c "CREATE ROLE authenticated NOLOGIN;" \
+            -c "CREATE ROLE service_role NOLOGIN;"
+
+      # Apply the full migration chain once so migration-pr-changes.test.ts
+      # — which assumes an already-migrated DATABASE_URL and does not run
+      # the migrator itself — has a schema to inspect. migrate.test.ts
+      # re-runs the migrator (idempotent) and spins up its own temp DBs
+      # for the from-scratch path.
+      - name: Apply migrations (from scratch)
+        run: node lib/resupply-db/scripts/migrate.mjs
+
+      - name: Run DB-backed migration tests
+        run: pnpm --filter @workspace/resupply-db test
+
+  integration:
+    name: Integration (PostgREST)
+    runs-on: ubuntu-latest
+
+    # Runs the DB-backed Supabase integration test(s) — currently
+    # invite-password-expiry-notify.integration.test.ts — against a REAL
+    # PostgREST surface (the service-role data path), not just a Postgres
+    # container. We don't spin up the full managed Supabase stack (Kong +
+    # GoTrue + Storage): a standalone PostgREST binary plus a tiny
+    # /rest/v1 path proxy is enough for what these tests exercise. The
+    # bootstrap lives in scripts/ci/start-test-postgrest.sh.
+    #
+    # continue-on-error while the harness proves itself in CI (mirrors the
+    # a11y job). The test itself is validated; the soft gate covers
+    # setup flakiness (PostgREST binary download, daemon startup). Flip to
+    # required once it has been green across a few runs.
+    continue-on-error: true
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: resupply_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d resupply_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/resupply_ci
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install pnpm
+        run: |
+          corepack disable pnpm 2>/dev/null || true
+          npm install -g pnpm@${{ env.PNPM_VERSION }}
+          pnpm --version
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "pnpm"
+          cache-dependency-path: pnpm-lock.yaml
+
+      - run: pnpm install --frozen-lockfile
+
+      # Migrations 0169+ GRANT/REVOKE against the Supabase platform roles;
+      # create them before the replay (see the migrations job).
+      - name: Create Supabase platform roles
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 \
+            -c "CREATE ROLE anon NOLOGIN;" \
+            -c "CREATE ROLE authenticated NOLOGIN;" \
+            -c "CREATE ROLE service_role NOLOGIN;"
+
+      - name: Apply migrations
+        run: node lib/resupply-db/scripts/migrate.mjs
+
+      # Grants service_role, downloads PostgREST, starts it + the
+      # /rest/v1 proxy (background — they persist across steps), and
+      # exports SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY to $GITHUB_ENV.
+      - name: Start standalone PostgREST
+        run: bash scripts/ci/start-test-postgrest.sh
+
+      - name: Run PostgREST integration tests
+        run: |
+          pnpm --filter @workspace/resupply-api exec \
+            vitest run src/worker/jobs/invite-password-expiry-notify.integration.test.ts
 
   a11y:
     name: A11y (Playwright + axe)
