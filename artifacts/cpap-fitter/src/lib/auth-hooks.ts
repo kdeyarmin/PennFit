@@ -16,8 +16,17 @@ import {
   createAuthHooks,
 } from "@workspace/resupply-auth-react";
 
+/**
+ * Namespaced session cache key for the STOREFRONT surface. Distinct
+ * from the admin key (["auth","me","admin"]) so both surfaces can
+ * share one QueryClient without their session entries colliding.
+ */
+export const SESSION_QUERY_KEY = ["auth", "me", "storefront"] as const;
+
 export const authClient = createAuthClient({
   basePath: "/api/auth",
 });
 
-export const authHooks = createAuthHooks(authClient);
+export const authHooks = createAuthHooks(authClient, {
+  sessionQueryKey: SESSION_QUERY_KEY,
+});

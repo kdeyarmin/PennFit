@@ -474,6 +474,13 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         hint: "Resupply funnel, compliance cohorts, CSR productivity",
       },
       {
+        href: "/admin/therapy-usage-report",
+        label: "Therapy Report",
+        icon: ScrollText,
+        matchPrefix: "/admin/therapy-usage-report",
+        hint: "Provider-ready, print-quality therapy adherence snapshot (by provider, patient, or manufacturer)",
+      },
+      {
         href: "/admin/nps",
         label: "Customer NPS",
         icon: Star,
