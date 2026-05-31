@@ -52,7 +52,7 @@ rg -n 'RESUPPLY_MASTER_KEY|RESUPPLY_DATA_KEY|RESUPPLY_PHONE_HMAC_KEY|pgp_sym_enc
 rg -ni 'AUTH_PASSWORD_PEPPER|password.?pepper' artifacts lib
 
 # R5 new audit_log readers / retired compliance env + writing logic vs the no-op audit stub
-rg -nP '\.from\(\s*["'\'']audit_log["'\'']\s*\)|RESUPPLY_AUDIT_HMAC_KEY' artifacts lib
+rg -nP "\.from\(\s*[\"\x27]audit_log[\"\x27]\s*\)|RESUPPLY_AUDIT_HMAC_KEY" artifacts lib
 
 # R6 email sent outside the shared SendGrid client
 rg -n '@sendgrid/mail|new MailService|sgMail|setApiKey\(' artifacts lib --glob '!lib/resupply-email/**'
