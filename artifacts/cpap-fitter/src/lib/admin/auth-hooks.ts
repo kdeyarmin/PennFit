@@ -21,8 +21,18 @@ import {
   createAuthHooks,
 } from "@workspace/resupply-auth-react";
 
+/**
+ * Namespaced session cache key for the ADMIN surface. The admin and
+ * storefront auth clients share one QueryClient; without distinct keys
+ * a sign-out (or sign-in) on one surface would invalidate the other's
+ * cached session. The storefront uses ["auth","me","storefront"].
+ */
+export const SESSION_QUERY_KEY = ["auth", "me", "admin"] as const;
+
 export const authClient = createAuthClient({
   basePath: "/resupply-api/auth",
 });
 
-export const authHooks = createAuthHooks(authClient);
+export const authHooks = createAuthHooks(authClient, {
+  sessionQueryKey: SESSION_QUERY_KEY,
+});
