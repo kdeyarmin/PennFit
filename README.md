@@ -60,7 +60,7 @@ top-level structure is:
   `nvm use` / `fnm use` / `asdf` auto-select the right major on
   clone — run it before `pnpm install` to avoid an
   `ERR_PNPM_UNSUPPORTED_ENGINE` mismatch.
-- pnpm **v11+** (pinned to `pnpm@11.4.0` via `packageManager`).
+- pnpm **v11+** (pinned to `pnpm@11.5.0` via `packageManager`).
   With Corepack enabled (`corepack enable`), the pinned pnpm is
   selected automatically from the repo root.
 - Postgres **v14+** (we run v16). No extensions required — the
