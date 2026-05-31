@@ -463,6 +463,13 @@ router.use(shopReturnNotesRouter);
 // macroMerge helper in the dashboard for the {{namespace.key}}
 // substitution syntax.
 router.use(csrMacrosRouter);
+// /admin/alerts/* — the alert library: a curated catalog of
+// email/SMS/voice alerts with editable per-channel messages, plus a
+// send action. Reading/editing is admin.tools.manage-gated; sending
+// is requireAdmin + rate-limited. The dispatch path degrades to a
+// hard-coded fallback when the seed rows are missing, so the route is
+// forward-deploy-safe before migration 0179 is applied.
+router.use(alertsRouter);
 // /admin/message-templates/* — admin read + edit for the
 // customer-message template library (Phase 1 of
 // docs/proposals/customer-message-templates.md). The render path

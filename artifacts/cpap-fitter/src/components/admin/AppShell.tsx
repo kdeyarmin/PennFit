@@ -197,6 +197,13 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         matchPrefix: "/admin/bulk-campaigns",
         hint: "Resolve audience + draft a bulk email send",
       },
+      {
+        href: "/admin/alerts",
+        label: "Alert Library",
+        icon: AlertOctagon,
+        matchPrefix: "/admin/alerts",
+        hint: "Send curated email / SMS / phone-call alerts to a patient",
+      },
     ],
   },
   {
