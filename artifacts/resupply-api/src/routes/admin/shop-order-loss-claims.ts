@@ -185,7 +185,7 @@ router.patch(
       if (!canTransition(prior.status as ClaimStatus, parsed.data.status)) {
         res.status(409).json({
           error: "illegal_transition",
-          message: `Cannot move ${prior.status} → ${parsed.data.status}.`,
+          message: `Cannot move ${prior.status.replace(/_/g, " ")} → ${parsed.data.status.replace(/_/g, " ")}.`,
         });
         return;
       }

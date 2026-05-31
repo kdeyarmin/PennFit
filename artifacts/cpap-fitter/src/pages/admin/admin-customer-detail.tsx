@@ -44,7 +44,7 @@ import {
 import { Card } from "@/components/admin/Card";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { Spinner } from "@/components/admin/Spinner";
-import { Badge } from "@/components/admin/Badge";
+import { Badge, conversationStatusLabel } from "@/components/admin/Badge";
 import { CustomerNotesPanel } from "@/components/admin/CustomerNotesPanel";
 import { CustomerFollowupsPanel } from "@/components/admin/CustomerFollowupsPanel";
 import { MessageTemplateOverridesPanel } from "@/components/admin/message-template-overrides-panel";
@@ -610,7 +610,7 @@ function InAppConversationCard({
               }}
             >
               <span>
-                Status: <strong>{humanizeStatus(inApp.status)}</strong>
+                Status: <strong>{conversationStatusLabel(inApp.status)}</strong>
               </span>
               <span>
                 Messages: <strong>{inApp.messageCount}</strong>
@@ -645,19 +645,6 @@ function InAppConversationCard({
       </div>
     </Card>
   );
-}
-
-function humanizeStatus(s: AdminCustomerInAppConversation["status"]): string {
-  switch (s) {
-    case "awaiting_admin":
-      return "Awaiting reply";
-    case "awaiting_patient":
-      return "Awaiting customer";
-    case "open":
-      return "Open";
-    case "closed":
-      return "Closed";
-  }
 }
 
 // ─── Recent orders / contact / saved card / stats cards ────────
