@@ -163,13 +163,13 @@ high-value items in Phases 2–5 have nowhere to read from.
     [reason, assessment, intervention, plan, follow_up_at], free-text
     note, linked alert/episode id). Append-only with edit-history, like
     the existing order/customer notes.
-  - **New granular role** in `lib/resupply-auth/src/rbac.ts`: add `rt`
-    (clinician) to `AdminRole` with `clinical.read`,
+  - **New granular role:** add `rt` (clinician) across the
+    `AdminRole` enum/check constraint, `lib/resupply-db/src/types.ts`,
+    `lib/resupply-auth/src/rbac.ts`, and `routes/admin/team.ts`
+    (`ROLE_VALUES` + `coarseAuthRoleFor`) with `clinical.read`,
     `clinical.note.write`, `clinical.intervention.write`,
-    `patients.read`. Coarse `auth.users.role` stays `agent` (so the
-    existing staff gate admits them); the RT scoping is purely granular
-    RBAC — **no `requireAdmin` rewrite**, it already reads
-    `admin_users.role`.
+    `patients.read`. Coarse `auth.users.role` stays `agent` so the
+    existing staff gate admits them.
   - **Clinician portal shell:** a new `/admin/clinical` area
     (AppShell nav entry gated on `clinical.read`) scoped to _flagged /
     panel_ patients rather than the full CSR firehose. Wrap in
