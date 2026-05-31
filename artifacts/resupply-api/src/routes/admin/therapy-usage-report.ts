@@ -38,7 +38,8 @@ import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 import {
   THERAPY_REPORT_GROUPINGS,
   aggregateTherapyUsageReport,
-  type TherapyNightRow,
+  type GroupRef,
+  type PatientNight,
   type TherapyReportGrouping,
 } from "../../lib/analytics/therapy-usage-report";
 import { requirePermission } from "../../middlewares/requireAdmin";
@@ -57,11 +58,34 @@ const NIGHTS_CAP = 50_000;
 // Cap on the join tables we read to build the grouping maps.
 const MAP_CAP = 50_000;
 
+/** Source priority when the same night exists from multiple feeds.
+ *  Mirrors the compliance-attestation route so this report and the
+ *  on-file attestation never disagree on which feed wins a night. */
+const SOURCE_PRIORITY: Record<string, number> = {
+  resmed_airview: 0,
+  philips_care: 1,
+  health_connect: 2,
+  react_health: 3,
+  manual: 4,
+};
+
 interface NightDbRow {
   patient_id: string;
+  night_date: string;
+  source: string;
   usage_minutes: number | null;
-  ahi: number | null;
-  leak_rate_l_min: number | null;
+  // `ahi` and `leak_rate_l_min` are Postgres `numeric` columns, which
+  // PostgREST serializes as strings. Coerce before any arithmetic.
+  ahi: string | null;
+  leak_rate_l_min: string | null;
+}
+
+/** Coerce a PostgREST numeric (string | null) to a finite number or
+ *  null. Guards against NaN poisoning the aggregation averages. */
+function toNum(value: string | number | null): number | null {
+  if (value == null) return null;
+  const n = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(n) ? n : null;
 }
 
 /** Opaque, stable, name-free reference for the de-identified patient
@@ -90,44 +114,58 @@ router.get(
     const cutoff = isoDaysAgo(days);
     const supabase = getSupabaseServiceRoleClient();
 
-    // 1. Pull the per-night therapy metrics over the window.
+    // 1. Pull the per-night therapy metrics over the window. We select
+    //    night_date + source so we can collapse multi-source duplicates
+    //    (UNIQUE(patient_id, night_date, source) permits several rows
+    //    per patient/night) before any counting.
     const { data: nightData, error: nightErr } = await supabase
       .schema("resupply")
       .from("patient_therapy_nights")
-      .select("patient_id, usage_minutes, ahi, leak_rate_l_min")
+      .select("patient_id, night_date, source, usage_minutes, ahi, leak_rate_l_min")
       .gte("night_date", cutoff)
       .limit(NIGHTS_CAP);
     if (nightErr) throw nightErr;
-    const nights = (nightData ?? []) as NightDbRow[];
+    const rawNights = (nightData ?? []) as NightDbRow[];
 
-    // 2. Build the per-patient → [groupKey,label,sublabel] mapping for
-    //    the requested axis. A patient can map to several buckets.
-    const groupsForPatient = await buildGroupingMap(
-      supabase,
-      groupBy,
-      nights,
+    // 2. Dedupe by (patient, night) taking the source-priority winner,
+    //    and coerce the numeric (string) columns to numbers.
+    const dedupedByKey = new Map<string, NightDbRow>();
+    for (const row of rawNights) {
+      const key = `${row.patient_id}::${row.night_date}`;
+      const existing = dedupedByKey.get(key);
+      if (!existing) {
+        dedupedByKey.set(key, row);
+        continue;
+      }
+      const newRank = SOURCE_PRIORITY[row.source] ?? 99;
+      const oldRank = SOURCE_PRIORITY[existing.source] ?? 99;
+      if (newRank < oldRank) dedupedByKey.set(key, row);
+    }
+    const nights: PatientNight[] = Array.from(dedupedByKey.values()).map(
+      (r) => ({
+        patientId: r.patient_id,
+        date: r.night_date,
+        usageMinutes: r.usage_minutes,
+        ahi: toNum(r.ahi),
+        leakRateLMin: toNum(r.leak_rate_l_min),
+      }),
     );
 
-    // 3. Fan each night out across its patient's buckets and aggregate.
-    const rows: TherapyNightRow[] = [];
-    for (const night of nights) {
-      const buckets = groupsForPatient.get(night.patient_id) ?? [
-        unattributedBucket(groupBy),
-      ];
-      for (const bucket of buckets) {
-        rows.push({
-          groupKey: bucket.key,
-          groupLabel: bucket.label,
-          groupSublabel: bucket.sublabel,
-          patientId: night.patient_id,
-          usageMinutes: night.usage_minutes,
-          ahi: night.ahi,
-          leakRateLMin: night.leak_rate_l_min,
-        });
-      }
-    }
+    // 3. Build the per-patient → bucket(s) mapping for the requested
+    //    axis. A patient can map to several buckets.
+    const patientIds = new Set(nights.map((n) => n.patientId));
+    const bucketsByPatient = await buildGroupingMap(
+      supabase,
+      groupBy,
+      patientIds,
+    );
 
-    const result = aggregateTherapyUsageReport(groupBy, rows);
+    const result = aggregateTherapyUsageReport({
+      grouping: groupBy,
+      nights,
+      bucketsByPatient,
+      asOfDate: new Date().toISOString().slice(0, 10),
+    });
     res.json({
       windowDays: days,
       generatedAt: new Date().toISOString(),
@@ -136,13 +174,7 @@ router.get(
   },
 );
 
-interface Bucket {
-  key: string;
-  label: string;
-  sublabel: string | null;
-}
-
-function unattributedBucket(groupBy: TherapyReportGrouping): Bucket {
+function unattributedRef(groupBy: TherapyReportGrouping): GroupRef {
   switch (groupBy) {
     case "provider":
       return {
@@ -163,14 +195,16 @@ function unattributedBucket(groupBy: TherapyReportGrouping): Bucket {
   }
 }
 
-/** Builds patient_id → Bucket[] for the requested grouping axis. */
+/** Builds patient_id → GroupRef[] for the requested grouping axis.
+ *  Every patient with night data gets at least one bucket (an
+ *  "Unattributed" fallback when no provider / device is on file) so the
+ *  headline summary and the cohort rows agree on the patient set. */
 async function buildGroupingMap(
   supabase: ReturnType<typeof getSupabaseServiceRoleClient>,
   groupBy: TherapyReportGrouping,
-  nights: NightDbRow[],
-): Promise<Map<string, Bucket[]>> {
-  const map = new Map<string, Bucket[]>();
-  const patientIds = new Set(nights.map((n) => n.patient_id));
+  patientIds: Set<string>,
+): Promise<Map<string, GroupRef[]>> {
+  const map = new Map<string, GroupRef[]>();
 
   if (groupBy === "patient") {
     for (const id of patientIds) {
@@ -204,7 +238,7 @@ async function buildGroupingMap(
       providerIds.add(r.provider_id);
     }
 
-    const providerById = new Map<string, Bucket>();
+    const providerById = new Map<string, GroupRef>();
     if (providerIds.size > 0) {
       const { data: provData, error: provErr } = await supabase
         .schema("resupply")
