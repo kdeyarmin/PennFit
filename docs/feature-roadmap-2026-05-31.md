@@ -163,8 +163,11 @@ high-value items in Phases 2–5 have nowhere to read from.
   **`metrics.daily-snapshot`** worker job (06:30 UTC) writing the first
   KPI set (orders + gross/refunded/net revenue from `shop_orders`) into
   `metrics_daily`, idempotent on the `(date, key)` PK and extensible to
-  more KPIs. Next: the evaluator job (`evaluateThreshold` over the
-  series) + the email/in-app notifier.
+  more KPIs; and the **`metrics.alerts-evaluator`** job (06:45 UTC) that
+  runs each enabled threshold's latest + 7-day-baseline values through
+  `evaluateThreshold` and writes idempotent `metric_alerts` on a breach.
+  Next: the email notifier (shared SendGrid digest of new alerts) + an
+  admin alert-feed endpoint. (F2 nearly complete.)
 
 ### F3 · Clinical encounters + RT role + clinician portal shell — **L**
 
