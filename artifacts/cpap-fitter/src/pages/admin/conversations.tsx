@@ -14,6 +14,7 @@ import {
   Badge,
   channelVariant,
   conversationStatusVariant,
+  conversationStatusLabel,
   humanizeStatus,
 } from "@/components/admin/Badge";
 import { Spinner } from "@/components/admin/Spinner";
@@ -29,7 +30,7 @@ const PAGE_SIZE = 25;
 
 const STATUS_OPTIONS = Object.values(ListConversationsStatus).map((v) => ({
   value: v,
-  label: humanizeStatus(v),
+  label: conversationStatusLabel(v),
 }));
 const CHANNEL_OPTIONS = Object.values(ListConversationsChannel).map((v) => ({
   value: v,
@@ -178,7 +179,7 @@ export function ConversationsPage() {
       header: "Status",
       render: (r) => (
         <Badge variant={conversationStatusVariant(r.status)}>
-          {humanizeStatus(r.status)}
+          {conversationStatusLabel(r.status)}
         </Badge>
       ),
     },
