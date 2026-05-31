@@ -55,6 +55,7 @@ import integrationsNightlySyncRouter from "./admin/integrations-nightly-sync.js"
 import integrationsWebhooksRouter from "./integrations-webhooks.js";
 import integrationsErrorsRouter from "./admin/integrations-errors.js";
 import therapyFleetRouter from "./admin/therapy-fleet.js";
+import therapyResupplyRouter from "./admin/therapy-resupply.js";
 import integrationsRefreshSuppliesRouter from "./admin/integrations-refresh-supplies.js";
 import integrationsSyncEquipmentRouter from "./admin/integrations-sync-equipment.js";
 import bulkCampaignsRouter from "./admin/bulk-campaigns.js";
@@ -632,6 +633,10 @@ router.use(integrationsErrorsRouter);
 // compliance cohorts + prioritized clinical/compliance outreach
 // worklist (with CSV export) over the patient_therapy_nights rollup.
 router.use(therapyFleetRouter);
+// /admin/therapy-resupply/* — resupply opportunities from device data:
+// vendor supply rosters whose nextEligibleDate has arrived, surfaced as
+// a fleet "due/overdue" queue (with CSV export) to drive resupply orders.
+router.use(therapyResupplyRouter);
 // /admin/patients/:id/integrations/refresh-supplies — post-shipment
 // hook that re-fetches just the vendor supply roster (preserves
 // prior nights + settings).

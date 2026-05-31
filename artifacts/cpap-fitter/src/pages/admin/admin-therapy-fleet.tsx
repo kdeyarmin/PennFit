@@ -19,6 +19,7 @@ import {
   AlertTriangle,
   Download,
   HeartPulse,
+  PackageCheck,
   Stethoscope,
   Wind,
 } from "lucide-react";
@@ -126,6 +127,14 @@ export function AdminTherapyFleetPage() {
             Philips Care Orchestrator, React Health, and Health Connect — over
             the last {windowDays} nights.
           </p>
+          <Link
+            href="/admin/therapy-resupply"
+            className="inline-flex items-center gap-1.5 text-sm mt-2 hover:underline"
+            style={{ color: "hsl(var(--penn-navy))" }}
+          >
+            <PackageCheck className="h-4 w-4" /> Resupply opportunities —
+            device-reported supplies due for replacement
+          </Link>
         </div>
         <div className="flex items-center gap-2">
           <label className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>

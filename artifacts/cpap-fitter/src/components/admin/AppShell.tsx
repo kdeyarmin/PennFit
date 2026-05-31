@@ -425,6 +425,13 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         hint: "Population compliance cohorts and clinical outreach worklist",
       },
       {
+        href: "/admin/therapy-resupply",
+        label: "Resupply Opportunities",
+        icon: PackageCheck,
+        matchPrefix: "/admin/therapy-resupply",
+        hint: "Device-reported supplies due for replacement — drives resupply orders",
+      },
+      {
         href: "/admin/delivery-failures",
         label: "Delivery Failures",
         icon: TruckIcon,
