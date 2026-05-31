@@ -527,6 +527,14 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         requiredPermission: "targets.manage",
       },
       {
+        href: "/admin/kpi-alerts",
+        label: "KPI alerts",
+        icon: BellRing,
+        matchPrefix: "/admin/kpi-alerts",
+        hint: "KPI threshold alert feed + rule config (revenue, denials, churn)",
+        requiredPermission: "metrics.read",
+      },
+      {
         href: "/admin/analytics",
         label: "Clinical Analytics",
         icon: Activity,

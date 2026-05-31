@@ -7,6 +7,7 @@ import followupsListRouter from "./admin/followups-list.js";
 import shopOrderNotesRouter from "./admin/order-notes.js";
 import productCostsRouter from "./admin/product-costs.js";
 import metricAlertsRouter from "./admin/metric-alerts.js";
+import metricThresholdsRouter from "./admin/metric-thresholds.js";
 import clinicalEncountersRouter from "./admin/clinical-encounters.js";
 import setupChecklistRouter from "./admin/setup-checklist.js";
 import casesRouter from "./admin/cases.js";
@@ -312,6 +313,10 @@ router.use(productCostsRouter);
 // /admin/metric-alerts/* — the in-app KPI alert feed (F2 metrics
 // substrate). Alerts written by the metrics.alerts-evaluator worker.
 router.use(metricAlertsRouter);
+// /admin/metric-thresholds/* — owner CRUD for the KPI alert rules the
+// evaluator walks (Owner #5). Read on metrics.read, write on
+// admin.tools.manage.
+router.use(metricThresholdsRouter);
 // /admin/patients/:id/clinical-encounters — append-only clinician
 // documentation (F3). Read on clinical.read, write on clinical.note.write.
 router.use(clinicalEncountersRouter);

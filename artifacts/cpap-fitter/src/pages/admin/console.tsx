@@ -135,6 +135,11 @@ const AdminGoalsPage = lazy(() =>
     default: m.AdminGoalsPage,
   })),
 );
+const AdminKpiAlertsPage = lazy(() =>
+  import("@/pages/admin/admin-kpi-alerts").then((m) => ({
+    default: m.AdminKpiAlertsPage,
+  })),
+);
 const AdminTherapyUsageReportPage = lazy(() =>
   import("@/pages/admin/admin-therapy-usage-report").then((m) => ({
     default: m.AdminTherapyUsageReportPage,
@@ -682,6 +687,7 @@ function AdminConsole() {
               component={AdminAnalyticsMarginPage}
             />
             <Route path="/admin/goals" component={AdminGoalsPage} />
+            <Route path="/admin/kpi-alerts" component={AdminKpiAlertsPage} />
             <Route path="/admin/analytics" component={AdminAnalyticsPage} />
             <Route
               path="/admin/therapy-usage-report"
