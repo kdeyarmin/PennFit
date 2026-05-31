@@ -90,6 +90,8 @@ import type { AdminRole } from "@workspace/resupply-db";
  *                              clinical timeline (rt + management)
  *   clinical.note.write     — author a clinical encounter note
  *   clinical.intervention.write — record a structured intervention plan
+ *   cases.read              — view CSR cases (cross-channel tickets)
+ *   cases.manage            — open / edit / link cases
  */
 export type Permission =
   | "patients.read"
@@ -116,7 +118,9 @@ export type Permission =
   | "admin.tools.manage"
   | "clinical.read"
   | "clinical.note.write"
-  | "clinical.intervention.write";
+  | "clinical.intervention.write"
+  | "cases.read"
+  | "cases.manage";
 
 /** Full enumeration — handy for tests and for the `admin` role
  *  that should always have every permission. Kept in sync with the
@@ -147,6 +151,8 @@ const ALL_PERMISSIONS: ReadonlyArray<Permission> = [
   "clinical.read",
   "clinical.note.write",
   "clinical.intervention.write",
+  "cases.read",
+  "cases.manage",
 ];
 
 /**
@@ -237,6 +243,8 @@ const EFFECTIVE_ROLE_PERMISSIONS: Record<
     "clinical.read",
     "clinical.note.write",
     "clinical.intervention.write",
+    "cases.read",
+    "cases.manage",
   ]),
 
   // Union of legacy `csr` + `fitter` + `fulfillment` + `agent`.
@@ -255,6 +263,8 @@ const EFFECTIVE_ROLE_PERMISSIONS: Record<
     "grievances.read",
     "conversations.manage",
     "fit_session.override",
+    "cases.read",
+    "cases.manage",
   ]),
 
   // Respiratory therapist (rt). Clinical documentation + the patient

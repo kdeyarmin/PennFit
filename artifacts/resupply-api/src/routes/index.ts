@@ -8,6 +8,7 @@ import shopOrderNotesRouter from "./admin/order-notes.js";
 import productCostsRouter from "./admin/product-costs.js";
 import metricAlertsRouter from "./admin/metric-alerts.js";
 import clinicalEncountersRouter from "./admin/clinical-encounters.js";
+import casesRouter from "./admin/cases.js";
 import shopOrdersAdminRouter from "./admin/shop-orders.js";
 import shopProductsAdminRouter from "./admin/shop-products.js";
 import inventoryReconciliationRouter from "./admin/inventory-reconciliation.js";
@@ -307,6 +308,8 @@ router.use(metricAlertsRouter);
 // /admin/patients/:id/clinical-encounters — append-only clinician
 // documentation (F3). Read on clinical.read, write on clinical.note.write.
 router.use(clinicalEncountersRouter);
+// /admin/cases — lightweight CSR case (ticket) object + links (F4).
+router.use(casesRouter);
 // /admin/billing/era-ingest + /admin/billing/era-files — upload a
 // 5010 835 remittance, parse it, auto-reconcile claim totals + line
 // items + insert paid/denied events.

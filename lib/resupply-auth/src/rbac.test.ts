@@ -165,6 +165,15 @@ describe("roleHasPermission", () => {
     }
   });
 
+  it("cases permissions are CSR + management tools", () => {
+    for (const perm of ["cases.read", "cases.manage"] as const) {
+      expect(roleHasPermission("csr", perm)).toBe(true);
+      expect(roleHasPermission("agent", perm)).toBe(true);
+      expect(roleHasPermission("admin", perm)).toBe(true);
+      expect(roleHasPermission("supervisor", perm)).toBe(true);
+    }
+  });
+
   it("clinical permissions are rt + management, off the CSR tier", () => {
     for (const perm of [
       "clinical.read",

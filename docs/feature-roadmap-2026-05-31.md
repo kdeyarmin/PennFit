@@ -235,6 +235,13 @@ sla_due_at, assigned_to, snippet}`. No new writes — it reads what
 - **Exit:** one query returns a unioned, prioritized work list for an
   agent; a case can be opened and linked to ≥2 items; `cases.manage`
   permission exists.
+- **Status (2026-05-31):** ⏳ in progress. Landed: migration `0189_cases`
+  (`cases` + `case_links`, RLS deny-all, soft refs, idempotent linking
+  via a UNIQUE), the `cases.read` / `cases.manage` permissions (CSR tier
+  - management), and the **`/admin/cases`** API (open / list / get-with-
+    links / patch / link). Next: the unified work-item read model — an
+    endpoint that UNIONs the open work across sources (modeled on
+    `inbox-counts.ts`) into one prioritized queue, completing F4.
 
 ---
 
