@@ -148,19 +148,21 @@ describe("roleHasPermission", () => {
     expect(roleHasPermission("fulfillment", "admin.tools.manage")).toBe(false);
   });
 
-  it("cost.read is finance-gated: admin + supervisor yes, CSR tier no", () => {
-    // Cost / COGS / margin figures are owner-and-management data. The
-    // permission rides the `admin` effective bucket (supervisor +
-    // compliance_officer fold in), and super_admin holds it trivially —
+  it("cost.read / cost.write are finance-gated: admin + supervisor yes, CSR tier no", () => {
+    // Cost / COGS / margin figures are owner-and-management data. Both
+    // permissions ride the `admin` effective bucket (supervisor +
+    // compliance_officer fold in), and super_admin holds them trivially —
     // but the customer_service_rep bucket (csr + fitter + fulfillment +
-    // agent) must NOT see unit cost.
-    expect(roleHasPermission("admin", "cost.read")).toBe(true);
-    expect(roleHasPermission("supervisor", "cost.read")).toBe(true);
-    expect(roleHasPermission("compliance_officer", "cost.read")).toBe(true);
-    expect(roleHasPermission("csr", "cost.read")).toBe(false);
-    expect(roleHasPermission("agent", "cost.read")).toBe(false);
-    expect(roleHasPermission("fitter", "cost.read")).toBe(false);
-    expect(roleHasPermission("fulfillment", "cost.read")).toBe(false);
+    // agent) must NOT see or edit unit cost.
+    for (const perm of ["cost.read", "cost.write"] as const) {
+      expect(roleHasPermission("admin", perm)).toBe(true);
+      expect(roleHasPermission("supervisor", perm)).toBe(true);
+      expect(roleHasPermission("compliance_officer", perm)).toBe(true);
+      expect(roleHasPermission("csr", perm)).toBe(false);
+      expect(roleHasPermission("agent", perm)).toBe(false);
+      expect(roleHasPermission("fitter", perm)).toBe(false);
+      expect(roleHasPermission("fulfillment", perm)).toBe(false);
+    }
   });
 });
 

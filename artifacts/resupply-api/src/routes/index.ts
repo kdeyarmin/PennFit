@@ -5,6 +5,7 @@ import shopCustomerNotesRouter from "./admin/customer-notes.js";
 import shopCustomerFollowupsRouter from "./admin/customer-followups.js";
 import followupsListRouter from "./admin/followups-list.js";
 import shopOrderNotesRouter from "./admin/order-notes.js";
+import productCostsRouter from "./admin/product-costs.js";
 import shopOrdersAdminRouter from "./admin/shop-orders.js";
 import shopProductsAdminRouter from "./admin/shop-products.js";
 import inventoryReconciliationRouter from "./admin/inventory-reconciliation.js";
@@ -294,6 +295,10 @@ router.use(denialCodesRouter);
 // /admin/payer-fee-schedules/* — payer + HCPCS expected-allowed
 // catalog. Drives the partial-pay variance triage on ERA ingest.
 router.use(payerFeeSchedulesRouter);
+// /admin/product-costs/* — operator-managed unit cost (COGS) per shop
+// SKU. The COGS analog of the fee-schedule catalog; source for the
+// per-transaction cost snapshots + every owner-facing margin surface.
+router.use(productCostsRouter);
 // /admin/billing/era-ingest + /admin/billing/era-files — upload a
 // 5010 835 remittance, parse it, auto-reconcile claim totals + line
 // items + insert paid/denied events.
