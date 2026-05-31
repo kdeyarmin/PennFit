@@ -131,8 +131,12 @@ high-value items in Phases 2–5 have nowhere to read from.
   paid-session ingest (SKU resolved from Stripe product metadata,
   fail-soft). **Claim-path capture** also landed — the claim builder
   resolves cost from the fulfillment SKU and `buildClaimLineRows` stamps
-  it onto `insurance_claim_line_items` at fulfillment→claim persist.
-  Next: seed/backfill `product_costs` (closes F1).
+  it onto `insurance_claim_line_items` at fulfillment→claim persist; and
+  the **`seed:product-costs`** operator script (CSV → `product_costs`
+  upsert, idempotent, `--dry-run`). **✅ F1 complete.** Historic
+  order/claim lines whose SKU wasn't persisted stay "unknown" by design —
+  surfaced honestly by the margin layer's costed/uncosted split, not
+  guessed. Next foundation: **F2 (metrics + threshold-alert substrate)**.
 
 ### F2 · Metrics-snapshot + threshold-alert substrate — **M**
 
