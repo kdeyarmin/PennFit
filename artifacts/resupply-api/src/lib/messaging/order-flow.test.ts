@@ -26,10 +26,16 @@ import {
 
 const supabaseMock = installSupabaseMock();
 
-import { reactivatePatient } from "./order-flow";
+import {
+  decideCoverageBlock,
+  placeResupplyOrderForConversation,
+  reactivatePatient,
+} from "./order-flow";
+import { invalidateFeatureFlagCache } from "../feature-flags";
 
 beforeEach(() => {
   supabaseMock.reset();
+  invalidateFeatureFlagCache();
 });
 
 const PATIENT_ID = "00000000-0000-4000-8000-000000000011";
@@ -286,5 +292,191 @@ describe("reactivatePatient — contrast with pausePatient (regression guard)", 
     // If this were pausePatient the values would be false; they must be true here.
     expect(prefs.smsMarketing).toBe(true);
     expect(prefs.smsTransactional).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// decideCoverageBlock — pure coverage decision matrix (#2)
+// ---------------------------------------------------------------------------
+// The order-time coverage guard only blocks on an EXPLICIT negative
+// signal. Everything else (null row, unknown/positive fields) is "no
+// opinion" → the order proceeds (fail open).
+
+describe("decideCoverageBlock", () => {
+  const ELIG_ID = "00000000-0000-4000-8000-0000000000e1";
+
+  it("returns null when there is no parsed eligibility row", () => {
+    expect(decideCoverageBlock(null, "Aetna")).toBeNull();
+  });
+
+  it("blocks (inactive) when is_active is explicitly false", () => {
+    expect(
+      decideCoverageBlock(
+        { id: ELIG_ID, is_active: false, requires_prior_auth: null },
+        "Aetna",
+      ),
+    ).toEqual({
+      reason: "inactive",
+      payerName: "Aetna",
+      eligibilityCheckId: ELIG_ID,
+    });
+  });
+
+  it("blocks (prior_auth_required) when requires_prior_auth is true and plan is active", () => {
+    expect(
+      decideCoverageBlock(
+        { id: ELIG_ID, is_active: true, requires_prior_auth: true },
+        "Cigna",
+      ),
+    ).toEqual({
+      reason: "prior_auth_required",
+      payerName: "Cigna",
+      eligibilityCheckId: ELIG_ID,
+    });
+  });
+
+  it("does NOT block an active plan with no PA requirement", () => {
+    expect(
+      decideCoverageBlock(
+        { id: ELIG_ID, is_active: true, requires_prior_auth: false },
+        "Aetna",
+      ),
+    ).toBeNull();
+  });
+
+  it("does NOT block when activeness is unknown (null) — fail open", () => {
+    expect(
+      decideCoverageBlock(
+        { id: ELIG_ID, is_active: null, requires_prior_auth: false },
+        "Aetna",
+      ),
+    ).toBeNull();
+  });
+
+  it("prefers the inactive reason over PA when both are negative", () => {
+    expect(
+      decideCoverageBlock(
+        { id: ELIG_ID, is_active: false, requires_prior_auth: true },
+        "Aetna",
+      ),
+    ).toMatchObject({ reason: "inactive" });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// placeResupplyOrderForConversation — order-time coverage guard (#2)
+// ---------------------------------------------------------------------------
+
+describe("placeResupplyOrderForConversation — coverage guard", () => {
+  const CONV_ID = "00000000-0000-4000-8000-0000000000c1";
+  const EPISODE_ID = "00000000-0000-4000-8000-0000000000e2";
+  const RX_ID = "00000000-0000-4000-8000-0000000000r1";
+  const COVERAGE_ID = "00000000-0000-4000-8000-0000000000cv";
+  const ELIG_ID = "00000000-0000-4000-8000-0000000000e9";
+
+  function stageLookupChain(): void {
+    stageSupabaseResponse("conversations", "select", {
+      data: { id: CONV_ID, patient_id: PATIENT_ID, episode_id: EPISODE_ID },
+      error: null,
+    });
+    stageSupabaseResponse("episodes", "select", {
+      data: {
+        id: EPISODE_ID,
+        patient_id: PATIENT_ID,
+        prescription_id: RX_ID,
+        status: "outreach_pending",
+      },
+      error: null,
+    });
+    stageSupabaseResponse("prescriptions", "select", {
+      data: { id: RX_ID, item_sku: "CUSHION-NASAL-MED" },
+      error: null,
+    });
+    // isFeatureEnabled lookups, in call order: entitlement first
+    // (staged OFF so the entitlement guard is skipped), eligibility
+    // second (staged ON so the coverage guard runs).
+    stageSupabaseResponse("feature_flags", "select", {
+      data: { enabled: false },
+      error: null,
+    });
+    stageSupabaseResponse("feature_flags", "select", {
+      data: { enabled: true },
+      error: null,
+    });
+    stageSupabaseResponse("insurance_coverages", "select", {
+      data: { id: COVERAGE_ID, payer_name: "Aetna" },
+      error: null,
+    });
+  }
+
+  it("holds the order and raises a CSR alert when the cached 271 is inactive", async () => {
+    stageLookupChain();
+    stageSupabaseResponse("eligibility_checks", "select", {
+      data: {
+        id: ELIG_ID,
+        is_active: false,
+        requires_prior_auth: null,
+        status: "parsed",
+        responded_at: new Date().toISOString(),
+      },
+      error: null,
+    });
+    // raiseCoverageAlert: no existing open alert, then insert.
+    stageSupabaseResponse("csr_compliance_alerts", "select", {
+      data: null,
+      error: null,
+    });
+    stageSupabaseResponse("csr_compliance_alerts", "insert", {
+      data: null,
+      error: null,
+    });
+
+    const result = await placeResupplyOrderForConversation({
+      conversationId: CONV_ID,
+    });
+
+    expect(result.status).toBe("coverage_blocked");
+    if (result.status === "coverage_blocked") {
+      expect(result.coverage.reason).toBe("inactive");
+      expect(result.coverage.payerName).toBe("Aetna");
+      expect(result.coverage.eligibilityCheckId).toBe(ELIG_ID);
+    }
+
+    // The episode must NOT be claimed/confirmed — the order is held.
+    expect(supabaseMock.callCount("episodes", "update")).toBe(0);
+    // Exactly one CSR alert row was written, with the right type.
+    expect(supabaseMock.callCount("csr_compliance_alerts", "insert")).toBe(1);
+    const [alert] = supabaseMock.writePayloads(
+      "csr_compliance_alerts",
+      "insert",
+    ) as Array<Record<string, unknown>>;
+    expect(alert!.alert_type).toBe("resupply_coverage_blocked");
+    expect(alert!.patient_id).toBe(PATIENT_ID);
+  });
+
+  it("does not de-dupe-insert when an open coverage alert already exists", async () => {
+    stageLookupChain();
+    stageSupabaseResponse("eligibility_checks", "select", {
+      data: {
+        id: ELIG_ID,
+        is_active: false,
+        requires_prior_auth: null,
+        status: "parsed",
+        responded_at: new Date().toISOString(),
+      },
+      error: null,
+    });
+    // An open alert already exists → raiseCoverageAlert returns early.
+    stageSupabaseResponse("csr_compliance_alerts", "select", {
+      data: { id: "existing-alert" },
+      error: null,
+    });
+
+    const result = await placeResupplyOrderForConversation({
+      conversationId: CONV_ID,
+    });
+
+    expect(result.status).toBe("coverage_blocked");
+    expect(supabaseMock.callCount("csr_compliance_alerts", "insert")).toBe(0);
   });
 });
