@@ -50,3 +50,12 @@ export {
   type TimelyFilingInput,
   type TimelyFilingResult,
 } from "./timely-filing";
+
+export {
+  parsePeriodRange,
+  computeGoalPace,
+  type GoalPaceStatus,
+  type PeriodRange,
+  type GoalPaceInput,
+  type GoalPaceResult,
+} from "./goal-pace";

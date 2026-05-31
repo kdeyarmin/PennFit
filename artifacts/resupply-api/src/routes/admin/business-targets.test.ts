@@ -96,6 +96,79 @@ describe("GET /admin/business-targets", () => {
       unit: "cents",
     });
   });
+
+  it("enriches each target with pace-to-goal from metrics_daily (windowed sum)", async () => {
+    mockAdmin.current = ADMIN;
+    // A fully-elapsed past period so the pace is deterministic regardless
+    // of the clock: Jan 2020 (31 days), target 100.
+    stageSupabaseResponse("business_targets", "select", {
+      data: [
+        {
+          id: "t1",
+          metric_key: "orders_paid_count",
+          period: "2020-01",
+          target_value: 100,
+          unit: "count",
+          notes: null,
+          created_by_email: "owner@penn.example.com",
+          created_at: "2020-01-01T00:00:00Z",
+          updated_at: "2020-01-01T00:00:00Z",
+        },
+      ],
+    });
+    stageSupabaseResponse("metrics_daily", "select", {
+      data: [
+        {
+          metric_key: "orders_paid_count",
+          metric_date: "2020-01-05",
+          metric_value: 40,
+        },
+        {
+          metric_key: "orders_paid_count",
+          metric_date: "2020-01-20",
+          metric_value: 50,
+        },
+        // Outside the period window — must be excluded by the in-memory sum.
+        {
+          metric_key: "orders_paid_count",
+          metric_date: "2020-02-05",
+          metric_value: 1000,
+        },
+      ],
+    });
+
+    const res = await request(makeApp()).get("/admin/business-targets");
+    expect(res.status).toBe(200);
+    const pace = res.body.targets[0].pace;
+    expect(pace).not.toBeNull();
+    expect(pace.actualToDate).toBe(90); // 40 + 50, Feb row excluded
+    expect(pace.daysInPeriod).toBe(31);
+    expect(pace.attainmentRatio).toBeCloseTo(0.9, 5);
+    // Fully elapsed → expected == target → pace 0.9 → on_track.
+    expect(pace.status).toBe("on_track");
+  });
+
+  it("reports pace: null for a target whose period can't be parsed", async () => {
+    mockAdmin.current = ADMIN;
+    stageSupabaseResponse("business_targets", "select", {
+      data: [
+        {
+          id: "t2",
+          metric_key: "orders_paid_count",
+          period: "2026-Q2",
+          target_value: 100,
+          unit: "count",
+          notes: null,
+          created_by_email: "owner@penn.example.com",
+          created_at: "2026-04-01T00:00:00Z",
+          updated_at: "2026-04-01T00:00:00Z",
+        },
+      ],
+    });
+    const res = await request(makeApp()).get("/admin/business-targets");
+    expect(res.status).toBe(200);
+    expect(res.body.targets[0].pace).toBeNull();
+  });
 });
 
 describe("PUT /admin/business-targets", () => {

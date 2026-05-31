@@ -14,6 +14,7 @@ import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { parsePeriodRange, computeGoalPace } from "@workspace/resupply-domain";
 
 import { logger } from "../../lib/logger";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
@@ -83,7 +84,82 @@ router.get(
       return;
     }
     const rows = (data ?? []) as Array<Record<string, unknown>>;
-    res.json({ targets: rows.map(mapTarget) });
+    const targets = rows.map(mapTarget);
+
+    // Pace-to-goal enrichment (Owner #8): join the F2 metrics_daily
+    // actuals. Each target's period parses to a date window; the
+    // cumulative actual is the sum of that metric's daily values over the
+    // window. One batched metrics_daily read covers every target; targets
+    // whose period or metric can't be resolved report pace: null.
+    const ranges = targets.map((t) => parsePeriodRange(String(t.period ?? "")));
+    const metricKeys = [
+      ...new Set(
+        targets
+          .map((t, i) => (ranges[i] ? String(t.metricKey ?? "") : ""))
+          .filter((k) => k !== ""),
+      ),
+    ];
+
+    let metricRows: Array<Record<string, unknown>> = [];
+    if (metricKeys.length > 0) {
+      const parsedRanges = ranges.filter(
+        (r): r is NonNullable<typeof r> => r != null,
+      );
+      const minStart = parsedRanges.map((r) => r.startDate).sort()[0] as string;
+      const maxEnd = parsedRanges
+        .map((r) => r.endExclusiveDate)
+        .sort()
+        .at(-1) as string;
+      const { data: metrics, error: metricsErr } = await supabase
+        .schema("resupply")
+        .from("metrics_daily")
+        .select("metric_key, metric_date, metric_value")
+        .in("metric_key", metricKeys)
+        .gte("metric_date", minStart)
+        .lt("metric_date", maxEnd)
+        .limit(5000);
+      if (metricsErr) {
+        res
+          .status(500)
+          .json({ error: "query_failed", message: metricsErr.message });
+        return;
+      }
+      metricRows = (metrics ?? []) as Array<Record<string, unknown>>;
+    }
+
+    const withPace = targets.map((t, i) => {
+      const range = ranges[i];
+      if (!range) return { ...t, pace: null };
+      const key = String(t.metricKey ?? "");
+      const actualToDate = metricRows.reduce((sum, m) => {
+        if (
+          m.metric_key === key &&
+          typeof m.metric_date === "string" &&
+          m.metric_date >= range.startDate &&
+          m.metric_date < range.endExclusiveDate
+        ) {
+          return (
+            sum + (typeof m.metric_value === "number" ? m.metric_value : 0)
+          );
+        }
+        return sum;
+      }, 0);
+      const target =
+        typeof t.targetValue === "number"
+          ? t.targetValue
+          : Number(t.targetValue ?? 0);
+      return {
+        ...t,
+        pace: computeGoalPace({
+          targetValue: Number.isFinite(target) ? target : 0,
+          startDate: range.startDate,
+          endExclusiveDate: range.endExclusiveDate,
+          actualToDate,
+        }),
+      };
+    });
+
+    res.json({ targets: withPace });
   },
 );
 

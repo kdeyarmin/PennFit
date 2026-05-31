@@ -47,6 +47,7 @@ import {
   FileSearch,
   Plug,
   Webhook,
+  Target,
   Menu,
   CircleDollarSign,
   Wallet,
@@ -516,6 +517,14 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         matchPrefix: "/admin/analytics/margin",
         hint: "Gross margin and % by product and overall, from captured cost",
         requiredPermission: "cost.read",
+      },
+      {
+        href: "/admin/goals",
+        label: "Goals & targets",
+        icon: Target,
+        matchPrefix: "/admin/goals",
+        hint: "Set KPI targets per period and track pace-to-goal vs. actuals",
+        requiredPermission: "targets.manage",
       },
       {
         href: "/admin/analytics",
