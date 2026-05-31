@@ -337,7 +337,7 @@ These need accumulated data from earlier phases or new content/vendors.
   to slip back into an `audit_log`-shaped habit — don't.
 - **Service-boot decoupling:** the video-library vendor (§25) and any
   new outbound channel must degrade, never block the listener.
-- **Don't re-coupling health checks** to new dependencies; keep
+- **Don't re-couple health checks** to new dependencies; keep
   `/resupply-api/healthz` dependency-free.
 
 ## All 37 items at a glance
