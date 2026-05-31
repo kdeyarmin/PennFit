@@ -391,17 +391,22 @@ describe.skipIf(!dbUrl)(
       expect(result.rows[0]!.column_default).toBe("1");
     }, 15_000);
 
-    // ── 0080 staff_training_records.staff_user_id type ─────────────
-    it("staff_training_records.staff_user_id is text type", async () => {
-      const result = await pool.query<{ data_type: string }>(
-        `SELECT data_type
-           FROM information_schema.columns
+    // ── 0080 staff_training_records — RETIRED by 0156 ──────────────
+    // 0156_drop_compliance_machinery dropped the entire compliance
+    // suite (staff training records, policy attestations, OIG LEIE
+    // screenings, …). The original assertion — staff_user_id is text,
+    // not uuid — no longer has a table to apply to. The post-migration
+    // truth after the full chain is that the table is gone, so assert
+    // that instead; this keeps the suite tracking the retirement rather
+    // than failing on a column that can't exist.
+    it("staff_training_records was dropped by 0156 (compliance retirement)", async () => {
+      const result = await pool.query<{ table_name: string }>(
+        `SELECT table_name
+           FROM information_schema.tables
            WHERE table_schema = 'resupply'
-             AND table_name = 'staff_training_records'
-             AND column_name = 'staff_user_id'`,
+             AND table_name = 'staff_training_records'`,
       );
-      expect(result.rows.length).toBe(1);
-      expect(result.rows[0]!.data_type).toBe("text");
+      expect(result.rows.length).toBe(0);
     }, 15_000);
 
     // ── 0084 admin_mfa_secrets.staff_user_id type ──────────────────
@@ -430,17 +435,18 @@ describe.skipIf(!dbUrl)(
       expect(result.rows[0]!.data_type).toBe("text");
     }, 15_000);
 
-    // ── 0087 admin_policy_attestations.staff_user_id type ──────────
-    it("admin_policy_attestations.staff_user_id is text type", async () => {
-      const result = await pool.query<{ data_type: string }>(
-        `SELECT data_type
-           FROM information_schema.columns
+    // ── 0087 admin_policy_attestations — RETIRED by 0156 ───────────
+    // Dropped by 0156_drop_compliance_machinery (see the
+    // staff_training_records note above). Assert the table is gone after
+    // the full chain rather than the now-inapplicable column type.
+    it("admin_policy_attestations was dropped by 0156 (compliance retirement)", async () => {
+      const result = await pool.query<{ table_name: string }>(
+        `SELECT table_name
+           FROM information_schema.tables
            WHERE table_schema = 'resupply'
-             AND table_name = 'admin_policy_attestations'
-             AND column_name = 'staff_user_id'`,
+             AND table_name = 'admin_policy_attestations'`,
       );
-      expect(result.rows.length).toBe(1);
-      expect(result.rows[0]!.data_type).toBe("text");
+      expect(result.rows.length).toBe(0);
     }, 15_000);
 
     // ── 0105 shop_order_loss_claims.order_id type ──────────────────
@@ -486,17 +492,18 @@ describe.skipIf(!dbUrl)(
       expect(result.rows[0]!.indexdef).not.toMatch(/WHERE/i);
     }, 15_000);
 
-    // ── 0141 oig_leie_screenings.subject_admin_user_id type ────────
-    it("oig_leie_screenings.subject_admin_user_id is text type", async () => {
-      const result = await pool.query<{ data_type: string }>(
-        `SELECT data_type
-           FROM information_schema.columns
+    // ── 0141 oig_leie_screenings — RETIRED by 0156 ─────────────────
+    // Dropped by 0156_drop_compliance_machinery (see the
+    // staff_training_records note above). Assert the table is gone after
+    // the full chain rather than the now-inapplicable column type.
+    it("oig_leie_screenings was dropped by 0156 (compliance retirement)", async () => {
+      const result = await pool.query<{ table_name: string }>(
+        `SELECT table_name
+           FROM information_schema.tables
            WHERE table_schema = 'resupply'
-             AND table_name = 'oig_leie_screenings'
-             AND column_name = 'subject_admin_user_id'`,
+             AND table_name = 'oig_leie_screenings'`,
       );
-      expect(result.rows.length).toBe(1);
-      expect(result.rows[0]!.data_type).toBe("text");
+      expect(result.rows.length).toBe(0);
     }, 15_000);
 
     // ── 0143 / 0164 service_role exists as a pg role ───────────────

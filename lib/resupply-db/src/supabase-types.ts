@@ -960,6 +960,76 @@ export interface Database {
         >;
         Relationships: [];
       };
+      alert_definitions: {
+        Row: {
+          id: string;
+          key: string;
+          name: string;
+          description: string | null;
+          category: string;
+          severity: "info" | "warning" | "critical";
+          channels: ("email" | "sms" | "voice")[];
+          allowed_variables: string[];
+          is_active: boolean;
+          created_at: string;
+          created_by: string | null;
+          updated_at: string;
+          updated_by: string | null;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["alert_definitions"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["alert_definitions"]["Row"]
+        >;
+        Relationships: [];
+      };
+      alert_messages: {
+        Row: {
+          id: string;
+          alert_key: string;
+          channel: "email" | "sms" | "voice";
+          subject: string | null;
+          body_html: string | null;
+          body_text: string;
+          is_active: boolean;
+          created_at: string;
+          created_by: string | null;
+          updated_at: string;
+          updated_by: string | null;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["alert_messages"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["alert_messages"]["Row"]
+        >;
+        Relationships: [];
+      };
+      alert_message_overrides: {
+        Row: {
+          id: string;
+          patient_id: string;
+          alert_key: string;
+          channel: "email" | "sms" | "voice";
+          subject: string | null;
+          body_html: string | null;
+          body_text: string | null;
+          is_active: boolean;
+          note: string | null;
+          created_at: string;
+          created_by: string | null;
+          updated_at: string;
+          updated_by: string | null;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["alert_message_overrides"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["alert_message_overrides"]["Row"]
+        >;
+        Relationships: [];
+      };
       message_templates: {
         Row: {
           id: string;

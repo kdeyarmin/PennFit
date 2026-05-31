@@ -11,6 +11,7 @@
 
 import { Router, type IRouter } from "express";
 
+import alertTwimlRouter from "./alert-twiml";
 import checkinTwimlRouter from "./checkin-twiml";
 import inboundReorderRouter from "./inbound-reorder";
 import placeCallRouter from "./place-call";
@@ -21,6 +22,10 @@ const router: IRouter = Router();
 router.use(placeCallRouter);
 router.use(twimlConnectRouter);
 router.use(statusCallbackRouter);
+// /voice/alert-twiml — speaks an automated alert call's rendered
+// transcript (stashed by lib/alerts/dispatch under an opaque ref so
+// the text never rides the webhook URL). <Say> + <Hangup>, no bridge.
+router.use(alertTwimlRouter);
 // /voice/checkin-twiml — TwiML for automated onboarding check-in
 // calls (day 3 / 7 / 30 / 60 / 90). Twilio fetches this when the
 // patient answers; we render <Say> + <Hangup> based on ?day=<label>.

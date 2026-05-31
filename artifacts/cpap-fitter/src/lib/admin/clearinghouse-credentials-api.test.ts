@@ -82,9 +82,7 @@ afterEach(() => {
 
 describe("fetchClearinghouses", () => {
   test("GETs /resupply-api/admin/clearinghouse-credentials", async () => {
-    fetchMock.mockResolvedValue(
-      okResponse({ clearinghouses: [SAMPLE_CH] }),
-    );
+    fetchMock.mockResolvedValue(okResponse({ clearinghouses: [SAMPLE_CH] }));
     await fetchClearinghouses();
     const [url] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toBe("/resupply-api/admin/clearinghouse-credentials");
@@ -98,9 +96,7 @@ describe("fetchClearinghouses", () => {
   });
 
   test("returns the clearinghouses array on success", async () => {
-    fetchMock.mockResolvedValue(
-      okResponse({ clearinghouses: [SAMPLE_CH] }),
-    );
+    fetchMock.mockResolvedValue(okResponse({ clearinghouses: [SAMPLE_CH] }));
     const result = await fetchClearinghouses();
     expect(result.clearinghouses).toHaveLength(1);
     expect(result.clearinghouses[0].id).toBe("ch-1");
@@ -116,9 +112,7 @@ describe("fetchClearinghouses", () => {
   test("ApiError carries the request URL", async () => {
     fetchMock.mockResolvedValue(errorResponse(500, "ISE"));
     const err = await fetchClearinghouses().catch((e: unknown) => e);
-    expect((err as ApiError).url).toContain(
-      "/admin/clearinghouse-credentials",
-    );
+    expect((err as ApiError).url).toContain("/admin/clearinghouse-credentials");
   });
 });
 
@@ -139,18 +133,16 @@ describe("createClearinghouse", () => {
     fetchMock.mockResolvedValue(okResponse({ clearinghouse: SAMPLE_CH }));
     await createClearinghouse(SAMPLE_BODY);
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(
-      (init.headers as Record<string, string>)["Content-Type"],
-    ).toBe("application/json");
+    expect((init.headers as Record<string, string>)["Content-Type"]).toBe(
+      "application/json",
+    );
   });
 
   test("throws ApiError on non-OK response", async () => {
     fetchMock.mockResolvedValue(
       errorResponse(422, "Unprocessable", { error: "dup_slug" }),
     );
-    const err = await createClearinghouse(SAMPLE_BODY).catch(
-      (e: unknown) => e,
-    );
+    const err = await createClearinghouse(SAMPLE_BODY).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(ApiError);
     expect((err as ApiError).status).toBe(422);
   });
@@ -165,9 +157,7 @@ describe("updateClearinghouse", () => {
     fetchMock.mockResolvedValue(okResponse({ clearinghouse: SAMPLE_CH }));
     await updateClearinghouse("ch-1", SAMPLE_BODY);
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe(
-      "/resupply-api/admin/clearinghouse-credentials/ch-1",
-    );
+    expect(url).toBe("/resupply-api/admin/clearinghouse-credentials/ch-1");
     expect(init.method).toBe("PATCH");
   });
 
@@ -187,14 +177,10 @@ describe("updateClearinghouse", () => {
 
 describe("testClearinghouse", () => {
   test("POSTs to the test URL", async () => {
-    fetchMock.mockResolvedValue(
-      okResponse({ ok: true, message: "Connected" }),
-    );
+    fetchMock.mockResolvedValue(okResponse({ ok: true, message: "Connected" }));
     await testClearinghouse("ch-1");
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe(
-      "/resupply-api/admin/clearinghouse-credentials/ch-1/test",
-    );
+    expect(url).toBe("/resupply-api/admin/clearinghouse-credentials/ch-1/test");
     expect(init.method).toBe("POST");
   });
 

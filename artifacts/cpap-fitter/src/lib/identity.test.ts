@@ -92,7 +92,7 @@ describe("identity.tsx — SESSION_QUERY_KEY import (PR: namespaced cache key)",
     );
   });
 
-  it("uses SESSION_QUERY_KEY in invalidateQueries, not the literal [\"auth\",\"me\"]", () => {
+  it('uses SESSION_QUERY_KEY in invalidateQueries, not the literal ["auth","me"]', () => {
     // Regression guard: the key must come from the import, not be hardcoded.
     // A hardcoded ["auth","me"] would collide with the admin surface.
     expect(SRC).toContain(
