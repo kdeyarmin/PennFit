@@ -8,6 +8,7 @@ import shopOrderNotesRouter from "./admin/order-notes.js";
 import productCostsRouter from "./admin/product-costs.js";
 import metricAlertsRouter from "./admin/metric-alerts.js";
 import clinicalEncountersRouter from "./admin/clinical-encounters.js";
+import setupChecklistRouter from "./admin/setup-checklist.js";
 import casesRouter from "./admin/cases.js";
 import workItemsRouter from "./admin/work-items.js";
 import businessTargetsRouter from "./admin/business-targets.js";
@@ -310,6 +311,9 @@ router.use(metricAlertsRouter);
 // /admin/patients/:id/clinical-encounters — append-only clinician
 // documentation (F3). Read on clinical.read, write on clinical.note.write.
 router.use(clinicalEncountersRouter);
+// /admin/patients/:id/setup-checklist — new-patient setup-guidance
+// checklist (Phase 1, RT). Gated by the clinical perms.
+router.use(setupChecklistRouter);
 // /admin/cases — lightweight CSR case (ticket) object + links (F4).
 router.use(casesRouter);
 // /admin/work-items — the unified, prioritized CSR work queue (F4),
