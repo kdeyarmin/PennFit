@@ -178,6 +178,35 @@ export interface Database {
         >;
         Relationships: [];
       };
+      // Migration 0186: current unit cost (COGS) per shop SKU. Source for
+      // the per-transaction cost snapshots + every owner-facing margin
+      // surface (computeMargin / aggregateMargin in resupply-domain).
+      product_costs: {
+        Row: {
+          sku: string;
+          unit_cost_cents: number;
+          currency: string;
+          cost_source: string;
+          effective_from: string;
+          notes: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          sku: string;
+          unit_cost_cents: number;
+          currency?: string;
+          cost_source?: string;
+          effective_from?: string;
+          notes?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<
+          Database["resupply"]["Tables"]["product_costs"]["Insert"]
+        >;
+        Relationships: [];
+      };
       // Migration 0165: per-object ACL policy for objects stored in
       // Supabase Storage. The policy JSON mirrors the in-memory
       // ObjectAclPolicy shape (`{ owner, visibility, aclRules }`)
@@ -1460,6 +1489,12 @@ export interface Database {
           billed_cents: number;
           allowed_cents: number;
           paid_cents: number;
+          // Migration 0186: point-in-time COGS snapshot, stamped at
+          // claim-line creation from resupply.product_costs. Nullable —
+          // null = "cost unknown" (never silently zero).
+          unit_cost_cents: number | null;
+          cost_source: string | null;
+          cost_captured_at: string | null;
           status: "pending" | "accepted" | "denied" | "paid";
           denial_reason: string | null;
           created_at: string;
@@ -3597,6 +3632,12 @@ export interface Database {
           quantity: number;
           unit_amount_cents: number | null;
           currency: string | null;
+          // Migration 0186: point-in-time COGS snapshot, stamped at
+          // order-item creation from resupply.product_costs. Nullable —
+          // null = "cost unknown" (never silently zero).
+          unit_cost_cents: number | null;
+          cost_source: string | null;
+          cost_captured_at: string | null;
           paid_at: string;
           created_at: string;
         };
@@ -3657,6 +3698,10 @@ export interface Database {
           created_at: string;
           updated_at: string;
           paid_at: string | null;
+          // Migration 0186: order-level cost-to-sell fees for true
+          // contribution margin (subtracted alongside COGS).
+          stripe_fee_cents: number | null;
+          shipping_cost_cents: number | null;
         };
         Insert: Partial<Database["resupply"]["Tables"]["shop_orders"]["Row"]>;
         Update: Partial<Database["resupply"]["Tables"]["shop_orders"]["Row"]>;
