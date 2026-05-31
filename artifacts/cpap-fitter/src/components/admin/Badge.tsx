@@ -93,6 +93,28 @@ export function conversationStatusVariant(status: string): Variant {
   }
 }
 
+// Friendly, customer-service-oriented labels for conversation states.
+// "awaiting_admin" means a CSR owes the customer a reply; "awaiting_
+// patient" means we're waiting on the customer. Plain title-casing
+// ("Awaiting Admin") removes the underscore but still reads like
+// jargon, so every conversation-status surface routes through here for
+// a consistent, human label. Falls back to humanizeStatus for any
+// future state so an unmapped value never renders raw.
+export function conversationStatusLabel(status: string): string {
+  switch (status) {
+    case "open":
+      return "Open";
+    case "awaiting_admin":
+      return "Awaiting reply";
+    case "awaiting_patient":
+      return "Awaiting customer";
+    case "closed":
+      return "Closed";
+    default:
+      return humanizeStatus(status);
+  }
+}
+
 export function episodeStatusVariant(status: string): Variant {
   switch (status) {
     case "outreach_pending":
@@ -147,13 +169,39 @@ export function channelVariant(channel: string): Variant {
   }
 }
 
-// Human-readable label for every enum used in the UI. Keep in sync
-// with the openapi enums.
+// Small joining words kept lowercase when they fall mid-label, so a
+// multi-word status reads like a phrase ("Submitted to PacWare")
+// rather than rigid title case ("Submitted To Pacware").
+const STATUS_LOWER_WORDS = new Set([
+  "to",
+  "of",
+  "and",
+  "or",
+  "the",
+  "a",
+  "an",
+  "for",
+  "with",
+  "on",
+  "at",
+  "by",
+]);
+
+// Human-readable label for the snake_case enums used across the UI.
+// Splits on "_", title-cases each word (preserving known acronyms and
+// proper nouns via titleCaseWord, so "sms" → "SMS" and
+// "submitted_to_pacware" → "Submitted to PacWare"), and keeps small
+// joining words lowercase mid-phrase. Keep in sync with the API enums.
 export function humanizeStatus(s: string | null | undefined): string {
   if (!s) return "—";
-  return s
-    .split("_")
-    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+  const words = s.split("_").filter(Boolean);
+  if (words.length === 0) return "—";
+  return words
+    .map((w, i) =>
+      i > 0 && STATUS_LOWER_WORDS.has(w.toLowerCase())
+        ? w.toLowerCase()
+        : titleCaseWord(w),
+    )
     .join(" ");
 }
 
@@ -179,8 +227,16 @@ const HUMANIZE_ACRONYMS = new Set([
   "EHR",
 ]);
 
+// Brand / proper nouns we keep in their canonical mixed case rather
+// than naive title-casing (which would yield "Pacware").
+const HUMANIZE_PROPER_NOUNS: Record<string, string> = {
+  pacware: "PacWare",
+};
+
 function titleCaseWord(word: string): string {
   if (word.length === 0) return word;
+  const lower = word.toLowerCase();
+  if (HUMANIZE_PROPER_NOUNS[lower]) return HUMANIZE_PROPER_NOUNS[lower];
   const upper = word.toUpperCase();
   if (HUMANIZE_ACRONYMS.has(upper)) return upper;
   return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
