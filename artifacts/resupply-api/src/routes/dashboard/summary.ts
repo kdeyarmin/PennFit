@@ -17,7 +17,6 @@ import { Router, type IRouter } from "express";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { requireAdmin } from "../../middlewares/requireAdmin";
-import { getLatestPhiSweepStatus } from "./sweep-status";
 
 const router: IRouter = Router();
 
@@ -63,19 +62,12 @@ router.get("/dashboard/summary", requireAdmin, async (_req, res) => {
       .eq("status", "paused"),
   ]);
 
-  // Latest PHI sweep status — read-only projection over the
-  // most recent `prescription.attachment.sweep` audit row. Defensive:
-  // helper returns null on no-row-yet OR malformed metadata; we
-  // never let it 500 the dashboard.
-  const prescriptionAttachmentSweep = await getLatestPhiSweepStatus();
-
   res.status(200).json({
     activeConversations: activeConversations ?? 0,
     awaitingAdmin: awaitingAdmin ?? 0,
     overdueEpisodes: overdueEpisodes ?? 0,
     fulfillmentsThisWeek: fulfillmentsThisWeek ?? 0,
     pausedPatients: pausedPatients ?? 0,
-    prescriptionAttachmentSweep,
   });
 });
 
