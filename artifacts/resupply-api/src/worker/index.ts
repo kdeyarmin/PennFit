@@ -46,6 +46,8 @@ import { registerFitterConversionAttributionJob } from "./jobs/fitter-conversion
 import { registerCartAbandonmentJob } from "./jobs/cart-abandonment-scan.js";
 import { registerFailedEmailDigestJob } from "./jobs/failed-order-emails-digest.js";
 import { registerTherapyNightlySyncJob } from "./jobs/therapy-integrations-nightly-sync.js";
+import { registerTherapyFleetSnapshotJob } from "./jobs/therapy-fleet-daily-snapshot.js";
+import { registerTherapyFleetAlertsJob } from "./jobs/therapy-fleet-alerts-scan.js";
 import { registerCoachingProgressJob } from "./jobs/coaching-plan-progress.js";
 import { registerPriorAuthExpirySweepJob } from "./jobs/prior-auth-expiry-sweep.js";
 import { registerShopOrderDeliveryFollowupJob } from "./jobs/shop-order-delivery-followup.js";
@@ -429,6 +431,16 @@ async function doStartWorker(): Promise<void> {
   // 04:30 UTC; persists snapshot recentNights into the canonical
   // patient_therapy_nights table for downstream consumers.
   await registerTherapyNightlySyncJob(boss);
+
+  // Daily snapshot of the therapy-fleet metrics into
+  // therapy_fleet_daily_metrics, 30 min after the nightly sync, so the
+  // fleet trend / sparklines reflect freshly-synced nights.
+  await registerTherapyFleetSnapshotJob(boss);
+
+  // Nightly therapy-fleet alerts scan (05:15 UTC): maintains the
+  // internal alert feed and, when the (default-off) auto-outreach flag
+  // is on, sends consented at-risk patients a gentle adherence SMS.
+  await registerTherapyFleetAlertsJob(boss);
 
   // Daily prior-authorization expiry sweep — flips approved → expired
   // on the day after approved_through, and emits CSR heads-up alerts
