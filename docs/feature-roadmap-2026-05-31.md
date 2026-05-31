@@ -239,9 +239,12 @@ sla_due_at, assigned_to, snippet}`. No new writes — it reads what
   (`cases` + `case_links`, RLS deny-all, soft refs, idempotent linking
   via a UNIQUE), the `cases.read` / `cases.manage` permissions (CSR tier
   - management), and the **`/admin/cases`** API (open / list / get-with-
-    links / patch / link). Next: the unified work-item read model — an
-    endpoint that UNIONs the open work across sources (modeled on
-    `inbox-counts.ts`) into one prioritized queue, completing F4.
+    links / patch / link); and the **`/admin/work-items`** unified queue
+    — one call UNIONs the 7 open-work sources (conversations, returns,
+    reviews, patient docs, shop + patient followups, faxes) into one
+    list, oldest/most-overdue first, via a pure tested merge. **✅ F4
+    complete — all four Phase-0 foundations done.** Next: Phase 1 quick
+    wins.
 
 ---
 
