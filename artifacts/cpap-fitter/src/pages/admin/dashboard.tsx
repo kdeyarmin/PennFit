@@ -2,7 +2,6 @@ import { Link } from "wouter";
 import { useGetDashboardSummary } from "@workspace/api-client-react/admin";
 import { KpiCard } from "@/components/admin/Card";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
-import { PhiSweepStatusCard } from "@/components/admin/PhiSweepStatusCard";
 
 // Admin landing page. Six KPI tiles + four "filtered queue" deep
 // links. Numbers come from /dashboard/summary which is a single
@@ -98,11 +97,6 @@ export function DashboardPage() {
           </Link>
         ))}
       </div>
-
-      <PhiSweepStatusCard
-        data={data?.prescriptionAttachmentSweep}
-        isLoading={isPending}
-      />
 
       <section
         className="bg-white border rounded-lg p-5"
