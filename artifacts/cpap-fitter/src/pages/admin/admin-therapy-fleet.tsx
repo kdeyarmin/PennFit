@@ -18,6 +18,7 @@ import {
   Activity,
   AlertTriangle,
   BellOff,
+  CalendarClock,
   Check,
   Download,
   HeartPulse,
@@ -160,14 +161,22 @@ export function AdminTherapyFleetPage() {
             Philips Care Orchestrator, React Health, and Health Connect — over
             the last {windowDays} nights.
           </p>
-          <Link
-            href="/admin/therapy-resupply"
-            className="inline-flex items-center gap-1.5 text-sm mt-2 hover:underline"
-            style={{ color: "hsl(var(--penn-navy))" }}
-          >
-            <PackageCheck className="h-4 w-4" /> Resupply opportunities —
-            device-reported supplies due for replacement
-          </Link>
+          <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2">
+            <Link
+              href="/admin/therapy-resupply"
+              className="inline-flex items-center gap-1.5 text-sm hover:underline"
+              style={{ color: "hsl(var(--penn-navy))" }}
+            >
+              <PackageCheck className="h-4 w-4" /> Resupply opportunities
+            </Link>
+            <Link
+              href="/admin/therapy-compliance"
+              className="inline-flex items-center gap-1.5 text-sm hover:underline"
+              style={{ color: "hsl(var(--penn-navy))" }}
+            >
+              <CalendarClock className="h-4 w-4" /> 90-day setup adherence
+            </Link>
+          </div>
         </div>
         <div className="flex items-center gap-2">
           <label className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>

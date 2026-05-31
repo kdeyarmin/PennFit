@@ -210,6 +210,11 @@ const AdminTherapyResupplyPage = lazy(() =>
     default: m.AdminTherapyResupplyPage,
   })),
 );
+const AdminTherapyCompliancePage = lazy(() =>
+  import("@/pages/admin/admin-therapy-compliance").then((m) => ({
+    default: m.AdminTherapyCompliancePage,
+  })),
+);
 const AdminCoachingPage = lazy(() =>
   import("@/pages/admin/admin-coaching").then((m) => ({
     default: m.AdminCoachingPage,
@@ -674,6 +679,10 @@ function AdminConsole() {
             <Route
               path="/admin/therapy-resupply"
               component={AdminTherapyResupplyPage}
+            />
+            <Route
+              path="/admin/therapy-compliance"
+              component={AdminTherapyCompliancePage}
             />
             <Route path="/admin/coaching" component={AdminCoachingPage} />
             <Route
