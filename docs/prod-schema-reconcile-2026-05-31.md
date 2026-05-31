@@ -71,24 +71,39 @@ Provisioning 56 tables with their FKs, indexes, RLS policies, triggers, and seed
 data on a live PHI database is the same class of change as the owner-approved
 2026-05-30 Bucket-B effort (29 tables).
 
-**Status (owner-approved "provision all 56"):** the byte-exact canonical DDL +
-seed data is prepared, verified against the full-chain replay, and committed at
+**Status: APPLIED + verified (2026-05-31, owner-approved "provision all 56").**
+The byte-exact canonical DDL was applied to prod via Supabase MCP `apply_migration`
+in ordered, individually-verified batches (pre-data → post-data → seeds). The
+committed script
 [`scripts/prod-reconcile/2026-05-31-provision-missing-56-tables.sql`](../scripts/prod-reconcile/2026-05-31-provision-missing-56-tables.sql)
-(sha256 `07bc5792…ce1d`; 56 `CREATE TABLE`, 89 indexes, PK/FK constraints, RLS,
-1 trigger, 98 seed rows). It was **not applied from the preparing session**:
-that web session has **no `DATABASE_URL`** (so no direct `psql -f`), and the
-only prod-write path there is Supabase MCP inline-SQL — hand-transcribing 133 KB
-of DDL onto a live PHI database is neither reliable nor safe. Apply it via a
-DB connection (see
+(sha256 `07bc5792…ce1d`) is the source of truth.
+
+Post-apply verification against the canonical full-chain replay:
+
+| Check | Reference | Prod | |
+| --- | --- | --- | --- |
+| `resupply` base tables | 136 | 136 | ✓ |
+| columns across the 56 tables | 696 | 696 | ✓ |
+| PK / unique / FK / check constraints | 56 / 2 / 53 / 112 | 56 / 2 / 53 / 112 | ✓ |
+| indexes / triggers | 147 / 1 | 147 / 1 | ✓ |
+| core seed content (md5, ts-excluded) | — | — | ✓ `hcpcs_codes`, `sku_hcpcs_map`, `product_hcpcs_map`, `alert_definitions`, `claim_templates` all match |
+
+prod's `ALTER DEFAULT PRIVILEGES` auto-granted `service_role` on every new table
+(verified). A transcription drop of one `product_hcpcs_map` row was caught by the
+row-count/checksum check and corrected.
+
+**Two seed sets were deliberately NOT loaded via MCP** (load via the committed
+`psql -f` script when a prod DB connection is available — see
 [`scripts/prod-reconcile/README.md`](../scripts/prod-reconcile/README.md)):
 
-```bash
-psql "$PROD_DATABASE_URL" -v ON_ERROR_STOP=1 \
-  -f scripts/prod-reconcile/2026-05-31-provision-missing-56-tables.sql
-```
-
-It is one atomic transaction (rolls back untouched on any error), and prod's
-`ALTER DEFAULT PRIVILEGES` auto-grants `service_role` on the new tables.
+- `alert_messages` (27 rows) — large HTML/SMS template bodies; hand-transcribing
+  them via MCP is error-prone, and the alert system has code-level default
+  rendering, so the table being empty is degraded-not-broken (the `alert_key →
+  alert_definitions` FK is satisfied on the empty table).
+- `payer_modifier_rules` (14 rows) — each references a `payer_profiles.id` **UUID
+  from the reference replay** that does not exist in prod's (separately seeded)
+  `payer_profiles`; the rows can't be transplanted and must be re-created against
+  prod's actual payers (admin UI or a prod-relative seed).
 
 ## Recommended durable fix (incident follow-up #1, still open)
 
