@@ -4,6 +4,8 @@
 
 import { ApiError } from "@workspace/api-client-react/admin";
 
+import { csrfHeader } from "../csrf";
+
 export type Priority = "low" | "normal" | "high" | "urgent";
 
 async function post(
@@ -17,6 +19,7 @@ async function post(
     headers: {
       Accept: "application/json",
       ...(body ? { "Content-Type": "application/json" } : {}),
+      ...csrfHeader(),
     },
     body: body ? JSON.stringify(body) : undefined,
   });

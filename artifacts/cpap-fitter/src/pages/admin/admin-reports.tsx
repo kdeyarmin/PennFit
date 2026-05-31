@@ -25,6 +25,7 @@ import {
 } from "@/lib/admin/report-presets-api";
 
 import { DATE_PRESETS, isoDate } from "./admin-reports-presets";
+import { csrfHeader } from "../../lib/csrf";
 import {
   REPORTS,
   FORMAT_LABELS,
@@ -327,6 +328,7 @@ async function postReportEmail(body: EmailSendBody): Promise<void> {
     headers: {
       "Content-Type": "application/json",
       Accept: "application/json",
+      ...csrfHeader(),
     },
     body: JSON.stringify(body),
   });
