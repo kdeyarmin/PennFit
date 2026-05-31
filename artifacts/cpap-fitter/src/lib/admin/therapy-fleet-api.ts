@@ -57,6 +57,20 @@ export interface FleetOverview {
   totalNights: number;
 }
 
+export type WorklistActionStatus =
+  | "acknowledged"
+  | "snoozed"
+  | "contacted"
+  | "resolved";
+
+export interface WorklistAction {
+  status: WorklistActionStatus;
+  snoozeUntil: string | null;
+  note: string | null;
+  updatedByEmail: string | null;
+  updatedAt: string | null;
+}
+
 export interface WorklistEntry {
   patientId: string;
   patientName: string | null;
@@ -70,6 +84,7 @@ export interface WorklistEntry {
   daysSinceLastNight: number | null;
   reasons: WorklistReason[];
   priority: number;
+  action: WorklistAction | null;
 }
 
 export const getFleetOverview = (windowDays: number) =>
@@ -81,16 +96,32 @@ export const getFleetWorklist = (params: {
   windowDays: number;
   limit?: number;
   reason?: WorklistReason;
+  includeHandled?: boolean;
 }) => {
   const q = new URLSearchParams({ windowDays: String(params.windowDays) });
   if (params.limit) q.set("limit", String(params.limit));
   if (params.reason) q.set("reason", params.reason);
+  if (params.includeHandled) q.set("includeHandled", "true");
   return jsonFetch<{
     windowDays: number;
     count: number;
     entries: WorklistEntry[];
   }>(`/admin/therapy-fleet/worklist?${q.toString()}`);
 };
+
+/** Set a patient's triage state on the worklist. */
+export const setWorklistAction = (
+  patientId: string,
+  body: { action: WorklistActionStatus; snoozeUntil?: string; note?: string },
+) =>
+  jsonFetch<{ patientId: string; action: WorklistAction }>(
+    `/admin/therapy-fleet/worklist/${patientId}/action`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+  );
 
 /** Build the CSV-export URL the browser can navigate to / download. */
 export const fleetWorklistCsvUrl = (params: {

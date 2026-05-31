@@ -12,14 +12,17 @@
 //     exportable to CSV for a calling list.
 
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
 import {
   Activity,
   AlertTriangle,
+  BellOff,
+  Check,
   Download,
   HeartPulse,
   PackageCheck,
+  PhoneCall,
   Stethoscope,
   Wind,
 } from "lucide-react";
@@ -33,6 +36,9 @@ import {
   getFleetOverview,
   getFleetWorklist,
   fleetWorklistCsvUrl,
+  setWorklistAction,
+  type WorklistAction,
+  type WorklistActionStatus,
   type WorklistEntry,
   type WorklistReason,
 } from "@/lib/admin/therapy-fleet-api";
@@ -89,8 +95,10 @@ function fmt(n: number | null, digits = 1): string {
 }
 
 export function AdminTherapyFleetPage() {
+  const qc = useQueryClient();
   const [windowDays, setWindowDays] = useState<number>(30);
   const [reason, setReason] = useState<WorklistReason | null>(null);
+  const [includeHandled, setIncludeHandled] = useState(false);
 
   const overviewQ = useQuery({
     queryKey: ["admin", "therapy-fleet", "overview", windowDays],
@@ -98,14 +106,39 @@ export function AdminTherapyFleetPage() {
     refetchOnWindowFocus: false,
   });
   const worklistQ = useQuery({
-    queryKey: ["admin", "therapy-fleet", "worklist", windowDays, reason],
+    queryKey: [
+      "admin",
+      "therapy-fleet",
+      "worklist",
+      windowDays,
+      reason,
+      includeHandled,
+    ],
     queryFn: () =>
       getFleetWorklist({
         windowDays,
         limit: 200,
         reason: reason ?? undefined,
+        includeHandled,
       }),
     refetchOnWindowFocus: false,
+  });
+
+  const actionMutation = useMutation({
+    mutationFn: (vars: {
+      patientId: string;
+      action: WorklistActionStatus;
+      snoozeUntil?: string;
+    }) =>
+      setWorklistAction(vars.patientId, {
+        action: vars.action,
+        snoozeUntil: vars.snoozeUntil,
+      }),
+    onSuccess: () => {
+      void qc.invalidateQueries({
+        queryKey: ["admin", "therapy-fleet", "worklist"],
+      });
+    },
   });
 
   const ov = overviewQ.data?.overview;
@@ -267,6 +300,17 @@ export function AdminTherapyFleetPage() {
               title={REASON_META[r].blurb}
             />
           ))}
+          <label
+            className="ml-auto inline-flex items-center gap-1.5 text-xs cursor-pointer"
+            style={{ color: "hsl(var(--ink-3))" }}
+          >
+            <input
+              type="checkbox"
+              checked={includeHandled}
+              onChange={(e) => setIncludeHandled(e.target.checked)}
+            />
+            Show handled (snoozed / resolved)
+          </label>
         </div>
 
         {worklistQ.isPending ? (
@@ -281,7 +325,17 @@ export function AdminTherapyFleetPage() {
             No patients match this filter — the fleet is in good shape. 🎉
           </p>
         ) : (
-          <WorklistTable entries={worklistQ.data.entries} />
+          <WorklistTable
+            entries={worklistQ.data.entries}
+            onAction={(patientId, action, snoozeUntil) =>
+              actionMutation.mutate({ patientId, action, snoozeUntil })
+            }
+            pendingPatientId={
+              actionMutation.isPending
+                ? actionMutation.variables?.patientId
+                : undefined
+            }
+          />
         )}
       </Card>
     </div>
@@ -348,7 +402,19 @@ function ReasonChip({
   );
 }
 
-function WorklistTable({ entries }: { entries: WorklistEntry[] }) {
+function WorklistTable({
+  entries,
+  onAction,
+  pendingPatientId,
+}: {
+  entries: WorklistEntry[];
+  onAction: (
+    patientId: string,
+    action: WorklistActionStatus,
+    snoozeUntil?: string,
+  ) => void;
+  pendingPatientId?: string;
+}) {
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
@@ -365,6 +431,7 @@ function WorklistTable({ entries }: { entries: WorklistEntry[] }) {
             <th className="py-2 font-semibold text-right">Avg AHI</th>
             <th className="py-2 font-semibold text-right">Avg leak</th>
             <th className="py-2 font-semibold text-right">Last night</th>
+            <th className="py-2 font-semibold text-right">Triage</th>
           </tr>
         </thead>
         <tbody>
@@ -439,10 +506,123 @@ function WorklistTable({ entries }: { entries: WorklistEntry[] }) {
                   </span>
                 )}
               </td>
+              <td className="py-2">
+                <TriageCell
+                  action={e.action}
+                  pending={pendingPatientId === e.patientId}
+                  onAction={(action, snoozeUntil) =>
+                    onAction(e.patientId, action, snoozeUntil)
+                  }
+                />
+              </td>
             </tr>
           ))}
         </tbody>
       </table>
     </div>
+  );
+}
+
+const ACTION_BADGE: Record<
+  WorklistActionStatus,
+  { variant: "info" | "warning" | "success" | "neutral"; label: string }
+> = {
+  acknowledged: { variant: "info", label: "Acknowledged" },
+  snoozed: { variant: "neutral", label: "Snoozed" },
+  contacted: { variant: "info", label: "Contacted" },
+  resolved: { variant: "success", label: "Resolved" },
+};
+
+function isoInDays(days: number): string {
+  return new Date(Date.now() + days * 86400_000).toISOString().slice(0, 10);
+}
+
+// Per-row triage controls: shows the current state (if any) plus quick
+// actions. Snooze offers 7d/30d; the rest are single-click.
+function TriageCell({
+  action,
+  pending,
+  onAction,
+}: {
+  action: WorklistAction | null;
+  pending: boolean;
+  onAction: (action: WorklistActionStatus, snoozeUntil?: string) => void;
+}) {
+  return (
+    <div className="flex flex-col items-end gap-1">
+      {action && (
+        <span className="inline-flex items-center gap-1">
+          <Badge variant={ACTION_BADGE[action.status].variant}>
+            {ACTION_BADGE[action.status].label}
+            {action.status === "snoozed" && action.snoozeUntil
+              ? ` → ${action.snoozeUntil}`
+              : ""}
+          </Badge>
+        </span>
+      )}
+      <div
+        className="flex items-center gap-1"
+        style={{ opacity: pending ? 0.5 : 1 }}
+      >
+        <IconAction
+          title="Mark contacted"
+          disabled={pending}
+          onClick={() => onAction("contacted")}
+        >
+          <PhoneCall className="h-3.5 w-3.5" />
+        </IconAction>
+        <IconAction
+          title="Snooze 7 days"
+          disabled={pending}
+          onClick={() => onAction("snoozed", isoInDays(7))}
+        >
+          <BellOff className="h-3.5 w-3.5" />
+          <span className="text-[10px] ml-0.5">7d</span>
+        </IconAction>
+        <IconAction
+          title="Snooze 30 days"
+          disabled={pending}
+          onClick={() => onAction("snoozed", isoInDays(30))}
+        >
+          <BellOff className="h-3.5 w-3.5" />
+          <span className="text-[10px] ml-0.5">30d</span>
+        </IconAction>
+        <IconAction
+          title="Resolve (remove from queue)"
+          disabled={pending}
+          onClick={() => onAction("resolved")}
+        >
+          <Check className="h-3.5 w-3.5" />
+        </IconAction>
+      </div>
+    </div>
+  );
+}
+
+function IconAction({
+  title,
+  disabled,
+  onClick,
+  children,
+}: {
+  title: string;
+  disabled?: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      title={title}
+      disabled={disabled}
+      onClick={onClick}
+      className="inline-flex items-center px-1.5 py-1 rounded border hover:bg-[hsl(var(--surface-2))] disabled:cursor-not-allowed"
+      style={{
+        borderColor: "hsl(var(--line-1))",
+        color: "hsl(var(--ink-2))",
+      }}
+    >
+      {children}
+    </button>
   );
 }

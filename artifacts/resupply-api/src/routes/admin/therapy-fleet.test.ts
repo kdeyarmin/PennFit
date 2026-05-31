@@ -21,6 +21,7 @@ import {
   stageSupabaseResponse,
   stageSupabaseRpcResponse,
   getSupabaseRpcArgs,
+  getSupabaseWritePayloads,
 } from "../../test-helpers/supabase-mock";
 
 const supabaseMock = installSupabaseMock();
@@ -31,6 +32,13 @@ const { mockAdmin } = vi.hoisted(() => ({
 vi.mock("../../middlewares/requireAdmin", () =>
   makeRequireAdminMock(mockAdmin),
 );
+
+const logAuditMock = vi.hoisted(() =>
+  vi.fn<(input: unknown) => Promise<undefined>>(async () => undefined),
+);
+vi.mock("@workspace/resupply-audit", () => ({
+  logAudit: logAuditMock,
+}));
 
 import therapyFleetRouter from "./therapy-fleet";
 
@@ -52,6 +60,7 @@ function makeApp(): Express {
 beforeEach(() => {
   mockAdmin.current = null;
   supabaseMock.reset();
+  logAuditMock.mockClear();
 });
 
 describe("GET /admin/therapy-fleet/overview", () => {
@@ -188,9 +197,11 @@ describe("GET /admin/therapy-fleet/worklist", () => {
       reasons: ["compliance_risk", "high_ahi", "high_leak", "usage_decline"],
     });
     expect(res.body.entries[1].patientName).toBe("Grace Hopper");
+    // includeHandled defaults to false, so the route over-fetches
+    // (limit*4, capped 500) to refill the page after hiding handled rows.
     expect(getSupabaseRpcArgs("therapy_fleet_worklist")[0]).toEqual({
       p_window_days: 30,
-      p_limit: 50,
+      p_limit: 200,
     });
   });
 
@@ -279,5 +290,208 @@ describe("GET /admin/therapy-fleet/worklist.csv", () => {
     expect(lines[1]).toContain("Ada Lovelace");
     // Multi-reason cell is pipe-joined within one CSV field.
     expect(lines[1]).toContain("compliance_risk|high_ahi");
+  });
+});
+
+describe("GET /admin/therapy-fleet/worklist — triage state", () => {
+  function stageTwoRowRpc() {
+    stageSupabaseRpcResponse("therapy_fleet_worklist", {
+      data: [
+        {
+          patient_id: P1,
+          nights_with_data: "12",
+          nights_over_4h: "8",
+          avg_usage_minutes: "201.5",
+          avg_ahi: "6.40",
+          avg_leak_l_min: "30.2",
+          prior_avg_usage_minutes: "340.0",
+          last_night_date: "2026-05-29",
+          days_since_last_night: "2",
+          reasons: ["compliance_risk"],
+          priority: "40",
+        },
+        {
+          patient_id: P2,
+          nights_with_data: "10",
+          nights_over_4h: "9",
+          avg_usage_minutes: "220",
+          avg_ahi: "3.0",
+          avg_leak_l_min: "10.0",
+          prior_avg_usage_minutes: null,
+          last_night_date: "2026-05-29",
+          days_since_last_night: "2",
+          reasons: ["compliance_risk"],
+          priority: "40",
+        },
+      ],
+    });
+  }
+
+  it("hides resolved + actively-snoozed patients by default and attaches action state", async () => {
+    mockAdmin.current = ADMIN;
+    stageTwoRowRpc();
+    // P1 is resolved (hidden); P2 has an elapsed snooze (visible).
+    stageSupabaseResponse("patient_worklist_actions", "select", {
+      data: [
+        {
+          patient_id: P1,
+          status: "resolved",
+          snooze_until: null,
+          note: null,
+          updated_by_email: "csr@x",
+          updated_at: "2026-05-30T00:00:00Z",
+        },
+        {
+          patient_id: P2,
+          status: "snoozed",
+          snooze_until: "2000-01-01",
+          note: "called",
+          updated_by_email: "csr@x",
+          updated_at: "2026-05-30T00:00:00Z",
+        },
+      ],
+    });
+    stageSupabaseResponse("patients", "select", {
+      data: [{ id: P2, legal_first_name: "Grace", legal_last_name: "Hopper" }],
+    });
+    const res = await request(makeApp()).get("/admin/therapy-fleet/worklist");
+    expect(res.status).toBe(200);
+    expect(res.body.count).toBe(1);
+    expect(res.body.entries[0].patientId).toBe(P2);
+    expect(res.body.entries[0].action).toMatchObject({
+      status: "snoozed",
+      note: "called",
+    });
+  });
+
+  it("includeHandled=true returns handled patients too", async () => {
+    mockAdmin.current = ADMIN;
+    stageTwoRowRpc();
+    stageSupabaseResponse("patient_worklist_actions", "select", {
+      data: [
+        {
+          patient_id: P1,
+          status: "resolved",
+          snooze_until: null,
+          note: null,
+          updated_by_email: null,
+          updated_at: null,
+        },
+      ],
+    });
+    stageSupabaseResponse("patients", "select", {
+      data: [
+        { id: P1, legal_first_name: "Ada", legal_last_name: "Lovelace" },
+        { id: P2, legal_first_name: "Grace", legal_last_name: "Hopper" },
+      ],
+    });
+    const res = await request(makeApp()).get(
+      "/admin/therapy-fleet/worklist?includeHandled=true",
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.count).toBe(2);
+  });
+});
+
+describe("POST /admin/therapy-fleet/worklist/:patientId/action", () => {
+  it("401s without admin", async () => {
+    const res = await request(makeApp())
+      .post(`/admin/therapy-fleet/worklist/${P1}/action`)
+      .send({ action: "contacted" });
+    expect(res.status).toBe(401);
+  });
+
+  it("404s on a non-uuid patient id", async () => {
+    mockAdmin.current = ADMIN;
+    const res = await request(makeApp())
+      .post("/admin/therapy-fleet/worklist/not-a-uuid/action")
+      .send({ action: "contacted" });
+    expect(res.status).toBe(404);
+  });
+
+  it("400s when snoozed without snoozeUntil", async () => {
+    mockAdmin.current = ADMIN;
+    const res = await request(makeApp())
+      .post(`/admin/therapy-fleet/worklist/${P1}/action`)
+      .send({ action: "snoozed" });
+    expect(res.status).toBe(400);
+  });
+
+  it("404s when the patient does not exist", async () => {
+    mockAdmin.current = ADMIN;
+    stageSupabaseResponse("patients", "select", { data: null });
+    const res = await request(makeApp())
+      .post(`/admin/therapy-fleet/worklist/${P1}/action`)
+      .send({ action: "contacted" });
+    expect(res.status).toBe(404);
+  });
+
+  it("upserts the action + audits without leaking the note", async () => {
+    mockAdmin.current = ADMIN;
+    stageSupabaseResponse("patients", "select", { data: { id: P1 } });
+    stageSupabaseResponse("patient_worklist_actions", "upsert", {
+      error: null,
+    });
+    const res = await request(makeApp())
+      .post(`/admin/therapy-fleet/worklist/${P1}/action`)
+      .send({
+        action: "snoozed",
+        snoozeUntil: "2026-06-15",
+        note: "AHI 9 — called, will recheck",
+      });
+    expect(res.status).toBe(200);
+    expect(res.body.action).toMatchObject({
+      status: "snoozed",
+      snoozeUntil: "2026-06-15",
+      note: "AHI 9 — called, will recheck",
+    });
+
+    const upserts = getSupabaseWritePayloads(
+      "patient_worklist_actions",
+      "upsert",
+    );
+    expect(upserts).toHaveLength(1);
+    expect(upserts[0]).toMatchObject({
+      patient_id: P1,
+      status: "snoozed",
+      snooze_until: "2026-06-15",
+      note: "AHI 9 — called, will recheck",
+    });
+
+    expect(logAuditMock).toHaveBeenCalledTimes(1);
+    const audit = logAuditMock.mock.calls[0]?.[0] as {
+      action: string;
+      metadata: Record<string, unknown>;
+    };
+    expect(audit.action).toBe("therapy.worklist.action.set");
+    expect(audit.metadata).toMatchObject({
+      patient_id: P1,
+      status: "snoozed",
+      snooze_until: "2026-06-15",
+      has_note: true,
+    });
+    // The note body must never reach the audit log.
+    expect(JSON.stringify(audit.metadata)).not.toContain("recheck");
+  });
+
+  it("clears snooze_until when the action is not 'snoozed'", async () => {
+    mockAdmin.current = ADMIN;
+    stageSupabaseResponse("patients", "select", { data: { id: P1 } });
+    stageSupabaseResponse("patient_worklist_actions", "upsert", {
+      error: null,
+    });
+    const res = await request(makeApp())
+      .post(`/admin/therapy-fleet/worklist/${P1}/action`)
+      .send({ action: "contacted", snoozeUntil: "2026-06-15" });
+    expect(res.status).toBe(200);
+    expect(res.body.action.snoozeUntil).toBeNull();
+    const upserts = getSupabaseWritePayloads(
+      "patient_worklist_actions",
+      "upsert",
+    );
+    expect(upserts[0]).toMatchObject({
+      status: "contacted",
+      snooze_until: null,
+    });
   });
 });
