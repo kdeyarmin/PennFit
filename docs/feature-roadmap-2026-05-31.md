@@ -155,6 +155,13 @@ high-value items in Phases 2–5 have nowhere to read from.
 - **Exit:** nightly snapshot persists; a configurable threshold (e.g.
   "denial rate WoW +5pts") fires an email + in-app alert; **derives
   from event tables, never `audit_log`.**
+- **Status (2026-05-31):** ⏳ in progress. Landed: migration
+  `0187_metrics_substrate` (`metrics_daily` keyed `(date, key)` rollup +
+  `metric_thresholds` + `metric_alerts`, all RLS deny-all) and the pure
+  `evaluateThreshold` logic in `@workspace/resupply-domain` (absolute /
+  `delta_7d` / `delta_pct_7d` modes, baseline-safe). Next: the nightly
+  `metrics-snapshot` worker job (persist KPIs the analytics endpoints
+  already compute), then the evaluator + email/in-app notifier.
 
 ### F3 · Clinical encounters + RT role + clinician portal shell — **L**
 

@@ -33,3 +33,13 @@ export {
   type MarginResult,
   type MarginAggregate,
 } from "./margin";
+
+export {
+  evaluateThreshold,
+  THRESHOLD_COMPARISONS,
+  THRESHOLD_MODES,
+  type ThresholdComparison,
+  type ThresholdMode,
+  type ThresholdRule,
+  type ThresholdEvalResult,
+} from "./metric-threshold";
