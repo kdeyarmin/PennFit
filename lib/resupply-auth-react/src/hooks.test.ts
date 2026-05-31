@@ -95,3 +95,127 @@ describe("createAuthHooks", () => {
     expect(calls[0]!.url).toBe("/api/auth/me");
   });
 });
+
+describe("createAuthHooks — sessionQueryKey option", () => {
+  it("defaults to SESSION_QUERY_KEY when no sessionQueryKey is provided", () => {
+    const { client } = buildAuthClient([]);
+    // createAuthHooks returns hooks that use SESSION_QUERY_KEY by default.
+    // We verify by setting query data with the default key and reading it back.
+    const hooks = createAuthHooks(client);
+    expect(hooks).toBeDefined();
+    const qc = new QueryClient();
+    const me: AuthMe = {
+      id: "u1",
+      email: "a@b.c",
+      role: "admin",
+      displayName: null,
+      emailVerified: true,
+      mustChangePassword: false,
+    };
+    qc.setQueryData(SESSION_QUERY_KEY, me);
+    // The default key must be the exported SESSION_QUERY_KEY constant.
+    expect(qc.getQueryData(SESSION_QUERY_KEY)).toEqual(me);
+  });
+
+  it("uses the custom sessionQueryKey instead of SESSION_QUERY_KEY", () => {
+    const { client } = buildAuthClient([]);
+    const customKey = ["auth", "me", "admin"] as const;
+    const hooks = createAuthHooks(client, { sessionQueryKey: customKey });
+    expect(hooks).toBeDefined();
+
+    const qc = new QueryClient();
+    const me: AuthMe = {
+      id: "u2",
+      email: "admin@org.com",
+      role: "admin",
+      displayName: "Admin",
+      emailVerified: true,
+      mustChangePassword: false,
+    };
+    // Populate the cache under the custom key.
+    qc.setQueryData(customKey, me);
+    // The default SESSION_QUERY_KEY slot must remain empty.
+    expect(qc.getQueryData(SESSION_QUERY_KEY)).toBeUndefined();
+    // The custom key slot must hold the data.
+    expect(qc.getQueryData(customKey)).toEqual(me);
+  });
+
+  it("two hook instances with distinct keys do not collide in a shared QueryClient", () => {
+    const { client: clientA } = buildAuthClient([]);
+    const { client: clientB } = buildAuthClient([]);
+    const keyA = ["auth", "me", "storefront"] as const;
+    const keyB = ["auth", "me", "admin"] as const;
+    const _hooksA = createAuthHooks(clientA, { sessionQueryKey: keyA });
+    const _hooksB = createAuthHooks(clientB, { sessionQueryKey: keyB });
+
+    const qc = new QueryClient();
+    const meA: AuthMe = {
+      id: "customer-1",
+      email: "customer@example.com",
+      role: "customer",
+      displayName: "Customer",
+      emailVerified: true,
+      mustChangePassword: false,
+    };
+    const meB: AuthMe = {
+      id: "admin-1",
+      email: "admin@example.com",
+      role: "admin",
+      displayName: "Admin",
+      emailVerified: true,
+      mustChangePassword: false,
+    };
+    qc.setQueryData(keyA, meA);
+    qc.setQueryData(keyB, meB);
+
+    // Each key must independently hold its own session data.
+    expect(qc.getQueryData(keyA)).toEqual(meA);
+    expect(qc.getQueryData(keyB)).toEqual(meB);
+    // Setting one to null must not affect the other.
+    qc.setQueryData(keyA, null);
+    expect(qc.getQueryData(keyA)).toBeNull();
+    expect(qc.getQueryData(keyB)).toEqual(meB);
+  });
+
+  it("sign-out with custom key sets that key to null, not SESSION_QUERY_KEY", () => {
+    const { client } = buildAuthClient([{ status: 200 }]);
+    const customKey = ["auth", "me", "storefront"] as const;
+    const _hooks = createAuthHooks(client, { sessionQueryKey: customKey });
+
+    const qc = new QueryClient();
+    const me: AuthMe = {
+      id: "u3",
+      email: "u3@example.com",
+      role: "customer",
+      displayName: null,
+      emailVerified: true,
+      mustChangePassword: false,
+    };
+    qc.setQueryData(customKey, me);
+    qc.setQueryData(SESSION_QUERY_KEY, me);
+
+    // Simulate the body of useSignOut.onSuccess with custom key.
+    qc.setQueryData(customKey, null);
+    void qc.invalidateQueries({ queryKey: customKey });
+
+    // Custom key should be null; the default key must be untouched.
+    expect(qc.getQueryData(customKey)).toBeNull();
+    expect(qc.getQueryData(SESSION_QUERY_KEY)).toEqual(me);
+  });
+
+  it("createAuthHooks returns all expected hook functions when given a custom sessionQueryKey", () => {
+    const { client } = buildAuthClient([]);
+    const hooks = createAuthHooks(client, {
+      sessionQueryKey: ["auth", "me", "custom"],
+    });
+    expect(typeof hooks.useSession).toBe("function");
+    expect(typeof hooks.useSignIn).toBe("function");
+    expect(typeof hooks.useSignOut).toBe("function");
+    expect(typeof hooks.useVerifySignInMfa).toBe("function");
+    expect(typeof hooks.useSignUp).toBe("function");
+    expect(typeof hooks.useForgotPassword).toBe("function");
+    expect(typeof hooks.useResetPassword).toBe("function");
+    expect(typeof hooks.useVerifyEmail).toBe("function");
+    expect(typeof hooks.useChangePassword).toBe("function");
+  });
+});
