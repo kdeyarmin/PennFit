@@ -109,7 +109,7 @@ describe("admin-therapy-usage-report — formatting helpers", () => {
     const fnBody = SRC.slice(fnStart, fnEnd + 2);
     expect(fnBody).toContain("null");
     // The null branch should return a dash.
-    expect(fnBody).toMatch(/[—\-]/);
+    expect(fnBody).toMatch(/[—-]/);
   });
 
   it("defines a hours() helper", () => {
