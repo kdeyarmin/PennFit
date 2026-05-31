@@ -95,7 +95,7 @@ for _ in $(seq 1 30); do
     -H "Authorization: Bearer ${SERVICE_ROLE_JWT}" \
     -H "apikey: ${SERVICE_ROLE_JWT}" \
     -H "Accept-Profile: resupply" \
-    "http://127.0.0.1:${PROXY_PORT}/rest/v1/feature_flags?limit=1" || true)"
+    "http://127.0.0.1:${PROXY_PORT}/rest/v1/" || true)"
   if [ "$code" = "200" ]; then ready=1; break; fi
   sleep 1
 done
