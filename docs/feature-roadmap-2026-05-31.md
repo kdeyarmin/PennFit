@@ -124,10 +124,13 @@ high-value items in Phases 2–5 have nowhere to read from.
   `@workspace/resupply-domain` (`computeMargin` / `aggregateMargin`); and
   the **`/admin/product-costs` API** (`GET` list on `cost.read`, `PUT`
   upsert on `cost.write`) so operators can enter and view per-SKU cost;
-  the `supabase-types.ts` schema mirror synced to 0186; and the fail-soft
-  `fetchUnitCostsBySku` batch helper the write paths read through. Next:
-  stamp snapshots at the Stripe-webhook order ingest + claim-line
-  creation, then seed/backfill `product_costs`.
+  the `supabase-types.ts` schema mirror synced to 0186; the fail-soft
+  `fetchUnitCostsBySku` batch helper; and **order-path capture** — the
+  Stripe webhook now stamps `unit_cost_cents` / `cost_source` /
+  `cost_captured_at` onto `shop_order_items` from `product_costs` at
+  paid-session ingest (SKU resolved from Stripe product metadata,
+  fail-soft). Next: stamp claim-line creation, then seed/backfill
+  `product_costs`.
 
 ### F2 · Metrics-snapshot + threshold-alert substrate — **M**
 

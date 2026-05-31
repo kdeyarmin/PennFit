@@ -72,3 +72,34 @@ export async function fetchUnitCostsBySku(
   }
   return out;
 }
+
+export interface CostSnapshotTarget {
+  unit_cost_cents?: number | null;
+  cost_source?: string | null;
+  cost_captured_at?: string | null;
+}
+
+/**
+ * Stamp the resolved COGS snapshot onto write rows IN PLACE, aligned by
+ * index with `skus` (rows[i] ↔ skus[i]). Only rows whose SKU has a known
+ * cost are touched; the rest keep their null "unknown" cost. Pure +
+ * synchronous so the index alignment — the one place a stamping bug
+ * could hide — is unit-testable without Stripe or the DB.
+ */
+export function stampUnitCostSnapshots(
+  rows: readonly CostSnapshotTarget[],
+  skus: readonly (string | null | undefined)[],
+  costBySku: ReadonlyMap<string, UnitCostSnapshot>,
+  capturedAtIso: string,
+): void {
+  if (costBySku.size === 0) return;
+  rows.forEach((row, i) => {
+    const sku = skus[i];
+    const cost = sku ? costBySku.get(sku) : undefined;
+    if (cost) {
+      row.unit_cost_cents = cost.unitCostCents;
+      row.cost_source = cost.costSource;
+      row.cost_captured_at = capturedAtIso;
+    }
+  });
+}

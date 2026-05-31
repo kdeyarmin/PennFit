@@ -15,7 +15,11 @@ import {
 
 const supabaseMock = installSupabaseMock();
 
-import { fetchUnitCostsBySku } from "./product-cost-lookup";
+import {
+  fetchUnitCostsBySku,
+  stampUnitCostSnapshots,
+  type CostSnapshotTarget,
+} from "./product-cost-lookup";
 
 beforeEach(() => {
   supabaseMock.reset();
@@ -98,5 +102,53 @@ describe("fetchUnitCostsBySku", () => {
     const out = await fetchUnitCostsBySku(["MASK"], { warn });
     expect(out.size).toBe(0);
     expect(warn).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("stampUnitCostSnapshots", () => {
+  const COSTS = new Map([
+    ["MASK", { unitCostCents: 4200, costSource: "invoice" }],
+    ["CUSHION", { unitCostCents: 1850, costSource: "manual" }],
+  ]);
+  const CAPTURED = "2026-05-31T12:00:00.000Z";
+
+  it("stamps each row from its index-aligned SKU", () => {
+    const rows: CostSnapshotTarget[] = [{}, {}];
+    stampUnitCostSnapshots(rows, ["MASK", "CUSHION"], COSTS, CAPTURED);
+    expect(rows[0]).toEqual({
+      unit_cost_cents: 4200,
+      cost_source: "invoice",
+      cost_captured_at: CAPTURED,
+    });
+    expect(rows[1]).toEqual({
+      unit_cost_cents: 1850,
+      cost_source: "manual",
+      cost_captured_at: CAPTURED,
+    });
+  });
+
+  it("leaves rows with an unknown or null SKU untouched", () => {
+    const rows: CostSnapshotTarget[] = [{}, {}];
+    stampUnitCostSnapshots(rows, ["TUBING", null], COSTS, CAPTURED);
+    expect(rows[0]).toEqual({});
+    expect(rows[1]).toEqual({});
+  });
+
+  it("is a no-op when the cost map is empty", () => {
+    const rows: CostSnapshotTarget[] = [{}];
+    stampUnitCostSnapshots(rows, ["MASK"], new Map(), CAPTURED);
+    expect(rows[0]).toEqual({});
+  });
+
+  it("respects index alignment when fewer SKUs than rows", () => {
+    const rows: CostSnapshotTarget[] = [{}, {}, {}];
+    stampUnitCostSnapshots(rows, ["MASK"], COSTS, CAPTURED);
+    expect(rows[0]).toEqual({
+      unit_cost_cents: 4200,
+      cost_source: "invoice",
+      cost_captured_at: CAPTURED,
+    });
+    expect(rows[1]).toEqual({});
+    expect(rows[2]).toEqual({});
   });
 });
