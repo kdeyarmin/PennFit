@@ -40,7 +40,10 @@ import {
 import { logger } from "../../lib/logger";
 import { isAsciiOnly } from "../../lib/message-templates/sms";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
-import { requireAdmin, requirePermission } from "../../middlewares/requireAdmin";
+import {
+  requireAdmin,
+  requirePermission,
+} from "../../middlewares/requireAdmin";
 
 type AlertDefinitionRow =
   Database["resupply"]["Tables"]["alert_definitions"]["Row"];
@@ -286,7 +289,9 @@ router.patch(
     }
 
     const nextSubject =
-      parsed.data.subject !== undefined ? parsed.data.subject : existing.subject;
+      parsed.data.subject !== undefined
+        ? parsed.data.subject
+        : existing.subject;
     const nextBodyHtml =
       parsed.data.bodyHtml !== undefined
         ? parsed.data.bodyHtml
@@ -376,7 +381,10 @@ router.patch(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err, alertKey, channel }, "alert_message.update audit failed");
+      logger.warn(
+        { err, alertKey, channel },
+        "alert_message.update audit failed",
+      );
     });
 
     res.json({ message: serializeMessage(updated as AlertMessageRow) });
@@ -450,21 +458,24 @@ router.post(
       return;
     }
 
-    const STATUS: Record<Exclude<DispatchAlertOutcome["status"], "ok">, number> =
-      {
-        alert_not_found: 404,
-        alert_inactive: 409,
-        channel_not_supported: 409,
-        message_not_configured: 409,
-        patient_not_found: 404,
-        patient_not_active: 409,
-        patient_missing_email: 422,
-        patient_missing_phone: 422,
-        patient_phone_unnormalizable: 422,
-        messaging_not_configured: 503,
-        voice_not_configured: 503,
-        vendor_error: 502,
-      };
+    const STATUS: Record<
+      Exclude<DispatchAlertOutcome["status"], "ok">,
+      number
+    > = {
+      alert_not_found: 404,
+      alert_inactive: 409,
+      channel_not_supported: 409,
+      message_not_configured: 409,
+      suppressed_for_patient: 409,
+      patient_not_found: 404,
+      patient_not_active: 409,
+      patient_missing_email: 422,
+      patient_missing_phone: 422,
+      patient_phone_unnormalizable: 422,
+      messaging_not_configured: 503,
+      voice_not_configured: 503,
+      vendor_error: 502,
+    };
     res.status(STATUS[outcome.status]).json({ error: outcome.status });
   },
 );

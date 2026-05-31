@@ -10,6 +10,7 @@ import shopProductsAdminRouter from "./admin/shop-products.js";
 import inventoryReconciliationRouter from "./admin/inventory-reconciliation.js";
 import csrMacrosRouter from "./admin/csr-macros.js";
 import alertsRouter from "./admin/alerts.js";
+import alertMessageOverridesRouter from "./admin/alert-message-overrides.js";
 import messageTemplatesRouter from "./admin/message-templates.js";
 import messageTemplateOverridesRouter from "./admin/message-template-overrides.js";
 import shopReturnsAdminRouter from "./admin/shop-returns.js";
@@ -470,6 +471,14 @@ router.use(csrMacrosRouter);
 // hard-coded fallback when the seed rows are missing, so the route is
 // forward-deploy-safe before migration 0179 is applied.
 router.use(alertsRouter);
+// /admin/patients/:patientId/alert-message-overrides/* — per-patient
+// overrides of the alert library. The dispatch path layers an active
+// override per-field over the global alert message; isActive=false
+// suppresses the alert for that patient on that channel. Same
+// admin.tools.manage gate + forward-deploy-safe posture as the global
+// surface (migration 0180; dispatch degrades to the global on a
+// missing override table).
+router.use(alertMessageOverridesRouter);
 // /admin/message-templates/* — admin read + edit for the
 // customer-message template library (Phase 1 of
 // docs/proposals/customer-message-templates.md). The render path

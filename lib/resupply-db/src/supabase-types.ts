@@ -1006,6 +1006,30 @@ export interface Database {
         >;
         Relationships: [];
       };
+      alert_message_overrides: {
+        Row: {
+          id: string;
+          patient_id: string;
+          alert_key: string;
+          channel: "email" | "sms" | "voice";
+          subject: string | null;
+          body_html: string | null;
+          body_text: string | null;
+          is_active: boolean;
+          note: string | null;
+          created_at: string;
+          created_by: string | null;
+          updated_at: string;
+          updated_by: string | null;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["alert_message_overrides"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["alert_message_overrides"]["Row"]
+        >;
+        Relationships: [];
+      };
       message_templates: {
         Row: {
           id: string;

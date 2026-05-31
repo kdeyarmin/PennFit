@@ -85,6 +85,7 @@ export type DispatchAlertOutcome =
   | { status: "alert_inactive" }
   | { status: "channel_not_supported"; channel: AlertChannel }
   | { status: "message_not_configured"; channel: AlertChannel }
+  | { status: "suppressed_for_patient"; channel: AlertChannel }
   | { status: "patient_not_found" }
   | { status: "patient_not_active"; patientStatus: string }
   | { status: "patient_missing_email" }
@@ -138,19 +139,49 @@ export async function dispatchAlert(
     return { status: "channel_not_supported", channel };
   }
 
-  // 2. Editable message for this channel.
-  const { data: msg, error: msgErr } = await supabase
-    .schema("resupply")
-    .from("alert_messages")
-    .select("subject, body_html, body_text, is_active")
-    .eq("alert_key", alertKey)
-    .eq("channel", channel)
-    .limit(1)
-    .maybeSingle();
-  if (msgErr) throw msgErr;
-  if (!msg || !msg.is_active) {
+  // 2. Editable message for this channel + the per-patient override
+  // (if any), in parallel — both are single unique-index hits.
+  const [globalRes, overrideRes] = await Promise.all([
+    supabase
+      .schema("resupply")
+      .from("alert_messages")
+      .select("subject, body_html, body_text, is_active")
+      .eq("alert_key", alertKey)
+      .eq("channel", channel)
+      .limit(1)
+      .maybeSingle(),
+    supabase
+      .schema("resupply")
+      .from("alert_message_overrides")
+      .select("subject, body_html, body_text, is_active")
+      .eq("patient_id", patientId)
+      .eq("alert_key", alertKey)
+      .eq("channel", channel)
+      .limit(1)
+      .maybeSingle(),
+  ]);
+  if (globalRes.error) throw globalRes.error;
+  // A missing override table (migration 0180 not yet applied) must not
+  // break the send — degrade to the global message. PostgREST surfaces
+  // "relation does not exist" as a query error; swallow it here.
+  const override = overrideRes.error ? null : (overrideRes.data ?? null);
+
+  const global = globalRes.data;
+  if (!global || !global.is_active) {
     return { status: "message_not_configured", channel };
   }
+  // An override with is_active=false explicitly SUPPRESSES this alert
+  // for this patient on this channel.
+  if (override && !override.is_active) {
+    return { status: "suppressed_for_patient", channel };
+  }
+  // Layer the override per-field over the global; null override fields
+  // inherit from the global.
+  const msg = {
+    subject: override?.subject ?? global.subject,
+    body_html: override?.body_html ?? global.body_html,
+    body_text: override?.body_text ?? global.body_text,
+  };
 
   // 3. Patient.
   const { data: patient, error: patientErr } = await supabase
