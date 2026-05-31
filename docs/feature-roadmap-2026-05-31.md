@@ -210,9 +210,12 @@ high-value items in Phases 2–5 have nowhere to read from.
   `rt`'s coarse `auth.users.role` stays `agent`; and the
   **`/admin/patients/:id/clinical-encounters`** API (append-only `POST`
   on `clinical.note.write` + `GET` on `clinical.read`; PHI-safe audit —
-  `patient_id` + `encounter_type` only, never the clinical content).
-  Next: the clinician portal shell (SPA — scoped patient list +
-  encounter form).
+  `patient_id` + `encounter_type` only, never the clinical content); and
+  the **`/admin/clinical`** clinician portal (patient lookup → encounter
+  timeline + a document-an-encounter form; nav gated on `clinical.read`).
+  **✅ F3 complete.** (A scoped "flagged patient" list, sourced from the
+  therapy-fleet worklist, is a natural Phase-3 RT enrichment.) Next
+  foundation: **F4 (unified work-items + cases)**.
 
 ### F4 · Unified work-item model + lightweight case object — **L**
 

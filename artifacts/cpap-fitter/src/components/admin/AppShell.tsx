@@ -230,6 +230,14 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         badgeKey: "newPatientDocuments",
       },
       {
+        href: "/admin/clinical",
+        label: "Clinical encounters",
+        icon: HeartPulse,
+        matchPrefix: "/admin/clinical",
+        hint: "Document + review patient clinical encounters (RT)",
+        requiredPermission: "clinical.read",
+      },
+      {
         href: "/admin/providers",
         label: "Providers",
         icon: HeartHandshake,
