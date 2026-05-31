@@ -370,6 +370,50 @@ router.post("/email/click", emailClickLimiter, async (req, res) => {
             );
           return;
         }
+        if (result.status === "coverage_blocked") {
+          // Coverage guard held the reship (inactive plan / PA required
+          // on the last 271). order-flow already raised a CSR alert and
+          // left the episode pending. Route the conversation to the CSR
+          // queue, audit the block, and render the same truthful
+          // "we'll review" page (200, not an error).
+          const { error: covErr } = await supabase
+            .schema("resupply")
+            .from("conversations")
+            .update({
+              status: "awaiting_admin",
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", conversationId);
+          if (covErr) throw covErr;
+          await safeAudit({
+            action: "messaging.order.blocked_coverage",
+            adminEmail: null,
+            adminUserId: null,
+            targetTable: "episodes",
+            targetId: result.episodeId,
+            metadata: {
+              channel: "email",
+              conversation_id: conversationId,
+              patient_id: result.patientId,
+              episode_id: result.episodeId,
+              coverage_reason: result.coverage.reason,
+              eligibility_check_id: result.coverage.eligibilityCheckId,
+              via: "email_link",
+            },
+            ip: req.ip ?? null,
+            userAgent: req.get("user-agent") ?? null,
+          });
+          res
+            .status(200)
+            .type("text/html")
+            .send(
+              renderClickConfirmation({
+                practiceName: cfg.practiceName,
+                action: "review",
+              }),
+            );
+          return;
+        }
         res
           .status(400)
           .type("text/html")

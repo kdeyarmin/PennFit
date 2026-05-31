@@ -49,6 +49,7 @@ import {
 } from "@workspace/resupply-db";
 
 import { resolveFulfillmentSku } from "../backorder/resolve-fulfillment-sku";
+import { getCachedEligibility } from "../billing/eligibility-verifier";
 import {
   resolveSkuEntitlement,
   type SkuEntitlement,
@@ -65,6 +66,25 @@ export interface NotEligibleEntitlement {
   hcpcsCode: string;
 }
 
+export interface CoverageBlock {
+  /** Why the confirmation was held for CSR review. */
+  reason: "inactive" | "prior_auth_required";
+  /** Payer display name from the patient's primary coverage. */
+  payerName: string;
+  /** The `eligibility_checks` row the decision was read from. */
+  eligibilityCheckId: string;
+}
+
+/**
+ * How far back a parsed 271 stays usable for the order-time coverage
+ * consult. 270s are run intermittently (not on a continuous refresh),
+ * so a same-day window would almost always miss; 45 days is recent
+ * enough that a plan-year flip is unlikely to be masked, while still
+ * letting a check run a few weeks ago count. Stale → treated as
+ * "no opinion" (fail open).
+ */
+const COVERAGE_FRESHNESS_MS = 45 * 24 * 60 * 60 * 1000;
+
 export type PlaceOrderResult =
   | {
       status: "ok";
@@ -78,6 +98,12 @@ export type PlaceOrderResult =
       patientId: string;
       episodeId: string;
       entitlement: NotEligibleEntitlement;
+    }
+  | {
+      status: "coverage_blocked";
+      patientId: string;
+      episodeId: string;
+      coverage: CoverageBlock;
     }
   | { status: "conversation_not_found" }
   | { status: "episode_not_found" }
@@ -186,6 +212,43 @@ export async function placeResupplyOrderForConversation(
           errName: err instanceof Error ? err.name : "unknown",
         },
         "resupply: entitlement check failed; allowing confirmation (fail open)",
+      );
+    }
+  }
+
+  // 3c. Coverage guard (feature-flagged). Before we ship, consult the
+  // most recent parsed 270/271 for the patient's PRIMARY coverage. An
+  // explicitly inactive plan or a prior-auth-required flag means the
+  // claim would deny and leave the patient with the bill, so we hold
+  // the confirmation for a CSR instead of auto-shipping. FAIL OPEN: no
+  // coverage on file, no/stale parsed result, or ANY lookup error
+  // allows the confirmation through — we never strand a legitimate
+  // reorder on our own eligibility plumbing. Runs before the atomic
+  // claim so a blocked episode is left untouched (stays pending) for
+  // the CSR to work, exactly like the entitlement guard above.
+  if (await isFeatureEnabled("resupply.eligibility_enforcement")) {
+    try {
+      const block = await consultCoverageEligibility(
+        supabase,
+        episode.patient_id,
+      );
+      if (block) {
+        await raiseCoverageAlert(supabase, episode.patient_id, block);
+        return {
+          status: "coverage_blocked",
+          patientId: episode.patient_id,
+          episodeId: episode.id,
+          coverage: block,
+        };
+      }
+    } catch (err) {
+      logger.warn(
+        {
+          event: "resupply.coverage.check_failed",
+          episodeId: episode.id,
+          errName: err instanceof Error ? err.name : "unknown",
+        },
+        "resupply: coverage check failed; allowing confirmation (fail open)",
       );
     }
   }
@@ -363,6 +426,120 @@ async function raiseTooSoonAlert(
         errName: err instanceof Error ? err.name : "unknown",
       },
       "resupply: failed to raise too-soon CSR alert",
+    );
+  }
+}
+
+/**
+ * Pure coverage decision from a parsed 271 row. Exported for unit
+ * testing the decision matrix independently of the DB reads (mirrors
+ * how the entitlement decision lives in a pure domain fn).
+ *
+ * Returns a `CoverageBlock` ONLY on an explicit negative signal
+ * (`is_active === false`, or `requires_prior_auth === true`). A null
+ * row, or any field that is null/unknown/positive, returns null → no
+ * opinion → the order proceeds (fail open).
+ */
+export function decideCoverageBlock(
+  elig: {
+    id: string;
+    is_active: boolean | null;
+    requires_prior_auth: boolean | null;
+  } | null,
+  payerName: string,
+): CoverageBlock | null {
+  if (!elig) return null;
+  if (elig.is_active === false) {
+    return { reason: "inactive", payerName, eligibilityCheckId: elig.id };
+  }
+  if (elig.requires_prior_auth === true) {
+    return {
+      reason: "prior_auth_required",
+      payerName,
+      eligibilityCheckId: elig.id,
+    };
+  }
+  return null;
+}
+
+/**
+ * Consult the most recent parsed 270/271 for the patient's PRIMARY
+ * insurance coverage. Returns a `CoverageBlock` when the coverage is
+ * explicitly inactive or flags prior-auth-required, else null.
+ *
+ * FAIL OPEN by omission: a patient with no coverage on file (cash-pay),
+ * no parsed result, or a result older than `COVERAGE_FRESHNESS_MS`
+ * returns null → the order proceeds. A thrown DB error propagates to
+ * the caller's fail-open catch.
+ */
+async function consultCoverageEligibility(
+  supabase: ResupplySupabaseClient,
+  patientId: string,
+): Promise<CoverageBlock | null> {
+  const { data: coverage, error: covErr } = await supabase
+    .schema("resupply")
+    .from("insurance_coverages")
+    .select("id, payer_name")
+    .eq("patient_id", patientId)
+    .eq("rank", "primary")
+    .limit(1)
+    .maybeSingle();
+  if (covErr) throw covErr;
+  if (!coverage) return null; // no coverage on file → no opinion
+
+  const elig = await getCachedEligibility(coverage.id, COVERAGE_FRESHNESS_MS);
+  return decideCoverageBlock(elig, coverage.payer_name);
+}
+
+/**
+ * Best-effort CSR alert when the coverage guard blocks a reorder.
+ * Mirrors `raiseTooSoonAlert`: NEVER throws into the caller (a failed
+ * alert must not turn a clean "coverage_blocked" return into a 500 on
+ * the patient's confirm), and de-dupes against the existing open alert
+ * via the `(patient_id, alert_type) WHERE status='open'` partial unique
+ * index so a repeat confirm doesn't 23505.
+ */
+async function raiseCoverageAlert(
+  supabase: ResupplySupabaseClient,
+  patientId: string,
+  block: CoverageBlock,
+): Promise<void> {
+  try {
+    const { data: existing } = await supabase
+      .schema("resupply")
+      .from("csr_compliance_alerts")
+      .select("id")
+      .eq("patient_id", patientId)
+      .eq("alert_type", "resupply_coverage_blocked")
+      .eq("status", "open")
+      .limit(1)
+      .maybeSingle();
+    if (existing) return;
+    const summary =
+      block.reason === "inactive"
+        ? `Reorder held — ${block.payerName} coverage is inactive on the last eligibility check. Verify coverage before shipping.`
+        : `Reorder held — ${block.payerName} requires prior authorization on the last eligibility check. Confirm PA before shipping.`;
+    await supabase
+      .schema("resupply")
+      .from("csr_compliance_alerts")
+      .insert({
+        patient_id: patientId,
+        alert_type: "resupply_coverage_blocked",
+        severity: "warning",
+        summary,
+        metric_snapshot: {
+          reason: block.reason,
+          payerName: block.payerName,
+          eligibilityCheckId: block.eligibilityCheckId,
+        } as unknown as Json,
+      });
+  } catch (err) {
+    logger.warn(
+      {
+        event: "resupply.coverage.alert_failed",
+        errName: err instanceof Error ? err.name : "unknown",
+      },
+      "resupply: failed to raise coverage-blocked CSR alert",
     );
   }
 }
