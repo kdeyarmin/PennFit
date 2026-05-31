@@ -40,13 +40,13 @@ jobs:
         # the cwd succeeds.
         #
         # The version must match the `packageManager` / `engines.pnpm` pin in
-        # the root `package.json` (currently `pnpm@11.4.0` / `>=11.0.0`).
+        # the root `package.json` (currently `pnpm@11.5.0` / `>=11.0.0`).
         # Installing an older pnpm here trips `ERR_PNPM_UNSUPPORTED_ENGINE` at
         # `pnpm install` time. ci.yml uses the same pin via $PNPM_VERSION.
         working-directory: ${{ github.workspace }}
         run: |
           corepack disable pnpm 2>/dev/null || true
-          npm install -g pnpm@11.4.0
+          npm install -g pnpm@11.5.0
           pnpm --version
 
       - name: Set up Node.js
