@@ -20,6 +20,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { CheckCircle2, Star } from "lucide-react";
 import { useDocumentTitle } from "@/hooks/use-document-title";
+import { csrfHeader } from "@/lib/csrf";
 
 function readSearchParam(name: string): string | null {
   if (typeof window === "undefined") return null;
@@ -62,6 +63,7 @@ export function NpsLanding() {
           headers: {
             Accept: "application/json",
             "Content-Type": "application/json",
+            ...csrfHeader(),
           },
           body: JSON.stringify({ token }),
         });
@@ -89,6 +91,7 @@ export function NpsLanding() {
         headers: {
           Accept: "application/json",
           "Content-Type": "application/json",
+          ...csrfHeader(),
         },
         body: JSON.stringify({ token, comment: comment.trim() }),
       });

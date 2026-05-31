@@ -523,12 +523,14 @@ function AddInsuranceCoverageModal({
         planName: planName.trim() || null,
         memberId: memberId.trim(),
         groupNumber: groupNumber.trim() || null,
-        deductibleCents: deductibleDollars
-          ? Math.round(Number(deductibleDollars) * 100)
-          : null,
-        copayCents: copayDollars
-          ? Math.round(Number(copayDollars) * 100)
-          : null,
+        deductibleCents:
+          deductibleDollars && Number.isFinite(Number(deductibleDollars))
+            ? Math.round(Number(deductibleDollars) * 100)
+            : null,
+        copayCents:
+          copayDollars && Number.isFinite(Number(copayDollars))
+            ? Math.round(Number(copayDollars) * 100)
+            : null,
       };
       return createInsuranceCoverage(patientId, body);
     },

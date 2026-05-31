@@ -12,6 +12,7 @@ import { Button } from "@/components/admin/Button";
 import { Card, KpiCard } from "@/components/admin/Card";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { Spinner } from "@/components/admin/Spinner";
+import { csrfHeader } from "@/lib/csrf";
 
 const BASE = "/resupply-api";
 
@@ -58,6 +59,7 @@ async function postJSON<T>(path: string): Promise<T> {
     headers: {
       Accept: "application/json",
       "Content-Type": "application/json",
+      ...csrfHeader(),
     },
     body: "{}",
   });

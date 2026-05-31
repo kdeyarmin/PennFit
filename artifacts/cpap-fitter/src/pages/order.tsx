@@ -899,35 +899,6 @@ export function Order() {
               </div>
             </div>
 
-            <div className="flex items-start gap-3">
-              <Checkbox
-                id="consent-to-contact"
-                data-testid="checkbox-consent"
-                checked={consentValue}
-                onCheckedChange={(checked) =>
-                  setValue("consentToContact", checked === true, {
-                    shouldValidate: isSubmitted,
-                  })
-                }
-                className="mt-0.5"
-              />
-              <div className="flex-1 space-y-1">
-                <Label
-                  htmlFor="consent-to-contact"
-                  className="text-sm leading-snug font-normal cursor-pointer"
-                >
-                  I authorize Penn Home Medical Supply to contact me about this
-                  order and ongoing resupply, and to store the order details
-                  above as described.
-                </Label>
-                {isSubmitted && errors.consentToContact && (
-                  <p className="text-xs text-destructive mt-1">
-                    {errors.consentToContact.message}
-                  </p>
-                )}
-              </div>
-            </div>
-
             <div className="flex items-start gap-3 text-xs text-muted-foreground">
               <ShieldCheck className="w-4 h-4 mt-0.5 text-primary shrink-0" />
               <p>

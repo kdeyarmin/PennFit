@@ -3,6 +3,8 @@
 
 import { ApiError } from "@workspace/api-client-react/admin";
 
+import { csrfHeader } from "../csrf";
+
 export interface ReportPreset {
   id: string;
   name: string;
@@ -45,9 +47,13 @@ async function jsonFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
   const method = (init.method ?? "GET").toUpperCase();
   const url = `/resupply-api${path}`;
   const res = await fetch(url, {
-    credentials: "include",
-    headers: { Accept: "application/json", ...(init.headers ?? {}) },
     ...init,
+    credentials: "include",
+    headers: {
+      Accept: "application/json",
+      ...(init.headers ?? {}),
+      ...csrfHeader(),
+    },
   });
   if (!res.ok) {
     let data: unknown = null;

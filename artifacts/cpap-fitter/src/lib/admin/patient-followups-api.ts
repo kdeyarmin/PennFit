@@ -3,6 +3,8 @@
 
 import { ApiError } from "@workspace/api-client-react/admin";
 
+import { csrfHeader } from "../csrf";
+
 export interface AdminPatientFollowup {
   id: string;
   body: string;
@@ -70,6 +72,7 @@ export async function createAdminPatientFollowup(
       headers: {
         "Content-Type": "application/json",
         Accept: "application/json",
+        ...csrfHeader(),
       },
       body: JSON.stringify({ body, dueAt: dueAt.toISOString() }),
     },
@@ -92,7 +95,7 @@ export async function completeAdminPatientFollowup(
     `/resupply-api/patients/${encodeURIComponent(patientId)}/followups/${encodeURIComponent(followupId)}/complete`,
     {
       method: "PATCH",
-      headers: { Accept: "application/json" },
+      headers: { Accept: "application/json", ...csrfHeader() },
     },
   );
   if (res.status === 404) {

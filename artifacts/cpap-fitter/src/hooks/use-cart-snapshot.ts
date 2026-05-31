@@ -25,6 +25,7 @@
 import { useEffect, useRef } from "react";
 
 import { useShopIdentity } from "@/lib/identity";
+import { csrfHeader } from "@/lib/csrf";
 import { useCart, type CartItem } from "./use-cart";
 
 const DEBOUNCE_MS = 3000;
@@ -121,7 +122,7 @@ export function useCartSnapshotSync(): void {
             const res = await fetch(SNAPSHOT_PATH, {
               method: "DELETE",
               credentials: "include",
-              headers: { Accept: "application/json" },
+              headers: { Accept: "application/json", ...csrfHeader() },
             });
             if (res.status === 401) {
               disabled.current = true;
@@ -137,6 +138,7 @@ export function useCartSnapshotSync(): void {
               headers: {
                 Accept: "application/json",
                 "Content-Type": "application/json",
+                ...csrfHeader(),
               },
               body: JSON.stringify(body),
             });

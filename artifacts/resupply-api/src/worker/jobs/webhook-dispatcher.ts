@@ -88,13 +88,25 @@ export async function runWebhookDispatcher(
   if (!candidates || candidates.length === 0) return stats;
 
   // Step 2: atomic claim. Bump next_attempt_at on these rows IF
-  // they're still queued. PostgREST runs this as a single UPDATE,
-  // and the .eq("status","queued") guard means an overlapping tick
-  // sees its claim fail for any row we won — RETURNING (.select)
-  // gives us only the rows we successfully leased. The lease bumps
-  // next_attempt_at past the cron window so the row is invisible
-  // to other ticks while we work on it; on worker crash, the lease
-  // expires and the next tick picks the row up.
+  // they're still queued AND still due. PostgREST runs this as a
+  // single UPDATE; RETURNING (.select) gives us only the rows we
+  // successfully leased.
+  //
+  // Exclusivity against an OVERLAPPING tick (one that already ran
+  // its candidate SELECT before we committed) hinges on the
+  // `next_attempt_at <= nowIso` guard, NOT on the status guard:
+  // we deliberately keep status='queued' (so a worker crash leaves
+  // the row recoverable on the next tick), which means status alone
+  // is unchanged by the claim and a concurrent UPDATE re-checking
+  // `status='queued'` would still match → double delivery. By also
+  // guarding on `next_attempt_at <= nowIso`, our bump to `leaseUntil`
+  // (CLAIM_LEASE_MS into the future) makes the row fail the other
+  // tick's re-evaluated WHERE (Postgres re-applies an UPDATE's
+  // qualifier against the latest committed row version once the row
+  // lock is released), so exactly one tick wins each row. The same
+  // future bump also hides the row from the next tick's candidate
+  // SELECT; on worker crash the lease expires and the row is picked
+  // up again.
   const leaseUntil = new Date(Date.now() + CLAIM_LEASE_MS).toISOString();
   const candidateIds = candidates.map((c) => c.id);
   const { data: deliveries, error: claimErr } = await supabase
@@ -103,6 +115,7 @@ export async function runWebhookDispatcher(
     .update({ next_attempt_at: leaseUntil, updated_at: nowIso })
     .in("id", candidateIds)
     .eq("status", "queued")
+    .lte("next_attempt_at", nowIso)
     .select("id, subscription_id, event_type, event_payload, attempt_count");
   if (claimErr) throw claimErr;
   if (!deliveries || deliveries.length === 0) return stats;

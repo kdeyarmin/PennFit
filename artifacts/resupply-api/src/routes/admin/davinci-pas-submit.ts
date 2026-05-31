@@ -33,7 +33,12 @@ import {
 
 import { resolveBillingIdentity } from "../../lib/billing/identity-resolver";
 import { logger } from "../../lib/logger";
-import { assertSafeOutboundUrlSync, SsrfError } from "../../lib/safe-outbound";
+import {
+  assertSafeOutboundHost,
+  assertSafeOutboundUrlSync,
+  fetchWithPinnedIp,
+  SsrfError,
+} from "../../lib/safe-outbound";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
 
@@ -128,8 +133,14 @@ router.post(
     // outbound URL in this codebase is wrapped by safe-outbound; mirror
     // that here (https-only + reject internal/reserved hosts) so we
     // never POST the Bearer access token to an internal endpoint.
+    let pasUrl: URL;
+    let pasPinnedIp: string;
     try {
-      assertSafeOutboundUrlSync(payerProfile.davinci_pas_endpoint_url);
+      pasUrl = assertSafeOutboundUrlSync(payerProfile.davinci_pas_endpoint_url);
+      // Resolve + pin the host now so the POST below can't be DNS-rebound
+      // to an internal IP between this check and connect time — the access
+      // token is Bearer-forwarded, so a rebind would exfiltrate it.
+      pasPinnedIp = await assertSafeOutboundHost(pasUrl.hostname);
     } catch (err) {
       const reason = err instanceof SsrfError ? err.reason : "unsafe_url";
       logger.warn(
@@ -270,6 +281,21 @@ router.post(
       bundle: bundle.bundle,
       endpointUrl: payerProfile.davinci_pas_endpoint_url,
       accessToken,
+      // Pin to the IP vetted above. The client appends /Claim/$submit and
+      // re-resolves DNS, so without pinning the validated hostname could
+      // rebind to internal space at connect time.
+      fetchImpl: (input, init) =>
+        fetchWithPinnedIp(
+          fetch,
+          typeof input === "string"
+            ? input
+            : input instanceof URL
+              ? input.href
+              : input.url,
+          pasPinnedIp,
+          pasUrl.hostname,
+          init,
+        ),
     });
 
     const parsedDecision =

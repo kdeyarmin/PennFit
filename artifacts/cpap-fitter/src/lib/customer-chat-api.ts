@@ -9,6 +9,8 @@
 // long-lived SSE is the failure-prone link, so any pre-chunk failure
 // transparently re-tries the JSON endpoint.
 
+import { csrfHeader } from "./csrf";
+
 export interface CustomerChatMessage {
   role: "user" | "assistant";
   content: string;
@@ -45,7 +47,11 @@ export async function postCustomerChatMessage(
   const res = await fetch(ENDPOINT, {
     method: "POST",
     credentials: "include",
-    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+      ...csrfHeader(),
+    },
     body: JSON.stringify({ messages }),
     signal,
   });
@@ -113,6 +119,7 @@ export async function streamCustomerChatMessage(
       headers: {
         "Content-Type": "application/json",
         Accept: "text/event-stream",
+        ...csrfHeader(),
       },
       body: JSON.stringify({ messages }),
       signal,

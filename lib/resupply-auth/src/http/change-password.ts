@@ -11,7 +11,7 @@ import { z } from "zod";
 
 import { writeUserChosenPassword } from "../credential-writes";
 import { checkCsrf } from "../csrf";
-import { hashPassword, verifyPassword } from "../password";
+import { hashPassword, verifyPasswordCredential } from "../password";
 import { validatePassword } from "../password-policy";
 
 import { authError } from "./responses";
@@ -76,9 +76,12 @@ export function makeChangePasswordHandler(deps: AuthDeps) {
       return;
     }
 
-    const ok = await verifyPassword(
+    // Use the algo-dispatch layer (same path as sign-in) rather than
+    // raw argon2 verify, so a future non-default credential algorithm is
+    // honored here too instead of silently failing to verify.
+    const { ok } = await verifyPasswordCredential(
       parsed.data.currentPassword,
-      cred.passwordHash,
+      cred,
     );
     if (!ok) {
       void deps.audit({
