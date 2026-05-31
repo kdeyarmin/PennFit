@@ -36,6 +36,7 @@ import inboundFaxesRouter from "./admin/inbound-faxes.js";
 import inboundReferralsRouter from "./admin/inbound-referrals.js";
 import equipmentRecallsRouter from "./admin/equipment-recalls.js";
 import analyticsRouter from "./admin/analytics.js";
+import analyticsMarginRouter from "./admin/analytics-margin.js";
 import rtOverviewRouter from "./admin/rt-overview.js";
 import productivityRouter from "./admin/productivity.js";
 import patientDocumentsRetentionRouter from "./admin/patient-documents-retention.js";
@@ -599,6 +600,10 @@ router.use(equipmentRecallsRouter);
 // analytics at /admin/storefront/analytics which covers orders +
 // email health + mask popularity.
 router.use(analyticsRouter);
+// /admin/analytics/margin — gross-margin / COGS dashboard (Owner #1).
+// Folds the F1 cost snapshots on shop_order_items through the shared
+// margin core; keeps the costed/uncosted revenue split explicit.
+router.use(analyticsMarginRouter);
 // /admin/rt-overview — respiratory-therapist at-a-glance board.
 // Reads patient_therapy_links + patient_therapy_nights +
 // patient_smart_trigger_events for the daily clinical review.

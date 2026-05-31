@@ -510,6 +510,14 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         hint: "At-a-glance therapy board: alerts, AHI, leak, usage",
       },
       {
+        href: "/admin/analytics/margin",
+        label: "Margin & COGS",
+        icon: CircleDollarSign,
+        matchPrefix: "/admin/analytics/margin",
+        hint: "Gross margin and % by product and overall, from captured cost",
+        requiredPermission: "cost.read",
+      },
+      {
         href: "/admin/analytics",
         label: "Clinical Analytics",
         icon: Activity,

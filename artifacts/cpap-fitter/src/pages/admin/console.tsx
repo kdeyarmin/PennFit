@@ -125,6 +125,11 @@ const AdminAnalyticsPage = lazy(() =>
     default: m.AdminAnalyticsPage,
   })),
 );
+const AdminAnalyticsMarginPage = lazy(() =>
+  import("@/pages/admin/admin-analytics-margin").then((m) => ({
+    default: m.AdminAnalyticsMarginPage,
+  })),
+);
 const AdminTherapyUsageReportPage = lazy(() =>
   import("@/pages/admin/admin-therapy-usage-report").then((m) => ({
     default: m.AdminTherapyUsageReportPage,
@@ -666,6 +671,10 @@ function AdminConsole() {
             <Route
               path="/admin/equipment-recalls"
               component={AdminEquipmentRecallsPage}
+            />
+            <Route
+              path="/admin/analytics/margin"
+              component={AdminAnalyticsMarginPage}
             />
             <Route path="/admin/analytics" component={AdminAnalyticsPage} />
             <Route
