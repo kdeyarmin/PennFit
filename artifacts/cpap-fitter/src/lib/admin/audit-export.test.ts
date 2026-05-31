@@ -199,3 +199,68 @@ describe("downloadAuditExport — success path", () => {
     expect(rowCountApprox).toBe(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// rowCountApprox — empty-line filtering (PR fix)
+// ---------------------------------------------------------------------------
+//
+// The PR changed the row-count calculation from:
+//   text.split("\n").length - 1
+// to:
+//   text.split("\n").filter(line => line.length > 0).length - 1
+//
+// This matters because the server emits a trailing newline at the end of
+// every CSV. The old code over-counted by 1 for every export, and reported
+// 1 instead of 0 for a header-only export.
+
+describe("downloadAuditExport — rowCountApprox empty-line filtering", () => {
+  it("trailing newline does not inflate the count (3 data rows stays 3)", async () => {
+    // "header\nrow1\nrow2\nrow3\n" → split gives 5 elements (last is "")
+    // old code: 5 - 1 = 4 (WRONG), new code: 4 non-empty - 1 = 3 (CORRECT)
+    fetchMock.mockResolvedValue(
+      makeOkResponse("date,action\nrow1\nrow2\nrow3\n"),
+    );
+    const { rowCountApprox } = await downloadAuditExport({});
+    expect(rowCountApprox).toBe(3);
+  });
+
+  it("header-only CSV with trailing newline returns 0 (not 1)", async () => {
+    // "date,action\n" → split gives ["date,action", ""]
+    // old code: 2 - 1 = 1 (WRONG — looks like 1 row), new code: 1 - 1 = 0 (CORRECT)
+    fetchMock.mockResolvedValue(makeOkResponse("date,action\n"));
+    const { rowCountApprox } = await downloadAuditExport({});
+    expect(rowCountApprox).toBe(0);
+  });
+
+  it("multiple trailing newlines still return the correct count", async () => {
+    // "header\nrow1\n\n" → split gives ["header", "row1", "", ""]
+    // old code: 4 - 1 = 3 (WRONG), new code: 2 non-empty - 1 = 1 (CORRECT)
+    fetchMock.mockResolvedValue(makeOkResponse("date,action\nrow1\n\n"));
+    const { rowCountApprox } = await downloadAuditExport({});
+    expect(rowCountApprox).toBe(1);
+  });
+
+  it("completely empty CSV body returns 0", async () => {
+    // "" → split gives [""], filter gives [], length 0 - 1 = -1 → max(0, -1) = 0
+    fetchMock.mockResolvedValue(makeOkResponse(""));
+    const { rowCountApprox } = await downloadAuditExport({});
+    expect(rowCountApprox).toBe(0);
+  });
+
+  it("CSV with blank lines interspersed does not count blank lines as rows", async () => {
+    // Some export tools may emit blank separator lines; they must be ignored.
+    // "header\n\nrow1\n\nrow2\n" → non-empty: ["header", "row1", "row2"] → 3 - 1 = 2
+    fetchMock.mockResolvedValue(
+      makeOkResponse("date,action\n\nrow1\n\nrow2\n"),
+    );
+    const { rowCountApprox } = await downloadAuditExport({});
+    expect(rowCountApprox).toBe(2);
+  });
+
+  it("single data row with trailing newline returns 1", async () => {
+    // "header\nrow1\n" → non-empty: ["header", "row1"] → 2 - 1 = 1
+    fetchMock.mockResolvedValue(makeOkResponse("date,action\nrow1\n"));
+    const { rowCountApprox } = await downloadAuditExport({});
+    expect(rowCountApprox).toBe(1);
+  });
+});

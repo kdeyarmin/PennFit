@@ -79,3 +79,40 @@ describe("identity.tsx — sign-out safety properties", () => {
     expect(cartClearPos).toBeGreaterThan(serverSignOutPos);
   });
 });
+
+// ---------------------------------------------------------------------------
+// SESSION_QUERY_KEY namespacing (PR change)
+// ---------------------------------------------------------------------------
+//
+// The PR replaced the hardcoded `["auth","me"]` query key with the
+// exported `SESSION_QUERY_KEY` constant from `./auth-hooks`. This ensures
+// the storefront surface uses its own namespaced key
+// (`["auth","me","storefront"]`) rather than the bare default, preventing
+// cache collisions with the admin surface when they share a QueryClient.
+
+describe("identity.tsx — SESSION_QUERY_KEY namespacing (PR regression guard)", () => {
+  it("imports SESSION_QUERY_KEY from ./auth-hooks", () => {
+    // The named import must be present — the storefront surface must not
+    // rely on a different module's key or define its own inline constant.
+    expect(SRC).toMatch(
+      /import\s*\{[^}]*SESSION_QUERY_KEY[^}]*\}\s*from\s*["']\.\/auth-hooks["']/,
+    );
+  });
+
+  it("uses SESSION_QUERY_KEY in the invalidateQueries call during sign-out", () => {
+    // The cache invalidation must reference the imported constant, not a
+    // hardcoded literal, so both identity.tsx and auth-hooks.ts stay in sync.
+    expect(SRC).toContain(
+      "queryClient.invalidateQueries({ queryKey: SESSION_QUERY_KEY })",
+    );
+  });
+
+  it("does NOT contain a hardcoded [\"auth\",\"me\"] array literal in the invalidation call", () => {
+    // Regression guard: the old code passed a literal that didn't match the
+    // admin surface's key. If someone reverts to a literal, this catches it.
+    // We allow the string to appear in comments but not in a queryKey argument.
+    const queryKeyLiteralPattern =
+      /queryKey:\s*\[\s*["']auth["']\s*,\s*["']me["']\s*\]/;
+    expect(SRC).not.toMatch(queryKeyLiteralPattern);
+  });
+});
