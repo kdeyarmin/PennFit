@@ -528,9 +528,14 @@ describe("GET /admin/reports/therapy-usage — aggregation via real aggregator",
     // Real CMS rule: ≥4h (240 min) on ≥21 of 30 consecutive calendar days.
     // patient-A: 5 consecutive nights ≥240 min → 5/30 = 17% → NOT compliant.
     // patient-B: 21 consecutive nights ≥240 min → 21/30 = 70% → compliant.
+    //
+    // Nights must fall within the recent 90-day CMS horizon (asOf − 89d), so
+    // we compute dates relative to today rather than using fixed month strings.
+    const toIso = (ms: number) => new Date(ms).toISOString().slice(0, 10);
+    const startMs = Date.now() - 80 * 86_400_000; // 80 days ago, inside the horizon
     const paNights = Array.from({ length: 5 }, (_, i) => ({
       patient_id: "patient-A",
-      night_date: `2026-01-${String(i + 1).padStart(2, "0")}`,
+      night_date: toIso(startMs + i * 86_400_000),
       source: "device",
       usage_minutes: 300,
       ahi: null,
@@ -538,7 +543,7 @@ describe("GET /admin/reports/therapy-usage — aggregation via real aggregator",
     }));
     const pbNights = Array.from({ length: 21 }, (_, i) => ({
       patient_id: "patient-B",
-      night_date: `2026-01-${String(i + 1).padStart(2, "0")}`,
+      night_date: toIso(startMs + i * 86_400_000),
       source: "device",
       usage_minutes: 300,
       ahi: null,

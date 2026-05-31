@@ -32,6 +32,7 @@ import { Router, type IRouter } from "express";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
+import { therapyNightSourceRank } from "../../lib/therapy-night-source-priority";
 import { requireSignedIn } from "../../middlewares/requireSignedIn";
 
 const router: IRouter = Router();
@@ -45,15 +46,6 @@ const WINDOW_NIGHTS = 30;
  *  counts as a compliant night. The 70%-of-nights rollup is computed
  *  in the projection. */
 const COMPLIANT_HOURS_PER_NIGHT = 4;
-
-/** Source priority when the same night exists from multiple feeds.
- *  Devices first, then apps, then manual entry. Lower index wins. */
-const SOURCE_PRIORITY: Record<string, number> = {
-  resmed_airview: 0,
-  philips_care: 1,
-  health_connect: 2,
-  manual: 3,
-};
 
 interface TherapyNightProjection {
   date: string;
@@ -193,9 +185,12 @@ function projectNights(rows: TherapyNightRow[]): TherapySummaryResponse {
       byDate.set(row.night_date, row);
       continue;
     }
-    const newRank = SOURCE_PRIORITY[row.source] ?? 99;
-    const oldRank = SOURCE_PRIORITY[existing.source] ?? 99;
-    if (newRank < oldRank) byDate.set(row.night_date, row);
+    if (
+      therapyNightSourceRank(row.source) <
+      therapyNightSourceRank(existing.source)
+    ) {
+      byDate.set(row.night_date, row);
+    }
   }
 
   // Trim to the most recent WINDOW_NIGHTS dates. Sorting descending

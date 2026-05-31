@@ -19,14 +19,19 @@
 //      nights), but the headline SUMMARY counts every patient — and
 //      every night — exactly once.
 //   2. "CMS compliant" means the real CMS rule (≥4h on ≥70% of nights
-//      across a consecutive 30-day window), evaluated per patient via
-//      the same `findBestAdherenceWindow` the on-file attestation uses
-//      — NOT "≥70% of whatever rows happened to land in the window".
-//      That keeps a physician-facing compliance share honest.
+//      across a consecutive 30-day window), evaluated per patient with
+//      the same vetted `findBestAdherenceWindow` helper — NOT "≥70% of
+//      whatever rows happened to land in the window". Because this is a
+//      *current-adherence* snapshot (not the one-time Medicare initial-
+//      90-day attestation), the probe is anchored to the RECENT 90-day
+//      horizon (see step 2 below), so a long report window can't make
+//      the headline reflect compliance from months ago. That keeps a
+//      physician-facing compliance share both honest and current.
 
 import {
   findBestAdherenceWindow,
   COMPLIANT_MINUTES_PER_NIGHT,
+  ATTESTATION_HORIZON_DAYS,
   type AdherenceNight,
 } from "../compliance-attestation";
 
@@ -179,6 +184,13 @@ function rate(numerator: number, denominator: number): number | null {
   return denominator > 0 ? round(numerator / denominator, 4) : null;
 }
 
+/** `isoDate` (YYYY-MM-DD) shifted back `days` calendar days, in UTC.
+ *  Pure: derived only from the passed date, never Date.now(). */
+function isoDaysBefore(isoDate: string, days: number): string {
+  const ms = Date.parse(`${isoDate}T00:00:00Z`) - days * 86_400_000;
+  return new Date(ms).toISOString().slice(0, 10);
+}
+
 export function aggregateTherapyUsageReport(
   input: AggregateTherapyUsageInput,
 ): TherapyUsageReportResult {
@@ -195,19 +207,37 @@ export function aggregateTherapyUsageReport(
     arr.push(night);
   }
 
-  // 2. Compute CMS compliance ONCE per patient using the real rule —
-  //    the same vetted helper the on-file attestation uses. It searches
-  //    for a qualifying 30-day window (≥4h on ≥70% of calendar days) in
-  //    the 90-day probe horizon anchored at the patient's first pulled
-  //    night. This is the genuine CMS definition, NOT "≥70% of whatever
-  //    rows landed in the report window".
+  // 2. Compute CMS compliance ONCE per patient using the real rule:
+  //    findBestAdherenceWindow searches for a qualifying 30-day window
+  //    (≥4h on ≥70% of calendar days) in a 90-day probe horizon. It only
+  //    ever examines 90 days starting at its anchor, so the anchor choice
+  //    decides WHICH 90 days are scored.
+  //
+  //    We anchor to the RECENT horizon — (asOf − 89 days), clamped
+  //    forward to the patient's earliest pulled night — NOT to the first
+  //    pulled night. Anchoring at the first pulled night made a 180/365-
+  //    day report score the OLDEST 90 days of the window (compliance as
+  //    of many months ago) instead of how the patient is doing now. This
+  //    report is a current-adherence snapshot, so we probe the most
+  //    recent 90 days; a qualifying 30-day window inside that horizon is
+  //    what "CMS compliant" means here. (This is intentionally distinct
+  //    from the on-file Medicare initial-90-day-of-therapy attestation,
+  //    which anchors at the patient's true therapy start.)
+  const recentHorizonStart = isoDaysBefore(
+    asOfDate,
+    ATTESTATION_HORIZON_DAYS - 1,
+  );
   const cmsCompliantPatient = new Set<string>();
   for (const [patientId, patientNights] of nightsByPatient) {
     const adherenceNights: AdherenceNight[] = patientNights
       .map((n) => ({ date: n.date, usageMinutes: n.usageMinutes }))
       .sort((a, b) => a.date.localeCompare(b.date));
-    const anchorDate = adherenceNights[0]?.date;
-    if (!anchorDate) continue;
+    const earliest = adherenceNights[0]?.date;
+    if (!earliest) continue;
+    // ISO date strings compare lexicographically; take the later of the
+    // recent-horizon start and the patient's first pulled night.
+    const anchorDate =
+      earliest > recentHorizonStart ? earliest : recentHorizonStart;
     const result = findBestAdherenceWindow(
       adherenceNights,
       anchorDate,
@@ -276,10 +306,21 @@ export function aggregateTherapyUsageReport(
     summary: {
       patientCount: summaryPatientCount,
       nightsWithData: summaryMetrics.nights,
-      avgUsageHours: mean(summaryMetrics.usageSum / 60, summaryMetrics.usageNights, 1),
+      avgUsageHours: mean(
+        summaryMetrics.usageSum / 60,
+        summaryMetrics.usageNights,
+        1,
+      ),
       avgAhi: mean(summaryMetrics.ahiSum, summaryMetrics.ahiNights, 1),
-      avgLeakRateLMin: mean(summaryMetrics.leakSum, summaryMetrics.leakNights, 1),
-      adherentNightRate: rate(summaryMetrics.adherentNights, summaryMetrics.nights),
+      avgLeakRateLMin: mean(
+        summaryMetrics.leakSum,
+        summaryMetrics.leakNights,
+        1,
+      ),
+      adherentNightRate: rate(
+        summaryMetrics.adherentNights,
+        summaryMetrics.nights,
+      ),
       cmsCompliantPatients: cmsCompliantPatient.size,
       cmsComplianceRate: rate(cmsCompliantPatient.size, summaryPatientCount),
     },

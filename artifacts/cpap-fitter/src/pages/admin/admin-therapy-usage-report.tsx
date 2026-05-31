@@ -52,7 +52,11 @@ const GROUPINGS: Array<{
 }> = [
   { value: "provider", label: "By provider", noun: "referring provider" },
   { value: "patient", label: "By patient", noun: "patient" },
-  { value: "manufacturer", label: "By manufacturer", noun: "device manufacturer" },
+  {
+    value: "manufacturer",
+    label: "By manufacturer",
+    noun: "device manufacturer",
+  },
 ];
 
 const WINDOWS = [30, 60, 90, 180, 365];
@@ -66,12 +70,14 @@ function pct(rate: number | null): string {
 
 function num(value: number | null, unit = ""): string {
   if (value == null) return "—";
-  return `${value}${unit}`;
+  // Fixed 1-decimal so a column never mixes "3" and "3.1" — the server
+  // already rounds these metrics to one decimal.
+  return `${value.toFixed(1)}${unit}`;
 }
 
 function hours(value: number | null): string {
   if (value == null) return "—";
-  return `${value}h`;
+  return `${value.toFixed(1)}h`;
 }
 
 function formatDate(iso: string): string {
@@ -136,10 +142,7 @@ export function AdminTherapyUsageReportPage() {
         </button>
       </div>
 
-      <div
-        data-print-hide
-        className="flex flex-wrap items-center gap-6 mb-8"
-      >
+      <div data-print-hide className="flex flex-wrap items-center gap-6 mb-8">
         <Segmented
           label="Pull"
           value={grouping}
@@ -329,13 +332,14 @@ function HeroStats({
       value: num(summary.avgAhi),
       foot:
         summary.avgLeakRateLMin != null
-          ? `Avg leak ${summary.avgLeakRateLMin} L/min`
+          ? `Avg leak ${summary.avgLeakRateLMin.toFixed(1)} L/min`
           : "Events per hour of therapy",
     },
   ];
 
   return (
-    <section className="grid grid-cols-2 gap-px sm:grid-cols-4 rounded-xl overflow-hidden"
+    <section
+      className="grid grid-cols-2 gap-px sm:grid-cols-4 rounded-xl overflow-hidden"
       style={{ backgroundColor: "hsl(var(--line-1))" }}
     >
       {stats.map((s, i) => (
@@ -409,7 +413,9 @@ function AdherenceChart({
         eyebrow="Compliance at a glance"
         title={`CMS-compliant patient share by ${groupingNoun}`}
       />
-      <div style={{ width: "100%", height: Math.max(chartData.length * 46, 140) }}>
+      <div
+        style={{ width: "100%", height: Math.max(chartData.length * 46, 140) }}
+      >
         <ResponsiveContainer width="100%" height="100%">
           <BarChart
             layout="vertical"
@@ -446,13 +452,20 @@ function AdherenceChart({
                 dataKey="rate"
                 position="right"
                 formatter={(v: number) => `${v}%`}
-                style={{ fontSize: 12, fontWeight: 600, fill: "hsl(222, 50%, 10%)" }}
+                style={{
+                  fontSize: 12,
+                  fontWeight: 600,
+                  fill: "hsl(222, 50%, 10%)",
+                }}
               />
             </Bar>
           </BarChart>
         </ResponsiveContainer>
       </div>
-      <p className="mt-1 text-[11px]" style={{ color: "hsl(var(--ink-muted))" }}>
+      <p
+        className="mt-1 text-[11px]"
+        style={{ color: "hsl(var(--ink-muted))" }}
+      >
         Green ≥ 70% (meeting CMS threshold) · gold 50–69% · rose &lt; 50%. Top{" "}
         {CHART_TOP_N} cohorts shown.
       </p>
@@ -476,14 +489,20 @@ function DetailTable({
       {groups.length === 0 ? (
         <p
           className="rounded-lg border border-dashed px-4 py-8 text-center text-sm"
-          style={{ borderColor: "hsl(var(--line-2))", color: "hsl(var(--ink-3))" }}
+          style={{
+            borderColor: "hsl(var(--line-2))",
+            color: "hsl(var(--ink-3))",
+          }}
         >
           No device-sourced therapy data in this window yet. As connected
           devices report, cohorts populate automatically.
         </p>
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full text-sm" style={{ borderCollapse: "collapse" }}>
+          <table
+            className="w-full text-sm"
+            style={{ borderCollapse: "collapse" }}
+          >
             <thead>
               <tr
                 style={{
@@ -665,10 +684,19 @@ function ReportFooter() {
   return (
     <footer
       className="flex flex-col gap-1 border-t pt-5 text-[11px]"
-      style={{ borderColor: "hsl(var(--line-1))", color: "hsl(var(--ink-muted))" }}
+      style={{
+        borderColor: "hsl(var(--line-1))",
+        color: "hsl(var(--ink-muted))",
+      }}
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <span style={{ fontFamily: "var(--report-serif)", fontSize: "13px", color: "hsl(var(--penn-navy))" }}>
+        <span
+          style={{
+            fontFamily: "var(--report-serif)",
+            fontSize: "13px",
+            color: "hsl(var(--penn-navy))",
+          }}
+        >
           PennFit · PennPAPs
         </span>
         <span>info@pennpaps.com</span>
@@ -685,13 +713,7 @@ function ReportFooter() {
 
 // ── small primitives ────────────────────────────────────────────────
 
-function SectionTitle({
-  eyebrow,
-  title,
-}: {
-  eyebrow: string;
-  title: string;
-}) {
+function SectionTitle({ eyebrow, title }: { eyebrow: string; title: string }) {
   return (
     <div className="mb-4">
       <div
@@ -779,7 +801,9 @@ function Segmented({
               onClick={() => onChange(opt.value)}
               className="rounded-full px-3 py-1 text-xs font-semibold transition-colors"
               style={{
-                backgroundColor: active ? "hsl(var(--penn-navy))" : "transparent",
+                backgroundColor: active
+                  ? "hsl(var(--penn-navy))"
+                  : "transparent",
                 color: active ? "white" : "hsl(var(--ink-2))",
               }}
             >

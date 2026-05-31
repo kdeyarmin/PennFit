@@ -42,6 +42,7 @@ import {
   type PatientNight,
   type TherapyReportGrouping,
 } from "../../lib/analytics/therapy-usage-report";
+import { therapyNightSourceRank } from "../../lib/therapy-night-source-priority";
 import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
@@ -52,22 +53,24 @@ const querySchema = z.object({
 });
 
 // Cap on how many therapy-night rows we pull for the window so a very
-// large tenant can't time the route out. The window math degrades
-// gracefully to an approximation over the cap (still representative).
+// large tenant can't time the route out. We pull most-recent-first (see
+// the `.order` below) so the cap deterministically keeps the freshest
+// nights rather than an arbitrary, request-to-request-varying slice.
 const NIGHTS_CAP = 50_000;
-// Cap on the join tables we read to build the grouping maps.
-const MAP_CAP = 50_000;
 
-/** Source priority when the same night exists from multiple feeds.
- *  Mirrors the compliance-attestation route so this report and the
- *  on-file attestation never disagree on which feed wins a night. */
-const SOURCE_PRIORITY: Record<string, number> = {
-  resmed_airview: 0,
-  philips_care: 1,
-  health_connect: 2,
-  react_health: 3,
-  manual: 4,
-};
+// The grouping joins (prescriptions / providers / equipment) are read by
+// id in chunks this size so each PostgREST `.in(...)` URL stays short,
+// while still fetching ONLY the rows the report references (no full-table
+// scan, no silent truncation of needed rows past a cap).
+const IN_CHUNK = 150;
+
+function chunkIds(ids: string[]): string[][] {
+  const chunks: string[][] = [];
+  for (let i = 0; i < ids.length; i += IN_CHUNK) {
+    chunks.push(ids.slice(i, i + IN_CHUNK));
+  }
+  return chunks;
+}
 
 interface NightDbRow {
   patient_id: string;
@@ -121,8 +124,11 @@ router.get(
     const { data: nightData, error: nightErr } = await supabase
       .schema("resupply")
       .from("patient_therapy_nights")
-      .select("patient_id, night_date, source, usage_minutes, ahi, leak_rate_l_min")
+      .select(
+        "patient_id, night_date, source, usage_minutes, ahi, leak_rate_l_min",
+      )
       .gte("night_date", cutoff)
+      .order("night_date", { ascending: false })
       .limit(NIGHTS_CAP);
     if (nightErr) throw nightErr;
     const rawNights = (nightData ?? []) as NightDbRow[];
@@ -137,9 +143,12 @@ router.get(
         dedupedByKey.set(key, row);
         continue;
       }
-      const newRank = SOURCE_PRIORITY[row.source] ?? 99;
-      const oldRank = SOURCE_PRIORITY[existing.source] ?? 99;
-      if (newRank < oldRank) dedupedByKey.set(key, row);
+      if (
+        therapyNightSourceRank(row.source) <
+        therapyNightSourceRank(existing.source)
+      ) {
+        dedupedByKey.set(key, row);
+      }
     }
     const nights: PatientNight[] = Array.from(dedupedByKey.values()).map(
       (r) => ({
@@ -215,39 +224,40 @@ async function buildGroupingMap(
 
   if (groupBy === "provider") {
     // patient_id → set of provider_ids (via prescriptions), then resolve
-    // provider rows for labels. Read the mapping tables in full (capped)
-    // and join in memory to avoid an unbounded `in(...)` URL.
-    const { data: rxData, error: rxErr } = await supabase
-      .schema("resupply")
-      .from("prescriptions")
-      .select("patient_id, provider_id")
-      .not("provider_id", "is", null)
-      .limit(MAP_CAP);
-    if (rxErr) throw rxErr;
-
+    // provider rows for labels. We fetch ONLY the prescriptions and
+    // providers this report references, in id-chunks (see chunkIds), so a
+    // large tenant can't push the rows we need past a row cap.
     const providerIdsByPatient = new Map<string, Set<string>>();
     const providerIds = new Set<string>();
-    for (const r of rxData ?? []) {
-      if (!patientIds.has(r.patient_id) || !r.provider_id) continue;
-      let set = providerIdsByPatient.get(r.patient_id);
-      if (!set) {
-        set = new Set();
-        providerIdsByPatient.set(r.patient_id, set);
+    for (const chunk of chunkIds([...patientIds])) {
+      const { data: rxData, error: rxErr } = await supabase
+        .schema("resupply")
+        .from("prescriptions")
+        .select("patient_id, provider_id")
+        .not("provider_id", "is", null)
+        .in("patient_id", chunk);
+      if (rxErr) throw rxErr;
+      for (const r of rxData ?? []) {
+        if (!r.provider_id) continue;
+        let set = providerIdsByPatient.get(r.patient_id);
+        if (!set) {
+          set = new Set();
+          providerIdsByPatient.set(r.patient_id, set);
+        }
+        set.add(r.provider_id);
+        providerIds.add(r.provider_id);
       }
-      set.add(r.provider_id);
-      providerIds.add(r.provider_id);
     }
 
     const providerById = new Map<string, GroupRef>();
-    if (providerIds.size > 0) {
+    for (const chunk of chunkIds([...providerIds])) {
       const { data: provData, error: provErr } = await supabase
         .schema("resupply")
         .from("providers")
         .select("id, legal_name, npi, practice_name")
-        .limit(MAP_CAP);
+        .in("id", chunk);
       if (provErr) throw provErr;
       for (const p of provData ?? []) {
-        if (!providerIds.has(p.id)) continue;
         const sublabel = [p.npi ? `NPI ${p.npi}` : null, p.practice_name]
           .filter(Boolean)
           .join(" · ");
@@ -271,25 +281,31 @@ async function buildGroupingMap(
     return map;
   }
 
-  // groupBy === "manufacturer"
-  const { data: eqData, error: eqErr } = await supabase
-    .schema("resupply")
-    .from("equipment_assets")
-    .select("patient_id, manufacturer")
-    .limit(MAP_CAP);
-  if (eqErr) throw eqErr;
+  // groupBy === "manufacturer" — fetch only the cohort's equipment, in
+  // id-chunks, for the same reason as the provider joins above.
+  for (const chunk of chunkIds([...patientIds])) {
+    const { data: eqData, error: eqErr } = await supabase
+      .schema("resupply")
+      .from("equipment_assets")
+      .select("patient_id, manufacturer")
+      .in("patient_id", chunk);
+    if (eqErr) throw eqErr;
 
-  for (const e of eqData ?? []) {
-    if (!patientIds.has(e.patient_id) || !e.manufacturer) continue;
-    const key = e.manufacturer.trim();
-    if (!key) continue;
-    let buckets = map.get(e.patient_id);
-    if (!buckets) {
-      buckets = [];
-      map.set(e.patient_id, buckets);
-    }
-    if (!buckets.some((b) => b.key === key)) {
-      buckets.push({ key, label: key, sublabel: null });
+    for (const e of eqData ?? []) {
+      if (!e.manufacturer) continue;
+      const label = e.manufacturer.trim();
+      if (!label) continue;
+      // Case-insensitive bucket key so "ResMed" and "resmed" collapse to
+      // one cohort; first-seen casing wins both the key and the display label.
+      const keyLower = label.toLowerCase();
+      let buckets = map.get(e.patient_id);
+      if (!buckets) {
+        buckets = [];
+        map.set(e.patient_id, buckets);
+      }
+      if (!buckets.some((b) => b.key.toLowerCase() === keyLower)) {
+        buckets.push({ key: label, label, sublabel: null });
+      }
     }
   }
   fillUnattributed(map, patientIds, groupBy);
