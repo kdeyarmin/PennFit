@@ -1,6 +1,8 @@
 // Hand-rolled fetch wrappers for the product Q&A endpoints
 // (Phase A.5 / feature #24 extension).
 
+import { csrfHeader } from "./csrf";
+
 export interface ShopProductQuestion {
   id: string;
   askerDisplayName: string;
@@ -48,6 +50,7 @@ export async function submitProductQuestion(
       headers: {
         "Content-Type": "application/json",
         Accept: "application/json",
+        ...csrfHeader(),
       },
       body: JSON.stringify({ questionBody }),
     },
