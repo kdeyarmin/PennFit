@@ -53,13 +53,16 @@ export async function downloadAuditExport(
   const match = /filename="([^"]+)"/i.exec(cd);
   const filename = match?.[1] ?? `audit-export-${Date.now()}.csv`;
 
-  // Approximate row count = number of \n in the blob minus 1
-  // (header). Used purely for an end-of-export confirmation
-  // toast; the real number lives in the file.
+  // Approximate row count = non-empty lines minus 1 (header). Filtering
+  // empty lines first avoids over-counting a trailing newline (or
+  // several) that servers commonly emit after the last data row. Used
+  // purely for an end-of-export confirmation toast; the real number
+  // lives in the file.
   let rowCountApprox: number;
   try {
     const text = await blob.text();
-    rowCountApprox = Math.max(0, text.split("\n").length - 1);
+    const nonEmptyLines = text.split("\n").filter((line) => line.length > 0);
+    rowCountApprox = Math.max(0, nonEmptyLines.length - 1);
   } catch {
     rowCountApprox = 0;
   }
