@@ -7,7 +7,7 @@
 
 import { useQueryClient } from "@tanstack/react-query";
 
-import { authHooks, authClient } from "./auth-hooks";
+import { authHooks, authClient, SESSION_QUERY_KEY } from "./auth-hooks";
 
 export interface DashboardIdentity {
   email: string | null;
@@ -51,7 +51,7 @@ export function useDashboardIdentity(): DashboardIdentity {
           queryClient.invalidateQueries({
             queryKey: ["/resupply-api/me"],
           }),
-          queryClient.invalidateQueries({ queryKey: ["auth", "me"] }),
+          queryClient.invalidateQueries({ queryKey: SESSION_QUERY_KEY }),
         ]);
       } catch {
         /* best-effort */
