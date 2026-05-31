@@ -30,14 +30,12 @@ const LISTEN = Number(process.env.PROXY_PORT || 54321);
 
 const server = http.createServer((req, res) => {
   let p = req.url || "/";
-  let p = req.url || "/";
   if (/^\/auth\/v1(?:\/|$)/.test(p) || /^\/storage\/v1(?:\/|$)/.test(p)) {
     res.writeHead(404, { "content-type": "text/plain" });
     res.end("rest-v1-proxy only supports /rest/v1");
     return;
   }
   p = p.replace(/^\/rest\/v1/, "");
-  if (p === "") p = "/";
   if (p === "") p = "/";
 
   const upstream = http.request(

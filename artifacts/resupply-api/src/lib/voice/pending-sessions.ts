@@ -32,6 +32,20 @@ export interface PendingSessionEntry {
   episodeId: string;
   /** Captured from Twilio's call-create response, set after dial. */
   twilioCallSid?: string;
+  /**
+   * Optional non-PHI grounding context passed to buildSystemPrompt.
+   * Outbound (place-call) leaves it unset → the ws-handler default
+   * ("Outbound CPAP resupply check-in…") applies. The inbound reorder
+   * IVR sets an inbound-flavored context so the agent frames the call
+   * correctly.
+   */
+  callContext?: string;
+  /**
+   * Optional opening line. Outbound leaves it unset → DEFAULT_GREETING.
+   * Inbound overrides it so the agent doesn't tell a caller who dialed
+   * in that we're calling them.
+   */
+  greeting?: string;
   createdAt: number;
   expiresAt: number;
 }
@@ -82,6 +96,8 @@ export class PendingSessions {
     conversationId: string;
     patientId: string;
     episodeId: string;
+    callContext?: string;
+    greeting?: string;
   }): PendingSessionEntry {
     this.sweep();
     const t = this.now();
@@ -89,6 +105,8 @@ export class PendingSessions {
       conversationId: args.conversationId,
       patientId: args.patientId,
       episodeId: args.episodeId,
+      ...(args.callContext ? { callContext: args.callContext } : {}),
+      ...(args.greeting ? { greeting: args.greeting } : {}),
       createdAt: t,
       expiresAt: t + this.ttlMs,
     };

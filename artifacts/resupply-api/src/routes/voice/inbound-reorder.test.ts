@@ -56,6 +56,11 @@ const { loggerMock } = vi.hoisted(() => ({
 vi.mock("../../lib/logger", () => ({ logger: loggerMock }));
 
 import inboundReorderRouter from "./inbound-reorder";
+import {
+  getPendingSessions,
+  __resetPendingSessionsForTests,
+} from "../../lib/voice/pending-sessions";
+import { invalidateFeatureFlagCache } from "../../lib/feature-flags";
 
 // ── Environment management ────────────────────────────────────────────────────
 const VOICE_ENV_KEYS = [
@@ -84,6 +89,8 @@ function makeApp(): Express {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const PATIENT_ID = "11111111-1111-4111-8111-111111111111";
 const SESSION_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+const EPISODE_ID = "22222222-2222-4222-8222-222222222222";
+const CONVERSATION_ID = "33333333-3333-4333-8333-333333333333";
 
 /** Stage the minimal DB calls for a single inbound reorder request. */
 function stagePatientFound(): void {
@@ -105,6 +112,8 @@ beforeEach(() => {
   for (const k of VOICE_ENV_KEYS) savedEnv[k] = process.env[k];
   for (const k of VOICE_ENV_KEYS) delete process.env[k];
   supabaseMock.reset();
+  invalidateFeatureFlagCache();
+  __resetPendingSessionsForTests();
   loggerMock.error.mockReset();
   loggerMock.warn.mockReset();
   loggerMock.info.mockReset();
@@ -317,5 +326,95 @@ describe("POST /voice/inbound-reorder — invalid body", () => {
 
     expect(res.status).toBe(400);
     expect(res.text).toContain("Hangup");
+  });
+});
+
+describe("POST /voice/inbound-reorder — identified caller → realtime bridge", () => {
+  beforeEach(() => setVoiceEnv());
+
+  function stageIdentifiedWithEpisode(flagEnabled: boolean): void {
+    stageSupabaseResponse("patients", "select", { data: { id: PATIENT_ID } });
+    stageSupabaseResponse("voice_reorder_sessions", "insert", {
+      data: { id: SESSION_ID },
+    });
+    stageSupabaseResponse("feature_flags", "select", {
+      data: { enabled: flagEnabled },
+    });
+    stageSupabaseResponse("episodes", "select", {
+      data: {
+        id: EPISODE_ID,
+        status: "outreach_pending",
+        created_at: new Date().toISOString(),
+      },
+    });
+    stageSupabaseResponse("conversations", "insert", {
+      data: { id: CONVERSATION_ID },
+    });
+  }
+
+  it("connects an identified caller with an actionable episode to the Media Stream bridge", async () => {
+    stageIdentifiedWithEpisode(true);
+
+    const res = await request(makeApp())
+      .post("/voice/inbound-reorder")
+      .type("form")
+      .send({ From: "+12155551212", CallSid: "CA_bridge" });
+
+    expect(res.status).toBe(200);
+    expect(res.headers["content-type"]).toContain("text/xml");
+    // Connect/Stream TwiML pointing at the existing voice bridge.
+    expect(res.text).toContain("<Connect");
+    expect(res.text).toContain("<Stream");
+    expect(res.text).toContain(
+      "wss://test.example.com/resupply-api/voice/stream",
+    );
+    expect(res.text).toContain(CONVERSATION_ID);
+    expect(res.text).toContain('<Parameter name="conversationId"');
+    // A voice conversation was created and a pending session registered
+    // with the inbound-flavored context + greeting.
+    expect(supabaseMock.callCount("conversations", "insert")).toBe(1);
+    const pending = getPendingSessions().peek(CONVERSATION_ID);
+    expect(pending).not.toBeNull();
+    expect(pending!.patientId).toBe(PATIENT_ID);
+    expect(pending!.episodeId).toBe(EPISODE_ID);
+    expect(pending!.callContext).toBeTruthy();
+    expect(pending!.greeting).toBeTruthy();
+  });
+
+  it("transfers to a human when the voice agent is disabled in the Control Center", async () => {
+    stageIdentifiedWithEpisode(false);
+
+    const res = await request(makeApp())
+      .post("/voice/inbound-reorder")
+      .type("form")
+      .send({ From: "+12155551212", CallSid: "CA_flag_off" });
+
+    expect(res.status).toBe(200);
+    expect(res.text).toContain("<Dial");
+    expect(res.text).toContain("Connecting you to our team");
+    // No bridge: no conversation row, no pending session.
+    expect(supabaseMock.callCount("conversations", "insert")).toBe(0);
+    expect(getPendingSessions().peek(CONVERSATION_ID)).toBeNull();
+  });
+
+  it("transfers to a human when the patient has no actionable episode", async () => {
+    stageSupabaseResponse("patients", "select", { data: { id: PATIENT_ID } });
+    stageSupabaseResponse("voice_reorder_sessions", "insert", {
+      data: { id: SESSION_ID },
+    });
+    stageSupabaseResponse("feature_flags", "select", {
+      data: { enabled: true },
+    });
+    stageSupabaseResponse("episodes", "select", { data: null });
+
+    const res = await request(makeApp())
+      .post("/voice/inbound-reorder")
+      .type("form")
+      .send({ From: "+12155551212", CallSid: "CA_no_episode" });
+
+    expect(res.status).toBe(200);
+    expect(res.text).toContain("<Dial");
+    expect(supabaseMock.callCount("conversations", "insert")).toBe(0);
+    expect(getPendingSessions().peek(CONVERSATION_ID)).toBeNull();
   });
 });
