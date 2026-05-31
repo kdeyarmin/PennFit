@@ -21,9 +21,14 @@
 --
 -- Journal posture (per CLAUDE.md): this file is NOT added to
 -- meta/_journal.json. migrate.mjs dedups by file hash and runs each
--- SQL once. The send path degrades to a hard-coded fallback when a
--- row is missing, so the feature is forward-deploy-safe before the
--- migration is applied.
+-- SQL once. Forward-deploy safety: dispatchAlert() catches a missing
+-- alert_definitions / alert_messages relation and returns a clean
+-- `alert_not_found` / `message_not_configured` outcome (the admin
+-- routes translate these to 404/409) rather than throwing a 500. So
+-- the alerts router can be mounted before this migration is applied —
+-- the surface is simply inert (no alert sends) until the tables exist.
+-- There is no hard-coded message fallback; an unconfigured alert just
+-- doesn't send.
 
 CREATE TABLE IF NOT EXISTS "resupply"."alert_definitions" (
   "id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,

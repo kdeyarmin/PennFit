@@ -41,11 +41,42 @@ import {
 } from "@workspace/resupply-templates";
 
 import { logger } from "../logger";
-import { readMessagingConfigOrNull } from "../messaging/messaging-config";
+import {
+  readEmailConfigOrNull,
+  readSmsConfigOrNull,
+} from "../messaging/messaging-config";
 import { readVoiceConfigOrNull } from "../voice/voice-config";
 import { getAlertVoiceScripts } from "./voice-scripts";
 
 export type AlertChannel = "email" | "sms" | "voice";
+
+/**
+ * Names of `{{snake_case}}` tokens still present in a rendered string —
+ * i.e. variables the caller didn't supply, which `applyVariables`
+ * leaves literal. Used to refuse a send that would ship a raw
+ * `{{order_number}}` to a patient. Mirrors the substitution regex.
+ */
+function unresolvedTokens(...rendered: Array<string | null>): string[] {
+  const found = new Set<string>();
+  for (const s of rendered) {
+    if (!s) continue;
+    for (const m of s.matchAll(/\{\{([a-z][a-z0-9_]*)\}\}/g)) {
+      found.add(m[1]!);
+    }
+  }
+  return [...found];
+}
+
+/** HTML-escape so a plain-text body can be used safely in an HTML
+ *  email part. Mirrors the escape in @workspace/resupply-templates. */
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
 
 export interface RenderedAlert {
   subject: string | null;
@@ -93,6 +124,7 @@ export type DispatchAlertOutcome =
   | { status: "patient_phone_unnormalizable" }
   | { status: "messaging_not_configured" }
   | { status: "voice_not_configured" }
+  | { status: "unresolved_variables"; channel: AlertChannel; missing: string[] }
   | {
       status: "vendor_error";
       channel: AlertChannel;
@@ -124,7 +156,9 @@ export async function dispatchAlert(
   const supabase = input.supabase ?? getSupabaseServiceRoleClient();
   const { alertKey, channel, patientId } = input;
 
-  // 1. Alert definition.
+  // 1. Alert definition. A missing table (migration 0179 not yet
+  // applied on this environment) degrades to `alert_not_found` rather
+  // than throwing a 500 — the route stays forward-deploy-safe.
   const { data: def, error: defErr } = await supabase
     .schema("resupply")
     .from("alert_definitions")
@@ -132,7 +166,13 @@ export async function dispatchAlert(
     .eq("key", alertKey)
     .limit(1)
     .maybeSingle();
-  if (defErr) throw defErr;
+  if (defErr) {
+    logger.warn(
+      { event: "alert_dispatch_def_lookup_failed", alertKey },
+      "alert dispatch: alert_definitions lookup failed; treating as not found",
+    );
+    return { status: "alert_not_found" };
+  }
   if (!def) return { status: "alert_not_found" };
   if (!def.is_active) return { status: "alert_inactive" };
   if (!(def.channels ?? []).includes(channel)) {
@@ -160,10 +200,16 @@ export async function dispatchAlert(
       .limit(1)
       .maybeSingle(),
   ]);
-  if (globalRes.error) throw globalRes.error;
-  // A missing override table (migration 0180 not yet applied) must not
-  // break the send — degrade to the global message. PostgREST surfaces
-  // "relation does not exist" as a query error; swallow it here.
+  // A missing alert_messages table (migration 0179) degrades to
+  // `message_not_configured`; a missing override table (0180) degrades
+  // to the global message. Both keep the route forward-deploy-safe.
+  if (globalRes.error) {
+    logger.warn(
+      { event: "alert_dispatch_message_lookup_failed", alertKey, channel },
+      "alert dispatch: alert_messages lookup failed; treating as not configured",
+    );
+    return { status: "message_not_configured", channel };
+  }
   const override = overrideRes.error ? null : (overrideRes.data ?? null);
 
   const global = globalRes.data;
@@ -212,21 +258,44 @@ export async function dispatchAlert(
     variables,
   });
 
+  // Refuse to ship a message that still has unresolved `{{tokens}}`.
+  // `applyVariables` leaves a variable literal when the caller didn't
+  // supply it — without this guard a "Send test" with only patientId +
+  // channel would deliver a raw `{{order_number}}` to a real patient.
+  const missing = unresolvedTokens(
+    rendered.subject,
+    rendered.bodyHtml,
+    rendered.bodyText,
+  );
+  if (missing.length > 0) {
+    return { status: "unresolved_variables", channel, missing };
+  }
+
   // 5. Send.
   if (channel === "email") {
     if (!patient.email) return { status: "patient_missing_email" };
-    const cfg = readMessagingConfigOrNull();
+    // Per-channel config: an email-only deployment must be able to send
+    // alerts even when Twilio SMS isn't configured (and vice versa).
+    const cfg = readEmailConfigOrNull();
     if (!cfg) return { status: "messaging_not_configured" };
     try {
       const sg = createSendgridClient({
-        apiKey: cfg.email.sendgridApiKey,
-        fromEmail: cfg.email.sendgridFromEmail,
-        fromName: cfg.email.sendgridFromName,
+        apiKey: cfg.sendgridApiKey,
+        fromEmail: cfg.sendgridFromEmail,
+        fromName: cfg.sendgridFromName,
       });
+      // When the email message has no HTML body, wrap the (HTML-escaped)
+      // plain-text body so an admin-typed `<` / `&` — or an unescaped
+      // variable value — can't inject markup into the rendered email.
+      const html =
+        rendered.bodyHtml ??
+        `<pre style="font-family:inherit;white-space:pre-wrap;">${escapeHtml(
+          rendered.bodyText,
+        )}</pre>`;
       const r = await sg.sendEmail({
         to: patient.email,
         subject: rendered.subject ?? "",
-        html: rendered.bodyHtml ?? rendered.bodyText,
+        html,
         text: rendered.bodyText,
         customArgs: { kind: "alert", alert_key: alertKey },
       });
@@ -240,14 +309,14 @@ export async function dispatchAlert(
     if (!patient.phone_e164) return { status: "patient_missing_phone" };
     const normalized = normalizeE164(patient.phone_e164);
     if (!normalized) return { status: "patient_phone_unnormalizable" };
-    const cfg = readMessagingConfigOrNull();
+    const cfg = readSmsConfigOrNull();
     if (!cfg) return { status: "messaging_not_configured" };
     try {
       const sms = createTwilioSmsClient({
-        accountSid: cfg.sms.twilioAccountSid,
-        authToken: cfg.sms.twilioAuthToken,
-        from: cfg.sms.twilioPhoneNumber,
-        messagingServiceSid: cfg.sms.twilioMessagingServiceSid,
+        accountSid: cfg.twilioAccountSid,
+        authToken: cfg.twilioAuthToken,
+        from: cfg.twilioPhoneNumber,
+        messagingServiceSid: cfg.twilioMessagingServiceSid,
       });
       const r = await sms.sendSms({ to: normalized, body: rendered.bodyText });
       return { status: "ok", channel, vendorRef: r.messageSid };

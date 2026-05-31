@@ -11,7 +11,7 @@ export type AlertChannel = "email" | "sms" | "voice";
 export type AlertSeverity = "info" | "warning" | "critical";
 
 export interface AlertMessage {
-  channel: string;
+  channel: AlertChannel;
   subject: string | null;
   bodyHtml: string | null;
   bodyText: string;
@@ -24,9 +24,11 @@ export interface AlertDefinition {
   key: string;
   name: string;
   description: string | null;
+  // `category` stays a free string — the backend column is TEXT with no
+  // enum, so a union here would drift from the DB.
   category: string;
-  severity: string;
-  channels: string[];
+  severity: AlertSeverity;
+  channels: AlertChannel[];
   allowedVariables: string[];
   isActive: boolean;
   messages: AlertMessage[];
@@ -72,8 +74,7 @@ async function jsonFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
   return (await res.json()) as T;
 }
 
-export const listAlerts = () =>
-  jsonFetch<{ alerts: AlertDefinition[] }>("");
+export const listAlerts = () => jsonFetch<{ alerts: AlertDefinition[] }>("");
 
 export const getAlert = (key: string) =>
   jsonFetch<{ alert: AlertDefinition }>(`/${encodeURIComponent(key)}`);

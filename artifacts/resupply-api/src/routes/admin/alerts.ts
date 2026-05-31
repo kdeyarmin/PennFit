@@ -24,7 +24,6 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
-import { logAudit } from "@workspace/resupply-audit";
 import {
   getSupabaseServiceRoleClient,
   type Database,
@@ -325,6 +324,12 @@ router.patch(
       res.status(400).json({ error: "sms_body_text_must_be_ascii" });
       return;
     }
+    // Email must ship with a non-empty subject — dispatch falls back to
+    // `rendered.subject ?? ""`, so a blank subject would send silently.
+    if (channel === "email" && (nextSubject?.trim() ?? "") === "") {
+      res.status(400).json({ error: "email_subject_required" });
+      return;
+    }
 
     const adminId = req.adminUserId ?? null;
     const updateValues: AlertMessageUpdate = {
@@ -361,16 +366,17 @@ router.patch(
     for (const k of ["subject", "bodyHtml", "bodyText", "isActive"] as const) {
       if (parsed.data[k] !== undefined) fieldsChanged.push(k);
     }
-    void logAudit({
-      action: "alert_message.update",
-      adminEmail: req.adminEmail ?? null,
-      adminUserId: adminId,
-      targetTable: "alert_messages",
-      targetId: `${alertKey}:${channel}`,
-      // Lengths only — bodies never enter the audit envelope.
-      metadata: {
+    // Observability only — a structured log line, NOT an audit write.
+    // Per CLAUDE.md the @workspace/resupply-audit package is a no-op
+    // stub and new resupply-api code must not write against it. Bodies
+    // are never logged (lengths only) — treat template copy as content
+    // that may quote PHI-shaped patterns.
+    logger.info(
+      {
+        event: "alert_message_updated",
         alert_key: alertKey,
         channel,
+        admin_user_id: adminId,
         fields_changed: fieldsChanged,
         new_lengths: {
           subject: nextSubject?.length ?? null,
@@ -378,14 +384,8 @@ router.patch(
           body_text: nextBodyText.length,
         },
       },
-      ip: req.ip ?? null,
-      userAgent: req.get("user-agent") ?? null,
-    }).catch((err) => {
-      logger.warn(
-        { err, alertKey, channel },
-        "alert_message.update audit failed",
-      );
-    });
+      "admin updated an alert message",
+    );
 
     res.json({ message: serializeMessage(updated as AlertMessageRow) });
   },
@@ -437,29 +437,36 @@ router.post(
     }
 
     if (outcome.status === "ok") {
-      void logAudit({
-        action: "alert.sent",
-        adminEmail: req.adminEmail ?? null,
-        adminUserId: req.adminUserId ?? null,
-        targetTable: "patients",
-        targetId: parsed.data.patientId,
-        metadata: {
+      // Observability only — structured log, NOT an audit write (see
+      // CLAUDE.md: resupply-audit is a no-op stub; no new writes).
+      logger.info(
+        {
+          event: "alert_sent",
           alert_key: alertKey,
           channel,
-          status: "ok",
+          patient_id: parsed.data.patientId,
+          admin_user_id: req.adminUserId ?? null,
           vendor_ref: outcome.vendorRef,
         },
-        ip: req.ip ?? null,
-        userAgent: req.get("user-agent") ?? null,
-      }).catch((err) => {
-        logger.warn({ err, alertKey, channel }, "alert.sent audit failed");
-      });
+        "admin sent an alert to a patient",
+      );
       res.status(201).json({ channel, vendorRef: outcome.vendorRef });
       return;
     }
 
+    // Unresolved placeholders are a 400 with the offending tokens so the
+    // caller can supply them (the Send-test form omits alert variables).
+    if (outcome.status === "unresolved_variables") {
+      res.status(400).json({
+        error: "unresolved_variables",
+        channel: outcome.channel,
+        missing: outcome.missing,
+      });
+      return;
+    }
+
     const STATUS: Record<
-      Exclude<DispatchAlertOutcome["status"], "ok">,
+      Exclude<DispatchAlertOutcome["status"], "ok" | "unresolved_variables">,
       number
     > = {
       alert_not_found: 404,

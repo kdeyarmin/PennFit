@@ -103,4 +103,54 @@ describe("dispatchAlert — override layering", () => {
     });
     expect(outcome.status).toBe("message_not_configured");
   });
+
+  it("degrades to alert_not_found when the alert_definitions table is missing", async () => {
+    stageSupabaseResponse("alert_definitions", "select", {
+      error: { code: "42P01", message: "relation does not exist" },
+    });
+    const outcome = await dispatchAlert({
+      alertKey: "resupply_due",
+      channel: "sms",
+      patientId: "p_1",
+    });
+    expect(outcome.status).toBe("alert_not_found");
+  });
+
+  it("refuses to send when a body still has unresolved {{tokens}}", async () => {
+    stageSupabaseResponse("alert_definitions", "select", {
+      data: {
+        ...ACTIVE_DEF,
+        allowed_variables: ["first_name", "practice_name", "order_number"],
+      },
+    });
+    stageSupabaseResponse("alert_messages", "select", {
+      data: {
+        subject: null,
+        body_html: null,
+        body_text: "Order {{order_number}} shipped",
+        is_active: true,
+      },
+    });
+    stageSupabaseResponse("alert_message_overrides", "select", { data: null });
+    stageSupabaseResponse("patients", "select", {
+      data: {
+        id: "p_1",
+        status: "active",
+        email: "p@example.com",
+        phone_e164: "+12155551212",
+        legal_first_name: "Sam",
+      },
+    });
+
+    // Caller omits order_number → it stays literal → must NOT send.
+    const outcome = await dispatchAlert({
+      alertKey: "resupply_due",
+      channel: "sms",
+      patientId: "p_1",
+    });
+    expect(outcome.status).toBe("unresolved_variables");
+    if (outcome.status === "unresolved_variables") {
+      expect(outcome.missing).toContain("order_number");
+    }
+  });
 });

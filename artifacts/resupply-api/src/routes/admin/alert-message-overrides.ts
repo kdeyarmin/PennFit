@@ -35,7 +35,6 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
-import { logAudit } from "@workspace/resupply-audit";
 import {
   getSupabaseServiceRoleClient,
   type Database,
@@ -263,27 +262,19 @@ router.post(
     }
     if (!inserted) throw new Error("alert override insert returned no rows");
 
-    void logAudit({
-      action: "alert_message_override.create",
-      adminEmail: req.adminEmail ?? null,
-      adminUserId: adminId,
-      targetTable: "alert_message_overrides",
-      targetId: inserted.id,
-      metadata: {
+    // Observability only — structured log, NOT an audit write (see
+    // CLAUDE.md: resupply-audit is a no-op stub; no new writes).
+    logger.info(
+      {
+        event: "alert_message_override_created",
         patient_id: idCheck.data,
         alert_key: inserted.alert_key,
         channel: inserted.channel,
         is_active: inserted.is_active,
-        has_note: true,
+        admin_user_id: adminId,
       },
-      ip: req.ip ?? null,
-      userAgent: req.get("user-agent") ?? null,
-    }).catch((err) => {
-      logger.warn(
-        { err, overrideId: inserted.id },
-        "alert_message_override.create audit write failed",
-      );
-    });
+      "admin created an alert message override",
+    );
 
     res.status(201).json({ override: serialize(inserted) });
   },
@@ -405,26 +396,18 @@ router.patch(
     ] as const) {
       if (parsed.data[k] !== undefined) fieldsChanged.push(k);
     }
-    void logAudit({
-      action: "alert_message_override.update",
-      adminEmail: req.adminEmail ?? null,
-      adminUserId: adminId,
-      targetTable: "alert_message_overrides",
-      targetId: existing.id,
-      metadata: {
+    // Observability only — structured log, NOT an audit write.
+    logger.info(
+      {
+        event: "alert_message_override_updated",
         patient_id: existing.patient_id,
         alert_key: existing.alert_key,
         channel: existing.channel,
+        admin_user_id: adminId,
         fields_changed: fieldsChanged,
       },
-      ip: req.ip ?? null,
-      userAgent: req.get("user-agent") ?? null,
-    }).catch((err) => {
-      logger.warn(
-        { err, overrideId: existing.id },
-        "alert_message_override.update audit write failed",
-      );
-    });
+      "admin updated an alert message override",
+    );
 
     res.json({ override: serialize(updated) });
   },
@@ -480,27 +463,17 @@ router.delete(
     if (updateErr) throw updateErr;
     if (!updated) throw new Error("alert override deactivate returned no rows");
 
-    void logAudit({
-      action: "alert_message_override.update",
-      adminEmail: req.adminEmail ?? null,
-      adminUserId: adminId,
-      targetTable: "alert_message_overrides",
-      targetId: existing.id,
-      metadata: {
+    // Observability only — structured log, NOT an audit write.
+    logger.info(
+      {
+        event: "alert_message_override_deactivated",
         patient_id: existing.patient_id,
         alert_key: existing.alert_key,
         channel: existing.channel,
-        fields_changed: ["isActive"],
-        deactivated: true,
+        admin_user_id: adminId,
       },
-      ip: req.ip ?? null,
-      userAgent: req.get("user-agent") ?? null,
-    }).catch((err) => {
-      logger.warn(
-        { err, overrideId: existing.id },
-        "alert_message_override deactivate audit write failed",
-      );
-    });
+      "admin deactivated an alert message override",
+    );
 
     res.json({ override: serialize(updated) });
   },
