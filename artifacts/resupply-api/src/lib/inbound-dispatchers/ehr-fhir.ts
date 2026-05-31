@@ -12,7 +12,9 @@
 // (middlewares/requireSmartFhirAccess); the dispatcher does NOT
 // re-verify because the JWT is short-lived (5-15 min) and re-fetching
 // the partner's JWKS for every drained row is wasteful. Stale-token
-// replay is mitigated by the route's iat-window + jti checks.
+// replay is mitigated at the route layer: iat-window verification plus
+// the single-use `jti` store (resupply.fhir_jwt_jti_seen, migration 0187)
+// that requireSmartFhirAccess enforces before accepting a token.
 //
 // PHI posture: logger sees referral id + source slug + counts only.
 // Bundle bytes never reach the logger.
