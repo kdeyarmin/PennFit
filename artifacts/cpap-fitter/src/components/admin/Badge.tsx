@@ -94,8 +94,8 @@ export function conversationStatusVariant(status: string): Variant {
 }
 
 // Friendly, customer-service-oriented labels for conversation states.
-// "awaiting_admin" means a CSR owes the customer a reply; "awaiting_
-// patient" means we're waiting on the customer. Plain title-casing
+// "awaiting_admin" means a CSR owes the customer a reply; "awaiting_patient"
+// means we're waiting on the customer. Plain title-casing
 // ("Awaiting Admin") removes the underscore but still reads like
 // jargon, so every conversation-status surface routes through here for
 // a consistent, human label. Falls back to humanizeStatus for any
