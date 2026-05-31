@@ -2,6 +2,7 @@
 // the only path the middleware supports.
 
 import express, { type Express } from "express";
+import rateLimit from "express-rate-limit";
 import request from "supertest";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -29,7 +30,14 @@ import { requireAdmin, requireAdminOnly } from "./requireAdmin";
 
 function makeApp(): Express {
   const app = express();
-  app.get("/protected", requireAdmin, (req, res) => {
+  const limiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 1_000,
+    standardHeaders: true,
+    legacyHeaders: false,
+  });
+
+  app.get("/protected", limiter, requireAdmin, (req, res) => {
     res.json({
       ok: true,
       adminEmail: req.adminEmail,
@@ -37,11 +45,11 @@ function makeApp(): Express {
       adminRole: req.adminRole,
     });
   });
-  app.get("/admin-only", requireAdminOnly, (req, res) => {
+  app.get("/admin-only", limiter, requireAdminOnly, (req, res) => {
     res.json({ ok: true, adminRole: req.adminRole });
   });
   // State-changing route to exercise the in-gate CSRF enforcement.
-  app.post("/protected", requireAdmin, (req, res) => {
+  app.post("/protected", limiter, requireAdmin, (req, res) => {
     res.json({ ok: true, adminEmail: req.adminEmail });
   });
   return app;
