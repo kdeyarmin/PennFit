@@ -36,6 +36,7 @@ import {
   type ResupplySupabaseClient,
 } from "@workspace/resupply-db";
 
+import { maybeDispatchLowUsageCheckinAlert } from "./alerts/low-usage-checkin-trigger";
 import { logger } from "./logger";
 
 export interface ScanOptions {
@@ -179,6 +180,14 @@ export async function scanCompliance(
       alertsUpdated++;
     } else {
       alertsCreated++;
+      // Net-new low-usage alert → fire the optional patient-facing
+      // check-in (flag-gated, fire-and-forget). Only on first open, so
+      // a patient who stays below target isn't messaged every day —
+      // the daily refreshes hit the `wasUpdated` branch above.
+      void maybeDispatchLowUsageCheckinAlert({
+        patientId: j.patientId,
+        nightsUsed: goodNights,
+      });
     }
   }
 

@@ -452,7 +452,11 @@ function AdminConsole() {
   }
 
   return (
-    <AppShell adminEmail={data?.email} adminRole={data?.role}>
+    <AppShell
+      adminEmail={data?.email}
+      adminRole={data?.role}
+      adminPermissions={data?.permissions}
+    >
       <ErrorBoundary>
         {/* Suspense boundary for the per-page lazy chunks declared at
             the top of this file. Without it, a navigation to any

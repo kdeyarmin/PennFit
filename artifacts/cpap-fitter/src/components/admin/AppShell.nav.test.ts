@@ -253,3 +253,36 @@ describe("AppShell — SidebarNavBody renders collapsible group toggles", () => 
     expect(APPSHELL_SRC).toContain("group.items.map((link) =>");
   });
 });
+
+// ---------------------------------------------------------------------------
+// Permission-gated nav entries.
+//
+// Alert Library, Canned Replies, and Message Templates are all gated on
+// the backend `admin.tools.manage` permission. The sidebar must hide
+// them for callers who lack it (a CSR), so they don't see a link that
+// would 403. These guard the requiredPermission tagging + the filter.
+// ---------------------------------------------------------------------------
+describe("AppShell NAV_GROUPS — admin.tools.manage gated entries", () => {
+  const gatedHrefs = ["/admin/macros", "/admin/templates", "/admin/alerts"];
+
+  for (const href of gatedHrefs) {
+    it(`tags ${href} with requiredPermission admin.tools.manage`, () => {
+      // The href and the permission tag must both appear; we assert the
+      // permission string is present at least once per gated entry by
+      // checking the block around the href contains it.
+      const idx = APPSHELL_SRC.indexOf(`href: "${href}"`);
+      expect(idx).toBeGreaterThan(-1);
+      const block = APPSHELL_SRC.slice(idx, idx + 260);
+      expect(block).toContain('requiredPermission: "admin.tools.manage"');
+    });
+  }
+
+  it("filters nav items by the caller's permission set", () => {
+    expect(APPSHELL_SRC).toContain("link.requiredPermission");
+    expect(APPSHELL_SRC).toContain("permissions.has(link.requiredPermission)");
+  });
+
+  it("drops groups left with no visible items after filtering", () => {
+    expect(APPSHELL_SRC).toContain("group.items.length > 0");
+  });
+});

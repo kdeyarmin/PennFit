@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useMemo,
   useRef,
   useState,
   type ComponentType,
@@ -103,6 +104,14 @@ type NavLink = {
     | "overdueFollowups"
     | "newPatientDocuments"
     | "newInboundFaxes";
+  /**
+   * Granular RBAC permission key required to USE the destination page
+   * (e.g. `admin.tools.manage`). When set, the nav entry is hidden for
+   * callers whose `/admin/me` permission set doesn't include it — so a
+   * CSR never sees a link that would 403. Purely a UX guardrail; the
+   * server-side `requirePermission(...)` is the real boundary.
+   */
+  requiredPermission?: string;
 };
 
 type NavGroup = {
@@ -182,6 +191,7 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         icon: Sparkles,
         matchPrefix: "/admin/macros",
         hint: "Reusable response templates",
+        requiredPermission: "admin.tools.manage",
       },
       {
         href: "/admin/templates",
@@ -189,6 +199,7 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         icon: Mail,
         matchPrefix: "/admin/templates",
         hint: "Edit the copy used by automated customer messages",
+        requiredPermission: "admin.tools.manage",
       },
       {
         href: "/admin/bulk-campaigns",
@@ -203,6 +214,7 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         icon: AlertOctagon,
         matchPrefix: "/admin/alerts",
         hint: "Send curated email / SMS / phone-call alerts to a patient",
+        requiredPermission: "admin.tools.manage",
       },
     ],
   },
@@ -967,12 +979,24 @@ function MfaEnforcementBanner() {
 export function AppShell({
   adminEmail,
   adminRole = "admin",
+  adminPermissions,
   children,
 }: {
   adminEmail?: string;
   adminRole?: AdminRole;
+  /**
+   * Granular permission keys from `/admin/me`. Used to hide nav
+   * entries whose `requiredPermission` the caller lacks. Undefined
+   * during the initial access-check window → treated as empty
+   * (fail-closed: gated entries stay hidden until /me resolves).
+   */
+  adminPermissions?: string[];
   children: ReactNode;
 }) {
+  const navPermissions = useMemo(
+    () => new Set(adminPermissions ?? []),
+    [adminPermissions],
+  );
   const [location] = useLocation();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
