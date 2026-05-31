@@ -13,8 +13,10 @@
 // therapy-integrations.nightly-sync.
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link } from "wouter";
 import {
   CheckCircle2,
+  HeartPulse,
   RefreshCw,
   ServerCog,
   TriangleAlert,
@@ -63,6 +65,14 @@ export function AdminIntegrationsPage() {
             ResMed AirView, Philips Care Orchestrator, and Health Connect
             adapter health over the last 7 days.
           </p>
+          <Link
+            href="/admin/therapy-fleet"
+            className="inline-flex items-center gap-1.5 text-sm mt-2 hover:underline"
+            style={{ color: "hsl(var(--penn-navy))" }}
+          >
+            <HeartPulse className="h-4 w-4" /> View therapy fleet — compliance
+            cohorts &amp; outreach worklist
+          </Link>
         </div>
         <Button
           onClick={() => nightlySync.mutate()}
