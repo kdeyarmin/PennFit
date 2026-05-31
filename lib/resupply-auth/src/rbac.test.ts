@@ -164,6 +164,27 @@ describe("roleHasPermission", () => {
       expect(roleHasPermission("fulfillment", perm)).toBe(false);
     }
   });
+
+  it("clinical permissions are rt + management, off the CSR tier", () => {
+    for (const perm of [
+      "clinical.read",
+      "clinical.note.write",
+      "clinical.intervention.write",
+    ] as const) {
+      // rt (clinician bucket) + the admin tiers hold clinical perms…
+      expect(roleHasPermission("rt", perm)).toBe(true);
+      expect(roleHasPermission("admin", perm)).toBe(true);
+      expect(roleHasPermission("supervisor", perm)).toBe(true);
+      // …but the front-line customer_service_rep bucket does not.
+      expect(roleHasPermission("csr", perm)).toBe(false);
+      expect(roleHasPermission("agent", perm)).toBe(false);
+      expect(roleHasPermission("fulfillment", perm)).toBe(false);
+    }
+    // rt can read patients but not approve returns or manage the team.
+    expect(roleHasPermission("rt", "patients.read")).toBe(true);
+    expect(roleHasPermission("rt", "returns.approve")).toBe(false);
+    expect(roleHasPermission("rt", "admin_team.manage")).toBe(false);
+  });
 });
 
 describe("permissionsForRole", () => {
@@ -181,6 +202,7 @@ describe("permissionsForRole", () => {
       "fulfillment",
       "compliance_officer",
       "agent",
+      "rt",
     ] as const) {
       expect(permissionsForRole(role).length).toBeGreaterThan(0);
     }
@@ -216,6 +238,7 @@ describe("catalog invariants", () => {
           "fulfillment",
           "compliance_officer",
           "agent",
+          "rt",
         ] as const
       ).some((r) => roleHasPermission(r, perm));
       expect(
@@ -236,6 +259,7 @@ describe("catalog invariants", () => {
       "fulfillment",
       "compliance_officer",
       "agent",
+      "rt",
     ] as const) {
       expect(roleHasPermission(role, "admin_team.manage")).toBe(false);
     }

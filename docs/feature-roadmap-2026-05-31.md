@@ -200,6 +200,16 @@ high-value items in Phases 2–5 have nowhere to read from.
 - **Exit:** an RT can open a flagged patient, write a structured
   encounter note, and it persists + audits (counts only); RBAC test
   covers the new role; portal renders only with `clinical.read`.
+- **Status (2026-05-31):** ⏳ in progress. Landed: migration
+  `0188_clinical_encounters_and_rt_role` (the `clinical_encounters`
+  append-only log + `'rt'` added to the `admin_users.role` CHECK), the
+  `rt` role across `AdminRole` / `team.ts` `ROLE_VALUES`, and the new
+  `clinical.read` / `clinical.note.write` / `clinical.intervention.write`
+  permissions in a new `clinician` RBAC bucket (`rt` → `clinician`;
+  management tiers also hold them; off the front-line CSR bucket).
+  `rt`'s coarse `auth.users.role` stays `agent`. Next: the encounter API
+  (create/list, gated `clinical.note.write`/`clinical.read`), then the
+  clinician portal shell.
 
 ### F4 · Unified work-item model + lightweight case object — **L**
 

@@ -365,7 +365,8 @@ export interface Database {
             | "fitter"
             | "fulfillment"
             | "compliance_officer"
-            | "agent";
+            | "agent"
+            | "rt";
           status: "pending" | "active" | "revoked";
           display_name: string | null;
           notes: string | null;
@@ -390,7 +391,8 @@ export interface Database {
             | "fitter"
             | "fulfillment"
             | "compliance_officer"
-            | "agent";
+            | "agent"
+            | "rt";
           status?: "pending" | "active" | "revoked";
           display_name?: string | null;
           notes?: string | null;

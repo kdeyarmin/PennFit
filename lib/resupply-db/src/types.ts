@@ -30,7 +30,8 @@ export type AdminRole =
   | "fitter"
   | "fulfillment"
   | "compliance_officer"
-  | "agent";
+  | "agent"
+  | "rt";
 
 export type AdminStatus = "pending" | "active" | "revoked";
 
