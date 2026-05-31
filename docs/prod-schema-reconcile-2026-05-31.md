@@ -92,18 +92,38 @@ prod's `ALTER DEFAULT PRIVILEGES` auto-granted `service_role` on every new table
 (verified). A transcription drop of one `product_hcpcs_map` row was caught by the
 row-count/checksum check and corrected.
 
-**Two seed sets were deliberately NOT loaded via MCP** (load via the committed
-`psql -f` script when a prod DB connection is available — see
-[`scripts/prod-reconcile/README.md`](../scripts/prod-reconcile/README.md)):
+**All seed sets are now loaded + content-verified (md5, timestamp-excluded):**
+`hcpcs_codes`, `sku_hcpcs_map`, `product_hcpcs_map`, `alert_definitions`,
+`claim_templates`, `alert_messages` (27 rows — the HTML templates, loaded via
+MCP and checksum-verified byte-identical), and `payer_modifier_rules` (14 rows).
+The modifier rules could not be transplanted verbatim (their reference-replay
+`payer_profiles` UUIDs don't exist on prod), so they were **re-seeded against
+prod's actual `medicare_dme_noridian` payer** (`b83e2192-…`); a UUID-independent
+content checksum confirms they match the canonical rules.
 
-- `alert_messages` (27 rows) — large HTML/SMS template bodies; hand-transcribing
-  them via MCP is error-prone, and the alert system has code-level default
-  rendering, so the table being empty is degraded-not-broken (the `alert_key →
-  alert_definitions` FK is satisfied on the empty table).
-- `payer_modifier_rules` (14 rows) — each references a `payer_profiles.id` **UUID
-  from the reference replay** that does not exist in prod's (separately seeded)
-  `payer_profiles`; the rows can't be transplanted and must be re-created against
-  prod's actual payers (admin UI or a prod-relative seed).
+### Residual reconciliation (code-referenced items the column audit missed)
+
+A full reference-vs-prod column diff surfaced 21 missing columns; after
+classification:
+
+- **4 additive columns added + verified** — `davinci_pas_submissions.request_bundle_json`
+  (jsonb), `payer_profiles.{accepts_secondary_electronic, era_enrollment_required,
+  era_payer_id}`. The first and `era_payer_id` are code-referenced (were latent 500s).
+- **2 VIEWS created + verified** — `fitter_campaign_touch_metrics` and
+  `fitter_campaign_touch_variant_metrics` (both code-referenced; queryable;
+  `service_role` SELECT auto-granted via default privileges).
+- **4 `audit_log` tamper columns (`signature`, `chain_seq`, `prev_signature`,
+  `archived_at`) deliberately NOT restored** — retired by migration 0156, zero
+  code references; restoring would resurrect dead schema (same call as 0178).
+
+### Final prod state (matches canonical)
+
+`136` base tables · `2` views · `12` functions · `1785` columns. The only
+remaining delta from the canonical replay is the 4 intentionally-absent
+`audit_log` columns (and one harmless legacy `fitter_campaign_touches.opened_at`
+column that predates the canonical `open_count`/`first_opened_at`/`last_opened_at`
+trio, which is also present). The live schema-drift detector should now report
+clean for `resupply`.
 
 ## Recommended durable fix (incident follow-up #1, still open)
 
