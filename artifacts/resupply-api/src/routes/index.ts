@@ -6,6 +6,7 @@ import shopCustomerFollowupsRouter from "./admin/customer-followups.js";
 import followupsListRouter from "./admin/followups-list.js";
 import shopOrderNotesRouter from "./admin/order-notes.js";
 import productCostsRouter from "./admin/product-costs.js";
+import metricAlertsRouter from "./admin/metric-alerts.js";
 import shopOrdersAdminRouter from "./admin/shop-orders.js";
 import shopProductsAdminRouter from "./admin/shop-products.js";
 import inventoryReconciliationRouter from "./admin/inventory-reconciliation.js";
@@ -299,6 +300,9 @@ router.use(payerFeeSchedulesRouter);
 // SKU. The COGS analog of the fee-schedule catalog; source for the
 // per-transaction cost snapshots + every owner-facing margin surface.
 router.use(productCostsRouter);
+// /admin/metric-alerts/* — the in-app KPI alert feed (F2 metrics
+// substrate). Alerts written by the metrics.alerts-evaluator worker.
+router.use(metricAlertsRouter);
 // /admin/billing/era-ingest + /admin/billing/era-files — upload a
 // 5010 835 remittance, parse it, auto-reconcile claim totals + line
 // items + insert paid/denied events.

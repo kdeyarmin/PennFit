@@ -73,6 +73,8 @@ import type { AdminRole } from "@workspace/resupply-db";
  *   cost.read               — view unit cost / COGS / margin figures
  *                              (finance-gated; off front-line CSRs)
  *   cost.write              — set / edit unit cost per SKU
+ *   metrics.read            — view KPI metric alerts / dashboards
+ *                              (management-gated; off front-line CSRs)
  *   bulk_campaigns.send     — send bulk messaging campaigns
  *   fit_session.override    — override a recommended mask/size
  *   inventory.read          — view shop stock counts (Pacware
@@ -98,6 +100,7 @@ export type Permission =
   | "reports.read"
   | "cost.read"
   | "cost.write"
+  | "metrics.read"
   | "bulk_campaigns.send"
   | "fit_session.override"
   | "inventory.read"
@@ -124,6 +127,7 @@ const ALL_PERMISSIONS: ReadonlyArray<Permission> = [
   "reports.read",
   "cost.read",
   "cost.write",
+  "metrics.read",
   "bulk_campaigns.send",
   "fit_session.override",
   "inventory.read",
@@ -202,6 +206,7 @@ const EFFECTIVE_ROLE_PERMISSIONS: Record<
     "reports.read",
     "cost.read",
     "cost.write",
+    "metrics.read",
     "bulk_campaigns.send",
     "fit_session.override",
     "inventory.read",
