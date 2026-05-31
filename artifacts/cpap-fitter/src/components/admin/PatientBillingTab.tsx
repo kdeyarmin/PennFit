@@ -29,6 +29,7 @@ import {
 import { Button } from "@/components/admin/Button";
 import { Card } from "@/components/admin/Card";
 import { Spinner } from "@/components/admin/Spinner";
+import { csrfHeader } from "@/lib/csrf";
 
 const BASE = "/resupply-api";
 
@@ -184,7 +185,7 @@ export function PatientBillingTab({ patientId }: { patientId: string }) {
         {
           method: "POST",
           credentials: "same-origin",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", ...csrfHeader() },
           body: JSON.stringify({}),
         },
       );
@@ -244,7 +245,7 @@ export function PatientBillingTab({ patientId }: { patientId: string }) {
         {
           method: "POST",
           credentials: "same-origin",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", ...csrfHeader() },
           body: JSON.stringify({
             kind: packetKind,
             includeSleepStudyIds: [],

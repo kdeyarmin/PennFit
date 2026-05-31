@@ -3,6 +3,8 @@
 
 import { ApiError } from "@workspace/api-client-react/admin";
 
+import { csrfHeader } from "../csrf";
+
 const API_PREFIX = "/resupply-api";
 
 export interface AdminPatientDocument {
@@ -60,6 +62,7 @@ export async function deletePatientDocument(
   const res = await fetch(url, {
     method: "DELETE",
     credentials: "same-origin",
+    headers: { ...csrfHeader() },
   });
   if (!res.ok) {
     let data: unknown = null;
@@ -81,7 +84,7 @@ export async function markPatientDocumentReviewed(
   const res = await fetch(url, {
     method: "PATCH",
     credentials: "same-origin",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...csrfHeader() },
     body: JSON.stringify(note !== undefined ? { note } : {}),
   });
   if (!res.ok) {

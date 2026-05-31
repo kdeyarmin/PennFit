@@ -219,6 +219,40 @@ export const requireSmartFhirAccess: RequestHandler = async (
     return;
   }
 
+  // Single-use enforcement (SMART backend-services treats `jti` as
+  // single-use). Persist the verified token's jti under a unique key; a
+  // duplicate means this exact token was already accepted — reject the
+  // replay. Without this, a captured but still-valid token could be
+  // replayed inside its ~6 min iat window carrying a DIFFERENT Bundle to
+  // land additional forged referrals (the route's body-sha256 dedupe only
+  // blocks IDENTICAL replays). Bounded by the token's own exp (migration
+  // 0187). A DB problem here fails closed (503) — the route's own inserts
+  // depend on the same database anyway.
+  const { error: jtiErr } = await supabase
+    .schema("resupply")
+    .from("fhir_jwt_jti_seen")
+    .insert({
+      jti: verifyOutcome.claims.jti,
+      tenant_id: tenant.id,
+      expires_at: new Date(verifyOutcome.claims.exp * 1000).toISOString(),
+    });
+  if (jtiErr) {
+    if ((jtiErr as { code?: string }).code === "23505") {
+      logger.warn(
+        { tenant_slug: tenant.slug, event: "smart_fhir_jti_replay" },
+        "requireSmartFhirAccess: jti replay rejected",
+      );
+      res.status(401).json({ error: "jwt_replay" });
+      return;
+    }
+    logger.error(
+      { tenant_slug: tenant.slug, err: jtiErr.message },
+      "requireSmartFhirAccess: jti replay-store insert failed",
+    );
+    res.status(503).json({ error: "jti_store_unavailable" });
+    return;
+  }
+
   req.fhirTenant = {
     id: tenant.id,
     slug: tenant.slug,

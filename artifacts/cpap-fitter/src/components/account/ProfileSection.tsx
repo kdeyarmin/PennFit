@@ -14,6 +14,7 @@ import { useState } from "react";
 import { CheckCircle2, Loader2, MapPin, User as UserIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { csrfHeader } from "@/lib/csrf";
 import { useUnsavedChangesWarning } from "@/hooks/use-unsaved-changes-warning";
 import {
   updateShopMe,
@@ -104,7 +105,7 @@ export function ProfileSection({
           const probe = await fetch("/resupply-api/shop/validate-address", {
             method: "POST",
             credentials: "include",
-            headers: { "Content-Type": "application/json" },
+            headers: { "Content-Type": "application/json", ...csrfHeader() },
             body: JSON.stringify({
               line1: cleanAddr.line1,
               line2: cleanAddr.line2,
