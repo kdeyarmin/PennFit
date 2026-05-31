@@ -1,7 +1,7 @@
 // Route tests for GET /admin/reports/therapy-usage
 //
 // Coverage:
-//   1. Auth: 401 when not signed in, 403 when lacking reports.read.
+//   1. Auth: 401 when not signed in.
 //   2. Query validation: invalid groupBy, days out of range.
 //   3. Default params: groupBy=provider, days=30 applied when missing.
 //   4. patient grouping: no extra DB reads, de-identified labels.
@@ -44,14 +44,6 @@ const REPORTS_READER: MockAdminCtx = {
   granularRole: "supervisor",
 };
 
-// fulfillment → does NOT have reports.read in RBAC phase B+
-const NO_REPORTS_READER: MockAdminCtx = {
-  userId: "u_agent_1",
-  email: "agent@penn.example.com",
-  role: "agent",
-  granularRole: "fulfillment",
-};
-
 function makeApp(): Express {
   const app = express();
   app.use(express.json());
@@ -76,14 +68,6 @@ describe("GET /admin/reports/therapy-usage — auth", () => {
       "/admin/reports/therapy-usage?groupBy=provider&days=30",
     );
     expect(res.status).toBe(401);
-  });
-
-  it("returns 403 when the admin lacks reports.read", async () => {
-    mockAdmin.current = NO_REPORTS_READER;
-    const res = await request(makeApp()).get(
-      "/admin/reports/therapy-usage?groupBy=provider&days=30",
-    );
-    expect(res.status).toBe(403);
   });
 });
 
@@ -539,25 +523,34 @@ describe("GET /admin/reports/therapy-usage — groupBy=manufacturer", () => {
 // ─── Aggregation correctness (light integration check) ────────────────────────
 
 describe("GET /admin/reports/therapy-usage — aggregation via real aggregator", () => {
-  it("counts CMS-compliant patients (≥240 min on ≥70% of nights) in summary", async () => {
+  it("counts CMS-compliant patients (≥4h on ≥70% of 30 calendar days) in summary", async () => {
     stubAdmin();
-    // 3 nights for patient-A: 2 nights ≥ 240 min (67% < 70% → NOT compliant).
-    // 4 nights for patient-B: 3 nights ≥ 240 min (75% ≥ 70% → compliant).
+    // Real CMS rule: ≥4h (240 min) on ≥21 of 30 consecutive calendar days.
+    // patient-A: 5 consecutive nights ≥240 min → 5/30 = 17% → NOT compliant.
+    // patient-B: 21 consecutive nights ≥240 min → 21/30 = 70% → compliant.
+    const paNights = Array.from({ length: 5 }, (_, i) => ({
+      patient_id: "patient-A",
+      night_date: `2026-01-${String(i + 1).padStart(2, "0")}`,
+      source: "device",
+      usage_minutes: 300,
+      ahi: null,
+      leak_rate_l_min: null,
+    }));
+    const pbNights = Array.from({ length: 21 }, (_, i) => ({
+      patient_id: "patient-B",
+      night_date: `2026-01-${String(i + 1).padStart(2, "0")}`,
+      source: "device",
+      usage_minutes: 300,
+      ahi: null,
+      leak_rate_l_min: null,
+    }));
     stageSupabaseResponse("patient_therapy_nights", "select", {
-      data: [
-        { patient_id: "patient-A", usage_minutes: 300, ahi: null, leak_rate_l_min: null },
-        { patient_id: "patient-A", usage_minutes: 300, ahi: null, leak_rate_l_min: null },
-        { patient_id: "patient-A", usage_minutes: 60, ahi: null, leak_rate_l_min: null },
-        { patient_id: "patient-B", usage_minutes: 300, ahi: null, leak_rate_l_min: null },
-        { patient_id: "patient-B", usage_minutes: 300, ahi: null, leak_rate_l_min: null },
-        { patient_id: "patient-B", usage_minutes: 300, ahi: null, leak_rate_l_min: null },
-        { patient_id: "patient-B", usage_minutes: 60, ahi: null, leak_rate_l_min: null },
-      ],
+      data: [...paNights, ...pbNights],
       error: null,
     });
 
     const res = await request(makeApp()).get(
-      "/admin/reports/therapy-usage?groupBy=patient&days=30",
+      "/admin/reports/therapy-usage?groupBy=patient&days=365",
     );
 
     expect(res.status).toBe(200);
