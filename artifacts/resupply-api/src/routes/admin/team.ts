@@ -105,6 +105,7 @@ const ROLE_VALUES: AdminRole[] = [
   "fulfillment",
   "compliance_officer",
   "agent",
+  "rt",
 ];
 
 /** Map a granular admin role to the coarse auth.users.role bucket.

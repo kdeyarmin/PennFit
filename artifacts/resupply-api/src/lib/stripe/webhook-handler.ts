@@ -65,6 +65,10 @@ import {
   type OrderConfirmationLineItem,
 } from "../order-emails/send-order-confirmation-email";
 import { tryAutoEnrollReminderFromOrder } from "../storefront/order-reminder-enrollment";
+import {
+  fetchUnitCostsBySku,
+  stampUnitCostSnapshots,
+} from "../billing/product-cost-lookup";
 
 /**
  * Pull our shop-customer id out of Stripe metadata. The mapping
@@ -860,6 +864,9 @@ async function upsertOrderItemsFromSession(
   });
 
   const rows: ShopOrderItemInsert[] = [];
+  // SKU per row (aligned 1:1 with `rows`), resolved from the expanded
+  // Stripe product metadata, for the COGS snapshot lookup below.
+  const rowSkus: (string | null)[] = [];
   // Built alongside `rows` so the email can reuse the line items we
   // just paid Stripe a single round-trip to fetch — instead of
   // making the same expanded listLineItems call again from the email
@@ -899,6 +906,16 @@ async function upsertOrderItemsFromSession(
       paid_at: paidAtIso,
     });
 
+    // Resolve the shop SKU from the expanded Stripe product metadata
+    // (written by seed-stripe-products). Aligned 1:1 with `rows` so the
+    // COGS snapshot lookup below can stamp by index.
+    let sku: string | null = null;
+    if (product && typeof product === "object" && !product.deleted) {
+      const raw = product.metadata.shop_sku;
+      if (typeof raw === "string" && raw.trim().length > 0) sku = raw.trim();
+    }
+    rowSkus.push(sku);
+
     // Stripe gives us a description on the LineItem itself (matches
     // what the customer saw in Hosted Checkout). Fall back to the
     // expanded product name if for some reason description is empty.
@@ -922,6 +939,13 @@ async function upsertOrderItemsFromSession(
     );
     return emailItems;
   }
+
+  // Stamp the per-unit COGS snapshot (migration 0193) so a later cost
+  // change never rewrites this order's margin. Fail-soft:
+  // fetchUnitCostsBySku returns an empty map on any error, leaving cost
+  // null ("unknown") — it must never block the order-items write.
+  const costBySku = await fetchUnitCostsBySku(rowSkus, log);
+  stampUnitCostSnapshots(rows, rowSkus, costBySku, paidAtIso);
 
   const supabase = getSupabaseServiceRoleClient();
   // ON CONFLICT DO NOTHING for the (stripe_session_id, product_id,

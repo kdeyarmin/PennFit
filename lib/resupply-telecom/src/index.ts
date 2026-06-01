@@ -22,7 +22,9 @@ export {
 export {
   buildConnectStreamTwiml,
   buildHangupTwiml,
+  buildDialTwiml,
   type BuildConnectStreamTwimlInput,
+  type BuildDialTwimlInput,
 } from "./twiml";
 
 export {

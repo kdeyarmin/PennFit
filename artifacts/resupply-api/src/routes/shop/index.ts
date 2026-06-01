@@ -15,6 +15,8 @@ import fitterCompleteRouter from "./fitter-complete";
 import quizLeadRouter from "./quiz-lead";
 import insuranceEstimateRouter from "./insurance-estimate";
 import npsResponseRouter from "./nps-response";
+import maskFitResponseRouter from "./mask-fit-response";
+import educationVideosRouter from "./education-videos";
 import backInStockRouter from "./back-in-stock";
 import meRouter from "./me";
 import meClinicalInfoRouter from "./me-clinical-info";
@@ -202,6 +204,10 @@ router.use(insuranceEstimateRouter);
 // 30-day TTL); rate-limited per IP; persists to
 // shop_order_nps_responses.
 router.use(npsResponseRouter);
+// /shop/orders/mask-fit — public mask-fit micro-survey capture (RT #22a).
+router.use(maskFitResponseRouter);
+// /shop/education-videos — public education-video library (RT #25).
+router.use(educationVideosRouter);
 router.use(backInStockRouter);
 
 export default router;

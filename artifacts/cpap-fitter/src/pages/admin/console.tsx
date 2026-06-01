@@ -95,6 +95,16 @@ const AdminTodayPage = lazy(() =>
     default: m.AdminTodayPage,
   })),
 );
+const AdminWorkQueuePage = lazy(() =>
+  import("@/pages/admin/admin-work-queue").then((m) => ({
+    default: m.AdminWorkQueuePage,
+  })),
+);
+const AdminCasesPage = lazy(() =>
+  import("@/pages/admin/admin-cases").then((m) => ({
+    default: m.AdminCasesPage,
+  })),
+);
 const AdminProvidersPage = lazy(() =>
   import("@/pages/admin/admin-providers").then((m) => ({
     default: m.AdminProvidersPage,
@@ -125,6 +135,31 @@ const AdminAnalyticsPage = lazy(() =>
     default: m.AdminAnalyticsPage,
   })),
 );
+const AdminAnalyticsMarginPage = lazy(() =>
+  import("@/pages/admin/admin-analytics-margin").then((m) => ({
+    default: m.AdminAnalyticsMarginPage,
+  })),
+);
+const AdminLtvCacPage = lazy(() =>
+  import("@/pages/admin/admin-ltv-cac").then((m) => ({
+    default: m.AdminLtvCacPage,
+  })),
+);
+const AdminInventoryTurnoverPage = lazy(() =>
+  import("@/pages/admin/admin-inventory-turnover").then((m) => ({
+    default: m.AdminInventoryTurnoverPage,
+  })),
+);
+const AdminGoalsPage = lazy(() =>
+  import("@/pages/admin/admin-goals").then((m) => ({
+    default: m.AdminGoalsPage,
+  })),
+);
+const AdminKpiAlertsPage = lazy(() =>
+  import("@/pages/admin/admin-kpi-alerts").then((m) => ({
+    default: m.AdminKpiAlertsPage,
+  })),
+);
 const AdminTherapyUsageReportPage = lazy(() =>
   import("@/pages/admin/admin-therapy-usage-report").then((m) => ({
     default: m.AdminTherapyUsageReportPage,
@@ -133,6 +168,31 @@ const AdminTherapyUsageReportPage = lazy(() =>
 const AdminRtOverviewPage = lazy(() =>
   import("@/pages/admin/admin-rt-overview").then((m) => ({
     default: m.AdminRtOverviewPage,
+  })),
+);
+const AdminRtOutcomesPage = lazy(() =>
+  import("@/pages/admin/admin-rt-outcomes").then((m) => ({
+    default: m.AdminRtOutcomesPage,
+  })),
+);
+const AdminInterventionsPage = lazy(() =>
+  import("@/pages/admin/admin-interventions").then((m) => ({
+    default: m.AdminInterventionsPage,
+  })),
+);
+const AdminMaskFitWorklistPage = lazy(() =>
+  import("@/pages/admin/admin-mask-fit-worklist").then((m) => ({
+    default: m.AdminMaskFitWorklistPage,
+  })),
+);
+const AdminClinicalOutreachPage = lazy(() =>
+  import("@/pages/admin/admin-clinical-outreach").then((m) => ({
+    default: m.AdminClinicalOutreachPage,
+  })),
+);
+const AdminEducationVideosPage = lazy(() =>
+  import("@/pages/admin/admin-education-videos").then((m) => ({
+    default: m.AdminEducationVideosPage,
   })),
 );
 const AdminBulkCampaignsPage = lazy(() =>
@@ -230,9 +290,19 @@ const AdminCoachingPage = lazy(() =>
     default: m.AdminCoachingPage,
   })),
 );
+const AdminClinicalPage = lazy(() =>
+  import("@/pages/admin/admin-clinical").then((m) => ({
+    default: m.AdminClinicalPage,
+  })),
+);
 const AdminDeliveryFailuresPage = lazy(() =>
   import("@/pages/admin/admin-delivery-failures").then((m) => ({
     default: m.AdminDeliveryFailuresPage,
+  })),
+);
+const AdminWebhookDeliveriesPage = lazy(() =>
+  import("@/pages/admin/admin-webhook-deliveries").then((m) => ({
+    default: m.AdminWebhookDeliveriesPage,
   })),
 );
 const AdminRuleTesterPage = lazy(() =>
@@ -305,6 +375,46 @@ const AdminBillingAgingPage = lazy(() =>
     default: m.AdminBillingAgingPage,
   })),
 );
+const AdminSecondaryClaimsPage = lazy(() =>
+  import("@/pages/admin/admin-secondary-claims").then((m) => ({
+    default: m.AdminSecondaryClaimsPage,
+  })),
+);
+const AdminBillingStatementsSendPage = lazy(() =>
+  import("@/pages/admin/admin-billing-statements-send").then((m) => ({
+    default: m.AdminBillingStatementsSendPage,
+  })),
+);
+const AdminBillingCollectionsForecastPage = lazy(() =>
+  import("@/pages/admin/admin-billing-collections-forecast").then((m) => ({
+    default: m.AdminBillingCollectionsForecastPage,
+  })),
+);
+const AdminBillingCmnWorklistPage = lazy(() =>
+  import("@/pages/admin/admin-billing-cmn-worklist").then((m) => ({
+    default: m.AdminBillingCmnWorklistPage,
+  })),
+);
+const AdminBillingTimelyFilingPage = lazy(() =>
+  import("@/pages/admin/admin-billing-timely-filing").then((m) => ({
+    default: m.AdminBillingTimelyFilingPage,
+  })),
+);
+const AdminPayerProfitabilityPage = lazy(() =>
+  import("@/pages/admin/admin-payer-profitability").then((m) => ({
+    default: m.AdminPayerProfitabilityPage,
+  })),
+);
+const AdminBillingDenialsWorklistPage = lazy(() =>
+  import("@/pages/admin/admin-billing-denials-worklist").then((m) => ({
+    default: m.AdminBillingDenialsWorklistPage,
+  })),
+);
+const AdminBillingManualClaimPage = lazy(() =>
+  import("@/pages/admin/admin-billing-manual-claim").then((m) => ({
+    default: m.AdminBillingManualClaimPage,
+  })),
+);
 const AdminBillingDenialsPage = lazy(() =>
   import("@/pages/admin/admin-billing-denials").then((m) => ({
     default: m.AdminBillingDenialsPage,
@@ -318,6 +428,11 @@ const AdminBillingEraPage = lazy(() =>
 const AdminBillingEligibilityPage = lazy(() =>
   import("@/pages/admin/admin-billing-eligibility").then((m) => ({
     default: m.AdminBillingEligibilityPage,
+  })),
+);
+const AdminBillingEligibilityWorklistPage = lazy(() =>
+  import("@/pages/admin/admin-billing-eligibility-worklist").then((m) => ({
+    default: m.AdminBillingEligibilityWorklistPage,
   })),
 );
 const AdminBillingPriorAuthsPage = lazy(() =>
@@ -504,10 +619,46 @@ function AdminConsole() {
               component={AdminBillingAgingPage}
             />
             <Route
+              path="/admin/billing/secondary"
+              component={AdminSecondaryClaimsPage}
+            />
+            <Route
+              path="/admin/billing/statements"
+              component={AdminBillingStatementsSendPage}
+            />
+            <Route
+              path="/admin/billing/collections-forecast"
+              component={AdminBillingCollectionsForecastPage}
+            />
+            <Route
+              path="/admin/billing/cmn"
+              component={AdminBillingCmnWorklistPage}
+            />
+            <Route
+              path="/admin/billing/timely-filing"
+              component={AdminBillingTimelyFilingPage}
+            />
+            <Route
+              path="/admin/billing/payer-profitability"
+              component={AdminPayerProfitabilityPage}
+            />
+            <Route
+              path="/admin/billing/denials-worklist"
+              component={AdminBillingDenialsWorklistPage}
+            />
+            <Route
+              path="/admin/billing/manual-claim"
+              component={AdminBillingManualClaimPage}
+            />
+            <Route
               path="/admin/billing/denials"
               component={AdminBillingDenialsPage}
             />
             <Route path="/admin/billing/era" component={AdminBillingEraPage} />
+            <Route
+              path="/admin/billing/eligibility-recheck"
+              component={AdminBillingEligibilityWorklistPage}
+            />
             <Route
               path="/admin/billing/eligibility"
               component={AdminBillingEligibilityPage}
@@ -631,6 +782,8 @@ function AdminConsole() {
             />
             <Route path="/admin/followups" component={AdminFollowupsPage} />
             <Route path="/admin/today" component={AdminTodayPage} />
+            <Route path="/admin/work-queue" component={AdminWorkQueuePage} />
+            <Route path="/admin/cases" component={AdminCasesPage} />
             <Route path="/admin/providers" component={AdminProvidersPage} />
             <Route
               path="/admin/inbound-faxes"
@@ -648,12 +801,43 @@ function AdminConsole() {
               path="/admin/equipment-recalls"
               component={AdminEquipmentRecallsPage}
             />
+            <Route
+              path="/admin/analytics/margin"
+              component={AdminAnalyticsMarginPage}
+            />
+            <Route
+              path="/admin/analytics/ltv-cac"
+              component={AdminLtvCacPage}
+            />
+            <Route
+              path="/admin/analytics/inventory-turnover"
+              component={AdminInventoryTurnoverPage}
+            />
+            <Route path="/admin/goals" component={AdminGoalsPage} />
+            <Route path="/admin/kpi-alerts" component={AdminKpiAlertsPage} />
             <Route path="/admin/analytics" component={AdminAnalyticsPage} />
             <Route
               path="/admin/therapy-usage-report"
               component={AdminTherapyUsageReportPage}
             />
             <Route path="/admin/rt-overview" component={AdminRtOverviewPage} />
+            <Route path="/admin/rt-outcomes" component={AdminRtOutcomesPage} />
+            <Route
+              path="/admin/clinical/interventions"
+              component={AdminInterventionsPage}
+            />
+            <Route
+              path="/admin/clinical/mask-fit"
+              component={AdminMaskFitWorklistPage}
+            />
+            <Route
+              path="/admin/clinical/outreach"
+              component={AdminClinicalOutreachPage}
+            />
+            <Route
+              path="/admin/clinical/education-videos"
+              component={AdminEducationVideosPage}
+            />
             <Route
               path="/admin/bulk-campaigns"
               component={AdminBulkCampaignsPage}
@@ -715,9 +899,14 @@ function AdminConsole() {
               component={AdminTherapyCompliancePage}
             />
             <Route path="/admin/coaching" component={AdminCoachingPage} />
+            <Route path="/admin/clinical" component={AdminClinicalPage} />
             <Route
               path="/admin/delivery-failures"
               component={AdminDeliveryFailuresPage}
+            />
+            <Route
+              path="/admin/webhook-deliveries"
+              component={AdminWebhookDeliveriesPage}
             />
             <Route path="/admin/rule-tester" component={AdminRuleTesterPage} />
             <Route path="/admin/settings" component={AdminSettingsPage} />

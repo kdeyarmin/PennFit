@@ -25,6 +25,7 @@
 //   * super_admin           ← db: admin
 //   * admin                 ← db: supervisor + compliance_officer
 //   * customer_service_rep  ← db: csr + fitter + fulfillment + agent
+//   * clinician             ← db: rt
 //
 // What does NOT live here
 // -----------------------
@@ -70,6 +71,11 @@ import type { AdminRole } from "@workspace/resupply-db";
  *   audit.read              — view audit log entries in the UI
  *   admin_team.manage       — invite / revoke admin team members
  *   reports.read            — view operations-center dashboards
+ *   cost.read               — view unit cost / COGS / margin figures
+ *                              (finance-gated; off front-line CSRs)
+ *   cost.write              — set / edit unit cost per SKU
+ *   metrics.read            — view KPI metric alerts / dashboards
+ *                              (management-gated; off front-line CSRs)
  *   bulk_campaigns.send     — send bulk messaging campaigns
  *   fit_session.override    — override a recommended mask/size
  *   inventory.read          — view shop stock counts (Pacware
@@ -80,6 +86,13 @@ import type { AdminRole } from "@workspace/resupply-db";
  *   conversations.manage    — triage admin inbox: snooze, tag, claim
  *   admin.tools.manage      — supervisor-tier CSR-tool management
  *                              (macro templates, future quick-actions)
+ *   clinical.read           — view clinical encounters / patient
+ *                              clinical timeline (rt + management)
+ *   clinical.note.write     — author a clinical encounter note
+ *   clinical.intervention.write — record a structured intervention plan
+ *   cases.read              — view CSR cases (cross-channel tickets)
+ *   cases.manage            — open / edit / link cases
+ *   targets.manage          — set / view business goals (management)
  */
 export type Permission =
   | "patients.read"
@@ -93,6 +106,9 @@ export type Permission =
   | "audit.read"
   | "admin_team.manage"
   | "reports.read"
+  | "cost.read"
+  | "cost.write"
+  | "metrics.read"
   | "bulk_campaigns.send"
   | "fit_session.override"
   | "inventory.read"
@@ -100,7 +116,13 @@ export type Permission =
   | "grievances.read"
   | "grievances.resolve"
   | "conversations.manage"
-  | "admin.tools.manage";
+  | "admin.tools.manage"
+  | "clinical.read"
+  | "clinical.note.write"
+  | "clinical.intervention.write"
+  | "cases.read"
+  | "cases.manage"
+  | "targets.manage";
 
 /** Full enumeration — handy for tests and for the `admin` role
  *  that should always have every permission. Kept in sync with the
@@ -117,6 +139,9 @@ const ALL_PERMISSIONS: ReadonlyArray<Permission> = [
   "audit.read",
   "admin_team.manage",
   "reports.read",
+  "cost.read",
+  "cost.write",
+  "metrics.read",
   "bulk_campaigns.send",
   "fit_session.override",
   "inventory.read",
@@ -125,10 +150,16 @@ const ALL_PERMISSIONS: ReadonlyArray<Permission> = [
   "grievances.resolve",
   "conversations.manage",
   "admin.tools.manage",
+  "clinical.read",
+  "clinical.note.write",
+  "clinical.intervention.write",
+  "cases.read",
+  "cases.manage",
+  "targets.manage",
 ];
 
 /**
- * The three roles the product actually distinguishes:
+ * The four roles the product actually distinguishes:
  *   * super_admin           — full surface; team management;
  *                              destructive ops (audit-archive
  *                              destruction, etc.).
@@ -141,8 +172,14 @@ const ALL_PERMISSIONS: ReadonlyArray<Permission> = [
  *                              folded together. Day-to-day patient
  *                              and returns work; no money-out, no
  *                              compliance resolution.
+ *   * clinician             — respiratory therapist (rt). Clinical
+ *                              encounter documentation + patient read.
  */
-export type EffectiveRole = "super_admin" | "admin" | "customer_service_rep";
+export type EffectiveRole =
+  | "super_admin"
+  | "admin"
+  | "customer_service_rep"
+  | "clinician";
 
 /**
  * Normalize a DB-persisted role to the 3-bucket effective model.
@@ -161,6 +198,8 @@ export function toEffectiveRole(role: AdminRole): EffectiveRole {
     case "supervisor":
     case "compliance_officer":
       return "admin";
+    case "rt":
+      return "clinician";
     case "csr":
     case "fitter":
     case "fulfillment":
@@ -193,6 +232,9 @@ const EFFECTIVE_ROLE_PERMISSIONS: Record<
     "audit.read",
     "audit.export",
     "reports.read",
+    "cost.read",
+    "cost.write",
+    "metrics.read",
     "bulk_campaigns.send",
     "fit_session.override",
     "inventory.read",
@@ -201,6 +243,12 @@ const EFFECTIVE_ROLE_PERMISSIONS: Record<
     "grievances.resolve",
     "conversations.manage",
     "admin.tools.manage",
+    "clinical.read",
+    "clinical.note.write",
+    "clinical.intervention.write",
+    "cases.read",
+    "cases.manage",
+    "targets.manage",
   ]),
 
   // Union of legacy `csr` + `fitter` + `fulfillment` + `agent`.
@@ -219,6 +267,18 @@ const EFFECTIVE_ROLE_PERMISSIONS: Record<
     "grievances.read",
     "conversations.manage",
     "fit_session.override",
+    "cases.read",
+    "cases.manage",
+  ]),
+
+  // Respiratory therapist (rt). Clinical documentation + the patient
+  // context needed to do it. No money-out, no team management, no
+  // returns approval.
+  clinician: new Set<Permission>([
+    "patients.read",
+    "clinical.read",
+    "clinical.note.write",
+    "clinical.intervention.write",
   ]),
 };
 

@@ -255,6 +255,48 @@ export function fetchPayerFeeSchedules(filters?: {
   return getJSON("/admin/payer-fee-schedules", filters);
 }
 
+export interface FeeScheduleImportResult {
+  accepted: number;
+  errors: Array<{ row: number; reason: string }>;
+}
+
+/**
+ * Bulk-import a payer's fee schedule from a pasted CSV
+ * (POST /admin/payer-fee-schedules/import-csv, admin-only).
+ *
+ * The route returns 201 `{ accepted, errors }` on success and 400
+ * `{ accepted: 0, errors }` when no row validated — both are useful
+ * (the row-level `errors` tell the operator what to fix), so we return
+ * that envelope rather than throwing. A genuine failure (403 / 404 /
+ * 500 / malformed-body) still throws an ApiError for ErrorPanel.
+ */
+export async function importPayerFeeScheduleCsv(
+  payerProfileId: string,
+  csv: string,
+): Promise<FeeScheduleImportResult> {
+  const url = `${BASE}/admin/payer-fee-schedules/import-csv`;
+  const res = await fetch(url, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      ...csrfHeader(),
+    },
+    body: JSON.stringify({ payerProfileId, csv }),
+  });
+  const data = await parseErrorBody(res);
+  const looksLikeResult =
+    typeof data === "object" &&
+    data !== null &&
+    "accepted" in data &&
+    "errors" in data;
+  if (res.ok || looksLikeResult) {
+    return data as FeeScheduleImportResult;
+  }
+  throw new ApiError(res, data, { method: "POST", url });
+}
+
 // ─── Payer modifier rules ──────────────────────────────────────────
 
 export interface PayerModifierRule {

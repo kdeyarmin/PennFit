@@ -320,6 +320,41 @@ describe("build837P", () => {
     expect(payload).not.toMatch(/~SBR\*[ST]\*/);
   });
 
+  it("bills a secondary claim: 2000B SBR*S + 2320 SBR*P with AMT*D prior-paid", () => {
+    const input = fixtureInput();
+    input.claims[0]!.payerResponsibility = "S";
+    input.claims[0]!.otherSubscriber = {
+      payerResponsibility: "P",
+      priorPayerPaidCents: 12000,
+      subscriber: {
+        firstName: "JANE",
+        lastName: "DOE",
+        dateOfBirth: "1965-04-12",
+        gender: "F",
+        memberId: "MCR123456",
+        address: {
+          line1: "200 ELM ST",
+          city: "ALTOONA",
+          state: "PA",
+          zip: "16601",
+        },
+        relationshipCode: "18",
+      },
+      payer: { organizationName: "MEDICARE PART B", payerId: "MEDPB" },
+    };
+    const { payload } = build837P(input);
+    // Destination (secondary) subscriber loop declares S.
+    expect(payload).toMatch(/~SBR\*S\*/);
+    // 2320 discloses the primary that already adjudicated, with AMT*D.
+    expect(payload).toMatch(/~SBR\*P\*/);
+    expect(payload).toContain("~AMT*D*120.00~");
+  });
+
+  it("defaults the destination SBR01 to P when payerResponsibility is unset", () => {
+    const { payload } = build837P(fixtureInput());
+    expect(payload).toMatch(/~SBR\*P\*/);
+  });
+
   it("emits loop 2310B (rendering provider) with NM1*82 + REF*0B", () => {
     const input = fixtureInput();
     input.claims[0]!.renderingProvider = {

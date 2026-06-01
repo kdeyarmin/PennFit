@@ -30,7 +30,8 @@ export type AdminRole =
   | "fitter"
   | "fulfillment"
   | "compliance_officer"
-  | "agent";
+  | "agent"
+  | "rt";
 
 export type AdminStatus = "pending" | "active" | "revoked";
 
@@ -135,6 +136,12 @@ export interface CommunicationPreferences {
    * otherwise; surfaced as a toggle on /account so they can mute.
    */
   emailInAppReplyNotifications: boolean;
+  /**
+   * Billing / patient-responsibility statement emails. A transactional
+   * account notice (a bill the patient owes), so default ON — surfaced
+   * as a toggle on /account so a patient who pays another way can mute.
+   */
+  emailBillingStatements: boolean;
   /** Marketing SMS. Promotions etc. */
   smsMarketing: boolean;
   /** Transactional SMS (order shipped, delivered). Off by default. */
@@ -155,6 +162,7 @@ export const DEFAULT_COMMUNICATION_PREFERENCES: CommunicationPreferences = {
   emailAbandonedCart: true,
   emailReviewRequests: true,
   emailInAppReplyNotifications: true,
+  emailBillingStatements: true,
   smsMarketing: false,
   smsTransactional: false,
   preferredChannel: "email",

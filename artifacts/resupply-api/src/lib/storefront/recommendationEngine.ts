@@ -783,11 +783,26 @@ function getActiveContraindications(
  * For any plausible input, at least one viable mask is returned.
  * (Guaranteed because we return alternatives even when confidence is low.)
  */
+export interface RecommendOptions {
+  /**
+   * Per-mask RANKING multipliers learned from real post-fit feedback
+   * (RT #22b — `computeFitAdjustments`). Centered on 1.0: a mask that
+   * seals well for real patients gets a small nudge up, a leaky/
+   * uncomfortable one a nudge down. Applied to the sort score ONLY
+   * (like the manufacturer boost) — never to patient-facing confidence,
+   * which stays a pure clinical-fit signal. Default: none (neutral), so
+   * the engine behaves identically until feedback has accumulated.
+   */
+  fitAdjustments?: Record<string, number>;
+}
+
 export function recommend(
   measurements: FacialMeasurements,
   answers: QuestionnaireAnswers,
+  options: RecommendOptions = {},
 ): RecommendationResult {
   const typeWeights = scoreAnswers(answers);
+  const fitAdjustments = options.fitAdjustments ?? {};
 
   const scoredMasks = maskCatalog.map((mask) => {
     const fitScore = scoreFitMatch(mask, measurements);
@@ -822,7 +837,10 @@ export function recommend(
     // an otherwise-equivalent peer, while a contraindicated preferred mask
     // still loses to a viable non-preferred one.
     const brandMultiplier = MANUFACTURER_BOOST[mask.manufacturer] ?? 1.0;
-    const sortScore = clinicalScore * brandMultiplier;
+    // Real-world fit feedback (#22b) nudges the ranking only — neutral
+    // (1.0) for any mask without enough accumulated feedback.
+    const fitMultiplier = fitAdjustments[mask.id] ?? 1.0;
+    const sortScore = clinicalScore * brandMultiplier * fitMultiplier;
 
     const reasoning = generateReasoning(
       mask,

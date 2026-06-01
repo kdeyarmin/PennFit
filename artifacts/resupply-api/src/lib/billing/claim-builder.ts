@@ -23,6 +23,7 @@ import {
 } from "@workspace/resupply-db";
 
 import { logger } from "../logger";
+import { fetchUnitCostsBySku } from "./product-cost-lookup";
 
 type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
 
@@ -39,6 +40,11 @@ export interface ProposedClaimLine {
   /** When the billed amount came from a fee-schedule lookup, the
    *  matching row id; otherwise null. */
   feeScheduleRowId: string | null;
+  /** Per-unit COGS snapshot (migration 0193), resolved from
+   *  product_costs by the dispensed SKU. undefined/null = cost unknown
+   *  (template / manual lines, or a SKU with no recorded cost). */
+  unitCostCents?: number | null;
+  costSource?: string | null;
 }
 
 export interface ProposedClaim {
@@ -299,6 +305,19 @@ export async function buildClaimFromFulfillment(
     proposed,
   );
   if (line) proposed.lines.push(line);
+
+  // 7b. Stamp the per-unit COGS snapshot (migration 0193) onto the line
+  //     from product_costs, keyed on the dispensed SKU. Fail-soft: an
+  //     unknown cost leaves the line's cost null — must never block
+  //     claim building.
+  if (line && fulfillment.item_sku) {
+    const costBySku = await fetchUnitCostsBySku([fulfillment.item_sku]);
+    const cost = costBySku.get(fulfillment.item_sku);
+    if (cost) {
+      line.unitCostCents = cost.unitCostCents;
+      line.costSource = cost.costSource;
+    }
+  }
 
   // 8. Apply payer modifier rules to every line. The rule engine
   //    needs the rental cycle stage + compliance state; we resolve
@@ -600,4 +619,48 @@ function isoDate(s: string | null | undefined): string | null {
   const d = new Date(s);
   if (Number.isNaN(d.getTime())) return null;
   return d.toISOString().slice(0, 10);
+}
+
+/** A row ready for insert into resupply.insurance_claim_line_items. */
+export interface ClaimLineItemRow {
+  claim_id: string;
+  hcpcs_code: string;
+  modifier: string | null;
+  description: string | null;
+  quantity: number;
+  billed_cents: number;
+  status: "pending";
+  unit_cost_cents: number | null;
+  cost_source: string | null;
+  cost_captured_at: string | null;
+}
+
+/**
+ * Map proposed claim lines to insurance_claim_line_items insert rows,
+ * carrying the per-unit COGS snapshot (migration 0193) when the builder
+ * resolved one. `cost_captured_at` is stamped ONLY on lines that
+ * actually have a cost (a known 0 counts), so an uncosted line reads
+ * back as "unknown" rather than "captured a null". Pure + exported for
+ * unit testing.
+ */
+export function buildClaimLineRows(
+  claimId: string,
+  lines: readonly ProposedClaimLine[],
+  capturedAtIso: string,
+): ClaimLineItemRow[] {
+  return lines.map((l) => {
+    const hasCost = typeof l.unitCostCents === "number";
+    return {
+      claim_id: claimId,
+      hcpcs_code: l.hcpcsCode,
+      modifier: l.modifiers.join(",") || null,
+      description: l.description,
+      quantity: l.quantity,
+      billed_cents: l.billedCents,
+      status: "pending",
+      unit_cost_cents: hasCost ? (l.unitCostCents as number) : null,
+      cost_source: hasCost ? (l.costSource ?? "manual") : null,
+      cost_captured_at: hasCost ? capturedAtIso : null,
+    };
+  });
 }

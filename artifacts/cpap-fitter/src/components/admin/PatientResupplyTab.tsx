@@ -20,12 +20,14 @@ import {
   Activity,
   ClipboardList,
   Gauge,
+  LineChart,
   TrendingUp,
 } from "lucide-react";
 
 import { Card } from "@/components/admin/Card";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { Spinner } from "@/components/admin/Spinner";
+import { Sparkline } from "@/components/admin/Sparkline";
 
 const BASE = "/resupply-api";
 
@@ -145,6 +147,8 @@ export function PatientResupplyTab({ patientId }: { patientId: string }) {
   return (
     <div className="admin-root space-y-6" data-testid="patient-resupply-tab">
       <AdherenceCard adherence={data.adherence} />
+
+      {data.nights.length > 0 && <TherapyTrendsCard nights={data.nights} />}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         <Card
@@ -421,6 +425,90 @@ function AdherenceCard({ adherence }: { adherence: AdherenceSummary }) {
         />
       </div>
     </Card>
+  );
+}
+
+// 90-night usage / AHI / leak trends. The `nights` arrive newest-first
+// (last 60 on file); we reverse to chronological order so the sparkline
+// reads left→old, right→now. Render-only — no extra fetch.
+function TherapyTrendsCard({ nights }: { nights: TherapyNight[] }) {
+  const chronological = [...nights].reverse();
+  const usageHours = chronological.map((n) =>
+    n.usageMinutes == null ? null : n.usageMinutes / 60,
+  );
+  const ahi = chronological.map((n) => n.ahi);
+  const leak = chronological.map((n) => n.leakRateLMin);
+  const latest = nights[0];
+
+  return (
+    <Card
+      title={
+        <span className="inline-flex items-center gap-2">
+          <LineChart className="h-4 w-4" />
+          Therapy trends
+        </span>
+      }
+      subtitle={`Last ${nights.length} night(s) on file, oldest → newest`}
+    >
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
+        <TrendCell
+          label="Usage"
+          values={usageHours}
+          latest={formatHours(latest?.usageMinutes ?? null)}
+          color="hsl(var(--penn-navy))"
+        />
+        <TrendCell
+          label="AHI"
+          values={ahi}
+          latest={latest?.ahi == null ? "—" : latest.ahi.toFixed(1)}
+          color="#b45309"
+        />
+        <TrendCell
+          label="Leak (L/min)"
+          values={leak}
+          latest={
+            latest?.leakRateLMin == null ? "—" : latest.leakRateLMin.toFixed(1)
+          }
+          color="#1d4ed8"
+        />
+      </div>
+    </Card>
+  );
+}
+
+function TrendCell({
+  label,
+  values,
+  latest,
+  color,
+}: {
+  label: string;
+  values: Array<number | null>;
+  latest: string;
+  color: string;
+}) {
+  return (
+    <div>
+      <p
+        className="text-[10px] uppercase tracking-[0.2em] font-semibold mb-1"
+        style={{ color: "hsl(var(--penn-gold-deep))" }}
+      >
+        {label}
+      </p>
+      <p
+        className="text-xl font-semibold tabular-nums leading-none mb-2"
+        style={{ color: "hsl(var(--ink-1))" }}
+      >
+        {latest}
+      </p>
+      <Sparkline
+        values={values}
+        color={color}
+        width={160}
+        height={32}
+        ariaLabel={`${label} trend over the last ${values.length} nights`}
+      />
+    </div>
   );
 }
 

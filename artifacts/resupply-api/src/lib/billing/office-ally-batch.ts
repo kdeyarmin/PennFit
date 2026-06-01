@@ -22,6 +22,7 @@ import {
   build837P,
   createOfficeAllyAdapter,
   type ClaimDetail,
+  type OtherSubscriberDetail,
 } from "@workspace/resupply-integrations-office-ally";
 
 import { resolveBillingIdentity } from "./identity-resolver";
@@ -451,6 +452,56 @@ export async function buildOneDetail(
     state: addr.state,
     zip: addr.zip,
   };
+
+  // Payer sequence drives both the destination SBR01 (2000B) and which
+  // COB loop we emit. A secondary/tertiary claim is billed downstream
+  // and must disclose the PRIOR (primary) payer's adjudication.
+  const payerSequence = (claim.payer_sequence as string | null) ?? "primary";
+  const payerResponsibility: "P" | "S" | "T" =
+    payerSequence === "tertiary"
+      ? "T"
+      : payerSequence === "secondary"
+        ? "S"
+        : "P";
+
+  // Loop 2320/2330. Downstream claim → disclose the primary that already
+  // paid (AMT*D from the generation-time snapshot). Primary claim that
+  // merely has a secondary on file → disclose that secondary (no prior
+  // payment yet). Money in cents; no PHI is logged from here.
+  let otherSubscriber: OtherSubscriberDetail | null = null;
+  if (payerResponsibility !== "P") {
+    otherSubscriber = await loadPrimaryCobDisclosure(
+      supabase,
+      claim,
+      {
+        firstName: patient.legal_first_name,
+        lastName: patient.legal_last_name,
+        dateOfBirth: patient.date_of_birth,
+      },
+      subscriberAddress,
+    );
+  } else if (secondaryCoverage) {
+    otherSubscriber = {
+      payerResponsibility: "S",
+      priorPayerPaidCents: null,
+      subscriber: {
+        firstName: patient.legal_first_name,
+        lastName: patient.legal_last_name,
+        dateOfBirth: patient.date_of_birth,
+        gender: "U",
+        memberId: secondaryCoverage.member_id,
+        address: subscriberAddress,
+        relationshipCode: relationshipFor(
+          secondaryCoverage.policyholder_relationship,
+        ),
+      },
+      payer: {
+        organizationName: secondaryCoverage.payer_name,
+        payerId: secondaryCoverage.payer_name.slice(0, 20),
+      },
+    };
+  }
+
   return {
     internalClaimId: claim.id.slice(0, 38),
     totalBilledCents: claim.total_billed_cents,
@@ -502,31 +553,72 @@ export async function buildOneDetail(
           lastName: splitLastName(referringProvider.legal_name),
         }
       : null,
-    // Loop 2320/2330 — secondary-payer coordination of benefits. We
-    // attach the secondary when one is linked; prior-payer paid is
-    // null because we don't compute pre-adjudication amounts at
-    // submit time.
-    otherSubscriber: secondaryCoverage
-      ? {
-          payerResponsibility: "S",
-          priorPayerPaidCents: null,
-          subscriber: {
-            firstName: patient.legal_first_name,
-            lastName: patient.legal_last_name,
-            dateOfBirth: patient.date_of_birth,
-            gender: "U",
-            memberId: secondaryCoverage.member_id,
-            address: subscriberAddress,
-            relationshipCode: relationshipFor(
-              secondaryCoverage.policyholder_relationship,
-            ),
-          },
-          payer: {
-            organizationName: secondaryCoverage.payer_name,
-            payerId: secondaryCoverage.payer_name.slice(0, 20),
-          },
-        }
-      : null,
+    // Loop 2320/2330 — coordination of benefits (computed above).
+    payerResponsibility,
+    otherSubscriber,
+  };
+}
+
+/**
+ * Build the 2320/2330 disclosure of the PRIMARY payer for a downstream
+ * (secondary/tertiary) claim. The primary payer name comes from the
+ * linked primary claim; the prior-paid amount (AMT*D) is the snapshot
+ * frozen onto this claim when the secondary was generated (Biller #28),
+ * so a later primary adjustment can't silently change what we disclose.
+ * Returns null when the link is missing (degrade to no COB loop rather
+ * than emit a malformed one).
+ */
+async function loadPrimaryCobDisclosure(
+  supabase: SupabaseClient,
+  claim: ClaimRow,
+  patientName: { firstName: string; lastName: string; dateOfBirth: string },
+  subscriberAddress: {
+    line1: string;
+    city: string;
+    state: string;
+    zip: string;
+  },
+): Promise<OtherSubscriberDetail | null> {
+  if (!claim.primary_claim_id) return null;
+  const { data: primaryClaim } = await supabase
+    .schema("resupply")
+    .from("insurance_claims")
+    .select("payer_name, insurance_coverage_id")
+    .eq("id", claim.primary_claim_id)
+    .limit(1)
+    .maybeSingle();
+  if (!primaryClaim?.payer_name) return null;
+
+  let memberId = "";
+  let relationship: string | null = null;
+  if (primaryClaim.insurance_coverage_id) {
+    const { data: cov } = await supabase
+      .schema("resupply")
+      .from("insurance_coverages")
+      .select("member_id, policyholder_relationship")
+      .eq("id", primaryClaim.insurance_coverage_id)
+      .limit(1)
+      .maybeSingle();
+    memberId = cov?.member_id ?? "";
+    relationship = cov?.policyholder_relationship ?? null;
+  }
+
+  return {
+    payerResponsibility: "P",
+    priorPayerPaidCents: claim.cob_primary_paid_cents ?? null,
+    subscriber: {
+      firstName: patientName.firstName,
+      lastName: patientName.lastName,
+      dateOfBirth: patientName.dateOfBirth,
+      gender: "U",
+      memberId,
+      address: subscriberAddress,
+      relationshipCode: relationshipFor(relationship),
+    },
+    payer: {
+      organizationName: primaryClaim.payer_name,
+      payerId: primaryClaim.payer_name.slice(0, 20),
+    },
   };
 }
 

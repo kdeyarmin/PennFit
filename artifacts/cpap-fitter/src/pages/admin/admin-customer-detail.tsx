@@ -47,6 +47,7 @@ import { Spinner } from "@/components/admin/Spinner";
 import { Badge, conversationStatusLabel } from "@/components/admin/Badge";
 import { CustomerNotesPanel } from "@/components/admin/CustomerNotesPanel";
 import { CustomerFollowupsPanel } from "@/components/admin/CustomerFollowupsPanel";
+import { CustomerTimelinePanel } from "@/components/admin/CustomerTimelinePanel";
 import { MessageTemplateOverridesPanel } from "@/components/admin/message-template-overrides-panel";
 import { OrderNotesPanel } from "@/components/admin/OrderNotesPanel";
 import { LossClaimsPanel } from "@/components/admin/LossClaimsPanel";
@@ -145,6 +146,7 @@ export function AdminCustomerDetailPage({ userId }: Props) {
             inApp={data.inAppConversation}
             customerName={data.customer.displayName ?? "this customer"}
           />
+          <CustomerTimelinePanel userId={userId} />
           <CustomerFollowupsPanel userId={userId} />
           <CustomerNotesPanel userId={userId} />
           <MessageTemplateOverridesPanel userId={userId} />
