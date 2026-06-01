@@ -1179,12 +1179,15 @@ function SidebarNavBody({
                 const section = link.section;
                 const showSectionHeader =
                   !!section && section !== group.items[idx - 1]?.section;
+                const groupSlug = group.label
+                  .toLowerCase()
+                  .replace(/[^a-z0-9]+/g, "-");
                 return (
                   <Fragment key={link.href}>
                     {showSectionHeader && section ? (
                       <p
                         className="px-3 pt-3 pb-0.5 text-[9px] font-semibold uppercase tracking-[0.16em] text-[hsl(var(--ink-muted))] first:pt-0.5"
-                        data-testid={`admin-nav-subsection-${section
+                        data-testid={`admin-nav-subsection-${groupSlug}-${section
                           .toLowerCase()
                           .replace(/[^a-z0-9]+/g, "-")}`}
                       >
