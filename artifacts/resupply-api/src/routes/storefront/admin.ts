@@ -20,6 +20,7 @@ import { z } from "zod";
 
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
+import { adminReadRateLimiter } from "../../middlewares/admin-rate-limit.js";
 import { requireCsrf } from "../../middlewares/csrf.js";
 import { requireAdmin } from "../../middlewares/requireAdmin.js";
 import { logger } from "../../lib/logger.js";
@@ -36,7 +37,12 @@ const router = Router();
 // router (including unrelated /api/usage-events requests on the same
 // parent router) and reject them with 401 — even though those routes
 // are intentionally public.
-router.use("/admin", requireAdmin);
+//
+// adminReadRateLimiter runs first (a CodeQL-recognized express-rate-limit
+// instance, keyed per admin actor with an IP fallback for the pre-auth
+// window) so the whole /admin/* surface on this router is rate-limited
+// ahead of the auth gate — an unauthenticated flood is throttled too.
+router.use("/admin", adminReadRateLimiter, requireAdmin);
 
 // Team-management routes live in their own file (admin-users.ts) but
 // share this router so they inherit the requireAdmin gate above. The
