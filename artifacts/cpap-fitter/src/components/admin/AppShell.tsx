@@ -388,6 +388,14 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         hint: "System-wide 270/271 worklist — rejected and inactive coverage rise to the top",
       },
       {
+        href: "/admin/billing/eligibility-recheck",
+        label: "Re-verification",
+        icon: ShieldCheck,
+        matchPrefix: "/admin/billing/eligibility-recheck",
+        hint: "Active coverages due for re-verification — never-checked, terminating soon, or stale",
+        requiredPermission: "reports.read",
+      },
+      {
         href: "/admin/billing/prior-auths",
         label: "Prior auths",
         icon: ShieldAlert,

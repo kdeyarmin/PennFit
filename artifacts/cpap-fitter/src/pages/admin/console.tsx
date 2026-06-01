@@ -365,6 +365,11 @@ const AdminBillingEligibilityPage = lazy(() =>
     default: m.AdminBillingEligibilityPage,
   })),
 );
+const AdminBillingEligibilityWorklistPage = lazy(() =>
+  import("@/pages/admin/admin-billing-eligibility-worklist").then((m) => ({
+    default: m.AdminBillingEligibilityWorklistPage,
+  })),
+);
 const AdminBillingPriorAuthsPage = lazy(() =>
   import("@/pages/admin/admin-billing-prior-auths").then((m) => ({
     default: m.AdminBillingPriorAuthsPage,
@@ -565,6 +570,10 @@ function AdminConsole() {
               component={AdminBillingDenialsPage}
             />
             <Route path="/admin/billing/era" component={AdminBillingEraPage} />
+            <Route
+              path="/admin/billing/eligibility-recheck"
+              component={AdminBillingEligibilityWorklistPage}
+            />
             <Route
               path="/admin/billing/eligibility"
               component={AdminBillingEligibilityPage}

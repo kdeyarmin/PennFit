@@ -109,6 +109,7 @@ import eraIngestRouter from "./admin/era-ingest.js";
 import billingReportsRouter from "./admin/billing-reports.js";
 import payerProfitabilityRouter from "./admin/payer-profitability.js";
 import denialsWorklistRouter from "./admin/denials-worklist.js";
+import eligibilityVerificationWorklistRouter from "./admin/eligibility-verification-worklist.js";
 import billingTimelyFilingRouter from "./admin/billing-timely-filing.js";
 import billingDashboardRouter from "./admin/billing-dashboard.js";
 import productHcpcsMapRouter from "./admin/product-hcpcs-map.js";
@@ -357,6 +358,10 @@ router.use(payerProfitabilityRouter);
 // /admin/billing/denials-worklist — denied claims ranked by recoverable
 // $ × win-probability (Biller #33). reports.read.
 router.use(denialsWorklistRouter);
+// /admin/billing/eligibility-verification-worklist — active coverages
+// ranked by re-verification urgency (never/terminating/stale) (Biller
+// #31, read-only half). reports.read.
+router.use(eligibilityVerificationWorklistRouter);
 // /admin/billing/dashboard — single round-trip "what needs my
 // attention today" view for the billing CSR. Aggregate counts +
 // dollar amounts only; the UI deep-links by id.
