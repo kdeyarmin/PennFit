@@ -18,6 +18,7 @@ import {
   Inbox,
   MessageSquareText,
   ListChecks,
+  FolderKanban,
   CalendarClock,
   Sparkles,
   Mail,
@@ -167,6 +168,14 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         icon: ListChecks,
         matchPrefix: "/admin/work-queue",
         hint: "Unified, prioritized queue of everything waiting on you, most-overdue first",
+      },
+      {
+        href: "/admin/cases",
+        label: "Cases",
+        icon: FolderKanban,
+        matchPrefix: "/admin/cases",
+        hint: "Multi-channel tickets — link the threads, orders, and faxes that belong to one issue",
+        requiredPermission: "cases.read",
       },
       {
         href: "/admin/conversations",
