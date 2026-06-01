@@ -180,6 +180,11 @@ const AdminInterventionsPage = lazy(() =>
     default: m.AdminInterventionsPage,
   })),
 );
+const AdminMaskFitWorklistPage = lazy(() =>
+  import("@/pages/admin/admin-mask-fit-worklist").then((m) => ({
+    default: m.AdminMaskFitWorklistPage,
+  })),
+);
 const AdminBulkCampaignsPage = lazy(() =>
   import("@/pages/admin/admin-bulk-campaigns").then((m) => ({
     default: m.AdminBulkCampaignsPage,
@@ -801,6 +806,10 @@ function AdminConsole() {
             <Route
               path="/admin/clinical/interventions"
               component={AdminInterventionsPage}
+            />
+            <Route
+              path="/admin/clinical/mask-fit"
+              component={AdminMaskFitWorklistPage}
             />
             <Route
               path="/admin/bulk-campaigns"

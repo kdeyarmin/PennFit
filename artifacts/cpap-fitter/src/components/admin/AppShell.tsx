@@ -67,6 +67,7 @@ import {
   ChevronRight,
   Stethoscope,
   Layers,
+  Wind,
 } from "lucide-react";
 import {
   Sheet,
@@ -275,6 +276,14 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         icon: Activity,
         matchPrefix: "/admin/clinical/interventions",
         hint: "Non-adherence intervention worklist — cause, plan, outcome",
+        requiredPermission: "clinical.read",
+      },
+      {
+        href: "/admin/clinical/mask-fit",
+        label: "Mask-fit feedback",
+        icon: Wind,
+        matchPrefix: "/admin/clinical/mask-fit",
+        hint: "Patients reporting a leaking / uncomfortable fit — triage to follow-up",
         requiredPermission: "clinical.read",
       },
       {
