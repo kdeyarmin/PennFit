@@ -3869,6 +3869,30 @@ export interface Database {
         >;
         Relationships: [];
       };
+      // Migration 0202 (Biller #29): structured CMN / DIF documents.
+      cmn_documents: {
+        Row: {
+          id: string;
+          patient_id: string;
+          claim_id: string | null;
+          dwo_document_id: string | null;
+          form_type: string;
+          hcpcs_code: string;
+          status: "draft" | "completed" | "on_file" | "voided";
+          answers: Json;
+          physician_name: string | null;
+          physician_npi: string | null;
+          initial_date: string | null;
+          recert_date: string | null;
+          length_of_need_months: number | null;
+          created_by_email: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["cmn_documents"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["cmn_documents"]["Row"]>;
+        Relationships: [];
+      };
       shop_customer_notes: {
         Row: {
           id: string;
