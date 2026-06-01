@@ -24,12 +24,16 @@
 import React, { useEffect, useState } from "react";
 import { Link } from "wouter";
 import { useDocumentTitle } from "@/hooks/use-document-title";
+import { useShopMessagesUnread } from "@/hooks/use-shop-messages-unread";
 import { SignedIn, useShopIdentity } from "@/lib/identity";
 import {
   AlertCircle,
   CreditCard,
+  HeartPulse,
   Loader2,
+  MessageSquare,
   Package,
+  Settings,
   ShoppingBag,
   UserCircle2,
 } from "lucide-react";
@@ -70,6 +74,86 @@ import { MyReturnsSection } from "@/components/my-returns-section";
 import { BiometricLockGate } from "@/components/biometric-lock-gate";
 
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
+
+// The account page used to be one ~20-section vertical scroll. We group
+// those sections into five tabs so the page is navigable and only the
+// active tab's sections mount (less to load, less to wade through).
+const ACCOUNT_TABS = [
+  { id: "overview", label: "Overview", icon: UserCircle2 },
+  { id: "orders", label: "Orders & returns", icon: Package },
+  { id: "therapy", label: "Therapy & supplies", icon: HeartPulse },
+  { id: "messages", label: "Messages", icon: MessageSquare },
+  { id: "account", label: "Account", icon: Settings },
+] as const;
+
+type AccountTabId = (typeof ACCOUNT_TABS)[number]["id"];
+
+// Map a URL hash to the tab that should open, so deep links from elsewhere
+// in the app keep working now that the sections live behind tabs:
+//   /account#messages  → Messages
+//   /account#autoship  → Orders & returns (SubscriptionsSection has id="autoship")
+function hashToAccountTab(hash: string): AccountTabId | null {
+  const h = hash.replace(/^#/, "");
+  if (h === "messages") return "messages";
+  if (h === "autoship") return "orders";
+  return null;
+}
+
+function AccountTabBar({
+  active,
+  onChange,
+  unreadMessages,
+}: {
+  active: AccountTabId;
+  onChange: (id: AccountTabId) => void;
+  unreadMessages: number;
+}) {
+  return (
+    <div
+      className="sticky top-16 md:top-20 z-30 bg-background/85 backdrop-blur-md border-b border-border/40"
+      data-testid="account-tabs"
+    >
+      <div
+        role="tablist"
+        aria-label="Account sections"
+        className="flex gap-1 overflow-x-auto"
+      >
+        {ACCOUNT_TABS.map((tab) => {
+          const isActive = tab.id === active;
+          const Icon = tab.icon;
+          const showBadge = tab.id === "messages" && unreadMessages > 0;
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              role="tab"
+              aria-selected={isActive}
+              onClick={() => onChange(tab.id)}
+              data-testid={`account-tab-${tab.id}`}
+              className={`relative inline-flex items-center gap-1.5 whitespace-nowrap border-b-2 px-3 py-3 text-sm font-medium transition-colors ${
+                isActive
+                  ? "border-[hsl(var(--penn-gold))] text-primary"
+                  : "border-transparent text-muted-foreground hover:text-primary"
+              }`}
+            >
+              <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
+              <span>{tab.label}</span>
+              {showBadge && (
+                <span
+                  className="ml-0.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-600 px-1 text-[10px] font-bold leading-none text-white"
+                  aria-label={`${unreadMessages} unread`}
+                  data-testid="account-tab-messages-badge"
+                >
+                  {unreadMessages > 99 ? "99+" : unreadMessages}
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 export function AccountPage() {
   useDocumentTitle("My account");
@@ -124,6 +208,24 @@ function AccountInner() {
   const [data, setData] = useState<ShopMeResponse | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [previewMode, setPreviewMode] = useState<boolean | null>(null);
+  const unreadMessages = useShopMessagesUnread();
+
+  // Which account tab is open. Honour a deep-link hash on first paint
+  // (/account#messages, /account#autoship), then keep listening so a
+  // hash click while already on the page still switches tabs.
+  const [activeTab, setActiveTab] = useState<AccountTabId>(() =>
+    typeof window !== "undefined"
+      ? (hashToAccountTab(window.location.hash) ?? "overview")
+      : "overview",
+  );
+  useEffect(() => {
+    function onHashChange() {
+      const tab = hashToAccountTab(window.location.hash);
+      if (tab) setActiveTab(tab);
+    }
+    window.addEventListener("hashchange", onHashChange);
+    return () => window.removeEventListener("hashchange", onHashChange);
+  }, []);
 
   // Probe preview mode the same way the cart does so we can disable
   // payment actions cleanly when Stripe isn't configured.
@@ -264,65 +366,87 @@ function AccountInner() {
       {previewMode === true && <PreviewBanner />}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 space-y-6">
-          {/*
-            One-time, dismissible nudge to enable web push so shipment
-            + delivery notifications reach the lock screen. The
-            CommPrefsSection toggle further down covers the same
-            ground, but it's buried two scrolls deep and barely
-            discovered. This banner self-hides on dismiss (per-device,
-            localStorage) and on subscription success.
-          */}
-          <PushPromptBanner />
-          <ProfileSection
-            profile={data.profile!}
-            onSaved={() => void reload()}
+        <div className="lg:col-span-2">
+          <AccountTabBar
+            active={activeTab}
+            onChange={setActiveTab}
+            unreadMessages={unreadMessages}
           />
-          {/*
-            Device + physician info — added in the
-            customer-clinical-info-and-messaging-foundation branch.
-            Both fields are stored on shop_customers as JSONB and
-            persist via PUT /shop/me/clinical-info, which audit-logs
-            every change with a non-PHI metadata envelope.
-          */}
-          <ClinicalInfoSection />
-          {/*
-            In-account messaging with PennPaps customer service —
-            Phase 2 (PR #53). Reuses the existing conversations +
-            messages tables via the new in_app channel; admins reply
-            from /admin/conversations.
-          */}
-          <AccountMessagesSection />
-          {/*
-            Account chatbot — answers order/subscription/supply/device
-            questions for the signed-in user. Hits the auth-gated
-            /shop/me/chat endpoint, which loads a thin slice of the
-            caller's account context into the system prompt and exposes
-            DB-backed tools scoped to this customer.
-          */}
-          <CustomerChatSection />
-          <DocumentsSection />
-          <TherapySummarySection />
-          <SubstitutionsSection />
-          <MaintenanceSection />
-          <MaskLeakWizardSection />
-          <EducationFeedSection />
-          <InsightsSection />
-          <ReorderSuggestionsSection />
-          <SubscriptionsSection previewMode={previewMode === true} />
-          <OrdersSection
-            orders={data.recentOrders ?? []}
-            previewMode={previewMode === true}
-          />
-          <MyReturnsSection />
-          <EquipmentRegistrySection />
-          <RequestAppointmentSection />
-          <EsignFormsSection />
-          <ReferralProgramSection />
-          <CaregiverSection />
-          <WalletPassSection />
-          <CommPrefsSection />
-          <DataExportSection />
+          <div className="space-y-6 mt-6">
+            {activeTab === "overview" && (
+              <>
+                {/*
+                  One-time, dismissible nudge to enable web push so shipment
+                  + delivery notifications reach the lock screen. The
+                  CommPrefsSection toggle (Account tab) covers the same
+                  ground, but this banner self-hides on dismiss (per-device,
+                  localStorage) and on subscription success.
+                */}
+                <PushPromptBanner />
+                <ProfileSection
+                  profile={data.profile!}
+                  onSaved={() => void reload()}
+                />
+                {/*
+                  Device + physician info. Both fields are stored on
+                  shop_customers as JSONB and persist via PUT
+                  /shop/me/clinical-info, which audit-logs every change
+                  with a non-PHI metadata envelope.
+                */}
+                <ClinicalInfoSection />
+                <InsightsSection />
+              </>
+            )}
+            {activeTab === "orders" && (
+              <>
+                <ReorderSuggestionsSection />
+                <SubscriptionsSection previewMode={previewMode === true} />
+                <OrdersSection
+                  orders={data.recentOrders ?? []}
+                  previewMode={previewMode === true}
+                />
+                <MyReturnsSection />
+                <SubstitutionsSection />
+              </>
+            )}
+            {activeTab === "therapy" && (
+              <>
+                <TherapySummarySection />
+                <MaintenanceSection />
+                <MaskLeakWizardSection />
+                <EducationFeedSection />
+                <EquipmentRegistrySection />
+              </>
+            )}
+            {activeTab === "messages" && (
+              <>
+                {/*
+                  In-account messaging with PennPaps customer service.
+                  Reuses the conversations + messages tables via the in_app
+                  channel; admins reply from /admin/conversations.
+                */}
+                <AccountMessagesSection />
+                {/*
+                  Account chatbot — answers order/subscription/supply/device
+                  questions for the signed-in user via the auth-gated
+                  /shop/me/chat endpoint (account context + scoped DB tools).
+                */}
+                <CustomerChatSection />
+              </>
+            )}
+            {activeTab === "account" && (
+              <>
+                <DocumentsSection />
+                <RequestAppointmentSection />
+                <EsignFormsSection />
+                <ReferralProgramSection />
+                <CaregiverSection />
+                <WalletPassSection />
+                <CommPrefsSection />
+                <DataExportSection />
+              </>
+            )}
+          </div>
         </div>
         <aside className="space-y-6">
           <SavedCardSection card={data.savedCard ?? null} />
