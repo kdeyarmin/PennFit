@@ -46,7 +46,6 @@ import {
   FlaskConical,
   UsersRound,
   Settings,
-  FileSearch,
   Plug,
   Webhook,
   Target,
@@ -947,7 +946,7 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
       {
         label: "Account",
         icon: ShieldCheck,
-        hint: "Your own security settings and the storefront audit trail",
+        hint: "Your own security settings",
         tabs: [
           {
             href: "/admin/security",
@@ -955,13 +954,6 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             icon: ShieldCheck,
             matchPrefix: "/admin/security",
             hint: "Manage your own MFA / authenticator-app enrollment",
-          },
-          {
-            href: "/admin/pennpaps/audit",
-            label: "Storefront Audit",
-            icon: FileSearch,
-            matchPrefix: "/admin/pennpaps/audit",
-            hint: "PennPaps storefront audit trail",
           },
         ],
       },

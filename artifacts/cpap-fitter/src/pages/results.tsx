@@ -230,7 +230,11 @@ export function Results() {
             {confidenceBand} ({topConfidencePct}%)
           </span>
         </div>
-        {confidenceBand === "low" && (
+        {confidenceBand !== "strong" && (
+          // Offer a retake for any match that isn't already "strong" (i.e.
+          // "low" AND "moderate"). A moderate result is still labelled as
+          // such to the customer, so leaving them no way to improve it is a
+          // dead end — a better scan means a better seal and fewer returns.
           <div className="pt-1">
             <Button
               variant="outline"
