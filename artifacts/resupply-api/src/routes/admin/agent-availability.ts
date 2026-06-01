@@ -15,7 +15,10 @@ import { z } from "zod";
 
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
-import { adminRateLimit } from "../../middlewares/admin-rate-limit";
+import {
+  adminRateLimit,
+  adminReadRateLimiter,
+} from "../../middlewares/admin-rate-limit";
 import { requireAdmin } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
@@ -33,7 +36,7 @@ router.get(
   // ahead of the authorization middleware). adminRateLimit keys on
   // req.adminUserId post-auth and falls back to a shared "no-actor"
   // bucket pre-auth.
-  adminRateLimit({ name: "agent_availability.list", preset: "query" }),
+  adminReadRateLimiter,
   requireAdmin,
   async (_req, res) => {
     const supabase = getSupabaseServiceRoleClient();

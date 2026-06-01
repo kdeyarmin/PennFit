@@ -30,7 +30,10 @@ import {
 } from "@workspace/resupply-domain";
 
 import { logger } from "../../lib/logger";
-import { adminRateLimit } from "../../middlewares/admin-rate-limit";
+import {
+  adminRateLimit,
+  adminReadRateLimiter,
+} from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
@@ -48,7 +51,7 @@ const CHANNELS = [
 
 router.get(
   "/admin/analytics/ltv-cac",
-  adminRateLimit({ name: "ltv_cac.get", preset: "query" }),
+  adminReadRateLimiter,
   requirePermission("cost.read"),
   async (_req, res) => {
     const supabase = getSupabaseServiceRoleClient();

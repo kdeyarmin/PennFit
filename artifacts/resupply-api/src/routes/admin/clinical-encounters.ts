@@ -22,7 +22,10 @@ import { logAudit } from "@workspace/resupply-audit";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
-import { adminRateLimit } from "../../middlewares/admin-rate-limit";
+import {
+  adminRateLimit,
+  adminReadRateLimiter,
+} from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
@@ -63,7 +66,7 @@ router.get(
   "/admin/patients/:patientId/clinical-encounters",
   // Limiter before the auth gate (CodeQL "sensitive data read from GET" /
   // "missing rate limiting" wants the throttle ahead of authorization).
-  adminRateLimit({ name: "clinical_encounters.list", preset: "query" }),
+  adminReadRateLimiter,
   requirePermission("clinical.read"),
   async (req, res) => {
     const parsed = patientIdParam.safeParse(req.params.patientId);

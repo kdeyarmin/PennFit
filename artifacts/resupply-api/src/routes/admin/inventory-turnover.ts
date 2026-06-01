@@ -18,7 +18,7 @@ import { z } from "zod";
 
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
-import { adminRateLimit } from "../../middlewares/admin-rate-limit";
+import { adminReadRateLimiter } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
@@ -133,7 +133,7 @@ const querySchema = z
 router.get(
   "/admin/analytics/inventory-turnover",
   // Rate-limit before the auth gate (CodeQL "missing rate limiting").
-  adminRateLimit({ name: "inventory_turnover.get", preset: "query" }),
+  adminReadRateLimiter,
   requirePermission("cost.read"),
   async (req, res) => {
     const parsed = querySchema.safeParse(req.query);
