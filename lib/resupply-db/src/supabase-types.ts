@@ -3847,6 +3847,28 @@ export interface Database {
         >;
         Relationships: [];
       };
+      // Migration 0201 (RT #22a): post-delivery mask-fit micro-survey.
+      mask_fit_outcomes: {
+        Row: {
+          id: string;
+          order_id: string;
+          fit_outcome: "good" | "leaking" | "uncomfortable";
+          comment: string | null;
+          status: "new" | "reviewed" | "actioned";
+          reviewed_by_email: string | null;
+          reviewed_at: string | null;
+          submitter_ip: string | null;
+          user_agent: string | null;
+          created_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["mask_fit_outcomes"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["mask_fit_outcomes"]["Row"]
+        >;
+        Relationships: [];
+      };
       shop_customer_notes: {
         Row: {
           id: string;
