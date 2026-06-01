@@ -46,6 +46,11 @@ import { Customer360Panel } from "@/components/admin/Customer360Panel";
 import { ConversationAssignmentBar } from "@/components/admin/ConversationAssignmentBar";
 import { useDraftAutosave } from "@/lib/admin/use-draft-autosave";
 import { setConversationStatus } from "@/lib/admin/conversation-assignment-api";
+import {
+  draftConversationReply,
+  draftUnavailableNote,
+} from "@/lib/admin/conversation-draft-reply-api";
+import { Sparkles } from "lucide-react";
 
 // Conversation viewer. Renders the chronological message timeline as
 // channel-aware bubbles (admin/agent on the right, patient on the
@@ -357,7 +362,31 @@ function ReplyComposer({
   const [error, setError] = useState<string | null>(null);
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
   const [showMacroForm, setShowMacroForm] = useState(false);
+  const [drafting, setDrafting] = useState(false);
+  const [draftNote, setDraftNote] = useState<string | null>(null);
   const reply = useReplyInConversation();
+
+  // AI reply drafting (#15). Generates a suggested reply the CSR edits
+  // before sending — never sends on its own. Only offered into an empty
+  // composer so it can't clobber text the CSR is already writing.
+  async function onDraftWithAi() {
+    setDrafting(true);
+    setDraftNote(null);
+    setError(null);
+    try {
+      const result = await draftConversationReply(conversationId);
+      if (result.available) {
+        setBody(result.draft);
+        setDraftNote("AI-drafted — review and edit before sending.");
+      } else {
+        setDraftNote(draftUnavailableNote(result.reason));
+      }
+    } catch {
+      setDraftNote("Couldn't draft a reply right now.");
+    } finally {
+      setDrafting(false);
+    }
+  }
 
   // Save-as-macro (#14) is a supervisor-tier action: promoting a draft
   // into the shared canned-reply library is gated on admin.tools.manage,
@@ -544,6 +573,31 @@ function ReplyComposer({
             </select>
           </div>
         )}
+      {!isClosed && (
+        <div className="mb-2 flex items-center gap-2 flex-wrap">
+          <Button
+            intent="secondary"
+            size="sm"
+            disabled={drafting || reply.isPending || trimmed.length > 0}
+            isLoading={drafting}
+            onClick={() => void onDraftWithAi()}
+            title={
+              trimmed.length > 0
+                ? "Clear the box to draft a fresh reply with AI"
+                : "Draft a suggested reply you can edit before sending"
+            }
+            data-testid="conv-draft-with-ai"
+          >
+            <Sparkles className="h-4 w-4 mr-1" />
+            Draft with AI
+          </Button>
+          {draftNote && (
+            <span className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
+              {draftNote}
+            </span>
+          )}
+        </div>
+      )}
       <textarea
         value={body}
         onChange={(e) => setBody(e.target.value)}
