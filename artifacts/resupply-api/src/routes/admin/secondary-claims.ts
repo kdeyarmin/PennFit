@@ -281,6 +281,29 @@ router.post(
       (covRes.data as { payer_name?: string | null } | null)?.payer_name ??
       "Secondary payer";
 
+    // Resolve the SECONDARY payer's profile so the claim can be batch-
+    // submitted (executeOfficeAllyBatchSubmit requires a payer_profile_id).
+    // Best-effort by name — null if the payer has no profile yet, in which
+    // case the biller sets it before submission. The primary's
+    // payer_profile_id would be WRONG here (that's the primary payer).
+    let secondaryPayerProfileId: string | null = null;
+    if (covRes.data) {
+      const escaped = secondaryPayerName.replace(
+        /[\\%_]/g,
+        (c: string) => `\\${c}`,
+      );
+      const profRes = await supabase
+        .schema("resupply")
+        .from("payer_profiles")
+        .select("id")
+        .ilike("display_name", escaped)
+        .eq("is_active", true)
+        .limit(1)
+        .maybeSingle();
+      secondaryPayerProfileId =
+        (profRes.data as { id?: string } | null)?.id ?? null;
+    }
+
     // Create the secondary claim header (snapshot the COB amounts).
     const insRes = await supabase
       .schema("resupply")
@@ -289,6 +312,7 @@ router.post(
         patient_id: primary.patient_id,
         insurance_coverage_id: primary.secondary_coverage_id,
         payer_name: secondaryPayerName,
+        payer_profile_id: secondaryPayerProfileId,
         date_of_service: primary.date_of_service,
         fulfillment_id: primary.fulfillment_id,
         status: "draft",

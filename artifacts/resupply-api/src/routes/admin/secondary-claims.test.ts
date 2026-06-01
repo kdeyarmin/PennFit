@@ -12,6 +12,7 @@ import {
 import {
   installSupabaseMock,
   stageSupabaseResponse,
+  getSupabaseWritePayloads,
 } from "../../test-helpers/supabase-mock";
 
 const supabaseMock = installSupabaseMock();
@@ -249,6 +250,11 @@ describe("POST /admin/claims/:id/generate-secondary", () => {
     stageSupabaseResponse("insurance_coverages", "select", {
       data: { payer_name: "Medicaid Secondary" },
     });
+    // 3b. resolve the SECONDARY payer's profile by name (the COB claim
+    // must carry the secondary payer's payer_profile_id to be submittable).
+    stageSupabaseResponse("payer_profiles", "select", {
+      data: { id: "pp_secondary" },
+    });
     // 4. insert secondary header (insert→select id)
     stageSupabaseResponse("insurance_claims", "insert", {
       data: { id: "secondary_1" },
@@ -277,5 +283,14 @@ describe("POST /admin/claims/:id/generate-secondary", () => {
     expect(res.body.secondaryClaimId).toBe("secondary_1");
     expect(res.body.cob.patientRespCents).toBe(3000);
     expect(res.body.lineCount).toBe(1);
+
+    // The secondary claim must carry the SECONDARY payer's profile (not
+    // the primary's) so executeOfficeAllyBatchSubmit can serialize it.
+    const inserted = getSupabaseWritePayloads(
+      "insurance_claims",
+      "insert",
+    )[0] as Record<string, unknown>;
+    expect(inserted.payer_profile_id).toBe("pp_secondary");
+    expect(inserted.payer_sequence).toBe("secondary");
   });
 });
