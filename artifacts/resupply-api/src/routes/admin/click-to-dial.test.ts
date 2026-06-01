@@ -241,20 +241,30 @@ describe("POST /admin/call-dispositions/:id", () => {
   });
 });
 
-describe("GET /admin/patients/:id/call-dispositions", () => {
+// Patient id moved off the URL into the body by a CodeQL autofix
+// ("sensitive data read from GET request") — now POST + { patientId }.
+describe("POST /admin/patients/call-dispositions", () => {
   it("401s without admin", async () => {
-    const res = await request(makeApp()).get(
-      `/admin/patients/${PATIENT_ID}/call-dispositions`,
-    );
+    const res = await request(makeApp())
+      .post(`/admin/patients/call-dispositions`)
+      .send({ patientId: PATIENT_ID });
     expect(res.status).toBe(401);
   });
 
   it("403s for a role without conversations.manage (rt)", async () => {
     mockAdmin.current = RT;
-    const res = await request(makeApp()).get(
-      `/admin/patients/${PATIENT_ID}/call-dispositions`,
-    );
+    const res = await request(makeApp())
+      .post(`/admin/patients/call-dispositions`)
+      .send({ patientId: PATIENT_ID });
     expect(res.status).toBe(403);
+  });
+
+  it("400s a missing/invalid patient id", async () => {
+    mockAdmin.current = ADMIN;
+    const res = await request(makeApp())
+      .post(`/admin/patients/call-dispositions`)
+      .send({ patientId: "not-a-uuid" });
+    expect(res.status).toBe(400);
   });
 
   it("returns the patient's recent call history", async () => {
@@ -270,9 +280,9 @@ describe("GET /admin/patients/:id/call-dispositions", () => {
         },
       ],
     });
-    const res = await request(makeApp()).get(
-      `/admin/patients/${PATIENT_ID}/call-dispositions`,
-    );
+    const res = await request(makeApp())
+      .post(`/admin/patients/call-dispositions`)
+      .send({ patientId: PATIENT_ID });
     expect(res.status).toBe(200);
     expect(res.body.count).toBe(1);
     expect(res.body.dispositions[0].outcome).toBe("voicemail");

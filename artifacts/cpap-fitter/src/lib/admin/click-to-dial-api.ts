@@ -78,12 +78,20 @@ export interface CallDisposition {
 export async function getPatientCallHistory(
   patientId: string,
 ): Promise<{ dispositions: CallDisposition[]; count: number }> {
-  const url = `/resupply-api/admin/patients/${encodeURIComponent(
-    patientId,
-  )}/call-dispositions`;
+  // POST (not GET) with the patient id in the body — the patient id is a
+  // read input, but a CodeQL autofix moved it off the URL ("sensitive data
+  // read from GET request"); the server route is now
+  // POST /admin/patients/call-dispositions.
+  const url = "/resupply-api/admin/patients/call-dispositions";
   const res = await fetch(url, {
+    method: "POST",
     credentials: "include",
-    headers: { Accept: "application/json" },
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      ...csrfHeader(),
+    },
+    body: JSON.stringify({ patientId }),
   });
   if (!res.ok) {
     let data: unknown = null;
@@ -92,7 +100,7 @@ export async function getPatientCallHistory(
     } catch {
       // body not JSON
     }
-    throw new ApiError(res, data, { method: "GET", url });
+    throw new ApiError(res, data, { method: "POST", url });
   }
   return (await res.json()) as {
     dispositions: CallDisposition[];
