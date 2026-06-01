@@ -3,6 +3,7 @@ import abandonedCartsRouter from "./admin/abandoned-carts.js";
 import shopCustomersAdminRouter from "./admin/customers.js";
 import shopCustomerNotesRouter from "./admin/customer-notes.js";
 import shopCustomerFollowupsRouter from "./admin/customer-followups.js";
+import customerTimelineRouter from "./admin/customer-timeline.js";
 import followupsListRouter from "./admin/followups-list.js";
 import shopOrderNotesRouter from "./admin/order-notes.js";
 import productCostsRouter from "./admin/product-costs.js";
@@ -798,6 +799,10 @@ router.use(shopCustomerNotesRouter);
 // reminders per shop customer (Phase 17). Same mount-after-detail
 // rationale as the notes router.
 router.use(shopCustomerFollowupsRouter);
+// /admin/shop/customers/:id/timeline — cross-channel customer timeline
+// (Biller/CSR #12): conversations + orders + returns + followups +
+// reviews, newest first. conversations.manage.
+router.use(customerTimelineRouter);
 // /admin/followups — cross-customer daily queue of open follow-ups
 // (Phase 18). Mounted alongside the per-customer router so both
 // surfaces stay co-located.
