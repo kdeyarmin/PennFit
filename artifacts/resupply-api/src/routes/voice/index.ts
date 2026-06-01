@@ -17,11 +17,15 @@ import inboundReorderRouter from "./inbound-reorder";
 import placeCallRouter from "./place-call";
 import statusCallbackRouter from "./status-callback";
 import twimlConnectRouter from "./twiml-connect";
+import clickToDialTwimlRouter from "./click-to-dial-twiml";
 
 const router: IRouter = Router();
 router.use(placeCallRouter);
 router.use(twimlConnectRouter);
 router.use(statusCallbackRouter);
+// /voice/click-to-dial-twiml — bridge leg of CSR click-to-dial (#11):
+// fetched when the agent answers, <Dial>s the patient to connect them.
+router.use(clickToDialTwimlRouter);
 // /voice/alert-twiml — speaks an automated alert call's rendered
 // transcript (stashed by lib/alerts/dispatch under an opaque ref so
 // the text never rides the webhook URL). <Say> + <Hangup>, no bridge.

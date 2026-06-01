@@ -379,6 +379,7 @@ export interface Database {
           auth_user_id: string | null;
           skills: Json;
           availability: string;
+          phone_e164: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -406,6 +407,7 @@ export interface Database {
           auth_user_id?: string | null;
           skills?: Json;
           availability?: string;
+          phone_e164?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -448,6 +450,36 @@ export interface Database {
           signature?: string | null;
         };
         Update: Partial<Database["resupply"]["Tables"]["audit_log"]["Insert"]>;
+        Relationships: [];
+      };
+      call_dispositions: {
+        Row: {
+          id: string;
+          patient_id: string | null;
+          conversation_id: string | null;
+          outcome: string;
+          note: string | null;
+          twilio_call_sid: string | null;
+          agent_user_id: string | null;
+          agent_email: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          patient_id?: string | null;
+          conversation_id?: string | null;
+          outcome?: string;
+          note?: string | null;
+          twilio_call_sid?: string | null;
+          agent_user_id?: string | null;
+          agent_email?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<
+          Database["resupply"]["Tables"]["call_dispositions"]["Insert"]
+        >;
         Relationships: [];
       };
       conversations: {

@@ -18,6 +18,7 @@ import businessTargetsRouter from "./admin/business-targets.js";
 import agentAvailabilityRouter from "./admin/agent-availability.js";
 import conversationsSearchRouter from "./admin/conversations-search.js";
 import conversationDraftReplyRouter from "./admin/conversation-draft-reply.js";
+import clickToDialRouter from "./admin/click-to-dial.js";
 import shopOrdersAdminRouter from "./admin/shop-orders.js";
 import shopProductsAdminRouter from "./admin/shop-products.js";
 import inventoryReconciliationRouter from "./admin/inventory-reconciliation.js";
@@ -352,6 +353,9 @@ router.use(conversationsSearchRouter);
 // POST /admin/conversations/:id/draft-reply — AI-draft the next reply
 // (Phase 4, CSR #15). Draft only; degrades soft when AI is unavailable.
 router.use(conversationDraftReplyRouter);
+// /admin/patients/:id/click-to-dial + /admin/call-dispositions/:id —
+// CSR click-to-dial bridge + post-call disposition logging (#11).
+router.use(clickToDialRouter);
 // /admin/billing/era-ingest + /admin/billing/era-files — upload a
 // 5010 835 remittance, parse it, auto-reconcile claim totals + line
 // items + insert paid/denied events.

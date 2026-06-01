@@ -30,9 +30,11 @@ export interface PlaceCallInput {
   url: string;
   /**
    * Public URL Twilio will POST lifecycle status to (`completed`,
-   * `failed`, `no-answer`, `busy`).
+   * `failed`, `no-answer`, `busy`). Optional — the agent-first
+   * click-to-dial bridge omits it (the CSR logs the disposition
+   * manually); the AI place-call path always sets it.
    */
-  statusCallbackUrl: string;
+  statusCallbackUrl?: string;
   /**
    * If true, Twilio will record the call. We pass false explicitly so
    * a future SDK default flip doesn't start sending PHI audio to
