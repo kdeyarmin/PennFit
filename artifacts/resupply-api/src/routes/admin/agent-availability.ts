@@ -28,8 +28,13 @@ const patchSchema = z
 
 router.get(
   "/admin/agent-availability",
-  requireAdmin,
+  // Rate-limit BEFORE the auth gate so an unauthenticated flood is
+  // throttled too (CodeQL "missing rate limiting" wants the limiter
+  // ahead of the authorization middleware). adminRateLimit keys on
+  // req.adminUserId post-auth and falls back to a shared "no-actor"
+  // bucket pre-auth.
   adminRateLimit({ name: "agent_availability.list", preset: "query" }),
+  requireAdmin,
   async (_req, res) => {
     const supabase = getSupabaseServiceRoleClient();
     const { data, error } = await supabase

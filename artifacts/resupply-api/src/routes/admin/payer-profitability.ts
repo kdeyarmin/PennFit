@@ -16,6 +16,7 @@ import { z } from "zod";
 
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
+import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
@@ -159,6 +160,8 @@ const querySchema = z
 
 router.get(
   "/admin/billing/payer-profitability",
+  // Rate-limit before the auth gate (CodeQL "missing rate limiting").
+  adminRateLimit({ name: "payer_profitability.get", preset: "query" }),
   requirePermission("cost.read"),
   async (req, res) => {
     const parsed = querySchema.safeParse(req.query);

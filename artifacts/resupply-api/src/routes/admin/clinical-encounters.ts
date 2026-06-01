@@ -61,8 +61,10 @@ const createSchema = z
 
 router.get(
   "/admin/patients/:patientId/clinical-encounters",
-  requirePermission("clinical.read"),
+  // Limiter before the auth gate (CodeQL "sensitive data read from GET" /
+  // "missing rate limiting" wants the throttle ahead of authorization).
   adminRateLimit({ name: "clinical_encounters.list", preset: "query" }),
+  requirePermission("clinical.read"),
   async (req, res) => {
     const parsed = patientIdParam.safeParse(req.params.patientId);
     if (!parsed.success) {

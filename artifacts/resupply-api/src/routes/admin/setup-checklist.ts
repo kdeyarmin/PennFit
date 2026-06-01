@@ -46,8 +46,10 @@ const putSchema = z
 
 router.get(
   "/admin/patients/:patientId/setup-checklist",
-  requirePermission("clinical.read"),
+  // Limiter before the auth gate (CodeQL "sensitive data read from GET" /
+  // "missing rate limiting" wants the throttle ahead of authorization).
   adminRateLimit({ name: "setup_checklist.get", preset: "query" }),
+  requirePermission("clinical.read"),
   async (req, res) => {
     const idCheck = patientIdParam.safeParse(req.params.patientId);
     if (!idCheck.success) {
