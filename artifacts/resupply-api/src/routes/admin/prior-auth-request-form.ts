@@ -78,19 +78,27 @@ interface JsonAddress {
   city?: string;
   state?: string;
   zip?: string;
+  // Patient / shipping addresses created through the storefront + patient
+  // APIs store the ZIP under `postalCode` (camel) or `postal_code` (snake)
+  // rather than `zip` (the SWO/GFE renderers read `postalCode`). Accept all
+  // three so a complete patient address isn't dropped to a blank line on
+  // the PA form.
+  postalCode?: string;
+  postal_code?: string;
 }
 
 function toPostalAddress(raw: unknown): PaRequestPostalAddress | null {
   if (!raw || typeof raw !== "object") return null;
   const a = raw as JsonAddress;
-  if (!a.line1 || !a.city || !a.state || !a.zip) return null;
+  const zip = a.zip ?? a.postalCode ?? a.postal_code;
+  if (!a.line1 || !a.city || !a.state || !zip) return null;
   return {
     line1: a.line1,
     line2: a.line2 ?? null,
     line3: a.line3 ?? null,
     city: a.city,
     state: a.state,
-    zip: a.zip,
+    zip,
   };
 }
 
@@ -151,7 +159,8 @@ router.get(
             .select("id, payer_name, member_id, group_number, plan_name")
             .eq("id", pa.insurance_coverage_id)
             .eq("patient_id", patientId)
-            .limit(1).maybeSingle()
+            .limit(1)
+            .maybeSingle()
         : Promise.resolve({ data: null }),
       supabase
         .schema("resupply")
@@ -236,13 +245,27 @@ router.get(
     //    carry.
     const requiredModifiers = (payerProfile?.required_claim_modifiers ??
       []) as string[];
+    // A PA can be recorded with a modifier suffix (e.g. "E0601-KX"); the
+    // BASE HCPCS drives the plain-language label + PAP length-of-need, and
+    // any suffix modifiers merge (de-duped) with the payer's required set.
+    const rawHcpcs = String(pa.hcpcs_code ?? "");
+    const [baseHcpcsRaw, ...hcpcsSuffix] = rawHcpcs.split("-");
+    const baseHcpcs = (baseHcpcsRaw ?? rawHcpcs).trim().toUpperCase();
+    const mergedModifiers = [
+      ...new Set(
+        [
+          ...hcpcsSuffix.map((m: string) => m.trim().toUpperCase()),
+          ...requiredModifiers,
+        ].filter(Boolean),
+      ),
+    ];
     const requestedLines: PaRequestLine[] = [
       {
-        hcpcsCode: pa.hcpcs_code,
-        description: HCPCS_LABELS[pa.hcpcs_code] ?? pa.hcpcs_code,
-        modifiers: requiredModifiers,
+        hcpcsCode: baseHcpcs,
+        description: HCPCS_LABELS[baseHcpcs] ?? rawHcpcs,
+        modifiers: mergedModifiers,
         quantity: 1,
-        lengthOfNeedMonths: PAP_DEVICE_CODES.has(pa.hcpcs_code) ? 99 : null,
+        lengthOfNeedMonths: PAP_DEVICE_CODES.has(baseHcpcs) ? 99 : null,
       },
     ];
 
