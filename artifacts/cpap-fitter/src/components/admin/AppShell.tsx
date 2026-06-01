@@ -1,4 +1,5 @@
 import {
+  Fragment,
   useEffect,
   useMemo,
   useRef,
@@ -106,6 +107,15 @@ type NavLink = {
   /** Optional one-line hint shown as a `title` for new reps. */
   hint?: string;
   /**
+   * Optional sub-section label. Consecutive items that share a
+   * `section` render under one muted sub-header inside the collapsible
+   * group, so a large group reads as a few scannable clusters instead
+   * of one long flat list. The header is emitted whenever an item's
+   * `section` differs from the previous item's — so order matters:
+   * keep items with the same section contiguous.
+   */
+  section?: string;
+  /**
    * Phase 16 — actionable-work badge. When set, picks the count from
    * the inbox-counts query and shows it as a pill next to the label.
    * "0" suppresses rendering so we don't show empty badges everywhere.
@@ -139,12 +149,17 @@ type NavGroup = {
  * expand/collapse state is persisted to localStorage so the
  * sidebar comes back the way they left it.
  *
- *   1. INBOX        — the queues a rep lives in (chat, episodes, board)
- *   2. CUSTOMERS    — patient lookup + records
- *   3. ORDERS & SHOP — anything order-, return-, or product-related
- *   4. BILLING      — claims, denials, eligibility, AR
- *   5. INSIGHTS     — operational health, reports, reminders
- *   6. SYSTEM       — admin-only configuration and audit trails
+ * To keep large groups digestible, every item carries a `section`
+ * tag. Consecutive items that share a section render beneath a single
+ * muted sub-header, so a 15-item group reads as three short clusters
+ * rather than one long wall of links. The six groups:
+ *
+ *   1. WORKSPACE  — the daily driver: queues, conversations, outreach
+ *   2. PATIENTS & CLINICAL — records, RT clinical work, therapy monitoring
+ *   3. ORDERS & SHOP — fulfillment, catalog, storefront growth
+ *   4. BILLING    — claim worklists, revenue & A/R, claims tools
+ *   5. ANALYTICS & REPORTS — business, customer/clinical, storefront
+ *   6. SYSTEM     — automation, operations health, configuration, account
  *
  * Each item has an icon so reps can scan visually rather than read
  * every word, and an optional `hint` shown via the link's title for
@@ -152,7 +167,7 @@ type NavGroup = {
  */
 const NAV_GROUPS: ReadonlyArray<NavGroup> = [
   {
-    label: "Inbox",
+    label: "Workspace",
     items: [
       {
         href: "/admin",
@@ -160,6 +175,7 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         icon: LayoutDashboard,
         matchPrefix: "/admin",
         hint: "Today's queues and team workload at a glance",
+        section: "Queues",
       },
       {
         href: "/admin/today",
@@ -167,6 +183,7 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         icon: Inbox,
         matchPrefix: "/admin/today",
         hint: "Top items across every queue — conversations, returns, alerts, Rx renewals, documents",
+        section: "Queues",
       },
       {
         href: "/admin/work-queue",
@@ -174,29 +191,7 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         icon: ListChecks,
         matchPrefix: "/admin/work-queue",
         hint: "Unified, prioritized queue of everything waiting on you, most-overdue first",
-      },
-      {
-        href: "/admin/cases",
-        label: "Cases",
-        icon: FolderKanban,
-        matchPrefix: "/admin/cases",
-        hint: "Multi-channel tickets — link the threads, orders, and faxes that belong to one issue",
-        requiredPermission: "cases.read",
-      },
-      {
-        href: "/admin/conversations",
-        label: "Conversations",
-        icon: MessageSquareText,
-        matchPrefix: "/admin/conversations",
-        hint: "Inbound SMS, MMS, and email threads",
-        badgeKey: "awaitingReplyConversations",
-      },
-      {
-        href: "/admin/episodes",
-        label: "Episodes",
-        icon: ListChecks,
-        matchPrefix: "/admin/episodes",
-        hint: "Open service episodes that need follow-up",
+        section: "Queues",
       },
       {
         href: "/admin/followups",
@@ -205,6 +200,7 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         matchPrefix: "/admin/followups",
         hint: "Today's queue of CSR-scheduled callbacks across customers and patients",
         badgeKey: "overdueFollowups",
+        section: "Queues",
       },
       {
         href: "/admin/appointment-requests",
@@ -212,6 +208,33 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         icon: CalendarPlus,
         matchPrefix: "/admin/appointment-requests",
         hint: "CSR queue for patient-initiated appointment requests",
+        section: "Queues",
+      },
+      {
+        href: "/admin/conversations",
+        label: "Conversations",
+        icon: MessageSquareText,
+        matchPrefix: "/admin/conversations",
+        hint: "Inbound SMS, MMS, and email threads",
+        badgeKey: "awaitingReplyConversations",
+        section: "Conversations",
+      },
+      {
+        href: "/admin/cases",
+        label: "Cases",
+        icon: FolderKanban,
+        matchPrefix: "/admin/cases",
+        hint: "Multi-channel tickets — link the threads, orders, and faxes that belong to one issue",
+        requiredPermission: "cases.read",
+        section: "Conversations",
+      },
+      {
+        href: "/admin/episodes",
+        label: "Episodes",
+        icon: ListChecks,
+        matchPrefix: "/admin/episodes",
+        hint: "Open service episodes that need follow-up",
+        section: "Conversations",
       },
       {
         href: "/admin/macros",
@@ -220,6 +243,7 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         matchPrefix: "/admin/macros",
         hint: "Reusable response templates",
         requiredPermission: "admin.tools.manage",
+        section: "Outreach tools",
       },
       {
         href: "/admin/templates",
@@ -228,6 +252,7 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         matchPrefix: "/admin/templates",
         hint: "Edit the copy used by automated customer messages",
         requiredPermission: "admin.tools.manage",
+        section: "Outreach tools",
       },
       {
         href: "/admin/bulk-campaigns",
@@ -235,6 +260,7 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         icon: BellRing,
         matchPrefix: "/admin/bulk-campaigns",
         hint: "Resolve audience + draft a bulk email send",
+        section: "Outreach tools",
       },
       {
         href: "/admin/alerts",
@@ -243,11 +269,20 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         matchPrefix: "/admin/alerts",
         hint: "Send curated email / SMS / phone-call alerts to a patient",
         requiredPermission: "admin.tools.manage",
+        section: "Outreach tools",
+      },
+      {
+        href: "/admin/pennpaps/reminders",
+        label: "Reminders",
+        icon: BellRing,
+        matchPrefix: "/admin/pennpaps/reminders",
+        hint: "Scheduled patient resupply reminders",
+        section: "Outreach tools",
       },
     ],
   },
   {
-    label: "Customers",
+    label: "Patients & Clinical",
     items: [
       {
         href: "/admin/patients",
@@ -256,54 +291,7 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         matchPrefix: "/admin/patients",
         hint: "Patient roster, profiles, and 360 view",
         badgeKey: "newPatientDocuments",
-      },
-      {
-        href: "/admin/clinical",
-        label: "Clinical encounters",
-        icon: HeartPulse,
-        matchPrefix: "/admin/clinical",
-        hint: "Document + review patient clinical encounters (RT)",
-        requiredPermission: "clinical.read",
-      },
-      {
-        href: "/admin/rt-outcomes",
-        label: "RT outcomes",
-        icon: Stethoscope,
-        matchPrefix: "/admin/rt-outcomes",
-        hint: "Per-therapist activity: encounters, patients, interventions",
-        requiredPermission: "clinical.read",
-      },
-      {
-        href: "/admin/clinical/interventions",
-        label: "Interventions",
-        icon: Activity,
-        matchPrefix: "/admin/clinical/interventions",
-        hint: "Non-adherence intervention worklist — cause, plan, outcome",
-        requiredPermission: "clinical.read",
-      },
-      {
-        href: "/admin/clinical/mask-fit",
-        label: "Mask-fit feedback",
-        icon: Wind,
-        matchPrefix: "/admin/clinical/mask-fit",
-        hint: "Patients reporting a leaking / uncomfortable fit — triage to follow-up",
-        requiredPermission: "clinical.read",
-      },
-      {
-        href: "/admin/clinical/outreach",
-        label: "Clinical outreach",
-        icon: Send,
-        matchPrefix: "/admin/clinical/outreach",
-        hint: "Send supportive check-ins to patients with an open intervention (consent/DND-gated)",
-        requiredPermission: "clinical.read",
-      },
-      {
-        href: "/admin/clinical/education-videos",
-        label: "Video library",
-        icon: PlayCircle,
-        matchPrefix: "/admin/clinical/education-videos",
-        hint: "Manage the short-video education library shown on the storefront /learn pages",
-        requiredPermission: "reports.read",
+        section: "Records",
       },
       {
         href: "/admin/providers",
@@ -311,6 +299,7 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         icon: HeartHandshake,
         matchPrefix: "/admin/providers",
         hint: "Central physician/NP registry — NPPES-backed",
+        section: "Records",
       },
       {
         href: "/admin/inbound-faxes",
@@ -319,6 +308,7 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         matchPrefix: "/admin/inbound-faxes",
         hint: "Triage queue for inbound faxes — sleep studies, Rx renewals, chart notes",
         badgeKey: "newInboundFaxes",
+        section: "Records",
       },
       {
         href: "/admin/equipment-recalls",
@@ -326,6 +316,101 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         icon: ShieldCheck,
         matchPrefix: "/admin/equipment-recalls",
         hint: "Manufacturer recall registry + scan against dispensed serials",
+        section: "Records",
+      },
+      {
+        href: "/admin/clinical",
+        label: "Clinical encounters",
+        icon: HeartPulse,
+        matchPrefix: "/admin/clinical",
+        hint: "Document + review patient clinical encounters (RT)",
+        requiredPermission: "clinical.read",
+        section: "Clinical (RT)",
+      },
+      {
+        href: "/admin/rt-outcomes",
+        label: "RT outcomes",
+        icon: Stethoscope,
+        matchPrefix: "/admin/rt-outcomes",
+        hint: "Per-therapist activity: encounters, patients, interventions",
+        requiredPermission: "clinical.read",
+        section: "Clinical (RT)",
+      },
+      {
+        href: "/admin/clinical/interventions",
+        label: "Interventions",
+        icon: Activity,
+        matchPrefix: "/admin/clinical/interventions",
+        hint: "Non-adherence intervention worklist — cause, plan, outcome",
+        requiredPermission: "clinical.read",
+        section: "Clinical (RT)",
+      },
+      {
+        href: "/admin/clinical/mask-fit",
+        label: "Mask-fit feedback",
+        icon: Wind,
+        matchPrefix: "/admin/clinical/mask-fit",
+        hint: "Patients reporting a leaking / uncomfortable fit — triage to follow-up",
+        requiredPermission: "clinical.read",
+        section: "Clinical (RT)",
+      },
+      {
+        href: "/admin/clinical/outreach",
+        label: "Clinical outreach",
+        icon: Send,
+        matchPrefix: "/admin/clinical/outreach",
+        hint: "Send supportive check-ins to patients with an open intervention (consent/DND-gated)",
+        requiredPermission: "clinical.read",
+        section: "Clinical (RT)",
+      },
+      {
+        href: "/admin/coaching",
+        label: "Adherence coaching",
+        icon: HeartPulse,
+        matchPrefix: "/admin/coaching",
+        hint: "Outreach plans for patients with slipping CPAP adherence",
+        section: "Clinical (RT)",
+      },
+      {
+        href: "/admin/clinical/education-videos",
+        label: "Video library",
+        icon: PlayCircle,
+        matchPrefix: "/admin/clinical/education-videos",
+        hint: "Manage the short-video education library shown on the storefront /learn pages",
+        requiredPermission: "reports.read",
+        section: "Clinical (RT)",
+      },
+      {
+        href: "/admin/rt-overview",
+        label: "RT Overview",
+        icon: HeartPulse,
+        matchPrefix: "/admin/rt-overview",
+        hint: "At-a-glance therapy board: alerts, AHI, leak, usage",
+        section: "Therapy monitoring",
+      },
+      {
+        href: "/admin/therapy-fleet",
+        label: "Therapy Fleet",
+        icon: HeartPulse,
+        matchPrefix: "/admin/therapy-fleet",
+        hint: "Population compliance cohorts and clinical outreach worklist",
+        section: "Therapy monitoring",
+      },
+      {
+        href: "/admin/therapy-resupply",
+        label: "Resupply Opportunities",
+        icon: PackageCheck,
+        matchPrefix: "/admin/therapy-resupply",
+        hint: "Device-reported supplies due for replacement — drives resupply orders",
+        section: "Therapy monitoring",
+      },
+      {
+        href: "/admin/therapy-compliance",
+        label: "Setup Adherence",
+        icon: ClipboardCheck,
+        matchPrefix: "/admin/therapy-compliance",
+        hint: "CMS 90-day adherence tracker for new Medicare setups",
+        section: "Therapy monitoring",
       },
     ],
   },
@@ -338,6 +423,7 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         icon: ShoppingBag,
         matchPrefix: "/admin/pennpaps/orders",
         hint: "Storefront orders — fulfill, refund, look up",
+        section: "Fulfillment",
       },
       {
         href: "/admin/shop/subscriptions",
@@ -345,6 +431,7 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         icon: Repeat,
         matchPrefix: "/admin/shop/subscriptions",
         hint: "Recurring resupply plans and health",
+        section: "Fulfillment",
       },
       {
         href: "/admin/shop/returns",
@@ -353,6 +440,7 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         matchPrefix: "/admin/shop/returns",
         hint: "Return requests, restocks, refund decisions",
         badgeKey: "pendingReturns",
+        section: "Fulfillment",
       },
       {
         href: "/admin/shop/backorders",
@@ -360,6 +448,23 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         icon: AlertOctagon,
         matchPrefix: "/admin/shop/backorders",
         hint: "Mark SKUs out of stock; manage resupply substitution rules",
+        section: "Fulfillment",
+      },
+      {
+        href: "/admin/shop/inventory",
+        label: "Inventory",
+        icon: Boxes,
+        matchPrefix: "/admin/shop/inventory",
+        hint: "Catalog, stock levels, product editor",
+        section: "Catalog",
+      },
+      {
+        href: "/admin/shop/inventory/reconcile",
+        label: "Reconcile",
+        icon: ClipboardCheck,
+        matchPrefix: "/admin/shop/inventory/reconcile",
+        hint: "Monthly physical count & variance report",
+        section: "Catalog",
       },
       {
         href: "/admin/shop/customers",
@@ -367,6 +472,7 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         icon: UsersRound,
         matchPrefix: "/admin/shop/customers",
         hint: "Registered shop accounts, with clinical info + in-app messaging",
+        section: "Storefront",
       },
       {
         href: "/admin/shop/abandoned-carts",
@@ -374,6 +480,7 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         icon: ShoppingCart,
         matchPrefix: "/admin/shop/abandoned-carts",
         hint: "Carts to recover via outreach",
+        section: "Storefront",
       },
       {
         href: "/admin/shop/back-in-stock",
@@ -381,20 +488,7 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         icon: PackageCheck,
         matchPrefix: "/admin/shop/back-in-stock",
         hint: "Customers waiting on restocked items",
-      },
-      {
-        href: "/admin/shop/insurance-leads",
-        label: "Insurance Leads",
-        icon: HeartHandshake,
-        matchPrefix: "/admin/shop/insurance-leads",
-        hint: "New benefit-verification requests",
-      },
-      {
-        href: "/admin/fitter-leads",
-        label: "Fitter Prospects",
-        icon: UsersRound,
-        matchPrefix: "/admin/fitter-leads",
-        hint: "Fitter funnel + supply-campaign conversion",
+        section: "Storefront",
       },
       {
         href: "/admin/shop/reviews",
@@ -403,6 +497,7 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         matchPrefix: "/admin/shop/reviews",
         hint: "Customer product reviews — moderate & reply",
         badgeKey: "pendingReviews",
+        section: "Storefront",
       },
       {
         href: "/admin/shop/product-questions",
@@ -410,20 +505,23 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         icon: HelpCircle,
         matchPrefix: "/admin/shop/product-questions",
         hint: "Customer-submitted questions — answer or reject",
+        section: "Storefront",
       },
       {
-        href: "/admin/shop/inventory",
-        label: "Inventory",
-        icon: Boxes,
-        matchPrefix: "/admin/shop/inventory",
-        hint: "Catalog, stock levels, product editor",
+        href: "/admin/shop/insurance-leads",
+        label: "Insurance Leads",
+        icon: HeartHandshake,
+        matchPrefix: "/admin/shop/insurance-leads",
+        hint: "New benefit-verification requests",
+        section: "Leads",
       },
       {
-        href: "/admin/shop/inventory/reconcile",
-        label: "Reconcile",
-        icon: ClipboardCheck,
-        matchPrefix: "/admin/shop/inventory/reconcile",
-        hint: "Monthly physical count & variance report",
+        href: "/admin/fitter-leads",
+        label: "Fitter Prospects",
+        icon: UsersRound,
+        matchPrefix: "/admin/fitter-leads",
+        hint: "Fitter funnel + supply-campaign conversion",
+        section: "Leads",
       },
     ],
   },
@@ -436,6 +534,7 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         icon: CircleDollarSign,
         matchPrefix: "/admin/billing",
         hint: "AR director dashboard — KPIs, money in flight, top payers",
+        section: "Worklists",
       },
       {
         href: "/admin/billing/ai-queue",
@@ -443,6 +542,7 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         icon: Bot,
         matchPrefix: "/admin/billing/ai-queue",
         hint: "Scrubber-blocked + denial-analyzer worklist with auto-resubmit",
+        section: "Worklists",
       },
       {
         href: "/admin/billing/eligibility",
@@ -450,6 +550,7 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         icon: ClipboardCheck,
         matchPrefix: "/admin/billing/eligibility",
         hint: "System-wide 270/271 worklist — rejected and inactive coverage rise to the top",
+        section: "Worklists",
       },
       {
         href: "/admin/billing/eligibility-recheck",
@@ -458,6 +559,7 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         matchPrefix: "/admin/billing/eligibility-recheck",
         hint: "Active coverages due for re-verification — never-checked, terminating soon, or stale",
         requiredPermission: "reports.read",
+        section: "Worklists",
       },
       {
         href: "/admin/billing/prior-auths",
@@ -465,35 +567,7 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         icon: ShieldAlert,
         matchPrefix: "/admin/billing/prior-auths",
         hint: "Missed / at-risk SLA + auths expiring soon + drafts to submit",
-      },
-      {
-        href: "/admin/billing/aging",
-        label: "A/R aging",
-        icon: ListFilter,
-        matchPrefix: "/admin/billing/aging",
-        hint: "Open claims by 0/30/60/90 day bucket and by payer",
-      },
-      {
-        href: "/admin/billing/timely-filing",
-        label: "Filing deadlines",
-        icon: CalendarClock,
-        matchPrefix: "/admin/billing/timely-filing",
-        hint: "Open claims ranked by days left before the payer's timely-filing window closes",
-      },
-      {
-        href: "/admin/billing/payer-profitability",
-        label: "Payer profitability",
-        icon: Landmark,
-        matchPrefix: "/admin/billing/payer-profitability",
-        hint: "Net yield by payer: billed → allowed → collected, denial rate, net of cost",
-        requiredPermission: "cost.read",
-      },
-      {
-        href: "/admin/billing/denials",
-        label: "Denials & DSO",
-        icon: TrendingDown,
-        matchPrefix: "/admin/billing/denials",
-        hint: "90-day denial rate + 180-day days-to-pay, per payer",
+        section: "Worklists",
       },
       {
         href: "/admin/billing/denials-worklist",
@@ -502,30 +576,7 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         matchPrefix: "/admin/billing/denials-worklist",
         hint: "Open denials ranked by recoverable $ × win-probability",
         requiredPermission: "reports.read",
-      },
-      {
-        href: "/admin/billing/secondary",
-        label: "Secondary claims",
-        icon: Layers,
-        matchPrefix: "/admin/billing/secondary",
-        hint: "Coordination of benefits — roll the primary's leftover balance to the secondary payer",
-        requiredPermission: "reports.read",
-      },
-      {
-        href: "/admin/billing/statements",
-        label: "Statement send",
-        icon: Mail,
-        matchPrefix: "/admin/billing/statements",
-        hint: "Send patient-responsibility statements (email/SMS) — consent + quiet-hours aware",
-        requiredPermission: "reports.read",
-      },
-      {
-        href: "/admin/billing/collections-forecast",
-        label: "Collections forecast",
-        icon: TrendingUp,
-        matchPrefix: "/admin/billing/collections-forecast",
-        hint: "Projected cash from claims in flight, bucketed by expected landing date",
-        requiredPermission: "reports.read",
+        section: "Worklists",
       },
       {
         href: "/admin/billing/cmn",
@@ -534,13 +585,67 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         matchPrefix: "/admin/billing/cmn",
         hint: "Draft Certificates of Medical Necessity awaiting completion",
         requiredPermission: "reports.read",
+        section: "Worklists",
       },
       {
-        href: "/admin/billing/era",
-        label: "ERA files",
-        icon: Wallet,
-        matchPrefix: "/admin/billing/era",
-        hint: "Upload an 835 to auto-post payer adjudications",
+        href: "/admin/billing/aging",
+        label: "A/R aging",
+        icon: ListFilter,
+        matchPrefix: "/admin/billing/aging",
+        hint: "Open claims by 0/30/60/90 day bucket and by payer",
+        section: "Revenue & A/R",
+      },
+      {
+        href: "/admin/billing/timely-filing",
+        label: "Filing deadlines",
+        icon: CalendarClock,
+        matchPrefix: "/admin/billing/timely-filing",
+        hint: "Open claims ranked by days left before the payer's timely-filing window closes",
+        section: "Revenue & A/R",
+      },
+      {
+        href: "/admin/billing/denials",
+        label: "Denials & DSO",
+        icon: TrendingDown,
+        matchPrefix: "/admin/billing/denials",
+        hint: "90-day denial rate + 180-day days-to-pay, per payer",
+        section: "Revenue & A/R",
+      },
+      {
+        href: "/admin/billing/secondary",
+        label: "Secondary claims",
+        icon: Layers,
+        matchPrefix: "/admin/billing/secondary",
+        hint: "Coordination of benefits — roll the primary's leftover balance to the secondary payer",
+        requiredPermission: "reports.read",
+        section: "Revenue & A/R",
+      },
+      {
+        href: "/admin/billing/statements",
+        label: "Statement send",
+        icon: Mail,
+        matchPrefix: "/admin/billing/statements",
+        hint: "Send patient-responsibility statements (email/SMS) — consent + quiet-hours aware",
+        requiredPermission: "reports.read",
+        section: "Revenue & A/R",
+      },
+      {
+        href: "/admin/billing/collections-forecast",
+        label: "Collections forecast",
+        icon: TrendingUp,
+        matchPrefix: "/admin/billing/collections-forecast",
+        hint: "Projected cash from claims in flight, bucketed by expected landing date",
+        requiredPermission: "reports.read",
+        section: "Revenue & A/R",
+      },
+      {
+        href: "/admin/billing/payer-profitability",
+        label: "Payer profitability",
+        icon: Landmark,
+        matchPrefix: "/admin/billing/payer-profitability",
+        hint: "Net yield by payer: billed → allowed → collected, denial rate, net of cost",
+        requiredPermission: "cost.read",
+        section: "Revenue & A/R",
       },
       {
         href: "/admin/billing/capped-rentals",
@@ -548,6 +653,15 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         icon: CalendarRange,
         matchPrefix: "/admin/billing/capped-rentals",
         hint: "13- and 36-month CMS rental cycle tracker + KH/KI/KX modifier rotation",
+        section: "Revenue & A/R",
+      },
+      {
+        href: "/admin/billing/era",
+        label: "ERA files",
+        icon: Wallet,
+        matchPrefix: "/admin/billing/era",
+        hint: "Upload an 835 to auto-post payer adjudications",
+        section: "Claims tools",
       },
       {
         href: "/admin/billing/manual-claim",
@@ -556,6 +670,7 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         matchPrefix: "/admin/billing/manual-claim",
         hint: "Key a corrected / void-replacement / paper-backup claim by hand",
         requiredPermission: "patients.update",
+        section: "Claims tools",
       },
       {
         href: "/admin/billing/config",
@@ -563,82 +678,20 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         icon: SlidersHorizontal,
         matchPrefix: "/admin/billing/config",
         hint: "Payer profiles, fee schedules, modifier rules, denial codes, claim templates",
+        section: "Claims tools",
       },
     ],
   },
   {
-    label: "Insights",
+    label: "Analytics & Reports",
     items: [
-      {
-        href: "/admin/operations",
-        label: "Operations",
-        icon: Activity,
-        matchPrefix: "/admin/operations",
-        hint: "Health of background jobs and pipelines",
-      },
-      {
-        href: "/admin/integrations",
-        label: "Integrations",
-        icon: Plug,
-        matchPrefix: "/admin/integrations",
-        hint: "Therapy-cloud vendor connections and nightly sync status",
-      },
-      {
-        href: "/admin/therapy-fleet",
-        label: "Therapy Fleet",
-        icon: HeartPulse,
-        matchPrefix: "/admin/therapy-fleet",
-        hint: "Population compliance cohorts and clinical outreach worklist",
-      },
-      {
-        href: "/admin/therapy-resupply",
-        label: "Resupply Opportunities",
-        icon: PackageCheck,
-        matchPrefix: "/admin/therapy-resupply",
-        hint: "Device-reported supplies due for replacement — drives resupply orders",
-      },
-      {
-        href: "/admin/therapy-compliance",
-        label: "Setup Adherence",
-        icon: ClipboardCheck,
-        matchPrefix: "/admin/therapy-compliance",
-        hint: "CMS 90-day adherence tracker for new Medicare setups",
-      },
-      {
-        href: "/admin/delivery-failures",
-        label: "Delivery Failures",
-        icon: TruckIcon,
-        matchPrefix: "/admin/delivery-failures",
-        hint: "Bounced messages and shipping exceptions",
-      },
-      {
-        href: "/admin/webhook-deliveries",
-        label: "Webhook Deliveries",
-        icon: Webhook,
-        matchPrefix: "/admin/webhook-deliveries",
-        hint: "Outbound event deliveries to partner endpoints — re-queue failed/exhausted sends",
-        requiredPermission: "admin.tools.manage",
-      },
       {
         href: "/admin/reports",
         label: "Reports",
         icon: BarChart3,
         matchPrefix: "/admin/reports",
         hint: "CSV, PDF, and QuickBooks (IIF / QBO) exports for ops and finance",
-      },
-      {
-        href: "/admin/productivity",
-        label: "Team throughput",
-        icon: Activity,
-        matchPrefix: "/admin/productivity",
-        hint: "Per-agent close / approve / resolve counts",
-      },
-      {
-        href: "/admin/rt-overview",
-        label: "RT Overview",
-        icon: HeartPulse,
-        matchPrefix: "/admin/rt-overview",
-        hint: "At-a-glance therapy board: alerts, AHI, leak, usage",
+        section: "Business",
       },
       {
         href: "/admin/analytics/margin",
@@ -647,6 +700,7 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         matchPrefix: "/admin/analytics/margin",
         hint: "Gross margin and % by product and overall, from captured cost",
         requiredPermission: "cost.read",
+        section: "Business",
       },
       {
         href: "/admin/analytics/ltv-cac",
@@ -655,6 +709,7 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         matchPrefix: "/admin/analytics/ltv-cac",
         hint: "Lifetime value vs acquisition cost by channel, with LTV:CAC",
         requiredPermission: "cost.read",
+        section: "Business",
       },
       {
         href: "/admin/analytics/inventory-turnover",
@@ -663,6 +718,15 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         matchPrefix: "/admin/analytics/inventory-turnover",
         hint: "Turnover (COGS ÷ inventory value) + stockout demand per SKU",
         requiredPermission: "cost.read",
+        section: "Business",
+      },
+      {
+        href: "/admin/productivity",
+        label: "Team throughput",
+        icon: Activity,
+        matchPrefix: "/admin/productivity",
+        hint: "Per-agent close / approve / resolve counts",
+        section: "Business",
       },
       {
         href: "/admin/goals",
@@ -671,6 +735,7 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         matchPrefix: "/admin/goals",
         hint: "Set KPI targets per period and track pace-to-goal vs. actuals",
         requiredPermission: "targets.manage",
+        section: "Business",
       },
       {
         href: "/admin/kpi-alerts",
@@ -679,6 +744,7 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         matchPrefix: "/admin/kpi-alerts",
         hint: "KPI threshold alert feed + rule config (revenue, denials, churn)",
         requiredPermission: "metrics.read",
+        section: "Business",
       },
       {
         href: "/admin/analytics",
@@ -686,6 +752,7 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         icon: Activity,
         matchPrefix: "/admin/analytics",
         hint: "Resupply funnel, compliance cohorts, CSR productivity",
+        section: "Customer & clinical",
       },
       {
         href: "/admin/therapy-usage-report",
@@ -693,6 +760,7 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         icon: ScrollText,
         matchPrefix: "/admin/therapy-usage-report",
         hint: "Provider-ready, print-quality therapy adherence snapshot (by provider, patient, or manufacturer)",
+        section: "Customer & clinical",
       },
       {
         href: "/admin/nps",
@@ -700,6 +768,7 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         icon: Star,
         matchPrefix: "/admin/nps",
         hint: "Post-delivery NPS responses with comment tail",
+        section: "Customer & clinical",
       },
       {
         href: "/admin/pennpaps/analytics",
@@ -707,13 +776,7 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         icon: BarChart3,
         matchPrefix: "/admin/pennpaps/analytics",
         hint: "PennPaps storefront traffic & revenue",
-      },
-      {
-        href: "/admin/pennpaps/reminders",
-        label: "Reminders",
-        icon: BellRing,
-        matchPrefix: "/admin/pennpaps/reminders",
-        hint: "Scheduled patient resupply reminders",
+        section: "Storefront",
       },
     ],
   },
@@ -726,6 +789,7 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         icon: ScrollText,
         matchPrefix: "/admin/rules",
         hint: "Automation rules that trigger replies & actions",
+        section: "Automation",
       },
       {
         href: "/admin/rule-tester",
@@ -733,34 +797,40 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         icon: FlaskConical,
         matchPrefix: "/admin/rule-tester",
         hint: "Dry-run a rule against sample input",
+        section: "Automation",
       },
       {
-        href: "/admin/coaching",
-        label: "Adherence coaching",
-        icon: HeartPulse,
-        matchPrefix: "/admin/coaching",
-        hint: "Outreach plans for patients with slipping CPAP adherence",
+        href: "/admin/operations",
+        label: "Operations",
+        icon: Activity,
+        matchPrefix: "/admin/operations",
+        hint: "Health of background jobs and pipelines",
+        section: "Operations",
       },
       {
-        href: "/admin/security",
-        label: "Account security",
-        icon: ShieldCheck,
-        matchPrefix: "/admin/security",
-        hint: "Manage your own MFA / authenticator-app enrollment",
+        href: "/admin/integrations",
+        label: "Integrations",
+        icon: Plug,
+        matchPrefix: "/admin/integrations",
+        hint: "Therapy-cloud vendor connections and nightly sync status",
+        section: "Operations",
       },
       {
-        href: "/admin/pennpaps/audit",
-        label: "Storefront Audit",
-        icon: FileSearch,
-        matchPrefix: "/admin/pennpaps/audit",
-        hint: "PennPaps storefront audit trail",
+        href: "/admin/delivery-failures",
+        label: "Delivery Failures",
+        icon: TruckIcon,
+        matchPrefix: "/admin/delivery-failures",
+        hint: "Bounced messages and shipping exceptions",
+        section: "Operations",
       },
       {
-        href: "/admin/team",
-        label: "Team",
-        icon: UsersRound,
-        matchPrefix: "/admin/team",
-        hint: "Manage admin & agent accounts",
+        href: "/admin/webhook-deliveries",
+        label: "Webhook Deliveries",
+        icon: Webhook,
+        matchPrefix: "/admin/webhook-deliveries",
+        hint: "Outbound event deliveries to partner endpoints — re-queue failed/exhausted sends",
+        requiredPermission: "admin.tools.manage",
+        section: "Operations",
       },
       {
         href: "/admin/closures",
@@ -768,6 +838,7 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         icon: CalendarOff,
         matchPrefix: "/admin/closures",
         hint: "Holidays and weather closures with inbound-SMS auto-reply",
+        section: "Configuration",
       },
       {
         href: "/admin/control-center",
@@ -775,6 +846,15 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         icon: ToggleLeft,
         matchPrefix: "/admin/control-center",
         hint: "On/off switches for major features (voice, SMS, campaigns, AI billing, …)",
+        section: "Configuration",
+      },
+      {
+        href: "/admin/team",
+        label: "Team",
+        icon: UsersRound,
+        matchPrefix: "/admin/team",
+        hint: "Manage admin & agent accounts",
+        section: "Configuration",
       },
       {
         href: "/admin/settings",
@@ -782,6 +862,23 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         icon: Settings,
         matchPrefix: "/admin/settings",
         hint: "Practice settings & integrations",
+        section: "Configuration",
+      },
+      {
+        href: "/admin/pennpaps/audit",
+        label: "Storefront Audit",
+        icon: FileSearch,
+        matchPrefix: "/admin/pennpaps/audit",
+        hint: "PennPaps storefront audit trail",
+        section: "Account & audit",
+      },
+      {
+        href: "/admin/security",
+        label: "Account security",
+        icon: ShieldCheck,
+        matchPrefix: "/admin/security",
+        hint: "Manage your own MFA / authenticator-app enrollment",
+        section: "Account & audit",
       },
     ],
   },
@@ -886,8 +983,17 @@ const NAV_EXPANDED_STORAGE_KEY = "pf-admin-nav-expanded-groups";
 const NAV_EXPLICIT_COLLAPSED_STORAGE_KEY =
   "pf-admin-nav-explicit-collapsed-groups";
 
+// Migration map for renamed nav groups to preserve user sidebar state
+// across deployments when group labels change.
+const NAV_GROUP_LABEL_MIGRATION: Record<string, string> = {
+  Inbox: "Workspace",
+  Customers: "Patients & Clinical",
+  Insights: "Analytics & Reports",
+};
+
 function loadInitialExpandedGroups(activeGroup: string | null): Set<string> {
   const fallback = new Set(activeGroup ? [activeGroup] : []);
+  const validGroups = new Set(NAV_GROUPS.map((group) => group.label));
   if (typeof window === "undefined") return fallback;
   try {
     const raw = window.localStorage.getItem(NAV_EXPANDED_STORAGE_KEY);
@@ -897,7 +1003,12 @@ function loadInitialExpandedGroups(activeGroup: string | null): Set<string> {
       Array.isArray(parsed) &&
       parsed.every((s): s is string => typeof s === "string")
     ) {
-      return new Set(parsed);
+      const migrated = new Set(
+        parsed
+          .map((label) => NAV_GROUP_LABEL_MIGRATION[label] ?? label)
+          .filter((label) => validGroups.has(label)),
+      );
+      return migrated.size > 0 ? migrated : fallback;
     }
   } catch {
     /* localStorage unavailable / corrupt — fall through */
@@ -927,7 +1038,11 @@ function loadExplicitCollapsedGroups(): Set<string> {
       Array.isArray(parsed) &&
       parsed.every((s): s is string => typeof s === "string")
     ) {
-      return new Set(parsed);
+      // Migrate old group labels to new ones
+      const migrated = parsed.map(
+        (label) => NAV_GROUP_LABEL_MIGRATION[label] ?? label,
+      );
+      return new Set(migrated);
     }
   } catch {
     /* localStorage unavailable / corrupt — fall through */
@@ -1075,15 +1190,38 @@ function SidebarNavBody({
               className="flex flex-col gap-0.5 pb-1"
               hidden={!isOpen}
             >
-              {group.items.map((link) => (
-                <div key={link.href} onClick={onItemClick}>
-                  <NavItem
-                    {...link}
-                    isActive={activeHref === link.href}
-                    badgeCount={badgeCountFor(link, counts)}
-                  />
-                </div>
-              ))}
+              {group.items.map((link, idx) => {
+                // Emit a muted sub-header when this item starts a new
+                // section, so a long group renders as a few labelled
+                // clusters. Items sharing a section must stay contiguous.
+                const section = link.section;
+                const showSectionHeader =
+                  !!section && section !== group.items[idx - 1]?.section;
+                const groupSlug = group.label
+                  .toLowerCase()
+                  .replace(/[^a-z0-9]+/g, "-");
+                return (
+                  <Fragment key={link.href}>
+                    {showSectionHeader && section ? (
+                      <p
+                        className="px-3 pt-3 pb-0.5 text-[9px] font-semibold uppercase tracking-[0.16em] text-[hsl(var(--ink-muted))] first:pt-0.5"
+                        data-testid={`admin-nav-subsection-${groupSlug}-${section
+                          .toLowerCase()
+                          .replace(/[^a-z0-9]+/g, "-")}`}
+                      >
+                        {section}
+                      </p>
+                    ) : null}
+                    <div onClick={onItemClick}>
+                      <NavItem
+                        {...link}
+                        isActive={activeHref === link.href}
+                        badgeCount={badgeCountFor(link, counts)}
+                      />
+                    </div>
+                  </Fragment>
+                );
+              })}
             </div>
           </div>
         );

@@ -601,9 +601,32 @@ export function AdminShopInventoryPage() {
   // accidentally re-include a deleted SKU.
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
 
+  // Catalog search — narrows the rendered rows by product name, SKU id,
+  // or category so a long catalog stays navigable instead of being one
+  // scroll-forever table. Selection is reset whenever the query changes
+  // so a bulk stock update can never silently touch a row the operator
+  // can no longer see.
+  const [query, setQuery] = useState("");
+  const normalizedQuery = query.trim().toLowerCase();
+  const filteredProducts = useMemo(() => {
+    const all = data?.products ?? [];
+    if (!normalizedQuery) return all;
+    return all.filter(
+      (p) =>
+        p.name.toLowerCase().includes(normalizedQuery) ||
+        p.id.toLowerCase().includes(normalizedQuery) ||
+        (p.category ?? "").toLowerCase().includes(normalizedQuery),
+    );
+  }, [data, normalizedQuery]);
+
+  function onQueryChange(next: string) {
+    setQuery(next);
+    setSelectedIds(new Set());
+  }
+
   const visibleIds = useMemo(
-    () => (data?.products ?? []).map((p) => p.id),
-    [data],
+    () => filteredProducts.map((p) => p.id),
+    [filteredProducts],
   );
   const allVisibleSelected =
     visibleIds.length > 0 && visibleIds.every((id) => selectedIds.has(id));
@@ -712,6 +735,40 @@ export function AdminShopInventoryPage() {
         <div style={{ color: "hsl(var(--ink-3))" }}>No products found.</div>
       ) : (
         <>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 12,
+              marginBottom: 12,
+              flexWrap: "wrap",
+            }}
+          >
+            <input
+              type="search"
+              value={query}
+              onChange={(e) => onQueryChange(e.target.value)}
+              placeholder="Search by product, SKU, or category"
+              aria-label="Search inventory"
+              data-testid="inventory-search"
+              style={{
+                flex: "1 1 260px",
+                minWidth: 200,
+                padding: "8px 12px",
+                fontSize: 14,
+                border: "1px solid hsl(var(--line-1))",
+                borderRadius: 6,
+              }}
+            />
+            <span
+              style={{ fontSize: 13, color: "hsl(var(--ink-3))" }}
+              data-testid="inventory-count"
+            >
+              {normalizedQuery
+                ? `${filteredProducts.length} of ${data.products.length} SKUs`
+                : `${data.products.length} SKUs`}
+            </span>
+          </div>
           <BulkStockBar
             selectedIds={selectedIds}
             onClear={() => setSelectedIds(new Set())}
@@ -811,7 +868,22 @@ export function AdminShopInventoryPage() {
                 </tr>
               </thead>
               <tbody>
-                {data.products.map((p) => {
+                {filteredProducts.length === 0 ? (
+                  <tr>
+                    <td
+                      colSpan={6}
+                      data-testid="inventory-no-matches"
+                      style={{
+                        padding: "16px 12px",
+                        color: "hsl(var(--ink-3))",
+                        fontSize: 14,
+                      }}
+                    >
+                      No SKUs match “{query}”.
+                    </td>
+                  </tr>
+                ) : null}
+                {filteredProducts.map((p) => {
                   const checked = selectedIds.has(p.id);
                   return (
                     <tr

@@ -211,6 +211,13 @@ describe("AppShell — collapsible nav machinery present", () => {
     expect(APPSHELL_SRC).toContain("NAV_EXPANDED_STORAGE_KEY");
   });
 
+  it("migrates legacy expanded-group labels on load", () => {
+    expect(APPSHELL_SRC).toContain("NAV_GROUP_LABEL_MIGRATION");
+    expect(APPSHELL_SRC).toContain('Inbox: "Workspace"');
+    expect(APPSHELL_SRC).toContain('Customers: "Patients & Clinical"');
+    expect(APPSHELL_SRC).toContain('Insights: "Analytics & Reports"');
+  });
+
   it("uses NAV_EXPLICIT_COLLAPSED_STORAGE_KEY for explicit collapses", () => {
     expect(APPSHELL_SRC).toContain("NAV_EXPLICIT_COLLAPSED_STORAGE_KEY");
   });
@@ -250,7 +257,17 @@ describe("AppShell — SidebarNavBody renders collapsible group toggles", () => 
 
   it("still renders NavItem for each link within a group", () => {
     expect(APPSHELL_SRC).toContain("NavItem");
-    expect(APPSHELL_SRC).toContain("group.items.map((link) =>");
+    // The item map now takes an index so it can detect when an item
+    // starts a new sub-section and emit a sub-header above it.
+    expect(APPSHELL_SRC).toContain("group.items.map((link, idx) =>");
+  });
+
+  it("renders a sub-section sub-header when an item starts a new section", () => {
+    // Large groups are broken into labelled clusters via the optional
+    // `section` tag on each NavLink; the body emits a muted sub-header
+    // whenever an item's section differs from the previous item's.
+    expect(APPSHELL_SRC).toContain("showSectionHeader");
+    expect(APPSHELL_SRC).toContain("admin-nav-subsection-");
   });
 });
 

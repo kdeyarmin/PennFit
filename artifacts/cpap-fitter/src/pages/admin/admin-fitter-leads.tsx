@@ -583,7 +583,20 @@ export function AdminFitterLeadsPage() {
       <div
         className="border rounded-lg bg-white overflow-x-auto"
         style={{ borderColor: "hsl(var(--line-1))" }}
+        data-testid="leads-queue"
       >
+        <div
+          className="px-4 py-3 border-b"
+          style={{ borderColor: "hsl(var(--line-1))" }}
+        >
+          <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+            Lead queue
+          </div>
+          <div className="text-xs text-slate-500 mt-0.5">
+            Filtered by the stage and source controls above — click a row to
+            expand details and log CSR notes.
+          </div>
+        </div>
         <table className="w-full text-sm min-w-[960px]">
           <thead style={{ backgroundColor: "#f8fafc" }}>
             <tr style={{ color: "#475569" }}>
