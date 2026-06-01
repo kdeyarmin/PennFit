@@ -17,6 +17,7 @@
     ]
   },
   "deploy": {
+    "preDeployCommand": "node lib/resupply-db/scripts/deploy-migrate.mjs",
     "startCommand": "node --enable-source-maps artifacts/resupply-api/dist/index.mjs",
     "healthcheckPath": "/resupply-api/healthz",
     "healthcheckTimeout": 90,
