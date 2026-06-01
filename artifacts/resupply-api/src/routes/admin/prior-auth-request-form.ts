@@ -16,7 +16,7 @@
 // record, so it's safe to refresh/reprint. `Cache-Control: no-store`
 // keeps the PHI bytes out of the browser disk cache.
 //
-// PHI posture: the PDF carries PHI; we stream it and never persist or
+// PHI posture: the PDF carries PHI; we send it in the response and never persist or
 // log the bytes. One `prior_auth.request_form.generated` audit row per
 // call (counts/ids only, no PHI) records the access.
 
