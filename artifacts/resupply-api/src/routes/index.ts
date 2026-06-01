@@ -12,6 +12,7 @@ import metricThresholdsRouter from "./admin/metric-thresholds.js";
 import clinicalEncountersRouter from "./admin/clinical-encounters.js";
 import rtOutcomesRouter from "./admin/rt-outcomes.js";
 import interventionsRouter from "./admin/interventions.js";
+import secondaryClaimsRouter from "./admin/secondary-claims.js";
 import setupChecklistRouter from "./admin/setup-checklist.js";
 import casesRouter from "./admin/cases.js";
 import workItemsRouter from "./admin/work-items.js";
@@ -338,6 +339,9 @@ router.use(rtOutcomesRouter);
 // /admin/.../interventions — structured non-adherence intervention
 // plan + outcome (Phase 3, RT #21). clinical.read / .intervention.write.
 router.use(interventionsRouter);
+// /admin/billing/secondary-eligible + /admin/claims/:id/generate-secondary
+// — secondary / COB claims (Phase 5, Biller #28).
+router.use(secondaryClaimsRouter);
 // /admin/patients/:id/setup-checklist — new-patient setup-guidance
 // checklist (Phase 1, RT). Gated by the clinical perms.
 router.use(setupChecklistRouter);

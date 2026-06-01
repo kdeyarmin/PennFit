@@ -1510,6 +1510,15 @@ export interface Database {
           claim_frequency_code: "1" | "7" | "8";
           original_claim_number: string | null;
           entry_source: "fulfillment" | "manual" | "adjustment";
+          // Migration 0199 (Biller #28): coordination-of-benefits. The
+          // claim's place in the payer sequence, plus a snapshot of the
+          // primary's adjudication carried onto a secondary claim for the
+          // 837 2320/2330 COB loop (null on primaries).
+          payer_sequence: "primary" | "secondary" | "tertiary";
+          primary_claim_id: string | null;
+          cob_primary_paid_cents: number | null;
+          cob_contractual_cents: number | null;
+          cob_patient_resp_cents: number | null;
           created_at: string;
           updated_at: string;
         };

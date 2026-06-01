@@ -66,6 +66,7 @@ import {
   ToggleLeft,
   ChevronRight,
   Stethoscope,
+  Layers,
 } from "lucide-react";
 import {
   Sheet,
@@ -472,6 +473,14 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         icon: Gavel,
         matchPrefix: "/admin/billing/denials-worklist",
         hint: "Open denials ranked by recoverable $ × win-probability",
+        requiredPermission: "reports.read",
+      },
+      {
+        href: "/admin/billing/secondary",
+        label: "Secondary claims",
+        icon: Layers,
+        matchPrefix: "/admin/billing/secondary",
+        hint: "Coordination of benefits — roll the primary's leftover balance to the secondary payer",
         requiredPermission: "reports.read",
       },
       {

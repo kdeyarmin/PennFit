@@ -360,6 +360,11 @@ const AdminBillingAgingPage = lazy(() =>
     default: m.AdminBillingAgingPage,
   })),
 );
+const AdminSecondaryClaimsPage = lazy(() =>
+  import("@/pages/admin/admin-secondary-claims").then((m) => ({
+    default: m.AdminSecondaryClaimsPage,
+  })),
+);
 const AdminBillingTimelyFilingPage = lazy(() =>
   import("@/pages/admin/admin-billing-timely-filing").then((m) => ({
     default: m.AdminBillingTimelyFilingPage,
@@ -582,6 +587,10 @@ function AdminConsole() {
             <Route
               path="/admin/billing/aging"
               component={AdminBillingAgingPage}
+            />
+            <Route
+              path="/admin/billing/secondary"
+              component={AdminSecondaryClaimsPage}
             />
             <Route
               path="/admin/billing/timely-filing"
