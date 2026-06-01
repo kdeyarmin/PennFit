@@ -983,6 +983,14 @@ const NAV_EXPANDED_STORAGE_KEY = "pf-admin-nav-expanded-groups";
 const NAV_EXPLICIT_COLLAPSED_STORAGE_KEY =
   "pf-admin-nav-explicit-collapsed-groups";
 
+// Migration map for renamed nav groups to preserve user sidebar state
+// across deployments when group labels change.
+const NAV_GROUP_LABEL_MIGRATION: Record<string, string> = {
+  Inbox: "Workspace",
+  Customers: "Patients & Clinical",
+  Insights: "Analytics & Reports",
+};
+
 function loadInitialExpandedGroups(activeGroup: string | null): Set<string> {
   const fallback = new Set(activeGroup ? [activeGroup] : []);
   if (typeof window === "undefined") return fallback;
@@ -994,7 +1002,11 @@ function loadInitialExpandedGroups(activeGroup: string | null): Set<string> {
       Array.isArray(parsed) &&
       parsed.every((s): s is string => typeof s === "string")
     ) {
-      return new Set(parsed);
+      // Migrate old group labels to new ones
+      const migrated = parsed.map(
+        (label) => NAV_GROUP_LABEL_MIGRATION[label] ?? label,
+      );
+      return new Set(migrated);
     }
   } catch {
     /* localStorage unavailable / corrupt — fall through */
@@ -1024,7 +1036,11 @@ function loadExplicitCollapsedGroups(): Set<string> {
       Array.isArray(parsed) &&
       parsed.every((s): s is string => typeof s === "string")
     ) {
-      return new Set(parsed);
+      // Migrate old group labels to new ones
+      const migrated = parsed.map(
+        (label) => NAV_GROUP_LABEL_MIGRATION[label] ?? label,
+      );
+      return new Set(migrated);
     }
   } catch {
     /* localStorage unavailable / corrupt — fall through */
