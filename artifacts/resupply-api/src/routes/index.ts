@@ -18,6 +18,7 @@ import billingCollectionsForecastRouter from "./admin/billing-collections-foreca
 import maskFitWorklistRouter from "./admin/mask-fit-worklist.js";
 import cmnDocumentsRouter from "./admin/cmn-documents.js";
 import clinicalOutreachRouter from "./admin/clinical-outreach.js";
+import educationVideosAdminRouter from "./admin/education-videos.js";
 import setupChecklistRouter from "./admin/setup-checklist.js";
 import casesRouter from "./admin/cases.js";
 import workItemsRouter from "./admin/work-items.js";
@@ -360,6 +361,8 @@ router.use(maskFitWorklistRouter);
 router.use(cmnDocumentsRouter);
 // /admin/clinical/outreach/* — proactive clinical outreach (RT #23).
 router.use(clinicalOutreachRouter);
+// /admin/education-videos — education-video library management (RT #25).
+router.use(educationVideosAdminRouter);
 // /admin/patients/:id/setup-checklist — new-patient setup-guidance
 // checklist (Phase 1, RT). Gated by the clinical perms.
 router.use(setupChecklistRouter);

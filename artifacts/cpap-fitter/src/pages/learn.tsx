@@ -462,6 +462,14 @@ export function Learn() {
           keep people from sticking with therapy — written by the same team that
           fits you.
         </p>
+        <p className="text-sm">
+          <Link
+            href="/learn/videos"
+            className="text-[hsl(var(--penn-gold))] hover:underline font-medium"
+          >
+            Prefer to watch? See our short video guides →
+          </Link>
+        </p>
       </header>
 
       {/*

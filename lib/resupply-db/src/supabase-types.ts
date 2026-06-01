@@ -3915,6 +3915,37 @@ export interface Database {
         >;
         Relationships: [];
       };
+      // Migration 0205 (RT #25): short-video education library.
+      education_videos: {
+        Row: {
+          id: string;
+          title: string;
+          topic:
+            | "getting_started"
+            | "mask_fitting"
+            | "ramp_comfort"
+            | "cleaning"
+            | "troubleshooting"
+            | "travel"
+            | "other";
+          description: string | null;
+          video_url: string;
+          thumbnail_url: string | null;
+          duration_seconds: number | null;
+          sort_order: number;
+          active: boolean;
+          created_by_email: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["education_videos"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["education_videos"]["Row"]
+        >;
+        Relationships: [];
+      };
       shop_customer_notes: {
         Row: {
           id: string;

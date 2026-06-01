@@ -190,6 +190,11 @@ const AdminClinicalOutreachPage = lazy(() =>
     default: m.AdminClinicalOutreachPage,
   })),
 );
+const AdminEducationVideosPage = lazy(() =>
+  import("@/pages/admin/admin-education-videos").then((m) => ({
+    default: m.AdminEducationVideosPage,
+  })),
+);
 const AdminBulkCampaignsPage = lazy(() =>
   import("@/pages/admin/admin-bulk-campaigns").then((m) => ({
     default: m.AdminBulkCampaignsPage,
@@ -828,6 +833,10 @@ function AdminConsole() {
             <Route
               path="/admin/clinical/outreach"
               component={AdminClinicalOutreachPage}
+            />
+            <Route
+              path="/admin/clinical/education-videos"
+              component={AdminEducationVideosPage}
             />
             <Route
               path="/admin/bulk-campaigns"

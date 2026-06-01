@@ -70,6 +70,7 @@ import {
   Wind,
   FileCheck2,
   Send,
+  PlayCircle,
 } from "lucide-react";
 import {
   Sheet,
@@ -295,6 +296,14 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         matchPrefix: "/admin/clinical/outreach",
         hint: "Send supportive check-ins to patients with an open intervention (consent/DND-gated)",
         requiredPermission: "clinical.read",
+      },
+      {
+        href: "/admin/clinical/education-videos",
+        label: "Video library",
+        icon: PlayCircle,
+        matchPrefix: "/admin/clinical/education-videos",
+        hint: "Manage the short-video education library shown on the storefront /learn pages",
+        requiredPermission: "reports.read",
       },
       {
         href: "/admin/providers",
