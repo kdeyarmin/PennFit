@@ -49,8 +49,10 @@ const putSchema = z
 
 router.get(
   "/admin/patients/:patientId/setup-checklist",
-  // Limiter before the auth gate (CodeQL "sensitive data read from GET" /
-  // "missing rate limiting" wants the throttle ahead of authorization).
+  // Throttle ahead of the auth gate so the pre-auth window is covered;
+  // this is what clears CodeQL's js/missing-rate-limiting. (The separate
+  // js/sensitive-get-query finding on the :patientId path param is a
+  // dismissed false positive — default setup ignores in-repo suppression.)
   adminReadRateLimiter,
   requirePermission("clinical.read"),
   async (req, res) => {
