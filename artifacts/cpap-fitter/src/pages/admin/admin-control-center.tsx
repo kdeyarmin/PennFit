@@ -14,6 +14,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
+import { humanizeAction } from "@/components/admin/Badge";
 import {
   isHighRiskFlag,
   listFeatureFlagActivity,
@@ -130,7 +131,7 @@ function SummaryTiles() {
         // The "by foo@example.com on <flag>" detail goes under the value.
         sublabel={
           lastToggle
-            ? `${lastToggle.updatedByEmail ?? "unknown"} • ${lastToggle.key}`
+            ? `${lastToggle.updatedByEmail ?? "unknown"} • ${humanizeAction(lastToggle.key)}`
             : "Seed defaults active"
         }
         accent="neutral"
@@ -331,9 +332,12 @@ function FlagRow({ flag }: { flag: FeatureFlag }) {
     >
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2 flex-wrap">
-          <code className="rounded bg-slate-100 px-1.5 py-0.5 text-xs font-mono text-slate-700">
-            {flag.key}
-          </code>
+          <span
+            className="text-sm font-semibold text-slate-900"
+            title={flag.key}
+          >
+            {humanizeAction(flag.key)}
+          </span>
           {!flag.enabled && (
             <span className="rounded bg-amber-100 text-amber-800 px-1.5 py-0.5 text-xs font-semibold">
               Disabled
@@ -368,7 +372,7 @@ function FlagRow({ flag }: { flag: FeatureFlag }) {
         enabled={flag.enabled}
         loading={mutation.isPending}
         onChange={handleToggle}
-        ariaLabel={`Toggle ${flag.key}`}
+        ariaLabel={`Toggle ${humanizeAction(flag.key)}`}
       />
       {pendingDisable && (
         <ConfirmDisableModal
@@ -407,7 +411,12 @@ function ConfirmDisableModal({
 }) {
   const [typed, setTyped] = useState("");
   const inputRef = useRef<HTMLInputElement | null>(null);
-  const matches = typed === flag.key;
+  // Confirm against the human-readable feature name (e.g. "Voice Agent")
+  // rather than the raw `voice.agent` slug — the rest of the Control
+  // Center no longer surfaces the code-level key, so asking an operator
+  // to type it would mean retyping a string they can't see.
+  const flagLabel = humanizeAction(flag.key);
+  const matches = typed === flagLabel;
 
   // Focus the input on open + Esc to dismiss. A modal that doesn't
   // grab focus or respond to Esc fails the keyboard-only operator
@@ -448,20 +457,20 @@ function ConfirmDisableModal({
             This change takes effect within seconds.
           </p>
           <p>
-            Type the flag key below to confirm. The disable button stays
-            inactive until the key matches exactly.
+            Type the feature name below to confirm. The disable button stays
+            inactive until it matches exactly.
           </p>
         </div>
         <div>
           <label className="block text-xs font-semibold text-slate-600 mb-1">
-            Type <code className="font-mono">{flag.key}</code> to confirm
+            Type <span className="font-semibold">{flagLabel}</span> to confirm
           </label>
           <input
             ref={inputRef}
             type="text"
             value={typed}
             onChange={(e) => setTyped(e.target.value)}
-            aria-label="Type the flag key to confirm"
+            aria-label="Type the feature name to confirm"
             className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm font-mono"
             data-testid={`confirm-disable-${flag.key}-input`}
             autoComplete="off"
@@ -634,9 +643,9 @@ function ActivityRow({ row }: { row: FeatureFlagActivity }) {
       >
         {directionLabel}
       </span>
-      <code className="rounded bg-slate-100 px-1.5 py-0.5 text-xs font-mono text-slate-700">
-        {row.key}
-      </code>
+      <span className="font-medium text-slate-800" title={row.key}>
+        {humanizeAction(row.key)}
+      </span>
       <span className="text-slate-600 truncate">
         {row.operatorEmail ?? "system"}
       </span>

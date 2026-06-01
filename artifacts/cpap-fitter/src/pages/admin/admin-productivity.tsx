@@ -15,6 +15,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Activity } from "lucide-react";
 
+import { humanizeStatus } from "@/components/admin/Badge";
 import { Card } from "@/components/admin/Card";
 import { Spinner } from "@/components/admin/Spinner";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
@@ -155,7 +156,7 @@ function AgentRow({ agent }: { agent: AgentStats }) {
           {agent.displayName?.trim() || agent.email}
         </div>
         <div className="text-[10px] text-muted-foreground">
-          {agent.role}
+          {humanizeStatus(agent.role)}
           {agent.displayName?.trim() ? ` · ${agent.email}` : null}
         </div>
       </td>
