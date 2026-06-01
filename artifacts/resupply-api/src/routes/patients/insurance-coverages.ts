@@ -22,6 +22,10 @@ type InsuranceCoverageUpdate =
   Database["resupply"]["Tables"]["insurance_coverages"]["Update"];
 
 import { logger } from "../../lib/logger";
+import {
+  adminReadRateLimiter,
+  adminWriteRateLimiter,
+} from "../../middlewares/admin-rate-limit";
 import { requireAdmin } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
@@ -75,6 +79,7 @@ const patchBody = baseBody.partial().strict();
 
 router.get(
   "/patients/:id/insurance-coverages",
+  adminReadRateLimiter,
   requireAdmin,
   async (req, res) => {
     const idParsed = idParam.safeParse(req.params);
@@ -123,6 +128,7 @@ router.get(
 router.post(
   "/patients/:id/insurance-coverages",
   requireAdmin,
+  adminWriteRateLimiter,
   async (req, res) => {
     const idParsed = idParam.safeParse(req.params);
     if (!idParsed.success) {
@@ -219,6 +225,7 @@ router.post(
 router.patch(
   "/patients/:id/insurance-coverages/:covId",
   requireAdmin,
+  adminWriteRateLimiter,
   async (req, res) => {
     const idParsed = idAndCovParam.safeParse(req.params);
     if (!idParsed.success) {

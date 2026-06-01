@@ -38,6 +38,10 @@ import {
 
 import { logger } from "../../lib/logger";
 import { publishEvent } from "../../lib/webhooks/publisher";
+import {
+  adminReadRateLimiter,
+  adminWriteRateLimiter,
+} from "../../middlewares/admin-rate-limit";
 import { requireAdmin } from "../../middlewares/requireAdmin";
 import { sendEobExplainerEmail } from "../../lib/order-emails/send-eob-explainer-email";
 
@@ -254,28 +258,34 @@ async function recomputeTotals(
 }
 
 // ── LIST ────────────────────────────────────────────────────────────
-router.get("/patients/:id/insurance-claims", requireAdmin, async (req, res) => {
-  const idParsed = idParam.safeParse(req.params);
-  if (!idParsed.success) {
-    res.status(404).json({ error: "not_found" });
-    return;
-  }
-  const supabase = getSupabaseServiceRoleClient();
-  const { data, error } = await supabase
-    .schema("resupply")
-    .from("insurance_claims")
-    .select(
-      "id, insurance_coverage_id, payer_name, claim_number, date_of_service, fulfillment_id, status, total_billed_cents, total_allowed_cents, total_paid_cents, patient_responsibility_cents, submitted_at, decision_at, paid_at, denial_reason, notes, created_at, updated_at",
-    )
-    .eq("patient_id", idParsed.data.id)
-    .order("date_of_service", { ascending: false });
-  if (error) throw error;
-  res.json({ insuranceClaims: (data ?? []).map(rowToApi) });
-});
+router.get(
+  "/patients/:id/insurance-claims",
+  adminReadRateLimiter,
+  requireAdmin,
+  async (req, res) => {
+    const idParsed = idParam.safeParse(req.params);
+    if (!idParsed.success) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    const supabase = getSupabaseServiceRoleClient();
+    const { data, error } = await supabase
+      .schema("resupply")
+      .from("insurance_claims")
+      .select(
+        "id, insurance_coverage_id, payer_name, claim_number, date_of_service, fulfillment_id, status, total_billed_cents, total_allowed_cents, total_paid_cents, patient_responsibility_cents, submitted_at, decision_at, paid_at, denial_reason, notes, created_at, updated_at",
+      )
+      .eq("patient_id", idParsed.data.id)
+      .order("date_of_service", { ascending: false });
+    if (error) throw error;
+    res.json({ insuranceClaims: (data ?? []).map(rowToApi) });
+  },
+);
 
 // ── DETAIL (claim + lines + events) ─────────────────────────────────
 router.get(
   "/patients/:id/insurance-claims/:claimId",
+  adminReadRateLimiter,
   requireAdmin,
   async (req, res) => {
     const idParsed = idAndClaimParam.safeParse(req.params);
@@ -348,6 +358,7 @@ router.get(
 router.post(
   "/patients/:id/insurance-claims",
   requireAdmin,
+  adminWriteRateLimiter,
   async (req, res) => {
     const idParsed = idParam.safeParse(req.params);
     if (!idParsed.success) {
@@ -429,6 +440,7 @@ router.post(
 router.patch(
   "/patients/:id/insurance-claims/:claimId",
   requireAdmin,
+  adminWriteRateLimiter,
   async (req, res) => {
     const idParsed = idAndClaimParam.safeParse(req.params);
     if (!idParsed.success) {
@@ -594,6 +606,7 @@ router.patch(
 router.post(
   "/patients/:id/insurance-claims/:claimId/lines",
   requireAdmin,
+  adminWriteRateLimiter,
   async (req, res) => {
     const idParsed = idAndClaimParam.safeParse(req.params);
     if (!idParsed.success) {
@@ -678,6 +691,7 @@ router.post(
 router.patch(
   "/patients/:id/insurance-claims/:claimId/lines/:lineId",
   requireAdmin,
+  adminWriteRateLimiter,
   async (req, res) => {
     const idParsed = idClaimAndLineParam.safeParse(req.params);
     if (!idParsed.success) {
@@ -771,6 +785,7 @@ router.patch(
 router.post(
   "/patients/:id/insurance-claims/:claimId/events",
   requireAdmin,
+  adminWriteRateLimiter,
   async (req, res) => {
     const idParsed = idAndClaimParam.safeParse(req.params);
     if (!idParsed.success) {

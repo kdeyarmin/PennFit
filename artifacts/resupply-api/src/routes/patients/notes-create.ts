@@ -16,6 +16,7 @@ import { logAudit } from "@workspace/resupply-audit";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
+import { adminWriteRateLimiter } from "../../middlewares/admin-rate-limit";
 import { requireAdmin } from "../../middlewares/requireAdmin";
 
 const idParam = z.object({ id: z.string().uuid() });
@@ -32,76 +33,81 @@ const bodySchema = z
 
 const router: IRouter = Router();
 
-router.post("/patients/:id/notes", requireAdmin, async (req, res) => {
-  const idParsed = idParam.safeParse(req.params);
-  if (!idParsed.success) {
-    res.status(404).json({ error: "not_found" });
-    return;
-  }
+router.post(
+  "/patients/:id/notes",
+  requireAdmin,
+  adminWriteRateLimiter,
+  async (req, res) => {
+    const idParsed = idParam.safeParse(req.params);
+    if (!idParsed.success) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
 
-  const bodyParsed = bodySchema.safeParse(req.body);
-  if (!bodyParsed.success) {
-    res.status(400).json({
-      error: "invalid_body",
-      issues: bodyParsed.error.issues.map((i) => ({
-        path: i.path.join("."),
-        message: i.message,
-      })),
+    const bodyParsed = bodySchema.safeParse(req.body);
+    if (!bodyParsed.success) {
+      res.status(400).json({
+        error: "invalid_body",
+        issues: bodyParsed.error.issues.map((i) => ({
+          path: i.path.join("."),
+          message: i.message,
+        })),
+      });
+      return;
+    }
+
+    const { id: patientId } = idParsed.data;
+    const { body } = bodyParsed.data;
+
+    const supabase = getSupabaseServiceRoleClient();
+
+    // Verify patient exists. We could rely on the FK to fire a 23503
+    // here, but a pre-check yields a cleaner 404 vs. 500 mapping.
+    const { data: patient } = await supabase
+      .schema("resupply")
+      .from("patients")
+      .select("id")
+      .eq("id", patientId)
+      .limit(1)
+      .maybeSingle();
+    if (!patient) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+
+    const { data: row, error } = await supabase
+      .schema("resupply")
+      .from("patient_notes")
+      .insert({
+        patient_id: patientId,
+        body,
+        author_email: req.adminEmail ?? "<unknown>",
+        author_user_id: req.adminUserId ?? null,
+      })
+      .select("id, created_at")
+      .single();
+    if (error) throw error;
+
+    await logAudit({
+      action: "patient.note.create",
+      adminEmail: req.adminEmail ?? null,
+      adminUserId: req.adminUserId ?? null,
+      targetTable: "patient_notes",
+      targetId: row.id,
+      // Structural metadata only. body_length lets reviewers spot
+      // suspiciously long pastes without exposing the contents.
+      metadata: { patient_id: patientId, body_length: body.length },
+      ip: req.ip ?? null,
+      userAgent: req.get("user-agent") ?? null,
+    }).catch((err) => {
+      logger.warn({ err }, "patient.note.create audit write failed");
     });
-    return;
-  }
 
-  const { id: patientId } = idParsed.data;
-  const { body } = bodyParsed.data;
-
-  const supabase = getSupabaseServiceRoleClient();
-
-  // Verify patient exists. We could rely on the FK to fire a 23503
-  // here, but a pre-check yields a cleaner 404 vs. 500 mapping.
-  const { data: patient } = await supabase
-    .schema("resupply")
-    .from("patients")
-    .select("id")
-    .eq("id", patientId)
-    .limit(1)
-    .maybeSingle();
-  if (!patient) {
-    res.status(404).json({ error: "not_found" });
-    return;
-  }
-
-  const { data: row, error } = await supabase
-    .schema("resupply")
-    .from("patient_notes")
-    .insert({
-      patient_id: patientId,
-      body,
-      author_email: req.adminEmail ?? "<unknown>",
-      author_user_id: req.adminUserId ?? null,
-    })
-    .select("id, created_at")
-    .single();
-  if (error) throw error;
-
-  await logAudit({
-    action: "patient.note.create",
-    adminEmail: req.adminEmail ?? null,
-    adminUserId: req.adminUserId ?? null,
-    targetTable: "patient_notes",
-    targetId: row.id,
-    // Structural metadata only. body_length lets reviewers spot
-    // suspiciously long pastes without exposing the contents.
-    metadata: { patient_id: patientId, body_length: body.length },
-    ip: req.ip ?? null,
-    userAgent: req.get("user-agent") ?? null,
-  }).catch((err) => {
-    logger.warn({ err }, "patient.note.create audit write failed");
-  });
-
-  res.status(201).json({
-    id: row.id,
-    createdAt: row.created_at,
-  });
-});
+    res.status(201).json({
+      id: row.id,
+      createdAt: row.created_at,
+    });
+  },
+);
 
 export default router;

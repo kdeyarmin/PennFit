@@ -126,3 +126,36 @@ export const adminReadRateLimiter: RequestHandler = expressRateLimit({
     req.socket.remoteAddress ??
     "unknown",
 });
+
+// Shared write-endpoint limiter for admin mutations (POST/PATCH/PUT/
+// DELETE) — the mutation analogue of `adminReadRateLimiter`.
+//
+// Built DIRECTLY from `express-rate-limit` for the same reason the read
+// limiter is: CodeQL's js/missing-rate-limiting query only recognizes
+// the upstream middleware at the call site, not our `adminRateLimit()`
+// factory wrapper (and it can't trace the app-level
+// `adminMutationLooseLimit` safety net either). Admin write handlers
+// gated only by those wrappers therefore kept re-flagging as "missing
+// rate limiting". This direct instance is recognized.
+//
+// Apply AFTER the auth gate (requireAdmin / requireAdminOnly /
+// requirePermission) so `req.adminUserId` is populated and the budget
+// is PER ADMIN ACTOR — one CSR's burst can't starve colleagues sharing
+// the same office NAT (the IP fallback only matters if this is ever
+// mis-wired ahead of the gate). 300 mutations/hour per actor sits well
+// above any honest CSR workflow (even heavy claims reconciliation tops
+// out far below it) while bounding a compromised or runaway admin
+// client that would otherwise drive unbounded writes. Routes that need
+// a tighter, operation-specific cap (invites, role changes) keep their
+// own bespoke limiter.
+export const adminWriteRateLimiter: RequestHandler = expressRateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 300,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) =>
+    (req as { adminUserId?: string }).adminUserId ??
+    req.ip ??
+    req.socket.remoteAddress ??
+    "unknown",
+});
