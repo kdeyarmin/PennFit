@@ -26,28 +26,33 @@ const patchSchema = z
   })
   .strict();
 
-router.get("/admin/agent-availability", requireAdmin, async (_req, res) => {
-  const supabase = getSupabaseServiceRoleClient();
-  const { data, error } = await supabase
-    .schema("resupply")
-    .from("admin_users")
-    .select("id, email_lower, display_name, role, availability")
-    .eq("status", "active")
-    .order("email_lower", { ascending: true });
-  if (error) {
-    res.status(500).json({ error: "query_failed", message: error.message });
-    return;
-  }
-  res.json({
-    agents: (data ?? []).map((a) => ({
-      adminUserId: a.id,
-      email: a.email_lower,
-      displayName: a.display_name,
-      role: a.role,
-      availability: a.availability,
-    })),
-  });
-});
+router.get(
+  "/admin/agent-availability",
+  requireAdmin,
+  adminRateLimit({ name: "agent_availability.list", preset: "query" }),
+  async (_req, res) => {
+    const supabase = getSupabaseServiceRoleClient();
+    const { data, error } = await supabase
+      .schema("resupply")
+      .from("admin_users")
+      .select("id, email_lower, display_name, role, availability")
+      .eq("status", "active")
+      .order("email_lower", { ascending: true });
+    if (error) {
+      res.status(500).json({ error: "query_failed", message: error.message });
+      return;
+    }
+    res.json({
+      agents: (data ?? []).map((a) => ({
+        adminUserId: a.id,
+        email: a.email_lower,
+        displayName: a.display_name,
+        role: a.role,
+        availability: a.availability,
+      })),
+    });
+  },
+);
 
 router.patch(
   "/admin/agent-availability/me",
