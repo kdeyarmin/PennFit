@@ -48,6 +48,10 @@ import {
 import { applyAiPatches, type AiPatch } from "../../lib/billing/ai-patch";
 import { scoreAndPersist } from "../../lib/billing/heuristic-denial-scorer";
 import { logger } from "../../lib/logger";
+import {
+  adminReadRateLimiter,
+  adminWriteRateLimiter,
+} from "../../middlewares/admin-rate-limit";
 import { requireAdmin, requireAdminOnly } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
@@ -74,6 +78,7 @@ const autoFixBody = z
 // ── 1. RUN AI SCRUB ─────────────────────────────────────────────────
 router.post(
   "/patients/:id/insurance-claims/:claimId/ai-scrub",
+  adminWriteRateLimiter,
   requireAdmin,
   async (req, res) => {
     const idParsed = params.safeParse(req.params);
@@ -180,6 +185,7 @@ router.post(
 // ── 2. APPLY SCRUB PATCHES ──────────────────────────────────────────
 router.post(
   "/patients/:id/insurance-claims/:claimId/ai-scrub/apply",
+  adminWriteRateLimiter,
   // Patch application mutates claim data; gate behind admin-only.
   requireAdminOnly,
   async (req, res) => {
@@ -280,6 +286,7 @@ router.post(
 // ── 3. LIST SCRUB HISTORY ───────────────────────────────────────────
 router.get(
   "/patients/:id/insurance-claims/:claimId/ai-scrub",
+  adminReadRateLimiter,
   requireAdmin,
   async (req, res) => {
     const idParsed = params.safeParse(req.params);
@@ -304,6 +311,7 @@ router.get(
 // ── 4. RUN AI DENIAL ANALYSIS ───────────────────────────────────────
 router.post(
   "/patients/:id/insurance-claims/:claimId/ai-denial-analysis",
+  adminWriteRateLimiter,
   requireAdmin,
   async (req, res) => {
     const idParsed = params.safeParse(req.params);
@@ -415,6 +423,7 @@ router.post(
 // ── 5. AUTO-FIX + RESUBMIT ──────────────────────────────────────────
 router.post(
   "/patients/:id/insurance-claims/:claimId/ai-denial-analysis/auto-fix-and-resubmit",
+  adminWriteRateLimiter,
   // Mutates the claim AND submits to OA — admin-only.
   requireAdminOnly,
   async (req, res) => {

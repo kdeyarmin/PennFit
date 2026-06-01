@@ -17,6 +17,7 @@ import {
   explainDenialToPatient,
 } from "../../lib/billing/ai-denial-patient-explainer";
 import { logger } from "../../lib/logger";
+import { adminWriteRateLimiter } from "../../middlewares/admin-rate-limit";
 import { requireAdmin } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
@@ -28,6 +29,7 @@ const params = z.object({
 
 router.post(
   "/patients/:id/insurance-claims/:claimId/explain-denial",
+  adminWriteRateLimiter,
   requireAdmin,
   async (req, res) => {
     const parsed = params.safeParse(req.params);
