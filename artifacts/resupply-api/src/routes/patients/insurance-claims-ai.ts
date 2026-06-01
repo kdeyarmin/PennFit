@@ -78,8 +78,8 @@ const autoFixBody = z
 // ── 1. RUN AI SCRUB ─────────────────────────────────────────────────
 router.post(
   "/patients/:id/insurance-claims/:claimId/ai-scrub",
-  requireAdmin,
   adminWriteRateLimiter,
+  requireAdmin,
   async (req, res) => {
     const idParsed = params.safeParse(req.params);
     if (!idParsed.success) {
@@ -185,9 +185,9 @@ router.post(
 // ── 2. APPLY SCRUB PATCHES ──────────────────────────────────────────
 router.post(
   "/patients/:id/insurance-claims/:claimId/ai-scrub/apply",
+  adminWriteRateLimiter,
   // Patch application mutates claim data; gate behind admin-only.
   requireAdminOnly,
-  adminWriteRateLimiter,
   async (req, res) => {
     const idParsed = params.safeParse(req.params);
     if (!idParsed.success) {
@@ -311,8 +311,8 @@ router.get(
 // ── 4. RUN AI DENIAL ANALYSIS ───────────────────────────────────────
 router.post(
   "/patients/:id/insurance-claims/:claimId/ai-denial-analysis",
-  requireAdmin,
   adminWriteRateLimiter,
+  requireAdmin,
   async (req, res) => {
     const idParsed = params.safeParse(req.params);
     if (!idParsed.success) {
@@ -423,9 +423,9 @@ router.post(
 // ── 5. AUTO-FIX + RESUBMIT ──────────────────────────────────────────
 router.post(
   "/patients/:id/insurance-claims/:claimId/ai-denial-analysis/auto-fix-and-resubmit",
+  adminWriteRateLimiter,
   // Mutates the claim AND submits to OA — admin-only.
   requireAdminOnly,
-  adminWriteRateLimiter,
   async (req, res) => {
     const idParsed = params.safeParse(req.params);
     if (!idParsed.success) {

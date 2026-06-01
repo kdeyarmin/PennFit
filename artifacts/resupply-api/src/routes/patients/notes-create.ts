@@ -35,8 +35,8 @@ const router: IRouter = Router();
 
 router.post(
   "/patients/:id/notes",
-  requireAdmin,
   adminWriteRateLimiter,
+  requireAdmin,
   async (req, res) => {
     const idParsed = idParam.safeParse(req.params);
     if (!idParsed.success) {

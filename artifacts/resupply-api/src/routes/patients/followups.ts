@@ -120,8 +120,8 @@ router.get(
 
 router.post(
   "/patients/:id/followups",
-  requireAdmin,
   adminWriteRateLimiter,
+  requireAdmin,
   async (req, res) => {
     const parsed = patientIdParam.safeParse(req.params.id);
     if (!parsed.success) {
@@ -198,8 +198,8 @@ router.post(
 
 router.patch(
   "/patients/:id/followups/:fid/complete",
-  requireAdmin,
   adminWriteRateLimiter,
+  requireAdmin,
   async (req, res) => {
     const parsed = patientIdParam.safeParse(req.params.id);
     if (!parsed.success) {

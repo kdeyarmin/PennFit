@@ -29,8 +29,8 @@ const params = z.object({
 
 router.post(
   "/patients/:id/insurance-claims/:claimId/explain-denial",
-  requireAdmin,
   adminWriteRateLimiter,
+  requireAdmin,
   async (req, res) => {
     const parsed = params.safeParse(req.params);
     if (!parsed.success) {

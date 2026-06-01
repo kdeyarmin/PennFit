@@ -357,8 +357,8 @@ router.get(
 // ── CREATE ──────────────────────────────────────────────────────────
 router.post(
   "/patients/:id/insurance-claims",
-  requireAdmin,
   adminWriteRateLimiter,
+  requireAdmin,
   async (req, res) => {
     const idParsed = idParam.safeParse(req.params);
     if (!idParsed.success) {
@@ -439,8 +439,8 @@ router.post(
 // ── PATCH (status transition + field edits) ─────────────────────────
 router.patch(
   "/patients/:id/insurance-claims/:claimId",
-  requireAdmin,
   adminWriteRateLimiter,
+  requireAdmin,
   async (req, res) => {
     const idParsed = idAndClaimParam.safeParse(req.params);
     if (!idParsed.success) {
@@ -605,8 +605,8 @@ router.patch(
 // ── ADD LINE ITEM ───────────────────────────────────────────────────
 router.post(
   "/patients/:id/insurance-claims/:claimId/lines",
-  requireAdmin,
   adminWriteRateLimiter,
+  requireAdmin,
   async (req, res) => {
     const idParsed = idAndClaimParam.safeParse(req.params);
     if (!idParsed.success) {
@@ -690,8 +690,8 @@ router.post(
 // ── PATCH LINE ITEM ─────────────────────────────────────────────────
 router.patch(
   "/patients/:id/insurance-claims/:claimId/lines/:lineId",
-  requireAdmin,
   adminWriteRateLimiter,
+  requireAdmin,
   async (req, res) => {
     const idParsed = idClaimAndLineParam.safeParse(req.params);
     if (!idParsed.success) {
@@ -784,8 +784,8 @@ router.patch(
 // ── APPEND EVENT (EOB receipt, note, partial pay) ───────────────────
 router.post(
   "/patients/:id/insurance-claims/:claimId/events",
-  requireAdmin,
   adminWriteRateLimiter,
+  requireAdmin,
   async (req, res) => {
     const idParsed = idAndClaimParam.safeParse(req.params);
     if (!idParsed.success) {

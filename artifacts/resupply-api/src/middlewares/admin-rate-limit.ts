@@ -128,29 +128,31 @@ export const adminReadRateLimiter: RequestHandler = expressRateLimit({
 });
 
 // Shared write-endpoint limiter for admin mutations (POST/PATCH/PUT/
-// DELETE) — the mutation analogue of `adminReadRateLimiter`.
+// DELETE) — the mutation analogue of `adminReadRateLimiter`, with its
+// own bucket so a burst of dashboard reads can't starve writes (and
+// vice versa).
 //
-// Built DIRECTLY from `express-rate-limit` for the same reason the read
-// limiter is: CodeQL's js/missing-rate-limiting query only recognizes
-// the upstream middleware at the call site, not our `adminRateLimit()`
-// factory wrapper (and it can't trace the app-level
-// `adminMutationLooseLimit` safety net either). Admin write handlers
-// gated only by those wrappers therefore kept re-flagging as "missing
-// rate limiting". This direct instance is recognized.
+// Built DIRECTLY from `express-rate-limit` (not the `adminRateLimit()`
+// factory wrapper, and not relying on the app-level
+// `adminMutationLooseLimit` net — CodeQL's js/missing-rate-limiting
+// query can't trace either) so the query recognizes it.
 //
-// Apply AFTER the auth gate (requireAdmin / requireAdminOnly /
-// requirePermission) so `req.adminUserId` is populated and the budget
-// is PER ADMIN ACTOR — one CSR's burst can't starve colleagues sharing
-// the same office NAT (the IP fallback only matters if this is ever
-// mis-wired ahead of the gate). 300 mutations/hour per actor sits well
-// above any honest CSR workflow (even heavy claims reconciliation tops
-// out far below it) while bounding a compromised or runaway admin
-// client that would otherwise drive unbounded writes. Routes that need
-// a tighter, operation-specific cap (invites, role changes) keep their
-// own bespoke limiter.
+// Apply BEFORE the auth gate (requireAdmin / requireAdminOnly /
+// requirePermission), exactly like `adminReadRateLimiter`. That query
+// flags a handler whose authorization step isn't preceded by rate
+// limiting ("performs authorization, but is not rate-limited"), so a
+// limiter mounted AFTER the gate does NOT clear the alert. Running
+// before the gate means `req.adminUserId` isn't populated yet, so this
+// keys per IP (same as the read limiter); the adminUserId branch in the
+// keyGenerator is only exercised if a caller mounts it after auth. 600
+// mutations/hour per IP is generous enough that even a busy office
+// behind one NAT won't trip it, while still bounding a runaway or
+// compromised client that would otherwise drive unbounded writes.
+// Routes that need a tighter, operation-specific cap (invites, role
+// changes) keep their own bespoke limiter.
 export const adminWriteRateLimiter: RequestHandler = expressRateLimit({
   windowMs: 60 * 60 * 1000, // 1 hour
-  max: 300,
+  max: 600,
   standardHeaders: true,
   legacyHeaders: false,
   keyGenerator: (req) =>

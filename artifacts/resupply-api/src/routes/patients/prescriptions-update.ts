@@ -38,8 +38,8 @@ const router: IRouter = Router();
 
 router.patch(
   "/prescriptions/:rxId",
-  requireAdmin,
   adminWriteRateLimiter,
+  requireAdmin,
   async (req, res) => {
     const idParsed = idParam.safeParse(req.params);
     if (!idParsed.success) {

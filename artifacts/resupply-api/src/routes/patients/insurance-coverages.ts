@@ -127,8 +127,8 @@ router.get(
 
 router.post(
   "/patients/:id/insurance-coverages",
-  requireAdmin,
   adminWriteRateLimiter,
+  requireAdmin,
   async (req, res) => {
     const idParsed = idParam.safeParse(req.params);
     if (!idParsed.success) {
@@ -224,8 +224,8 @@ router.post(
 
 router.patch(
   "/patients/:id/insurance-coverages/:covId",
-  requireAdmin,
   adminWriteRateLimiter,
+  requireAdmin,
   async (req, res) => {
     const idParsed = idAndCovParam.safeParse(req.params);
     if (!idParsed.success) {

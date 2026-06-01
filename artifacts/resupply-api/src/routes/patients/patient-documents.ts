@@ -260,8 +260,8 @@ router.get(
 
 router.patch(
   "/patients/:id/documents/:docId/reviewed",
-  requireAdmin,
   adminWriteRateLimiter,
+  requireAdmin,
   async (req, res) => {
     const ids = idsParam.safeParse(req.params);
     if (!ids.success) {
@@ -334,8 +334,8 @@ router.patch(
 
 router.delete(
   "/patients/:id/documents/:docId",
-  requireAdmin,
   adminWriteRateLimiter,
+  requireAdmin,
   async (req, res) => {
     const ids = idsParam.safeParse(req.params);
     if (!ids.success) {
