@@ -17,6 +17,7 @@ import billingStatementSendRouter from "./admin/billing-statement-send.js";
 import billingCollectionsForecastRouter from "./admin/billing-collections-forecast.js";
 import maskFitWorklistRouter from "./admin/mask-fit-worklist.js";
 import cmnDocumentsRouter from "./admin/cmn-documents.js";
+import clinicalOutreachRouter from "./admin/clinical-outreach.js";
 import setupChecklistRouter from "./admin/setup-checklist.js";
 import casesRouter from "./admin/cases.js";
 import workItemsRouter from "./admin/work-items.js";
@@ -357,6 +358,8 @@ router.use(maskFitWorklistRouter);
 // /admin/.../cmn-documents + /admin/billing/cmn-* — CMN/DIF structured
 // forms (Biller #29).
 router.use(cmnDocumentsRouter);
+// /admin/clinical/outreach/* — proactive clinical outreach (RT #23).
+router.use(clinicalOutreachRouter);
 // /admin/patients/:id/setup-checklist — new-patient setup-guidance
 // checklist (Phase 1, RT). Gated by the clinical perms.
 router.use(setupChecklistRouter);

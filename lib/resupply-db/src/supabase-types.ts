@@ -3894,6 +3894,27 @@ export interface Database {
         Update: Partial<Database["resupply"]["Tables"]["cmn_documents"]["Row"]>;
         Relationships: [];
       };
+      // Migration 0204 (RT #23): proactive clinical outreach log.
+      clinical_outreach_log: {
+        Row: {
+          id: string;
+          patient_id: string;
+          intervention_encounter_id: string | null;
+          channel: "email" | "sms";
+          message_category: string | null;
+          status: "sent" | "failed" | "skipped";
+          error: string | null;
+          sent_by_email: string;
+          created_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["clinical_outreach_log"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["clinical_outreach_log"]["Row"]
+        >;
+        Relationships: [];
+      };
       shop_customer_notes: {
         Row: {
           id: string;

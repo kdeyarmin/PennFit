@@ -69,6 +69,7 @@ import {
   Layers,
   Wind,
   FileCheck2,
+  Send,
 } from "lucide-react";
 import {
   Sheet,
@@ -285,6 +286,14 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         icon: Wind,
         matchPrefix: "/admin/clinical/mask-fit",
         hint: "Patients reporting a leaking / uncomfortable fit — triage to follow-up",
+        requiredPermission: "clinical.read",
+      },
+      {
+        href: "/admin/clinical/outreach",
+        label: "Clinical outreach",
+        icon: Send,
+        matchPrefix: "/admin/clinical/outreach",
+        hint: "Send supportive check-ins to patients with an open intervention (consent/DND-gated)",
         requiredPermission: "clinical.read",
       },
       {
