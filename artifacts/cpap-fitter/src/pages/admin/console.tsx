@@ -170,6 +170,11 @@ const AdminRtOverviewPage = lazy(() =>
     default: m.AdminRtOverviewPage,
   })),
 );
+const AdminRtOutcomesPage = lazy(() =>
+  import("@/pages/admin/admin-rt-outcomes").then((m) => ({
+    default: m.AdminRtOutcomesPage,
+  })),
+);
 const AdminBulkCampaignsPage = lazy(() =>
   import("@/pages/admin/admin-bulk-campaigns").then((m) => ({
     default: m.AdminBulkCampaignsPage,
@@ -760,6 +765,7 @@ function AdminConsole() {
               component={AdminTherapyUsageReportPage}
             />
             <Route path="/admin/rt-overview" component={AdminRtOverviewPage} />
+            <Route path="/admin/rt-outcomes" component={AdminRtOutcomesPage} />
             <Route
               path="/admin/bulk-campaigns"
               component={AdminBulkCampaignsPage}

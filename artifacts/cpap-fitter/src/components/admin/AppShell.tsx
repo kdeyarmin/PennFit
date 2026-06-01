@@ -65,6 +65,7 @@ import {
   CalendarRange,
   ToggleLeft,
   ChevronRight,
+  Stethoscope,
 } from "lucide-react";
 import {
   Sheet,
@@ -257,6 +258,14 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         icon: HeartPulse,
         matchPrefix: "/admin/clinical",
         hint: "Document + review patient clinical encounters (RT)",
+        requiredPermission: "clinical.read",
+      },
+      {
+        href: "/admin/rt-outcomes",
+        label: "RT outcomes",
+        icon: Stethoscope,
+        matchPrefix: "/admin/rt-outcomes",
+        hint: "Per-therapist activity: encounters, patients, interventions",
         requiredPermission: "clinical.read",
       },
       {

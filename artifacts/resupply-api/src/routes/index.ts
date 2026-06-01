@@ -10,6 +10,7 @@ import productCostsRouter from "./admin/product-costs.js";
 import metricAlertsRouter from "./admin/metric-alerts.js";
 import metricThresholdsRouter from "./admin/metric-thresholds.js";
 import clinicalEncountersRouter from "./admin/clinical-encounters.js";
+import rtOutcomesRouter from "./admin/rt-outcomes.js";
 import setupChecklistRouter from "./admin/setup-checklist.js";
 import casesRouter from "./admin/cases.js";
 import workItemsRouter from "./admin/work-items.js";
@@ -328,6 +329,9 @@ router.use(metricThresholdsRouter);
 // /admin/patients/:id/clinical-encounters — append-only clinician
 // documentation (F3). Read on clinical.read, write on clinical.note.write.
 router.use(clinicalEncountersRouter);
+// /admin/analytics/rt-outcomes — per-RT outcomes rollup from
+// clinical_encounters (Phase 3, RT #24). Counts only; clinical.read.
+router.use(rtOutcomesRouter);
 // /admin/patients/:id/setup-checklist — new-patient setup-guidance
 // checklist (Phase 1, RT). Gated by the clinical perms.
 router.use(setupChecklistRouter);
