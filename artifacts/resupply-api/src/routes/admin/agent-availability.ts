@@ -39,6 +39,11 @@ const phoneSchema = z
   })
   .strict();
 
+const adminReadRateLimiter = adminRateLimit({
+  name: "agent_availability.read",
+  preset: "read",
+});
+
 router.get(
   "/admin/agent-availability",
   // Rate-limit BEFORE the auth gate so an unauthenticated flood is
@@ -74,7 +79,7 @@ router.get(
 
 router.get(
   "/admin/agent-availability/me",
-  adminRateLimit({ name: "agent_availability.me", preset: "read" }),
+  adminReadRateLimiter,
   requireAdmin,
   async (req, res) => {
     const userId = req.adminUserId;
