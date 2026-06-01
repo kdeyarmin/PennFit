@@ -674,7 +674,7 @@ export function PriorAuthorizationsTab({ patientId }: { patientId: string }) {
                       p.id,
                     )}/request-form`}
                     target="_blank"
-                    rel="noreferrer"
+                    rel="noopener noreferrer"
                     className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
                     title="Download the auto-populated prior-authorization request form (PDF) to fax or attach to the payer portal"
                   >
