@@ -48,7 +48,9 @@ const signatureMiddleware = requireTwilioSignature({
 });
 
 function renderHangup(spoken?: string): string {
-  const say = spoken ? `  <Say voice="Polly.Joanna">${escapeXmlText(spoken)}</Say>\n` : "";
+  const say = spoken
+    ? `  <Say voice="Polly.Joanna">${escapeXmlText(spoken)}</Say>\n`
+    : "";
   return [
     `<?xml version="1.0" encoding="UTF-8"?>`,
     `<Response>`,

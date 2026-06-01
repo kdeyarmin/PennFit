@@ -93,8 +93,8 @@ function AlertList() {
   if (grouped.length === 0) {
     return (
       <div className="text-sm text-slate-500">
-        No alerts defined yet. The starter library is seeded by migration
-        0179 — if this is empty, the migration hasn&apos;t been applied to this
+        No alerts defined yet. The starter library is seeded by migration 0179 —
+        if this is empty, the migration hasn&apos;t been applied to this
         environment.
       </div>
     );
@@ -177,7 +177,9 @@ function AlertCard({ alert }: { alert: AlertDefinition }) {
         </button>
       </div>
 
-      {sending && <SendTestForm alert={alert} onClose={() => setSending(false)} />}
+      {sending && (
+        <SendTestForm alert={alert} onClose={() => setSending(false)} />
+      )}
 
       <div className="mt-3 flex flex-wrap gap-1.5">
         {alert.channels.map((ch) => {
@@ -210,8 +212,8 @@ function AlertCard({ alert }: { alert: AlertDefinition }) {
           />
         ) : (
           <div className="mt-3 text-sm text-slate-500">
-            No {CHANNEL_LABEL[openChannel] ?? openChannel} message configured for
-            this alert.
+            No {CHANNEL_LABEL[openChannel] ?? openChannel} message configured
+            for this alert.
           </div>
         ))}
     </li>
@@ -343,7 +345,8 @@ function SendTestForm({
   );
 
   const send = useMutation({
-    mutationFn: () => sendAlert(alert.key, { patientId: patientId.trim(), channel }),
+    mutationFn: () =>
+      sendAlert(alert.key, { patientId: patientId.trim(), channel }),
     onSuccess: () => {
       setPatientId("");
     },
@@ -389,7 +392,9 @@ function SendTestForm({
         </div>
       )}
       {send.isSuccess && (
-        <div className="text-xs text-emerald-700">Sent ({send.data.channel}).</div>
+        <div className="text-xs text-emerald-700">
+          Sent ({send.data.channel}).
+        </div>
       )}
       <div className="flex justify-end gap-2">
         <button

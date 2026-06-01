@@ -46,7 +46,8 @@ function base(patientId: string): string {
   return `/resupply-api/admin/patients/${encodeURIComponent(patientId)}/alert-message-overrides`;
 }
 
-const LIST_ENDPOINT = "/resupply-api/admin/patients/alert-message-overrides/list";
+const LIST_ENDPOINT =
+  "/resupply-api/admin/patients/alert-message-overrides/list";
 
 async function readError(res: Response): Promise<never> {
   const json = (await res.json().catch(() => null)) as {
