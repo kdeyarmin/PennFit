@@ -152,12 +152,13 @@ export const adminReadRateLimiter: RequestHandler = expressRateLimit({
 // keep their own limiter AFTER `requireAdmin`, layered on top of this net.
 export const adminWriteRateLimiter: RequestHandler = expressRateLimit({
   windowMs: 60 * 60 * 1000, // 1 hour
-  max: 300,
-  standardHeaders: true,
+  limit: 300,
+  standardHeaders: "draft-7",
   legacyHeaders: false,
   keyGenerator: (req) =>
     (req as { adminUserId?: string }).adminUserId ??
     req.ip ??
     req.socket.remoteAddress ??
     "unknown",
+  message: { error: "too_many_requests", limiter: "admin_write" },
 });
