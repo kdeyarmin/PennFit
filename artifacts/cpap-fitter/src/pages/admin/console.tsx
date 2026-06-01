@@ -380,6 +380,11 @@ const AdminBillingCollectionsForecastPage = lazy(() =>
     default: m.AdminBillingCollectionsForecastPage,
   })),
 );
+const AdminBillingCmnWorklistPage = lazy(() =>
+  import("@/pages/admin/admin-billing-cmn-worklist").then((m) => ({
+    default: m.AdminBillingCmnWorklistPage,
+  })),
+);
 const AdminBillingTimelyFilingPage = lazy(() =>
   import("@/pages/admin/admin-billing-timely-filing").then((m) => ({
     default: m.AdminBillingTimelyFilingPage,
@@ -614,6 +619,10 @@ function AdminConsole() {
             <Route
               path="/admin/billing/collections-forecast"
               component={AdminBillingCollectionsForecastPage}
+            />
+            <Route
+              path="/admin/billing/cmn"
+              component={AdminBillingCmnWorklistPage}
             />
             <Route
               path="/admin/billing/timely-filing"

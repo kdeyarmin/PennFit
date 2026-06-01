@@ -68,6 +68,7 @@ import {
   Stethoscope,
   Layers,
   Wind,
+  FileCheck2,
 } from "lucide-react";
 import {
   Sheet,
@@ -506,6 +507,14 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         icon: TrendingUp,
         matchPrefix: "/admin/billing/collections-forecast",
         hint: "Projected cash from claims in flight, bucketed by expected landing date",
+        requiredPermission: "reports.read",
+      },
+      {
+        href: "/admin/billing/cmn",
+        label: "CMN / DIF worklist",
+        icon: FileCheck2,
+        matchPrefix: "/admin/billing/cmn",
+        hint: "Draft Certificates of Medical Necessity awaiting completion",
         requiredPermission: "reports.read",
       },
       {
