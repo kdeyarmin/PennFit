@@ -292,7 +292,7 @@ const PRODUCTS: SeedProduct[] = [
     unitAmountCents: 2400,
     manufacturer: "React Health",
     modelNumber: "RH-RIO2-HG",
-    imagePath: "/products/react-health-viva.webp",
+    imagePath: "/products/react-health-rio2.webp",
   },
   {
     sku: "headgear-universal",

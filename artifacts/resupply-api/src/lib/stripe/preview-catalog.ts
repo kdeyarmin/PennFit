@@ -318,7 +318,7 @@ const SEED: PreviewSeed[] = [
     unitAmountCents: 2400,
     manufacturer: "React Health",
     modelNumber: "RH-RIO2-HG",
-    imageUrl: "/products/react-health-viva.webp",
+    imageUrl: "/products/react-health-rio2.webp",
   },
   {
     sku: "headgear-universal",
