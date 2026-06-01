@@ -261,3 +261,76 @@ describe("visibleTabs / sectionLandingHref / sectionVisible — permission gatin
     expect(sectionVisible(GROUPS[1]!.items[0]!, csr)).toBe(true);
   });
 });
+
+// ---------------------------------------------------------------------------
+// SECTION 3 — Sub-nav active-tab is computed from the VISIBLE tabs.
+//
+// Regression guard for the review nit fixed in d92cc2e6: SectionSubNav must
+// derive the highlighted tab from the permission-filtered `tabs`, not from
+// pickActiveTarget's unfiltered `active.tab`. Otherwise a caller sitting on a
+// gated route sees the gated tab filtered out AND nothing highlighted — the
+// bar looks "unselected". The fix highlights the first visible tab in that
+// case so something is always selected.
+// ---------------------------------------------------------------------------
+describe("SectionSubNav — active tab derived from visible tabs (source guard)", () => {
+  it("computes activeHref from the filtered tabs, not active.tab?.href", () => {
+    expect(APPSHELL_SRC).toContain(
+      "Determine the active tab from the *visible* tabs",
+    );
+    expect(APPSHELL_SRC).toContain("let activeHref = tabs[0]!.href");
+    // The old, buggy derivation must not creep back.
+    expect(APPSHELL_SRC).not.toContain("const activeHref = active.tab?.href");
+  });
+});
+
+describe("SectionSubNav active-tab computation (pure logic)", () => {
+  // Verbatim mirror of the activeHref loop in SectionSubNav.
+  function subNavActiveHref(location: string, visible: Tab[]): string {
+    let activeHref = visible[0]!.href;
+    let bestSpecificity = 0;
+    for (const tab of visible) {
+      const prefix = tab.matchPrefix ?? tab.href;
+      if (!linkMatchesLocation(location, prefix)) continue;
+      const specificity = prefix.length;
+      if (specificity > bestSpecificity) {
+        bestSpecificity = specificity;
+        activeHref = tab.href;
+      }
+    }
+    return activeHref;
+  }
+
+  // Two visible worklists plus one the caller can't see (lacks reports.read).
+  const section: Section = {
+    label: "Worklists",
+    tabs: [
+      { href: "/admin/billing/ai-queue", label: "AI queue" },
+      { href: "/admin/billing/eligibility", label: "Eligibility" },
+      { href: "/admin/billing/cmn", label: "CMN", perm: "reports.read" },
+    ],
+  };
+  const csr = new Set<string>(); // lacks reports.read
+
+  it("highlights the visible tab matching the current route", () => {
+    const visible = visibleTabs(section, csr);
+    expect(subNavActiveHref("/admin/billing/eligibility", visible)).toBe(
+      "/admin/billing/eligibility",
+    );
+  });
+
+  it("uses longest-prefix among visible tabs for detail routes", () => {
+    const visible = visibleTabs(section, csr);
+    expect(subNavActiveHref("/admin/billing/eligibility/123", visible)).toBe(
+      "/admin/billing/eligibility",
+    );
+  });
+
+  it("falls back to the first visible tab on a gated current-route (never blank)", () => {
+    const visible = visibleTabs(section, csr); // [ai-queue, eligibility]
+    // The caller deep-linked to /admin/billing/cmn, which they can't see, so
+    // it's filtered out. The bar must still highlight a visible tab.
+    const href = subNavActiveHref("/admin/billing/cmn", visible);
+    expect(visible.some((t) => t.href === href)).toBe(true);
+    expect(href).toBe("/admin/billing/ai-queue");
+  });
+});
