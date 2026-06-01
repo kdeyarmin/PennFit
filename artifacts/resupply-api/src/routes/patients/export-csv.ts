@@ -37,6 +37,7 @@ import {
 } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
+import { adminReadRateLimiter } from "../../middlewares/admin-rate-limit";
 import { requireAdmin } from "../../middlewares/requireAdmin";
 
 const MAX_ROWS = 5000;
@@ -81,111 +82,118 @@ function csvEscape(value: string | null | undefined): string {
 
 const router: IRouter = Router();
 
-router.get("/patients/export.csv", requireAdmin, async (req, res) => {
-  const parsed = querySchema.safeParse(req.query);
-  if (!parsed.success) {
-    res.status(400).json({
-      error: "invalid_query",
-      issues: parsed.error.issues.map((i) => ({
-        path: i.path.join("."),
-        message: i.message,
-      })),
-    });
-    return;
-  }
+router.get(
+  "/patients/export.csv",
+  adminReadRateLimiter,
+  requireAdmin,
+  async (req, res) => {
+    const parsed = querySchema.safeParse(req.query);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: "invalid_query",
+        issues: parsed.error.issues.map((i) => ({
+          path: i.path.join("."),
+          message: i.message,
+        })),
+      });
+      return;
+    }
 
-  const { status, search } = parsed.data;
-  const supabase = getSupabaseServiceRoleClient();
+    const { status, search } = parsed.data;
+    const supabase = getSupabaseServiceRoleClient();
 
-  // Mirror GET /patients' behavior:
-  //   * status: simple .eq
-  //   * search: case-insensitive substring across pacware_id +
-  //     legal_first_name + legal_last_name via PostgREST `.or()`
-  //     with `.ilike` clauses. Zod-capped at 64 chars so the value
-  //     can't smuggle metacharacters.
-  let query = supabase
-    .schema("resupply")
-    .from("patients")
-    .select(
-      "pacware_id, legal_first_name, legal_last_name, date_of_birth, phone_e164, email, status, created_at, updated_at",
-    )
-    .order("created_at", { ascending: true })
-    // Fetch one extra row so we know whether to flag truncation
-    // without a separate COUNT(*) query.
-    .limit(MAX_ROWS + 1);
-  if (status) query = query.eq("status", status);
-  if (search) {
-    // PostgREST `.or()` uses `*` wildcards (not `%`) for ILIKE.
-    // Escape commas/parentheses/quotes in the search value to
-    // prevent breaking the filter expression.
-    const escaped = escapePostgRESTFilterValue(search);
-    const pattern = `*${escaped}*`;
-    query = query.or(
-      `pacware_id.ilike.${pattern},legal_first_name.ilike.${pattern},legal_last_name.ilike.${pattern}`,
+    // Mirror GET /patients' behavior:
+    //   * status: simple .eq
+    //   * search: case-insensitive substring across pacware_id +
+    //     legal_first_name + legal_last_name via PostgREST `.or()`
+    //     with `.ilike` clauses. Zod-capped at 64 chars so the value
+    //     can't smuggle metacharacters.
+    let query = supabase
+      .schema("resupply")
+      .from("patients")
+      .select(
+        "pacware_id, legal_first_name, legal_last_name, date_of_birth, phone_e164, email, status, created_at, updated_at",
+      )
+      .order("created_at", { ascending: true })
+      // Fetch one extra row so we know whether to flag truncation
+      // without a separate COUNT(*) query.
+      .limit(MAX_ROWS + 1);
+    if (status) query = query.eq("status", status);
+    if (search) {
+      // PostgREST `.or()` uses `*` wildcards (not `%`) for ILIKE.
+      // Escape commas/parentheses/quotes in the search value to
+      // prevent breaking the filter expression.
+      const escaped = escapePostgRESTFilterValue(search);
+      const pattern = `*${escaped}*`;
+      query = query.or(
+        `pacware_id.ilike.${pattern},legal_first_name.ilike.${pattern},legal_last_name.ilike.${pattern}`,
+      );
+    }
+    const { data: rows, error } = await query;
+    if (error) throw error;
+
+    const truncated = (rows?.length ?? 0) > MAX_ROWS;
+    const exportRows = truncated ? rows!.slice(0, MAX_ROWS) : (rows ?? []);
+
+    const lines: string[] = [COLUMNS.join(",")];
+    for (const r of exportRows) {
+      lines.push(
+        [
+          csvEscape(r.pacware_id),
+          csvEscape(r.legal_first_name),
+          csvEscape(r.legal_last_name),
+          csvEscape(r.date_of_birth),
+          csvEscape(r.phone_e164),
+          csvEscape(r.email),
+          csvEscape(r.status),
+          csvEscape(r.created_at),
+          csvEscape(r.updated_at),
+        ].join(","),
+      );
+    }
+
+    // Audit: row count + filters. NEVER the row contents.
+    try {
+      await logAudit({
+        action: "patient.export.csv",
+        adminEmail: req.adminEmail ?? null,
+        adminUserId: req.adminUserId ?? null,
+        targetTable: "patients",
+        targetId: null,
+        ip: req.ip ?? null,
+        userAgent: req.get("user-agent") ?? null,
+        metadata: {
+          row_count: exportRows.length,
+          truncated,
+          status_filter: status ?? null,
+          // We deliberately store whether a search was used (boolean)
+          // rather than the search string itself — search terms can
+          // be PHI ("Smith", a partial DOB, etc.).
+          search_filter_present: Boolean(search),
+        },
+      });
+    } catch (err) {
+      logger.warn(
+        {
+          err:
+            err instanceof Error
+              ? { name: err.name, message: err.message }
+              : err,
+        },
+        "patients/export-csv: audit write failed",
+      );
+    }
+
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Cache-Control", "no-store");
+    res.setHeader(
+      "Content-Disposition",
+      'attachment; filename="patients-export.csv"',
     );
-  }
-  const { data: rows, error } = await query;
-  if (error) throw error;
-
-  const truncated = (rows?.length ?? 0) > MAX_ROWS;
-  const exportRows = truncated ? rows!.slice(0, MAX_ROWS) : (rows ?? []);
-
-  const lines: string[] = [COLUMNS.join(",")];
-  for (const r of exportRows) {
-    lines.push(
-      [
-        csvEscape(r.pacware_id),
-        csvEscape(r.legal_first_name),
-        csvEscape(r.legal_last_name),
-        csvEscape(r.date_of_birth),
-        csvEscape(r.phone_e164),
-        csvEscape(r.email),
-        csvEscape(r.status),
-        csvEscape(r.created_at),
-        csvEscape(r.updated_at),
-      ].join(","),
-    );
-  }
-
-  // Audit: row count + filters. NEVER the row contents.
-  try {
-    await logAudit({
-      action: "patient.export.csv",
-      adminEmail: req.adminEmail ?? null,
-      adminUserId: req.adminUserId ?? null,
-      targetTable: "patients",
-      targetId: null,
-      ip: req.ip ?? null,
-      userAgent: req.get("user-agent") ?? null,
-      metadata: {
-        row_count: exportRows.length,
-        truncated,
-        status_filter: status ?? null,
-        // We deliberately store whether a search was used (boolean)
-        // rather than the search string itself — search terms can
-        // be PHI ("Smith", a partial DOB, etc.).
-        search_filter_present: Boolean(search),
-      },
-    });
-  } catch (err) {
-    logger.warn(
-      {
-        err:
-          err instanceof Error ? { name: err.name, message: err.message } : err,
-      },
-      "patients/export-csv: audit write failed",
-    );
-  }
-
-  res.setHeader("Content-Type", "text/csv; charset=utf-8");
-  res.setHeader("Cache-Control", "no-store");
-  res.setHeader(
-    "Content-Disposition",
-    'attachment; filename="patients-export.csv"',
-  );
-  if (truncated) res.setHeader("X-Truncated", "true");
-  res.status(200).send(lines.join("\n") + "\n");
-});
+    if (truncated) res.setHeader("X-Truncated", "true");
+    res.status(200).send(lines.join("\n") + "\n");
+  },
+);
 
 export default router;
 

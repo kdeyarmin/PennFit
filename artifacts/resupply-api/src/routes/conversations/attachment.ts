@@ -35,6 +35,7 @@ import {
   ObjectNotFoundError,
   ObjectStorageService,
 } from "../../lib/object-storage/objectStorage";
+import { adminReadRateLimiter } from "../../middlewares/admin-rate-limit";
 import { requireAdmin } from "../../middlewares/requireAdmin";
 
 const idsParam = z.object({
@@ -48,6 +49,7 @@ const objectStorage = new ObjectStorageService();
 
 router.get(
   "/conversations/:id/messages/:messageId/attachments/:attachmentId",
+  adminReadRateLimiter,
   requireAdmin,
   async (req, res) => {
     const ids = idsParam.safeParse(req.params);

@@ -43,6 +43,7 @@ import {
   IN_APP_MESSAGE_BODY_MAX,
 } from "../../lib/messaging/in-app-conversation";
 import { readMessagingConfigOrNull } from "../../lib/messaging/messaging-config";
+import { adminWriteRateLimiter } from "../../middlewares/admin-rate-limit";
 import { withIdempotency } from "../../middlewares/idempotency";
 import { requireAdmin } from "../../middlewares/requireAdmin";
 
@@ -69,6 +70,7 @@ const router: IRouter = Router();
 
 router.post(
   "/conversations/:id/reply",
+  adminWriteRateLimiter,
   requireAdmin,
   withIdempotency("POST /conversations/:id/reply"),
   async (req, res) => {

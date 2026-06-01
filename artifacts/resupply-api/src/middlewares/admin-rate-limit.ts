@@ -126,3 +126,39 @@ export const adminReadRateLimiter: RequestHandler = expressRateLimit({
     req.socket.remoteAddress ??
     "unknown",
 });
+
+// Shared write-endpoint limiter for admin MUTATIONS (POST/PATCH/PUT/
+// DELETE) on routers mounted OUTSIDE the `/admin` path prefix — the
+// conversation, patient, episode, and email-send routers under
+// `/resupply-api/*`. Those never match the app-level
+// `adminMutationLooseLimit` (which is keyed off the `/admin` prefix),
+// so before this they had no rate limiter at all.
+//
+// Same construction + rationale as `adminReadRateLimiter`: built
+// DIRECTLY from `express-rate-limit` (not the local `rateLimit()` /
+// `adminRateLimit()` wrappers) because CodeQL's js/missing-rate-limiting
+// query only recognises the upstream middleware at the call site. Just
+// as importantly, it must be mounted BEFORE `requireAdmin`: that gate
+// performs a DB-backed session lookup, so a limiter placed AFTER it
+// leaves the session read unprotected (CodeQL flags the `requireAdmin`
+// line, and a stolen-session flood still hits the DB). Running first
+// also caps an unauthenticated flood before it reaches the auth lookup.
+//
+// Keyed per admin actor once auth runs, with an IP fallback for the
+// pre-auth window (the same posture the mfa.ts IP limiter uses).
+// 300/hr is well above any honest CSR mutation cadence while bounding a
+// runaway client or a stolen session. Routes that need a tighter,
+// action-specific budget (e.g. episodes/bulk-send's 10/hr per-admin cap)
+// keep their own limiter AFTER `requireAdmin`, layered on top of this net.
+export const adminWriteRateLimiter: RequestHandler = expressRateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  limit: 300,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  keyGenerator: (req) =>
+    (req as { adminUserId?: string }).adminUserId ??
+    req.ip ??
+    req.socket.remoteAddress ??
+    "unknown",
+  message: { error: "too_many_requests", limiter: "admin_write" },
+});
