@@ -302,16 +302,25 @@ export async function runOwnerDigest(
   };
 }
 
+function textToHtml(body: string): string {
+  const escaped = body
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+  return `<pre style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:14px;color:#111827;white-space:pre-wrap;">${escaped}</pre>`;
+}
+
 async function sendDigestEmail(
   sendgrid: Sendgrid,
   recipients: string[],
   subject: string,
   body: string,
 ): Promise<void> {
+  const html = textToHtml(body);
   // Per-recipient send (the shared client validates a single `to`).
   for (const to of recipients) {
     try {
-      await sendgrid.sendEmail({ to, subject, text: body });
+      await sendgrid.sendEmail({ to, subject, html, text: body });
     } catch (err) {
       logger.warn(
         { err: err instanceof Error ? err.message : err, to },

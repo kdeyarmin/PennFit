@@ -138,7 +138,7 @@ describe("GET /admin/analytics/inventory-turnover", () => {
         },
       ],
     });
-    stageSupabaseResponse("shop_back_in_stock_subscriptions", "select", {
+    stageSupabaseResponse("shop_back_in_stock_notifications", "select", {
       data: [
         { product_id: "pA", notified_at: null },
         { product_id: "pA", notified_at: null },

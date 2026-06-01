@@ -155,9 +155,10 @@ router.get(
         .select("product_id, product_name, counted_qty, created_at")
         .order("created_at", { ascending: false })
         .limit(2000),
+      // Open waiters = back-in-stock signups not yet notified.
       supabase
         .schema("resupply")
-        .from("shop_back_in_stock_subscriptions")
+        .from("shop_back_in_stock_notifications")
         .select("product_id, notified_at")
         .is("notified_at", null)
         .limit(5000),

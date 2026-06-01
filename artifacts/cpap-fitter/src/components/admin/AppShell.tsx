@@ -528,6 +528,14 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         requiredPermission: "cost.read",
       },
       {
+        href: "/admin/analytics/inventory-turnover",
+        label: "Inventory turnover",
+        icon: Boxes,
+        matchPrefix: "/admin/analytics/inventory-turnover",
+        hint: "Turnover (COGS ÷ inventory value) + stockout demand per SKU",
+        requiredPermission: "cost.read",
+      },
+      {
         href: "/admin/goals",
         label: "Goals & targets",
         icon: Target,

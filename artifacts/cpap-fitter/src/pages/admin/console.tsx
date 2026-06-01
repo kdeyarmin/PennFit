@@ -130,6 +130,11 @@ const AdminAnalyticsMarginPage = lazy(() =>
     default: m.AdminAnalyticsMarginPage,
   })),
 );
+const AdminInventoryTurnoverPage = lazy(() =>
+  import("@/pages/admin/admin-inventory-turnover").then((m) => ({
+    default: m.AdminInventoryTurnoverPage,
+  })),
+);
 const AdminGoalsPage = lazy(() =>
   import("@/pages/admin/admin-goals").then((m) => ({
     default: m.AdminGoalsPage,
@@ -694,6 +699,10 @@ function AdminConsole() {
             <Route
               path="/admin/analytics/margin"
               component={AdminAnalyticsMarginPage}
+            />
+            <Route
+              path="/admin/analytics/inventory-turnover"
+              component={AdminInventoryTurnoverPage}
             />
             <Route path="/admin/goals" component={AdminGoalsPage} />
             <Route path="/admin/kpi-alerts" component={AdminKpiAlertsPage} />

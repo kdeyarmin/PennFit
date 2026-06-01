@@ -452,6 +452,9 @@ async function doStartWorker(): Promise<void> {
   // Email a SendGrid digest of new KPI alerts to admins (06:50 UTC).
   await registerMetricAlertsNotifyJob(boss);
 
+  // Weekly owner KPI digest (Mondays 13:00 UTC).
+  await registerOwnerDigestJob(boss);
+
   // Nightly therapy-fleet alerts scan (05:15 UTC): maintains the
   // internal alert feed and, when the (default-off) auto-outreach flag
   // is on, sends consented at-risk patients a gentle adherence SMS.

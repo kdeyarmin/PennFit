@@ -280,9 +280,9 @@ revenue-only reporting into a real P&L view. Parallelizable with Phases
 | #   | Item                                                                                                        | Size | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | --- | ----------------------------------------------------------------------------------------------------------- | ---- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 1   | **✅ Gross-margin / COGS dashboard** (margin $ and % by SKU, category, order)                               | M    | ✅ Shipped: `GET /admin/analytics/margin` folds the **F1** cost snapshots on `shop_order_items` through the tested `aggregateMargin` core (pure `buildMarginBreakdown`: overall + per-product, biggest-revenue-first), keeping the costed/uncosted-revenue split explicit so an unpriced SKU never reads as 100% margin; best-effort product-name enrichment from the latest reconciliation. `cost.read`-gated. SPA "Margin & COGS" page (headline net-margin / margin-% / revenue / cost-coverage cards + per-product table) under Insights. |
-| 2   | **Payer-mix profitability** (net-yield by payer: billed→allowed→collected minus cost-to-collect)            | M    | Joins `insurance_claim_events` + denial/appeal counts + **F1**; new `/admin/billing/payer-profitability`. Answers "stay in-network with Payer X?"                                                                                                                                                                                                                                                                                                                                                                                             |
+| 2   | **✅ Payer-mix profitability** (net-yield by payer: billed→allowed→collected minus cost-to-collect)         | M    | Joins `insurance_claim_events` + denial/appeal counts + **F1**; new `/admin/billing/payer-profitability`. Answers "stay in-network with Payer X?"                                                                                                                                                                                                                                                                                                                                                                                             |
 | 3   | **LTV & CAC cohort economics** (lifetime value per patient; acquisition cost by source)                     | L    | Cohorts from signup month + a new `referrals_attribute` attribution table for channel; **F1** for margin-based LTV. Aggregates only.                                                                                                                                                                                                                                                                                                                                                                                                          |
-| 7   | **Inventory turnover & stockout-cost** view                                                                 | M    | Reconciliation + Stripe stock counts already exist; add turnover (COGS ÷ avg inventory, from **F1**) and "revenue lost to stockouts" from back-in-stock demand signals.                                                                                                                                                                                                                                                                                                                                                                       |
+| 7   | **✅ Inventory turnover & stockout-cost** view                                                              | M    | ✅ Shipped: `GET /admin/analytics/inventory-turnover` (pure tested `buildInventoryTurnover`) — turnover = annualized COGS ÷ inventory value (latest reconciliation count × latest **F1** snapshot cost), plus stockout demand (open `shop_back_in_stock_notifications` × latest price), per SKU. Honest null turnover when a SKU has no reconciliation. `cost.read`-gated; SPA "Inventory turnover" page (Insights nav).                                                                                                                      |
 | 5   | **✅ KPI threshold alerting** (push when denial rate spikes, churn jumps, claims stall)                     | M    | ✅ Shipped: the F2 evaluator/notify/feed already wrote + emailed alerts; this closes the loop with `/admin/metric-thresholds` CRUD (read `metrics.read`, write `admin.tools.manage`, audited) so rules are tuned without SQL, plus a "KPI alerts" SPA page (Insights, `metrics.read`) — an open-alerts feed with acknowledge / resolve and a rule manager (add / enable-toggle / delete).                                                                                                                                                     |
 | 6   | **✅ Weekly owner digest email** (one screen: revenue, margin, A/R, denial trend, churn, NPS, biggest fire) | S–M  | ✅ Shipped: the `owner.weekly-digest` pg-boss job (Mondays 13:00 UTC) folds the last two weeks of **F2** `metrics_daily` into this-week-vs-prior-week movement per KPI (pure tested `buildOwnerDigest` / `formatDigestText`) + the single highest-severity open alert ("biggest fire"), emailed via the shared SendGrid client to `RESUPPLY_ADMIN_EMAILS`. Fail-soft (no SendGrid / no recipients → log + return). Deterministic numbers (no LLM); a Claude narrative is an easy follow-up. Grows as more KPIs are snapshotted.               |
 | 8   | **✅ Goal pace automation** (auto pace-to-goal vs. target)                                                  | S    | ✅ Shipped: a pure, tested `computeGoalPace` + `parsePeriodRange` in `@workspace/resupply-domain` (linear pro-rata: expected-by-now = target × elapsed ÷ period; ±10% on-track band; run-rate projection). `GET /admin/business-targets` now enriches each target with the **F2** `metrics_daily` window-summed actual → `{ paceRatio, attainmentRatio, projectedValue, status }` (one batched read; unparseable period → `pace: null`). New SPA "Goals & targets" page (set a target + pace bars / projected landing) under Insights.        |
@@ -393,50 +393,50 @@ These need accumulated data from earlier phases or new content/vendors.
 
 ## All 37 items at a glance
 
-| #   | Persona | Item                               | Phase  | Size    | Key dependency  |
-| --- | ------- | ---------------------------------- | ------ | ------- | --------------- |
-| F1  | shared  | Cost / COGS capture                | 0      | M       | —               |
-| F2  | shared  | Metrics + threshold substrate      | 0      | M       | —               |
-| F3  | shared  | Clinical encounters + RT role      | 0      | L       | —               |
-| F4  | shared  | Work-item model + cases            | 0      | L       | —               |
-| 1   | Owner   | ✅ Gross-margin / COGS dashboard   | 2      | M       | done (F1)       |
-| 2   | Owner   | ✅ Payer-mix profitability         | 2      | M       | done (F1)       |
-| 3   | Owner   | LTV & CAC cohort economics         | 2      | L       | F1              |
-| 4   | Owner   | Revenue / cash-flow forecast       | 6      | L       | F1, eligibility |
-| 5   | Owner   | ✅ KPI threshold alerting          | 2      | M       | done (F2)       |
-| 6   | Owner   | ✅ Weekly owner digest             | 2      | S–M     | done (F2)       |
-| 7   | Owner   | Inventory turnover & stockout cost | 2      | M       | F1              |
-| 8   | Owner   | ✅ Goal / target tracking + pace   | 1→2    | S       | done            |
-| 9   | Owner   | Compliance reporting _(optional)_  | 6      | XL      | owner decision  |
-| 10  | CSR     | Unified work queue                 | 4      | M       | F4              |
-| 11  | CSR     | Click-to-dial + call-back queue    | 4      | L       | F4, telecom     |
-| 12  | CSR     | Cross-channel customer timeline    | 4      | M       | F4              |
-| 13  | CSR     | ✅ Conversation full-text search   | 1      | M       | done            |
-| 14  | CSR     | ✅ Save-as-macro                   | 1      | S       | done            |
-| 15  | CSR     | AI reply drafting                  | 4      | M       | —               |
-| 16  | CSR     | ✅ Agent status toggle             | 1      | S–M     | done            |
-| 17  | CSR     | Case / ticket object               | 4      | M       | F4              |
-| 18  | CSR     | ✅ Live queue counts               | 1      | S       | done            |
-| 19  | RT      | Clinical encounter note            | 0 (F3) | L       | —               |
-| 20  | RT      | RT role & portal                   | 0 (F3) | L       | —               |
-| 21  | RT      | Non-adherence intervention plan    | 3      | M       | F3              |
-| 22  | RT      | Mask-fit confirmation loop         | 3 / 6  | M / M–L | F3 / §22a       |
-| 23  | RT      | Clinical-alert patient outreach    | 3      | M       | F3              |
-| 24  | RT      | Per-RT outcomes dashboard          | 3      | M       | F3              |
-| 25  | RT      | Short-video education library      | 6      | M       | vendor          |
-| 26  | RT      | ✅ Therapy-trend sparklines        | 1      | S       | done            |
-| 27  | RT      | ✅ Setup-guidance checklist        | 1      | S–M     | done            |
-| 28  | Biller  | Automated secondary / COB claims   | 5      | L       | —               |
-| 29  | Biller  | CMN / DIF generation               | 5      | L       | —               |
-| 30  | Biller  | Patient-statement automation       | 5      | M       | —               |
-| 31  | Biller  | Scheduled / batch eligibility      | 5      | M       | —               |
-| 32  | Biller  | Manual / adjustment claim entry    | 5      | M       | —               |
-| 33  | Biller  | Denials worklist                   | 5      | M       | —               |
-| 34  | Biller  | ✅ Fee-schedule bulk upload        | 1      | S–M     | done            |
-| 35  | Biller  | PA expiry → auto-renewal nudge     | 5      | S–M     | —               |
-| 36  | Biller  | ✅ Timely-filing countdown         | 1      | S       | done            |
-| 37  | Biller  | ✅ Webhook re-delivery UI          | 1      | S–M     | done            |
-| ★   | shared  | ✅ Fixed CSR-productivity report   | 1      | M       | done            |
+| #   | Persona | Item                              | Phase  | Size    | Key dependency  |
+| --- | ------- | --------------------------------- | ------ | ------- | --------------- |
+| F1  | shared  | Cost / COGS capture               | 0      | M       | —               |
+| F2  | shared  | Metrics + threshold substrate     | 0      | M       | —               |
+| F3  | shared  | Clinical encounters + RT role     | 0      | L       | —               |
+| F4  | shared  | Work-item model + cases           | 0      | L       | —               |
+| 1   | Owner   | ✅ Gross-margin / COGS dashboard  | 2      | M       | done (F1)       |
+| 2   | Owner   | ✅ Payer-mix profitability        | 2      | M       | done (F1)       |
+| 3   | Owner   | LTV & CAC cohort economics        | 2      | L       | F1              |
+| 4   | Owner   | Revenue / cash-flow forecast      | 6      | L       | F1, eligibility |
+| 5   | Owner   | ✅ KPI threshold alerting         | 2      | M       | done (F2)       |
+| 6   | Owner   | ✅ Weekly owner digest            | 2      | S–M     | done (F2)       |
+| 7   | Owner   | ✅ Inventory turnover & stockout  | 2      | M       | done (F1)       |
+| 8   | Owner   | ✅ Goal / target tracking + pace  | 1→2    | S       | done            |
+| 9   | Owner   | Compliance reporting _(optional)_ | 6      | XL      | owner decision  |
+| 10  | CSR     | Unified work queue                | 4      | M       | F4              |
+| 11  | CSR     | Click-to-dial + call-back queue   | 4      | L       | F4, telecom     |
+| 12  | CSR     | Cross-channel customer timeline   | 4      | M       | F4              |
+| 13  | CSR     | ✅ Conversation full-text search  | 1      | M       | done            |
+| 14  | CSR     | ✅ Save-as-macro                  | 1      | S       | done            |
+| 15  | CSR     | AI reply drafting                 | 4      | M       | —               |
+| 16  | CSR     | ✅ Agent status toggle            | 1      | S–M     | done            |
+| 17  | CSR     | Case / ticket object              | 4      | M       | F4              |
+| 18  | CSR     | ✅ Live queue counts              | 1      | S       | done            |
+| 19  | RT      | Clinical encounter note           | 0 (F3) | L       | —               |
+| 20  | RT      | RT role & portal                  | 0 (F3) | L       | —               |
+| 21  | RT      | Non-adherence intervention plan   | 3      | M       | F3              |
+| 22  | RT      | Mask-fit confirmation loop        | 3 / 6  | M / M–L | F3 / §22a       |
+| 23  | RT      | Clinical-alert patient outreach   | 3      | M       | F3              |
+| 24  | RT      | Per-RT outcomes dashboard         | 3      | M       | F3              |
+| 25  | RT      | Short-video education library     | 6      | M       | vendor          |
+| 26  | RT      | ✅ Therapy-trend sparklines       | 1      | S       | done            |
+| 27  | RT      | ✅ Setup-guidance checklist       | 1      | S–M     | done            |
+| 28  | Biller  | Automated secondary / COB claims  | 5      | L       | —               |
+| 29  | Biller  | CMN / DIF generation              | 5      | L       | —               |
+| 30  | Biller  | Patient-statement automation      | 5      | M       | —               |
+| 31  | Biller  | Scheduled / batch eligibility     | 5      | M       | —               |
+| 32  | Biller  | Manual / adjustment claim entry   | 5      | M       | —               |
+| 33  | Biller  | Denials worklist                  | 5      | M       | —               |
+| 34  | Biller  | ✅ Fee-schedule bulk upload       | 1      | S–M     | done            |
+| 35  | Biller  | PA expiry → auto-renewal nudge    | 5      | S–M     | —               |
+| 36  | Biller  | ✅ Timely-filing countdown        | 1      | S       | done            |
+| 37  | Biller  | ✅ Webhook re-delivery UI         | 1      | S–M     | done            |
+| ★   | shared  | ✅ Fixed CSR-productivity report  | 1      | M       | done            |
 
 _That's all 37 brainstormed features + the 4 foundations + the
 productivity-report fix, every one placed in a phase with a size and its

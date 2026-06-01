@@ -152,7 +152,9 @@ describe("runOwnerDigest", () => {
       ],
     });
     stageSupabaseResponse("metric_alerts", "select", { data: [] });
-    const sendEmail = vi.fn(async () => undefined);
+    const sendEmail = vi.fn<
+      (c: unknown, r: string[], s: string, b: string) => Promise<void>
+    >(async () => undefined);
     const r = await runOwnerDigest({ sendEmail });
     expect(sendEmail).toHaveBeenCalledTimes(1);
     const [, recipients, subject] = sendEmail.mock.calls[0]!;
