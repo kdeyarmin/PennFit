@@ -1,7 +1,7 @@
 // GET /admin/patients/:id/prior-authorizations/:paId/request-form
 //
 // Renders the universal DME/PAP Prior-Authorization Request Form as a
-// PDF and streams it to the calling admin. Auto-populated from the
+// PDF and serves it to the calling admin. Auto-populated from the
 // prior_authorizations row + the linked patient / coverage / payer
 // profile / ordering provider / most-recent sleep study, this is the
 // faxable (or portal-attachable) artifact a CSR sends to the payer's
