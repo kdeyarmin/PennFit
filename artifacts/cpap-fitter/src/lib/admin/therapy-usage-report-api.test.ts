@@ -253,9 +253,7 @@ describe("fetchTherapyUsageReport — error handling", () => {
       (e: unknown) => e,
     );
 
-    expect((err as ApiError).url).toContain(
-      "/admin/reports/therapy-usage",
-    );
+    expect((err as ApiError).url).toContain("/admin/reports/therapy-usage");
   });
 
   it("handles a non-JSON error body gracefully (still throws ApiError)", async () => {

@@ -38,6 +38,7 @@ import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { getAuthDeps } from "../lib/auth-deps";
 import { logger } from "../lib/logger";
+import { enforceCsrfForAuthedMutation } from "./csrf";
 
 declare global {
   // eslint-disable-next-line @typescript-eslint/no-namespace
@@ -176,6 +177,17 @@ export async function requireAdmin(
     res.status(401).json({ error: "Sign in required" });
     return;
   }
+  // Every admin-gated mutation must also clear the double-submit CSRF
+  // check. requireAdminOnly and requirePermission both delegate through
+  // requireAdmin, so enforcing it here guarantees CSRF coverage for the
+  // entire admin surface — including routes mounted OUTSIDE the /admin
+  // path prefix (e.g. PATCH /resupply-api/patients/:id, the
+  // /conversations/:id/* actions, /sms|/email/send-reminder,
+  // /voice/place-call) that the app-level requireCsrfOnAdminMutations
+  // gate doesn't match. Safe methods pass through; the check runs only
+  // after the session resolves so an unauthenticated caller still gets a
+  // clean 401 (not a 403). Returns false only after sending the 403.
+  if (!enforceCsrfForAuthedMutation(req, res)) return;
   req.adminEmail = admin.email;
   req.adminUserId = admin.userId;
   req.adminRole = admin.role;

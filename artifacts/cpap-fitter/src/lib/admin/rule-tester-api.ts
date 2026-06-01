@@ -2,6 +2,8 @@
 
 import { ApiError } from "@workspace/api-client-react/admin";
 
+import { csrfHeader } from "../csrf";
+
 export type Channel = "sms" | "email" | "voice";
 
 export interface RuleTestInput {
@@ -71,6 +73,7 @@ export async function testRules(
     headers: {
       "Content-Type": "application/json",
       Accept: "application/json",
+      ...csrfHeader(),
     },
     body: JSON.stringify(input),
   });

@@ -17,15 +17,11 @@ const SRC = readFileSync(path.join(__dirname, "console.tsx"), "utf8");
 
 describe("console.tsx — AdminTherapyUsageReportPage lazy loading", () => {
   it("declares AdminTherapyUsageReportPage as a lazy() component", () => {
-    expect(SRC).toMatch(
-      /const\s+AdminTherapyUsageReportPage\s*=\s*lazy\s*\(/,
-    );
+    expect(SRC).toMatch(/const\s+AdminTherapyUsageReportPage\s*=\s*lazy\s*\(/);
   });
 
   it("imports the page from @/pages/admin/admin-therapy-usage-report", () => {
-    expect(SRC).toContain(
-      'import("@/pages/admin/admin-therapy-usage-report")',
-    );
+    expect(SRC).toContain('import("@/pages/admin/admin-therapy-usage-report")');
   });
 
   it("maps the named export to default via .then({ default: m.AdminTherapyUsageReportPage })", () => {

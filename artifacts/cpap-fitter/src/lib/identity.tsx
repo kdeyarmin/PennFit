@@ -10,6 +10,7 @@ import { useQueryClient } from "@tanstack/react-query";
 
 import { authClient, authHooks, SESSION_QUERY_KEY } from "./auth-hooks";
 import { cartStore } from "@/hooks/use-cart";
+import { csrfHeader } from "./csrf";
 
 export interface ShopIdentity {
   email: string | null;
@@ -50,7 +51,7 @@ export function useShopIdentity(): ShopIdentity {
               await fetch("/resupply-api/shop/me/push-subscriptions", {
                 method: "DELETE",
                 credentials: "include",
-                headers: { "Content-Type": "application/json" },
+                headers: { "Content-Type": "application/json", ...csrfHeader() },
                 body: JSON.stringify({ endpoint }),
               });
             } catch {

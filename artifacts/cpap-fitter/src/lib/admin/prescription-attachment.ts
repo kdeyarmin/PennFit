@@ -15,6 +15,8 @@
 
 import { ApiError } from "@workspace/api-client-react/admin";
 
+import { csrfHeader } from "../csrf";
+
 const API_PREFIX = "/resupply-api";
 
 export type AttachmentMetadata = {
@@ -47,7 +49,7 @@ export async function uploadPrescriptionAttachment(args: {
   const urlReqUrl = `${API_PREFIX}/patients/${patientId}/prescriptions/${rxId}/attachment/upload-url`;
   const urlRes = await fetch(urlReqUrl, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", ...csrfHeader() },
     credentials: "same-origin",
     body: JSON.stringify({
       filename: file.name,
@@ -94,7 +96,7 @@ export async function uploadPrescriptionAttachment(args: {
   const finUrl = `${API_PREFIX}/patients/${patientId}/prescriptions/${rxId}/attachment`;
   const finRes = await fetch(finUrl, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", ...csrfHeader() },
     credentials: "same-origin",
     body: JSON.stringify({
       objectPath,

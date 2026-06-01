@@ -36,6 +36,7 @@ import {
 } from "@workspace/resupply-auth";
 
 import {
+  ADMIN_SAFE_HTTP_METHODS,
   isAdminMutationRequest,
   isStorefrontSessionMutationRequest,
 } from "./admin-path";
@@ -224,3 +225,34 @@ export const requireCsrfWhenSessionOnShopMutations: RequestHandler = (
   }
   denyCsrf(req, res, result.reason);
 };
+
+/**
+ * Enforce double-submit CSRF on an already-authenticated, state-changing
+ * request — a building block for auth gates rather than a standalone
+ * mount. Returns `true` if the request may proceed; returns `false` AFTER
+ * having already sent the 403 (the caller must stop). Safe methods
+ * (GET/HEAD/OPTIONS) always return `true`.
+ *
+ * `requireAdmin` calls this so that EVERY admin-gated mutation is
+ * CSRF-protected, regardless of its URL prefix. The app-level
+ * `requireCsrfOnAdminMutations` gate only matches the `/api/admin` +
+ * `/resupply-api/admin` trees, but many admin-gated mutations are mounted
+ * outside that prefix (e.g. `PATCH /resupply-api/patients/:id`,
+ * `POST /resupply-api/conversations/:id/assign`, `/sms/send-reminder`,
+ * `/voice/place-call`). Tying the check to the authz gate — the single
+ * chokepoint `requireAdminOnly` and `requirePermission` both delegate
+ * through — means a route cannot be admin-gated without also being
+ * CSRF-gated, which is the invariant the path-prefix gate was only
+ * approximating. Double-checking with the app-level gate on the `/admin`
+ * tree is harmless (it short-circuits on success).
+ */
+export function enforceCsrfForAuthedMutation(
+  req: Request,
+  res: Response,
+): boolean {
+  if (ADMIN_SAFE_HTTP_METHODS.has(req.method)) return true;
+  const result = checkCsrf(req);
+  if (result.ok) return true;
+  denyCsrf(req, res, result.reason);
+  return false;
+}

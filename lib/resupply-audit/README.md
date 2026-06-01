@@ -5,12 +5,18 @@
 > `logAudit()` is retained as a no-op so the ~150 callsites do not need
 > to be rewritten, but no rows are written and no audit data is read.
 > Don't author new audit logic against this package; treat any new
-> `.from("audit_log")` call as a bug. The four historical readers
-> (delivery-failures system-events, feature-flag activity, CSR
-> productivity, PHI-sweep status) have been short-circuited to return
-> their existing endpoint-specific "unavailable"/"no longer tracked"
-> stub shapes (for example, not every reader uses `{ unavailable: true }`)
-> so the SPA can render a notice instead of failing silently.
+> `.from("audit_log")` call as a bug. Of the three historical readers:
+>
+> - **delivery-failures**, **system-events**, and **CSR productivity**
+>   have been short-circuited to return endpoint-specific
+>   "unavailable"/"no longer tracked" stub shapes (for example, not
+>   every reader uses `{ unavailable: true }`) so the SPA can render a
+>   notice instead of failing silently.
+> - **feature-flag activity** (`GET /admin/feature-flags/activity`) is
+>   **not** stubbed — it was migrated in migration 0163 to read from
+>   `resupply.feature_flag_events`, which the `PATCH
+>   /admin/feature-flags/:key` handler now populates. The activity feed
+>   is fully operational; only the `audit_log` source is gone.
 
 ## Historical reference
 
