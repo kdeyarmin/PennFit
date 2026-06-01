@@ -59,11 +59,54 @@ interface SeedProduct {
 
 const PRODUCTS: SeedProduct[] = [
   // ── Masks ────────────────────────────────────────────────────────
+  // React Health — our flagship mask line. US-engineered, lighter,
+  // quieter, and meaningfully better value than the import-tier brands.
+  // Listed first so it leads the shop. Mirrors /cpap-masks/react-health.
+  {
+    sku: "rh-mask-rio2-pillows",
+    name: "React Health Rio II Nasal Pillows Mask — Fit Pack",
+    description:
+      "Our flagship mask — the one we put on more first-time CPAP users than any other. The Rio II weighs just 88 grams fully assembled, so most patients forget they're wearing it within a week (the single biggest predictor of long-term adherence). The diffuser vent measures under 24 dBA at 10 cmH₂O — quieter than a whisper, so your bed partner sleeps too — and the magnetic-clip headgear goes on one-handed in the dark. US-engineered and assembled in Florida, FDA-cleared for the full 4–25 cmH₂O range — the same clinical performance as the import brands, typically for a third of the price. Ships with the frame, all three nasal-pillow sizes (S/M/L), and headgear.",
+    category: "mask",
+    tagline: "Best Overall · our flagship · 88g",
+    replacementHint: "Replace mask every ~3 months",
+    unitAmountCents: 7900,
+    manufacturer: "React Health",
+    modelNumber: "RH-RIO2-FP",
+    imagePath: "/products/react-health-rio2.webp",
+  },
+  {
+    sku: "rh-mask-viva-nasal",
+    name: "React Health Viva Nasal Mask — Fit Pack",
+    description:
+      "Step up to a traditional nasal cushion when you need more pressure tolerance than pillows deliver — without giving up the quiet, lightweight feel React Health is known for. The silicone cushion holds a leak-free seal at pressures up to 25 cmH₂O, the tube routes over the top of the head for an open field of vision (read or wear glasses in bed), and the fit pack ships with multiple cushion sizes so you can dial in the seal at home without a second fitting. US-engineered, FDA-cleared, and noticeably more affordable than the comparable ResMed AirFit N20.",
+    category: "mask",
+    tagline: "Best value · multiple cushion sizes included",
+    replacementHint: "Replace mask every ~3 months",
+    unitAmountCents: 8900,
+    manufacturer: "React Health",
+    modelNumber: "RH-VIVA-FP",
+    imagePath: "/products/react-health-viva.webp",
+  },
+  {
+    sku: "rh-mask-numa-fullface",
+    name: "React Health Numa Full Face Mask — Medium",
+    description:
+      "A surprisingly light full-face mask for mouth-breathers and bilevel (BiPAP) patients. The hybrid silicone cushion pairs a soft sealing edge with a firmer structural core, so it holds at higher pressures without digging in, and the low-profile bridge clears glasses for a wide field of vision. A quick-release elbow makes 3am bathroom trips painless, and it's compatible with every CPAP machine we sell. US-engineered and FDA-cleared across the full 4–25 cmH₂O range — the comfortable, better-value answer to the ResMed AirFit F30.",
+    category: "mask",
+    tagline: "Best full-face value · mouth-breathers & BiPAP",
+    replacementHint: "Replace mask every ~3 months",
+    unitAmountCents: 9900,
+    manufacturer: "React Health",
+    modelNumber: "RH-NUMA-M",
+    imagePath: "/products/react-health-numa.webp",
+  },
+  // ResMed — premium import-tier alternatives.
   {
     sku: "mask-nasal-pillows-medium",
     name: "ResMed AirFit P10 Nasal Pillows Mask — Medium",
     description:
-      "ResMed's flagship nasal pillows mask. The QuietAir vent is 50% quieter than the predecessor, and the dual-strap headgear weighs almost nothing — most patients forget they're wearing it. Includes frame, medium nasal pillows, headgear, and clip system. Compatible with all standard CPAP and BiPAP machines.",
+      "ResMed's flagship nasal pillows mask. The QuietAir vent is 50% quieter than the predecessor, and the dual-strap headgear weighs almost nothing — most patients forget they're wearing it. Includes frame, medium nasal pillows, headgear, and clip system. Compatible with all standard CPAP and BiPAP machines. Prefer something lighter and better value? Compare our flagship React Health Rio II.",
     category: "mask",
     tagline: "Most popular for side sleepers",
     replacementHint: "Replace mask every ~3 months",
@@ -76,9 +119,9 @@ const PRODUCTS: SeedProduct[] = [
     sku: "mask-nasal-fitpack",
     name: "ResMed AirFit N20 Nasal Mask — Fit Pack (S/M/L)",
     description:
-      "Traditional nasal mask with InfinitySeal silicone cushion that conforms to a wide range of facial profiles. Fit pack includes three cushion sizes (small, medium, large) so you can dial in the seal at home without a re-fit appointment. Includes frame, three cushions, and magnetic-clip headgear.",
+      "Traditional nasal mask with InfinitySeal silicone cushion that conforms to a wide range of facial profiles. Fit pack includes three cushion sizes (small, medium, large) so you can dial in the seal at home without a re-fit appointment. Includes frame, three cushions, and magnetic-clip headgear. Want the lighter, better-value nasal option? See our flagship React Health Viva.",
     category: "mask",
-    tagline: "Best value: three cushion sizes included",
+    tagline: "Premium nasal · three cushion sizes",
     replacementHint: "Replace mask every ~3 months",
     unitAmountCents: 12900,
     manufacturer: "ResMed",
@@ -89,7 +132,7 @@ const PRODUCTS: SeedProduct[] = [
     sku: "mask-fullface-medium",
     name: "ResMed AirFit F30i Full Face Mask — Medium",
     description:
-      "Top-of-tube full-face mask designed for mouth-breathers, higher pressures, and side sleepers who hate traditional under-the-nose full-face masks. The hose connects at the crown of the head, so you can sleep on your stomach without dislodging the seal. Includes frame, medium cushion, headgear, and tube.",
+      "Top-of-tube full-face mask designed for mouth-breathers, higher pressures, and side sleepers who hate traditional under-the-nose full-face masks. The hose connects at the crown of the head, so you can sleep on your stomach without dislodging the seal. Includes frame, medium cushion, headgear, and tube. For a lighter, lower-cost full-face, see our flagship React Health Numa.",
     category: "mask",
     tagline: "For mouth-breathers and higher pressures",
     replacementHint: "Replace mask every ~3 months",
@@ -100,6 +143,47 @@ const PRODUCTS: SeedProduct[] = [
   },
 
   // ── Cushions (replacement only) ──────────────────────────────────
+  // React Health replacements first — keeps flagship customers on a
+  // genuine-parts resupply cadence.
+  {
+    sku: "rh-cushion-rio2-pillows",
+    name: "React Health Rio II Replacement Nasal Pillows — Fit Pack",
+    description:
+      "Genuine React Health replacement pillows for the Rio II frame — all three sizes (S/M/L) in the box, so you can adjust as the season (or your weight) changes. Nasal pillows take more wear than any other part of your setup; a fresh set every couple of weeks is the highest-impact, lowest-cost thing you can do to keep the seal quiet and leak-free. Direct fit, no tools.",
+    category: "cushion",
+    tagline: "All three sizes included",
+    replacementHint: "Replace every 2 weeks – 1 month",
+    unitAmountCents: 1900,
+    manufacturer: "React Health",
+    modelNumber: "RH-RIO2-CUSH",
+    imagePath: "/products/react-health-rio2.webp",
+  },
+  {
+    sku: "rh-cushion-viva-nasal",
+    name: "React Health Viva Replacement Nasal Cushion — Medium",
+    description:
+      "Genuine React Health silicone cushion for the Viva nasal frame. Leaks creep up gradually as silicone fatigues — a little each night, so you stop noticing — which makes a fresh cushion the fastest way to restore the original seal and your therapy numbers. Direct fit on the Viva frame; medium covers most adult profiles.",
+    category: "cushion",
+    tagline: "Restore the original seal",
+    replacementHint: "Replace every 2 weeks – 1 month",
+    unitAmountCents: 2400,
+    manufacturer: "React Health",
+    modelNumber: "RH-VIVA-CUSH-M",
+    imagePath: "/products/react-health-viva.webp",
+  },
+  {
+    sku: "rh-cushion-numa-fullface",
+    name: "React Health Numa Replacement Full Face Cushion — Medium",
+    description:
+      "Genuine React Health full-face replacement cushion for the Numa frame. The hybrid silicone keeps its soft sealing edge for about 30 days of nightly use; after that, refreshing it is the difference between fighting leaks and forgetting the mask is on. Direct fit — pop the old cushion out, pop the new one in, no tools.",
+    category: "cushion",
+    tagline: "Single cushion replacement",
+    replacementHint: "Replace every 2 weeks – 1 month",
+    unitAmountCents: 2900,
+    manufacturer: "React Health",
+    modelNumber: "RH-NUMA-CUSH-M",
+    imagePath: "/products/react-health-numa.webp",
+  },
   {
     sku: "cushion-nasal-medium",
     name: "ResMed AirFit N20 Replacement Nasal Cushion — Medium",
@@ -198,6 +282,19 @@ const PRODUCTS: SeedProduct[] = [
 
   // ── Headgear & straps ────────────────────────────────────────────
   {
+    sku: "rh-headgear-rio2",
+    name: "React Health Rio II Replacement Headgear",
+    description:
+      "Genuine React Health magnetic-clip headgear for the Rio II. Headgear is fabric, and fabric stretches — when you catch yourself cranking the straps tighter each week to hold the seal, the headgear (not the cushion) is usually the culprit. A fresh set restores even, gentle tension and ends the morning strap-marks. One-handed magnetic clips snap on in the dark.",
+    category: "headgear",
+    tagline: "Restore tension, lose the red marks",
+    replacementHint: "Replace every 6 months",
+    unitAmountCents: 2400,
+    manufacturer: "React Health",
+    modelNumber: "RH-RIO2-HG",
+    imagePath: "/products/react-health-viva.webp",
+  },
+  {
     sku: "headgear-universal",
     name: "ResMed AirFit N20 Replacement Headgear — Standard",
     description:
@@ -255,6 +352,24 @@ const PRODUCTS: SeedProduct[] = [
   },
 
   // ── Bundles ──────────────────────────────────────────────────────
+  {
+    sku: "bundle-react-health-starter",
+    name: "React Health Comfort Starter Bundle",
+    description:
+      "The easiest way onto our flagship line: a complete React Health Rio II nasal-pillow system (frame, all three pillow sizes, and headgear), a spare set of Rio II pillows, and a canister of daily cleaning wipes. Everything you need to start — and keep — a quiet, lightweight night of therapy, priced below buying the pieces separately and shipped in one box.",
+    category: "bundle",
+    tagline: "Start on our flagship line — and save",
+    replacementHint: "Great first order; resupply every 3 months",
+    unitAmountCents: 9900,
+    manufacturer: "React Health",
+    modelNumber: "BUNDLE-RH",
+    imagePath: "/products/react-health-rio2.webp",
+    bundleContents: [
+      "1× React Health Rio II nasal-pillow mask · fit pack (#RH-RIO2-FP)",
+      "1× React Health Rio II replacement pillows · fit pack (#RH-RIO2-CUSH)",
+      "1× Citrus II mask & tubing wipes · 62 ct. (#635871164)",
+    ],
+  },
   {
     sku: "bundle-quarterly-refresh",
     name: "Quarterly Refresh Bundle",
