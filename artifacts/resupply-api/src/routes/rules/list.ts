@@ -14,11 +14,12 @@ import { logAudit } from "@workspace/resupply-audit";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
+import { adminReadRateLimiter } from "../../middlewares/admin-rate-limit";
 import { requireAdmin } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
 
-router.get("/rules", requireAdmin, async (req, res) => {
+router.get("/rules", adminReadRateLimiter, requireAdmin, async (req, res) => {
   const supabase = getSupabaseServiceRoleClient();
   const { data, error } = await supabase
     .schema("resupply")

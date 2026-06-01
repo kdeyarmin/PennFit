@@ -18,6 +18,7 @@ import {
   suggestIcd10,
 } from "../../lib/clinical/ai-icd10-suggester";
 import { logger } from "../../lib/logger";
+import { adminWriteRateLimiter } from "../../middlewares/admin-rate-limit";
 import { requireAdmin } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
@@ -38,6 +39,7 @@ const body = z
 
 router.post(
   "/patients/:id/sleep-studies/:studyId/suggest-icd10",
+  adminWriteRateLimiter,
   requireAdmin,
   async (req, res) => {
     const idParsed = params.safeParse(req.params);
@@ -125,6 +127,7 @@ router.post(
 
 router.post(
   "/patients/:id/sleep-studies/:studyId/accept-icd10",
+  adminWriteRateLimiter,
   requireAdmin,
   async (req, res) => {
     const idParsed = params.safeParse(req.params);

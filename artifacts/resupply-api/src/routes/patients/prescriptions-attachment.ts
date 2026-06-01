@@ -62,6 +62,10 @@ import {
   ObjectNotFoundError,
   ObjectStorageService,
 } from "../../lib/object-storage/objectStorage";
+import {
+  adminReadRateLimiter,
+  adminWriteRateLimiter,
+} from "../../middlewares/admin-rate-limit";
 import { requireAdmin } from "../../middlewares/requireAdmin";
 
 // 10 MB. Big enough for a multi-page wet-signed Rx PDF; small enough
@@ -147,6 +151,7 @@ async function findPrescriptionForPatient(
 
 router.post(
   "/patients/:id/prescriptions/:rxId/attachment/upload-url",
+  adminWriteRateLimiter,
   requireAdmin,
   async (req, res) => {
     const ids = idsParam.safeParse(req.params);
@@ -229,6 +234,7 @@ router.post(
 
 router.post(
   "/patients/:id/prescriptions/:rxId/attachment",
+  adminWriteRateLimiter,
   requireAdmin,
   async (req, res) => {
     const ids = idsParam.safeParse(req.params);
@@ -447,6 +453,7 @@ router.post(
 
 router.get(
   "/patients/:id/prescriptions/:rxId/attachment",
+  adminReadRateLimiter,
   requireAdmin,
   async (req, res) => {
     const ids = idsParam.safeParse(req.params);
@@ -536,6 +543,7 @@ router.get(
 
 router.delete(
   "/patients/:id/prescriptions/:rxId/attachment",
+  adminWriteRateLimiter,
   requireAdmin,
   async (req, res) => {
     const ids = idsParam.safeParse(req.params);

@@ -14,6 +14,7 @@ import { logAudit } from "@workspace/resupply-audit";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
+import { adminWriteRateLimiter } from "../../middlewares/admin-rate-limit";
 import { requireAdmin } from "../../middlewares/requireAdmin";
 
 // Shared shape used by both POST and PATCH. PATCH wraps every field
@@ -65,7 +66,7 @@ const ruleBody = z
 
 const router: IRouter = Router();
 
-router.post("/rules", requireAdmin, async (req, res) => {
+router.post("/rules", adminWriteRateLimiter, requireAdmin, async (req, res) => {
   const parsed = ruleBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({

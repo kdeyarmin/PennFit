@@ -40,6 +40,10 @@ type SleepStudyUpdate =
   Database["resupply"]["Tables"]["sleep_studies"]["Update"];
 
 import { logger } from "../../lib/logger";
+import {
+  adminReadRateLimiter,
+  adminWriteRateLimiter,
+} from "../../middlewares/admin-rate-limit";
 import { requireAdmin } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
@@ -98,134 +102,145 @@ const patchBody = z
   })
   .strict();
 
-router.get("/patients/:id/sleep-studies", requireAdmin, async (req, res) => {
-  const idParsed = idParam.safeParse(req.params);
-  if (!idParsed.success) {
-    res.status(404).json({ error: "not_found" });
-    return;
-  }
-  const supabase = getSupabaseServiceRoleClient();
-  const { data, error } = await supabase
-    .schema("resupply")
-    .from("sleep_studies")
-    .select(
-      "id, study_date, study_type, ahi, rdi, lowest_spo2_pct, sleep_efficiency_pct, diagnosis_icd10, interpreting_provider_id, facility_name, source, document_id, notes, created_at",
-    )
-    .eq("patient_id", idParsed.data.id)
-    .order("study_date", { ascending: false });
-  if (error) throw error;
+router.get(
+  "/patients/:id/sleep-studies",
+  adminReadRateLimiter,
+  requireAdmin,
+  async (req, res) => {
+    const idParsed = idParam.safeParse(req.params);
+    if (!idParsed.success) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    const supabase = getSupabaseServiceRoleClient();
+    const { data, error } = await supabase
+      .schema("resupply")
+      .from("sleep_studies")
+      .select(
+        "id, study_date, study_type, ahi, rdi, lowest_spo2_pct, sleep_efficiency_pct, diagnosis_icd10, interpreting_provider_id, facility_name, source, document_id, notes, created_at",
+      )
+      .eq("patient_id", idParsed.data.id)
+      .order("study_date", { ascending: false });
+    if (error) throw error;
 
-  res.json({
-    studies: (data ?? []).map((r) => ({
-      id: r.id,
-      studyDate: r.study_date,
-      studyType: r.study_type,
-      // PostgREST returns numeric as string — convert for the SPA.
-      ahi: Number(r.ahi),
-      rdi: r.rdi == null ? null : Number(r.rdi),
-      lowestSpo2Pct: r.lowest_spo2_pct,
-      sleepEfficiencyPct: r.sleep_efficiency_pct,
-      diagnosisIcd10: r.diagnosis_icd10,
-      interpretingProviderId: r.interpreting_provider_id,
-      facilityName: r.facility_name,
-      source: r.source,
-      documentId: r.document_id,
-      notes: r.notes,
-      createdAt: r.created_at,
-    })),
-  });
-});
-
-router.post("/patients/:id/sleep-studies", requireAdmin, async (req, res) => {
-  const idParsed = idParam.safeParse(req.params);
-  if (!idParsed.success) {
-    res.status(404).json({ error: "not_found" });
-    return;
-  }
-  const parsed = createBody.safeParse(req.body);
-  if (!parsed.success) {
-    res.status(400).json({
-      error: "invalid_body",
-      issues: parsed.error.issues.map((i) => ({
-        path: i.path.join("."),
-        message: i.message,
+    res.json({
+      studies: (data ?? []).map((r) => ({
+        id: r.id,
+        studyDate: r.study_date,
+        studyType: r.study_type,
+        // PostgREST returns numeric as string — convert for the SPA.
+        ahi: Number(r.ahi),
+        rdi: r.rdi == null ? null : Number(r.rdi),
+        lowestSpo2Pct: r.lowest_spo2_pct,
+        sleepEfficiencyPct: r.sleep_efficiency_pct,
+        diagnosisIcd10: r.diagnosis_icd10,
+        interpretingProviderId: r.interpreting_provider_id,
+        facilityName: r.facility_name,
+        source: r.source,
+        documentId: r.document_id,
+        notes: r.notes,
+        createdAt: r.created_at,
       })),
     });
-    return;
-  }
-  const body = parsed.data;
-  const patientId = idParsed.data.id;
+  },
+);
 
-  const supabase = getSupabaseServiceRoleClient();
-  const { data: patient } = await supabase
-    .schema("resupply")
-    .from("patients")
-    .select("id")
-    .eq("id", patientId)
-    .limit(1)
-    .maybeSingle();
-  if (!patient) {
-    res.status(404).json({ error: "not_found" });
-    return;
-  }
+router.post(
+  "/patients/:id/sleep-studies",
+  adminWriteRateLimiter,
+  requireAdmin,
+  async (req, res) => {
+    const idParsed = idParam.safeParse(req.params);
+    if (!idParsed.success) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    const parsed = createBody.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: "invalid_body",
+        issues: parsed.error.issues.map((i) => ({
+          path: i.path.join("."),
+          message: i.message,
+        })),
+      });
+      return;
+    }
+    const body = parsed.data;
+    const patientId = idParsed.data.id;
 
-  const { data: row, error } = await supabase
-    .schema("resupply")
-    .from("sleep_studies")
-    .insert({
-      patient_id: patientId,
-      study_date: body.studyDate,
-      study_type: body.studyType,
-      // Numeric columns accept JS numbers; PostgREST coerces them.
-      ahi: body.ahi.toString(),
-      rdi: body.rdi == null ? null : body.rdi.toString(),
-      lowest_spo2_pct: body.lowestSpo2Pct ?? null,
-      sleep_efficiency_pct: body.sleepEfficiencyPct ?? null,
-      diagnosis_icd10: body.diagnosisIcd10 ?? null,
-      interpreting_provider_id: body.interpretingProviderId ?? null,
-      facility_name: body.facilityName ?? null,
-      source: body.source,
-      document_id: body.documentId ?? null,
-      notes: body.notes ?? null,
-    })
-    .select("id")
-    .single();
-  if (error) throw error;
+    const supabase = getSupabaseServiceRoleClient();
+    const { data: patient } = await supabase
+      .schema("resupply")
+      .from("patients")
+      .select("id")
+      .eq("id", patientId)
+      .limit(1)
+      .maybeSingle();
+    if (!patient) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
 
-  const populated = ["studyDate", "studyType", "ahi"];
-  if (body.rdi != null) populated.push("rdi");
-  if (body.lowestSpo2Pct != null) populated.push("lowestSpo2Pct");
-  if (body.sleepEfficiencyPct != null) populated.push("sleepEfficiencyPct");
-  if (body.diagnosisIcd10) populated.push("diagnosisIcd10");
-  if (body.interpretingProviderId) populated.push("interpretingProviderId");
-  if (body.facilityName) populated.push("facilityName");
-  if (body.documentId) populated.push("documentId");
-  if (body.notes) populated.push("notes");
+    const { data: row, error } = await supabase
+      .schema("resupply")
+      .from("sleep_studies")
+      .insert({
+        patient_id: patientId,
+        study_date: body.studyDate,
+        study_type: body.studyType,
+        // Numeric columns accept JS numbers; PostgREST coerces them.
+        ahi: body.ahi.toString(),
+        rdi: body.rdi == null ? null : body.rdi.toString(),
+        lowest_spo2_pct: body.lowestSpo2Pct ?? null,
+        sleep_efficiency_pct: body.sleepEfficiencyPct ?? null,
+        diagnosis_icd10: body.diagnosisIcd10 ?? null,
+        interpreting_provider_id: body.interpretingProviderId ?? null,
+        facility_name: body.facilityName ?? null,
+        source: body.source,
+        document_id: body.documentId ?? null,
+        notes: body.notes ?? null,
+      })
+      .select("id")
+      .single();
+    if (error) throw error;
 
-  await logAudit({
-    action: "patient.sleep_study.create",
-    adminEmail: req.adminEmail ?? null,
-    adminUserId: req.adminUserId ?? null,
-    targetTable: "sleep_studies",
-    targetId: row.id,
-    metadata: {
-      patient_id: patientId,
-      study_date: body.studyDate,
-      study_type: body.studyType,
-      source: body.source,
-      populated_fields: populated,
-    },
-    ip: req.ip ?? null,
-    userAgent: req.get("user-agent") ?? null,
-  }).catch((err) => {
-    logger.warn({ err }, "patient.sleep_study.create audit write failed");
-  });
+    const populated = ["studyDate", "studyType", "ahi"];
+    if (body.rdi != null) populated.push("rdi");
+    if (body.lowestSpo2Pct != null) populated.push("lowestSpo2Pct");
+    if (body.sleepEfficiencyPct != null) populated.push("sleepEfficiencyPct");
+    if (body.diagnosisIcd10) populated.push("diagnosisIcd10");
+    if (body.interpretingProviderId) populated.push("interpretingProviderId");
+    if (body.facilityName) populated.push("facilityName");
+    if (body.documentId) populated.push("documentId");
+    if (body.notes) populated.push("notes");
 
-  res.status(201).json({ id: row.id });
-});
+    await logAudit({
+      action: "patient.sleep_study.create",
+      adminEmail: req.adminEmail ?? null,
+      adminUserId: req.adminUserId ?? null,
+      targetTable: "sleep_studies",
+      targetId: row.id,
+      metadata: {
+        patient_id: patientId,
+        study_date: body.studyDate,
+        study_type: body.studyType,
+        source: body.source,
+        populated_fields: populated,
+      },
+      ip: req.ip ?? null,
+      userAgent: req.get("user-agent") ?? null,
+    }).catch((err) => {
+      logger.warn({ err }, "patient.sleep_study.create audit write failed");
+    });
+
+    res.status(201).json({ id: row.id });
+  },
+);
 
 router.patch(
   "/patients/:id/sleep-studies/:sid",
+  adminWriteRateLimiter,
   requireAdmin,
   async (req, res) => {
     const idParsed = idAndStudyParam.safeParse(req.params);
