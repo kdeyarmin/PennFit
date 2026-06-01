@@ -95,6 +95,11 @@ const AdminTodayPage = lazy(() =>
     default: m.AdminTodayPage,
   })),
 );
+const AdminWorkQueuePage = lazy(() =>
+  import("@/pages/admin/admin-work-queue").then((m) => ({
+    default: m.AdminWorkQueuePage,
+  })),
+);
 const AdminProvidersPage = lazy(() =>
   import("@/pages/admin/admin-providers").then((m) => ({
     default: m.AdminProvidersPage,
@@ -711,6 +716,7 @@ function AdminConsole() {
             />
             <Route path="/admin/followups" component={AdminFollowupsPage} />
             <Route path="/admin/today" component={AdminTodayPage} />
+            <Route path="/admin/work-queue" component={AdminWorkQueuePage} />
             <Route path="/admin/providers" component={AdminProvidersPage} />
             <Route
               path="/admin/inbound-faxes"

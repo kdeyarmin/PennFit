@@ -162,6 +162,13 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         hint: "Top items across every queue — conversations, returns, alerts, Rx renewals, documents",
       },
       {
+        href: "/admin/work-queue",
+        label: "Work queue",
+        icon: ListChecks,
+        matchPrefix: "/admin/work-queue",
+        hint: "Unified, prioritized queue of everything waiting on you, most-overdue first",
+      },
+      {
         href: "/admin/conversations",
         label: "Conversations",
         icon: MessageSquareText,
