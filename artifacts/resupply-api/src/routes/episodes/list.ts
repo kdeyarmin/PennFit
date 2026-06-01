@@ -19,6 +19,7 @@ import {
   escapePostgRESTFilterValue,
 } from "@workspace/resupply-db";
 
+import { adminReadRateLimiter } from "../../middlewares/admin-rate-limit";
 import { requireAdmin } from "../../middlewares/requireAdmin";
 
 const UUID_RE =
@@ -110,137 +111,147 @@ export async function resolveEpisodesSearch(
 
 const router: IRouter = Router();
 
-router.get("/episodes", requireAdmin, async (req, res) => {
-  const parsed = listQuery.safeParse(req.query);
-  if (!parsed.success) {
-    res.status(400).json({
-      error: "invalid_query",
-      issues: parsed.error.issues.map((i) => ({
-        path: i.path.join("."),
-        message: i.message,
-      })),
-    });
-    return;
-  }
-  const { status, limit, offset, q } = parsed.data;
-  const isOverdue = status === "overdue";
-
-  const supabase = getSupabaseServiceRoleClient();
-  const nowIso = new Date().toISOString();
-
-  // Resolve the q-filter into a candidate episode-id set up front.
-  // Empty array means "no matches" → short-circuit to an empty
-  // response so the COUNT and main query don't fire.
-  let qEpisodeIds: string[] | null = null;
-  if (q) {
-    qEpisodeIds = await resolveEpisodesSearch(supabase, q);
-    if (qEpisodeIds.length === 0) {
-      res.status(200).json({ items: [], total: 0, limit, offset });
+router.get(
+  "/episodes",
+  adminReadRateLimiter,
+  requireAdmin,
+  async (req, res) => {
+    const parsed = listQuery.safeParse(req.query);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: "invalid_query",
+        issues: parsed.error.issues.map((i) => ({
+          path: i.path.join("."),
+          message: i.message,
+        })),
+      });
       return;
     }
-  }
+    const { status, limit, offset, q } = parsed.data;
+    const isOverdue = status === "overdue";
 
-  const buildBaseQuery = () => {
-    let query = supabase
-      .schema("resupply")
-      .from("episodes")
-      .select(
-        "id, patient_id, prescription_id, status, due_at, expires_at, created_at",
-        { count: "exact" },
-      );
-    if (isOverdue) {
-      query = query
-        .in("status", ["outreach_pending", "awaiting_response"])
-        .lte("due_at", nowIso);
-    } else if (status) {
-      query = query.eq("status", status);
+    const supabase = getSupabaseServiceRoleClient();
+    const nowIso = new Date().toISOString();
+
+    // Resolve the q-filter into a candidate episode-id set up front.
+    // Empty array means "no matches" → short-circuit to an empty
+    // response so the COUNT and main query don't fire.
+    let qEpisodeIds: string[] | null = null;
+    if (q) {
+      qEpisodeIds = await resolveEpisodesSearch(supabase, q);
+      if (qEpisodeIds.length === 0) {
+        res.status(200).json({ items: [], total: 0, limit, offset });
+        return;
+      }
     }
-    if (qEpisodeIds) query = query.in("id", qEpisodeIds);
-    return query;
-  };
 
-  let episodesListQuery = buildBaseQuery();
-  if (isOverdue) {
-    episodesListQuery = episodesListQuery.order("due_at", { ascending: true });
-  } else {
-    episodesListQuery = episodesListQuery.order("created_at", {
-      ascending: false,
+    const buildBaseQuery = () => {
+      let query = supabase
+        .schema("resupply")
+        .from("episodes")
+        .select(
+          "id, patient_id, prescription_id, status, due_at, expires_at, created_at",
+          { count: "exact" },
+        );
+      if (isOverdue) {
+        query = query
+          .in("status", ["outreach_pending", "awaiting_response"])
+          .lte("due_at", nowIso);
+      } else if (status) {
+        query = query.eq("status", status);
+      }
+      if (qEpisodeIds) query = query.in("id", qEpisodeIds);
+      return query;
+    };
+
+    let episodesListQuery = buildBaseQuery();
+    if (isOverdue) {
+      episodesListQuery = episodesListQuery.order("due_at", {
+        ascending: true,
+      });
+    } else {
+      episodesListQuery = episodesListQuery.order("created_at", {
+        ascending: false,
+      });
+    }
+    episodesListQuery = episodesListQuery.range(offset, offset + limit - 1);
+    const { data: rows, count, error } = await episodesListQuery;
+    if (error) throw error;
+
+    // Bulk-fetch the joined identity rows. The original SQL path
+    // LEFT JOINed patients + prescriptions; PostgREST has no JOIN, so
+    // we collect the IDs from this page's rows and fetch in one extra
+    // round-trip per side.
+    const patientIds = Array.from(
+      new Set(
+        (rows ?? [])
+          .map((r) => r.patient_id)
+          .filter((v): v is string => v !== null),
+      ),
+    );
+    const prescriptionIds = Array.from(
+      new Set(
+        (rows ?? [])
+          .map((r) => r.prescription_id)
+          .filter((v): v is string => v !== null),
+      ),
+    );
+
+    const [patientsRes, prescriptionsRes] = await Promise.all([
+      patientIds.length > 0
+        ? supabase
+            .schema("resupply")
+            .from("patients")
+            .select("id, legal_first_name, legal_last_name")
+            .in("id", patientIds)
+        : Promise.resolve({ data: [], error: null } as const),
+      prescriptionIds.length > 0
+        ? supabase
+            .schema("resupply")
+            .from("prescriptions")
+            .select("id, item_sku, cadence_days")
+            .in("id", prescriptionIds)
+        : Promise.resolve({ data: [], error: null } as const),
+    ]);
+    if (patientsRes.error) throw patientsRes.error;
+    if (prescriptionsRes.error) throw prescriptionsRes.error;
+    const patientsById = new Map(
+      (patientsRes.data ?? []).map((p) => [p.id, p] as const),
+    );
+    const prescriptionsById = new Map(
+      (prescriptionsRes.data ?? []).map((p) => [p.id, p] as const),
+    );
+
+    const now = Date.now();
+    res.status(200).json({
+      items: (rows ?? []).map((r) => {
+        const pt = patientsById.get(r.patient_id);
+        const rx = prescriptionsById.get(r.prescription_id);
+        const dueAtMs = new Date(r.due_at).getTime();
+        const daysOverdue = Math.max(
+          0,
+          Math.floor((now - dueAtMs) / 86_400_000),
+        );
+        return {
+          id: r.id,
+          patientId: r.patient_id,
+          patientFirstName: pt?.legal_first_name ?? "",
+          patientLastName: pt?.legal_last_name ?? "",
+          prescriptionId: r.prescription_id,
+          itemSku: rx?.item_sku ?? "",
+          cadenceDays: rx?.cadence_days ?? 0,
+          status: r.status,
+          dueAt: r.due_at,
+          daysOverdue,
+          expiresAt: r.expires_at,
+          createdAt: r.created_at,
+        };
+      }),
+      total: count ?? 0,
+      limit,
+      offset,
     });
-  }
-  episodesListQuery = episodesListQuery.range(offset, offset + limit - 1);
-  const { data: rows, count, error } = await episodesListQuery;
-  if (error) throw error;
-
-  // Bulk-fetch the joined identity rows. The original SQL path
-  // LEFT JOINed patients + prescriptions; PostgREST has no JOIN, so
-  // we collect the IDs from this page's rows and fetch in one extra
-  // round-trip per side.
-  const patientIds = Array.from(
-    new Set(
-      (rows ?? [])
-        .map((r) => r.patient_id)
-        .filter((v): v is string => v !== null),
-    ),
-  );
-  const prescriptionIds = Array.from(
-    new Set(
-      (rows ?? [])
-        .map((r) => r.prescription_id)
-        .filter((v): v is string => v !== null),
-    ),
-  );
-
-  const [patientsRes, prescriptionsRes] = await Promise.all([
-    patientIds.length > 0
-      ? supabase
-          .schema("resupply")
-          .from("patients")
-          .select("id, legal_first_name, legal_last_name")
-          .in("id", patientIds)
-      : Promise.resolve({ data: [], error: null } as const),
-    prescriptionIds.length > 0
-      ? supabase
-          .schema("resupply")
-          .from("prescriptions")
-          .select("id, item_sku, cadence_days")
-          .in("id", prescriptionIds)
-      : Promise.resolve({ data: [], error: null } as const),
-  ]);
-  if (patientsRes.error) throw patientsRes.error;
-  if (prescriptionsRes.error) throw prescriptionsRes.error;
-  const patientsById = new Map(
-    (patientsRes.data ?? []).map((p) => [p.id, p] as const),
-  );
-  const prescriptionsById = new Map(
-    (prescriptionsRes.data ?? []).map((p) => [p.id, p] as const),
-  );
-
-  const now = Date.now();
-  res.status(200).json({
-    items: (rows ?? []).map((r) => {
-      const pt = patientsById.get(r.patient_id);
-      const rx = prescriptionsById.get(r.prescription_id);
-      const dueAtMs = new Date(r.due_at).getTime();
-      const daysOverdue = Math.max(0, Math.floor((now - dueAtMs) / 86_400_000));
-      return {
-        id: r.id,
-        patientId: r.patient_id,
-        patientFirstName: pt?.legal_first_name ?? "",
-        patientLastName: pt?.legal_last_name ?? "",
-        prescriptionId: r.prescription_id,
-        itemSku: rx?.item_sku ?? "",
-        cadenceDays: rx?.cadence_days ?? 0,
-        status: r.status,
-        dueAt: r.due_at,
-        daysOverdue,
-        expiresAt: r.expires_at,
-        createdAt: r.created_at,
-      };
-    }),
-    total: count ?? 0,
-    limit,
-    offset,
-  });
-});
+  },
+);
 
 export default router;

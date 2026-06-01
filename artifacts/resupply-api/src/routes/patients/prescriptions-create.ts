@@ -28,6 +28,7 @@ import {
 } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
+import { adminWriteRateLimiter } from "../../middlewares/admin-rate-limit";
 import { requireAdmin } from "../../middlewares/requireAdmin";
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -103,112 +104,117 @@ const bodySchema = z
 
 const router: IRouter = Router();
 
-router.post("/patients/:id/prescriptions", requireAdmin, async (req, res) => {
-  const idParsed = idParam.safeParse(req.params);
-  if (!idParsed.success) {
-    res.status(404).json({ error: "not_found" });
-    return;
-  }
-  const bodyParsed = bodySchema.safeParse(req.body);
-  if (!bodyParsed.success) {
-    res.status(400).json({
-      error: "invalid_body",
-      issues: bodyParsed.error.issues.map((i) => ({
-        path: i.path.join("."),
-        message: i.message,
-      })),
+router.post(
+  "/patients/:id/prescriptions",
+  adminWriteRateLimiter,
+  requireAdmin,
+  async (req, res) => {
+    const idParsed = idParam.safeParse(req.params);
+    if (!idParsed.success) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    const bodyParsed = bodySchema.safeParse(req.body);
+    if (!bodyParsed.success) {
+      res.status(400).json({
+        error: "invalid_body",
+        issues: bodyParsed.error.issues.map((i) => ({
+          path: i.path.join("."),
+          message: i.message,
+        })),
+      });
+      return;
+    }
+
+    const { id: patientId } = idParsed.data;
+    const body = bodyParsed.data;
+
+    // Cross-field check: validUntil >= validFrom when present.
+    if (body.validUntil && body.validUntil < body.validFrom) {
+      res.status(400).json({
+        error: "invalid_body",
+        issues: [
+          {
+            path: "validUntil",
+            message: "validUntil must be on or after validFrom.",
+          },
+        ],
+      });
+      return;
+    }
+
+    const supabase = getSupabaseServiceRoleClient();
+
+    const { data: patient, error: patientError } = await supabase
+      .schema("resupply")
+      .from("patients")
+      .select("id")
+      .eq("id", patientId)
+      .limit(1)
+      .maybeSingle();
+    if (patientError) throw patientError;
+    if (!patient) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+
+    const detailsBlob: Json | null =
+      body.prescriberName || body.prescriberNpi || body.diagnosis || body.notes
+        ? ({
+            prescriberName: body.prescriberName ?? undefined,
+            prescriberNpi: body.prescriberNpi ?? undefined,
+            diagnosis: body.diagnosis ?? undefined,
+            notes: body.notes ?? undefined,
+          } as unknown as Json)
+        : null;
+
+    const { data: row, error } = await supabase
+      .schema("resupply")
+      .from("prescriptions")
+      .insert({
+        patient_id: patientId,
+        provider_id: body.providerId ?? null,
+        item_sku: body.itemSku,
+        cadence_days: body.cadenceDays,
+        valid_from: body.validFrom,
+        valid_until: body.validUntil ?? null,
+        hcpcs_code: body.hcpcsCode ?? null,
+        details: detailsBlob,
+        status: "active",
+      })
+      .select("id")
+      .single();
+    if (error) throw error;
+
+    const populated = ["itemSku", "cadenceDays", "validFrom"];
+    if (body.validUntil) populated.push("validUntil");
+    if (body.hcpcsCode) populated.push("hcpcsCode");
+    if (body.providerId) populated.push("providerId");
+    if (body.prescriberName) populated.push("prescriberName");
+    if (body.prescriberNpi) populated.push("prescriberNpi");
+    if (body.diagnosis) populated.push("diagnosis");
+    if (body.notes) populated.push("notes");
+
+    await logAudit({
+      action: "patient.prescription.create",
+      adminEmail: req.adminEmail ?? null,
+      adminUserId: req.adminUserId ?? null,
+      targetTable: "prescriptions",
+      targetId: row.id,
+      metadata: {
+        patient_id: patientId,
+        item_sku: body.itemSku,
+        cadence_days: body.cadenceDays,
+        populated_fields: populated,
+      },
+      ip: req.ip ?? null,
+      userAgent: req.get("user-agent") ?? null,
+    }).catch((err) => {
+      logger.warn({ err }, "patient.prescription.create audit write failed");
     });
-    return;
-  }
 
-  const { id: patientId } = idParsed.data;
-  const body = bodyParsed.data;
-
-  // Cross-field check: validUntil >= validFrom when present.
-  if (body.validUntil && body.validUntil < body.validFrom) {
-    res.status(400).json({
-      error: "invalid_body",
-      issues: [
-        {
-          path: "validUntil",
-          message: "validUntil must be on or after validFrom.",
-        },
-      ],
-    });
-    return;
-  }
-
-  const supabase = getSupabaseServiceRoleClient();
-
-  const { data: patient, error: patientError } = await supabase
-    .schema("resupply")
-    .from("patients")
-    .select("id")
-    .eq("id", patientId)
-    .limit(1)
-    .maybeSingle();
-  if (patientError) throw patientError;
-  if (!patient) {
-    res.status(404).json({ error: "not_found" });
-    return;
-  }
-
-  const detailsBlob: Json | null =
-    body.prescriberName || body.prescriberNpi || body.diagnosis || body.notes
-      ? ({
-          prescriberName: body.prescriberName ?? undefined,
-          prescriberNpi: body.prescriberNpi ?? undefined,
-          diagnosis: body.diagnosis ?? undefined,
-          notes: body.notes ?? undefined,
-        } as unknown as Json)
-      : null;
-
-  const { data: row, error } = await supabase
-    .schema("resupply")
-    .from("prescriptions")
-    .insert({
-      patient_id: patientId,
-      provider_id: body.providerId ?? null,
-      item_sku: body.itemSku,
-      cadence_days: body.cadenceDays,
-      valid_from: body.validFrom,
-      valid_until: body.validUntil ?? null,
-      hcpcs_code: body.hcpcsCode ?? null,
-      details: detailsBlob,
-      status: "active",
-    })
-    .select("id")
-    .single();
-  if (error) throw error;
-
-  const populated = ["itemSku", "cadenceDays", "validFrom"];
-  if (body.validUntil) populated.push("validUntil");
-  if (body.hcpcsCode) populated.push("hcpcsCode");
-  if (body.providerId) populated.push("providerId");
-  if (body.prescriberName) populated.push("prescriberName");
-  if (body.prescriberNpi) populated.push("prescriberNpi");
-  if (body.diagnosis) populated.push("diagnosis");
-  if (body.notes) populated.push("notes");
-
-  await logAudit({
-    action: "patient.prescription.create",
-    adminEmail: req.adminEmail ?? null,
-    adminUserId: req.adminUserId ?? null,
-    targetTable: "prescriptions",
-    targetId: row.id,
-    metadata: {
-      patient_id: patientId,
-      item_sku: body.itemSku,
-      cadence_days: body.cadenceDays,
-      populated_fields: populated,
-    },
-    ip: req.ip ?? null,
-    userAgent: req.get("user-agent") ?? null,
-  }).catch((err) => {
-    logger.warn({ err }, "patient.prescription.create audit write failed");
-  });
-
-  res.status(201).json({ id: row.id });
-});
+    res.status(201).json({ id: row.id });
+  },
+);
 
 export default router;

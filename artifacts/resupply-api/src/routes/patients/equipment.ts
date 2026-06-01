@@ -43,6 +43,10 @@ import {
 } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
+import {
+  adminReadRateLimiter,
+  adminWriteRateLimiter,
+} from "../../middlewares/admin-rate-limit";
 import { requireAdmin } from "../../middlewares/requireAdmin";
 
 type EquipmentAssetUpdate =
@@ -135,155 +139,166 @@ const patchBody = z
   })
   .strict();
 
-router.get("/patients/:id/equipment", requireAdmin, async (req, res) => {
-  const parsed = idParam.safeParse(req.params);
-  if (!parsed.success) {
-    res.status(404).json({ error: "not_found" });
-    return;
-  }
-  const supabase = getSupabaseServiceRoleClient();
-  const { data, error } = await supabase
-    .schema("resupply")
-    .from("equipment_assets")
-    .select(
-      "id, patient_id, prescription_id, device_class, manufacturer, model, serial_number, pressure_setting, humidifier_setting, status, dispensed_at, dispensing_note, recall_id, notes, created_at, updated_at",
-    )
-    .eq("patient_id", parsed.data.id)
-    .order("created_at", { ascending: false });
-  if (error) throw error;
+router.get(
+  "/patients/:id/equipment",
+  adminReadRateLimiter,
+  requireAdmin,
+  async (req, res) => {
+    const parsed = idParam.safeParse(req.params);
+    if (!parsed.success) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    const supabase = getSupabaseServiceRoleClient();
+    const { data, error } = await supabase
+      .schema("resupply")
+      .from("equipment_assets")
+      .select(
+        "id, patient_id, prescription_id, device_class, manufacturer, model, serial_number, pressure_setting, humidifier_setting, status, dispensed_at, dispensing_note, recall_id, notes, created_at, updated_at",
+      )
+      .eq("patient_id", parsed.data.id)
+      .order("created_at", { ascending: false });
+    if (error) throw error;
 
-  res.json({
-    equipment: (data ?? []).map((r) => ({
-      id: r.id,
-      patientId: r.patient_id,
-      prescriptionId: r.prescription_id,
-      deviceClass: r.device_class,
-      manufacturer: r.manufacturer,
-      model: r.model,
-      serialNumber: r.serial_number,
-      pressureSetting: r.pressure_setting,
-      humidifierSetting: r.humidifier_setting,
-      status: r.status,
-      dispensedAt: r.dispensed_at,
-      dispensingNote: r.dispensing_note,
-      recallId: r.recall_id,
-      notes: r.notes,
-      createdAt: r.created_at,
-      updatedAt: r.updated_at,
-    })),
-  });
-});
-
-router.post("/patients/:id/equipment", requireAdmin, async (req, res) => {
-  const idParsed = idParam.safeParse(req.params);
-  if (!idParsed.success) {
-    res.status(404).json({ error: "not_found" });
-    return;
-  }
-  const parsed = createBody.safeParse(req.body);
-  if (!parsed.success) {
-    res.status(400).json({
-      error: "invalid_body",
-      issues: parsed.error.issues.map((i) => ({
-        path: i.path.join("."),
-        message: i.message,
+    res.json({
+      equipment: (data ?? []).map((r) => ({
+        id: r.id,
+        patientId: r.patient_id,
+        prescriptionId: r.prescription_id,
+        deviceClass: r.device_class,
+        manufacturer: r.manufacturer,
+        model: r.model,
+        serialNumber: r.serial_number,
+        pressureSetting: r.pressure_setting,
+        humidifierSetting: r.humidifier_setting,
+        status: r.status,
+        dispensedAt: r.dispensed_at,
+        dispensingNote: r.dispensing_note,
+        recallId: r.recall_id,
+        notes: r.notes,
+        createdAt: r.created_at,
+        updatedAt: r.updated_at,
       })),
     });
-    return;
-  }
-  const b = parsed.data;
-  const patientId = idParsed.data.id;
-  const supabase = getSupabaseServiceRoleClient();
+  },
+);
 
-  const { data: patient } = await supabase
-    .schema("resupply")
-    .from("patients")
-    .select("id")
-    .eq("id", patientId)
-    .limit(1)
-    .maybeSingle();
-  if (!patient) {
-    res.status(404).json({ error: "not_found" });
-    return;
-  }
-
-  const { data: row, error } = await supabase
-    .schema("resupply")
-    .from("equipment_assets")
-    .insert({
-      patient_id: patientId,
-      prescription_id: b.prescriptionId ?? null,
-      device_class: b.deviceClass,
-      manufacturer: b.manufacturer,
-      model: b.model,
-      serial_number: b.serialNumber,
-      pressure_setting: b.pressureSetting ?? null,
-      humidifier_setting: b.humidifierSetting ?? null,
-      dispensed_at: b.dispensedAt ?? null,
-      dispensing_note: b.dispensingNote ?? null,
-      notes: b.notes ?? null,
-      status: "active",
-    })
-    .select("id")
-    .single();
-  if (error) {
-    const code = (error as { code?: string }).code;
-    if (code === "23505") {
-      // Unique violation on (manufacturer, serial_number) — same
-      // device is already on file. Only surface cross-patient
-      // information when the existing row belongs to THIS patient;
-      // otherwise return a generic 409 so an admin can't probe
-      // arbitrary serials to enumerate equipment registered to
-      // other patients (or harvest their equipment_assets.id).
-      const { data: existing } = await supabase
-        .schema("resupply")
-        .from("equipment_assets")
-        .select("id, patient_id")
-        .eq("manufacturer", b.manufacturer)
-        .eq("serial_number", b.serialNumber)
-        .limit(1)
-        .maybeSingle();
-      const sameOwner = existing && existing.patient_id === patientId;
-      res.status(409).json({
-        error: "serial_already_registered",
-        message: sameOwner
-          ? "This serial number is already on this patient's record."
-          : "This serial number is already registered. If you believe this is an error, contact support to verify ownership.",
-        // Only return existingId for same-patient conflicts; an
-        // attacker enumerating serials must not learn other
-        // patients' equipment row ids.
-        existingId: sameOwner ? (existing?.id ?? null) : null,
+router.post(
+  "/patients/:id/equipment",
+  adminWriteRateLimiter,
+  requireAdmin,
+  async (req, res) => {
+    const idParsed = idParam.safeParse(req.params);
+    if (!idParsed.success) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    const parsed = createBody.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: "invalid_body",
+        issues: parsed.error.issues.map((i) => ({
+          path: i.path.join("."),
+          message: i.message,
+        })),
       });
       return;
     }
-    throw error;
-  }
+    const b = parsed.data;
+    const patientId = idParsed.data.id;
+    const supabase = getSupabaseServiceRoleClient();
 
-  await logAudit({
-    action: "patient.equipment.create",
-    adminEmail: req.adminEmail ?? null,
-    adminUserId: req.adminUserId ?? null,
-    targetTable: "equipment_assets",
-    targetId: row.id,
-    metadata: {
-      patient_id: patientId,
-      device_class: b.deviceClass,
-      manufacturer: b.manufacturer,
-      // Serial intentionally withheld from audit metadata — recall-
-      // workflow audit happens at the recall-scan endpoint, not on
-      // device creation, and the bare serial is PHI-adjacent.
-    },
-    ip: req.ip ?? null,
-    userAgent: req.get("user-agent") ?? null,
-  }).catch((err) => {
-    logger.warn({ err }, "patient.equipment.create audit write failed");
-  });
+    const { data: patient } = await supabase
+      .schema("resupply")
+      .from("patients")
+      .select("id")
+      .eq("id", patientId)
+      .limit(1)
+      .maybeSingle();
+    if (!patient) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
 
-  res.status(201).json({ id: row.id });
-});
+    const { data: row, error } = await supabase
+      .schema("resupply")
+      .from("equipment_assets")
+      .insert({
+        patient_id: patientId,
+        prescription_id: b.prescriptionId ?? null,
+        device_class: b.deviceClass,
+        manufacturer: b.manufacturer,
+        model: b.model,
+        serial_number: b.serialNumber,
+        pressure_setting: b.pressureSetting ?? null,
+        humidifier_setting: b.humidifierSetting ?? null,
+        dispensed_at: b.dispensedAt ?? null,
+        dispensing_note: b.dispensingNote ?? null,
+        notes: b.notes ?? null,
+        status: "active",
+      })
+      .select("id")
+      .single();
+    if (error) {
+      const code = (error as { code?: string }).code;
+      if (code === "23505") {
+        // Unique violation on (manufacturer, serial_number) — same
+        // device is already on file. Only surface cross-patient
+        // information when the existing row belongs to THIS patient;
+        // otherwise return a generic 409 so an admin can't probe
+        // arbitrary serials to enumerate equipment registered to
+        // other patients (or harvest their equipment_assets.id).
+        const { data: existing } = await supabase
+          .schema("resupply")
+          .from("equipment_assets")
+          .select("id, patient_id")
+          .eq("manufacturer", b.manufacturer)
+          .eq("serial_number", b.serialNumber)
+          .limit(1)
+          .maybeSingle();
+        const sameOwner = existing && existing.patient_id === patientId;
+        res.status(409).json({
+          error: "serial_already_registered",
+          message: sameOwner
+            ? "This serial number is already on this patient's record."
+            : "This serial number is already registered. If you believe this is an error, contact support to verify ownership.",
+          // Only return existingId for same-patient conflicts; an
+          // attacker enumerating serials must not learn other
+          // patients' equipment row ids.
+          existingId: sameOwner ? (existing?.id ?? null) : null,
+        });
+        return;
+      }
+      throw error;
+    }
+
+    await logAudit({
+      action: "patient.equipment.create",
+      adminEmail: req.adminEmail ?? null,
+      adminUserId: req.adminUserId ?? null,
+      targetTable: "equipment_assets",
+      targetId: row.id,
+      metadata: {
+        patient_id: patientId,
+        device_class: b.deviceClass,
+        manufacturer: b.manufacturer,
+        // Serial intentionally withheld from audit metadata — recall-
+        // workflow audit happens at the recall-scan endpoint, not on
+        // device creation, and the bare serial is PHI-adjacent.
+      },
+      ip: req.ip ?? null,
+      userAgent: req.get("user-agent") ?? null,
+    }).catch((err) => {
+      logger.warn({ err }, "patient.equipment.create audit write failed");
+    });
+
+    res.status(201).json({ id: row.id });
+  },
+);
 
 router.patch(
   "/patients/:id/equipment/:assetId",
+  adminWriteRateLimiter,
   requireAdmin,
   async (req, res) => {
     const idParsed = idAndAssetParam.safeParse(req.params);
