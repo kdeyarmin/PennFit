@@ -34,55 +34,70 @@ fresh full replay:
 # first unapplied migration → cutoff = (that prefix) - 1.
 ```
 
-## Procedure
+### The payer-data caveat (why `--baseline-except`)
 
-> Run from a machine with the **production** `DATABASE_URL` exported. The
-> migrator takes a session advisory lock, so it is safe to run while the app
-> is live. Each migration commits in its own transaction.
+`0142_payer_profile_completeness` and `0149_pa_payers_phase2` are **below**
+the cutoff, but their **value backfill + 25-payer seed never ran on prod** —
+only their columns were added (via `0186`). So they must NOT be baselined as
+"applied"; they need to actually run (both are fully idempotent: `ADD COLUMN
+IF NOT EXISTS`, DO-guarded constraints, `INSERT … ON CONFLICT DO NOTHING`,
+slug-targeted `UPDATE`s). `--baseline-except` leaves them pending so the
+normal run re-applies them ahead of `0206`/`0207` (which then reconcile +
+PA-note all 51 payers). Confirm with a fresh full-replay diff before relying
+on the exact cutoff/except set.
+
+## Procedure A — env-driven, via the deploy hook (recommended, no shell)
+
+The `preDeployCommand` (`deploy-migrate.mjs`) performs the whole one-time
+adoption from env vars, using the service's own `DATABASE_URL`. On the
+Railway service, for **one** deploy set:
+
+```
+RUN_DB_MIGRATIONS=true
+MIGRATIONS_BASELINE_THROUGH=0187
+MIGRATIONS_BASELINE_EXCEPT=0142_payer_profile_completeness,0149_pa_payers_phase2
+```
+
+then deploy. The hook baselines `0000–0187` (except the two payer
+migrations), then applies the pending set: `0142` + `0149` (backfill +
+25-payer seed) and the `0188–0207` tail (15 tables + `0206`/`0207`
+reconcile). The deploy is gated on success (a failure keeps the previous
+release live).
+
+**After the cutover deploy succeeds, delete `MIGRATIONS_BASELINE_THROUGH`
+and `MIGRATIONS_BASELINE_EXCEPT`** (leave `RUN_DB_MIGRATIONS=true`). From
+then on every deploy runs a normal (usually no-op) migrate. Re-running with
+the baseline vars still set is harmless — the baseline is idempotent.
+
+End state to expect: **51 payers** (50 with claims/flat addresses; only the
+`pa_chip` umbrella has none), **51 PA notes**, **~152 base tables**, ledger
+fully populated (227 rows), 0 payers at `enrollment_status='unknown'`.
+
+## Procedure B — manual CLI (alternative; needs shell + prod `DATABASE_URL`)
+
+> The migrator takes a session advisory lock, so it is safe to run while the
+> app is live; each migration commits in its own transaction. Easiest with a
+> Railway one-off shell (`railway run --service <api> bash`), which injects
+> the service `DATABASE_URL`.
 
 ```bash
-export DATABASE_URL='postgresql://…prod…'
+# 1. Baseline 0000–0187, leaving the two payer migrations pending.
+node lib/resupply-db/scripts/migrate.mjs \
+  --baseline-through=0187 \
+  --baseline-except=0142_payer_profile_completeness,0149_pa_payers_phase2
 
-# 1. Baseline the already-applied range (stamps the ledger, runs NO SQL).
-node lib/resupply-db/scripts/migrate.mjs --baseline-through=0187
-
-# 2. Apply the pending tail (0188.. plus anything unledgered above the
-#    cutoff). Review the printed "applied …" list.
+# 2. Apply the pending set (the two payer migrations + the 0188–0207 tail).
 node lib/resupply-db/scripts/migrate.mjs
 
-# 3. Verify: table count matches a fresh full replay; ledger is populated.
+# 3. Verify table count + payer count + ledger as above.
 ```
 
-### The `0149` seed caveat
+## After adoption: auto-migrate is on
 
-`0149_pa_payers_phase2` is **below** the cutoff (so it gets baselined as
-"applied"), but its **seed of 25 payers never actually ran on prod** — only
-its columns were backfilled (via `0186`). After the steps above, prod still
-has 26 of 51 payers. The `0149` body is fully idempotent (`ADD COLUMN IF NOT
-EXISTS`, DO-guarded constraints, `INSERT … ON CONFLICT (slug) DO NOTHING`),
-so apply just its seed once, then re-run the (idempotent) `0206`/`0207`
-payer migrations so the newly-inserted rows get their derived fields + PA
-notes:
-
-```bash
-# Apply the 0149 INSERT block (idempotent) + re-run 0206/0207. These can be
-# run directly against prod via the Supabase SQL editor / MCP since all three
-# are idempotent and were validated against a full-chain replay.
-```
-
-(If you prefer the migrator to do it: `DELETE FROM drizzle.resupply_migrations
-WHERE hash = '<sha256 of 0149 file>'` then re-run `migrate.mjs` — it will
-re-apply `0149` idempotently. `0206`/`0207` are above the cutoff and already
-ran in step 2.)
-
-## Turn on auto-migrate
-
-Once the ledger is baselined and the tail is applied:
-
-1. Set **`RUN_DB_MIGRATIONS=true`** on the Railway service.
-2. Redeploy. From now on every deploy runs `migrate.mjs` in the
-   `preDeployCommand`. A migration error **fails the deploy** and Railway
-   keeps the previous release live (it does not take the site down).
+With `RUN_DB_MIGRATIONS=true` (and the baseline vars removed), every deploy
+runs `migrate.mjs` in the `preDeployCommand`. A migration error **fails the
+deploy** and Railway keeps the previous release live (it does not take the
+site down).
 
 ## Rollback / safety notes
 
