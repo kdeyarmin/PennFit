@@ -6,23 +6,31 @@
 // and keeping it model-free means the weekly send never depends on an AI
 // vendor key or a flaky completion. (A Claude narrative over these numbers
 // is an easy future enhancement — see the roadmap.) Fail-soft like the
-// other notify jobs: missing SendGrid or empty RESUPPLY_ADMIN_EMAILS →
-// log + return, no throw.
+// metric-alerts-notify job: missing SendGrid config or empty
+// RESUPPLY_ADMIN_EMAILS → log + return, never throw / never block.
 //
 // PHI posture: metrics_daily + metric_alerts are aggregate KPI data
 // (counts / dollars / ratios), no patient identifiers — safe to email to
 // the owner distribution.
 
-import { createSendgridClient } from "@workspace/resupply-email";
+import type PgBoss from "pg-boss";
+
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import {
+  createSendgridClient,
+  EmailConfigError,
+} from "@workspace/resupply-email";
 
 import { logger } from "../../lib/logger";
-import { createQueueWithDlq, CRON_SCAN_QUEUE_OPTS } from "../queue-helpers";
+import {
+  createQueueWithDlq,
+  VENDOR_SEND_QUEUE_OPTS,
+} from "../lib/queue-options";
 
-const QUEUE = "owner.weekly-digest";
+export const OWNER_DIGEST_JOB = "owner.weekly-digest";
 // Mondays 13:00 UTC — Monday morning in the US, after the weekend's
 // snapshots have landed.
-const CRON = "0 13 * * 1";
+const OWNER_DIGEST_CRON = "0 13 * * 1";
 
 export type MetricUnit = "count" | "cents" | "ratio" | "pct" | "days";
 
@@ -182,9 +190,19 @@ export function formatDigestText(digest: OwnerDigest): string {
   return lines.join("\n");
 }
 
+export function parseRecipientList(raw: string | undefined): string[] {
+  if (!raw) return [];
+  return raw
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter((s) => s.length > 0 && s.includes("@"));
+}
+
+type Sendgrid = ReturnType<typeof createSendgridClient>;
+
 interface DigestDeps {
   sendEmail?: (
-    client: NonNullable<ReturnType<typeof createSendgridClient>>,
+    client: Sendgrid,
     recipients: string[],
     subject: string,
     body: string,
@@ -235,13 +253,10 @@ export async function runOwnerDigest(
     })),
   );
 
-  const recipients = (process.env.RESUPPLY_ADMIN_EMAILS ?? "")
-    .split(",")
-    .map((s) => s.trim())
-    .filter((s) => s.length > 0);
+  const recipients = parseRecipientList(process.env.RESUPPLY_ADMIN_EMAILS);
   if (recipients.length === 0) {
     logger.info(
-      { event: "owner_digest_no_recipients" },
+      { event: "owner_digest.no_recipients" },
       "owner.weekly-digest: RESUPPLY_ADMIN_EMAILS empty; skipping",
     );
     return {
@@ -252,23 +267,28 @@ export async function runOwnerDigest(
     };
   }
 
-  const client = createSendgridClient();
-  if (!client) {
-    logger.info(
-      { event: "owner_digest_no_sendgrid" },
-      "owner.weekly-digest: SendGrid not configured; skipping send",
-    );
-    return {
-      hasData: digest.hasData,
-      emailed: 0,
-      skippedNoSendgrid: true,
-      skippedNoRecipients: false,
-    };
+  let sendgrid: Sendgrid;
+  try {
+    sendgrid = createSendgridClient();
+  } catch (err) {
+    if (err instanceof EmailConfigError) {
+      logger.info(
+        { event: "owner_digest.email_unconfigured", message: err.message },
+        "owner.weekly-digest: email not configured; skipping send",
+      );
+      return {
+        hasData: digest.hasData,
+        emailed: 0,
+        skippedNoSendgrid: true,
+        skippedNoRecipients: false,
+      };
+    }
+    throw err;
   }
 
   const sendImpl = deps.sendEmail ?? sendDigestEmail;
   await sendImpl(
-    client,
+    sendgrid,
     recipients,
     `PennFit weekly digest — week of ${digest.windowStart}`,
     formatDigestText(digest),
@@ -283,20 +303,49 @@ export async function runOwnerDigest(
 }
 
 async function sendDigestEmail(
-  client: NonNullable<ReturnType<typeof createSendgridClient>>,
+  sendgrid: Sendgrid,
   recipients: string[],
   subject: string,
   body: string,
 ): Promise<void> {
-  await client.sendEmail({ to: recipients, subject, text: body });
+  // Per-recipient send (the shared client validates a single `to`).
+  for (const to of recipients) {
+    try {
+      await sendgrid.sendEmail({ to, subject, text: body });
+    } catch (err) {
+      logger.warn(
+        { err: err instanceof Error ? err.message : err, to },
+        "owner.weekly-digest: send failed for one recipient",
+      );
+    }
+  }
 }
 
-export async function registerOwnerDigestJob(
-  boss: import("pg-boss").default,
-): Promise<void> {
-  await createQueueWithDlq(boss, QUEUE);
-  await boss.schedule(QUEUE, CRON, {}, CRON_SCAN_QUEUE_OPTS);
-  await boss.work(QUEUE, async () => {
-    await runOwnerDigest();
+export async function registerOwnerDigestJob(boss: PgBoss): Promise<void> {
+  await createQueueWithDlq(boss, OWNER_DIGEST_JOB, VENDOR_SEND_QUEUE_OPTS);
+  await boss.work(OWNER_DIGEST_JOB, async () => {
+    try {
+      const stats = await runOwnerDigest();
+      logger.info(
+        { event: "owner_digest.completed", ...stats },
+        "owner.weekly-digest: completed",
+      );
+    } catch (err) {
+      logger.error(
+        {
+          err:
+            err instanceof Error
+              ? { name: err.name, message: err.message }
+              : err,
+        },
+        "owner.weekly-digest: failed",
+      );
+      throw err;
+    }
   });
+  await boss.schedule(OWNER_DIGEST_JOB, OWNER_DIGEST_CRON);
+  logger.info(
+    { queue: OWNER_DIGEST_JOB, cron: OWNER_DIGEST_CRON },
+    "owner weekly-digest worker registered",
+  );
 }

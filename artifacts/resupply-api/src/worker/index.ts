@@ -50,6 +50,7 @@ import { registerTherapyFleetSnapshotJob } from "./jobs/therapy-fleet-daily-snap
 import { registerMetricsSnapshotJob } from "./jobs/metrics-snapshot.js";
 import { registerMetricAlertsEvaluatorJob } from "./jobs/metric-alerts-evaluator.js";
 import { registerMetricAlertsNotifyJob } from "./jobs/metric-alerts-notify.js";
+import { registerOwnerDigestJob } from "./jobs/owner-digest.js";
 import { registerTherapyFleetAlertsJob } from "./jobs/therapy-fleet-alerts-scan.js";
 import { registerCoachingProgressJob } from "./jobs/coaching-plan-progress.js";
 import { registerPriorAuthExpirySweepJob } from "./jobs/prior-auth-expiry-sweep.js";
