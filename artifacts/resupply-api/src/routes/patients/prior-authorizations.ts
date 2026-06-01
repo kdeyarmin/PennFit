@@ -30,6 +30,10 @@ type PriorAuthorizationUpdate =
   Database["resupply"]["Tables"]["prior_authorizations"]["Update"];
 
 import { logger } from "../../lib/logger";
+import {
+  adminReadRateLimiter,
+  adminWriteRateLimiter,
+} from "../../middlewares/admin-rate-limit";
 import { requireAdmin } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
@@ -111,6 +115,7 @@ const patchBody = z
 
 router.get(
   "/patients/:id/prior-authorizations",
+  adminReadRateLimiter,
   requireAdmin,
   async (req, res) => {
     const idParsed = idParam.safeParse(req.params);
@@ -153,6 +158,7 @@ router.get(
 
 router.post(
   "/patients/:id/prior-authorizations",
+  adminWriteRateLimiter,
   requireAdmin,
   async (req, res) => {
     const idParsed = idParam.safeParse(req.params);
@@ -235,6 +241,7 @@ router.post(
 
 router.patch(
   "/patients/:id/prior-authorizations/:paId",
+  adminWriteRateLimiter,
   requireAdmin,
   async (req, res) => {
     const idParsed = idAndPaParam.safeParse(req.params);

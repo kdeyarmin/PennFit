@@ -15,7 +15,10 @@ import { z } from "zod";
 
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
-import { adminRateLimit } from "../../middlewares/admin-rate-limit";
+import {
+  adminReadRateLimiter,
+  adminWriteRateLimiter,
+} from "../../middlewares/admin-rate-limit";
 import { requireAdmin } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
@@ -39,18 +42,13 @@ const phoneSchema = z
   })
   .strict();
 
-const adminReadRateLimiter = adminRateLimit({
-  name: "agent_availability.read",
-  preset: "read",
-});
-
 router.get(
   "/admin/agent-availability",
   // Rate-limit BEFORE the auth gate so an unauthenticated flood is
   // throttled too (CodeQL "missing rate limiting" wants the limiter
-  // ahead of the authorization middleware). adminRateLimit keys on
-  // req.adminUserId post-auth and falls back to a shared "no-actor"
-  // bucket pre-auth.
+  // ahead of the authorization middleware). adminReadRateLimiter keys
+  // on req.adminUserId once requireAdmin runs, with an IP fallback for
+  // the pre-auth window.
   adminReadRateLimiter,
   requireAdmin,
   async (_req, res) => {
@@ -114,7 +112,7 @@ router.get(
 
 router.put(
   "/admin/agent-availability/me/phone",
-  adminRateLimit({ name: "agent_phone.set", preset: "mutation" }),
+  adminWriteRateLimiter,
   requireAdmin,
   async (req, res) => {
     const parsed = phoneSchema.safeParse(req.body);
@@ -166,8 +164,8 @@ router.put(
 
 router.patch(
   "/admin/agent-availability/me",
+  adminWriteRateLimiter,
   requireAdmin,
-  adminRateLimit({ name: "agent_availability.set", preset: "mutation" }),
   async (req, res) => {
     const parsed = patchSchema.safeParse(req.body);
     if (!parsed.success) {

@@ -126,3 +126,33 @@ export const adminReadRateLimiter: RequestHandler = expressRateLimit({
     req.socket.remoteAddress ??
     "unknown",
 });
+
+// Shared write-endpoint limiter for admin mutations (POST/PATCH/PUT/DELETE).
+//
+// Same rationale as adminReadRateLimiter above: built DIRECTLY from
+// express-rate-limit (not the local ./rate-limit wrapper or the
+// adminRateLimit factory) because CodeQL's js/missing-rate-limiting query
+// only recognizes the upstream middleware at the call site — it can't
+// trace our factory wrappers, so wrapped mutation routes kept re-flagging
+// as "missing rate limiting". Apply it BEFORE the auth gate on admin
+// mutation routes; like the read limiter it keys per admin actor once
+// requireAdmin has run, with an IP fallback for the pre-auth window.
+//
+// A SEPARATE bucket from the read limiter is deliberate: a burst of
+// writes can't exhaust the read budget (or vice versa), so a busy CSR's
+// mutations never get blocked behind their own dashboard polling. 300/hr
+// — generous for any human CSR mutation workflow (mutations are far
+// rarer than reads, and trust-proxy=1 keys per real client IP) while
+// keeping a runaway client or a stolen session from driving unbounded
+// inserts/updates or paid voice/SMS sends.
+export const adminWriteRateLimiter: RequestHandler = expressRateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 300,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) =>
+    (req as { adminUserId?: string }).adminUserId ??
+    req.ip ??
+    req.socket.remoteAddress ??
+    "unknown",
+});

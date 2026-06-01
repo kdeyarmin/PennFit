@@ -33,6 +33,7 @@ import {
 } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
+import { adminWriteRateLimiter } from "../../middlewares/admin-rate-limit";
 import { requireAdmin } from "../../middlewares/requireAdmin";
 
 type PatientsUpdate = Database["resupply"]["Tables"]["patients"]["Update"];
@@ -77,151 +78,160 @@ const bodySchema = z
 
 const router: IRouter = Router();
 
-router.patch("/patients/:id", requireAdmin, async (req, res) => {
-  const idParsed = idParam.safeParse(req.params);
-  if (!idParsed.success) {
-    res.status(404).json({ error: "not_found" });
-    return;
-  }
-
-  const bodyParsed = bodySchema.safeParse(req.body);
-  if (!bodyParsed.success) {
-    res.status(400).json({
-      error: "invalid_body",
-      issues: bodyParsed.error.issues.map((i) => ({
-        path: i.path.join("."),
-        message: i.message,
-      })),
-    });
-    return;
-  }
-
-  const { id } = idParsed.data;
-  const body = bodyParsed.data;
-
-  // Build the set of columns to update. Only keys actually present
-  // in the body are touched; absent keys leave the column alone.
-  // `expectedUpdatedAt` is a precondition, not a column — it never
-  // lands in `updates`.
-  const updates: PatientsUpdate = {};
-  if ("insurancePayer" in body)
-    updates.insurance_payer = body.insurancePayer ?? null;
-  if ("cadenceOverrideDays" in body)
-    updates.cadence_override_days = body.cadenceOverrideDays ?? null;
-  if ("channelPreference" in body)
-    updates.channel_preference = body.channelPreference ?? null;
-  if ("status" in body && body.status) updates.status = body.status;
-
-  const supabase = getSupabaseServiceRoleClient();
-
-  if (Object.keys(updates).length === 0) {
-    // Empty body is a no-op rather than an error so dashboards don't
-    // have to special-case "user clicked save without changing
-    // anything". We still need to return a current `updatedAt` so
-    // the client's optimistic-concurrency token stays usable.
-    const { data: current, error } = await supabase
-      .schema("resupply")
-      .from("patients")
-      .select("id, updated_at")
-      .eq("id", id)
-      .limit(1)
-      .maybeSingle();
-    if (error) throw error;
-    if (!current) {
+router.patch(
+  "/patients/:id",
+  adminWriteRateLimiter,
+  requireAdmin,
+  async (req, res) => {
+    const idParsed = idParam.safeParse(req.params);
+    if (!idParsed.success) {
       res.status(404).json({ error: "not_found" });
       return;
     }
-    res.status(200).json({
-      id,
-      changed: [],
-      updatedAt: current.updated_at,
-    });
-    return;
-  }
 
-  updates.updated_at = new Date().toISOString();
+    const bodyParsed = bodySchema.safeParse(req.body);
+    if (!bodyParsed.success) {
+      res.status(400).json({
+        error: "invalid_body",
+        issues: bodyParsed.error.issues.map((i) => ({
+          path: i.path.join("."),
+          message: i.message,
+        })),
+      });
+      return;
+    }
 
-  // If a precondition was supplied, gate the UPDATE on
-  // `updated_at = $expected`. The dashboard echoes back the exact
-  // ISO string it received from a prior response, so a literal
-  // `.eq()` matches reliably for values written through this code
-  // path. The original SQL implementation used
-  // `date_trunc('milliseconds', updated_at) = $expected` to defend
-  // against `pg` lossily reparsing microsecond Postgres timestamps
-  // into millisecond JS `Date`s; PostgREST returns the full
-  // string, so the lossiness disappears and the trunc isn't needed.
-  const expectedUpdatedAt = body.expectedUpdatedAt;
-  let updateQuery = supabase
-    .schema("resupply")
-    .from("patients")
-    .update(updates)
-    .eq("id", id);
-  if (expectedUpdatedAt) {
-    updateQuery = updateQuery.eq("updated_at", expectedUpdatedAt);
-  }
-  const { data: result, error: updErr } =
-    await updateQuery.select("id, updated_at");
-  if (updErr) throw updErr;
+    const { id } = idParsed.data;
+    const body = bodyParsed.data;
 
-  if (!result || result.length === 0) {
-    if (expectedUpdatedAt) {
-      // The UPDATE matched nothing — either the patient was deleted
-      // or its `updated_at` moved. Re-SELECT to disambiguate so the
-      // dashboard knows whether to refetch (409) or navigate away
-      // (404). Without this disambiguation we'd punish a stale write
-      // with the same response as a missing row, and the admin
-      // would think the patient vanished.
-      const { data: exists, error: existsErr } = await supabase
+    // Build the set of columns to update. Only keys actually present
+    // in the body are touched; absent keys leave the column alone.
+    // `expectedUpdatedAt` is a precondition, not a column — it never
+    // lands in `updates`.
+    const updates: PatientsUpdate = {};
+    if ("insurancePayer" in body)
+      updates.insurance_payer = body.insurancePayer ?? null;
+    if ("cadenceOverrideDays" in body)
+      updates.cadence_override_days = body.cadenceOverrideDays ?? null;
+    if ("channelPreference" in body)
+      updates.channel_preference = body.channelPreference ?? null;
+    if ("status" in body && body.status) updates.status = body.status;
+
+    const supabase = getSupabaseServiceRoleClient();
+
+    if (Object.keys(updates).length === 0) {
+      // Empty body is a no-op rather than an error so dashboards don't
+      // have to special-case "user clicked save without changing
+      // anything". We still need to return a current `updatedAt` so
+      // the client's optimistic-concurrency token stays usable.
+      const { data: current, error } = await supabase
         .schema("resupply")
         .from("patients")
-        .select("id")
+        .select("id, updated_at")
         .eq("id", id)
         .limit(1)
         .maybeSingle();
-      if (existsErr) throw existsErr;
-      if (exists) {
-        res.status(409).json({
-          error: "stale_patient",
-          message:
-            "This patient was changed by someone else since you opened it. Please refresh and re-apply your edit.",
-        });
+      if (error) throw error;
+      if (!current) {
+        res.status(404).json({ error: "not_found" });
         return;
       }
+      res.status(200).json({
+        id,
+        changed: [],
+        updatedAt: current.updated_at,
+      });
+      return;
     }
-    res.status(404).json({ error: "not_found" });
-    return;
-  }
 
-  // Audit: record which columns changed; do NOT record the new values
-  // (they round-trip in the dashboard already; logging values would
-  // duplicate state into the audit log unnecessarily).
-  const changedColumns = Object.keys(updates).filter((k) => k !== "updated_at");
-  try {
-    await logAudit({
-      action: "patient.update",
-      adminEmail: req.adminEmail ?? null,
-      adminUserId: req.adminUserId ?? null,
-      targetTable: "patients",
-      targetId: id,
-      ip: req.ip ?? null,
-      userAgent: req.get("user-agent") ?? null,
-      metadata: { columns: changedColumns },
-    });
-  } catch (err) {
-    logger.error(
-      {
-        err:
-          err instanceof Error ? { name: err.name, message: err.message } : err,
-      },
-      "patients.update: audit write failed",
+    updates.updated_at = new Date().toISOString();
+
+    // If a precondition was supplied, gate the UPDATE on
+    // `updated_at = $expected`. The dashboard echoes back the exact
+    // ISO string it received from a prior response, so a literal
+    // `.eq()` matches reliably for values written through this code
+    // path. The original SQL implementation used
+    // `date_trunc('milliseconds', updated_at) = $expected` to defend
+    // against `pg` lossily reparsing microsecond Postgres timestamps
+    // into millisecond JS `Date`s; PostgREST returns the full
+    // string, so the lossiness disappears and the trunc isn't needed.
+    const expectedUpdatedAt = body.expectedUpdatedAt;
+    let updateQuery = supabase
+      .schema("resupply")
+      .from("patients")
+      .update(updates)
+      .eq("id", id);
+    if (expectedUpdatedAt) {
+      updateQuery = updateQuery.eq("updated_at", expectedUpdatedAt);
+    }
+    const { data: result, error: updErr } =
+      await updateQuery.select("id, updated_at");
+    if (updErr) throw updErr;
+
+    if (!result || result.length === 0) {
+      if (expectedUpdatedAt) {
+        // The UPDATE matched nothing — either the patient was deleted
+        // or its `updated_at` moved. Re-SELECT to disambiguate so the
+        // dashboard knows whether to refetch (409) or navigate away
+        // (404). Without this disambiguation we'd punish a stale write
+        // with the same response as a missing row, and the admin
+        // would think the patient vanished.
+        const { data: exists, error: existsErr } = await supabase
+          .schema("resupply")
+          .from("patients")
+          .select("id")
+          .eq("id", id)
+          .limit(1)
+          .maybeSingle();
+        if (existsErr) throw existsErr;
+        if (exists) {
+          res.status(409).json({
+            error: "stale_patient",
+            message:
+              "This patient was changed by someone else since you opened it. Please refresh and re-apply your edit.",
+          });
+          return;
+        }
+      }
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+
+    // Audit: record which columns changed; do NOT record the new values
+    // (they round-trip in the dashboard already; logging values would
+    // duplicate state into the audit log unnecessarily).
+    const changedColumns = Object.keys(updates).filter(
+      (k) => k !== "updated_at",
     );
-  }
+    try {
+      await logAudit({
+        action: "patient.update",
+        adminEmail: req.adminEmail ?? null,
+        adminUserId: req.adminUserId ?? null,
+        targetTable: "patients",
+        targetId: id,
+        ip: req.ip ?? null,
+        userAgent: req.get("user-agent") ?? null,
+        metadata: { columns: changedColumns },
+      });
+    } catch (err) {
+      logger.error(
+        {
+          err:
+            err instanceof Error
+              ? { name: err.name, message: err.message }
+              : err,
+        },
+        "patients.update: audit write failed",
+      );
+    }
 
-  res.status(200).json({
-    id,
-    changed: changedColumns,
-    updatedAt: result[0]!.updated_at,
-  });
-});
+    res.status(200).json({
+      id,
+      changed: changedColumns,
+      updatedAt: result[0]!.updated_at,
+    });
+  },
+);
 
 export default router;
