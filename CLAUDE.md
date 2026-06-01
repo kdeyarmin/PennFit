@@ -75,21 +75,21 @@ side is worse than a visible conflict.
 
 ## Repository map
 
-This is a `pnpm` workspaces monorepo (Node v24, TypeScript ~6.0, pnpm 11.4).
+This is a `pnpm` workspaces monorepo (Node v24, TypeScript ~6.0, pnpm 11.5).
 Workspace globs (`pnpm-workspace.yaml`): `artifacts/*`, `lib/*`,
 `lib/integrations/*`, and `scripts`.
 
-| Path                         | Purpose                                                                                                                                                                                                                                                                                                                                                                                             |
-| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `artifacts/resupply-api`     | Single Express 5 API process. Hosts the storefront/fitter routes (`/api/*`), the resupply admin/voice routes (`/resupply-api/*`), AND the in-process `pg-boss` worker (reminders + PHI sweep) booted from `src/worker/index.ts`.                                                                                                                                                                    |
-| `artifacts/cpap-fitter`      | Customer-facing SPA (Vite + React + Wouter + Tailwind). Mounts the internal admin console at `/admin/*` (gated by `useGetAdminMe`); legacy `/resupply/*` URLs SPA-redirect to `/admin/*` preserving query strings.                                                                                                                                                                                  |
-| `artifacts/shared`           | Cross-artifact static assets (favicons served at root).                                                                                                                                                                                                                                                                                                                                             |
-| `lib/resupply-*`             | Shared workspace packages: `db`, `auth` (+ `auth-react`), `messaging`, `email`, `ai`, `telecom`, `audit`, `domain`, `secrets`, `reminders`, `templates`.                                                                                                                                                                                                                                            |
-| `lib/resupply-integrations*` | Partner-connectivity layer (therapy-cloud pulls, inbound order webhooks, payer/claims). `lib/resupply-integrations` is the shared contract; the per-vendor adapters live alongside it. See **Integrations layer** below.                                                                                                                                                                            |
-| `lib/api-client-react`       | Hand-maintained API client + React hooks (`src/{admin,storefront}/generated/`).                                                                                                                                                                                                                                                                                                                     |
-| `scripts/`                   | Architecture/route/migration drift checks (`check-resupply-architecture`, `check-admin-route-gates`, `check-resupply-migration-prefix`, `check-ts-syntax`) plus operator utilities under `src/`: `preflight-prod-env.ts` (env validator), `verify-deploy.ts` (post-deploy routing probe), `auth-bootstrap-admin.ts` / `auth-set-admin-password.ts`, `seed-stripe-products.ts`, `probe-supabase.ts`. |
-| `e2e/`                       | Playwright end-to-end suite (storefront load, results-page resilience, axe a11y). Run from the repo root, not a workspace.                                                                                                                                                                                                                                                                          |
-| `docs/`                      | Architecture notes, post-mortems, production readiness, runbooks.                                                                                                                                                                                                                                                                                                                                   |
+| Path                         | Purpose                                                                                                                                                                                                                                                                                                                                                                                                |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `artifacts/resupply-api`     | Single Express 5 API process. Hosts the storefront/fitter routes (`/api/*`), the resupply admin/voice routes (`/resupply-api/*`), AND the in-process `pg-boss` worker (reminders + PHI sweep) booted from `src/worker/index.ts`.                                                                                                                                                                       |
+| `artifacts/cpap-fitter`      | Customer-facing SPA (Vite + React + Wouter + Tailwind). Mounts the internal admin console at `/admin/*` (gated by `useGetAdminMe`); legacy `/resupply/*` URLs SPA-redirect to `/admin/*` preserving query strings.                                                                                                                                                                                     |
+| `artifacts/shared`           | Cross-artifact static assets (favicons served at root).                                                                                                                                                                                                                                                                                                                                                |
+| `lib/resupply-*`             | Shared workspace packages: `db`, `auth` (+ `auth-react`), `messaging`, `email`, `ai`, `telecom`, `audit`, `domain`, `secrets`, `reminders`, `templates`.                                                                                                                                                                                                                                               |
+| `lib/resupply-integrations*` | Partner-connectivity layer (therapy-cloud pulls, inbound order webhooks, payer/claims). `lib/resupply-integrations` is the shared contract; the per-vendor adapters live alongside it. See **Integrations layer** below.                                                                                                                                                                               |
+| `lib/api-client-react`       | Hand-maintained API client + React hooks (`src/{admin,storefront}/generated/`).                                                                                                                                                                                                                                                                                                                        |
+| `scripts/`                   | Architecture/route/migration drift checks (`check-resupply-architecture`, `check-admin-route-gates`, `check-resupply-migration-prefix`, `ci-check-ts-syntax`) plus operator utilities under `src/`: `preflight-prod-env.ts` (env validator), `verify-deploy.ts` (post-deploy routing probe), `auth-bootstrap-admin.ts` / `auth-set-admin-password.ts`, `seed-stripe-products.ts`, `probe-supabase.ts`. |
+| `e2e/`                       | Playwright end-to-end suite (storefront load, results-page resilience, axe a11y). Run from the repo root, not a workspace.                                                                                                                                                                                                                                                                             |
+| `docs/`                      | Architecture notes, post-mortems, production readiness, runbooks.                                                                                                                                                                                                                                                                                                                                      |
 
 There is **one** customer-facing site (`pennfit.up.railway.app/` or your
 bound custom domain). The former separate `api-server`,
@@ -167,16 +167,15 @@ correctness, not style:
   is a no-op stub kept for back-compat with 150+ callsites — don't
   write new audit logic against it. `RESUPPLY_AUDIT_HMAC_KEY` is no
   longer read by any code path. Compliance is now handled out of band
-  by the business owner. The four historical `audit_log` readers
+  by the business owner. The three historical `audit_log` readers
   (`/admin/delivery-failures` system-events stream,
-  `/admin/feature-flags/activity`, `/admin/analytics/csr-productivity`,
-  and the dashboard's PHI-sweep status helper) now short-circuit to
+  `/admin/feature-flags/activity`, and
+  `/admin/analytics/csr-productivity`) now short-circuit to
   route-specific degraded responses (for example, delivery failures
-  returns `auditEventsUnavailable: true`, while the PHI-sweep status
-  helper returns `null`) so the SPA can render an explicit "no longer
-  tracked" notice; new readers must NOT add `.from("audit_log")`
-  calls. The `/readyz` DB probe was moved off `audit_log` onto
-  `feature_flags`.
+  returns `auditEventsUnavailable: true`) so the SPA can render an
+  explicit "no longer tracked" notice; new readers must NOT add
+  `.from("audit_log")` calls. The `/readyz` DB probe was moved off
+  `audit_log` onto `feature_flags`.
 - **One From address.** Every outbound email funnels through
   `lib/resupply-email`'s `createSendgridClient()`; `SENDGRID_FROM_EMAIL`
   is `info@pennpaps.com`. Don't bypass the shared client.

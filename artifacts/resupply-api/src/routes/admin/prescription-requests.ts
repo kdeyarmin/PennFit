@@ -378,7 +378,7 @@ router.post(
     if (packet.status !== "draft" && packet.status !== "failed") {
       res.status(409).json({
         error: "invalid_status",
-        message: `Cannot dispatch a packet in status "${packet.status}".`,
+        message: `Cannot dispatch a packet in status "${packet.status.replace(/_/g, " ")}".`,
       });
       return;
     }
@@ -551,7 +551,7 @@ router.post(
     ) {
       res.status(409).json({
         error: "invalid_status",
-        message: `Cannot mark a packet in status "${existing.status}" as signed.`,
+        message: `Cannot mark a packet in status "${existing.status.replace(/_/g, " ")}" as signed.`,
       });
       return;
     }
@@ -614,7 +614,7 @@ router.post(
     if (existing.status === "signed" || existing.status === "void") {
       res.status(409).json({
         error: "invalid_status",
-        message: `Cannot void a packet in status "${existing.status}".`,
+        message: `Cannot void a packet in status "${existing.status.replace(/_/g, " ")}".`,
       });
       return;
     }

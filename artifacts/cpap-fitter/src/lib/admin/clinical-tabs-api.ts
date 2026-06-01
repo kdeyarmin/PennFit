@@ -3,6 +3,8 @@
 // Bundled in one file because they share the same patient-scoped URL
 // shape and the same project-as-camelCase pattern.
 
+import { ApiError } from "@workspace/api-client-react/admin";
+
 import { csrfHeader } from "../csrf";
 
 export type SleepStudyType = "psg" | "hsat" | "split_night" | "re_titration";
@@ -131,7 +133,9 @@ export interface CreatePriorAuthorizationRequest {
 
 async function jsonFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
   const { headers: initHeaders, ...restInit } = init;
-  const res = await fetch(`/resupply-api${path}`, {
+  const method = (init.method ?? "GET").toUpperCase();
+  const url = `/resupply-api${path}`;
+  const res = await fetch(url, {
     ...restInit,
     headers: {
       Accept: "application/json",
@@ -140,14 +144,13 @@ async function jsonFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
     },
   });
   if (!res.ok) {
-    let message = `${res.status} ${res.statusText}`;
+    let data: unknown = null;
     try {
-      const body = (await res.json()) as { message?: string; error?: string };
-      message = body.message ?? body.error ?? message;
+      data = await res.json();
     } catch {
       // ignore
     }
-    throw new Error(message);
+    throw new ApiError(res, data, { method, url });
   }
   return (await res.json()) as T;
 }

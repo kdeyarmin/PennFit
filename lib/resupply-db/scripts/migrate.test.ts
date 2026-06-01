@@ -37,8 +37,39 @@ const dbUrl = process.env.DATABASE_URL;
 describe.skipIf(!dbUrl)("resupply-db migrate.mjs", () => {
   let pool: Pool;
 
-  beforeAll(() => {
+  beforeAll(async () => {
     pool = new Pool({ connectionString: dbUrl, max: 1 });
+
+    // Supabase provisions the `anon`, `authenticated`, and
+    // `service_role` roles as part of the managed platform. A vanilla
+    // Postgres (local dev, or a CI service container) has none of them,
+    // so the GRANT/REVOKE statements in migrations 0169+ abort the
+    // from-scratch replay with `role "anon" does not exist`. Create the
+    // three roles idempotently and best-effort:
+    //   * On real Supabase they already exist, so the CREATE is skipped.
+    //   * On a fresh vanilla PG we connect to as a superuser (the CI
+    //     service container), the CREATE succeeds.
+    //   * If the connecting role somehow lacks CREATEROLE, we swallow
+    //     the error — the only environment that actually needs creation
+    //     is the superuser-on-vanilla-PG case, where it succeeds.
+    // Roles are cluster-global, so creating them here also covers the
+    // temp databases the from-scratch test spins up below.
+    try {
+      await pool.query(`
+        DO $$
+        DECLARE r text;
+        BEGIN
+          FOREACH r IN ARRAY ARRAY['anon', 'authenticated', 'service_role'] LOOP
+            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = r) THEN
+              EXECUTE format('CREATE ROLE %I NOLOGIN', r);
+            END IF;
+          END LOOP;
+        END $$;
+      `);
+    } catch {
+      // Best-effort — see the comment above. On Supabase the roles
+      // already exist, so a failure here doesn't block the replay.
+    }
   });
 
   afterAll(async () => {

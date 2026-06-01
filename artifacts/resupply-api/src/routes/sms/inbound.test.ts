@@ -253,6 +253,42 @@ describe("POST /sms/inbound", () => {
     }
   });
 
+  it("dispatches confirm intent → coverage_blocked holds for CSR, audits blocked_coverage", async () => {
+    setMessagingEnv();
+    stageKnownPatientFlow();
+    placeOrderMock.mockResolvedValue({
+      status: "coverage_blocked",
+      episodeId: EPISODE_ID,
+      patientId: PATIENT_ID,
+      coverage: {
+        reason: "prior_auth_required",
+        payerName: "Cigna",
+        eligibilityCheckId: "elig-9",
+      },
+    });
+
+    const res = await request(makeApp())
+      .post("/resupply-api/sms/inbound")
+      .type("form")
+      .send({
+        From: FROM_PHONE,
+        To: "+12158675309",
+        Body: "YES",
+        MessageSid: "SM_yes_cov",
+        NumMedia: "0",
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.text).toMatch(/verify your insurance coverage/);
+    const audits = logAuditMock.mock.calls.map((c) => c[0]);
+    const blockedAudit = audits.find(
+      (a) => a.action === "messaging.order.blocked_coverage",
+    );
+    expect(blockedAudit).toBeDefined();
+    expect(blockedAudit?.metadata.coverage_reason).toBe("prior_auth_required");
+    expect(blockedAudit?.metadata.eligibility_check_id).toBe("elig-9");
+  });
+
   it("STOP keyword pauses patient + closes regardless of conversation context", async () => {
     setMessagingEnv();
     stageKnownPatientFlow();

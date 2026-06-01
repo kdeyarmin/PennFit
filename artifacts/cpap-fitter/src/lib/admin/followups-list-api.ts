@@ -1,6 +1,8 @@
 // Hand-rolled fetch wrapper for /admin/followups (Phase 18 + 20).
 // Cross-flow queue across shop_customers and patients.
 
+import { ApiError } from "@workspace/api-client-react/admin";
+
 export type AdminFollowupKind = "shop_customer" | "patient";
 
 export interface AdminFollowupRow {
@@ -21,11 +23,18 @@ export interface AdminFollowupsListResponse {
 }
 
 export async function listAllAdminFollowups(): Promise<AdminFollowupsListResponse> {
-  const res = await fetch("/resupply-api/admin/followups", {
+  const url = "/resupply-api/admin/followups";
+  const res = await fetch(url, {
     headers: { Accept: "application/json" },
   });
   if (!res.ok) {
-    throw new Error(`Failed to load followups (${res.status})`);
+    let data: unknown = null;
+    try {
+      data = await res.json();
+    } catch {
+      // body not JSON
+    }
+    throw new ApiError(res, data, { method: "GET", url });
   }
   return (await res.json()) as AdminFollowupsListResponse;
 }

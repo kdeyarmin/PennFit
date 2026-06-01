@@ -3,6 +3,8 @@
 // hand-typed contracts (no OpenAPI generation in this repo since
 // Task #37) and same on-same-origin cookie auth.
 
+import { ApiError } from "@workspace/api-client-react/admin";
+
 import { csrfHeader } from "../csrf";
 
 export interface ReconciliationHeader {
@@ -106,7 +108,13 @@ export async function listReconciliations(): Promise<ReconciliationListItem[]> {
     headers: { Accept: "application/json" },
   });
   if (!res.ok) {
-    throw new Error(`Failed to load reconciliations (${res.status})`);
+    let data: unknown = null;
+    try {
+      data = await res.json();
+    } catch {
+      // non-JSON error body — status alone is enough
+    }
+    throw new ApiError(res, data, { method: "GET", url: res.url });
   }
   const json = (await res.json()) as {
     reconciliations: ReconciliationListItem[];
@@ -121,7 +129,13 @@ export async function getReconciliation(
     headers: { Accept: "application/json" },
   });
   if (!res.ok) {
-    throw new Error(`Failed to load reconciliation (${res.status})`);
+    let data: unknown = null;
+    try {
+      data = await res.json();
+    } catch {
+      // non-JSON error body — status alone is enough
+    }
+    throw new ApiError(res, data, { method: "GET", url: res.url });
   }
   return (await res.json()) as ReconciliationDetail;
 }

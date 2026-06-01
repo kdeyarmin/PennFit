@@ -2,11 +2,17 @@
 // during the second 15-phase sprint. Same convention as the other
 // /shop/me/* clients in this directory.
 
+import { csrfHeader } from "../csrf";
+
 async function jsonFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
   const res = await fetch(`/resupply-api${path}`, {
-    credentials: "include",
-    headers: { Accept: "application/json", ...(init.headers ?? {}) },
     ...init,
+    credentials: "include",
+    headers: {
+      Accept: "application/json",
+      ...(init.headers ?? {}),
+      ...csrfHeader(),
+    },
   });
   if (!res.ok) {
     let message = `${res.status} ${res.statusText}`;

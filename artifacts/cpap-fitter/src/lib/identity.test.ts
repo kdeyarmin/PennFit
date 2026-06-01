@@ -22,7 +22,9 @@ const SRC = readFileSync(path.join(__dirname, "identity.tsx"), "utf8");
 describe("identity.tsx — cartStore integration (regression: cart stayed populated after sign-out)", () => {
   it("imports cartStore from @/hooks/use-cart", () => {
     // The store must be imported so sign-out can call cartStore.clear().
-    expect(SRC).toMatch(/import\s*\{[^}]*cartStore[^}]*\}\s*from\s*["']@\/hooks\/use-cart["']/);
+    expect(SRC).toMatch(
+      /import\s*\{[^}]*cartStore[^}]*\}\s*from\s*["']@\/hooks\/use-cart["']/,
+    );
   });
 
   it("calls cartStore.clear() during sign-out", () => {
@@ -77,5 +79,36 @@ describe("identity.tsx — sign-out safety properties", () => {
     // cartStore.clear() must come AFTER the serverSignOutError capture block
     // (i.e., after the authClient.signOut() call), so local state is always purged.
     expect(cartClearPos).toBeGreaterThan(serverSignOutPos);
+  });
+});
+
+describe("identity.tsx — SESSION_QUERY_KEY import (PR: namespaced cache key)", () => {
+  it("imports SESSION_QUERY_KEY from ./auth-hooks", () => {
+    // This PR introduced a namespaced SESSION_QUERY_KEY per auth surface.
+    // identity.tsx must import it from ./auth-hooks (not ./admin/auth-hooks)
+    // so it invalidates the correct storefront cache entry.
+    expect(SRC).toMatch(
+      /import\s*\{[^}]*SESSION_QUERY_KEY[^}]*\}\s*from\s*["']\.\/auth-hooks["']/,
+    );
+  });
+
+  it('uses SESSION_QUERY_KEY in invalidateQueries, not the literal ["auth","me"]', () => {
+    // Regression guard: the key must come from the import, not be hardcoded.
+    // A hardcoded ["auth","me"] would collide with the admin surface.
+    expect(SRC).toContain(
+      "queryClient.invalidateQueries({ queryKey: SESSION_QUERY_KEY })",
+    );
+    // Must NOT contain the old hardcoded key literal.
+    expect(SRC).not.toMatch(/queryKey:\s*\["auth",\s*"me"\]/);
+  });
+
+  it("SESSION_QUERY_KEY is referenced after authClient.signOut() call (invalidates on sign-out)", () => {
+    // Ensure the invalidation happens after the actual sign-out API call.
+    const signOutCallPos = SRC.indexOf("authClient.signOut()");
+    const invalidatePos = SRC.indexOf(
+      "queryClient.invalidateQueries({ queryKey: SESSION_QUERY_KEY })",
+    );
+    expect(signOutCallPos).toBeGreaterThan(-1);
+    expect(invalidatePos).toBeGreaterThan(signOutCallPos);
   });
 });

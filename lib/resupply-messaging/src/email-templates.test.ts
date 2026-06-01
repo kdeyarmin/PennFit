@@ -226,6 +226,54 @@ describe("renderClickLanding", () => {
     expect(html).toContain("Disposable filter");
   });
 
+  it("renders a category glyph tile (inline SVG) when an item has no photo", () => {
+    const html = renderClickLanding({
+      practiceName: "Penn Sleep Center",
+      action: "confirm",
+      formActionUrl: "https://api.example/email/click?t=conf",
+      items: [{ name: "Nasal mask cushion", category: "cushion", quantity: 1 }],
+    });
+    // A self-contained glyph is shown (no external image), and no <img>
+    // tag is emitted when there's no product photo.
+    expect(html).toContain("<svg");
+    expect(html).not.toContain("<img");
+  });
+
+  it("renders a product photo thumbnail when imageUrl is provided", () => {
+    const html = renderClickLanding({
+      practiceName: "Penn Sleep Center",
+      action: "confirm",
+      formActionUrl: "https://api.example/email/click?t=conf",
+      items: [
+        {
+          name: "ResMed AirFit P10",
+          category: "mask",
+          quantity: 1,
+          imageUrl: "https://cdn.example/p10.png",
+        },
+      ],
+    });
+    expect(html).toContain('src="https://cdn.example/p10.png"');
+  });
+
+  it("escapes a malicious imageUrl to prevent attribute injection", () => {
+    const html = renderClickLanding({
+      practiceName: "Penn Sleep Center",
+      action: "confirm",
+      formActionUrl: "https://api.example/email/click?t=conf",
+      items: [
+        {
+          name: "Cushion",
+          category: "cushion",
+          quantity: 1,
+          imageUrl: 'https://cdn.example/x.png" onerror="alert(1)',
+        },
+      ],
+    });
+    expect(html).not.toContain('onerror="alert(1)"');
+    expect(html).toContain("&quot;");
+  });
+
   it("does NOT render the item list on edit/stop even if items are passed", () => {
     const html = renderClickLanding({
       practiceName: "Penn Sleep Center",

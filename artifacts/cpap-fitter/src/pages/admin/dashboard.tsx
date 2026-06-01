@@ -2,7 +2,6 @@ import { Link } from "wouter";
 import { useGetDashboardSummary } from "@workspace/api-client-react/admin";
 import { KpiCard } from "@/components/admin/Card";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
-import { PhiSweepStatusCard } from "@/components/admin/PhiSweepStatusCard";
 
 // Admin landing page. Six KPI tiles + four "filtered queue" deep
 // links. Numbers come from /dashboard/summary which is a single
@@ -30,21 +29,21 @@ export function DashboardPage() {
     {
       label: "Active conversations",
       value: data?.activeConversations ?? "—",
-      hint: "open · awaiting_patient · awaiting_admin",
+      hint: "Open, awaiting customer, or awaiting reply",
       href: "/admin/conversations?status=open",
       testId: "kpi-active-conversations",
     },
     {
-      label: "Awaiting admin",
+      label: "Awaiting reply",
       value: data?.awaitingAdmin ?? "—",
-      hint: "parked for human attention",
+      hint: "Parked for a customer-service reply",
       href: "/admin/conversations?status=awaiting_admin",
       testId: "kpi-awaiting-admin",
     },
     {
       label: "Overdue episodes",
       value: data?.overdueEpisodes ?? "—",
-      hint: "due_at ≤ now & status pending or awaiting",
+      hint: "Past due and still awaiting action",
       href: "/admin/episodes?status=overdue",
       testId: "kpi-overdue-episodes",
     },
@@ -58,7 +57,7 @@ export function DashboardPage() {
     {
       label: "Paused patients",
       value: data?.pausedPatients ?? "—",
-      hint: "status = paused",
+      hint: "Currently paused",
       href: "/admin/patients?status=paused",
       testId: "kpi-paused-patients",
     },
@@ -98,11 +97,6 @@ export function DashboardPage() {
           </Link>
         ))}
       </div>
-
-      <PhiSweepStatusCard
-        data={data?.prescriptionAttachmentSweep}
-        isLoading={isPending}
-      />
 
       <section
         className="bg-white border rounded-lg p-5"

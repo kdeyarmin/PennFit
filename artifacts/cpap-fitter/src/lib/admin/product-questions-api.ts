@@ -1,6 +1,8 @@
 // Hand-rolled fetch wrappers for the admin product-question
 // moderation endpoints (Phase A.5 follow-up).
 
+import { ApiError } from "@workspace/api-client-react/admin";
+
 import { csrfHeader } from "../csrf";
 
 export type AdminProductQuestionStatus = "pending" | "answered" | "rejected";
@@ -43,7 +45,13 @@ export async function listAdminProductQuestions(
     { headers: { Accept: "application/json" }, credentials: "include" },
   );
   if (!res.ok) {
-    throw new Error(`Failed to load questions (${res.status})`);
+    let data: unknown = null;
+    try {
+      data = await res.json();
+    } catch {
+      // non-JSON error body — status alone is enough
+    }
+    throw new ApiError(res, data, { method: "GET", url: res.url });
   }
   return (await res.json()) as AdminProductQuestionListResponse;
 }
@@ -78,7 +86,7 @@ export async function answerAdminProductQuestion(
   }
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    throw new Error(`Failed to answer (${res.status}): ${text}`);
+    throw new ApiError(res, text || null, { method: "PATCH", url: res.url });
   }
 }
 
@@ -105,6 +113,6 @@ export async function rejectAdminProductQuestion(
   }
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    throw new Error(`Failed to reject (${res.status}): ${text}`);
+    throw new ApiError(res, text || null, { method: "PATCH", url: res.url });
   }
 }

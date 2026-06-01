@@ -2,6 +2,7 @@
 // the only path the middleware supports.
 
 import express, { type Express } from "express";
+import rateLimit from "express-rate-limit";
 import request from "supertest";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -29,7 +30,14 @@ import { requireAdmin, requireAdminOnly } from "./requireAdmin";
 
 function makeApp(): Express {
   const app = express();
-  app.get("/protected", requireAdmin, (req, res) => {
+  const limiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 1_000,
+    standardHeaders: true,
+    legacyHeaders: false,
+  });
+
+  app.get("/protected", limiter, requireAdmin, (req, res) => {
     res.json({
       ok: true,
       adminEmail: req.adminEmail,
@@ -37,8 +45,12 @@ function makeApp(): Express {
       adminRole: req.adminRole,
     });
   });
-  app.get("/admin-only", requireAdminOnly, (req, res) => {
+  app.get("/admin-only", limiter, requireAdminOnly, (req, res) => {
     res.json({ ok: true, adminRole: req.adminRole });
+  });
+  // State-changing route to exercise the in-gate CSRF enforcement.
+  app.post("/protected", limiter, requireAdmin, (req, res) => {
+    res.json({ ok: true, adminEmail: req.adminEmail });
   });
   return app;
 }
@@ -293,5 +305,75 @@ describe("requireAdmin — in-house pf_session cookie path", () => {
     const res = await request(makeApp()).get("/protected");
 
     expect(res.status).toBe(401);
+  });
+
+  // ── CSRF enforcement on state-changing admin requests ──────────────
+  // requireAdmin double-submit-CSRF-gates every non-safe method, so an
+  // admin route mounted OUTSIDE the /api/admin path prefix (which the
+  // app-level requireCsrfOnAdminMutations gate matches) is still
+  // protected. Auth resolves first, so an unauthenticated mutation is a
+  // clean 401, not a 403.
+  describe("CSRF on state-changing requests", () => {
+    it("admits a POST with matching pf_csrf cookie + X-PF-CSRF header", async () => {
+      const { deps, repo } = await buildDepsWithRepo();
+      mockDeps = deps;
+      const { cookie } = await seedSignedInUser(repo, {
+        id: "u-csrf-ok",
+        email: "admin@example.test",
+        role: "admin",
+      });
+
+      const res = await request(makeApp())
+        .post("/protected")
+        .set("Cookie", `${cookie}; pf_csrf=tok-123`)
+        .set("X-PF-CSRF", "tok-123");
+
+      expect(res.status).toBe(200);
+      expect(res.body.ok).toBe(true);
+    });
+
+    it("rejects a POST that omits the X-PF-CSRF header (403 csrf_failed)", async () => {
+      const { deps, repo } = await buildDepsWithRepo();
+      mockDeps = deps;
+      const { cookie } = await seedSignedInUser(repo, {
+        id: "u-csrf-missing",
+        email: "admin@example.test",
+        role: "admin",
+      });
+
+      const res = await request(makeApp())
+        .post("/protected")
+        .set("Cookie", `${cookie}; pf_csrf=tok-123`);
+
+      expect(res.status).toBe(403);
+      expect(res.body.error).toBe("csrf_failed");
+    });
+
+    it("rejects a POST when the cookie and header CSRF values mismatch", async () => {
+      const { deps, repo } = await buildDepsWithRepo();
+      mockDeps = deps;
+      const { cookie } = await seedSignedInUser(repo, {
+        id: "u-csrf-mismatch",
+        email: "admin@example.test",
+        role: "admin",
+      });
+
+      const res = await request(makeApp())
+        .post("/protected")
+        .set("Cookie", `${cookie}; pf_csrf=tok-123`)
+        .set("X-PF-CSRF", "different-token");
+
+      expect(res.status).toBe(403);
+      expect(res.body.error).toBe("csrf_failed");
+    });
+
+    it("returns 401 (not 403) for an unauthenticated POST — auth gate runs first", async () => {
+      const { deps } = await buildDepsWithRepo();
+      mockDeps = deps;
+
+      const res = await request(makeApp()).post("/protected");
+
+      expect(res.status).toBe(401);
+    });
   });
 });

@@ -6,15 +6,17 @@
 // every consumer to wrap a provider, and also avoids hidden module-
 // level singletons.
 //
-// Mutations invalidate the `/me` query key on success so a sign-in,
-// sign-out, or password reset is reflected immediately in any
-// consumer of `useSession`.
+// Mutations invalidate the shared `/me` query-key prefix on success
+// so a sign-in, sign-out, or password reset is reflected immediately
+// in any consumer of `useSession`, even when multiple auth surfaces
+// use namespaced keys under one QueryClient.
 
 import {
   useMutation,
   useQuery,
   useQueryClient,
   type QueryClient,
+  type QueryKey,
   type UseMutationResult,
   type UseQueryResult,
 } from "@tanstack/react-query";
@@ -76,6 +78,13 @@ export interface CreateAuthHooksOptions {
    * needs an unconditional refetch.
    */
   staleTime?: number;
+  /**
+   * Override for the session cache key. Lets multiple auth surfaces
+   * (admin + storefront) share one QueryClient without their session
+   * entries colliding. Defaults to ["auth","me"]; the admin SPA passes
+   * ["auth","me","admin"] and the storefront ["auth","me","storefront"].
+   */
+  sessionQueryKey?: QueryKey;
 }
 
 export function createAuthHooks(
@@ -83,15 +92,18 @@ export function createAuthHooks(
   options: CreateAuthHooksOptions = {},
 ): AuthHooks {
   const staleTime = options.staleTime ?? 60_000;
+  const sessionQueryKey = options.sessionQueryKey ?? SESSION_QUERY_KEY;
 
   function invalidateMe(qc: QueryClient): void {
+    // Invalidate every /me cache entry (e.g. storefront + admin)
+    // because both surfaces observe one shared pf_session cookie.
     void qc.invalidateQueries({ queryKey: SESSION_QUERY_KEY });
   }
 
   return {
     useSession() {
       return useQuery({
-        queryKey: SESSION_QUERY_KEY,
+        queryKey: sessionQueryKey,
         queryFn: () => client.fetchMe(),
         staleTime,
         refetchOnWindowFocus: false,
@@ -137,7 +149,7 @@ export function createAuthHooks(
         onSuccess: () => {
           // Reset to null immediately so any gate watching
           // useSession redirects without a flicker.
-          qc.setQueryData(SESSION_QUERY_KEY, null);
+          qc.setQueryData(sessionQueryKey, null);
           invalidateMe(qc);
         },
       });
@@ -156,7 +168,7 @@ export function createAuthHooks(
         onSuccess: () => {
           // Server revoked all sessions for this user. Force the
           // SPA to re-fetch; it'll get null and route to sign-in.
-          qc.setQueryData(SESSION_QUERY_KEY, null);
+          qc.setQueryData(sessionQueryKey, null);
           invalidateMe(qc);
         },
       });

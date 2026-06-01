@@ -5,6 +5,8 @@
 // events and dismiss false positives without leaving the patient
 // page.
 
+import { ApiError } from "@workspace/api-client-react/admin";
+
 import { csrfHeader } from "../csrf";
 
 export type SmartTriggerKind =
@@ -46,7 +48,13 @@ export async function listPatientSmartTriggers(
     { headers: { Accept: "application/json" }, credentials: "include" },
   );
   if (!res.ok) {
-    throw new Error(`Failed to load smart triggers (${res.status})`);
+    let data: unknown = null;
+    try {
+      data = await res.json();
+    } catch {
+      // non-JSON error body — status alone is enough
+    }
+    throw new ApiError(res, data, { method: "GET", url: res.url });
   }
   return (await res.json()) as { events: SmartTriggerEventRow[] };
 }
@@ -72,6 +80,6 @@ export async function dismissSmartTrigger(
       }
     }
     const text = await res.text().catch(() => "");
-    throw new Error(`Failed to dismiss trigger (${res.status}): ${text}`);
+    throw new ApiError(res, text || null, { method: "POST", url: res.url });
   }
 }

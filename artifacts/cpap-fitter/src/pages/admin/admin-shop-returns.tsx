@@ -212,6 +212,19 @@ const STATUS_TONE: Record<ReturnStatus, string> = {
   closed: "bg-slate-200 text-slate-700 border-slate-300",
 };
 
+// Human-readable status labels (matches the TABS labels above) so the
+// badge reads "In transit" rather than the raw "shipped_back" enum.
+const STATUS_LABELS: Record<ReturnStatus, string> = {
+  requested: "Requested",
+  approved: "Approved",
+  shipped_back: "In transit",
+  received: "Received",
+  refunded: "Refunded",
+  replaced: "Replaced",
+  rejected: "Rejected",
+  closed: "Closed",
+};
+
 /**
  * Render a single admin return card showing status, metadata, notes, and status-gated actions.
  *
@@ -328,7 +341,7 @@ function ReturnCard({ item }: { item: AdminReturn }) {
             <span
               className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-semibold ${STATUS_TONE[item.status]}`}
             >
-              {item.status.replace(/_/g, " ")}
+              {STATUS_LABELS[item.status] ?? item.status}
             </span>
             <span className="text-xs text-slate-600">
               {REASON_LABELS[item.reason] ?? item.reason}

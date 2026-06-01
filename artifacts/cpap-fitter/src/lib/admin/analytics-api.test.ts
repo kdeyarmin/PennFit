@@ -18,7 +18,9 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { fetchCsrProductivity } from "./analytics-api";
+import { ApiError } from "@workspace/api-client-react/admin";
+
+import { fetchCsrProductivity, fetchResupplyFunnel } from "./analytics-api";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SRC = readFileSync(path.join(__dirname, "analytics-api.ts"), "utf8");
@@ -142,8 +144,55 @@ describe("fetchCsrProductivity", () => {
       },
     });
 
-    await expect(fetchCsrProductivity(7)).rejects.toThrow(
-      "503 Service Unavailable",
+    await expect(fetchCsrProductivity(7)).rejects.toThrow("503");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ApiError migration — jsonFetch now throws ApiError (not plain Error)
+// ---------------------------------------------------------------------------
+
+describe("analytics-api — ApiError thrown on non-OK response", () => {
+  it("fetchCsrProductivity throws ApiError instance", async () => {
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 403,
+      statusText: "Forbidden",
+      headers: new Headers(),
+      url: "",
+      json: async () => ({}),
+    });
+    const err = await fetchCsrProductivity(7).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect((err as ApiError).status).toBe(403);
+  });
+
+  it("fetchResupplyFunnel throws ApiError with correct status", async () => {
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 500,
+      statusText: "Internal Server Error",
+      headers: new Headers(),
+      url: "",
+      json: async () => ({}),
+    });
+    const err = await fetchResupplyFunnel(30).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect((err as ApiError).status).toBe(500);
+  });
+
+  it("ApiError carries the request URL", async () => {
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 401,
+      statusText: "Unauthorized",
+      headers: new Headers(),
+      url: "",
+      json: async () => null,
+    });
+    const err = await fetchCsrProductivity(14).catch((e: unknown) => e);
+    expect((err as ApiError).url).toContain(
+      "/admin/analytics/csr-productivity",
     );
   });
 });

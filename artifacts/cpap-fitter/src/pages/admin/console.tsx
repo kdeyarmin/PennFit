@@ -125,6 +125,11 @@ const AdminAnalyticsPage = lazy(() =>
     default: m.AdminAnalyticsPage,
   })),
 );
+const AdminTherapyUsageReportPage = lazy(() =>
+  import("@/pages/admin/admin-therapy-usage-report").then((m) => ({
+    default: m.AdminTherapyUsageReportPage,
+  })),
+);
 const AdminRtOverviewPage = lazy(() =>
   import("@/pages/admin/admin-rt-overview").then((m) => ({
     default: m.AdminRtOverviewPage,
@@ -148,6 +153,11 @@ const AdminMacrosPage = lazy(() =>
 const AdminMessageTemplatesPage = lazy(() =>
   import("@/pages/admin/admin-message-templates").then((m) => ({
     default: m.AdminMessageTemplatesPage,
+  })),
+);
+const AdminAlertsPage = lazy(() =>
+  import("@/pages/admin/admin-alerts").then((m) => ({
+    default: m.AdminAlertsPage,
   })),
 );
 const AdminShopSubscriptionsPage = lazy(() =>
@@ -198,6 +208,21 @@ const AdminAppointmentRequestsPage = lazy(() =>
 const AdminIntegrationsPage = lazy(() =>
   import("@/pages/admin/admin-integrations").then((m) => ({
     default: m.AdminIntegrationsPage,
+  })),
+);
+const AdminTherapyFleetPage = lazy(() =>
+  import("@/pages/admin/admin-therapy-fleet").then((m) => ({
+    default: m.AdminTherapyFleetPage,
+  })),
+);
+const AdminTherapyResupplyPage = lazy(() =>
+  import("@/pages/admin/admin-therapy-resupply").then((m) => ({
+    default: m.AdminTherapyResupplyPage,
+  })),
+);
+const AdminTherapyCompliancePage = lazy(() =>
+  import("@/pages/admin/admin-therapy-compliance").then((m) => ({
+    default: m.AdminTherapyCompliancePage,
   })),
 );
 const AdminCoachingPage = lazy(() =>
@@ -426,6 +451,9 @@ function AdminConsole() {
       },
     },
   });
+  const canManageTools = (data?.permissions ?? []).includes(
+    "admin.tools.manage",
+  );
 
   if (isError) {
     const status = error instanceof ApiError ? error.status : 0;
@@ -447,7 +475,11 @@ function AdminConsole() {
   }
 
   return (
-    <AppShell adminEmail={data?.email} adminRole={data?.role}>
+    <AppShell
+      adminEmail={data?.email}
+      adminRole={data?.role}
+      adminPermissions={data?.permissions}
+    >
       <ErrorBoundary>
         {/* Suspense boundary for the per-page lazy chunks declared at
             the top of this file. Without it, a navigation to any
@@ -617,6 +649,10 @@ function AdminConsole() {
               component={AdminEquipmentRecallsPage}
             />
             <Route path="/admin/analytics" component={AdminAnalyticsPage} />
+            <Route
+              path="/admin/therapy-usage-report"
+              component={AdminTherapyUsageReportPage}
+            />
             <Route path="/admin/rt-overview" component={AdminRtOverviewPage} />
             <Route
               path="/admin/bulk-campaigns"
@@ -628,6 +664,15 @@ function AdminConsole() {
               path="/admin/templates"
               component={AdminMessageTemplatesPage}
             />
+            <Route path="/admin/alerts">
+              {() =>
+                canManageTools ? (
+                  <AdminAlertsPage />
+                ) : (
+                  <NotAuthorizedPage reason="not-authorized" />
+                )
+              }
+            </Route>
             <Route
               path="/admin/shop/subscriptions"
               component={AdminShopSubscriptionsPage}
@@ -656,6 +701,18 @@ function AdminConsole() {
             <Route
               path="/admin/integrations"
               component={AdminIntegrationsPage}
+            />
+            <Route
+              path="/admin/therapy-fleet"
+              component={AdminTherapyFleetPage}
+            />
+            <Route
+              path="/admin/therapy-resupply"
+              component={AdminTherapyResupplyPage}
+            />
+            <Route
+              path="/admin/therapy-compliance"
+              component={AdminTherapyCompliancePage}
             />
             <Route path="/admin/coaching" component={AdminCoachingPage} />
             <Route

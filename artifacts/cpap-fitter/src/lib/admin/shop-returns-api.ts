@@ -2,6 +2,7 @@
 // Mirrors shop-reviews-api.ts — the v1 returns surface is not yet in
 // the OpenAPI spec; promote it once the workflow stabilizes.
 
+import { ApiError } from "@workspace/api-client-react/admin";
 import { csrfHeader } from "../csrf";
 
 export type ReturnStatus =
@@ -68,10 +69,19 @@ export async function listAdminShopReturns(params: {
   qs.set("status", params.status);
   if (params.cursor) qs.set("cursor", params.cursor);
   if (params.limit) qs.set("limit", String(params.limit));
-  const res = await fetch(`${BASE}?${qs.toString()}`, {
+  const url = `${BASE}?${qs.toString()}`;
+  const res = await fetch(url, {
     headers: { Accept: "application/json" },
   });
-  if (!res.ok) throw new Error(`Failed to load returns (${res.status})`);
+  if (!res.ok) {
+    let data: unknown = null;
+    try {
+      data = await res.json();
+    } catch {
+      // body not JSON
+    }
+    throw new ApiError(res, data, { method: "GET", url });
+  }
   return (await res.json()) as AdminReturnListResponse;
 }
 
@@ -127,7 +137,8 @@ async function action(
   verb: string,
   body: Record<string, unknown>,
 ): Promise<{ return: AdminReturn }> {
-  const res = await fetch(`${BASE}/${encodeURIComponent(id)}/${verb}`, {
+  const url = `${BASE}/${encodeURIComponent(id)}/${verb}`;
+  const res = await fetch(url, {
     method: "POST",
     credentials: "include",
     headers: {
@@ -138,13 +149,8 @@ async function action(
     body: JSON.stringify(body),
   });
   if (!res.ok) {
-    const json = (await res.json().catch(() => null)) as {
-      error?: string;
-      message?: string;
-    } | null;
-    throw new Error(
-      json?.message ?? json?.error ?? `Action failed (${res.status})`,
-    );
+    const data = await res.json().catch(() => null);
+    throw new ApiError(res, data, { method: "POST", url });
   }
   return (await res.json()) as { return: AdminReturn };
 }

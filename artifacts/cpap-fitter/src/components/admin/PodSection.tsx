@@ -23,6 +23,8 @@ import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Camera, Loader2, RefreshCw, Trash2, Upload } from "lucide-react";
 
+import { csrfHeader } from "@/lib/csrf";
+
 const BASE = "/resupply-api";
 
 interface PodMetaResponse {
@@ -75,7 +77,7 @@ async function uploadPodFile(
     {
       method: "POST",
       credentials: "same-origin",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...csrfHeader() },
       body: JSON.stringify({
         contentType: file.type,
         sizeBytes: file.size,
@@ -135,6 +137,7 @@ async function deletePod(orderId: string): Promise<void> {
   const res = await fetch(`${BASE}/admin/shop/orders/${orderId}/pod`, {
     method: "DELETE",
     credentials: "same-origin",
+    headers: { ...csrfHeader() },
   });
   if (!res.ok) throw new Error(`POD delete failed (${res.status})`);
 }

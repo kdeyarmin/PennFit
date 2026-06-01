@@ -11,6 +11,7 @@
 //
 // Fetch is stubbed with vi.stubGlobal so no real network calls are made.
 
+import { ApiError } from "@workspace/api-client-react/admin";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   getReconciliation,
@@ -265,18 +266,18 @@ describe("listReconciliations — success", () => {
 });
 
 describe("listReconciliations — error handling", () => {
-  it("throws when the response is not ok", async () => {
+  it("throws an ApiError when the response is not ok", async () => {
     vi.stubGlobal("fetch", makeFetchFail(500, {}));
 
-    await expect(listReconciliations()).rejects.toThrow(
-      "Failed to load reconciliations (500)",
-    );
+    await expect(listReconciliations()).rejects.toBeInstanceOf(ApiError);
   });
 
-  it("includes the status code in the error message", async () => {
+  it("exposes the status code on the thrown ApiError", async () => {
     vi.stubGlobal("fetch", makeFetchFail(403, {}));
 
-    await expect(listReconciliations()).rejects.toThrow("(403)");
+    const err = await listReconciliations().catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect((err as ApiError).status).toBe(403);
   });
 });
 
@@ -339,12 +340,12 @@ describe("getReconciliation — success", () => {
 });
 
 describe("getReconciliation — error handling", () => {
-  it("throws when response is not ok", async () => {
+  it("throws an ApiError carrying the status when response is not ok", async () => {
     vi.stubGlobal("fetch", makeFetchFail(404, {}));
 
-    await expect(getReconciliation("missing")).rejects.toThrow(
-      "Failed to load reconciliation (404)",
-    );
+    const err = await getReconciliation("missing").catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect((err as ApiError).status).toBe(404);
   });
 });
 

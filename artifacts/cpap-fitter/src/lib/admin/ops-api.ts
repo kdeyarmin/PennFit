@@ -3,6 +3,7 @@
 // Auth flows over the `pf_session` cookie, sent automatically by
 // the browser on same-origin requests.
 
+import { ApiError } from "@workspace/api-client-react/admin";
 import { csrfHeader } from "../csrf";
 
 export interface OpsStatus {
@@ -39,10 +40,19 @@ export interface OpsStatus {
 }
 
 export async function fetchOpsStatus(): Promise<OpsStatus> {
-  const res = await fetch("/resupply-api/admin/ops-status", {
+  const url = "/resupply-api/admin/ops-status";
+  const res = await fetch(url, {
     headers: { Accept: "application/json" },
   });
-  if (!res.ok) throw new Error(`Failed to load ops status (${res.status})`);
+  if (!res.ok) {
+    let data: unknown = null;
+    try {
+      data = await res.json();
+    } catch {
+      // body not JSON
+    }
+    throw new ApiError(res, data, { method: "GET", url });
+  }
   return (await res.json()) as OpsStatus;
 }
 
@@ -125,13 +135,11 @@ async function postDispatcher(url: string): Promise<DispatcherResult> {
     headers: { Accept: "application/json", ...csrfHeader() },
   });
   if (!res.ok) {
-    const json = (await res.json().catch(() => null)) as {
+    const data = (await res.json().catch(() => null)) as {
       error?: string;
       message?: string;
     } | null;
-    throw new Error(
-      json?.message ?? json?.error ?? `Dispatcher failed (${res.status})`,
-    );
+    throw new ApiError(res, data, { method: "POST", url });
   }
   return (await res.json()) as DispatcherResult;
 }

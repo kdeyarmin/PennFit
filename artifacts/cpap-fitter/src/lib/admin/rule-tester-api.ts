@@ -1,5 +1,9 @@
 // Hand-rolled fetch wrapper for the /rules/test simulator.
 
+import { ApiError } from "@workspace/api-client-react/admin";
+
+import { csrfHeader } from "../csrf";
+
 export type Channel = "sms" | "email" | "voice";
 
 export interface RuleTestInput {
@@ -62,23 +66,20 @@ export interface RuleTestResponse {
 export async function testRules(
   input: RuleTestInput,
 ): Promise<RuleTestResponse> {
-  const res = await fetch("/resupply-api/rules/test", {
+  const url = "/resupply-api/rules/test";
+  const res = await fetch(url, {
     method: "POST",
     credentials: "include",
     headers: {
       "Content-Type": "application/json",
       Accept: "application/json",
+      ...csrfHeader(),
     },
     body: JSON.stringify(input),
   });
   if (!res.ok) {
-    const json = (await res.json().catch(() => null)) as {
-      error?: string;
-      message?: string;
-    } | null;
-    throw new Error(
-      json?.message ?? json?.error ?? `Test failed (${res.status})`,
-    );
+    const data = await res.json().catch(() => null);
+    throw new ApiError(res, data, { method: "POST", url });
   }
   return (await res.json()) as RuleTestResponse;
 }

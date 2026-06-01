@@ -52,6 +52,7 @@ type ShopCustomerUpdate =
 type ShopSubscriptionUpdate =
   Database["resupply"]["Tables"]["shop_subscriptions"]["Update"];
 
+import { maybeDispatchPaymentFailedAlert } from "../alerts/payment-failed-trigger";
 import {
   getStripeClient,
   readStripeConfigOrNull,
@@ -615,6 +616,21 @@ export const stripeWebhookHandler: RequestHandler = async (
           },
           "stripe: subscription renewal payment failed",
         );
+        // Optional automated patient alert. Fire-and-forget — the
+        // SendGrid round-trip must NOT sit on the webhook's ACK path
+        // (Stripe will retry on a slow response). Gated by the
+        // `alerts.auto_dispatch` feature flag (default OFF), so this is
+        // inert until an operator turns it on. Resolution + send + all
+        // error handling live in the trigger module; we don't await.
+        void maybeDispatchPaymentFailedAlert({
+          stripeCustomerId:
+            typeof invoice.customer === "string"
+              ? invoice.customer
+              : (invoice.customer?.id ?? null),
+          amountDueCents: invoice.amount_due,
+          currency: invoice.currency,
+          log,
+        });
         break;
       }
       case "charge.dispute.created": {

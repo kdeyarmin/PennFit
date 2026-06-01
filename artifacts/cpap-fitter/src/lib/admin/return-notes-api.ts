@@ -1,6 +1,8 @@
 // Hand-rolled fetch wrappers for the admin shop-return notes
 // endpoints (Phase 15). Mirrors order-notes-api.ts.
 
+import { ApiError } from "@workspace/api-client-react/admin";
+
 import { csrfHeader } from "../csrf";
 
 export interface AdminReturnNote {
@@ -37,7 +39,13 @@ export async function listAdminReturnNotes(
     throw new AdminReturnNotesNotFoundError();
   }
   if (!res.ok) {
-    throw new Error(`Failed to load notes (${res.status})`);
+    let data: unknown = null;
+    try {
+      data = await res.json();
+    } catch {
+      // non-JSON error body — status alone is enough
+    }
+    throw new ApiError(res, data, { method: "GET", url: res.url });
   }
   return (await res.json()) as AdminReturnNotesListResponse;
 }
@@ -63,7 +71,7 @@ export async function createAdminReturnNote(
   }
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    throw new Error(`Failed to save note (${res.status}): ${text}`);
+    throw new ApiError(res, text || null, { method: "POST", url: res.url });
   }
   return (await res.json()) as CreateAdminReturnNoteResponse;
 }

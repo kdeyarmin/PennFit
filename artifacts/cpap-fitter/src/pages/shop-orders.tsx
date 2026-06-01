@@ -60,6 +60,7 @@ import {
   type OrderShippingAddress,
 } from "@/lib/shop-api";
 import { SignedIn } from "@/lib/identity";
+import { csrfHeader } from "@/lib/csrf";
 
 type LoadState = "idle" | "loading" | "ready" | "error";
 
@@ -421,7 +422,7 @@ function ReturnRequestControl({ order }: { order: OrderHistoryItem }) {
         {
           method: "POST",
           credentials: "include",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", ...csrfHeader() },
           body: JSON.stringify({
             reason,
             reasonNote: note || null,

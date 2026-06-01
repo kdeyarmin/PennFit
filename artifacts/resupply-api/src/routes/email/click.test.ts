@@ -251,6 +251,45 @@ describe("POST /email/click (signed action)", () => {
     ).toBeDefined();
   });
 
+  it("confirm + coverage_blocked: parks in awaiting_admin, renders review, audits blocked_coverage", async () => {
+    setMessagingEnv();
+    const token = signLinkToken({
+      conversationId: CONVERSATION_ID,
+      action: "confirm",
+    });
+    stageSupabaseResponse("conversations", "select", {
+      data: {
+        id: CONVERSATION_ID,
+        patient_id: PATIENT_ID,
+        episode_id: EPISODE_ID,
+      },
+    });
+    // awaiting_admin update on the coverage-hold path.
+    stageSupabaseResponse("conversations", "update", { error: null });
+    placeOrderMock.mockResolvedValue({
+      status: "coverage_blocked",
+      episodeId: EPISODE_ID,
+      patientId: PATIENT_ID,
+      coverage: {
+        reason: "inactive",
+        payerName: "Aetna",
+        eligibilityCheckId: "elig-1",
+      },
+    });
+
+    const res = await request(makeApp()).post(
+      `/resupply-api/email/click?t=${encodeURIComponent(token)}`,
+    );
+    expect(res.status).toBe(200);
+    expect(res.headers["content-type"]).toContain("text/html");
+    const blockedAudit = logAuditMock.mock.calls
+      .map((c) => c[0])
+      .find((a) => a.action === "messaging.order.blocked_coverage");
+    expect(blockedAudit).toBeDefined();
+    expect(blockedAudit.metadata.coverage_reason).toBe("inactive");
+    expect(blockedAudit.metadata.eligibility_check_id).toBe("elig-1");
+  });
+
   it("stop: pauses patient, closes conversation, audits", async () => {
     setMessagingEnv();
     const token = signLinkToken({

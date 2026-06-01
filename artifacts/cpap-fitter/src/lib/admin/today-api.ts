@@ -3,6 +3,8 @@
 // queues a CSR touches every day. See routes/admin/today.ts for shape
 // notes.
 
+import { ApiError } from "@workspace/api-client-react/admin";
+
 export interface TodayConversation {
   id: string;
   channel: string;
@@ -75,11 +77,18 @@ export interface TodayResponse {
 }
 
 export async function fetchTodayWorklist(): Promise<TodayResponse> {
-  const res = await fetch("/resupply-api/admin/today", {
+  const url = "/resupply-api/admin/today";
+  const res = await fetch(url, {
     headers: { Accept: "application/json" },
   });
   if (!res.ok) {
-    throw new Error(`Failed to load today's worklist (${res.status})`);
+    let data: unknown = null;
+    try {
+      data = await res.json();
+    } catch {
+      // body not JSON
+    }
+    throw new ApiError(res, data, { method: "GET", url });
   }
   return (await res.json()) as TodayResponse;
 }

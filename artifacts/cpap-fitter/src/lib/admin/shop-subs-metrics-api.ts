@@ -1,5 +1,7 @@
 // Hand-rolled fetch wrapper for the subscription metrics endpoint.
 
+import { ApiError } from "@workspace/api-client-react/admin";
+
 export interface SubsMetrics {
   counters: {
     activeNow: number;
@@ -21,9 +23,18 @@ export interface SubsMetrics {
 }
 
 export async function fetchSubsMetrics(): Promise<SubsMetrics> {
-  const res = await fetch("/resupply-api/admin/shop/subscriptions/metrics", {
+  const url = "/resupply-api/admin/shop/subscriptions/metrics";
+  const res = await fetch(url, {
     headers: { Accept: "application/json" },
   });
-  if (!res.ok) throw new Error(`Failed to load metrics (${res.status})`);
+  if (!res.ok) {
+    let data: unknown = null;
+    try {
+      data = await res.json();
+    } catch {
+      // body not JSON
+    }
+    throw new ApiError(res, data, { method: "GET", url });
+  }
   return (await res.json()) as SubsMetrics;
 }

@@ -13,6 +13,10 @@
 // All paths are relative — the same proxy rules that route
 // `/resupply-api/*` to the resupply-api service apply.
 
+import { ApiError } from "@workspace/api-client-react/admin";
+
+import { csrfHeader } from "../csrf";
+
 const API_PREFIX = "/resupply-api";
 
 export type AttachmentMetadata = {
@@ -42,21 +46,25 @@ export async function uploadPrescriptionAttachment(args: {
   // the size/MIME validation gate — the API rejects unsupported
   // types and oversized files BEFORE we ever try to upload, so the
   // user gets a fast error instead of a silent S3-style 403.
-  const urlRes = await fetch(
-    `${API_PREFIX}/patients/${patientId}/prescriptions/${rxId}/attachment/upload-url`,
-    {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      credentials: "same-origin",
-      body: JSON.stringify({
-        filename: file.name,
-        contentType: file.type || "application/octet-stream",
-        sizeBytes: file.size,
-      }),
-    },
-  );
+  const urlReqUrl = `${API_PREFIX}/patients/${patientId}/prescriptions/${rxId}/attachment/upload-url`;
+  const urlRes = await fetch(urlReqUrl, {
+    method: "POST",
+    headers: { "content-type": "application/json", ...csrfHeader() },
+    credentials: "same-origin",
+    body: JSON.stringify({
+      filename: file.name,
+      contentType: file.type || "application/octet-stream",
+      sizeBytes: file.size,
+    }),
+  });
   if (!urlRes.ok) {
-    throw new Error(await readErrorMessage(urlRes, "Couldn't start upload."));
+    let data: unknown = null;
+    try {
+      data = await urlRes.json();
+    } catch {
+      // body not JSON
+    }
+    throw new ApiError(urlRes, data, { method: "POST", url: urlReqUrl });
   }
   const { uploadURL, objectPath } = (await urlRes.json()) as {
     uploadURL: string;
@@ -75,30 +83,36 @@ export async function uploadPrescriptionAttachment(args: {
     body: file,
   });
   if (!putRes.ok) {
-    throw new Error(
-      `Upload to storage failed (${putRes.status} ${putRes.statusText}).`,
-    );
+    let data: unknown = null;
+    try {
+      data = await putRes.json();
+    } catch {
+      // body not JSON
+    }
+    throw new ApiError(putRes, data, { method: "PUT", url: uploadURL });
   }
 
   // Step 3: tell the API we're done so it can write the row + ACL.
-  const finRes = await fetch(
-    `${API_PREFIX}/patients/${patientId}/prescriptions/${rxId}/attachment`,
-    {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      credentials: "same-origin",
-      body: JSON.stringify({
-        objectPath,
-        filename: file.name,
-        contentType: file.type || "application/octet-stream",
-        sizeBytes: file.size,
-      }),
-    },
-  );
+  const finUrl = `${API_PREFIX}/patients/${patientId}/prescriptions/${rxId}/attachment`;
+  const finRes = await fetch(finUrl, {
+    method: "POST",
+    headers: { "content-type": "application/json", ...csrfHeader() },
+    credentials: "same-origin",
+    body: JSON.stringify({
+      objectPath,
+      filename: file.name,
+      contentType: file.type || "application/octet-stream",
+      sizeBytes: file.size,
+    }),
+  });
   if (!finRes.ok) {
-    throw new Error(
-      await readErrorMessage(finRes, "Couldn't finalize upload."),
-    );
+    let data: unknown = null;
+    try {
+      data = await finRes.json();
+    } catch {
+      // body not JSON
+    }
+    throw new ApiError(finRes, data, { method: "POST", url: finUrl });
   }
 }
 
@@ -106,12 +120,19 @@ export async function removePrescriptionAttachment(args: {
   patientId: string;
   rxId: string;
 }): Promise<void> {
-  const res = await fetch(
-    `${API_PREFIX}/patients/${args.patientId}/prescriptions/${args.rxId}/attachment`,
-    { method: "DELETE", credentials: "same-origin" },
-  );
+  const url = `${API_PREFIX}/patients/${args.patientId}/prescriptions/${args.rxId}/attachment`;
+  const res = await fetch(url, {
+    method: "DELETE",
+    credentials: "same-origin",
+  });
   if (!res.ok) {
-    throw new Error(await readErrorMessage(res, "Couldn't remove attachment."));
+    let data: unknown = null;
+    try {
+      data = await res.json();
+    } catch {
+      // body not JSON
+    }
+    throw new ApiError(res, data, { method: "DELETE", url });
   }
 }
 
@@ -127,26 +148,4 @@ export function prescriptionAttachmentDownloadUrl(args: {
   rxId: string;
 }): string {
   return `${API_PREFIX}/patients/${args.patientId}/prescriptions/${args.rxId}/attachment`;
-}
-
-async function readErrorMessage(
-  res: Response,
-  fallback: string,
-): Promise<string> {
-  try {
-    const body = (await res.json()) as { error?: string; issues?: unknown };
-    if (body.error === "object_missing") {
-      return "Upload didn't complete — please try again.";
-    }
-    if (body.error === "invalid_body" && Array.isArray(body.issues)) {
-      const first = (body.issues as Array<{ message?: string }>)[0];
-      if (first?.message) return `${fallback} ${first.message}`;
-    }
-    if (typeof body.error === "string") {
-      return `${fallback} (${body.error})`;
-    }
-  } catch {
-    // fall through
-  }
-  return `${fallback} (HTTP ${res.status})`;
 }

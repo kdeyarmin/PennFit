@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useMemo,
   useRef,
   useState,
   type ComponentType,
@@ -103,6 +104,14 @@ type NavLink = {
     | "overdueFollowups"
     | "newPatientDocuments"
     | "newInboundFaxes";
+  /**
+   * Granular RBAC permission key required to USE the destination page
+   * (e.g. `admin.tools.manage`). When set, the nav entry is hidden for
+   * callers whose `/admin/me` permission set doesn't include it — so a
+   * CSR never sees a link that would 403. Purely a UX guardrail; the
+   * server-side `requirePermission(...)` is the real boundary.
+   */
+  requiredPermission?: string;
 };
 
 type NavGroup = {
@@ -182,6 +191,7 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         icon: Sparkles,
         matchPrefix: "/admin/macros",
         hint: "Reusable response templates",
+        requiredPermission: "admin.tools.manage",
       },
       {
         href: "/admin/templates",
@@ -189,6 +199,7 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         icon: Mail,
         matchPrefix: "/admin/templates",
         hint: "Edit the copy used by automated customer messages",
+        requiredPermission: "admin.tools.manage",
       },
       {
         href: "/admin/bulk-campaigns",
@@ -196,6 +207,14 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         icon: BellRing,
         matchPrefix: "/admin/bulk-campaigns",
         hint: "Resolve audience + draft a bulk email send",
+      },
+      {
+        href: "/admin/alerts",
+        label: "Alert Library",
+        icon: AlertOctagon,
+        matchPrefix: "/admin/alerts",
+        hint: "Send curated email / SMS / phone-call alerts to a patient",
+        requiredPermission: "admin.tools.manage",
       },
     ],
   },
@@ -418,6 +437,27 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         hint: "Therapy-cloud vendor connections and nightly sync status",
       },
       {
+        href: "/admin/therapy-fleet",
+        label: "Therapy Fleet",
+        icon: HeartPulse,
+        matchPrefix: "/admin/therapy-fleet",
+        hint: "Population compliance cohorts and clinical outreach worklist",
+      },
+      {
+        href: "/admin/therapy-resupply",
+        label: "Resupply Opportunities",
+        icon: PackageCheck,
+        matchPrefix: "/admin/therapy-resupply",
+        hint: "Device-reported supplies due for replacement — drives resupply orders",
+      },
+      {
+        href: "/admin/therapy-compliance",
+        label: "Setup Adherence",
+        icon: ClipboardCheck,
+        matchPrefix: "/admin/therapy-compliance",
+        hint: "CMS 90-day adherence tracker for new Medicare setups",
+      },
+      {
         href: "/admin/delivery-failures",
         label: "Delivery Failures",
         icon: TruckIcon,
@@ -451,6 +491,13 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         icon: Activity,
         matchPrefix: "/admin/analytics",
         hint: "Resupply funnel, compliance cohorts, CSR productivity",
+      },
+      {
+        href: "/admin/therapy-usage-report",
+        label: "Therapy Report",
+        icon: ScrollText,
+        matchPrefix: "/admin/therapy-usage-report",
+        hint: "Provider-ready, print-quality therapy adherence snapshot (by provider, patient, or manufacturer)",
       },
       {
         href: "/admin/nps",
@@ -731,6 +778,7 @@ function SidebarNavBody({
   onToggleGroup,
   onItemClick,
   isAdminConfirmed,
+  permissions,
 }: {
   location: string;
   /** Shared nav-group expansion state, owned by the parent AppShell. */
@@ -742,6 +790,9 @@ function SidebarNavBody({
    *  Keeps the inbox-counts query from firing with a 401 during the
    *  initial access-check state before adminEmail is populated. */
   isAdminConfirmed: boolean;
+  /** Granular permission keys the caller holds (from /admin/me). Used
+   *  to hide nav entries whose `requiredPermission` they lack. */
+  permissions: ReadonlySet<string>;
 }) {
   // Phase 16 — actionable-work counts powering nav badges. Cached for
   // 30s so paging through the SPA doesn't hammer the endpoint, but
@@ -758,13 +809,26 @@ function SidebarNavBody({
     retry: false,
     enabled: isAdminConfirmed,
   });
+  // Hide nav entries whose `requiredPermission` the caller lacks, then
+  // drop any group left with no visible items. A link with no
+  // requiredPermission is always shown. The server-side
+  // `requirePermission(...)` is the real boundary; this only avoids
+  // showing a link that would 403.
+  const visibleGroups = NAV_GROUPS.map((group) => ({
+    ...group,
+    items: group.items.filter(
+      (link) =>
+        !link.requiredPermission || permissions.has(link.requiredPermission),
+    ),
+  })).filter((group) => group.items.length > 0);
+
   // Resolve "which nav link is active" once per render so a parent
   // and a child of the current location don't both highlight.
-  const activeHref = pickActiveHref(location, NAV_GROUPS);
+  const activeHref = pickActiveHref(location, visibleGroups);
 
   return (
     <div className="flex flex-col gap-2">
-      {NAV_GROUPS.map((group) => {
+      {visibleGroups.map((group) => {
         const isOpen = expanded.has(group.label);
         const rolledUpBadge = isOpen
           ? 0
@@ -960,12 +1024,24 @@ function MfaEnforcementBanner() {
 export function AppShell({
   adminEmail,
   adminRole = "admin",
+  adminPermissions,
   children,
 }: {
   adminEmail?: string;
   adminRole?: AdminRole;
+  /**
+   * Granular permission keys from `/admin/me`. Used to hide nav
+   * entries whose `requiredPermission` the caller lacks. Undefined
+   * during the initial access-check window → treated as empty
+   * (fail-closed: gated entries stay hidden until /me resolves).
+   */
+  adminPermissions?: string[];
   children: ReactNode;
 }) {
+  const navPermissions = useMemo(
+    () => new Set(adminPermissions ?? []),
+    [adminPermissions],
+  );
   const [location] = useLocation();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
@@ -1122,6 +1198,7 @@ export function AppShell({
                     onToggleGroup={toggleNavGroup}
                     onItemClick={() => setMobileNavOpen(false)}
                     isAdminConfirmed={!!adminEmail}
+                    permissions={navPermissions}
                   />
                 </nav>
               </SheetContent>
@@ -1154,6 +1231,7 @@ export function AppShell({
                 expanded={navExpanded}
                 onToggleGroup={toggleNavGroup}
                 isAdminConfirmed={!!adminEmail}
+                permissions={navPermissions}
               />
             </nav>
           </aside>

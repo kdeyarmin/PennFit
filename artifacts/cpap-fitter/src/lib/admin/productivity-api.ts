@@ -1,5 +1,7 @@
 // Hand-rolled fetch wrapper for /admin/productivity.
 
+import { ApiError } from "@workspace/api-client-react/admin";
+
 export type ProductivityWindow = "today" | "7d" | "30d";
 
 export interface AgentStats {
@@ -23,22 +25,19 @@ export interface ProductivityResponse {
 export async function getProductivity(
   window: ProductivityWindow,
 ): Promise<ProductivityResponse> {
-  const res = await fetch(
-    `/resupply-api/admin/productivity?window=${encodeURIComponent(window)}`,
-    {
-      credentials: "include",
-      headers: { Accept: "application/json" },
-    },
-  );
+  const url = `/resupply-api/admin/productivity?window=${encodeURIComponent(window)}`;
+  const res = await fetch(url, {
+    credentials: "include",
+    headers: { Accept: "application/json" },
+  });
   if (!res.ok) {
-    let message = `${res.status} ${res.statusText}`;
+    let data: unknown = null;
     try {
-      const body = (await res.json()) as { message?: string; error?: string };
-      message = body.message ?? body.error ?? message;
+      data = await res.json();
     } catch {
-      // ignore
+      // body not JSON
     }
-    throw new Error(message);
+    throw new ApiError(res, data, { method: "GET", url });
   }
   return (await res.json()) as ProductivityResponse;
 }

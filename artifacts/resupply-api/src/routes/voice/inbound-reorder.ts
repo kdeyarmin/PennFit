@@ -24,19 +24,48 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import {
+  getSupabaseServiceRoleClient,
+  type Json,
+} from "@workspace/resupply-db";
 import { normalizeE164 } from "@workspace/resupply-domain";
 import {
+  buildConnectStreamTwiml,
   buildHangupTwiml,
   requireTwilioSignature,
 } from "@workspace/resupply-telecom";
 
+import { isFeatureEnabled } from "../../lib/feature-flags";
 import { logger } from "../../lib/logger";
+import { getPendingSessions } from "../../lib/voice/pending-sessions";
 import {
+  publicWsOriginFromBaseUrl,
   readTwilioWebhookAuthTokenOrNull,
   readVoiceConfigOrNull,
   readVoicePublicBaseUrlOrNull,
 } from "../../lib/voice/voice-config";
+
+// Episode statuses a caller can still act on by phone (pre-confirm). A
+// confirmed/fulfilled/cancelled episode has nothing left to reorder, so
+// we don't route those to the agent.
+const ACTIONABLE_EPISODE_STATUSES = [
+  "outreach_pending",
+  "awaiting_response",
+  "declined",
+] as const;
+
+const INBOUND_CALL_CONTEXT =
+  "Inbound call: the patient phoned our CPAP resupply line to reorder. " +
+  "Verify identity by date of birth, review what's due, confirm the " +
+  "address on file, then place the order.";
+
+const INBOUND_GREETING =
+  "Hi there, thanks for calling your CPAP resupply line! I can help you " +
+  "reorder your supplies today.";
+
+// Human fallback number, shared by the unidentified and no-actionable-
+// episode paths.
+const SUPPORT_DIAL_E164 = "+18144710627";
 
 const router: IRouter = Router();
 
@@ -145,41 +174,167 @@ router.post("/voice/inbound-reorder", signatureMiddleware, async (req, res) => {
     return;
   }
 
-  // 3b. Identified caller. The Realtime reorder bridge is not yet
-  // wired (the WS upgrade handler in index.ts only accepts the
-  // /resupply-api/voice/stream path with a pending-session
-  // conversationId; the reorder shape uses voice_reorder_sessions.id
-  // and there is no WS handler that consumes it yet). Until the
-  // bridge ships, transfer the identified caller to the human team
-  // — that's strictly better than greeting them and then dropping
-  // the call when the WS handshake fails.
-  //
-  // Once the reorder WS handler lands, swap this back to a Connect
-  // / Stream TwiML pointing at /resupply-api/voice/stream with the
-  // reorderSessionId param (and register the session via
-  // getPendingSessions() so the upgrade handler can claim it).
+  // 3b. Identified caller → connect to the AI reorder agent (the
+  // existing OpenAI Realtime bridge) when (a) the voice agent is enabled
+  // in the Control Center AND (b) the patient has an episode they can
+  // still act on. We reuse the proven outbound machinery: create a voice
+  // `conversations` row bound to the episode (exactly like place-call),
+  // register a pending session, and return the same Connect/Stream TwiML
+  // that points Twilio's Media Stream at /resupply-api/voice/stream —
+  // the unchanged WS upgrade handler then claims it and runs the bridge.
+  // Anything else falls back to a human, which is strictly better than
+  // greeting the caller and dropping them.
+  const transferToHuman = async (reason: string): Promise<void> => {
+    await supabase
+      .schema("resupply")
+      .from("voice_reorder_sessions")
+      .update({
+        status: "transferred_to_human",
+        outcome_json: { routed: "human", reason } as unknown as Json,
+      })
+      .eq("id", session.id);
+    res
+      .status(200)
+      .type("text/xml")
+      .send(
+        [
+          '<?xml version="1.0" encoding="UTF-8"?>',
+          "<Response>",
+          "<Say>Hi! Welcome to your PennPaps reorder line. ",
+          "Connecting you to our team now.</Say>",
+          `<Dial timeout="20">${SUPPORT_DIAL_E164}</Dial>`,
+          "</Response>",
+        ].join(""),
+      );
+  };
+
+  if (!(await isFeatureEnabled("voice.agent"))) {
+    logger.info(
+      { event: "voice.inbound-reorder.agent_disabled", callSid: CallSid },
+      "voice.inbound-reorder: voice agent disabled; transferring to human",
+    );
+    await transferToHuman("voice_agent_disabled");
+    return;
+  }
+
+  const episodeId = await findActionableEpisodeId(supabase, patientId);
+  if (!episodeId) {
+    logger.info(
+      {
+        event: "voice.inbound-reorder.no_actionable_episode",
+        callSid: CallSid,
+        sessionId: session.id,
+      },
+      "voice.inbound-reorder: no actionable episode; transferring to human",
+    );
+    await transferToHuman("no_actionable_episode");
+    return;
+  }
+
+  // Bind a voice conversation to the episode (mirrors place-call).
+  let conversationId: string;
+  try {
+    const { data: conv, error: convErr } = await supabase
+      .schema("resupply")
+      .from("conversations")
+      .insert({
+        patient_id: patientId,
+        episode_id: episodeId,
+        channel: "voice",
+        status: "open",
+        external_ref: CallSid,
+        last_message_at: new Date().toISOString(),
+      })
+      .select("id")
+      .single();
+    if (convErr) throw convErr;
+    conversationId = conv.id;
+  } catch (err) {
+    logger.warn(
+      {
+        err: err instanceof Error ? err.message : "unknown",
+        callSid: CallSid,
+      },
+      "voice.inbound-reorder: conversation create failed; transferring to human",
+    );
+    await transferToHuman("conversation_create_failed");
+    return;
+  }
+
+  // Register the pending session BEFORE returning TwiML so the WS
+  // upgrade (which races the TwiML response) finds it. Inbound-flavored
+  // callContext + greeting so the agent doesn't tell a caller who dialed
+  // in that we're calling them.
+  getPendingSessions().register({
+    conversationId,
+    patientId,
+    episodeId,
+    callContext: INBOUND_CALL_CONTEXT,
+    greeting: INBOUND_GREETING,
+  });
+
+  await supabase
+    .schema("resupply")
+    .from("voice_reorder_sessions")
+    .update({
+      outcome_json: {
+        routed: "realtime_bridge",
+        conversation_id: conversationId,
+        episode_id: episodeId,
+      } as unknown as Json,
+    })
+    .eq("id", session.id);
+
+  const wsUrl =
+    `${publicWsOriginFromBaseUrl(config.publicBaseUrl)}` +
+    `/resupply-api/voice/stream?conversationId=${encodeURIComponent(conversationId)}`;
   logger.info(
     {
-      event: "voice.inbound-reorder.identified",
+      event: "voice.inbound-reorder.connected",
       callSid: CallSid,
       sessionId: session.id,
     },
-    "voice.inbound-reorder: caller identified, transferring (reorder bridge not yet wired)",
+    "voice.inbound-reorder: connecting caller to the realtime reorder agent",
   );
   res
     .status(200)
     .type("text/xml")
     .send(
-      [
-        '<?xml version="1.0" encoding="UTF-8"?>',
-        "<Response>",
-        "<Say>Hi! Welcome to your PennPaps reorder line. ",
-        "Connecting you to our team now.</Say>",
-        '<Dial timeout="20">+18144710627</Dial>',
-        "</Response>",
-      ].join(""),
+      buildConnectStreamTwiml({
+        wsUrl,
+        customParameters: { conversationId },
+      }),
     );
 });
+
+/**
+ * Most recent episode the caller can still act on by phone (a pre-confirm
+ * status). Returns null on no match or any lookup error → the route then
+ * transfers the caller to a human rather than opening an agent session
+ * with nothing to reorder.
+ */
+async function findActionableEpisodeId(
+  supabase: ReturnType<typeof getSupabaseServiceRoleClient>,
+  patientId: string,
+): Promise<string | null> {
+  const { data, error } = await supabase
+    .schema("resupply")
+    .from("episodes")
+    .select("id, status, created_at")
+    .eq("patient_id", patientId)
+    .in("status", [...ACTIONABLE_EPISODE_STATUSES])
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) {
+    logger.warn(
+      { err: error.message },
+      "voice.inbound-reorder: episode lookup failed",
+    );
+    return null;
+  }
+  return data?.id ?? null;
+}
 
 interface IdentifyResult {
   patientId: string | null;

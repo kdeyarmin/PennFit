@@ -9,19 +9,40 @@
 // prior-auth details. The other config tables remain read-only here;
 // edits still flow through their dedicated backend routes.
 
+import { ApiError } from "@workspace/api-client-react/admin";
+
 import { csrfHeader } from "../csrf";
 
 const BASE = "/resupply-api";
+
+// Parse an error response body as JSON when possible, otherwise fall
+// back to the raw text. Mirrors the shape the shared admin client's
+// ApiError carries so ErrorPanel can surface the real status/detail
+// (a 403 / 500 / validation error) instead of mislabelling every
+// non-ok response as a generic "Network error".
+async function parseErrorBody(res: Response): Promise<unknown> {
+  const raw = await res.text().catch(() => "");
+  if (raw.trim() === "") return null;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return raw;
+  }
+}
 
 async function getJSON<T>(
   path: string,
   params?: Record<string, string | undefined>,
 ): Promise<T> {
-  const res = await fetch(`${BASE}${path}${buildQs(params)}`, {
+  const url = `${BASE}${path}${buildQs(params)}`;
+  const res = await fetch(url, {
     credentials: "same-origin",
     headers: { Accept: "application/json" },
   });
-  if (!res.ok) throw new Error(`GET ${path} failed (${res.status})`);
+  if (!res.ok) {
+    const data = await parseErrorBody(res);
+    throw new ApiError(res, data, { method: "GET", url });
+  }
   return (await res.json()) as T;
 }
 
@@ -41,7 +62,8 @@ async function sendJSON<T>(
   path: string,
   body: unknown,
 ): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
+  const url = `${BASE}${path}`;
+  const res = await fetch(url, {
     method,
     credentials: "same-origin",
     headers: {
@@ -52,15 +74,8 @@ async function sendJSON<T>(
     body: JSON.stringify(body),
   });
   if (!res.ok) {
-    let detail = "";
-    try {
-      detail = JSON.stringify(await res.json());
-    } catch {
-      // Body not JSON or unreadable — fall through with empty detail.
-    }
-    throw new Error(
-      `${method} ${path} failed (${res.status})${detail ? `: ${detail}` : ""}`,
-    );
+    const data = await parseErrorBody(res);
+    throw new ApiError(res, data, { method, url });
   }
   return (await res.json()) as T;
 }

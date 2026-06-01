@@ -5,6 +5,8 @@
 // for every backend tweak. The browser sends `pf_session` automatically
 // on same-origin requests, so no auth header is needed per call.
 
+import { ApiError } from "@workspace/api-client-react/admin";
+
 function getCsrfToken(): string | null {
   if (typeof document === "undefined") return null;
   const match = document.cookie
@@ -91,14 +93,18 @@ export async function listFitterLeads(
   if (source !== "all") params.set("source", source);
   if (hotOnly) params.set("hotOnly", "1");
   const qs = params.toString();
-  const res = await fetch(
-    `/resupply-api/admin/fitter-leads${qs ? `?${qs}` : ""}`,
-    {
-      headers: { Accept: "application/json" },
-    },
-  );
+  const url = `/resupply-api/admin/fitter-leads${qs ? `?${qs}` : ""}`;
+  const res = await fetch(url, {
+    headers: { Accept: "application/json" },
+  });
   if (!res.ok) {
-    throw new Error(`Failed to load fitter leads (${res.status})`);
+    let data: unknown = null;
+    try {
+      data = await res.json();
+    } catch {
+      // body not JSON
+    }
+    throw new ApiError(res, data, { method: "GET", url });
   }
   return (await res.json()) as ListFitterLeadsResponse;
 }
@@ -112,15 +118,19 @@ export interface UnsubscribeFitterLeadResponse {
 export async function unsubscribeFitterLead(
   id: string,
 ): Promise<UnsubscribeFitterLeadResponse> {
-  const res = await fetch(
-    `/resupply-api/admin/fitter-leads/${encodeURIComponent(id)}/unsubscribe`,
-    {
-      method: "POST",
-      headers: { Accept: "application/json", ...csrfHeader() },
-    },
-  );
+  const url = `/resupply-api/admin/fitter-leads/${encodeURIComponent(id)}/unsubscribe`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { Accept: "application/json", ...csrfHeader() },
+  });
   if (!res.ok) {
-    throw new Error(`Failed to unsubscribe lead (${res.status})`);
+    let data: unknown = null;
+    try {
+      data = await res.json();
+    } catch {
+      // body not JSON
+    }
+    throw new ApiError(res, data, { method: "POST", url });
   }
   return (await res.json()) as UnsubscribeFitterLeadResponse;
 }
@@ -134,15 +144,19 @@ export interface MarkContactedFitterLeadResponse {
 export async function markContactedFitterLead(
   id: string,
 ): Promise<MarkContactedFitterLeadResponse> {
-  const res = await fetch(
-    `/resupply-api/admin/fitter-leads/${encodeURIComponent(id)}/mark-contacted`,
-    {
-      method: "POST",
-      headers: { Accept: "application/json" },
-    },
-  );
+  const url = `/resupply-api/admin/fitter-leads/${encodeURIComponent(id)}/mark-contacted`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { Accept: "application/json" },
+  });
   if (!res.ok) {
-    throw new Error(`Failed to mark lead contacted (${res.status})`);
+    let data: unknown = null;
+    try {
+      data = await res.json();
+    } catch {
+      // body not JSON
+    }
+    throw new ApiError(res, data, { method: "POST", url });
   }
   return (await res.json()) as MarkContactedFitterLeadResponse;
 }
@@ -164,11 +178,18 @@ export interface ListFitterTouchMetricsResponse {
 }
 
 export async function listFitterTouchMetrics(): Promise<ListFitterTouchMetricsResponse> {
-  const res = await fetch("/resupply-api/admin/fitter-leads/metrics", {
+  const url = "/resupply-api/admin/fitter-leads/metrics";
+  const res = await fetch(url, {
     headers: { Accept: "application/json" },
   });
   if (!res.ok) {
-    throw new Error(`Failed to load fitter metrics (${res.status})`);
+    let data: unknown = null;
+    try {
+      data = await res.json();
+    } catch {
+      // body not JSON
+    }
+    throw new ApiError(res, data, { method: "GET", url });
   }
   return (await res.json()) as ListFitterTouchMetricsResponse;
 }
@@ -189,11 +210,18 @@ export interface ListFitterTouchVariantMetricsResponse {
 }
 
 export async function listFitterTouchVariantMetrics(): Promise<ListFitterTouchVariantMetricsResponse> {
-  const res = await fetch("/resupply-api/admin/fitter-leads/metrics/variants", {
+  const url = "/resupply-api/admin/fitter-leads/metrics/variants";
+  const res = await fetch(url, {
     headers: { Accept: "application/json" },
   });
   if (!res.ok) {
-    throw new Error(`Failed to load fitter variant metrics (${res.status})`);
+    let data: unknown = null;
+    try {
+      data = await res.json();
+    } catch {
+      // body not JSON
+    }
+    throw new ApiError(res, data, { method: "GET", url });
   }
   return (await res.json()) as ListFitterTouchVariantMetricsResponse;
 }
@@ -213,12 +241,16 @@ export interface FitterLeadTimelineResponse {
 export async function getFitterLeadTimeline(
   id: string,
 ): Promise<FitterLeadTimelineResponse> {
-  const res = await fetch(
-    `/resupply-api/admin/fitter-leads/${encodeURIComponent(id)}/timeline`,
-    { headers: { Accept: "application/json" } },
-  );
+  const url = `/resupply-api/admin/fitter-leads/${encodeURIComponent(id)}/timeline`;
+  const res = await fetch(url, { headers: { Accept: "application/json" } });
   if (!res.ok) {
-    throw new Error(`Failed to load timeline (${res.status})`);
+    let data: unknown = null;
+    try {
+      data = await res.json();
+    } catch {
+      // body not JSON
+    }
+    throw new ApiError(res, data, { method: "GET", url });
   }
   return (await res.json()) as FitterLeadTimelineResponse;
 }
@@ -232,19 +264,23 @@ export async function setFitterLeadNotes(
   id: string,
   notes: string | null,
 ): Promise<SetFitterLeadNotesResponse> {
-  const res = await fetch(
-    `/resupply-api/admin/fitter-leads/${encodeURIComponent(id)}/notes`,
-    {
-      method: "POST",
-      headers: {
-        Accept: "application/json",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ notes }),
+  const url = `/resupply-api/admin/fitter-leads/${encodeURIComponent(id)}/notes`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
     },
-  );
+    body: JSON.stringify({ notes }),
+  });
   if (!res.ok) {
-    throw new Error(`Failed to set lead notes (${res.status})`);
+    let data: unknown = null;
+    try {
+      data = await res.json();
+    } catch {
+      // body not JSON
+    }
+    throw new ApiError(res, data, { method: "POST", url });
   }
   return (await res.json()) as SetFitterLeadNotesResponse;
 }

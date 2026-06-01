@@ -10,6 +10,7 @@
 // Auth: the browser sends the `pf_session` cookie automatically on
 // same-origin requests, so no per-call auth header is needed.
 
+import { ApiError } from "@workspace/api-client-react/admin";
 import { csrfHeader } from "../csrf";
 
 export type ReviewStatus = "pending" | "approved" | "rejected";
@@ -48,25 +49,36 @@ export async function listAdminShopReviews(
   qs.set("status", params.status);
   if (params.cursor) qs.set("cursor", params.cursor);
   if (params.limit) qs.set("limit", String(params.limit));
-  const res = await fetch(`/resupply-api/admin/shop/reviews?${qs.toString()}`, {
+  const url = `/resupply-api/admin/shop/reviews?${qs.toString()}`;
+  const res = await fetch(url, {
     headers: { Accept: "application/json" },
   });
   if (!res.ok) {
-    throw new Error(`Failed to load reviews (${res.status})`);
+    let data: unknown = null;
+    try {
+      data = await res.json();
+    } catch {
+      // body not JSON
+    }
+    throw new ApiError(res, data, { method: "GET", url });
   }
   return (await res.json()) as AdminReviewListResponse;
 }
 
 export async function approveAdminShopReview(id: string): Promise<AdminReview> {
-  const res = await fetch(
-    `/resupply-api/admin/shop/reviews/${encodeURIComponent(id)}/approve`,
-    {
-      method: "POST",
-      headers: { Accept: "application/json", ...csrfHeader() },
-    },
-  );
+  const url = `/resupply-api/admin/shop/reviews/${encodeURIComponent(id)}/approve`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { Accept: "application/json", ...csrfHeader() },
+  });
   if (!res.ok) {
-    throw new Error(`Approve failed (${res.status})`);
+    let data: unknown = null;
+    try {
+      data = await res.json();
+    } catch {
+      // body not JSON
+    }
+    throw new ApiError(res, data, { method: "POST", url });
   }
   return (await res.json()) as AdminReview;
 }
@@ -75,20 +87,24 @@ export async function rejectAdminShopReview(
   id: string,
   note: string | null,
 ): Promise<AdminReview> {
-  const res = await fetch(
-    `/resupply-api/admin/shop/reviews/${encodeURIComponent(id)}/reject`,
-    {
-      method: "POST",
-      headers: {
-        Accept: "application/json",
-        "Content-Type": "application/json",
-        ...csrfHeader(),
-      },
-      body: JSON.stringify(note ? { note } : {}),
+  const url = `/resupply-api/admin/shop/reviews/${encodeURIComponent(id)}/reject`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      ...csrfHeader(),
     },
-  );
+    body: JSON.stringify(note ? { note } : {}),
+  });
   if (!res.ok) {
-    throw new Error(`Reject failed (${res.status})`);
+    let data: unknown = null;
+    try {
+      data = await res.json();
+    } catch {
+      // body not JSON
+    }
+    throw new ApiError(res, data, { method: "POST", url });
   }
   return (await res.json()) as AdminReview;
 }
@@ -108,15 +124,19 @@ export interface UnrejectResponse {
 export async function unrejectAdminShopReview(
   id: string,
 ): Promise<UnrejectResponse> {
-  const res = await fetch(
-    `/resupply-api/admin/shop/reviews/${encodeURIComponent(id)}/unreject`,
-    {
-      method: "POST",
-      headers: { Accept: "application/json", ...csrfHeader() },
-    },
-  );
+  const url = `/resupply-api/admin/shop/reviews/${encodeURIComponent(id)}/unreject`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { Accept: "application/json", ...csrfHeader() },
+  });
   if (!res.ok) {
-    throw new Error(`Un-reject failed (${res.status})`);
+    let data: unknown = null;
+    try {
+      data = await res.json();
+    } catch {
+      // body not JSON
+    }
+    throw new ApiError(res, data, { method: "POST", url });
   }
   return (await res.json()) as UnrejectResponse;
 }
@@ -135,20 +155,24 @@ export async function updateAdminShopReviewNote(
   id: string,
   note: string | null,
 ): Promise<NotePatchResponse> {
-  const res = await fetch(
-    `/resupply-api/admin/shop/reviews/${encodeURIComponent(id)}/note`,
-    {
-      method: "PATCH",
-      headers: {
-        Accept: "application/json",
-        "Content-Type": "application/json",
-        ...csrfHeader(),
-      },
-      body: JSON.stringify({ note: note && note.trim() !== "" ? note : null }),
+  const url = `/resupply-api/admin/shop/reviews/${encodeURIComponent(id)}/note`;
+  const res = await fetch(url, {
+    method: "PATCH",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      ...csrfHeader(),
     },
-  );
+    body: JSON.stringify({ note: note && note.trim() !== "" ? note : null }),
+  });
   if (!res.ok) {
-    throw new Error(`Note update failed (${res.status})`);
+    let data: unknown = null;
+    try {
+      data = await res.json();
+    } catch {
+      // body not JSON
+    }
+    throw new ApiError(res, data, { method: "PATCH", url });
   }
   return (await res.json()) as NotePatchResponse;
 }

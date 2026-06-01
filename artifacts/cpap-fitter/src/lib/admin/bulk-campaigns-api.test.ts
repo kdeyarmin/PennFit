@@ -14,6 +14,8 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { Mock } from "vitest";
 
+import { ApiError } from "@workspace/api-client-react/admin";
+
 import {
   TICK_INTERVAL_SECONDS,
   listBulkCampaigns,
@@ -603,5 +605,71 @@ describe("resumeBulkCampaign", () => {
 
     await resumeBulkCampaign("camp-1");
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ApiError migration — jsonFetch now throws ApiError (not plain Error)
+// ---------------------------------------------------------------------------
+
+describe("bulk-campaigns-api — ApiError thrown on non-OK response", () => {
+  test("listBulkCampaigns throws ApiError instance on 403", async () => {
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 403,
+      statusText: "Forbidden",
+      headers: new Headers(),
+      url: "",
+      json: async () => ({}),
+    });
+    const err = await listBulkCampaigns().catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect((err as ApiError).status).toBe(403);
+  });
+
+  test("getBulkCampaign throws ApiError instance on 404", async () => {
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 404,
+      statusText: "Not Found",
+      headers: new Headers(),
+      url: "",
+      json: async () => ({}),
+    });
+    const err = await getBulkCampaign("ghost").catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect((err as ApiError).status).toBe(404);
+  });
+
+  test("createBulkCampaignDraft throws ApiError with method POST", async () => {
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 422,
+      statusText: "Unprocessable",
+      headers: new Headers(),
+      url: "",
+      json: async () => ({}),
+    });
+    const err = await createBulkCampaignDraft({
+      name: "Test",
+      audienceKind: "all_active_patients",
+      category: "marketing",
+      templateKey: "t1",
+    }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect((err as ApiError).method).toBe("POST");
+  });
+
+  test("ApiError carries the request URL", async () => {
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 500,
+      statusText: "ISE",
+      headers: new Headers(),
+      url: "",
+      json: async () => null,
+    });
+    const err = await listBulkCampaigns().catch((e: unknown) => e);
+    expect((err as ApiError).url).toContain("/admin/bulk-campaigns");
   });
 });

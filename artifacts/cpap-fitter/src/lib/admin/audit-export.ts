@@ -5,6 +5,8 @@
 // the `pf_session` cookie, sent automatically by the browser on
 // same-origin requests.
 
+import { ApiError } from "@workspace/api-client-react/admin";
+
 export interface AuditExportFilters {
   action?: string;
   targetTable?: string;
@@ -41,9 +43,7 @@ export async function downloadAuditExport(
     } catch {
       detail = "";
     }
-    throw new Error(
-      `Audit export failed (${res.status})${detail ? `: ${detail.slice(0, 200)}` : ""}`,
-    );
+    throw new ApiError(res, detail || null, { method: "GET", url });
   }
 
   const blob = await res.blob();
@@ -53,13 +53,18 @@ export async function downloadAuditExport(
   const match = /filename="([^"]+)"/i.exec(cd);
   const filename = match?.[1] ?? `audit-export-${Date.now()}.csv`;
 
-  // Approximate row count = number of \n in the blob minus 1
-  // (header). Used purely for an end-of-export confirmation
-  // toast; the real number lives in the file.
+  // Approximate row count = non-blank lines minus 1 (header). We trim
+  // each line before the emptiness test so trailing newlines AND lone
+  // "\r" lines from CRLF endings don't inflate the count. Used purely
+  // for an end-of-export confirmation toast; the real number lives in
+  // the file.
   let rowCountApprox: number;
   try {
     const text = await blob.text();
-    rowCountApprox = Math.max(0, text.split("\n").length - 1);
+    const nonEmptyLines = text
+      .split("\n")
+      .filter((line) => line.trim().length > 0);
+    rowCountApprox = Math.max(0, nonEmptyLines.length - 1);
   } catch {
     rowCountApprox = 0;
   }

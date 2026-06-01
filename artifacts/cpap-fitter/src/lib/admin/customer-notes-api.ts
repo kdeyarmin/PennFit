@@ -5,6 +5,8 @@
 // `pf_session` cookie automatically on same-origin requests, so no
 // per-call auth header is needed.
 
+import { ApiError } from "@workspace/api-client-react/admin";
+
 import { csrfHeader } from "../csrf";
 
 export interface AdminCustomerNote {
@@ -41,7 +43,13 @@ export async function listAdminCustomerNotes(
     throw new AdminCustomerNotesNotFoundError();
   }
   if (!res.ok) {
-    throw new Error(`Failed to load notes (${res.status})`);
+    let data: unknown = null;
+    try {
+      data = await res.json();
+    } catch {
+      // non-JSON error body — status alone is enough
+    }
+    throw new ApiError(res, data, { method: "GET", url: res.url });
   }
   return (await res.json()) as AdminCustomerNotesListResponse;
 }
@@ -67,7 +75,7 @@ export async function createAdminCustomerNote(
   }
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    throw new Error(`Failed to save note (${res.status}): ${text}`);
+    throw new ApiError(res, text || null, { method: "POST", url: res.url });
   }
   return (await res.json()) as CreateAdminCustomerNoteResponse;
 }

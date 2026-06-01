@@ -14,8 +14,8 @@ What's in here:
 - `createAuthHooks(client)` — React Query hooks: `useSession`,
   `useSignIn`, `useSignUp`, `useSignOut`, `useForgotPassword`,
   `useResetPassword`, `useVerifyEmail`, `useChangePassword`. The
-  hooks invalidate the `/me` query key on mutations that flip
-  identity state.
+  hooks invalidate the shared `/me` query-key prefix on mutations
+  that flip identity state.
 
 What's NOT in here:
 

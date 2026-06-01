@@ -8,8 +8,9 @@
 import type * as React from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
-import { authClient, authHooks } from "./auth-hooks";
+import { authClient, authHooks, SESSION_QUERY_KEY } from "./auth-hooks";
 import { cartStore } from "@/hooks/use-cart";
+import { csrfHeader } from "./csrf";
 
 export interface ShopIdentity {
   email: string | null;
@@ -50,7 +51,7 @@ export function useShopIdentity(): ShopIdentity {
               await fetch("/resupply-api/shop/me/push-subscriptions", {
                 method: "DELETE",
                 credentials: "include",
-                headers: { "Content-Type": "application/json" },
+                headers: { "Content-Type": "application/json", ...csrfHeader() },
                 body: JSON.stringify({ endpoint }),
               });
             } catch {
@@ -124,7 +125,7 @@ export function useShopIdentity(): ShopIdentity {
       // shared device kept rendering &lt;SignedIn&gt; gates with the
       // prior user's identity for up to a minute.
       try {
-        await queryClient.invalidateQueries({ queryKey: ["auth", "me"] });
+        await queryClient.invalidateQueries({ queryKey: SESSION_QUERY_KEY });
       } catch {
         /* best-effort */
       }

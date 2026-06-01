@@ -1,6 +1,8 @@
 // Hand-rolled fetch wrapper for /admin/inbox-counts (Phase 16).
 // Powers the actionable-work badges on the admin nav.
 
+import { ApiError } from "@workspace/api-client-react/admin";
+
 export interface AdminInboxCounts {
   awaitingReplyConversations: number;
   pendingReturns: number;
@@ -15,11 +17,18 @@ export interface AdminInboxCounts {
 }
 
 export async function fetchAdminInboxCounts(): Promise<AdminInboxCounts> {
-  const res = await fetch("/resupply-api/admin/inbox-counts", {
+  const url = "/resupply-api/admin/inbox-counts";
+  const res = await fetch(url, {
     headers: { Accept: "application/json" },
   });
   if (!res.ok) {
-    throw new Error(`Failed to load inbox counts (${res.status})`);
+    let data: unknown = null;
+    try {
+      data = await res.json();
+    } catch {
+      // body not JSON
+    }
+    throw new ApiError(res, data, { method: "GET", url });
   }
   return (await res.json()) as AdminInboxCounts;
 }

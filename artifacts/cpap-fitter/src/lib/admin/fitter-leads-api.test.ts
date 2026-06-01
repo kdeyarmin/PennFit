@@ -68,6 +68,9 @@ function makeJsonResponse(body: unknown, ok = true, status = 200): Response {
   return {
     ok,
     status,
+    statusText: "",
+    headers: new Headers(),
+    text: async () => "",
     json: async () => body,
   } as unknown as Response;
 }

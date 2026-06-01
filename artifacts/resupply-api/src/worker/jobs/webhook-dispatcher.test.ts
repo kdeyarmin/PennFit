@@ -3,6 +3,7 @@ import { createHmac } from "node:crypto";
 import { describe, expect, it, beforeEach, vi } from "vitest";
 
 import {
+  getSupabaseFilterCalls,
   getSupabaseWritePayloads,
   installSupabaseMock,
   stageSupabaseResponse,
@@ -149,6 +150,37 @@ describe("runWebhookDispatcher", () => {
     expect(
       (subscriptionUpdates[0] as Record<string, unknown>).last_delivery_status,
     ).toBe("delivered");
+  });
+
+  it("claims rows with a due-time lease guard so overlapping ticks can't double-deliver", async () => {
+    stageDispatchableDelivery();
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValue(new Response("ok", { status: 200 }));
+    await runWebhookDispatcher({
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+
+    // The atomic-claim UPDATE must guard on BOTH status='queued' and
+    // next_attempt_at <= now. The status guard alone is NOT exclusive:
+    // the claim deliberately leaves status unchanged (so a worker crash
+    // leaves the row recoverable), so a concurrent tick re-evaluating
+    // `status='queued'` would still match and double-deliver. The
+    // due-time guard is what serialises two overlapping ticks — the
+    // first tick's lease bump pushes next_attempt_at into the future,
+    // failing the second tick's re-evaluated WHERE. (lte on
+    // next_attempt_at appears only on the claim, never on the
+    // delivered/retry outcome update, so it uniquely identifies it.)
+    const claimFilters = getSupabaseFilterCalls("webhook_deliveries", "update");
+    const hasStatusGuard = claimFilters.some(
+      (f) =>
+        f.verb === "eq" && f.args[0] === "status" && f.args[1] === "queued",
+    );
+    const hasDueGuard = claimFilters.some(
+      (f) => f.verb === "lte" && f.args[0] === "next_attempt_at",
+    );
+    expect(hasStatusGuard).toBe(true);
+    expect(hasDueGuard).toBe(true);
   });
 
   it("schedules an exponential backoff retry on 5xx", async () => {

@@ -1,5 +1,7 @@
 // Thin typed client for the /admin/nps/* endpoints.
 
+import { ApiError } from "@workspace/api-client-react/admin";
+
 export interface NpsRecentResponse {
   windowDays: number;
   total: number;
@@ -36,14 +38,13 @@ export async function fetchRecentNps(
     headers: { Accept: "application/json" },
   });
   if (!res.ok) {
-    let message = `${res.status} ${res.statusText}`;
+    let data: unknown = null;
     try {
-      const body = (await res.json()) as { message?: string; error?: string };
-      message = body.message ?? body.error ?? message;
+      data = await res.json();
     } catch {
-      // ignore
+      // body not JSON
     }
-    throw new Error(message);
+    throw new ApiError(res, data, { method: "GET", url });
   }
   return (await res.json()) as NpsRecentResponse;
 }

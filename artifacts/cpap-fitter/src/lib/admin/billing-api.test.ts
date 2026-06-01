@@ -12,6 +12,8 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { Mock } from "vitest";
 
+import { ApiError } from "@workspace/api-client-react/admin";
+
 import {
   fetchAgingReport,
   fetchAiQueue,
@@ -190,14 +192,16 @@ describe("getJSON shared behaviour (via fetchDirectorSummary)", () => {
     await expect(fetchDirectorSummary()).rejects.toThrow("403");
   });
 
-  test("error message includes the path", async () => {
+  test("ApiError carries the request URL", async () => {
     fetchMock.mockResolvedValue({
       ok: false,
       status: 500,
     });
 
-    await expect(fetchDirectorSummary()).rejects.toThrow(
-      "/admin/billing/director-summary",
+    const err = await fetchDirectorSummary().catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect((err as ApiError).url).toBe(
+      "/resupply-api/admin/billing/director-summary",
     );
   });
 
@@ -686,15 +690,17 @@ describe("ingestEraFile", () => {
     await expect(ingestEraFile(INGEST_INPUT)).rejects.toThrow("500");
   });
 
-  test("throws and message includes the path", async () => {
+  test("throws an ApiError carrying the request URL", async () => {
     fetchMock.mockResolvedValue({
       ok: false,
       status: 400,
       json: async () => ({}),
     });
 
-    await expect(ingestEraFile(INGEST_INPUT)).rejects.toThrow(
-      "/admin/billing/era-ingest",
+    const err = await ingestEraFile(INGEST_INPUT).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect((err as ApiError).url).toBe(
+      "/resupply-api/admin/billing/era-ingest",
     );
   });
 

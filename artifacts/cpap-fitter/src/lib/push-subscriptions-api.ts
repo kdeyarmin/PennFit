@@ -1,6 +1,8 @@
 // Hand-rolled fetch wrappers for the W3C Web Push registration
 // endpoints (Phase C.1 / feature #4).
 
+import { csrfHeader } from "./csrf";
+
 export async function fetchVapidPublicKey(): Promise<string | null> {
   const res = await fetch(
     "/resupply-api/shop/me/push-subscriptions/vapid-public-key",
@@ -20,7 +22,7 @@ export async function registerPushSubscription(
   const res = await fetch("/resupply-api/shop/me/push-subscriptions", {
     method: "POST",
     credentials: "include",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...csrfHeader() },
     body: JSON.stringify(sub),
   });
   if (!res.ok) {
@@ -35,7 +37,7 @@ export async function unregisterPushSubscription(
   const res = await fetch("/resupply-api/shop/me/push-subscriptions", {
     method: "DELETE",
     credentials: "include",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...csrfHeader() },
     body: JSON.stringify({ endpoint }),
   });
   if (!res.ok && res.status !== 204) {

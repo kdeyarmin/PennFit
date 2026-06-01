@@ -1,5 +1,7 @@
 // Hand-rolled fetch wrappers for /admin/coaching-plans.
 
+import { ApiError } from "@workspace/api-client-react/admin";
+
 import { csrfHeader } from "../csrf";
 
 export type CoachingStatus =
@@ -27,7 +29,9 @@ export interface CoachingPlan {
 
 async function jsonFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
   const { headers: initHeaders, ...restInit } = init;
-  const res = await fetch(`/resupply-api${path}`, {
+  const method = (init.method ?? "GET").toUpperCase();
+  const url = `/resupply-api${path}`;
+  const res = await fetch(url, {
     ...restInit,
     credentials: "include",
     headers: {
@@ -37,14 +41,13 @@ async function jsonFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
     },
   });
   if (!res.ok) {
-    let message = `${res.status} ${res.statusText}`;
+    let data: unknown = null;
     try {
-      const body = (await res.json()) as { message?: string; error?: string };
-      message = body.message ?? body.error ?? message;
+      data = await res.json();
     } catch {
       // ignore
     }
-    throw new Error(message);
+    throw new ApiError(res, data, { method, url });
   }
   return (await res.json()) as T;
 }

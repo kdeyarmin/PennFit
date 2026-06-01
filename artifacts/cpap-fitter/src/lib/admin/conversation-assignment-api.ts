@@ -2,18 +2,24 @@
 // SLA / escalation endpoints. The generated OpenAPI client doesn't
 // include these yet — add them to the spec when the surface stabilizes.
 
+import { ApiError } from "@workspace/api-client-react/admin";
+
+import { csrfHeader } from "../csrf";
+
 export type Priority = "low" | "normal" | "high" | "urgent";
 
 async function post(
   path: string,
   body?: Record<string, unknown>,
 ): Promise<unknown> {
-  const res = await fetch(`/resupply-api${path}`, {
+  const url = `/resupply-api${path}`;
+  const res = await fetch(url, {
     method: "POST",
     credentials: "include",
     headers: {
       Accept: "application/json",
       ...(body ? { "Content-Type": "application/json" } : {}),
+      ...csrfHeader(),
     },
     body: body ? JSON.stringify(body) : undefined,
   });
@@ -22,9 +28,7 @@ async function post(
       error?: string;
       message?: string;
     } | null;
-    throw new Error(
-      json?.message ?? json?.error ?? `Request failed (${res.status})`,
-    );
+    throw new ApiError(res, json, { method: "POST", url });
   }
   return await res.json();
 }
