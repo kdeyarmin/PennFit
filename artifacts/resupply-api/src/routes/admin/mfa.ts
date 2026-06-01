@@ -34,6 +34,7 @@ import {
 } from "@workspace/resupply-auth";
 
 import { logger } from "../../lib/logger";
+import { adminReadRateLimiter } from "../../middlewares/admin-rate-limit";
 import { requireAdmin } from "../../middlewares/requireAdmin";
 import { rateLimit } from "../../middlewares/rate-limit";
 
@@ -109,74 +110,79 @@ function getEnforcementMode(): EnforcementMode {
   return ENFORCEMENT_MODE;
 }
 
-router.get("/admin/mfa/status", requireAdmin, async (req, res) => {
-  const adminUserId = req.adminUserId;
-  if (!adminUserId) {
-    // requireAdmin should have populated this. Guard defensively.
-    res.status(500).json({ error: "admin_user_id_missing" });
-    return;
-  }
-  const supabase = getSupabaseServiceRoleClient();
-  // Multi-device: pull EVERY row for this admin so the SPA can
-  // render the device list (one row per enrolled device, plus any
-  // in-progress unverified row).
-  const { data: rows, error } = await supabase
-    .schema("resupply")
-    .from("admin_mfa_secrets")
-    .select("id, verified_at, last_used_at, created_at, device_label")
-    .eq("staff_user_id", adminUserId)
-    .order("created_at", { ascending: true });
-  if (error) throw error;
-  const allRows = rows ?? [];
-  const verifiedRows = allRows.filter((r) => r.verified_at);
-  const inProgress = allRows.find((r) => !r.verified_at) ?? null;
-
-  let recoveryCodesRemaining = 0;
-  if (verifiedRows.length > 0) {
-    const { count } = await supabase
+router.get(
+  "/admin/mfa/status",
+  adminReadRateLimiter,
+  requireAdmin,
+  async (req, res) => {
+    const adminUserId = req.adminUserId;
+    if (!adminUserId) {
+      // requireAdmin should have populated this. Guard defensively.
+      res.status(500).json({ error: "admin_user_id_missing" });
+      return;
+    }
+    const supabase = getSupabaseServiceRoleClient();
+    // Multi-device: pull EVERY row for this admin so the SPA can
+    // render the device list (one row per enrolled device, plus any
+    // in-progress unverified row).
+    const { data: rows, error } = await supabase
       .schema("resupply")
-      .from("admin_mfa_recovery_codes")
-      .select("id", { count: "exact", head: true })
+      .from("admin_mfa_secrets")
+      .select("id, verified_at, last_used_at, created_at, device_label")
       .eq("staff_user_id", adminUserId)
-      .is("used_at", null);
-    recoveryCodesRemaining = count ?? 0;
-  }
+      .order("created_at", { ascending: true });
+    if (error) throw error;
+    const allRows = rows ?? [];
+    const verifiedRows = allRows.filter((r) => r.verified_at);
+    const inProgress = allRows.find((r) => !r.verified_at) ?? null;
 
-  const enforcementMode = getEnforcementMode();
-  const enrolled = verifiedRows.length > 0;
-  // First-verified row drives the legacy "verifiedAt / createdAt"
-  // fields so existing SPA code keeps working without a refactor.
-  const primary = verifiedRows[0] ?? null;
-  // Most-recent last_used_at across devices.
-  const lastUsedAt =
-    verifiedRows
-      .map((r) => r.last_used_at)
-      .filter((v): v is string => v != null)
-      .sort()
-      .pop() ?? null;
+    let recoveryCodesRemaining = 0;
+    if (verifiedRows.length > 0) {
+      const { count } = await supabase
+        .schema("resupply")
+        .from("admin_mfa_recovery_codes")
+        .select("id", { count: "exact", head: true })
+        .eq("staff_user_id", adminUserId)
+        .is("used_at", null);
+      recoveryCodesRemaining = count ?? 0;
+    }
 
-  res.json({
-    enrolled,
-    inProgressEnrollment: inProgress != null,
-    verifiedAt: primary?.verified_at ?? null,
-    lastUsedAt,
-    createdAt: primary?.created_at ?? null,
-    recoveryCodesRemaining,
-    enforcementMode,
-    mustEnroll: enforcementMode === "required" && !enrolled,
-    // Multi-device list. Each entry is one verified device the
-    // admin has enrolled — the SPA renders a per-row "Remove"
-    // button alongside the existing "Disable all" / "Regenerate
-    // codes" actions.
-    devices: verifiedRows.map((r) => ({
-      id: r.id,
-      label: r.device_label,
-      verifiedAt: r.verified_at,
-      lastUsedAt: r.last_used_at,
-      createdAt: r.created_at,
-    })),
-  });
-});
+    const enforcementMode = getEnforcementMode();
+    const enrolled = verifiedRows.length > 0;
+    // First-verified row drives the legacy "verifiedAt / createdAt"
+    // fields so existing SPA code keeps working without a refactor.
+    const primary = verifiedRows[0] ?? null;
+    // Most-recent last_used_at across devices.
+    const lastUsedAt =
+      verifiedRows
+        .map((r) => r.last_used_at)
+        .filter((v): v is string => v != null)
+        .sort()
+        .pop() ?? null;
+
+    res.json({
+      enrolled,
+      inProgressEnrollment: inProgress != null,
+      verifiedAt: primary?.verified_at ?? null,
+      lastUsedAt,
+      createdAt: primary?.created_at ?? null,
+      recoveryCodesRemaining,
+      enforcementMode,
+      mustEnroll: enforcementMode === "required" && !enrolled,
+      // Multi-device list. Each entry is one verified device the
+      // admin has enrolled — the SPA renders a per-row "Remove"
+      // button alongside the existing "Disable all" / "Regenerate
+      // codes" actions.
+      devices: verifiedRows.map((r) => ({
+        id: r.id,
+        label: r.device_label,
+        verifiedAt: r.verified_at,
+        lastUsedAt: r.last_used_at,
+        createdAt: r.created_at,
+      })),
+    });
+  },
+);
 
 const beginBody = z
   .object({

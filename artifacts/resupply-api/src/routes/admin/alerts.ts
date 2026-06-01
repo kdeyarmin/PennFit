@@ -38,7 +38,10 @@ import {
 } from "../../lib/alerts/dispatch";
 import { logger } from "../../lib/logger";
 import { isAsciiOnly } from "../../lib/message-templates/sms";
-import { adminRateLimit } from "../../middlewares/admin-rate-limit";
+import {
+  adminRateLimit,
+  adminReadRateLimiter,
+} from "../../middlewares/admin-rate-limit";
 import {
   requireAdmin,
   requirePermission,
@@ -394,6 +397,10 @@ router.patch(
 // ─── POST /admin/alerts/:key/send ────────────────────────────────
 router.post(
   "/admin/alerts/:key/send",
+  // Recognized front-gate limiter ahead of the auth gate (CodeQL
+  // js/missing-rate-limiting); the tighter per-actor send cap below
+  // still applies once requireAdmin populates req.adminUserId.
+  adminReadRateLimiter,
   requireAdmin,
   adminRateLimit({ name: "alerts.send", preset: "sensitive" }),
   async (req, res) => {
