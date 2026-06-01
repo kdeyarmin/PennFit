@@ -109,8 +109,8 @@ router.get(
 
 router.put(
   "/admin/agent-availability/me/phone",
-  adminRateLimit({ name: "agent_phone.set", preset: "mutation" }),
   requireAdmin,
+  adminRateLimit({ name: "agent_phone.set", preset: "mutation" }),
   async (req, res) => {
     const parsed = phoneSchema.safeParse(req.body);
     if (!parsed.success) {
