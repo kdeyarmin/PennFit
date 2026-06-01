@@ -52,6 +52,7 @@ import {
   CircleDollarSign,
   Landmark,
   Gavel,
+  FilePlus2,
   Wallet,
   Bot,
   ListFilter,
@@ -452,6 +453,14 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         icon: CalendarRange,
         matchPrefix: "/admin/billing/capped-rentals",
         hint: "13- and 36-month CMS rental cycle tracker + KH/KI/KX modifier rotation",
+      },
+      {
+        href: "/admin/billing/manual-claim",
+        label: "Manual claim",
+        icon: FilePlus2,
+        matchPrefix: "/admin/billing/manual-claim",
+        hint: "Key a corrected / void-replacement / paper-backup claim by hand",
+        requiredPermission: "patients.update",
       },
       {
         href: "/admin/billing/config",

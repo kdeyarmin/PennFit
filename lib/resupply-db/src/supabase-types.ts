@@ -1471,6 +1471,13 @@ export interface Database {
           latest_scrub_result_id: string | null;
           // Pointer to the most recent denial analysis (migration 0131).
           latest_denial_analysis_id: string | null;
+          // Migration 0195 (Biller #32): X12 837 CLM05-3 resubmission
+          // code — '1' original (default), '7' replacement, '8' void —
+          // the payer ICN being corrected/voided, and how the claim was
+          // entered (fulfillment-derived vs hand-keyed manual/adjustment).
+          claim_frequency_code: "1" | "7" | "8";
+          original_claim_number: string | null;
+          entry_source: "fulfillment" | "manual" | "adjustment";
           created_at: string;
           updated_at: string;
         };

@@ -40,7 +40,7 @@ These come straight from `CLAUDE.md`'s "Hard rules" and the service-boot
 contract. A violation is a correctness bug, not a style nit.
 
 1. **Migrations** are hand-written SQL in `lib/resupply-db/drizzle/`.
-   The next free prefix is **`0195`** (this branch uses `0188`–`0194`;
+   The next free prefix is **`0196`** (this branch uses `0188`–`0194`;
    `main` landed `0186`/`0187` mid-flight, so the original cost/metrics
    migrations were **rebase-bumped** from `0186`/`0187` → `0193`/`0194`);
    numbers are **collision-prone on merge trains** (`0179`–`0181` already
@@ -330,7 +330,7 @@ the data.
 | 29  | **CMN / DIF generation** (Certificates of Medical Necessity / Detailed Item Forms)                              | L    | Entirely absent today. New doc templates fed by data already held (HCPCS, dx, prescriber NPI, sleep study); render via the existing PDF path used for appeal letters.                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | 30  | **Patient-statement automation** (batch + schedule)                                                             | M    | `patient_billing_statements` table + PDF render already exist; add a `statements.nightly` job + schedule, with the Stripe pay-link already generated. Email via shared client.                                                                                                                                                                                                                                                                                                                                                                                                          |
 | 31  | **◑ Scheduled / batch eligibility** (re-verify the panel monthly; auto-check coverages near `termination_date`) | M    | ◑ Read-only half shipped: `GET /admin/billing/eligibility-verification-worklist` (pure tested `buildVerificationWorklist`) ranks active coverages by urgency — never_verified / terminating_soon / stale — member id masked to last-4; `reports.read`-gated; SPA "Re-verification" page (Billing nav) deep-linking each row to the existing per-coverage 270/271 verify. **Deferred:** the auto-fire batch worker (cron-driving outbound 270 across the panel) — outbound clearinghouse traffic from a cron needs its own rate-limit/backoff + opt-in, so it lands as a separate slice. |
-| 32  | **Manual / adjustment claim entry** (key a corrected / void-replacement / paper-backup claim)                   | M    | New "manual claim" route + UI feeding the same draft→scrub→submit pipeline; every claim today originates from a fulfillment, this is the exception path.                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| 32  | **✅ Manual / adjustment claim entry** (key a corrected / void-replacement / paper-backup claim)                | M    | ✅ Shipped: migration `0195` adds the X12 837 CLM05-3 resubmission fields (`claim_frequency_code` 1/7/8 + `original_claim_number` + `entry_source`); `POST /admin/patients/:id/manual-claims` (pure tested `validateManualClaim`: frequency 7/8 requires the original payer claim #) creates a `draft` feeding the same scrub→submit pipeline, audited; SPA "Manual claim" page (Billing nav, `patients.update`) deep-links to the patient workbench on create.                                                                                                                         |
 | 33  | **✅ Denials _worklist_** (prioritized by recoverable $ × win-probability, AI action inline)                    | M    | ✅ Shipped: `GET /admin/billing/denials-worklist` (pure tested `rankDenialWorklist`) ranks open denials by recoverable $ (billed − paid) × win-probability (AI `confidence`, conservative default when unanalyzed); excludes already-resubmitted/appealed/written-off. `reports.read`-gated. SPA "Denials worklist" page (Billing nav) with expected-recoverable totals + a ranked table deep-linking each claim to its workbench for the existing one-click resubmit/appeal.                                                                                                           |
 | 35  | **✅ Prior-auth expiry → auto-renewal nudge**                                                                   | S–M  | ✅ Shipped: the expiry sweep already writes the `prior_auth_expiring` / `prior_auth_expired` CSR alert (the nudge); this adds the **draft-renewal** half — `POST /admin/prior-authorizations/:id/draft-renewal` clones an approved/expired/denied PA into a fresh `draft` (same patient/coverage/HCPCS/payer), refusing if an open renewal for that patient+HCPCS already exists. `patients.update`-gated, audited (ids + HCPCS only).                                                                                                                                                  |
 
@@ -393,50 +393,50 @@ These need accumulated data from earlier phases or new content/vendors.
 
 ## All 37 items at a glance
 
-| #   | Persona | Item                              | Phase  | Size    | Key dependency  |
-| --- | ------- | --------------------------------- | ------ | ------- | --------------- |
-| F1  | shared  | Cost / COGS capture               | 0      | M       | —               |
-| F2  | shared  | Metrics + threshold substrate     | 0      | M       | —               |
-| F3  | shared  | Clinical encounters + RT role     | 0      | L       | —               |
-| F4  | shared  | Work-item model + cases           | 0      | L       | —               |
-| 1   | Owner   | ✅ Gross-margin / COGS dashboard  | 2      | M       | done (F1)       |
-| 2   | Owner   | ✅ Payer-mix profitability        | 2      | M       | done (F1)       |
-| 3   | Owner   | LTV & CAC cohort economics        | 2      | L       | F1              |
-| 4   | Owner   | Revenue / cash-flow forecast      | 6      | L       | F1, eligibility |
-| 5   | Owner   | ✅ KPI threshold alerting         | 2      | M       | done (F2)       |
-| 6   | Owner   | ✅ Weekly owner digest            | 2      | S–M     | done (F2)       |
-| 7   | Owner   | ✅ Inventory turnover & stockout  | 2      | M       | done (F1)       |
-| 8   | Owner   | ✅ Goal / target tracking + pace  | 1→2    | S       | done            |
-| 9   | Owner   | Compliance reporting _(optional)_ | 6      | XL      | owner decision  |
-| 10  | CSR     | Unified work queue                | 4      | M       | F4              |
-| 11  | CSR     | Click-to-dial + call-back queue   | 4      | L       | F4, telecom     |
-| 12  | CSR     | Cross-channel customer timeline   | 4      | M       | F4              |
-| 13  | CSR     | ✅ Conversation full-text search  | 1      | M       | done            |
-| 14  | CSR     | ✅ Save-as-macro                  | 1      | S       | done            |
-| 15  | CSR     | AI reply drafting                 | 4      | M       | —               |
-| 16  | CSR     | ✅ Agent status toggle            | 1      | S–M     | done            |
-| 17  | CSR     | Case / ticket object              | 4      | M       | F4              |
-| 18  | CSR     | ✅ Live queue counts              | 1      | S       | done            |
-| 19  | RT      | Clinical encounter note           | 0 (F3) | L       | —               |
-| 20  | RT      | RT role & portal                  | 0 (F3) | L       | —               |
-| 21  | RT      | Non-adherence intervention plan   | 3      | M       | F3              |
-| 22  | RT      | Mask-fit confirmation loop        | 3 / 6  | M / M–L | F3 / §22a       |
-| 23  | RT      | Clinical-alert patient outreach   | 3      | M       | F3              |
-| 24  | RT      | Per-RT outcomes dashboard         | 3      | M       | F3              |
-| 25  | RT      | Short-video education library     | 6      | M       | vendor          |
-| 26  | RT      | ✅ Therapy-trend sparklines       | 1      | S       | done            |
-| 27  | RT      | ✅ Setup-guidance checklist       | 1      | S–M     | done            |
-| 28  | Biller  | Automated secondary / COB claims  | 5      | L       | —               |
-| 29  | Biller  | CMN / DIF generation              | 5      | L       | —               |
-| 30  | Biller  | Patient-statement automation      | 5      | M       | —               |
-| 31  | Biller  | ◑ Scheduled / batch eligibility   | 5      | M       | partial         |
-| 32  | Biller  | Manual / adjustment claim entry   | 5      | M       | —               |
-| 33  | Biller  | ✅ Denials worklist               | 5      | M       | done            |
-| 34  | Biller  | ✅ Fee-schedule bulk upload       | 1      | S–M     | done            |
-| 35  | Biller  | ✅ PA expiry → auto-renewal nudge | 5      | S–M     | done            |
-| 36  | Biller  | ✅ Timely-filing countdown        | 1      | S       | done            |
-| 37  | Biller  | ✅ Webhook re-delivery UI         | 1      | S–M     | done            |
-| ★   | shared  | ✅ Fixed CSR-productivity report  | 1      | M       | done            |
+| #   | Persona | Item                               | Phase  | Size    | Key dependency  |
+| --- | ------- | ---------------------------------- | ------ | ------- | --------------- |
+| F1  | shared  | Cost / COGS capture                | 0      | M       | —               |
+| F2  | shared  | Metrics + threshold substrate      | 0      | M       | —               |
+| F3  | shared  | Clinical encounters + RT role      | 0      | L       | —               |
+| F4  | shared  | Work-item model + cases            | 0      | L       | —               |
+| 1   | Owner   | ✅ Gross-margin / COGS dashboard   | 2      | M       | done (F1)       |
+| 2   | Owner   | ✅ Payer-mix profitability         | 2      | M       | done (F1)       |
+| 3   | Owner   | LTV & CAC cohort economics         | 2      | L       | F1              |
+| 4   | Owner   | Revenue / cash-flow forecast       | 6      | L       | F1, eligibility |
+| 5   | Owner   | ✅ KPI threshold alerting          | 2      | M       | done (F2)       |
+| 6   | Owner   | ✅ Weekly owner digest             | 2      | S–M     | done (F2)       |
+| 7   | Owner   | ✅ Inventory turnover & stockout   | 2      | M       | done (F1)       |
+| 8   | Owner   | ✅ Goal / target tracking + pace   | 1→2    | S       | done            |
+| 9   | Owner   | Compliance reporting _(optional)_  | 6      | XL      | owner decision  |
+| 10  | CSR     | Unified work queue                 | 4      | M       | F4              |
+| 11  | CSR     | Click-to-dial + call-back queue    | 4      | L       | F4, telecom     |
+| 12  | CSR     | Cross-channel customer timeline    | 4      | M       | F4              |
+| 13  | CSR     | ✅ Conversation full-text search   | 1      | M       | done            |
+| 14  | CSR     | ✅ Save-as-macro                   | 1      | S       | done            |
+| 15  | CSR     | AI reply drafting                  | 4      | M       | —               |
+| 16  | CSR     | ✅ Agent status toggle             | 1      | S–M     | done            |
+| 17  | CSR     | Case / ticket object               | 4      | M       | F4              |
+| 18  | CSR     | ✅ Live queue counts               | 1      | S       | done            |
+| 19  | RT      | Clinical encounter note            | 0 (F3) | L       | —               |
+| 20  | RT      | RT role & portal                   | 0 (F3) | L       | —               |
+| 21  | RT      | Non-adherence intervention plan    | 3      | M       | F3              |
+| 22  | RT      | Mask-fit confirmation loop         | 3 / 6  | M / M–L | F3 / §22a       |
+| 23  | RT      | Clinical-alert patient outreach    | 3      | M       | F3              |
+| 24  | RT      | Per-RT outcomes dashboard          | 3      | M       | F3              |
+| 25  | RT      | Short-video education library      | 6      | M       | vendor          |
+| 26  | RT      | ✅ Therapy-trend sparklines        | 1      | S       | done            |
+| 27  | RT      | ✅ Setup-guidance checklist        | 1      | S–M     | done            |
+| 28  | Biller  | Automated secondary / COB claims   | 5      | L       | —               |
+| 29  | Biller  | CMN / DIF generation               | 5      | L       | —               |
+| 30  | Biller  | Patient-statement automation       | 5      | M       | —               |
+| 31  | Biller  | ◑ Scheduled / batch eligibility    | 5      | M       | partial         |
+| 32  | Biller  | ✅ Manual / adjustment claim entry | 5      | M       | done            |
+| 33  | Biller  | ✅ Denials worklist                | 5      | M       | done            |
+| 34  | Biller  | ✅ Fee-schedule bulk upload        | 1      | S–M     | done            |
+| 35  | Biller  | ✅ PA expiry → auto-renewal nudge  | 5      | S–M     | done            |
+| 36  | Biller  | ✅ Timely-filing countdown         | 1      | S       | done            |
+| 37  | Biller  | ✅ Webhook re-delivery UI          | 1      | S–M     | done            |
+| ★   | shared  | ✅ Fixed CSR-productivity report   | 1      | M       | done            |
 
 _That's all 37 brainstormed features + the 4 foundations + the
 productivity-report fix, every one placed in a phase with a size and its

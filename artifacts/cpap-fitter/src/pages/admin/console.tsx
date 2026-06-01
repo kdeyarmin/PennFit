@@ -350,6 +350,11 @@ const AdminBillingDenialsWorklistPage = lazy(() =>
     default: m.AdminBillingDenialsWorklistPage,
   })),
 );
+const AdminBillingManualClaimPage = lazy(() =>
+  import("@/pages/admin/admin-billing-manual-claim").then((m) => ({
+    default: m.AdminBillingManualClaimPage,
+  })),
+);
 const AdminBillingDenialsPage = lazy(() =>
   import("@/pages/admin/admin-billing-denials").then((m) => ({
     default: m.AdminBillingDenialsPage,
@@ -564,6 +569,10 @@ function AdminConsole() {
             <Route
               path="/admin/billing/denials-worklist"
               component={AdminBillingDenialsWorklistPage}
+            />
+            <Route
+              path="/admin/billing/manual-claim"
+              component={AdminBillingManualClaimPage}
             />
             <Route
               path="/admin/billing/denials"

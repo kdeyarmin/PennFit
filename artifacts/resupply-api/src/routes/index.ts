@@ -111,6 +111,7 @@ import payerProfitabilityRouter from "./admin/payer-profitability.js";
 import denialsWorklistRouter from "./admin/denials-worklist.js";
 import eligibilityVerificationWorklistRouter from "./admin/eligibility-verification-worklist.js";
 import priorAuthRenewalRouter from "./admin/prior-auth-renewal.js";
+import manualClaimRouter from "./admin/manual-claim.js";
 import billingTimelyFilingRouter from "./admin/billing-timely-filing.js";
 import billingDashboardRouter from "./admin/billing-dashboard.js";
 import productHcpcsMapRouter from "./admin/product-hcpcs-map.js";
@@ -366,6 +367,10 @@ router.use(eligibilityVerificationWorklistRouter);
 // /admin/prior-authorizations/:id/draft-renewal — one-click renewal
 // draft cloned from an expiring/expired PA (Biller #35). patients.update.
 router.use(priorAuthRenewalRouter);
+// /admin/patients/:id/manual-claims — hand-keyed corrected /
+// void-replacement / paper-backup claim entry (Biller #32). The X12
+// resubmission fields live in migration 0195. patients.update.
+router.use(manualClaimRouter);
 // /admin/billing/dashboard — single round-trip "what needs my
 // attention today" view for the billing CSR. Aggregate counts +
 // dollar amounts only; the UI deep-links by id.
