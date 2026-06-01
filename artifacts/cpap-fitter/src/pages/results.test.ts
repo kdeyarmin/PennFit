@@ -177,3 +177,25 @@ describe("results — structural integrity", () => {
     expect(SRC).toContain("catalogById.get(mask.maskId)");
   });
 });
+
+// ---------------------------------------------------------------------------
+// Retake CTA — offered for any non-"strong" confidence (low AND moderate)
+// ---------------------------------------------------------------------------
+
+describe("results — retake CTA gating", () => {
+  it("offers the retake CTA whenever confidence is not strong", () => {
+    // Previously gated on `confidenceBand === "low"`, which stranded a
+    // "moderate" (70–84%) match with no way to improve it. The CTA now
+    // shows for everything below "strong".
+    expect(SRC).toContain('confidenceBand !== "strong"');
+  });
+
+  it("no longer gates the retake CTA on the low band alone", () => {
+    expect(SRC).not.toContain('confidenceBand === "low" && (');
+  });
+
+  it("still routes the retake CTA back to /capture", () => {
+    expect(SRC).toContain('setLocation("/capture")');
+    expect(SRC).toContain('data-testid="results-retake-photo"');
+  });
+});
