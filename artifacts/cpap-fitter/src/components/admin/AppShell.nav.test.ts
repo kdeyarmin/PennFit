@@ -211,6 +211,13 @@ describe("AppShell — collapsible nav machinery present", () => {
     expect(APPSHELL_SRC).toContain("NAV_EXPANDED_STORAGE_KEY");
   });
 
+  it("migrates legacy expanded-group labels on load", () => {
+    expect(APPSHELL_SRC).toContain("NAV_GROUP_LABEL_MIGRATION");
+    expect(APPSHELL_SRC).toContain('Inbox: "Workspace"');
+    expect(APPSHELL_SRC).toContain('Customers: "Patients & Clinical"');
+    expect(APPSHELL_SRC).toContain('Insights: "Analytics & Reports"');
+  });
+
   it("uses NAV_EXPLICIT_COLLAPSED_STORAGE_KEY for explicit collapses", () => {
     expect(APPSHELL_SRC).toContain("NAV_EXPLICIT_COLLAPSED_STORAGE_KEY");
   });

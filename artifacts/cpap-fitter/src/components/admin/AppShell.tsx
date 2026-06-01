@@ -993,6 +993,7 @@ const NAV_GROUP_LABEL_MIGRATION: Record<string, string> = {
 
 function loadInitialExpandedGroups(activeGroup: string | null): Set<string> {
   const fallback = new Set(activeGroup ? [activeGroup] : []);
+  const validGroups = new Set(NAV_GROUPS.map((group) => group.label));
   if (typeof window === "undefined") return fallback;
   try {
     const raw = window.localStorage.getItem(NAV_EXPANDED_STORAGE_KEY);
@@ -1002,11 +1003,12 @@ function loadInitialExpandedGroups(activeGroup: string | null): Set<string> {
       Array.isArray(parsed) &&
       parsed.every((s): s is string => typeof s === "string")
     ) {
-      // Migrate old group labels to new ones
-      const migrated = parsed.map(
-        (label) => NAV_GROUP_LABEL_MIGRATION[label] ?? label,
+      const migrated = new Set(
+        parsed
+          .map((label) => NAV_GROUP_LABEL_MIGRATION[label] ?? label)
+          .filter((label) => validGroups.has(label)),
       );
-      return new Set(migrated);
+      return migrated.size > 0 ? migrated : fallback;
     }
   } catch {
     /* localStorage unavailable / corrupt — fall through */
