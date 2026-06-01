@@ -98,11 +98,13 @@ const idParam = z.object({ id: z.string().uuid() });
 //
 // Built from `express-rate-limit` (not our middlewares/rate-limit
 // wrapper) so CodeQL's js/missing-rate-limiting query recognises it,
+// Built from `express-rate-limit` (not our middlewares/rate-limit
+// wrapper) so CodeQL's js/missing-rate-limiting query recognises it,
 // and mounted BEFORE `requireAdmin` on the routes below — requireAdmin
 // performs a DB session lookup, so a limiter placed after it leaves
 // that read unprotected (and CodeQL flags the requireAdmin line).
-// Keyed per admin actor once auth runs, with an IP fallback for the
-// pre-auth window.
+// Keyed by whatever stable identifier is already available on the
+// request (e.g. adminUserId if present), with an IP fallback.
 const fhirAdminReadLimiter = expressRateLimit({
   windowMs: 60_000,
   limit: 120,
