@@ -25,3 +25,45 @@ export {
   type ResupplyEntitlementInput,
   type ResupplyEntitlementResult,
 } from "./entitlement";
+
+export {
+  computeMargin,
+  aggregateMargin,
+  type MarginInput,
+  type MarginResult,
+  type MarginAggregate,
+} from "./margin";
+
+export {
+  evaluateThreshold,
+  THRESHOLD_COMPARISONS,
+  THRESHOLD_MODES,
+  type ThresholdComparison,
+  type ThresholdMode,
+  type ThresholdRule,
+  type ThresholdEvalResult,
+} from "./metric-threshold";
+
+export {
+  timelyFilingStatus,
+  type TimelyFilingStatus,
+  type TimelyFilingInput,
+  type TimelyFilingResult,
+} from "./timely-filing";
+
+export {
+  parsePeriodRange,
+  computeGoalPace,
+  type GoalPaceStatus,
+  type PeriodRange,
+  type GoalPaceInput,
+  type GoalPaceResult,
+} from "./goal-pace";
+
+export {
+  buildLtvCacReport,
+  type AcquisitionChannel,
+  type CustomerEconomicsInput,
+  type ChannelEconomics,
+  type LtvCacReport,
+} from "./ltv-cac";

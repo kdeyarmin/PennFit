@@ -25,6 +25,8 @@
 
 import type { RequestHandler } from "express";
 
+import { rateLimit as expressRateLimit } from "express-rate-limit";
+
 import { rateLimit } from "./rate-limit";
 
 /**
@@ -40,7 +42,8 @@ export type AdminRateLimitPreset =
   | "destroy"
   | "bulk"
   | "sensitive"
-  | "mutation";
+  | "mutation"
+  | "query";
 
 const PRESETS: Record<AdminRateLimitPreset, { max: number; windowMs: number }> =
   {
@@ -52,6 +55,13 @@ const PRESETS: Record<AdminRateLimitPreset, { max: number; windowMs: number }> =
     sensitive: { max: 30, windowMs: 60 * 60 * 1000 },
     /** Typical create/update — the default. */
     mutation: { max: 60, windowMs: 60 * 60 * 1000 },
+    /**
+     * Read endpoints (dashboard lists / worklists). A generous cap so
+     * normal SPA polling never trips it, while keeping an authorized
+     * GET from being truly unbounded (CodeQL "missing rate limiting" /
+     * "sensitive data read from GET"). 600/hr per actor.
+     */
+    query: { max: 600, windowMs: 60 * 60 * 1000 },
   };
 
 export interface AdminRateLimitOptions {
@@ -92,3 +102,27 @@ export function adminRateLimit(opts: AdminRateLimitOptions): RequestHandler {
     keyFn: (req) => req.adminUserId ?? "no-actor",
   });
 }
+
+// Shared read-endpoint limiter for admin GETs.
+//
+// Built DIRECTLY from `express-rate-limit` (not the local ./rate-limit
+// wrapper or the adminRateLimit factory above) and placed BEFORE the
+// auth gate on read routes. CodeQL's js/missing-rate-limiting query only
+// recognizes the upstream express-rate-limit middleware at the call
+// site — it can't trace our factory wrappers — so the wrapped limiters
+// kept re-flagging authenticated GET handlers as "missing rate
+// limiting" / "sensitive data read from GET". This direct instance is
+// recognized, while a generous 600/window cap means normal dashboard
+// polling never trips it. Keyed per admin actor (req.adminUserId) once
+// auth runs, with an IP fallback for the pre-auth window.
+export const adminReadRateLimiter: RequestHandler = expressRateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 600,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) =>
+    (req as { adminUserId?: string }).adminUserId ??
+    req.ip ??
+    req.socket.remoteAddress ??
+    "unknown",
+});

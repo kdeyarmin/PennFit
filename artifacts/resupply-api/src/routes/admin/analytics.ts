@@ -262,28 +262,189 @@ router.get(
       return;
     }
     const days = parsed.data.days;
-    // CSR productivity was historically rolled up from
-    // `resupply.audit_log` rows. That table was dropped with the
-    // wider audit-chain cleanup, and there is no replacement
-    // per-operator event log yet. Return an empty rollup paired with
-    // `unavailable: true` so the SPA renders a clear "no longer
-    // tracked" notice rather than a misleading empty productivity
-    // table.
-    const result: CsrProductivityResponseShape = {
-      windowDays: days,
-      rows: [],
-      totalActions: 0,
-      unavailable: true,
+    const to = new Date();
+    const from = new Date(to);
+    from.setUTCDate(from.getUTCDate() - days);
+    const fromIso = from.toISOString();
+    const toIso = to.toISOString();
+
+    const supabase = getSupabaseServiceRoleClient();
+
+    // Per-operator productivity is re-derived from EVENT tables (the
+    // same sources as /admin/productivity) now that the historical
+    // audit_log source is retired — never from audit_log (CLAUDE.md
+    // hard rule). Each signal is an "action" the operator took in the
+    // window; byAction breaks the total down and lastActiveDate is the
+    // most recent action timestamp.
+    const { data: admins, error: adminsErr } = await supabase
+      .schema("resupply")
+      .from("admin_users")
+      .select("id, email_lower")
+      .eq("status", "active");
+    if (adminsErr) throw adminsErr;
+    const adminList = (admins ?? []) as Array<{
+      id: string;
+      email_lower: string;
+    }>;
+    if (adminList.length === 0) {
+      res.json({ windowDays: days, rows: [], totalActions: 0 });
+      return;
+    }
+    const adminIds = adminList.map((a) => a.id);
+
+    const [closed, approved, rejected, alertsResolved, followupsDone] =
+      await Promise.all([
+        csrActionRows(
+          supabase,
+          "conversations",
+          "assigned_admin_user_id",
+          "updated_at",
+          adminIds,
+          (q) =>
+            q
+              .eq("status", "closed")
+              .gte("updated_at", fromIso)
+              .lte("updated_at", toIso),
+        ),
+        csrActionRows(
+          supabase,
+          "shop_returns",
+          "admin_user_id",
+          "approved_at",
+          adminIds,
+          (q) => q.gte("approved_at", fromIso).lte("approved_at", toIso),
+        ),
+        csrActionRows(
+          supabase,
+          "shop_returns",
+          "admin_user_id",
+          "rejected_at",
+          adminIds,
+          (q) => q.gte("rejected_at", fromIso).lte("rejected_at", toIso),
+        ),
+        csrActionRows(
+          supabase,
+          "csr_compliance_alerts",
+          "resolved_by_user_id",
+          "resolved_at",
+          adminIds,
+          (q) =>
+            q
+              .eq("status", "resolved")
+              .gte("resolved_at", fromIso)
+              .lte("resolved_at", toIso),
+        ),
+        csrActionRows(
+          supabase,
+          "patient_followups",
+          "completed_by_user_id",
+          "completed_at",
+          adminIds,
+          (q) =>
+            q
+              .not("completed_at", "is", null)
+              .gte("completed_at", fromIso)
+              .lte("completed_at", toIso),
+        ),
+      ]);
+
+    const acc = new Map<
+      string,
+      { byAction: Record<string, number>; lastTs: string | null }
+    >();
+    const apply = (
+      actionRows: Array<{ id: string; ts: string | null }>,
+      action: string,
+    ): void => {
+      for (const r of actionRows) {
+        let entry = acc.get(r.id);
+        if (!entry) {
+          entry = { byAction: {}, lastTs: null };
+          acc.set(r.id, entry);
+        }
+        entry.byAction[action] = (entry.byAction[action] ?? 0) + 1;
+        if (r.ts && (entry.lastTs === null || r.ts > entry.lastTs)) {
+          entry.lastTs = r.ts;
+        }
+      }
     };
-    res.json(result);
+    apply(closed, "conversation_closed");
+    apply(approved, "return_approved");
+    apply(rejected, "return_rejected");
+    apply(alertsResolved, "compliance_alert_resolved");
+    apply(followupsDone, "followup_completed");
+
+    const rows = adminList
+      .map((a) => {
+        const entry = acc.get(a.id);
+        const byAction = entry?.byAction ?? {};
+        const total = Object.values(byAction).reduce((s, n) => s + n, 0);
+        return {
+          operator: a.email_lower,
+          total,
+          byAction,
+          lastActiveDate: entry?.lastTs ? entry.lastTs.slice(0, 10) : null,
+        };
+      })
+      .filter((r) => r.total > 0)
+      .sort((a, b) => b.total - a.total);
+
+    res.json({
+      windowDays: days,
+      rows,
+      totalActions: rows.reduce((s, r) => s + r.total, 0),
+    });
   },
 );
 
-interface CsrProductivityResponseShape {
-  windowDays: number;
-  rows: never[];
-  totalActions: 0;
-  unavailable: true;
+// Structural builder type — mirrors the local one in productivity.ts.
+// The upstream PostgREST generic chain is too deep to spell out; this
+// captures only the chainable methods csrActionRows exercises.
+type CsrActionQuery = {
+  eq(column: string, value: string): CsrActionQuery;
+  gte(column: string, value: string): CsrActionQuery;
+  lte(column: string, value: string): CsrActionQuery;
+  in(column: string, values: readonly string[]): CsrActionQuery;
+  not(column: string, operator: string, value: unknown): CsrActionQuery;
+  limit(count: number): Promise<{ data: unknown; error: unknown }>;
+};
+
+/**
+ * Fetch (attribution id, timestamp) pairs for one action source within
+ * the window, scoped to the given admin ids. The caller tallies
+ * per-operator counts + last-active. Mirrors productivity.ts's grouped
+ * fetch but keeps the timestamp so we can surface "last active".
+ */
+async function csrActionRows(
+  supabase: ReturnType<typeof getSupabaseServiceRoleClient>,
+  table:
+    | "conversations"
+    | "shop_returns"
+    | "csr_compliance_alerts"
+    | "patient_followups",
+  attributionCol: string,
+  tsCol: string,
+  adminIds: string[],
+  refine: (q: CsrActionQuery) => CsrActionQuery,
+): Promise<Array<{ id: string; ts: string | null }>> {
+  if (adminIds.length === 0) return [];
+  const base = supabase
+    .schema("resupply")
+    .from(table)
+    .select(`${attributionCol}, ${tsCol}`) as unknown as CsrActionQuery;
+  const refined = refine(base.in(attributionCol, adminIds));
+  const { data, error } = await refined.limit(50_000);
+  if (error) throw error;
+  const out: Array<{ id: string; ts: string | null }> = [];
+  for (const row of (data ?? []) as unknown as Array<
+    Record<string, string | null>
+  >) {
+    const id = row[attributionCol];
+    if (typeof id === "string" && id.length > 0) {
+      out.push({ id, ts: row[tsCol] ?? null });
+    }
+  }
+  return out;
 }
 
 // ────────────────────────────────────────────────────────────────

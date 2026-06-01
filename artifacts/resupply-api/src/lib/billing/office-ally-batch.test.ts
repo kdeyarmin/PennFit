@@ -207,6 +207,140 @@ describe("buildOneDetail — serviceLines billedCents = billed_cents × quantity
 });
 
 // ---------------------------------------------------------------------------
+// Coordination of benefits (Biller #28 slice 2)
+// ---------------------------------------------------------------------------
+
+describe("buildOneDetail — coordination of benefits", () => {
+  it("secondary claim → payerResponsibility S, discloses primary with snapshot prior-paid", async () => {
+    // FIFO: own (secondary) coverage first, then the primary's coverage
+    // (fetched by loadPrimaryCobDisclosure).
+    stageSupabaseResponse("insurance_coverages", "select", {
+      data: { member_id: "SEC-MBR-9", policyholder_relationship: "self" },
+      error: null,
+    });
+    stageSupabaseResponse("patients", "select", {
+      data: {
+        legal_first_name: "Jane",
+        legal_last_name: "Doe",
+        date_of_birth: "1980-01-01",
+        address: {
+          line1: "100 Main St",
+          city: "Pittsburgh",
+          state: "PA",
+          zip: "15201",
+        },
+      },
+      error: null,
+    });
+    stageSupabaseResponse("insurance_claim_line_items", "select", {
+      data: [
+        {
+          hcpcs_code: "E0601",
+          modifier: "RR",
+          billed_cents: 20000,
+          quantity: 1,
+        },
+      ],
+      error: null,
+    });
+    // loadPrimaryCobDisclosure: primary claim row, then its coverage.
+    stageSupabaseResponse("insurance_claims", "select", {
+      data: {
+        payer_name: "Medicare Part B",
+        insurance_coverage_id: "cov-primary-1",
+      },
+      error: null,
+    });
+    stageSupabaseResponse("insurance_coverages", "select", {
+      data: { member_id: "PRI-MBR-1", policyholder_relationship: "self" },
+      error: null,
+    });
+
+    const claim = makeClaimRow({
+      payer_sequence: "secondary",
+      primary_claim_id: "claim-primary-1",
+      cob_primary_paid_cents: 12000,
+      secondary_coverage_id: null,
+    });
+    const supabase = getSupabaseServiceRoleClient();
+    const detail = await buildOneDetail(
+      supabase,
+      claim as never,
+      "Medicaid Secondary",
+      "MCDPA",
+    );
+
+    expect(detail).not.toBeNull();
+    expect(detail!.payerResponsibility).toBe("S");
+    expect(detail!.otherSubscriber).not.toBeNull();
+    expect(detail!.otherSubscriber!.payerResponsibility).toBe("P");
+    expect(detail!.otherSubscriber!.priorPayerPaidCents).toBe(12000);
+    expect(detail!.otherSubscriber!.payer.organizationName).toBe(
+      "Medicare Part B",
+    );
+    expect(detail!.otherSubscriber!.subscriber.memberId).toBe("PRI-MBR-1");
+  });
+
+  it("primary claim with a secondary on file → payerResponsibility P, discloses secondary, no prior paid", async () => {
+    stageSupabaseResponse("insurance_coverages", "select", {
+      data: { member_id: "MBR-1", policyholder_relationship: "self" },
+      error: null,
+    });
+    stageSupabaseResponse("patients", "select", {
+      data: {
+        legal_first_name: "Jane",
+        legal_last_name: "Doe",
+        date_of_birth: "1980-01-01",
+        address: {
+          line1: "100 Main St",
+          city: "Pittsburgh",
+          state: "PA",
+          zip: "15201",
+        },
+      },
+      error: null,
+    });
+    stageSupabaseResponse("insurance_claim_line_items", "select", {
+      data: [
+        {
+          hcpcs_code: "E0601",
+          modifier: "RR",
+          billed_cents: 20000,
+          quantity: 1,
+        },
+      ],
+      error: null,
+    });
+    // secondaryCoverage fetch (claim.secondary_coverage_id set).
+    stageSupabaseResponse("insurance_coverages", "select", {
+      data: {
+        member_id: "SEC-2",
+        payer_name: "Aetna Secondary",
+        policyholder_relationship: "self",
+      },
+      error: null,
+    });
+
+    const claim = makeClaimRow({ secondary_coverage_id: "cov-sec-1" });
+    const supabase = getSupabaseServiceRoleClient();
+    const detail = await buildOneDetail(
+      supabase,
+      claim as never,
+      "Highmark",
+      "00700",
+    );
+
+    expect(detail!.payerResponsibility).toBe("P");
+    expect(detail!.otherSubscriber).not.toBeNull();
+    expect(detail!.otherSubscriber!.payerResponsibility).toBe("S");
+    expect(detail!.otherSubscriber!.priorPayerPaidCents).toBeNull();
+    expect(detail!.otherSubscriber!.payer.organizationName).toBe(
+      "Aetna Secondary",
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Null/missing guard cases
 // ---------------------------------------------------------------------------
 

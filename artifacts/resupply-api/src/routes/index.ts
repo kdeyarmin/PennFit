@@ -3,8 +3,30 @@ import abandonedCartsRouter from "./admin/abandoned-carts.js";
 import shopCustomersAdminRouter from "./admin/customers.js";
 import shopCustomerNotesRouter from "./admin/customer-notes.js";
 import shopCustomerFollowupsRouter from "./admin/customer-followups.js";
+import customerTimelineRouter from "./admin/customer-timeline.js";
 import followupsListRouter from "./admin/followups-list.js";
 import shopOrderNotesRouter from "./admin/order-notes.js";
+import productCostsRouter from "./admin/product-costs.js";
+import metricAlertsRouter from "./admin/metric-alerts.js";
+import metricThresholdsRouter from "./admin/metric-thresholds.js";
+import clinicalEncountersRouter from "./admin/clinical-encounters.js";
+import rtOutcomesRouter from "./admin/rt-outcomes.js";
+import interventionsRouter from "./admin/interventions.js";
+import secondaryClaimsRouter from "./admin/secondary-claims.js";
+import billingStatementSendRouter from "./admin/billing-statement-send.js";
+import billingCollectionsForecastRouter from "./admin/billing-collections-forecast.js";
+import maskFitWorklistRouter from "./admin/mask-fit-worklist.js";
+import cmnDocumentsRouter from "./admin/cmn-documents.js";
+import clinicalOutreachRouter from "./admin/clinical-outreach.js";
+import educationVideosAdminRouter from "./admin/education-videos.js";
+import setupChecklistRouter from "./admin/setup-checklist.js";
+import casesRouter from "./admin/cases.js";
+import workItemsRouter from "./admin/work-items.js";
+import businessTargetsRouter from "./admin/business-targets.js";
+import agentAvailabilityRouter from "./admin/agent-availability.js";
+import conversationsSearchRouter from "./admin/conversations-search.js";
+import conversationDraftReplyRouter from "./admin/conversation-draft-reply.js";
+import clickToDialRouter from "./admin/click-to-dial.js";
 import shopOrdersAdminRouter from "./admin/shop-orders.js";
 import shopProductsAdminRouter from "./admin/shop-products.js";
 import inventoryReconciliationRouter from "./admin/inventory-reconciliation.js";
@@ -27,6 +49,9 @@ import inboundFaxesRouter from "./admin/inbound-faxes.js";
 import inboundReferralsRouter from "./admin/inbound-referrals.js";
 import equipmentRecallsRouter from "./admin/equipment-recalls.js";
 import analyticsRouter from "./admin/analytics.js";
+import analyticsMarginRouter from "./admin/analytics-margin.js";
+import inventoryTurnoverRouter from "./admin/inventory-turnover.js";
+import ltvCacRouter from "./admin/ltv-cac.js";
 import rtOverviewRouter from "./admin/rt-overview.js";
 import productivityRouter from "./admin/productivity.js";
 import patientDocumentsRetentionRouter from "./admin/patient-documents-retention.js";
@@ -95,6 +120,12 @@ import denialCodesRouter from "./admin/denial-codes.js";
 import payerFeeSchedulesRouter from "./admin/payer-fee-schedules.js";
 import eraIngestRouter from "./admin/era-ingest.js";
 import billingReportsRouter from "./admin/billing-reports.js";
+import payerProfitabilityRouter from "./admin/payer-profitability.js";
+import denialsWorklistRouter from "./admin/denials-worklist.js";
+import eligibilityVerificationWorklistRouter from "./admin/eligibility-verification-worklist.js";
+import priorAuthRenewalRouter from "./admin/prior-auth-renewal.js";
+import manualClaimRouter from "./admin/manual-claim.js";
+import billingTimelyFilingRouter from "./admin/billing-timely-filing.js";
 import billingDashboardRouter from "./admin/billing-dashboard.js";
 import productHcpcsMapRouter from "./admin/product-hcpcs-map.js";
 import payerModifierRulesRouter from "./admin/payer-modifier-rules.js";
@@ -294,6 +325,66 @@ router.use(denialCodesRouter);
 // /admin/payer-fee-schedules/* — payer + HCPCS expected-allowed
 // catalog. Drives the partial-pay variance triage on ERA ingest.
 router.use(payerFeeSchedulesRouter);
+// /admin/product-costs/* — operator-managed unit cost (COGS) per shop
+// SKU. The COGS analog of the fee-schedule catalog; source for the
+// per-transaction cost snapshots + every owner-facing margin surface.
+router.use(productCostsRouter);
+// /admin/metric-alerts/* — the in-app KPI alert feed (F2 metrics
+// substrate). Alerts written by the metrics.alerts-evaluator worker.
+router.use(metricAlertsRouter);
+// /admin/metric-thresholds/* — owner CRUD for the KPI alert rules the
+// evaluator walks (Owner #5). Read on metrics.read, write on
+// admin.tools.manage.
+router.use(metricThresholdsRouter);
+// /admin/patients/:id/clinical-encounters — append-only clinician
+// documentation (F3). Read on clinical.read, write on clinical.note.write.
+router.use(clinicalEncountersRouter);
+// /admin/analytics/rt-outcomes — per-RT outcomes rollup from
+// clinical_encounters (Phase 3, RT #24). Counts only; clinical.read.
+router.use(rtOutcomesRouter);
+// /admin/.../interventions — structured non-adherence intervention
+// plan + outcome (Phase 3, RT #21). clinical.read / .intervention.write.
+router.use(interventionsRouter);
+// /admin/billing/secondary-eligible + /admin/claims/:id/generate-secondary
+// — secondary / COB claims (Phase 5, Biller #28).
+router.use(secondaryClaimsRouter);
+// /admin/billing/statements/* — patient-responsibility statement send
+// (Phase 5, Biller #30). Consent/DND-gated outbound.
+router.use(billingStatementSendRouter);
+// /admin/billing/collections-forecast — AR collections projection
+// (Owner #4, slice 1).
+router.use(billingCollectionsForecastRouter);
+// /admin/clinical/mask-fit/* — RT mask-fit triage worklist (RT #22a s2).
+router.use(maskFitWorklistRouter);
+// /admin/.../cmn-documents + /admin/billing/cmn-* — CMN/DIF structured
+// forms (Biller #29).
+router.use(cmnDocumentsRouter);
+// /admin/clinical/outreach/* — proactive clinical outreach (RT #23).
+router.use(clinicalOutreachRouter);
+// /admin/education-videos — education-video library management (RT #25).
+router.use(educationVideosAdminRouter);
+// /admin/patients/:id/setup-checklist — new-patient setup-guidance
+// checklist (Phase 1, RT). Gated by the clinical perms.
+router.use(setupChecklistRouter);
+// /admin/cases — lightweight CSR case (ticket) object + links (F4).
+router.use(casesRouter);
+// /admin/work-items — the unified, prioritized CSR work queue (F4),
+// UNIONing the open work across every triage source.
+router.use(workItemsRouter);
+// /admin/business-targets — owner goal / target tracking (Phase 1).
+router.use(businessTargetsRouter);
+// /admin/agent-availability — CSR availability toggle (Phase 1); the
+// skill-router skips away / do-not-assign reps.
+router.use(agentAvailabilityRouter);
+// /admin/conversations-search — search conversations by message content
+// (Phase 1, CSR #13).
+router.use(conversationsSearchRouter);
+// POST /admin/conversations/:id/draft-reply — AI-draft the next reply
+// (Phase 4, CSR #15). Draft only; degrades soft when AI is unavailable.
+router.use(conversationDraftReplyRouter);
+// /admin/patients/:id/click-to-dial + /admin/call-dispositions/:id —
+// CSR click-to-dial bridge + post-call disposition logging (#11).
+router.use(clickToDialRouter);
 // /admin/billing/era-ingest + /admin/billing/era-files — upload a
 // 5010 835 remittance, parse it, auto-reconcile claim totals + line
 // items + insert paid/denied events.
@@ -302,6 +393,27 @@ router.use(eraIngestRouter);
 // /admin/billing/denial-rate — read-only AR + reporting dashboards
 // for the billing team.
 router.use(billingReportsRouter);
+// /admin/billing/timely-filing — open-claim filing-deadline worklist,
+// ranked most-urgent-first (days left before the payer's timely-filing
+// window closes). Pure countdown core in @workspace/resupply-domain.
+router.use(billingTimelyFilingRouter);
+// /admin/billing/payer-profitability — per-payer net yield (Owner #2):
+// billed → allowed → collected, denial rate, net of F1 COGS. cost.read.
+router.use(payerProfitabilityRouter);
+// /admin/billing/denials-worklist — denied claims ranked by recoverable
+// $ × win-probability (Biller #33). reports.read.
+router.use(denialsWorklistRouter);
+// /admin/billing/eligibility-verification-worklist — active coverages
+// ranked by re-verification urgency (never/terminating/stale) (Biller
+// #31, read-only half). reports.read.
+router.use(eligibilityVerificationWorklistRouter);
+// /admin/prior-authorizations/:id/draft-renewal — one-click renewal
+// draft cloned from an expiring/expired PA (Biller #35). patients.update.
+router.use(priorAuthRenewalRouter);
+// /admin/patients/:id/manual-claims — hand-keyed corrected /
+// void-replacement / paper-backup claim entry (Biller #32). The X12
+// resubmission fields live in migration 0195. patients.update.
+router.use(manualClaimRouter);
 // /admin/billing/dashboard — single round-trip "what needs my
 // attention today" view for the billing CSR. Aggregate counts +
 // dollar amounts only; the UI deep-links by id.
@@ -559,6 +671,17 @@ router.use(equipmentRecallsRouter);
 // analytics at /admin/storefront/analytics which covers orders +
 // email health + mask popularity.
 router.use(analyticsRouter);
+// /admin/analytics/margin — gross-margin / COGS dashboard (Owner #1).
+// Folds the F1 cost snapshots on shop_order_items through the shared
+// margin core; keeps the costed/uncosted revenue split explicit.
+router.use(analyticsMarginRouter);
+// /admin/analytics/inventory-turnover — turnover (annualized COGS ÷
+// inventory value) + stockout demand per SKU (Owner #7). cost.read.
+router.use(inventoryTurnoverRouter);
+// /admin/analytics/ltv-cac + /admin/customers/:id/acquisition — LTV &
+// CAC cohort economics by acquisition channel (Owner #3). cost.read to
+// view, cost.write to record attribution.
+router.use(ltvCacRouter);
 // /admin/rt-overview — respiratory-therapist at-a-glance board.
 // Reads patient_therapy_links + patient_therapy_nights +
 // patient_smart_trigger_events for the daily clinical review.
@@ -717,6 +840,10 @@ router.use(shopCustomerNotesRouter);
 // reminders per shop customer (Phase 17). Same mount-after-detail
 // rationale as the notes router.
 router.use(shopCustomerFollowupsRouter);
+// /admin/shop/customers/:id/timeline — cross-channel customer timeline
+// (Biller/CSR #12): conversations + orders + returns + followups +
+// reviews, newest first. conversations.manage.
+router.use(customerTimelineRouter);
 // /admin/followups — cross-customer daily queue of open follow-ups
 // (Phase 18). Mounted alongside the per-customer router so both
 // surfaces stay co-located.

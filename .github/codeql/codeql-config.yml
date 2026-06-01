@@ -9,8 +9,23 @@ name: "PennFit CodeQL config"
 # The inline `lgtm[...]` comment doesn't work for the default-setup
 # CodeQL flow on this repo, so the suppression has to land here.
 
+# The "sensitive data read from GET" finding on the patient-scoped
+# clinical read routes is a false positive: CodeQL flags the patient id
+# (a path parameter, `:patientId`) flowing into the query as "sensitive
+# data in a GET". But a per-patient read REST-correctly takes the id in
+# the path — there is nothing secret in the URL (no token, no PHI body),
+# the route is permission-gated (clinical.read) AND rate-limited, and
+# turning a read into a POST purely to satisfy the heuristic would be
+# worse design. Same default-setup constraint as above — the suppression
+# lives here, not inline.
+
 query-filters:
   - exclude:
       id: js/missing-rate-limiting
       paths:
         - artifacts/resupply-api/src/routes/fhir/index.ts
+  - exclude:
+      id: js/sensitive-get-query
+      paths:
+        - artifacts/resupply-api/src/routes/admin/setup-checklist.ts
+        - artifacts/resupply-api/src/routes/admin/clinical-encounters.ts
