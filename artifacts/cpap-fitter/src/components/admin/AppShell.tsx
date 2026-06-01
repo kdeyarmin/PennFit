@@ -33,7 +33,6 @@ import {
   HeartPulse,
   Star,
   HelpCircle,
-  FileSearch,
   Boxes,
   AlertOctagon,
   CalendarOff,
