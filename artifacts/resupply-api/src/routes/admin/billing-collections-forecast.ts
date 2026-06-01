@@ -20,6 +20,10 @@ import {
   projectClaimCollections,
   type OutstandingClaim,
 } from "../../lib/billing/collections-forecast";
+import {
+  projectForwardOrderBook,
+  type DuePrescription,
+} from "../../lib/billing/forward-order-book";
 import { adminReadRateLimiter } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
 
@@ -66,6 +70,87 @@ router.get(
     );
 
     res.json(forecast);
+  },
+);
+
+const orderBookQuery = z
+  .object({
+    expectedOrderValueCents: z.coerce
+      .number()
+      .int()
+      .min(0)
+      .max(1_000_000)
+      .optional(),
+    confirmRate: z.coerce.number().min(0).max(1).optional(),
+    horizonDays: z.coerce.number().int().min(1).max(365).optional(),
+  })
+  .strip();
+
+// Forward resupply order book (Owner #4 slice 2): expected NEW resupply
+// revenue from prescriptions becoming eligible within the horizon, from
+// real cadence + last-fill, with tunable value/confirm-rate assumptions.
+router.get(
+  "/admin/billing/forward-order-book",
+  adminReadRateLimiter,
+  requirePermission("reports.read"),
+  async (req, res) => {
+    const parsed = orderBookQuery.safeParse(req.query);
+    if (!parsed.success) {
+      res.status(400).json({ error: "invalid_query" });
+      return;
+    }
+    const supabase = getSupabaseServiceRoleClient();
+
+    const { data: rx, error: rxErr } = await supabase
+      .schema("resupply")
+      .from("prescriptions")
+      .select("patient_id, item_sku, cadence_days")
+      .eq("status", "active")
+      .limit(5000);
+    if (rxErr) {
+      res.status(500).json({ error: "query_failed", message: rxErr.message });
+      return;
+    }
+    const prescriptions = (rx ?? []) as Array<{
+      patient_id: string;
+      item_sku: string;
+      cadence_days: number;
+    }>;
+
+    // Most-recent fulfillment per (patient, sku) — the resupply anchor.
+    const lastFill = new Map<string, string>();
+    if (prescriptions.length > 0) {
+      const { data: fills, error: fErr } = await supabase
+        .schema("resupply")
+        .from("fulfillments")
+        .select("patient_id, item_sku, created_at")
+        .order("created_at", { ascending: false })
+        .limit(20000);
+      if (fErr) {
+        res.status(500).json({ error: "query_failed", message: fErr.message });
+        return;
+      }
+      for (const f of (fills ?? []) as Array<{
+        patient_id: string;
+        item_sku: string;
+        created_at: string;
+      }>) {
+        const k = `${f.patient_id}|${f.item_sku}`;
+        if (!lastFill.has(k)) lastFill.set(k, f.created_at); // first = newest
+      }
+    }
+
+    const due: DuePrescription[] = prescriptions.map((p) => ({
+      lastFillIso: lastFill.get(`${p.patient_id}|${p.item_sku}`) ?? null,
+      cadenceDays: p.cadence_days,
+    }));
+
+    const book = projectForwardOrderBook(due, {
+      expectedOrderValueCents: parsed.data.expectedOrderValueCents,
+      confirmRate: parsed.data.confirmRate,
+      horizonDays: parsed.data.horizonDays,
+    });
+    res.json(book);
   },
 );
 

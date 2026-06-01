@@ -15,6 +15,7 @@ import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { Spinner } from "@/components/admin/Spinner";
 import {
   getCollectionsForecast,
+  getForwardOrderBook,
   type ForecastTuning,
 } from "@/lib/admin/collections-forecast-api";
 
@@ -31,6 +32,12 @@ export function AdminBillingCollectionsForecastPage() {
   const query = useQuery({
     queryKey: ["admin", "collections-forecast", tuning] as const,
     queryFn: () => getCollectionsForecast(tuning),
+    staleTime: 60_000,
+  });
+
+  const orderBook = useQuery({
+    queryKey: ["admin", "forward-order-book"] as const,
+    queryFn: getForwardOrderBook,
     staleTime: 60_000,
   });
 
@@ -117,6 +124,57 @@ export function AdminBillingCollectionsForecastPage() {
             onChange={setTuning}
             pending={query.isFetching}
           />
+
+          {orderBook.data && (
+            <Card title="Forward resupply revenue (next 90 days)">
+              <p
+                className="text-xs mb-3"
+                style={{ color: "hsl(var(--ink-3))" }}
+              >
+                Expected NEW resupply orders from patients becoming eligible
+                (last fill + cadence), at{" "}
+                {money(orderBook.data.assumptions.expectedOrderValueCents)} per
+                order ×{" "}
+                {Math.round(orderBook.data.assumptions.confirmRate * 100)}%
+                confirm rate — an estimate.
+              </p>
+              <div className="space-y-2">
+                {orderBook.data.horizons.map((h) => (
+                  <div key={h.label} className="flex justify-between text-sm">
+                    <span style={{ color: "hsl(var(--ink-2))" }}>
+                      {h.label}
+                      <span
+                        className="ml-2 text-xs"
+                        style={{ color: "hsl(var(--ink-3))" }}
+                      >
+                        {h.dueCount} due
+                      </span>
+                    </span>
+                    <span
+                      className="font-semibold tabular-nums"
+                      style={{ color: "hsl(var(--ink-1))" }}
+                    >
+                      {money(h.expectedCents)}
+                    </span>
+                  </div>
+                ))}
+                <div
+                  className="flex justify-between text-sm pt-2 border-t"
+                  style={{ borderColor: "hsl(var(--line-1))" }}
+                >
+                  <span style={{ color: "hsl(var(--ink-2))" }}>
+                    Total expected
+                  </span>
+                  <span
+                    className="font-semibold tabular-nums"
+                    style={{ color: "hsl(var(--ink-1))" }}
+                  >
+                    {money(orderBook.data.totalExpectedCents)}
+                  </span>
+                </div>
+              </div>
+            </Card>
+          )}
         </>
       )}
     </div>

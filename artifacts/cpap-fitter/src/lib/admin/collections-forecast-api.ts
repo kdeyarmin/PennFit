@@ -28,6 +28,43 @@ export interface ForecastTuning {
   collectionProbability?: number;
 }
 
+export interface OrderBookHorizon {
+  label: string;
+  withinDays: number;
+  dueCount: number;
+  expectedCents: number;
+}
+
+export interface ForwardOrderBook {
+  horizons: OrderBookHorizon[];
+  totalExpectedCents: number;
+  dueCount: number;
+  assumptions: {
+    expectedOrderValueCents: number;
+    confirmRate: number;
+    horizonDays: number;
+    asOf: string;
+  };
+}
+
+export async function getForwardOrderBook(): Promise<ForwardOrderBook> {
+  const url = "/resupply-api/admin/billing/forward-order-book";
+  const res = await fetch(url, {
+    credentials: "include",
+    headers: { Accept: "application/json" },
+  });
+  if (!res.ok) {
+    let data: unknown = null;
+    try {
+      data = await res.json();
+    } catch {
+      // not json
+    }
+    throw new ApiError(res, data, { method: "GET", url });
+  }
+  return (await res.json()) as ForwardOrderBook;
+}
+
 export async function getCollectionsForecast(
   tuning: ForecastTuning = {},
 ): Promise<CollectionsForecast> {
