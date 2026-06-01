@@ -144,6 +144,7 @@ import adherencePredictionsRouter from "./admin/adherence-predictions.js";
 import shopMembershipRouter from "./admin/shop-membership.js";
 import fhirRouter from "./fhir/index.js";
 import davinciPasSubmitRouter from "./admin/davinci-pas-submit.js";
+import priorAuthRequestFormRouter from "./admin/prior-auth-request-form.js";
 import billingBenchmarksRouter from "./admin/billing-benchmarks.js";
 import billingBatchSubmitRouter from "./admin/billing-batch-submit.js";
 import billingStatementsRouter from "./admin/billing-statements.js";
@@ -483,6 +484,10 @@ router.use(fhirRouter);
 // /admin/patients/:id/prior-authorizations/:paId/submit-davinci-pas
 // — FHIR-based PA submission per Da Vinci PAS IG v2.2 (CMS-0057-F).
 router.use(davinciPasSubmitRouter);
+// /admin/patients/:id/prior-authorizations/:paId/request-form — the
+// faxable/portal-attachable PA request form PDF, auto-populated from
+// the PA + patient/coverage/payer/provider/sleep-study rows.
+router.use(priorAuthRequestFormRouter);
 // /admin/billing/benchmarks — internal cohort percentiles (Phase 1).
 router.use(billingBenchmarksRouter);
 // /admin/billing/batch-submit-office-ally — multi-claim 837P batch.

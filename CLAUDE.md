@@ -37,6 +37,19 @@ SIGTERM reaches the graceful-shutdown handler — running it via
 `pnpm start` would make pnpm PID 1 and silently swallow SIGTERM on every
 deploy rollover.
 
+**Migrations on deploy.** `railway.json` has a `preDeployCommand`
+(`node lib/resupply-db/scripts/deploy-migrate.mjs`) that runs the migrator
+once per deploy, before the new release goes live, and **gates the deploy
+on success** (a migration error keeps the previous release running — it
+does not take the site down). It is **opt-in**: it only runs when
+`RUN_DB_MIGRATIONS=true`, so it is safe with the flag unset. Production has
+no migration ledger yet, so it must be **baselined once** before enabling
+the flag — see
+[`docs/runbooks/adopt-migration-ledger.md`](./docs/runbooks/adopt-migration-ledger.md).
+The migrator refuses a destructive full replay onto a populated,
+unledgered database (`migrate.mjs` adoption guard); use
+`migrate.mjs --baseline-through=<prefix>` to adopt an existing DB.
+
 Post-mortem of the historical Git-drift event:
 [`docs/git-state-2026-05-01.md`](./docs/git-state-2026-05-01.md).
 
