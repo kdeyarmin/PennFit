@@ -67,6 +67,46 @@ export function logCallDisposition(
   );
 }
 
+export interface CallDisposition {
+  id: string;
+  outcome: string;
+  note: string | null;
+  agentEmail: string | null;
+  createdAt: string;
+}
+
+export async function getPatientCallHistory(
+  patientId: string,
+): Promise<{ dispositions: CallDisposition[]; count: number }> {
+  const url = `/resupply-api/admin/patients/${encodeURIComponent(
+    patientId,
+  )}/call-dispositions`;
+  const res = await fetch(url, {
+    credentials: "include",
+    headers: { Accept: "application/json" },
+  });
+  if (!res.ok) {
+    let data: unknown = null;
+    try {
+      data = await res.json();
+    } catch {
+      // body not JSON
+    }
+    throw new ApiError(res, data, { method: "GET", url });
+  }
+  return (await res.json()) as {
+    dispositions: CallDisposition[];
+    count: number;
+  };
+}
+
+/** Set the current agent's own click-to-dial bridge number (E.164, or "" to clear). */
+export function setAgentPhone(
+  phoneE164: string,
+): Promise<{ hasPhone: boolean; phoneLast4: string | null }> {
+  return postJson("/admin/agent-availability/me/phone", { phoneE164 });
+}
+
 export const OUTCOME_LABEL: Record<CallOutcome, string> = {
   reached: "Reached patient",
   voicemail: "Left voicemail",

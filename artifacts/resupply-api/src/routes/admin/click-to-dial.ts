@@ -31,6 +31,7 @@ import {
 
 import { logger } from "../../lib/logger";
 import { readVoiceConfigOrNull } from "../../lib/voice/voice-config";
+import { adminReadRateLimiter } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
@@ -259,6 +260,41 @@ router.post(
     );
 
     res.status(201).json({ dispositionId, callSid });
+  },
+);
+
+// Patient call history — the recent dispositions for the patient panel.
+router.get(
+  "/admin/patients/:patientId/call-dispositions",
+  adminReadRateLimiter,
+  requirePermission("conversations.manage"),
+  async (req, res) => {
+    const idParsed = patientIdParam.safeParse(req.params.patientId);
+    if (!idParsed.success) {
+      res.status(400).json({ error: "invalid_patient_id" });
+      return;
+    }
+    const supabase = getSupabaseServiceRoleClient();
+    const { data, error } = await supabase
+      .schema("resupply")
+      .from("call_dispositions")
+      .select("id, outcome, note, agent_email, created_at")
+      .eq("patient_id", idParsed.data)
+      .order("created_at", { ascending: false })
+      .limit(25);
+    if (error) {
+      res.status(500).json({ error: "query_failed", message: error.message });
+      return;
+    }
+    const rows = ((data ?? []) as Array<Record<string, unknown>>).map((r) => ({
+      id: String(r.id),
+      outcome: String(r.outcome),
+      // The note is the CSR's tool; returned to them but never logged.
+      note: r.note == null ? null : String(r.note),
+      agentEmail: r.agent_email == null ? null : String(r.agent_email),
+      createdAt: String(r.created_at),
+    }));
+    res.json({ dispositions: rows, count: rows.length });
   },
 );
 

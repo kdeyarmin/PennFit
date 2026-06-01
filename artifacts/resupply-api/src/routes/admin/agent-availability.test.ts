@@ -117,3 +117,83 @@ describe("PATCH /admin/agent-availability/me", () => {
     expect(payload).toMatchObject({ availability: "away" });
   });
 });
+
+describe("GET /admin/agent-availability/me", () => {
+  it("401s without admin", async () => {
+    expect(
+      (await request(makeApp()).get("/admin/agent-availability/me")).status,
+    ).toBe(401);
+  });
+
+  it("returns own availability + masked phone (last4 only)", async () => {
+    mockAdmin.current = AGENT;
+    stageSupabaseResponse("admin_users", "select", {
+      data: {
+        id: "u_csr",
+        availability: "available",
+        phone_e164: "+19998887777",
+      },
+    });
+    const res = await request(makeApp()).get("/admin/agent-availability/me");
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({
+      adminUserId: "u_csr",
+      availability: "available",
+      phoneLast4: "7777",
+      hasPhone: true,
+    });
+  });
+});
+
+describe("PUT /admin/agent-availability/me/phone", () => {
+  it("401s without admin", async () => {
+    const res = await request(makeApp())
+      .put("/admin/agent-availability/me/phone")
+      .send({ phoneE164: "+12155551212" });
+    expect(res.status).toBe(401);
+  });
+
+  it("400s on a non-E.164 number", async () => {
+    mockAdmin.current = AGENT;
+    const res = await request(makeApp())
+      .put("/admin/agent-availability/me/phone")
+      .send({ phoneE164: "215-555-1212" });
+    expect(res.status).toBe(400);
+  });
+
+  it("sets the caller's own bridge number", async () => {
+    mockAdmin.current = AGENT;
+    stageSupabaseResponse("admin_users", "update", {
+      data: { id: "u_csr", phone_e164: "+12155551212" },
+    });
+    const res = await request(makeApp())
+      .put("/admin/agent-availability/me/phone")
+      .send({ phoneE164: "+12155551212" });
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({
+      adminUserId: "u_csr",
+      hasPhone: true,
+      phoneLast4: "1212",
+    });
+    const payload = getSupabaseWritePayloads("admin_users", "update")[0] as
+      | Record<string, unknown>
+      | undefined;
+    expect(payload).toMatchObject({ phone_e164: "+12155551212" });
+  });
+
+  it("clears the number on an empty string", async () => {
+    mockAdmin.current = AGENT;
+    stageSupabaseResponse("admin_users", "update", {
+      data: { id: "u_csr", phone_e164: null },
+    });
+    const res = await request(makeApp())
+      .put("/admin/agent-availability/me/phone")
+      .send({ phoneE164: "" });
+    expect(res.status).toBe(200);
+    expect(res.body.hasPhone).toBe(false);
+    const payload = getSupabaseWritePayloads("admin_users", "update")[0] as
+      | Record<string, unknown>
+      | undefined;
+    expect(payload).toMatchObject({ phone_e164: null });
+  });
+});

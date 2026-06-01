@@ -29,6 +29,19 @@ const patchSchema = z
   })
   .strict();
 
+// The agent's own click-to-dial bridge number (#11). Empty string
+// clears it; otherwise E.164.
+const phoneSchema = z
+  .object({
+    phoneE164: z.union([
+      z.literal(""),
+      z
+        .string()
+        .regex(/^\+[1-9]\d{6,14}$/, "Must be E.164, e.g. +12155551212."),
+    ]),
+  })
+  .strict();
+
 router.get(
   "/admin/agent-availability",
   // Rate-limit BEFORE the auth gate so an unauthenticated flood is
@@ -58,6 +71,93 @@ router.get(
         role: a.role,
         availability: a.availability,
       })),
+    });
+  },
+);
+
+router.get(
+  "/admin/agent-availability/me",
+  adminReadRateLimiter,
+  requireAdmin,
+  async (req, res) => {
+    const userId = req.adminUserId;
+    if (!userId) {
+      res.status(401).json({ error: "no_user" });
+      return;
+    }
+    const supabase = getSupabaseServiceRoleClient();
+    const { data, error } = await supabase
+      .schema("resupply")
+      .from("admin_users")
+      .select("id, availability, phone_e164")
+      .eq("id", userId)
+      .maybeSingle();
+    if (error) {
+      res.status(500).json({ error: "query_failed", message: error.message });
+      return;
+    }
+    if (!data) {
+      res.status(404).json({ error: "admin_not_found" });
+      return;
+    }
+    res.json({
+      adminUserId: data.id,
+      availability: data.availability,
+      // Last 4 only — never echo the full bridge number back to the UI.
+      phoneLast4: data.phone_e164 ? String(data.phone_e164).slice(-4) : null,
+      hasPhone: Boolean(data.phone_e164),
+    });
+  },
+);
+
+router.put(
+  "/admin/agent-availability/me/phone",
+  requireAdmin,
+  adminRateLimit({ name: "agent_phone.set", preset: "mutation" }),
+  async (req, res) => {
+    const parsed = phoneSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: "invalid_body",
+        issues: parsed.error.issues.map((i) => ({
+          path: i.path.join("."),
+          message: i.message,
+        })),
+      });
+      return;
+    }
+    const userId = req.adminUserId;
+    if (!userId) {
+      res.status(401).json({ error: "no_user" });
+      return;
+    }
+    const phone = parsed.data.phoneE164 === "" ? null : parsed.data.phoneE164;
+
+    const supabase = getSupabaseServiceRoleClient();
+    const { data, error } = await supabase
+      .schema("resupply")
+      .from("admin_users")
+      .update({ phone_e164: phone, updated_at: new Date().toISOString() })
+      .eq("id", userId)
+      .select("id, phone_e164")
+      .maybeSingle();
+    if (error) {
+      res.status(500).json({ error: "update_failed", message: error.message });
+      return;
+    }
+    if (!data) {
+      res.status(404).json({ error: "admin_not_found" });
+      return;
+    }
+    // Structural log only — never the number.
+    req.log?.info(
+      { adminUserId: userId, hasPhone: phone !== null },
+      "admin.agent_phone.set",
+    );
+    res.json({
+      adminUserId: data.id,
+      hasPhone: Boolean(data.phone_e164),
+      phoneLast4: data.phone_e164 ? String(data.phone_e164).slice(-4) : null,
     });
   },
 );

@@ -3,13 +3,16 @@
 // "Call patient" places an agent-first Twilio bridge: Twilio rings the
 // CSR's OWN phone first; when they answer, the patient is connected. The
 // patient's number never reaches the browser. After hanging up the CSR
-// logs the outcome (reached / voicemail / …) + an optional note.
+// logs the outcome (reached / voicemail / …) + an optional note, and a
+// recent call-history list shows below.
 //
 // The call-window guardrail (9am–7pm ET, Mon–Sat) is enforced server-
 // side; outside it the first attempt 409s and we offer "Call anyway".
+// If the agent hasn't set their own bridge number yet, the failure
+// surfaces an inline "set your callback number" field right here.
 
 import { useState } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Phone, PhoneOutgoing } from "lucide-react";
 
 import { ApiError } from "@workspace/api-client-react/admin";
@@ -20,6 +23,8 @@ import { Input } from "@/components/admin/Input";
 import {
   placeClickToDial,
   logCallDisposition,
+  getPatientCallHistory,
+  setAgentPhone,
   CALL_OUTCOMES,
   OUTCOME_LABEL,
   type CallOutcome,
@@ -43,12 +48,23 @@ export function ClickToDialCard({
   patientId: string;
   hasPhone: boolean;
 }) {
+  const qc = useQueryClient();
+  const historyKey = ["admin", "patient", patientId, "call-history"] as const;
   const [dispositionId, setDispositionId] = useState<string | null>(null);
   const [outcome, setOutcome] = useState<CallOutcome>("reached");
   const [note, setNote] = useState("");
   const [offerOverride, setOfferOverride] = useState(false);
+  const [needPhone, setNeedPhone] = useState(false);
+  const [phoneInput, setPhoneInput] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [logged, setLogged] = useState(false);
+
+  const history = useQuery({
+    queryKey: historyKey,
+    queryFn: () => getPatientCallHistory(patientId),
+    enabled: hasPhone,
+    staleTime: 30_000,
+  });
 
   const dial = useMutation({
     mutationFn: (override: boolean) =>
@@ -60,11 +76,22 @@ export function ClickToDialCard({
     onSuccess: (res) => {
       setDispositionId(res.dispositionId);
       setOfferOverride(false);
+      setNeedPhone(false);
     },
     onError: (err) => {
       const { code, message } = errInfo(err);
       setOfferOverride(code === "outside_call_window");
+      setNeedPhone(code === "agent_phone_missing");
       setError(message);
+    },
+  });
+
+  const savePhone = useMutation({
+    mutationFn: () => setAgentPhone(phoneInput.trim()),
+    onSuccess: () => {
+      setNeedPhone(false);
+      setError(null);
+      setPhoneInput("");
     },
   });
 
@@ -79,6 +106,7 @@ export function ClickToDialCard({
       setDispositionId(null);
       setNote("");
       setOutcome("reached");
+      void qc.invalidateQueries({ queryKey: historyKey });
     },
   });
 
@@ -162,7 +190,41 @@ export function ClickToDialCard({
           </div>
         )}
 
-        {error && (
+        {needPhone && (
+          <div
+            className="rounded border p-2 space-y-2"
+            style={{ borderColor: "hsl(var(--line-1))", background: "#fffbe6" }}
+          >
+            <p className="text-xs" style={{ color: "hsl(var(--ink-2))" }}>
+              Set your own callback number — Twilio rings it first, then bridges
+              the patient.
+            </p>
+            <div className="flex flex-wrap items-end gap-2">
+              <Input
+                value={phoneInput}
+                onChange={(e) => setPhoneInput(e.target.value)}
+                placeholder="+12155551212"
+                aria-label="Your callback number"
+                className="font-mono text-sm w-[200px]"
+              />
+              <Button
+                size="sm"
+                isLoading={savePhone.isPending}
+                disabled={phoneInput.trim() === ""}
+                onClick={() => savePhone.mutate()}
+              >
+                Save number
+              </Button>
+            </div>
+            {savePhone.error instanceof Error && (
+              <p className="text-xs" style={{ color: "#b91c1c" }} role="alert">
+                Couldn&apos;t save — use E.164 format (e.g. +12155551212).
+              </p>
+            )}
+          </div>
+        )}
+
+        {error && !needPhone && (
           <p className="text-sm" style={{ color: "#b91c1c" }} role="alert">
             {error}
           </p>
@@ -171,6 +233,41 @@ export function ClickToDialCard({
           <p className="text-sm" style={{ color: "#166534" }} role="status">
             Outcome logged.
           </p>
+        )}
+
+        {hasPhone && history.data && history.data.dispositions.length > 0 && (
+          <div className="pt-1">
+            <p
+              className="text-[10px] uppercase tracking-wider font-semibold mb-1"
+              style={{ color: "hsl(var(--ink-3))" }}
+            >
+              Recent calls
+            </p>
+            <ul className="space-y-1">
+              {history.data.dispositions.slice(0, 6).map((d) => (
+                <li
+                  key={d.id}
+                  className="text-xs flex items-center gap-2"
+                  style={{ color: "hsl(var(--ink-2))" }}
+                >
+                  <span className="font-medium">
+                    {OUTCOME_LABEL[d.outcome as CallOutcome] ?? d.outcome}
+                  </span>
+                  <span style={{ color: "hsl(var(--ink-3))" }}>
+                    {new Date(d.createdAt).toLocaleString()}
+                  </span>
+                  {d.note && (
+                    <span
+                      className="truncate"
+                      style={{ color: "hsl(var(--ink-3))" }}
+                    >
+                      · {d.note}
+                    </span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
         )}
       </div>
     </Card>

@@ -240,3 +240,41 @@ describe("POST /admin/call-dispositions/:id", () => {
     expect(res.body.outcome).toBe("reached");
   });
 });
+
+describe("GET /admin/patients/:id/call-dispositions", () => {
+  it("401s without admin", async () => {
+    const res = await request(makeApp()).get(
+      `/admin/patients/${PATIENT_ID}/call-dispositions`,
+    );
+    expect(res.status).toBe(401);
+  });
+
+  it("403s for a role without conversations.manage (rt)", async () => {
+    mockAdmin.current = RT;
+    const res = await request(makeApp()).get(
+      `/admin/patients/${PATIENT_ID}/call-dispositions`,
+    );
+    expect(res.status).toBe(403);
+  });
+
+  it("returns the patient's recent call history", async () => {
+    mockAdmin.current = ADMIN;
+    stageSupabaseResponse("call_dispositions", "select", {
+      data: [
+        {
+          id: "d1",
+          outcome: "voicemail",
+          note: "Left a message about the new mask.",
+          agent_email: "csr@penn.example.com",
+          created_at: "2026-05-30T15:00:00.000Z",
+        },
+      ],
+    });
+    const res = await request(makeApp()).get(
+      `/admin/patients/${PATIENT_ID}/call-dispositions`,
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.count).toBe(1);
+    expect(res.body.dispositions[0].outcome).toBe("voicemail");
+  });
+});
