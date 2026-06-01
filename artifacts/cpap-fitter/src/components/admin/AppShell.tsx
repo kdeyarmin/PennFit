@@ -269,6 +269,14 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         requiredPermission: "clinical.read",
       },
       {
+        href: "/admin/clinical/interventions",
+        label: "Interventions",
+        icon: Activity,
+        matchPrefix: "/admin/clinical/interventions",
+        hint: "Non-adherence intervention worklist — cause, plan, outcome",
+        requiredPermission: "clinical.read",
+      },
+      {
         href: "/admin/providers",
         label: "Providers",
         icon: HeartHandshake,

@@ -23,6 +23,7 @@ import { DocumentsTab } from "@/components/admin/DocumentsTab";
 import { EquipmentTab } from "@/components/admin/EquipmentTab";
 import { PatientActionBar } from "@/components/admin/PatientActionBar";
 import { ClickToDialCard } from "@/components/admin/ClickToDialCard";
+import { LogInterventionCard } from "@/components/admin/LogInterventionCard";
 import { PatientBillingTab } from "@/components/admin/PatientBillingTab";
 import { PatientResupplyTab } from "@/components/admin/PatientResupplyTab";
 import { PortalTab } from "@/components/admin/PortalTab";
@@ -259,6 +260,8 @@ export function PatientDetailPage({ id }: { id: string }) {
       <PatientActionBar patient={data} onAfterAction={() => void refetch()} />
 
       <ClickToDialCard patientId={data.id} hasPhone={data.hasPhone} />
+
+      <LogInterventionCard patientId={data.id} />
 
       <SettingsCard patient={data} onSaved={() => void refetch()} />
 
