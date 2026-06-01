@@ -19,6 +19,10 @@ import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { adminReadRateLimiter } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
+import {
+  computeFitAdjustments,
+  tallyOutcomesByMask,
+} from "../../lib/storefront/mask-fit-tuning";
 
 const router: IRouter = Router();
 
@@ -108,6 +112,46 @@ router.get(
         leaking: items.filter((i) => i.fit_outcome === "leaking").length,
       },
     });
+  },
+);
+
+// GET /admin/clinical/mask-fit/rec-signal — the #22b tuning signal: per-
+// mask seal/comfort counts from attributed outcomes + the ranking
+// multiplier each would feed the recommendation engine. Neutral (empty)
+// until outcomes have accumulated with a mask attribution. clinical.read.
+router.get(
+  "/admin/clinical/mask-fit/rec-signal",
+  adminReadRateLimiter,
+  requirePermission("clinical.read"),
+  async (_req, res) => {
+    const supabase = getSupabaseServiceRoleClient();
+    const { data, error } = await supabase
+      .schema("resupply")
+      .from("mask_fit_outcomes")
+      .select("mask_id, fit_outcome")
+      .not("mask_id", "is", null)
+      .limit(20000);
+    if (error) {
+      res.status(500).json({ error: "query_failed", message: error.message });
+      return;
+    }
+    const rows = (data ?? []) as Array<{
+      mask_id: string | null;
+      fit_outcome: "good" | "leaking" | "uncomfortable";
+    }>;
+    const byMask = tallyOutcomesByMask(
+      rows.map((r) => ({ maskId: r.mask_id, fitOutcome: r.fit_outcome })),
+    );
+    const adjustments = computeFitAdjustments(byMask);
+    const masks = Object.entries(byMask)
+      .map(([maskId, counts]) => ({
+        maskId,
+        counts,
+        total: counts.good + counts.leaking + counts.uncomfortable,
+        adjustment: adjustments[maskId] ?? 1, // 1.0 = neutral (below threshold)
+      }))
+      .sort((a, b) => b.total - a.total);
+    res.json({ masks, adjustments, attributedOutcomes: rows.length });
   },
 );
 

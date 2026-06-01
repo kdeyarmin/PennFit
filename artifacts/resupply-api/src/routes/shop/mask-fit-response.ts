@@ -77,6 +77,7 @@ router.post("/shop/orders/mask-fit", maskFitRateLimiter, async (req, res) => {
     .from("mask_fit_outcomes")
     .insert({
       order_id: verified.orderId,
+      mask_id: verified.maskId,
       fit_outcome: verified.outcome,
       comment: parsed.data.comment ?? null,
       submitter_ip: ip === "unknown" ? null : ip,

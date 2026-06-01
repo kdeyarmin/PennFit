@@ -3852,6 +3852,7 @@ export interface Database {
         Row: {
           id: string;
           order_id: string;
+          mask_id: string | null;
           fit_outcome: "good" | "leaking" | "uncomfortable";
           comment: string | null;
           status: "new" | "reviewed" | "actioned";

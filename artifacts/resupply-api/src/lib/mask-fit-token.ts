@@ -25,6 +25,8 @@ interface MaskFitTokenPayload {
   f: MaskFitOutcome;
   /** Expiry as Unix seconds. */
   e: number;
+  /** Optional recommendation-engine mask id, for the #22b tuning signal. */
+  m?: string;
 }
 
 const DEFAULT_TTL_SECONDS = 30 * 86_400;
@@ -65,6 +67,7 @@ export function signMaskFitToken(
   orderId: string,
   outcome: MaskFitOutcome,
   ttlSeconds = DEFAULT_TTL_SECONDS,
+  maskId?: string,
 ): string {
   if (!isOutcome(outcome)) {
     throw new Error("mask-fit outcome must be good | leaking | uncomfortable");
@@ -73,6 +76,7 @@ export function signMaskFitToken(
     o: orderId,
     f: outcome,
     e: Math.floor(Date.now() / 1000) + ttlSeconds,
+    ...(maskId ? { m: maskId } : {}),
   };
   const payloadEncoded = base64urlEncode(
     Buffer.from(JSON.stringify(payload), "utf8"),
@@ -82,7 +86,12 @@ export function signMaskFitToken(
 }
 
 export type VerifyMaskFitTokenResult =
-  | { valid: true; orderId: string; outcome: MaskFitOutcome }
+  | {
+      valid: true;
+      orderId: string;
+      outcome: MaskFitOutcome;
+      maskId: string | null;
+    }
   | { valid: false };
 
 export function verifyMaskFitToken(token: string): VerifyMaskFitTokenResult {
@@ -123,5 +132,10 @@ export function verifyMaskFitToken(token: string): VerifyMaskFitTokenResult {
 
   if (p.e <= Math.floor(Date.now() / 1000)) return { valid: false };
 
-  return { valid: true, orderId: p.o, outcome: p.f };
+  return {
+    valid: true,
+    orderId: p.o,
+    outcome: p.f,
+    maskId: typeof p.m === "string" && p.m.length > 0 ? p.m : null,
+  };
 }

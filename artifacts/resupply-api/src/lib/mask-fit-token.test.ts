@@ -16,12 +16,32 @@ import {
 } from "./mask-fit-token";
 
 describe("mask-fit token", () => {
-  it("round-trips each outcome", () => {
+  it("round-trips each outcome (no mask id)", () => {
     for (const outcome of MASK_FIT_OUTCOMES) {
       const token = signMaskFitToken("order-1", outcome);
       const v = verifyMaskFitToken(token);
-      expect(v).toEqual({ valid: true, orderId: "order-1", outcome });
+      expect(v).toEqual({
+        valid: true,
+        orderId: "order-1",
+        outcome,
+        maskId: null,
+      });
     }
+  });
+
+  it("round-trips an attributed mask id (#22b)", () => {
+    const token = signMaskFitToken(
+      "order-1",
+      "good",
+      undefined,
+      "resmed-airfit-f20",
+    );
+    expect(verifyMaskFitToken(token)).toEqual({
+      valid: true,
+      orderId: "order-1",
+      outcome: "good",
+      maskId: "resmed-airfit-f20",
+    });
   });
 
   it("rejects a tampered payload", () => {
