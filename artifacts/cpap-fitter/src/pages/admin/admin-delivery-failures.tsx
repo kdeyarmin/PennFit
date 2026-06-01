@@ -8,6 +8,8 @@
 import { useMemo, useState } from "react";
 import { Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
+
+import { humanizeAction, humanizeStatus } from "@/components/admin/Badge";
 import {
   fetchDeliveryFailures,
   type AuditFailureEvent,
@@ -147,7 +149,7 @@ function MessageFailuresTable({ data }: { data: DeliveryFailuresResponse }) {
               "bg-slate-100 text-slate-700 border-slate-300"
             }`}
           >
-            {status} · {count}
+            {humanizeStatus(status)} · {count}
           </span>
         ))}
       </div>
@@ -190,7 +192,7 @@ function MessageRow({ row }: { row: MessageFailureEvent }) {
             "bg-slate-100 text-slate-700 border-slate-300"
           }`}
         >
-          {row.deliveryStatus ?? "—"}
+          {humanizeStatus(row.deliveryStatus)}
         </span>
       </td>
       <td className="px-3 py-2 text-sm">
@@ -275,13 +277,13 @@ function AuditRow({ row }: { row: AuditFailureEvent }) {
       <td className="px-3 py-2 text-xs text-slate-700 tabular-nums whitespace-nowrap">
         {new Date(row.occurredAt).toLocaleString()}
       </td>
-      <td className="px-3 py-2 text-xs font-mono text-slate-900">
-        {row.action}
+      <td className="px-3 py-2 text-xs text-slate-900" title={row.action}>
+        {humanizeAction(row.action)}
       </td>
       <td className="px-3 py-2 text-xs">
         {row.targetTable ? (
-          <span className="text-slate-700">
-            {row.targetTable}
+          <span className="text-slate-700" title={row.targetTable}>
+            {humanizeAction(row.targetTable)}
             {row.targetId ? ` · ${row.targetId.slice(-12)}` : ""}
           </span>
         ) : (

@@ -26,6 +26,7 @@ import {
   XCircle,
 } from "lucide-react";
 
+import { humanizeAction, humanizeStatus } from "@/components/admin/Badge";
 import { Button } from "@/components/admin/Button";
 import { Card } from "@/components/admin/Card";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
@@ -558,7 +559,7 @@ function OverviewPane({
           <ul className="text-xs space-y-1">
             {referral.documents.map((d) => (
               <li key={d.id}>
-                <span className="font-mono">{d.kind}</span>{" "}
+                <span className="font-medium">{humanizeStatus(d.kind)}</span>{" "}
                 {d.filename && <span>· {d.filename}</span>}
                 {isHttpUrl(d.sourceUrl) && (
                   <a
@@ -683,7 +684,9 @@ function PatientMatchPane({
                 style={{ borderColor: "hsl(var(--line-2))" }}
               >
                 <span>
-                  <span className="font-mono text-[10px]">{p.kind}</span>{" "}
+                  <span className="font-medium text-[10px]">
+                    {humanizeStatus(p.kind)}
+                  </span>{" "}
                   <span>
                     {p.legalFirstName ?? ""} {p.legalLastName ?? ""}
                   </span>{" "}
@@ -767,7 +770,7 @@ function PreflightPane({
               className="flex items-center justify-between border rounded px-2 py-1 text-xs"
               style={{ borderColor: "hsl(var(--line-2))" }}
             >
-              <span className="font-mono">{c.checkKind}</span>
+              <span className="font-medium">{humanizeStatus(c.checkKind)}</span>
               <span
                 className={`inline-block px-1.5 py-0.5 rounded text-[10px] uppercase font-semibold tracking-wider ${PREFLIGHT_BADGE[c.outcomeStatus]}`}
               >
@@ -841,9 +844,11 @@ function CallbacksPane({
               style={{ borderColor: "hsl(var(--line-2))" }}
             >
               <span>
-                <span className="font-mono">{c.eventType}</span>
+                <span className="font-medium">
+                  {humanizeAction(c.eventType)}
+                </span>
                 <span className="ml-2" style={{ color: "hsl(var(--ink-3))" }}>
-                  · {c.targetKind} · attempt {c.attemptCount}
+                  · {humanizeStatus(c.targetKind)} · attempt {c.attemptCount}
                 </span>
               </span>
               <span className="flex items-center gap-1">

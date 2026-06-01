@@ -5,7 +5,11 @@
 //     "Toggle activity is no longer tracked" notice was removed.
 //   - refetchInterval is now a static 60_000 ms (previously conditional
 //     on `query.state.data?.unavailable`).
-//   - ConfirmDisableModal text input gains aria-label="Type the flag key to confirm".
+//   - Feature keys render as human-readable names via humanizeAction
+//     (e.g. "ai_billing.suggestions" → "AI Billing Suggestions"); the raw
+//     slug is retained only in a `title` tooltip for cross-reference.
+//   - ConfirmDisableModal confirms against the readable feature name
+//     (aria-label="Type the feature name to confirm").
 //
 // The page renders a row of summary tiles (enabled count, disabled
 // count, last toggle) above the per-flag list. The component itself
@@ -112,11 +116,14 @@ describe("admin-control-center — high-risk confirmation modal", () => {
     expect(onConfirmMatch).not.toBeNull();
   });
 
-  it("disables the Confirm button until the typed string matches the flag key exactly", () => {
-    // The modal binds `matches = typed === flag.key`. Anything other
-    // than an exact-match check (e.g., includes, startsWith) would
-    // weaken the guard.
-    expect(SRC).toMatch(/const\s+matches\s*=\s*typed\s*===\s*flag\.key/);
+  it("disables the Confirm button until the typed string matches the feature name exactly", () => {
+    // The modal binds `matches = typed === flagLabel`, where flagLabel
+    // is the human-readable feature name (humanizeAction(flag.key)) so
+    // the operator types the same readable string the rest of the page
+    // shows. Anything other than an exact-match check (e.g., includes,
+    // startsWith) would weaken the guard.
+    expect(SRC).toMatch(/const\s+flagLabel\s*=\s*humanizeAction\(flag\.key\)/);
+    expect(SRC).toMatch(/const\s+matches\s*=\s*typed\s*===\s*flagLabel/);
     expect(SRC).toMatch(/disabled=\{!matches\}/);
   });
 
@@ -134,10 +141,10 @@ describe("admin-control-center — high-risk confirmation modal", () => {
     expect(SRC).toContain("flag-row-${flag.key}-high-risk-badge");
   });
 
-  it("ConfirmDisableModal text input has aria-label='Type the flag key to confirm'", () => {
-    // a11y guard: the PR added aria-label to the typed-confirm input so
+  it("ConfirmDisableModal text input has aria-label='Type the feature name to confirm'", () => {
+    // a11y guard: the typed-confirm input carries an aria-label so
     // screen-reader users know what text is expected.
-    expect(SRC).toContain('aria-label="Type the flag key to confirm"');
+    expect(SRC).toContain('aria-label="Type the feature name to confirm"');
   });
 });
 

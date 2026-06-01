@@ -8,6 +8,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 
+import { humanizeStatus } from "@/components/admin/Badge";
+
 interface Hit {
   kind: string;
   id: string;
@@ -129,7 +131,7 @@ export function GlobalLookup() {
                         KIND_TONE[h.kind] ?? "bg-slate-100 text-slate-700"
                       }`}
                     >
-                      {h.kind.replace(/_/g, " ")}
+                      {humanizeStatus(h.kind)}
                     </span>
                     <span className="flex-1 min-w-0">
                       <span className="block text-slate-900 font-medium truncate">
