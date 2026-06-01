@@ -70,6 +70,7 @@ export function withinCallWindow(
 }
 
 const patientIdParam = z.string().uuid();
+const callDispositionsBody = z.object({ patientId: z.string().uuid() }).strict();
 const dialBody = z
   .object({ override: z.boolean().optional() })
   .strict()
@@ -264,13 +265,13 @@ router.post(
 );
 
 // Patient call history — the recent dispositions for the patient panel.
-router.get(
-  "/admin/patients/:patientId/call-dispositions",
+router.post(
+  "/admin/patients/call-dispositions",
   adminReadRateLimiter,
   requirePermission("conversations.manage"),
   async (req, res) => {
-    const idParsed = patientIdParam.safeParse(req.params.patientId);
-    if (!idParsed.success) {
+    const bodyParsed = callDispositionsBody.safeParse(req.body);
+    if (!bodyParsed.success) {
       res.status(400).json({ error: "invalid_patient_id" });
       return;
     }
@@ -279,7 +280,7 @@ router.get(
       .schema("resupply")
       .from("call_dispositions")
       .select("id, outcome, note, agent_email, created_at")
-      .eq("patient_id", idParsed.data)
+      .eq("patient_id", bodyParsed.data.patientId)
       .order("created_at", { ascending: false })
       .limit(25);
     if (error) {
