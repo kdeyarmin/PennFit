@@ -11,12 +11,20 @@
 // context / snippets are a follow-up enrichment).
 
 import { Router, type IRouter } from "express";
+import rateLimit from "express-rate-limit";
 
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { requireAdmin } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
+
+const adminWorkItemsRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 60, // limit each IP to 60 requests per window
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 
 const PER_SOURCE_LIMIT = 50;
 
@@ -91,7 +99,11 @@ export function buildWorkItems(
   return items;
 }
 
-router.get("/admin/work-items", requireAdmin, async (_req, res) => {
+router.get(
+  "/admin/work-items",
+  adminWorkItemsRateLimiter,
+  requireAdmin,
+  async (_req, res) => {
   const supabase = getSupabaseServiceRoleClient();
   const nowIso = new Date().toISOString();
 
