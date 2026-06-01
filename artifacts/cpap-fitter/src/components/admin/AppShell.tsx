@@ -1464,8 +1464,20 @@ function SectionSubNav({
   if (!active?.section.tabs) return null;
   const tabs = visibleTabs(active.section, permissions);
   if (tabs.length <= 1) return null;
-  const activeHref = active.tab?.href;
 
+  // Determine the active tab from the *visible* tabs so permission-gated
+  // routes don't leave the sub-nav with nothing selected.
+  let activeHref = tabs[0]!.href;
+  let bestSpecificity = 0;
+  for (const tab of tabs) {
+    const prefix = tab.matchPrefix ?? tab.href;
+    if (!linkMatchesLocation(location, prefix)) continue;
+    const specificity = prefix.length;
+    if (specificity > bestSpecificity) {
+      bestSpecificity = specificity;
+      activeHref = tab.href;
+    }
+  }
   return (
     <div
       className="mb-5 border-b border-[hsl(var(--border))]"
