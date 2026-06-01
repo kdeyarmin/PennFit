@@ -400,7 +400,7 @@ These need accumulated data from earlier phases or new content/vendors.
 | F3  | shared  | Clinical encounters + RT role      | 0      | L       | —               |
 | F4  | shared  | Work-item model + cases            | 0      | L       | —               |
 | 1   | Owner   | ✅ Gross-margin / COGS dashboard   | 2      | M       | done (F1)       |
-| 2   | Owner   | Payer-mix profitability            | 2      | M       | F1              |
+| 2   | Owner   | ✅ Payer-mix profitability         | 2      | M       | done (F1)       |
 | 3   | Owner   | LTV & CAC cohort economics         | 2      | L       | F1              |
 | 4   | Owner   | Revenue / cash-flow forecast       | 6      | L       | F1, eligibility |
 | 5   | Owner   | ✅ KPI threshold alerting          | 2      | M       | done (F2)       |

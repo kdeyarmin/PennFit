@@ -335,6 +335,11 @@ const AdminBillingTimelyFilingPage = lazy(() =>
     default: m.AdminBillingTimelyFilingPage,
   })),
 );
+const AdminPayerProfitabilityPage = lazy(() =>
+  import("@/pages/admin/admin-payer-profitability").then((m) => ({
+    default: m.AdminPayerProfitabilityPage,
+  })),
+);
 const AdminBillingDenialsPage = lazy(() =>
   import("@/pages/admin/admin-billing-denials").then((m) => ({
     default: m.AdminBillingDenialsPage,
@@ -536,6 +541,10 @@ function AdminConsole() {
             <Route
               path="/admin/billing/timely-filing"
               component={AdminBillingTimelyFilingPage}
+            />
+            <Route
+              path="/admin/billing/payer-profitability"
+              component={AdminPayerProfitabilityPage}
             />
             <Route
               path="/admin/billing/denials"

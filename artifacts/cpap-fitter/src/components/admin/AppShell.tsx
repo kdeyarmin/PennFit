@@ -50,6 +50,7 @@ import {
   Target,
   Menu,
   CircleDollarSign,
+  Landmark,
   Wallet,
   Bot,
   ListFilter,
@@ -405,6 +406,14 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         icon: CalendarClock,
         matchPrefix: "/admin/billing/timely-filing",
         hint: "Open claims ranked by days left before the payer's timely-filing window closes",
+      },
+      {
+        href: "/admin/billing/payer-profitability",
+        label: "Payer profitability",
+        icon: Landmark,
+        matchPrefix: "/admin/billing/payer-profitability",
+        hint: "Net yield by payer: billed → allowed → collected, denial rate, net of cost",
+        requiredPermission: "cost.read",
       },
       {
         href: "/admin/billing/denials",
