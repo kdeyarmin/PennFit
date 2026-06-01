@@ -3,6 +3,8 @@
 
 import { ApiError } from "@workspace/api-client-react/admin";
 
+import { csrfHeader } from "../csrf";
+
 export type VerificationStatus =
   | "never_verified"
   | "terminating_soon"
@@ -54,4 +56,45 @@ export async function fetchEligibilityVerificationWorklist(
     throw new ApiError(res, data, { method: "GET", url });
   }
   return (await res.json()) as VerificationWorklistResponse;
+}
+
+export interface ReverifyBatchSummary {
+  scanned: number;
+  due: number;
+  selected: number;
+  fired: number;
+  uploadOk: number;
+  errored: number;
+}
+
+/**
+ * Fire the re-verification batch on demand (admin.tools.manage). Emits
+ * outbound 270s for the most-urgent, not-recently-attempted coverages,
+ * capped per run; returns a counts summary.
+ */
+export async function runEligibilityBatch(opts?: {
+  cap?: number;
+  staleDays?: number;
+}): Promise<{ summary: ReverifyBatchSummary }> {
+  const url = "/resupply-api/admin/billing/eligibility-batch-run";
+  const res = await fetch(url, {
+    method: "POST",
+    credentials: "include",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      ...csrfHeader(),
+    },
+    body: JSON.stringify(opts ?? {}),
+  });
+  if (!res.ok) {
+    let data: unknown = null;
+    try {
+      data = await res.json();
+    } catch {
+      // body not JSON
+    }
+    throw new ApiError(res, data, { method: "POST", url });
+  }
+  return (await res.json()) as { summary: ReverifyBatchSummary };
 }

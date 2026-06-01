@@ -25,146 +25,29 @@ import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { adminReadRateLimiter } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
+import { runEligibilityReverificationBatch } from "../../lib/billing/eligibility-batch";
 
 const router: IRouter = Router();
 
-export type VerificationStatus =
-  | "never_verified"
-  | "terminating_soon"
-  | "stale"
-  | "ok";
+// The pure ranking core moved to lib/billing/eligibility-worklist.ts so
+// the batch runner can share it without a route↔lib cycle. Imported for
+// this route's handler + re-exported for back-compat with existing
+// importers (this route's test).
+import {
+  buildVerificationWorklist,
+  type VerificationStatus,
+  type CoverageInput,
+  type VerificationWorkItem,
+  type VerificationWorklist,
+} from "../../lib/billing/eligibility-worklist";
 
-export interface CoverageInput {
-  id: string;
-  patientId: string;
-  rank: string;
-  payerName: string | null;
-  /** Last 4 of the member id only — never the full value. */
-  memberIdTail: string | null;
-  verifiedAt: string | null;
-  terminationDate: string | null;
-}
-
-export interface VerificationWorkItem extends CoverageInput {
-  status: VerificationStatus;
-  /** Whole days since verifiedAt, or null when never verified. */
-  daysSinceVerified: number | null;
-  /** Whole days until termination, or null when no termination date. */
-  daysUntilTermination: number | null;
-  /** Sort key — higher = more urgent. */
-  priority: number;
-}
-
-export interface VerificationWorklist {
-  items: VerificationWorkItem[];
-  counts: {
-    neverVerified: number;
-    terminatingSoon: number;
-    stale: number;
-    ok: number;
-    total: number;
-  };
-}
-
-const DAY_MS = 86_400_000;
-
-// Urgency ordering. terminating_soon outranks never_verified because a
-// coverage about to lapse is time-boxed; both beat stale; ok sinks.
-const PRIORITY: Record<VerificationStatus, number> = {
-  terminating_soon: 3,
-  never_verified: 2,
-  stale: 1,
-  ok: 0,
+export {
+  buildVerificationWorklist,
+  type VerificationStatus,
+  type CoverageInput,
+  type VerificationWorkItem,
+  type VerificationWorklist,
 };
-
-function wholeDaysBetween(fromIso: string, toMs: number): number | null {
-  const fromMs = Date.parse(fromIso.slice(0, 10));
-  if (Number.isNaN(fromMs)) return null;
-  const toDayMs = Date.parse(new Date(toMs).toISOString().slice(0, 10));
-  return Math.round((toDayMs - fromMs) / DAY_MS);
-}
-
-/**
- * Pure: classify each active coverage by verification urgency and sort
- * most-urgent first (then by the sharper of "soonest termination" /
- * "longest stale"). No I/O — unit-tested directly.
- */
-export function buildVerificationWorklist(
-  coverages: readonly CoverageInput[],
-  opts?: {
-    staleDays?: number;
-    terminationLookaheadDays?: number;
-    asOf?: string;
-  },
-): VerificationWorklist {
-  const staleDays = opts?.staleDays ?? 30;
-  const lookahead = opts?.terminationLookaheadDays ?? 30;
-  const asOfMs = opts?.asOf ? Date.parse(opts.asOf) : Date.now();
-  const nowMs = Number.isNaN(asOfMs) ? Date.now() : asOfMs;
-
-  const items: VerificationWorkItem[] = coverages.map((c) => {
-    const daysSinceVerified =
-      c.verifiedAt != null ? wholeDaysBetween(c.verifiedAt, nowMs) : null;
-    const daysUntilTermination =
-      c.terminationDate != null
-        ? (() => {
-            const d = wholeDaysBetween(c.terminationDate, nowMs);
-            return d == null ? null : -d; // wholeDaysBetween gives elapsed; flip to remaining
-          })()
-        : null;
-
-    let status: VerificationStatus;
-    if (c.verifiedAt == null) {
-      status = "never_verified";
-    } else if (
-      daysUntilTermination != null &&
-      daysUntilTermination >= 0 &&
-      daysUntilTermination <= lookahead
-    ) {
-      status = "terminating_soon";
-    } else if (daysSinceVerified != null && daysSinceVerified > staleDays) {
-      status = "stale";
-    } else {
-      status = "ok";
-    }
-
-    return {
-      ...c,
-      status,
-      daysSinceVerified,
-      daysUntilTermination,
-      priority: PRIORITY[status],
-    };
-  });
-
-  items.sort((a, b) => {
-    if (b.priority !== a.priority) return b.priority - a.priority;
-    // Tie-break: soonest termination first, else longest stale first.
-    if (a.status === "terminating_soon" && b.status === "terminating_soon") {
-      return (
-        (a.daysUntilTermination ?? Infinity) -
-        (b.daysUntilTermination ?? Infinity)
-      );
-    }
-    return (b.daysSinceVerified ?? 0) - (a.daysSinceVerified ?? 0);
-  });
-
-  const counts = {
-    neverVerified: 0,
-    terminatingSoon: 0,
-    stale: 0,
-    ok: 0,
-    total: items.length,
-  };
-  for (const i of items) {
-    if (i.status === "never_verified") counts.neverVerified += 1;
-    else if (i.status === "terminating_soon") counts.terminatingSoon += 1;
-    else if (i.status === "stale") counts.stale += 1;
-    else counts.ok += 1;
-  }
-
-  return { items, counts };
-}
 
 const querySchema = z
   .object({
@@ -231,6 +114,54 @@ router.get(
       counts: worklist.counts,
       generatedAt: new Date().toISOString(),
     });
+  },
+);
+
+// POST /admin/billing/eligibility-batch-run — fire the re-verification
+// batch on demand (Biller #31 write half). Operator-controlled entry to
+// the same core the opt-in cron runs; returns a counts summary. Runs
+// inline with a conservative cap, so it stays a few-second request even
+// over SFTP. admin.tools.manage — it emits outbound clearinghouse 270s.
+const batchRunSchema = z
+  .object({
+    cap: z.coerce.number().int().min(1).max(100).optional(),
+    minHoursBetweenAttempts: z.coerce
+      .number()
+      .int()
+      .min(0)
+      .max(8760)
+      .optional(),
+    staleDays: z.coerce.number().int().min(1).max(365).optional(),
+  })
+  .strip();
+
+router.post(
+  "/admin/billing/eligibility-batch-run",
+  requirePermission("admin.tools.manage"),
+  async (req, res) => {
+    const parsed = batchRunSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      res.status(400).json({ error: "invalid_body" });
+      return;
+    }
+    const summary = await runEligibilityReverificationBatch(
+      {
+        cap: parsed.data.cap ?? 25,
+        minHoursBetweenAttempts: parsed.data.minHoursBetweenAttempts,
+        staleDays: parsed.data.staleDays,
+        requestedByEmail: req.adminEmail ?? "admin:eligibility-batch",
+      },
+      { throttleMs: 100 },
+    );
+    req.log?.info(
+      {
+        event: "admin.eligibility_batch.run",
+        ...summary,
+        adminEmail: req.adminEmail,
+      },
+      "admin.eligibility_batch.run",
+    );
+    res.json({ summary });
   },
 );
 

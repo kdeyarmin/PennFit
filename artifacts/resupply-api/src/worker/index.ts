@@ -46,6 +46,7 @@ import { registerFitterConversionAttributionJob } from "./jobs/fitter-conversion
 import { registerCartAbandonmentJob } from "./jobs/cart-abandonment-scan.js";
 import { registerFailedEmailDigestJob } from "./jobs/failed-order-emails-digest.js";
 import { registerTherapyNightlySyncJob } from "./jobs/therapy-integrations-nightly-sync.js";
+import { registerEligibilityReverifyBatchJob } from "./jobs/eligibility-reverify-batch.js";
 import { registerTherapyFleetSnapshotJob } from "./jobs/therapy-fleet-daily-snapshot.js";
 import { registerMetricsSnapshotJob } from "./jobs/metrics-snapshot.js";
 import { registerMetricAlertsEvaluatorJob } from "./jobs/metric-alerts-evaluator.js";
@@ -435,6 +436,11 @@ async function doStartWorker(): Promise<void> {
   // 04:30 UTC; persists snapshot recentNights into the canonical
   // patient_therapy_nights table for downstream consumers.
   await registerTherapyNightlySyncJob(boss);
+
+  // Eligibility re-verification batch (Biller #31). Queue + worker
+  // always register; the recurring cron only attaches when
+  // ELIGIBILITY_REVERIFY_CRON is set (opt-in — it emits outbound 270s).
+  await registerEligibilityReverifyBatchJob(boss);
 
   // Daily snapshot of the therapy-fleet metrics into
   // therapy_fleet_daily_metrics, 30 min after the nightly sync, so the

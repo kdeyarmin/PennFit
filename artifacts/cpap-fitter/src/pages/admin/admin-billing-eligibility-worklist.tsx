@@ -11,15 +11,18 @@
 
 import { useState } from "react";
 import { Link } from "wouter";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ShieldCheck } from "lucide-react";
 
 import { Card } from "@/components/admin/Card";
+import { Button } from "@/components/admin/Button";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { Spinner } from "@/components/admin/Spinner";
 import { Badge } from "@/components/admin/Badge";
 import {
   fetchEligibilityVerificationWorklist,
+  runEligibilityBatch,
+  type ReverifyBatchSummary,
   type VerificationStatus,
   type VerificationWorkItem,
 } from "@/lib/admin/eligibility-verification-worklist-api";
@@ -43,6 +46,7 @@ const STATUS_META: Record<
 
 export function AdminBillingEligibilityWorklistPage() {
   const [staleDays, setStaleDays] = useState(30);
+  const qc = useQueryClient();
   const query = useQuery({
     queryKey: [
       "admin",
@@ -51,6 +55,17 @@ export function AdminBillingEligibilityWorklistPage() {
     ] as const,
     queryFn: () => fetchEligibilityVerificationWorklist(staleDays),
     refetchInterval: 300_000,
+  });
+
+  const [lastRun, setLastRun] = useState<ReverifyBatchSummary | null>(null);
+  const batch = useMutation({
+    mutationFn: () => runEligibilityBatch({ staleDays }),
+    onSuccess: (res) => {
+      setLastRun(res.summary);
+      void qc.invalidateQueries({
+        queryKey: ["admin", "eligibility-verification-worklist"],
+      });
+    },
   });
 
   return (
@@ -70,21 +85,52 @@ export function AdminBillingEligibilityWorklistPage() {
             270/271 from the patient page.
           </p>
         </div>
-        <label className="flex items-center gap-2 text-xs text-slate-600">
-          Stale after
-          <select
-            value={staleDays}
-            onChange={(e) => setStaleDays(Number(e.target.value))}
-            className="rounded border border-slate-300 px-2 py-1 text-xs"
+        <div className="flex items-center gap-3">
+          <label className="flex items-center gap-2 text-xs text-slate-600">
+            Stale after
+            <select
+              value={staleDays}
+              onChange={(e) => setStaleDays(Number(e.target.value))}
+              className="rounded border border-slate-300 px-2 py-1 text-xs"
+            >
+              {STALE_WINDOWS.map((w) => (
+                <option key={w.value} value={w.value}>
+                  {w.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <Button
+            size="sm"
+            isLoading={batch.isPending}
+            onClick={() => batch.mutate()}
+            title="Fire a 270 for the most urgent coverages not checked recently (capped per run)"
           >
-            {STALE_WINDOWS.map((w) => (
-              <option key={w.value} value={w.value}>
-                {w.label}
-              </option>
-            ))}
-          </select>
-        </label>
+            Run batch now
+          </Button>
+        </div>
       </header>
+
+      {lastRun && (
+        <div
+          className="rounded border px-3 py-2 text-xs"
+          style={{
+            borderColor: "hsl(var(--line-1))",
+            color: "hsl(var(--ink-2))",
+          }}
+          role="status"
+        >
+          Last run — scanned {lastRun.scanned}, due {lastRun.due}, fired{" "}
+          {lastRun.fired} (uploaded {lastRun.uploadOk}
+          {lastRun.errored > 0 ? `, ${lastRun.errored} errored` : ""}).
+        </div>
+      )}
+      {batch.error instanceof Error && (
+        <div className="text-xs" style={{ color: "#b91c1c" }} role="alert">
+          Couldn&apos;t run the batch. You may not have permission, or the
+          clearinghouse is unreachable.
+        </div>
+      )}
 
       {query.isPending ? (
         <Spinner label="Loading worklist…" />
