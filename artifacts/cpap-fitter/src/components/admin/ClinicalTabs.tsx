@@ -9,7 +9,7 @@
 
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, ShieldCheck } from "lucide-react";
+import { FileText, Plus, ShieldCheck } from "lucide-react";
 
 import { Spinner } from "@/components/admin/Spinner";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
@@ -646,6 +646,7 @@ export function PriorAuthorizationsTab({ patientId }: { patientId: string }) {
               <th className="py-2 font-semibold">Auth #</th>
               <th className="py-2 font-semibold">Through</th>
               <th className="py-2 font-semibold">Status</th>
+              <th className="py-2 font-semibold">Form</th>
             </tr>
           </thead>
           <tbody>
@@ -659,6 +660,27 @@ export function PriorAuthorizationsTab({ patientId }: { patientId: string }) {
                 <td className="py-2">{p.approvedThrough ?? "—"}</td>
                 <td className="py-2">
                   <PaStatusBadge status={p.status} />
+                </td>
+                <td className="py-2">
+                  {/* Opens the auto-populated PA request form PDF
+                      (GET /resupply-api/admin/patients/:id/
+                      prior-authorizations/:paId/request-form). Same-origin
+                      GET carries the admin session cookie, so a plain link
+                      streams the PDF in a new tab. */}
+                  <a
+                    href={`/resupply-api/admin/patients/${encodeURIComponent(
+                      patientId,
+                    )}/prior-authorizations/${encodeURIComponent(
+                      p.id,
+                    )}/request-form`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+                    title="Download the auto-populated prior-authorization request form (PDF) to fax or attach to the payer portal"
+                  >
+                    <FileText className="h-3.5 w-3.5" />
+                    PA form
+                  </a>
                 </td>
               </tr>
             ))}
