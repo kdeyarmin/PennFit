@@ -62,6 +62,7 @@ const createSchema = z
 router.get(
   "/admin/patients/:patientId/clinical-encounters",
   requirePermission("clinical.read"),
+  adminRateLimit({ name: "clinical_encounters.list", preset: "query" }),
   async (req, res) => {
     const parsed = patientIdParam.safeParse(req.params.patientId);
     if (!parsed.success) {

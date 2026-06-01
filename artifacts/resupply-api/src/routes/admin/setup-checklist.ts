@@ -47,6 +47,7 @@ const putSchema = z
 router.get(
   "/admin/patients/:patientId/setup-checklist",
   requirePermission("clinical.read"),
+  adminRateLimit({ name: "setup_checklist.get", preset: "query" }),
   async (req, res) => {
     const idCheck = patientIdParam.safeParse(req.params.patientId);
     if (!idCheck.success) {

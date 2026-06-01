@@ -40,7 +40,8 @@ export type AdminRateLimitPreset =
   | "destroy"
   | "bulk"
   | "sensitive"
-  | "mutation";
+  | "mutation"
+  | "query";
 
 const PRESETS: Record<AdminRateLimitPreset, { max: number; windowMs: number }> =
   {
@@ -52,6 +53,13 @@ const PRESETS: Record<AdminRateLimitPreset, { max: number; windowMs: number }> =
     sensitive: { max: 30, windowMs: 60 * 60 * 1000 },
     /** Typical create/update — the default. */
     mutation: { max: 60, windowMs: 60 * 60 * 1000 },
+    /**
+     * Read endpoints (dashboard lists / worklists). A generous cap so
+     * normal SPA polling never trips it, while keeping an authorized
+     * GET from being truly unbounded (CodeQL "missing rate limiting" /
+     * "sensitive data read from GET"). 600/hr per actor.
+     */
+    query: { max: 600, windowMs: 60 * 60 * 1000 },
   };
 
 export interface AdminRateLimitOptions {
