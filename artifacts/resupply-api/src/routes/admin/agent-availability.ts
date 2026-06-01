@@ -15,10 +15,7 @@ import { z } from "zod";
 
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
-import {
-  adminRateLimit,
-  adminReadRateLimiter,
-} from "../../middlewares/admin-rate-limit";
+import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requireAdmin } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
@@ -77,7 +74,7 @@ router.get(
 
 router.get(
   "/admin/agent-availability/me",
-  adminReadRateLimiter,
+  adminRateLimit({ name: "agent_availability.me", preset: "read" }),
   requireAdmin,
   async (req, res) => {
     const userId = req.adminUserId;
