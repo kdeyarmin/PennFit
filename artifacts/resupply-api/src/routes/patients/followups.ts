@@ -22,6 +22,10 @@ import { logAudit } from "@workspace/resupply-audit";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
+import {
+  adminReadRateLimiter,
+  adminWriteRateLimiter,
+} from "../../middlewares/admin-rate-limit";
 import { requireAdmin } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
@@ -42,148 +46,159 @@ const createSchema = z
   })
   .strict();
 
-router.get("/patients/:id/followups", requireAdmin, async (req, res) => {
-  const parsed = patientIdParam.safeParse(req.params.id);
-  if (!parsed.success) {
-    res.status(404).json({ error: "not_found" });
-    return;
-  }
-  const patientId = parsed.data;
-  const includeCompleted = req.query.include === "completed";
+router.get(
+  "/patients/:id/followups",
+  adminReadRateLimiter,
+  requireAdmin,
+  async (req, res) => {
+    const parsed = patientIdParam.safeParse(req.params.id);
+    if (!parsed.success) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    const patientId = parsed.data;
+    const includeCompleted = req.query.include === "completed";
 
-  const supabase = getSupabaseServiceRoleClient();
+    const supabase = getSupabaseServiceRoleClient();
 
-  const { data: patient } = await supabase
-    .schema("resupply")
-    .from("patients")
-    .select("id")
-    .eq("id", patientId)
-    .limit(1)
-    .maybeSingle();
-  if (!patient) {
-    res.status(404).json({ error: "not_found" });
-    return;
-  }
+    const { data: patient } = await supabase
+      .schema("resupply")
+      .from("patients")
+      .select("id")
+      .eq("id", patientId)
+      .limit(1)
+      .maybeSingle();
+    if (!patient) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
 
-  // ALWAYS order descending so the newest entries are returned
-  // when the 100-row cap kicks in. The previous code flipped order
-  // to ascending when `includeCompleted` was true — which, for a
-  // patient with more than 100 historical completed followups,
-  // silently dropped the most-recent ones and surfaced the OLDEST.
-  // The UI uses this list to render "recent activity", so a CSR
-  // reviewing the past week's calls would see nothing and might
-  // re-attempt outreach the patient already received.
-  let listQuery = supabase
-    .schema("resupply")
-    .from("patient_followups")
-    .select(
-      "id, body, due_at, completed_at, completed_by_email, created_by_email, created_at",
-    )
-    .eq("patient_id", patientId)
-    .order("due_at", { ascending: false })
-    .limit(100);
-  if (!includeCompleted) listQuery = listQuery.is("completed_at", null);
-  const { data: rows, error } = await listQuery;
-  if (error) throw error;
+    // ALWAYS order descending so the newest entries are returned
+    // when the 100-row cap kicks in. The previous code flipped order
+    // to ascending when `includeCompleted` was true — which, for a
+    // patient with more than 100 historical completed followups,
+    // silently dropped the most-recent ones and surfaced the OLDEST.
+    // The UI uses this list to render "recent activity", so a CSR
+    // reviewing the past week's calls would see nothing and might
+    // re-attempt outreach the patient already received.
+    let listQuery = supabase
+      .schema("resupply")
+      .from("patient_followups")
+      .select(
+        "id, body, due_at, completed_at, completed_by_email, created_by_email, created_at",
+      )
+      .eq("patient_id", patientId)
+      .order("due_at", { ascending: false })
+      .limit(100);
+    if (!includeCompleted) listQuery = listQuery.is("completed_at", null);
+    const { data: rows, error } = await listQuery;
+    if (error) throw error;
 
-  req.log?.info(
-    {
-      patientId,
-      count: rows?.length ?? 0,
-      includeCompleted,
-      adminEmail: req.adminEmail,
-    },
-    "patient.followups.list",
-  );
+    req.log?.info(
+      {
+        patientId,
+        count: rows?.length ?? 0,
+        includeCompleted,
+        adminEmail: req.adminEmail,
+      },
+      "patient.followups.list",
+    );
 
-  res.json({
-    followups: (rows ?? []).map((r) => ({
-      id: r.id,
-      body: r.body,
-      dueAt: r.due_at,
-      completedAt: r.completed_at,
-      completedByEmail: r.completed_by_email,
-      createdByEmail: r.created_by_email,
-      createdAt: r.created_at,
-    })),
-  });
-});
-
-router.post("/patients/:id/followups", requireAdmin, async (req, res) => {
-  const parsed = patientIdParam.safeParse(req.params.id);
-  if (!parsed.success) {
-    res.status(404).json({ error: "not_found" });
-    return;
-  }
-  const patientId = parsed.data;
-
-  const bodyParsed = createSchema.safeParse(req.body);
-  if (!bodyParsed.success) {
-    res.status(400).json({
-      error: "invalid_body",
-      issues: bodyParsed.error.issues.map((i) => ({
-        path: i.path.join("."),
-        message: i.message,
+    res.json({
+      followups: (rows ?? []).map((r) => ({
+        id: r.id,
+        body: r.body,
+        dueAt: r.due_at,
+        completedAt: r.completed_at,
+        completedByEmail: r.completed_by_email,
+        createdByEmail: r.created_by_email,
+        createdAt: r.created_at,
       })),
     });
-    return;
-  }
-  const { body, dueAt } = bodyParsed.data;
+  },
+);
 
-  const supabase = getSupabaseServiceRoleClient();
+router.post(
+  "/patients/:id/followups",
+  adminWriteRateLimiter,
+  requireAdmin,
+  async (req, res) => {
+    const parsed = patientIdParam.safeParse(req.params.id);
+    if (!parsed.success) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    const patientId = parsed.data;
 
-  const { data: patient } = await supabase
-    .schema("resupply")
-    .from("patients")
-    .select("id")
-    .eq("id", patientId)
-    .limit(1)
-    .maybeSingle();
-  if (!patient) {
-    res.status(404).json({ error: "not_found" });
-    return;
-  }
+    const bodyParsed = createSchema.safeParse(req.body);
+    if (!bodyParsed.success) {
+      res.status(400).json({
+        error: "invalid_body",
+        issues: bodyParsed.error.issues.map((i) => ({
+          path: i.path.join("."),
+          message: i.message,
+        })),
+      });
+      return;
+    }
+    const { body, dueAt } = bodyParsed.data;
 
-  const { data: row, error } = await supabase
-    .schema("resupply")
-    .from("patient_followups")
-    .insert({
-      patient_id: patientId,
-      body,
-      due_at: new Date(dueAt).toISOString(),
-      created_by_email: req.adminEmail ?? "<unknown>",
-      created_by_user_id: req.adminUserId ?? null,
-    })
-    .select("id, created_at, due_at")
-    .single();
-  if (error) throw error;
+    const supabase = getSupabaseServiceRoleClient();
 
-  await logAudit({
-    action: "patient.followup.create",
-    adminEmail: req.adminEmail ?? null,
-    adminUserId: req.adminUserId ?? null,
-    targetTable: "patient_followups",
-    targetId: row.id,
-    metadata: {
-      patient_id: patientId,
-      body_length: body.length,
-      due_at: row.due_at,
-    },
-    ip: req.ip ?? null,
-    userAgent: req.get("user-agent") ?? null,
-  }).catch((err) => {
-    logger.warn({ err }, "patient.followup.create audit write failed");
-  });
+    const { data: patient } = await supabase
+      .schema("resupply")
+      .from("patients")
+      .select("id")
+      .eq("id", patientId)
+      .limit(1)
+      .maybeSingle();
+    if (!patient) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
 
-  res.status(201).json({
-    id: row.id,
-    dueAt: row.due_at,
-    createdAt: row.created_at,
-  });
-});
+    const { data: row, error } = await supabase
+      .schema("resupply")
+      .from("patient_followups")
+      .insert({
+        patient_id: patientId,
+        body,
+        due_at: new Date(dueAt).toISOString(),
+        created_by_email: req.adminEmail ?? "<unknown>",
+        created_by_user_id: req.adminUserId ?? null,
+      })
+      .select("id, created_at, due_at")
+      .single();
+    if (error) throw error;
+
+    await logAudit({
+      action: "patient.followup.create",
+      adminEmail: req.adminEmail ?? null,
+      adminUserId: req.adminUserId ?? null,
+      targetTable: "patient_followups",
+      targetId: row.id,
+      metadata: {
+        patient_id: patientId,
+        body_length: body.length,
+        due_at: row.due_at,
+      },
+      ip: req.ip ?? null,
+      userAgent: req.get("user-agent") ?? null,
+    }).catch((err) => {
+      logger.warn({ err }, "patient.followup.create audit write failed");
+    });
+
+    res.status(201).json({
+      id: row.id,
+      dueAt: row.due_at,
+      createdAt: row.created_at,
+    });
+  },
+);
 
 router.patch(
   "/patients/:id/followups/:fid/complete",
+  adminWriteRateLimiter,
   requireAdmin,
   async (req, res) => {
     const parsed = patientIdParam.safeParse(req.params.id);

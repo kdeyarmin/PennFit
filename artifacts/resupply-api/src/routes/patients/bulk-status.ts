@@ -44,6 +44,7 @@ import { logAudit } from "@workspace/resupply-audit";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
+import { adminWriteRateLimiter } from "../../middlewares/admin-rate-limit";
 import { withIdempotency } from "../../middlewares/idempotency";
 import { requireAdmin } from "../../middlewares/requireAdmin";
 
@@ -74,6 +75,7 @@ const router: IRouter = Router();
 
 router.post(
   "/patients/bulk-status",
+  adminWriteRateLimiter,
   requireAdmin,
   withIdempotency("POST /patients/bulk-status"),
   async (req, res) => {

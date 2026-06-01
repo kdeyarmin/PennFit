@@ -34,6 +34,7 @@ import {
 } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
+import { adminWriteRateLimiter } from "../../middlewares/admin-rate-limit";
 import { withIdempotency } from "../../middlewares/idempotency";
 import { requireAdmin } from "../../middlewares/requireAdmin";
 
@@ -85,6 +86,7 @@ const router: IRouter = Router();
 
 router.post(
   "/patients/import-csv",
+  adminWriteRateLimiter,
   requireAdmin,
   withIdempotency("POST /patients/import-csv"),
   async (req, res) => {
