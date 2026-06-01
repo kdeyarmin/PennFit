@@ -108,6 +108,7 @@ import payerFeeSchedulesRouter from "./admin/payer-fee-schedules.js";
 import eraIngestRouter from "./admin/era-ingest.js";
 import billingReportsRouter from "./admin/billing-reports.js";
 import payerProfitabilityRouter from "./admin/payer-profitability.js";
+import denialsWorklistRouter from "./admin/denials-worklist.js";
 import billingTimelyFilingRouter from "./admin/billing-timely-filing.js";
 import billingDashboardRouter from "./admin/billing-dashboard.js";
 import productHcpcsMapRouter from "./admin/product-hcpcs-map.js";
@@ -353,6 +354,9 @@ router.use(billingTimelyFilingRouter);
 // /admin/billing/payer-profitability — per-payer net yield (Owner #2):
 // billed → allowed → collected, denial rate, net of F1 COGS. cost.read.
 router.use(payerProfitabilityRouter);
+// /admin/billing/denials-worklist — denied claims ranked by recoverable
+// $ × win-probability (Biller #33). reports.read.
+router.use(denialsWorklistRouter);
 // /admin/billing/dashboard — single round-trip "what needs my
 // attention today" view for the billing CSR. Aggregate counts +
 // dollar amounts only; the UI deep-links by id.

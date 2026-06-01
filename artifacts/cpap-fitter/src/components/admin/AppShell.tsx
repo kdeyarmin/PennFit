@@ -51,6 +51,7 @@ import {
   Menu,
   CircleDollarSign,
   Landmark,
+  Gavel,
   Wallet,
   Bot,
   ListFilter,
@@ -421,6 +422,14 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         icon: TrendingDown,
         matchPrefix: "/admin/billing/denials",
         hint: "90-day denial rate + 180-day days-to-pay, per payer",
+      },
+      {
+        href: "/admin/billing/denials-worklist",
+        label: "Denials worklist",
+        icon: Gavel,
+        matchPrefix: "/admin/billing/denials-worklist",
+        hint: "Open denials ranked by recoverable $ × win-probability",
+        requiredPermission: "reports.read",
       },
       {
         href: "/admin/billing/era",
