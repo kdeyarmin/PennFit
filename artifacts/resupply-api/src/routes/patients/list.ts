@@ -32,6 +32,7 @@ import {
   escapePostgRESTFilterValue,
 } from "@workspace/resupply-db";
 
+import { adminReadRateLimiter } from "../../middlewares/admin-rate-limit";
 import { requireAdmin } from "../../middlewares/requireAdmin";
 
 const listQuery = z
@@ -45,112 +46,117 @@ const listQuery = z
 
 const router: IRouter = Router();
 
-router.get("/patients", requireAdmin, async (req, res) => {
-  const parsed = listQuery.safeParse(req.query);
-  if (!parsed.success) {
-    res.status(400).json({
-      error: "invalid_query",
-      issues: parsed.error.issues.map((i) => ({
-        path: i.path.join("."),
-        message: i.message,
-      })),
-    });
-    return;
-  }
-  const { status, search, limit, offset } = parsed.data;
+router.get(
+  "/patients",
+  adminReadRateLimiter,
+  requireAdmin,
+  async (req, res) => {
+    const parsed = listQuery.safeParse(req.query);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: "invalid_query",
+        issues: parsed.error.issues.map((i) => ({
+          path: i.path.join("."),
+          message: i.message,
+        })),
+      });
+      return;
+    }
+    const { status, search, limit, offset } = parsed.data;
 
-  const supabase = getSupabaseServiceRoleClient();
-  let query = supabase
-    .schema("resupply")
-    .from("patients")
-    .select(
-      "id, pacware_id, legal_first_name, legal_last_name, status, phone_e164, email, created_at, updated_at",
-      { count: "exact" },
-    )
-    .order("created_at", { ascending: false })
-    .range(offset, offset + limit - 1);
+    const supabase = getSupabaseServiceRoleClient();
+    let query = supabase
+      .schema("resupply")
+      .from("patients")
+      .select(
+        "id, pacware_id, legal_first_name, legal_last_name, status, phone_e164, email, created_at, updated_at",
+        { count: "exact" },
+      )
+      .order("created_at", { ascending: false })
+      .range(offset, offset + limit - 1);
 
-  if (status) query = query.eq("status", status);
-  if (search) {
-    // Phone-shaped input → exact-match against the indexed
-    // `phone_e164` column. We try this BEFORE the ILIKE branch so
-    // that a perfectly-formatted phone number lands in the index
-    // path. `normalizeE164` returns null for anything that doesn't
-    // parse as a real phone; treat that as "this is a name or
-    // email or pacware id" and fall through.
-    const normalizedPhone = normalizeE164(search);
-    if (normalizedPhone) {
-      query = query.eq("phone_e164", normalizedPhone);
-    } else {
-      // PostgREST `.or()` uses `*` wildcards (not `%`) for ILIKE.
-      // Escape commas/parentheses/quotes in the search value to
-      // prevent breaking the filter expression.
-      const escaped = escapePostgRESTFilterValue(search);
-      const needle = `*${escaped}*`;
-      query = query.or(
-        `pacware_id.ilike.${needle},legal_first_name.ilike.${needle},legal_last_name.ilike.${needle},email.ilike.${needle}`,
+    if (status) query = query.eq("status", status);
+    if (search) {
+      // Phone-shaped input → exact-match against the indexed
+      // `phone_e164` column. We try this BEFORE the ILIKE branch so
+      // that a perfectly-formatted phone number lands in the index
+      // path. `normalizeE164` returns null for anything that doesn't
+      // parse as a real phone; treat that as "this is a name or
+      // email or pacware id" and fall through.
+      const normalizedPhone = normalizeE164(search);
+      if (normalizedPhone) {
+        query = query.eq("phone_e164", normalizedPhone);
+      } else {
+        // PostgREST `.or()` uses `*` wildcards (not `%`) for ILIKE.
+        // Escape commas/parentheses/quotes in the search value to
+        // prevent breaking the filter expression.
+        const escaped = escapePostgRESTFilterValue(search);
+        const needle = `*${escaped}*`;
+        query = query.or(
+          `pacware_id.ilike.${needle},legal_first_name.ilike.${needle},legal_last_name.ilike.${needle},email.ilike.${needle}`,
+        );
+      }
+    }
+
+    const { data: rows, count, error } = await query;
+    if (error) throw error;
+
+    // Bulk-fetch the latest-message projection for the rows on this
+    // page. Single round-trip; the `.in()` filter is cheap because the
+    // projection is patient-scoped (one row per patient).
+    const ids = (rows ?? []).map((r) => r.id);
+    let latestById = new Map<
+      string,
+      {
+        last_message_at: string;
+        last_message_direction: string;
+        last_message_preview: string;
+      }
+    >();
+    if (ids.length > 0) {
+      const { data: latest, error: latestErr } = await supabase
+        .schema("resupply")
+        .from("patient_latest_message")
+        .select(
+          "patient_id, last_message_at, last_message_direction, last_message_preview",
+        )
+        .in("patient_id", ids);
+      if (latestErr) throw latestErr;
+      latestById = new Map(
+        (latest ?? []).map((l) => [
+          l.patient_id,
+          {
+            last_message_at: l.last_message_at,
+            last_message_direction: l.last_message_direction,
+            last_message_preview: l.last_message_preview,
+          },
+        ]),
       );
     }
-  }
 
-  const { data: rows, count, error } = await query;
-  if (error) throw error;
-
-  // Bulk-fetch the latest-message projection for the rows on this
-  // page. Single round-trip; the `.in()` filter is cheap because the
-  // projection is patient-scoped (one row per patient).
-  const ids = (rows ?? []).map((r) => r.id);
-  let latestById = new Map<
-    string,
-    {
-      last_message_at: string;
-      last_message_direction: string;
-      last_message_preview: string;
-    }
-  >();
-  if (ids.length > 0) {
-    const { data: latest, error: latestErr } = await supabase
-      .schema("resupply")
-      .from("patient_latest_message")
-      .select(
-        "patient_id, last_message_at, last_message_direction, last_message_preview",
-      )
-      .in("patient_id", ids);
-    if (latestErr) throw latestErr;
-    latestById = new Map(
-      (latest ?? []).map((l) => [
-        l.patient_id,
-        {
-          last_message_at: l.last_message_at,
-          last_message_direction: l.last_message_direction,
-          last_message_preview: l.last_message_preview,
-        },
-      ]),
-    );
-  }
-
-  res.status(200).json({
-    items: (rows ?? []).map((r) => {
-      const latest = latestById.get(r.id);
-      return {
-        id: r.id,
-        pacwareId: r.pacware_id,
-        firstName: r.legal_first_name ?? "",
-        lastName: r.legal_last_name ?? "",
-        status: r.status,
-        hasPhone: r.phone_e164 != null,
-        hasEmail: r.email != null,
-        createdAt: r.created_at,
-        updatedAt: r.updated_at,
-        lastMessageAt: latest?.last_message_at ?? null,
-        lastMessageDirection: latest?.last_message_direction ?? null,
-        lastMessagePreview: latest?.last_message_preview ?? null,
-      };
-    }),
-    total: count ?? 0,
-    limit,
-    offset,
-  });
-});
+    res.status(200).json({
+      items: (rows ?? []).map((r) => {
+        const latest = latestById.get(r.id);
+        return {
+          id: r.id,
+          pacwareId: r.pacware_id,
+          firstName: r.legal_first_name ?? "",
+          lastName: r.legal_last_name ?? "",
+          status: r.status,
+          hasPhone: r.phone_e164 != null,
+          hasEmail: r.email != null,
+          createdAt: r.created_at,
+          updatedAt: r.updated_at,
+          lastMessageAt: latest?.last_message_at ?? null,
+          lastMessageDirection: latest?.last_message_direction ?? null,
+          lastMessagePreview: latest?.last_message_preview ?? null,
+        };
+      }),
+      total: count ?? 0,
+      limit,
+      offset,
+    });
+  },
+);
 
 export default router;
