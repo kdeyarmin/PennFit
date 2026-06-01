@@ -35,8 +35,8 @@
 // approximate — the goal is a clean, legible, faxable single document,
 // not pixel-parity with any one payer's pre-printed form.
 //
-// PHI posture: the rendered PDF carries PHI. Callers stream it straight
-// to the requesting admin and never persist or log the bytes.
+// PHI posture: the rendered PDF carries PHI. Callers return it in the
+// HTTP response and never persist or log the bytes.
 
 import type PDFKit from "pdfkit";
 import PDFDocument from "pdfkit";
