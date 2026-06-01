@@ -253,3 +253,89 @@ describe("account — formatMoneyCents no longer imported from @/lib/shop-api", 
     expect(SRC).not.toContain("formatMoneyCents");
   });
 });
+
+// ---------------------------------------------------------------------------
+// Tabbed account navigation — the ~20-section scroll is now five tabs.
+// ---------------------------------------------------------------------------
+describe("account — sections grouped into tabs", () => {
+  it("defines an AccountTabBar with the five tab ids", () => {
+    expect(SRC).toContain("function AccountTabBar");
+    expect(SRC).toContain("const ACCOUNT_TABS");
+    for (const id of ["overview", "orders", "therapy", "messages", "account"]) {
+      expect(SRC).toContain(`id: "${id}"`);
+    }
+  });
+
+  it("renders a tablist with per-tab testids", () => {
+    expect(SRC).toContain('data-testid="account-tabs"');
+    expect(SRC).toContain("account-tab-");
+    expect(SRC).toContain('role="tablist"');
+  });
+
+  it("keeps deep links working via hashToAccountTab + a hashchange listener", () => {
+    expect(SRC).toContain("function hashToAccountTab");
+    expect(SRC).toContain('if (h === "messages") return "messages"');
+    expect(SRC).toContain('if (h === "autoship") return "orders"');
+    expect(SRC).toContain('addEventListener("hashchange"');
+  });
+
+  it("badges the Messages tab from the unread hook", () => {
+    expect(SRC).toContain("useShopMessagesUnread");
+    expect(SRC).toContain("account-tab-messages-badge");
+  });
+
+  it("still renders every section, now behind a tab", () => {
+    const tags = [
+      "<PushPromptBanner",
+      "<ProfileSection",
+      "<ClinicalInfoSection",
+      "<InsightsSection",
+      "<ReorderSuggestionsSection",
+      "<SubscriptionsSection",
+      "<OrdersSection",
+      "<MyReturnsSection",
+      "<SubstitutionsSection",
+      "<TherapySummarySection",
+      "<MaintenanceSection",
+      "<MaskLeakWizardSection",
+      "<EducationFeedSection",
+      "<EquipmentRegistrySection",
+      "<AccountMessagesSection",
+      "<CustomerChatSection",
+      "<DocumentsSection",
+      "<RequestAppointmentSection",
+      "<EsignFormsSection",
+      "<ReferralProgramSection",
+      "<CaregiverSection",
+      "<WalletPassSection",
+      "<CommPrefsSection",
+      "<DataExportSection",
+    ];
+    for (const tag of tags) {
+      expect(SRC).toContain(tag);
+    }
+  });
+});
+
+// Pure-logic mirror of hashToAccountTab (kept verbatim with account.tsx).
+describe("hashToAccountTab", () => {
+  function hashToAccountTab(hash: string): "messages" | "orders" | null {
+    const h = hash.replace(/^#/, "");
+    if (h === "messages") return "messages";
+    if (h === "autoship") return "orders";
+    return null;
+  }
+
+  it("maps #messages → Messages tab", () => {
+    expect(hashToAccountTab("#messages")).toBe("messages");
+  });
+
+  it("maps #autoship → Orders & returns tab", () => {
+    expect(hashToAccountTab("#autoship")).toBe("orders");
+  });
+
+  it("returns null for empty / unknown hashes (defaults to Overview)", () => {
+    expect(hashToAccountTab("")).toBeNull();
+    expect(hashToAccountTab("#whatever")).toBeNull();
+  });
+});
