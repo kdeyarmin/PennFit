@@ -225,6 +225,8 @@ const HUMANIZE_ACRONYMS = new Set([
   "DTMF",
   "CRM",
   "EHR",
+  "AI",
+  "NPS",
 ]);
 
 // Brand / proper nouns we keep in their canonical mixed case rather
