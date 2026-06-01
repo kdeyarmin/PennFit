@@ -150,8 +150,8 @@ router.get(
             .from("insurance_coverages")
             .select("id, payer_name, member_id, group_number, plan_name")
             .eq("id", pa.insurance_coverage_id)
-            .limit(1)
-            .maybeSingle()
+            .eq("patient_id", patientId)
+            .limit(1).maybeSingle()
         : Promise.resolve({ data: null }),
       supabase
         .schema("resupply")
