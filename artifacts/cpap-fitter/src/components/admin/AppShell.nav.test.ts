@@ -295,8 +295,14 @@ describe("AppShell NAV_GROUPS — admin.tools.manage gated entries", () => {
   }
 
   it("filters nav items by the caller's permission set", () => {
-    expect(APPSHELL_SRC).toContain("link.requiredPermission");
-    expect(APPSHELL_SRC).toContain("permissions.has(link.requiredPermission)");
+    // Sidebar entries are filtered through sectionVisible(...), which hides
+    // an entry the caller lacks permission for and — for multi-page sections
+    // — keeps it only while at least one tab the caller can see remains.
+    expect(APPSHELL_SRC).toContain("sectionVisible(link, permissions)");
+    expect(APPSHELL_SRC).toContain(
+      "permissions.has(section.requiredPermission)",
+    );
+    expect(APPSHELL_SRC).toContain("permissions.has(tab.requiredPermission)");
   });
 
   it("drops groups left with no visible items after filtering", () => {
