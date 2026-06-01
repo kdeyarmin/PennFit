@@ -56,9 +56,13 @@ vi.mock("../../lib/messaging/messaging-config", () => ({
 }));
 
 // Bypass the rate limiter so its closure-scoped bucket state doesn't
-// bleed between test cases and cause 429s on later tests.
+// bleed between test cases and cause 429s on later tests. Stub BOTH the
+// default export (used directly here as `bulkSendLimiter`) and the named
+// `rateLimit` export (used by middlewares/admin-rate-limit's
+// `adminWriteRateLimiter`, now in this route's middleware chain).
 vi.mock("express-rate-limit", () => ({
   default: () => (_req: unknown, _res: unknown, next: () => void) => next(),
+  rateLimit: () => (_req: unknown, _res: unknown, next: () => void) => next(),
   ipKeyGenerator: (ip: string) => ip,
 }));
 

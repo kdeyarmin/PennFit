@@ -37,91 +37,97 @@ import { Router, type IRouter } from "express";
 
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
+import { adminReadRateLimiter } from "../../middlewares/admin-rate-limit";
 import { requireAdmin } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
 
-router.get("/admin/inbox-counts", requireAdmin, async (_req, res) => {
-  const supabase = getSupabaseServiceRoleClient();
-  const nowIso = new Date().toISOString();
+router.get(
+  "/admin/inbox-counts",
+  adminReadRateLimiter,
+  requireAdmin,
+  async (_req, res) => {
+    const supabase = getSupabaseServiceRoleClient();
+    const nowIso = new Date().toISOString();
 
-  // Six counts in parallel. The original code packed four into one
-  // round-trip via `SELECT (subquery), (subquery), …` for a single
-  // payload; PostgREST doesn't expose that shape, so we issue six
-  // and parallelize via Promise.all. Each individual query is
-  // already index-backed (every WHERE clause hits a partial or
-  // narrow index), so the wall-clock cost is the slowest of the
-  // six rather than their sum.
-  // Throw on ANY of the seven errors so a partial Supabase failure
-  // surfaces as a 500 rather than silently rendering "queue empty"
-  // on every nav badge. The previous code destructured only `count`
-  // from each result and ignored `error`, which masked transient
-  // table-permission / network-blip errors as zero counts.
-  const results = await Promise.all([
-    supabase
-      .schema("resupply")
-      .from("conversations")
-      .select("*", { count: "exact", head: true })
-      .eq("status", "awaiting_admin"),
-    supabase
-      .schema("resupply")
-      .from("shop_returns")
-      .select("*", { count: "exact", head: true })
-      // Admin-blocking states only (see module doc): `requested` (await
-      // approve/reject), `shipped_back` (await receive), `received`
-      // (await refund/replace). `approved` is waiting on the CUSTOMER to
-      // ship the item back, so it must not inflate the CSR badge.
-      .in("status", ["requested", "shipped_back", "received"]),
-    supabase
-      .schema("resupply")
-      .from("shop_reviews")
-      .select("*", { count: "exact", head: true })
-      .eq("status", "pending"),
-    supabase
-      .schema("resupply")
-      .from("patient_documents")
-      .select("*", { count: "exact", head: true })
-      .is("reviewed_at", null),
-    supabase
-      .schema("resupply")
-      .from("shop_customer_followups")
-      .select("*", { count: "exact", head: true })
-      .is("completed_at", null)
-      .lt("due_at", nowIso),
-    supabase
-      .schema("resupply")
-      .from("patient_followups")
-      .select("*", { count: "exact", head: true })
-      .is("completed_at", null)
-      .lt("due_at", nowIso),
-    supabase
-      .schema("resupply")
-      .from("inbound_faxes")
-      .select("*", { count: "exact", head: true })
-      .eq("status", "new"),
-  ]);
-  for (const r of results) {
-    if (r.error) throw r.error;
-  }
-  const [
-    { count: awaitingReplyConversations },
-    { count: pendingReturns },
-    { count: pendingReviews },
-    { count: newPatientDocuments },
-    { count: overdueShop },
-    { count: overduePatient },
-    { count: newInboundFaxes },
-  ] = results;
+    // Six counts in parallel. The original code packed four into one
+    // round-trip via `SELECT (subquery), (subquery), …` for a single
+    // payload; PostgREST doesn't expose that shape, so we issue six
+    // and parallelize via Promise.all. Each individual query is
+    // already index-backed (every WHERE clause hits a partial or
+    // narrow index), so the wall-clock cost is the slowest of the
+    // six rather than their sum.
+    // Throw on ANY of the seven errors so a partial Supabase failure
+    // surfaces as a 500 rather than silently rendering "queue empty"
+    // on every nav badge. The previous code destructured only `count`
+    // from each result and ignored `error`, which masked transient
+    // table-permission / network-blip errors as zero counts.
+    const results = await Promise.all([
+      supabase
+        .schema("resupply")
+        .from("conversations")
+        .select("*", { count: "exact", head: true })
+        .eq("status", "awaiting_admin"),
+      supabase
+        .schema("resupply")
+        .from("shop_returns")
+        .select("*", { count: "exact", head: true })
+        // Admin-blocking states only (see module doc): `requested` (await
+        // approve/reject), `shipped_back` (await receive), `received`
+        // (await refund/replace). `approved` is waiting on the CUSTOMER to
+        // ship the item back, so it must not inflate the CSR badge.
+        .in("status", ["requested", "shipped_back", "received"]),
+      supabase
+        .schema("resupply")
+        .from("shop_reviews")
+        .select("*", { count: "exact", head: true })
+        .eq("status", "pending"),
+      supabase
+        .schema("resupply")
+        .from("patient_documents")
+        .select("*", { count: "exact", head: true })
+        .is("reviewed_at", null),
+      supabase
+        .schema("resupply")
+        .from("shop_customer_followups")
+        .select("*", { count: "exact", head: true })
+        .is("completed_at", null)
+        .lt("due_at", nowIso),
+      supabase
+        .schema("resupply")
+        .from("patient_followups")
+        .select("*", { count: "exact", head: true })
+        .is("completed_at", null)
+        .lt("due_at", nowIso),
+      supabase
+        .schema("resupply")
+        .from("inbound_faxes")
+        .select("*", { count: "exact", head: true })
+        .eq("status", "new"),
+    ]);
+    for (const r of results) {
+      if (r.error) throw r.error;
+    }
+    const [
+      { count: awaitingReplyConversations },
+      { count: pendingReturns },
+      { count: pendingReviews },
+      { count: newPatientDocuments },
+      { count: overdueShop },
+      { count: overduePatient },
+      { count: newInboundFaxes },
+    ] = results;
 
-  res.json({
-    awaitingReplyConversations: awaitingReplyConversations ?? 0,
-    pendingReturns: pendingReturns ?? 0,
-    pendingReviews: pendingReviews ?? 0,
-    overdueFollowups: (overdueShop ?? 0) + (overduePatient ?? 0),
-    newPatientDocuments: newPatientDocuments ?? 0,
-    newInboundFaxes: newInboundFaxes ?? 0,
-    serverTime: new Date().toISOString(),
-  });
-});
+    res.json({
+      awaitingReplyConversations: awaitingReplyConversations ?? 0,
+      pendingReturns: pendingReturns ?? 0,
+      pendingReviews: pendingReviews ?? 0,
+      overdueFollowups: (overdueShop ?? 0) + (overduePatient ?? 0),
+      newPatientDocuments: newPatientDocuments ?? 0,
+      newInboundFaxes: newInboundFaxes ?? 0,
+      serverTime: new Date().toISOString(),
+    });
+  },
+);
 
 export default router;
