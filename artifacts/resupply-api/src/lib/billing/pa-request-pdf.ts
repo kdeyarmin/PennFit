@@ -138,8 +138,8 @@ const STUDY_TYPE_LABEL: Record<string, string> = {
 
 /**
  * Render the universal PAP/DME prior-authorization request form as a
- * single-document PDF. Returns a thenable Buffer; callers `await` and
- * pipe it into the HTTP response.
+ * single-document PDF. Returns a Buffer; callers `await` and write it
+ * into the HTTP response.
  */
 export async function renderPaRequestPdf(
   input: PaRequestInput,
