@@ -1954,6 +1954,10 @@ export interface Database {
           statement_pdf_object_key: string | null;
           delivery_method: "email" | "sms" | "mail" | "in_person" | null;
           delivered_at: string | null;
+          // Migration 0200 (Biller #30): send-outcome state machine.
+          delivery_status: "pending" | "sent" | "failed" | "skipped";
+          delivery_channel: "email" | "sms" | null;
+          delivery_error: string | null;
           generated_by_email: string;
           created_at: string;
         };

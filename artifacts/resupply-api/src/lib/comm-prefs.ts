@@ -79,7 +79,12 @@ export function isInDndWindow(
 
 export function shouldSendEmail(
   prefs: CommunicationPreferences,
-  kind: "marketing" | "abandonedCart" | "resupplyReminder" | "reviewRequest",
+  kind:
+    | "marketing"
+    | "abandonedCart"
+    | "resupplyReminder"
+    | "reviewRequest"
+    | "billingStatement",
   now: Date = new Date(),
   opts: DndOptions = {},
 ): boolean {
@@ -93,6 +98,8 @@ export function shouldSendEmail(
       return prefs.emailResupplyReminders;
     case "reviewRequest":
       return prefs.emailReviewRequests;
+    case "billingStatement":
+      return prefs.emailBillingStatements;
   }
 }
 

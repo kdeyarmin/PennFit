@@ -484,6 +484,14 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         requiredPermission: "reports.read",
       },
       {
+        href: "/admin/billing/statements",
+        label: "Statement send",
+        icon: Mail,
+        matchPrefix: "/admin/billing/statements",
+        hint: "Send patient-responsibility statements (email/SMS) — consent + quiet-hours aware",
+        requiredPermission: "reports.read",
+      },
+      {
         href: "/admin/billing/era",
         label: "ERA files",
         icon: Wallet,
