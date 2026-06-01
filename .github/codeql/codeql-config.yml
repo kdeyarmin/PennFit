@@ -1,31 +1,44 @@
 name: "PennFit CodeQL config"
 
-# Custom queries-and-paths config for the default code-scanning setup.
-# Surfaces a path-specific exclusion for js/missing-rate-limiting on the
-# SMART-on-FHIR ServiceRequest POST: that route IS rate-limited, but
-# CodeQL's heuristic only inspects the line of the auth middleware and
-# can't see the per-IP serviceRequestPostLimiter that runs BEFORE it
-# (or the per-tenant serviceRequestPostTenantLimiter that runs AFTER).
-# The inline `lgtm[...]` comment doesn't work for the default-setup
-# CodeQL flow on this repo, so the suppression has to land here.
-
-# The "sensitive data read from GET" finding on the patient-scoped
-# clinical read routes is a false positive: CodeQL flags the patient id
-# (a path parameter, `:patientId`) flowing into the query as "sensitive
-# data in a GET". But a per-patient read REST-correctly takes the id in
-# the path — there is nothing secret in the URL (no token, no PHI body),
-# the route is permission-gated (clinical.read) AND rate-limited, and
-# turning a read into a POST purely to satisfy the heuristic would be
-# worse design. Same default-setup constraint as above — the suppression
-# lives here, not inline.
+# ⚠️ NOT ACTIVE under this repo's current code-scanning setup.
+#
+# This repo runs CodeQL via GitHub **default setup** — no CodeQL Actions
+# workflow under .github/workflows passes this file to
+# github/codeql-action/init. GitHub default setup does NOT read a
+# repository codeql-config.yml: custom config files, `query-filters`, and
+# `paths-ignore` are **advanced-setup-only** features. Inline
+# `// lgtm[...]` / `// codeql[...]` comments are not honored by GitHub
+# code scanning either. So nothing in this file currently suppresses any
+# alert.
+#
+# How false positives are actually handled today: dismiss them in the
+# repo's Security → Code scanning tab (Dismiss → "False positive") with a
+# short reason. Under default setup that is the GitHub-native mechanism,
+# and a dismissal persists across re-scans.
+#
+#   • js/sensitive-get-query on the patient-scoped clinical read GETs
+#     (admin/setup-checklist.ts, admin/clinical-encounters.ts) is a
+#     dismissed false positive: the patient id is a REST path parameter
+#     (`:patientId`) on a permission-gated (clinical.read), rate-limited
+#     admin route — there is no secret/token/PHI in the URL, and turning a
+#     read into a POST purely to satisfy the heuristic would be worse
+#     design. It is intentionally NOT listed below, because listing it
+#     here did nothing (commit 9fa764a) and only implied otherwise.
+#
+# This file is retained as a record of intent: the filter below would
+# take effect only IF the repo migrates to advanced setup (a workflow
+# passing `config-file: .github/codeql/codeql-config.yml`). Note that
+# `query-filters` match query metadata, not file paths — per-file scoping
+# of a single query isn't directly supported, so any migration must
+# reshape these entries (e.g. top-level `paths-ignore`) rather than copy
+# them verbatim.
 
 query-filters:
+  # SMART-on-FHIR ServiceRequest POST: the route IS rate-limited
+  # (serviceRequestPostLimiter before auth, serviceRequestPostTenantLimiter
+  # after), but CodeQL's js/missing-rate-limiting heuristic inspects only
+  # the auth-middleware line and can't see the surrounding limiters.
   - exclude:
       id: js/missing-rate-limiting
       paths:
         - artifacts/resupply-api/src/routes/fhir/index.ts
-  - exclude:
-      id: js/sensitive-get-query
-      paths:
-        - artifacts/resupply-api/src/routes/admin/setup-checklist.ts
-        - artifacts/resupply-api/src/routes/admin/clinical-encounters.ts
