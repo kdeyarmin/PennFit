@@ -14,6 +14,7 @@ import rtOutcomesRouter from "./admin/rt-outcomes.js";
 import interventionsRouter from "./admin/interventions.js";
 import secondaryClaimsRouter from "./admin/secondary-claims.js";
 import billingStatementSendRouter from "./admin/billing-statement-send.js";
+import billingCollectionsForecastRouter from "./admin/billing-collections-forecast.js";
 import setupChecklistRouter from "./admin/setup-checklist.js";
 import casesRouter from "./admin/cases.js";
 import workItemsRouter from "./admin/work-items.js";
@@ -346,6 +347,9 @@ router.use(secondaryClaimsRouter);
 // /admin/billing/statements/* — patient-responsibility statement send
 // (Phase 5, Biller #30). Consent/DND-gated outbound.
 router.use(billingStatementSendRouter);
+// /admin/billing/collections-forecast — AR collections projection
+// (Owner #4, slice 1).
+router.use(billingCollectionsForecastRouter);
 // /admin/patients/:id/setup-checklist — new-patient setup-guidance
 // checklist (Phase 1, RT). Gated by the clinical perms.
 router.use(setupChecklistRouter);

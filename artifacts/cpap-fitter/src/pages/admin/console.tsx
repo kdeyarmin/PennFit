@@ -370,6 +370,11 @@ const AdminBillingStatementsSendPage = lazy(() =>
     default: m.AdminBillingStatementsSendPage,
   })),
 );
+const AdminBillingCollectionsForecastPage = lazy(() =>
+  import("@/pages/admin/admin-billing-collections-forecast").then((m) => ({
+    default: m.AdminBillingCollectionsForecastPage,
+  })),
+);
 const AdminBillingTimelyFilingPage = lazy(() =>
   import("@/pages/admin/admin-billing-timely-filing").then((m) => ({
     default: m.AdminBillingTimelyFilingPage,
@@ -600,6 +605,10 @@ function AdminConsole() {
             <Route
               path="/admin/billing/statements"
               component={AdminBillingStatementsSendPage}
+            />
+            <Route
+              path="/admin/billing/collections-forecast"
+              component={AdminBillingCollectionsForecastPage}
             />
             <Route
               path="/admin/billing/timely-filing"

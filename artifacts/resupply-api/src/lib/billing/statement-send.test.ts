@@ -20,7 +20,16 @@ import {
   sendOneStatement,
   runStatementBatchSend,
   type SendOutcome,
+  type StatementChannel,
+  type StatementContext,
+  type StatementMessagingConfig,
 } from "./statement-send";
+
+type SendFn = (
+  ctx: StatementContext,
+  channel: StatementChannel,
+  cfg: StatementMessagingConfig,
+) => Promise<SendOutcome>;
 
 beforeEach(() => {
   supabaseMock.reset();
@@ -128,7 +137,7 @@ describe("sendOneStatement", () => {
     stageCustomerPrefs({}); // defaults → email allowed
 
     const send = vi
-      .fn<() => Promise<SendOutcome>>()
+      .fn<SendFn>()
       .mockResolvedValue({ kind: "sent", channel: "email" });
 
     const outcome = await sendOneStatement(
@@ -146,7 +155,7 @@ describe("sendOneStatement", () => {
 
   it("skips a zero-balance statement without sending", async () => {
     stageStatement({ total_patient_responsibility_cents: 0 });
-    const send = vi.fn<() => Promise<SendOutcome>>();
+    const send = vi.fn<SendFn>();
     const outcome = await sendOneStatement(
       getSupabaseServiceRoleClient(),
       "stmt-1",
@@ -160,7 +169,7 @@ describe("sendOneStatement", () => {
     stageStatement();
     stagePatient({ phone_e164: null });
     stageCustomerPrefs({ emailBillingStatements: false });
-    const send = vi.fn<() => Promise<SendOutcome>>();
+    const send = vi.fn<SendFn>();
     const outcome = await sendOneStatement(
       getSupabaseServiceRoleClient(),
       "stmt-1",
@@ -198,7 +207,7 @@ describe("runStatementBatchSend", () => {
     });
 
     const send = vi
-      .fn<() => Promise<SendOutcome>>()
+      .fn<SendFn>()
       .mockResolvedValue({ kind: "sent", channel: "email" });
 
     const result = await runStatementBatchSend(

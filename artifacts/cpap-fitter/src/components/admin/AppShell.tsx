@@ -492,6 +492,14 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         requiredPermission: "reports.read",
       },
       {
+        href: "/admin/billing/collections-forecast",
+        label: "Collections forecast",
+        icon: TrendingUp,
+        matchPrefix: "/admin/billing/collections-forecast",
+        hint: "Projected cash from claims in flight, bucketed by expected landing date",
+        requiredPermission: "reports.read",
+      },
+      {
         href: "/admin/billing/era",
         label: "ERA files",
         icon: Wallet,
