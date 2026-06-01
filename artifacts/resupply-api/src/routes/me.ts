@@ -1,4 +1,5 @@
 import { Router, type IRouter } from "express";
+import { adminReadRateLimiter } from "../middlewares/admin-rate-limit";
 import { requireAdmin } from "../middlewares/requireAdmin";
 
 // /resupply-api/me — admin identity smoke endpoint.
@@ -34,7 +35,7 @@ import { requireAdmin } from "../middlewares/requireAdmin";
 
 const router: IRouter = Router();
 
-router.get("/me", requireAdmin, (req, res) => {
+router.get("/me", adminReadRateLimiter, requireAdmin, (req, res) => {
   // All three fields are guaranteed to be set by requireAdmin on the
   // success path; the `??` is a belt-and-braces guard so a future
   // refactor that breaks that contract surfaces as an empty string

@@ -41,7 +41,7 @@ const phoneSchema = z
 
 const adminReadRateLimiter = adminRateLimit({
   name: "agent_availability.read",
-  preset: "read",
+  preset: "query",
 });
 
 router.get(

@@ -35,6 +35,7 @@ import { EmailConfigError } from "@workspace/resupply-email";
 
 import { logger } from "../../lib/logger";
 import { readMessagingConfigOrNull } from "../../lib/messaging/messaging-config";
+import { adminWriteRateLimiter } from "../../middlewares/admin-rate-limit";
 import { requireAdmin } from "../../middlewares/requireAdmin";
 
 const MAX_IDS = 50;
@@ -77,6 +78,7 @@ const router: IRouter = Router();
 
 router.post(
   "/episodes/bulk-send",
+  adminWriteRateLimiter,
   requireAdmin,
   bulkSendLimiter,
   async (req, res) => {
