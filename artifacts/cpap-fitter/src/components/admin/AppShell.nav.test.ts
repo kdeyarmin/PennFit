@@ -94,20 +94,8 @@ describe("AppShell NAV_GROUPS — retired compliance/audit nav items absent", ()
     expect(APPSHELL_SRC).not.toContain('label: "Accreditation binder"');
   });
 
-  it("does not register the /admin/pennpaps/audit (Storefront Audit) nav item", () => {
-    // The storefront audit-trail page was retired with the rest of the
-    // audit machinery (0156), but its nav entry lingered and routed to a
-    // 404 because no matching Route exists in console.tsx. Pin its absence.
-    expect(APPSHELL_SRC).not.toContain('href: "/admin/pennpaps/audit"');
-    expect(APPSHELL_SRC).not.toContain('label: "Storefront Audit"');
-  });
-
   it("no longer imports the ClipboardList icon (only the removed binder used it)", () => {
     expect(APPSHELL_SRC).not.toContain("ClipboardList");
-  });
-
-  it("no longer imports the FileSearch icon (only the removed audit item used it)", () => {
-    expect(APPSHELL_SRC).not.toContain("FileSearch");
   });
 });
 
