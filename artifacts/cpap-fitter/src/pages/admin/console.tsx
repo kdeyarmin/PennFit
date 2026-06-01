@@ -130,6 +130,11 @@ const AdminAnalyticsMarginPage = lazy(() =>
     default: m.AdminAnalyticsMarginPage,
   })),
 );
+const AdminLtvCacPage = lazy(() =>
+  import("@/pages/admin/admin-ltv-cac").then((m) => ({
+    default: m.AdminLtvCacPage,
+  })),
+);
 const AdminInventoryTurnoverPage = lazy(() =>
   import("@/pages/admin/admin-inventory-turnover").then((m) => ({
     default: m.AdminInventoryTurnoverPage,
@@ -726,6 +731,10 @@ function AdminConsole() {
             <Route
               path="/admin/analytics/margin"
               component={AdminAnalyticsMarginPage}
+            />
+            <Route
+              path="/admin/analytics/ltv-cac"
+              component={AdminLtvCacPage}
             />
             <Route
               path="/admin/analytics/inventory-turnover"

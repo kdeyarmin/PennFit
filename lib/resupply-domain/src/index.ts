@@ -59,3 +59,11 @@ export {
   type GoalPaceInput,
   type GoalPaceResult,
 } from "./goal-pace";
+
+export {
+  buildLtvCacReport,
+  type AcquisitionChannel,
+  type CustomerEconomicsInput,
+  type ChannelEconomics,
+  type LtvCacReport,
+} from "./ltv-cac";

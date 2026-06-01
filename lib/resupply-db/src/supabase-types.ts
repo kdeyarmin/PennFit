@@ -3589,6 +3589,36 @@ export interface Database {
         >;
         Relationships: [];
       };
+      // Migration 0196 (Owner #3): per-customer acquisition attribution —
+      // channel + (optional) acquisition cost for LTV/CAC cohort math.
+      customer_acquisition: {
+        Row: {
+          customer_id: string;
+          channel:
+            | "organic"
+            | "paid_search"
+            | "paid_social"
+            | "referral"
+            | "fitter"
+            | "insurance_lead"
+            | "partner"
+            | "other";
+          // Nullable — null = "cost unknown" (never silently zero).
+          acquisition_cost_cents: number | null;
+          source_detail: string | null;
+          acquired_at: string;
+          recorded_by_email: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["customer_acquisition"]["Row"]
+        > & { customer_id: string };
+        Update: Partial<
+          Database["resupply"]["Tables"]["customer_acquisition"]["Row"]
+        >;
+        Relationships: [];
+      };
       shop_customers: {
         Row: {
           customer_id: string;

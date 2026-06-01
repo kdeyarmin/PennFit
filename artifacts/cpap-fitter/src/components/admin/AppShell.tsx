@@ -57,6 +57,7 @@ import {
   Bot,
   ListFilter,
   TrendingDown,
+  TrendingUp,
   ClipboardCheck,
   ShieldAlert,
   SlidersHorizontal,
@@ -551,6 +552,14 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         icon: CircleDollarSign,
         matchPrefix: "/admin/analytics/margin",
         hint: "Gross margin and % by product and overall, from captured cost",
+        requiredPermission: "cost.read",
+      },
+      {
+        href: "/admin/analytics/ltv-cac",
+        label: "LTV & CAC",
+        icon: TrendingUp,
+        matchPrefix: "/admin/analytics/ltv-cac",
+        hint: "Lifetime value vs acquisition cost by channel, with LTV:CAC",
         requiredPermission: "cost.read",
       },
       {
