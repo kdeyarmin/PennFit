@@ -43,7 +43,10 @@ import {
   type ShopAbandonedCartItem,
 } from "@workspace/resupply-db";
 
-import { adminRateLimit } from "../../middlewares/admin-rate-limit";
+import {
+  adminRateLimit,
+  adminReadRateLimiter,
+} from "../../middlewares/admin-rate-limit";
 import {
   requireAdmin,
   requirePermission,
@@ -52,52 +55,57 @@ import { runCartAbandonmentDispatch } from "../../lib/cart-abandonment/run-dispa
 
 const router: IRouter = Router();
 
-router.get("/admin/shop/abandoned-carts", requireAdmin, async (_req, res) => {
-  const supabase = getSupabaseServiceRoleClient();
-  const { data: rows, error } = await supabase
-    .schema("resupply")
-    .from("shop_abandoned_carts")
-    .select(
-      "id, customer_id, email, items, subtotal_cents, currency, updated_at, reminded_at, recovered_at, cleared_at, created_at",
-    )
-    .order("updated_at", { ascending: false })
-    .limit(200);
-  if (error) throw error;
+router.get(
+  "/admin/shop/abandoned-carts",
+  adminReadRateLimiter,
+  requireAdmin,
+  async (_req, res) => {
+    const supabase = getSupabaseServiceRoleClient();
+    const { data: rows, error } = await supabase
+      .schema("resupply")
+      .from("shop_abandoned_carts")
+      .select(
+        "id, customer_id, email, items, subtotal_cents, currency, updated_at, reminded_at, recovered_at, cleared_at, created_at",
+      )
+      .order("updated_at", { ascending: false })
+      .limit(200);
+    if (error) throw error;
 
-  // Email is partially redacted in the response — admins don't need
-  // the full address to triage a row, and this keeps an extra step
-  // between an exported admin log and a usable contact list.
-  function redactEmail(e: string | null): string | null {
-    if (!e) return null;
-    const at = e.indexOf("@");
-    if (at <= 0) return "***";
-    const local = e.slice(0, at);
-    const domain = e.slice(at + 1);
-    const head = local.slice(0, Math.min(2, local.length));
-    return `${head}${"*".repeat(Math.max(1, local.length - 2))}@${domain}`;
-  }
+    // Email is partially redacted in the response — admins don't need
+    // the full address to triage a row, and this keeps an extra step
+    // between an exported admin log and a usable contact list.
+    function redactEmail(e: string | null): string | null {
+      if (!e) return null;
+      const at = e.indexOf("@");
+      if (at <= 0) return "***";
+      const local = e.slice(0, at);
+      const domain = e.slice(at + 1);
+      const head = local.slice(0, Math.min(2, local.length));
+      return `${head}${"*".repeat(Math.max(1, local.length - 2))}@${domain}`;
+    }
 
-  res.json({
-    rows: (rows ?? []).map((r) => {
-      const items = (r.items ?? []) as unknown as ShopAbandonedCartItem[];
-      return {
-        id: r.id,
-        customerId: r.customer_id,
-        emailRedacted: redactEmail(r.email),
-        itemCount: Array.isArray(items)
-          ? items.reduce((sum, it) => sum + (it.quantity || 0), 0)
-          : 0,
-        subtotalCents: r.subtotal_cents,
-        currency: r.currency,
-        updatedAt: r.updated_at,
-        remindedAt: r.reminded_at,
-        recoveredAt: r.recovered_at,
-        clearedAt: r.cleared_at,
-        createdAt: r.created_at,
-      };
-    }),
-  });
-});
+    res.json({
+      rows: (rows ?? []).map((r) => {
+        const items = (r.items ?? []) as unknown as ShopAbandonedCartItem[];
+        return {
+          id: r.id,
+          customerId: r.customer_id,
+          emailRedacted: redactEmail(r.email),
+          itemCount: Array.isArray(items)
+            ? items.reduce((sum, it) => sum + (it.quantity || 0), 0)
+            : 0,
+          subtotalCents: r.subtotal_cents,
+          currency: r.currency,
+          updatedAt: r.updated_at,
+          remindedAt: r.reminded_at,
+          recoveredAt: r.recovered_at,
+          clearedAt: r.cleared_at,
+          createdAt: r.created_at,
+        };
+      }),
+    });
+  },
+);
 
 // Manual dispatcher — thin wrapper around runCartAbandonmentDispatch.
 // Same dispatcher runs hourly via the pg-boss cron registered in

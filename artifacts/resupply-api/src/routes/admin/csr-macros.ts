@@ -16,7 +16,10 @@ import {
   type Database,
   getSupabaseServiceRoleClient,
 } from "@workspace/resupply-db";
-import { adminRateLimit } from "../../middlewares/admin-rate-limit";
+import {
+  adminRateLimit,
+  adminReadRateLimiter,
+} from "../../middlewares/admin-rate-limit";
 import {
   requireAdmin,
   requirePermission,
@@ -74,24 +77,29 @@ interface CsrMacroRow {
   updated_by: string | null;
 }
 
-router.get("/admin/csr-macros", requireAdmin, async (req, res) => {
-  const includeInactive = req.query.includeInactive === "1";
-  const supabase = getSupabaseServiceRoleClient();
-  let query = supabase
-    .schema("resupply")
-    .from("csr_macros")
-    .select("*")
-    .order("sort_order", { ascending: true })
-    .order("label", { ascending: true })
-    .limit(500);
-  if (!includeInactive) query = query.eq("is_active", true);
-  const { data, error } = await query;
-  if (error) {
-    res.status(500).json({ error: "query_failed", message: error.message });
-    return;
-  }
-  res.json({ macros: (data ?? []).map(serialize) });
-});
+router.get(
+  "/admin/csr-macros",
+  adminReadRateLimiter,
+  requireAdmin,
+  async (req, res) => {
+    const includeInactive = req.query.includeInactive === "1";
+    const supabase = getSupabaseServiceRoleClient();
+    let query = supabase
+      .schema("resupply")
+      .from("csr_macros")
+      .select("*")
+      .order("sort_order", { ascending: true })
+      .order("label", { ascending: true })
+      .limit(500);
+    if (!includeInactive) query = query.eq("is_active", true);
+    const { data, error } = await query;
+    if (error) {
+      res.status(500).json({ error: "query_failed", message: error.message });
+      return;
+    }
+    res.json({ macros: (data ?? []).map(serialize) });
+  },
+);
 
 router.post(
   "/admin/csr-macros",

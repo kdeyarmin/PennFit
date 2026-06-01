@@ -39,6 +39,7 @@ import {
   type TherapyNightInput,
 } from "../../lib/rt-overview/aggregate";
 import { logger } from "../../lib/logger";
+import { adminReadRateLimiter } from "../../middlewares/admin-rate-limit";
 import { requireAdmin } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
@@ -250,90 +251,100 @@ export async function buildRtOverview(days: number): Promise<{
   return { asOf, windowDays: days, summary, rows };
 }
 
-router.get("/admin/rt-overview", requireAdmin, async (req, res) => {
-  const parsed = querySchema.safeParse(req.query);
-  if (!parsed.success) {
-    res.status(400).json({ error: "invalid_query" });
-    return;
-  }
-  const days = parsed.data.days;
-  const overview = await buildRtOverview(days);
+router.get(
+  "/admin/rt-overview",
+  adminReadRateLimiter,
+  requireAdmin,
+  async (req, res) => {
+    const parsed = querySchema.safeParse(req.query);
+    if (!parsed.success) {
+      res.status(400).json({ error: "invalid_query" });
+      return;
+    }
+    const days = parsed.data.days;
+    const overview = await buildRtOverview(days);
 
-  // Counts-only audit. The patient list is intentionally NOT logged.
-  await logAudit({
-    action: "admin.rt_overview.read",
-    adminEmail: req.adminEmail ?? null,
-    metadata: {
-      patients: overview.rows.length,
-      window_days: days,
-      ...overview.summary,
-    },
-  }).catch((err) => {
-    logger.warn({ err }, "rt-overview: audit log failed (continuing)");
-  });
+    // Counts-only audit. The patient list is intentionally NOT logged.
+    await logAudit({
+      action: "admin.rt_overview.read",
+      adminEmail: req.adminEmail ?? null,
+      metadata: {
+        patients: overview.rows.length,
+        window_days: days,
+        ...overview.summary,
+      },
+    }).catch((err) => {
+      logger.warn({ err }, "rt-overview: audit log failed (continuing)");
+    });
 
-  res.json(overview);
-});
+    res.json(overview);
+  },
+);
 
-router.get("/admin/rt-overview.csv", requireAdmin, async (req, res) => {
-  const parsed = querySchema.safeParse(req.query);
-  if (!parsed.success) {
-    res.status(400).json({ error: "invalid_query" });
-    return;
-  }
-  const days = parsed.data.days;
-  const overview = await buildRtOverview(days);
+router.get(
+  "/admin/rt-overview.csv",
+  adminReadRateLimiter,
+  requireAdmin,
+  async (req, res) => {
+    const parsed = querySchema.safeParse(req.query);
+    if (!parsed.success) {
+      res.status(400).json({ error: "invalid_query" });
+      return;
+    }
+    const days = parsed.data.days;
+    const overview = await buildRtOverview(days);
 
-  await logAudit({
-    action: "admin.rt_overview.export_csv",
-    adminEmail: req.adminEmail ?? null,
-    metadata: {
-      patients: overview.rows.length,
-      window_days: days,
-      ...overview.summary,
-    },
-  }).catch((err) => {
-    logger.warn({ err }, "rt-overview.csv: audit log failed (continuing)");
-  });
+    await logAudit({
+      action: "admin.rt_overview.export_csv",
+      adminEmail: req.adminEmail ?? null,
+      metadata: {
+        patients: overview.rows.length,
+        window_days: days,
+        ...overview.summary,
+      },
+    }).catch((err) => {
+      logger.warn({ err }, "rt-overview.csv: audit log failed (continuing)");
+    });
 
-  const headers = [
-    "pacware_id",
-    "last_name",
-    "first_name",
-    "nights_in_window",
-    "last_night_date",
-    "stale_days",
-    "ahi_avg",
-    "leak_avg",
-    "usage_minutes_avg",
-    "active_alerts",
-    "therapy_link_sources",
-  ];
-  const lines: string[] = [headers.join(",")];
-  for (const r of overview.rows) {
-    const alerts = r.activeAlerts.map((a) => a.label).join("; ");
-    const sources = r.therapyLinks.map((l) => l.source).join("; ");
-    const row = [
-      csvCell(r.pacwareId),
-      csvCell(r.lastName),
-      csvCell(r.firstName),
-      String(r.nightsInWindow),
-      r.lastNightDate ?? "",
-      r.staleDays === null ? "" : String(r.staleDays),
-      r.ahiAvg === null ? "" : String(r.ahiAvg),
-      r.leakAvg === null ? "" : String(r.leakAvg),
-      r.usageMinutesAvg === null ? "" : String(r.usageMinutesAvg),
-      csvCell(alerts),
-      csvCell(sources),
+    const headers = [
+      "pacware_id",
+      "last_name",
+      "first_name",
+      "nights_in_window",
+      "last_night_date",
+      "stale_days",
+      "ahi_avg",
+      "leak_avg",
+      "usage_minutes_avg",
+      "active_alerts",
+      "therapy_link_sources",
     ];
-    lines.push(row.join(","));
-  }
+    const lines: string[] = [headers.join(",")];
+    for (const r of overview.rows) {
+      const alerts = r.activeAlerts.map((a) => a.label).join("; ");
+      const sources = r.therapyLinks.map((l) => l.source).join("; ");
+      const row = [
+        csvCell(r.pacwareId),
+        csvCell(r.lastName),
+        csvCell(r.firstName),
+        String(r.nightsInWindow),
+        r.lastNightDate ?? "",
+        r.staleDays === null ? "" : String(r.staleDays),
+        r.ahiAvg === null ? "" : String(r.ahiAvg),
+        r.leakAvg === null ? "" : String(r.leakAvg),
+        r.usageMinutesAvg === null ? "" : String(r.usageMinutesAvg),
+        csvCell(alerts),
+        csvCell(sources),
+      ];
+      lines.push(row.join(","));
+    }
 
-  const filename = `rt-overview-${overview.asOf.slice(0, 10)}-${days}d.csv`;
-  res.setHeader("Content-Type", "text/csv; charset=utf-8");
-  res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
-  res.send(lines.join("\n") + "\n");
-});
+    const filename = `rt-overview-${overview.asOf.slice(0, 10)}-${days}d.csv`;
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    res.send(lines.join("\n") + "\n");
+  },
+);
 
 function csvCell(s: string): string {
   // Neutralize formula injection: prefix cells that start with
