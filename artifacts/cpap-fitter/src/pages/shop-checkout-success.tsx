@@ -28,6 +28,11 @@ import {
   formatMoneyCents,
   type OrderSummaryResponse,
 } from "@/lib/shop-api";
+import {
+  MAX_PENDING_POLLS,
+  PENDING_POLL_INTERVAL_MS,
+  shouldPollPendingPayment,
+} from "@/lib/checkout-pending-poll";
 import { track } from "@/lib/track";
 
 function getSessionIdFromQuery(): string | null {
@@ -43,6 +48,24 @@ export function ShopCheckoutSuccess() {
   const [order, setOrder] = useState<OrderSummaryResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [pollCount, setPollCount] = useState(0);
+
+  // Fire the conversion event + clear the cart exactly once — when (and
+  // only when) Stripe reports the session PAID. Shared by the initial
+  // fetch and the pending re-poll so the side effects can't double-fire
+  // (the poll stops the moment the status flips to paid).
+  const finalizeIfPaid = React.useCallback(
+    (o: OrderSummaryResponse) => {
+      if (o.paymentStatus !== "paid") return;
+      track("checkout_completed", {
+        lineItems: o.lineItems.length,
+        amountTotalCents: o.amountTotalCents,
+        currency: o.currency,
+      });
+      clear();
+    },
+    [clear],
+  );
 
   useEffect(() => {
     if (!sessionId) {
@@ -81,15 +104,10 @@ export function ShopCheckoutSuccess() {
         // a "session exists, payment pending" state — keeping the
         // cart intact across that window means a user who hits
         // refresh too early doesn't lose their items if payment
-        // ultimately fails.
-        if (o.paymentStatus === "paid") {
-          track("checkout_completed", {
-            lineItems: o.lineItems.length,
-            amountTotalCents: o.amountTotalCents,
-            currency: o.currency,
-          });
-          clear();
-        }
+        // ultimately fails. The bounded poll below re-checks that
+        // window so the page settles itself instead of stranding the
+        // customer on a "refresh to see if you were charged" screen.
+        finalizeIfPaid(o);
       })
       .catch((err: unknown) => {
         if (!active) return;
@@ -106,6 +124,48 @@ export function ShopCheckoutSuccess() {
     // We only want this to run on mount with the captured sessionId.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
+
+  // Bounded self-refresh while Stripe's webhook is still settling the
+  // charge. The order can read back as not-yet-paid for a few seconds
+  // after the customer lands here; rather than ask them to manually
+  // refresh a payment page (anxiety-inducing — "was I charged?"), we
+  // re-fetch a handful of times so the status flips to "paid" on its
+  // own. Stops as soon as it's paid or the attempt cap is hit.
+  useEffect(() => {
+    if (
+      !sessionId ||
+      !shouldPollPendingPayment({
+        loading,
+        hasOrder: order != null,
+        paymentStatus: order?.paymentStatus,
+        pollCount,
+      })
+    ) {
+      return;
+    }
+    let active = true;
+    const timer = setTimeout(() => {
+      fetchOrderSummary(sessionId)
+        .then((o) => {
+          if (!active) return;
+          setOrder(o);
+          finalizeIfPaid(o);
+        })
+        .catch(() => {
+          // Transient read failure — the next tick (or a manual
+          // refresh) can still recover; don't replace the pending
+          // copy with a hard error.
+        })
+        .finally(() => {
+          if (active) setPollCount((n) => n + 1);
+        });
+    }, PENDING_POLL_INTERVAL_MS);
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId, loading, order, pollCount]);
 
   const isPaid = order?.paymentStatus === "paid";
 
@@ -168,10 +228,11 @@ export function ShopCheckoutSuccess() {
               className="text-center text-muted-foreground mb-8 leading-relaxed"
               data-testid="success-pending-copy"
             >
-              Your payment is finishing up. This page will reflect the final
-              status shortly — refresh in a minute or check the email Stripe
-              sent for the receipt. If the charge doesn&apos;t go through, your
-              cart is still saved.
+              Your payment is finishing up.{" "}
+              {pollCount < MAX_PENDING_POLLS
+                ? "This page updates on its own the moment it settles — no need to refresh."
+                : "This is taking a little longer than usual — check the receipt email Stripe sent, or refresh this page in a moment."}{" "}
+              If the charge doesn&apos;t go through, your cart is still saved.
             </p>
           )}
 

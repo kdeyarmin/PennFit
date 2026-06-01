@@ -46,7 +46,6 @@ import {
   FlaskConical,
   UsersRound,
   Settings,
-  FileSearch,
   Plug,
   Webhook,
   Target,
@@ -863,14 +862,6 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         matchPrefix: "/admin/settings",
         hint: "Practice settings & integrations",
         section: "Configuration",
-      },
-      {
-        href: "/admin/pennpaps/audit",
-        label: "Storefront Audit",
-        icon: FileSearch,
-        matchPrefix: "/admin/pennpaps/audit",
-        hint: "PennPaps storefront audit trail",
-        section: "Account & audit",
       },
       {
         href: "/admin/security",
