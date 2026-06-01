@@ -46,7 +46,13 @@ import { registerFitterConversionAttributionJob } from "./jobs/fitter-conversion
 import { registerCartAbandonmentJob } from "./jobs/cart-abandonment-scan.js";
 import { registerFailedEmailDigestJob } from "./jobs/failed-order-emails-digest.js";
 import { registerTherapyNightlySyncJob } from "./jobs/therapy-integrations-nightly-sync.js";
+import { registerEligibilityReverifyBatchJob } from "./jobs/eligibility-reverify-batch.js";
+import { registerClinicalOutreachBatchJob } from "./jobs/clinical-outreach-batch.js";
 import { registerTherapyFleetSnapshotJob } from "./jobs/therapy-fleet-daily-snapshot.js";
+import { registerMetricsSnapshotJob } from "./jobs/metrics-snapshot.js";
+import { registerMetricAlertsEvaluatorJob } from "./jobs/metric-alerts-evaluator.js";
+import { registerMetricAlertsNotifyJob } from "./jobs/metric-alerts-notify.js";
+import { registerOwnerDigestJob } from "./jobs/owner-digest.js";
 import { registerTherapyFleetAlertsJob } from "./jobs/therapy-fleet-alerts-scan.js";
 import { registerCoachingProgressJob } from "./jobs/coaching-plan-progress.js";
 import { registerPriorAuthExpirySweepJob } from "./jobs/prior-auth-expiry-sweep.js";
@@ -432,10 +438,34 @@ async function doStartWorker(): Promise<void> {
   // patient_therapy_nights table for downstream consumers.
   await registerTherapyNightlySyncJob(boss);
 
+  // Eligibility re-verification batch (Biller #31). Queue + worker
+  // always register; the recurring cron only attaches when
+  // ELIGIBILITY_REVERIFY_CRON is set (opt-in — it emits outbound 270s).
+  await registerEligibilityReverifyBatchJob(boss);
+
+  // Proactive clinical outreach (RT #23). Queue + worker always register;
+  // the recurring cron only attaches when CLINICAL_OUTREACH_CRON is set
+  // (opt-in — it emits outbound patient contact).
+  await registerClinicalOutreachBatchJob(boss);
+
   // Daily snapshot of the therapy-fleet metrics into
   // therapy_fleet_daily_metrics, 30 min after the nightly sync, so the
   // fleet trend / sparklines reflect freshly-synced nights.
   await registerTherapyFleetSnapshotJob(boss);
+
+  // Daily headline-KPI snapshot (06:30 UTC) into metrics_daily — the F2
+  // metrics substrate the threshold evaluator + owner digest read from.
+  await registerMetricsSnapshotJob(boss);
+
+  // Evaluate metric_thresholds against the fresh snapshot (06:45 UTC)
+  // and write metric_alerts on a breach.
+  await registerMetricAlertsEvaluatorJob(boss);
+
+  // Email a SendGrid digest of new KPI alerts to admins (06:50 UTC).
+  await registerMetricAlertsNotifyJob(boss);
+
+  // Weekly owner KPI digest (Mondays 13:00 UTC).
+  await registerOwnerDigestJob(boss);
 
   // Nightly therapy-fleet alerts scan (05:15 UTC): maintains the
   // internal alert feed and, when the (default-off) auto-outreach flag

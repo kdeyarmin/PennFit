@@ -1,6 +1,24 @@
 import { describe, expect, it } from "vitest";
 
-import { applyRequiredModifierBaseline } from "./claim-builder";
+import {
+  applyRequiredModifierBaseline,
+  buildClaimLineRows,
+  type ProposedClaimLine,
+} from "./claim-builder";
+
+function line(overrides: Partial<ProposedClaimLine> = {}): ProposedClaimLine {
+  return {
+    hcpcsCode: "A7034",
+    modifiers: ["RR", "KX"],
+    description: "Nasal mask",
+    quantity: 1,
+    billedCents: 12000,
+    sourceKind: "product_map",
+    sourceRef: null,
+    feeScheduleRowId: null,
+    ...overrides,
+  };
+}
 
 describe("applyRequiredModifierBaseline", () => {
   it("prepends the first required modifier when none are present", () => {
@@ -40,5 +58,56 @@ describe("applyRequiredModifierBaseline", () => {
       "B2",
       "C3",
     ]);
+  });
+});
+
+describe("buildClaimLineRows", () => {
+  const CAPTURED = "2026-05-31T12:00:00.000Z";
+
+  it("maps core fields and joins modifiers", () => {
+    const [row] = buildClaimLineRows("claim_1", [line()], CAPTURED);
+    expect(row).toMatchObject({
+      claim_id: "claim_1",
+      hcpcs_code: "A7034",
+      modifier: "RR,KX",
+      description: "Nasal mask",
+      quantity: 1,
+      billed_cents: 12000,
+      status: "pending",
+    });
+  });
+
+  it("nulls the modifier when there are none", () => {
+    const [row] = buildClaimLineRows("c", [line({ modifiers: [] })], CAPTURED);
+    expect(row.modifier).toBeNull();
+  });
+
+  it("carries the COGS snapshot when the line has a cost", () => {
+    const [row] = buildClaimLineRows(
+      "c",
+      [line({ unitCostCents: 4200, costSource: "invoice" })],
+      CAPTURED,
+    );
+    expect(row.unit_cost_cents).toBe(4200);
+    expect(row.cost_source).toBe("invoice");
+    expect(row.cost_captured_at).toBe(CAPTURED);
+  });
+
+  it("leaves cost null (and no captured_at) when the line has no cost", () => {
+    const [row] = buildClaimLineRows("c", [line()], CAPTURED);
+    expect(row.unit_cost_cents).toBeNull();
+    expect(row.cost_source).toBeNull();
+    expect(row.cost_captured_at).toBeNull();
+  });
+
+  it("treats a known zero cost as captured, defaulting the source", () => {
+    const [row] = buildClaimLineRows(
+      "c",
+      [line({ unitCostCents: 0 })],
+      CAPTURED,
+    );
+    expect(row.unit_cost_cents).toBe(0);
+    expect(row.cost_source).toBe("manual");
+    expect(row.cost_captured_at).toBe(CAPTURED);
   });
 });

@@ -60,10 +60,15 @@ export async function maybeAutoAssignConversation(
   const { data: admins, error: adminErr } = await supabase
     .schema("resupply")
     .from("admin_users")
-    .select("id, skills")
+    .select("id, skills, availability")
     .eq("status", "active");
   if (adminErr) throw adminErr;
-  const adminList = admins ?? [];
+  // Skip reps who've flipped themselves away / do-not-assign (CSR #16).
+  // Anything else (incl. a missing value) counts as available, so the
+  // pre-availability behavior is preserved.
+  const adminList = (admins ?? []).filter(
+    (a) => a.availability !== "away" && a.availability !== "do_not_assign",
+  );
   if (adminList.length === 0) {
     return { assigned: false, reason: "no_eligible_candidate" };
   }

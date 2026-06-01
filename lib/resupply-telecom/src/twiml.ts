@@ -99,6 +99,49 @@ export function buildHangupTwiml(spokenMessage?: string): string {
   ].join("\n");
 }
 
+const e164Schema = z
+  .string()
+  .regex(/^\+[1-9]\d{6,14}$/, "Phone must be E.164, e.g. +12155551212.");
+
+export interface BuildDialTwimlInput {
+  /** The number to bridge in (the patient), E.164. */
+  to: string;
+  /** Caller-ID shown to the dialed party (our Twilio number), E.164. */
+  callerId?: string;
+  /** Hard cap on the bridged leg, seconds. */
+  timeLimitSeconds?: number;
+  /** Optional message read to the answerer BEFORE the dial connects. */
+  spokenMessage?: string;
+}
+
+/**
+ * Build the TwiML for an agent-first click-to-dial bridge: Twilio has
+ * already rung the agent's phone; when they answer it fetches this,
+ * which `<Dial>`s the patient and bridges the two legs. Throws on a
+ * non-E.164 number (a Twilio webhook must 5xx loudly on bad input so
+ * the misconfiguration surfaces rather than silently dropping the call).
+ */
+export function buildDialTwiml(input: BuildDialTwimlInput): string {
+  const to = e164Schema.parse(input.to);
+  const callerId = input.callerId
+    ? e164Schema.parse(input.callerId)
+    : undefined;
+  const say = input.spokenMessage
+    ? `  <Say>${escapeXmlText(input.spokenMessage)}</Say>\n`
+    : "";
+  const callerAttr = callerId ? ` callerId="${escapeXmlAttr(callerId)}"` : "";
+  const timeLimit =
+    input.timeLimitSeconds && input.timeLimitSeconds > 0
+      ? ` timeLimit="${Math.floor(input.timeLimitSeconds)}"`
+      : "";
+  return [
+    `<?xml version="1.0" encoding="UTF-8"?>`,
+    `<Response>`,
+    say + `  <Dial${callerAttr}${timeLimit}>${escapeXmlText(to)}</Dial>`,
+    `</Response>`,
+  ].join("\n");
+}
+
 function escapeXmlAttr(s: string): string {
   return s
     .replace(/&/g, "&amp;")

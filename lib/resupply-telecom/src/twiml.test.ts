@@ -1,5 +1,36 @@
 import { describe, expect, it } from "vitest";
-import { buildConnectStreamTwiml, buildHangupTwiml } from "./twiml";
+import {
+  buildConnectStreamTwiml,
+  buildHangupTwiml,
+  buildDialTwiml,
+} from "./twiml";
+
+describe("buildDialTwiml", () => {
+  it("emits a Dial to the E.164 number with caller id and time limit", () => {
+    const xml = buildDialTwiml({
+      to: "+12155551212",
+      callerId: "+18005550000",
+      timeLimitSeconds: 600,
+      spokenMessage: "Connecting you now.",
+    });
+    expect(xml).toContain('<?xml version="1.0" encoding="UTF-8"?>');
+    expect(xml).toContain("<Say>Connecting you now.</Say>");
+    expect(xml).toContain(
+      '<Dial callerId="+18005550000" timeLimit="600">+12155551212</Dial>',
+    );
+  });
+
+  it("omits caller id / time limit when not provided", () => {
+    const xml = buildDialTwiml({ to: "+12155551212" });
+    expect(xml).toContain("<Dial>+12155551212</Dial>");
+    expect(xml).not.toContain("callerId");
+    expect(xml).not.toContain("<Say>");
+  });
+
+  it("throws on a non-E.164 number (webhook must 5xx loudly)", () => {
+    expect(() => buildDialTwiml({ to: "215-555-1212" })).toThrow();
+  });
+});
 
 describe("buildConnectStreamTwiml", () => {
   it("emits a well-formed Connect+Stream document with a wss URL", () => {

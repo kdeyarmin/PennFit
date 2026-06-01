@@ -4,7 +4,7 @@
 // on a large book.
 
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { Card } from "@/components/admin/Card";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
@@ -13,8 +13,14 @@ import {
   fetchPayerFeeSchedules,
   fetchPayerProfiles,
   formatMoneyCents,
+  importPayerFeeScheduleCsv,
+  type FeeScheduleImportResult,
   type PayerProfile,
 } from "@/lib/admin/billing-config-api";
+
+const CSV_HEADER =
+  "hcpcs_code,modifier,allowed_cents,effective_from,effective_through,source,notes";
+const CSV_SAMPLE = `${CSV_HEADER}\nE0601,RR,12235,2026-01-01,,cms_published,Medicare DME 2026\nA7038,,4200,2026-01-01,,payer_published,`;
 
 export function AdminBillingConfigFeeSchedulesPage() {
   const [payerProfileId, setPayerProfileId] = useState("");
@@ -108,6 +114,11 @@ export function AdminBillingConfigFeeSchedulesPage() {
         </div>
       </Card>
 
+      <ImportCard
+        payers={payers.data?.payerProfiles ?? []}
+        onImported={() => void schedules.refetch()}
+      />
+
       <Card>
         {schedules.isPending ? (
           <Spinner label="Loading fee schedules…" />
@@ -186,5 +197,139 @@ export function AdminBillingConfigFeeSchedulesPage() {
         )}
       </Card>
     </div>
+  );
+}
+
+// Bulk import card. Paste a CSV (header + rows), pick the payer, submit.
+// The server (admin-only) validates each row and reports row-level
+// errors without blocking the valid rows. No upsert — operators close
+// prior rows by setting effective_through, matching the export format.
+function ImportCard({
+  payers,
+  onImported,
+}: {
+  payers: PayerProfile[];
+  onImported: () => void;
+}) {
+  const qc = useQueryClient();
+  const [payerProfileId, setPayerProfileId] = useState("");
+  const [csv, setCsv] = useState("");
+  const [result, setResult] = useState<FeeScheduleImportResult | null>(null);
+
+  const importMutation = useMutation({
+    mutationFn: () => importPayerFeeScheduleCsv(payerProfileId, csv),
+    onSuccess: (res) => {
+      setResult(res);
+      if (res.accepted > 0) {
+        setCsv("");
+        void qc.invalidateQueries({ queryKey: ["admin-payer-fee-schedules"] });
+        onImported();
+      }
+    },
+  });
+
+  const canSubmit =
+    payerProfileId !== "" &&
+    csv.trim().length >= 20 &&
+    !importMutation.isPending;
+
+  return (
+    <Card title="Import fee schedule (CSV)">
+      <div className="space-y-3">
+        <p className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
+          Paste a CSV with the header{" "}
+          <code className="font-mono text-[11px]">{CSV_HEADER}</code>. One row
+          per HCPCS + modifier. <code className="font-mono">allowed_cents</code>{" "}
+          is whole cents; <code className="font-mono">source</code> is one of
+          manual / cms_published / payer_published / observed. Admin-only.
+        </p>
+        <div className="flex flex-wrap gap-3 items-end">
+          <label className="block">
+            <span
+              className="text-xs font-semibold block mb-1"
+              style={{ color: "hsl(var(--ink-3))" }}
+            >
+              Payer
+            </span>
+            <select
+              value={payerProfileId}
+              onChange={(e) => setPayerProfileId(e.target.value)}
+              className="rounded border border-slate-300 px-2 py-1.5 text-sm min-w-[220px]"
+              aria-label="Import payer"
+            >
+              <option value="">Select a payer…</option>
+              {payers.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.displayName}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+        <textarea
+          value={csv}
+          onChange={(e) => setCsv(e.target.value)}
+          placeholder={CSV_SAMPLE}
+          rows={6}
+          aria-label="Fee schedule CSV"
+          className="w-full rounded border border-slate-300 px-3 py-2 text-xs font-mono"
+        />
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            disabled={!canSubmit}
+            onClick={() => {
+              setResult(null);
+              importMutation.mutate();
+            }}
+            className="rounded bg-slate-900 px-4 py-1.5 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
+            data-testid="fee-schedule-import-submit"
+          >
+            {importMutation.isPending ? "Importing…" : "Import rows"}
+          </button>
+          {payerProfileId === "" && (
+            <span className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
+              Pick a payer first.
+            </span>
+          )}
+        </div>
+
+        {importMutation.error instanceof Error && (
+          <div className="rounded border border-rose-200 bg-rose-50 p-2 text-xs text-rose-900">
+            {importMutation.error.message}
+          </div>
+        )}
+
+        {result && (
+          <div
+            className="rounded border p-3 text-xs"
+            style={{ borderColor: "hsl(var(--line-1))" }}
+            data-testid="fee-schedule-import-result"
+          >
+            <p className="font-semibold" style={{ color: "hsl(var(--ink-1))" }}>
+              Imported {result.accepted} row(s)
+              {result.errors.length > 0
+                ? ` · ${result.errors.length} skipped`
+                : ""}
+              .
+            </p>
+            {result.errors.length > 0 && (
+              <ul className="mt-1 space-y-0.5">
+                {result.errors.slice(0, 25).map((e, i) => (
+                  <li key={i} className="text-rose-800">
+                    Row {e.row}: {e.reason}
+                  </li>
+                ))}
+                {result.errors.length > 25 && (
+                  <li style={{ color: "hsl(var(--ink-3))" }}>
+                    …and {result.errors.length - 25} more.
+                  </li>
+                )}
+              </ul>
+            )}
+          </div>
+        )}
+      </div>
+    </Card>
   );
 }

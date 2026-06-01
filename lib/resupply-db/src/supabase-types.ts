@@ -178,6 +178,35 @@ export interface Database {
         >;
         Relationships: [];
       };
+      // Migration 0193: current unit cost (COGS) per shop SKU. Source for
+      // the per-transaction cost snapshots + every owner-facing margin
+      // surface (computeMargin / aggregateMargin in resupply-domain).
+      product_costs: {
+        Row: {
+          sku: string;
+          unit_cost_cents: number;
+          currency: string;
+          cost_source: string;
+          effective_from: string;
+          notes: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          sku: string;
+          unit_cost_cents: number;
+          currency?: string;
+          cost_source?: string;
+          effective_from?: string;
+          notes?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<
+          Database["resupply"]["Tables"]["product_costs"]["Insert"]
+        >;
+        Relationships: [];
+      };
       // Migration 0165: per-object ACL policy for objects stored in
       // Supabase Storage. The policy JSON mirrors the in-memory
       // ObjectAclPolicy shape (`{ owner, visibility, aclRules }`)
@@ -336,7 +365,8 @@ export interface Database {
             | "fitter"
             | "fulfillment"
             | "compliance_officer"
-            | "agent";
+            | "agent"
+            | "rt";
           status: "pending" | "active" | "revoked";
           display_name: string | null;
           notes: string | null;
@@ -348,6 +378,8 @@ export interface Database {
           last_login_at: string | null;
           auth_user_id: string | null;
           skills: Json;
+          availability: string;
+          phone_e164: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -361,7 +393,8 @@ export interface Database {
             | "fitter"
             | "fulfillment"
             | "compliance_officer"
-            | "agent";
+            | "agent"
+            | "rt";
           status?: "pending" | "active" | "revoked";
           display_name?: string | null;
           notes?: string | null;
@@ -373,6 +406,8 @@ export interface Database {
           last_login_at?: string | null;
           auth_user_id?: string | null;
           skills?: Json;
+          availability?: string;
+          phone_e164?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -415,6 +450,36 @@ export interface Database {
           signature?: string | null;
         };
         Update: Partial<Database["resupply"]["Tables"]["audit_log"]["Insert"]>;
+        Relationships: [];
+      };
+      call_dispositions: {
+        Row: {
+          id: string;
+          patient_id: string | null;
+          conversation_id: string | null;
+          outcome: string;
+          note: string | null;
+          twilio_call_sid: string | null;
+          agent_user_id: string | null;
+          agent_email: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          patient_id?: string | null;
+          conversation_id?: string | null;
+          outcome?: string;
+          note?: string | null;
+          twilio_call_sid?: string | null;
+          agent_user_id?: string | null;
+          agent_email?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<
+          Database["resupply"]["Tables"]["call_dispositions"]["Insert"]
+        >;
         Relationships: [];
       };
       conversations: {
@@ -1438,6 +1503,22 @@ export interface Database {
           latest_scrub_result_id: string | null;
           // Pointer to the most recent denial analysis (migration 0131).
           latest_denial_analysis_id: string | null;
+          // Migration 0195 (Biller #32): X12 837 CLM05-3 resubmission
+          // code — '1' original (default), '7' replacement, '8' void —
+          // the payer ICN being corrected/voided, and how the claim was
+          // entered (fulfillment-derived vs hand-keyed manual/adjustment).
+          claim_frequency_code: "1" | "7" | "8";
+          original_claim_number: string | null;
+          entry_source: "fulfillment" | "manual" | "adjustment";
+          // Migration 0199 (Biller #28): coordination-of-benefits. The
+          // claim's place in the payer sequence, plus a snapshot of the
+          // primary's adjudication carried onto a secondary claim for the
+          // 837 2320/2330 COB loop (null on primaries).
+          payer_sequence: "primary" | "secondary" | "tertiary";
+          primary_claim_id: string | null;
+          cob_primary_paid_cents: number | null;
+          cob_contractual_cents: number | null;
+          cob_patient_resp_cents: number | null;
           created_at: string;
           updated_at: string;
         };
@@ -1460,6 +1541,12 @@ export interface Database {
           billed_cents: number;
           allowed_cents: number;
           paid_cents: number;
+          // Migration 0193: point-in-time COGS snapshot, stamped at
+          // claim-line creation from resupply.product_costs. Nullable —
+          // null = "cost unknown" (never silently zero).
+          unit_cost_cents: number | null;
+          cost_source: string | null;
+          cost_captured_at: string | null;
           status: "pending" | "accepted" | "denied" | "paid";
           denial_reason: string | null;
           created_at: string;
@@ -1867,6 +1954,10 @@ export interface Database {
           statement_pdf_object_key: string | null;
           delivery_method: "email" | "sms" | "mail" | "in_person" | null;
           delivered_at: string | null;
+          // Migration 0200 (Biller #30): send-outcome state machine.
+          delivery_status: "pending" | "sent" | "failed" | "skipped";
+          delivery_channel: "email" | "sms" | null;
+          delivery_error: string | null;
           generated_by_email: string;
           created_at: string;
         };
@@ -3543,6 +3634,36 @@ export interface Database {
         >;
         Relationships: [];
       };
+      // Migration 0196 (Owner #3): per-customer acquisition attribution —
+      // channel + (optional) acquisition cost for LTV/CAC cohort math.
+      customer_acquisition: {
+        Row: {
+          customer_id: string;
+          channel:
+            | "organic"
+            | "paid_search"
+            | "paid_social"
+            | "referral"
+            | "fitter"
+            | "insurance_lead"
+            | "partner"
+            | "other";
+          // Nullable — null = "cost unknown" (never silently zero).
+          acquisition_cost_cents: number | null;
+          source_detail: string | null;
+          acquired_at: string;
+          recorded_by_email: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["customer_acquisition"]["Row"]
+        > & { customer_id: string };
+        Update: Partial<
+          Database["resupply"]["Tables"]["customer_acquisition"]["Row"]
+        >;
+        Relationships: [];
+      };
       shop_customers: {
         Row: {
           customer_id: string;
@@ -3597,6 +3718,12 @@ export interface Database {
           quantity: number;
           unit_amount_cents: number | null;
           currency: string | null;
+          // Migration 0193: point-in-time COGS snapshot, stamped at
+          // order-item creation from resupply.product_costs. Nullable —
+          // null = "cost unknown" (never silently zero).
+          unit_cost_cents: number | null;
+          cost_source: string | null;
+          cost_captured_at: string | null;
           paid_at: string;
           created_at: string;
         };
@@ -3657,6 +3784,10 @@ export interface Database {
           created_at: string;
           updated_at: string;
           paid_at: string | null;
+          // Migration 0193: order-level cost-to-sell fees for true
+          // contribution margin (subtracted alongside COGS).
+          stripe_fee_cents: number | null;
+          shipping_cost_cents: number | null;
         };
         Insert: Partial<Database["resupply"]["Tables"]["shop_orders"]["Row"]>;
         Update: Partial<Database["resupply"]["Tables"]["shop_orders"]["Row"]>;
@@ -3713,6 +3844,105 @@ export interface Database {
         >;
         Update: Partial<
           Database["resupply"]["Tables"]["shop_order_nps_responses"]["Row"]
+        >;
+        Relationships: [];
+      };
+      // Migration 0201 (RT #22a): post-delivery mask-fit micro-survey.
+      mask_fit_outcomes: {
+        Row: {
+          id: string;
+          order_id: string;
+          mask_id: string | null;
+          fit_outcome: "good" | "leaking" | "uncomfortable";
+          comment: string | null;
+          status: "new" | "reviewed" | "actioned";
+          reviewed_by_email: string | null;
+          reviewed_at: string | null;
+          submitter_ip: string | null;
+          user_agent: string | null;
+          created_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["mask_fit_outcomes"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["mask_fit_outcomes"]["Row"]
+        >;
+        Relationships: [];
+      };
+      // Migration 0202 (Biller #29): structured CMN / DIF documents.
+      cmn_documents: {
+        Row: {
+          id: string;
+          patient_id: string;
+          claim_id: string | null;
+          dwo_document_id: string | null;
+          form_type: string;
+          hcpcs_code: string;
+          status: "draft" | "completed" | "on_file" | "voided";
+          answers: Json;
+          physician_name: string | null;
+          physician_npi: string | null;
+          initial_date: string | null;
+          recert_date: string | null;
+          length_of_need_months: number | null;
+          created_by_email: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["cmn_documents"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["cmn_documents"]["Row"]>;
+        Relationships: [];
+      };
+      // Migration 0204 (RT #23): proactive clinical outreach log.
+      clinical_outreach_log: {
+        Row: {
+          id: string;
+          patient_id: string;
+          intervention_encounter_id: string | null;
+          channel: "email" | "sms";
+          message_category: string | null;
+          status: "sent" | "failed" | "skipped";
+          error: string | null;
+          sent_by_email: string;
+          created_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["clinical_outreach_log"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["clinical_outreach_log"]["Row"]
+        >;
+        Relationships: [];
+      };
+      // Migration 0205 (RT #25): short-video education library.
+      education_videos: {
+        Row: {
+          id: string;
+          title: string;
+          topic:
+            | "getting_started"
+            | "mask_fitting"
+            | "ramp_comfort"
+            | "cleaning"
+            | "troubleshooting"
+            | "travel"
+            | "other";
+          description: string | null;
+          video_url: string;
+          thumbnail_url: string | null;
+          duration_seconds: number | null;
+          sort_order: number;
+          active: boolean;
+          created_by_email: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["education_videos"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["education_videos"]["Row"]
         >;
         Relationships: [];
       };

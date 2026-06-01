@@ -124,6 +124,12 @@ export interface ClaimDetail {
    *  secondary payer exists; or to the secondary with the primary's
    *  prior-payment info attached. */
   otherSubscriber?: OtherSubscriberDetail | null;
+  /** SBR01 for the DESTINATION payer in loop 2000B — `P` primary
+   *  (default, back-compat), `S` secondary, `T` tertiary. Set to S/T
+   *  when this claim is being billed to a downstream payer so the
+   *  subscriber loop declares the correct payer sequence (and the
+   *  2320 loop discloses the prior payer that already adjudicated). */
+  payerResponsibility?: "P" | "S" | "T";
 }
 
 export interface ProviderRef {
@@ -470,7 +476,7 @@ export function build837P(
     segments.push(
       joinSegment([
         "SBR",
-        "P", // primary
+        claim.payerResponsibility ?? "P", // P primary (default) | S | T
         claim.subscriber.relationshipCode,
         "", // group/policy number lives in 2010BA REF*0F when known
         "", // group name

@@ -21,6 +21,7 @@ import {
   fetchDenialCodes,
   fetchClaimTemplates,
   formatMoneyCents,
+  importPayerFeeScheduleCsv,
 } from "./billing-config-api";
 
 const ORIGINAL_FETCH = globalThis.fetch;
@@ -580,5 +581,64 @@ describe("fetchClaimTemplates", () => {
 
     await fetchClaimTemplates();
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// importPayerFeeScheduleCsv — POST /admin/payer-fee-schedules/import-csv
+// ---------------------------------------------------------------------------
+
+describe("importPayerFeeScheduleCsv", () => {
+  test("POSTs the payer + csv and returns the result on 201", async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 201,
+      text: async () => JSON.stringify({ accepted: 2, errors: [] }),
+    });
+
+    const res = await importPayerFeeScheduleCsv(
+      "payer-1",
+      "header\nrow1\nrow2",
+    );
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("/resupply-api/admin/payer-fee-schedules/import-csv");
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(init.body as string)).toEqual({
+      payerProfileId: "payer-1",
+      csv: "header\nrow1\nrow2",
+    });
+    expect((init.headers as Record<string, string>)["Content-Type"]).toBe(
+      "application/json",
+    );
+    expect(res).toEqual({ accepted: 2, errors: [] });
+  });
+
+  test("returns the row-level errors on a 400 'no valid rows' response (does not throw)", async () => {
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 400,
+      statusText: "Bad Request",
+      headers: new Headers(),
+      text: async () =>
+        JSON.stringify({
+          accepted: 0,
+          errors: [{ row: 2, reason: "invalid HCPCS: ZZZ" }],
+        }),
+    });
+
+    const res = await importPayerFeeScheduleCsv("payer-1", "header\nbad");
+    expect(res.accepted).toBe(0);
+    expect(res.errors).toEqual([{ row: 2, reason: "invalid HCPCS: ZZZ" }]);
+  });
+
+  test("throws an ApiError on a 403 (no result envelope)", async () => {
+    fetchMock.mockResolvedValue(
+      errorResponse(403, "Forbidden", JSON.stringify({ error: "forbidden" })),
+    );
+
+    await expect(
+      importPayerFeeScheduleCsv("payer-1", "header\nrow"),
+    ).rejects.toBeInstanceOf(ApiError);
   });
 });

@@ -4,6 +4,7 @@ import {
   ApiError,
   type ConversationMessageAttachment,
   useGetConversation,
+  useGetAdminMe,
   useSendSmsReminder,
   useSendEmailReminder,
   usePlaceVoiceCall,
@@ -26,7 +27,11 @@ import {
   templatesForChannel,
 } from "@/lib/admin/reply-templates";
 import { applyMacro, applyLegacyFirstName } from "@/lib/admin/macro-merge";
-import { listMacros, type CsrMacro } from "@/lib/admin/csr-macros-api";
+import {
+  createMacro,
+  listMacros,
+  type CsrMacro,
+} from "@/lib/admin/csr-macros-api";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
@@ -41,6 +46,11 @@ import { Customer360Panel } from "@/components/admin/Customer360Panel";
 import { ConversationAssignmentBar } from "@/components/admin/ConversationAssignmentBar";
 import { useDraftAutosave } from "@/lib/admin/use-draft-autosave";
 import { setConversationStatus } from "@/lib/admin/conversation-assignment-api";
+import {
+  draftConversationReply,
+  draftUnavailableNote,
+} from "@/lib/admin/conversation-draft-reply-api";
+import { Sparkles } from "lucide-react";
 
 // Conversation viewer. Renders the chronological message timeline as
 // channel-aware bubbles (admin/agent on the right, patient on the
@@ -351,7 +361,42 @@ function ReplyComposer({
   const [body, setBody] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
+  const [showMacroForm, setShowMacroForm] = useState(false);
+  const [drafting, setDrafting] = useState(false);
+  const [draftNote, setDraftNote] = useState<string | null>(null);
   const reply = useReplyInConversation();
+
+  // AI reply drafting (#15). Generates a suggested reply the CSR edits
+  // before sending — never sends on its own. Only offered into an empty
+  // composer so it can't clobber text the CSR is already writing.
+  async function onDraftWithAi() {
+    setDrafting(true);
+    setDraftNote(null);
+    setError(null);
+    try {
+      const result = await draftConversationReply(conversationId);
+      if (result.available) {
+        setBody(result.draft);
+        setDraftNote("AI-drafted — review and edit before sending.");
+      } else {
+        setDraftNote(draftUnavailableNote(result.reason));
+      }
+    } catch {
+      setDraftNote("Couldn't draft a reply right now.");
+    } finally {
+      setDrafting(false);
+    }
+  }
+
+  // Save-as-macro (#14) is a supervisor-tier action: promoting a draft
+  // into the shared canned-reply library is gated on admin.tools.manage,
+  // matching the POST /admin/csr-macros gate. Macros are channel-scoped,
+  // so the affordance only shows on sms / email threads. /admin/me is
+  // already cached app-wide, so this hook dedupes rather than re-fetches.
+  const adminMe = useGetAdminMe();
+  const canSaveMacro =
+    (adminMe.data?.permissions ?? []).includes("admin.tools.manage") &&
+    (channel === "sms" || channel === "email");
 
   // Drafts persist across navigation/refresh per-conversation.
   // Hydrating from localStorage means a patient call mid-typing
@@ -528,6 +573,31 @@ function ReplyComposer({
             </select>
           </div>
         )}
+      {!isClosed && (
+        <div className="mb-2 flex items-center gap-2 flex-wrap">
+          <Button
+            intent="secondary"
+            size="sm"
+            disabled={drafting || reply.isPending || trimmed.length > 0}
+            isLoading={drafting}
+            onClick={() => void onDraftWithAi()}
+            title={
+              trimmed.length > 0
+                ? "Clear the box to draft a fresh reply with AI"
+                : "Draft a suggested reply you can edit before sending"
+            }
+            data-testid="conv-draft-with-ai"
+          >
+            <Sparkles className="h-4 w-4 mr-1" />
+            Draft with AI
+          </Button>
+          {draftNote && (
+            <span className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
+              {draftNote}
+            </span>
+          )}
+        </div>
+      )}
       <textarea
         value={body}
         onChange={(e) => setBody(e.target.value)}
@@ -575,14 +645,37 @@ function ReplyComposer({
             ? ` · saved locally ${formatDraftSavedAt(draft.savedAt)}`
             : ""}
         </span>
-        <Button
-          onClick={() => void onSend()}
-          isLoading={reply.isPending}
-          disabled={!canSend || reply.isPending}
-        >
-          Send reply
-        </Button>
+        <div className="flex items-center gap-2">
+          {canSaveMacro && trimmed.length > 0 && !isClosed && (
+            <Button
+              intent="secondary"
+              onClick={() => setShowMacroForm((v) => !v)}
+              disabled={reply.isPending}
+            >
+              {showMacroForm ? "Cancel macro" : "Save as macro"}
+            </Button>
+          )}
+          <Button
+            onClick={() => void onSend()}
+            isLoading={reply.isPending}
+            disabled={!canSend || reply.isPending}
+          >
+            Send reply
+          </Button>
+        </div>
       </div>
+      {showMacroForm && canSaveMacro && (
+        <SaveMacroPanel
+          channel={channel as "sms" | "email"}
+          body={trimmed}
+          onClose={() => setShowMacroForm(false)}
+          onSaved={(label) => {
+            setShowMacroForm(false);
+            setError(null);
+            setStatusMsg(`Saved "${label}" to the macro library.`);
+          }}
+        />
+      )}
       {error && (
         <p className="mt-3 text-sm" style={{ color: "#b91c1c" }} role="alert">
           {error}
@@ -594,6 +687,168 @@ function ReplyComposer({
         </p>
       )}
     </Card>
+  );
+}
+
+// Derive a server-valid macro key from a label: lower-case, collapse
+// non-alphanumerics to a single dash, trim dashes, cap at 60, and make
+// sure it starts with an alphanumeric (the server regex requires it).
+export function slugifyMacroKey(label: string): string {
+  return label
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .replace(/^[^a-z0-9]+/, "")
+    .slice(0, 60);
+}
+
+// Save-as-macro panel (#14). Snapshots the current draft into the shared
+// csr-macros library, scoped to the thread's channel. Key auto-suggests
+// from the label until the operator edits it. On success the picker
+// query is invalidated so the new macro is immediately selectable.
+function SaveMacroPanel({
+  channel,
+  body,
+  onClose,
+  onSaved,
+}: {
+  channel: "sms" | "email";
+  body: string;
+  onClose: () => void;
+  onSaved: (label: string) => void;
+}) {
+  const qc = useQueryClient();
+  const [label, setLabel] = useState("");
+  const [key, setKey] = useState("");
+  const [keyEdited, setKeyEdited] = useState(false);
+  const [category, setCategory] = useState("");
+
+  const effectiveKey = keyEdited ? key.trim() : slugifyMacroKey(label);
+  const labelValid = label.trim().length >= 1 && label.trim().length <= 120;
+  const keyValid =
+    /^[a-z0-9][a-z0-9_-]*$/.test(effectiveKey) &&
+    effectiveKey.length >= 2 &&
+    effectiveKey.length <= 60;
+
+  const save = useMutation({
+    mutationFn: () =>
+      createMacro({
+        key: effectiveKey,
+        label: label.trim(),
+        category: category.trim() || null,
+        body,
+        channels: [channel],
+      }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["admin-csr-macros-picker"] });
+      onSaved(label.trim());
+    },
+  });
+
+  function describe(err: unknown): string {
+    if (err instanceof ApiError) {
+      const data = err.data as { error?: string; message?: string } | undefined;
+      if (data?.error === "key_already_exists") {
+        return `A macro with key "${effectiveKey}" already exists — choose another key.`;
+      }
+      return data?.message ?? data?.error ?? "Couldn't save the macro.";
+    }
+    return err instanceof Error ? err.message : "Couldn't save the macro.";
+  }
+
+  const labelStyle =
+    "text-[10px] uppercase tracking-wider font-semibold block mb-1";
+  const inputStyle = "w-full rounded border px-2 py-1.5 text-sm";
+  const inputBorder = { borderColor: "hsl(var(--line-1))" } as const;
+
+  return (
+    <div
+      className="mt-3 rounded border p-3"
+      style={{
+        borderColor: "hsl(var(--line-1))",
+        backgroundColor: "hsl(var(--surface-2))",
+      }}
+      data-testid="save-macro-panel"
+    >
+      <p
+        className="text-xs font-semibold mb-2"
+        style={{ color: "hsl(var(--ink-2))" }}
+      >
+        Save this reply as a reusable {channel.toUpperCase()} macro
+      </p>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+        <label className="block">
+          <span className={labelStyle} style={{ color: "hsl(var(--ink-3))" }}>
+            Label
+          </span>
+          <input
+            value={label}
+            onChange={(e) => setLabel(e.target.value)}
+            placeholder="Leak troubleshooting"
+            aria-label="Macro label"
+            className={inputStyle}
+            style={inputBorder}
+          />
+        </label>
+        <label className="block">
+          <span className={labelStyle} style={{ color: "hsl(var(--ink-3))" }}>
+            Key
+          </span>
+          <input
+            value={effectiveKey}
+            onChange={(e) => {
+              setKeyEdited(true);
+              setKey(e.target.value);
+            }}
+            placeholder="leak-troubleshooting"
+            aria-label="Macro key"
+            className={`${inputStyle} font-mono`}
+            style={inputBorder}
+          />
+        </label>
+        <label className="block">
+          <span className={labelStyle} style={{ color: "hsl(var(--ink-3))" }}>
+            Category (optional)
+          </span>
+          <input
+            value={category}
+            onChange={(e) => setCategory(e.target.value)}
+            placeholder="Troubleshooting"
+            aria-label="Macro category"
+            className={inputStyle}
+            style={inputBorder}
+          />
+        </label>
+      </div>
+      <div className="mt-2 flex items-center gap-2 flex-wrap">
+        <Button
+          onClick={() => save.mutate()}
+          isLoading={save.isPending}
+          disabled={!labelValid || !keyValid || save.isPending}
+        >
+          Save macro
+        </Button>
+        <button
+          type="button"
+          onClick={onClose}
+          className="text-xs underline"
+          style={{ color: "hsl(var(--ink-3))" }}
+        >
+          Cancel
+        </button>
+        {label.trim().length > 0 && !keyValid && (
+          <span className="text-[11px]" style={{ color: "#b45309" }}>
+            Key must be 2–60 chars: lower-case letters, numbers, dash, or
+            underscore.
+          </span>
+        )}
+      </div>
+      {save.error != null && (
+        <p className="mt-2 text-sm" style={{ color: "#b91c1c" }} role="alert">
+          {describe(save.error)}
+        </p>
+      )}
+    </div>
   );
 }
 
