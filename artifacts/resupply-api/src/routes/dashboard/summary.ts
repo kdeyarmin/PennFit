@@ -16,59 +16,65 @@ import { Router, type IRouter } from "express";
 
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
+import { adminReadRateLimiter } from "../../middlewares/admin-rate-limit";
 import { requireAdmin } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
 
-router.get("/dashboard/summary", requireAdmin, async (_req, res) => {
-  const supabase = getSupabaseServiceRoleClient();
-  const sevenDaysAgo = new Date(
-    Date.now() - 7 * 24 * 60 * 60 * 1000,
-  ).toISOString();
-  const nowIso = new Date().toISOString();
+router.get(
+  "/dashboard/summary",
+  adminReadRateLimiter,
+  requireAdmin,
+  async (_req, res) => {
+    const supabase = getSupabaseServiceRoleClient();
+    const sevenDaysAgo = new Date(
+      Date.now() - 7 * 24 * 60 * 60 * 1000,
+    ).toISOString();
+    const nowIso = new Date().toISOString();
 
-  const [
-    { count: activeConversations },
-    { count: awaitingAdmin },
-    { count: overdueEpisodes },
-    { count: fulfillmentsThisWeek },
-    { count: pausedPatients },
-  ] = await Promise.all([
-    supabase
-      .schema("resupply")
-      .from("conversations")
-      .select("*", { count: "exact", head: true })
-      .in("status", ["open", "awaiting_patient", "awaiting_admin"]),
-    supabase
-      .schema("resupply")
-      .from("conversations")
-      .select("*", { count: "exact", head: true })
-      .eq("status", "awaiting_admin"),
-    supabase
-      .schema("resupply")
-      .from("episodes")
-      .select("*", { count: "exact", head: true })
-      .in("status", ["outreach_pending", "awaiting_response"])
-      .lte("due_at", nowIso),
-    supabase
-      .schema("resupply")
-      .from("fulfillments")
-      .select("*", { count: "exact", head: true })
-      .gte("created_at", sevenDaysAgo),
-    supabase
-      .schema("resupply")
-      .from("patients")
-      .select("*", { count: "exact", head: true })
-      .eq("status", "paused"),
-  ]);
+    const [
+      { count: activeConversations },
+      { count: awaitingAdmin },
+      { count: overdueEpisodes },
+      { count: fulfillmentsThisWeek },
+      { count: pausedPatients },
+    ] = await Promise.all([
+      supabase
+        .schema("resupply")
+        .from("conversations")
+        .select("*", { count: "exact", head: true })
+        .in("status", ["open", "awaiting_patient", "awaiting_admin"]),
+      supabase
+        .schema("resupply")
+        .from("conversations")
+        .select("*", { count: "exact", head: true })
+        .eq("status", "awaiting_admin"),
+      supabase
+        .schema("resupply")
+        .from("episodes")
+        .select("*", { count: "exact", head: true })
+        .in("status", ["outreach_pending", "awaiting_response"])
+        .lte("due_at", nowIso),
+      supabase
+        .schema("resupply")
+        .from("fulfillments")
+        .select("*", { count: "exact", head: true })
+        .gte("created_at", sevenDaysAgo),
+      supabase
+        .schema("resupply")
+        .from("patients")
+        .select("*", { count: "exact", head: true })
+        .eq("status", "paused"),
+    ]);
 
-  res.status(200).json({
-    activeConversations: activeConversations ?? 0,
-    awaitingAdmin: awaitingAdmin ?? 0,
-    overdueEpisodes: overdueEpisodes ?? 0,
-    fulfillmentsThisWeek: fulfillmentsThisWeek ?? 0,
-    pausedPatients: pausedPatients ?? 0,
-  });
-});
+    res.status(200).json({
+      activeConversations: activeConversations ?? 0,
+      awaitingAdmin: awaitingAdmin ?? 0,
+      overdueEpisodes: overdueEpisodes ?? 0,
+      fulfillmentsThisWeek: fulfillmentsThisWeek ?? 0,
+      pausedPatients: pausedPatients ?? 0,
+    });
+  },
+);
 
 export default router;

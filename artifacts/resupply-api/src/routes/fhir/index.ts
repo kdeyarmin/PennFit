@@ -40,7 +40,6 @@ import {
 } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
-import { rateLimit } from "../../middlewares/rate-limit";
 import { requireAdmin } from "../../middlewares/requireAdmin";
 import { requireSmartFhirAccess } from "../../middlewares/requireSmartFhirAccess";
 
@@ -93,24 +92,38 @@ router.get("/fhir/r4/metadata", (_req, res) => {
 
 const idParam = z.object({ id: z.string().uuid() });
 
-// Per-admin rate limit for the FHIR Patient read endpoints. Without
-// it an admin (or a script using an admin's session) could enumerate
-// patient ids one-at-a-time. 120/min/admin is far above the
-// console's normal pull cadence.
-const fhirAdminReadLimiter = rateLimit({
+// Rate limit for the FHIR Patient read endpoints. Without it an admin
+// (or a script using an admin's session) could enumerate patient ids
+// one-at-a-time. 120/min is far above the console's normal pull cadence.
+//
+// Built from `express-rate-limit` (not our middlewares/rate-limit
+// wrapper) so CodeQL's js/missing-rate-limiting query recognises it,
+// Built from `express-rate-limit` (not our middlewares/rate-limit
+// wrapper) so CodeQL's js/missing-rate-limiting query recognises it,
+// and mounted BEFORE `requireAdmin` on the routes below — requireAdmin
+// performs a DB session lookup, so a limiter placed after it leaves
+// that read unprotected (and CodeQL flags the requireAdmin line).
+// Keyed by whatever stable identifier is already available on the
+// request (e.g. adminUserId if present), with an IP fallback.
+const fhirAdminReadLimiter = expressRateLimit({
   windowMs: 60_000,
-  max: 120,
-  name: "fhir_admin_patient_read",
-  keyFn: (req) =>
+  limit: 120,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  keyGenerator: (req: Request) =>
     (req as unknown as { adminUserId?: string }).adminUserId ??
     req.ip ??
     "unknown",
+  message: {
+    error: "too_many_requests",
+    limiter: "fhir_admin_patient_read",
+  },
 });
 
 router.get(
   "/fhir/r4/Patient/:id",
-  requireAdmin,
   fhirAdminReadLimiter,
+  requireAdmin,
   async (req, res) => {
     const parsed = idParam.safeParse(req.params);
     if (!parsed.success) {
@@ -164,8 +177,8 @@ router.get(
 
 router.get(
   "/fhir/r4/Patient/:id/$everything",
-  requireAdmin,
   fhirAdminReadLimiter,
+  requireAdmin,
   async (req, res) => {
     const parsed = idParam.safeParse(req.params);
     if (!parsed.success) {
