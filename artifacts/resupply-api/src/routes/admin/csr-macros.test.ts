@@ -63,6 +63,13 @@ const adminRateLimitSpy = vi.hoisted(() =>
 );
 vi.mock("../../middlewares/admin-rate-limit", () => ({
   adminRateLimit: adminRateLimitSpy,
+  // The GET list route now sits behind the shared read limiter; in
+  // tests it's a pass-through (the GET's throttle isn't under test here).
+  adminReadRateLimiter: (
+    _req: import("express").Request,
+    _res: import("express").Response,
+    next: import("express").NextFunction,
+  ) => next(),
 }));
 
 import csrMacrosRouter from "./csr-macros";

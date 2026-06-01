@@ -7,12 +7,18 @@
 import { Router, type IRouter } from "express";
 
 import { WEBHOOK_EVENT_CATALOG } from "../../lib/webhooks/event-catalog";
+import { adminReadRateLimiter } from "../../middlewares/admin-rate-limit";
 import { requireAdmin } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
 
-router.get("/admin/webhook-event-catalog", requireAdmin, (_req, res) => {
-  res.json({ events: WEBHOOK_EVENT_CATALOG });
-});
+router.get(
+  "/admin/webhook-event-catalog",
+  adminReadRateLimiter,
+  requireAdmin,
+  (_req, res) => {
+    res.json({ events: WEBHOOK_EVENT_CATALOG });
+  },
+);
 
 export default router;
