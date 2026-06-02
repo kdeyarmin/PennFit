@@ -368,6 +368,8 @@ const RemindersManage = lazy(() =>
 import { FitterProvider, useFitterStore } from "@/hooks/use-fitter-store";
 import { useShopIdentity } from "@/lib/identity";
 import { canStayOnMeasure } from "@/lib/measure-flow";
+import { DemoModeProvider } from "@/demo/DemoModeProvider";
+import { DemoBanner } from "@/demo/DemoBanner";
 
 /**
  * Suspense fallback for lazy-loaded routes. Intentionally minimal
@@ -858,23 +860,32 @@ function TopRouter() {
 // in `@/lib/identity` for auth state.
 function AppInner() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <TooltipProvider>
-        <FitterProvider>
-          {/*
-            ErrorBoundary wraps the router so any thrown render error in a
-            page falls back to a recoverable on-brand screen instead of a
-            blank white page.
-          */}
-          <ErrorBoundary>
-            <WouterRouter base={basePath}>
-              <TopRouter />
-            </WouterRouter>
-          </ErrorBoundary>
-          <Toaster />
-        </FitterProvider>
-      </TooltipProvider>
-    </QueryClientProvider>
+    <DemoModeProvider>
+      <QueryClientProvider client={queryClient}>
+        <TooltipProvider>
+          <FitterProvider>
+            {/*
+              ErrorBoundary wraps the router so any thrown render error in a
+              page falls back to a recoverable on-brand screen instead of a
+              blank white page.
+            */}
+            <ErrorBoundary>
+              {/*
+                Global demo-mode banner. Sits above the router (and the
+                storefront's sticky header) in normal flow so it never
+                overlaps fixed/sticky chrome. No-op when the invite has
+                been dismissed and demo mode is off.
+              */}
+              <DemoBanner />
+              <WouterRouter base={basePath}>
+                <TopRouter />
+              </WouterRouter>
+            </ErrorBoundary>
+            <Toaster />
+          </FitterProvider>
+        </TooltipProvider>
+      </QueryClientProvider>
+    </DemoModeProvider>
   );
 }
 
