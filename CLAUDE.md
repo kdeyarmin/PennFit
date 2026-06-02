@@ -264,7 +264,7 @@ the vendor side) and gracefully degrade when their API key is unset.
 | ----------------------- | ------------------------ | --------------------- | ------------------------------------------------- |
 | Voice agent (LLM brain) | OpenAI `gpt-realtime`    | n/a (offline if down) | `OPENAI_API_KEY`                                  |
 | Voice agent (STT)       | `gpt-4o-mini-transcribe` | Deepgram Nova-3 (opt) | `OPENAI_API_KEY`, `DEEPGRAM_API_KEY`              |
-| Voice agent (TTS)       | OpenAI `cedar` voice     | ElevenLabs (opt)      | `OPENAI_API_KEY`, `ELEVENLABS_API_KEY`            |
+| Voice agent (TTS)       | ElevenLabs (when key set), else OpenAI `cedar` | OpenAI `cedar` (no ElevenLabs key) | `ELEVENLABS_API_KEY` (preferred), `OPENAI_API_KEY` |
 | Storefront chatbot      | Claude Sonnet 4.6        | `gpt-4o-mini`         | `ANTHROPIC_API_KEY` (preferred), `OPENAI_API_KEY` |
 | Sleep coach             | Claude Sonnet 4.6        | `gpt-4o-mini`         | `ANTHROPIC_API_KEY` (preferred), `OPENAI_API_KEY` |
 | SMS intent classifier   | Claude Haiku 4.5         | `gpt-4o-mini`         | `ANTHROPIC_API_KEY` (preferred), `OPENAI_API_KEY` |
@@ -293,9 +293,20 @@ Vendor clients live in `lib/resupply-ai/src/`:
   row on hangup. The OpenAI Realtime model still drives the
   conversation — Deepgram is the audit-grade backup transcript.
 - `elevenlabs-client.ts` — TTS (REST + streaming + voice list).
-  `createElevenLabsClient()`. Currently unwired on the live voice path
-  (follow-up); ready for opt-in deployments that want the most natural
-  voice quality available.
+  `createElevenLabsClient()`. **Wired into the live voice path**: when
+  `ELEVENLABS_API_KEY` is set, ElevenLabs becomes the agent's voice —
+  the `RealtimeClient` is constructed with `generateAudio: false`
+  (text-output mode), and `VoiceBridge`'s `TtsSynthesizer` synthesises
+  each finalised agent turn through ElevenLabs (`ulaw_8000`, re-framed
+  to 160-byte µ-law frames) and streams it to Twilio. Caller barge-in
+  (`input.speech_started`) aborts the in-flight synthesis and flushes
+  the sink. When the key is **unset**, the bridge forwards OpenAI's
+  built-in `cedar` audio unchanged (the historical default) — so a
+  missing key degrades gracefully, never breaks the call. A mid-call
+  ElevenLabs failure drops that one utterance's audio (logged as a
+  `tts` session error) but does NOT end the call. **PHI:** synthesised
+  text is patient-facing speech — confirm the ElevenLabs BAA is in
+  place before enabling against real patients.
 
 **Post-call summarization** (`artifacts/resupply-api/src/lib/voice/post-call-summary.ts`)
 runs Claude Sonnet 4.6 on the accumulated transcript turns after every
@@ -312,8 +323,10 @@ Voice agent prompt: `lib/resupply-ai/src/prompts.ts` (version
 backchannels, brief empathy, name-pronunciation guidance. The Realtime
 session uses `semantic_vad` with `eagerness: "low"` and `temperature:
 0.8` for natural turn-taking and phrasing variation (see
-`lib/resupply-ai/src/realtime-client.ts`). Default voice is `cedar`,
-the warmest of the current Realtime voices.
+`lib/resupply-ai/src/realtime-client.ts`). The agent's voice is
+ElevenLabs when `ELEVENLABS_API_KEY` is set, otherwise OpenAI's built-in
+`cedar` (the warmest of the current Realtime voices) — see the
+ElevenLabs entry under **Vendor clients** above.
 
 ## Integrations layer (`lib/resupply-integrations*`)
 

@@ -4,11 +4,13 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import express, { type Express, type Request } from "express";
+import compression from "compression";
 import cors from "cors";
 import pinoHttp from "pino-http";
 import expressRateLimit, { ipKeyGenerator } from "express-rate-limit";
 import { makeAuthRouter, type AuthDeps } from "@workspace/resupply-auth";
 import { registerAuditRequestIdResolver } from "@workspace/resupply-audit";
+import { applyEnvAliases } from "@workspace/resupply-secrets";
 import router from "./routes";
 import storefrontRouter from "./routes/storefront";
 import { getAuthDeps } from "./lib/auth-deps";
@@ -31,6 +33,13 @@ import { stripeWebhookHandler } from "./lib/stripe/webhook-handler";
 // returns null there and audit rows skip the field.
 registerAuditRequestIdResolver(getRequestId);
 
+// Resolve consolidated env aliases (PUBLIC_BASE_URL → the five
+// *_PUBLIC_BASE_URL vars + CORS allow-list; OPS_EMAIL → the operational
+// recipient inboxes; TWILIO_PHONE_NUMBER → the retired voice-number
+// alias) BEFORE the CORS allow-list IIFE below reads them. Backfill
+// only — an explicitly-set specific var always wins. Idempotent.
+applyEnvAliases();
+
 const app: Express = express();
 
 // We're behind Railway's reverse proxy. Without trust proxy, every request
@@ -43,6 +52,17 @@ app.set("trust proxy", 1);
 // response) carries them. See middlewares/securityHeaders.ts for the
 // header set + per-header rationale.
 app.use(securityHeaders);
+
+// gzip/brotli response compression. Admin list + dashboard endpoints
+// return large, highly-compressible JSON (claims pipelines, customer
+// rollups, funnel/analytics payloads); compressing them is a pure
+// egress + latency win on every response. `compression` only kicks in
+// above its ~1KB default threshold, so tiny responses (health checks,
+// the Stripe webhook ACK) are left untouched. A client may opt out per
+// response with the `x-no-compression` header. Mounted right after the
+// security headers so it wraps every downstream router, including the
+// error-handler envelope.
+app.use(compression());
 
 // CORS allowlist resolution, in priority order:
 //   1. RESUPPLY_ALLOWED_ORIGINS — explicit comma-separated list. Set this

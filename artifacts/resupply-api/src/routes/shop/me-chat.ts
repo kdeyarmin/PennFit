@@ -32,9 +32,13 @@
  *   - The system prompt explicitly tells the model never to ask for
  *     SSN / DOB / member ID / full card.
  *
+ * Provider selection mirrors /api/chat and the sleep coach: when
+ * `ANTHROPIC_API_KEY` is set we go Claude-first (Sonnet 4.6, warmer
+ * patient-facing copy); otherwise we fall back to OpenAI gpt-4o-mini.
+ *
  * Failure modes mirror /api/chat:
- *   - `OPENAI_API_KEY` unset → friendly "chat is offline" reply with
- *     `offline: true`. Endpoint stays 200.
+ *   - Neither `ANTHROPIC_API_KEY` nor `OPENAI_API_KEY` set → friendly
+ *     "chat is offline" reply with `offline: true`. Endpoint stays 200.
  *   - Upstream HTTP error / abort / malformed JSON → "having trouble
  *     answering" reply with `degraded: true`. We never throw out of
  *     the route.
@@ -65,6 +69,17 @@ import {
   type CustomerChatToolContext,
 } from "../../lib/storefront/customerChatTools.js";
 import { redactPiiForOutbound } from "../../lib/storefront/chatbotPii.js";
+import {
+  DEFAULT_ANTHROPIC_MODEL_CHAT,
+  getAnthropicClient,
+  getResponseText,
+  getResponseToolCalls,
+  selectLlmProvider,
+  type AnthropicClient,
+  type AnthropicContentBlock,
+  type AnthropicMessage,
+  type AnthropicTool,
+} from "../../lib/llm-provider.js";
 import { requireSignedIn } from "../../middlewares/requireSignedIn.js";
 
 const router: IRouter = Router();
@@ -392,16 +407,17 @@ router.post("/shop/me/chat", requireSignedIn, async (req, res) => {
   }
 
   const streaming = wantsStreaming(req.get("Accept"));
+  const selection = selectLlmProvider();
   const apiKey = process.env.OPENAI_API_KEY;
 
-  if (!apiKey || apiKey.trim() === "") {
+  if (selection.provider === "offline") {
     logger.info(
       {
-        event: "customer_chat_openai_unconfigured",
+        event: "customer_chat_llm_unconfigured",
         turns: messages.length,
         streaming,
       },
-      "customer chat: OPENAI_API_KEY not set, returning offline fallback",
+      "customer chat: neither ANTHROPIC_API_KEY nor OPENAI_API_KEY set, returning offline fallback",
     );
     if (streaming) {
       startSseHeaders(res);
@@ -437,6 +453,44 @@ router.post("/shop/me/chat", requireSignedIn, async (req, res) => {
   }
 
   const toolCtx: CustomerChatToolContext = { supabase, customerId };
+
+  // Claude path — preferred when Anthropic is configured. Sonnet 4.6
+  // writes noticeably warmer patient-facing copy than gpt-4o-mini and
+  // is at least as strong on tool selection. This brings the signed-in
+  // account assistant in line with the storefront chatbot + sleep
+  // coach, which already go Claude-first. (Previously this route read
+  // OPENAI_API_KEY directly, so a deployment configured per the docs —
+  // ANTHROPIC_API_KEY only — left the account assistant silently
+  // offline while the storefront bot worked.)
+  if (selection.provider === "anthropic") {
+    const client = getAnthropicClient();
+    if (client) {
+      return streaming
+        ? handleAnthropicStreaming(
+            res,
+            initial,
+            client,
+            toolCtx,
+            messages.length,
+          )
+        : handleAnthropicJson(res, initial, client, toolCtx, messages.length);
+    }
+  }
+
+  if (!apiKey || apiKey.trim() === "") {
+    if (streaming) {
+      startSseHeaders(res);
+      writeSseEvent(res, {
+        type: "chunk",
+        text: CUSTOMER_OFFLINE_FALLBACK_REPLY,
+      });
+      writeSseEvent(res, { type: "done", offline: true });
+      res.end();
+    } else {
+      res.json({ reply: CUSTOMER_OFFLINE_FALLBACK_REPLY, offline: true });
+    }
+    return;
+  }
 
   return streaming
     ? handleStreaming(res, initial, apiKey, toolCtx, messages.length)
@@ -760,6 +814,344 @@ async function handleStreaming(
     res.end();
   } finally {
     clearTimeout(timer);
+  }
+}
+
+// ─── Anthropic (Claude) path ─────────────────────────────────────────────
+//
+// Same tool-calling semantics as the OpenAI path above, but uses Claude
+// Sonnet 4.6 + Anthropic's tool_use shape. The system prompt (which
+// embeds the caller's account context) is wrapped in a cache_control
+// block so multi-turn conversations re-pay only ~10% of the input
+// token cost on the 2nd+ turn. Tool execution is unchanged — the same
+// async `applyToolCalls()` → `executeCustomerChatTool()` dispatcher
+// runs, so the four customer-scoped DB tools behave identically
+// whichever vendor answered.
+
+const ANTHROPIC_TOOLS: AnthropicTool[] = CUSTOMER_CHAT_TOOLS.map((t) => ({
+  name: t.function.name,
+  description: t.function.description,
+  input_schema: t.function.parameters,
+}));
+
+/**
+ * Convert the OpenAI-shaped message log into the Anthropic Messages API
+ * shape. Mirrors the storefront chat route: the system prompt is
+ * extracted to the `system` field, assistant tool calls become
+ * `tool_use` blocks, and each tool result becomes a `user` message with
+ * a `tool_result` block.
+ */
+function convertOpenAiToAnthropicMessages(openai: OpenAiMessage[]): {
+  system: string;
+  messages: AnthropicMessage[];
+} {
+  const systemMsg = openai.find((m) => m.role === "system");
+  const system =
+    systemMsg && systemMsg.role === "system" ? systemMsg.content : "";
+  const out: AnthropicMessage[] = [];
+  for (const m of openai) {
+    if (m.role === "system") continue;
+    if (m.role === "user") {
+      out.push({ role: "user", content: m.content });
+      continue;
+    }
+    if (m.role === "assistant") {
+      const blocks: AnthropicContentBlock[] = [];
+      if (typeof m.content === "string" && m.content.length > 0) {
+        blocks.push({ type: "text", text: m.content });
+      }
+      if (m.tool_calls && m.tool_calls.length > 0) {
+        for (const tc of m.tool_calls) {
+          let input: Record<string, unknown>;
+          try {
+            input = tc.function.arguments
+              ? (JSON.parse(tc.function.arguments) as Record<string, unknown>)
+              : {};
+          } catch {
+            input = {};
+          }
+          blocks.push({
+            type: "tool_use",
+            id: tc.id,
+            name: tc.function.name,
+            input,
+          });
+        }
+      }
+      if (blocks.length > 0) {
+        out.push({ role: "assistant", content: blocks });
+      }
+      continue;
+    }
+    if (m.role === "tool") {
+      const block: AnthropicContentBlock = {
+        type: "tool_result",
+        tool_use_id: m.tool_call_id,
+        content: m.content,
+      };
+      const last = out.at(-1);
+      if (last && last.role === "user" && Array.isArray(last.content)) {
+        (last.content as AnthropicContentBlock[]).push(block);
+      } else {
+        out.push({ role: "user", content: [block] });
+      }
+    }
+  }
+  return { system, messages: out };
+}
+
+/** Map Anthropic tool_use blocks back into the OpenAI tool_calls shape
+ * the shared `applyToolCalls()` dispatcher expects. */
+function toOpenAiToolCalls(
+  toolCalls: Array<{
+    id: string;
+    name: string;
+    input: Record<string, unknown>;
+  }>,
+): OpenAiToolCall[] {
+  return toolCalls.map((c) => ({
+    id: c.id,
+    type: "function" as const,
+    function: { name: c.name, arguments: JSON.stringify(c.input) },
+  }));
+}
+
+async function handleAnthropicJson(
+  res: Response,
+  initialMessages: OpenAiMessage[],
+  client: AnthropicClient,
+  toolCtx: CustomerChatToolContext,
+  turns: number,
+): Promise<void> {
+  let messages = initialMessages;
+  try {
+    for (let round = 0; round <= MAX_CUSTOMER_TOOL_ROUNDS; round++) {
+      const { system, messages: anthMessages } =
+        convertOpenAiToAnthropicMessages(messages);
+      const result = await client.send({
+        model: DEFAULT_ANTHROPIC_MODEL_CHAT,
+        max_tokens: 600,
+        temperature: 0.2,
+        system: [
+          { type: "text", text: system, cache_control: { type: "ephemeral" } },
+        ],
+        messages: anthMessages,
+        tools: ANTHROPIC_TOOLS,
+      });
+      if (!result.ok) {
+        logger.warn(
+          {
+            event: "customer_chat_anthropic_error",
+            code: result.errorCode,
+            status: result.httpStatus,
+          },
+          "customer chat: anthropic call failed",
+        );
+        res.json({ reply: DEGRADED_FALLBACK_REPLY, degraded: true });
+        return;
+      }
+      const text = getResponseText(result.response).trim();
+      const toolCalls = getResponseToolCalls(result.response);
+      if (toolCalls.length > 0 && round < MAX_CUSTOMER_TOOL_ROUNDS) {
+        // applyToolCalls appends the assistant tool_calls message itself,
+        // so hand it the prior messages (not a pre-appended copy).
+        messages = await applyToolCalls(
+          messages,
+          toOpenAiToolCalls(toolCalls),
+          toolCtx,
+        );
+        continue;
+      }
+      if (text.length === 0) {
+        logger.warn(
+          { event: "customer_chat_empty_reply", vendor: "anthropic", round },
+          "customer chat: anthropic returned empty content",
+        );
+        res.json({ reply: DEGRADED_FALLBACK_REPLY, degraded: true });
+        return;
+      }
+      logger.info(
+        {
+          event: "customer_chat_ok",
+          vendor: "anthropic",
+          turns,
+          replyChars: text.length,
+          rounds: round,
+        },
+        "customer chat: anthropic replied",
+      );
+      res.json({ reply: text });
+      return;
+    }
+    logger.warn(
+      { event: "customer_chat_tool_cap_hit", vendor: "anthropic" },
+      "customer chat: hit MAX_CUSTOMER_TOOL_ROUNDS without a final reply",
+    );
+    res.json({ reply: DEGRADED_FALLBACK_REPLY, degraded: true });
+  } catch (err) {
+    logger.warn(
+      {
+        event: "customer_chat_exception",
+        vendor: "anthropic",
+        err: err instanceof Error ? { name: err.name } : { name: "unknown" },
+      },
+      "customer chat: anthropic exception (returning degraded fallback)",
+    );
+    res.json({ reply: DEGRADED_FALLBACK_REPLY, degraded: true });
+  }
+}
+
+async function handleAnthropicStreaming(
+  res: Response,
+  initialMessages: OpenAiMessage[],
+  client: AnthropicClient,
+  toolCtx: CustomerChatToolContext,
+  turns: number,
+): Promise<void> {
+  startSseHeaders(res);
+
+  let clientClosed = false;
+  const onClientClose = () => {
+    clientClosed = true;
+  };
+  res.on("close", onClientClose);
+
+  let messages = initialMessages;
+  let totalChars = 0;
+
+  const isOpen = () => !clientClosed && !res.destroyed && !res.writableEnded;
+  const safeEvent = (payload: object) => {
+    if (!isOpen()) return;
+    writeSseEvent(res, payload);
+  };
+  const safeEnd = () => {
+    if (!isOpen()) return;
+    res.end();
+  };
+  const writeChunk = (text: string) => {
+    if (!isOpen()) return;
+    totalChars += text.length;
+    writeSseEvent(res, { type: "chunk", text });
+  };
+
+  try {
+    for (let round = 0; round <= MAX_CUSTOMER_TOOL_ROUNDS; round++) {
+      const { system, messages: anthMessages } =
+        convertOpenAiToAnthropicMessages(messages);
+      const startCharCount = totalChars;
+      const result = await client.stream(
+        {
+          model: DEFAULT_ANTHROPIC_MODEL_CHAT,
+          max_tokens: 600,
+          temperature: 0.2,
+          system: [
+            {
+              type: "text",
+              text: system,
+              cache_control: { type: "ephemeral" },
+            },
+          ],
+          messages: anthMessages,
+          tools: ANTHROPIC_TOOLS,
+        },
+        writeChunk,
+      );
+      if (!result.ok) {
+        logger.warn(
+          {
+            event: "customer_chat_anthropic_error",
+            code: result.errorCode,
+            status: result.httpStatus,
+            streaming: true,
+          },
+          "customer chat: anthropic stream failed",
+        );
+        if (totalChars === 0) {
+          safeEvent({ type: "chunk", text: DEGRADED_FALLBACK_REPLY });
+        }
+        safeEvent({ type: "done", degraded: true });
+        safeEnd();
+        return;
+      }
+      const toolCalls = getResponseToolCalls(result.response);
+      // If the tab closed mid-round, stop chaining — the customer-scoped
+      // tools are real DB reads we shouldn't run for a viewer who's gone.
+      if (clientClosed) {
+        safeEnd();
+        return;
+      }
+      if (toolCalls.length > 0 && round < MAX_CUSTOMER_TOOL_ROUNDS) {
+        // The assistant's pre-tool text (if any) was already streamed to
+        // the client via writeChunk; `applyToolCalls` appends the
+        // tool_calls turn to the canonical log so the next round's
+        // conversion is consistent.
+        messages = await applyToolCalls(
+          messages,
+          toOpenAiToolCalls(toolCalls),
+          toolCtx,
+        );
+        continue;
+      }
+      if (totalChars - startCharCount === 0) {
+        logger.warn(
+          {
+            event: "customer_chat_empty_reply",
+            vendor: "anthropic",
+            streaming: true,
+            round,
+          },
+          "customer chat: anthropic stream returned no content",
+        );
+        safeEvent({ type: "chunk", text: DEGRADED_FALLBACK_REPLY });
+        safeEvent({ type: "done", degraded: true });
+        safeEnd();
+        return;
+      }
+      logger.info(
+        {
+          event: "customer_chat_ok",
+          vendor: "anthropic",
+          streaming: true,
+          turns,
+          replyChars: totalChars,
+          rounds: round + 1,
+        },
+        "customer chat: anthropic streamed reply",
+      );
+      safeEvent({ type: "done" });
+      safeEnd();
+      return;
+    }
+    logger.warn(
+      {
+        event: "customer_chat_tool_cap_hit",
+        vendor: "anthropic",
+        streaming: true,
+      },
+      "customer chat: hit MAX_CUSTOMER_TOOL_ROUNDS without a final reply",
+    );
+    if (totalChars === 0) {
+      safeEvent({ type: "chunk", text: DEGRADED_FALLBACK_REPLY });
+    }
+    safeEvent({ type: "done", degraded: true });
+    safeEnd();
+  } catch (err) {
+    logger.warn(
+      {
+        event: "customer_chat_exception",
+        vendor: "anthropic",
+        streaming: true,
+        err: err instanceof Error ? { name: err.name } : { name: "unknown" },
+      },
+      "customer chat: anthropic exception during stream (returning degraded fallback)",
+    );
+    if (totalChars === 0) {
+      safeEvent({ type: "chunk", text: DEGRADED_FALLBACK_REPLY });
+    }
+    safeEvent({ type: "done", degraded: true });
+    safeEnd();
+  } finally {
+    res.off("close", onClientClose);
   }
 }
 

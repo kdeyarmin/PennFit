@@ -158,6 +158,118 @@ describe("createTwilioSmsClient", () => {
     ).rejects.toBeInstanceOf(TwilioApiError);
   });
 
+  describe("retry on transient Twilio failures", () => {
+    const noSleep = () => Promise.resolve();
+
+    function envOn() {
+      process.env.TWILIO_ACCOUNT_SID = "AC123";
+      process.env.TWILIO_AUTH_TOKEN = "tok";
+      process.env.TWILIO_PHONE_NUMBER = "+12158675309";
+    }
+
+    it("retries a 503 then succeeds", async () => {
+      envOn();
+      const create = vi
+        .fn()
+        .mockRejectedValueOnce({ status: 503, message: "Service Unavailable" })
+        .mockResolvedValue({ sid: "SMok" });
+      const client = createTwilioSmsClient({
+        sdkFactory: () => fakeSdk(create),
+        retry: { sleep: noSleep },
+      });
+
+      await expect(
+        client.sendSms({ to: "+12155551212", body: "hi" }),
+      ).resolves.toEqual({ messageSid: "SMok" });
+      expect(create).toHaveBeenCalledTimes(2);
+    });
+
+    it("retries a 429 then succeeds", async () => {
+      envOn();
+      const create = vi
+        .fn()
+        .mockRejectedValueOnce({ status: 429, message: "Too Many Requests" })
+        .mockResolvedValue({ sid: "SMok" });
+      const client = createTwilioSmsClient({
+        sdkFactory: () => fakeSdk(create),
+        retry: { sleep: noSleep },
+      });
+
+      await client.sendSms({ to: "+12155551212", body: "hi" });
+      expect(create).toHaveBeenCalledTimes(2);
+    });
+
+    it("retries a network error then succeeds", async () => {
+      envOn();
+      const create = vi
+        .fn()
+        .mockRejectedValueOnce({ code: "ETIMEDOUT", message: "timeout" })
+        .mockResolvedValue({ sid: "SMok" });
+      const client = createTwilioSmsClient({
+        sdkFactory: () => fakeSdk(create),
+        retry: { sleep: noSleep },
+      });
+
+      await client.sendSms({ to: "+12155551212", body: "hi" });
+      expect(create).toHaveBeenCalledTimes(2);
+    });
+
+    it("does NOT retry a terminal 400 (blocked recipient)", async () => {
+      envOn();
+      const create = vi.fn().mockRejectedValue({
+        status: 400,
+        code: 21610,
+        message: "blocked by recipient",
+      });
+      const client = createTwilioSmsClient({
+        sdkFactory: () => fakeSdk(create),
+        retry: { sleep: noSleep },
+      });
+
+      await expect(
+        client.sendSms({ to: "+12155551212", body: "hi" }),
+      ).rejects.toMatchObject({
+        name: "TwilioApiError",
+        status: 400,
+        code: 21610,
+      });
+      expect(create).toHaveBeenCalledTimes(1);
+    });
+
+    it("exhausts attempts on a persistent 500 and marks retryable", async () => {
+      envOn();
+      const create = vi
+        .fn()
+        .mockRejectedValue({ status: 500, message: "Internal Server Error" });
+      const client = createTwilioSmsClient({
+        sdkFactory: () => fakeSdk(create),
+        retry: { maxAttempts: 3, sleep: noSleep },
+      });
+
+      await expect(
+        client.sendSms({ to: "+12155551212", body: "hi" }),
+      ).rejects.toMatchObject({
+        name: "TwilioApiError",
+        status: 500,
+        retryable: true,
+      });
+      expect(create).toHaveBeenCalledTimes(3);
+    });
+
+    it("maxAttempts:1 disables retry", async () => {
+      envOn();
+      const create = vi.fn().mockRejectedValue({ status: 503 });
+      const client = createTwilioSmsClient({
+        sdkFactory: () => fakeSdk(create),
+        retry: { maxAttempts: 1, sleep: noSleep },
+      });
+      await expect(
+        client.sendSms({ to: "+12155551212", body: "hi" }),
+      ).rejects.toBeInstanceOf(TwilioApiError);
+      expect(create).toHaveBeenCalledTimes(1);
+    });
+  });
+
   it("respects per-call from override", async () => {
     process.env.TWILIO_ACCOUNT_SID = "AC123";
     process.env.TWILIO_AUTH_TOKEN = "tok";

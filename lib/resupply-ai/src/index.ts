@@ -11,12 +11,12 @@
 //   - `createDeepgramClient`  — Nova-3 STT (post-call audit transcripts,
 //     optional parallel transcription on live calls for higher accuracy).
 //
-// (An ElevenLabs TTS client exists at `./elevenlabs-client` for the
-// eventual opt-in TTS path but is intentionally NOT re-exported here
-// — zero call sites today, and shipping it on the public surface
-// invites accidental imports that would degrade the "vendor selection
-// happens in one place" posture. Re-add the export when the live
-// voice path is wired to it.)
+// Plus the ElevenLabs TTS client (`./elevenlabs-client`), now wired
+// into the live voice path: when `ELEVENLABS_API_KEY` is set the voice
+// agent runs the Realtime session in text-output mode and synthesises
+// the agent's speech through ElevenLabs (see `VoiceBridge`'s
+// `TtsSynthesizer`). When the key is unset it falls back to OpenAI's
+// built-in `cedar` voice.
 //
 // All PHI handling (database reads, encryption, audit) lives in the API.
 // The architecture rules forbid this package from importing
@@ -44,6 +44,7 @@ export {
   type SessionError,
   type ToolInvocation,
   type TranscriptTurn,
+  type TtsSynthesizer,
 } from "./bridge";
 
 export {
@@ -97,9 +98,20 @@ export {
   type DeepgramWebSocketLike,
 } from "./deepgram-client";
 
-// ElevenLabs TTS client lives at ./elevenlabs-client; intentionally
-// NOT re-exported until the live voice path is wired to it. See file
-// header above for rationale.
+export {
+  createElevenLabsClient,
+  DEFAULT_ELEVENLABS_MODEL,
+  DEFAULT_ELEVENLABS_VOICE_ID,
+  type ElevenLabsClient,
+  type ElevenLabsClientOptions,
+  type ElevenLabsTtsInput,
+  type ElevenLabsCallResult,
+  type ElevenLabsStreamCallResult,
+  type ElevenLabsOutputFormat,
+  type ElevenLabsVoiceSettings,
+  type ElevenLabsVoiceSummary,
+  type ElevenLabsListVoicesResult,
+} from "./elevenlabs-client";
 
 export {
   TOOL_NAMES,

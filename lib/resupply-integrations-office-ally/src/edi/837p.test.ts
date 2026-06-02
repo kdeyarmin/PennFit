@@ -210,6 +210,76 @@ describe("build837P", () => {
     expect(payload).toMatch(/~CLM\*CLM-0001\*249\.99\*\*\*12:B:1\*Y\*A\*Y\*Y~/);
   });
 
+  it("defaults to frequency 1 and emits no REF*F8 for an original claim", () => {
+    const { payload } = build837P(fixtureInput());
+    expect(payload).toMatch(/12:B:1\*/);
+    expect(payload).not.toContain("REF*F8");
+  });
+
+  it("emits CLM05 frequency 7 + REF*F8 for a corrected (replacement) claim", () => {
+    const base = fixtureInput();
+    const input = {
+      ...base,
+      claims: [
+        {
+          ...base.claims[0]!,
+          claimFrequencyCode: "7" as const,
+          originalClaimNumber: "PAYERICN123",
+        },
+      ],
+    };
+    const { payload } = build837P(input);
+    // Without these the payer would adjudicate the replacement as a duplicate.
+    expect(payload).toMatch(/~CLM\*CLM-0001\*249\.99\*\*\*12:B:7\*/);
+    expect(payload).toContain("~REF*F8*PAYERICN123~");
+  });
+
+  it("emits CLM05 frequency 8 + REF*F8 for a void/cancel claim", () => {
+    const base = fixtureInput();
+    const input = {
+      ...base,
+      claims: [
+        {
+          ...base.claims[0]!,
+          claimFrequencyCode: "8" as const,
+          originalClaimNumber: "ICN-VOID-9",
+        },
+      ],
+    };
+    const { payload } = build837P(input);
+    expect(payload).toMatch(/~CLM\*CLM-0001\*249\.99\*\*\*12:B:8\*/);
+    expect(payload).toContain("~REF*F8*ICN-VOID-9~");
+  });
+
+  it("omits REF*F8 when frequency is 7 but no original claim number is known", () => {
+    const base = fixtureInput();
+    const input = {
+      ...base,
+      claims: [
+        {
+          ...base.claims[0]!,
+          claimFrequencyCode: "7" as const,
+          originalClaimNumber: null,
+        },
+      ],
+    };
+    const { payload } = build837P(input);
+    expect(payload).toMatch(/12:B:7\*/);
+    expect(payload).not.toContain("REF*F8");
+  });
+
+  it("computes CLM02 from the service-line sum, not a drifted header total", () => {
+    const base = fixtureInput();
+    const input = {
+      ...base,
+      // Header total drifted to 999.99, but the single line sums to 249.99.
+      claims: [{ ...base.claims[0]!, totalBilledCents: 99999 }],
+    };
+    const { payload } = build837P(input);
+    expect(payload).toMatch(/~CLM\*CLM-0001\*249\.99\*/);
+    expect(payload).not.toContain("*999.99*");
+  });
+
   it("uses ABK for principal diagnosis and ABF for subsequent", () => {
     const input = fixtureInput();
     input.claims[0]!.diagnosisCodes = ["G47.33", "E11.9"];
@@ -408,6 +478,37 @@ describe("build837P", () => {
     expect(payload).toContain("~AMT*D*123.45~");
     expect(payload).toMatch(/~NM1\*IL\*1\*DOE\*JANE[^~]*MI\*MED-XYZ-7~/);
     expect(payload).toMatch(/~NM1\*PR\*2\*MEDICARE PART B[^~]*PI\*12502~/);
+  });
+
+  it("2330B falls back to the payer NAME (no PI id) when the other-payer id is unknown", () => {
+    const input = fixtureInput();
+    input.claims[0]!.otherSubscriber = {
+      payerResponsibility: "P",
+      priorPayerPaidCents: 5000,
+      subscriber: {
+        firstName: "JANE",
+        lastName: "DOE",
+        dateOfBirth: "1965-04-12",
+        gender: "F",
+        memberId: "MED-XYZ-7",
+        address: {
+          line1: "200 ELM ST",
+          city: "ALTOONA",
+          state: "PA",
+          zip: "16601",
+        },
+        relationshipCode: "18",
+      },
+      payer: { organizationName: "SOME LOCAL PLAN", payerId: "" },
+    };
+    const { payload } = build837P(input);
+    // The other-payer 2330B NM1 carries the name but NO PI identifier (a name
+    // is not a valid payer id) — better a missing id the clearinghouse flags
+    // than a name-as-id that mis-routes the COB loop.
+    expect(payload).toMatch(/~NM1\*PR\*2\*SOME LOCAL PLAN[ ]*~/);
+    expect(payload).not.toMatch(/~NM1\*PR\*2\*SOME LOCAL PLAN[^~]*PI\*/);
+    // ...and the prior-paid (AMT*D) disclosure is still emitted.
+    expect(payload).toContain("~AMT*D*50.00~");
   });
 
   it("omits AMT*D when prior payer hasn't paid yet (null priorPayerPaidCents)", () => {

@@ -30,6 +30,15 @@ export {
 } from "./signature";
 
 export {
+  isTransientSendgridError,
+  withRetry,
+  computeBackoffMs,
+  DEFAULT_EMAIL_RETRY_POLICY,
+  type RetryPolicy,
+  type WithRetryHooks,
+} from "./retry";
+
+export {
   parseSendgridEventBatch,
   sendgridEventSchema,
   sendgridEventBatchSchema,
