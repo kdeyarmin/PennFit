@@ -47,6 +47,30 @@ export function AdminSystemConfigurationPage() {
     queryKey,
     queryFn: getSystemConfig,
   });
+  const [search, setSearch] = useState("");
+  const [onlyUnset, setOnlyUnset] = useState(false);
+
+  const categories = data?.categories ?? [];
+  const allSettings = categories.flatMap((c) => c.settings);
+  const configuredCount = allSettings.filter((s) => s.configured).length;
+
+  const q = search.trim().toLowerCase();
+  const visibleCategories = categories
+    .map((cat) => ({
+      category: cat.category,
+      total: cat.settings.length,
+      configured: cat.settings.filter((s) => s.configured).length,
+      settings: cat.settings.filter((s) => {
+        if (onlyUnset && s.configured) return false;
+        if (!q) return true;
+        return (
+          s.label.toLowerCase().includes(q) ||
+          s.key.toLowerCase().includes(q) ||
+          s.category.toLowerCase().includes(q)
+        );
+      }),
+    }))
+    .filter((cat) => cat.settings.length > 0);
 
   return (
     <div className="p-6 space-y-6 max-w-4xl">
@@ -71,15 +95,56 @@ export function AdminSystemConfigurationPage() {
         <ErrorPanel error={error} onRetry={() => void refetch()} />
       ) : (
         <>
-          {data.categories.map((cat) => (
-            <Card key={cat.category} title={cat.category}>
-              <div>
-                {cat.settings.map((s) => (
-                  <SettingRow key={s.key} setting={s} />
-                ))}
-              </div>
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex-1 min-w-[220px]">
+              <Input
+                type="search"
+                placeholder="Filter settings by name or key…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                aria-label="Filter settings"
+              />
+            </div>
+            <label
+              className="flex items-center gap-1.5 text-sm select-none"
+              style={{ color: "hsl(var(--ink-2))" }}
+            >
+              <input
+                type="checkbox"
+                checked={onlyUnset}
+                onChange={(e) => setOnlyUnset(e.target.checked)}
+              />
+              Only unset
+            </label>
+            <span
+              className="text-xs whitespace-nowrap"
+              style={{ color: "hsl(var(--ink-3))" }}
+            >
+              {configuredCount} of {allSettings.length} configured
+            </span>
+          </div>
+
+          {visibleCategories.length === 0 ? (
+            <Card>
+              <p className="text-sm" style={{ color: "hsl(var(--ink-3))" }}>
+                No settings match the current filter.
+              </p>
             </Card>
-          ))}
+          ) : (
+            visibleCategories.map((cat) => (
+              <Card
+                key={cat.category}
+                title={cat.category}
+                subtitle={`${cat.configured} of ${cat.total} configured`}
+              >
+                <div>
+                  {cat.settings.map((s) => (
+                    <SettingRow key={s.key} setting={s} />
+                  ))}
+                </div>
+              </Card>
+            ))
+          )}
           <RecentActivity />
         </>
       )}
@@ -224,6 +289,16 @@ function SettingRow({ setting }: { setting: AppConfigSettingView }) {
                 · by {setting.updatedByEmail}
               </span>
             )}
+          </p>
+        )}
+        {setting.formatValid === false && (
+          <p
+            className="text-xs flex items-center gap-1"
+            style={{ color: "hsl(38 80% 28%)" }}
+          >
+            <AlertTriangle className="h-3 w-3 shrink-0" />
+            Format looks unexpected
+            {setting.formatHint ? ` — expected ${setting.formatHint}` : ""}.
           </p>
         )}
       </div>

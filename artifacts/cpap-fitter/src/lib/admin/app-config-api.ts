@@ -29,6 +29,10 @@ export interface AppConfigSettingView {
   envProvided: boolean;
   /** Masked last-4 for secrets; the actual value for non-secret config; null when unset. */
   hint: string | null;
+  /** Soft format check: true = matches, false = looks unexpected, null = no rule/unset. */
+  formatValid: boolean | null;
+  /** Expected-shape hint when a rule exists (e.g. "starts with sk-"). */
+  formatHint: string | null;
   updatedByEmail: string | null;
   updatedAt: string | null;
 }
