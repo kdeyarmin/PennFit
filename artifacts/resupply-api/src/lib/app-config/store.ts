@@ -116,14 +116,18 @@ async function loadOverridesFromDb(
     }
     return out;
   } catch (err) {
+    // Log the Error OBJECT (not the raw message string) so the logger's
+    // redaction scrubs err.message / err.stack — an upstream error could
+    // otherwise embed a DSN fragment or secret. Fail-soft: degrade to
+    // "no overrides" and let the caller run on process.env.
     const normalized =
-      err instanceof Error ? err : new Error(String((err as unknown) ?? "unknown"));
+      err instanceof Error
+        ? err
+        : new Error(String((err as unknown) ?? "unknown"));
     logger.warn(
       { event: "app_config_overlay_load_failed", err: normalized },
       "app_config overlay load failed; falling back to process.env only",
     );
-    return {};
-  }
     return {};
   }
 }

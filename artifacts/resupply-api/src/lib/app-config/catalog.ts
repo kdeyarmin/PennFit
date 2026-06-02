@@ -194,7 +194,12 @@ export const APP_CONFIG_CATALOG: readonly AppConfigSetting[] = [
     placeholder: "sk_live_…",
   },
   {
-    key: "STRIPE_WEBHOOK_SECRET",
+    // Canonical key the webhook handler actually reads
+    // (readStripeConfigOrNull → env.STRIPE_WEBHOOK_SIGNING_SECRET).
+    // NOT the STRIPE_WEBHOOK_SECRET legacy alias, which only the
+    // system-info readout checks — overlaying that would leave Stripe
+    // webhook verification unconfigured. See PR #488 review.
+    key: "STRIPE_WEBHOOK_SIGNING_SECRET",
     label: "Webhook signing secret",
     category: CATEGORY_STRIPE,
     secret: true,
