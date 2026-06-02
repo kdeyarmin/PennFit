@@ -90,7 +90,7 @@ without a DB round-trip. The UI shows a warning banner when this is set.
 3. Do **not** add a bootstrap/boot-required key (see the denylist in
    `store.ts`). `store.test.ts` guards against this.
 4. Optionally add a **format rule** for the key in
-   `lib/app-config/validators.ts` (e.g. a prefix or E.164/URL pattern).
+   `artifacts/resupply-api/src/lib/app-config/validators.ts` (e.g. a prefix or E.164/URL pattern).
    The read API returns `formatValid` and the UI shows a non-blocking
    "format looks unexpected" warning — it never rejects a save, so keep
    patterns lenient. `validators.test.ts` pins every rule key to the
