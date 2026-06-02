@@ -42,6 +42,10 @@ import {
   invalidateAppConfigCache,
   maskSecretHint,
 } from "../../lib/app-config/store";
+import {
+  checkConfigFormat,
+  configFormatHint,
+} from "../../lib/app-config/validators";
 import { logger } from "../../lib/logger";
 import {
   adminRateLimit,
@@ -76,6 +80,14 @@ interface SettingView {
    * value. Null when unset.
    */
   hint: string | null;
+  /**
+   * Soft format check of the effective value: true = matches the
+   * expected shape, false = looks unexpected (UI shows a non-blocking
+   * warning), null = no rule for this key or nothing set.
+   */
+  formatValid: boolean | null;
+  /** Expected-shape hint when a rule exists (e.g. "starts with sk-"). */
+  formatHint: string | null;
   /** Who last saved a DB value (only when source === "db"). */
   updatedByEmail: string | null;
   /** When the DB value was last saved (only when source === "db"). */
@@ -128,6 +140,11 @@ function buildSettingView(
     source,
     envProvided,
     hint,
+    formatValid:
+      effectiveValue !== undefined
+        ? checkConfigFormat(setting.key, effectiveValue)
+        : null,
+    formatHint: configFormatHint(setting.key),
     updatedByEmail: dbState?.updatedByEmail ?? null,
     updatedAt: source === "db" ? (dbState?.updatedAt ?? null) : null,
   };

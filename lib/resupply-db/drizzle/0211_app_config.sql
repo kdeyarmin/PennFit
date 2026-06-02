@@ -17,8 +17,9 @@
 --   * `value` is stored in PLAINTEXT. Per the repo hard rule "No new
 --     column-level encryption" (migration 0025 stripped pgcrypto), there
 --     is no at-rest column encryption. The protection model is:
---       - the table is reachable only via the service-role client
---         (server-side; never the browser),
+--       - RLS is ENABLED with no policies → deny-all to anon /
+--         authenticated; only the service-role client (which bypasses
+--         RLS) can touch the table, and that key is server-side only,
 --       - the read API masks secret values (returns a last-4 hint, never
 --         the plaintext), and
 --       - only the `system.config.manage` permission (super_admin) can
@@ -34,6 +35,11 @@
 --   * `updated_by_user_id` is free-form text (not an FK) so a deleted
 --     admin row doesn't break the config row — same posture as
 --     feature_flags.updated_by_user_id (migration 0149).
+--
+-- RLS posture: both tables ENABLE ROW LEVEL SECURITY with no policies,
+-- matching the deny-all-by-default hardening adopted after migration
+-- 0170 (e.g. 0196/0197). The runtime path is the service-role client,
+-- which bypasses RLS; anon / authenticated PostgREST roles get nothing.
 --
 -- What this does NOT do
 -- ---------------------
@@ -54,14 +60,10 @@ CREATE TABLE IF NOT EXISTS resupply.app_config (
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 
-ALTER TABLE "resupply"."app_config" ENABLE ROW LEVEL SECURITY;
-
 --> statement-breakpoint
-  updated_by_user_id text NULL,
-  updated_by_email text NULL,
-  created_at timestamptz NOT NULL DEFAULT now(),
-  updated_at timestamptz NOT NULL DEFAULT now()
-);
+
+-- Deny-all by default (service-role bypasses; see header).
+ALTER TABLE "resupply"."app_config" ENABLE ROW LEVEL SECURITY;
 
 --> statement-breakpoint
 
@@ -86,16 +88,11 @@ CREATE TABLE IF NOT EXISTS resupply.app_config_events (
   occurred_at timestamptz NOT NULL DEFAULT now()
 );
 
-ALTER TABLE "resupply"."app_config_events" ENABLE ROW LEVEL SECURITY;
-
 --> statement-breakpoint
-  -- render "set" vs "updated" without storing either value.
-  had_previous boolean NOT NULL,
-  CONSTRAINT app_config_events_action_chk
-    CHECK (action IN ('set', 'clear')),
-  operator_email text,
-  occurred_at timestamptz NOT NULL DEFAULT now()
-);
+
+-- Deny-all by default, same as app_config. Value-free, but still part
+-- of the internal resupply schema, so it follows the same posture.
+ALTER TABLE "resupply"."app_config_events" ENABLE ROW LEVEL SECURITY;
 
 --> statement-breakpoint
 

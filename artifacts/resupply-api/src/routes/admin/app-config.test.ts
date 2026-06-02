@@ -64,6 +64,7 @@ interface SettingView {
   hint: string | null;
   source: string;
   configured: boolean;
+  formatValid: boolean | null;
 }
 
 function flattenSettings(body: {
@@ -129,6 +130,13 @@ describe("GET /admin/system/config", () => {
           updated_by_email: "owner@example.com",
           updated_at: "2026-06-01T00:00:00.000Z",
         },
+        {
+          // Malformed on purpose — a Stripe secret that isn't sk_/rk_.
+          key: "STRIPE_SECRET_KEY",
+          value: "totally-wrong",
+          updated_by_email: "owner@example.com",
+          updated_at: "2026-06-01T00:00:00.000Z",
+        },
       ],
     });
 
@@ -142,11 +150,21 @@ describe("GET /admin/system/config", () => {
     expect(openai.configured).toBe(true);
     // Masked — only the last 4 chars revealed.
     expect(openai.hint).toBe("••••7f3a");
+    // "sk-…" matches the OpenAI format rule.
+    expect(openai.formatValid).toBe(true);
 
     // Non-secret config is shown in full.
     const airview = settings.get("AIRVIEW_API_BASE_URL")!;
     expect(airview.secret).toBe(false);
     expect(airview.hint).toBe("https://airview.example.com");
+    expect(airview.formatValid).toBe(true);
+
+    // Soft format check flags the malformed Stripe key (non-blocking).
+    const stripe = settings.get("STRIPE_SECRET_KEY")!;
+    expect(stripe.formatValid).toBe(false);
+
+    // A key with no format rule reports null (never flagged).
+    expect(settings.get("DEEPGRAM_API_KEY")!.formatValid).toBeNull();
 
     // Hard guarantee: the secret plaintext is nowhere in the payload.
     expect(JSON.stringify(res.body)).not.toContain(SECRET);
