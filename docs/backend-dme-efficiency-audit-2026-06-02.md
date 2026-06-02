@@ -429,5 +429,3 @@ behavior change to the EDI/billing core.
 - Resupply→order gap: `src/lib/storefront/order-reminder-enrollment.ts`, `src/routes/admin/therapy-resupply.ts:204`, `reminders.ts:420`
 - Unbounded reads: `src/routes/admin/{ltv-cac.ts:60-91, billing-director.ts:69-126, analytics.ts:207-243, mask-fit-worklist.ts:128-133}`
 - Patient search: `src/routes/patients/list.ts:88-96`; therapy adapters: `src/lib/therapy-cloud/index.ts:69-112`
-</content>
-</invoke>
