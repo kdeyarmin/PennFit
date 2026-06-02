@@ -35,9 +35,37 @@ export function installDemoFetchInterceptor(): void {
       const handled = await routeDemoRequest(input, init);
       if (handled) return handled;
     } catch (err) {
-      // The interceptor must never break the app. If a handler throws,
-      // fall through to the real network rather than failing the call.
-      console.error("[demo] handler threw, passing through:", err);
+      if (import.meta.env.DEV) {
+        console.error("[demo] handler threw:", err);
+      }
+      try {
+        const url =
+          typeof input === "string"
+            ? input
+            : input instanceof URL
+              ? input.toString()
+              : input.url;
+        const origin = window.location?.origin ?? "http://localhost";
+        const parsed = new URL(url, origin);
+        const pathname = parsed.pathname;
+        const isApi =
+          pathname.startsWith("/api/") ||
+          pathname === "/api" ||
+          pathname.startsWith("/resupply-api/") ||
+          pathname === "/resupply-api";
+        if (isApi) {
+          const method = (
+            init?.method ?? (input instanceof Request ? input.method : "GET")
+          ).toUpperCase();
+          const body = method === "GET" || method === "HEAD" ? {} : { ok: true };
+          return new Response(JSON.stringify(body), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          });
+        }
+      } catch {
+        /* ignore */
+      }
     }
     return originalFetch(input, init);
   };
