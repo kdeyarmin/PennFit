@@ -672,11 +672,13 @@ function SavedPresetRow({
 // ReportCard grid; keep this catalog in sync. (A future refactor
 // could derive both from one source.)
 const PRESET_SLUG_OPTIONS = [
+  "all-financial",
   "orders",
   "returns",
   "revenue-summary",
   "refunds-journal",
   "insurance-claims",
+  "patient-payments",
   "customer-activity",
 ] as const;
 // Matches the FORMAT_VALUES enum on the backend (routes/admin/report-presets.ts).
