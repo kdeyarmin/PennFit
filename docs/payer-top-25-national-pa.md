@@ -89,8 +89,20 @@ These are documented so a future reviewer doesn't "re-add" them by mistake.
   Medicare, no PA). Its dedicated claims PO Box was not verified and is left
   NULL rather than guessed.
 
-Unverified values (GEHA contractual timely-filing, Mutual of Omaha claims
-address + member-ID format, Oscar exact filing day-count, line-level E0601 PA
-status for FEP/GEHA/Anthem) are intentionally left NULL in the catalog and
-can be filled per-row through the admin edit drawer once confirmed, without a
-deploy.
+A few fields are intentionally left **NULL** rather than guessed, and can be
+filled per-row through the admin edit drawer once confirmed (no deploy needed):
+
+- **`timely_filing_days` for `bcbs_fep` and `geha`** — both are FEHB plans
+  whose deadline is "file by Dec 31 of the year after the date of service,"
+  which is not a fixed day count, so the rule lives in `notes` instead of a
+  number that would over-flag still-timely claims.
+- **Mutual of Omaha's** dedicated Medigap claims PO Box and member-ID format.
+- **Oscar's** verified Office Ally enrollment for payer ID `OSCAR`
+  (`edi_enrollment_status='pending'` until confirmed).
+
+Values that **are** seeded but remain best-effort: **Oscar's
+`timely_filing_days` is a working 180-day value** (agreement-dependent — revise
+per the provider contract), and `requires_prior_auth_dme` is set `true` on the
+commercial/federal rows with the specific CPAP/E0601 pathway captured in
+`notes` (Availity, eviCore, Highmark FEP UM) rather than a structured per-code
+field.
