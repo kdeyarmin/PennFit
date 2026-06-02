@@ -15,6 +15,7 @@ import { assertRequiredEnv } from "./lib/env-check";
 assertRequiredEnv();
 
 import app from "./app";
+import { applyAppConfigOverlayToEnv } from "./lib/app-config/store";
 import { logger } from "./lib/logger";
 import { getPendingSessions } from "./lib/voice/pending-sessions";
 import { handleVoiceWsConnection } from "./lib/voice/ws-handler";
@@ -401,6 +402,21 @@ async function start(): Promise<void> {
       );
       resolve();
     });
+  });
+
+  // Fold any super-admin System Configuration overrides
+  // (resupply.app_config, migration 0211) into process.env so the
+  // "restart"-mode settings (Stripe, Twilio, SendGrid, …) entered in
+  // /admin/system/configuration are honoured this boot. Fire-and-forget
+  // and fail-soft — same decoupled spirit as the worker start below:
+  // it runs AFTER the listener is up, never blocks it, and a DB hiccup
+  // just leaves the Railway env in place (the function already catches
+  // internally; the extra .catch is belt-and-braces).
+  void applyAppConfigOverlayToEnv().catch((err) => {
+    logger.warn(
+      { err: serializeErr(err), event: "app_config_overlay_boot_failed" },
+      "app_config overlay failed at boot — continuing on environment values",
+    );
   });
 
   scheduleWorkerStart();

@@ -18,7 +18,7 @@ import {
   integrationSnapshotSchema,
 } from "@workspace/resupply-integrations";
 
-import { getIntegrationAdapters } from "../../lib/integrations/registry";
+import { getIntegrationAdaptersWithDbOverrides } from "../../lib/integrations/registry";
 import { persistTherapyNights } from "../../lib/integrations/persist-nights";
 import { logger } from "../../lib/logger";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
@@ -76,7 +76,7 @@ router.post(
       return;
     }
     const supabase = getSupabaseServiceRoleClient();
-    const adapters = getIntegrationAdapters();
+    const adapters = await getIntegrationAdaptersWithDbOverrides();
     const { data: rows, error: lookupErr } = await supabase
       .schema("resupply")
       .from("patient_integration_snapshots")

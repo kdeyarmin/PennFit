@@ -27,7 +27,7 @@ import {
   integrationSnapshotSchema,
 } from "@workspace/resupply-integrations";
 
-import { getIntegrationAdapters } from "../../lib/integrations/registry.js";
+import { getIntegrationAdaptersWithDbOverrides } from "../../lib/integrations/registry.js";
 import { persistTherapyNights } from "../../lib/integrations/persist-nights.js";
 import { logger } from "../../lib/logger.js";
 import {
@@ -76,7 +76,7 @@ export interface NightlySyncResult {
 
 export async function runTherapyNightlySync(): Promise<NightlySyncResult> {
   const supabase = getSupabaseServiceRoleClient();
-  const adapters = getIntegrationAdapters();
+  const adapters = await getIntegrationAdaptersWithDbOverrides();
   const result: NightlySyncResult = {
     scanned: 0,
     refreshed: 0,

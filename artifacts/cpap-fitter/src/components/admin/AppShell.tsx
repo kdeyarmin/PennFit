@@ -928,6 +928,14 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             hint: "On/off switches for major features (voice, SMS, campaigns, AI billing, …)",
           },
           {
+            href: "/admin/system/configuration",
+            label: "Configuration",
+            icon: SlidersHorizontal,
+            matchPrefix: "/admin/system/configuration",
+            requiredPermission: "system.config.manage",
+            hint: "Integration credentials & platform secrets (super-admin)",
+          },
+          {
             href: "/admin/closures",
             label: "Closures",
             icon: CalendarOff,

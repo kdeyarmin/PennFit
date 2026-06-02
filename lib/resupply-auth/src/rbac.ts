@@ -93,6 +93,13 @@ import type { AdminRole } from "@workspace/resupply-db";
  *   cases.read              — view CSR cases (cross-channel tickets)
  *   cases.manage            — open / edit / link cases
  *   targets.manage          — set / view business goals (management)
+ *   system.config.manage    — read/write the System Configuration store
+ *                              (integration credentials + platform
+ *                              secrets). super_admin ONLY — like
+ *                              admin_team.manage, it is deliberately
+ *                              left out of every non-super_admin role
+ *                              set below so only the top role can view
+ *                              or enter secrets.
  */
 export type Permission =
   | "patients.read"
@@ -122,7 +129,8 @@ export type Permission =
   | "clinical.intervention.write"
   | "cases.read"
   | "cases.manage"
-  | "targets.manage";
+  | "targets.manage"
+  | "system.config.manage";
 
 /** Full enumeration — handy for tests and for the `admin` role
  *  that should always have every permission. Kept in sync with the
@@ -156,6 +164,7 @@ const ALL_PERMISSIONS: ReadonlyArray<Permission> = [
   "cases.read",
   "cases.manage",
   "targets.manage",
+  "system.config.manage",
 ];
 
 /**

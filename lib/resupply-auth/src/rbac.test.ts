@@ -246,6 +246,10 @@ describe("catalog invariants", () => {
       // requireAdminOnly surface; the perm exists in the catalog
       // for symmetry but must not leak to any other role today.
       "admin_team.manage",
+      // System Configuration (integration credentials + platform
+      // secrets) is super_admin-only — entering secrets must never be
+      // delegable to a lower role. See rbac.ts.
+      "system.config.manage",
     ]);
     for (const perm of ALL_PERMISSIONS) {
       if (ADMIN_ONLY.has(perm)) continue;
@@ -282,5 +286,23 @@ describe("catalog invariants", () => {
     ] as const) {
       expect(roleHasPermission(role, "admin_team.manage")).toBe(false);
     }
+  });
+
+  it("system.config.manage is restricted to super_admin (admin) only", () => {
+    // The System Configuration store holds integration credentials and
+    // platform secrets — only the top role may read or enter them.
+    for (const role of [
+      "supervisor",
+      "csr",
+      "fitter",
+      "fulfillment",
+      "compliance_officer",
+      "agent",
+      "rt",
+    ] as const) {
+      expect(roleHasPermission(role, "system.config.manage")).toBe(false);
+    }
+    // super_admin (the `admin` DB role) holds it via ALL_PERMISSIONS.
+    expect(roleHasPermission("admin", "system.config.manage")).toBe(true);
   });
 });
