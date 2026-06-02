@@ -9,6 +9,7 @@ import pinoHttp from "pino-http";
 import expressRateLimit, { ipKeyGenerator } from "express-rate-limit";
 import { makeAuthRouter, type AuthDeps } from "@workspace/resupply-auth";
 import { registerAuditRequestIdResolver } from "@workspace/resupply-audit";
+import { applyEnvAliases } from "@workspace/resupply-secrets";
 import router from "./routes";
 import storefrontRouter from "./routes/storefront";
 import { getAuthDeps } from "./lib/auth-deps";
@@ -30,6 +31,13 @@ import { stripeWebhookHandler } from "./lib/stripe/webhook-handler";
 // and CLI scripts run outside the request scope; the resolver
 // returns null there and audit rows skip the field.
 registerAuditRequestIdResolver(getRequestId);
+
+// Resolve consolidated env aliases (PUBLIC_BASE_URL → the five
+// *_PUBLIC_BASE_URL vars + CORS allow-list; OPS_EMAIL → the operational
+// recipient inboxes; TWILIO_PHONE_NUMBER → the retired voice-number
+// alias) BEFORE the CORS allow-list IIFE below reads them. Backfill
+// only — an explicitly-set specific var always wins. Idempotent.
+applyEnvAliases();
 
 const app: Express = express();
 

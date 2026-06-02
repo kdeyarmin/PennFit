@@ -80,6 +80,10 @@ export async function resolvePayerProfileForEra(
       .select("id")
       .ilike("display_name", name)
       .eq("is_active", true)
+      // Deterministic tie-break (see id-lookup note above): a name match can
+      // also hit multiple profiles; always resolve to the same one.
+      .order("created_at", { ascending: true })
+      .order("id", { ascending: true })
       .limit(1);
     if (error) {
       logger.warn(
@@ -107,6 +111,14 @@ async function lookup(
     .select("id")
     .eq(column, value)
     .eq("is_active", true)
+    // Deterministic tie-break: several active profiles can share one EDI id
+    // (a carrier with many plan rows — e.g. 60054 spans Aetna commercial /
+    // Medicare / D-SNP; 23281 spans the UPMC lines). Without an explicit
+    // order PostgREST returns an arbitrary row, so the ERA's payer
+    // attribution would flip between ingests. Oldest first, then id, so the
+    // same profile is always chosen for a given shared id.
+    .order("created_at", { ascending: true })
+    .order("id", { ascending: true })
     .limit(1);
   if (error) {
     logger.warn(

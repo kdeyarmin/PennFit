@@ -497,7 +497,11 @@ export async function buildOneDetail(
       },
       payer: {
         organizationName: secondaryCoverage.payer_name,
-        payerId: secondaryCoverage.payer_name.slice(0, 20),
+        // The secondary coverage carries only a free-text payer_name (no
+        // structured payer_profile link), so we cannot emit a real payer id.
+        // Send the name only (the 837P builder omits NM108/09) rather than a
+        // name-as-id that would mis-route the COB loop.
+        payerId: "",
       },
     };
   }
@@ -556,6 +560,16 @@ export async function buildOneDetail(
     // Loop 2320/2330 — coordination of benefits (computed above).
     payerResponsibility,
     otherSubscriber,
+    // CLM05-3 frequency + REF*F8 original ICN for corrected (7) / void (8)
+    // claims — without these a replacement/void is transmitted as a brand-new
+    // original and the payer adjudicates it as a duplicate (or, worse, pays a
+    // claim that was meant to be voided). The DB CHECK limits the column to
+    // {1,7,8}; guard anyway so an unexpected value falls back to original.
+    claimFrequencyCode:
+      claim.claim_frequency_code === "7" || claim.claim_frequency_code === "8"
+        ? claim.claim_frequency_code
+        : "1",
+    originalClaimNumber: claim.original_claim_number,
   };
 }
 
@@ -583,7 +597,7 @@ async function loadPrimaryCobDisclosure(
   const { data: primaryClaim } = await supabase
     .schema("resupply")
     .from("insurance_claims")
-    .select("payer_name, insurance_coverage_id")
+    .select("payer_name, insurance_coverage_id, payer_profile_id")
     .eq("id", claim.primary_claim_id)
     .limit(1)
     .maybeSingle();
@@ -603,6 +617,23 @@ async function loadPrimaryCobDisclosure(
     relationship = cov?.policyholder_relationship ?? null;
   }
 
+  // Resolve the primary payer's REAL id from its payer_profile. The primary
+  // claim carries a structured payer_profile_id (unlike the free-text
+  // secondary coverage), so this is a reliable id lookup — the 837P 2330B
+  // "other payer" loop needs a payer id, not a name. Fall back to name-only
+  // (empty id) when the profile or its id is missing.
+  let otherPayerId = "";
+  if (primaryClaim.payer_profile_id) {
+    const { data: prof } = await supabase
+      .schema("resupply")
+      .from("payer_profiles")
+      .select("office_ally_payer_id, edi_5010_payer_id")
+      .eq("id", primaryClaim.payer_profile_id)
+      .limit(1)
+      .maybeSingle();
+    otherPayerId = prof?.office_ally_payer_id ?? prof?.edi_5010_payer_id ?? "";
+  }
+
   return {
     payerResponsibility: "P",
     priorPayerPaidCents: claim.cob_primary_paid_cents ?? null,
@@ -617,7 +648,7 @@ async function loadPrimaryCobDisclosure(
     },
     payer: {
       organizationName: primaryClaim.payer_name,
-      payerId: primaryClaim.payer_name.slice(0, 20),
+      payerId: otherPayerId,
     },
   };
 }
