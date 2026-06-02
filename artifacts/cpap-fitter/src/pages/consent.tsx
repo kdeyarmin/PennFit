@@ -68,12 +68,17 @@ export function Consent() {
   const phoneValid =
     phoneDigits.length === 0 || PHONE_DIGIT_RE.test(phoneDigits);
   const phoneFilled = phoneDigits.length > 0;
-  const canContinue = agreed && emailValid && emailOptIn && phoneValid;
+  // Marketing opt-in is intentionally NOT part of the gate: we require the
+  // camera consent + a valid email (so we can deliver the recommendation)
+  // and a well-formed phone IF one was entered. Forcing the marketing
+  // checkbox to advance would be a consent dark pattern — see the phone
+  // block comment below, which already documents this intent.
+  const canContinue = agreed && emailValid && phoneValid;
 
   const handleContinue = () => {
     if (!canContinue) return;
     const normalizedEmail = trimmedEmail.toLowerCase();
-    setEmailConsent(normalizedEmail, true);
+    setEmailConsent(normalizedEmail, emailOptIn);
     track("consent_given");
     // Fire-and-forget the server-side record so the opt-in row exists
     // even for patients who don't make it to /order. We deliberately
@@ -83,7 +88,7 @@ export function Consent() {
     // and the patient still advances.
     submitFitterLead({
       email: normalizedEmail,
-      marketingOptIn: true,
+      marketingOptIn: emailOptIn,
       phone: phoneFilled ? phone.trim() : undefined,
       smsOptIn: phoneFilled && smsOptIn,
       website: "",

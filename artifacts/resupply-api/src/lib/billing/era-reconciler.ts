@@ -8,9 +8,12 @@
 //
 // Side effects per claim block in the ERA:
 //   1. UPDATE insurance_claims:
-//        total_allowed_cents += sum of CO + PR adjustments per claim,
+//        total_allowed_cents += paid (CLP04) + patient responsibility
+//                               (CLP05) per claim — i.e. the payer-allowed
+//                               amount (= billed − contractual CO), NOT the
+//                               sum of CO + PR adjustments,
 //        total_paid_cents     += claim.paidCents,
-//        patient_responsibility_cents += sum of PR adjustments,
+//        patient_responsibility_cents += claim.patientResponsibilityCents,
 //        decision_at  = now() (first time we land on a decision),
 //        paid_at      = now() (only when claim becomes paid),
 //        status: draft|submitted|accepted -> paid (if paidCents > 0
@@ -20,7 +23,7 @@
 //                                  see state machine in
 //                                  routes/patients/insurance-claims.ts).
 //   2. UPDATE insurance_claim_line_items per SVC:
-//        allowed_cents += sum of CO + PR adjustments per line,
+//        allowed_cents += line paid (SVC03) + line PR adjustments,
 //        paid_cents    += line.paidCents,
 //        status: pending -> paid (if paidCents > 0) | denied (if 0
 //                                                              paid + CO
@@ -181,7 +184,7 @@ async function applyClaim(
     for (const eraLine of eraClaim.serviceLines) {
       const localLine = matchLine(localLines ?? [], eraLine);
       if (!localLine) continue;
-      const allowedDelta = sumPositive(eraLine.adjustments, "CO", "PR");
+      const allowedDelta = lineAllowedCents(eraLine);
       const nextAllowed = localLine.allowed_cents + allowedDelta;
       const nextPaid = localLine.paid_cents + eraLine.paidCents;
       const nextStatus: LineRow["status"] =
@@ -205,7 +208,7 @@ async function applyClaim(
   }
 
   // 3. Apply claim-level totals + status transition.
-  const claimAllowedDelta = sumPositive(eraClaim.adjustments, "CO", "PR");
+  const claimAllowedDelta = claimAllowedCents(eraClaim);
   const newTotalAllowed = claim.total_allowed_cents + claimAllowedDelta;
   const newTotalPaid = claim.total_paid_cents + eraClaim.paidCents;
   const newPatientResp =
@@ -312,6 +315,32 @@ function normaliseMods(mods: readonly string[]): string {
     .filter((m) => m.length === 2)
     .sort()
     .join(",");
+}
+
+/**
+ * The payer-allowed amount for a claim remit, in cents.
+ *
+ * In an 835, billed (CLP03) = paid (CLP04) + Σ(CAS adjustments), and the
+ * *allowed* amount = billed − contractual obligation (CO) = paid + patient
+ * responsibility (CLP05). It is therefore `paidCents + patientResponsibility`,
+ * NOT the sum of the CO + PR adjustments (that is the total reduction from
+ * billed). A full contractual denial allows ~0, not the billed charge.
+ */
+export function claimAllowedCents(
+  eraClaim: Pick<Parsed835Claim, "paidCents" | "patientResponsibilityCents">,
+): number {
+  return eraClaim.paidCents + eraClaim.patientResponsibilityCents;
+}
+
+/**
+ * The payer-allowed amount for a single 835 service line, in cents. SVC
+ * carries no patient-responsibility element, so the line allowed = line paid
+ * (SVC03) + the line's PR (patient-responsibility) adjustments.
+ */
+export function lineAllowedCents(
+  eraLine: Pick<Parsed835ServiceLine, "paidCents" | "adjustments">,
+): number {
+  return eraLine.paidCents + sumPositive(eraLine.adjustments, "PR");
 }
 
 function sumPositive(adjustments: Adjustment[], ...groups: string[]): number {

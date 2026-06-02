@@ -215,6 +215,178 @@ describe("createSendgridClient", () => {
     expect(result.messageId).toBe("msg-array");
   });
 
+  // ── Transient-failure retry ──────────────────────────────────────
+  describe("retry on transient SendGrid failures", () => {
+    const noSleep = () => Promise.resolve();
+
+    function envOn() {
+      process.env.SENDGRID_API_KEY = "SG.xxx";
+      process.env.SENDGRID_FROM_EMAIL = "no-reply@penn.example";
+    }
+
+    it("retries a 503 then succeeds", async () => {
+      envOn();
+      const send = vi
+        .fn()
+        .mockRejectedValueOnce({
+          response: { statusCode: 503 },
+          message: "Service Unavailable",
+        })
+        .mockResolvedValue([
+          { statusCode: 202, headers: { "x-message-id": "msg-ok" } },
+          undefined,
+        ]);
+      const client = createSendgridClient({
+        sgFactory: () => fakeSdk(send),
+        retry: { sleep: noSleep },
+      });
+
+      const result = await client.sendEmail({
+        to: "p@e.com",
+        subject: "s",
+        html: "h",
+        text: "t",
+      });
+      expect(result.messageId).toBe("msg-ok");
+      expect(send).toHaveBeenCalledTimes(2);
+    });
+
+    it("retries a 429 then succeeds", async () => {
+      envOn();
+      const send = vi
+        .fn()
+        .mockRejectedValueOnce({
+          response: { statusCode: 429 },
+          message: "Too Many Requests",
+        })
+        .mockResolvedValue([
+          { statusCode: 202, headers: { "x-message-id": "msg-ok" } },
+          undefined,
+        ]);
+      const client = createSendgridClient({
+        sgFactory: () => fakeSdk(send),
+        retry: { sleep: noSleep },
+      });
+
+      await expect(
+        client.sendEmail({ to: "p@e.com", subject: "s", html: "h", text: "t" }),
+      ).resolves.toEqual({ messageId: "msg-ok" });
+      expect(send).toHaveBeenCalledTimes(2);
+    });
+
+    it("retries a network error (ECONNRESET) then succeeds", async () => {
+      envOn();
+      const send = vi
+        .fn()
+        .mockRejectedValueOnce({
+          code: "ECONNRESET",
+          message: "socket hang up",
+        })
+        .mockResolvedValue([
+          { statusCode: 202, headers: { "x-message-id": "msg-ok" } },
+          undefined,
+        ]);
+      const client = createSendgridClient({
+        sgFactory: () => fakeSdk(send),
+        retry: { sleep: noSleep },
+      });
+
+      await client.sendEmail({
+        to: "p@e.com",
+        subject: "s",
+        html: "h",
+        text: "t",
+      });
+      expect(send).toHaveBeenCalledTimes(2);
+    });
+
+    it("does NOT retry a 400 (terminal) and throws after one attempt", async () => {
+      envOn();
+      const send = vi.fn().mockRejectedValue({
+        response: { statusCode: 400, body: { errors: [{ message: "bad" }] } },
+        message: "Bad Request",
+      });
+      const client = createSendgridClient({
+        sgFactory: () => fakeSdk(send),
+        retry: { sleep: noSleep },
+      });
+
+      await expect(
+        client.sendEmail({ to: "junk", subject: "s", html: "h", text: "t" }),
+      ).rejects.toMatchObject({ name: "EmailApiError", status: 400 });
+      expect(send).toHaveBeenCalledTimes(1);
+    });
+
+    it("exhausts attempts on a persistent 500 and throws retryable error", async () => {
+      envOn();
+      const send = vi.fn().mockRejectedValue({
+        response: { statusCode: 500 },
+        message: "Internal Server Error",
+      });
+      const client = createSendgridClient({
+        sgFactory: () => fakeSdk(send),
+        retry: { maxAttempts: 3, sleep: noSleep },
+      });
+
+      await expect(
+        client.sendEmail({ to: "p@e.com", subject: "s", html: "h", text: "t" }),
+      ).rejects.toMatchObject({
+        name: "EmailApiError",
+        status: 500,
+        retryable: true,
+      });
+      expect(send).toHaveBeenCalledTimes(3);
+    });
+
+    it("keeps status undefined for string transport error codes", async () => {
+      envOn();
+      const send = vi.fn().mockRejectedValue({
+        code: "ECONNRESET",
+        message: "socket hang up",
+      });
+      const client = createSendgridClient({
+        sgFactory: () => fakeSdk(send),
+        retry: { maxAttempts: 1, sleep: noSleep },
+      });
+
+      await expect(
+        client.sendEmail({ to: "p@e.com", subject: "s", html: "h", text: "t" }),
+      ).rejects.toMatchObject({
+        name: "EmailApiError",
+        status: undefined,
+      });
+      expect(send).toHaveBeenCalledTimes(1);
+    });
+
+    it("maxAttempts:1 disables retry", async () => {
+      envOn();
+      const send = vi.fn().mockRejectedValue({ response: { statusCode: 503 } });
+      const client = createSendgridClient({
+        sgFactory: () => fakeSdk(send),
+        retry: { maxAttempts: 1, sleep: noSleep },
+      });
+      await expect(
+        client.sendEmail({ to: "p@e.com", subject: "s", html: "h", text: "t" }),
+      ).rejects.toBeInstanceOf(EmailApiError);
+      expect(send).toHaveBeenCalledTimes(1);
+    });
+
+    it("does NOT retry a 2xx with a missing message id (already accepted)", async () => {
+      envOn();
+      const send = vi
+        .fn()
+        .mockResolvedValue([{ statusCode: 202, headers: {} }, undefined]);
+      const client = createSendgridClient({
+        sgFactory: () => fakeSdk(send),
+        retry: { sleep: noSleep },
+      });
+      await expect(
+        client.sendEmail({ to: "p@e.com", subject: "s", html: "h", text: "t" }),
+      ).rejects.toBeInstanceOf(EmailApiError);
+      expect(send).toHaveBeenCalledTimes(1);
+    });
+  });
+
   // ── Header-injection guard ───────────────────────────────────────
   describe("CR/LF injection guard", () => {
     function client() {

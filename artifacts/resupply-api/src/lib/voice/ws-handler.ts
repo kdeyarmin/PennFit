@@ -40,14 +40,17 @@ import {
 import {
   buildSystemPrompt,
   createDeepgramClient,
+  createElevenLabsClient,
   OPENAI_TOOL_DESCRIPTORS,
   PROMPT_VERSION,
   RealtimeClient,
   TOOL_NAMES,
   VoiceBridge,
   type DeepgramLiveSession,
+  type ElevenLabsClient,
   type MediaStreamSink,
   type TranscriptTurn,
+  type TtsSynthesizer,
 } from "@workspace/resupply-ai";
 import {
   encodeClearFrame,
@@ -151,8 +154,34 @@ export async function handleVoiceWsConnection(
     episodeId: pending.episodeId,
   });
 
+  // Optional ElevenLabs voice. When ELEVENLABS_API_KEY is set,
+  // ElevenLabs becomes the agent's voice: the Realtime session runs in
+  // text-output mode (generateAudio: false) and the bridge synthesises
+  // each agent turn through ElevenLabs. When unset, `tts` stays null and
+  // the bridge forwards OpenAI's built-in `cedar` audio (default).
+  const ttsSynthesizer = config.elevenLabsApiKey
+    ? buildElevenLabsSynthesizer({
+        apiKey: config.elevenLabsApiKey,
+        voiceId: config.elevenLabsVoiceId,
+        modelId: config.elevenLabsModelId,
+        conversationId: pending.conversationId,
+      })
+    : null;
+  if (ttsSynthesizer) {
+    logger.info(
+      {
+        event: "voice_elevenlabs_enabled",
+        conversationId: pending.conversationId,
+      },
+      "voice: ElevenLabs TTS enabled (Realtime running in text-output mode)",
+    );
+  }
+
   const client = new RealtimeClient({
     apiKey: config.openaiApiKey,
+    // When ElevenLabs owns the voice, the model emits text (not audio)
+    // and the bridge synthesises it. Otherwise the model speaks (cedar).
+    generateAudio: ttsSynthesizer === null,
     instructions: buildSystemPrompt({
       practiceName: config.practiceName ?? "PennPaps",
       // Inbound calls (the reorder IVR) set their own context + greeting
@@ -169,7 +198,12 @@ export async function handleVoiceWsConnection(
     allowedToolNames: new Set(TOOL_NAMES),
   });
 
-  const bridge = new VoiceBridge({ client, sink, dispatcher });
+  const bridge = new VoiceBridge({
+    client,
+    sink,
+    dispatcher,
+    ...(ttsSynthesizer ? { tts: ttsSynthesizer } : {}),
+  });
 
   // Hoisted force-cleanup timer (assignment happens further down in
   // the ws.on("close")/("error") handlers via `scheduleForceCleanup`).
@@ -806,6 +840,91 @@ async function runPostCallSummary(
       "voice: post-call summary failed",
     );
   }
+}
+
+// 20ms of µ-law @ 8kHz = 160 bytes — Twilio Media Streams' native frame
+// size. ElevenLabs streams `ulaw_8000` in arbitrary chunk boundaries, so
+// we re-frame to 160 bytes for clean playback pacing (Twilio buffers and
+// plays out at 8kHz regardless, but uniform frames avoid edge-case
+// stutter on some carriers).
+const MULAW_FRAME_BYTES = 160;
+
+/**
+ * Adapt the ElevenLabs streaming-TTS client to the bridge's
+ * `TtsSynthesizer` contract: stream `ulaw_8000` audio, re-frame the
+ * bytes into 160-byte µ-law frames, and hand each to the bridge as
+ * base64 (the format the Twilio sink forwards). Honors the bridge's
+ * abort signal for barge-in. A vendor error throws so the bridge logs a
+ * `tts` session error and drops that utterance's audio without ending
+ * the call.
+ *
+ * PHI: the synthesised text IS patient-facing speech (PHI). We never log
+ * the text or the audio bytes — only structural counts on failure.
+ */
+function buildElevenLabsSynthesizer(opts: {
+  apiKey: string;
+  voiceId?: string;
+  modelId?: string;
+  conversationId: string;
+}): TtsSynthesizer {
+  let client: ElevenLabsClient;
+  try {
+    client = createElevenLabsClient({ apiKey: opts.apiKey });
+  } catch (err) {
+    // Should not happen (apiKey is non-empty here), but never let a
+    // client-construction throw escape into the WS setup path.
+    logger.warn(
+      {
+        event: "voice_elevenlabs_init_failed",
+        err: serializeErr(err),
+        conversationId: opts.conversationId,
+      },
+      "voice: ElevenLabs client init failed",
+    );
+    throw err;
+  }
+
+  return {
+    async synthesize(text, onFrame, signal): Promise<void> {
+      let carry = Buffer.alloc(0);
+      const result = await client.streamTextToSpeech(
+        {
+          text,
+          ...(opts.voiceId ? { voiceId: opts.voiceId } : {}),
+          ...(opts.modelId ? { modelId: opts.modelId } : {}),
+          outputFormat: "ulaw_8000",
+          signal,
+        },
+        (chunk) => {
+          if (signal.aborted) return;
+          carry =
+            carry.length === 0
+              ? Buffer.from(chunk)
+              : Buffer.concat([carry, Buffer.from(chunk)]);
+          let offset = 0;
+          while (carry.length - offset >= MULAW_FRAME_BYTES) {
+            onFrame(
+              carry
+                .subarray(offset, offset + MULAW_FRAME_BYTES)
+                .toString("base64"),
+            );
+            offset += MULAW_FRAME_BYTES;
+          }
+          carry = carry.subarray(offset);
+        },
+      );
+      // Flush any trailing partial frame (Twilio tolerates a short final
+      // frame). Skip if we were barged-in mid-utterance.
+      if (!signal.aborted && carry.length > 0) {
+        onFrame(carry.toString("base64"));
+      }
+      if (!result.ok && !signal.aborted) {
+        throw new Error(
+          `elevenlabs ${result.errorCode}: ${result.errorMessage}`,
+        );
+      }
+    },
+  };
 }
 
 function serializeErr(err: unknown): { name: string; message?: string } {

@@ -235,7 +235,7 @@ export function Results() {
           // "low" AND "moderate"). A moderate result is still labelled as
           // such to the customer, so leaving them no way to improve it is a
           // dead end — a better scan means a better seal and fewer returns.
-          <div className="pt-1">
+          <div className="pt-1 space-y-1.5">
             <Button
               variant="outline"
               size="sm"
@@ -247,6 +247,11 @@ export function Results() {
             >
               Retake photo for a stronger match
             </Button>
+            <p className="text-xs text-muted-foreground max-w-md mx-auto">
+              Optional — these recommendations are solid and you can order with
+              confidence below. A retake can sharpen the fit if you have a
+              moment.
+            </p>
           </div>
         )}
         <p className="text-sm text-muted-foreground max-w-2xl mx-auto">

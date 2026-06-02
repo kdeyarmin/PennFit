@@ -69,11 +69,25 @@ export class TwilioConfigError extends Error {
 export class TwilioApiError extends Error {
   readonly status?: number;
   readonly code?: number | string;
-  constructor(message: string, status?: number, code?: number | string) {
+  /**
+   * True when this failure is transient (HTTP 429 / 5xx / transport
+   * error) and the message was NOT accepted — i.e. safe to retry.
+   * `sendSms` exhausts its bounded in-process retry budget before
+   * throwing, so a thrown retryable error means every attempt failed.
+   * Defaults to false (voice/fax paths construct without it).
+   */
+  readonly retryable: boolean;
+  constructor(
+    message: string,
+    status?: number,
+    code?: number | string,
+    retryable = false,
+  ) {
     super(message);
     this.name = "TwilioApiError";
     this.status = status;
     this.code = code;
+    this.retryable = retryable;
   }
 }
 

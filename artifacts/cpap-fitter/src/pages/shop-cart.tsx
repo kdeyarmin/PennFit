@@ -1064,8 +1064,8 @@ function EmptyCart() {
         Your cart is empty.
       </h2>
       <p className="text-sm text-muted-foreground mb-6 max-w-md mx-auto">
-        Browse cushions, tubing, filters, and curated bundles, or skip the cash
-        flow entirely and use your insurance.
+        Browse cushions, tubing, filters, and curated bundles — or use your
+        insurance instead. Most patients pay $0 with a prescription.
       </p>
       <div className="flex flex-col sm:flex-row gap-3 justify-center">
         <Link href="/shop">

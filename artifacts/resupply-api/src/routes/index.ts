@@ -337,8 +337,9 @@ router.use(metricAlertsRouter);
 // evaluator walks (Owner #5). Read on metrics.read, write on
 // admin.tools.manage.
 router.use(metricThresholdsRouter);
-// /admin/patients/:id/clinical-encounters — append-only clinician
-// documentation (F3). Read on clinical.read, write on clinical.note.write.
+// /admin/patients/clinical-encounters/query (read) +
+// /admin/patients/:id/clinical-encounters (append-only write) (F3).
+// Read on clinical.read, write on clinical.note.write.
 router.use(clinicalEncountersRouter);
 // /admin/analytics/rt-outcomes — per-RT outcomes rollup from
 // clinical_encounters (Phase 3, RT #24). Counts only; clinical.read.
@@ -364,8 +365,9 @@ router.use(cmnDocumentsRouter);
 router.use(clinicalOutreachRouter);
 // /admin/education-videos — education-video library management (RT #25).
 router.use(educationVideosAdminRouter);
-// /admin/patients/:id/setup-checklist — new-patient setup-guidance
-// checklist (Phase 1, RT). Gated by the clinical perms.
+// /admin/patients/setup-checklist/query (read) +
+// /admin/patients/:id/setup-checklist/:stepKey (write) — new-patient
+// setup-guidance checklist (Phase 1, RT). Gated by the clinical perms.
 router.use(setupChecklistRouter);
 // /admin/cases — lightweight CSR case (ticket) object + links (F4).
 router.use(casesRouter);

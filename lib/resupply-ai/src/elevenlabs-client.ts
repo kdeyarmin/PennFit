@@ -89,6 +89,13 @@ export interface ElevenLabsTtsInput {
   /** Optional language code (BCP-47). Helps disambiguate accented English. */
   languageCode?: string;
   timeoutMs?: number;
+  /**
+   * Optional caller-supplied abort signal. Aborting it cancels the
+   * in-flight request immediately — used by the voice bridge to stop
+   * synthesis the moment a caller barges in. Combined with the internal
+   * timeout: whichever fires first aborts the request.
+   */
+  signal?: AbortSignal;
 }
 
 export interface ElevenLabsTtsResult {
@@ -210,6 +217,24 @@ export function createElevenLabsClient(
     return `${apiUrl}/text-to-speech/${voice}${suffix}${qs ? `?${qs}` : ""}`;
   }
 
+  // Bridge an optional caller-supplied AbortSignal onto the per-request
+  // controller (which also carries the timeout). Returns a cleanup fn
+  // that detaches the listener so we don't leak across requests sharing
+  // one long-lived signal.
+  function linkExternalAbort(
+    signal: AbortSignal | undefined,
+    ctrl: AbortController,
+  ): () => void {
+    if (!signal) return () => {};
+    if (signal.aborted) {
+      ctrl.abort();
+      return () => {};
+    }
+    const onAbort = () => ctrl.abort();
+    signal.addEventListener("abort", onAbort, { once: true });
+    return () => signal.removeEventListener("abort", onAbort);
+  }
+
   return {
     async textToSpeech(input): Promise<ElevenLabsCallResult> {
       const ctrl = new AbortController();
@@ -217,6 +242,7 @@ export function createElevenLabsClient(
         () => ctrl.abort(),
         input.timeoutMs ?? defaultTimeoutMs,
       );
+      const unlinkAbort = linkExternalAbort(input.signal, ctrl);
       const startedAt = Date.now();
       try {
         const upstream = await fetchImpl(ttsUrl(input, false), {
@@ -266,6 +292,7 @@ export function createElevenLabsClient(
         };
       } finally {
         clearTimeout(timer);
+        unlinkAbort();
       }
     },
 
@@ -278,6 +305,7 @@ export function createElevenLabsClient(
         () => ctrl.abort(),
         input.timeoutMs ?? defaultTimeoutMs,
       );
+      const unlinkAbort = linkExternalAbort(input.signal, ctrl);
       const startedAt = Date.now();
       let totalBytes = 0;
       try {
@@ -330,6 +358,7 @@ export function createElevenLabsClient(
         };
       } finally {
         clearTimeout(timer);
+        unlinkAbort();
       }
     },
 
