@@ -11,9 +11,13 @@
 // over offshore CSR experiences. Inline expansion stays scrollable
 // and keyboard-friendly.
 //
-// When a video's `youtubeId` is empty (the default before a
-// deployer drops in a real recording), we render a "video coming
-// soon" placeholder instead of a broken iframe.
+// When a video's `youtubeId` is empty (the default before a deployer
+// drops in a real recording), it is HIDDEN — production must never show
+// "coming soon" placeholder cards to customers. If no video has a real
+// id yet, the whole "Watch & learn" section renders nothing (the rest of
+// /learn is unaffected); add real YouTube ids in lib/learn-videos.ts and
+// the cards appear automatically. The per-card "coming soon" branch
+// below is kept only as defensive resilience.
 
 import { useState, useEffect, useRef } from "react";
 import { Play, Clock } from "lucide-react";
@@ -25,6 +29,14 @@ export function LearnVideoLibrary() {
   // (null = none) ensures that opening a second card unmounts the first
   // iframe and stops playback, preventing overlapping audio/CPU waste.
   const [openId, setOpenId] = useState<string | null>(null);
+
+  // Show only videos that have a real, embeddable id. Empty-id entries
+  // are placeholders and must not surface in production.
+  const videos = LEARN_VIDEOS.filter((v) => v.youtubeId.trim().length > 0);
+
+  // Nothing curated yet → hide the section entirely rather than render an
+  // empty "Watch & learn" header with no cards.
+  if (videos.length === 0) return null;
 
   return (
     <section
@@ -47,7 +59,7 @@ export function LearnVideoLibrary() {
         </p>
       </div>
       <ul className="grid gap-4 sm:grid-cols-2">
-        {LEARN_VIDEOS.map((v) => (
+        {videos.map((v) => (
           <VideoCard
             key={v.id}
             video={v}

@@ -75,9 +75,36 @@ export interface ToolInvocation {
 }
 
 export interface SessionError {
-  source: "openai" | "tool";
+  source: "openai" | "tool" | "tts";
   code: string;
   message: string;
+}
+
+/**
+ * External text-to-speech engine (e.g. ElevenLabs). When provided to
+ * the bridge, the agent's voice is produced by THIS engine instead of
+ * the OpenAI Realtime model's built-in voice: the Realtime session runs
+ * in text-output mode, and for each finalised output turn the bridge
+ * calls `synthesize`, forwarding the resulting base64 µ-law frames to
+ * the audio sink.
+ *
+ * Contract:
+ *   - Emit base64-encoded µ-law @ 8kHz frames via `onFrame` (the same
+ *     format the sink forwards to Twilio).
+ *   - Respect `signal`: on abort (caller barge-in) stop synthesising and
+ *     resolve/reject promptly. Frames emitted after abort are ignored by
+ *     the bridge.
+ *   - Resolve when the utterance is fully synthesised; reject on a
+ *     vendor/transport error (the bridge logs it as a `tts` session
+ *     error and continues — a failed utterance drops its audio but does
+ *     NOT end the call).
+ */
+export interface TtsSynthesizer {
+  synthesize(
+    text: string,
+    onFrame: (base64Mulaw: string) => void,
+    signal: AbortSignal,
+  ): Promise<void>;
 }
 
 export interface BridgeEvents {
@@ -92,6 +119,16 @@ export interface BridgeOptions {
   client: RealtimeClient;
   sink: MediaStreamSink;
   dispatcher: ToolDispatcher;
+  /**
+   * Optional external TTS engine. When set, the bridge produces the
+   * agent's voice by synthesising each finalised OUTPUT transcript turn
+   * through this engine (and ignores any built-in `audio.delta` from
+   * the model — the Realtime client should be constructed with
+   * `generateAudio: false` so none are emitted). When unset, the bridge
+   * forwards the model's built-in audio deltas straight to the sink
+   * (the default cedar path).
+   */
+  tts?: TtsSynthesizer;
 }
 
 const KNOWN_TOOL_NAMES = new Set<ToolName>(TOOL_NAMES);
@@ -111,6 +148,7 @@ export class VoiceBridge extends EventEmitter {
   private readonly client: RealtimeClient;
   private readonly sink: MediaStreamSink;
   private readonly dispatcher: ToolDispatcher;
+  private readonly tts: TtsSynthesizer | null;
 
   // Buffer for input STT deltas — coalesce until `done` fires so each
   // patient turn becomes ONE messages-table row, not N. Keyed on
@@ -118,11 +156,20 @@ export class VoiceBridge extends EventEmitter {
   private readonly inputBuf = new Map<string, string>();
   private readonly outputBuf = new Map<string, string>();
 
+  // External-TTS synthesis queue (only used when `this.tts` is set).
+  // Utterances are synthesised one at a time so their µ-law frames reach
+  // the sink in order; `ttsAbort` cancels the in-flight synthesis on a
+  // caller barge-in.
+  private readonly ttsQueue: string[] = [];
+  private ttsDraining = false;
+  private ttsAbort: AbortController | null = null;
+
   constructor(opts: BridgeOptions) {
     super();
     this.client = opts.client;
     this.sink = opts.sink;
     this.dispatcher = opts.dispatcher;
+    this.tts = opts.tts ?? null;
     this.wireRealtimeEvents();
   }
 
@@ -133,6 +180,14 @@ export class VoiceBridge extends EventEmitter {
 
   /** Stop both sides cleanly. Idempotent. */
   close(reason: string): void {
+    // Abort any in-flight external-TTS synthesis and drop the queue so a
+    // synthesiser promise can't keep writing to a sink whose socket is
+    // closing.
+    this.ttsQueue.length = 0;
+    if (this.ttsAbort) {
+      this.ttsAbort.abort();
+      this.ttsAbort = null;
+    }
     this.client.close(1000, reason);
   }
 
@@ -142,7 +197,21 @@ export class VoiceBridge extends EventEmitter {
     });
 
     this.client.on("audio.delta", (delta) => {
+      // When an external TTS engine owns the voice we generate the audio
+      // ourselves from the output transcript; ignore any built-in audio
+      // the model emits (there should be none — it's in text mode — but
+      // this is belt-and-suspenders against a modality config drift).
+      if (this.tts) return;
       this.sink.writeAudioBase64(delta.audioBase64);
+    });
+
+    // Caller barge-in. The built-in-audio path relies on the Realtime
+    // server's own `interrupt_response`; but when WE own playback via an
+    // external TTS engine, we must stop feeding + flush queued frames
+    // ourselves the instant the caller starts speaking.
+    this.client.on("input.speech_started", () => {
+      if (!this.tts) return;
+      this.bargeInTts();
     });
 
     this.client.on("transcript.delta", (delta) => {
@@ -159,6 +228,11 @@ export class VoiceBridge extends EventEmitter {
             text,
             itemId: delta.itemId,
           });
+          // External-TTS path: synthesise the agent's finalised spoken
+          // turn. Input turns (the caller) are never synthesised.
+          if (this.tts && delta.source === "output") {
+            this.enqueueTts(text);
+          }
         }
       } else {
         buf.set(key, next);
@@ -301,6 +375,72 @@ export class VoiceBridge extends EventEmitter {
         message,
       });
     }
+  }
+
+  // ---- External TTS (ElevenLabs) --------------------------------------
+
+  /** Queue an agent utterance for synthesis and kick the drain loop. */
+  private enqueueTts(text: string): void {
+    this.ttsQueue.push(text);
+    void this.drainTts();
+  }
+
+  /**
+   * Synthesise queued utterances one at a time so their µ-law frames
+   * reach the sink in order. Re-entrancy guarded by `ttsDraining`; a new
+   * utterance enqueued mid-drain is picked up by the running loop.
+   */
+  private async drainTts(): Promise<void> {
+    if (this.ttsDraining || !this.tts) return;
+    this.ttsDraining = true;
+    try {
+      while (this.ttsQueue.length > 0) {
+        const text = this.ttsQueue.shift();
+        if (text === undefined) break;
+        const ctrl = new AbortController();
+        this.ttsAbort = ctrl;
+        try {
+          await this.tts.synthesize(
+            text,
+            (frame) => {
+              // A barge-in (or call close) may have fired mid-synthesis;
+              // drop late frames rather than talk over the caller.
+              if (ctrl.signal.aborted) return;
+              this.sink.writeAudioBase64(frame);
+            },
+            ctrl.signal,
+          );
+        } catch (err) {
+          // A failed utterance loses its audio but must NOT end the call.
+          // The transcript turn was already emitted/persisted upstream.
+          if (!ctrl.signal.aborted) {
+            this.emit("session.error", {
+              source: "tts",
+              code: "tts_synthesis_failed",
+              message: err instanceof Error ? err.message : String(err),
+            });
+          }
+        } finally {
+          if (this.ttsAbort === ctrl) this.ttsAbort = null;
+        }
+      }
+    } finally {
+      this.ttsDraining = false;
+    }
+  }
+
+  /**
+   * Caller interrupted: drop everything queued, abort the in-flight
+   * synthesis, and flush whatever the sink has already buffered toward
+   * Twilio so the agent goes quiet immediately.
+   */
+  private bargeInTts(): void {
+    this.ttsQueue.length = 0;
+    if (this.ttsAbort) {
+      this.ttsAbort.abort();
+      this.ttsAbort = null;
+    }
+    this.sink.clearQueuedAudio?.();
   }
 }
 
