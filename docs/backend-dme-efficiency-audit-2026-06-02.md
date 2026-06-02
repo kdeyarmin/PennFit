@@ -34,9 +34,10 @@ machinery most resupply shops buy from three or four separate vendors:
   999/277CA acknowledgement dispatch, 835 ERA parse + auto-posting with a
   terminal-status idempotency guard
   (`lib/resupply-integrations-office-ally/src/edi/*`,
+  (`lib/resupply-integrations-office-ally/src/edi/*`,
   `artifacts/resupply-api/src/lib/billing/era-reconciler.ts`), plus an
   AI denial analyzer + auto-workflow engine
-  (`src/lib/billing/ai-denial-analyzer.ts`, `auto-workflow-engine.ts`).
+  (`src/lib/billing/ai-denial-analyzer.ts`, `src/lib/billing/auto-workflow-engine.ts`).
 - **DME-specific billing**: capped-rental month advance with KH/KI/KX
   modifier rotation (`worker/jobs/capped-rental-advance.ts`), DWO/CMN
   expiry sweeps, PA/MCO 7-day SLA tracking, PECOS ordering-provider sync,
