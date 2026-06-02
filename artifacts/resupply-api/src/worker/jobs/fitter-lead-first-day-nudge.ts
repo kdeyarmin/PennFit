@@ -195,12 +195,21 @@ export async function runFirstDayNudgeSweep(): Promise<FirstDayNudgeStats> {
   const youngerThan = new Date(now - MIN_AGE_MS).toISOString();
   const olderThan = new Date(now - MAX_AGE_MS).toISOString();
 
+  // Eligibility: opted-in, not yet first-day-nudged, NOT yet
+  // completed, aged 18–30h. The completed_at IS NULL guard keeps this
+  // ABANDONMENT nudge ("you didn't quite finish") off patients who
+  // actually finished the fitter — those are enrolled in the supply
+  // campaign (fitter-supply-campaign.ts), whose day-1 touch ("your
+  // mask is on hold") would otherwise collide with this email and
+  // contradict it. Finishers get the supply campaign; non-finishers
+  // get this nudge.
   const { data: leads, error } = await supabase
     .schema("resupply")
     .from("fitter_leads")
     .select("id, email, phone_e164, sms_opt_in, source, created_at")
     .eq("marketing_opt_in", true)
     .is("first_day_nudged_at", null)
+    .is("completed_at", null)
     .lt("created_at", youngerThan)
     .gt("created_at", olderThan)
     .order("created_at", { ascending: true })

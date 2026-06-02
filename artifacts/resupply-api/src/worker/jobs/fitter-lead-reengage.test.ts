@@ -13,6 +13,7 @@ import {
   installSupabaseMock,
   stageSupabaseResponse,
   getSupabaseWritePayloads,
+  getSupabaseFilterCalls,
 } from "../../test-helpers/supabase-mock";
 
 const supabaseMock = installSupabaseMock();
@@ -213,6 +214,28 @@ describe("runFitterLeadReengageSweep", () => {
     const stats = await runFitterLeadReengageSweep(FULL_CFG);
     expect(stats).toMatchObject({ scanned: 0, emailed: 0 });
     expect(sendEmailMock).not.toHaveBeenCalled();
+  });
+
+  it("excludes leads that already completed the fitter (owned by the supply campaign)", async () => {
+    // The eligibility scan must filter on `completed_at IS NULL`.
+    // A completed lead is enrolled in the multi-touch supply campaign;
+    // sending it this "you didn't finish" nudge would contradict that
+    // cadence. We can't make the in-memory mock evaluate the predicate
+    // (filtering is DB-side), so we assert the worker applies the
+    // filter — the closest behavioural check available.
+    stageSupabaseResponse("fitter_leads", "select", { data: [] });
+    await runFitterLeadReengageSweep(FULL_CFG);
+    const filters = getSupabaseFilterCalls("fitter_leads", "select");
+    expect(filters).toContainEqual({
+      verb: "is",
+      args: ["completed_at", null],
+    });
+    // Sanity: the existing opt-in + unnudged predicates are still applied.
+    expect(filters).toContainEqual({
+      verb: "eq",
+      args: ["marketing_opt_in", true],
+    });
+    expect(filters).toContainEqual({ verb: "is", args: ["nudged_at", null] });
   });
 
   it("counts a send failure as errors AND stamps the row to prevent retry storm", async () => {

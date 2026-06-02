@@ -7,15 +7,29 @@
 // behind with no order ever attached to it. This dispatcher closes
 // that gap:
 //
-//   * eligibility: opt-in row aged 3–30 days, never nudged, no
-//     matching public.orders.patient_email (i.e. patient hasn't
-//     submitted an order yet);
+//   * eligibility: opt-in row aged 3–30 days, never nudged, NOT yet
+//     completed (completed_at IS NULL), no matching
+//     public.orders.patient_email (i.e. patient hasn't submitted an
+//     order yet);
 //   * one shot per row: a stamped nudged_at column flags the lead
 //     so it never gets emailed twice;
 //   * fail-soft: SendGrid misconfig logs and exits 0 (so a half-
 //     configured deploy doesn't fill the pg-boss retry queue),
 //     and per-row send errors increment `errors` but don't halt
 //     the sweep.
+//
+// Why completed_at IS NULL:
+//   This is the ABANDONED-fitter nudge — its copy says "you didn't
+//   finish." A patient who DID finish the fitter (saw a mask
+//   recommendation, stamping completed_at) is owned by the multi-
+//   touch supply campaign (fitter-supply-campaign.ts), which sends an
+//   accurate "your mask is on hold" drip. Without this guard a
+//   completed-but-unpurchased opt-in would get BOTH the polished
+//   supply-campaign cadence AND this contradictory "you didn't
+//   finish" email — undercutting the campaign and inflating
+//   unsubscribes. Excluding completed_at keeps the two cadences in
+//   their lanes: abandoners get "finish your fitting," finishers get
+//   the supply campaign.
 //
 // Why 3 days minimum:
 //   Patients commonly bounce out and back into the fitter inside a
@@ -160,15 +174,20 @@ export async function runFitterLeadReengageSweep(
   const youngerThan = new Date(now - MIN_AGE_MS).toISOString();
   const olderThan = new Date(now - MAX_AGE_MS).toISOString();
 
-  // Eligibility: opted-in, not yet nudged, in the 3–30 day window.
-  // The partial index `fitter_leads_unnudged_created_idx` covers
-  // this exact predicate.
+  // Eligibility: opted-in, not yet nudged, NOT yet completed (those
+  // are owned by the supply campaign — see the file header), in the
+  // 3–30 day window. The partial index
+  // `fitter_leads_unnudged_created_idx` covers the opt-in/nudged/age
+  // predicate; the completed_at IS NULL check is applied as an
+  // additional filter (abandoned-lead volume is low, so an index-
+  // covered scan + filter is fine).
   const { data: leads, error } = await supabase
     .schema("resupply")
     .from("fitter_leads")
     .select("id, email, created_at")
     .eq("marketing_opt_in", true)
     .is("nudged_at", null)
+    .is("completed_at", null)
     .lt("created_at", youngerThan)
     .gt("created_at", olderThan)
     .order("created_at", { ascending: true })
