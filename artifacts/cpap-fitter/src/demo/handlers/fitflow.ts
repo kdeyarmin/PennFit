@@ -8,6 +8,7 @@ import { json } from "../respond";
 import { demoMaskCatalog, demoRecommendation } from "../fixtures/masks";
 import { demoStore } from "../fixtures/store";
 import { NOW_ISO } from "../fixtures/dates";
+import { demoOrderReference, demoSessionId } from "../ids";
 
 export const fitflowHandlers: DemoHandler[] = [
   // /consent → capture the lead (best-effort on the real server too).
@@ -29,10 +30,10 @@ export const fitflowHandlers: DemoHandler[] = [
       req.json<{
         chosenMask?: { name?: string; manufacturer?: string };
       }>() ?? {};
-    const orderReference = `PENN-DEMO-${Math.floor(1000 + Math.random() * 9000)}`;
+    const orderReference = demoOrderReference();
     demoStore.recordPlacedOrder({
       id: `demo-order-${Date.now()}`,
-      sessionId: `demo_sess_${Math.random().toString(36).slice(2, 10)}`,
+      sessionId: demoSessionId(),
       status: "paid",
       amountTotalCents: 0,
       currency: "usd",

@@ -21,6 +21,7 @@ import {
 } from "../fixtures/account";
 import { demoStore } from "../fixtures/store";
 import { daysAgo, NOW_ISO } from "../fixtures/dates";
+import { demoSessionId } from "../ids";
 
 function baseUrl(): string {
   const base = import.meta.env.BASE_URL || "/";
@@ -325,7 +326,7 @@ export const accountHandlers: DemoHandler[] = [
 
   // ── signed-in quick checkout + billing portal ────────────────────
   route("POST", "/resupply-api/shop/me/quick-checkout", () => {
-    const sessionId = `demo_sess_${Math.random().toString(36).slice(2, 10)}`;
+    const sessionId = demoSessionId();
     return json({
       url: `${baseUrl()}shop/checkout-success?session_id=${sessionId}`,
       sessionId,
@@ -346,7 +347,7 @@ export const accountHandlers: DemoHandler[] = [
   ),
   route("POST", "/api/me/payments/checkout-session", (req) => {
     const body = req.json<{ amountCents?: number }>() ?? {};
-    const sessionId = `demo_sess_${Math.random().toString(36).slice(2, 10)}`;
+    const sessionId = demoSessionId();
     return json({
       paymentId: `demo-pay-${Date.now()}`,
       url: `${baseUrl()}shop/checkout-success?session_id=${sessionId}`,

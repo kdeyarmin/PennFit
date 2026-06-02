@@ -6,6 +6,7 @@ import { route, type DemoHandler } from "../types";
 import { json } from "../respond";
 import { DEMO_PRODUCTS, demoProductsResponse } from "../fixtures/products";
 import { demoOrderSummary } from "../fixtures/orders";
+import { demoSessionId } from "../ids";
 
 function baseUrl(): string {
   const base = import.meta.env.BASE_URL || "/";
@@ -119,7 +120,7 @@ export const shopHandlers: DemoHandler[] = [
   // Simulated checkout — returns a same-origin URL that lands on the
   // SPA's checkout-success page (no Stripe round-trip in the demo).
   route("POST", "/resupply-api/shop/checkout", () => {
-    const sessionId = `demo_sess_${Math.random().toString(36).slice(2, 10)}`;
+    const sessionId = demoSessionId();
     const url = `${baseUrl()}shop/checkout-success?session_id=${sessionId}`;
     return json({ url, sessionId });
   }),
