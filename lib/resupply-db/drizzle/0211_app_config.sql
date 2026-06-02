@@ -86,6 +86,17 @@ CREATE TABLE IF NOT EXISTS resupply.app_config_events (
   occurred_at timestamptz NOT NULL DEFAULT now()
 );
 
+ALTER TABLE "resupply"."app_config_events" ENABLE ROW LEVEL SECURITY;
+
+--> statement-breakpoint
+  -- render "set" vs "updated" without storing either value.
+  had_previous boolean NOT NULL,
+  CONSTRAINT app_config_events_action_chk
+    CHECK (action IN ('set', 'clear')),
+  operator_email text,
+  occurred_at timestamptz NOT NULL DEFAULT now()
+);
+
 --> statement-breakpoint
 
 -- Newest-first lookup powers the activity panel's default view.
