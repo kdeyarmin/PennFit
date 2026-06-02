@@ -32,5 +32,3 @@ CREATE INDEX CONCURRENTLY IF NOT EXISTS "insurance_claims_status_decision_at_idx
 CREATE INDEX CONCURRENTLY IF NOT EXISTS "insurance_claims_submitted_at_idx"
   ON "resupply"."insurance_claims" ("submitted_at")
   WHERE "status" = 'submitted';
-</content>
-</invoke>
