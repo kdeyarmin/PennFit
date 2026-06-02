@@ -173,8 +173,8 @@ describe("FORMAT_LABELS", () => {
 // ─── REPORTS catalog ──────────────────────────────────────────────────────
 
 describe("REPORTS catalog", () => {
-  it("contains exactly six report definitions", () => {
-    expect(REPORTS).toHaveLength(6);
+  it("contains exactly eight report definitions", () => {
+    expect(REPORTS).toHaveLength(8);
   });
 
   it("every report has csv and pdf formats", () => {

@@ -14,6 +14,19 @@
 //   insurance-claims   — billing-side claims in range (cf. cash-pay
 //                         orders); QB exports cover the `paid` slice
 //                         keyed on payer-cash receipts.
+//   patient-payments   — patient-responsibility cash actually
+//                         collected (Stripe PaymentIntents + mail-in
+//                         checks). Disjoint from insurance-claims
+//                         (payer cash) so the two never double-count.
+//                         QB exports post the `succeeded` slice to a
+//                         dedicated "Patient Payments" income account.
+//   all-financial      — the one-click "export everything" bundle:
+//                         every cash-bearing row above (orders +
+//                         refunds + payer receipts + patient payments)
+//                         unioned into a single chronological file per
+//                         format, so a bookkeeper imports ONE artifact
+//                         per QuickBooks edition instead of chasing
+//                         four separate downloads.
 //   customer-activity  — aggregated storefront customer activity per
 //                         day (new signups, returning-customer orders,
 //                         active-customer count); count-only so the
@@ -535,6 +548,200 @@ function buildQbRowsFromClaims(
       memo: `${r.payer_name}${r.claim_number ? ` — ${r.claim_number}` : ""}`,
       customerKey: customerKeyForId(r.patient_id),
     }));
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Patient payments — data fetcher + format helpers.
+//
+// This is the patient-responsibility cash the practice actually
+// collected (Stripe card payments via the portal/CSR, plus mail-in
+// checks recorded by staff). It is DISJOINT from the insurance-claims
+// export: claims carry the payer's `total_paid_cents` (insurance
+// cash), patient_payments carries the patient's own cash. Exporting
+// both is additive, never double-counting.
+//
+// PHI posture: `patient_id` is hashed via `customerKeyForId`; the
+// free-text `note` / `failure_reason` columns (which can hold PHI —
+// "check memo: re: my husband's CPAP") are intentionally NOT pulled,
+// mirroring the insurance-claims fetcher.
+// ─────────────────────────────────────────────────────────────────
+
+interface PatientPaymentRow {
+  id: string;
+  patient_id: string;
+  stripe_payment_intent_id: string | null;
+  amount_cents: number;
+  currency: string;
+  status: string;
+  source: string;
+  succeeded_at: string | null;
+  created_at: string;
+}
+
+async function fetchPatientPayments(
+  from: Date,
+  to: Date,
+): Promise<PatientPaymentRow[]> {
+  const supabase = getSupabaseServiceRoleClient();
+  // Clamp on created_at (consistent with orders/returns); the QB
+  // builder anchors each receipt on succeeded_at so the ledger date
+  // reflects when the cash actually landed.
+  const { data, error } = await supabase
+    .schema("resupply")
+    .from("patient_payments")
+    .select(
+      "id, patient_id, stripe_payment_intent_id, amount_cents, currency, status, source, succeeded_at, created_at",
+    )
+    .gte("created_at", from.toISOString())
+    .lte("created_at", to.toISOString())
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return (data ?? []) as PatientPaymentRow[];
+}
+
+function writePatientPaymentsCsv(
+  res: import("express").Response,
+  rows: PatientPaymentRow[],
+): void {
+  const headers = [
+    "payment_id",
+    "patient_key", // hashed prefix, not raw patient_id
+    "stripe_payment_intent_id",
+    "amount_usd",
+    "currency",
+    "status",
+    "source",
+    "succeeded_at",
+    "created_at",
+  ];
+  res.write(headers.join(",") + "\n");
+  for (const p of rows) {
+    const row = [
+      p.id,
+      customerKeyForId(p.patient_id),
+      p.stripe_payment_intent_id,
+      (p.amount_cents / 100).toFixed(2),
+      p.currency,
+      p.status,
+      p.source,
+      p.succeeded_at,
+      p.created_at,
+    ];
+    res.write(row.map(escapeCsv).join(",") + "\n");
+  }
+  res.end();
+}
+
+// Build QuickBooks rows from the `succeeded` slice of patient
+// payments. Each becomes a positive-amount ORDER row (a cash
+// receipt) routed to a dedicated "Patient Payments" income account so
+// it lands on its own P&L line instead of being lumped in with
+// storefront sales. Pending / failed / cancelled payments are
+// excluded — they're not received cash.
+function buildQbRowsFromPatientPayments(
+  rows: PatientPaymentRow[],
+): QuickbooksRowInput[] {
+  return rows
+    .filter((p) => p.status === "succeeded" && p.amount_cents > 0)
+    .map((p) => ({
+      txnId: `PAY-${p.id.replace(/[^A-Za-z0-9]/g, "").slice(0, 10)}`,
+      date: (p.succeeded_at ?? p.created_at).slice(0, 10),
+      amountUsd: centsToDollars(p.amount_cents),
+      kind: "ORDER" as const,
+      memo: p.stripe_payment_intent_id ?? `patient payment (${p.source})`,
+      customerKey: customerKeyForId(p.patient_id),
+      incomeAccount: "Patient Payments",
+    }));
+}
+
+// ─────────────────────────────────────────────────────────────────
+// All-financial — the one-click "export everything" bundle.
+//
+// Unions every cash-bearing row from the storefront + billing sides
+// into a single chronological ledger: shop orders, shop refunds,
+// insurance (payer) receipts, and patient-responsibility payments.
+// Reuses the existing per-stream QB builders verbatim so the combined
+// file posts each row to exactly the same account it would in its
+// standalone export (orders → Sales:Online Orders, refunds → Sales
+// Returns and Allowances, patient payments → Patient Payments, …).
+// IIF / QBO consume the QuickbooksRowInput fields; the CSV/PDF use
+// the `category` + `source` tags for a human-readable ledger.
+// ─────────────────────────────────────────────────────────────────
+
+type CombinedFinancialRow = QuickbooksRowInput & {
+  category: string;
+  source: string;
+};
+
+function buildCombinedFinancialRows(
+  orders: OrderRow[],
+  returns: ReturnRow[],
+  claims: InsuranceClaimRow[],
+  payments: PatientPaymentRow[],
+): CombinedFinancialRow[] {
+  const tag =
+    (category: string, source: string) =>
+    (r: QuickbooksRowInput): CombinedFinancialRow => ({
+      ...r,
+      category,
+      source,
+    });
+  const rows: CombinedFinancialRow[] = [
+    ...buildQbRowsFromOrders(orders).map(tag("Shop order", "shop")),
+    ...buildQbRowsFromReturns(returns).map(tag("Shop refund", "shop")),
+    ...buildQbRowsFromClaims(claims).map(tag("Insurance payment", "payer")),
+    ...buildQbRowsFromPatientPayments(payments).map(
+      tag("Patient payment", "patient"),
+    ),
+  ];
+  // Ascending by date for a clean chronological general-ledger view.
+  rows.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+  return rows;
+}
+
+async function fetchCombinedFinancial(
+  from: Date,
+  to: Date,
+): Promise<CombinedFinancialRow[]> {
+  const [orders, returns, claims, payments] = await Promise.all([
+    fetchOrders(from, to),
+    fetchReturns(from, to),
+    fetchInsuranceClaims(from, to),
+    fetchPatientPayments(from, to),
+  ]);
+  return buildCombinedFinancialRows(orders, returns, claims, payments);
+}
+
+function writeCombinedFinancialCsv(
+  res: import("express").Response,
+  rows: CombinedFinancialRow[],
+): void {
+  const headers = [
+    "date",
+    "category",
+    "kind", // ORDER (cash in) | REFUND (cash out)
+    "amount_usd", // signed: positive = inflow, negative = refund
+    "customer_key", // hashed prefix, not a name
+    "reference",
+    "source",
+  ];
+  res.write(headers.join(",") + "\n");
+  for (const r of rows) {
+    res.write(
+      [
+        r.date,
+        r.category,
+        r.kind,
+        r.amountUsd.toFixed(2),
+        r.customerKey,
+        r.memo,
+        r.source,
+      ]
+        .map(escapeCsv)
+        .join(",") + "\n",
+    );
+  }
+  res.end();
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -1319,6 +1526,224 @@ router.get(
 );
 
 // ─────────────────────────────────────────────────────────────────
+// PATIENT PAYMENTS — CSV / PDF / IIF / QBO CSV
+// ─────────────────────────────────────────────────────────────────
+
+router.get(
+  "/admin/reports/patient-payments.csv",
+  requirePermission("reports.read"),
+  async (req, res) => {
+    const { from, to } = parseRange(req);
+    const rows = await fetchPatientPayments(from, to);
+    setDownloadHeaders(
+      res,
+      "text/csv; charset=utf-8",
+      `pennpaps-patient-payments-${rangeSlug(from, to)}.csv`,
+    );
+    writePatientPaymentsCsv(res, rows);
+  },
+);
+
+router.get(
+  "/admin/reports/patient-payments.pdf",
+  requirePermission("reports.read"),
+  async (req, res) => {
+    const { from, to } = parseRange(req);
+    const rows = await fetchPatientPayments(from, to);
+    const collected = rows
+      .filter((p) => p.status === "succeeded")
+      .reduce((s, p) => s + centsToDollars(p.amount_cents), 0);
+    const pdf = await renderTablePdf({
+      title: "Patient payments",
+      range: rangeLabel(from, to),
+      practiceName: PRACTICE_NAME,
+      columns: [
+        { label: "Payment #", width: 100 },
+        { label: "Date", width: 80 },
+        { label: "Status", width: 80 },
+        { label: "Amount (USD)", width: 90, rightAlign: true },
+        { label: "Source", width: 90 },
+        { label: "Patient key", width: 110 },
+      ],
+      rows: rows.map((p) => [
+        p.id.slice(0, 8),
+        (p.succeeded_at ?? p.created_at).slice(0, 10),
+        p.status,
+        (p.amount_cents / 100).toFixed(2),
+        p.source,
+        customerKeyForId(p.patient_id),
+      ]),
+      summaryLines: [
+        `Payments in range: ${rows.length}`,
+        `Succeeded: ${rows.filter((p) => p.status === "succeeded").length}`,
+        `Cash collected (succeeded): $${collected.toFixed(2)}`,
+      ],
+    });
+    setDownloadHeaders(
+      res,
+      "application/pdf",
+      `pennpaps-patient-payments-${rangeSlug(from, to)}.pdf`,
+    );
+    res.setHeader("Content-Length", String(pdf.length));
+    res.end(pdf);
+  },
+);
+
+router.get(
+  "/admin/reports/patient-payments.iif",
+  requirePermission("reports.read"),
+  async (req, res) => {
+    const { from, to } = parseRange(req);
+    const rows = await fetchPatientPayments(from, to);
+    const iif = renderIif({
+      from: from.toISOString().slice(0, 10),
+      to: to.toISOString().slice(0, 10),
+      practiceName: PRACTICE_NAME,
+      rows: buildQbRowsFromPatientPayments(rows),
+    });
+    setDownloadHeaders(
+      res,
+      "application/octet-stream",
+      `pennpaps-patient-payments-${rangeSlug(from, to)}.iif`,
+    );
+    res.end(iif);
+  },
+);
+
+router.get(
+  "/admin/reports/patient-payments.qbo.csv",
+  requirePermission("reports.read"),
+  async (req, res) => {
+    const { from, to } = parseRange(req);
+    const rows = await fetchPatientPayments(from, to);
+    const csv = renderQboCsv({
+      from: from.toISOString().slice(0, 10),
+      to: to.toISOString().slice(0, 10),
+      practiceName: PRACTICE_NAME,
+      rows: buildQbRowsFromPatientPayments(rows),
+    });
+    setDownloadHeaders(
+      res,
+      "text/csv; charset=utf-8",
+      `pennpaps-patient-payments-${rangeSlug(from, to)}.qbo.csv`,
+    );
+    res.end(csv);
+  },
+);
+
+// ─────────────────────────────────────────────────────────────────
+// ALL-FINANCIAL — the one-click "export everything" bundle.
+// CSV / PDF / IIF / QBO CSV, each a single file unioning every
+// cash-bearing row in the range. This is the report the task asks
+// for: "export ALL financial data into QuickBooks easily" — one
+// download per QuickBooks edition, not four.
+// ─────────────────────────────────────────────────────────────────
+
+router.get(
+  "/admin/reports/all-financial.csv",
+  requirePermission("reports.read"),
+  async (req, res) => {
+    const { from, to } = parseRange(req);
+    const rows = await fetchCombinedFinancial(from, to);
+    setDownloadHeaders(
+      res,
+      "text/csv; charset=utf-8",
+      `pennpaps-all-financial-${rangeSlug(from, to)}.csv`,
+    );
+    writeCombinedFinancialCsv(res, rows);
+  },
+);
+
+router.get(
+  "/admin/reports/all-financial.pdf",
+  requirePermission("reports.read"),
+  async (req, res) => {
+    const { from, to } = parseRange(req);
+    const rows = await fetchCombinedFinancial(from, to);
+    const inflow = rows
+      .filter((r) => r.amountUsd > 0)
+      .reduce((s, r) => s + r.amountUsd, 0);
+    const refunds = rows
+      .filter((r) => r.amountUsd < 0)
+      .reduce((s, r) => s + r.amountUsd, 0);
+    const pdf = await renderTablePdf({
+      title: "All financial data",
+      range: rangeLabel(from, to),
+      practiceName: PRACTICE_NAME,
+      columns: [
+        { label: "Date", width: 75 },
+        { label: "Category", width: 130 },
+        { label: "Amount (USD)", width: 95, rightAlign: true },
+        { label: "Customer", width: 110 },
+        { label: "Reference", width: 200 },
+      ],
+      rows: rows.map((r) => [
+        r.date,
+        r.category,
+        r.amountUsd.toFixed(2),
+        r.customerKey,
+        r.memo,
+      ]),
+      summaryLines: [
+        `Transactions in range: ${rows.length}`,
+        `Gross inflow: $${inflow.toFixed(2)}`,
+        `Refunds: $${refunds.toFixed(2)}`,
+        `Net: $${(inflow + refunds).toFixed(2)}`,
+      ],
+    });
+    setDownloadHeaders(
+      res,
+      "application/pdf",
+      `pennpaps-all-financial-${rangeSlug(from, to)}.pdf`,
+    );
+    res.setHeader("Content-Length", String(pdf.length));
+    res.end(pdf);
+  },
+);
+
+router.get(
+  "/admin/reports/all-financial.iif",
+  requirePermission("reports.read"),
+  async (req, res) => {
+    const { from, to } = parseRange(req);
+    const rows = await fetchCombinedFinancial(from, to);
+    const iif = renderIif({
+      from: from.toISOString().slice(0, 10),
+      to: to.toISOString().slice(0, 10),
+      practiceName: PRACTICE_NAME,
+      rows,
+    });
+    setDownloadHeaders(
+      res,
+      "application/octet-stream",
+      `pennpaps-all-financial-${rangeSlug(from, to)}.iif`,
+    );
+    res.end(iif);
+  },
+);
+
+router.get(
+  "/admin/reports/all-financial.qbo.csv",
+  requirePermission("reports.read"),
+  async (req, res) => {
+    const { from, to } = parseRange(req);
+    const rows = await fetchCombinedFinancial(from, to);
+    const csv = renderQboCsv({
+      from: from.toISOString().slice(0, 10),
+      to: to.toISOString().slice(0, 10),
+      practiceName: PRACTICE_NAME,
+      rows,
+    });
+    setDownloadHeaders(
+      res,
+      "text/csv; charset=utf-8",
+      `pennpaps-all-financial-${rangeSlug(from, to)}.qbo.csv`,
+    );
+    res.end(csv);
+  },
+);
+
+// ─────────────────────────────────────────────────────────────────
 // Buffered-response shim for the email endpoint.
 //
 // The existing CSV writers (writeOrdersCsv, etc.) stream directly to
@@ -1381,6 +1806,8 @@ const REPORT_SLUGS = [
   "revenue-summary",
   "refunds-journal",
   "insurance-claims",
+  "patient-payments",
+  "all-financial",
   "customer-activity",
 ] as const;
 type ReportSlug = (typeof REPORT_SLUGS)[number];
@@ -1443,6 +1870,16 @@ async function buildReportArtifact(
       writeInsuranceClaimsCsv(
         res as unknown as import("express").Response,
         await fetchInsuranceClaims(from, to),
+      );
+    } else if (slug === "patient-payments") {
+      writePatientPaymentsCsv(
+        res as unknown as import("express").Response,
+        await fetchPatientPayments(from, to),
+      );
+    } else if (slug === "all-financial") {
+      writeCombinedFinancialCsv(
+        res as unknown as import("express").Response,
+        await fetchCombinedFinancial(from, to),
       );
     } else if (slug === "customer-activity") {
       writeCustomerActivityCsv(
@@ -1718,11 +2155,88 @@ async function buildReportArtifact(
         filenameExt: "pdf",
       };
     }
+    if (slug === "patient-payments") {
+      const rows = await fetchPatientPayments(from, to);
+      const collected = rows
+        .filter((p) => p.status === "succeeded")
+        .reduce((s, p) => s + centsToDollars(p.amount_cents), 0);
+      const pdf = await renderTablePdf({
+        title: "Patient payments",
+        range: rangeLabel(from, to),
+        practiceName: PRACTICE_NAME,
+        columns: [
+          { label: "Payment #", width: 100 },
+          { label: "Date", width: 80 },
+          { label: "Status", width: 80 },
+          { label: "Amount (USD)", width: 90, rightAlign: true },
+          { label: "Source", width: 90 },
+          { label: "Patient key", width: 110 },
+        ],
+        rows: rows.map((p) => [
+          p.id.slice(0, 8),
+          (p.succeeded_at ?? p.created_at).slice(0, 10),
+          p.status,
+          (p.amount_cents / 100).toFixed(2),
+          p.source,
+          customerKeyForId(p.patient_id),
+        ]),
+        summaryLines: [
+          `Payments in range: ${rows.length}`,
+          `Succeeded: ${rows.filter((p) => p.status === "succeeded").length}`,
+          `Cash collected (succeeded): $${collected.toFixed(2)}`,
+        ],
+      });
+      return {
+        buffer: pdf,
+        contentType: "application/pdf",
+        filenameExt: "pdf",
+      };
+    }
+    if (slug === "all-financial") {
+      const rows = await fetchCombinedFinancial(from, to);
+      const inflow = rows
+        .filter((r) => r.amountUsd > 0)
+        .reduce((s, r) => s + r.amountUsd, 0);
+      const refunds = rows
+        .filter((r) => r.amountUsd < 0)
+        .reduce((s, r) => s + r.amountUsd, 0);
+      const pdf = await renderTablePdf({
+        title: "All financial data",
+        range: rangeLabel(from, to),
+        practiceName: PRACTICE_NAME,
+        columns: [
+          { label: "Date", width: 75 },
+          { label: "Category", width: 130 },
+          { label: "Amount (USD)", width: 95, rightAlign: true },
+          { label: "Customer", width: 110 },
+          { label: "Reference", width: 200 },
+        ],
+        rows: rows.map((r) => [
+          r.date,
+          r.category,
+          r.amountUsd.toFixed(2),
+          r.customerKey,
+          r.memo,
+        ]),
+        summaryLines: [
+          `Transactions in range: ${rows.length}`,
+          `Gross inflow: $${inflow.toFixed(2)}`,
+          `Refunds: $${refunds.toFixed(2)}`,
+          `Net: $${(inflow + refunds).toFixed(2)}`,
+        ],
+      });
+      return {
+        buffer: pdf,
+        contentType: "application/pdf",
+        filenameExt: "pdf",
+      };
+    }
   }
 
-  // IIF / QBO-CSV — only the orders/returns/insurance-claims slugs
-  // have QuickBooks exports. Other slugs reject before reaching
-  // here (the zod enum allows them but we explicitly 400 below).
+  // IIF / QBO-CSV — the orders / returns / insurance-claims /
+  // patient-payments / all-financial slugs have QuickBooks exports.
+  // Other slugs reject before reaching here (the zod enum allows them
+  // but we explicitly 400 below).
   if (format === "iif" || format === "qbo.csv") {
     let rows: QuickbooksRowInput[];
     if (slug === "orders") {
@@ -1731,6 +2245,12 @@ async function buildReportArtifact(
       rows = buildQbRowsFromReturns(await fetchReturns(from, to));
     } else if (slug === "insurance-claims") {
       rows = buildQbRowsFromClaims(await fetchInsuranceClaims(from, to));
+    } else if (slug === "patient-payments") {
+      rows = buildQbRowsFromPatientPayments(
+        await fetchPatientPayments(from, to),
+      );
+    } else if (slug === "all-financial") {
+      rows = await fetchCombinedFinancial(from, to);
     } else {
       throw new ReportEmailValidationError(
         `${slug} does not support QuickBooks export`,
