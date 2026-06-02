@@ -116,16 +116,14 @@ async function loadOverridesFromDb(
     }
     return out;
   } catch (err) {
-    const message =
-      err instanceof Error
-        ? err.message
-        : typeof err === "object" && err !== null && "message" in err
-          ? String((err as { message?: unknown }).message ?? "unknown")
-          : "unknown";
+    const normalized =
+      err instanceof Error ? err : new Error(String((err as unknown) ?? "unknown"));
     logger.warn(
-      { event: "app_config_overlay_load_failed", err: message },
+      { event: "app_config_overlay_load_failed", err: normalized },
       "app_config overlay load failed; falling back to process.env only",
     );
+    return {};
+  }
     return {};
   }
 }
