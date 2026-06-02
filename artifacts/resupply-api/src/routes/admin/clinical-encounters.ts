@@ -1,7 +1,7 @@
-// /admin/patients/:patientId/clinical-encounters — append-only clinician
-// documentation (migration 0188 / roadmap F3).
+// /admin/patients/clinical-encounters/query + /admin/patients/:patientId/clinical-encounters
+// — append-only clinician documentation (migration 0188 / roadmap F3).
 //
-//   GET  /admin/patients/:patientId/clinical-encounters  — list (newest first)
+//   POST /admin/patients/clinical-encounters/query       — list (newest first)
 //   POST /admin/patients/:patientId/clinical-encounters  — author an encounter
 //
 // Append-only: there is no update/delete. A correction is a new
@@ -31,6 +31,7 @@ import { requirePermission } from "../../middlewares/requireAdmin";
 const router: IRouter = Router();
 
 const patientIdParam = z.string().trim().min(1).max(128);
+const patientIdBody = z.object({ patientId: patientIdParam }).strict();
 
 const ENCOUNTER_TYPES = [
   "mask_fit",
@@ -62,8 +63,8 @@ const createSchema = z
     { message: "An encounter needs at least a note or one structured field." },
   );
 
-router.get(
-  "/admin/patients/:patientId/clinical-encounters",
+router.post(
+  "/admin/patients/clinical-encounters/query",
   // Throttle ahead of the auth gate so the pre-auth window is covered;
   // this is what clears CodeQL's js/missing-rate-limiting. (The separate
   // js/sensitive-get-query finding on the :patientId path param is a
@@ -71,12 +72,12 @@ router.get(
   adminReadRateLimiter,
   requirePermission("clinical.read"),
   async (req, res) => {
-    const parsed = patientIdParam.safeParse(req.params.patientId);
+    const parsed = patientIdBody.safeParse(req.body);
     if (!parsed.success) {
-      res.status(400).json({ error: "invalid_patient_id" });
+      res.status(400).json({ error: "invalid_body" });
       return;
     }
-    const patientId = parsed.data;
+    const patientId = parsed.data.patientId;
 
     const supabase = getSupabaseServiceRoleClient();
     const { data, error } = await supabase

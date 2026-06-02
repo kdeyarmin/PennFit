@@ -1,4 +1,4 @@
-// Hand-rolled fetch wrappers for /admin/patients/:id/clinical-encounters
+// Hand-rolled fetch wrappers for clinical encounter admin endpoints.
 // (F3 clinician portal). Append-only: list + create only.
 
 import { ApiError } from "@workspace/api-client-react/admin";
@@ -67,7 +67,12 @@ async function jsonFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
 
 export const getClinicalEncounters = (patientId: string) =>
   jsonFetch<{ encounters: ClinicalEncounter[] }>(
-    `/admin/patients/${encodeURIComponent(patientId)}/clinical-encounters`,
+    "/admin/patients/clinical-encounters/query",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ patientId }),
+    },
   );
 
 export const createClinicalEncounter = (

@@ -1,4 +1,4 @@
-// Route tests for /admin/patients/:patientId/setup-checklist (RT #27).
+// Route tests for setup checklist admin routes (RT #27).
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import express, { type Express } from "express";
@@ -44,7 +44,8 @@ const CSR: MockAdminCtx = {
   granularRole: "csr",
 };
 const PATIENT_ID = "pat_1";
-const BASE = `/admin/patients/${PATIENT_ID}/setup-checklist`;
+const QUERY_BASE = "/admin/patients/setup-checklist/query";
+const MUTATION_BASE = `/admin/patients/${PATIENT_ID}/setup-checklist`;
 
 function makeApp(): Express {
   const app = express();
@@ -59,14 +60,22 @@ beforeEach(() => {
   logAuditMock.mockClear();
 });
 
-describe("GET setup-checklist", () => {
+describe("POST setup-checklist/query", () => {
   it("401s without admin", async () => {
-    expect((await request(makeApp()).get(BASE)).status).toBe(401);
+    expect(
+      (
+        await request(makeApp())
+          .post(QUERY_BASE)
+          .send({ patientId: PATIENT_ID })
+      ).status,
+    ).toBe(401);
   });
 
   it("403s for the CSR tier (lacks clinical.read)", async () => {
     mockAdmin.current = CSR;
-    const res = await request(makeApp()).get(BASE);
+    const res = await request(makeApp())
+      .post(QUERY_BASE)
+      .send({ patientId: PATIENT_ID });
     expect(res.status).toBe(403);
     expect(res.body.requiredPermission).toBe("clinical.read");
   });
@@ -85,7 +94,9 @@ describe("GET setup-checklist", () => {
         },
       ],
     });
-    const res = await request(makeApp()).get(BASE);
+    const res = await request(makeApp())
+      .post(QUERY_BASE)
+      .send({ patientId: PATIENT_ID });
     expect(res.status).toBe(200);
     expect(res.body.steps).toHaveLength(6);
     const byKey = Object.fromEntries(
@@ -103,7 +114,7 @@ describe("PUT setup-checklist/:stepKey", () => {
   it("403s for the CSR tier (lacks clinical.note.write)", async () => {
     mockAdmin.current = CSR;
     const res = await request(makeApp())
-      .put(`${BASE}/humidifier`)
+      .put(`${MUTATION_BASE}/humidifier`)
       .send({ status: "done" });
     expect(res.status).toBe(403);
     expect(getSupabaseCallCount("setup_checklist_items", "upsert")).toBe(0);
@@ -112,7 +123,7 @@ describe("PUT setup-checklist/:stepKey", () => {
   it("400s on an unknown step key", async () => {
     mockAdmin.current = RT;
     const res = await request(makeApp())
-      .put(`${BASE}/bogus_step`)
+      .put(`${MUTATION_BASE}/bogus_step`)
       .send({ status: "done" });
     expect(res.status).toBe(400);
     expect(res.body.error).toBe("invalid_step_key");
@@ -121,7 +132,7 @@ describe("PUT setup-checklist/:stepKey", () => {
   it("400s on an invalid status", async () => {
     mockAdmin.current = RT;
     const res = await request(makeApp())
-      .put(`${BASE}/humidifier`)
+      .put(`${MUTATION_BASE}/humidifier`)
       .send({ status: "bogus" });
     expect(res.status).toBe(400);
     expect(res.body.error).toBe("invalid_body");
@@ -130,7 +141,7 @@ describe("PUT setup-checklist/:stepKey", () => {
   it("upserts a step (done stamps completed_at) + audits structurally", async () => {
     mockAdmin.current = RT;
     const res = await request(makeApp())
-      .put(`${BASE}/humidifier`)
+      .put(`${MUTATION_BASE}/humidifier`)
       .send({ status: "done" });
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ stepKey: "humidifier", status: "done" });
