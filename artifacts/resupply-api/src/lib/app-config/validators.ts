@@ -12,7 +12,7 @@
 // permissive about live-vs-test and provider variations.
 
 const URL_RULE: FormatRule = {
-  test: /^https?:\/\/\S+$/,
+  test: /^https:\/\/\S+$/,
   hint: "an https:// URL",
 };
 const E164_RULE: FormatRule = {
