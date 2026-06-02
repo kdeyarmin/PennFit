@@ -13,6 +13,13 @@
 
 import sgMail from "@sendgrid/mail";
 
+import {
+  DEFAULT_EMAIL_RETRY_POLICY,
+  isTransientSendgridError,
+  withRetry,
+  type RetryPolicy,
+} from "./retry";
+
 export class EmailConfigError extends Error {
   constructor(message: string) {
     super(message);
@@ -23,11 +30,25 @@ export class EmailConfigError extends Error {
 export class EmailApiError extends Error {
   readonly status?: number;
   readonly responseBody?: unknown;
-  constructor(message: string, status?: number, responseBody?: unknown) {
+  /**
+   * True when this failure is transient (HTTP 429 / 5xx / transport
+   * error) and the send was NOT accepted — i.e. it is safe to retry.
+   * `sendEmail` exhausts its bounded in-process retry budget before
+   * throwing, so a thrown `EmailApiError` with `retryable: true` means
+   * every attempt failed; callers can treat it as a genuine outage.
+   */
+  readonly retryable: boolean;
+  constructor(
+    message: string,
+    status?: number,
+    responseBody?: unknown,
+    retryable = false,
+  ) {
     super(message);
     this.name = "EmailApiError";
     this.status = status;
     this.responseBody = responseBody;
+    this.retryable = retryable;
   }
 }
 
@@ -120,6 +141,14 @@ export interface CreateSendgridClientOptions {
   fromName?: string;
   /** Test-only seam. Production callers leave undefined. */
   sgFactory?: () => RawSendgridSdk;
+  /**
+   * Override the bounded in-process retry on transient SendGrid
+   * failures (HTTP 429 / 5xx / network). Defaults to
+   * {@link DEFAULT_EMAIL_RETRY_POLICY} (3 attempts). Set
+   * `{ maxAttempts: 1 }` to disable. Test seam `sleep` lets specs
+   * assert retry without real timers.
+   */
+  retry?: Partial<RetryPolicy> & { sleep?: (ms: number) => Promise<void> };
 }
 
 export interface SendgridClient {
@@ -157,6 +186,15 @@ export function createSendgridClient(
 
   const sg: RawSendgridSdk = opts.sgFactory ? opts.sgFactory() : sgMail;
 
+  const retryPolicy: RetryPolicy = {
+    maxAttempts:
+      opts.retry?.maxAttempts ?? DEFAULT_EMAIL_RETRY_POLICY.maxAttempts,
+    baseDelayMs:
+      opts.retry?.baseDelayMs ?? DEFAULT_EMAIL_RETRY_POLICY.baseDelayMs,
+    maxDelayMs: opts.retry?.maxDelayMs ?? DEFAULT_EMAIL_RETRY_POLICY.maxDelayMs,
+  };
+  const retrySleep = opts.retry?.sleep;
+
   return {
     async sendEmail(input) {
       // Defense-in-depth header-injection guard. SendGrid's v3 JSON API
@@ -181,56 +219,90 @@ export function createSendgridClient(
         );
       }
       sg.setApiKey(apiKey);
-      try {
-        const attachments = input.attachments?.map((a) => ({
-          content: a.content.toString("base64"),
-          filename: a.filename,
-          type: a.contentType,
-          disposition: "attachment" as const,
-        }));
-        const [response] = await sg.send({
-          to: input.to,
-          from: fromName
-            ? { email: fromEmail, name: fromName }
-            : { email: fromEmail },
-          subject: input.subject,
-          html: input.html,
-          text: input.text,
-          replyTo: input.replyTo,
-          customArgs: input.customArgs,
-          ...(attachments && attachments.length > 0 ? { attachments } : {}),
-        });
-        // SendGrid returns the X-Message-Id in response headers; this is
-        // the stable id we'll see echoed back on every Event Webhook
-        // delivery for this message.
-        const headerVal = response.headers["x-message-id"];
-        const messageId =
-          typeof headerVal === "string"
-            ? headerVal
-            : Array.isArray(headerVal)
-              ? (headerVal[0] ?? "")
-              : "";
-        if (!messageId) {
+      const attachments = input.attachments?.map((a) => ({
+        content: a.content.toString("base64"),
+        filename: a.filename,
+        type: a.contentType,
+        disposition: "attachment" as const,
+      }));
+
+      // A single send attempt. Transient SendGrid failures (429 / 5xx /
+      // network) are classified here and re-thrown as a retryable
+      // EmailApiError; `withRetry` re-runs this whole function with the
+      // identical payload (idempotent — SendGrid never accepted the
+      // failed attempt, so there is no duplicate-send risk).
+      const attempt = async (): Promise<SendEmailResult> => {
+        try {
+          const [response] = await sg.send({
+            to: input.to,
+            from: fromName
+              ? { email: fromEmail, name: fromName }
+              : { email: fromEmail },
+            subject: input.subject,
+            html: input.html,
+            text: input.text,
+            replyTo: input.replyTo,
+            customArgs: input.customArgs,
+            ...(attachments && attachments.length > 0 ? { attachments } : {}),
+          });
+          // SendGrid returns the X-Message-Id in response headers; this is
+          // the stable id we'll see echoed back on every Event Webhook
+          // delivery for this message.
+          const headerVal = response.headers["x-message-id"];
+          const messageId =
+            typeof headerVal === "string"
+              ? headerVal
+              : Array.isArray(headerVal)
+                ? (headerVal[0] ?? "")
+                : "";
+          if (!messageId) {
+            // A 2xx with no message id means the mail WAS accepted; do
+            // not retry (would duplicate). Non-retryable EmailApiError.
+            throw new EmailApiError(
+              "SendGrid response did not include x-message-id header",
+              response.statusCode,
+              response.body,
+            );
+          }
+          return { messageId };
+        } catch (err) {
+          if (err instanceof EmailApiError) throw err;
+          const e = err as {
+            code?: number;
+            response?: { body?: unknown; statusCode?: number };
+            message?: string;
+          };
           throw new EmailApiError(
-            "SendGrid response did not include x-message-id header",
-            response.statusCode,
-            response.body,
+            e.message ?? "SendGrid API error",
+            e.response?.statusCode ?? e.code,
+            e.response?.body,
+            isTransientSendgridError(err),
           );
         }
-        return { messageId };
-      } catch (err) {
-        if (err instanceof EmailApiError) throw err;
-        const e = err as {
-          code?: number;
-          response?: { body?: unknown; statusCode?: number };
-          message?: string;
-        };
-        throw new EmailApiError(
-          e.message ?? "SendGrid API error",
-          e.response?.statusCode ?? e.code,
-          e.response?.body,
-        );
-      }
+      };
+
+      return withRetry(attempt, retryPolicy, {
+        shouldRetry: (err) =>
+          err instanceof EmailApiError && err.retryable === true,
+        sleep: retrySleep,
+        onRetry: ({ attempt: n, nextDelayMs, err }) => {
+          // PHI-free structured line: no recipient, no subject, no body.
+          const status =
+            err instanceof EmailApiError ? (err.status ?? null) : null;
+          process.stderr.write(
+            JSON.stringify({
+              level: 40,
+              event: "email_send_retry",
+              vendor: "sendgrid",
+              attempt: n,
+              maxAttempts: retryPolicy.maxAttempts,
+              nextDelayMs,
+              status,
+              msg: "Transient SendGrid failure — retrying send",
+            }) + "\n",
+          );
+        },
+      });
     },
   };
 }
