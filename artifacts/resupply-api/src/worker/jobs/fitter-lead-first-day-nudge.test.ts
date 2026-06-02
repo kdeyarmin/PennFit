@@ -62,7 +62,7 @@ describe("composeFirstDayEmail", () => {
 });
 
 describe("composeFirstDaySms", () => {
-  it("stays a single GSM-7 segment (<=160 chars) and includes STOP", () => {
+  it("stays under 160 characters and includes STOP", () => {
     const sms = composeFirstDaySms({
       practiceName: "PennPaps",
       resumeUrl: "https://pennfit.example/consent",
@@ -70,6 +70,7 @@ describe("composeFirstDaySms", () => {
     expect(sms.length).toBeLessThanOrEqual(160);
     expect(sms).toContain("Reply STOP to opt out");
   });
+});
 });
 
 describe("runFirstDayNudgeSweep — eligibility predicate", () => {
