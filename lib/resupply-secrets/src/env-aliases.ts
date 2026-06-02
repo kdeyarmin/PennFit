@@ -12,13 +12,16 @@
 // effective environment. It mutates the passed env object in place so
 // the ~20 call sites that read the specific names need no changes.
 //
-// Three consolidations:
+// Consolidations:
 //   1. PUBLIC_BASE_URL  → the five `*_PUBLIC_BASE_URL` vars, plus the
 //      CORS allow-list. On Railway, `RAILWAY_PUBLIC_DOMAIN` is used as
 //      the source when `PUBLIC_BASE_URL` itself is unset, so a
 //      single-service Railway deploy can set NEITHER.
-//   2. OPS_EMAIL        → the five operational recipient addresses.
-//   3. TWILIO_PHONE_NUMBER → TWILIO_VOICE_PHONE_NUMBER (one number on a
+//   2. OPS_EMAIL        → the five operational recipient addresses, and
+//      (as a mailto:) the web-push VAPID abuse-contact subject.
+//   3. RESUPPLY_PRACTICE_NAME → SENDGRID_FROM_NAME (both are the brand
+//      display name, so it's set in one place).
+//   4. TWILIO_PHONE_NUMBER → TWILIO_VOICE_PHONE_NUMBER (one number on a
 //      typical single-number account; the separate var is retired).
 
 type EnvLike = NodeJS.ProcessEnv | Record<string, string | undefined>;
@@ -86,9 +89,24 @@ export function applyEnvAliases(env: EnvLike = process.env): void {
     for (const name of OPS_EMAIL_TARGETS) {
       if (trimmed(env[name]) === "") env[name] = opsEmail;
     }
+    // The web-push VAPID "subject" is just an abuse-contact address the
+    // push services require. Default it to the ops inbox (as a mailto:)
+    // so enabling web push needs only its generated key pair.
+    if (trimmed(env.WEB_PUSH_VAPID_SUBJECT) === "") {
+      env.WEB_PUSH_VAPID_SUBJECT = `mailto:${opsEmail}`;
+    }
   }
 
-  // 3. Twilio voice caller-id is the same number as SMS on a one-number
+  // 3. SendGrid From-name defaults to the practice display name — both
+  //    are the brand, so the operator sets the name in one place.
+  if (
+    trimmed(env.SENDGRID_FROM_NAME) === "" &&
+    trimmed(env.RESUPPLY_PRACTICE_NAME) !== ""
+  ) {
+    env.SENDGRID_FROM_NAME = trimmed(env.RESUPPLY_PRACTICE_NAME);
+  }
+
+  // 4. Twilio voice caller-id is the same number as SMS on a one-number
   //    account; alias the retired var so any remaining reader still works.
   if (
     trimmed(env.TWILIO_VOICE_PHONE_NUMBER) === "" &&

@@ -82,6 +82,40 @@ describe("applyEnvAliases — OPS_EMAIL", () => {
   });
 });
 
+describe("applyEnvAliases — OPS_EMAIL feeds the web-push VAPID subject", () => {
+  it("defaults WEB_PUSH_VAPID_SUBJECT to mailto:OPS_EMAIL", () => {
+    const env: Env = { OPS_EMAIL: "ops@pennpaps.com" };
+    applyEnvAliases(env);
+    expect(env.WEB_PUSH_VAPID_SUBJECT).toBe("mailto:ops@pennpaps.com");
+  });
+
+  it("does not override an explicit VAPID subject", () => {
+    const env: Env = {
+      OPS_EMAIL: "ops@pennpaps.com",
+      WEB_PUSH_VAPID_SUBJECT: "mailto:push@pennpaps.com",
+    };
+    applyEnvAliases(env);
+    expect(env.WEB_PUSH_VAPID_SUBJECT).toBe("mailto:push@pennpaps.com");
+  });
+});
+
+describe("applyEnvAliases — SendGrid From-name", () => {
+  it("defaults SENDGRID_FROM_NAME to RESUPPLY_PRACTICE_NAME", () => {
+    const env: Env = { RESUPPLY_PRACTICE_NAME: "Penn Home Medical" };
+    applyEnvAliases(env);
+    expect(env.SENDGRID_FROM_NAME).toBe("Penn Home Medical");
+  });
+
+  it("does not override an explicit From-name", () => {
+    const env: Env = {
+      RESUPPLY_PRACTICE_NAME: "Penn Home Medical",
+      SENDGRID_FROM_NAME: "PennPaps",
+    };
+    applyEnvAliases(env);
+    expect(env.SENDGRID_FROM_NAME).toBe("PennPaps");
+  });
+});
+
 describe("applyEnvAliases — Twilio voice number", () => {
   it("aliases TWILIO_VOICE_PHONE_NUMBER to TWILIO_PHONE_NUMBER", () => {
     const env: Env = { TWILIO_PHONE_NUMBER: "+18145551234" };
