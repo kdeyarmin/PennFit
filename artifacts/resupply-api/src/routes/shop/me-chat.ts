@@ -884,16 +884,17 @@ function convertOpenAiToAnthropicMessages(openai: OpenAiMessage[]): {
       continue;
     }
     if (m.role === "tool") {
-      out.push({
-        role: "user",
-        content: [
-          {
-            type: "tool_result",
-            tool_use_id: m.tool_call_id,
-            content: m.content,
-          },
-        ],
-      });
+      const block: AnthropicContentBlock = {
+        type: "tool_result",
+        tool_use_id: m.tool_call_id,
+        content: m.content,
+      };
+      const last = out.at(-1);
+      if (last && last.role === "user" && Array.isArray(last.content)) {
+        (last.content as AnthropicContentBlock[]).push(block);
+      } else {
+        out.push({ role: "user", content: [block] });
+      }
     }
   }
   return { system, messages: out };
