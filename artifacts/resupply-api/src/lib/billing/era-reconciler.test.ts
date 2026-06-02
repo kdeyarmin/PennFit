@@ -27,8 +27,76 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
+import { claimAllowedCents, lineAllowedCents } from "./era-reconciler";
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SRC = readFileSync(path.join(__dirname, "era-reconciler.ts"), "utf8");
+
+// ---------------------------------------------------------------------------
+// Allowed-amount arithmetic (P0 fix)
+// ---------------------------------------------------------------------------
+// An 835: billed = paid + Σ(CAS). allowed = billed − CO = paid + PR (CLP05).
+// The pre-fix code stored Σ(CO + PR) into total_allowed_cents, which is the
+// total *reduction* from billed, not the allowed amount — corrupting payer
+// profitability and the COB contractual (billed − allowed) disclosed to the
+// secondary payer. These tests pin the corrected formula.
+function adj(groupCode: string, reasonCode: string, amountCents: number) {
+  return { groupCode, reasonCode, amountCents, quantity: null };
+}
+
+describe("era-reconciler — claimAllowedCents (P0 allowed-amount fix)", () => {
+  it("allowed = paid + patient responsibility ($100 billed, $80 allowed)", () => {
+    // billed 10000 = paid 6400 + CO 2000 + PR 1600; allowed = 8000.
+    expect(
+      claimAllowedCents({ paidCents: 6400, patientResponsibilityCents: 1600 }),
+    ).toBe(8000);
+  });
+
+  it("a full contractual denial allows ~0, not the billed charge", () => {
+    expect(
+      claimAllowedCents({ paidCents: 0, patientResponsibilityCents: 0 }),
+    ).toBe(0);
+  });
+
+  it("a claim paid in full at the allowed amount (no patient share)", () => {
+    expect(
+      claimAllowedCents({ paidCents: 8000, patientResponsibilityCents: 0 }),
+    ).toBe(8000);
+  });
+});
+
+describe("era-reconciler — lineAllowedCents (P0 allowed-amount fix)", () => {
+  it("excludes CO writeoffs: allowed = line paid + line PR", () => {
+    // SVC paid 6400; CAS PR 1600 (coinsurance) + CO 2000 (writeoff) → 8000.
+    expect(
+      lineAllowedCents({
+        paidCents: 6400,
+        adjustments: [adj("PR", "2", 1600), adj("CO", "45", 2000)],
+      }),
+    ).toBe(8000);
+  });
+
+  it("a line-level contractual denial allows 0 (CO only, no paid)", () => {
+    expect(
+      lineAllowedCents({ paidCents: 0, adjustments: [adj("CO", "97", 10000)] }),
+    ).toBe(0);
+  });
+
+  it("a line fully applied to deductible: paid 0 + PR 5000 = 5000 allowed", () => {
+    expect(
+      lineAllowedCents({ paidCents: 0, adjustments: [adj("PR", "1", 5000)] }),
+    ).toBe(5000);
+  });
+});
+
+describe("era-reconciler — allowed-amount source guard (no regression)", () => {
+  it("does not add CO into the allowed amount at claim or line level", () => {
+    expect(SRC).not.toContain('sumPositive(eraClaim.adjustments, "CO", "PR")');
+    expect(SRC).not.toContain('sumPositive(eraLine.adjustments, "CO", "PR")');
+    expect(SRC).toContain("claimAllowedCents(eraClaim)");
+    expect(SRC).toContain("lineAllowedCents(eraLine)");
+  });
+});
 
 // ---------------------------------------------------------------------------
 // ReconciliationOutcome interface — linesUpdated field (PR change)

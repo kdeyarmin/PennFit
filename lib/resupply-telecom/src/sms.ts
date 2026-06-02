@@ -27,6 +27,12 @@ import { z } from "zod";
 import twilioPkg from "twilio";
 
 import { TwilioApiError, TwilioConfigError } from "./client";
+import {
+  DEFAULT_SMS_RETRY_POLICY,
+  isTransientTwilioError,
+  withRetry,
+  type RetryPolicy,
+} from "./retry";
 
 const Twilio = twilioPkg;
 
@@ -79,6 +85,13 @@ export interface CreateTwilioSmsClientOptions {
   messagingServiceSid?: string;
   /** Test-only seam. Production callers leave undefined. */
   sdkFactory?: (accountSid: string, authToken: string) => RawTwilioMessagingSdk;
+  /**
+   * Override the bounded in-process retry on transient Twilio failures
+   * (HTTP 429 / 5xx / network). Defaults to
+   * {@link DEFAULT_SMS_RETRY_POLICY} (3 attempts). Set
+   * `{ maxAttempts: 1 }` to disable; `sleep` is a test seam.
+   */
+  retry?: Partial<RetryPolicy> & { sleep?: (ms: number) => Promise<void> };
 }
 
 export interface TwilioSmsClient {
@@ -128,41 +141,80 @@ export function createTwilioSmsClient(
     ? opts.sdkFactory(accountSid, authToken)
     : (Twilio(accountSid, authToken) as unknown as RawTwilioMessagingSdk);
 
+  const retryPolicy: RetryPolicy = {
+    maxAttempts:
+      opts.retry?.maxAttempts ?? DEFAULT_SMS_RETRY_POLICY.maxAttempts,
+    baseDelayMs:
+      opts.retry?.baseDelayMs ?? DEFAULT_SMS_RETRY_POLICY.baseDelayMs,
+    maxDelayMs: opts.retry?.maxDelayMs ?? DEFAULT_SMS_RETRY_POLICY.maxDelayMs,
+  };
+  const retrySleep = opts.retry?.sleep;
+
   return {
     async sendSms(input) {
-      try {
-        const fromNumber = input.from ?? defaultFrom;
-        const msid = input.messagingServiceSid ?? defaultMsid;
-        const params: Parameters<
-          RawTwilioMessagingSdk["messages"]["create"]
-        >[0] = {
+      const fromNumber = input.from ?? defaultFrom;
+      const msid = input.messagingServiceSid ?? defaultMsid;
+      const params: Parameters<RawTwilioMessagingSdk["messages"]["create"]>[0] =
+        {
           to: input.to,
           body: input.body,
         };
-        // Messaging service SID takes precedence — Twilio recommends it
-        // for production (opt-out handling, sticky sender, etc).
-        if (msid) {
-          params.messagingServiceSid = msid;
-        } else if (fromNumber) {
-          params.from = fromNumber;
-        }
-        if (input.statusCallbackUrl) {
-          params.statusCallback = input.statusCallbackUrl;
-        }
-        const res = await sdk.messages.create(params);
-        return { messageSid: res.sid };
-      } catch (err) {
-        const e = err as {
-          status?: number;
-          code?: number | string;
-          message?: string;
-        };
-        throw new TwilioApiError(
-          e.message ?? "Twilio API error",
-          e.status,
-          e.code,
-        );
+      // Messaging service SID takes precedence — Twilio recommends it
+      // for production (opt-out handling, sticky sender, etc).
+      if (msid) {
+        params.messagingServiceSid = msid;
+      } else if (fromNumber) {
+        params.from = fromNumber;
       }
+      if (input.statusCallbackUrl) {
+        params.statusCallback = input.statusCallbackUrl;
+      }
+
+      // A single send attempt. Transient Twilio failures (429 / 5xx /
+      // network) are classified retryable; `withRetry` re-runs this with
+      // the identical params (idempotent — Twilio never accepted the
+      // failed attempt, so no duplicate SMS is sent).
+      const attempt = async (): Promise<SendSmsResult> => {
+        try {
+          const res = await sdk.messages.create(params);
+          return { messageSid: res.sid };
+        } catch (err) {
+          const e = err as {
+            status?: number;
+            code?: number | string;
+            message?: string;
+          };
+          throw new TwilioApiError(
+            e.message ?? "Twilio API error",
+            e.status,
+            e.code,
+            isTransientTwilioError(err),
+          );
+        }
+      };
+
+      return withRetry(attempt, retryPolicy, {
+        shouldRetry: (err) =>
+          err instanceof TwilioApiError && err.retryable === true,
+        sleep: retrySleep,
+        onRetry: ({ attempt: n, nextDelayMs, err }) => {
+          // PHI-free structured line: no recipient phone, no body.
+          const status =
+            err instanceof TwilioApiError ? (err.status ?? null) : null;
+          process.stderr.write(
+            JSON.stringify({
+              level: 40,
+              event: "sms_send_retry",
+              vendor: "twilio",
+              attempt: n,
+              maxAttempts: retryPolicy.maxAttempts,
+              nextDelayMs,
+              status,
+              msg: "Transient Twilio failure — retrying send",
+            }) + "\n",
+          );
+        },
+      });
     },
   };
 }

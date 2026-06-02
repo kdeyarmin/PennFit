@@ -118,4 +118,18 @@ describe("resolvePayerProfileForEra", () => {
       matchReason: "name_ilike",
     });
   });
+
+  it("resolves a shared EDI id deterministically (orders by created_at, then id)", async () => {
+    // Many active profiles can share one EDI id (e.g. 60054 spans Aetna
+    // commercial / Medicare / D-SNP). The lookup must apply an explicit,
+    // stable order so the resolved payer doesn't flip between ingests.
+    stageSupabaseResponse("payer_profiles", "select", {
+      data: [{ id: PROFILE_ID }],
+    });
+    await resolvePayerProfileForEra({ payerId: "60054", payerName: null });
+    const orderCols = getSupabaseFilterCalls("payer_profiles", "select")
+      .filter((c) => c.verb === "order")
+      .map((c) => c.args[0]);
+    expect(orderCols).toEqual(["created_at", "id"]);
+  });
 });
