@@ -65,6 +65,15 @@ export {
 } from "./sms";
 
 export {
+  isTransientTwilioError,
+  withRetry,
+  computeBackoffMs,
+  DEFAULT_SMS_RETRY_POLICY,
+  type RetryPolicy,
+  type WithRetryHooks,
+} from "./retry";
+
+export {
   createTwilioFaxClient,
   type SendFaxInput,
   type SendFaxResult,

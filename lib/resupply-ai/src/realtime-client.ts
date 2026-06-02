@@ -89,6 +89,14 @@ export interface RealtimeClientEvents {
   open: () => void;
   "audio.delta": (delta: RealtimeAudioDelta) => void;
   "transcript.delta": (delta: RealtimeTranscriptDelta) => void;
+  /**
+   * The server's VAD detected the caller starting to speak. Used for
+   * barge-in: when an external TTS engine (ElevenLabs) is producing the
+   * agent's audio, the bridge must stop feeding/flush queued frames the
+   * moment the caller interrupts. (In the built-in-audio path the
+   * Realtime server handles barge-in itself via `interrupt_response`.)
+   */
+  "input.speech_started": () => void;
   "tool.call": (call: RealtimeToolCall) => void;
   "response.done": (info: { responseId: string }) => void;
   error: (err: RealtimeError) => void;
@@ -99,6 +107,20 @@ export interface RealtimeClientOptions {
   apiKey: string;
   model?: string;
   voice?: string;
+  /**
+   * Whether the OpenAI Realtime model should generate the spoken audio
+   * itself (its built-in `voice`, e.g. cedar). Default `true`.
+   *
+   * Set to `false` when an external TTS engine (ElevenLabs) owns the
+   * voice: the session then runs in TEXT output mode, so the model
+   * emits `response.output_text.*` events (which we surface as output
+   * transcript turns) and NO `response.audio.delta`. The bridge
+   * synthesizes those text turns through the external engine and
+   * streams the resulting µ-law back to Twilio. Input audio + STT +
+   * VAD turn-taking + tool calls are unaffected — only the output
+   * modality changes.
+   */
+  generateAudio?: boolean;
   /** System prompt, already built (see prompts.ts). */
   instructions: string;
   /** Tool descriptors (see tools.ts). */
@@ -143,10 +165,14 @@ const OPEN: number = 1;
 // eslint-disable-next-line @typescript-eslint/no-unsafe-declaration-merging
 export class RealtimeClient extends EventEmitter {
   private readonly opts: Required<
-    Omit<RealtimeClientOptions, "webSocketFactory" | "voice" | "model">
+    Omit<
+      RealtimeClientOptions,
+      "webSocketFactory" | "voice" | "model" | "generateAudio"
+    >
   > & {
     model: string;
     voice: string;
+    generateAudio: boolean;
   };
   private readonly ws: WebSocketLike;
   private sessionUpdateSent = false;
@@ -170,6 +196,7 @@ export class RealtimeClient extends EventEmitter {
       apiKey: opts.apiKey,
       model: opts.model ?? DEFAULT_REALTIME_MODEL,
       voice: opts.voice ?? DEFAULT_REALTIME_VOICE,
+      generateAudio: opts.generateAudio ?? true,
       instructions: opts.instructions,
       tools: opts.tools,
       allowedToolNames: opts.allowedToolNames,
@@ -361,6 +388,51 @@ export class RealtimeClient extends EventEmitter {
         });
         return;
       }
+      // Text-output mode (generateAudio:false, used when an external TTS
+      // engine owns the voice). The model emits text deltas/done instead
+      // of audio + audio_transcript. We map them onto the SAME output
+      // transcript events so the bridge's turn-coalescing + (for the
+      // ElevenLabs path) synthesis trigger work identically. Both the
+      // older (`response.text.*`) and GA (`response.output_text.*`)
+      // names are accepted so an OpenAI rollout can't silence the agent.
+      case "response.text.delta":
+      case "response.output_text.delta": {
+        const text = typeof payload.delta === "string" ? payload.delta : "";
+        if (!text) return;
+        this.emit("transcript.delta", {
+          source: "output",
+          text,
+          done: false,
+          responseId:
+            typeof payload.response_id === "string"
+              ? payload.response_id
+              : undefined,
+          itemId:
+            typeof payload.item_id === "string" ? payload.item_id : undefined,
+        });
+        return;
+      }
+      case "response.text.done":
+      case "response.output_text.done": {
+        const text = typeof payload.text === "string" ? payload.text : "";
+        this.emit("transcript.delta", {
+          source: "output",
+          text,
+          done: true,
+          responseId:
+            typeof payload.response_id === "string"
+              ? payload.response_id
+              : undefined,
+          itemId:
+            typeof payload.item_id === "string" ? payload.item_id : undefined,
+        });
+        return;
+      }
+      case "input_audio_buffer.speech_started": {
+        // Caller started talking — surface for barge-in handling.
+        this.emit("input.speech_started");
+        return;
+      }
       case "conversation.item.input_audio_transcription.delta": {
         const text = typeof payload.delta === "string" ? payload.delta : "";
         if (!text) return;
@@ -440,17 +512,26 @@ export class RealtimeClient extends EventEmitter {
     const tools = this.opts.tools.filter((t) =>
       this.opts.allowedToolNames.has(t.name),
     );
+    // Output modality: built-in audio (cedar) by default, or text-only
+    // when an external TTS engine owns the voice. Input audio + STT +
+    // VAD are identical in both cases — only the output side changes.
+    const session: Record<string, unknown> = {
+      modalities: this.opts.generateAudio ? ["audio", "text"] : ["text"],
+      instructions: this.opts.instructions,
+      // µ-law @ 8kHz inbound — same as Twilio's Media Streams default —
+      // so we do zero transcoding of the caller audio.
+      input_audio_format: "g711_ulaw",
+      input_audio_transcription: { model: "gpt-4o-mini-transcribe" },
+    };
+    if (this.opts.generateAudio) {
+      // Only meaningful when the model generates the audio itself.
+      session.voice = this.opts.voice;
+      session.output_audio_format = "g711_ulaw";
+    }
     this.sendJson({
       type: "session.update",
       session: {
-        modalities: ["audio", "text"],
-        voice: this.opts.voice,
-        instructions: this.opts.instructions,
-        // µ-law @ 8kHz on both ends — same as Twilio's Media Streams
-        // default — so we do zero transcoding in the bridge.
-        input_audio_format: "g711_ulaw",
-        output_audio_format: "g711_ulaw",
-        input_audio_transcription: { model: "gpt-4o-mini-transcribe" },
+        ...session,
         // Semantic VAD waits for a semantic end-of-thought rather than
         // a fixed silence threshold, so the agent doesn't interrupt
         // callers who pause mid-sentence to think (very common with

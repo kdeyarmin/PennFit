@@ -94,6 +94,31 @@ describe("renderIif", () => {
     expect(splLine).toContain("75.00"); // sign flipped to positive
   });
 
+  it("routes the SPL line to a custom incomeAccount when set", () => {
+    const input = sampleInput();
+    // Tag the order row with a dedicated income account — e.g. a
+    // patient-responsibility collection that should NOT land in
+    // "Sales:Online Orders".
+    input.rows[0]!.incomeAccount = "Patient Payments";
+    const iif = renderIif(input);
+    const lines = iif.split("\n");
+    const trnsIdx = lines.findIndex((l) => l.startsWith("TRNS\tORD-abc123"));
+    const splLine = lines[trnsIdx + 1]!;
+    expect(splLine).toContain("Patient Payments");
+    expect(splLine).not.toContain("Sales:Online Orders");
+    // The TRNS (clearing) account is unaffected by the override.
+    expect(lines[trnsIdx]!).toContain("Stripe Clearing");
+  });
+
+  it("defaults the SPL account when incomeAccount is omitted", () => {
+    // Regression guard: the optional field must not change the
+    // historical default for rows that don't set it.
+    const iif = renderIif(sampleInput());
+    const lines = iif.split("\n");
+    const trnsIdx = lines.findIndex((l) => l.startsWith("TRNS\tORD-abc123"));
+    expect(lines[trnsIdx + 1]!).toContain("Sales:Online Orders");
+  });
+
   it("strips tabs and newlines from string fields", () => {
     const input = sampleInput();
     input.rows[0]!.memo = "tab\there\nand newline";

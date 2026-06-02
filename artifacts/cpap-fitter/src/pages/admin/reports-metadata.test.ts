@@ -53,8 +53,8 @@ describe("FORMAT_LABELS", () => {
 // ─────────────────────────────────────────────────────────────────
 
 describe("REPORTS", () => {
-  it("contains exactly six report definitions", () => {
-    expect(REPORTS).toHaveLength(6);
+  it("contains exactly eight report definitions", () => {
+    expect(REPORTS).toHaveLength(8);
   });
 
   it("every report has a non-empty slug, title, and subtitle", () => {
@@ -75,25 +75,40 @@ describe("REPORTS", () => {
   it("contains the expected report slugs", () => {
     const slugs = REPORTS.map((r) => r.slug);
     for (const expected of [
+      "all-financial",
       "orders",
       "returns",
       "revenue-summary",
       "refunds-journal",
       "insurance-claims",
+      "patient-payments",
       "customer-activity",
     ]) {
       expect(slugs, `slug '${expected}' must be present`).toContain(expected);
     }
   });
 
-  it("orders, returns, and insurance-claims reports have iif and qbo formats", () => {
-    const financeReports = ["orders", "returns", "insurance-claims"];
+  it("finance-bearing reports have iif and qbo formats", () => {
+    // orders/returns/insurance-claims plus the patient-payments stream
+    // and the combined all-financial bundle all carry QuickBooks
+    // exports.
+    const financeReports = [
+      "orders",
+      "returns",
+      "insurance-claims",
+      "patient-payments",
+      "all-financial",
+    ];
     for (const slug of financeReports) {
       const r = REPORTS.find((x) => x.slug === slug);
       expect(r, `report '${slug}' must exist`).toBeDefined();
       expect(r!.formats, `'${slug}' must have iif`).toContain("iif");
       expect(r!.formats, `'${slug}' must have qbo`).toContain("qbo");
     }
+  });
+
+  it("all-financial is the first card (the headline export-everything button)", () => {
+    expect(REPORTS[0]!.slug).toBe("all-financial");
   });
 
   it("revenue-summary and customer-activity reports do NOT have iif or qbo", () => {

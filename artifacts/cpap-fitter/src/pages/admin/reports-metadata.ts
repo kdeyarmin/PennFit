@@ -50,11 +50,19 @@ export const FORMAT_LABELS: Record<FormatKey, string> = {
   qbo: "QuickBooks Online (.csv)",
 };
 
-/** The six reports the page exposes. Order matches the order the
- *  cards render in (a 2-column grid on >= sm). Adding a seventh
- *  row is a one-line change; removing a row needs the backend
- *  route gone first or the card 404s on click. */
+/** The eight reports the page exposes. Order matches the order the
+ *  cards render in (a 2-column grid on >= sm). Adding a row is a
+ *  one-line change; removing a row needs the backend route gone first
+ *  or the card 404s on click. `all-financial` is intentionally first:
+ *  it's the one-click "export everything for QuickBooks" bundle. */
 export const REPORTS: readonly ReportDefinition[] = [
+  {
+    slug: "all-financial",
+    title: "All financial data",
+    subtitle:
+      "Everything in one file: shop orders, refunds, insurance (payer) receipts, and patient payments for the range. Pick QuickBooks Desktop (.iif) or Online (.csv) and import a single artifact — no chasing four separate downloads.",
+    formats: ["csv", "pdf", "iif", "qbo"],
+  },
   {
     slug: "orders",
     title: "Orders",
@@ -87,7 +95,14 @@ export const REPORTS: readonly ReportDefinition[] = [
     slug: "insurance-claims",
     title: "Insurance claims",
     subtitle:
-      "Submitted, accepted, paid, and denied claims in the range. The QuickBooks formats record patient responsibility as a separate line.",
+      "Submitted, accepted, paid, and denied claims in the range. The QuickBooks formats post the paid slice as payer cash receipts; patient-collected cash lives in the Patient payments report.",
+    formats: ["csv", "pdf", "iif", "qbo"],
+  },
+  {
+    slug: "patient-payments",
+    title: "Patient payments",
+    subtitle:
+      "Patient-responsibility cash actually collected (card + mail-in check). Disjoint from insurance claims, so the two reconcile without double-counting. QuickBooks formats post to a dedicated Patient Payments income account.",
     formats: ["csv", "pdf", "iif", "qbo"],
   },
   {

@@ -198,6 +198,27 @@ function makeReturnRow(
   };
 }
 
+// Minimal patient-payment row matching PatientPaymentRow in reports.ts.
+// (The insurance-claim row helper `makeClaimRow` is defined later in
+// this file, alongside the insurance-claims suite; function
+// declarations hoist, so the all-financial tests above can use it.)
+function makePatientPaymentRow(
+  over: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    id: "pay-jkl012",
+    patient_id: "patient-1",
+    stripe_payment_intent_id: "pi_patient_1",
+    amount_cents: 5000,
+    currency: "usd",
+    status: "succeeded",
+    source: "portal",
+    succeeded_at: "2026-04-16T10:00:00.000Z",
+    created_at: "2026-04-16T09:00:00.000Z",
+    ...over,
+  };
+}
+
 const FROM = "2026-04-01";
 const TO = "2026-04-30";
 
@@ -232,6 +253,14 @@ describe("reports endpoints — auth", () => {
     "/admin/reports/revenue-summary.pdf",
     "/admin/reports/refunds-journal.csv",
     "/admin/reports/refunds-journal.pdf",
+    "/admin/reports/patient-payments.csv",
+    "/admin/reports/patient-payments.pdf",
+    "/admin/reports/patient-payments.iif",
+    "/admin/reports/patient-payments.qbo.csv",
+    "/admin/reports/all-financial.csv",
+    "/admin/reports/all-financial.pdf",
+    "/admin/reports/all-financial.iif",
+    "/admin/reports/all-financial.qbo.csv",
   ])("returns 401 for unauthenticated request to %s", async (path) => {
     const res = await request(makeApp()).get(path);
     expect(res.status).toBe(401);
@@ -985,6 +1014,200 @@ describe("permission gate — new reports", () => {
 
 // ─── POST /admin/reports/email ──────────────────────────────────────────
 
+// ─── patient-payments ────────────────────────────────────────────────────
+
+describe("GET /admin/reports/patient-payments.csv", () => {
+  it("returns 200 text/csv with the header row + a data row", async () => {
+    stubAdmin();
+    stageSupabaseResponse("patient_payments", "select", {
+      data: [makePatientPaymentRow()],
+    });
+
+    const res = await request(makeApp()).get(
+      `/admin/reports/patient-payments.csv?from=${FROM}&to=${TO}`,
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.headers["content-type"]).toContain("text/csv");
+    const lines = res.text.trim().split("\n");
+    expect(lines[0]).toContain("payment_id");
+    expect(lines[0]).toContain("patient_key");
+    // PHI guard: the raw patient_id must never appear; only the hash.
+    expect(res.text).not.toContain("patient-1");
+    expect(lines).toHaveLength(2);
+  });
+});
+
+describe("GET /admin/reports/patient-payments.iif", () => {
+  it("calls renderIif with ORDER rows only for succeeded payments", async () => {
+    stubAdmin();
+    stageSupabaseResponse("patient_payments", "select", {
+      data: [
+        makePatientPaymentRow({ id: "p-ok", status: "succeeded" }),
+        makePatientPaymentRow({ id: "p-pending", status: "pending" }),
+        makePatientPaymentRow({ id: "p-failed", status: "failed" }),
+      ],
+    });
+
+    const res = await request(makeApp()).get(
+      `/admin/reports/patient-payments.iif?from=${FROM}&to=${TO}`,
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.headers["content-type"]).toContain("application/octet-stream");
+    expect(res.headers["content-disposition"]).toContain(".iif");
+    expect(renderIifMock).toHaveBeenCalledOnce();
+    const call = renderIifMock.mock.calls[0]![0] as {
+      rows: Array<{ kind: string; incomeAccount?: string }>;
+    };
+    // Only the succeeded payment becomes a QB row.
+    expect(call.rows).toHaveLength(1);
+    expect(call.rows[0]!.kind).toBe("ORDER");
+    // Routed to its own income account, not lumped into store sales.
+    expect(call.rows[0]!.incomeAccount).toBe("Patient Payments");
+  });
+});
+
+describe("GET /admin/reports/patient-payments.qbo.csv", () => {
+  it("returns 200 text/csv with a .qbo.csv attachment filename", async () => {
+    stubAdmin();
+    stageSupabaseResponse("patient_payments", "select", { data: [] });
+
+    const res = await request(makeApp()).get(
+      `/admin/reports/patient-payments.qbo.csv?from=${FROM}&to=${TO}`,
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.headers["content-type"]).toContain("text/csv");
+    expect(res.headers["content-disposition"]).toContain(".qbo.csv");
+    expect(renderQboCsvMock).toHaveBeenCalledOnce();
+  });
+});
+
+describe("GET /admin/reports/patient-payments.pdf", () => {
+  it("returns 200 application/pdf", async () => {
+    stubAdmin();
+    stageSupabaseResponse("patient_payments", "select", {
+      data: [makePatientPaymentRow()],
+    });
+
+    const res = await request(makeApp()).get(
+      `/admin/reports/patient-payments.pdf?from=${FROM}&to=${TO}`,
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.headers["content-type"]).toContain("application/pdf");
+  });
+});
+
+// ─── all-financial (the "export everything" bundle) ──────────────────────
+
+describe("GET /admin/reports/all-financial.csv", () => {
+  it("returns 200 text/csv unioning all four sources into one ledger", async () => {
+    stubAdmin();
+    stageSupabaseResponse("shop_orders", "select", {
+      data: [makeOrderRow({ status: "paid" })],
+    });
+    stageSupabaseResponse("shop_returns", "select", {
+      data: [makeReturnRow()],
+    });
+    stageSupabaseResponse("insurance_claims", "select", {
+      data: [makeClaimRow()],
+    });
+    stageSupabaseResponse("patient_payments", "select", {
+      data: [makePatientPaymentRow()],
+    });
+
+    const res = await request(makeApp()).get(
+      `/admin/reports/all-financial.csv?from=${FROM}&to=${TO}`,
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.headers["content-type"]).toContain("text/csv");
+    const lines = res.text.trim().split("\n");
+    expect(lines[0]).toBe(
+      "date,category,kind,amount_usd,customer_key,reference,source",
+    );
+    // 1 order + 1 refund + 1 paid claim + 1 succeeded payment = 4 rows.
+    expect(lines).toHaveLength(5); // header + 4 rows
+    expect(res.text).toContain("Shop order");
+    expect(res.text).toContain("Shop refund");
+    expect(res.text).toContain("Insurance payment");
+    expect(res.text).toContain("Patient payment");
+  });
+});
+
+describe("GET /admin/reports/all-financial.iif", () => {
+  it("calls renderIif once with the union of all cash-bearing rows", async () => {
+    stubAdmin();
+    stageSupabaseResponse("shop_orders", "select", {
+      data: [makeOrderRow({ status: "paid" })],
+    });
+    stageSupabaseResponse("shop_returns", "select", {
+      data: [makeReturnRow()],
+    });
+    stageSupabaseResponse("insurance_claims", "select", {
+      data: [makeClaimRow({ status: "paid" })],
+    });
+    stageSupabaseResponse("patient_payments", "select", {
+      data: [makePatientPaymentRow({ status: "succeeded" })],
+    });
+
+    const res = await request(makeApp()).get(
+      `/admin/reports/all-financial.iif?from=${FROM}&to=${TO}`,
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.headers["content-type"]).toContain("application/octet-stream");
+    expect(res.headers["content-disposition"]).toContain(".iif");
+    expect(renderIifMock).toHaveBeenCalledOnce();
+    const call = renderIifMock.mock.calls[0]![0] as {
+      rows: Array<{ kind: string }>;
+    };
+    expect(call.rows).toHaveLength(4);
+    // Both the refund (REFUND) and the three receipts (ORDER) appear.
+    const kinds = call.rows.map((r) => r.kind);
+    expect(kinds).toContain("REFUND");
+    expect(kinds.filter((k) => k === "ORDER")).toHaveLength(3);
+  });
+});
+
+describe("GET /admin/reports/all-financial.qbo.csv", () => {
+  it("returns 200 text/csv with a .qbo.csv attachment filename", async () => {
+    stubAdmin();
+    stageSupabaseResponse("shop_orders", "select", { data: [] });
+    stageSupabaseResponse("shop_returns", "select", { data: [] });
+    stageSupabaseResponse("insurance_claims", "select", { data: [] });
+    stageSupabaseResponse("patient_payments", "select", { data: [] });
+
+    const res = await request(makeApp()).get(
+      `/admin/reports/all-financial.qbo.csv?from=${FROM}&to=${TO}`,
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.headers["content-type"]).toContain("text/csv");
+    expect(res.headers["content-disposition"]).toContain(".qbo.csv");
+    expect(renderQboCsvMock).toHaveBeenCalledOnce();
+  });
+});
+
+describe("GET /admin/reports/all-financial.pdf", () => {
+  it("returns 200 application/pdf", async () => {
+    stubAdmin();
+    stageSupabaseResponse("shop_orders", "select", { data: [] });
+    stageSupabaseResponse("shop_returns", "select", { data: [] });
+    stageSupabaseResponse("insurance_claims", "select", { data: [] });
+    stageSupabaseResponse("patient_payments", "select", { data: [] });
+
+    const res = await request(makeApp()).get(
+      `/admin/reports/all-financial.pdf?from=${FROM}&to=${TO}`,
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.headers["content-type"]).toContain("application/pdf");
+  });
+});
+
 describe("POST /admin/reports/email — auth + validation", () => {
   it("returns 401 when not signed in", async () => {
     const res = await request(makeApp()).post("/admin/reports/email").send({
@@ -1088,6 +1311,32 @@ describe("POST /admin/reports/email — happy path", () => {
     expect(audit.action).toBe("report.emailed");
     expect(audit.metadata.slug).toBe("orders");
     expect(audit.metadata.recipient).toBe("accounting@example.com");
+  });
+
+  it("emails the all-financial bundle as a QuickBooks IIF attachment", async () => {
+    stubAdmin();
+    // The combined builder fetches all four sources; stage each empty.
+    stageSupabaseResponse("shop_orders", "select", { data: [] });
+    stageSupabaseResponse("shop_returns", "select", { data: [] });
+    stageSupabaseResponse("insurance_claims", "select", { data: [] });
+    stageSupabaseResponse("patient_payments", "select", { data: [] });
+
+    const res = await request(makeApp()).post("/admin/reports/email").send({
+      slug: "all-financial",
+      format: "iif",
+      from: FROM,
+      to: TO,
+      recipient: "accounting@example.com",
+    });
+
+    expect(res.status).toBe(202);
+    expect(sendEmailMock).toHaveBeenCalledOnce();
+    const sendCall = sendEmailMock.mock.calls[0]![0] as {
+      attachments?: { filename: string }[];
+    };
+    expect(sendCall.attachments![0]!.filename).toMatch(
+      /^pennpaps-all-financial-.*\.iif$/,
+    );
   });
 
   it("returns 503 when SendGrid is not configured (EmailConfigError)", async () => {

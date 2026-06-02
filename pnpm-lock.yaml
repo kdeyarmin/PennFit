@@ -939,6 +939,9 @@ importers:
       '@workspace/resupply-email':
         specifier: workspace:*
         version: link:../lib/resupply-email
+      '@workspace/resupply-secrets':
+        specifier: workspace:*
+        version: link:../lib/resupply-secrets
       stripe:
         specifier: ^22.1.1
         version: 22.1.1(@types/node@25.8.0)

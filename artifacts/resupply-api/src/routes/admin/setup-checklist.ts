@@ -1,7 +1,8 @@
-// /admin/patients/:patientId/setup-checklist — new-patient setup-guidance
+// /admin/patients/setup-checklist/query + /admin/patients/:patientId/setup-checklist/:stepKey
+// — new-patient setup-guidance
 // checklist (migration 0191 / Phase 1, RT #27).
 //
-//   GET  /admin/patients/:patientId/setup-checklist          — canonical
+//   POST /admin/patients/setup-checklist/query               — canonical
 //        steps merged with each step's recorded status
 //   PUT  /admin/patients/:patientId/setup-checklist/:stepKey — set a step
 //
@@ -39,6 +40,7 @@ const SETUP_STEPS: ReadonlyArray<{ key: string; label: string }> = [
 const STEP_KEYS = new Set(SETUP_STEPS.map((s) => s.key));
 
 const patientIdParam = z.string().trim().min(1).max(128);
+const patientIdBody = z.object({ patientId: patientIdParam }).strict();
 
 const putSchema = z
   .object({
@@ -47,8 +49,8 @@ const putSchema = z
   })
   .strict();
 
-router.get(
-  "/admin/patients/:patientId/setup-checklist",
+router.post(
+  "/admin/patients/setup-checklist/query",
   // Throttle ahead of the auth gate so the pre-auth window is covered;
   // this is what clears CodeQL's js/missing-rate-limiting. (The separate
   // js/sensitive-get-query finding on the :patientId path param is a
@@ -56,12 +58,12 @@ router.get(
   adminReadRateLimiter,
   requirePermission("clinical.read"),
   async (req, res) => {
-    const idCheck = patientIdParam.safeParse(req.params.patientId);
+    const idCheck = patientIdBody.safeParse(req.body);
     if (!idCheck.success) {
-      res.status(400).json({ error: "invalid_patient_id" });
+      res.status(400).json({ error: "invalid_body" });
       return;
     }
-    const patientId = idCheck.data;
+    const patientId = idCheck.data.patientId;
 
     const supabase = getSupabaseServiceRoleClient();
     const { data, error } = await supabase

@@ -20,6 +20,18 @@ export interface QuickbooksRowInput {
   memo: string;
   /** Stable customer key — hashed prefix, not a name. */
   customerKey: string;
+  /**
+   * Optional override for the offsetting SPL (income / category)
+   * account. When unset, ORDER rows post to "Sales:Online Orders"
+   * and REFUND rows to "Sales Returns and Allowances" (the historical
+   * defaults). Set this to route a distinct revenue stream — e.g.
+   * patient-responsibility collections — to its own income account so
+   * it lands on its own P&L line in QuickBooks instead of being lumped
+   * in with storefront sales. The TRNS (clearing) account is
+   * unaffected. The QBO CSV has no account column, so this only
+   * influences the IIF output.
+   */
+  incomeAccount?: string;
 }
 
 export interface QuickbooksExportInput {
@@ -111,7 +123,9 @@ export function renderIif(input: QuickbooksExportInput): string {
   let splId = 1;
   for (const r of input.rows) {
     const trnsType = r.kind === "REFUND" ? "CREDIT MEMO" : "DEPOSIT";
-    const splAccnt = r.kind === "REFUND" ? REFUND_ACCOUNT : REVENUE_ACCOUNT;
+    const splAccnt =
+      r.incomeAccount ??
+      (r.kind === "REFUND" ? REFUND_ACCOUNT : REVENUE_ACCOUNT);
     // TRNS holds the gross amount posted to the Stripe clearing
     // account.
     lines.push(
