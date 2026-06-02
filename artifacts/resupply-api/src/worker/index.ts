@@ -77,6 +77,7 @@ import { registerReferralStatusOutboundJob } from "./jobs/inbound-referral-statu
 import { registerPrescriptionRequestAutoDraftJob } from "./jobs/prescription-request-auto-draft.js";
 import { registerConversationOrphanAssigneeSweepJob } from "./jobs/conversation-orphan-assignee-sweep.js";
 import { registerIfProvisioned } from "./lib/table-guard.js";
+import { resolvePgBossPoolMax } from "./lib/pgboss-pool.js";
 
 let bossInstance: PgBoss | null = null;
 let workerReady = false;
@@ -153,9 +154,17 @@ async function doStartWorker(): Promise<void> {
     "//$1:***@",
   );
 
+  // Bound pg-boss's dedicated connection pool so the worker can't
+  // exhaust Postgres connection slots and starve PostgREST — the path
+  // admin sign-in reads through. Left unbounded, the worker pool
+  // (multiplied across a deploy-rollover overlap or extra replicas) can
+  // consume every slot, at which point every query 503s and sign-in
+  // reports "We can't reach the credentials store." See
+  // ./lib/pgboss-pool.ts; tunable via PGBOSS_POOL_MAX.
   const pgBossConfig = {
     schema: "pgboss_resupply",
     monitorStateIntervalSeconds: MONITOR_STATE_INTERVAL_SECONDS,
+    max: resolvePgBossPoolMax(process.env.PGBOSS_POOL_MAX),
   };
 
   let boss: PgBoss;
@@ -311,6 +320,31 @@ async function doStartWorker(): Promise<void> {
         serialized,
         "pg-boss: boss.start() threw — cannot start worker",
       );
+      // Release the connection pool this failed instance opened before
+      // re-throwing. pg-boss opens its pool early in start() (before the
+      // step that fails when the database is out of connection slots),
+      // and a failed start() poisons the instance — its private
+      // `#starting` flag never resets, so a retry on the same object is a
+      // silent no-op and the boot-retry path in startWorker() must build
+      // a FRESH PgBoss next time. Without this stop(), every failed
+      // attempt therefore orphans a still-open pool; during an outage the
+      // in-app retry loop plus Railway's ON_FAILURE restarts pile up
+      // orphaned pools until they exhaust max_connections and starve
+      // PostgREST (the path admin sign-in reads through). `bossInstance`
+      // is only assigned on success below, so this `boss` is otherwise
+      // unreachable for cleanup. graceful:false closes the pool right
+      // away — a failed start has no in-flight job handlers to drain.
+      try {
+        await boss.stop({ graceful: false });
+      } catch (stopErr) {
+        logger.warn(
+          {
+            event: "pg_boss_failed_start_cleanup_error",
+            err: stopErr instanceof Error ? stopErr.message : String(stopErr),
+          },
+          "pg-boss: releasing the failed-start connection pool errored — connections may linger until idle timeout",
+        );
+      }
       throw err;
     }
 

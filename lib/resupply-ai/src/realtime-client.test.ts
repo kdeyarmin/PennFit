@@ -125,6 +125,64 @@ describe("RealtimeClient", () => {
     expect(sent.session.tools).toHaveLength(TOOL_NAMES.length);
   });
 
+  it("runs in text-output mode when generateAudio:false (external TTS owns the voice)", () => {
+    const fake = new FakeWebSocket();
+    new RealtimeClient({
+      apiKey: "sk-test",
+      instructions: "x",
+      generateAudio: false,
+      tools: OPENAI_TOOL_DESCRIPTORS,
+      allowedToolNames,
+      webSocketFactory: () => fake,
+    });
+    fake.fakeOpen();
+    const sent = JSON.parse(fake.received[0]!);
+    // Output is text-only; the model must NOT generate its own audio.
+    expect(sent.session.modalities).toEqual(["text"]);
+    expect(sent.session.voice).toBeUndefined();
+    expect(sent.session.output_audio_format).toBeUndefined();
+    // Input STT + VAD are unchanged so the model still hears the caller.
+    expect(sent.session.input_audio_format).toBe("g711_ulaw");
+    expect(sent.session.input_audio_transcription.model).toBe(
+      "gpt-4o-mini-transcribe",
+    );
+    expect(sent.session.turn_detection.type).toBe("semantic_vad");
+  });
+
+  it("maps text-output events onto output transcript turns (text-mode)", () => {
+    const fake = new FakeWebSocket();
+    const client = new RealtimeClient({
+      apiKey: "sk-test",
+      instructions: "x",
+      generateAudio: false,
+      tools: OPENAI_TOOL_DESCRIPTORS,
+      allowedToolNames,
+      webSocketFactory: () => fake,
+    });
+    const deltas: { source: string; text: string; done: boolean }[] = [];
+    client.on("transcript.delta", (d) =>
+      deltas.push({ source: d.source, text: d.text, done: d.done }),
+    );
+    fake.fakeOpen();
+    fake.fakeMessage({ type: "response.output_text.delta", delta: "Hel" });
+    fake.fakeMessage({ type: "response.output_text.done", text: "Hello" });
+    expect(deltas).toEqual([
+      { source: "output", text: "Hel", done: false },
+      { source: "output", text: "Hello", done: true },
+    ]);
+  });
+
+  it("emits input.speech_started for barge-in", () => {
+    const { client, fake } = build();
+    let started = 0;
+    client.on("input.speech_started", () => {
+      started += 1;
+    });
+    fake.fakeOpen();
+    fake.fakeMessage({ type: "input_audio_buffer.speech_started" });
+    expect(started).toBe(1);
+  });
+
   it("filters tools against allowedToolNames so an over-broad descriptor list cannot smuggle a tool through", () => {
     const fake = new FakeWebSocket();
     new RealtimeClient({

@@ -1,11 +1,11 @@
 // Tests for lib/resupply-ai/src/index.ts
 //
-// PR change: removed all ElevenLabs exports from the public surface.
-// The ElevenLabs client still lives at ./elevenlabs-client but is
-// intentionally NOT re-exported until the live voice path is wired to it.
+// The ElevenLabs client is now re-exported from the public surface: it
+// is wired into the live voice path as the agent's voice (with OpenAI's
+// cedar voice as the fallback when ELEVENLABS_API_KEY is unset).
 //
 // These tests verify:
-//   1. All removed ElevenLabs exports are absent from the module index.
+//   1. The ElevenLabs exports are present with the right shapes.
 //   2. Core exports that ship on the public surface are still present and
 //      have the correct shapes.
 
@@ -14,29 +14,22 @@ import { describe, expect, it } from "vitest";
 import * as resupplyAi from "./index";
 
 // ---------------------------------------------------------------------------
-// ElevenLabs exports — removed in this PR
+// ElevenLabs exports — now wired into the live voice path
 // ---------------------------------------------------------------------------
 
-describe("resupply-ai index — ElevenLabs exports removed", () => {
-  it("does NOT export createElevenLabsClient", () => {
-    expect("createElevenLabsClient" in resupplyAi).toBe(false);
+describe("resupply-ai index — ElevenLabs exports present", () => {
+  it("exports createElevenLabsClient as a function", () => {
+    expect(typeof resupplyAi.createElevenLabsClient).toBe("function");
   });
 
-  it("does NOT export DEFAULT_ELEVENLABS_MODEL", () => {
-    expect("DEFAULT_ELEVENLABS_MODEL" in resupplyAi).toBe(false);
+  it("exports DEFAULT_ELEVENLABS_MODEL as a non-empty string", () => {
+    expect(typeof resupplyAi.DEFAULT_ELEVENLABS_MODEL).toBe("string");
+    expect(resupplyAi.DEFAULT_ELEVENLABS_MODEL.length).toBeGreaterThan(0);
   });
 
-  it("does NOT export DEFAULT_ELEVENLABS_VOICE_ID", () => {
-    expect("DEFAULT_ELEVENLABS_VOICE_ID" in resupplyAi).toBe(false);
-  });
-
-  it("does not leak any other ElevenLabs identifier at runtime", () => {
-    // All exported names from the index
-    const keys = Object.keys(resupplyAi);
-    const elevenLabsKeys = keys.filter((k) =>
-      k.toLowerCase().includes("elevenlabs"),
-    );
-    expect(elevenLabsKeys).toHaveLength(0);
+  it("exports DEFAULT_ELEVENLABS_VOICE_ID as a non-empty string", () => {
+    expect(typeof resupplyAi.DEFAULT_ELEVENLABS_VOICE_ID).toBe("string");
+    expect(resupplyAi.DEFAULT_ELEVENLABS_VOICE_ID.length).toBeGreaterThan(0);
   });
 });
 

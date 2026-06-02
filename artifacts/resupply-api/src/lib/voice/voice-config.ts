@@ -57,6 +57,22 @@ export interface VoiceConfig {
    * and the post-call summarizer.
    */
   deepgramApiKey?: string;
+  /**
+   * Optional ElevenLabs API key. When set, ElevenLabs becomes the
+   * agent's voice: the Realtime session runs in text-output mode and
+   * each agent turn is synthesised through ElevenLabs (µ-law @ 8kHz)
+   * before being streamed to Twilio. When UNSET, the voice agent falls
+   * back to OpenAI's built-in `cedar` voice (the historical default).
+   *
+   * PHI note: agent speech IS patient-facing PHI by definition.
+   * ElevenLabs offers a BAA on their Enterprise tier — verify it is in
+   * place before enabling this against real patients.
+   */
+  elevenLabsApiKey?: string;
+  /** Optional ElevenLabs voice id override (defaults to the client's). */
+  elevenLabsVoiceId?: string;
+  /** Optional ElevenLabs model id override (defaults to the client's). */
+  elevenLabsModelId?: string;
 }
 
 /**
@@ -124,6 +140,9 @@ export function readVoiceConfigOrNull(
     publicBaseUrl,
     practiceName: env.RESUPPLY_PRACTICE_NAME,
     deepgramApiKey: env.DEEPGRAM_API_KEY,
+    elevenLabsApiKey: env.ELEVENLABS_API_KEY?.trim() || undefined,
+    elevenLabsVoiceId: env.ELEVENLABS_VOICE_ID?.trim() || undefined,
+    elevenLabsModelId: env.ELEVENLABS_MODEL_ID?.trim() || undefined,
   };
 }
 
