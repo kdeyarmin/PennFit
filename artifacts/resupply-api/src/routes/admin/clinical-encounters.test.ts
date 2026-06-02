@@ -78,6 +78,14 @@ describe("POST clinical-encounters/query", () => {
     expect(res.body.requiredPermission).toBe("clinical.read");
   });
 
+  it("400s on an invalid query body", async () => {
+    mockAdmin.current = RT;
+    const res = await request(makeApp()).post(QUERY_BASE).send({});
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe("invalid_body");
+    expect(getSupabaseCallCount("clinical_encounters", "select")).toBe(0);
+  });
+
   it("returns the mapped encounter list for an RT", async () => {
     mockAdmin.current = RT;
     stageSupabaseResponse("clinical_encounters", "select", {
