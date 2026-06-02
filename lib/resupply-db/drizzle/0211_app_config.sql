@@ -54,6 +54,15 @@ CREATE TABLE IF NOT EXISTS resupply.app_config (
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 
+ALTER TABLE "resupply"."app_config" ENABLE ROW LEVEL SECURITY;
+
+--> statement-breakpoint
+  updated_by_user_id text NULL,
+  updated_by_email text NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
 --> statement-breakpoint
 
 -- app_config_events — append-only log of config writes.
