@@ -556,6 +556,16 @@ export async function buildOneDetail(
     // Loop 2320/2330 — coordination of benefits (computed above).
     payerResponsibility,
     otherSubscriber,
+    // CLM05-3 frequency + REF*F8 original ICN for corrected (7) / void (8)
+    // claims — without these a replacement/void is transmitted as a brand-new
+    // original and the payer adjudicates it as a duplicate (or, worse, pays a
+    // claim that was meant to be voided). The DB CHECK limits the column to
+    // {1,7,8}; guard anyway so an unexpected value falls back to original.
+    claimFrequencyCode:
+      claim.claim_frequency_code === "7" || claim.claim_frequency_code === "8"
+        ? claim.claim_frequency_code
+        : "1",
+    originalClaimNumber: claim.original_claim_number,
   };
 }
 

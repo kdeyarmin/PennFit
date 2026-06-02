@@ -210,6 +210,76 @@ describe("build837P", () => {
     expect(payload).toMatch(/~CLM\*CLM-0001\*249\.99\*\*\*12:B:1\*Y\*A\*Y\*Y~/);
   });
 
+  it("defaults to frequency 1 and emits no REF*F8 for an original claim", () => {
+    const { payload } = build837P(fixtureInput());
+    expect(payload).toMatch(/12:B:1\*/);
+    expect(payload).not.toContain("REF*F8");
+  });
+
+  it("emits CLM05 frequency 7 + REF*F8 for a corrected (replacement) claim", () => {
+    const base = fixtureInput();
+    const input = {
+      ...base,
+      claims: [
+        {
+          ...base.claims[0]!,
+          claimFrequencyCode: "7" as const,
+          originalClaimNumber: "PAYERICN123",
+        },
+      ],
+    };
+    const { payload } = build837P(input);
+    // Without these the payer would adjudicate the replacement as a duplicate.
+    expect(payload).toMatch(/~CLM\*CLM-0001\*249\.99\*\*\*12:B:7\*/);
+    expect(payload).toContain("~REF*F8*PAYERICN123~");
+  });
+
+  it("emits CLM05 frequency 8 + REF*F8 for a void/cancel claim", () => {
+    const base = fixtureInput();
+    const input = {
+      ...base,
+      claims: [
+        {
+          ...base.claims[0]!,
+          claimFrequencyCode: "8" as const,
+          originalClaimNumber: "ICN-VOID-9",
+        },
+      ],
+    };
+    const { payload } = build837P(input);
+    expect(payload).toMatch(/~CLM\*CLM-0001\*249\.99\*\*\*12:B:8\*/);
+    expect(payload).toContain("~REF*F8*ICN-VOID-9~");
+  });
+
+  it("omits REF*F8 when frequency is 7 but no original claim number is known", () => {
+    const base = fixtureInput();
+    const input = {
+      ...base,
+      claims: [
+        {
+          ...base.claims[0]!,
+          claimFrequencyCode: "7" as const,
+          originalClaimNumber: null,
+        },
+      ],
+    };
+    const { payload } = build837P(input);
+    expect(payload).toMatch(/12:B:7\*/);
+    expect(payload).not.toContain("REF*F8");
+  });
+
+  it("computes CLM02 from the service-line sum, not a drifted header total", () => {
+    const base = fixtureInput();
+    const input = {
+      ...base,
+      // Header total drifted to 999.99, but the single line sums to 249.99.
+      claims: [{ ...base.claims[0]!, totalBilledCents: 99999 }],
+    };
+    const { payload } = build837P(input);
+    expect(payload).toMatch(/~CLM\*CLM-0001\*249\.99\*/);
+    expect(payload).not.toContain("*999.99*");
+  });
+
   it("uses ABK for principal diagnosis and ABF for subsequent", () => {
     const input = fixtureInput();
     input.claims[0]!.diagnosisCodes = ["G47.33", "E11.9"];

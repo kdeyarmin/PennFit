@@ -496,30 +496,41 @@ export async function dispatch835(
     .eq("file_sha256", sha256)
     .limit(1)
     .maybeSingle();
-  let eraFileId = existingEra?.id;
-  if (!eraFileId) {
-    const { data: row, error } = await supabase
-      .schema("resupply")
-      .from("era_files")
-      .insert({
-        file_name: fileName,
-        file_sha256: sha256,
-        file_size_bytes: Buffer.byteLength(content, "utf8"),
-        payer_check_number: parsed.checkOrEftNumber,
-        payer_paid_date: parsed.paymentDate,
-        total_paid_cents: parsed.totalPaidCents,
-        claims_paid_count: 0,
-        claims_denied_count: 0,
-        lines_processed_count: 0,
-        matched_submission_id: null,
-        status: "partial",
-        ingested_by_email: SYSTEM_ACTOR_EMAIL,
-      })
-      .select("id")
-      .single();
-    if (error) throw error;
-    eraFileId = row.id;
+  if (existingEra) {
+    // This exact 835 content was already ingested. Do NOT re-run
+    // reconcileEra — it would re-apply every monetary delta (a double-post
+    // of paid / allowed / patient-responsibility). Mirrors the HTTP
+    // era-ingest route's 409-on-duplicate. The upstream
+    // clearinghouse_inbound_files SHA dedup normally prevents reaching here;
+    // this is the defense-in-depth guard the prior code relied on but which,
+    // by falling through to reconcileEra, was silently a no-op.
+    logger.info(
+      { eraFileId: existingEra.id, status: existingEra.status },
+      "dispatch835: duplicate 835 content; skipping re-reconcile",
+    );
+    return 0;
   }
+  const { data: row, error } = await supabase
+    .schema("resupply")
+    .from("era_files")
+    .insert({
+      file_name: fileName,
+      file_sha256: sha256,
+      file_size_bytes: Buffer.byteLength(content, "utf8"),
+      payer_check_number: parsed.checkOrEftNumber,
+      payer_paid_date: parsed.paymentDate,
+      total_paid_cents: parsed.totalPaidCents,
+      claims_paid_count: 0,
+      claims_denied_count: 0,
+      lines_processed_count: 0,
+      matched_submission_id: null,
+      status: "partial",
+      ingested_by_email: SYSTEM_ACTOR_EMAIL,
+    })
+    .select("id")
+    .single();
+  if (error) throw error;
+  const eraFileId = row.id;
 
   const summary = await reconcileEra(parsed, {
     actorEmail: SYSTEM_ACTOR_EMAIL,
