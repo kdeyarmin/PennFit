@@ -480,6 +480,37 @@ describe("build837P", () => {
     expect(payload).toMatch(/~NM1\*PR\*2\*MEDICARE PART B[^~]*PI\*12502~/);
   });
 
+  it("2330B falls back to the payer NAME (no PI id) when the other-payer id is unknown", () => {
+    const input = fixtureInput();
+    input.claims[0]!.otherSubscriber = {
+      payerResponsibility: "P",
+      priorPayerPaidCents: 5000,
+      subscriber: {
+        firstName: "JANE",
+        lastName: "DOE",
+        dateOfBirth: "1965-04-12",
+        gender: "F",
+        memberId: "MED-XYZ-7",
+        address: {
+          line1: "200 ELM ST",
+          city: "ALTOONA",
+          state: "PA",
+          zip: "16601",
+        },
+        relationshipCode: "18",
+      },
+      payer: { organizationName: "SOME LOCAL PLAN", payerId: "" },
+    };
+    const { payload } = build837P(input);
+    // The other-payer 2330B NM1 carries the name but NO PI identifier (a name
+    // is not a valid payer id) — better a missing id the clearinghouse flags
+    // than a name-as-id that mis-routes the COB loop.
+    expect(payload).toMatch(/~NM1\*PR\*2\*SOME LOCAL PLAN[ ]*~/);
+    expect(payload).not.toMatch(/~NM1\*PR\*2\*SOME LOCAL PLAN[^~]*PI\*/);
+    // ...and the prior-paid (AMT*D) disclosure is still emitted.
+    expect(payload).toContain("~AMT*D*50.00~");
+  });
+
   it("omits AMT*D when prior payer hasn't paid yet (null priorPayerPaidCents)", () => {
     const input = fixtureInput();
     input.claims[0]!.otherSubscriber = {

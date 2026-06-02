@@ -724,21 +724,29 @@ export function build837P(
           oth.subscriber.gender,
         ]),
       );
-      // 2330B — other payer
-      segments.push(
-        joinSegment([
-          "NM1",
-          "PR",
-          "2",
-          padOrTrunc(sanitizeElement(oth.payer.organizationName), 60),
+      // 2330B — other payer. Emit the real payer identifier (NM108=PI,
+      // NM109=id) when we have one; otherwise fall back to the payer NAME
+      // only (no NM108/09). A payer name is NOT a valid payer identifier —
+      // emitting a name in NM109 mis-routes the COB loop, so a missing id
+      // (which the clearinghouse flags and a CSR can correct) is the safer
+      // degrade. The AMT*D prior-paid disclosure above is retained either way.
+      const otherPayerNm1: string[] = [
+        "NM1",
+        "PR",
+        "2",
+        padOrTrunc(sanitizeElement(oth.payer.organizationName), 60),
+      ];
+      if (oth.payer.payerId && oth.payer.payerId.trim().length > 0) {
+        otherPayerNm1.push(
           "",
           "",
           "",
           "",
           "PI",
           sanitizeElement(oth.payer.payerId),
-        ]),
-      );
+        );
+      }
+      segments.push(joinSegment(otherPayerNm1));
     }
 
     // 2400 — service lines
