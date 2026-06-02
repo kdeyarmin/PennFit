@@ -1,0 +1,46 @@
+-- 0208_drop_stale_admin_users_role_chk — remove the orphan role CHECK
+-- that blocked every granular admin role and 500'd team invites.
+--
+-- The bug
+-- -------
+-- POST /admin/team/invite returned HTTP 500 ("Something went wrong.")
+-- for any invite whose role was NOT 'admin' or 'agent'. The invite
+-- form defaults the role to 'csr', so the default path was broken.
+-- The auth-side rows (resupply_auth.users + email_tokens, or
+-- password_credentials on the "set their password" path) were written
+-- first, then the INSERT into resupply.admin_users failed with:
+--
+--   new row for relation "admin_users" violates check constraint
+--   "admin_users_role_chk"
+--
+-- and the route's `throw insertErr` surfaced as a 500 to the browser.
+--
+-- Root cause
+-- ----------
+-- TWO CHECK constraints governed admin_users.role, and a row must
+-- satisfy BOTH:
+--   * admin_users_role_enum — the TRACKED constraint, evolved across
+--     migrations 0059 -> 0086 -> 0188 into the current 8-role catalog
+--     ('admin','supervisor','csr','fitter','fulfillment',
+--      'compliance_officer','agent','rt').
+--   * admin_users_role_chk  — role IN ('agent','admin','superadmin').
+--     This constraint was NEVER created by any migration in this tree;
+--     it exists only as drift in the production database (which has no
+--     migration ledger yet — see
+--     docs/migration-state-investigation-2026-05-08.md). Its
+--     intersection with the enum constraint is just {agent, admin}, so
+--     every granular role (csr, supervisor, fitter, fulfillment,
+--     compliance_officer, rt) was rejected at write time.
+--
+-- The fix
+-- -------
+-- Drop the orphan constraint. admin_users_role_enum stays and is the
+-- single source of truth for the allowed role set. 'superadmin' — the
+-- only value the orphan allowed that the enum does not — is used
+-- nowhere in the codebase, so nothing is lost.
+--
+-- Idempotent (DROP ... IF EXISTS). Corrective; no data change.
+-- Per ADR 003 — versioned hand-authored migration.
+
+ALTER TABLE "resupply"."admin_users"
+  DROP CONSTRAINT IF EXISTS "admin_users_role_chk";
