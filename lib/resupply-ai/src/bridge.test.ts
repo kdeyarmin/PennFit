@@ -4,8 +4,10 @@ import { describe, expect, it, vi } from "vitest";
 import {
   VoiceBridge,
   type MediaStreamSink,
+  type SessionError,
   type ToolInvocation,
   type TranscriptTurn,
+  type TtsSynthesizer,
 } from "./bridge";
 import type { RealtimeClient } from "./realtime-client";
 import type {
@@ -274,5 +276,160 @@ describe("VoiceBridge", () => {
     bridge.on("session.closed", (i) => closes.push(i));
     fake.emit("closed", { code: 1011, reason: "x" });
     expect(closes).toEqual([{ code: 1011, reason: "x" }]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// External-TTS path (ElevenLabs). When a `tts` synthesizer is supplied,
+// the bridge produces the agent's voice itself: it ignores the model's
+// built-in audio.delta and synthesises each finalised OUTPUT transcript
+// turn, with caller barge-in aborting the in-flight synthesis.
+// ---------------------------------------------------------------------------
+
+function buildBridgeWithTts(tts: TtsSynthesizer): {
+  bridge: VoiceBridge;
+  fake: FakeRealtimeClient;
+  sink: ReturnType<typeof buildSink>;
+} {
+  const fake = new FakeRealtimeClient();
+  const sink = buildSink();
+  const dispatcher: ToolDispatcher = { dispatch: vi.fn() };
+  const bridge = new VoiceBridge({
+    client: fake as unknown as RealtimeClient,
+    sink,
+    dispatcher,
+    tts,
+  });
+  return { bridge, fake, sink };
+}
+
+const flush = () => new Promise((r) => setImmediate(r));
+
+describe("VoiceBridge — external TTS path", () => {
+  it("ignores model audio.delta and synthesises finalised OUTPUT turns instead", async () => {
+    const tts: TtsSynthesizer = {
+      async synthesize(text, onFrame) {
+        onFrame(`a:${text}`);
+        onFrame(`b:${text}`);
+      },
+    };
+    const { fake, sink } = buildBridgeWithTts(tts);
+
+    // Built-in audio is suppressed — we own the voice now.
+    fake.emit("audio.delta", { audioBase64: "CEDAR", responseId: "r" });
+    expect(sink.written).toEqual([]);
+
+    // A finalised agent turn is synthesised to the sink.
+    fake.emit("transcript.delta", {
+      source: "output",
+      text: "Hi there",
+      done: true,
+      itemId: "o1",
+    });
+    await flush();
+    expect(sink.written).toEqual(["a:Hi there", "b:Hi there"]);
+  });
+
+  it("does NOT synthesise the caller's (input) turns", async () => {
+    const calls: string[] = [];
+    const tts: TtsSynthesizer = {
+      async synthesize(text, onFrame) {
+        calls.push(text);
+        onFrame(text);
+      },
+    };
+    const { fake, sink } = buildBridgeWithTts(tts);
+    fake.emit("transcript.delta", {
+      source: "input",
+      text: "my date of birth is...",
+      done: true,
+      itemId: "i1",
+    });
+    await flush();
+    expect(calls).toEqual([]);
+    expect(sink.written).toEqual([]);
+  });
+
+  it("synthesises queued utterances in order (one at a time)", async () => {
+    const tts: TtsSynthesizer = {
+      async synthesize(text, onFrame) {
+        // Yield once so a second enqueue lands while the first is mid-flight.
+        await Promise.resolve();
+        onFrame(`f:${text}`);
+      },
+    };
+    const { fake, sink } = buildBridgeWithTts(tts);
+    fake.emit("transcript.delta", {
+      source: "output",
+      text: "one",
+      done: true,
+      itemId: "o1",
+    });
+    fake.emit("transcript.delta", {
+      source: "output",
+      text: "two",
+      done: true,
+      itemId: "o2",
+    });
+    await flush();
+    expect(sink.written).toEqual(["f:one", "f:two"]);
+  });
+
+  it("barge-in aborts in-flight synthesis, drops late frames, and flushes the sink", async () => {
+    let release: (() => void) | null = null;
+    let abortedDuringSynthesis = false;
+    const tts: TtsSynthesizer = {
+      async synthesize(text, onFrame, signal) {
+        onFrame(`early:${text}`);
+        await new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        abortedDuringSynthesis = signal.aborted;
+        // Adversarial: emit a late frame unconditionally — the bridge's
+        // own guard must drop it because the signal is aborted.
+        onFrame(`late:${text}`);
+      },
+    };
+    const { fake, sink } = buildBridgeWithTts(tts);
+
+    fake.emit("transcript.delta", {
+      source: "output",
+      text: "hello",
+      done: true,
+      itemId: "o1",
+    });
+    await flush();
+    expect(sink.written).toEqual(["early:hello"]);
+
+    // Caller interrupts.
+    fake.emit("input.speech_started");
+    expect(sink.cleared).toBe(1);
+
+    // Let the synthesis finish; the late frame must be suppressed.
+    release!();
+    await flush();
+    expect(abortedDuringSynthesis).toBe(true);
+    expect(sink.written).toEqual(["early:hello"]);
+  });
+
+  it("a synthesis failure surfaces session.error(source='tts') without ending the call", async () => {
+    const tts: TtsSynthesizer = {
+      async synthesize() {
+        throw new Error("elevenlabs http 500");
+      },
+    };
+    const { bridge, fake } = buildBridgeWithTts(tts);
+    const errors: SessionError[] = [];
+    bridge.on("session.error", (e) => errors.push(e));
+    fake.emit("transcript.delta", {
+      source: "output",
+      text: "boom",
+      done: true,
+      itemId: "o1",
+    });
+    await flush();
+    expect(errors.some((e) => e.source === "tts")).toBe(true);
+    // A TTS failure drops that utterance's audio but does NOT close the call.
+    expect(fake.close).not.toHaveBeenCalled();
   });
 });

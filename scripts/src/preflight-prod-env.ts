@@ -45,6 +45,8 @@
 //   1 — at least one required check failed.
 //   2 — internal error (the checker itself crashed).
 
+import { applyEnvAliases } from "@workspace/resupply-secrets";
+
 const RESET = "\x1b[0m";
 const RED = "\x1b[31m";
 const YELLOW = "\x1b[33m";
@@ -346,6 +348,14 @@ function refusePlaceholder(name: string, ...placeholders: string[]): boolean {
  */
 
 function runChecks(): void {
+  // Resolve consolidated env aliases first, so preflight validates the
+  // EFFECTIVE environment the running app will see — e.g. setting only
+  // PUBLIC_BASE_URL (or relying on RAILWAY_PUBLIC_DOMAIN) backfills the
+  // five *_PUBLIC_BASE_URL vars + the CORS allow-list, and OPS_EMAIL
+  // backfills the operational recipient inboxes. Same call the API makes
+  // at boot; backfill-only, so an explicitly-set var still wins.
+  applyEnvAliases(process.env);
+
   // NODE_ENV must be explicitly set to one of the known values. An
   // undefined NODE_ENV used to default to "development", which silently
   // downgraded every production gate below from FAIL to WARN — so a
