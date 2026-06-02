@@ -69,6 +69,19 @@ router.get(
     // All counts run concurrently — independent queries with no ordering
     // dependency between them.
     //
+    // Count mode: the dispatcher-eligibility tiles below use
+    // `count: 'estimated'` rather than `'exact'`. These ride
+    // growing-base tables (shop_orders, shop_abandoned_carts,
+    // prescriptions, …), and an exact PostgREST count is a full
+    // COUNT(*) over every matching row on every /admin/operations
+    // render. `'estimated'` returns the EXACT count while the result
+    // set is small — the common case when a queue is drained or
+    // nearly so — and only falls back to the planner's row estimate
+    // once the eligible set is large, where the tile is a "lots of
+    // work waiting" signal and ±a few doesn't change the operator's
+    // decision. The team counts (admin_users) stay `'exact'`: the
+    // table is tiny and the number is a precise headcount.
+    //
     // Note: the original `jsonb_array_length(items) > 0` predicate on
     // shop_abandoned_carts is replaced with `.neq('items', '[]')`. PostgREST
     // doesn't expose jsonb_array_length, but a stored empty cart is always
@@ -86,7 +99,7 @@ router.get(
       supabase
         .schema("resupply")
         .from("shop_abandoned_carts")
-        .select("*", { count: "exact", head: true })
+        .select("*", { count: "estimated", head: true })
         .lte("updated_at", cutoff24h)
         .is("reminded_at", null)
         .is("recovered_at", null)
@@ -96,7 +109,7 @@ router.get(
       supabase
         .schema("resupply")
         .from("shop_orders")
-        .select("*", { count: "exact", head: true })
+        .select("*", { count: "estimated", head: true })
         .eq("status", "paid")
         .lte("paid_at", reviewCutoff)
         .is("review_request_sent_at", null)
@@ -105,7 +118,7 @@ router.get(
       supabase
         .schema("resupply")
         .from("prescriptions")
-        .select("*", { count: "exact", head: true })
+        .select("*", { count: "estimated", head: true })
         .eq("status", "active")
         .is("renewal_requested_at", null)
         .not("valid_until", "is", null)
@@ -114,7 +127,7 @@ router.get(
       supabase
         .schema("resupply")
         .from("patient_smart_trigger_events")
-        .select("*", { count: "exact", head: true })
+        .select("*", { count: "estimated", head: true })
         .is("sent_at", null)
         .is("dismissed_at", null),
 
@@ -129,7 +142,7 @@ router.get(
       supabase
         .schema("resupply")
         .from("physician_fax_outreach")
-        .select("*", { count: "exact", head: true })
+        .select("*", { count: "estimated", head: true })
         .eq("status", "pending"),
 
       supabase
