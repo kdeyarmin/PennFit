@@ -13,6 +13,8 @@ import {
   RefreshCcw,
   ShieldCheck,
   BookOpen,
+  Copy,
+  Check,
 } from "lucide-react";
 import { ComfortGuarantee } from "@/components/comfort-guarantee";
 import { SubscribeRemindersCta } from "@/components/subscribe-reminders-cta";
@@ -44,6 +46,22 @@ export function OrderSuccess() {
   const [confirmation, setConfirmation] = useState<OrderConfirmation | null>(
     null,
   );
+  const [copied, setCopied] = useState(false);
+
+  const handleCopyReference = () => {
+    const ref = confirmation?.orderReference;
+    if (!ref || !navigator.clipboard?.writeText) return;
+    navigator.clipboard
+      .writeText(ref)
+      .then(() => {
+        setCopied(true);
+        window.setTimeout(() => setCopied(false), 2000);
+      })
+      .catch(() => {
+        /* clipboard blocked (e.g. insecure context) — the reference is
+           still visible on screen for manual copy, so fail silently */
+      });
+  };
 
   // The route-level OrderSuccessGate in App.tsx already verified that the
   // confirmation exists in sessionStorage before mounting this component.
@@ -95,11 +113,32 @@ export function OrderSuccess() {
             <div className="text-xs uppercase tracking-[0.2em] text-[hsl(var(--penn-navy))]/70 font-semibold mb-1">
               Your order reference
             </div>
-            <div
-              className="font-mono text-3xl font-bold text-primary tracking-wider"
-              data-testid="text-order-reference"
-            >
-              {confirmation.orderReference}
+            <div className="flex items-center gap-3">
+              <div
+                className="font-mono text-3xl font-bold text-primary tracking-wider"
+                data-testid="text-order-reference"
+              >
+                {confirmation.orderReference}
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleCopyReference}
+                aria-label={
+                  copied
+                    ? "Order reference copied"
+                    : "Copy order reference to clipboard"
+                }
+                className="h-8 gap-1.5 rounded-full"
+              >
+                {copied ? (
+                  <Check className="w-3.5 h-3.5" />
+                ) : (
+                  <Copy className="w-3.5 h-3.5" />
+                )}
+                {copied ? "Copied" : "Copy"}
+              </Button>
             </div>
             <p className="text-xs text-muted-foreground mt-1">
               Save this reference for your records and to mention when calling

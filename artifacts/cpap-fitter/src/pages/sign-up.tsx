@@ -70,15 +70,19 @@ export function SignUpPage() {
             We've sent a verification link to <strong>{email}</strong>. Click it
             to finish setting up your account. The link expires in 24 hours.
           </p>
-          <p className="text-xs text-muted-foreground">
-            Didn't get it? Check your spam folder, or{" "}
+          <p className="rounded-md border border-amber-300/70 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+            <strong>Don't see it within a few minutes?</strong> Check your spam
+            or junk folder — verification emails sometimes land there.
+          </p>
+          <p className="text-sm text-muted-foreground">
+            Already have an account?{" "}
             <Link
               href={`${basePath}/sign-in`}
               className="underline text-[hsl(var(--penn-navy-deep))]"
             >
-              sign in
-            </Link>{" "}
-            if you already have an account.
+              Sign in
+            </Link>
+            .
           </p>
         </div>
       </AuthLayout>
