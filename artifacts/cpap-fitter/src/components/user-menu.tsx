@@ -12,7 +12,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "wouter";
-import { LogIn, LogOut, MessageSquare, User } from "lucide-react";
+import { LogIn, LogOut, MessageSquare, Package, User } from "lucide-react";
 
 import { SignedIn, useShopIdentity } from "@/lib/identity";
 import { useShopMessagesUnread } from "@/hooks/use-shop-messages-unread";
@@ -138,6 +138,21 @@ function UserPill() {
             role="menuitem"
           >
             <User className="h-4 w-4" /> My account
+          </Link>
+          {/*
+            Direct shortcut to the orders page. On desktop this duplicates
+            the header "Your orders" link, but on mobile (where that link is
+            hidden) it is the only one-tap path to order history & returns
+            without first opening /account and finding the right tab.
+          */}
+          <Link
+            href="/shop/orders"
+            onClick={() => setOpen(false)}
+            className="flex items-center gap-2 px-3 py-2 rounded-md hover:bg-muted"
+            role="menuitem"
+            data-testid="user-menu-orders"
+          >
+            <Package className="h-4 w-4" /> Your orders
           </Link>
           <button
             type="button"
