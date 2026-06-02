@@ -140,9 +140,9 @@ export function readVoiceConfigOrNull(
     publicBaseUrl,
     practiceName: env.RESUPPLY_PRACTICE_NAME,
     deepgramApiKey: env.DEEPGRAM_API_KEY,
-    elevenLabsApiKey: env.ELEVENLABS_API_KEY,
-    elevenLabsVoiceId: env.ELEVENLABS_VOICE_ID,
-    elevenLabsModelId: env.ELEVENLABS_MODEL_ID,
+    elevenLabsApiKey: env.ELEVENLABS_API_KEY?.trim() || undefined,
+    elevenLabsVoiceId: env.ELEVENLABS_VOICE_ID?.trim() || undefined,
+    elevenLabsModelId: env.ELEVENLABS_MODEL_ID?.trim() || undefined,
   };
 }
 
