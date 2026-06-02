@@ -338,6 +338,26 @@ describe("createSendgridClient", () => {
       expect(send).toHaveBeenCalledTimes(3);
     });
 
+    it("keeps status undefined for string transport error codes", async () => {
+      envOn();
+      const send = vi.fn().mockRejectedValue({
+        code: "ECONNRESET",
+        message: "socket hang up",
+      });
+      const client = createSendgridClient({
+        sgFactory: () => fakeSdk(send),
+        retry: { maxAttempts: 1, sleep: noSleep },
+      });
+
+      await expect(
+        client.sendEmail({ to: "p@e.com", subject: "s", html: "h", text: "t" }),
+      ).rejects.toMatchObject({
+        name: "EmailApiError",
+        status: undefined,
+      });
+      expect(send).toHaveBeenCalledTimes(1);
+    });
+
     it("maxAttempts:1 disables retry", async () => {
       envOn();
       const send = vi.fn().mockRejectedValue({ response: { statusCode: 503 } });

@@ -268,13 +268,15 @@ export function createSendgridClient(
         } catch (err) {
           if (err instanceof EmailApiError) throw err;
           const e = err as {
-            code?: number;
+            code?: string | number;
             response?: { body?: unknown; statusCode?: number };
             message?: string;
           };
+          const statusFromCode =
+            typeof e.code === "number" ? e.code : undefined;
           throw new EmailApiError(
             e.message ?? "SendGrid API error",
-            e.response?.statusCode ?? e.code,
+            e.response?.statusCode ?? statusFromCode,
             e.response?.body,
             isTransientSendgridError(err),
           );
