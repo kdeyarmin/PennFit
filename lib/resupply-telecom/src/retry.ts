@@ -99,7 +99,7 @@ function defaultSleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/** Full-jitter exponential backoff: random in [0, min(cap, base*2^n)]. */
+/** Full-jitter exponential backoff: random integer in [0, min(cap, base*2^(attempt-1))). */
 export function computeBackoffMs(attempt: number, policy: RetryPolicy): number {
   const exp = policy.baseDelayMs * 2 ** (attempt - 1);
   const capped = Math.min(policy.maxDelayMs, exp);
