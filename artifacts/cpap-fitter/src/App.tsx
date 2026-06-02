@@ -1,4 +1,4 @@
-import React, { Suspense, lazy, useEffect, useState } from "react";
+import React, { Suspense, useEffect, useState } from "react";
 import {
   Switch,
   Route,
@@ -13,6 +13,7 @@ import NotFound from "@/pages/not-found";
 import { Layout } from "@/components/layout";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { CartSnapshotSync } from "@/hooks/use-cart-snapshot";
+import { lazyWithRetry } from "@/lib/lazy-with-retry";
 
 // Eagerly imported pages — small, public, and likely entry points.
 // Splitting them out of the initial chunk would only add latency to
@@ -41,99 +42,99 @@ import { LearnVideos } from "@/pages/learn-videos";
 // The named-export -> default-export adapter is needed because each
 // page file uses a named export and React.lazy expects a module with
 // a default export.
-const Consent = lazy(() =>
+const Consent = lazyWithRetry(() =>
   import("@/pages/consent").then((m) => ({ default: m.Consent })),
 );
-const Capture = lazy(() =>
+const Capture = lazyWithRetry(() =>
   import("@/pages/capture").then((m) => ({ default: m.Capture })),
 );
-const Measure = lazy(() =>
+const Measure = lazyWithRetry(() =>
   import("@/pages/measure").then((m) => ({ default: m.Measure })),
 );
-const Questionnaire = lazy(() =>
+const Questionnaire = lazyWithRetry(() =>
   import("@/pages/questionnaire").then((m) => ({ default: m.Questionnaire })),
 );
-const Results = lazy(() =>
+const Results = lazyWithRetry(() =>
   import("@/pages/results").then((m) => ({ default: m.Results })),
 );
-const Order = lazy(() =>
+const Order = lazyWithRetry(() =>
   import("@/pages/order").then((m) => ({ default: m.Order })),
 );
-const OrderSuccess = lazy(() =>
+const OrderSuccess = lazyWithRetry(() =>
   import("@/pages/order-success").then((m) => ({ default: m.OrderSuccess })),
 );
-const ComfortGuaranteePage = lazy(() =>
+const ComfortGuaranteePage = lazyWithRetry(() =>
   import("@/pages/comfort-guarantee").then((m) => ({
     default: m.ComfortGuaranteePage,
   })),
 );
-const ReplacementSchedule = lazy(() =>
+const ReplacementSchedule = lazyWithRetry(() =>
   import("@/pages/replacement-schedule").then((m) => ({
     default: m.ReplacementSchedule,
   })),
 );
-const DeviceSetup = lazy(() =>
+const DeviceSetup = lazyWithRetry(() =>
   import("@/pages/device-setup").then((m) => ({ default: m.DeviceSetup })),
 );
-const SleepApneaQuiz = lazy(() =>
+const SleepApneaQuiz = lazyWithRetry(() =>
   import("@/pages/sleep-apnea-quiz").then((m) => ({
     default: m.SleepApneaQuiz,
   })),
 );
-const ShopCart = lazy(() =>
+const ShopCart = lazyWithRetry(() =>
   import("@/pages/shop-cart").then((m) => ({ default: m.ShopCart })),
 );
-const ShopProductDetail = lazy(() =>
+const ShopProductDetail = lazyWithRetry(() =>
   import("@/pages/shop-product-detail").then((m) => ({
     default: m.ShopProductDetail,
   })),
 );
-const ShopCheckoutSuccess = lazy(() =>
+const ShopCheckoutSuccess = lazyWithRetry(() =>
   import("@/pages/shop-checkout-success").then((m) => ({
     default: m.ShopCheckoutSuccess,
   })),
 );
-const ShopCheckoutCancel = lazy(() =>
+const ShopCheckoutCancel = lazyWithRetry(() =>
   import("@/pages/shop-checkout-cancel").then((m) => ({
     default: m.ShopCheckoutCancel,
   })),
 );
-const ShopOrders = lazy(() =>
+const ShopOrders = lazyWithRetry(() =>
   import("@/pages/shop-orders").then((m) => ({ default: m.ShopOrders })),
 );
-const ShopWishlist = lazy(() =>
+const ShopWishlist = lazyWithRetry(() =>
   import("@/pages/shop-wishlist").then((m) => ({ default: m.ShopWishlist })),
 );
-const AccountPage = lazy(() =>
+const AccountPage = lazyWithRetry(() =>
   import("@/pages/account").then((m) => ({ default: m.AccountPage })),
 );
-const AccountBillingPage = lazy(() =>
+const AccountBillingPage = lazyWithRetry(() =>
   import("@/pages/account-billing").then((m) => ({
     default: m.AccountBillingPage,
   })),
 );
-const SignInPage = lazy(() =>
+const SignInPage = lazyWithRetry(() =>
   import("@/pages/sign-in").then((m) => ({ default: m.SignInPage })),
 );
-const SignUpPage = lazy(() =>
+const SignUpPage = lazyWithRetry(() =>
   import("@/pages/sign-up").then((m) => ({ default: m.SignUpPage })),
 );
-const ForgotPasswordPage = lazy(() =>
+const ForgotPasswordPage = lazyWithRetry(() =>
   import("@/pages/forgot-password").then((m) => ({
     default: m.ForgotPasswordPage,
   })),
 );
-const ResetPasswordPage = lazy(() =>
+const ResetPasswordPage = lazyWithRetry(() =>
   import("@/pages/reset-password").then((m) => ({
     default: m.ResetPasswordPage,
   })),
 );
-const VerifyEmailPage = lazy(() =>
+const VerifyEmailPage = lazyWithRetry(() =>
   import("@/pages/verify-email").then((m) => ({
     default: m.VerifyEmailPage,
   })),
 );
-const ReturnsPage = lazy(() =>
+const ReturnsPage = lazyWithRetry(() =>
   import("@/pages/returns").then((m) => ({ default: m.ReturnsPage })),
 );
 
@@ -141,62 +142,62 @@ const ReturnsPage = lazy(() =>
 // shareable awareness pages, not entry points for the fitter flow, so
 // they shouldn't bloat the initial bundle. The marketing/contact flows
 // link out to these URLs directly.
-const LearnSleepApneaExplained = lazy(() =>
+const LearnSleepApneaExplained = lazyWithRetry(() =>
   import("@/pages/learn-sleep-apnea-explained").then((m) => ({
     default: m.LearnSleepApneaExplained,
   })),
 );
-const LearnHealthRisks = lazy(() =>
+const LearnHealthRisks = lazyWithRetry(() =>
   import("@/pages/learn-health-risks").then((m) => ({
     default: m.LearnHealthRisks,
   })),
 );
-const LearnPapTherapyBenefits = lazy(() =>
+const LearnPapTherapyBenefits = lazyWithRetry(() =>
   import("@/pages/learn-pap-therapy-benefits").then((m) => ({
     default: m.LearnPapTherapyBenefits,
   })),
 );
-const LearnHowPapWorks = lazy(() =>
+const LearnHowPapWorks = lazyWithRetry(() =>
   import("@/pages/learn-how-pap-works").then((m) => ({
     default: m.LearnHowPapWorks,
   })),
 );
-const LearnTherapyTypes = lazy(() =>
+const LearnTherapyTypes = lazyWithRetry(() =>
   import("@/pages/learn-therapy-types").then((m) => ({
     default: m.LearnTherapyTypes,
   })),
 );
-const LearnSleepApneaHeartHealth = lazy(() =>
+const LearnSleepApneaHeartHealth = lazyWithRetry(() =>
   import("@/pages/learn-sleep-apnea-heart-health").then((m) => ({
     default: m.LearnSleepApneaHeartHealth,
   })),
 );
-const LearnFirstTwoWeeks = lazy(() =>
+const LearnFirstTwoWeeks = lazyWithRetry(() =>
   import("@/pages/learn-first-two-weeks").then((m) => ({
     default: m.LearnFirstTwoWeeks,
   })),
 );
-const LearnTravelingWithCpap = lazy(() =>
+const LearnTravelingWithCpap = lazyWithRetry(() =>
   import("@/pages/learn-traveling-with-cpap").then((m) => ({
     default: m.LearnTravelingWithCpap,
   })),
 );
-const LearnCleaningRoutine = lazy(() =>
+const LearnCleaningRoutine = lazyWithRetry(() =>
   import("@/pages/learn-cleaning-routine").then((m) => ({
     default: m.LearnCleaningRoutine,
   })),
 );
-const LearnMythsDebunked = lazy(() =>
+const LearnMythsDebunked = lazyWithRetry(() =>
   import("@/pages/learn-myths-debunked").then((m) => ({
     default: m.LearnMythsDebunked,
   })),
 );
-const LearnGlossary = lazy(() =>
+const LearnGlossary = lazyWithRetry(() =>
   import("@/pages/learn-glossary").then((m) => ({
     default: m.LearnGlossary,
   })),
 );
-const LearnInsuranceGuide = lazy(() =>
+const LearnInsuranceGuide = lazyWithRetry(() =>
   import("@/pages/learn-insurance-guide").then((m) => ({
     default: m.LearnInsuranceGuide,
   })),
@@ -205,7 +206,7 @@ const LearnInsuranceGuide = lazy(() =>
 // SEO landing — the "front door" mega-page that anchors the whole
 // educational library. Lazy because it's marketing content, not part
 // of any fitter/checkout flow.
-const SleepApnea101 = lazy(() =>
+const SleepApnea101 = lazyWithRetry(() =>
   import("@/pages/sleep-apnea-101").then((m) => ({
     default: m.SleepApnea101,
   })),
@@ -216,37 +217,37 @@ const SleepApnea101 = lazy(() =>
 // affected (women, diabetes, mental health, kids, seniors) plus the
 // "for partners & family" pair that drives shareable, conversion-
 // relevant content.
-const LearnSleepApneaWomen = lazy(() =>
+const LearnSleepApneaWomen = lazyWithRetry(() =>
   import("@/pages/learn-sleep-apnea-women").then((m) => ({
     default: m.LearnSleepApneaWomen,
   })),
 );
-const LearnSleepApneaDiabetes = lazy(() =>
+const LearnSleepApneaDiabetes = lazyWithRetry(() =>
   import("@/pages/learn-sleep-apnea-diabetes").then((m) => ({
     default: m.LearnSleepApneaDiabetes,
   })),
 );
-const LearnSleepApneaMentalHealth = lazy(() =>
+const LearnSleepApneaMentalHealth = lazyWithRetry(() =>
   import("@/pages/learn-sleep-apnea-mental-health").then((m) => ({
     default: m.LearnSleepApneaMentalHealth,
   })),
 );
-const LearnPediatricSleepApnea = lazy(() =>
+const LearnPediatricSleepApnea = lazyWithRetry(() =>
   import("@/pages/learn-pediatric-sleep-apnea").then((m) => ({
     default: m.LearnPediatricSleepApnea,
   })),
 );
-const LearnSleepApneaSeniors = lazy(() =>
+const LearnSleepApneaSeniors = lazyWithRetry(() =>
   import("@/pages/learn-sleep-apnea-seniors").then((m) => ({
     default: m.LearnSleepApneaSeniors,
   })),
 );
-const LearnPartnerGuide = lazy(() =>
+const LearnPartnerGuide = lazyWithRetry(() =>
   import("@/pages/learn-partner-guide").then((m) => ({
     default: m.LearnPartnerGuide,
   })),
 );
-const LearnTalkingToALovedOne = lazy(() =>
+const LearnTalkingToALovedOne = lazyWithRetry(() =>
   import("@/pages/learn-talking-to-a-loved-one").then((m) => ({
     default: m.LearnTalkingToALovedOne,
   })),
@@ -254,25 +255,25 @@ const LearnTalkingToALovedOne = lazy(() =>
 
 // Troubleshooting cluster — focused, high-search-volume fix-it articles
 // for the issues that drive most first-month adherence drop-off.
-const LearnDryMouth = lazy(() =>
+const LearnDryMouth = lazyWithRetry(() =>
   import("@/pages/learn-dry-mouth").then((m) => ({ default: m.LearnDryMouth })),
 );
-const LearnCpapBloating = lazy(() =>
+const LearnCpapBloating = lazyWithRetry(() =>
   import("@/pages/learn-cpap-bloating").then((m) => ({
     default: m.LearnCpapBloating,
   })),
 );
-const LearnMaskLeaks = lazy(() =>
+const LearnMaskLeaks = lazyWithRetry(() =>
   import("@/pages/learn-mask-leaks").then((m) => ({
     default: m.LearnMaskLeaks,
   })),
 );
-const LearnCpapClaustrophobia = lazy(() =>
+const LearnCpapClaustrophobia = lazyWithRetry(() =>
   import("@/pages/learn-cpap-claustrophobia").then((m) => ({
     default: m.LearnCpapClaustrophobia,
   })),
 );
-const LearnNasalCongestion = lazy(() =>
+const LearnNasalCongestion = lazyWithRetry(() =>
   import("@/pages/learn-nasal-congestion").then((m) => ({
     default: m.LearnNasalCongestion,
   })),
@@ -281,20 +282,20 @@ const LearnNasalCongestion = lazy(() =>
 // Utility & marketing additions — patient stories landing, plus three
 // further long-form learn pieces (sleep-report explainer, sleep
 // hygiene companion, CPAP & weight-loss relationship).
-const Stories = lazy(() =>
+const Stories = lazyWithRetry(() =>
   import("@/pages/stories").then((m) => ({ default: m.Stories })),
 );
-const LearnReadingYourSleepReport = lazy(() =>
+const LearnReadingYourSleepReport = lazyWithRetry(() =>
   import("@/pages/learn-reading-your-sleep-report").then((m) => ({
     default: m.LearnReadingYourSleepReport,
   })),
 );
-const LearnSleepHygiene = lazy(() =>
+const LearnSleepHygiene = lazyWithRetry(() =>
   import("@/pages/learn-sleep-hygiene").then((m) => ({
     default: m.LearnSleepHygiene,
   })),
 );
-const LearnCpapAndWeightLoss = lazy(() =>
+const LearnCpapAndWeightLoss = lazyWithRetry(() =>
   import("@/pages/learn-cpap-and-weight-loss").then((m) => ({
     default: m.LearnCpapAndWeightLoss,
   })),
@@ -304,20 +305,20 @@ const LearnCpapAndWeightLoss = lazy(() =>
 // is our flagship line, ResMed and Fisher & Paykel round out the catalog).
 // Lazy-loaded because they're SEO landing surfaces, not entry points for
 // the fitter flow — they shouldn't bloat the initial bundle.
-const CpapMasks = lazy(() =>
+const CpapMasks = lazyWithRetry(() =>
   import("@/pages/cpap-masks").then((m) => ({ default: m.CpapMasks })),
 );
-const CpapMasksReactHealth = lazy(() =>
+const CpapMasksReactHealth = lazyWithRetry(() =>
   import("@/pages/cpap-masks-react-health").then((m) => ({
     default: m.CpapMasksReactHealth,
   })),
 );
-const CpapMasksResmed = lazy(() =>
+const CpapMasksResmed = lazyWithRetry(() =>
   import("@/pages/cpap-masks-resmed").then((m) => ({
     default: m.CpapMasksResmed,
   })),
 );
-const CpapMasksFisherPaykel = lazy(() =>
+const CpapMasksFisherPaykel = lazyWithRetry(() =>
   import("@/pages/cpap-masks-fisher-paykel").then((m) => ({
     default: m.CpapMasksFisherPaykel,
   })),
@@ -329,20 +330,20 @@ const CpapMasksFisherPaykel = lazy(() =>
 // the same, but the entry pages are distinct so a typo in the
 // password page can't accidentally promote a customer into the
 // console-allowlist check or vice versa.
-const AdminSignInPage = lazy(() =>
+const AdminSignInPage = lazyWithRetry(() =>
   import("@/pages/admin/sign-in").then((m) => ({ default: m.SignInPage })),
 );
-const AdminForgotPasswordPage = lazy(() =>
+const AdminForgotPasswordPage = lazyWithRetry(() =>
   import("@/pages/admin/forgot-password").then((m) => ({
     default: m.ForgotPasswordPage,
   })),
 );
-const AdminResetPasswordPage = lazy(() =>
+const AdminResetPasswordPage = lazyWithRetry(() =>
   import("@/pages/admin/reset-password").then((m) => ({
     default: m.ResetPasswordPage,
   })),
 );
-const AdminVerifyEmailPage = lazy(() =>
+const AdminVerifyEmailPage = lazyWithRetry(() =>
   import("@/pages/admin/verify-email").then((m) => ({
     default: m.VerifyEmailPage,
   })),
@@ -352,14 +353,14 @@ const AdminVerifyEmailPage = lazy(() =>
 // chrome, and the generated resupply-api client into a single chunk
 // loaded only when a staff user navigates to /admin/*. Keeps the
 // patient storefront bundle clean.
-const AdminConsoleRoute = lazy(() =>
+const AdminConsoleRoute = lazyWithRetry(() =>
   import("@/pages/admin/console").then((m) => ({ default: m.ConsoleRoute })),
 );
 
-const Reminders = lazy(() =>
+const Reminders = lazyWithRetry(() =>
   import("@/pages/reminders").then((m) => ({ default: m.Reminders })),
 );
-const RemindersManage = lazy(() =>
+const RemindersManage = lazyWithRetry(() =>
   import("@/pages/reminders-manage").then((m) => ({
     default: m.RemindersManage,
   })),
