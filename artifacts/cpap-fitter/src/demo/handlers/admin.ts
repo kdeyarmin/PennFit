@@ -72,20 +72,17 @@ export const adminHandlers: DemoHandler[] = [
   ),
 
   // ── inventory mutations (admin maps the storefront catalog) ──────
+  // The client (shop-inventory-api.ts) reads `json.product.{id,name,
+  // category,price.unitAmount,price.currency,stockCount,
+  // lowStockThreshold}`, so the response MUST be wrapped in
+  // `{ product: <ShopProductView> }`, mirroring the real API.
   route(
     "PATCH",
     "/resupply-api/admin/shop/products/:id/stock",
     (req, { id }) => {
       const body = req.json<{ stockCount?: number | null }>() ?? {};
-      const p = findDemoProduct(id);
       return json({
-        id,
-        name: p?.name ?? "Demo product",
-        category: p?.category ?? "accessory",
-        priceCents: p?.price.unitAmount ?? null,
-        currency: p?.price.currency ?? "usd",
-        stockCount: body.stockCount ?? null,
-        lowStockThreshold: p?.lowStockThreshold ?? null,
+        product: inventoryProduct(id, { stockCount: body.stockCount ?? null }),
       });
     },
   ),
@@ -94,16 +91,33 @@ export const adminHandlers: DemoHandler[] = [
     "/resupply-api/admin/shop/products/:id/threshold",
     (req, { id }) => {
       const body = req.json<{ lowStockThreshold?: number | null }>() ?? {};
-      const p = findDemoProduct(id);
       return json({
-        id,
-        name: p?.name ?? "Demo product",
-        category: p?.category ?? "accessory",
-        priceCents: p?.price.unitAmount ?? null,
-        currency: p?.price.currency ?? "usd",
-        stockCount: p?.stockCount ?? null,
-        lowStockThreshold: body.lowStockThreshold ?? null,
+        product: inventoryProduct(id, {
+          lowStockThreshold: body.lowStockThreshold ?? null,
+        }),
       });
     },
   ),
 ];
+
+/**
+ * Build the `{ product }` payload the inventory client expects after a
+ * stock/threshold PATCH. Starts from the seeded catalog product (a
+ * full ShopProductView, so `price.unitAmount` etc. are present) and
+ * applies the edited field.
+ */
+function inventoryProduct(
+  id: string,
+  patch: { stockCount?: number | null; lowStockThreshold?: number | null },
+) {
+  const p = findDemoProduct(id);
+  if (p) return { ...p, ...patch };
+  return {
+    id,
+    name: "Demo product",
+    category: "accessory" as const,
+    price: { id: `demo_price_${id}`, unitAmount: 0, currency: "usd" },
+    stockCount: patch.stockCount ?? null,
+    lowStockThreshold: patch.lowStockThreshold ?? null,
+  };
+}

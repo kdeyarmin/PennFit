@@ -7,11 +7,7 @@ import { json } from "../respond";
 import { DEMO_PRODUCTS, demoProductsResponse } from "../fixtures/products";
 import { demoOrderSummary } from "../fixtures/orders";
 import { demoSessionId } from "../ids";
-
-function baseUrl(): string {
-  const base = import.meta.env.BASE_URL || "/";
-  return base.endsWith("/") ? base : `${base}/`;
-}
+import { appBaseUrl } from "../paths";
 
 export const shopHandlers: DemoHandler[] = [
   // Catalog (also consumed by the admin inventory page, which maps it
@@ -121,7 +117,7 @@ export const shopHandlers: DemoHandler[] = [
   // SPA's checkout-success page (no Stripe round-trip in the demo).
   route("POST", "/resupply-api/shop/checkout", () => {
     const sessionId = demoSessionId();
-    const url = `${baseUrl()}shop/checkout-success?session_id=${sessionId}`;
+    const url = `${appBaseUrl()}shop/checkout-success?session_id=${sessionId}`;
     return json({ url, sessionId });
   }),
 

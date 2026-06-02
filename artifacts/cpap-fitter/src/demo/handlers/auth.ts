@@ -15,8 +15,8 @@ const ok = () => json({ ok: true });
 
 function authMutations(base: string): DemoHandler[] {
   return [
-    route("GET", `${base}/csrf`, () => json({ ok: true })),
-    route("POST", `${base}/sign-in`, () => json({ ok: true })),
+    route("GET", `${base}/csrf`, () => ok()),
+    route("POST", `${base}/sign-in`, () => ok()),
     route("POST", `${base}/sign-in/verify-mfa`, () => ok()),
     route("POST", `${base}/sign-up`, () => ok()),
     route("POST", `${base}/sign-out`, () => ok()),

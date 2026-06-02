@@ -53,13 +53,17 @@ async function resolveBody(
 ): Promise<string | null> {
   if (init && "body" in init && init.body != null) {
     if (typeof init.body === "string") return init.body;
-    try {
-      // Blobs, URLSearchParams, etc. stringify well enough for demo
-      // handlers (which mostly read JSON bodies).
-      return String(init.body);
-    } catch {
-      return null;
+    if (
+      typeof URLSearchParams !== "undefined" &&
+      init.body instanceof URLSearchParams
+    ) {
+      return init.body.toString();
     }
+    // FormData / Blob / ArrayBuffer aren't used as bodies on the app's
+    // API paths. Don't `String()` them — that yields "[object Object]",
+    // which a handler's json() would then fail to parse. Treat as no
+    // readable JSON body instead.
+    return null;
   }
   if (input instanceof Request) {
     try {
@@ -69,6 +73,18 @@ async function resolveBody(
     }
   }
   return null;
+}
+
+function parseUrl(url: string): URL {
+  const origin =
+    typeof window !== "undefined" && window.location
+      ? window.location.origin
+      : "http://localhost";
+  try {
+    return new URL(url, origin);
+  } catch {
+    return new URL(origin);
+  }
 }
 
 function resolveHeaders(input: RequestInfo | URL, init?: RequestInit): Headers {
@@ -83,21 +99,12 @@ function resolveHeaders(input: RequestInfo | URL, init?: RequestInit): Headers {
 }
 
 function buildDemoRequest(
+  parsed: URL,
   url: string,
   method: string,
   headers: Headers,
   rawBody: string | null,
 ): DemoRequest {
-  const origin =
-    typeof window !== "undefined" && window.location
-      ? window.location.origin
-      : "http://localhost";
-  let parsed: URL;
-  try {
-    parsed = new URL(url, origin);
-  } catch {
-    parsed = new URL(origin);
-  }
   let cachedJson: unknown;
   let jsonParsed = false;
   return {
@@ -133,12 +140,17 @@ export async function routeDemoRequest(
   init?: RequestInit,
 ): Promise<Response | null> {
   const url = resolveUrl(input);
+  const parsed = parseUrl(url);
+
+  // Gate on the path BEFORE touching headers/body: non-API requests
+  // (assets, images, HMR, third-party) are the common case and must
+  // pass straight through with no body clone or header copy.
+  if (!isApiPath(parsed.pathname)) return null;
+
   const method = resolveMethod(input, init);
   const headers = resolveHeaders(input, init);
   const rawBody = await resolveBody(input, init);
-  const req = buildDemoRequest(url, method, headers, rawBody);
-
-  if (!isApiPath(req.pathname)) return null;
+  const req = buildDemoRequest(parsed, url, method, headers, rawBody);
 
   for (const handler of handlers) {
     if (handler.method !== req.method) continue;

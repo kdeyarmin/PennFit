@@ -91,4 +91,23 @@ describe("demo router", () => {
     expect(res!.status).toBe(200);
     expect(await res!.json()).toEqual({ ok: true });
   });
+
+  it("wraps the inventory PATCH response in { product } with a nested price", async () => {
+    // The admin inventory client reads json.product.id and
+    // json.product.price.unitAmount — a flat row would crash it.
+    const res = await routeDemoRequest(
+      "/resupply-api/admin/shop/products/demo-prod-n20-cushion/stock",
+      { method: "PATCH", body: JSON.stringify({ stockCount: 7 }) },
+    );
+    const body = (await res!.json()) as {
+      product: {
+        id: string;
+        stockCount: number;
+        price: { unitAmount: number };
+      };
+    };
+    expect(body.product.id).toBe("demo-prod-n20-cushion");
+    expect(body.product.stockCount).toBe(7);
+    expect(typeof body.product.price.unitAmount).toBe("number");
+  });
 });

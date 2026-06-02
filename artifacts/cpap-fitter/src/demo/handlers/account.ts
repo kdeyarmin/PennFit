@@ -22,11 +22,7 @@ import {
 import { demoStore } from "../fixtures/store";
 import { daysAgo, NOW_ISO } from "../fixtures/dates";
 import { demoSessionId } from "../ids";
-
-function baseUrl(): string {
-  const base = import.meta.env.BASE_URL || "/";
-  return base.endsWith("/") ? base : `${base}/`;
-}
+import { appBaseUrl } from "../paths";
 
 export const accountHandlers: DemoHandler[] = [
   // ── profile ──────────────────────────────────────────────────────
@@ -264,7 +260,7 @@ export const accountHandlers: DemoHandler[] = [
   ),
   route("POST", "/resupply-api/shop/me/documents/upload-url", () =>
     json({
-      uploadURL: `${baseUrl()}demo-upload-sink`,
+      uploadURL: `${appBaseUrl()}demo-upload-sink`,
       objectPath: "demo/uploads/file",
     }),
   ),
@@ -328,12 +324,12 @@ export const accountHandlers: DemoHandler[] = [
   route("POST", "/resupply-api/shop/me/quick-checkout", () => {
     const sessionId = demoSessionId();
     return json({
-      url: `${baseUrl()}shop/checkout-success?session_id=${sessionId}`,
+      url: `${appBaseUrl()}shop/checkout-success?session_id=${sessionId}`,
       sessionId,
     });
   }),
   route("POST", "/resupply-api/shop/me/billing-portal", () =>
-    json({ url: `${baseUrl()}account/billing` }),
+    json({ url: `${appBaseUrl()}account/billing` }),
   ),
 
   // ── patient billing (/api/me/*) ──────────────────────────────────
@@ -350,7 +346,7 @@ export const accountHandlers: DemoHandler[] = [
     const sessionId = demoSessionId();
     return json({
       paymentId: `demo-pay-${Date.now()}`,
-      url: `${baseUrl()}shop/checkout-success?session_id=${sessionId}`,
+      url: `${appBaseUrl()}shop/checkout-success?session_id=${sessionId}`,
       amountCents: body.amountCents ?? 4250,
     });
   }),
