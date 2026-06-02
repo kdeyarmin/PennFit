@@ -82,3 +82,11 @@ export function getLinkHmacKey(env: EnvLike = process.env): Buffer {
   //       than preflight (as CodeRabbit flagged on PR #409).
   return Buffer.from(value, "utf8");
 }
+
+// Consolidated environment aliases — set one PUBLIC_BASE_URL / OPS_EMAIL
+// instead of several near-duplicate vars. See ./env-aliases.ts.
+export {
+  applyEnvAliases,
+  PUBLIC_BASE_URL_TARGETS,
+  OPS_EMAIL_TARGETS,
+} from "./env-aliases";
