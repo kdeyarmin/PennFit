@@ -130,6 +130,13 @@ export interface ClaimDetail {
    *  subscriber loop declares the correct payer sequence (and the
    *  2320 loop discloses the prior payer that already adjudicated). */
   payerResponsibility?: "P" | "S" | "T";
+  /** CLM05-3 claim frequency: '1' original (default), '7' replacement of a
+   *  prior claim, '8' void/cancel. */
+  claimFrequencyCode?: "1" | "7" | "8";
+  /** Payer's original claim control number (ICN/DCN). Emitted as REF*F8 in
+   *  loop 2300 when the frequency is 7 or 8 so the payer matches the
+   *  replacement/void to the original instead of adjudicating a duplicate. */
+  originalClaimNumber?: string | null;
 }
 
 export interface ProviderRef {
@@ -540,11 +547,16 @@ export function build837P(
       joinSegment([
         "CLM",
         padOrTrunc(sanitizeElement(claim.internalClaimId), 38),
-        centsToMoney(claim.totalBilledCents),
+        // CLM02 MUST equal Σ(SV1-02). Compute it from the same extended line
+        // amounts the service lines emit rather than trusting the stored
+        // header total — a drifted header would otherwise produce an 837P
+        // whose claim total ≠ sum of lines, which the payer front-end rejects.
+        centsToMoney(claim.serviceLines.reduce((s, l) => s + l.billedCents, 0)),
         "",
         "",
-        // CLM05 composite — place of service : facility-code-qualifier (B) : frequency (1)
-        `${sanitizeElement(claim.placeOfServiceCode).slice(0, 2)}${COMPONENT_SEPARATOR}B${COMPONENT_SEPARATOR}1`,
+        // CLM05 composite — place of service : facility-code-qualifier (B)
+        // : claim frequency (1 original / 7 replacement / 8 void).
+        `${sanitizeElement(claim.placeOfServiceCode).slice(0, 2)}${COMPONENT_SEPARATOR}B${COMPONENT_SEPARATOR}${claim.claimFrequencyCode ?? "1"}`,
         "Y", // provider/signature on file
         "A", // provider accepts assignment
         "Y", // benefits assignment
@@ -566,6 +578,22 @@ export function build837P(
           "REF",
           "G1",
           sanitizeElement(claim.priorAuthNumber).slice(0, 50),
+        ]),
+      );
+    }
+
+    // REF*F8 — original claim control number (ICN/DCN) for a replacement
+    // (frequency 7) or void (8), so the payer matches it to the original
+    // claim instead of adjudicating it as a new/duplicate claim.
+    if (
+      (claim.claimFrequencyCode === "7" || claim.claimFrequencyCode === "8") &&
+      claim.originalClaimNumber
+    ) {
+      segments.push(
+        joinSegment([
+          "REF",
+          "F8",
+          sanitizeElement(claim.originalClaimNumber).slice(0, 50),
         ]),
       );
     }
@@ -696,21 +724,29 @@ export function build837P(
           oth.subscriber.gender,
         ]),
       );
-      // 2330B — other payer
-      segments.push(
-        joinSegment([
-          "NM1",
-          "PR",
-          "2",
-          padOrTrunc(sanitizeElement(oth.payer.organizationName), 60),
+      // 2330B — other payer. Emit the real payer identifier (NM108=PI,
+      // NM109=id) when we have one; otherwise fall back to the payer NAME
+      // only (no NM108/09). A payer name is NOT a valid payer identifier —
+      // emitting a name in NM109 mis-routes the COB loop, so a missing id
+      // (which the clearinghouse flags and a CSR can correct) is the safer
+      // degrade. The AMT*D prior-paid disclosure above is retained either way.
+      const otherPayerNm1: string[] = [
+        "NM1",
+        "PR",
+        "2",
+        padOrTrunc(sanitizeElement(oth.payer.organizationName), 60),
+      ];
+      if (oth.payer.payerId && oth.payer.payerId.trim().length > 0) {
+        otherPayerNm1.push(
           "",
           "",
           "",
           "",
           "PI",
           sanitizeElement(oth.payer.payerId),
-        ]),
-      );
+        );
+      }
+      segments.push(joinSegment(otherPayerNm1));
     }
 
     // 2400 — service lines
