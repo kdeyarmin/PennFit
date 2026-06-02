@@ -354,6 +354,56 @@ export interface Database {
         >;
         Relationships: [];
       };
+      // Super-admin System Configuration store (migration 0211). One
+      // row per setting, keyed by the literal env-var name; `value` is
+      // plaintext (no column encryption — see migration header). Backs
+      // /admin/system/config.
+      app_config: {
+        Row: {
+          key: string;
+          value: string;
+          updated_by_user_id: string | null;
+          updated_by_email: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          key: string;
+          value: string;
+          updated_by_user_id?: string | null;
+          updated_by_email?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["resupply"]["Tables"]["app_config"]["Row"]>;
+        Relationships: [];
+      };
+      // Append-only, value-free audit of config writes (migration
+      // 0211). Records the key, action ('set' | 'clear'), whether a
+      // prior value existed, and the operator — never the secret
+      // itself. Drives the System Config "Recent activity" panel.
+      app_config_events: {
+        Row: {
+          id: string;
+          key: string;
+          action: string;
+          had_previous: boolean;
+          operator_email: string | null;
+          occurred_at: string;
+        };
+        Insert: {
+          id?: string;
+          key: string;
+          action: string;
+          had_previous: boolean;
+          operator_email?: string | null;
+          occurred_at?: string;
+        };
+        Update: Partial<
+          Database["resupply"]["Tables"]["app_config_events"]["Row"]
+        >;
+        Relationships: [];
+      };
       admin_users: {
         Row: {
           id: string;

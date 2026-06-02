@@ -25,6 +25,8 @@ import { createCareOrchestratorAdapter } from "@workspace/resupply-integrations-
 import { createHealthConnectAdapter } from "@workspace/resupply-integrations-health-connect";
 import { createReactHealthAdapter } from "@workspace/resupply-integrations-react-health";
 
+import { getEffectiveEnv } from "../app-config/store";
+
 export function getIntegrationAdapters(
   env: NodeJS.ProcessEnv = process.env,
 ): Map<IntegrationSource, IntegrationAdapter> {
@@ -34,6 +36,27 @@ export function getIntegrationAdapters(
   m.set("health_connect", createHealthConnectAdapter(env));
   m.set("react_health", createReactHealthAdapter(env));
   return m;
+}
+
+/**
+ * Same as getIntegrationAdapters, but first overlays any super-admin
+ * System Configuration values (resupply.app_config) on top of
+ * process.env via getEffectiveEnv(). This is what makes therapy-cloud
+ * credentials entered in /admin/system/configuration take effect LIVE:
+ * the registry is rebuilt per call, so the next sync/refresh sees the
+ * rotated credential without a restart. Fail-soft — if the overlay
+ * can't be read, getEffectiveEnv returns process.env unchanged and the
+ * adapters build exactly as before.
+ *
+ * Prefer this in async contexts (route handlers, the nightly sync job).
+ * The synchronous getIntegrationAdapters(env) above stays for callers
+ * that already hold an env and for unit tests.
+ */
+export async function getIntegrationAdaptersWithDbOverrides(): Promise<
+  Map<IntegrationSource, IntegrationAdapter>
+> {
+  const env = await getEffectiveEnv();
+  return getIntegrationAdapters(env);
 }
 
 /**

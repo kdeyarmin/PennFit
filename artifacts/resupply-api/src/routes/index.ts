@@ -92,6 +92,7 @@ import mfaRouter from "./admin/mfa.js";
 import reportsRouter from "./admin/reports.js";
 import reportPresetsRouter from "./admin/report-presets.js";
 import featureFlagsRouter from "./admin/feature-flags.js";
+import appConfigRouter from "./admin/app-config.js";
 import npsSummaryRouter from "./admin/nps-summary.js";
 import deliveryFailuresRouter from "./admin/delivery-failures.js";
 import lookupRouter from "./admin/lookup.js";
@@ -821,6 +822,10 @@ router.use(reportPresetsRouter);
 // /admin/feature-flags/* — Control Center on/off toggles that gate
 // dispatchers and route handlers in real time.
 router.use(featureFlagsRouter);
+// /admin/system/config/* — super-admin System Configuration store:
+// enter/rotate integration credentials + platform secrets (migration
+// 0211). super_admin-only (system.config.manage).
+router.use(appConfigRouter);
 // /admin/nps/recent — last-N-days NPS rollup for the post-delivery
 // follow-up. Surfaces band counts + canonical NPS score + a comment
 // tail. Powered by shop_order_nps_responses (migration 0127).

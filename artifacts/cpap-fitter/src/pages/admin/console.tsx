@@ -270,6 +270,11 @@ const AdminIntegrationsPage = lazy(() =>
     default: m.AdminIntegrationsPage,
   })),
 );
+const AdminSystemConfigurationPage = lazy(() =>
+  import("@/pages/admin/admin-system-configuration").then((m) => ({
+    default: m.AdminSystemConfigurationPage,
+  })),
+);
 const AdminTherapyFleetPage = lazy(() =>
   import("@/pages/admin/admin-therapy-fleet").then((m) => ({
     default: m.AdminTherapyFleetPage,
@@ -885,6 +890,10 @@ function AdminConsole() {
             <Route
               path="/admin/integrations"
               component={AdminIntegrationsPage}
+            />
+            <Route
+              path="/admin/system/configuration"
+              component={AdminSystemConfigurationPage}
             />
             <Route
               path="/admin/therapy-fleet"

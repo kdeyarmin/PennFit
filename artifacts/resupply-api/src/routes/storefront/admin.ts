@@ -18,6 +18,7 @@
 import { Router } from "express";
 import { z } from "zod";
 
+import { permissionsForRole } from "@workspace/resupply-auth";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { adminReadRateLimiter } from "../../middlewares/admin-rate-limit.js";
@@ -411,6 +412,13 @@ router.get("/admin/me", (req, res) => {
     email: req.adminEmail,
     userId: req.adminUserId,
     role: req.adminRole ?? "admin",
+    // Granular RBAC keys the role carries — drives nav-visibility in the
+    // SPA (e.g. the super-admin-only System Configuration page). Kept in
+    // sync with /resupply-api/me. Non-sensitive: the server still
+    // enforces every gate; this just hides controls that would 403.
+    permissions: permissionsForRole(
+      req.adminGranularRole ?? req.adminRole ?? "admin",
+    ),
   });
 });
 

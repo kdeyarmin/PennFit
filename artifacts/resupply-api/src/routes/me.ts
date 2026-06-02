@@ -1,4 +1,7 @@
 import { Router, type IRouter } from "express";
+
+import { permissionsForRole } from "@workspace/resupply-auth";
+
 import { adminReadRateLimiter } from "../middlewares/admin-rate-limit";
 import { requireAdmin } from "../middlewares/requireAdmin";
 
@@ -29,23 +32,35 @@ import { requireAdmin } from "../middlewares/requireAdmin";
 //     1. There is a valid session (else 401),
 //     2. The session's primary email is verified (else 403),
 //     3. The email is on the admin OR agent allowlist (else 403),
-//   AND attached `adminEmail`, `adminUserId`, and `adminRole` to
-//   `req`. The handler itself never reaches the auth provider and never
-//   re-validates.
+//   AND attached `adminEmail`, `adminUserId`, `adminRole`, and
+//   `adminGranularRole` to `req`. The handler itself never reaches the
+//   auth provider and never re-validates.
+//
+// `permissions`:
+//   The granular RBAC keys the caller's role carries (derived from
+//   `adminGranularRole` via the catalog in resupply-auth/rbac.ts). The
+//   admin SPA reads this to hide nav entries the role can't use — e.g.
+//   the super-admin-only System Configuration page is gated on
+//   `system.config.manage`, which only super_admin holds. The set is
+//   non-sensitive (it's a list of action names, not a grant of access
+//   — the server still enforces every gate); surfacing it just keeps
+//   the UI from showing controls that would 403.
 
 const router: IRouter = Router();
 
 router.get("/me", adminReadRateLimiter, requireAdmin, (req, res) => {
-  // All three fields are guaranteed to be set by requireAdmin on the
-  // success path; the `??` is a belt-and-braces guard so a future
-  // refactor that breaks that contract surfaces as an empty string
-  // / "admin" default (which the dashboard will treat as a hard
-  // error in the email case, and a safe default in the role case)
-  // rather than as `undefined` serialized to `null`.
+  // All fields are guaranteed to be set by requireAdmin on the success
+  // path; the `??` is a belt-and-braces guard so a future refactor that
+  // breaks that contract surfaces as an empty string / "admin" default
+  // (which the dashboard will treat as a hard error in the email case,
+  // and a safe default in the role case) rather than as `undefined`
+  // serialized to `null`.
+  const role = req.adminGranularRole ?? req.adminRole ?? "admin";
   res.json({
     userId: req.adminUserId ?? "",
     email: req.adminEmail ?? "",
     role: req.adminRole ?? "admin",
+    permissions: permissionsForRole(role),
   });
 });
 

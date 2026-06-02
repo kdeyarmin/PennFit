@@ -71,7 +71,6 @@ describe("composeFirstDaySms", () => {
     expect(sms).toContain("Reply STOP to opt out");
   });
 });
-});
 
 describe("runFirstDayNudgeSweep — eligibility predicate", () => {
   it("excludes leads that already completed the fitter", async () => {

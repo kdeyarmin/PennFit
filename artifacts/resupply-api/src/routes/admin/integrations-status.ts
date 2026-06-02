@@ -21,7 +21,10 @@ import {
 } from "@workspace/resupply-integrations";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
-import { getIntegrationAdapters } from "../../lib/integrations/registry";
+import {
+  getIntegrationAdapters,
+  getIntegrationAdaptersWithDbOverrides,
+} from "../../lib/integrations/registry";
 import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
@@ -51,7 +54,7 @@ router.get(
   "/admin/integrations/status",
   requirePermission("admin.tools.manage"),
   async (_req, res) => {
-    const adapters = getIntegrationAdapters();
+    const adapters = await getIntegrationAdaptersWithDbOverrides();
     const supabase = getSupabaseServiceRoleClient();
     const cutoff = new Date(
       Date.now() - LOOKBACK_DAYS * 86400_000,
