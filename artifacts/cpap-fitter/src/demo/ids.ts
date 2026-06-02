@@ -12,6 +12,16 @@ export function demoSessionId(): string {
 
 /** `PENN-DEMO-<4 digits>` — a fake order reference for the demo. */
 export function demoOrderReference(): string {
-  const n = crypto.getRandomValues(new Uint32Array(1))[0] % 9000;
+  const range = 9000;
+  const limit = Math.floor(0x100000000 / range) * range; // largest multiple of range < 2^32
+  const buf = new Uint32Array(1);
+
+  let x: number;
+  do {
+    crypto.getRandomValues(buf);
+    x = buf[0];
+  } while (x >= limit);
+
+  const n = x % range;
   return `PENN-DEMO-${2000 + n}`;
 }
