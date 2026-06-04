@@ -69,6 +69,7 @@ describe("apple-wallet assets", () => {
       colorType: 6,
     });
     expect(png.length).toBeGreaterThan(200);
+    expectDecodesAsNonBlankPng(png);
   });
 
   it("icon and logo are distinct assets", () => {
