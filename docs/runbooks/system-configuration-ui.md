@@ -23,6 +23,29 @@ Every route is gated on the `system.config.manage` permission, which
 nav entry is hidden for them. The `/me` endpoints now return the caller's
 `permissions` so the SPA can gate the nav entry accordingly.
 
+### Granting super-admin
+
+`super_admin` resolves from **`resupply.admin_users.role = 'admin'`** (via
+`toEffectiveRole()`). `requireAdmin` falls back to the coarse
+`resupply_auth.users.role` when a user has **no** `admin_users` row, so a
+freshly bootstrapped `admin` reaches super_admin by that fallback — but
+the grant is implicit and fragile (adding a lower-role `admin_users` row
+later silently demotes them). Make it explicit and durable:
+
+```bash
+SUPABASE_URL=… SUPABASE_SERVICE_ROLE_KEY=… \
+pnpm --filter @workspace/scripts auth:grant-super-admin --email=<addr>
+```
+
+The user must already exist (run `auth:bootstrap-admin` first to create
+the account + set a password). `auth:grant-super-admin`
+(`scripts/src/auth-grant-super-admin.ts`) is idempotent: it ensures the
+coarse role is `admin` **and** upserts an `admin_users` row with
+`role='admin'`, `status='active'`, linked via `auth_user_id`. It issues
+no password reset and sends no email, so it's safe to re-run. Unlike
+`auth:bootstrap-admin`, it writes the granular row the team console and
+the `system.config.manage` gate actually read.
+
 ## How values are stored (read this before changing the schema)
 
 - One row per setting in `resupply.app_config`, keyed by the **literal
