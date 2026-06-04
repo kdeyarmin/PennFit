@@ -439,7 +439,12 @@ async function releaseAdherenceCapKey(
     .eq("key", key);
   if (error) {
     logger.warn(
-      { err: error, queue: THERAPY_FLEET_ALERTS_JOB, dedup_key: key },
+      {
+        event: "therapy_fleet_adherence_cap_release_failed",
+        err: { code: error.code, message: error.message },
+        queue: THERAPY_FLEET_ALERTS_JOB,
+        dedup_key: key,
+      },
       "therapy fleet: failed to release adherence cap key after non-send",
     );
   }
