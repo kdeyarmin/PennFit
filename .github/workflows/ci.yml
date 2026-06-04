@@ -81,6 +81,20 @@ jobs:
           scripts/check-admin-route-gates.sh --self-test
           scripts/check-admin-route-gates.sh
 
+      # Fixture-driven negative-test harness for the admin-gate checker
+      # (distinct from the script's own --self-test above: this one
+      # builds a synthetic routes/admin tree via RESUPPLY_GATE_CHECK_ROOT
+      # and asserts gated/ungated/ignored outcomes). It shipped with the
+      # checker but ran in no pipeline until now — see
+      # docs/workflow-efficiency-audit-2026-06-04.md (W5). The sibling
+      # *.sh.test harnesses for the architecture and migration-prefix
+      # checkers are intentionally NOT wired in yet (the architecture one
+      # has rotted against the May-2026 artifact consolidation; the
+      # migration-prefix and lib-staged-snapshot ones git-commit in
+      # fixtures and need CI-side validation first — see the audit doc).
+      - name: Admin route gate negative-test harness
+        run: bash scripts/check-admin-route-gates.sh.test
+
   test:
     name: Tests
     runs-on: ubuntu-latest
@@ -415,5 +429,82 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: playwright-smoke-report
+          path: playwright-report/
+          retention-days: 14
+
+  e2e-dev:
+    name: E2E (Playwright, dev server)
+    runs-on: ubuntu-latest
+
+    # results-page-resilience.spec.ts is a regression test that REQUIRES
+    # the Vite *dev* server: it stubs @mediapipe/tasks-vision by
+    # intercepting the ES-module request, which only exists as a separate
+    # fetch when modules are served unbundled (dev). Under `vite preview`
+    # (what the smoke/a11y jobs use) the module is bundled and the spec
+    # self-skips — so it ran in NO CI job until now (see
+    # docs/workflow-efficiency-audit-2026-06-04.md, W4). This job boots
+    # the dev server so the spec runs for real.
+    #
+    # continue-on-error while the harness proves itself in CI — this spec
+    # has never run here, and a full mocked-camera fitter walk is the
+    # most timing-sensitive thing in the suite. Mirrors the soft-gate
+    # pattern of the integration + a11y jobs; flip to required once it's
+    # been green across a few runs.
+    continue-on-error: true
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: ./.github/actions/setup
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          pnpm-version: ${{ env.PNPM_VERSION }}
+
+      # The dev server's predev hook downloads the MediaPipe model from
+      # storage.googleapis.com; run it as an explicit, debuggable step so
+      # a download failure is distinct from a server-start failure.
+      - name: Pre-download MediaPipe assets
+        run: node artifacts/cpap-fitter/scripts/setup-mediapipe.mjs
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('pnpm-lock.yaml') }}
+
+      - name: Install Playwright browsers (chromium only)
+        run: pnpm exec playwright install --with-deps chromium
+
+      # `vite dev` (not preview) so modules are served unbundled and the
+      # spec's @mediapipe/tasks-vision module stub can take effect. The
+      # dev script already passes --host 0.0.0.0; vite reads PORT +
+      # BASE_PATH from env (strictPort: true).
+      - name: Start vite dev server
+        env:
+          PORT: "5173"
+          BASE_PATH: "/"
+        run: |
+          pnpm --filter @workspace/cpap-fitter dev &
+          for i in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:5173/ > /dev/null 2>&1; then
+              echo "vite dev is up after ${i}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "vite dev did not respond on :5173 within 60s"
+          exit 1
+
+      - name: Run results-page resilience spec
+        env:
+          E2E_BASE_URL: http://127.0.0.1:5173
+          CI: "true"
+        run: pnpm exec playwright test --config e2e/playwright.config.ts e2e/tests/results-page-resilience.spec.ts
+
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-e2e-dev-report
           path: playwright-report/
           retention-days: 14
