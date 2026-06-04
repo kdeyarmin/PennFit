@@ -36,7 +36,8 @@
 //     --email=alice@example.com
 //
 // The auth user must already exist (run auth:bootstrap-admin first to
-// create it + set a password). A revoked user is refused unless --force.
+// create it + set a password). A locked or revoked user is refused
+// unless --force.
 //
 // Exit codes:
 //   0 — success
@@ -104,9 +105,17 @@ async function main(): Promise<void> {
         `  pnpm --filter @workspace/scripts auth:bootstrap-admin --email=${emailLower} --role=admin`,
     );
   }
-  if ((user.status === "revoked" || user.status === "locked") && !argsParsed.force) {
+  // Sign-in (and requireAdmin) refuse BOTH 'locked' and 'revoked' users
+  // — see lib/resupply-auth/src/http/sign-in.ts and
+  // middlewares/requireAdmin.ts. Granting the role doesn't clear those
+  // statuses, so refuse unless --force, and don't claim the user can
+  // sign in below when its status still blocks it.
+  const canSignIn = user.status !== "locked" && user.status !== "revoked";
+  if (!canSignIn && !argsParsed.force) {
     fail(
-      `User ${emailLower} is ${user.status}. Re-run with --force to grant super-admin anyway.`,
+      `User ${emailLower} is ${user.status} and cannot sign in. Re-run with ` +
+        `--force to grant super-admin anyway (they still won't be able to ` +
+        `sign in until it's cleared).`,
     );
   }
 
@@ -135,18 +144,18 @@ async function main(): Promise<void> {
   const { data: existingAdmin, error: findErr } = await supabase
     .schema("resupply")
     .from("admin_users")
-    .select("id, role, status")
+    .select("id, role, status, accepted_at, revoked_at")
     .eq("email_lower", emailLower)
     .maybeSingle();
   if (findErr) throw findErr;
 
   let adminAction: "created" | "updated" | "unchanged";
   if (existingAdmin) {
-    if (existingAdmin.role === "admin" && existingAdmin.status === "active") {
-      adminAction = "unchanged";
-    } else {
-      adminAction = "updated";
-    }
+    const alreadyConsistent =
+      existingAdmin.role === "admin" &&
+      existingAdmin.status === "active" &&
+      existingAdmin.revoked_at === null;
+    adminAction = alreadyConsistent ? "unchanged" : "updated";
     const { error } = await supabase
       .schema("resupply")
       .from("admin_users")
@@ -154,8 +163,13 @@ async function main(): Promise<void> {
         role: "admin",
         status: "active",
         auth_user_id: user.id,
+        // Clearing the revoke stamps keeps the row from being internally
+        // inconsistent (active + revoked_*); backfilling accepted_at when
+        // it's missing mirrors the team-invite reactivation flow in
+        // routes/admin/team.ts.
         revoked_at: null,
         revoked_by: null,
+        accepted_at: existingAdmin.accepted_at ?? nowIso,
         updated_at: nowIso,
       })
       .eq("email_lower", emailLower);
@@ -182,8 +196,12 @@ async function main(): Promise<void> {
       `  admin_users.role  = admin  (effective: super_admin) [${adminAction}]\n` +
       `  status            = active\n` +
       `  auth_user_id      = ${user.id}\n\n` +
-      `They can now open /admin/system/configuration to enter integration\n` +
-      `secrets (ElevenLabs, Deepgram, OpenAI, Anthropic, Stripe, …).\n`,
+      (canSignIn
+        ? `They can now open /admin/system/configuration to enter integration\n` +
+          `secrets (ElevenLabs, Deepgram, OpenAI, Anthropic, Stripe, …).\n`
+        : `NOTE: the auth account status is '${user.status}', which still\n` +
+          `blocks sign-in — clear it before they can open\n` +
+          `/admin/system/configuration.\n`),
   );
 }
 
