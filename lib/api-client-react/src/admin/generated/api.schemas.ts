@@ -887,6 +887,12 @@ truncated to 80 characters. PHI.
   portalStatus: "not_invited" | "pending" | "active";
   /** ISO timestamp of the most recent portal invite. */
   portalInvitedAt?: string | null;
+  /** The shop-customer userId that shares this patient's portal login
+(shop_customers.auth_user_id === patients.portal_auth_user_id), or null
+when there is no portal account / no matching customer. Drives the
+"view customer record" jump on the detail page.
+ */
+  linkedCustomerUserId?: string | null;
 }
 
 export type ConversationListItemChannel =

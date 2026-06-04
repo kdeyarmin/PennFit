@@ -80,6 +80,12 @@ export interface AdminCustomerProfile {
   createdAt: string;
   updatedAt: string;
   isGuest: boolean;
+  /**
+   * The clinical patient that shares this customer's portal login
+   * (patients.portal_auth_user_id === shop_customers.auth_user_id), or
+   * null when there's no match. Drives the "view patient record" jump.
+   */
+  linkedPatientId: string | null;
 }
 
 export interface AdminCustomerOrder {
