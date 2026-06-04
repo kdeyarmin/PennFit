@@ -241,6 +241,7 @@ function CustomerHeader({
               </span>
             )}
           </div>
+          <PatientDirectoryJump displayName={profile.displayName} />
         </div>
       </div>
       <div style={{ display: "flex", gap: 12, fontSize: 13 }}>
@@ -253,6 +254,38 @@ function CustomerHeader({
         <Stat label="Avg order" value={formatCents(stats.avgOrderValueCents)} />
       </div>
     </div>
+  );
+}
+
+/**
+ * "Find this person in Patients" jump. Patient and shop-customer records
+ * aren't linked in the data, so this is a name search into the clinical
+ * directory rather than a guaranteed match. The patient search matches
+ * each name column against the whole needle (no tokenizing), so we pass
+ * the surname (last token of the display name) to hit `legal_last_name`.
+ */
+function PatientDirectoryJump({
+  displayName,
+}: {
+  displayName: string | null | undefined;
+}) {
+  const surname = (displayName ?? "").trim().split(/\s+/).pop() ?? "";
+  if (!surname) return null;
+  return (
+    <Link
+      href={`/admin/patients?search=${encodeURIComponent(surname)}`}
+      style={{
+        fontSize: 12,
+        fontWeight: 600,
+        color: "var(--penn-navy, #1e3a5f)",
+        textDecoration: "none",
+        marginTop: 4,
+        display: "inline-block",
+      }}
+      title="Search the clinical Patients directory for this surname"
+    >
+      Find in Patients →
+    </Link>
   );
 }
 

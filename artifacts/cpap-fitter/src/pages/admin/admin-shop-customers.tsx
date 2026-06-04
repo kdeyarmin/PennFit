@@ -4,7 +4,7 @@
 // Companion to /admin/shop/customers/:userId (the detail page from
 // PR #54). The directory makes the customer-360 surface navigable
 // for CSRs who don't have a userId in hand — search by partial
-// email or jump from a row.
+// name or email, or jump from a row.
 //
 // PHI posture (mirrors the server endpoint):
 //   * Email column shows the redacted form ("ja******@example.com")
@@ -56,9 +56,18 @@ const SORT_LABELS: Record<AdminCustomerListSortBy, string> = {
   created_at: "Account age",
 };
 
+/** Read a query-string param once for seeding initial state. */
+function initialSearchParam(key: string): string {
+  if (typeof window === "undefined") return "";
+  return new URLSearchParams(window.location.search).get(key) ?? "";
+}
+
 export function AdminShopCustomersPage() {
   const [, navigate] = useLocation();
-  const [q, setQ] = useState("");
+  // Seed the search box from `?search=` so a deep link (e.g. the
+  // "Find this person in Customers" jump from a patient record) lands
+  // pre-filtered. Search matches name or email server-side.
+  const [q, setQ] = useState(() => initialSearchParam("search"));
   const [sortBy, setSortBy] = useState<AdminCustomerListSortBy>("last_order");
   const [subFilter, setSubFilter] = useState<"" | "active" | "none">("");
   const [awaitingOnly, setAwaitingOnly] = useState(false);
@@ -137,8 +146,8 @@ export function AdminShopCustomersPage() {
               setQ(e.target.value);
               setPage(1);
             }}
-            placeholder="Search by email…"
-            aria-label="Search customers by email"
+            placeholder="Search by name or email…"
+            aria-label="Search customers by name or email"
             style={{
               width: "100%",
               height: 32,
