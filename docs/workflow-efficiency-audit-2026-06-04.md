@@ -25,22 +25,22 @@ etc.) — these are pure build/CI/dev-loop changes.
 | W2  | Playwright browser downloaded twice/run, never cached         | MEDIUM   | ✅ fixed (cache step)           |
 | W3  | SPA built twice per CI run (a11y + smoke)                     | MEDIUM   | open — recommendation below     |
 | W4  | `results-page-resilience.spec.ts` runs in no CI job           | MEDIUM   | ✅ fixed (new `e2e-dev` job)    |
-| W5  | Shell-script test files (`*.sh.test`) execute nowhere         | MEDIUM   | ✅ 3 of 4 wired in; 1 deferred   |
+| W5  | Shell-script test files (`*.sh.test`) execute nowhere         | MEDIUM   | ✅ all 4 wired in                |
 | W5a | The architecture-guard test had rotted (stale `resupply-worker`) | MEDIUM | ✅ fixed (fixtures repointed)    |
 | W6  | No single "run what CI runs" local command                   | LOW      | open — recommendation below     |
 | W7  | Hooks not auto-installed on fresh clone (only post-merge)     | LOW      | open — recommendation below     |
 | W8  | `pnpm typecheck` runs in `build`, then again in CI standalone | INFO     | open — note                     |
 
 Shipped on this branch: W1, W2 (mechanical CI DRY + caching), W4 (the
-dev-server e2e job, soft-gated), W5 (the two genuinely-dormant guard-test
-harnesses — architecture + migration-prefix — wired into CI; the
-admin-gate one already ran), and **W5a** (the architecture-guard test
-had silently rotted against the May-2026 artifact consolidation — its
-worker fixtures are repointed to the real location, so it passes and now
-runs in CI). Investigating W5 was itself the payoff: running the dormant
-tests is how the W5a rot and a latent flake in the pre-commit snapshot
-lib surfaced at all. The remaining items (W3, W6, W7, W8, and the
-`lib-staged-snapshot` deflake) are left **open** with a fix sketch.
+dev-server e2e job, soft-gated), W5 (all four dormant/under-run guard-test
+harnesses now run in CI), and **W5a** (the architecture-guard test had
+silently rotted against the May-2026 artifact consolidation — its worker
+fixtures are repointed to the real location). Investigating W5 was itself
+the payoff: running the dormant tests is how the W5a rot **and** a
+self-inflicted bug in the snapshot-lib test surfaced at all — and the
+latter, on full diagnosis, proved the production lib was correct and the
+test was sweeping its own stderr sink. The remaining items (W3, W6, W7,
+W8) are left **open** with a fix sketch.
 
 ---
 
@@ -168,7 +168,7 @@ the checker catches them, then asserts a clean tree passes).
 | `check-admin-route-gates.sh.test`          | 5.7 KB| `check-admin-route-gates.sh`         | already ran via `--self-test`       |
 | `check-resupply-architecture.sh.test`      | 35 KB | `check-resupply-architecture.sh`     | dormant + rotted → ✅ fixed & wired |
 | `check-resupply-migration-prefix.sh.test`  | 6.3 KB| `check-resupply-migration-prefix.sh` | dormant → ✅ wired                  |
-| `git-hooks/lib-staged-snapshot.test`       | 11 KB | `lib-staged-snapshot.sh`             | ⏸ deferred — real flake (below)    |
+| `git-hooks/lib-staged-snapshot.test`       | 11 KB | `lib-staged-snapshot.sh`             | dormant + buggy → ✅ fixed & wired  |
 
 **Correction to the first pass of this audit:** the admin-gate harness
 was _not_ dormant — the `drift` job already ran
@@ -180,29 +180,31 @@ checker (`check-resupply-architecture.sh` /
 fixture coverage for the repo's most safety-critical guard — the one
 that protects the hexagonal dependency rules — was running nowhere.
 
-**Fix (this branch).** Added two steps to the `drift` job:
-`check-resupply-architecture.sh --self-test` and
-`check-resupply-migration-prefix.sh --self-test`. Both pass locally
+**Fix (this branch).** Added four steps to the `drift` job:
+`check-resupply-architecture.sh --self-test`,
+`check-resupply-migration-prefix.sh --self-test`, and a direct
+`bash scripts/git-hooks/lib-staged-snapshot.test`. All pass locally
 (the architecture one after the W5a repoint below; the migration-prefix
-one once its fixture repo's commits aren't intercepted by a local
-commit-signing config — it runs clean on a stock runner). The fourth is
-deferred:
+one runs clean on a stock runner — its fixture commits were only
+intercepted by this sandbox's commit-signing config; the
+staged-snapshot one after the scenario-9 fix below).
 
-- **`git-hooks/lib-staged-snapshot.test`** has a **real, deterministic
-  failure** in scenario 9 ("recovery-dir breadcrumb emitted before
-  mutation"): the lib takes the fast/no-op path when it should snapshot.
-  Reproduced 3/3 and 5/5 in clean repos with commit-signing disabled, so
-  it is **not** a signing artifact — the lib's capture-phase `git diff`
-  reports no unstaged change when the staged `git add` and the
-  subsequent edit happen before any index-refreshing `git` command runs;
-  the breadcrumb fires once an intervening `git diff`/`status` refreshes
-  the stat cache. In real pre-commit usage `git commit` refreshes the
-  index before the hook fires, so this is unlikely to bite in practice —
-  but it's a latent edge in a guard library and the test pins it. Needs a
-  deflake (a `git update-index -q --refresh` in the lib's capture phase,
-  or a warm-up in the test) and a decision on whether the lib should
-  defend against the cold-stat-cache case before it gates CI. Left for a
-  focused follow-up because it touches the pre-commit isolation lib.
+- **`git-hooks/lib-staged-snapshot.test`** failed scenario 9
+  deterministically — but the bug was in the **test**, not the lib. The
+  scenario redirected the wrapper's stderr to `$WORK/hint.log`, a file
+  **inside the repo working tree**. Scenario 9 isn't in a complex git
+  state, so the wrapper does full isolation: it archives every untracked
+  file (including the empty `hint.log` it was about to write to), runs
+  the command, fires the "recovery dir:" breadcrumb into `hint.log`, then
+  **restores the archived empty version on the way out** — clobbering the
+  breadcrumb the test then grepped for. (Scenario 4 gets away with a
+  `$WORK/warn.log` only because its mid-merge state makes the wrapper
+  skip isolation.) The production lib was behaving **perfectly** — it
+  correctly snapshots and restores untracked files, including the test's
+  own stderr sink. Fix: move the sink to `mktemp` (`$TMPDIR`, outside the
+  swept tree). Now passes 15/15 across both the default and this
+  environment's `core.checkstat=minimal` git config, with **zero change
+  to the lib**.
 
 ### [MEDIUM] W5a — The architecture-guard test had rotted → **fixed**
 
@@ -316,10 +318,9 @@ independent infrastructure.
 
 ## Suggested next step
 
-W1, W2, W4, W5, and W5a are on this branch. The clearest remaining unit
-of work is the **`lib-staged-snapshot` deflake** (W5) — decide whether
-the snapshot lib should defend against the cold-stat-cache case, fix it
-or the test accordingly, then wire that fourth harness in. W3 is worth
-doing only if a CI-duration measurement shows the double SPA build is on
-the critical path. W6 + W7 are quality-of-life and can ride along with
-any other DX change.
+W1, W2, W4, W5, and W5a are all on this branch — every guard-test harness
+now runs in CI. The remaining items are all optional: W3 (build-once SPA)
+is worth doing only if a CI-duration measurement shows the double build
+is on the critical path; W6 (`pnpm verify`) and W7 (hook auto-install on
+fresh clone) are quality-of-life and can ride along with any other DX
+change; W8 is informational.

@@ -91,13 +91,21 @@ jobs:
       # docs/workflow-efficiency-audit-2026-06-04.md (W5/W5a). They guard
       # the repo's primary architecture invariant, so an undetected
       # regression in the checker itself is exactly what they prevent.
-      # (lib-staged-snapshot.test is intentionally NOT wired in yet — its
-      # scenario 9 is non-deterministic; see the audit doc.)
       - name: Architecture checker self-test
         run: scripts/check-resupply-architecture.sh --self-test
 
       - name: Migration-prefix checker self-test
         run: scripts/check-resupply-migration-prefix.sh --self-test
+
+      # Self-test for the pre-commit staged-snapshot library (the helper
+      # that makes the hook's checks see the staged index, not the live
+      # working tree). No `--self-test` wrapper — it's a hook lib, not a
+      # checker — so invoke the harness directly. Was dormant; its
+      # scenario 9 also had a self-inflicted bug (an in-repo stderr sink
+      # the lib correctly swept), fixed in the same change that wired it
+      # in. See docs/workflow-efficiency-audit-2026-06-04.md (W5).
+      - name: Staged-snapshot library self-test
+        run: bash scripts/git-hooks/lib-staged-snapshot.test
 
   test:
     name: Tests
