@@ -1,3 +1,7 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
 import { describe, it, expect } from "vitest";
 
 import {
@@ -6,6 +10,14 @@ import {
   type EscalationConvRow,
   type EscalationEpisodeRow,
 } from "./reminder-escalation";
+
+const SRC = readFileSync(
+  path.join(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "reminder-escalation.ts",
+  ),
+  "utf8",
+);
 
 const NOW = new Date("2026-05-30T12:00:00Z").getTime();
 const DAY = 24 * 60 * 60 * 1000;
@@ -109,5 +121,24 @@ describe("planReminderEscalations", () => {
     );
     expect(byEpisode.e1).toEqual({ kind: "send", channel: "email" });
     expect(byEpisode.e2).toEqual({ kind: "csr_exhausted" });
+  });
+});
+
+// Regression guard (structural source check): the episodes + conversations
+// reads in runReminderEscalationScan MUST keyset-page. PostgREST caps a
+// single response at ~1000 rows, so the previous raw .limit(5000) /
+// .limit(50000) silently truncated — and an episode whose page was dropped
+// looked "never reminded" to the conversation-stitch and stopped
+// escalating. A behavioural test would need a multi-page Supabase mock;
+// pin the invariant cheaply, like the dedup/IDOR source checks elsewhere.
+describe("runReminderEscalationScan — paginated reads (no ~1000-row truncation)", () => {
+  it("does not use a raw high .limit() that PostgREST would silently cap", () => {
+    expect(SRC).not.toContain(".limit(5000)");
+    expect(SRC).not.toContain(".limit(50000)");
+  });
+
+  it("keyset-pages both reads with .range() ordered by id", () => {
+    expect(SRC).toContain('.order("id", { ascending: true })');
+    expect(SRC).toContain(".range(from, from + PAGE_SIZE - 1)");
   });
 });

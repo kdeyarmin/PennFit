@@ -484,21 +484,21 @@ function GuardedOrder() {
 function GuardedShopOrders() {
   const { isSignedIn, isLoaded } = useShopIdentity();
   if (!isLoaded) return <RouteFallback />;
-  if (!isSignedIn) return <Redirect to={`${basePath}/sign-in`} />;
+  if (!isSignedIn) return <Redirect to="/sign-in" />;
   return <ShopOrders />;
 }
 
 function GuardedAccount() {
   const { isSignedIn, isLoaded } = useShopIdentity();
   if (!isLoaded) return <RouteFallback />;
-  if (!isSignedIn) return <Redirect to={`${basePath}/sign-in`} />;
+  if (!isSignedIn) return <Redirect to="/sign-in" />;
   return <AccountPage />;
 }
 
 function GuardedAccountBilling() {
   const { isSignedIn, isLoaded } = useShopIdentity();
   if (!isLoaded) return <RouteFallback />;
-  if (!isSignedIn) return <Redirect to={`${basePath}/sign-in`} />;
+  if (!isSignedIn) return <Redirect to="/sign-in" />;
   return <AccountBillingPage />;
 }
 

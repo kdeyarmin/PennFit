@@ -278,6 +278,7 @@ export async function inviteTeamMember(
       uiPathPrefix: args.uiPathPrefix,
     },
     token.raw,
+    INVITE_TOKEN_TTL_MS,
   );
 
   let emailSent = false;

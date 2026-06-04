@@ -191,11 +191,13 @@ async function main(): Promise<void> {
     finalStatus = inserted.status;
   }
 
-  // Issue a password_reset token (1 hour TTL — same as the
-  // forgot-password flow, since the UX is identical from the
-  // user's perspective).
+  // Issue a short-lived password_reset token. The bootstrap link is a
+  // high-privilege admin credential, so it gets a deliberately tight
+  // 1-hour TTL (shorter than the public forgot-password flow's
+  // AUTH_EMAIL_TOKEN_TTL_HOURS default of 24h).
+  const RESET_TOKEN_TTL_MS = 60 * 60 * 1000;
   const token = issueToken();
-  const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
+  const expiresAt = new Date(Date.now() + RESET_TOKEN_TTL_MS);
   await repo.insertEmailToken({
     tokenHash: token.hash,
     userId,
@@ -215,7 +217,11 @@ async function main(): Promise<void> {
       publicBaseUrl: argsParsed.publicBaseUrl,
       uiPathPrefix: argsParsed.uiPathPrefix,
     };
-    const rendered = renderPasswordResetEmail(ctx, token.raw);
+    const rendered = renderPasswordResetEmail(
+      ctx,
+      token.raw,
+      RESET_TOKEN_TTL_MS,
+    );
     try {
       const client = createSendgridClient();
       await client.sendEmail({
