@@ -1,12 +1,14 @@
-// /admin/work-queue — the unified, prioritized CSR work queue (Phase 4,
-// CSR #10). Renders the F4 /admin/work-items model: everything waiting on
-// you across conversations, returns, reviews, patient documents,
-// follow-ups, and inbound faxes — oldest / most-overdue first, one screen
-// replacing six fragmented triage surfaces. Each row deep-links to where
-// the work actually gets done.
+// The unified, prioritized CSR work queue (Phase 4, CSR #10). Renders the
+// F4 /admin/work-items model: everything waiting on you across
+// conversations, returns, reviews, patient documents, follow-ups, and
+// inbound faxes — oldest / most-overdue first, each row deep-linking to
+// where the work actually gets done.
 //
-// requireAdmin-gated server-side (any staff). Read-only — ids +
-// timestamps + kind only, no PHI in the payload.
+// NOTE: the /admin/work-queue route now redirects to the merged Home
+// landing (/admin), so this page is no longer routed. It's retained
+// (along with the exported `workItemHref` / `KIND_META` helpers) as a
+// ready-to-surface "most-overdue-first" view. `requireAdmin`-gated
+// server-side; read-only — ids + timestamps + kind only, no PHI.
 
 import { useMemo, useState } from "react";
 import { Link } from "wouter";
@@ -57,7 +59,7 @@ export function workItemHref(item: WorkItem): string {
     case "fax":
       return "/admin/inbound-faxes";
     default:
-      return "/admin/today";
+      return "/admin";
   }
 }
 

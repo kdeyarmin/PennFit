@@ -202,6 +202,8 @@ describe("GET /patients/:id", () => {
     expect(res.body.conversations).toHaveLength(1);
     expect(res.body.fulfillments).toHaveLength(1);
     expect(res.body.episodes[0].itemSku).toBe("MASK-001");
+    // No portal login on file → no linked shop customer.
+    expect(res.body.linkedCustomerUserId).toBeNull();
     // No phone or email leaks.
     expect(res.body).not.toHaveProperty("phoneE164");
     expect(res.body).not.toHaveProperty("email");
@@ -215,5 +217,50 @@ describe("GET /patients/:id", () => {
         adminEmail: ALLOWED_EMAIL,
       }),
     );
+  });
+
+  it("surfaces linkedCustomerUserId when the patient shares a portal login with a shop customer", async () => {
+    stubVerifiedAdmin();
+    const AUTH_USER = "auth-user-portal-9";
+    stageSupabaseResponse("patients", "select", {
+      data: {
+        id: PATIENT_ID,
+        pacware_id: "PAC-009",
+        legal_first_name: "Bob",
+        legal_last_name: "Jones",
+        status: "active",
+        phone_e164: null,
+        email: null,
+        insurance_payer: null,
+        cadence_override_days: null,
+        channel_preference: null,
+        created_at: new Date("2025-02-01T00:00:00Z").toISOString(),
+        updated_at: new Date("2025-02-01T00:00:00Z").toISOString(),
+        portal_auth_user_id: AUTH_USER,
+        portal_invited_at: new Date("2025-02-01T00:00:00Z").toISOString(),
+      },
+    });
+    stageSupabaseResponse("prescriptions", "select", { data: [] });
+    stageSupabaseResponse("episodes", "select", { data: [] });
+    stageSupabaseResponse("conversations", "select", { data: [] });
+    stageSupabaseResponse("fulfillments", "select", { data: [] });
+    // Second parallel block (episodes empty → episode-rx select skipped):
+    // latest_message + auth user + the shop_customers link lookup.
+    stageSupabaseResponse("patient_latest_message", "select", { data: null });
+    stageSupabaseResponse("users", "select", {
+      data: {
+        email_verified_at: new Date("2025-02-02T00:00:00Z").toISOString(),
+      },
+    });
+    stageSupabaseResponse("shop_customers", "select", {
+      data: { customer_id: "cust_linked_42" },
+    });
+
+    const res = await request(makeApp()).get(
+      `/resupply-api/patients/${PATIENT_ID}`,
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.linkedCustomerUserId).toBe("cust_linked_42");
+    expect(res.body.portalStatus).toBe("active");
   });
 });

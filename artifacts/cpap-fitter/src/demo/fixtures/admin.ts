@@ -114,6 +114,100 @@ export function demoPatients(limit = 25, offset = 0) {
   return { items, total: all.length, limit, offset };
 }
 
+export function demoShopCustomers(opts: {
+  q?: string | null;
+  page?: number;
+  pageSize?: number;
+  subscription?: string | null;
+  awaitingReply?: boolean;
+}) {
+  const page = Math.max(1, opts.page ?? 1);
+  const pageSize = opts.pageSize ?? 25;
+  const all = FIRST_NAMES.map((first, i) => {
+    const last = LAST_NAMES[i % LAST_NAMES.length];
+    const orders = (i * 3) % 12;
+    return {
+      userId: `demo-customer-${i + 1}`,
+      displayName: `${first} ${last}`,
+      emailRedacted: `${first.slice(0, 2).toLowerCase()}****@pennfit.example`,
+      ordersCount: orders,
+      lifetimeValueCents: orders * 8995,
+      lastOrderAt: i % 5 === 0 ? null : daysAgo(i + 1),
+      hasActiveSubscription: i % 3 === 0,
+      inAppNeedsReply: i % 4 === 0,
+    };
+  });
+  let filtered = all;
+  const q = opts.q?.trim().toLowerCase();
+  if (q) {
+    filtered = filtered.filter(
+      (c) =>
+        c.displayName.toLowerCase().includes(q) ||
+        c.emailRedacted.toLowerCase().includes(q),
+    );
+  }
+  if (opts.subscription === "active") {
+    filtered = filtered.filter((c) => c.hasActiveSubscription);
+  } else if (opts.subscription === "none") {
+    filtered = filtered.filter((c) => !c.hasActiveSubscription);
+  }
+  if (opts.awaitingReply) {
+    filtered = filtered.filter((c) => c.inAppNeedsReply);
+  }
+  const total = filtered.length;
+  const start = (page - 1) * pageSize;
+  return {
+    customers: filtered.slice(start, start + pageSize),
+    total,
+    page,
+    pageSize,
+  };
+}
+
+export function demoCustomerDetail(userId: string) {
+  const n = Number.parseInt(userId.replace(/\D/g, ""), 10) || 1;
+  const first = FIRST_NAMES[(n - 1) % FIRST_NAMES.length];
+  const last = LAST_NAMES[(n - 1) % LAST_NAMES.length];
+  const orders = (n * 3) % 12 || 3;
+  return {
+    customer: {
+      userId,
+      displayName: `${first} ${last}`,
+      email: `${first.toLowerCase()}.${last.toLowerCase()}@pennfit.example`,
+      stripeCustomerId: `cus_demo${n}`,
+      shippingAddress: null,
+      defaultPaymentMethod: {
+        brand: "visa",
+        last4: "4242",
+        expMonth: 8,
+        expYear: 2030,
+      },
+      clinicalInfo: {
+        cpapDevice: null,
+        physicianInfo: null,
+        facialMeasurements: null,
+      },
+      createdAt: daysAgo(140),
+      updatedAt: daysAgo(3),
+      isGuest: false,
+      // Pretend every other demo customer shares a portal login with a
+      // patient, so the "View patient record" jump is exercisable.
+      linkedPatientId: n % 2 === 0 ? `demo-patient-${n}` : null,
+    },
+    orders: [],
+    subscriptions: [],
+    abandonedCart: null,
+    reviews: [],
+    stats: {
+      ordersCount: orders,
+      lifetimeValueCents: orders * 8995,
+      avgOrderValueCents: 8995,
+      lastOrderAt: daysAgo(12),
+    },
+    inAppConversation: null,
+  };
+}
+
 type ConvStatus = "open" | "awaiting_patient" | "awaiting_admin" | "closed";
 type ConvChannel = "sms" | "voice" | "email" | "in_app";
 

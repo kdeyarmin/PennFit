@@ -32,7 +32,15 @@ mkdir -p "$WORK"/lib/resupply-messaging/src
 mkdir -p "$WORK"/lib/resupply-email/src
 mkdir -p "$WORK"/lib/resupply-reminders/src
 mkdir -p "$WORK"/artifacts/resupply-api/src
-mkdir -p "$WORK"/artifacts/resupply-worker/src
+# The standalone `resupply-worker` artifact was folded into resupply-api
+# during the May-2026 consolidations — the worker now lives under
+# artifacts/resupply-api/src/worker/. The checker's per-rule directory
+# lists were updated to drop the old `resupply-worker` path accordingly,
+# so the "worker may not …" fixtures below live under the real
+# post-consolidation location (which Rules 6/7/8 reach via the recursive
+# artifacts/resupply-api/src scan). Pinning them here proves the worker
+# tree is still covered after the fold-in.
+mkdir -p "$WORK"/artifacts/resupply-api/src/worker
 mkdir -p "$WORK"/artifacts/resupply-dashboard/src
 
 # Baseline: every dir has a clean file. The checker should pass.
@@ -47,7 +55,7 @@ echo 'export {};' > "$WORK"/lib/resupply-messaging/src/index.ts
 echo 'export {};' > "$WORK"/lib/resupply-email/src/index.ts
 echo 'export {};' > "$WORK"/lib/resupply-reminders/src/index.ts
 echo 'export {};' > "$WORK"/artifacts/resupply-api/src/index.ts
-echo 'export {};' > "$WORK"/artifacts/resupply-worker/src/index.ts
+echo 'export {};' > "$WORK"/artifacts/resupply-api/src/worker/index.ts
 echo 'export {};' > "$WORK"/artifacts/resupply-dashboard/src/index.ts
 
 run_checker() {
@@ -216,10 +224,10 @@ rm "$WORK"/artifacts/resupply-dashboard/src/bad.ts
 
 echo "[self-test] Rule 6: worker may not import @workspace/api-client-react"
 echo "import { x } from '@workspace/api-client-react';" \
-  > "$WORK"/artifacts/resupply-worker/src/bad.ts
+  > "$WORK"/artifacts/resupply-api/src/worker/bad.ts
 assert_fail_with "worker importing @workspace/api-client-react (single-quoted)" \
   "must not import the storefront UI client"
-rm "$WORK"/artifacts/resupply-worker/src/bad.ts
+rm "$WORK"/artifacts/resupply-api/src/worker/bad.ts
 
 echo "[self-test] Rule 6: dashboard may import @workspace/resupply-api-client"
 echo 'import { healthCheck } from "@workspace/resupply-api-client";' \
@@ -268,10 +276,10 @@ echo "[self-test] Rule 7: worker may not import from 'pg' (closes alias bypass)"
 # `import { Pool as Whatever } from "pg"; new Whatever()` and slip past
 # the Pool-name check.
 echo "import { Pool as PgPoolAlias } from 'pg';" \
-  > "$WORK"/artifacts/resupply-worker/src/bad.ts
+  > "$WORK"/artifacts/resupply-api/src/worker/bad.ts
 assert_fail_with "worker importing from pg" \
   "must not construct its own Postgres pool or import 'pg' directly"
-rm "$WORK"/artifacts/resupply-worker/src/bad.ts
+rm "$WORK"/artifacts/resupply-api/src/worker/bad.ts
 
 echo "[self-test] Rule 7: dashboard may not import from 'pg'"
 echo 'import { Pool } from "pg";' \
@@ -314,10 +322,10 @@ rm "$WORK"/artifacts/resupply-api/src/bad.ts
 
 echo "[self-test] Rule 8: worker may not raw 'INSERT INTO audit_log'"
 echo "await pool.query('INSERT INTO audit_log (...) VALUES (...)');" \
-  > "$WORK"/artifacts/resupply-worker/src/bad.ts
+  > "$WORK"/artifacts/resupply-api/src/worker/bad.ts
 assert_fail_with "worker raw INSERT INTO audit_log" \
   "must not write to audit_log directly"
-rm "$WORK"/artifacts/resupply-worker/src/bad.ts
+rm "$WORK"/artifacts/resupply-api/src/worker/bad.ts
 
 echo "[self-test] Rule 8: schema-qualified 'INSERT INTO resupply.audit_log' also banned"
 echo 'await pool.query("INSERT INTO resupply.audit_log (...) VALUES (...)");' \
@@ -328,10 +336,10 @@ rm "$WORK"/artifacts/resupply-api/src/bad.ts
 
 echo "[self-test] Rule 8: case-insensitive (lowercase 'insert into ...') still banned"
 echo 'await pool.query("insert into audit_log (...) values (...)");' \
-  > "$WORK"/artifacts/resupply-worker/src/bad.ts
+  > "$WORK"/artifacts/resupply-api/src/worker/bad.ts
 assert_fail_with "worker lowercase 'insert into audit_log'" \
   "must not write to audit_log directly"
-rm "$WORK"/artifacts/resupply-worker/src/bad.ts
+rm "$WORK"/artifacts/resupply-api/src/worker/bad.ts
 
 echo "[self-test] Rule 8: SELECT from audit_log is allowed"
 echo 'await pool.query("SELECT * FROM resupply.audit_log WHERE id = $1");' \
@@ -388,12 +396,12 @@ echo "[self-test] Rule 8: aliased import bypass (auditLog as al) is banned"
 # by `db.insert(al)` would slip past every `audit`-keyed pattern: the
 # insert line wouldn't contain the word `audit` at all.
 echo "import { auditLog as al } from '@workspace/resupply-db';" \
-  > "$WORK"/artifacts/resupply-worker/src/bad.ts
+  > "$WORK"/artifacts/resupply-api/src/worker/bad.ts
 echo "await db.insert(al).values({});" \
-  >> "$WORK"/artifacts/resupply-worker/src/bad.ts
+  >> "$WORK"/artifacts/resupply-api/src/worker/bad.ts
 assert_fail_with "worker import { auditLog as al } rename bypass" \
   "must not write to audit_log directly"
-rm "$WORK"/artifacts/resupply-worker/src/bad.ts
+rm "$WORK"/artifacts/resupply-api/src/worker/bad.ts
 
 echo "[self-test] Rule 8: indirect aliasing 'const al = auditLog; .insert(al)' is banned"
 # The architect's 2026-04 review flagged this two-step bypass as
@@ -419,7 +427,7 @@ echo "[self-test] Rule 8: multi-line braced import is banned"
 #   } from "@workspace/resupply-db";
 # With `-U` enabled and `[^}]*` spanning newlines, the import-side
 # pattern catches it.
-cat > "$WORK"/artifacts/resupply-worker/src/bad.ts <<'EOF'
+cat > "$WORK"/artifacts/resupply-api/src/worker/bad.ts <<'EOF'
 import {
   foo,
   auditLog as al,
@@ -428,7 +436,7 @@ await db.insert(al).values({});
 EOF
 assert_fail_with "worker multi-line braced import with auditLog" \
   "must not write to audit_log directly"
-rm "$WORK"/artifacts/resupply-worker/src/bad.ts
+rm "$WORK"/artifacts/resupply-api/src/worker/bad.ts
 
 echo "[self-test] Rule 8: multi-line .insert(\\n  schema.auditLog\\n) is banned"
 # `.insert(<ident>?audit*)` must match across newlines under `-U` so
@@ -449,7 +457,7 @@ echo "[self-test] Rule 8: multi-line raw 'INSERT\\n  INTO ... audit_log' is bann
 # raw-INSERT pattern. With `-U` and `[^;]*` (which spans newlines),
 # the gap matcher reaches the audit_log token without crossing a
 # statement terminator.
-cat > "$WORK"/artifacts/resupply-worker/src/bad.ts <<'EOF'
+cat > "$WORK"/artifacts/resupply-api/src/worker/bad.ts <<'EOF'
 await pool.query(`
   INSERT INTO
     resupply.audit_log (action)
@@ -458,7 +466,7 @@ await pool.query(`
 EOF
 assert_fail_with "worker multi-line raw INSERT INTO audit_log" \
   "must not write to audit_log directly"
-rm "$WORK"/artifacts/resupply-worker/src/bad.ts
+rm "$WORK"/artifacts/resupply-api/src/worker/bad.ts
 
 echo "[self-test] Rule 8: template-literal interpolated INSERT INTO …audit_log is banned"
 # `INSERT INTO \${schema}.audit_log` would slip past a strict

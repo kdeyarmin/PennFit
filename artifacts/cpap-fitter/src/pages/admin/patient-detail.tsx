@@ -165,9 +165,38 @@ export function PatientDetailPage({ id }: { id: string }) {
               {formatDate(data.createdAt)}
             </p>
           </div>
-          <Badge variant={patientStatusVariant(data.status)}>
-            {humanizeStatus(data.status)}
-          </Badge>
+          <div className="flex flex-col items-end gap-2 shrink-0">
+            <Badge variant={patientStatusVariant(data.status)}>
+              {humanizeStatus(data.status)}
+            </Badge>
+            {data.linkedCustomerUserId ? (
+              // This patient shares a portal login with a shop customer —
+              // a deterministic link, so jump straight to that record.
+              <Link
+                href={`/admin/shop/customers/${encodeURIComponent(
+                  data.linkedCustomerUserId,
+                )}`}
+                className="text-xs font-semibold hover:underline whitespace-nowrap"
+                style={{ color: "hsl(var(--penn-navy))" }}
+                title="Open the shop-customer record that shares this patient's portal login"
+              >
+                View customer record →
+              </Link>
+            ) : (
+              // No shared login on file — fall back to a name search of
+              // the Customers directory (not a guaranteed match).
+              <Link
+                href={`/admin/shop/customers?search=${encodeURIComponent(
+                  fullName(data.firstName, data.lastName),
+                )}`}
+                className="text-xs font-semibold hover:underline whitespace-nowrap"
+                style={{ color: "hsl(var(--penn-navy))" }}
+                title="Search the storefront Customers directory for this name"
+              >
+                Find in Customers →
+              </Link>
+            )}
+          </div>
         </div>
         <div className="mt-4 grid grid-cols-2 gap-4 text-sm">
           <div>

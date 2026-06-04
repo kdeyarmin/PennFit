@@ -311,6 +311,27 @@ describe("GET /admin/shop/customers — happy path", () => {
     expect(getSupabaseCallCount("shop_customers", "select")).toBe(1);
   });
 
+  it("searches display_name OR email (find-a-person by name, not just address)", async () => {
+    stubVerifiedAdmin();
+    stageListEndpoint({ customers: [] });
+    const router = await loadRouter();
+    const res = await request(makeApp(router)).get(
+      "/resupply-api/admin/shop/customers?q=Smith",
+    );
+    expect(res.status).toBe(200);
+    // The search must cover display_name as well as email_lower so the
+    // directory is findable by who the person is — this also powers the
+    // "find this person in Customers" jump from a patient record.
+    const orCalls = supabaseMock
+      .filterCalls("shop_customers", "select")
+      .filter((c) => c.verb === "or");
+    expect(orCalls).toHaveLength(1);
+    const expr = String(orCalls[0]!.args[0]);
+    expect(expr).toContain("display_name.ilike");
+    expect(expr).toContain("email_lower.ilike");
+    expect(expr.toLowerCase()).toContain("smith");
+  });
+
   it("redacts very-short local-parts safely (<=2 chars)", async () => {
     stubVerifiedAdmin();
     stageListEndpoint({
@@ -515,6 +536,52 @@ describe("GET /admin/shop/customers/:userId — happy paths", () => {
     );
     expect(res.status).toBe(404);
     expect(res.body.error).toBe("customer_not_found");
+  });
+
+  const linkBaseCustomer = (authUserId: string | null) => ({
+    customer_id: VALID_USER_ID,
+    display_name: "Linked Person",
+    email_lower: "linked@example.com",
+    stripe_customer_id: null,
+    shipping_address_json: null,
+    default_payment_method_brand: null,
+    default_payment_method_last4: null,
+    default_payment_method_exp_month: null,
+    default_payment_method_exp_year: null,
+    cpap_device_json: null,
+    physician_info_json: null,
+    facial_measurements_json: null,
+    created_at: "2026-01-01T00:00:00Z",
+    updated_at: "2026-01-01T00:00:00Z",
+    auth_user_id: authUserId,
+  });
+
+  it("surfaces customer.linkedPatientId when the customer shares a portal login with a patient", async () => {
+    stubVerifiedAdmin();
+    stageDetailEndpoint({
+      customer: linkBaseCustomer("auth-shared-7"),
+      orders: [],
+    });
+    // The linked-patient lookup fires because the customer row carries an
+    // auth_user_id; stage the matching patient row.
+    stageSupabaseResponse("patients", "select", { data: { id: "patient-77" } });
+    const router = await loadRouter();
+    const res = await request(makeApp(router)).get(
+      `/resupply-api/admin/shop/customers/${VALID_USER_ID}`,
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.customer.linkedPatientId).toBe("patient-77");
+  });
+
+  it("returns null linkedPatientId when the customer has no shared portal login", async () => {
+    stubVerifiedAdmin();
+    stageDetailEndpoint({ customer: linkBaseCustomer(null), orders: [] });
+    const router = await loadRouter();
+    const res = await request(makeApp(router)).get(
+      `/resupply-api/admin/shop/customers/${VALID_USER_ID}`,
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.customer.linkedPatientId).toBeNull();
   });
 
   it("returns full profile for registered customer with orders", async () => {

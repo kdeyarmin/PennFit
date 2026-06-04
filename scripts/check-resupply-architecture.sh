@@ -33,6 +33,20 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ROOT="${RESUPPLY_CHECK_ROOT:-$REPO_ROOT}"
 cd "$ROOT"
 
+# Hard dependency: every rule below is a ripgrep query. If `rg` is not on
+# PATH, each query errors to stderr and matches nothing — which would make
+# this checker report "passed" while enforcing absolutely nothing. That is
+# exactly how the architecture gate silently became a no-op on CI runners
+# that ship without ripgrep (the .sh.test harness, once wired into CI,
+# caught it). Fail loudly so a missing rg can never again turn the gate
+# into a rubber stamp.
+if ! command -v rg >/dev/null 2>&1; then
+  echo "check-resupply-architecture: ripgrep (rg) is required but not on PATH." >&2
+  echo "  Install it (e.g. 'apt-get install -y ripgrep' or 'brew install ripgrep')," >&2
+  echo "  then re-run. Refusing to pass vacuously without it." >&2
+  exit 2
+fi
+
 errors=0
 
 fail() {

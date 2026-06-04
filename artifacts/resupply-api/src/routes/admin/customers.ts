@@ -62,7 +62,10 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import {
+  escapePostgRESTFilterValue,
+  getSupabaseServiceRoleClient,
+} from "@workspace/resupply-db";
 
 import {
   getStripeClient,
@@ -158,12 +161,17 @@ router.get(
         "customer_id, display_name, email_lower, stripe_customer_id, created_at",
       );
     if (q) {
-      // Escape LIKE metacharacters (`_`, `%`, `\`) before composing
-      // the wildcard pattern. Then run as `*<escaped>*` with `*` as
-      // PostgREST's wildcard. Email local-parts can legitimately
-      // contain `_`.
-      const escaped = q.toLowerCase().replace(/[\\%_]/g, (c) => `\\${c}`);
-      customersQuery = customersQuery.ilike("email_lower", `*${escaped}*`);
+      // Match on email OR display name so the directory is searchable by
+      // who the person is, not just their address (this also powers the
+      // "find this person in Customers" jump from a patient record).
+      // escapePostgRESTFilterValue handles both LIKE metacharacters and
+      // .or() delimiters. ILIKE is case-insensitive, so a lowercased
+      // needle still matches a mixed-case display_name; email_lower is
+      // already stored lowercase.
+      const pattern = `*${escapePostgRESTFilterValue(q.toLowerCase())}*`;
+      customersQuery = customersQuery.or(
+        `email_lower.ilike.${pattern},display_name.ilike.${pattern}`,
+      );
     }
     const { data: customerRows, error: customersErr } = await customersQuery;
     if (customersErr) throw customersErr;
@@ -392,7 +400,7 @@ router.get(
         .schema("resupply")
         .from("shop_customers")
         .select(
-          "customer_id, display_name, email_lower, stripe_customer_id, shipping_address_json, default_payment_method_brand, default_payment_method_last4, default_payment_method_exp_month, default_payment_method_exp_year, cpap_device_json, physician_info_json, facial_measurements_json, created_at, updated_at",
+          "customer_id, display_name, email_lower, stripe_customer_id, shipping_address_json, default_payment_method_brand, default_payment_method_last4, default_payment_method_exp_month, default_payment_method_exp_year, cpap_device_json, physician_info_json, facial_measurements_json, created_at, updated_at, auth_user_id",
         )
         .eq("customer_id", userId)
         .limit(1)
@@ -485,6 +493,25 @@ router.get(
       );
       res.status(404).json({ error: "customer_not_found" });
       return;
+    }
+
+    // The clinical patient that shares this customer's portal login, if
+    // any. Customers and patients are otherwise unlinked; the only
+    // deterministic correlation is a shared in-house auth user
+    // (shop_customers.auth_user_id === patients.portal_auth_user_id).
+    // Surfacing the patient id lets the detail page offer a real "view
+    // their patient record" jump instead of a best-effort name search.
+    let linkedPatientId: string | null = null;
+    if (customerRow?.auth_user_id) {
+      const { data: linkedPatient, error: linkedPatientErr } = await supabase
+        .schema("resupply")
+        .from("patients")
+        .select("id")
+        .eq("portal_auth_user_id", customerRow.auth_user_id)
+        .limit(1)
+        .maybeSingle();
+      if (linkedPatientErr) throw linkedPatientErr;
+      linkedPatientId = linkedPatient?.id ?? null;
     }
 
     // Item-count rollup — one bulk fetch instead of N correlated
@@ -601,6 +628,7 @@ router.get(
           createdAt: customerRow.created_at,
           updatedAt: customerRow.updated_at,
           isGuest: false as const,
+          linkedPatientId,
         }
       : {
           userId,
@@ -619,6 +647,7 @@ router.get(
             new Date().toISOString(),
           updatedAt: orderRows[0]?.created_at ?? new Date().toISOString(),
           isGuest: true as const,
+          linkedPatientId: null,
         };
 
     req.log?.info(

@@ -75,7 +75,7 @@ describe("console.tsx — core admin pages are lazy-loaded", () => {
     ["ConversationDetailPage", "@/pages/admin/conversation-detail"],
     ["EpisodesPage", "@/pages/admin/episodes"],
     ["RulesPage", "@/pages/admin/rules"],
-    ["AdminTodayPage", "@/pages/admin/admin-today"],
+    ["AdminFollowupsPage", "@/pages/admin/admin-followups"],
     ["AdminProvidersPage", "@/pages/admin/admin-providers"],
     ["AdminAnalyticsPage", "@/pages/admin/admin-analytics"],
     ["AdminSecurityPage", "@/pages/admin/admin-security"],
