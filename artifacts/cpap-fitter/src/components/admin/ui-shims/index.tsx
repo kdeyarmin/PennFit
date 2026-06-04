@@ -45,7 +45,7 @@ export const Card = React.forwardRef<
   <div
     ref={ref}
     className={cn(
-      "rounded-2xl border border-border/40 bg-white shadow-sm",
+      "rounded-2xl border border-border bg-background shadow-sm",
       className,
     )}
     {...rest}
@@ -67,7 +67,10 @@ export const CardTitle = React.forwardRef<
 >(({ className, ...rest }, ref) => (
   <h3
     ref={ref}
-    className={cn("text-base font-semibold tracking-tight", className)}
+    className={cn(
+      "text-base font-semibold tracking-tight text-foreground",
+      className,
+    )}
     {...rest}
   />
 ));
@@ -104,11 +107,13 @@ export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElemen
 }
 
 const BUTTON_VARIANT: Record<ButtonVariant, string> = {
-  default: "bg-slate-900 text-white hover:bg-slate-800 border border-slate-900",
-  outline: "bg-white text-slate-900 hover:bg-slate-50 border border-slate-300",
+  default:
+    "bg-primary text-primary-foreground hover:opacity-90 border border-primary",
+  outline: "bg-background text-foreground hover:bg-muted border border-border",
   ghost:
-    "bg-transparent text-slate-700 hover:bg-slate-100 border border-transparent",
-  destructive: "bg-red-600 text-white hover:bg-red-700 border border-red-600",
+    "bg-transparent text-foreground hover:bg-muted border border-transparent",
+  destructive:
+    "bg-destructive text-destructive-foreground hover:opacity-90 border border-destructive",
 };
 
 const BUTTON_SIZE: Record<ButtonSize, string> = {
@@ -122,7 +127,7 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
     <button
       ref={ref}
       className={cn(
-        "inline-flex items-center justify-center gap-1 rounded-md font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400",
+        "inline-flex items-center justify-center gap-1 rounded-md font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--penn-gold))]",
         BUTTON_VARIANT[variant],
         BUTTON_SIZE[size],
         className,
@@ -139,9 +144,10 @@ type BadgeVariant = "default" | "secondary" | "destructive" | "outline";
 
 const BADGE_VARIANT: Record<BadgeVariant, string> = {
   default: "bg-emerald-100 text-emerald-900 border border-emerald-300",
-  secondary: "bg-slate-200 text-slate-700 border border-slate-300",
-  destructive: "bg-red-100 text-red-900 border border-red-300",
-  outline: "bg-transparent text-slate-700 border border-slate-300",
+  secondary: "bg-primary/10 text-primary border border-primary/20",
+  destructive:
+    "bg-destructive/10 text-destructive border border-destructive/30",
+  outline: "bg-transparent text-foreground border border-border",
 };
 
 export interface BadgeProps extends React.HTMLAttributes<HTMLSpanElement> {
@@ -170,7 +176,7 @@ export const Input = React.forwardRef<
   <input
     ref={ref}
     className={cn(
-      "h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm placeholder:text-slate-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400",
+      "h-10 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--penn-gold))]",
       className,
     )}
     {...rest}
@@ -186,7 +192,7 @@ export function Skeleton({
 }: React.HTMLAttributes<HTMLDivElement>) {
   return (
     <div
-      className={cn("animate-pulse rounded-md bg-slate-200", className)}
+      className={cn("animate-pulse rounded-md bg-muted", className)}
       {...rest}
     />
   );
@@ -323,7 +329,7 @@ export function Select({
           onValueChange?.(next);
         }}
         className={cn(
-          "h-10 rounded-md border border-slate-300 bg-white px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400",
+          "h-10 rounded-md border border-input bg-background px-3 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--penn-gold))]",
           trigger.className,
         )}
       >
@@ -380,8 +386,8 @@ export function SelectItem(_props: {
 type AlertVariant = "default" | "destructive";
 
 const ALERT_VARIANT: Record<AlertVariant, string> = {
-  default: "border-slate-300 bg-slate-50 text-slate-900",
-  destructive: "border-red-300 bg-red-50 text-red-900",
+  default: "border-border bg-muted text-foreground",
+  destructive: "border-destructive/30 bg-destructive/10 text-destructive",
 };
 
 export interface AlertProps extends React.HTMLAttributes<HTMLDivElement> {
