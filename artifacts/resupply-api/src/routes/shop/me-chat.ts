@@ -727,6 +727,15 @@ async function handleStreaming(
 ): Promise<void> {
   startSseHeaders(res);
 
+  // Client-disconnect guard — mirrors the Anthropic path below: if the tab
+  // closes mid-stream, stop running further tool rounds (real customer-
+  // scoped DB reads) + LLM calls and don't write to a dead socket.
+  let clientClosed = false;
+  const onClientClose = () => {
+    clientClosed = true;
+  };
+  res.on("close", onClientClose);
+
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), DEFAULT_TIMEOUT_MS);
 
@@ -734,7 +743,17 @@ async function handleStreaming(
   let totalChars = 0;
   let degraded = false;
 
+  const isOpen = () => !clientClosed && !res.destroyed && !res.writableEnded;
+  const safeEvent = (payload: object) => {
+    if (!isOpen()) return;
+    writeSseEvent(res, payload);
+  };
+  const safeEnd = () => {
+    if (!isOpen()) return;
+    res.end();
+  };
   const writeChunk = (text: string) => {
+    if (!isOpen()) return;
     totalChars += text.length;
     writeSseEvent(res, { type: "chunk", text });
   };
@@ -749,10 +768,16 @@ async function handleStreaming(
       );
       if (result.degraded) {
         if (totalChars === 0) {
-          writeSseEvent(res, { type: "chunk", text: DEGRADED_FALLBACK_REPLY });
+          safeEvent({ type: "chunk", text: DEGRADED_FALLBACK_REPLY });
         }
-        writeSseEvent(res, { type: "done", degraded: true });
-        res.end();
+        safeEvent({ type: "done", degraded: true });
+        safeEnd();
+        return;
+      }
+      // If the tab closed mid-round, stop chaining — the customer-scoped
+      // tools are real DB reads we shouldn't run for a viewer who's gone.
+      if (clientClosed) {
+        safeEnd();
         return;
       }
       if (
@@ -768,7 +793,7 @@ async function handleStreaming(
           { event: "customer_chat_empty_reply", streaming: true, round },
           "customer chat: openai stream returned no content",
         );
-        writeSseEvent(res, { type: "chunk", text: DEGRADED_FALLBACK_REPLY });
+        safeEvent({ type: "chunk", text: DEGRADED_FALLBACK_REPLY });
         degraded = true;
       }
       logger.info(
@@ -782,11 +807,8 @@ async function handleStreaming(
         },
         "customer chat: streamed reply",
       );
-      writeSseEvent(
-        res,
-        degraded ? { type: "done", degraded: true } : { type: "done" },
-      );
-      res.end();
+      safeEvent(degraded ? { type: "done", degraded: true } : { type: "done" });
+      safeEnd();
       return;
     }
     logger.warn(
@@ -794,10 +816,10 @@ async function handleStreaming(
       "customer chat: hit MAX_CUSTOMER_TOOL_ROUNDS without a final reply",
     );
     if (totalChars === 0) {
-      writeSseEvent(res, { type: "chunk", text: DEGRADED_FALLBACK_REPLY });
+      safeEvent({ type: "chunk", text: DEGRADED_FALLBACK_REPLY });
     }
-    writeSseEvent(res, { type: "done", degraded: true });
-    res.end();
+    safeEvent({ type: "done", degraded: true });
+    safeEnd();
   } catch (err) {
     logger.warn(
       {
@@ -808,10 +830,10 @@ async function handleStreaming(
       "customer chat: exception during stream (returning degraded fallback)",
     );
     if (totalChars === 0) {
-      writeSseEvent(res, { type: "chunk", text: DEGRADED_FALLBACK_REPLY });
+      safeEvent({ type: "chunk", text: DEGRADED_FALLBACK_REPLY });
     }
-    writeSseEvent(res, { type: "done", degraded: true });
-    res.end();
+    safeEvent({ type: "done", degraded: true });
+    safeEnd();
   } finally {
     clearTimeout(timer);
   }
