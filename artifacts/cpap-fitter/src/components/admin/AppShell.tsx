@@ -753,9 +753,12 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         hint: "CSV, PDF, and QuickBooks (IIF / QBO) exports for ops and finance",
       },
       {
-        label: "Business",
+        // Was the catch-all "Business" section; split into Financial vs
+        // Performance & goals so cost economics and team/KPI tracking
+        // stop sharing one grab-bag list.
+        label: "Financial",
         icon: TrendingUp,
-        hint: "Margin, LTV/CAC, turnover, throughput, goals, KPI alerts, storefront",
+        hint: "Captured-cost economics — margin, LTV/CAC, inventory turnover",
         tabs: [
           {
             href: "/admin/analytics/margin",
@@ -781,6 +784,13 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             requiredPermission: "cost.read",
             hint: "Turnover (COGS ÷ inventory value) + stockout demand per SKU",
           },
+        ],
+      },
+      {
+        label: "Performance & goals",
+        icon: Target,
+        hint: "Team throughput, KPI targets, and threshold alerts",
+        tabs: [
           {
             href: "/admin/productivity",
             label: "Team throughput",
@@ -804,19 +814,12 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             requiredPermission: "metrics.read",
             hint: "KPI threshold alert feed + rule config (revenue, denials, churn)",
           },
-          {
-            href: "/admin/pennpaps/analytics",
-            label: "Storefront Analytics",
-            icon: BarChart3,
-            matchPrefix: "/admin/pennpaps/analytics",
-            hint: "PennPaps storefront traffic & revenue",
-          },
         ],
       },
       {
         label: "Clinical & customer",
         icon: Activity,
-        hint: "Resupply funnel & compliance, provider-ready therapy report, customer NPS",
+        hint: "Resupply funnel & compliance, provider therapy report, customer NPS, storefront traffic",
         tabs: [
           {
             href: "/admin/analytics",
@@ -838,6 +841,13 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             icon: Star,
             matchPrefix: "/admin/nps",
             hint: "Post-delivery NPS responses with comment tail",
+          },
+          {
+            href: "/admin/pennpaps/analytics",
+            label: "Storefront Analytics",
+            icon: BarChart3,
+            matchPrefix: "/admin/pennpaps/analytics",
+            hint: "PennPaps storefront traffic & revenue",
           },
         ],
       },
