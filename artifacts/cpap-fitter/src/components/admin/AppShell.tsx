@@ -645,9 +645,13 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         ],
       },
       {
-        label: "A/R & revenue",
+        // Split out of the old "A/R & revenue" grab-bag: the actionable
+        // money-collection worklists (work these to get paid). The pure
+        // revenue dashboards moved to "Revenue analytics" below, so this
+        // section stops mixing "do something" with "read a metric".
+        label: "A/R & collections",
         icon: Landmark,
-        hint: "Aging, filing deadlines, DSO, secondary claims, statements, forecast",
+        hint: "Work claims to get paid — aging, filing deadlines, secondary claims, statements, capped rentals",
         tabs: [
           {
             href: "/admin/billing/aging",
@@ -662,13 +666,6 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             icon: CalendarClock,
             matchPrefix: "/admin/billing/timely-filing",
             hint: "Open claims ranked by days left before the payer's timely-filing window closes",
-          },
-          {
-            href: "/admin/billing/denials",
-            label: "Denials & DSO",
-            icon: TrendingDown,
-            matchPrefix: "/admin/billing/denials",
-            hint: "90-day denial rate + 180-day days-to-pay, per payer",
           },
           {
             href: "/admin/billing/secondary",
@@ -687,6 +684,27 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             hint: "Send patient-responsibility statements (email/SMS) — consent + quiet-hours aware",
           },
           {
+            href: "/admin/billing/capped-rentals",
+            label: "Capped rentals",
+            icon: CalendarRange,
+            matchPrefix: "/admin/billing/capped-rentals",
+            hint: "13- and 36-month CMS rental cycle tracker + KH/KI/KX modifier rotation",
+          },
+        ],
+      },
+      {
+        label: "Revenue analytics",
+        icon: TrendingUp,
+        hint: "Read-only revenue dashboards — denial rate & DSO, collections forecast, payer profitability",
+        tabs: [
+          {
+            href: "/admin/billing/denials",
+            label: "Denials & DSO",
+            icon: TrendingDown,
+            matchPrefix: "/admin/billing/denials",
+            hint: "90-day denial rate + 180-day days-to-pay, per payer",
+          },
+          {
             href: "/admin/billing/collections-forecast",
             label: "Collections forecast",
             icon: TrendingUp,
@@ -701,13 +719,6 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             matchPrefix: "/admin/billing/payer-profitability",
             requiredPermission: "cost.read",
             hint: "Net yield by payer: billed → allowed → collected, denial rate, net of cost",
-          },
-          {
-            href: "/admin/billing/capped-rentals",
-            label: "Capped rentals",
-            icon: CalendarRange,
-            matchPrefix: "/admin/billing/capped-rentals",
-            hint: "13- and 36-month CMS rental cycle tracker + KH/KI/KX modifier rotation",
           },
         ],
       },
