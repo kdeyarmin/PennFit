@@ -25,20 +25,22 @@ etc.) — these are pure build/CI/dev-loop changes.
 | W2  | Playwright browser downloaded twice/run, never cached         | MEDIUM   | ✅ fixed (cache step)           |
 | W3  | SPA built twice per CI run (a11y + smoke)                     | MEDIUM   | open — recommendation below     |
 | W4  | `results-page-resilience.spec.ts` runs in no CI job           | MEDIUM   | ✅ fixed (new `e2e-dev` job)    |
-| W5  | Shell-script test files (`*.sh.test`) execute nowhere         | MEDIUM   | ◑ partial — 1 of 4 wired in     |
-| W5a | The architecture-guard test has rotted (stale `resupply-worker`) | MEDIUM | open — **new finding**, below   |
+| W5  | Shell-script test files (`*.sh.test`) execute nowhere         | MEDIUM   | ✅ 3 of 4 wired in; 1 deferred   |
+| W5a | The architecture-guard test had rotted (stale `resupply-worker`) | MEDIUM | ✅ fixed (fixtures repointed)    |
 | W6  | No single "run what CI runs" local command                   | LOW      | open — recommendation below     |
 | W7  | Hooks not auto-installed on fresh clone (only post-merge)     | LOW      | open — recommendation below     |
 | W8  | `pnpm typecheck` runs in `build`, then again in CI standalone | INFO     | open — note                     |
 
 Shipped on this branch: W1, W2 (mechanical CI DRY + caching), W4 (the
-dev-server e2e job, soft-gated), and the validated slice of W5 (one of
-four dormant guard tests wired in). Investigating W5 surfaced **W5a** —
-the architecture-guard test has silently rotted against the May-2026
-artifact consolidation — which is the most important finding here and is
-left for a focused maintainer pass because it touches a correctness-
-critical script. The remaining items (W3, W6, W7, W8 and the other two
-shell tests) are left **open** with a fix sketch.
+dev-server e2e job, soft-gated), W5 (the two genuinely-dormant guard-test
+harnesses — architecture + migration-prefix — wired into CI; the
+admin-gate one already ran), and **W5a** (the architecture-guard test
+had silently rotted against the May-2026 artifact consolidation — its
+worker fixtures are repointed to the real location, so it passes and now
+runs in CI). Investigating W5 was itself the payoff: running the dormant
+tests is how the W5a rot and a latent flake in the pre-commit snapshot
+lib surfaced at all. The remaining items (W3, W6, W7, W8, and the
+`lib-staged-snapshot` deflake) are left **open** with a fix sketch.
 
 ---
 
@@ -154,69 +156,89 @@ and a mocked-camera fitter walk is the most timing-sensitive thing in
 the suite; this mirrors the soft-gate pattern of the `integration` and
 `a11y` jobs. Flip to required once it's been green across a few runs.
 
-### [MEDIUM] W5 — Shell-script guard tests execute nowhere → **1 of 4 wired in**
+### [MEDIUM] W5 — Shell-script guard tests execute nowhere → **3 of 4 wired in**
 
-`scripts/` ships substantial test files for its bash guards that no
-pipeline ran:
+`scripts/` ships fixture-driven test files for its bash guards. Each
+guard script exposes a `--self-test` flag that `exec`s its sibling
+`*.sh.test` (builds a synthetic tree, plants known violations, asserts
+the checker catches them, then asserts a clean tree passes).
 
-| Test file                                  | Size  | Tests its sibling                    | Status                              |
+| Test file (`--self-test`)                  | Size  | Tests its sibling                    | Status before / after               |
 | ------------------------------------------ | ----- | ------------------------------------ | ----------------------------------- |
-| `check-admin-route-gates.sh.test`          | 5.7 KB| `check-admin-route-gates.sh`         | ✅ wired into the `drift` job       |
-| `check-resupply-architecture.sh.test`      | 35 KB | `check-resupply-architecture.sh`     | ❌ rotted — see **W5a**             |
-| `check-resupply-migration-prefix.sh.test`  | 6.3 KB| `check-resupply-migration-prefix.sh` | ⏸ deferred — git-commits (below)   |
-| `git-hooks/lib-staged-snapshot.test`       | 11 KB | `lib-staged-snapshot.sh`             | ⏸ deferred — flaky scenario 9      |
+| `check-admin-route-gates.sh.test`          | 5.7 KB| `check-admin-route-gates.sh`         | already ran via `--self-test`       |
+| `check-resupply-architecture.sh.test`      | 35 KB | `check-resupply-architecture.sh`     | dormant + rotted → ✅ fixed & wired |
+| `check-resupply-migration-prefix.sh.test`  | 6.3 KB| `check-resupply-migration-prefix.sh` | dormant → ✅ wired                  |
+| `git-hooks/lib-staged-snapshot.test`       | 11 KB | `lib-staged-snapshot.sh`             | ⏸ deferred — real flake (below)    |
 
-`pnpm test` only runs the per-package vitest suites; CI's `drift` job
-only ran `check-admin-route-gates.sh --self-test` (a self-test baked
-into that one script, distinct from the fixture-driven `.sh.test`
-harnesses). So coverage for the repo's most safety-critical guard
-scripts was dormant.
+**Correction to the first pass of this audit:** the admin-gate harness
+was _not_ dormant — the `drift` job already ran
+`check-admin-route-gates.sh --self-test`, and `--self-test` execs the
+`.sh.test`. The genuinely-dormant harnesses were the **architecture**
+and **migration-prefix** ones: their `drift` steps ran only the real
+checker (`check-resupply-architecture.sh` /
+`check-resupply-migration-prefix.sh`), never `--self-test`. So the
+fixture coverage for the repo's most safety-critical guard — the one
+that protects the hexagonal dependency rules — was running nowhere.
 
-**Fix (this branch).** Wired the fully-validated
-`check-admin-route-gates.sh.test` (passes locally, no git-commit
-fixtures) into the `drift` job. The other three are deferred for
-concrete reasons:
+**Fix (this branch).** Added two steps to the `drift` job:
+`check-resupply-architecture.sh --self-test` and
+`check-resupply-migration-prefix.sh --self-test`. Both pass locally
+(the architecture one after the W5a repoint below; the migration-prefix
+one once its fixture repo's commits aren't intercepted by a local
+commit-signing config — it runs clean on a stock runner). The fourth is
+deferred:
 
-- **`check-resupply-migration-prefix.sh.test`** builds a throwaway git
-  repo and `git commit`s synthetic diffs into it. That's fine in GitHub
-  Actions but can't be validated in every local/agent sandbox (some
-  intercept `git commit` for signing). Wire it in once confirmed green
-  on a CI runner.
-- **`git-hooks/lib-staged-snapshot.test`** is **non-deterministic**:
-  scenario 9 ("recovery-dir breadcrumb emitted before mutation") asserts
-  the lib takes the snapshot path, but the lib's `git diff` capture
-  intermittently reports no unstaged change (observed 5/5 fast-path in a
-  bare run, but the breadcrumb fires once an intervening `git` command
-  refreshes the index). Needs a deflake — likely a `git update-index
-  --refresh` (or an explicit `git diff` warm-up) in either the lib's
-  capture phase or the test setup — before it can gate CI.
+- **`git-hooks/lib-staged-snapshot.test`** has a **real, deterministic
+  failure** in scenario 9 ("recovery-dir breadcrumb emitted before
+  mutation"): the lib takes the fast/no-op path when it should snapshot.
+  Reproduced 3/3 and 5/5 in clean repos with commit-signing disabled, so
+  it is **not** a signing artifact — the lib's capture-phase `git diff`
+  reports no unstaged change when the staged `git add` and the
+  subsequent edit happen before any index-refreshing `git` command runs;
+  the breadcrumb fires once an intervening `git diff`/`status` refreshes
+  the stat cache. In real pre-commit usage `git commit` refreshes the
+  index before the hook fires, so this is unlikely to bite in practice —
+  but it's a latent edge in a guard library and the test pins it. Needs a
+  deflake (a `git update-index -q --refresh` in the lib's capture phase,
+  or a warm-up in the test) and a decision on whether the lib should
+  defend against the cold-stat-cache case before it gates CI. Left for a
+  focused follow-up because it touches the pre-commit isolation lib.
 
-### [MEDIUM] W5a — The architecture-guard test has rotted (new finding)
+### [MEDIUM] W5a — The architecture-guard test had rotted → **fixed**
 
 `check-resupply-architecture.sh.test` — the negative-test harness for
-the repo's **primary architecture invariant checker** — fails on the
-current `main`. It plants fixtures under `artifacts/resupply-worker/src`
-and asserts the checker flags them, but `resupply-worker` was **folded
+the repo's **primary architecture invariant checker** — failed on the
+current `main`. It planted fixtures under `artifacts/resupply-worker/src`
+and asserted the checker flagged them, but `resupply-worker` was **folded
 into `resupply-api` during the May-2026 consolidations** (the worker now
 lives at `artifacts/resupply-api/src/worker/`). The checker's per-rule
 directory lists were updated to drop the standalone `resupply-worker`
-path; the test was not. The failures cascade (fixing the Rule 6 worker
-case exposes the Rule 7 worker case, etc.), so ~7 `resupply-worker`
-fixture cases are stale.
+path; the test was not — so ~7 `resupply-worker` fixture cases (across
+Rules 6, 7, 8) asserted against a directory the checker no longer scans.
+The failures cascaded (fixing the Rule 6 case exposed the Rule 7 case,
+…). This is the exact danger dormant tests create: **the test for the
+architecture guard no longer matched the guard, so the guard could
+regress with nothing to catch it.**
 
-This is the exact danger dormant tests create: **the test for the
-architecture guard no longer matches the guard, so the guard could
-regress with nothing to catch it.** Reconciling it is a judgement call
-per rule — does the checker intend to cover the worker (now under
-`resupply-api/src`, which most rules already scan) or not? — and it
-touches a correctness-critical script, so it's left for the maintainer
-rather than mechanically "made green." A focused reconciliation PR
-should: (1) repoint or drop each `resupply-worker` fixture case, (2)
-confirm the real worker tree (`resupply-api/src/worker`) is covered by
-the rules that matter, (3) drop the vestigial `resupply-dashboard`
-fixtures + the checker's stale `resupply-dashboard/src` enumeration
-entries, then (4) wire the test into the `drift` job alongside the
-admin-gate harness.
+**Fix.** Repointed all 17 `artifacts/resupply-worker/src` fixture paths
+to `artifacts/resupply-api/src/worker` — the real post-consolidation
+worker location, which Rules 6/7/8 reach via their recursive
+`artifacts/resupply-api/src` scan. This preserves every case's intent
+("the worker tree must not import the storefront UI client / `pg` /
+write `audit_log` directly") while pointing at a path the checker
+actually covers, so the test now also **proves the worker tree stayed
+covered after the fold-in**. The full harness passes (exit 0), and the
+two `--self-test` steps above wire it into CI. No change was made to the
+enforcement script itself.
+
+A note on what was deliberately _not_ changed: the `resupply-dashboard`
+fixture cases (and the checker's `artifacts/resupply-dashboard/src`
+enumeration entries) were left as-is. Unlike the worker cases they
+**pass** — they create a fixture dir and verify the checker still
+flags violations there, which functions as a forward-looking tripwire
+if a `resupply-dashboard` artifact is ever re-added. Removing them would
+have meant editing the enforcement script for no functional gain, so
+that cleanup (if desired) is left as a separate, optional call.
 
 ### [LOW] W6 — No single "run exactly what CI runs" local command
 
@@ -294,11 +316,10 @@ independent infrastructure.
 
 ## Suggested next step
 
-W1, W2, W4, and the validated slice of W5 are on this branch. The
-clearest remaining unit of work is **W5a** — reconcile the rotted
-architecture-guard test against the consolidation and wire it into the
-`drift` job. After that, deflake `lib-staged-snapshot.test` (W5) and
-confirm `check-resupply-migration-prefix.sh.test` green on a runner,
-then wire both in. W3 is worth doing only if a CI-duration measurement
-shows the double SPA build is on the critical path. W6 + W7 are
-quality-of-life and can ride along with any other DX change.
+W1, W2, W4, W5, and W5a are on this branch. The clearest remaining unit
+of work is the **`lib-staged-snapshot` deflake** (W5) — decide whether
+the snapshot lib should defend against the cold-stat-cache case, fix it
+or the test accordingly, then wire that fourth harness in. W3 is worth
+doing only if a CI-duration measurement shows the double SPA build is on
+the critical path. W6 + W7 are quality-of-life and can ride along with
+any other DX change.

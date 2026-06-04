@@ -81,19 +81,23 @@ jobs:
           scripts/check-admin-route-gates.sh --self-test
           scripts/check-admin-route-gates.sh
 
-      # Fixture-driven negative-test harness for the admin-gate checker
-      # (distinct from the script's own --self-test above: this one
-      # builds a synthetic routes/admin tree via RESUPPLY_GATE_CHECK_ROOT
-      # and asserts gated/ungated/ignored outcomes). It shipped with the
-      # checker but ran in no pipeline until now — see
-      # docs/workflow-efficiency-audit-2026-06-04.md (W5). The sibling
-      # *.sh.test harnesses for the architecture and migration-prefix
-      # checkers are intentionally NOT wired in yet (the architecture one
-      # has rotted against the May-2026 artifact consolidation; the
-      # migration-prefix and lib-staged-snapshot ones git-commit in
-      # fixtures and need CI-side validation first — see the audit doc).
-      - name: Admin route gate negative-test harness
-        run: bash scripts/check-admin-route-gates.sh.test
+      # Fixture-driven negative-test harnesses for the guard scripts:
+      # each `--self-test` execs the sibling `*.sh.test`, which builds a
+      # synthetic tree, plants known violations, and asserts the checker
+      # catches them (then that a clean tree passes). The admin-gate
+      # harness already runs via its `--self-test` in the step above; the
+      # architecture + migration-prefix harnesses shipped with their
+      # checkers but ran in NO pipeline until now — see
+      # docs/workflow-efficiency-audit-2026-06-04.md (W5/W5a). They guard
+      # the repo's primary architecture invariant, so an undetected
+      # regression in the checker itself is exactly what they prevent.
+      # (lib-staged-snapshot.test is intentionally NOT wired in yet — its
+      # scenario 9 is non-deterministic; see the audit doc.)
+      - name: Architecture checker self-test
+        run: scripts/check-resupply-architecture.sh --self-test
+
+      - name: Migration-prefix checker self-test
+        run: scripts/check-resupply-migration-prefix.sh --self-test
 
   test:
     name: Tests
