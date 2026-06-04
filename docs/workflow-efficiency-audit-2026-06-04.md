@@ -23,7 +23,7 @@ etc.) — these are pure build/CI/dev-loop changes.
 | --- | ------------------------------------------------------------- | -------- | ------------------------------- |
 | W1  | CI bootstrap (pnpm+Node+install) copy-pasted into 9 jobs      | HIGH     | ✅ fixed (composite action)     |
 | W2  | Playwright browser downloaded twice/run, never cached         | MEDIUM   | ✅ fixed (cache step)           |
-| W3  | SPA built twice per CI run (a11y + smoke)                     | MEDIUM   | open — recommendation below     |
+| W3  | SPA built twice per CI run (a11y + smoke)                     | MEDIUM   | ✅ measured — not worth fixing   |
 | W4  | `results-page-resilience.spec.ts` runs in no CI job           | MEDIUM   | ✅ fixed (new `e2e-dev` job)    |
 | W5  | Shell-script test files (`*.sh.test`) execute nowhere         | MEDIUM   | ✅ all 4 wired in                |
 | W5a | The architecture-guard test had rotted (stale `resupply-worker`) | MEDIUM | ✅ fixed (fixtures repointed)    |
@@ -117,23 +117,25 @@ Playwright version bumps.
 
 ## Open recommendations (judgement calls left to the maintainer)
 
-### [MEDIUM] W3 — The SPA is built twice per CI run
+### [MEDIUM] W3 — The SPA is built twice per CI run → **measured; not worth fixing**
 
 `a11y` and `smoke` each run `pnpm --filter @workspace/cpap-fitter run
-build` (the single most expensive CI step) on separate runners. The
-jobs are deliberately kept separate so each reports an independent
-signal (`smoke` is required; `a11y` is `continue-on-error`), so
-**merging them is the wrong fix** — it would couple a soft gate to a
-hard one.
+build` on separate (parallel) runners. The jobs are deliberately kept
+separate so each reports an independent signal (`smoke` is required;
+`a11y` is `continue-on-error`), so merging them is the wrong fix.
 
-**Sketch.** Build once in a tiny `build-spa` job, upload
-`artifacts/cpap-fitter/dist` via `actions/upload-artifact`, and have
-`a11y` + `smoke` `needs: build-spa` and download it. Keeps both signals
-independent while removing the duplicate Vite build. Trade-off: adds
-artifact upload/download latency (~seconds) and a job dependency; only
-worth it if the SPA build is slow enough that the duplication hurts
-wall-clock time. Measure first (`build-spa` duration in a recent run)
-before committing to this.
+The proposed dedup was: build once in a `build-spa` job, upload
+`artifacts/cpap-fitter/dist`, and have `a11y` + `smoke` `needs:
+build-spa` + download. **Measured before committing to it** (CI run
+26966267295): the "Build cpap-fitter SPA" step took **~2 seconds** in
+each job (16:50:22→24 and 16:50:20→22), out of ~50 s total per job, and
+the two builds run **in parallel** — so the duplication costs ~2 s of
+runner time, not wall-clock time. The dedup would *add* an
+`actions/upload-artifact` + `download-artifact` round-trip (typically
+longer than 2 s for a multi-MB `dist/`) **and** serialize the build
+ahead of both jobs via `needs:`, making wall-clock time worse. **Verdict:
+don't do it** — the Vite build is too fast for artifact-sharing to pay
+off. (Revisit only if the SPA build grows by an order of magnitude.)
 
 ### [MEDIUM] W4 — `results-page-resilience.spec.ts` ran in no CI job → **fixed**
 
@@ -358,10 +360,9 @@ independent infrastructure.
 
 ## Suggested next step
 
-W1, W2, W4, W5, W5a, W6, and W7 are all on this branch — every guard-test
-harness now runs in CI, and the local pre-flight + fresh-clone setup gaps
-are closed. The only remaining item that could be acted on is **W3**
-(build the SPA once and share it via artifact instead of rebuilding it in
-both the `a11y` and `smoke` jobs) — and that's worth doing only if a
-CI-duration measurement shows the double build is actually on the
-critical path. W8 is informational (no action).
+Every actionable finding is resolved on this branch (W1, W2, W4, W5, W5a,
+W5b, W6, W7) — every guard-test harness now runs in CI, the architecture
+gate actually enforces for the first time, and the local pre-flight +
+fresh-clone setup gaps are closed. W3 was **measured and closed** (the
+duplicate SPA build is ~2 s in parallel; artifact-sharing would cost more
+than it saves). W8 is informational, no action. Nothing is left open.
