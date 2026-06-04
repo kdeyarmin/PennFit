@@ -191,30 +191,9 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
       {
         label: "Home",
         icon: LayoutDashboard,
-        hint: "Your day at a glance — dashboard, personal queue, prioritized work",
-        tabs: [
-          {
-            href: "/admin",
-            label: "Dashboard",
-            icon: LayoutDashboard,
-            matchPrefix: "/admin",
-            hint: "Today's queues and team workload at a glance",
-          },
-          {
-            href: "/admin/today",
-            label: "My Today",
-            icon: Inbox,
-            matchPrefix: "/admin/today",
-            hint: "Top items across every queue — conversations, returns, alerts, Rx renewals, documents",
-          },
-          {
-            href: "/admin/work-queue",
-            label: "Work queue",
-            icon: ListChecks,
-            matchPrefix: "/admin/work-queue",
-            hint: "Unified, prioritized queue of everything waiting on you, most-overdue first",
-          },
-        ],
+        href: "/admin",
+        matchPrefix: "/admin",
+        hint: "Your day at a glance — KPIs, today's worklist, and quick links into every queue",
       },
       {
         label: "Conversations",
@@ -327,9 +306,9 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         badgeKey: "newPatientDocuments",
       },
       {
-        label: "Clinical",
+        label: "Clinical work",
         icon: Stethoscope,
-        hint: "RT clinical work — encounters, interventions, mask-fit, coaching, outcomes",
+        hint: "RT clinical work — encounters, interventions, mask-fit, coaching",
         tabs: [
           {
             href: "/admin/clinical",
@@ -371,14 +350,6 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             hint: "Outreach plans for patients with slipping CPAP adherence",
           },
           {
-            href: "/admin/rt-outcomes",
-            label: "RT outcomes",
-            icon: Stethoscope,
-            matchPrefix: "/admin/rt-outcomes",
-            requiredPermission: "clinical.read",
-            hint: "Per-therapist activity: encounters, patients, interventions",
-          },
-          {
             href: "/admin/clinical/education-videos",
             label: "Video library",
             icon: PlayCircle,
@@ -389,9 +360,9 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         ],
       },
       {
-        label: "Therapy",
+        label: "Therapy monitoring",
         icon: HeartPulse,
-        hint: "Population therapy monitoring — adherence board, fleet, resupply",
+        hint: "Population therapy monitoring — adherence board, RT outcomes, fleet, resupply",
         tabs: [
           {
             href: "/admin/rt-overview",
@@ -399,6 +370,14 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             icon: HeartPulse,
             matchPrefix: "/admin/rt-overview",
             hint: "At-a-glance therapy board: alerts, AHI, leak, usage",
+          },
+          {
+            href: "/admin/rt-outcomes",
+            label: "RT outcomes",
+            icon: Stethoscope,
+            matchPrefix: "/admin/rt-outcomes",
+            requiredPermission: "clinical.read",
+            hint: "Per-therapist activity: encounters, patients, interventions",
           },
           {
             href: "/admin/therapy-fleet",
