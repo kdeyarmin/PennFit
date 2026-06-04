@@ -91,7 +91,7 @@ export function AdminCustomerDetailPage({ userId }: Props) {
               style={{
                 padding: 24,
                 textAlign: "center",
-                color: "var(--text-muted, #475569)",
+                color: "hsl(var(--ink-2))",
               }}
             >
               <AlertCircle
@@ -175,7 +175,7 @@ function BackLink({ onBack }: { onBack?: () => void } = {}) {
         gap: 6,
         background: "transparent",
         border: 0,
-        color: "var(--text-muted, #475569)",
+        color: "hsl(var(--ink-2))",
         cursor: "pointer",
         font: "inherit",
         padding: 0,
@@ -211,7 +211,7 @@ function CustomerHeader({
             width: 44,
             height: 44,
             borderRadius: "50%",
-            background: "var(--surface-2, #e2e8f0)",
+            background: "hsl(var(--surface-2))",
             display: "inline-flex",
             alignItems: "center",
             justifyContent: "center",
@@ -230,7 +230,7 @@ function CustomerHeader({
           <div
             style={{
               fontSize: 13,
-              color: "var(--text-muted, #475569)",
+              color: "hsl(var(--ink-2))",
               fontFamily: "monospace",
             }}
           >
@@ -241,6 +241,10 @@ function CustomerHeader({
               </span>
             )}
           </div>
+          <PatientDirectoryJump
+            displayName={profile.displayName}
+            linkedPatientId={profile.linkedPatientId}
+          />
         </div>
       </div>
       <div style={{ display: "flex", gap: 12, fontSize: 13 }}>
@@ -253,6 +257,56 @@ function CustomerHeader({
         <Stat label="Avg order" value={formatCents(stats.avgOrderValueCents)} />
       </div>
     </div>
+  );
+}
+
+/**
+ * "View / find this person in Patients" jump. When the customer shares a
+ * portal login with a patient (`linkedPatientId`), that's a deterministic
+ * link and we jump straight to the patient record. Otherwise patients and
+ * shop-customers aren't linked in the data, so we fall back to a name
+ * search of the clinical directory. The patient search matches each name
+ * column against the whole needle (no tokenizing), so the fallback passes
+ * the surname (last token of the display name) to hit `legal_last_name`.
+ */
+function PatientDirectoryJump({
+  displayName,
+  linkedPatientId,
+}: {
+  displayName: string | null | undefined;
+  linkedPatientId: string | null | undefined;
+}) {
+  const linkStyle = {
+    fontSize: 12,
+    fontWeight: 600,
+    color: "hsl(var(--penn-navy))",
+    textDecoration: "none",
+    marginTop: 4,
+    display: "inline-block",
+  } as const;
+
+  if (linkedPatientId) {
+    return (
+      <Link
+        href={`/admin/patients/${encodeURIComponent(linkedPatientId)}`}
+        style={linkStyle}
+        title="Open the patient record that shares this customer's portal login"
+      >
+        View patient record →
+      </Link>
+    );
+  }
+
+  const surname = (displayName ?? "").trim().split(/\s+/).pop() ?? "";
+  if (!surname) return null;
+  return (
+    <Link
+      href={`/admin/patients?search=${encodeURIComponent(surname)}`}
+      style={linkStyle}
+      title="Search the clinical Patients directory for this surname"
+    >
+      Find in Patients →
+    </Link>
   );
 }
 
@@ -269,7 +323,9 @@ function Stat({
     <div
       style={{
         background: highlight ? "#f0fdf4" : "transparent",
-        border: highlight ? "1px solid #bbf7d0" : "1px solid #e2e8f0",
+        border: highlight
+          ? "1px solid #bbf7d0"
+          : "1px solid hsl(var(--line-1))",
         borderRadius: 8,
         padding: "6px 10px",
         textAlign: "right",
@@ -281,7 +337,7 @@ function Stat({
           fontSize: 10,
           textTransform: "uppercase",
           letterSpacing: 0.5,
-          color: "var(--text-muted, #475569)",
+          color: "hsl(var(--ink-2))",
         }}
       >
         {label}
@@ -379,7 +435,7 @@ function ClinicalInfoCard({
                     <span
                       style={{
                         display: "block",
-                        color: "var(--text-muted, #475569)",
+                        color: "hsl(var(--ink-2))",
                       }}
                     >
                       {[
@@ -445,7 +501,7 @@ function FacialMeasurementsAdminCard({
             <span
               style={{
                 fontSize: 11,
-                color: "var(--text-muted, #475569)",
+                color: "hsl(var(--ink-2))",
               }}
             >
               Captured {new Date(measurements.capturedAt).toLocaleDateString()}
@@ -453,7 +509,7 @@ function FacialMeasurementsAdminCard({
           )}
         </div>
         {!measurements ? (
-          <p style={{ margin: 0, color: "var(--text-muted, #475569)" }}>
+          <p style={{ margin: 0, color: "hsl(var(--ink-2))" }}>
             No on-device scan saved. Customer hasn&apos;t completed a fitting
             while signed in.
           </p>
@@ -503,8 +559,8 @@ function FacialMeasurementsGroup({
   return (
     <div
       style={{
-        background: "var(--surface-1, #f8fafc)",
-        border: "1px solid var(--border, #e2e8f0)",
+        background: "hsl(var(--surface-1))",
+        border: "1px solid hsl(var(--line-1))",
         borderRadius: 8,
         padding: "10px 12px",
       }}
@@ -516,7 +572,7 @@ function FacialMeasurementsGroup({
           fontWeight: 600,
           textTransform: "uppercase",
           letterSpacing: 0.6,
-          color: "var(--text-muted, #475569)",
+          color: "hsl(var(--ink-2))",
           marginBottom: 8,
         }}
       >
@@ -540,7 +596,7 @@ function FacialMeasurementsGroup({
               gap: 8,
             }}
           >
-            <dt style={{ color: "var(--text-muted, #475569)" }}>{row.label}</dt>
+            <dt style={{ color: "hsl(var(--ink-2))" }}>{row.label}</dt>
             <dd
               style={{
                 margin: 0,
@@ -598,7 +654,7 @@ function InAppConversationCard({
           )}
         </div>
         {!inApp ? (
-          <p style={{ margin: 0, color: "var(--text-muted, #475569)" }}>
+          <p style={{ margin: 0, color: "hsl(var(--ink-2))" }}>
             {customerName} hasn&apos;t messaged customer service yet.
           </p>
         ) : (
@@ -663,7 +719,7 @@ function RecentOrdersCard({
           <h2 style={{ margin: 0, fontSize: 14, marginBottom: 12 }}>
             Recent orders
           </h2>
-          <p style={{ margin: 0, color: "var(--text-muted, #475569)" }}>
+          <p style={{ margin: 0, color: "hsl(var(--ink-2))" }}>
             No orders yet.
           </p>
         </div>
@@ -698,7 +754,7 @@ function OrderRow({
     <li
       style={{
         padding: "8px 0",
-        borderBottom: "1px solid var(--border, #e2e8f0)",
+        borderBottom: "1px solid hsl(var(--line-1))",
         fontSize: 13,
       }}
     >
@@ -708,7 +764,7 @@ function OrderRow({
         <span>
           <code
             style={{
-              background: "#f1f5f9",
+              background: "hsl(var(--surface-2))",
               padding: "1px 4px",
               borderRadius: 3,
               fontSize: 11,
@@ -720,7 +776,7 @@ function OrderRow({
           {order.itemCount === 1 ? "" : "s"}
         </span>
         <span style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <span style={{ color: "var(--text-muted, #475569)" }}>
+          <span style={{ color: "hsl(var(--ink-2))" }}>
             {order.amountTotalCents != null
               ? formatCents(order.amountTotalCents)
               : "—"}{" "}
@@ -731,12 +787,12 @@ function OrderRow({
             onClick={() => setShowNotes((v) => !v)}
             style={{
               background: "transparent",
-              border: "1px solid var(--border, #e2e8f0)",
+              border: "1px solid hsl(var(--line-1))",
               borderRadius: 4,
               padding: "2px 8px",
               fontSize: 11,
               cursor: "pointer",
-              color: "var(--text-muted, #475569)",
+              color: "hsl(var(--ink-2))",
             }}
             data-testid={`admin-customer-order-notes-toggle-${order.id}`}
             aria-expanded={showNotes}
@@ -748,12 +804,12 @@ function OrderRow({
             onClick={() => setShowClaims((v) => !v)}
             style={{
               background: "transparent",
-              border: "1px solid var(--border, #e2e8f0)",
+              border: "1px solid hsl(var(--line-1))",
               borderRadius: 4,
               padding: "2px 8px",
               fontSize: 11,
               cursor: "pointer",
-              color: "var(--text-muted, #475569)",
+              color: "hsl(var(--ink-2))",
             }}
             aria-expanded={showClaims}
           >
@@ -764,12 +820,12 @@ function OrderRow({
             onClick={() => setShowPod((v) => !v)}
             style={{
               background: "transparent",
-              border: "1px solid var(--border, #e2e8f0)",
+              border: "1px solid hsl(var(--line-1))",
               borderRadius: 4,
               padding: "2px 8px",
               fontSize: 11,
               cursor: "pointer",
-              color: "var(--text-muted, #475569)",
+              color: "hsl(var(--ink-2))",
             }}
             data-testid={`admin-customer-order-pod-toggle-${order.id}`}
             aria-expanded={showPod}
@@ -834,7 +890,7 @@ function ContactCard({ profile }: { profile: AdminCustomerProfile }) {
           </p>
         )}
         {!profile.email && !profile.shippingAddress && (
-          <p style={{ margin: 0, color: "var(--text-muted, #475569)" }}>
+          <p style={{ margin: 0, color: "hsl(var(--ink-2))" }}>
             No contact info on file.
           </p>
         )}
@@ -855,7 +911,7 @@ function SavedCardCard({
           <h2 style={{ margin: 0, fontSize: 14, marginBottom: 12 }}>
             Saved card
           </h2>
-          <p style={{ margin: 0, color: "var(--text-muted, #475569)" }}>
+          <p style={{ margin: 0, color: "hsl(var(--ink-2))" }}>
             No card on file.
           </p>
         </div>
@@ -871,7 +927,7 @@ function SavedCardCard({
         <p style={{ margin: 0, fontSize: 13, fontFamily: "monospace" }}>
           {card.brand.toUpperCase()} •••• {card.last4}
           {card.expMonth != null && card.expYear != null && (
-            <span style={{ color: "var(--text-muted, #475569)" }}>
+            <span style={{ color: "hsl(var(--ink-2))" }}>
               {" · "}
               expires {String(card.expMonth).padStart(2, "0")}/
               {String(card.expYear).slice(-2)}
@@ -943,7 +999,7 @@ function Subsection({
           fontSize: 12,
           textTransform: "uppercase",
           letterSpacing: 0.5,
-          color: "var(--text-muted, #475569)",
+          color: "hsl(var(--ink-2))",
           display: "flex",
           alignItems: "center",
           gap: 6,
@@ -957,7 +1013,7 @@ function Subsection({
           style={{
             margin: 0,
             fontSize: 13,
-            color: "var(--text-muted, #475569)",
+            color: "hsl(var(--ink-2))",
           }}
         >
           {emptyHint}
@@ -997,7 +1053,7 @@ function DefItem({
     <>
       <dt
         style={{
-          color: "var(--text-muted, #475569)",
+          color: "hsl(var(--ink-2))",
           textTransform: "uppercase",
           fontSize: 10,
           letterSpacing: 0.5,

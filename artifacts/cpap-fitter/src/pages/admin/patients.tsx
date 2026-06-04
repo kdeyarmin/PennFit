@@ -48,6 +48,23 @@ const STATUS_OPTIONS = Object.values(ListPatientsStatus).map((v) => ({
   label: humanizeStatus(v),
 }));
 
+/**
+ * Seed the patients filter state from the URL query string. `?search=`
+ * pre-fills the search box; `?status=` pre-selects a status (validated
+ * against the known statuses so a junk value is ignored). Read once at
+ * mount — the filters become local state thereafter.
+ */
+function initialPatientFilters(): { status: string; search: string } {
+  if (typeof window === "undefined") return { status: "", search: "" };
+  const params = new URLSearchParams(window.location.search);
+  const statusRaw = params.get("status") ?? "";
+  const validStatuses = Object.values(ListPatientsStatus) as string[];
+  return {
+    status: validStatuses.includes(statusRaw) ? statusRaw : "",
+    search: params.get("search") ?? "",
+  };
+}
+
 type PatientRow = {
   id: string;
   pacwareId: string;
@@ -84,14 +101,22 @@ export function PatientsPage() {
 
   // Filter + offset state. useFilteredList owns the "reset offset to
   // 0 on any filter change" invariant — pagination state still lives
-  // here, but the page can never forget to reset it.
-  const { filters, setFilter, clearFilters, offset, setOffset, pageSize } =
-    useFilteredList({ status: "", search: "" }, { pageSize: PAGE_SIZE });
+  // here, but the page can never forget to reset it. The initial
+  // filters are seeded from the URL query string so a deep link
+  // (the dashboard KPI tiles, or the "Find this person in Patients"
+  // jump from a customer record) lands pre-filtered.
+  const { filters, setFilter, setFilters, offset, setOffset, pageSize } =
+    useFilteredList(initialPatientFilters(), { pageSize: PAGE_SIZE });
   const { status: statusFilter, search } = filters;
   // Search-input is debounced into filters.search so we don't hammer
   // the API while the admin is mid-type. The input value is pure UI
   // state; the committed string is what drives the query params.
-  const [searchInput, setSearchInput] = useState<string>("");
+  // Seed from the URL too: the debounced effect below mirrors
+  // searchInput into filters.search, so an empty input here would
+  // immediately wipe the URL-seeded filter on mount.
+  const [searchInput, setSearchInput] = useState<string>(
+    () => initialPatientFilters().search,
+  );
   const [creating, setCreating] = useState<boolean>(false);
   const [importing, setImporting] = useState<boolean>(false);
   const [bulkFeedback, setBulkFeedback] = useState<{
@@ -457,11 +482,13 @@ export function PatientsPage() {
               intent="ghost"
               size="sm"
               onClick={() => {
-                // Reset the un-debounced input ref alongside the
-                // hook-managed filters so the visible input clears
-                // immediately too.
+                // Reset to true-blank defaults, not the hook's captured
+                // initial filters — those are now seeded from the URL
+                // (?status=, ?search=), so clearFilters() would restore
+                // the deep-linked status instead of clearing it. Also
+                // reset the un-debounced input so the box clears at once.
                 setSearchInput("");
-                clearFilters();
+                setFilters({ status: "", search: "" });
               }}
             >
               Clear filters

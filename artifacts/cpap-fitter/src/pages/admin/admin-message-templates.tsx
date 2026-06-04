@@ -49,7 +49,7 @@ export function AdminMessageTemplatesPage() {
           className="text-2xl font-bold tracking-tight"
           style={{ color: "hsl(var(--ink-1))" }}
         >
-          Message templates
+          Automated messages
         </h1>
         <p className="text-sm text-slate-600">
           Edit the copy that customer-facing automated messages use. Templates

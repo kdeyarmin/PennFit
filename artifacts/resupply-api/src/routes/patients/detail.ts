@@ -122,34 +122,53 @@ router.get(
           .filter((v): v is string => v !== null),
       ),
     );
-    const [latestMsgRes, authRes, episodeRxRes] = await Promise.all([
-      supabase
-        .schema("resupply")
-        .from("patient_latest_message")
-        .select("last_message_at, last_message_direction, last_message_preview")
-        .eq("patient_id", id)
-        .limit(1)
-        .maybeSingle(),
-      patient.portal_auth_user_id
-        ? supabase
-            .schema("resupply_auth")
-            .from("users")
-            .select("email_verified_at")
-            .eq("id", patient.portal_auth_user_id)
-            .limit(1)
-            .maybeSingle()
-        : Promise.resolve({ data: null, error: null } as const),
-      episodePrescriptionIds.length > 0
-        ? supabase
-            .schema("resupply")
-            .from("prescriptions")
-            .select("id, item_sku")
-            .in("id", episodePrescriptionIds)
-        : Promise.resolve({ data: [], error: null } as const),
-    ]);
+    const [latestMsgRes, authRes, episodeRxRes, linkedCustomerRes] =
+      await Promise.all([
+        supabase
+          .schema("resupply")
+          .from("patient_latest_message")
+          .select(
+            "last_message_at, last_message_direction, last_message_preview",
+          )
+          .eq("patient_id", id)
+          .limit(1)
+          .maybeSingle(),
+        patient.portal_auth_user_id
+          ? supabase
+              .schema("resupply_auth")
+              .from("users")
+              .select("email_verified_at")
+              .eq("id", patient.portal_auth_user_id)
+              .limit(1)
+              .maybeSingle()
+          : Promise.resolve({ data: null, error: null } as const),
+        episodePrescriptionIds.length > 0
+          ? supabase
+              .schema("resupply")
+              .from("prescriptions")
+              .select("id, item_sku")
+              .in("id", episodePrescriptionIds)
+          : Promise.resolve({ data: [], error: null } as const),
+        // The storefront shop-customer that shares this patient's portal
+        // login, if any. Patients and shop customers are otherwise
+        // unlinked; the only deterministic correlation is a shared
+        // in-house auth user (patients.portal_auth_user_id ===
+        // shop_customers.auth_user_id). Surfacing the customer's id lets
+        // the detail page offer a real "view their customer record" jump.
+        patient.portal_auth_user_id
+          ? supabase
+              .schema("resupply")
+              .from("shop_customers")
+              .select("customer_id")
+              .eq("auth_user_id", patient.portal_auth_user_id)
+              .limit(1)
+              .maybeSingle()
+          : Promise.resolve({ data: null, error: null } as const),
+      ]);
     if (latestMsgRes.error) throw latestMsgRes.error;
     if (authRes.error) throw authRes.error;
     if (episodeRxRes.error) throw episodeRxRes.error;
+    if (linkedCustomerRes.error) throw linkedCustomerRes.error;
     const itemSkuByRxId = new Map<string, string>();
     for (const rx of episodeRxRes.data ?? []) {
       itemSkuByRxId.set(rx.id, rx.item_sku);
@@ -203,6 +222,10 @@ router.get(
       lastMessagePreview: latestMsgRes.data?.last_message_preview ?? null,
       portalStatus,
       portalInvitedAt: patient.portal_invited_at,
+      // The shop-customer userId that shares this patient's portal login
+      // (null when the patient has no portal account or no matching
+      // customer). Drives the "view customer record" link.
+      linkedCustomerUserId: linkedCustomerRes.data?.customer_id ?? null,
       prescriptions: (prescriptionsRes.data ?? []).map((p) => ({
         id: p.id,
         itemSku: p.item_sku,

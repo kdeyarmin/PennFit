@@ -1,0 +1,56 @@
+name: "Setup pnpm + Node"
+description: >-
+  Shared toolchain bootstrap for every CI job: installs the pinned pnpm,
+  sets up Node with the pnpm store cache, and runs a frozen-lockfile
+  install. Extracted so the pnpm/Node version pins live in ONE place
+  instead of being copy-pasted into every job (ci.yml had 7 identical
+  copies). Bump a version here and every job picks it up.
+
+# NOTE: this is the bootstrap the smoke-job comment in ci.yml asked for
+# ("factor the shared setup into a composite action"). It intentionally
+# does NOT run actions/checkout — a local composite action can only be
+# resolved after the repo is on disk, so each job still checks out first.
+
+inputs:
+  node-version:
+    description: "Node major version to install."
+    required: false
+    default: "24"
+  pnpm-version:
+    description: >-
+      pnpm version to install. Must match the packageManager /
+      engines.pnpm pin in the root package.json.
+    required: false
+    default: "11.5.0"
+  install:
+    description: >-
+      Whether to run `pnpm install --frozen-lockfile`. Set to "false"
+      for jobs that only need the toolchain on PATH.
+    required: false
+    default: "true"
+
+runs:
+  using: composite
+  steps:
+    # Install pnpm via npm rather than corepack — corepack's pnpm shim
+    # fails with ERR_PNPM_NO_PKG_MANIFEST when the runner cwd doesn't
+    # contain a package.json (see copilot-setup-steps.yml for the long
+    # version of this rationale). Disabling the corepack shim first
+    # ensures the npm-installed binary wins the PATH lookup.
+    - name: Install pnpm
+      shell: bash
+      run: |
+        corepack disable pnpm 2>/dev/null || true
+        npm install -g pnpm@${{ inputs.pnpm-version }}
+        pnpm --version
+
+    - uses: actions/setup-node@v5
+      with:
+        node-version: ${{ inputs.node-version }}
+        cache: "pnpm"
+        cache-dependency-path: pnpm-lock.yaml
+
+    - name: Install dependencies
+      if: inputs.install == 'true'
+      shell: bash
+      run: pnpm install --frozen-lockfile
