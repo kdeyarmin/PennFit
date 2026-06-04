@@ -14,6 +14,7 @@
 //     new admin.
 
 import { useQuery } from "@tanstack/react-query";
+import { useDemoMode } from "@/demo/DemoModeProvider";
 
 interface SystemInfo {
   server: {
@@ -74,6 +75,7 @@ export function AdminSettingsPage() {
           set?" booleans plus a few benign-to-display fields.
         </p>
       </header>
+      <DemoModeCard />
       {query.isPending ? (
         <div className="text-sm text-slate-500">Loading…</div>
       ) : query.isError ? (
@@ -85,6 +87,63 @@ export function AdminSettingsPage() {
         <Body data={query.data} />
       ) : null}
     </div>
+  );
+}
+
+// Demo / live mode toggle. Demo mode is a CLIENT-ONLY sandbox (see
+// src/demo/*): when ON, a fetch interceptor answers every same-origin
+// API call from in-browser fixtures instead of the real backend, so the
+// whole site renders simulated data with no PHI and no orders placed.
+// This card is the single place to flip it — it replaces the old global
+// page banner. Flipping reloads the page so every data consumer (React
+// Query caches, the in-memory demo store, the auth probe) re-resolves
+// against the chosen source.
+function DemoModeCard() {
+  const { isDemo, enterDemo, exitDemo } = useDemoMode();
+
+  return (
+    <Card title="Demo mode">
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div className="space-y-1">
+          <p className="text-sm text-slate-700">
+            {isDemo ? (
+              <>
+                <span className="font-semibold text-amber-700">On</span> — the
+                site is showing simulated data. Nothing is real and no orders
+                are placed.
+              </>
+            ) : (
+              <>
+                <span className="font-semibold text-emerald-700">Off</span> —
+                the site is showing live data.
+              </>
+            )}
+          </p>
+          <p className="text-xs text-slate-500 max-w-xl">
+            Demo mode is a client-only sandbox stored in this browser. Toggling
+            it reloads the page so every surface re-resolves against the chosen
+            data source. It never touches the live backend or real customer
+            data.
+          </p>
+        </div>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={isDemo}
+          aria-label="Toggle demo mode"
+          onClick={isDemo ? exitDemo : enterDemo}
+          className={`relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-amber-500 ${
+            isDemo ? "bg-amber-500" : "bg-slate-300"
+          }`}
+        >
+          <span
+            className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${
+              isDemo ? "translate-x-6" : "translate-x-1"
+            }`}
+          />
+        </button>
+      </div>
+    </Card>
   );
 }
 
