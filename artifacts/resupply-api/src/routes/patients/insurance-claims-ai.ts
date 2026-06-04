@@ -836,7 +836,13 @@ async function submitDraftToOfficeAlly(
             .split(",")
             .map((m: string) => m.trim().toUpperCase())
             .filter((m: string) => m.length === 2),
-          billedCents: l.billed_cents,
+          // EDI 837P SV1-02 (and the builder's CLM02 = Σ SV1-02) expect the
+          // EXTENDED line charge: per-unit billed_cents × quantity. The
+          // stored billed_cents is per-unit (for the admin UI), so the
+          // multiply happens here at the EDI-build boundary — matching the
+          // canonical path in lib/billing/office-ally-batch.ts. Submitting
+          // the bare per-unit amount under-bills every multi-unit line.
+          billedCents: l.billed_cents * l.quantity,
           units: l.quantity,
           serviceDate: claim.date_of_service,
           diagnosisPointers: [1],

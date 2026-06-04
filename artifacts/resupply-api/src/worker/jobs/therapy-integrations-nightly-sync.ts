@@ -7,9 +7,10 @@
 // canonical patient_therapy_nights table.
 //
 // Throttling: 200ms sleep between calls so a partner with rate
-// limits doesn't 429 us. For a population of ~5K active patients
-// this puts the tick ceiling around 20 minutes — well under
-// pg-boss's stall threshold.
+// limits doesn't 429 us. Each run processes at most MAX_LINKS_PER_RUN
+// links (least-recently-synced first), keeping the tick well under
+// pg-boss's stall threshold; a larger active population is covered
+// across consecutive nightly runs rather than in a single tick.
 //
 // Audit: per-link result not individually audited (would explode
 // the log). Aggregate completion + failure counts are emitted in
@@ -39,6 +40,11 @@ export const THERAPY_NIGHTLY_SYNC_JOB = "therapy-integrations.nightly-sync";
 
 const SYSTEM_ACTOR_EMAIL = "system:worker:therapy-sync";
 const THROTTLE_MS = 200;
+// Per-run ceiling (one PostgREST page). Bounds the throttled fetch loop so
+// a tick stays well under the pg-boss lease; a larger active-link
+// population is covered across consecutive nightly runs via the
+// least-recently-synced ordering on the scan query below.
+const MAX_LINKS_PER_RUN = 1000;
 
 type Json =
   Database["resupply"]["Tables"]["patient_integration_snapshots"]["Row"]["payload"];
@@ -89,7 +95,18 @@ export async function runTherapyNightlySync(): Promise<NightlySyncResult> {
     .from("patient_therapy_links")
     .select("id, patient_id, source, partner_patient_id, status")
     .eq("status", "active")
-    .limit(5000);
+    // Process the least-recently-synced links first, bounded to one
+    // PostgREST page per run. The previous unpaginated read silently
+    // truncated at the ~1000-row response cap AND returned an arbitrary
+    // order, so the same ~1000 links were re-synced every night and the
+    // rest were NEVER synced. Ordering by last_synced_at — stamped on every
+    // link below, nulls (never-synced) sorting first — rotates coverage
+    // across nights, and the per-run bound keeps the throttled fetch loop
+    // within the job lease. A population larger than one page is covered
+    // over consecutive nightly runs.
+    .order("last_synced_at", { ascending: true, nullsFirst: true })
+    .order("id", { ascending: true })
+    .limit(MAX_LINKS_PER_RUN);
   if (error) throw error;
 
   for (const link of links ?? []) {

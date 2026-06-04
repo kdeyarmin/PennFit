@@ -101,18 +101,33 @@ export async function runPecosSync(
 }
 
 async function collectActiveNpis(supabase: SupabaseClient): Promise<string[]> {
-  // Gather distinct NPIs from the providers table that have ever
-  // been used as a rendering or referring provider on a claim.
-  // Cap at 5000 (one full sync still fits inside a 30-minute window
-  // at 5 req/sec).
-  const { data: providers } = await supabase
-    .schema("resupply")
-    .from("providers")
-    .select("id, npi")
-    .limit(5000);
+  // Gather distinct NPIs from the providers table. KEYSET-PAGINATED:
+  // PostgREST caps a single response at ~1000 rows, so the previous
+  // unpaginated read silently truncated there — at the documented <2K
+  // provider population that left roughly half the providers never
+  // PECOS-checked. Page through by id and bound the distinct-NPI set to
+  // MAX_NPIS_PER_RUN so the throttled per-NPI loop (5 req/sec) stays
+  // inside the job lease. The
+  // whole population fits in one run at current scale; the bound only
+  // engages far beyond it (a staleness-ordered rotation keyed on
+  // providers_pecos_status.last_synced_at is the follow-up if the
+  // population ever approaches the bound).
+  const PAGE_SIZE = 1000;
+  const MAX_NPIS_PER_RUN = 3000;
   const npis = new Set<string>();
-  for (const p of providers ?? []) {
-    if (/^\d{10}$/.test(p.npi)) npis.add(p.npi);
+  for (let from = 0; npis.size < MAX_NPIS_PER_RUN; from += PAGE_SIZE) {
+    const { data, error } = await supabase
+      .schema("resupply")
+      .from("providers")
+      .select("id, npi")
+      .order("id", { ascending: true })
+      .range(from, from + PAGE_SIZE - 1);
+    if (error) throw error;
+    if (!data || data.length === 0) break;
+    for (const p of data) {
+      if (/^\d{10}$/.test(p.npi)) npis.add(p.npi);
+    }
+    if (data.length < PAGE_SIZE) break;
   }
   return [...npis];
 }

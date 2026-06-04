@@ -61,9 +61,42 @@ function safeSubjectValue(s: string): string {
   return s.replace(/[\r\n]/g, "");
 }
 
+/**
+ * Render a token's TTL as the human-readable "this link expires in …"
+ * phrase used in the auth emails.
+ *
+ * Derived from the SAME millisecond value the caller uses to set the
+ * token's `expires_at`, so the copy can never drift from the real
+ * expiry. (It used to be hardcoded — "1 hour" on the reset email — while
+ * the actual reset-token TTL was the 24h `AUTH_EMAIL_TOKEN_TTL_HOURS`
+ * default and the team-invite reuse of the same template ran on a 7-day
+ * token; every recipient was told the wrong window.)
+ *
+ * Whole days only roll up at >= 48h (so a 24h token still reads
+ * "24 hours", matching the historical verify-email copy, while a 7-day
+ * invite doesn't become an absurd "168 hours"); otherwise whole hours,
+ * falling back to minutes for sub-hour or non-round values.
+ */
+export function formatTokenExpiry(ttlMs: number): string {
+  const totalMinutes = Math.round(ttlMs / 60_000);
+  const MIN_PER_HOUR = 60;
+  const MIN_PER_DAY = 60 * 24;
+  if (totalMinutes >= 2 * MIN_PER_DAY && totalMinutes % MIN_PER_DAY === 0) {
+    const days = totalMinutes / MIN_PER_DAY;
+    return `${days} day${days === 1 ? "" : "s"}`;
+  }
+  if (totalMinutes >= MIN_PER_HOUR && totalMinutes % MIN_PER_HOUR === 0) {
+    const hours = totalMinutes / MIN_PER_HOUR;
+    return `${hours} hour${hours === 1 ? "" : "s"}`;
+  }
+  const minutes = Math.max(1, totalMinutes);
+  return `${minutes} minute${minutes === 1 ? "" : "s"}`;
+}
+
 export function renderVerifyEmail(
   ctx: AuthEmailContext,
   rawToken: string,
+  ttlMs: number,
 ): RenderedEmail {
   const link = makeLink(
     ctx.publicBaseUrl,
@@ -73,18 +106,19 @@ export function renderVerifyEmail(
   );
   const safeLink = escapeHtml(link);
   const safeName = escapeHtml(ctx.productName);
+  const expiry = formatTokenExpiry(ttlMs);
   return {
     subject: `Verify your email — ${safeSubjectValue(ctx.productName)}`,
     html: `<p>Welcome to ${safeName}.</p>
 <p>Click the link below to verify your email address:</p>
 <p><a href="${safeLink}">${safeLink}</a></p>
-<p>This link expires in 24 hours. If you didn't create this account, you can ignore this email.</p>`,
+<p>This link expires in ${expiry}. If you didn't create this account, you can ignore this email.</p>`,
     text: `Welcome to ${ctx.productName}.
 
 Verify your email address by visiting:
 ${link}
 
-This link expires in 24 hours. If you didn't create this account, you can ignore this email.`,
+This link expires in ${expiry}. If you didn't create this account, you can ignore this email.`,
   };
 }
 
@@ -125,6 +159,7 @@ This link expires in 7 days. If you weren't expecting this invitation, you can s
 export function renderPasswordResetEmail(
   ctx: AuthEmailContext,
   rawToken: string,
+  ttlMs: number,
 ): RenderedEmail {
   const link = makeLink(
     ctx.publicBaseUrl,
@@ -134,17 +169,18 @@ export function renderPasswordResetEmail(
   );
   const safeLink = escapeHtml(link);
   const safeName = escapeHtml(ctx.productName);
+  const expiry = formatTokenExpiry(ttlMs);
   return {
     subject: `Reset your ${safeSubjectValue(ctx.productName)} password`,
     html: `<p>We received a request to reset your ${safeName} password.</p>
 <p>Click the link below to choose a new one:</p>
 <p><a href="${safeLink}">${safeLink}</a></p>
-<p>This link expires in 1 hour. If you didn't request a password reset, you can ignore this email — your current password will keep working.</p>`,
+<p>This link expires in ${expiry}. If you didn't request a password reset, you can ignore this email — your current password will keep working.</p>`,
     text: `We received a request to reset your ${ctx.productName} password.
 
 Choose a new one by visiting:
 ${link}
 
-This link expires in 1 hour. If you didn't request a password reset, you can ignore this email — your current password will keep working.`,
+This link expires in ${expiry}. If you didn't request a password reset, you can ignore this email — your current password will keep working.`,
   };
 }

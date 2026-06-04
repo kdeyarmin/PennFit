@@ -169,6 +169,10 @@ describe("runTherapyFleetAlertsScan — auto-outreach (flag-gated)", () => {
     const arg = sendSmsMock.mock.calls[0]?.[0];
     expect(arg?.patientId).toBe(P1);
     expect(arg?.body).toContain("CPAP");
+    // The frequency-cap key is claimed once a message actually goes out.
+    expect(
+      getSupabaseWritePayloads("worker_dedup_keys", "insert"),
+    ).toHaveLength(1);
   });
 
   it("does not send when the patient has no SMS opt-in", async () => {
@@ -188,6 +192,11 @@ describe("runTherapyFleetAlertsScan — auto-outreach (flag-gated)", () => {
     const result = await runTherapyFleetAlertsScan();
     expect(result.messaged).toBe(0);
     expect(sendSmsMock).not.toHaveBeenCalled();
+    // Regression guard: the 14-day cap key must NOT be claimed for a
+    // patient who was skipped (no opt-in / DND), otherwise a patient who
+    // is merely ineligible at the instant of this fixed-time nightly scan
+    // would be suppressed for the full cooldown and never re-evaluated.
+    expect(getSupabaseWritePayloads("worker_dedup_keys", "insert")).toEqual([]);
   });
 
   it("does not send a patient SMS for clinical-only alert types", async () => {

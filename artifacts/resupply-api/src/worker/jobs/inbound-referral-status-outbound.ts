@@ -127,11 +127,18 @@ export async function runReferralStatusOutbound(
   }
   if (!candidates || candidates.length === 0) return stats;
 
-  // Step 2: atomic lease. Bump next_attempt_at on these rows IF
-  // still queued. PostgREST runs this as one UPDATE; .eq("status",
-  // "queued") is the atomic guard. RETURNING (.select) gives us the
-  // rows we actually leased; concurrent ticks see their claim fail
-  // and skip these rows.
+  // Step 2: atomic lease. Bump next_attempt_at on these rows into the
+  // future; RETURNING (.select) gives us the rows we actually leased.
+  //
+  // Exclusivity against an OVERLAPPING tick (one that ran its candidate
+  // SELECT before we committed) hinges on the `next_attempt_at <= nowIso`
+  // guard, NOT on the status guard: we deliberately keep status='queued'
+  // (so a worker crash leaves the row recoverable), so status is unchanged
+  // by the claim and a concurrent UPDATE re-checking only status='queued'
+  // would still match → double delivery (a double partner callback). By
+  // also guarding on `next_attempt_at <= nowIso`, our bump to `leaseUntil`
+  // makes the row fail the other tick's re-evaluated WHERE, so exactly one
+  // tick wins each row. Mirrors webhook-dispatcher.ts.
   const leaseUntil = new Date(Date.now() + CLAIM_LEASE_MS).toISOString();
   const { data: rows, error } = await supabase
     .schema("resupply")
@@ -142,6 +149,7 @@ export async function runReferralStatusOutbound(
       candidates.map((c) => c.id),
     )
     .eq("status", "queued")
+    .lte("next_attempt_at", nowIso)
     .select(
       "id, referral_id, target_kind, event_type, payload_json, attempt_count, max_retries, status",
     );

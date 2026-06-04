@@ -146,7 +146,7 @@ export function makeSignUpHandler(
       expiresAt: new Date(t.getTime() + tokenTtlMs),
     });
 
-    const rendered = renderVerifyEmail(ctx, token.raw);
+    const rendered = renderVerifyEmail(ctx, token.raw, tokenTtlMs);
     try {
       await deps.email({
         to: parsed.data.email,

@@ -87,12 +87,24 @@ export function AccountBillingPage() {
 
 function AccountBillingInner() {
   const qc = useQueryClient();
-  const [location, setLocation] = useLocation();
-  const params = new URLSearchParams(
-    location.includes("?") ? location.split("?")[1] : "",
-  );
-  const justPaid = params.get("paid") === "1";
-  const cancelled = params.get("cancelled") === "1";
+  const [, setLocation] = useLocation();
+  // wouter's useLocation() returns the pathname ONLY — the query string is
+  // excluded — so the Stripe Hosted Checkout return params (?paid=1 /
+  // ?cancelled=1, set by routes/storefront/me-payments.ts) must be read off
+  // window.location.search. Capture once at mount (a useState initialiser,
+  // matching reminders-manage) so a later in-app navigation can't flip the
+  // banner state; dismissal is tracked separately (and also strips the
+  // query — see dismissBanner).
+  const [bannerDismissed, setBannerDismissed] = useState(false);
+  const [{ justPaid, cancelled }] = useState(() => {
+    const params = new URLSearchParams(
+      typeof window === "undefined" ? "" : window.location.search,
+    );
+    return {
+      justPaid: params.get("paid") === "1",
+      cancelled: params.get("cancelled") === "1",
+    };
+  });
 
   const balance = useQuery({
     queryKey: ["me-billing-balance"],
@@ -155,9 +167,11 @@ function AccountBillingInner() {
   const totalOpen = balance.data?.totalOpenCents ?? 0;
   const claimCount = balance.data?.claimCount ?? 0;
   const showPayBanner = totalOpen > 0;
-  // Use `setLocation` to dismiss the success/cancel banner — strips
-  // the query string without a full reload.
+  // Dismiss the success/cancel banner: hide it for this view AND strip the
+  // query string (so a refresh/bookmark won't re-show it), without a full
+  // reload.
   function dismissBanner() {
+    setBannerDismissed(true);
     setLocation("/account/billing", { replace: true });
   }
 
@@ -179,7 +193,7 @@ function AccountBillingInner() {
         </p>
       </header>
 
-      {justPaid && (
+      {justPaid && !bannerDismissed && (
         <div
           className="rounded-lg border bg-emerald-50 border-emerald-200 p-4 flex items-start gap-3"
           data-testid="payment-success-banner"
@@ -204,7 +218,7 @@ function AccountBillingInner() {
         </div>
       )}
 
-      {cancelled && (
+      {cancelled && !bannerDismissed && (
         <div
           className="rounded-lg border bg-amber-50 border-amber-200 p-4 flex items-start gap-3"
           data-testid="payment-cancelled-banner"

@@ -144,7 +144,7 @@ export function makeForgotPasswordHandler(
       publicBaseUrl: deps.publicBaseUrl,
       uiPathPrefix: options.uiPathPrefix,
     };
-    const rendered = renderPasswordResetEmail(ctx, token.raw);
+    const rendered = renderPasswordResetEmail(ctx, token.raw, resetTokenTtlMs);
     try {
       await deps.email({
         to: parsed.data.email,

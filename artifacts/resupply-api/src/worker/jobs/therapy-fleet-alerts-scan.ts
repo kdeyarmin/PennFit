@@ -326,31 +326,28 @@ export async function runTherapyFleetAlertsScan(): Promise<AlertsScanResult> {
   return result;
 }
 
-// Returns true iff a message was actually dispatched. Enforces the
-// frequency cap, explicit SMS opt-in, and DND before sending.
+// Returns true iff a message was actually dispatched. Enforces explicit
+// SMS opt-in and DND BEFORE claiming the frequency-cap key.
+//
+// Ordering matters: the 14-day cap key must be claimed only once the
+// patient is eligible AND about to be messaged. Claiming it up front (the
+// old behavior) permanently suppressed any patient who was merely in their
+// quiet-hours window or not-yet-opted-in at the instant this fixed-time
+// nightly scan ran — e.g. a West-Coast patient whose DND window covers the
+// 05:15 UTC scan tripped the DND gate every night while the cap key was
+// re-claimed and held for 14 days, so they never received the nudge. The
+// key is also released when the send doesn't actually go out, so a
+// transient/no-op send doesn't burn the cooldown (mirrors
+// reminders.ts:releaseReminderDedupKey).
 async function maybeSendAdherenceSms(
   supabase: ReturnType<typeof getSupabaseServiceRoleClient>,
   cfg: SmsSendConfig,
   patientId: string,
 ): Promise<boolean> {
-  // Frequency cap: claim a 14-day dedup key. If the row already exists,
-  // we messaged this patient recently — skip.
-  const capKey = `therapy-alert-sms:${patientId}`;
-  const expiresAt = new Date(
-    Date.now() + OUTREACH_COOLDOWN_DAYS * 24 * 60 * 60 * 1000,
-  ).toISOString();
-  const claim = await supabase
-    .schema("resupply")
-    .from("worker_dedup_keys")
-    .insert({ key: capKey, expires_at: expiresAt });
-  if (claim.error) {
-    // 23505 = unique violation = already messaged within the window.
-    return false;
-  }
-
   // Consent: look up the patient's communication preferences via their
   // shop_customers row (matched on lowercased email). No row / no opt-in
-  // → do not message.
+  // / inside the DND window → do not message (and do not claim the cap
+  // key, so the next run re-evaluates).
   const patientRes = await supabase
     .schema("resupply")
     .from("patients")
@@ -373,6 +370,32 @@ async function maybeSendAdherenceSms(
   if (!shouldSendSms(prefs, "transactional", now)) return false;
   if (isInDndWindow(prefs, now)) return false;
 
+  // Frequency cap: claim a 14-day dedup key now that the patient is
+  // eligible. If the row already exists, we messaged this patient within
+  // the window — skip.
+  const capKey = `therapy-alert-sms:${patientId}`;
+  const expiresAt = new Date(
+    Date.now() + OUTREACH_COOLDOWN_DAYS * 24 * 60 * 60 * 1000,
+  ).toISOString();
+  const claim = await supabase
+    .schema("resupply")
+    .from("worker_dedup_keys")
+    .insert({ key: capKey, expires_at: expiresAt });
+  if (claim.error) {
+    // 23505 = unique violation (cap already claimed) → already messaged recently.
+    if (claim.error.code === "23505") return false;
+    logger.warn(
+      {
+        event: "therapy_fleet_adherence_cap_claim_failed",
+        err: { code: claim.error.code, message: claim.error.message },
+        queue: THERAPY_FLEET_ALERTS_JOB,
+        dedup_key: capKey,
+      },
+      "therapy fleet: failed to claim adherence cap key",
+    );
+    return false;
+  }
+
   const body =
     `It's ${cfg.practiceName}. We noticed your CPAP use has dipped recently — ` +
     `steady nightly use keeps your therapy working and your insurance ` +
@@ -387,12 +410,42 @@ async function maybeSendAdherenceSms(
       body,
       actor,
     });
-    return outcome.status === "ok";
+    if (outcome.status === "ok") return true;
+    // Didn't actually dispatch (e.g. no routable phone) — release the cap
+    // key so a later run can retry instead of suppressing for 14 days.
+    await releaseAdherenceCapKey(supabase, capKey);
+    return false;
   } catch (err) {
     logger.warn(
       { err, queue: THERAPY_FLEET_ALERTS_JOB },
       "therapy fleet adherence SMS send failed",
     );
+    await releaseAdherenceCapKey(supabase, capKey);
     return false;
+  }
+}
+
+// Release a previously-claimed adherence frequency-cap key when the send
+// didn't actually go out, so the patient isn't suppressed for the full
+// cooldown over a transient or no-op send.
+async function releaseAdherenceCapKey(
+  supabase: ReturnType<typeof getSupabaseServiceRoleClient>,
+  key: string,
+): Promise<void> {
+  const { error } = await supabase
+    .schema("resupply")
+    .from("worker_dedup_keys")
+    .delete()
+    .eq("key", key);
+  if (error) {
+    logger.warn(
+      {
+        event: "therapy_fleet_adherence_cap_release_failed",
+        err: { code: error.code, message: error.message },
+        queue: THERAPY_FLEET_ALERTS_JOB,
+        dedup_key: key,
+      },
+      "therapy fleet: failed to release adherence cap key after non-send",
+    );
   }
 }
