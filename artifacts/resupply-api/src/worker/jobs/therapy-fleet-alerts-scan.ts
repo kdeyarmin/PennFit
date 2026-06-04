@@ -382,7 +382,17 @@ async function maybeSendAdherenceSms(
     .from("worker_dedup_keys")
     .insert({ key: capKey, expires_at: expiresAt });
   if (claim.error) {
-    // 23505 = unique violation = already messaged within the window.
+    // 23505 = unique violation (cap already claimed) → already messaged recently.
+    if (claim.error.code === "23505") return false;
+    logger.warn(
+      {
+        event: "therapy_fleet_adherence_cap_claim_failed",
+        err: { code: claim.error.code, message: claim.error.message },
+        queue: THERAPY_FLEET_ALERTS_JOB,
+        dedup_key: capKey,
+      },
+      "therapy fleet: failed to claim adherence cap key",
+    );
     return false;
   }
 
