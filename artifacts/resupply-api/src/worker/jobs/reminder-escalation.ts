@@ -157,41 +157,62 @@ export async function runReminderEscalationScan(
     now.getTime() - (ESCALATION_MAX_DAYS + 2) * DAY_MS,
   ).toISOString();
 
-  // Unresolved episodes within the escalation horizon.
-  const { data: epRows, error: epErr } = await supabase
-    .schema("resupply")
-    .from("episodes")
-    .select("id, patient_id")
-    .in("status", IN_PROGRESS_STATUSES)
-    .gte("created_at", horizonIso)
-    .limit(5000);
-  if (epErr) throw epErr;
-  const episodes: EscalationEpisodeRow[] = (epRows ?? []).map((r) => ({
-    id: r.id,
-    patientId: r.patient_id,
-  }));
+  // Unresolved episodes within the escalation horizon. PAGINATED:
+  // PostgREST caps a single response at ~1000 rows, so the previous
+  // unpaginated read silently truncated once the unresolved backlog
+  // exceeded the cap — and any episode whose page was dropped looked
+  // "never reminded" to the conversation-stitch below and stopped
+  // escalating. Mirror the keyset-paging pattern in reminders.ts.
+  const PAGE_SIZE = 1000;
+  const episodes: EscalationEpisodeRow[] = [];
+  for (let from = 0; ; from += PAGE_SIZE) {
+    const { data, error } = await supabase
+      .schema("resupply")
+      .from("episodes")
+      .select("id, patient_id")
+      .in("status", IN_PROGRESS_STATUSES)
+      .gte("created_at", horizonIso)
+      .order("id", { ascending: true })
+      .range(from, from + PAGE_SIZE - 1);
+    if (error) throw error;
+    if (!data || data.length === 0) break;
+    for (const r of data) episodes.push({ id: r.id, patientId: r.patient_id });
+    if (data.length < PAGE_SIZE) break;
+  }
   if (episodes.length === 0) return result;
-  const episodeIdSet = new Set(episodes.map((e) => e.id));
 
-  // Reminder conversations in the horizon (filter to our episodes in JS
-  // to avoid a huge IN clause).
-  const { data: convRows, error: convErr } = await supabase
-    .schema("resupply")
-    .from("conversations")
-    .select("episode_id, channel, created_at")
-    .not("episode_id", "is", null)
-    .in("channel", ["sms", "email"])
-    .gte("created_at", horizonIso)
-    .limit(50000);
-  if (convErr) throw convErr;
+  // Reminder conversations for THOSE episodes. Fetch by the bounded
+  // episode-id set (chunk the IN list ~200 ids, page within each chunk)
+  // rather than scanning every sms/email conversation in the horizon: the
+  // old unpaginated read also truncated at the ~1000-row cap, so episodes
+  // whose reminder conversation was dropped looked un-reminded and would
+  // re-escalate (or stall), and it scanned far more rows than needed.
+  const episodeIds = episodes.map((e) => e.id);
   const conversations: EscalationConvRow[] = [];
-  for (const c of convRows ?? []) {
-    if (c.episode_id && episodeIdSet.has(c.episode_id) && c.created_at) {
-      conversations.push({
-        episodeId: c.episode_id,
-        channel: c.channel,
-        createdAtMs: new Date(c.created_at).getTime(),
-      });
+  for (let i = 0; i < episodeIds.length; i += 200) {
+    const idChunk = episodeIds.slice(i, i + 200);
+    for (let from = 0; ; from += PAGE_SIZE) {
+      const { data, error } = await supabase
+        .schema("resupply")
+        .from("conversations")
+        .select("id, episode_id, channel, created_at")
+        .in("episode_id", idChunk)
+        .in("channel", ["sms", "email"])
+        .gte("created_at", horizonIso)
+        .order("id", { ascending: true })
+        .range(from, from + PAGE_SIZE - 1);
+      if (error) throw error;
+      if (!data || data.length === 0) break;
+      for (const c of data) {
+        if (c.episode_id && c.created_at) {
+          conversations.push({
+            episodeId: c.episode_id,
+            channel: c.channel,
+            createdAtMs: new Date(c.created_at).getTime(),
+          });
+        }
+      }
+      if (data.length < PAGE_SIZE) break;
     }
   }
 
