@@ -190,6 +190,9 @@ export function demoCustomerDetail(userId: string) {
       createdAt: daysAgo(140),
       updatedAt: daysAgo(3),
       isGuest: false,
+      // Pretend every other demo customer shares a portal login with a
+      // patient, so the "View patient record" jump is exercisable.
+      linkedPatientId: n % 2 === 0 ? `demo-patient-${n}` : null,
     },
     orders: [],
     subscriptions: [],

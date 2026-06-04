@@ -241,7 +241,10 @@ function CustomerHeader({
               </span>
             )}
           </div>
-          <PatientDirectoryJump displayName={profile.displayName} />
+          <PatientDirectoryJump
+            displayName={profile.displayName}
+            linkedPatientId={profile.linkedPatientId}
+          />
         </div>
       </div>
       <div style={{ display: "flex", gap: 12, fontSize: 13 }}>
@@ -258,30 +261,48 @@ function CustomerHeader({
 }
 
 /**
- * "Find this person in Patients" jump. Patient and shop-customer records
- * aren't linked in the data, so this is a name search into the clinical
- * directory rather than a guaranteed match. The patient search matches
- * each name column against the whole needle (no tokenizing), so we pass
+ * "View / find this person in Patients" jump. When the customer shares a
+ * portal login with a patient (`linkedPatientId`), that's a deterministic
+ * link and we jump straight to the patient record. Otherwise patients and
+ * shop-customers aren't linked in the data, so we fall back to a name
+ * search of the clinical directory. The patient search matches each name
+ * column against the whole needle (no tokenizing), so the fallback passes
  * the surname (last token of the display name) to hit `legal_last_name`.
  */
 function PatientDirectoryJump({
   displayName,
+  linkedPatientId,
 }: {
   displayName: string | null | undefined;
+  linkedPatientId: string | null | undefined;
 }) {
+  const linkStyle = {
+    fontSize: 12,
+    fontWeight: 600,
+    color: "hsl(var(--penn-navy))",
+    textDecoration: "none",
+    marginTop: 4,
+    display: "inline-block",
+  } as const;
+
+  if (linkedPatientId) {
+    return (
+      <Link
+        href={`/admin/patients/${encodeURIComponent(linkedPatientId)}`}
+        style={linkStyle}
+        title="Open the patient record that shares this customer's portal login"
+      >
+        View patient record →
+      </Link>
+    );
+  }
+
   const surname = (displayName ?? "").trim().split(/\s+/).pop() ?? "";
   if (!surname) return null;
   return (
     <Link
       href={`/admin/patients?search=${encodeURIComponent(surname)}`}
-      style={{
-        fontSize: 12,
-        fontWeight: 600,
-        color: "hsl(var(--penn-navy))",
-        textDecoration: "none",
-        marginTop: 4,
-        display: "inline-block",
-      }}
+      style={linkStyle}
       title="Search the clinical Patients directory for this surname"
     >
       Find in Patients →
