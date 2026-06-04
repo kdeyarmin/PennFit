@@ -27,20 +27,21 @@ etc.) — these are pure build/CI/dev-loop changes.
 | W4  | `results-page-resilience.spec.ts` runs in no CI job           | MEDIUM   | ✅ fixed (new `e2e-dev` job)    |
 | W5  | Shell-script test files (`*.sh.test`) execute nowhere         | MEDIUM   | ✅ all 4 wired in                |
 | W5a | The architecture-guard test had rotted (stale `resupply-worker`) | MEDIUM | ✅ fixed (fixtures repointed)    |
-| W6  | No single "run what CI runs" local command                   | LOW      | open — recommendation below     |
-| W7  | Hooks not auto-installed on fresh clone (only post-merge)     | LOW      | open — recommendation below     |
+| W6  | No single "run what CI runs" local command                   | LOW      | ✅ fixed (`pnpm verify`)         |
+| W7  | Hooks not auto-installed on fresh clone (only post-merge)     | LOW      | ✅ fixed (documented setup step) |
 | W8  | `pnpm typecheck` runs in `build`, then again in CI standalone | INFO     | open — note                     |
 
 Shipped on this branch: W1, W2 (mechanical CI DRY + caching), W4 (the
 dev-server e2e job, soft-gated), W5 (all four dormant/under-run guard-test
 harnesses now run in CI), and **W5a** (the architecture-guard test had
 silently rotted against the May-2026 artifact consolidation — its worker
-fixtures are repointed to the real location). Investigating W5 was itself
+fixtures are repointed to the real location), plus W6 (`pnpm verify`) and
+W7 (a documented hook-install step). Investigating W5 was itself
 the payoff: running the dormant tests is how the W5a rot **and** a
 self-inflicted bug in the snapshot-lib test surfaced at all — and the
 latter, on full diagnosis, proved the production lib was correct and the
-test was sweeping its own stderr sink. The remaining items (W3, W6, W7,
-W8) are left **open** with a fix sketch.
+test was sweeping its own stderr sink. The only items left **open** are
+W3 (optional — measure first) and W8 (informational, no action).
 
 ---
 
@@ -242,45 +243,48 @@ if a `resupply-dashboard` artifact is ever re-added. Removing them would
 have meant editing the enforcement script for no functional gain, so
 that cleanup (if desired) is left as a separate, optional call.
 
-### [LOW] W6 — No single "run exactly what CI runs" local command
+### [LOW] W6 — No single "run exactly what CI runs" local command → **fixed**
 
-A contributor wanting to pre-flight a PR locally has to know to run
+A contributor wanting to pre-flight a PR locally had to know to run
 `pnpm lint:resupply`, `pnpm typecheck`, `pnpm test`,
 `scripts/check-resupply-architecture.sh`, and
 `scripts/check-admin-route-gates.sh` by hand, in the right order. The
 pre-commit hook runs a _subset_ (arch + migration-prefix + ts-syntax)
 but not lint/typecheck/test.
 
-**Sketch.** Add a root `package.json` script, e.g.:
+**Fix.** Added a root `pnpm verify` script:
 
 ```json
-"verify": "pnpm lint:resupply && pnpm typecheck && pnpm test && scripts/check-resupply-architecture.sh && scripts/check-admin-route-gates.sh"
+"verify": "pnpm run lint:resupply && pnpm run typecheck && scripts/check-resupply-architecture.sh && scripts/check-admin-route-gates.sh && pnpm run test"
 ```
 
-so `pnpm verify` mirrors the gating CI jobs in one command. Pure
-convenience; no behavior change.
+It mirrors the **infrastructure-free** gating CI jobs (the
+`lint-typecheck`, `drift`, and `test` jobs) in one command. The
+DB-migration replay and the Playwright smoke/a11y/e2e jobs need Postgres
+/ browsers and are intentionally excluded — they belong to CI, not a
+quick local pre-flight. The guard-script `--self-test` harnesses are
+also out of `verify` (they matter when editing the checkers themselves,
+not a feature change); CI's `drift` job covers them. Pure convenience;
+no behavior change.
 
-### [LOW] W7 — Git hooks only auto-install on `post-merge`
+### [LOW] W7 — Git hooks only auto-install on `post-merge` → **fixed (documented)**
 
 `scripts/install-hooks.sh` is invoked from `scripts/post-merge.sh`, so a
 contributor picks up the hooks only _after their first merge_. A fresh
 clone that hasn't merged yet commits with no architecture/migration/
-ts-syntax guard. There's no `pnpm` lifecycle hook (`prepare`) wiring it
-in on install.
+ts-syntax guard.
 
-**Sketch.** Two options, both low-risk:
-
-- Add `"prepare": "bash scripts/install-hooks.sh"` to root
-  `package.json` so `pnpm install` wires the hooks (the installer is
-  already idempotent and no-ops outside a git repo). This is the
-  conventional Husky-style entry point without adding Husky.
-- Or just document `bash scripts/install-hooks.sh` as step 1 of local
-  setup in `README.md` / `CLAUDE.md` (it's currently only mentioned in
-  passing).
-
-The installer's own header explains why it avoids Husky/lefthook
-(agent environments wipe `node_modules`); a `prepare` script is
-compatible with that reasoning since it re-runs on every install.
+**Fix.** Added `bash scripts/install-hooks.sh` as an explicit step 1b in
+the README "Getting started" block (it was previously only mentioned in
+passing). Chose documentation over a `package.json` `"prepare"` hook on
+purpose: the installer's own header lists "no `prepare` script" as a
+deliberate design property (it's invoked from `post-merge` and is
+idempotent), so wiring a `prepare` script would override an explicit
+authoring decision and make the hook re-run on every `pnpm install` —
+including in CI, where it's pure waste. The documented step closes the
+fresh-clone gap without that cost. (If the team later decides the
+auto-install convenience is worth it, the `prepare` route remains a
+one-line change.)
 
 ### [INFO] W8 — `typecheck` runs inside `build` and again as its own job
 
@@ -318,9 +322,10 @@ independent infrastructure.
 
 ## Suggested next step
 
-W1, W2, W4, W5, and W5a are all on this branch — every guard-test harness
-now runs in CI. The remaining items are all optional: W3 (build-once SPA)
-is worth doing only if a CI-duration measurement shows the double build
-is on the critical path; W6 (`pnpm verify`) and W7 (hook auto-install on
-fresh clone) are quality-of-life and can ride along with any other DX
-change; W8 is informational.
+W1, W2, W4, W5, W5a, W6, and W7 are all on this branch — every guard-test
+harness now runs in CI, and the local pre-flight + fresh-clone setup gaps
+are closed. The only remaining item that could be acted on is **W3**
+(build the SPA once and share it via artifact instead of rebuilding it in
+both the `a11y` and `smoke` jobs) — and that's worth doing only if a
+CI-duration measurement shows the double build is actually on the
+critical path. W8 is informational (no action).
