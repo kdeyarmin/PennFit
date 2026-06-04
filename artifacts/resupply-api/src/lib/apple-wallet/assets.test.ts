@@ -1,8 +1,26 @@
+import { inflateSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
 
 import { defaultIconPng, defaultLogoPng } from "./assets";
 
 const PNG_SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+const PNG_IEND = Buffer.from([0, 0, 0, 0, 73, 69, 78, 68, 174, 66, 96, 130]);
+
+function idatPayload(png: Buffer): Buffer {
+  let offset = 8; // after signature
+  const parts: Buffer[] = [];
+  while (offset + 8 <= png.length) {
+    const len = png.readUInt32BE(offset);
+    const type = png.subarray(offset + 4, offset + 8).toString("ascii");
+    const dataStart = offset + 8;
+    const dataEnd = dataStart + len;
+    if (dataEnd + 4 > png.length) break;
+    if (type === "IDAT") parts.push(png.subarray(dataStart, dataEnd));
+    offset = dataEnd + 4; // skip CRC
+    if (type === "IEND") break;
+  }
+  return Buffer.concat(parts);
+}
 
 /** Minimal IHDR reader — width/height/bit-depth/color-type. */
 function readIhdr(png: Buffer) {
@@ -13,6 +31,15 @@ function readIhdr(png: Buffer) {
     bitDepth: png[24],
     colorType: png[25],
   };
+}
+
+function expectDecodesAsNonBlankPng(png: Buffer) {
+  // Helps catch truncated base64 pastes and all-transparent placeholders.
+  expect(png.subarray(-12)).toEqual(PNG_IEND);
+  const idat = idatPayload(png);
+  expect(idat.length).toBeGreaterThan(0);
+  const raw = inflateSync(idat);
+  expect(raw.some((b) => b !== 0)).toBe(true);
 }
 
 describe("apple-wallet assets", () => {
