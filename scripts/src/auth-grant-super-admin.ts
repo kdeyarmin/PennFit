@@ -104,9 +104,9 @@ async function main(): Promise<void> {
         `  pnpm --filter @workspace/scripts auth:bootstrap-admin --email=${emailLower} --role=admin`,
     );
   }
-  if (user.status === "revoked" && !argsParsed.force) {
+  if ((user.status === "revoked" || user.status === "locked") && !argsParsed.force) {
     fail(
-      `User ${emailLower} is revoked. Re-run with --force to grant super-admin anyway.`,
+      `User ${emailLower} is ${user.status}. Re-run with --force to grant super-admin anyway.`,
     );
   }
 
