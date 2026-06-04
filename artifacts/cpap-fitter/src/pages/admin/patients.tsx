@@ -105,7 +105,7 @@ export function PatientsPage() {
   // filters are seeded from the URL query string so a deep link
   // (the dashboard KPI tiles, or the "Find this person in Patients"
   // jump from a customer record) lands pre-filtered.
-  const { filters, setFilter, clearFilters, offset, setOffset, pageSize } =
+  const { filters, setFilter, setFilters, offset, setOffset, pageSize } =
     useFilteredList(initialPatientFilters(), { pageSize: PAGE_SIZE });
   const { status: statusFilter, search } = filters;
   // Search-input is debounced into filters.search so we don't hammer
@@ -482,11 +482,13 @@ export function PatientsPage() {
               intent="ghost"
               size="sm"
               onClick={() => {
-                // Reset the un-debounced input ref alongside the
-                // hook-managed filters so the visible input clears
-                // immediately too.
+                // Reset to true-blank defaults, not the hook's captured
+                // initial filters — those are now seeded from the URL
+                // (?status=, ?search=), so clearFilters() would restore
+                // the deep-linked status instead of clearing it. Also
+                // reset the un-debounced input so the box clears at once.
                 setSearchInput("");
-                clearFilters();
+                setFilters({ status: "", search: "" });
               }}
             >
               Clear filters
