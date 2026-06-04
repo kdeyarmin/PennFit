@@ -370,7 +370,6 @@ import { FitterProvider, useFitterStore } from "@/hooks/use-fitter-store";
 import { useShopIdentity } from "@/lib/identity";
 import { canStayOnMeasure } from "@/lib/measure-flow";
 import { DemoModeProvider } from "@/demo/DemoModeProvider";
-import { DemoBanner } from "@/demo/DemoBanner";
 
 /**
  * Suspense fallback for lazy-loaded routes. Intentionally minimal
@@ -872,12 +871,10 @@ function AppInner() {
             */}
             <ErrorBoundary>
               {/*
-                Global demo-mode banner. Sits above the router (and the
-                storefront's sticky header) in normal flow so it never
-                overlaps fixed/sticky chrome. No-op when the invite has
-                been dismissed and demo mode is off.
+                Demo mode is controlled from the admin Settings page
+                (/admin/settings) rather than a global page banner — see
+                the "Demo mode" card in admin-settings.tsx.
               */}
-              <DemoBanner />
               <WouterRouter base={basePath}>
                 <TopRouter />
               </WouterRouter>
