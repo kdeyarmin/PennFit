@@ -164,6 +164,47 @@ export function demoShopCustomers(opts: {
   };
 }
 
+export function demoCustomerDetail(userId: string) {
+  const n = Number.parseInt(userId.replace(/\D/g, ""), 10) || 1;
+  const first = FIRST_NAMES[(n - 1) % FIRST_NAMES.length];
+  const last = LAST_NAMES[(n - 1) % LAST_NAMES.length];
+  const orders = (n * 3) % 12 || 3;
+  return {
+    customer: {
+      userId,
+      displayName: `${first} ${last}`,
+      email: `${first.toLowerCase()}.${last.toLowerCase()}@pennfit.example`,
+      stripeCustomerId: `cus_demo${n}`,
+      shippingAddress: null,
+      defaultPaymentMethod: {
+        brand: "visa",
+        last4: "4242",
+        expMonth: 8,
+        expYear: 2030,
+      },
+      clinicalInfo: {
+        cpapDevice: null,
+        physicianInfo: null,
+        facialMeasurements: null,
+      },
+      createdAt: daysAgo(140),
+      updatedAt: daysAgo(3),
+      isGuest: false,
+    },
+    orders: [],
+    subscriptions: [],
+    abandonedCart: null,
+    reviews: [],
+    stats: {
+      ordersCount: orders,
+      lifetimeValueCents: orders * 8995,
+      avgOrderValueCents: 8995,
+      lastOrderAt: daysAgo(12),
+    },
+    inAppConversation: null,
+  };
+}
+
 type ConvStatus = "open" | "awaiting_patient" | "awaiting_admin" | "closed";
 type ConvChannel = "sms" | "voice" | "email" | "in_app";
 

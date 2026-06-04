@@ -16,6 +16,7 @@ import {
   demoToday,
   demoWorkItems,
   demoShopCustomers,
+  demoCustomerDetail,
   demoFitterLeads,
   demoBillingDirectorSummary,
   demoAdminOrders,
@@ -57,6 +58,11 @@ export const adminHandlers: DemoHandler[] = [
           req.query.get("awaitingReply") === "true",
       }),
     ),
+  ),
+  route(
+    "GET",
+    "/resupply-api/admin/shop/customers/:userId",
+    (_req, { userId }) => json(demoCustomerDetail(userId)),
   ),
 
   // ── core lists (offset/limit pagination) ─────────────────────────
