@@ -154,6 +154,8 @@ async function main(): Promise<void> {
         role: "admin",
         status: "active",
         auth_user_id: user.id,
+        revoked_at: null,
+        revoked_by: null,
         updated_at: nowIso,
       })
       .eq("email_lower", emailLower);
