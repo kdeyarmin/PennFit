@@ -29,24 +29,10 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      # Install pnpm via npm rather than corepack — corepack's pnpm shim
-      # fails with ERR_PNPM_NO_PKG_MANIFEST when the runner cwd doesn't
-      # contain a package.json (see copilot-setup-steps.yml for the long
-      # version of this rationale). Disabling the corepack shim first
-      # ensures the npm-installed binary wins the PATH lookup.
-      - name: Install pnpm
-        run: |
-          corepack disable pnpm 2>/dev/null || true
-          npm install -g pnpm@${{ env.PNPM_VERSION }}
-          pnpm --version
-
-      - uses: actions/setup-node@v5
+      - uses: ./.github/actions/setup
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: "pnpm"
-          cache-dependency-path: pnpm-lock.yaml
-
-      - run: pnpm install --frozen-lockfile
+          pnpm-version: ${{ env.PNPM_VERSION }}
 
       - run: pnpm lint:resupply
 
@@ -76,19 +62,10 @@ jobs:
           git fetch --no-tags --depth=1 origin "$GITHUB_BASE_REF"
           BASE_REF=FETCH_HEAD DIFF_TARGET= bash scripts/check-resupply-migration-prefix.sh
 
-      - name: Install pnpm
-        run: |
-          corepack disable pnpm 2>/dev/null || true
-          npm install -g pnpm@${{ env.PNPM_VERSION }}
-          pnpm --version
-
-      - uses: actions/setup-node@v5
+      - uses: ./.github/actions/setup
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: "pnpm"
-          cache-dependency-path: pnpm-lock.yaml
-
-      - run: pnpm install --frozen-lockfile
+          pnpm-version: ${{ env.PNPM_VERSION }}
 
       - name: Architecture drift
         run: scripts/check-resupply-architecture.sh
@@ -132,19 +109,10 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Install pnpm
-        run: |
-          corepack disable pnpm 2>/dev/null || true
-          npm install -g pnpm@${{ env.PNPM_VERSION }}
-          pnpm --version
-
-      - uses: actions/setup-node@v5
+      - uses: ./.github/actions/setup
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: "pnpm"
-          cache-dependency-path: pnpm-lock.yaml
-
-      - run: pnpm install --frozen-lockfile
+          pnpm-version: ${{ env.PNPM_VERSION }}
 
       - name: Run tests
         run: pnpm -r --if-present run test
@@ -193,19 +161,10 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Install pnpm
-        run: |
-          corepack disable pnpm 2>/dev/null || true
-          npm install -g pnpm@${{ env.PNPM_VERSION }}
-          pnpm --version
-
-      - uses: actions/setup-node@v5
+      - uses: ./.github/actions/setup
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: "pnpm"
-          cache-dependency-path: pnpm-lock.yaml
-
-      - run: pnpm install --frozen-lockfile
+          pnpm-version: ${{ env.PNPM_VERSION }}
 
       # Supabase provisions anon/authenticated/service_role as managed
       # platform roles; the resupply migrations GRANT/REVOKE against them
@@ -270,19 +229,10 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Install pnpm
-        run: |
-          corepack disable pnpm 2>/dev/null || true
-          npm install -g pnpm@${{ env.PNPM_VERSION }}
-          pnpm --version
-
-      - uses: actions/setup-node@v5
+      - uses: ./.github/actions/setup
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: "pnpm"
-          cache-dependency-path: pnpm-lock.yaml
-
-      - run: pnpm install --frozen-lockfile
+          pnpm-version: ${{ env.PNPM_VERSION }}
 
       # Migrations 0169+ GRANT/REVOKE against the Supabase platform roles;
       # create them before the replay (see the migrations job).
@@ -328,25 +278,26 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Install pnpm
-        run: |
-          corepack disable pnpm 2>/dev/null || true
-          npm install -g pnpm@${{ env.PNPM_VERSION }}
-          pnpm --version
-
-      - uses: actions/setup-node@v5
+      - uses: ./.github/actions/setup
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: "pnpm"
-          cache-dependency-path: pnpm-lock.yaml
-
-      - run: pnpm install --frozen-lockfile
+          pnpm-version: ${{ env.PNPM_VERSION }}
 
       # Build the SPA. vite preview serves the built artifact on the
       # port we pass in via E2E_PORT; the e2e config defaults to
       # 5173 if E2E_PORT is unset.
       - name: Build cpap-fitter SPA
         run: pnpm --filter @workspace/cpap-fitter run build
+
+      # Cache the downloaded browser binary across runs (and between the
+      # a11y + smoke jobs in the same run, since they share this cache
+      # key). On a hit, `playwright install` below skips the ~100 MB
+      # chromium download and only the (fast) OS-dependency apt step runs.
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('pnpm-lock.yaml') }}
 
       - name: Install Playwright browsers (chromium only)
         run: pnpm exec playwright install --with-deps chromium
@@ -412,22 +363,22 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Install pnpm
-        run: |
-          corepack disable pnpm 2>/dev/null || true
-          npm install -g pnpm@${{ env.PNPM_VERSION }}
-          pnpm --version
-
-      - uses: actions/setup-node@v5
+      - uses: ./.github/actions/setup
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: "pnpm"
-          cache-dependency-path: pnpm-lock.yaml
-
-      - run: pnpm install --frozen-lockfile
+          pnpm-version: ${{ env.PNPM_VERSION }}
 
       - name: Build cpap-fitter SPA
         run: pnpm --filter @workspace/cpap-fitter run build
+
+      # Shares the cache key with the a11y job (see its comment); chromium
+      # is downloaded at most once per CI run and reused across runs while
+      # pnpm-lock.yaml (hence the Playwright version) is unchanged.
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('pnpm-lock.yaml') }}
 
       - name: Install Playwright browsers (chromium only)
         run: pnpm exec playwright install --with-deps chromium
