@@ -29,24 +29,10 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      # Install pnpm via npm rather than corepack — corepack's pnpm shim
-      # fails with ERR_PNPM_NO_PKG_MANIFEST when the runner cwd doesn't
-      # contain a package.json (see copilot-setup-steps.yml for the long
-      # version of this rationale). Disabling the corepack shim first
-      # ensures the npm-installed binary wins the PATH lookup.
-      - name: Install pnpm
-        run: |
-          corepack disable pnpm 2>/dev/null || true
-          npm install -g pnpm@${{ env.PNPM_VERSION }}
-          pnpm --version
-
-      - uses: actions/setup-node@v5
+      - uses: ./.github/actions/setup
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: "pnpm"
-          cache-dependency-path: pnpm-lock.yaml
-
-      - run: pnpm install --frozen-lockfile
+          pnpm-version: ${{ env.PNPM_VERSION }}
 
       - run: pnpm lint:resupply
 
@@ -76,19 +62,19 @@ jobs:
           git fetch --no-tags --depth=1 origin "$GITHUB_BASE_REF"
           BASE_REF=FETCH_HEAD DIFF_TARGET= bash scripts/check-resupply-migration-prefix.sh
 
-      - name: Install pnpm
-        run: |
-          corepack disable pnpm 2>/dev/null || true
-          npm install -g pnpm@${{ env.PNPM_VERSION }}
-          pnpm --version
-
-      - uses: actions/setup-node@v5
+      - uses: ./.github/actions/setup
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: "pnpm"
-          cache-dependency-path: pnpm-lock.yaml
+          pnpm-version: ${{ env.PNPM_VERSION }}
 
-      - run: pnpm install --frozen-lockfile
+      # The architecture checker is a set of ripgrep queries; the
+      # ubuntu-latest runner image does not ship `rg`. Without it the
+      # checker matched nothing and "passed" vacuously — the gate enforced
+      # nothing in CI until this step was added (surfaced by wiring the
+      # checker's own self-test into CI; the checker now also hard-fails
+      # if rg is absent rather than passing empty).
+      - name: Install ripgrep
+        run: sudo apt-get update && sudo apt-get install -y ripgrep
 
       - name: Architecture drift
         run: scripts/check-resupply-architecture.sh
@@ -103,6 +89,32 @@ jobs:
         run: |
           scripts/check-admin-route-gates.sh --self-test
           scripts/check-admin-route-gates.sh
+
+      # Fixture-driven negative-test harnesses for the guard scripts:
+      # each `--self-test` execs the sibling `*.sh.test`, which builds a
+      # synthetic tree, plants known violations, and asserts the checker
+      # catches them (then that a clean tree passes). The admin-gate
+      # harness already runs via its `--self-test` in the step above; the
+      # architecture + migration-prefix harnesses shipped with their
+      # checkers but ran in NO pipeline until now — see
+      # docs/workflow-efficiency-audit-2026-06-04.md (W5/W5a). They guard
+      # the repo's primary architecture invariant, so an undetected
+      # regression in the checker itself is exactly what they prevent.
+      - name: Architecture checker self-test
+        run: scripts/check-resupply-architecture.sh --self-test
+
+      - name: Migration-prefix checker self-test
+        run: scripts/check-resupply-migration-prefix.sh --self-test
+
+      # Self-test for the pre-commit staged-snapshot library (the helper
+      # that makes the hook's checks see the staged index, not the live
+      # working tree). No `--self-test` wrapper — it's a hook lib, not a
+      # checker — so invoke the harness directly. Was dormant; its
+      # scenario 9 also had a self-inflicted bug (an in-repo stderr sink
+      # the lib correctly swept), fixed in the same change that wired it
+      # in. See docs/workflow-efficiency-audit-2026-06-04.md (W5).
+      - name: Staged-snapshot library self-test
+        run: bash scripts/git-hooks/lib-staged-snapshot.test
 
   test:
     name: Tests
@@ -132,19 +144,10 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Install pnpm
-        run: |
-          corepack disable pnpm 2>/dev/null || true
-          npm install -g pnpm@${{ env.PNPM_VERSION }}
-          pnpm --version
-
-      - uses: actions/setup-node@v5
+      - uses: ./.github/actions/setup
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: "pnpm"
-          cache-dependency-path: pnpm-lock.yaml
-
-      - run: pnpm install --frozen-lockfile
+          pnpm-version: ${{ env.PNPM_VERSION }}
 
       - name: Run tests
         run: pnpm -r --if-present run test
@@ -193,19 +196,10 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Install pnpm
-        run: |
-          corepack disable pnpm 2>/dev/null || true
-          npm install -g pnpm@${{ env.PNPM_VERSION }}
-          pnpm --version
-
-      - uses: actions/setup-node@v5
+      - uses: ./.github/actions/setup
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: "pnpm"
-          cache-dependency-path: pnpm-lock.yaml
-
-      - run: pnpm install --frozen-lockfile
+          pnpm-version: ${{ env.PNPM_VERSION }}
 
       # Supabase provisions anon/authenticated/service_role as managed
       # platform roles; the resupply migrations GRANT/REVOKE against them
@@ -270,19 +264,10 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Install pnpm
-        run: |
-          corepack disable pnpm 2>/dev/null || true
-          npm install -g pnpm@${{ env.PNPM_VERSION }}
-          pnpm --version
-
-      - uses: actions/setup-node@v5
+      - uses: ./.github/actions/setup
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: "pnpm"
-          cache-dependency-path: pnpm-lock.yaml
-
-      - run: pnpm install --frozen-lockfile
+          pnpm-version: ${{ env.PNPM_VERSION }}
 
       # Migrations 0169+ GRANT/REVOKE against the Supabase platform roles;
       # create them before the replay (see the migrations job).
@@ -328,25 +313,26 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Install pnpm
-        run: |
-          corepack disable pnpm 2>/dev/null || true
-          npm install -g pnpm@${{ env.PNPM_VERSION }}
-          pnpm --version
-
-      - uses: actions/setup-node@v5
+      - uses: ./.github/actions/setup
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: "pnpm"
-          cache-dependency-path: pnpm-lock.yaml
-
-      - run: pnpm install --frozen-lockfile
+          pnpm-version: ${{ env.PNPM_VERSION }}
 
       # Build the SPA. vite preview serves the built artifact on the
       # port we pass in via E2E_PORT; the e2e config defaults to
       # 5173 if E2E_PORT is unset.
       - name: Build cpap-fitter SPA
         run: pnpm --filter @workspace/cpap-fitter run build
+
+      # Cache the downloaded browser binary across runs (and between the
+      # a11y + smoke jobs in the same run, since they share this cache
+      # key). On a hit, `playwright install` below skips the ~100 MB
+      # chromium download and only the (fast) OS-dependency apt step runs.
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('pnpm-lock.yaml') }}
 
       - name: Install Playwright browsers (chromium only)
         run: pnpm exec playwright install --with-deps chromium
@@ -412,22 +398,22 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Install pnpm
-        run: |
-          corepack disable pnpm 2>/dev/null || true
-          npm install -g pnpm@${{ env.PNPM_VERSION }}
-          pnpm --version
-
-      - uses: actions/setup-node@v5
+      - uses: ./.github/actions/setup
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: "pnpm"
-          cache-dependency-path: pnpm-lock.yaml
-
-      - run: pnpm install --frozen-lockfile
+          pnpm-version: ${{ env.PNPM_VERSION }}
 
       - name: Build cpap-fitter SPA
         run: pnpm --filter @workspace/cpap-fitter run build
+
+      # Shares the cache key with the a11y job (see its comment); chromium
+      # is downloaded at most once per CI run and reused across runs while
+      # pnpm-lock.yaml (hence the Playwright version) is unchanged.
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('pnpm-lock.yaml') }}
 
       - name: Install Playwright browsers (chromium only)
         run: pnpm exec playwright install --with-deps chromium
@@ -464,5 +450,82 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: playwright-smoke-report
+          path: playwright-report/
+          retention-days: 14
+
+  e2e-dev:
+    name: E2E (Playwright, dev server)
+    runs-on: ubuntu-latest
+
+    # results-page-resilience.spec.ts is a regression test that REQUIRES
+    # the Vite *dev* server: it stubs @mediapipe/tasks-vision by
+    # intercepting the ES-module request, which only exists as a separate
+    # fetch when modules are served unbundled (dev). Under `vite preview`
+    # (what the smoke/a11y jobs use) the module is bundled and the spec
+    # self-skips — so it ran in NO CI job until now (see
+    # docs/workflow-efficiency-audit-2026-06-04.md, W4). This job boots
+    # the dev server so the spec runs for real.
+    #
+    # continue-on-error while the harness proves itself in CI — this spec
+    # has never run here, and a full mocked-camera fitter walk is the
+    # most timing-sensitive thing in the suite. Mirrors the soft-gate
+    # pattern of the integration + a11y jobs; flip to required once it's
+    # been green across a few runs.
+    continue-on-error: true
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: ./.github/actions/setup
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          pnpm-version: ${{ env.PNPM_VERSION }}
+
+      # The dev server's predev hook downloads the MediaPipe model from
+      # storage.googleapis.com; run it as an explicit, debuggable step so
+      # a download failure is distinct from a server-start failure.
+      - name: Pre-download MediaPipe assets
+        run: node artifacts/cpap-fitter/scripts/setup-mediapipe.mjs
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('pnpm-lock.yaml') }}
+
+      - name: Install Playwright browsers (chromium only)
+        run: pnpm exec playwright install --with-deps chromium
+
+      # `vite dev` (not preview) so modules are served unbundled and the
+      # spec's @mediapipe/tasks-vision module stub can take effect. The
+      # dev script already passes --host 0.0.0.0; vite reads PORT +
+      # BASE_PATH from env (strictPort: true).
+      - name: Start vite dev server
+        env:
+          PORT: "5173"
+          BASE_PATH: "/"
+        run: |
+          pnpm --filter @workspace/cpap-fitter dev &
+          for i in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:5173/ > /dev/null 2>&1; then
+              echo "vite dev is up after ${i}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "vite dev did not respond on :5173 within 60s"
+          exit 1
+
+      - name: Run results-page resilience spec
+        env:
+          E2E_BASE_URL: http://127.0.0.1:5173
+          CI: "true"
+        run: pnpm exec playwright test --config e2e/playwright.config.ts e2e/tests/results-page-resilience.spec.ts
+
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-e2e-dev-report
           path: playwright-report/
           retention-days: 14

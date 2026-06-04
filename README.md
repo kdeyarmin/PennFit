@@ -73,6 +73,12 @@ top-level structure is:
 # 1. Install workspace dependencies
 pnpm install
 
+# 1b. Install the local git hooks (pre-commit architecture/migration
+#     guards, pre-push drift guard, lockfile auto-merge). Idempotent and
+#     local-only; safe to re-run. post-merge re-runs it automatically, so
+#     you only need this on a fresh clone before your first commit.
+bash scripts/install-hooks.sh
+
 # 2. Copy the env template and fill in the values you need
 cp .env.example .env
 
@@ -86,6 +92,13 @@ pnpm build
 pnpm --filter @workspace/resupply-api dev   # boots the in-process pg-boss worker too
 pnpm --filter @workspace/cpap-fitter dev    # serves customer storefront + admin console
 ```
+
+Before pushing a PR, `pnpm verify` runs the infrastructure-free CI gates
+in one shot — lint, typecheck, the architecture + admin-route-gate
+checks, and the test suite — so you can catch the common failures
+locally instead of waiting on CI. (The DB-migration replay and the
+Playwright smoke/a11y/e2e jobs need Postgres / browsers and aren't part
+of `verify`.)
 
 Locally, set `PORT` and `BASE_PATH` per-artifact before running
 `pnpm --filter @workspace/<artifact> dev`. The cpap-fitter SPA

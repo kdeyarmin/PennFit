@@ -271,9 +271,19 @@ echo staged > tracked.txt
 git add tracked.txt
 echo unstaged > tracked.txt
 
-hint_log="$WORK/hint.log"
+# The stderr sink MUST live outside $WORK (the repo working tree). This
+# scenario isn't in a complex state, so the wrapper performs full
+# isolation: it archives every untracked file, runs the command, then
+# restores them. A hint_log inside the repo is itself an untracked file,
+# so it gets archived (empty) at capture time and restored (empty) at
+# the end — clobbering the very breadcrumb this scenario greps for, and
+# the test fails even though the lib behaved perfectly. (Scenario 4 gets
+# away with a $WORK/warn.log only because its mid-merge state makes the
+# wrapper skip isolation entirely.) Keep this sink in $TMPDIR, not $WORK.
+hint_log="$(mktemp -t snap-hint.XXXXXX)"
 with_staged_snapshot true 2> "$hint_log"
 grep -q 'recovery dir:' "$hint_log" || \
   fail "scenario 9 expected 'recovery dir:' breadcrumb in stderr, got: $(cat "$hint_log")"
+rm -f "$hint_log"
 
 printf 'lib-staged-snapshot self-test PASS\n'
