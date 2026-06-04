@@ -55,6 +55,7 @@ describe("apple-wallet assets", () => {
     });
     // Sanity: a real asset is more than a 1×1 placeholder.
     expect(png.length).toBeGreaterThan(200);
+    expectDecodesAsNonBlankPng(png);
   });
 
   it("logo is a branded 120×120 RGBA PNG", () => {
