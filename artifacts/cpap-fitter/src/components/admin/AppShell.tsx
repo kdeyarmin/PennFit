@@ -248,32 +248,20 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         ],
       },
       {
+        // "Outreach" is now scoped to things you actively SEND to a
+        // patient. The reusable-content editors (canned replies +
+        // automated-message copy) moved to the "Templates" section
+        // below, so the section no longer mixes "send" with "author".
         label: "Outreach",
-        icon: Mail,
-        hint: "Canned replies, message templates, bulk campaigns, alerts, reminders",
+        icon: Send,
+        hint: "Send messages to patients — bulk campaigns, one-off alerts, resupply reminders",
         tabs: [
           {
             href: "/admin/bulk-campaigns",
             label: "Bulk Campaigns",
             icon: BellRing,
             matchPrefix: "/admin/bulk-campaigns",
-            hint: "Resolve audience + draft a bulk email send",
-          },
-          {
-            href: "/admin/macros",
-            label: "Canned Replies",
-            icon: Sparkles,
-            matchPrefix: "/admin/macros",
-            requiredPermission: "admin.tools.manage",
-            hint: "Reusable response templates",
-          },
-          {
-            href: "/admin/templates",
-            label: "Message Templates",
-            icon: Mail,
-            matchPrefix: "/admin/templates",
-            requiredPermission: "admin.tools.manage",
-            hint: "Edit the copy used by automated customer messages",
+            hint: "Resolve an audience, then draft and send a bulk email",
           },
           {
             href: "/admin/alerts",
@@ -281,7 +269,7 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             icon: AlertOctagon,
             matchPrefix: "/admin/alerts",
             requiredPermission: "admin.tools.manage",
-            hint: "Send curated email / SMS / phone-call alerts to a patient",
+            hint: "Send a curated one-off email / SMS / phone-call alert to a patient",
           },
           {
             href: "/admin/pennpaps/reminders",
@@ -289,6 +277,34 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             icon: BellRing,
             matchPrefix: "/admin/pennpaps/reminders",
             hint: "Scheduled patient resupply reminders",
+          },
+        ],
+      },
+      {
+        // Reusable message CONTENT (authoring/config), split out from
+        // "Outreach" so the near-synonym labels stop competing: canned
+        // replies are snippets a CSR inserts manually; automated
+        // messages are the system-sent copy. Both are admin.tools.manage
+        // gated, so this whole section is hidden from plain CSRs.
+        label: "Templates",
+        icon: Mail,
+        hint: "Reusable message content — manual reply snippets and automated-message copy",
+        tabs: [
+          {
+            href: "/admin/macros",
+            label: "Canned Replies",
+            icon: Sparkles,
+            matchPrefix: "/admin/macros",
+            requiredPermission: "admin.tools.manage",
+            hint: "Saved snippets a CSR inserts into a manual conversation reply",
+          },
+          {
+            href: "/admin/templates",
+            label: "Automated messages",
+            icon: Mail,
+            matchPrefix: "/admin/templates",
+            requiredPermission: "admin.tools.manage",
+            hint: "Edit the copy used by automated, system-sent customer messages",
           },
         ],
       },
