@@ -67,6 +67,15 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           pnpm-version: ${{ env.PNPM_VERSION }}
 
+      # The architecture checker is a set of ripgrep queries; the
+      # ubuntu-latest runner image does not ship `rg`. Without it the
+      # checker matched nothing and "passed" vacuously — the gate enforced
+      # nothing in CI until this step was added (surfaced by wiring the
+      # checker's own self-test into CI; the checker now also hard-fails
+      # if rg is absent rather than passing empty).
+      - name: Install ripgrep
+        run: sudo apt-get update && sudo apt-get install -y ripgrep
+
       - name: Architecture drift
         run: scripts/check-resupply-architecture.sh
 

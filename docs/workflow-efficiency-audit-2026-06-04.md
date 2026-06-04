@@ -27,6 +27,7 @@ etc.) — these are pure build/CI/dev-loop changes.
 | W4  | `results-page-resilience.spec.ts` runs in no CI job           | MEDIUM   | ✅ fixed (new `e2e-dev` job)    |
 | W5  | Shell-script test files (`*.sh.test`) execute nowhere         | MEDIUM   | ✅ all 4 wired in                |
 | W5a | The architecture-guard test had rotted (stale `resupply-worker`) | MEDIUM | ✅ fixed (fixtures repointed)    |
+| W5b | The architecture gate was a **silent no-op in CI** (no `rg`)   | HIGH     | ✅ fixed (install rg + hard-fail) |
 | W6  | No single "run what CI runs" local command                   | LOW      | ✅ fixed (`pnpm verify`)         |
 | W7  | Hooks not auto-installed on fresh clone (only post-merge)     | LOW      | ✅ fixed (documented setup step) |
 | W8  | `pnpm typecheck` runs in `build`, then again in CI standalone | INFO     | open — note                     |
@@ -35,13 +36,15 @@ Shipped on this branch: W1, W2 (mechanical CI DRY + caching), W4 (the
 dev-server e2e job, soft-gated), W5 (all four dormant/under-run guard-test
 harnesses now run in CI), and **W5a** (the architecture-guard test had
 silently rotted against the May-2026 artifact consolidation — its worker
-fixtures are repointed to the real location), plus W6 (`pnpm verify`) and
-W7 (a documented hook-install step). Investigating W5 was itself
-the payoff: running the dormant tests is how the W5a rot **and** a
-self-inflicted bug in the snapshot-lib test surfaced at all — and the
-latter, on full diagnosis, proved the production lib was correct and the
-test was sweeping its own stderr sink. The only items left **open** are
-W3 (optional — measure first) and W8 (informational, no action).
+fixtures are repointed to the real location), **W5b** (the architecture
+gate was a silent no-op in CI because the runner had no ripgrep — now
+fixed and hardened to fail loudly), plus W6 (`pnpm verify`) and W7 (a
+documented hook-install step). Investigating W5 was itself the payoff:
+running the dormant tests is how the W5a rot, the **W5b vacuous-pass**,
+and a self-inflicted bug in the snapshot-lib test surfaced at all — W5b
+in particular is a guard that had been green for months while enforcing
+nothing. The only items left **open** are W3 (optional — measure first)
+and W8 (informational, no action).
 
 ---
 
@@ -242,6 +245,39 @@ flags violations there, which functions as a forward-looking tripwire
 if a `resupply-dashboard` artifact is ever re-added. Removing them would
 have meant editing the enforcement script for no functional gain, so
 that cleanup (if desired) is left as a separate, optional call.
+
+### [HIGH] W5b — The architecture gate was a silent no-op in CI (no ripgrep)
+
+Wiring the architecture checker's self-test into CI (W5) immediately
+failed — with `rg: command not found`. `check-resupply-architecture.sh`
+implements **every** rule as a `ripgrep` query, and the `ubuntu-latest`
+runner image **does not ship ripgrep**. The consequence is the
+important part: the `drift` job's existing "Architecture drift" step
+(the real scan, running since this workflow was written) was **passing
+vacuously** — with `rg` absent, each query errored to stderr, matched
+nothing, and the checker printed "Resupply architecture check passed."
+So the repo's primary architecture invariant (the hexagonal dependency
+rules: no `pg` outside resupply-db, no vendor SDKs in pure libs, no
+direct `audit_log` writes, …) **was not actually enforced on CI** — a
+violation could merge clean. The self-test is what exposed it, because
+it asserts that planted violations are _detected_, not merely that the
+checker exits 0.
+
+**Fix, two parts:**
+
+1. **Install ripgrep** in the `drift` job (`apt-get install -y ripgrep`)
+   before the architecture steps, so the real scan and the self-test
+   both actually run their queries.
+2. **Hard-fail the checker when `rg` is absent** (a `command -v rg`
+   guard at the top that exits non-zero with an install hint) so the
+   gate can never again degrade into a silent rubber stamp on a runner
+   or developer machine without ripgrep — the failure mode that hid
+   this for as long as the workflow has existed.
+
+This is the highest-impact finding of the audit: a guard that had been
+green for months while enforcing nothing. It is exactly the class of
+problem the "make the dormant tests actually run" work (W5) exists to
+catch.
 
 ### [LOW] W6 — No single "run exactly what CI runs" local command → **fixed**
 
