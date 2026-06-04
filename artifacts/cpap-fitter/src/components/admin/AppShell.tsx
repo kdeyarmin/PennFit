@@ -191,30 +191,9 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
       {
         label: "Home",
         icon: LayoutDashboard,
-        hint: "Your day at a glance — dashboard, personal queue, prioritized work",
-        tabs: [
-          {
-            href: "/admin",
-            label: "Dashboard",
-            icon: LayoutDashboard,
-            matchPrefix: "/admin",
-            hint: "Today's queues and team workload at a glance",
-          },
-          {
-            href: "/admin/today",
-            label: "My Today",
-            icon: Inbox,
-            matchPrefix: "/admin/today",
-            hint: "Top items across every queue — conversations, returns, alerts, Rx renewals, documents",
-          },
-          {
-            href: "/admin/work-queue",
-            label: "Work queue",
-            icon: ListChecks,
-            matchPrefix: "/admin/work-queue",
-            hint: "Unified, prioritized queue of everything waiting on you, most-overdue first",
-          },
-        ],
+        href: "/admin",
+        matchPrefix: "/admin",
+        hint: "Your day at a glance — KPIs, today's worklist, and quick links into every queue",
       },
       {
         label: "Conversations",
@@ -269,32 +248,20 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         ],
       },
       {
+        // "Outreach" is now scoped to things you actively SEND to a
+        // patient. The reusable-content editors (canned replies +
+        // automated-message copy) moved to the "Templates" section
+        // below, so the section no longer mixes "send" with "author".
         label: "Outreach",
-        icon: Mail,
-        hint: "Canned replies, message templates, bulk campaigns, alerts, reminders",
+        icon: Send,
+        hint: "Send messages to patients — bulk campaigns, one-off alerts, resupply reminders",
         tabs: [
           {
             href: "/admin/bulk-campaigns",
             label: "Bulk Campaigns",
             icon: BellRing,
             matchPrefix: "/admin/bulk-campaigns",
-            hint: "Resolve audience + draft a bulk email send",
-          },
-          {
-            href: "/admin/macros",
-            label: "Canned Replies",
-            icon: Sparkles,
-            matchPrefix: "/admin/macros",
-            requiredPermission: "admin.tools.manage",
-            hint: "Reusable response templates",
-          },
-          {
-            href: "/admin/templates",
-            label: "Message Templates",
-            icon: Mail,
-            matchPrefix: "/admin/templates",
-            requiredPermission: "admin.tools.manage",
-            hint: "Edit the copy used by automated customer messages",
+            hint: "Resolve an audience, then draft and send a bulk email",
           },
           {
             href: "/admin/alerts",
@@ -302,7 +269,7 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             icon: AlertOctagon,
             matchPrefix: "/admin/alerts",
             requiredPermission: "admin.tools.manage",
-            hint: "Send curated email / SMS / phone-call alerts to a patient",
+            hint: "Send a curated one-off email / SMS / phone-call alert to a patient",
           },
           {
             href: "/admin/pennpaps/reminders",
@@ -310,6 +277,34 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             icon: BellRing,
             matchPrefix: "/admin/pennpaps/reminders",
             hint: "Scheduled patient resupply reminders",
+          },
+        ],
+      },
+      {
+        // Reusable message CONTENT (authoring/config), split out from
+        // "Outreach" so the near-synonym labels stop competing: canned
+        // replies are snippets a CSR inserts manually; automated
+        // messages are the system-sent copy. Both are admin.tools.manage
+        // gated, so this whole section is hidden from plain CSRs.
+        label: "Templates",
+        icon: Mail,
+        hint: "Reusable message content — manual reply snippets and automated-message copy",
+        tabs: [
+          {
+            href: "/admin/macros",
+            label: "Canned Replies",
+            icon: Sparkles,
+            matchPrefix: "/admin/macros",
+            requiredPermission: "admin.tools.manage",
+            hint: "Saved snippets a CSR inserts into a manual conversation reply",
+          },
+          {
+            href: "/admin/templates",
+            label: "Automated messages",
+            icon: Mail,
+            matchPrefix: "/admin/templates",
+            requiredPermission: "admin.tools.manage",
+            hint: "Edit the copy used by automated, system-sent customer messages",
           },
         ],
       },
@@ -327,9 +322,9 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         badgeKey: "newPatientDocuments",
       },
       {
-        label: "Clinical",
+        label: "Clinical work",
         icon: Stethoscope,
-        hint: "RT clinical work — encounters, interventions, mask-fit, coaching, outcomes",
+        hint: "RT clinical work — encounters, interventions, mask-fit, coaching",
         tabs: [
           {
             href: "/admin/clinical",
@@ -371,14 +366,6 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             hint: "Outreach plans for patients with slipping CPAP adherence",
           },
           {
-            href: "/admin/rt-outcomes",
-            label: "RT outcomes",
-            icon: Stethoscope,
-            matchPrefix: "/admin/rt-outcomes",
-            requiredPermission: "clinical.read",
-            hint: "Per-therapist activity: encounters, patients, interventions",
-          },
-          {
             href: "/admin/clinical/education-videos",
             label: "Video library",
             icon: PlayCircle,
@@ -389,9 +376,9 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         ],
       },
       {
-        label: "Therapy",
+        label: "Therapy monitoring",
         icon: HeartPulse,
-        hint: "Population therapy monitoring — adherence board, fleet, resupply",
+        hint: "Population therapy monitoring — adherence board, RT outcomes, fleet, resupply",
         tabs: [
           {
             href: "/admin/rt-overview",
@@ -399,6 +386,14 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             icon: HeartPulse,
             matchPrefix: "/admin/rt-overview",
             hint: "At-a-glance therapy board: alerts, AHI, leak, usage",
+          },
+          {
+            href: "/admin/rt-outcomes",
+            label: "RT outcomes",
+            icon: Stethoscope,
+            matchPrefix: "/admin/rt-outcomes",
+            requiredPermission: "clinical.read",
+            hint: "Per-therapist activity: encounters, patients, interventions",
           },
           {
             href: "/admin/therapy-fleet",
@@ -650,9 +645,13 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         ],
       },
       {
-        label: "A/R & revenue",
+        // Split out of the old "A/R & revenue" grab-bag: the actionable
+        // money-collection worklists (work these to get paid). The pure
+        // revenue dashboards moved to "Revenue analytics" below, so this
+        // section stops mixing "do something" with "read a metric".
+        label: "A/R & collections",
         icon: Landmark,
-        hint: "Aging, filing deadlines, DSO, secondary claims, statements, forecast",
+        hint: "Work claims to get paid — aging, filing deadlines, secondary claims, statements, capped rentals",
         tabs: [
           {
             href: "/admin/billing/aging",
@@ -667,13 +666,6 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             icon: CalendarClock,
             matchPrefix: "/admin/billing/timely-filing",
             hint: "Open claims ranked by days left before the payer's timely-filing window closes",
-          },
-          {
-            href: "/admin/billing/denials",
-            label: "Denials & DSO",
-            icon: TrendingDown,
-            matchPrefix: "/admin/billing/denials",
-            hint: "90-day denial rate + 180-day days-to-pay, per payer",
           },
           {
             href: "/admin/billing/secondary",
@@ -692,6 +684,27 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             hint: "Send patient-responsibility statements (email/SMS) — consent + quiet-hours aware",
           },
           {
+            href: "/admin/billing/capped-rentals",
+            label: "Capped rentals",
+            icon: CalendarRange,
+            matchPrefix: "/admin/billing/capped-rentals",
+            hint: "13- and 36-month CMS rental cycle tracker + KH/KI/KX modifier rotation",
+          },
+        ],
+      },
+      {
+        label: "Revenue analytics",
+        icon: TrendingUp,
+        hint: "Read-only revenue dashboards — denial rate & DSO, collections forecast, payer profitability",
+        tabs: [
+          {
+            href: "/admin/billing/denials",
+            label: "Denials & DSO",
+            icon: TrendingDown,
+            matchPrefix: "/admin/billing/denials",
+            hint: "90-day denial rate + 180-day days-to-pay, per payer",
+          },
+          {
             href: "/admin/billing/collections-forecast",
             label: "Collections forecast",
             icon: TrendingUp,
@@ -706,13 +719,6 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             matchPrefix: "/admin/billing/payer-profitability",
             requiredPermission: "cost.read",
             hint: "Net yield by payer: billed → allowed → collected, denial rate, net of cost",
-          },
-          {
-            href: "/admin/billing/capped-rentals",
-            label: "Capped rentals",
-            icon: CalendarRange,
-            matchPrefix: "/admin/billing/capped-rentals",
-            hint: "13- and 36-month CMS rental cycle tracker + KH/KI/KX modifier rotation",
           },
         ],
       },
@@ -758,9 +764,12 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         hint: "CSV, PDF, and QuickBooks (IIF / QBO) exports for ops and finance",
       },
       {
-        label: "Business",
+        // Was the catch-all "Business" section; split into Financial vs
+        // Performance & goals so cost economics and team/KPI tracking
+        // stop sharing one grab-bag list.
+        label: "Financial",
         icon: TrendingUp,
-        hint: "Margin, LTV/CAC, turnover, throughput, goals, KPI alerts, storefront",
+        hint: "Captured-cost economics — margin, LTV/CAC, inventory turnover",
         tabs: [
           {
             href: "/admin/analytics/margin",
@@ -786,6 +795,13 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             requiredPermission: "cost.read",
             hint: "Turnover (COGS ÷ inventory value) + stockout demand per SKU",
           },
+        ],
+      },
+      {
+        label: "Performance & goals",
+        icon: Target,
+        hint: "Team throughput, KPI targets, and threshold alerts",
+        tabs: [
           {
             href: "/admin/productivity",
             label: "Team throughput",
@@ -809,19 +825,12 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             requiredPermission: "metrics.read",
             hint: "KPI threshold alert feed + rule config (revenue, denials, churn)",
           },
-          {
-            href: "/admin/pennpaps/analytics",
-            label: "Storefront Analytics",
-            icon: BarChart3,
-            matchPrefix: "/admin/pennpaps/analytics",
-            hint: "PennPaps storefront traffic & revenue",
-          },
         ],
       },
       {
         label: "Clinical & customer",
         icon: Activity,
-        hint: "Resupply funnel & compliance, provider-ready therapy report, customer NPS",
+        hint: "Resupply funnel & compliance, provider therapy report, customer NPS, storefront traffic",
         tabs: [
           {
             href: "/admin/analytics",
@@ -843,6 +852,13 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             icon: Star,
             matchPrefix: "/admin/nps",
             hint: "Post-delivery NPS responses with comment tail",
+          },
+          {
+            href: "/admin/pennpaps/analytics",
+            label: "Storefront Analytics",
+            icon: BarChart3,
+            matchPrefix: "/admin/pennpaps/analytics",
+            hint: "PennPaps storefront traffic & revenue",
           },
         ],
       },

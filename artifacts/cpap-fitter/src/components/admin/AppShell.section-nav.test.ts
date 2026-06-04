@@ -49,8 +49,8 @@ describe("AppShell — section/sub-nav infrastructure present", () => {
     expect(APPSHELL_SRC).toContain("tabs?: ReadonlyArray<NavLink>");
     // The big domains are now tabbed sections, not flat link lists.
     expect(APPSHELL_SRC).toContain('label: "Worklists"');
-    expect(APPSHELL_SRC).toContain('label: "A/R & revenue"');
-    expect(APPSHELL_SRC).toContain('label: "Clinical"');
+    expect(APPSHELL_SRC).toContain('label: "A/R & collections"');
+    expect(APPSHELL_SRC).toContain('label: "Clinical work"');
     expect(APPSHELL_SRC).toContain('label: "Outreach"');
   });
 

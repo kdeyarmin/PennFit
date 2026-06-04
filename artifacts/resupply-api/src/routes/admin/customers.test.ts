@@ -311,6 +311,27 @@ describe("GET /admin/shop/customers — happy path", () => {
     expect(getSupabaseCallCount("shop_customers", "select")).toBe(1);
   });
 
+  it("searches display_name OR email (find-a-person by name, not just address)", async () => {
+    stubVerifiedAdmin();
+    stageListEndpoint({ customers: [] });
+    const router = await loadRouter();
+    const res = await request(makeApp(router)).get(
+      "/resupply-api/admin/shop/customers?q=Smith",
+    );
+    expect(res.status).toBe(200);
+    // The search must cover display_name as well as email_lower so the
+    // directory is findable by who the person is — this also powers the
+    // "find this person in Customers" jump from a patient record.
+    const orCalls = supabaseMock
+      .filterCalls("shop_customers", "select")
+      .filter((c) => c.verb === "or");
+    expect(orCalls).toHaveLength(1);
+    const expr = String(orCalls[0]!.args[0]);
+    expect(expr).toContain("display_name.ilike");
+    expect(expr).toContain("email_lower.ilike");
+    expect(expr.toLowerCase()).toContain("smith");
+  });
+
   it("redacts very-short local-parts safely (<=2 chars)", async () => {
     stubVerifiedAdmin();
     stageListEndpoint({

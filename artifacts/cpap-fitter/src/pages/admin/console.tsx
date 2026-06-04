@@ -90,16 +90,6 @@ const AdminFollowupsPage = lazy(() =>
     default: m.AdminFollowupsPage,
   })),
 );
-const AdminTodayPage = lazy(() =>
-  import("@/pages/admin/admin-today").then((m) => ({
-    default: m.AdminTodayPage,
-  })),
-);
-const AdminWorkQueuePage = lazy(() =>
-  import("@/pages/admin/admin-work-queue").then((m) => ({
-    default: m.AdminWorkQueuePage,
-  })),
-);
 const AdminCasesPage = lazy(() =>
   import("@/pages/admin/admin-cases").then((m) => ({
     default: m.AdminCasesPage,
@@ -786,8 +776,14 @@ function AdminConsole() {
               component={AdminShopReturnsPage}
             />
             <Route path="/admin/followups" component={AdminFollowupsPage} />
-            <Route path="/admin/today" component={AdminTodayPage} />
-            <Route path="/admin/work-queue" component={AdminWorkQueuePage} />
+            {/* /admin/today and /admin/work-queue merged into the Home
+                landing (/admin); keep the URLs working for bookmarks. */}
+            <Route path="/admin/today">
+              <Redirect to="/admin" replace />
+            </Route>
+            <Route path="/admin/work-queue">
+              <Redirect to="/admin" replace />
+            </Route>
             <Route path="/admin/cases" component={AdminCasesPage} />
             <Route path="/admin/providers" component={AdminProvidersPage} />
             <Route

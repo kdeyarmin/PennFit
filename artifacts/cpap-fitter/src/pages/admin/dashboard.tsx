@@ -2,10 +2,17 @@ import { Link } from "wouter";
 import { useGetDashboardSummary } from "@workspace/api-client-react/admin";
 import { KpiCard } from "@/components/admin/Card";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
+import { TodayWorklistSection } from "@/pages/admin/admin-today";
 
-// Admin landing page. Six KPI tiles + four "filtered queue" deep
-// links. Numbers come from /dashboard/summary which is a single
-// COUNT(*)-only query — no PHI crosses the API boundary.
+// Admin Home landing. This is the single start-of-day screen — it merges
+// what used to be three overlapping surfaces (the old /admin dashboard,
+// /admin/today, and /admin/work-queue) into one page:
+//   1. KPI count tiles (orientation) — from /dashboard/summary, a single
+//      COUNT(*)-only query, no PHI across the boundary.
+//   2. Today's worklist — top items across every queue (rendered by
+//      <TodayWorklistSection/>, which owns its own fetch).
+//   3. Quick links — pre-filtered queue deep links.
+// The /admin/today and /admin/work-queue routes now redirect here.
 //
 // Each KPI tile is wrapped in a Link to a pre-filtered queue view —
 // admins can click "Awaiting admin" and land directly on the filtered
@@ -70,11 +77,11 @@ export function DashboardPage() {
           className="text-2xl font-semibold mb-1"
           style={{ color: "hsl(var(--ink-1))" }}
         >
-          Dashboard
+          Home
         </h1>
         <p className="text-sm" style={{ color: "hsl(var(--ink-2))" }}>
-          Live counters across the resupply pipeline. Each tile links to its
-          filtered queue.
+          Your day at a glance — live counters, today&apos;s worklist, and quick
+          links into each queue.
         </p>
       </header>
 
@@ -97,6 +104,8 @@ export function DashboardPage() {
           </Link>
         ))}
       </div>
+
+      <TodayWorklistSection />
 
       <section
         className="bg-white border rounded-lg p-5"

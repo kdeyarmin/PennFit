@@ -1,9 +1,11 @@
-// /admin/today — unified CSR work queue.
+// Today's worklist — the unified CSR work section.
 //
 // Aggregate worklist that surfaces the top items across the queues a
-// CSR touches every day, in one screen, so opening admin lands on
-// "what does the team owe right now" instead of an empty operations
-// dashboard. Each section deep-links to its full queue.
+// CSR touches every day, in one block, so opening the admin Home lands
+// on "what does the team owe right now". Each card deep-links to its
+// full queue. This is rendered as a section of the merged Home landing
+// (`src/pages/admin/dashboard.tsx`); the standalone `/admin/today` route
+// now redirects to `/admin`.
 //
 // Data: GET /admin/today (top 5 per queue, single round-trip).
 // Section visibility: a section that has zero items renders a
@@ -38,7 +40,12 @@ import { createCoachingPlan } from "@/lib/admin/coaching-plans-api";
 
 const queryKey = ["admin", "today"] as const;
 
-export function AdminTodayPage() {
+/**
+ * Today's worklist, rendered as a section of the merged Home landing.
+ * Owns its own data fetch + refresh control; the query key is shared
+ * with the sidebar inbox badges so the cache is reused.
+ */
+export function TodayWorklistSection() {
   const qc = useQueryClient();
   const { data, isPending, isError, error, refetch, isRefetching } = useQuery({
     queryKey,
@@ -46,30 +53,19 @@ export function AdminTodayPage() {
     refetchOnWindowFocus: true,
   });
 
-  if (isPending) {
-    return (
-      <div style={{ padding: 24 }}>
-        <Spinner />
-      </div>
-    );
-  }
-  if (isError) {
-    return (
-      <div style={{ padding: 24 }}>
-        <ErrorPanel error={error} onRetry={() => void refetch()} />
-      </div>
-    );
-  }
-
   return (
-    <div className="p-6 space-y-6 max-w-5xl">
-      <header className="flex items-center justify-between">
+    <section className="space-y-4">
+      <div className="flex items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold">Today</h1>
-          <p className="text-sm mt-1" style={{ color: "hsl(var(--ink-3))" }}>
-            Top items across every queue. Cleared up to 5 per section — refresh
-            to pull the next batch, or click through to a queue for the full
-            list.
+          <h2
+            className="text-lg font-semibold"
+            style={{ color: "hsl(var(--ink-1))" }}
+          >
+            Today&apos;s worklist
+          </h2>
+          <p className="text-sm" style={{ color: "hsl(var(--ink-3))" }}>
+            Top items across every queue — up to 5 per section. Refresh to pull
+            the next batch, or open a queue for the full list.
           </p>
         </div>
         <Button
@@ -77,25 +73,33 @@ export function AdminTodayPage() {
           onClick={() => {
             void qc.invalidateQueries({ queryKey });
           }}
-          disabled={isRefetching}
+          disabled={isPending || isRefetching}
         >
           <RefreshCw
             className={`h-4 w-4 mr-1.5 ${isRefetching ? "animate-spin" : ""}`}
           />
           Refresh
         </Button>
-      </header>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <ConversationsCard data={data} />
-        <FollowupsCard data={data} />
-        <ReturnsCard data={data} />
-        <ComplianceAlertsCard data={data} />
-        <RxRenewalsCard data={data} />
-        <DocumentsCard data={data} />
-        <InboundFaxesCard data={data} />
       </div>
-    </div>
+
+      {isPending ? (
+        <div className="py-6">
+          <Spinner />
+        </div>
+      ) : isError ? (
+        <ErrorPanel error={error} onRetry={() => void refetch()} />
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <ConversationsCard data={data} />
+          <FollowupsCard data={data} />
+          <ReturnsCard data={data} />
+          <ComplianceAlertsCard data={data} />
+          <RxRenewalsCard data={data} />
+          <DocumentsCard data={data} />
+          <InboundFaxesCard data={data} />
+        </div>
+      )}
+    </section>
   );
 }
 

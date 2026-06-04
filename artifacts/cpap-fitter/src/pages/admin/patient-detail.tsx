@@ -165,9 +165,24 @@ export function PatientDetailPage({ id }: { id: string }) {
               {formatDate(data.createdAt)}
             </p>
           </div>
-          <Badge variant={patientStatusVariant(data.status)}>
-            {humanizeStatus(data.status)}
-          </Badge>
+          <div className="flex flex-col items-end gap-2 shrink-0">
+            <Badge variant={patientStatusVariant(data.status)}>
+              {humanizeStatus(data.status)}
+            </Badge>
+            {/* Patient and shop-customer records aren't linked in the
+                data, so this is a name-search jump into the other
+                directory rather than a guaranteed match. */}
+            <Link
+              href={`/admin/shop/customers?search=${encodeURIComponent(
+                fullName(data.firstName, data.lastName),
+              )}`}
+              className="text-xs font-semibold hover:underline whitespace-nowrap"
+              style={{ color: "hsl(var(--penn-navy))" }}
+              title="Search the storefront Customers directory for this name"
+            >
+              Find in Customers →
+            </Link>
+          </div>
         </div>
         <div className="mt-4 grid grid-cols-2 gap-4 text-sm">
           <div>

@@ -62,7 +62,10 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import {
+  escapePostgRESTFilterValue,
+  getSupabaseServiceRoleClient,
+} from "@workspace/resupply-db";
 
 import {
   getStripeClient,
@@ -158,12 +161,17 @@ router.get(
         "customer_id, display_name, email_lower, stripe_customer_id, created_at",
       );
     if (q) {
-      // Escape LIKE metacharacters (`_`, `%`, `\`) before composing
-      // the wildcard pattern. Then run as `*<escaped>*` with `*` as
-      // PostgREST's wildcard. Email local-parts can legitimately
-      // contain `_`.
-      const escaped = q.toLowerCase().replace(/[\\%_]/g, (c) => `\\${c}`);
-      customersQuery = customersQuery.ilike("email_lower", `*${escaped}*`);
+      // Match on email OR display name so the directory is searchable by
+      // who the person is, not just their address (this also powers the
+      // "find this person in Customers" jump from a patient record).
+      // escapePostgRESTFilterValue handles both LIKE metacharacters and
+      // .or() delimiters. ILIKE is case-insensitive, so a lowercased
+      // needle still matches a mixed-case display_name; email_lower is
+      // already stored lowercase.
+      const pattern = `*${escapePostgRESTFilterValue(q.toLowerCase())}*`;
+      customersQuery = customersQuery.or(
+        `email_lower.ilike.${pattern},display_name.ilike.${pattern}`,
+      );
     }
     const { data: customerRows, error: customersErr } = await customersQuery;
     if (customersErr) throw customersErr;
