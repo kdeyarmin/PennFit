@@ -15,6 +15,7 @@ import {
   demoEpisodes,
   demoToday,
   demoWorkItems,
+  demoShopCustomers,
   demoFitterLeads,
   demoBillingDirectorSummary,
   demoAdminOrders,
@@ -44,6 +45,19 @@ export const adminHandlers: DemoHandler[] = [
   // ── worklists ────────────────────────────────────────────────────
   route("GET", "/resupply-api/admin/today", () => json(demoToday())),
   route("GET", "/resupply-api/admin/work-items", () => json(demoWorkItems())),
+  route("GET", "/resupply-api/admin/shop/customers", (req) =>
+    json(
+      demoShopCustomers({
+        q: req.query.get("q"),
+        page: intParam(req, "page", 1),
+        pageSize: intParam(req, "pageSize", 25),
+        subscription: req.query.get("subscription"),
+        awaitingReply:
+          req.query.get("awaitingReply") === "1" ||
+          req.query.get("awaitingReply") === "true",
+      }),
+    ),
+  ),
 
   // ── core lists (offset/limit pagination) ─────────────────────────
   route("GET", "/resupply-api/patients", (req) =>
