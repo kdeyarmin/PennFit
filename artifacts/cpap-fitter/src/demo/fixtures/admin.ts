@@ -536,6 +536,55 @@ export function demoBillingDirectorSummary() {
   };
 }
 
+// Mirrors the /admin/system-info response shape consumed by
+// admin-settings.tsx (server / database / publicUrls / auth / vendors /
+// secrets). The settings page derefs these nested objects directly, so the
+// demo sandbox MUST answer this endpoint with a full shape — the router's
+// empty-object fallback (`{}`) would make the page crash on
+// `data.server.uptimeSeconds`. All values are fictional and benign
+// (presence booleans + non-secret metadata), matching the real route's
+// privacy posture.
+export function demoSystemInfo() {
+  return {
+    server: {
+      now: NOW_ISO(),
+      nodeVersion: "v24.0.0",
+      pgVersion: "PostgreSQL 15.6 (demo)",
+      uptimeSeconds: 192_540, // ~2d 5h
+      gitSha: "demo1234",
+      nodeEnv: "production",
+    },
+    database: {
+      migrationCount: 180,
+      lastMigrationAt: daysAgo(3),
+    },
+    publicUrls: {
+      shop: "https://pennfit.example",
+      voice: "https://pennfit.example",
+      dashboard: "https://pennfit.example/admin",
+    },
+    auth: {
+      adminAllowlistCount: 2,
+      agentAllowlistCount: 4,
+      legacyAdminAllowlistCount: 0,
+    },
+    vendors: {
+      sendgrid: { configured: true, fromEmailConfigured: true },
+      twilio: {
+        accountSidConfigured: true,
+        authTokenConfigured: true,
+        messagingServiceConfigured: true,
+        voicePhoneConfigured: true,
+        faxPhoneConfigured: false,
+      },
+      stripe: { secretKeyConfigured: true, webhookSecretConfigured: true },
+      objectStorage: { privateBucketConfigured: true },
+      openai: { apiKeyConfigured: true },
+    },
+    secrets: { linkHmacKeyConfigured: true },
+  };
+}
+
 export function demoAdminOrders(page = 1, pageSize = 25) {
   const all = FIRST_NAMES.slice(0, 10).map((first, i) => ({
     id: `demo-aorder-${i + 1}`,

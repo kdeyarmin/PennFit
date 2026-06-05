@@ -45,12 +45,43 @@ interface SystemInfo {
   };
 }
 
-async function fetchSystemInfo(): Promise<SystemInfo> {
+// Runtime shape guard. The renderer (`Body`) derefs every one of these
+// nested objects directly, so a 200 response that is missing any of them
+// would throw a raw `TypeError: Cannot read properties of undefined` mid-
+// render — which bubbles to the top-level ErrorBoundary and shows the
+// patient-facing "Something went wrong" screen instead of this page's own
+// graceful inline error. This happens whenever the endpoint returns a
+// well-formed-but-wrong body, e.g. the client-side demo sandbox's
+// empty-object (`{}`) fallback for unhandled API GETs, or future backend
+// shape drift (see the `encryption`-key regression that motivated
+// admin-settings.render.test.tsx). Validating here turns that class of
+// failure into `query.isError`, which renders recoverably AND keeps the
+// demo on/off toggle (rendered above the data branch) reachable.
+export function isSystemInfo(value: unknown): value is SystemInfo {
+  if (typeof value !== "object" || value === null) return false;
+  const o = value as Record<string, unknown>;
+  const isObject = (v: unknown): v is Record<string, unknown> =>
+    typeof v === "object" && v !== null;
+  return (
+    isObject(o.server) &&
+    isObject(o.database) &&
+    isObject(o.publicUrls) &&
+    isObject(o.auth) &&
+    isObject(o.vendors) &&
+    isObject(o.secrets)
+  );
+}
+
+export async function fetchSystemInfo(): Promise<SystemInfo> {
   const res = await fetch("/resupply-api/admin/system-info", {
     headers: { Accept: "application/json" },
   });
   if (!res.ok) throw new Error(`Failed to load system info (${res.status})`);
-  return (await res.json()) as SystemInfo;
+  const body = (await res.json()) as unknown;
+  if (!isSystemInfo(body)) {
+    throw new Error("System info response was missing expected fields");
+  }
+  return body;
 }
 
 export function AdminSettingsPage() {
