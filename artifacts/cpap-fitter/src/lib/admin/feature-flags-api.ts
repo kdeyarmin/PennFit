@@ -10,6 +10,17 @@ export interface FeatureFlag {
   enabled: boolean;
   description: string;
   category: string;
+  /**
+   * Whether the API build serving this response can actually toggle the
+   * flag. The PATCH route validates the key against a compile-time
+   * allow-list, so a flag seeded by a newer migration than the running
+   * build LISTS here but 404s (`unknown_flag`) on toggle. The server
+   * computes this; the Control Center disables the switch and explains
+   * when it's false. Optional on the wire so an older API (mid-deploy)
+   * that omits the field is treated as manageable — the historical
+   * default, where every listed flag was assumed toggleable.
+   */
+  manageable?: boolean;
   updatedByEmail: string | null;
   updatedAt: string;
 }

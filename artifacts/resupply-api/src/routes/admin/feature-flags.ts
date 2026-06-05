@@ -52,6 +52,10 @@ const featureFlagSchema = z.object({
   enabled: z.boolean(),
   description: z.string(),
   category: z.string(),
+  // True when THIS running build's catalog (FEATURE_FLAG_KEYS) knows
+  // the key, i.e. PATCH would accept a toggle. False for a flag seeded
+  // by a newer migration than the running build — see rowToApi below.
+  manageable: z.boolean(),
   updatedByEmail: z.string().nullable(),
   updatedAt: z.string(),
 });
@@ -64,12 +68,23 @@ const patchResponseSchema = z.object({
   flag: featureFlagSchema,
 });
 
+// The PATCH handler validates `:key` against FEATURE_FLAG_KEYS before it
+// will write (z.enum → 404 `unknown_flag` otherwise). So a flag whose key
+// is NOT in THIS build's catalog is a dead toggle: it still LISTS (the
+// list reads DB rows), but every toggle 404s. That happens during a
+// deploy-drift window — the database has been migrated forward to seed a
+// newer flag while the running build predates the catalog entry. Expose
+// that state as `manageable` so the Control Center can disable the switch
+// and explain *why* instead of letting the operator hit the raw 404.
+const MANAGEABLE_KEYS: ReadonlySet<string> = new Set(FEATURE_FLAG_KEYS);
+
 function rowToApi(r: Row) {
   return {
     key: r.key,
     enabled: r.enabled,
     description: r.description,
     category: r.category,
+    manageable: MANAGEABLE_KEYS.has(r.key),
     updatedByEmail: r.updated_by_email,
     updatedAt: r.updated_at,
   };

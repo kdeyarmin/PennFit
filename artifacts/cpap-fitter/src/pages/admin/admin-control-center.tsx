@@ -307,12 +307,25 @@ function FlagRow({ flag }: { flag: FeatureFlag }) {
     },
   });
 
+  // A flag whose key isn't in the running API build's catalog can't be
+  // toggled — PATCH would 404 `unknown_flag`. This happens during a
+  // deploy-drift window: the DB has been migrated forward to seed a newer
+  // flag while the running build predates the catalog entry, so the flag
+  // lists here but the switch is dead. A missing `manageable` (an older
+  // API mid-deploy that doesn't send the field) is treated as toggleable
+  // — the historical default.
+  const manageable = flag.manageable !== false;
+
   // Drive the toggle UI through this single handler so the
   // "high-risk disable needs a typed confirmation" rule is enforced
   // in exactly one place. Re-enables (next=true) and disables of
   // non-high-risk flags fall straight through to the optimistic
   // mutation — only the dangerous direction routes through the modal.
   const handleToggle = (next: boolean) => {
+    // Dead toggle: the running build doesn't know this key. The switch is
+    // disabled too; this guard is belt-and-suspenders against a
+    // programmatic call.
+    if (!manageable) return;
     if (!next && isHighRiskFlag(flag.key)) {
       setPendingDisable(flag);
       return;
@@ -352,9 +365,27 @@ function FlagRow({ flag }: { flag: FeatureFlag }) {
               High-risk
             </span>
           )}
+          {!manageable && (
+            <span
+              className="rounded bg-indigo-100 text-indigo-800 px-1.5 py-0.5 text-xs font-semibold"
+              title="This flag was added in a newer release than the one currently deployed. Redeploy to manage it here."
+              data-testid={`flag-row-${flag.key}-unmanageable-badge`}
+            >
+              Needs redeploy
+            </span>
+          )}
         </div>
         <p className="mt-1 text-sm text-slate-700">{flag.description}</p>
         <p className="mt-1 text-xs text-slate-500">{updatedRelative}</p>
+        {!manageable && (
+          <p
+            className="mt-1 text-xs text-indigo-700"
+            data-testid={`flag-row-${flag.key}-unmanageable-note`}
+          >
+            Added in a newer release than the one currently deployed — redeploy
+            to manage this flag here.
+          </p>
+        )}
         {mutation.isError && (
           <p
             className="mt-1 text-xs text-rose-700"
@@ -371,6 +402,7 @@ function FlagRow({ flag }: { flag: FeatureFlag }) {
       <ToggleSwitch
         enabled={flag.enabled}
         loading={mutation.isPending}
+        disabled={!manageable}
         onChange={handleToggle}
         ariaLabel={`Toggle ${humanizeAction(flag.key)}`}
       />
@@ -509,11 +541,13 @@ function ConfirmDisableModal({
 function ToggleSwitch({
   enabled,
   loading,
+  disabled = false,
   onChange,
   ariaLabel,
 }: {
   enabled: boolean;
   loading: boolean;
+  disabled?: boolean;
   onChange: (next: boolean) => void;
   ariaLabel: string;
 }) {
@@ -524,12 +558,16 @@ function ToggleSwitch({
       aria-checked={enabled}
       aria-label={ariaLabel}
       onClick={() => onChange(!enabled)}
-      disabled={loading}
+      disabled={loading || disabled}
       className={[
-        "relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors",
+        "relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors",
         "focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2",
         enabled ? "bg-blue-600" : "bg-slate-300",
-        loading ? "opacity-60 cursor-wait" : "",
+        disabled
+          ? "opacity-50 cursor-not-allowed"
+          : loading
+            ? "opacity-60 cursor-wait"
+            : "cursor-pointer",
       ].join(" ")}
     >
       <span
