@@ -10,7 +10,6 @@ import { csrfHeader } from "../csrf";
 export type IntegrationSource =
   | "resmed_airview"
   | "philips_care"
-  | "health_connect"
   | "react_health";
 
 export type AdapterAvailability =
@@ -197,8 +196,6 @@ export function formatSourceLabel(source: IntegrationSource): string {
       return "ResMed AirView";
     case "philips_care":
       return "Care Orchestrator";
-    case "health_connect":
-      return "Health Connect";
     case "react_health":
       return "React Health";
   }

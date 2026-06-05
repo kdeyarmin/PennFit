@@ -42,8 +42,7 @@ const querySchema = z.object({
 const SOURCE_PRIORITY: Record<string, number> = {
   resmed_airview: 0,
   philips_care: 1,
-  health_connect: 2,
-  manual: 3,
+  manual: 2,
 };
 
 router.get(

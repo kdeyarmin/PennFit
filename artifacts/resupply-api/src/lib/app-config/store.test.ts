@@ -113,28 +113,28 @@ describe("getEffectiveEnv", () => {
 
 describe("applyAppConfigOverlayToEnv", () => {
   afterEach(() => {
-    delete process.env.PARACHUTE_SIGNING_SECRET;
+    delete process.env.DEEPGRAM_API_KEY;
   });
 
   it("folds catalog values into process.env and reports the count", async () => {
     stageSupabaseResponse("app_config", "select", {
-      data: [{ key: "PARACHUTE_SIGNING_SECRET", value: "whsec-xyz" }],
+      data: [{ key: "DEEPGRAM_API_KEY", value: "whsec-xyz" }],
     });
 
     const result = await applyAppConfigOverlayToEnv();
     expect(result.applied).toBe(1);
-    expect(process.env.PARACHUTE_SIGNING_SECRET).toBe("whsec-xyz");
+    expect(process.env.DEEPGRAM_API_KEY).toBe("whsec-xyz");
   });
 
   it("does nothing when disabled", async () => {
     process.env.APP_CONFIG_OVERLAY_DISABLED = "1";
     stageSupabaseResponse("app_config", "select", {
-      data: [{ key: "PARACHUTE_SIGNING_SECRET", value: "whsec-xyz" }],
+      data: [{ key: "DEEPGRAM_API_KEY", value: "whsec-xyz" }],
     });
 
     const result = await applyAppConfigOverlayToEnv();
     expect(result.applied).toBe(0);
-    expect(process.env.PARACHUTE_SIGNING_SECRET).toBeUndefined();
+    expect(process.env.DEEPGRAM_API_KEY).toBeUndefined();
   });
 });
 

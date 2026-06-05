@@ -1,5 +1,5 @@
 // Cross-vendor unified types for the therapy-cloud integrations
-// surface (ResMed AirView, Philips Care Orchestrator, Health Connect).
+// surface (ResMed AirView, Philips Care Orchestrator, React Health).
 //
 // Each vendor speaks a different wire format; the adapter packages
 // translate into these types so the admin UI and any downstream
@@ -17,7 +17,6 @@ import { z } from "zod";
 export const INTEGRATION_SOURCES = [
   "resmed_airview",
   "philips_care",
-  "health_connect",
   // 3B Medical's iCode Connect cloud — backs the Luna G3 line and the
   // Lumin sanitizer ecosystem (consumer-marketed as React Health).
   "react_health",

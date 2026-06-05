@@ -125,19 +125,6 @@ export const RATE_LIMITS = {
   },
 
   /**
-   * Partner-side ingest (Parachute referrals, EHR FHIR pushes).
-   * 120/min/IP because Parachute's own retry storm caps at ~30/min
-   * and the rate exists to stop scripted abuse, not throttle a
-   * real partner. Lower than the webhook tier because these
-   * inserts hit the DB write path immediately.
-   */
-  integrations_inbound_dispatch: {
-    windowMs: 60 * 1000,
-    limit: 120,
-    doc: "POST /integrations/inbound/* — partner referral/FHIR ingest, immediate DB write",
-  },
-
-  /**
    * Provider portal (the prescriber-facing surface). Login-gated
    * but the public-facing prescriber discovery pages can flood
    * before auth; per-IP cap absorbs that.
@@ -146,17 +133,6 @@ export const RATE_LIMITS = {
     windowMs: 60 * 1000,
     limit: 60,
     doc: "Provider portal — prescriber-facing, public discovery + login flow",
-  },
-
-  /**
-   * Clinician portal — same posture as provider_portal but for the
-   * sleep-physician surface (which has different SSO routing and
-   * therefore a separate mount).
-   */
-  portal_clinician: {
-    windowMs: 60 * 1000,
-    limit: 60,
-    doc: "Clinician portal — sleep-physician surface, separate SSO mount",
   },
 } as const;
 

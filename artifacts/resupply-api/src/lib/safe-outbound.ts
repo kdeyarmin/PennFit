@@ -2,8 +2,7 @@
 // cloud-metadata infrastructure.
 //
 // Used by the webhook dispatcher (worker/jobs/webhook-dispatcher.ts)
-// and the inbound-referral status outbox (worker/jobs/
-// inbound-referral-status-outbound.ts) so an admin-controlled
+// and other admin-configurable outbound callbacks so an admin-controlled
 // callback URL cannot be turned into an SSRF probe against the
 // Railway / Supabase internal network or the cloud metadata
 // endpoint at 169.254.169.254.

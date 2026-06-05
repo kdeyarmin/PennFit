@@ -10,14 +10,13 @@ describe("INTEGRATION_SOURCES", () => {
     expect(INTEGRATION_SOURCES).toEqual([
       "resmed_airview",
       "philips_care",
-      "health_connect",
       "react_health",
     ]);
   });
 
-  it("has exactly four entries", () => {
+  it("has exactly three entries", () => {
     // Regression guard: adding a vendor without updating this count is a red flag.
-    expect(INTEGRATION_SOURCES).toHaveLength(4);
+    expect(INTEGRATION_SOURCES).toHaveLength(3);
   });
 
   it("includes react_health", () => {

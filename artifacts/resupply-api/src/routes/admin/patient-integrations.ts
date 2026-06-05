@@ -1,6 +1,6 @@
 // /admin/patients/:id/integrations — unified "Device data" view
-// across ResMed AirView, Philips Care Orchestrator, and Health
-// Connect for one patient.
+// across ResMed AirView, Philips Care Orchestrator, and React
+// Health for one patient.
 //
 //   GET  /admin/patients/:id/integrations
 //        Returns the per-source therapy link (if any) + the
@@ -8,7 +8,7 @@
 //        not call partner APIs — pure cache read.
 //
 //   POST /admin/patients/:id/integrations/refresh
-//        Body: { source: "resmed_airview" | "philips_care" | "health_connect" }
+//        Body: { source: "resmed_airview" | "philips_care" | "react_health" }
 //        Calls the adapter's fetchSnapshot, validates the result,
 //        UPSERTs into patient_integration_snapshots, and returns
 //        the fresh row. Errors normalise to fetch_status='error'
@@ -224,45 +224,27 @@ router.post(
 
     const supabase = getSupabaseServiceRoleClient();
 
-    // Look up the active link for this (patient, source). For
-    // health_connect there is no link row — the partner-side id
-    // is the PennFit patient id (the patient app authenticates
-    // as the patient, not via a separate partner account).
-    let partnerPatientId: string;
-    if (source === "health_connect") {
-      const { data: existsRow, error: existsErr } = await supabase
-        .schema("resupply")
-        .from("patients")
-        .select("id")
-        .eq("id", patientId)
-        .limit(1)
-        .maybeSingle();
-      if (existsErr) throw existsErr;
-      if (!existsRow) {
-        res.status(404).json({ error: "patient_not_found" });
-        return;
-      }
-      partnerPatientId = patientId;
-    } else {
-      const { data: link, error: linkErr } = await supabase
-        .schema("resupply")
-        .from("patient_therapy_links")
-        .select("partner_patient_id")
-        .eq("patient_id", patientId)
-        .eq("source", source)
-        .eq("status", "active")
-        .limit(1)
-        .maybeSingle();
-      if (linkErr) throw linkErr;
-      if (!link) {
-        res.status(409).json({
-          error: "no_active_link",
-          message: `Patient has no active ${source} link. Create one before refreshing.`,
-        });
-        return;
-      }
-      partnerPatientId = link.partner_patient_id;
+    // Look up the active link for this (patient, source). Every
+    // therapy source requires an active partner link before a
+    // refresh can pull a snapshot.
+    const { data: link, error: linkErr } = await supabase
+      .schema("resupply")
+      .from("patient_therapy_links")
+      .select("partner_patient_id")
+      .eq("patient_id", patientId)
+      .eq("source", source)
+      .eq("status", "active")
+      .limit(1)
+      .maybeSingle();
+    if (linkErr) throw linkErr;
+    if (!link) {
+      res.status(409).json({
+        error: "no_active_link",
+        message: `Patient has no active ${source} link. Create one before refreshing.`,
+      });
+      return;
     }
+    const partnerPatientId = link.partner_patient_id;
 
     const adapter = (await getIntegrationAdaptersWithDbOverrides()).get(source);
     if (!adapter) {
@@ -401,11 +383,7 @@ router.post(
     // the snapshot upsert above is the authoritative success, and
     // a persist failure shouldn't fail the refresh.
     let nightsPersisted = 0;
-    if (
-      source === "resmed_airview" ||
-      source === "philips_care" ||
-      source === "health_connect"
-    ) {
+    if (source === "resmed_airview" || source === "philips_care") {
       try {
         const r = await persistTherapyNights(
           supabase,

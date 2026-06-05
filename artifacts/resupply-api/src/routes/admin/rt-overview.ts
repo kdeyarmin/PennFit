@@ -1,8 +1,8 @@
 // /admin/rt-overview — Respiratory therapist at-a-glance dashboard.
 //
 // Surfaces the data the RT side of the house already has — therapy
-// nights from the four manufacturer integrations (ResMed AirView,
-// Philips Care Orchestrator, Google Health Connect, React Health),
+// nights from the three manufacturer integrations (ResMed AirView,
+// Philips Care Orchestrator, React Health),
 // active therapy links, and undismissed smart-trigger events — as
 // one consolidated read for the RT/clinical team's daily review.
 // No new schema; every column already exists.

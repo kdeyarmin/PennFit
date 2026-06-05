@@ -22,7 +22,6 @@ const DEFAULT_TIMEOUT_MS = 30_000;
 // KB; 4 MB is generous headroom. The cap stops a compromised/misbehaving
 // payer endpoint (it only has to pass the route's SSRF host check, not be
 // honest) from OOM-ing the in-process API/worker with a multi-GB body.
-// Mirrors MAX_JWKS_BODY_BYTES in resupply-integrations-ehr-fhir.
 const MAX_PAS_RESPONSE_BYTES = 4 * 1024 * 1024;
 
 /**
