@@ -50,6 +50,7 @@ import {
   getSupabaseServiceRoleClient,
 } from "@workspace/resupply-db";
 
+import { isFeatureEnabled } from "../../lib/feature-flags";
 import { logger } from "../../lib/logger";
 import {
   createQueueWithDlq,
@@ -332,6 +333,15 @@ export async function registerFitterLeadReengageJob(
   await createQueueWithDlq(boss, NUDGE_JOB, VENDOR_SEND_QUEUE_OPTS);
   await boss.work(NUDGE_JOB, async () => {
     try {
+      // Runtime kill switch (admin Control Center). The env var gates
+      // registration; this flag pauses the sweep without changing env.
+      if (!(await isFeatureEnabled("fitter_reengage.dispatcher"))) {
+        logger.info(
+          { event: "fitter-lead.reengage.flag_off" },
+          "fitter-lead-reengage: feature flag off — skipping",
+        );
+        return;
+      }
       const stats = await runFitterLeadReengageSweep();
       logger.info(
         { event: "fitter-lead.reengage.completed", ...stats },

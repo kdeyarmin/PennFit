@@ -60,6 +60,10 @@ export const FEATURE_FLAG_KEYS = [
   "storefront.auto_reminder_enrollment",
   "alerts.auto_dispatch",
   "therapy_fleet.auto_outreach",
+  "clinical_outreach.dispatcher",
+  "eligibility.auto_reverify",
+  "fitter_first_day_nudge.dispatcher",
+  "fitter_reengage.dispatcher",
 ] as const;
 
 export type FeatureFlagKey = (typeof FEATURE_FLAG_KEYS)[number];
