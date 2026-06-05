@@ -19,6 +19,7 @@ import {
   installSupabaseMock,
   stageSupabaseResponse,
 } from "../../test-helpers/supabase-mock";
+import { __resetAppConfigCacheForTests } from "../../lib/app-config/store";
 
 const supabaseMock = installSupabaseMock();
 
@@ -59,6 +60,11 @@ beforeEach(() => {
   for (const k of ALL_VENDOR_KEYS) delete process.env[k];
   mockAdmin.current = null;
   supabaseMock.reset();
+  // The route now folds System Configuration overrides over process.env
+  // via getEffectiveEnv(), which caches the app_config read for a few
+  // seconds. Clear it so each test starts from a clean overlay (and an
+  // unstaged app_config read returns "no overrides").
+  __resetAppConfigCacheForTests();
 });
 
 afterEach(() => {
@@ -139,6 +145,15 @@ describe("GET /admin/ops-status", () => {
       stripe: false,
       objectStorage: false,
     });
+    // Nothing saved in System Configuration either → nothing pending.
+    expect(res.body.vendorsPendingRestart).toEqual({
+      sendgrid: false,
+      twilioVoice: false,
+      twilioSms: false,
+      twilioFax: false,
+      stripe: false,
+      objectStorage: false,
+    });
   });
 
   it("flags sendgrid only when both API key + from email are set", async () => {
@@ -187,6 +202,68 @@ describe("GET /admin/ops-status", () => {
       stripe: true,
       objectStorage: true,
     });
+    // All present directly in process.env (live) → none pending restart.
+    expect(res.body.vendorsPendingRestart).toEqual({
+      sendgrid: false,
+      twilioVoice: false,
+      twilioSms: false,
+      twilioFax: false,
+      stripe: false,
+      objectStorage: false,
+    });
+  });
+
+  it("surfaces a credential saved in System Configuration as configured + pending restart", async () => {
+    mockAdmin.current = { userId: "u", email: "ops@x", role: "admin" };
+    // STRIPE_SECRET_KEY is absent from process.env (deleted in beforeEach)
+    // but a super-admin saved it in /admin/system/configuration. It is a
+    // catalog key with applyMode: "restart", so it is NOT live in
+    // process.env until the next deploy folds it in via the boot overlay.
+    stageSupabaseResponse("app_config", "select", {
+      data: [{ key: "STRIPE_SECRET_KEY", value: "sk_live_savedinapp" }],
+    });
+    queueCounts([0, 0, 0, 0, 0, 0, 0, 0]);
+    const res = await request(makeApp()).get("/admin/ops-status");
+    expect(res.status).toBe(200);
+    // The value exists (effective env) → reads as configured, NOT the
+    // flat "not configured" the old process.env-only check returned.
+    expect(res.body.vendors.stripe).toBe(true);
+    // …and is flagged as not-yet-live so the UI says "applies after restart".
+    expect(res.body.vendorsPendingRestart.stripe).toBe(true);
+    // A vendor with no value anywhere stays false on both maps.
+    expect(res.body.vendors.sendgrid).toBe(false);
+    expect(res.body.vendorsPendingRestart.sendgrid).toBe(false);
+  });
+
+  it("flags a saved rotation as pending even when an old credential is still live", async () => {
+    mockAdmin.current = { userId: "u", email: "ops@x", role: "admin" };
+    // An OLD Stripe key is live in process.env; a NEW one was saved in the
+    // app. The running clients keep using the old value until the next
+    // deploy, so this must read as pending — not a misleading green
+    // "configured". (Regression test for PR #521 review: a presence-only
+    // check missed this because both live and effective are configured.)
+    process.env.STRIPE_SECRET_KEY = "sk_live_oldlive";
+    stageSupabaseResponse("app_config", "select", {
+      data: [{ key: "STRIPE_SECRET_KEY", value: "sk_live_newsaved" }],
+    });
+    queueCounts([0, 0, 0, 0, 0, 0, 0, 0]);
+    const res = await request(makeApp()).get("/admin/ops-status");
+    expect(res.body.vendors.stripe).toBe(true);
+    expect(res.body.vendorsPendingRestart.stripe).toBe(true);
+  });
+
+  it("does not flag pending when the saved value matches the live env value", async () => {
+    mockAdmin.current = { userId: "u", email: "ops@x", role: "admin" };
+    // Saved value === live value (e.g. already folded in on a prior
+    // deploy): nothing is waiting on a restart.
+    process.env.STRIPE_SECRET_KEY = "sk_live_same";
+    stageSupabaseResponse("app_config", "select", {
+      data: [{ key: "STRIPE_SECRET_KEY", value: "sk_live_same" }],
+    });
+    queueCounts([0, 0, 0, 0, 0, 0, 0, 0]);
+    const res = await request(makeApp()).get("/admin/ops-status");
+    expect(res.body.vendors.stripe).toBe(true);
+    expect(res.body.vendorsPendingRestart.stripe).toBe(false);
   });
 
   it("returns dispatcher counts in the correct shape", async () => {
