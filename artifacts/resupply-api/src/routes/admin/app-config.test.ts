@@ -11,7 +11,7 @@
 //      app_config_events row.
 //   5. DELETE clears a saved value.
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import express, { type Express } from "express";
 import request from "supertest";
 
@@ -168,6 +168,92 @@ describe("GET /admin/system/config", () => {
 
     // Hard guarantee: the secret plaintext is nowhere in the payload.
     expect(JSON.stringify(res.body)).not.toContain(SECRET);
+  });
+});
+
+describe("GET /admin/system/config — Twilio webhook URLs", () => {
+  const BASE_KEY = "RESUPPLY_VOICE_PUBLIC_BASE_URL";
+  let savedBase: string | undefined;
+  let savedRailway: string | undefined;
+
+  beforeEach(() => {
+    // Hermetic: the reference URLs resolve from these env vars unless a
+    // db value is staged, so pin them off for a predictable baseline.
+    savedBase = process.env[BASE_KEY];
+    savedRailway = process.env.RAILWAY_PUBLIC_DOMAIN;
+    delete process.env[BASE_KEY];
+    delete process.env.RAILWAY_PUBLIC_DOMAIN;
+  });
+  afterEach(() => {
+    if (savedBase === undefined) delete process.env[BASE_KEY];
+    else process.env[BASE_KEY] = savedBase;
+    if (savedRailway === undefined) delete process.env.RAILWAY_PUBLIC_DOMAIN;
+    else process.env.RAILWAY_PUBLIC_DOMAIN = savedRailway;
+  });
+
+  it("derives the full webhook URLs from a saved base URL (slash stripped)", async () => {
+    stubSuperAdmin();
+    stageSupabaseResponse("app_config", "select", {
+      data: [
+        {
+          key: BASE_KEY,
+          value: "https://pennfit.example.com/",
+          updated_by_email: "owner@example.com",
+          updated_at: "2026-06-01T00:00:00.000Z",
+        },
+      ],
+    });
+
+    const res = await request(makeApp()).get("/admin/system/config");
+    expect(res.status).toBe(200);
+
+    const w = res.body.twilioWebhooks;
+    expect(w.baseUrl).toBe("https://pennfit.example.com");
+    expect(w.baseUrlSource).toBe("db");
+    expect(w.baseUrlKey).toBe(BASE_KEY);
+
+    const urls: Record<string, string> = Object.fromEntries(
+      (w.endpoints as Array<{ id: string; url: string }>).map((e) => [
+        e.id,
+        e.url,
+      ]),
+    );
+    expect(urls.voice_inbound).toBe(
+      "https://pennfit.example.com/resupply-api/voice/inbound-reorder",
+    );
+    expect(urls.sms_inbound).toBe(
+      "https://pennfit.example.com/resupply-api/sms/inbound",
+    );
+    expect(urls.sms_status).toBe(
+      "https://pennfit.example.com/resupply-api/sms/status-callback",
+    );
+    expect(urls.fax_inbound).toBe(
+      "https://pennfit.example.com/resupply-api/fax/inbound",
+    );
+  });
+
+  it("falls back to the Railway domain when only RAILWAY_PUBLIC_DOMAIN is set", async () => {
+    stubSuperAdmin();
+    process.env.RAILWAY_PUBLIC_DOMAIN = "pennfit.up.railway.app";
+    stageSupabaseResponse("app_config", "select", { data: [] });
+
+    const res = await request(makeApp()).get("/admin/system/config");
+    expect(res.status).toBe(200);
+    expect(res.body.twilioWebhooks.baseUrl).toBe(
+      "https://pennfit.up.railway.app",
+    );
+    expect(res.body.twilioWebhooks.baseUrlSource).toBe("railway");
+  });
+
+  it("returns no URLs when no base URL is configured", async () => {
+    stubSuperAdmin();
+    stageSupabaseResponse("app_config", "select", { data: [] });
+
+    const res = await request(makeApp()).get("/admin/system/config");
+    expect(res.status).toBe(200);
+    expect(res.body.twilioWebhooks.baseUrl).toBeNull();
+    expect(res.body.twilioWebhooks.baseUrlSource).toBe("unset");
+    expect(res.body.twilioWebhooks.endpoints).toEqual([]);
   });
 });
 
