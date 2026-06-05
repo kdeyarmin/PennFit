@@ -120,11 +120,9 @@ This is the **highest-ROI, lowest-effort** lever: real capability that's already
 written, tested, and wired — just switched off. There are two gating layers.
 
 > **Before enabling anything that contacts patients:** confirm marketing
-> opt-in / transactional consent (`communication_preferences`), confirm the
-> relevant vendor BAA (Twilio, SendGrid, Anthropic, OpenAI, ElevenLabs,
-> Deepgram), and respect the existing frequency caps. The system fails safe
-> (these are off by design), so treat each as a deliberate go-live, ideally
-> staged.
+> opt-in / transactional consent (`communication_preferences`) and respect
+> the existing frequency caps. The system fails safe (these are off by
+> design), so treat each as a deliberate go-live, ideally staged.
 
 ### Table A — Runtime flags seeded OFF
 
@@ -171,7 +169,7 @@ redeploy**.
 3. `reminder_escalation.dispatcher` — better conversion on existing reminders.
 4. `RESUPPLY_FITTER_SUPPLY_CAMPAIGN_ENABLED` — supply nurture for new fittings.
 5. `storefront.auto_reminder_enrollment` — recurring-revenue enrolment.
-6. `therapy_fleet.auto_outreach` + `CLINICAL_OUTREACH_CRON` — clinical SMS (most sensitive; confirm consent/BAA).
+6. `therapy_fleet.auto_outreach` + `CLINICAL_OUTREACH_CRON` — clinical SMS (most sensitive; confirm consent).
 7. `*_enforcement` guards — once you're ready to gate orders on entitlement/eligibility.
 
 ---
@@ -274,12 +272,12 @@ nothing new since the math already exists.
 | 2   | Enable cart-abandonment auto-cron                                     | 1     | Config | Low  | Consent-gated patient email.                              |
 | 3   | Enable `reminder_escalation.dispatcher`                               | 1     | Config | Low  | More conversions from existing reminders.                 |
 | 4   | Enable fitter supply campaign + `storefront.auto_reminder_enrollment` | 1     | Config | Low  | Recurring-revenue enrolment.                              |
-| 5   | Enable `therapy_fleet.auto_outreach` + `CLINICAL_OUTREACH_CRON`       | 1     | Config | Med  | Clinical SMS — confirm consent/BAA; stage carefully.      |
+| 5   | Enable `therapy_fleet.auto_outreach` + `CLINICAL_OUTREACH_CRON`       | 1     | Config | Med  | Clinical SMS — confirm consent; stage carefully.          |
 | 6   | **Per-payer compliance rules**                                        | 2     | 1–2 wk | Low  | Seed Medicare default so nothing moves until rules added. |
 | 7   | **Deadline-aware escalating outreach**                                | 4     | 1–2 wk | Med  | Reuses existing setup-adherence math.                     |
 | 8   | **Closed-loop attribution + revenue-by-source**                       | 3     | ~2 wk  | Low  | Measures the impact of items 1–7.                         |
 
-Items **1–5 are days of config** (plus consent/BAA sign-off), not engineering.
+Items **1–5 are days of config** (plus consent sign-off), not engineering.
 Items 6–8 are the genuine builds. Doing **8 early-ish** is worth it: it's how
 you'll prove the activations in 1–5 are working.
 
@@ -308,7 +306,6 @@ Operational guardrails specific to this roadmap:
   `communication_preferences` (marketing opt-in, transactional, DND) and the
   per-patient frequency caps already in `clinical_outreach_log` and the
   reminder de-dup logic.
-- **BAA per vendor** before clinical messaging or AI on patient data.
 - **Stage activations** and measure (Lever 3) — turn one lever on, watch the
   metrics and CSR alert volume, then proceed.
 
