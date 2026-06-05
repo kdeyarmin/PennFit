@@ -7,10 +7,31 @@ import { ApiError } from "@workspace/api-client-react/admin";
 import { csrfHeader } from "../csrf";
 
 export interface OpsStatus {
+  // Mirrors the server contract (/admin/ops-status). `twilioFax` is
+  // returned by the API and typed here for fidelity even though the
+  // current VendorStrip renders a curated subset (no fax tile yet).
   vendors: {
     sendgrid: boolean;
     twilioVoice: boolean;
     twilioSms: boolean;
+    twilioFax: boolean;
+    stripe: boolean;
+    objectStorage: boolean;
+  };
+  /**
+   * Per-vendor: the credential was saved in System Configuration
+   * (/admin/system/configuration) but hasn't been folded into the live
+   * process yet — catalog keys are `applyMode: "restart"`, so they take
+   * effect on the next deploy. When true, `vendors[key]` is also true
+   * (the value exists); the UI renders a distinct "saved — applies after
+   * restart" state instead of a green "configured" or amber "not
+   * configured". Optional so older API responses still typecheck.
+   */
+  vendorsPendingRestart?: {
+    sendgrid: boolean;
+    twilioVoice: boolean;
+    twilioSms: boolean;
+    twilioFax: boolean;
     stripe: boolean;
     objectStorage: boolean;
   };
