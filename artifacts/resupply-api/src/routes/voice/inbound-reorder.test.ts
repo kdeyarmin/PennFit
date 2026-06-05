@@ -94,14 +94,14 @@ const CONVERSATION_ID = "33333333-3333-4333-8333-333333333333";
 
 /** Stage the minimal DB calls for a single inbound reorder request. */
 function stagePatientFound(): void {
-  stageSupabaseResponse("patients", "select", { data: { id: PATIENT_ID } });
+  stageSupabaseResponse("patients", "select", { data: [{ id: PATIENT_ID }] });
   stageSupabaseResponse("voice_reorder_sessions", "insert", {
     data: { id: SESSION_ID },
   });
 }
 
 function stagePatientNotFound(): void {
-  stageSupabaseResponse("patients", "select", { data: null });
+  stageSupabaseResponse("patients", "select", { data: [] });
   stageSupabaseResponse("voice_reorder_sessions", "insert", {
     data: { id: SESSION_ID },
   });
@@ -294,13 +294,44 @@ describe("POST /voice/inbound-reorder — identified caller path", () => {
       status: "in_progress",
     });
   });
+
+  it("transfers to a human (never binds to a patient) when the caller number is on multiple accounts", async () => {
+    // Two patients share the caller-ID number. We must NOT auto-bind the
+    // patient-scoped AI reorder agent to an arbitrary one — mirror the SMS
+    // handler's ambiguous-phone guard and route to a human instead.
+    stageSupabaseResponse("patients", "select", {
+      data: [
+        { id: PATIENT_ID },
+        { id: "99999999-9999-4999-8999-999999999999" },
+      ],
+    });
+    stageSupabaseResponse("voice_reorder_sessions", "insert", {
+      data: { id: SESSION_ID },
+    });
+
+    const res = await request(makeApp())
+      .post("/voice/inbound-reorder")
+      .type("form")
+      .send({ From: "+12155550001", CallSid: "CA_shared" });
+
+    expect(res.status).toBe(200);
+    // Routed to a human, NOT connected to the patient-scoped media bridge.
+    expect(res.text).not.toContain("<Connect");
+    expect(res.text).toContain("<Dial");
+    // The session row must not be bound to either patient.
+    const inserts = supabaseMock.writePayloads(
+      "voice_reorder_sessions",
+      "insert",
+    ) as Array<Record<string, unknown>>;
+    expect(inserts[0]).toMatchObject({ patient_id: null });
+  });
 });
 
 describe("POST /voice/inbound-reorder — session insert failure", () => {
   beforeEach(() => setVoiceEnv());
 
   it("returns 500 TwiML when voice_reorder_sessions insert fails", async () => {
-    stageSupabaseResponse("patients", "select", { data: { id: PATIENT_ID } });
+    stageSupabaseResponse("patients", "select", { data: [{ id: PATIENT_ID }] });
     stageSupabaseResponse("voice_reorder_sessions", "insert", {
       error: { message: "db error" },
     });
@@ -333,7 +364,7 @@ describe("POST /voice/inbound-reorder — identified caller → realtime bridge"
   beforeEach(() => setVoiceEnv());
 
   function stageIdentifiedWithEpisode(flagEnabled: boolean): void {
-    stageSupabaseResponse("patients", "select", { data: { id: PATIENT_ID } });
+    stageSupabaseResponse("patients", "select", { data: [{ id: PATIENT_ID }] });
     stageSupabaseResponse("voice_reorder_sessions", "insert", {
       data: { id: SESSION_ID },
     });
@@ -398,7 +429,7 @@ describe("POST /voice/inbound-reorder — identified caller → realtime bridge"
   });
 
   it("transfers to a human when the patient has no actionable episode", async () => {
-    stageSupabaseResponse("patients", "select", { data: { id: PATIENT_ID } });
+    stageSupabaseResponse("patients", "select", { data: [{ id: PATIENT_ID }] });
     stageSupabaseResponse("voice_reorder_sessions", "insert", {
       data: { id: SESSION_ID },
     });

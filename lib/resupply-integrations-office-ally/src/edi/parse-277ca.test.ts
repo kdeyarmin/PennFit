@@ -48,4 +48,40 @@ describe("parse277CA", () => {
     expect(r.claims[1]!.traceNumber).toBe("CLM-0002");
     expect(r.claims[1]!.subscriberLastName).toBe("SMITH");
   });
+
+  // Regression: claims for a dependent (HL level 23) distinct from the
+  // subscriber (level 22) must be parsed, and the empty subscriber parent
+  // block must NOT emit a spurious claim row.
+  it("parses a dependent-patient (HL 23) claim and skips the empty subscriber parent", () => {
+    const DEP = [
+      "ISA*00*          *00*          *ZZ*OFFCLY         *ZZ*PENNPAPS01     *260519*1437*^*00501*000000201*0*P*:~",
+      "GS*HN*OFFCLY*PENNPAPS01*20260519*1437*201*X*005010X214~",
+      "ST*277*0001~",
+      "BHT*0085*08*PF-CLAIMS-2*20260519*1437*TH~",
+      "HL*1**20*1~",
+      "NM1*PR*2*OFFICE ALLY*****46*OFFCLY~",
+      "HL*2*1*21*1~",
+      "NM1*41*2*PENNPAPS INC*****46*PENNPAPS01~",
+      "HL*3*2*19*1~",
+      "NM1*85*2*PENNPAPS INC*****XX*1234567893~",
+      // Subscriber parent — no claim hangs off this HL.
+      "HL*4*3*22*1~",
+      "NM1*IL*1*DOE*JOHN****MI*S111111111~",
+      // Dependent IS the patient; the claim ack hangs off level 23.
+      "HL*5*4*23~",
+      "NM1*QC*1*DOE*JIMMY****MI*M222222222~",
+      "TRN*2*CLM-DEP-1~",
+      "STC*A2:20:PR*20260519*WQ*99.99~",
+      "REF*1K*PAYER-DEP-1~",
+      "SE*14*0001~",
+      "GE*1*201~",
+      "IEA*1*000000201~",
+    ].join("");
+    const r = parse277CA(DEP);
+    expect(r.claims).toHaveLength(1);
+    expect(r.claims[0]!.traceNumber).toBe("CLM-DEP-1");
+    expect(r.claims[0]!.outcome).toBe("accepted");
+    expect(r.claims[0]!.payerClaimRef).toBe("PAYER-DEP-1");
+    expect(r.claims[0]!.patientId).toBe("M222222222");
+  });
 });

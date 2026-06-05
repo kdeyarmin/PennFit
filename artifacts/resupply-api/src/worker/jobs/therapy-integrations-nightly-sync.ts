@@ -53,6 +53,61 @@ async function sleep(ms: number): Promise<void> {
   await new Promise((r) => setTimeout(r, ms));
 }
 
+/**
+ * Coerce the common per-night vendor quirks that would otherwise fail
+ * `integrationSnapshotSchema` and cause the ENTIRE snapshot — valid device
+ * settings, compliance, AND every other night — to be dropped for that
+ * patient. The adapters copy vendor fields verbatim (`nightDate: raw.date`,
+ * `usageMinutes: raw.x`), so a vendor returning a full ISO timestamp, a
+ * fractional minute count, or a negative leak reading nukes the whole sync.
+ *
+ * We normalize in place: ISO timestamps -> YYYY-MM-DD, numerics
+ * rounded/clamped to the schema shape (non-negative int | non-negative
+ * number | null), drop ONLY the individual nights whose date can't be
+ * salvaged, and strip any extra keys (the night schema is exact). Non-night
+ * fields are left untouched — a malformed settings/compliance block is a
+ * different, rarer failure handled by the safeParse below.
+ */
+export function normalizeSnapshotForPersistence(snapshot: unknown): unknown {
+  if (!snapshot || typeof snapshot !== "object") return snapshot;
+  const snap = snapshot as Record<string, unknown>;
+  const nights = snap.recentNights;
+  if (!Array.isArray(nights)) return snapshot;
+
+  const toDate = (v: unknown): string | null => {
+    if (typeof v !== "string") return null;
+    // Accept YYYY-MM-DD or slice the date prefix off an ISO timestamp.
+    const m = /^(\d{4}-\d{2}-\d{2})/.exec(v.trim());
+    return m ? m[1]! : null;
+  };
+  // Fractional positive values are rounded/kept; negative (garbage)
+  // readings become null ("no data") rather than a misleading 0.
+  const toNonNegInt = (v: unknown): number | null =>
+    typeof v === "number" && Number.isFinite(v) && v >= 0
+      ? Math.round(v)
+      : null;
+  const toNonNeg = (v: unknown): number | null =>
+    typeof v === "number" && Number.isFinite(v) && v >= 0 ? v : null;
+
+  const normalizedNights = nights.flatMap((raw) => {
+    if (!raw || typeof raw !== "object") return [];
+    const n = raw as Record<string, unknown>;
+    const nightDate = toDate(n.nightDate);
+    if (!nightDate) return []; // unsalvageable date -> drop only this night
+    return [
+      {
+        nightDate,
+        usageMinutes: toNonNegInt(n.usageMinutes),
+        ahi: toNonNeg(n.ahi),
+        leakRateLMin: toNonNeg(n.leakRateLMin),
+        pressureP95Cmh2o: toNonNeg(n.pressureP95Cmh2o),
+      },
+    ];
+  });
+
+  return { ...snap, recentNights: normalizedNights };
+}
+
 export async function registerTherapyNightlySyncJob(
   boss: PgBoss,
 ): Promise<void> {
@@ -163,8 +218,23 @@ export async function runTherapyNightlySync(): Promise<NightlySyncResult> {
         continue;
       }
 
-      const parsed = integrationSnapshotSchema.safeParse(fetched.snapshot);
+      const parsed = integrationSnapshotSchema.safeParse(
+        normalizeSnapshotForPersistence(fetched.snapshot),
+      );
       if (!parsed.success) {
+        // Previously a silent drop. Log path+code (never raw values — PHI)
+        // so a persistently malformed vendor payload is visible to ops
+        // instead of just incrementing a counter.
+        logger.warn(
+          {
+            link_id: link.id,
+            source,
+            issues: parsed.error.issues
+              .slice(0, 5)
+              .map((i) => ({ path: i.path.join("."), code: i.code })),
+          },
+          "nightly-sync: snapshot failed schema validation after normalization; dropping",
+        );
         result.failed += 1;
         await sleep(THROTTLE_MS);
         continue;

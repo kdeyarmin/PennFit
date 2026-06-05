@@ -889,13 +889,28 @@ export async function registerReminderJobs(boss: PgBoss): Promise<void> {
     );
     if (!proceed) return;
     const actor: SendActor = { kind: "system", jobId: j.id };
-    const outcome = await sendReminderSms({
-      supabase,
-      cfg: cfg.sms,
-      patientId: j.data.patientId,
-      episodeId: j.data.episodeId,
-      actor,
-    });
+    let outcome: Awaited<ReturnType<typeof sendReminderSms>>;
+    try {
+      outcome = await sendReminderSms({
+        supabase,
+        cfg: cfg.sms,
+        patientId: j.data.patientId,
+        episodeId: j.data.episodeId,
+        actor,
+      });
+    } catch (err) {
+      // sendReminderSms threw instead of returning a non-ok outcome (e.g.
+      // a Supabase read inside it rejected). Release the dedup claim before
+      // the throw propagates so pg-boss's retry can re-claim; otherwise the
+      // key stays held for its full TTL and this reminder is silently
+      // dropped for the whole 22h window.
+      try {
+        await releaseReminderDedupKey(supabase, dedupKey, j.id);
+      } catch {
+        // best-effort release; surface the original failure regardless
+      }
+      throw err;
+    }
     if (outcome.status !== "ok") {
       logger.warn(
         {
@@ -943,13 +958,27 @@ export async function registerReminderJobs(boss: PgBoss): Promise<void> {
     );
     if (!proceed) return;
     const actor: SendActor = { kind: "system", jobId: j.id };
-    const outcome = await sendReminderEmail({
-      supabase,
-      cfg: cfg.email,
-      patientId: j.data.patientId,
-      episodeId: j.data.episodeId,
-      actor,
-    });
+    let outcome: Awaited<ReturnType<typeof sendReminderEmail>>;
+    try {
+      outcome = await sendReminderEmail({
+        supabase,
+        cfg: cfg.email,
+        patientId: j.data.patientId,
+        episodeId: j.data.episodeId,
+        actor,
+      });
+    } catch (err) {
+      // sendReminderEmail threw instead of returning a non-ok outcome.
+      // Release the dedup claim before the throw propagates so pg-boss's
+      // retry can re-claim; otherwise the key stays held for its full TTL
+      // and this reminder is silently dropped for the whole 22h window.
+      try {
+        await releaseReminderDedupKey(supabase, dedupKey, j.id);
+      } catch {
+        // best-effort release; surface the original failure regardless
+      }
+      throw err;
+    }
     if (outcome.status !== "ok") {
       logger.warn(
         {

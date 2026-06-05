@@ -618,7 +618,8 @@ async function placeVoiceCall(
           // touching the database first.
           url: `${clients.voice!.publicBaseUrl}/resupply-api/voice/checkin-twiml?day=${encodeURIComponent(day)}&patientId=${encodeURIComponent(row.patientId)}&journeyId=${encodeURIComponent(row.journeyId)}`,
           statusCallbackUrl: `${clients.voice!.publicBaseUrl}/resupply-api/voice/status-callback`,
-          record: false,
+          // Recording is always off (enforced in placeCall per the PHI
+          // hard rule); no `record` option to pass.
           timeLimit: 120,
         }),
       {
