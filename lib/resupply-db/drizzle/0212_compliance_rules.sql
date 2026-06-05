@@ -59,7 +59,7 @@ CREATE TABLE IF NOT EXISTS "resupply"."compliance_rules" (
   CONSTRAINT "compliance_rules_min_minutes_chk"
     CHECK ("min_minutes" >= 0 AND "min_minutes" <= 1440),
   CONSTRAINT "compliance_rules_required_nights_chk"
-    CHECK ("required_nights" >= 1 AND "required_nights" <= 31)
+    CHECK ("required_nights" >= 1 AND "required_nights" <= 30)
 );
 --> statement-breakpoint
 

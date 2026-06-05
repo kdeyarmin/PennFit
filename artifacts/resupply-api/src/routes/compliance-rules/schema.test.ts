@@ -42,12 +42,12 @@ describe("complianceRuleBody (POST)", () => {
     expect(parsed.requiredNights).toBe(14);
   });
 
-  it("rejects requiredNights outside 1..31", () => {
+  it("rejects requiredNights outside 1..30", () => {
     expect(
       complianceRuleBody.safeParse({ name: "x", requiredNights: 0 }).success,
     ).toBe(false);
     expect(
-      complianceRuleBody.safeParse({ name: "x", requiredNights: 32 }).success,
+      complianceRuleBody.safeParse({ name: "x", requiredNights: 31 }).success,
     ).toBe(false);
   });
 

@@ -48,7 +48,7 @@ export const compliancePatchBody = z
       .optional()
       .transform((v) => (v === "" ? null : v)),
     minMinutes: z.number().int().min(0).max(1440).optional(),
-    requiredNights: z.number().int().min(1).max(31).optional(),
+    requiredNights: z.number().int().min(1).max(30).optional(),
     active: z.boolean().optional(),
     notes: z
       .string()

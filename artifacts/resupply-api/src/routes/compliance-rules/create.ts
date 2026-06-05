@@ -36,8 +36,8 @@ export const complianceRuleBody = z
       .transform((v) => (v === "" || v === undefined ? null : v)),
     // 0..1440 minutes (a night can't exceed 24h). 240 = 4 hours.
     minMinutes: z.number().int().min(0).max(1440).default(240),
-    // 1..31 qualifying nights in a (≤31-day) window. 21 = CMS.
-    requiredNights: z.number().int().min(1).max(31).default(21),
+    // 1..30 qualifying nights in a (≤30-day) window. 21 = CMS.
+    requiredNights: z.number().int().min(1).max(30).default(21),
     active: z.boolean().default(true),
     notes: z
       .string()
