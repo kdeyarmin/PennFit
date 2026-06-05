@@ -62,6 +62,19 @@ jobs:
           git fetch --no-tags --depth=1 origin "$GITHUB_BASE_REF"
           BASE_REF=FETCH_HEAD DIFF_TARGET= bash scripts/check-resupply-migration-prefix.sh
 
+      # Migration immutability guard. Complements the prefix check above:
+      # a migration that already exists on the PR base must not be edited
+      # or deleted. migrate.mjs dedups applied migrations by content hash,
+      # so an in-place edit makes the deploy-time migrator re-apply the
+      # file against prod and gates the Railway release if it isn't
+      # perfectly idempotent — the 2026-06-05 0212_compliance_rules.sql
+      # incident. PR-only — a push to main has no base to diff.
+      - name: Migration immutability check
+        if: github.event_name == 'pull_request'
+        run: |
+          git fetch --no-tags --depth=1 origin "$GITHUB_BASE_REF"
+          BASE_REF=FETCH_HEAD DIFF_TARGET= bash scripts/check-resupply-migration-immutability.sh
+
       - uses: ./.github/actions/setup
         with:
           node-version: ${{ env.NODE_VERSION }}
@@ -105,6 +118,9 @@ jobs:
 
       - name: Migration-prefix checker self-test
         run: scripts/check-resupply-migration-prefix.sh --self-test
+
+      - name: Migration-immutability checker self-test
+        run: scripts/check-resupply-migration-immutability.sh --self-test
 
       # Self-test for the pre-commit staged-snapshot library (the helper
       # that makes the hook's checks see the staged index, not the live

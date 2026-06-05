@@ -1,0 +1,149 @@
+#!/usr/bin/env bash
+#
+# Self-test for scripts/check-resupply-migration-immutability.sh.
+#
+# Builds a throwaway git repo in a tempdir, runs the checker against
+# synthetic diffs, asserts pass/fail. Never touches the real working
+# tree.
+#
+# Scenarios:
+#   A. clean staged index (no migration changes)              — pass
+#   B. modify an existing (shipped) migration                 — fail
+#   C. modify a shipped migration that is allowlisted         — pass
+#   D. add a NEW migration (additions are not our concern)    — pass
+#   E. delete an existing (shipped) migration                 — fail
+#   F. unrelated edit                                         — pass
+#   G. working-tree mode (DIFF_TARGET="") detects a modify    — fail
+#   H. edit the allowlist file itself (non-.sql)              — pass
+
+set -euo pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+SCRIPT="$REPO_ROOT/scripts/check-resupply-migration-immutability.sh"
+
+if [[ ! -x "$SCRIPT" ]]; then
+  printf '[self-test] %s is not executable; chmod +x it first\n' "$SCRIPT" >&2
+  exit 1
+fi
+
+WORK="$(mktemp -d -t resupply-immutable-test.XXXXXX)"
+trap 'rm -rf "$WORK"' EXIT INT TERM
+
+cd "$WORK"
+git init -q
+git config user.email "test@example.com"
+git config user.name "Test"
+# Some environments globally enable commit signing via a custom signing
+# program; throwaway fixture commits don't need (and can't use) it. Disable
+# locally so the harness is hermetic everywhere.
+git config commit.gpgsign false
+git config tag.gpgsign false
+git commit -q --allow-empty -m "init"
+
+mkdir -p lib/resupply-db/drizzle/meta
+echo "-- baseline" > lib/resupply-db/drizzle/0000_init.sql
+echo "-- shipped migration" > lib/resupply-db/drizzle/0049_existing.sql
+# Allowlist exists but is empty (only docs) at baseline.
+printf '# edit allowlist (see check-resupply-migration-immutability.sh)\n' \
+  > lib/resupply-db/drizzle/.migration-edit-allowlist
+git add .
+git commit -q -m "baseline"
+
+mkdir -p scripts
+cp "$SCRIPT" scripts/check-resupply-migration-immutability.sh
+chmod +x scripts/check-resupply-migration-immutability.sh
+
+run_check() {
+  BASE_REF=HEAD DIFF_TARGET=--cached \
+    bash scripts/check-resupply-migration-immutability.sh
+}
+
+# --- A: clean staged index --------------------------------------------------
+echo "[self-test] scenario A: clean staged index should pass"
+if ! run_check >/dev/null 2>&1; then
+  echo "[self-test] FAIL: A (clean tree should have passed)" >&2
+  exit 1
+fi
+
+# --- B: modify a shipped migration ------------------------------------------
+echo "[self-test] scenario B: modifying a shipped migration should fail"
+echo "-- edited in place" >> lib/resupply-db/drizzle/0049_existing.sql
+git add lib/resupply-db/drizzle/0049_existing.sql
+if run_check >/dev/null 2>&1; then
+  echo "[self-test] FAIL: B (in-place edit should have failed)" >&2
+  exit 1
+fi
+git restore --staged lib/resupply-db/drizzle/0049_existing.sql >/dev/null 2>&1 || true
+git checkout -- lib/resupply-db/drizzle/0049_existing.sql
+
+# --- C: modify a shipped migration that is allowlisted ----------------------
+echo "[self-test] scenario C: modifying an allowlisted migration should pass"
+echo "-- edited in place" >> lib/resupply-db/drizzle/0049_existing.sql
+printf '0049_existing.sql  # emergency idempotency hotfix\n' \
+  >> lib/resupply-db/drizzle/.migration-edit-allowlist
+git add lib/resupply-db/drizzle/0049_existing.sql \
+        lib/resupply-db/drizzle/.migration-edit-allowlist
+if ! run_check >/dev/null 2>&1; then
+  echo "[self-test] FAIL: C (allowlisted edit should have passed)" >&2
+  exit 1
+fi
+git restore --staged lib/resupply-db/drizzle/0049_existing.sql \
+                     lib/resupply-db/drizzle/.migration-edit-allowlist >/dev/null 2>&1 || true
+git checkout -- lib/resupply-db/drizzle/0049_existing.sql \
+                lib/resupply-db/drizzle/.migration-edit-allowlist
+
+# --- D: add a NEW migration -------------------------------------------------
+echo "[self-test] scenario D: adding a new migration should pass (not our concern)"
+echo "-- brand new" > lib/resupply-db/drizzle/0100_new.sql
+git add lib/resupply-db/drizzle/0100_new.sql
+if ! run_check >/dev/null 2>&1; then
+  echo "[self-test] FAIL: D (a new migration add should have passed)" >&2
+  exit 1
+fi
+git restore --staged lib/resupply-db/drizzle/0100_new.sql >/dev/null 2>&1 || true
+rm -f lib/resupply-db/drizzle/0100_new.sql
+
+# --- E: delete a shipped migration ------------------------------------------
+echo "[self-test] scenario E: deleting a shipped migration should fail"
+git rm -q lib/resupply-db/drizzle/0049_existing.sql
+if run_check >/dev/null 2>&1; then
+  echo "[self-test] FAIL: E (deleting a shipped migration should have failed)" >&2
+  exit 1
+fi
+git restore --staged lib/resupply-db/drizzle/0049_existing.sql >/dev/null 2>&1 || true
+git checkout -- lib/resupply-db/drizzle/0049_existing.sql
+
+# --- F: unrelated edit ------------------------------------------------------
+echo "[self-test] scenario F: unrelated edit should pass"
+mkdir -p artifacts/cpap-fitter/src
+echo "// no migration involvement" > artifacts/cpap-fitter/src/index.ts
+git add artifacts/cpap-fitter/src/index.ts
+if ! run_check >/dev/null 2>&1; then
+  echo "[self-test] FAIL: F (unrelated edit should have passed)" >&2
+  exit 1
+fi
+git restore --staged artifacts/cpap-fitter/src/index.ts >/dev/null 2>&1 || true
+rm -rf artifacts
+
+# --- G: working-tree mode (DIFF_TARGET="") detects an unstaged modify -------
+echo "[self-test] scenario G: DIFF_TARGET= mode should fail on an unstaged modify"
+echo "-- unstaged edit" >> lib/resupply-db/drizzle/0049_existing.sql
+if BASE_REF=HEAD DIFF_TARGET= bash scripts/check-resupply-migration-immutability.sh \
+   >/dev/null 2>&1; then
+  echo "[self-test] FAIL: G (working-tree mode should have detected the modify)" >&2
+  exit 1
+fi
+git checkout -- lib/resupply-db/drizzle/0049_existing.sql
+
+# --- H: edit the allowlist file itself (non-.sql) ---------------------------
+echo "[self-test] scenario H: editing the allowlist file (non-.sql) should pass"
+printf '# touched\n' >> lib/resupply-db/drizzle/.migration-edit-allowlist
+git add lib/resupply-db/drizzle/.migration-edit-allowlist
+if ! run_check >/dev/null 2>&1; then
+  echo "[self-test] FAIL: H (allowlist-file edit should have passed)" >&2
+  exit 1
+fi
+git restore --staged lib/resupply-db/drizzle/.migration-edit-allowlist >/dev/null 2>&1 || true
+git checkout -- lib/resupply-db/drizzle/.migration-edit-allowlist
+
+echo "[self-test] all scenarios passed"
