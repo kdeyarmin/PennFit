@@ -15,6 +15,7 @@ import { Router, type IRouter } from "express";
 
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
+import { getEffectiveEnv } from "../../lib/app-config/store";
 import { adminReadRateLimiter } from "../../middlewares/admin-rate-limit";
 import { requireAdmin } from "../../middlewares/requireAdmin";
 import { RENEWAL_WINDOW_DAYS } from "@workspace/resupply-domain";
@@ -24,6 +25,34 @@ const router: IRouter = Router();
 const NUDGE_WAIT_MS = 24 * 60 * 60 * 1000;
 const REVIEW_REQUEST_AGE_DAYS = 14;
 
+// Per-vendor "are the required credentials present in THIS env?" flags.
+// Pure env read — no vendor round-trip. Called twice per request: once
+// against the live process.env, once against the effective env
+// (process.env + System Configuration overrides from resupply.app_config)
+// so a credential a super-admin just saved in the app is reflected here
+// immediately instead of looking "not configured" until the next deploy.
+function computeVendorFlags(env: NodeJS.ProcessEnv) {
+  return {
+    sendgrid: Boolean(env.SENDGRID_API_KEY && env.SENDGRID_FROM_EMAIL),
+    twilioVoice: Boolean(env.TWILIO_ACCOUNT_SID && env.TWILIO_AUTH_TOKEN),
+    twilioSms: Boolean(
+      env.TWILIO_ACCOUNT_SID &&
+        env.TWILIO_AUTH_TOKEN &&
+        env.TWILIO_MESSAGING_SERVICE_SID,
+    ),
+    twilioFax: Boolean(
+      env.TWILIO_ACCOUNT_SID &&
+        env.TWILIO_AUTH_TOKEN &&
+        env.TWILIO_FAX_FROM_NUMBER &&
+        (env.RESUPPLY_VOICE_PUBLIC_BASE_URL || env.RAILWAY_PUBLIC_DOMAIN),
+    ),
+    stripe: Boolean(env.STRIPE_SECRET_KEY),
+    objectStorage: Boolean(env.SUPABASE_STORAGE_BUCKET_PRIVATE),
+  };
+}
+
+type VendorFlags = ReturnType<typeof computeVendorFlags>;
+
 router.get(
   "/admin/ops-status",
   adminReadRateLimiter,
@@ -31,32 +60,11 @@ router.get(
   async (_req, res) => {
     const supabase = getSupabaseServiceRoleClient();
 
-    // Vendor flags. We deliberately don't ping the vendor APIs —
-    // a missing key reliably means "feature disabled" and pinging
-    // would slow the page down for negligible value. Boolean
-    // presence is enough.
-    const vendors = {
-      sendgrid: Boolean(
-        process.env.SENDGRID_API_KEY && process.env.SENDGRID_FROM_EMAIL,
-      ),
-      twilioVoice: Boolean(
-        process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN,
-      ),
-      twilioSms: Boolean(
-        process.env.TWILIO_ACCOUNT_SID &&
-        process.env.TWILIO_AUTH_TOKEN &&
-        process.env.TWILIO_MESSAGING_SERVICE_SID,
-      ),
-      twilioFax: Boolean(
-        process.env.TWILIO_ACCOUNT_SID &&
-        process.env.TWILIO_AUTH_TOKEN &&
-        process.env.TWILIO_FAX_FROM_NUMBER &&
-        (process.env.RESUPPLY_VOICE_PUBLIC_BASE_URL ||
-          process.env.RAILWAY_PUBLIC_DOMAIN),
-      ),
-      stripe: Boolean(process.env.STRIPE_SECRET_KEY),
-      objectStorage: Boolean(process.env.SUPABASE_STORAGE_BUCKET_PRIVATE),
-    };
+    // Vendor flags are computed AFTER the fetch below — they depend on
+    // the effective env (process.env + saved app_config overrides), which
+    // is loaded alongside the dispatcher counts in the Promise.all. We
+    // still don't ping the vendor APIs: boolean credential presence is
+    // enough and keeps the page fast.
 
     const cutoff24h = new Date(Date.now() - NUDGE_WAIT_MS).toISOString();
     const reviewCutoff = new Date(
@@ -87,6 +95,7 @@ router.get(
     // doesn't expose jsonb_array_length, but a stored empty cart is always
     // `[]::jsonb` (the column default), so a literal `[]` neq is equivalent.
     const [
+      effectiveEnv,
       abandonedCartRes,
       reviewRequestRes,
       rxRenewalRes,
@@ -96,6 +105,12 @@ router.get(
       agentRes,
       pendingRes,
     ] = await Promise.all([
+      // System Configuration overrides folded over process.env
+      // (cached + fail-soft; degrades to process.env on any DB hiccup).
+      // Lets a credential saved in /admin/system/configuration show as
+      // configured here without waiting for the next deploy.
+      getEffectiveEnv(),
+
       supabase
         .schema("resupply")
         .from("shop_abandoned_carts")
@@ -178,8 +193,25 @@ router.get(
       if (r.error) throw r.error;
     }
 
+    // Live = what the running process can use right now (process.env).
+    // Effective = live + values saved in System Configuration. A vendor
+    // configured in `effective` but not `live` was entered in the app
+    // but hasn't been folded into process.env yet (catalog keys are
+    // applyMode: "restart" — they apply on the next deploy). Surfacing
+    // that distinct "saved, pending restart" state is what stops a
+    // just-saved secret from showing as a flat "not configured" here.
+    const liveFlags = computeVendorFlags(process.env);
+    const effectiveFlags = computeVendorFlags(effectiveEnv);
+    const vendorsPendingRestart = Object.fromEntries(
+      (Object.keys(effectiveFlags) as Array<keyof VendorFlags>).map((k) => [
+        k,
+        effectiveFlags[k] && !liveFlags[k],
+      ]),
+    ) as Record<keyof VendorFlags, boolean>;
+
     res.json({
-      vendors,
+      vendors: effectiveFlags,
+      vendorsPendingRestart,
       dispatchers: {
         abandonedCart: { eligibleNow: abandonedCartRes.count ?? 0 },
         reviewRequest: { eligibleNow: reviewRequestRes.count ?? 0 },

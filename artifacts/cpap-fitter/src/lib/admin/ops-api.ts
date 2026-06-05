@@ -14,6 +14,22 @@ export interface OpsStatus {
     stripe: boolean;
     objectStorage: boolean;
   };
+  /**
+   * Per-vendor: the credential was saved in System Configuration
+   * (/admin/system/configuration) but hasn't been folded into the live
+   * process yet — catalog keys are `applyMode: "restart"`, so they take
+   * effect on the next deploy. When true, `vendors[key]` is also true
+   * (the value exists); the UI renders a distinct "saved — applies after
+   * restart" state instead of a green "configured" or amber "not
+   * configured". Optional so older API responses still typecheck.
+   */
+  vendorsPendingRestart?: {
+    sendgrid: boolean;
+    twilioVoice: boolean;
+    twilioSms: boolean;
+    stripe: boolean;
+    objectStorage: boolean;
+  };
   dispatchers: {
     abandonedCart: { eligibleNow: number };
     reviewRequest: { eligibleNow: number };
