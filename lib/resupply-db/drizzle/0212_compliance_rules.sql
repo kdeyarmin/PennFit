@@ -71,6 +71,9 @@ CREATE INDEX IF NOT EXISTS "compliance_rules_active_priority_idx"
 --> statement-breakpoint
 
 -- Shared BEFORE UPDATE trigger (resupply.set_updated_at() from 0054).
+-- DROP first for idempotency: a previous partial run may have created
+-- the trigger without recording the migration as applied.
+DROP TRIGGER IF EXISTS "trg_compliance_rules_set_updated_at" ON "resupply"."compliance_rules";
 CREATE TRIGGER "trg_compliance_rules_set_updated_at"
   BEFORE UPDATE ON "resupply"."compliance_rules"
   FOR EACH ROW EXECUTE FUNCTION resupply.set_updated_at();
