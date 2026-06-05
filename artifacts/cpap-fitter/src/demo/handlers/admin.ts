@@ -20,6 +20,7 @@ import {
   demoFitterLeads,
   demoBillingDirectorSummary,
   demoAdminOrders,
+  demoSystemInfo,
 } from "../fixtures/admin";
 import { findDemoProduct } from "../fixtures/products";
 
@@ -42,6 +43,11 @@ export const adminHandlers: DemoHandler[] = [
   route("GET", "/resupply-api/dashboard/summary", () =>
     json(demoDashboardSummary()),
   ),
+  // The Settings page derefs nested objects from this payload directly, so
+  // it must be answered with a full shape — without this the router's
+  // empty-object GET fallback crashes /admin/settings (and traps the user,
+  // since the demo on/off toggle lives on that very page).
+  route("GET", "/resupply-api/admin/system-info", () => json(demoSystemInfo())),
 
   // ── worklists ────────────────────────────────────────────────────
   route("GET", "/resupply-api/admin/today", () => json(demoToday())),

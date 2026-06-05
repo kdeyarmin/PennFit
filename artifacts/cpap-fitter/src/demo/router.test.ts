@@ -80,6 +80,31 @@ describe("demo router", () => {
     expect(sseRes!.headers.get("content-type")).toContain("text/event-stream");
   });
 
+  it("answers /admin/system-info with a full shape (settings page derefs it)", async () => {
+    // Regression guard: the Settings page reads data.server.uptimeSeconds,
+    // data.secrets.linkHmacKeyConfigured, etc. directly. If this endpoint
+    // ever falls through to the empty-object GET fallback, the page crashes
+    // into the global ErrorBoundary — and the demo on/off toggle lives on
+    // that same page, so the user gets trapped in demo mode.
+    const res = await get("/resupply-api/admin/system-info");
+    expect(res).not.toBeNull();
+    expect(res!.status).toBe(200);
+    const body = (await res!.json()) as Record<string, unknown>;
+    for (const key of [
+      "server",
+      "database",
+      "publicUrls",
+      "auth",
+      "vendors",
+      "secrets",
+    ]) {
+      expect(body[key]).toBeTypeOf("object");
+      expect(body[key]).not.toBeNull();
+    }
+    const server = body.server as Record<string, unknown>;
+    expect(typeof server.uptimeSeconds).toBe("number");
+  });
+
   it("falls back to empty object for unmatched API GETs", async () => {
     const res = await get("/api/totally-unknown-endpoint");
     expect(res!.status).toBe(200);
