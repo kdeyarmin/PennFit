@@ -174,6 +174,20 @@ export const WEBHOOK_EVENT_CATALOG: readonly WebhookEventDefinition[] = [
     },
     carriesPatientId: true,
   },
+  {
+    type: "eligibility.completed",
+    description:
+      "A 270/271 eligibility round-trip resolved — the parsed 271 landed on the eligibility_checks row. Lets a subscriber (or the CSR queue) react the moment coverage detail is available instead of polling the worklist.",
+    publisher: "worker/jobs/office-ally-inbound-poll.ts dispatch271",
+    payloadFields: {
+      eligibility_check_id: "uuid",
+      patient_id: "uuid",
+      insurance_coverage_id: "uuid",
+      is_active: "boolean",
+      requires_prior_auth: "boolean",
+    },
+    carriesPatientId: true,
+  },
   // ── Compliance auto-workflow (Phase 11) ──
   {
     type: "compliance.baa_expiring_soon",

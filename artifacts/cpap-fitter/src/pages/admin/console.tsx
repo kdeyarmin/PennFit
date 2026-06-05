@@ -500,6 +500,11 @@ const AdminBillingOfficeAllyPage = lazy(() =>
     default: m.AdminBillingOfficeAllyPage,
   })),
 );
+const AdminBillingAutoSubmitPage = lazy(() =>
+  import("@/pages/admin/admin-billing-auto-submit").then((m) => ({
+    default: m.AdminBillingAutoSubmitPage,
+  })),
+);
 const AdminOfficeAllySubmissionDetailPage = lazy(() =>
   import("@/pages/admin/admin-billing-office-ally-detail").then((m) => ({
     default: m.AdminOfficeAllySubmissionDetailPage,
@@ -712,6 +717,10 @@ function AdminConsole() {
             <Route
               path="/admin/billing/capped-rentals"
               component={AdminBillingCappedRentalsPage}
+            />
+            <Route
+              path="/admin/billing/auto-submit"
+              component={AdminBillingAutoSubmitPage}
             />
             <Route
               path="/admin/billing/office-ally"

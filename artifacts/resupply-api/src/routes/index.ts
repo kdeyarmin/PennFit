@@ -150,6 +150,7 @@ import davinciPasSubmitRouter from "./admin/davinci-pas-submit.js";
 import priorAuthRequestFormRouter from "./admin/prior-auth-request-form.js";
 import billingBenchmarksRouter from "./admin/billing-benchmarks.js";
 import billingBatchSubmitRouter from "./admin/billing-batch-submit.js";
+import billingAutoSubmitRouter from "./admin/billing-auto-submit.js";
 import billingStatementsRouter from "./admin/billing-statements.js";
 import claimAppealsRouter from "./admin/claim-appeals.js";
 import webhookSubscriptionsRouter from "./admin/webhook-subscriptions.js";
@@ -499,6 +500,10 @@ router.use(priorAuthRequestFormRouter);
 router.use(billingBenchmarksRouter);
 // /admin/billing/batch-submit-office-ally — multi-claim 837P batch.
 router.use(billingBatchSubmitRouter);
+// /admin/billing/auto-submit/* — staged-approval auto-submission: the
+// "ready to transmit" worklist (preflight-clean + active eligibility),
+// automation status, and the operator approve-and-submit action.
+router.use(billingAutoSubmitRouter);
 // /admin/patients/:id/billing-statements — patient statement PDF.
 router.use(billingStatementsRouter);
 // /admin/patients/:id/insurance-claims/:claimId/appeal-letter — PDF.

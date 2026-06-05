@@ -50,6 +50,7 @@ export const FEATURE_FLAG_KEYS = [
   "bulk_campaigns.send",
   "cart_abandonment.dispatcher",
   "ai_billing.suggestions",
+  "billing.auto_submit_claims",
   "smart_triggers.dispatcher",
   "patient_onboarding.dispatcher",
   "fitter_supply_campaign.dispatcher",
@@ -59,6 +60,10 @@ export const FEATURE_FLAG_KEYS = [
   "storefront.auto_reminder_enrollment",
   "alerts.auto_dispatch",
   "therapy_fleet.auto_outreach",
+  "clinical_outreach.dispatcher",
+  "eligibility.auto_reverify",
+  "fitter_first_day_nudge.dispatcher",
+  "fitter_reengage.dispatcher",
 ] as const;
 
 export type FeatureFlagKey = (typeof FEATURE_FLAG_KEYS)[number];

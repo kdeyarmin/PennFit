@@ -18,6 +18,7 @@ import type PgBoss from "pg-boss";
 import { logAudit } from "@workspace/resupply-audit";
 
 import { runEligibilityReverificationBatch } from "../../lib/billing/eligibility-batch.js";
+import { isFeatureEnabled } from "../../lib/feature-flags.js";
 import { logger } from "../../lib/logger.js";
 import {
   createQueueWithDlq,
@@ -37,6 +38,17 @@ export async function registerEligibilityReverifyBatchJob(
     VENDOR_SEND_QUEUE_OPTS,
   );
   await boss.work(ELIGIBILITY_REVERIFY_BATCH_JOB, async () => {
+    // Runtime kill switch (admin Control Center). The env cron controls
+    // scheduling; this flag pauses the unattended 270s without a deploy.
+    // The operator "Run batch now" route calls the run core directly and
+    // is intentionally not gated here.
+    if (!(await isFeatureEnabled("eligibility.auto_reverify"))) {
+      logger.info(
+        { queue: ELIGIBILITY_REVERIFY_BATCH_JOB },
+        "eligibility reverify-batch: feature flag off — skipping",
+      );
+      return;
+    }
     const result = await runEligibilityReverificationBatch();
     await logAudit({
       action: "billing.eligibility.reverify_batch.completed",
