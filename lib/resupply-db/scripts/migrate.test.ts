@@ -6,6 +6,11 @@ import { promisify } from "node:util";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+// readMigrations is exported and the migrator's main() is guarded behind a
+// direct-run check, so importing it here does NOT connect to a DB — these
+// ordering tests run without DATABASE_URL.
+import { readMigrations } from "./migrate.mjs";
+
 // Integration test for `lib/resupply-db/scripts/migrate.mjs`.
 //
 // Skips automatically when `DATABASE_URL` is not set so this file is
@@ -365,5 +370,62 @@ describe.skipIf(!dbUrl)("resupply-db migrate.mjs", () => {
       exitCode = e.code ?? null;
     }
     expect(exitCode).toBe(2);
+  });
+});
+
+// These run WITHOUT a database — they exercise the pure apply-ordering
+// logic in readMigrations. They guard the fix for the journaled-first sort
+// bug: the comparator must order every migration by numeric prefix,
+// regardless of whether a file has a _journal.json entry. The old
+// comparator sorted all journaled migrations ahead of all disk-only ones,
+// which pulled the stray journaled 0157_backfill into apply-position ~52
+// (ahead of 0049+) on a from-scratch replay.
+describe("readMigrations — apply ordering", () => {
+  const MIGRATIONS_FOLDER = path.resolve(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "..",
+    "drizzle",
+  );
+
+  it("orders every migration by non-decreasing numeric prefix", () => {
+    const migs = readMigrations(MIGRATIONS_FOLDER);
+    expect(migs.length).toBeGreaterThan(200);
+    for (let i = 1; i < migs.length; i++) {
+      expect(migs[i]!.prefixNumber).toBeGreaterThanOrEqual(
+        migs[i - 1]!.prefixNumber,
+      );
+    }
+  });
+
+  it("starts at 0000 and never lets a journaled file jump the queue", () => {
+    const migs = readMigrations(MIGRATIONS_FOLDER);
+    expect(migs[0]!.prefixNumber).toBe(0);
+    // No journaled migration may sort before a lower-prefix disk-only one.
+    for (let i = 1; i < migs.length; i++) {
+      if (migs[i]!.prefixNumber === migs[i - 1]!.prefixNumber) continue;
+      expect(migs[i]!.prefixNumber).toBeGreaterThan(migs[i - 1]!.prefixNumber);
+    }
+  });
+
+  it("places the stray journaled 0157_backfill at its prefix slot, not early", () => {
+    const migs = readMigrations(MIGRATIONS_FOLDER);
+    const idx = migs.findIndex(
+      (m: { tag: string }) => m.tag === "0157_backfill_missing_inbound_tables",
+    );
+    expect(idx).toBeGreaterThan(-1);
+    expect(migs[idx]!.prefixNumber).toBe(157);
+    // Its left neighbour is a prefix-0156 file — i.e. it is NOT pulled into
+    // the early (~52) slot the journaled-first comparator gave it.
+    expect(migs[idx - 1]!.prefixNumber).toBe(156);
+  });
+
+  it("groups duplicate-prefix files together by tag", () => {
+    const migs = readMigrations(MIGRATIONS_FOLDER);
+    const dup157 = migs.filter(
+      (m: { prefixNumber: number }) => m.prefixNumber === 157,
+    );
+    expect(dup157.length).toBeGreaterThan(1);
+    const tags = dup157.map((m: { tag: string }) => m.tag);
+    expect(tags).toEqual([...tags].sort());
   });
 });
