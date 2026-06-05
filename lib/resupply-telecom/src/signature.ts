@@ -138,16 +138,24 @@ export function requireTwilioSignature(
     }
     const sig = req.header("x-twilio-signature");
     const url = opts.buildPublicUrl(req);
-    // express.urlencoded gives us a parsed object — coerce values to
-    // string (the only legal shape Twilio sends; arrays would only
-    // appear from a malicious client trying to confuse the canonical
-    // string).
+    // express.urlencoded gives us a parsed object. Twilio only ever posts
+    // flat string params, so EVERY value should be a string. A non-string
+    // value means a repeated key (express/qs parses `a=1&a=2` to an array)
+    // or a nested key — i.e. a parser anomaly or a forged request.
+    // Silently dropping such a value (the old behavior) would compute the
+    // HMAC over a DIFFERENT parameter set than Twilio signed; we fail
+    // closed instead so the canonical string is always the exact set we
+    // validate against, never a partial one.
     const params: Record<string, string> = {};
     if (req.body && typeof req.body === "object") {
       for (const [k, v] of Object.entries(
         req.body as Record<string, unknown>,
       )) {
-        if (typeof v === "string") params[k] = v;
+        if (typeof v !== "string") {
+          reject(req, res, opts, "non_string_param");
+          return;
+        }
+        params[k] = v;
       }
     }
     if (

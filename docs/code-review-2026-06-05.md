@@ -204,15 +204,15 @@ makes the migrator re-run it**, so the fix (a `DROP INDEX IF EXISTS`
 before each concurrent create) belongs in a _new_ migration + a
 documented pattern for future no-tx index builds, not an edit to 0208.
 
-**D3 (High) — Twilio signature verifier drops repeated/array params.**
-`lib/resupply-telecom/src/signature.ts`. It only includes
-string-valued params in the canonical string; a legitimately repeated
-key would mismatch. The failure mode is **fail-closed** (403 on a valid
-request), and Twilio's standard webhooks don't repeat keys, so the
-practical risk is low — but "fixing" the canonical-string construction
-risks breaking _all_ Twilio verification, so it needs a careful,
-well-tested change (faithful to Twilio's repeated-key concatenation)
-rather than a quick patch.
+**D3 (High) — Twilio signature verifier dropped repeated/array params.**
+`lib/resupply-telecom/src/signature.ts`. It silently dropped non-string
+(array) param values, computing the HMAC over a different param set than
+Twilio signed. **FIXED in this PR:** since Twilio only ever posts flat
+string params (and even Twilio's own validator mishandles repeated keys),
+the middleware now **fails closed** (`non_string_param`) when any body
+value isn't a string, rather than guessing at a canonicalization or
+validating a partial set. No-op for every real Twilio request; test
+updated + added.
 
 **D4 (Medium) — Non-idempotent `ADD CONSTRAINT` migrations.** ~14 files
 add named constraints with no drop-first / `duplicate_object` guard;
@@ -229,16 +229,19 @@ correct fix needs an idempotent per-claim application ledger (a unique
 `(payment_id, claim_id)` row) and/or an advisory lock — i.e. a schema
 change, so it belongs in its own reviewed PR.
 
-**D6 (Low, SPA) — assorted lifecycle nits.** `useDraftAutosave` key-
-switch write race (`use-draft-autosave.ts`), `useUrlState` popstate stale
-closure (`use-url-state.ts`), a handful of un-cleared "just copied/added"
-`setTimeout`s (harmless on React 18+), and `formatMoneyCents` hard-coding
-`en-US` while accepting a currency arg (latent if a non-USD price ever
-lands; left as-is since changing live money formatting in a USD-only shop
-is riskier than the latent bug). Low impact; batch into a SPA-hygiene PR
-with a lint rule for the timer pattern. _(The `chat_opened` telemetry
-double-count — it re-fired on every navigation while the panel stayed
-open — **was fixed** in this PR: gate on the open false→true transition.)_
+**D6 (Low, SPA) — assorted lifecycle nits. FIXED in this PR.**
+`useDraftAutosave` key-switch write race (`use-draft-autosave.ts`) — added
+a per-key `writeKeyRef` guard so a key switch can't persist the previous
+conversation's text under the new key; `useUrlState` popstate stale
+closure (`use-url-state.ts`) — the mount-only listener now reads through a
+`readRef` so back/forward rehydrates against current props; the un-cleared
+"just copied/added" `setTimeout`s in `order-success.tsx` and
+`maintenance-section.tsx` now clear on unmount; and the `chat_opened`
+telemetry double-count now fires only on the open false→true transition.
+**Left as-is:** `formatMoneyCents` hard-coding `en-US` while accepting a
+currency arg (latent only — the shop is USD-only, and changing live money
+formatting is riskier than the latent bug). Tests added for the
+draft-autosave guard.
 
 ---
 
