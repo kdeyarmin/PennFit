@@ -125,12 +125,56 @@ describe("GET /admin/feature-flags", () => {
       enabled: false,
       category: "Messaging",
       updatedByEmail: "ops@example.com",
+      // Both keys are in FEATURE_FLAG_KEYS, so the running build can
+      // toggle them.
+      manageable: true,
     });
     expect(res.body.flags[1]).toMatchObject({
       key: "voice.agent",
       enabled: true,
       category: "Voice & AI",
+      manageable: true,
     });
+  });
+
+  it("marks a flag absent from this build's catalog as manageable:false (deploy-drift)", async () => {
+    // Deploy-drift window: the DB has been migrated forward to seed a
+    // newer flag, but the running build's FEATURE_FLAG_KEYS predates the
+    // catalog entry — so the flag LISTS (the list reads DB rows) but a
+    // PATCH would 404 `unknown_flag`. The list must flag that as
+    // manageable:false so the Control Center can disable the dead toggle.
+    stubAdmin();
+    stageSupabaseResponse("feature_flags", "select", {
+      data: [
+        {
+          key: "sms.reminders", // in FEATURE_FLAG_KEYS
+          enabled: true,
+          description: "sms reminders",
+          category: "Messaging",
+          updated_by_email: null,
+          updated_at: "2026-01-01T00:00:00.000Z",
+        },
+        {
+          key: "some.future_flag", // seeded by a newer migration; unknown here
+          enabled: false,
+          description: "a flag from a newer release",
+          category: "Billing",
+          updated_by_email: null,
+          updated_at: "2026-06-05T00:00:00.000Z",
+        },
+      ],
+    });
+
+    const res = await request(makeApp()).get("/admin/feature-flags");
+    expect(res.status).toBe(200);
+    const known = res.body.flags.find(
+      (f: { key: string }) => f.key === "sms.reminders",
+    );
+    const future = res.body.flags.find(
+      (f: { key: string }) => f.key === "some.future_flag",
+    );
+    expect(known.manageable).toBe(true);
+    expect(future.manageable).toBe(false);
   });
 });
 

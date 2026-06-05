@@ -148,6 +148,44 @@ describe("admin-control-center — high-risk confirmation modal", () => {
   });
 });
 
+// ─── Deploy-drift guard (unmanageable flags) ─────────────────────────────
+//
+// A flag seeded by a newer migration than the running API build LISTS in
+// the Control Center but 404s `unknown_flag` on toggle (PATCH validates
+// the key against the build's compile-time catalog). The server marks
+// such rows `manageable:false`; FlagRow must disable the switch and
+// explain instead of letting the operator hit the raw 404.
+
+describe("admin-control-center — deploy-drift (unmanageable flag) guard", () => {
+  it("derives `manageable` from flag.manageable (defaulting absent → toggleable)", () => {
+    // `!== false` is deliberate: an older API mid-deploy that omits the
+    // field must stay toggleable (the historical default), not get
+    // locked out.
+    expect(SRC).toMatch(
+      /const\s+manageable\s*=\s*flag\.manageable\s*!==\s*false/,
+    );
+  });
+
+  it("short-circuits handleToggle when the flag isn't manageable", () => {
+    expect(SRC).toMatch(/if\s*\(!manageable\)\s*return;/);
+  });
+
+  it("passes disabled={!manageable} to the ToggleSwitch", () => {
+    expect(SRC).toContain("disabled={!manageable}");
+  });
+
+  it("ToggleSwitch accepts a disabled prop and reflects it on the button", () => {
+    expect(SRC).toMatch(/disabled\?:\s*boolean/);
+    expect(SRC).toContain("disabled={loading || disabled}");
+  });
+
+  it("renders a 'Needs redeploy' badge and an explanatory note", () => {
+    expect(SRC).toContain("Needs redeploy");
+    expect(SRC).toContain("flag-row-${flag.key}-unmanageable-badge");
+    expect(SRC).toContain("flag-row-${flag.key}-unmanageable-note");
+  });
+});
+
 // ─── ActivityPanel — unavailable branch removed ───────────────────────────
 //
 // PR change: the `query.data?.unavailable` conditional was removed from
