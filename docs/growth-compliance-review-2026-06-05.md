@@ -33,7 +33,7 @@ So the real opportunity is in three places:
 | Theme                  | One-line summary                                                                                                                                    |
 | ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Activation**         | High-value jobs exist but are **gated OFF** by default flags/env vars. Turning them on is mostly a config + consent decision, not engineering.      |
-| **Per-payer accuracy** | Compliance is **hard-coded to the Medicare rule** (≥4h on ≥21 of 30 nights). Non-Medicare payers are mis-classified, so we flag the wrong patients. |
+| **Per-payer accuracy** | Compliance is **hard-coded to the Medicare rule** (≥4h on ≥21 of 30 nights). Non-Medicare payers are misclassified, so we flag the wrong patients. |
 | **Measurement**        | We send a lot of outreach but **can't see which of it converts** to orders or compliance improvement. No closed-loop attribution.                   |
 
 ### Scoreboard
