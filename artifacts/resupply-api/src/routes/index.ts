@@ -40,6 +40,7 @@ import shopReturnNotesRouter from "./admin/return-notes.js";
 import shopReviewRequestsRouter from "./admin/shop-review-requests.js";
 import teamRouter from "./admin/team.js";
 import opsStatusRouter from "./admin/ops-status.js";
+import accountSetupRouter from "./admin/account-setup.js";
 import inboxCountsRouter from "./admin/inbox-counts.js";
 import todayRouter from "./admin/today.js";
 import providersRouter from "./admin/providers.js";
@@ -636,6 +637,10 @@ router.use(teamRouter);
 // /admin/ops-status — operations center status feed: vendor flags,
 // dispatcher-eligible row counts, team counts. Read-only.
 router.use(opsStatusRouter);
+// /admin/account-setup — new-account / production launch checklist.
+// Read-only "is this done?" feed (env presence + DB probes) for the
+// Settings -> Account Setup page. Never returns env-var values.
+router.use(accountSetupRouter);
 // /admin/inbox-counts — actionable-work counters for nav badges
 // (awaiting-reply convs, pending returns, pending reviews). Read-
 // only, called on every nav render with a 30s SPA cache.

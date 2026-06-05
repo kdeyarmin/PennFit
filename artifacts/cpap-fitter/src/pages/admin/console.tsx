@@ -235,6 +235,11 @@ const AdminOperationsPage = lazy(() =>
     default: m.AdminOperationsPage,
   })),
 );
+const AdminAccountSetupPage = lazy(() =>
+  import("@/pages/admin/account-setup").then((m) => ({
+    default: m.AdminAccountSetupPage,
+  })),
+);
 const AdminReportsPage = lazy(() =>
   import("@/pages/admin/admin-reports").then((m) => ({
     default: m.AdminReportsPage,
@@ -891,6 +896,10 @@ function AdminConsole() {
             />
             <Route path="/admin/team" component={AdminTeamPage} />
             <Route path="/admin/operations" component={AdminOperationsPage} />
+            <Route
+              path="/admin/account-setup"
+              component={AdminAccountSetupPage}
+            />
             <Route path="/admin/reports" component={AdminReportsPage} />
             <Route
               path="/admin/control-center"
