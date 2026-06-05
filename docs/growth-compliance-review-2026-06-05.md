@@ -189,7 +189,7 @@ COUNT(*) FILTER (WHERE nights_over_4h >= 21)     AS compliant        -- ≥ 21 o
 
 There is **no** `compliance_rules` / threshold table anywhere. Patients on plans
 whose adherence definition differs from Medicare's 21/30 are therefore
-**mis-classified** — we either chase patients who are actually fine, or miss
+**misclassified** — we either chase patients who are actually fine, or miss
 patients who are actually failing their plan's standard. That undermines goal #2
 ("identify non-compliant sooner") for every non-Medicare book of business.
 
