@@ -9,7 +9,7 @@
 //   * Operations is action-oriented: vendor health (am I broken
 //     right now?) and dispatcher buttons.
 //   * Settings is configuration-oriented: deployment metadata,
-//     allowlist sizes, encryption-key presence, etc. — the kind
+//     allowlist sizes, secret presence, etc. — the kind
 //     of stuff ops checks during incident triage or onboarding a
 //     new admin.
 
@@ -40,9 +40,8 @@ interface SystemInfo {
     legacyAdminAllowlistCount: number;
   };
   vendors: Record<string, Record<string, boolean>>;
-  encryption: {
-    phiKeyConfigured: boolean;
-    phoneHmacKeyConfigured: boolean;
+  secrets: {
+    linkHmacKeyConfigured: boolean;
   };
 }
 
@@ -70,9 +69,9 @@ export function AdminSettingsPage() {
           Settings
         </h1>
         <p className="text-sm text-slate-600">
-          Deployment metadata, vendor configuration, and encryption-key
-          presence. Read-only — env-var values are never surfaced; only "is this
-          set?" booleans plus a few benign-to-display fields.
+          Deployment metadata, vendor configuration, and secret presence.
+          Read-only — env-var values are never surfaced; only "is this set?"
+          booleans plus a few benign-to-display fields.
         </p>
       </header>
       <DemoModeCard />
@@ -219,16 +218,14 @@ function Body({ data }: { data: SystemInfo }) {
 
       <VendorCard vendors={data.vendors} />
 
-      <Card title="Encryption keys">
+      <Card title="Secrets">
         <DefList
-          rows={[
-            ["PHI encryption key", flag(data.encryption.phiKeyConfigured)],
-            ["Phone HMAC key", flag(data.encryption.phoneHmacKeyConfigured)],
-          ]}
+          rows={[["Link HMAC key", flag(data.secrets.linkHmacKeyConfigured)]]}
         />
         <p className="text-xs text-slate-500 mt-2">
-          Both keys MUST be set in production. The dashboard displays presence
-          only — never the key value or any fingerprint.
+          Signs short-lived patient links in SMS/email reminders. MUST be set in
+          production. The dashboard displays presence only — never the key value
+          or any fingerprint.
         </p>
       </Card>
     </div>
