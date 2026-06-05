@@ -290,6 +290,7 @@ async function maybeSendDeadlineSms(
         event: "setup_deadline_cap_claim_failed",
         err: { code: claim.error.code, message: claim.error.message },
         queue: SETUP_DEADLINE_OUTREACH_JOB,
+        dedup_key: capKey,
       },
       "setup-deadline: failed to claim cap key",
     );
