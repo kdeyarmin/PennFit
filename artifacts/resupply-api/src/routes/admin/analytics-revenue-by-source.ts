@@ -16,7 +16,7 @@
 // head-only (no row data pulled). shop_orders / fulfillments rows here
 // hold no PHI (status + amount + quantity only).
 
-import { Router, type IRouter } from "express";
+import { Router, type IRouter, type Response } from "express";
 import { z } from "zod";
 
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
@@ -37,6 +37,17 @@ const windowSchema = z.object({
 
 const READ_CAP = 50_000;
 
+// Thrown when the window holds more rows than we read in one page, so the
+// aggregate would silently undercount. The route converts it to a clear
+// 422 rather than returning wrong totals. (A SQL aggregation RPC would
+// remove the cap entirely — tracked as a scale-out follow-up.)
+class RevenueWindowTooLargeError extends Error {
+  constructor(readonly cap: number) {
+    super("revenue_window_too_large");
+    this.name = "RevenueWindowTooLargeError";
+  }
+}
+
 function isoDaysAgo(days: number): string {
   const d = new Date();
   d.setUTCDate(d.getUTCDate() - days);
@@ -50,14 +61,16 @@ async function loadRevenueBySource(cutoff: string) {
     supabase
       .schema("resupply")
       .from("shop_orders")
-      .select("status, amount_total_cents")
+      .select("status, amount_total_cents", { count: "exact" })
       .gte("created_at", cutoff)
+      .order("created_at", { ascending: false })
       .limit(READ_CAP),
     supabase
       .schema("resupply")
       .from("fulfillments")
-      .select("status, quantity")
+      .select("status, quantity", { count: "exact" })
       .gte("created_at", cutoff)
+      .order("created_at", { ascending: false })
       .limit(READ_CAP),
     // Head-only count — public.orders holds PHI; we never pull its rows.
     supabase
@@ -70,11 +83,30 @@ async function loadRevenueBySource(cutoff: string) {
   if (fulRes.error) throw fulRes.error;
   if (clinicalRes.error) throw clinicalRes.error;
 
+  // Fail fast rather than silently undercount: if either capped read
+  // matched more rows than we pulled, the aggregate would be wrong.
+  if ((shopRes.count ?? 0) > READ_CAP || (fulRes.count ?? 0) > READ_CAP) {
+    throw new RevenueWindowTooLargeError(READ_CAP);
+  }
+
   return aggregateRevenueBySource({
     shopOrders: (shopRes.data ?? []) as ShopOrderRow[],
     fulfillments: (fulRes.data ?? []) as FulfillmentRow[],
     clinicalFormOrderCount: clinicalRes.count ?? 0,
   });
+}
+
+// Translate the window-too-large sentinel into a 422 the caller can act
+// on (reduce `days`). Returns true when it handled the error.
+function handleWindowTooLarge(err: unknown, res: Response): boolean {
+  if (err instanceof RevenueWindowTooLargeError) {
+    res.status(422).json({
+      error: "window_too_large",
+      message: `Too many records in this window to aggregate accurately (> ${err.cap}). Choose a shorter window.`,
+    });
+    return true;
+  }
+  return false;
 }
 
 router.get(
@@ -87,8 +119,13 @@ router.get(
       return;
     }
     const days = parsed.data.days;
-    const result = await loadRevenueBySource(isoDaysAgo(days));
-    res.json({ windowDays: days, ...result });
+    try {
+      const result = await loadRevenueBySource(isoDaysAgo(days));
+      res.json({ windowDays: days, ...result });
+    } catch (err) {
+      if (handleWindowTooLarge(err, res)) return;
+      throw err;
+    }
   },
 );
 
@@ -102,7 +139,13 @@ router.get(
       return;
     }
     const days = parsed.data.days;
-    const result = await loadRevenueBySource(isoDaysAgo(days));
+    let result: Awaited<ReturnType<typeof loadRevenueBySource>>;
+    try {
+      result = await loadRevenueBySource(isoDaysAgo(days));
+    } catch (err) {
+      if (handleWindowTooLarge(err, res)) return;
+      throw err;
+    }
 
     const filename = `revenue-by-source-${days}d-${new Date()
       .toISOString()
