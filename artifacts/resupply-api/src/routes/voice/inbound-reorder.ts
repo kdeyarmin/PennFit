@@ -112,7 +112,7 @@ router.post("/voice/inbound-reorder", signatureMiddleware, async (req, res) => {
 
   // 1. Identify the caller (best-effort).
   const callerE164 = From ?? parsed.data.Caller ?? "";
-  const { patientId, shopCustomerId } = await identifyCaller(
+  const { patientId, shopCustomerId, ambiguous } = await identifyCaller(
     supabase,
     callerE164,
   );
@@ -147,16 +147,23 @@ router.post("/voice/inbound-reorder", signatureMiddleware, async (req, res) => {
     return;
   }
 
-  // 3a. Unknown caller → transfer to human.
+  // 3a. Unknown (or ambiguous) caller → transfer to human. An ambiguous
+  // match (one phone, multiple patients) is deliberately treated as
+  // unidentified so we never bind the AI reorder agent to an arbitrary
+  // patient's episode.
   if (!patientId) {
     logger.info(
       {
-        event: "voice.inbound-reorder.unidentified",
+        event: ambiguous
+          ? "voice.inbound-reorder.ambiguous_phone"
+          : "voice.inbound-reorder.unidentified",
         callSid: CallSid,
         // Log only the digit-count to keep PHI out of logs.
         fromDigits: callerE164.replace(/\D+/g, "").length,
       },
-      "voice.inbound-reorder: caller not identified, transferring",
+      ambiguous
+        ? "voice.inbound-reorder: caller number on multiple accounts, transferring"
+        : "voice.inbound-reorder: caller not identified, transferring",
     );
     res
       .status(200)
@@ -339,33 +346,47 @@ async function findActionableEpisodeId(
 interface IdentifyResult {
   patientId: string | null;
   shopCustomerId: string | null;
+  /** True when more than one patient shares this caller-ID number. */
+  ambiguous: boolean;
 }
 
 async function identifyCaller(
   supabase: ReturnType<typeof getSupabaseServiceRoleClient>,
   fromE164: string,
 ): Promise<IdentifyResult> {
-  if (!fromE164) return { patientId: null, shopCustomerId: null };
+  if (!fromE164)
+    return { patientId: null, shopCustomerId: null, ambiguous: false };
   // Use the canonical E.164 normalizer (same as the SMS + inbound voice
   // paths) so a bare 10-digit US caller ID maps to +1XXXXXXXXXX and
   // matches the stored patients.phone_e164. The previous naive
   // `+${digits}` produced `+2155551212` (no country code) and silently
   // failed to identify a known caller. null ⇒ unparseable ⇒ unidentified.
   const normalised = normalizeE164(fromE164);
-  if (!normalised) return { patientId: null, shopCustomerId: null };
-  const { data: patient } = await supabase
+  if (!normalised)
+    return { patientId: null, shopCustomerId: null, ambiguous: false };
+  // Pull up to 2 rows to detect a shared number. Multiple patients on one
+  // phone (a family/household plan) can't be safely auto-routed to a
+  // patient-scoped AI reorder agent — binding to an arbitrary [0] would
+  // expose one patient's episode to whoever called. Mirror the SMS inbound
+  // handler: on ambiguity, treat as unidentified and let the caller route
+  // to a human (where identity can be verified out of band).
+  const { data: rows } = await supabase
     .schema("resupply")
     .from("patients")
     .select("id")
     .eq("phone_e164", normalised)
-    .limit(1)
-    .maybeSingle();
+    .limit(2);
+  const matches = rows ?? [];
+  if (matches.length > 1) {
+    return { patientId: null, shopCustomerId: null, ambiguous: true };
+  }
   return {
-    patientId: patient?.id ?? null,
+    patientId: matches[0]?.id ?? null,
     // shop_customers doesn't carry phone_e164 today; we leave the
     // hookup for when the storefront captures it (storefront opt-in
     // SMS flow).
     shopCustomerId: null,
+    ambiguous: false,
   };
 }
 

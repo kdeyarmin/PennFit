@@ -248,7 +248,10 @@ router.post("/me/payments/checkout-session", async (req, res) => {
     allocations: parsed.data.allocations,
     successUrl,
     cancelUrl,
-    initiatorEmail: customerId,
+    // The customer's email, not the customer UUID — this is stamped into
+    // Stripe metadata.initiator_email for the "who initiated this payment"
+    // audit trail (matches the PaymentIntent path above).
+    initiatorEmail: link.customerEmail,
   });
   if ("error" in result) {
     res

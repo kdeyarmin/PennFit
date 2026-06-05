@@ -18,6 +18,59 @@ import type { FhirBundle } from "./build-bundle";
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 
+// Hard cap on the payer response body. A ClaimResponse Bundle is a few
+// KB; 4 MB is generous headroom. The cap stops a compromised/misbehaving
+// payer endpoint (it only has to pass the route's SSRF host check, not be
+// honest) from OOM-ing the in-process API/worker with a multi-GB body.
+// Mirrors MAX_JWKS_BODY_BYTES in resupply-integrations-ehr-fhir.
+const MAX_PAS_RESPONSE_BYTES = 4 * 1024 * 1024;
+
+/**
+ * Read a fetch Response body as UTF-8 text with a hard byte cap, so a
+ * hostile/misbehaving upstream can't OOM us. Streams the body and aborts
+ * once the cap is crossed. Falls back to a (still length-checked) buffered
+ * read when the Response exposes no readable stream (e.g. a test mock).
+ */
+async function readBodyCapped(
+  res: Response,
+  maxBytes: number,
+): Promise<string> {
+  const reader = res.body?.getReader?.();
+  if (!reader) {
+    // No stream (mock/edge case). Guard via Content-Length when present,
+    // then fall back to text(). Real payer calls use undici, which always
+    // exposes a body stream, so the streamed path above is what protects
+    // production.
+    const declared = Number(res.headers?.get?.("content-length") ?? "");
+    if (Number.isFinite(declared) && declared > maxBytes) {
+      throw new Error("payer response exceeded size cap");
+    }
+    return res.text();
+  }
+  let received = 0;
+  const chunks: Uint8Array[] = [];
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (value) {
+        received += value.byteLength;
+        if (received > maxBytes) {
+          throw new Error("payer response exceeded size cap");
+        }
+        chunks.push(value);
+      }
+    }
+  } finally {
+    try {
+      await reader.cancel();
+    } catch {
+      // best-effort
+    }
+  }
+  return Buffer.concat(chunks).toString("utf8");
+}
+
 export interface SubmitPasInput {
   bundle: FhirBundle;
   endpointUrl: string;
@@ -64,7 +117,7 @@ export async function submitPasBundle(
       },
     );
     const latencyMs = Date.now() - startedAt;
-    const body = await res.text();
+    const body = await readBodyCapped(res, MAX_PAS_RESPONSE_BYTES);
     let parsed: unknown = null;
     try {
       parsed = body ? JSON.parse(body) : null;
@@ -88,12 +141,22 @@ export async function submitPasBundle(
       errorMessage: `payer http ${res.status}`,
     };
   } catch (err) {
+    // Map to a fixed set of caller-safe reasons rather than returning the
+    // raw transport error. This value is persisted to
+    // davinci_pas_submissions.error_message AND returned in the HTTP body;
+    // a raw undici/fetch error string is the one spot in this client that
+    // could surface internal request detail to an API response.
+    const aborted =
+      err instanceof Error &&
+      (err.name === "AbortError" || ctrl.signal.aborted);
     return {
       status: "transport_failed",
       httpStatus: null,
       responseJson: null,
       latencyMs: Date.now() - startedAt,
-      errorMessage: err instanceof Error ? err.message : String(err),
+      errorMessage: aborted
+        ? "payer request timed out"
+        : "payer transport error",
     };
   } finally {
     clearTimeout(timer);

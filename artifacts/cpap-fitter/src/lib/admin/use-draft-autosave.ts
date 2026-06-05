@@ -181,6 +181,10 @@ export function useDraftAutosave(
   const [restored, setRestored] = useState(false);
   const [savedAt, setSavedAt] = useState<Date | null>(null);
   const hasHydratedRef = useRef(false);
+  // Tracks which key the debounced write is currently armed for, so a
+  // key switch doesn't persist the previous key's text under the new key
+  // (see the write effect below).
+  const writeKeyRef = useRef(key);
   // Always reflect the latest applyRestored without forcing the
   // mount-effect to re-run when the caller's identity changes
   // (which would re-hydrate on every render and clobber typing).
@@ -208,6 +212,15 @@ export function useDraftAutosave(
   // run (it would write the empty initial value over a real
   // localStorage entry before the hydration effect lands).
   useEffect(() => {
+    // On a key switch this effect runs with the NEW key but the PREVIOUS
+    // render's `value` (the parent hasn't re-rendered with the hydrated /
+    // reset value yet). Writing then would persist the old conversation's
+    // text under the new conversation's key. Skip that first run; the
+    // next value change for the new key writes normally.
+    if (writeKeyRef.current !== key) {
+      writeKeyRef.current = key;
+      return;
+    }
     if (!hasHydratedRef.current) return;
     const t = window.setTimeout(() => {
       const at = writeDraft(key, value);

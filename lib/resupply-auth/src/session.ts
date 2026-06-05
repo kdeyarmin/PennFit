@@ -49,8 +49,16 @@ export function slideExpiry(
   const ceiling = current.issuedAt.getTime() + cap;
   const next = Math.min(proposed, ceiling);
   // Never move expiry backward; if `now + ttl` < current.expiresAt
-  // (system clock skew, tests), keep the current one.
-  return new Date(Math.max(next, current.expiresAt.getTime()));
+  // (system clock skew, tests), keep the current one — BUT still clamp to
+  // the absolute ceiling. Without the outer Math.min, a row whose
+  // expiresAt already sits past the ceiling (e.g. written under a longer
+  // prior absoluteMaxDays, or a manual/clock-skew edit) would be returned
+  // uncapped, defeating the "stolen cookie expires within a known window"
+  // guarantee in this file's header. In normal operation expiresAt is
+  // always <= ceiling, so this Math.min is a no-op.
+  return new Date(
+    Math.min(Math.max(next, current.expiresAt.getTime()), ceiling),
+  );
 }
 
 /**

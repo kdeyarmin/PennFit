@@ -463,5 +463,12 @@ export function summarizeToolArgsForAudit(
         name,
         outcome: typeof a.outcome === "string" ? a.outcome : null,
       };
+    default:
+      // The switch is exhaustive over ToolName, but this function is
+      // exported and reusable: a caller passing an unvalidated/unknown
+      // tool name would otherwise fall through and return `undefined`,
+      // violating the declared return type and writing `undefined` into an
+      // audit record. Never echo raw args (may carry PHI) — name only.
+      return { name: String(name), unknown_tool: true };
   }
 }

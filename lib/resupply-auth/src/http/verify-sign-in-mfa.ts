@@ -301,9 +301,16 @@ export function makeVerifySignInMfaHandler(deps: AuthDeps) {
         // Bump the per-user MFA failure counter so brute-force
         // spraying across recovery codes also hits the throttle.
         try {
+          // ip: null — the per-user MFA bucket is keyed on the
+          // __mfa_verify:<id> sentinel; recording a real `ip` would also
+          // bleed MFA-verify failures into the per-IP SIGN-IN lockout
+          // (which counts every success:false row for an IP regardless of
+          // email_lower), letting fat-fingered TOTP codes lock out other
+          // users behind the same NAT. The IP is still captured in the
+          // deps.audit row below.
           await deps.repo.recordLoginAttempt({
             emailLower: `__mfa_verify:${user.id}`,
-            ip: req.ip ?? null,
+            ip: null,
             success: false,
           });
         } catch {
@@ -368,9 +375,16 @@ export function makeVerifySignInMfaHandler(deps: AuthDeps) {
         // request reads a stale count and slips past the throttle.
         // Mirrors the recovery-code branch above.
         try {
+          // ip: null — the per-user MFA bucket is keyed on the
+          // __mfa_verify:<id> sentinel; recording a real `ip` would also
+          // bleed MFA-verify failures into the per-IP SIGN-IN lockout
+          // (which counts every success:false row for an IP regardless of
+          // email_lower), letting fat-fingered TOTP codes lock out other
+          // users behind the same NAT. The IP is still captured in the
+          // deps.audit row below.
           await deps.repo.recordLoginAttempt({
             emailLower: `__mfa_verify:${user.id}`,
-            ip: req.ip ?? null,
+            ip: null,
             success: false,
           });
         } catch {
