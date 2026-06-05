@@ -193,6 +193,52 @@ A `.dockerignore` exists but the builder is `RAILPACK` (not `DOCKERFILE`), so it
 isn't consulted. Harmless. If build-context trimming is ever wanted, Railpack
 honors `.railwayignore`.
 
+### R6 — `NODE_ENV=production` skips devDependencies at build → build fails — ✅ FIXED (2026-06-05)
+
+_Addendum, found later._ Every Railway build of `resupply-api` was failing
+("Build Failed") even though **all GitHub CI was green**. Root cause:
+
+- The build toolchain — `typescript`/`tsc`, `vite`, `esbuild`,
+  `esbuild-plugin-pino`, `pino-pretty`, `@types/node`, `vitest` — all live in
+  `devDependencies` (correct: they're build-time, not runtime).
+- The service sets `NODE_ENV=production` (required at runtime — fail-closed
+  CORS, prod env-checks). Railway applies service variables to the **build**
+  environment too, and `pnpm install` honors `NODE_ENV=production` by
+  **omitting `devDependencies`**. So Railpack's install left the build
+  toolchain absent and `pnpm run build` failed at the very first step
+  (`pnpm run typecheck` → `tsc` can't find `@types/node`, `Response`, `fetch`,
+  `vitest`, …; then `vite`/`esbuild` are "not found").
+- **CI never reproduced it:** no CI job sets `NODE_ENV=production`, and — the
+  reason it stayed invisible — **no CI job runs the resupply-api production
+  build at all** (`ci.yml` builds only the SPA, in the a11y/smoke jobs, and
+  otherwise only typechecks/tests). The one build Railway runs that CI doesn't
+  is exactly the one that broke.
+
+Reproduced locally: a prod-only install (`pnpm install --prod`) then
+`pnpm run build` fails identically; re-adding dev deps
+(`pnpm install --prod=false`) makes it pass.
+
+**Fix:** `railway.json` `build.buildCommand` now force-installs the full
+dependency set before building, overriding the `NODE_ENV`-driven default:
+
+```
+CI=true pnpm install --frozen-lockfile --prod=false && pnpm run build
+```
+
+`--prod=false` includes `devDependencies` regardless of `NODE_ENV`;
+`--frozen-lockfile` keeps it deterministic; `CI=true` lets pnpm reconcile the
+modules directory non-interactively (avoids `ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY`
+when adding dev deps onto Railpack's prod-only install). Railpack still prunes
+to prod deps for the final runtime image, so this does not bloat the deploy.
+
+> **Follow-ups (recommended, not done here):**
+> 1. Add a CI job that runs the real `pnpm run build` (ideally also with
+>    `NODE_ENV=production` + a prod install) so a broken production build can
+>    never be green in CI again.
+> 2. Operator-side alternative/defense-in-depth: scope `NODE_ENV` to the
+>    runtime only in Railway, or set `NIXPACKS_*`/Railpack install overrides —
+>    but the in-repo `buildCommand` fix above needs no dashboard change.
+
 ## Bottom line
 
 Config and app are Railway-appropriate and reflect real production hardening
