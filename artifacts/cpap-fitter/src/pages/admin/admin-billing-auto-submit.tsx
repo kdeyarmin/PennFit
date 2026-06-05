@@ -41,6 +41,10 @@ import {
 
 const READY_QUERY_KEY = ["admin-billing-auto-submit-ready"] as const;
 const STATUS_QUERY_KEY = ["admin-billing-auto-submit-status"] as const;
+// How many ready claims the worklist loads and "Submit all ready" sends.
+// The same cap is passed through to the run so "Submit all ready (N)"
+// transmits all N shown — not the engine's smaller per-cron-tick default.
+const READY_CAP = 200;
 
 export function AdminBillingAutoSubmitPage() {
   const queryClient = useQueryClient();
@@ -51,7 +55,7 @@ export function AdminBillingAutoSubmitPage() {
 
   const readyQuery = useQuery({
     queryKey: READY_QUERY_KEY,
-    queryFn: () => fetchAutoSubmitReady(200),
+    queryFn: () => fetchAutoSubmitReady(READY_CAP),
     staleTime: 30_000,
     refetchOnWindowFocus: true,
   });
@@ -71,8 +75,15 @@ export function AdminBillingAutoSubmitPage() {
   );
 
   const runMutation = useMutation({
+    // claimIds present → operator-approved subset; absent → "submit all
+    // ready", which passes maxClaims so the server sends every claim the
+    // worklist showed (up to READY_CAP) rather than its smaller default.
     mutationFn: (claimIds?: string[]) =>
-      runAutoSubmit(claimIds ? { claimIds } : undefined),
+      runAutoSubmit(
+        claimIds && claimIds.length > 0
+          ? { claimIds }
+          : { maxClaims: READY_CAP },
+      ),
     onSuccess: (result) => {
       setLastResult(result);
       setSelected(new Set());

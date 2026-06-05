@@ -340,6 +340,38 @@ describe("runAutoSubmitBatch (orchestration)", () => {
     expect(result.skippedNotReady).toEqual(["ghost"]);
   });
 
+  it("dedupes approved ids and scopes selection to exactly those ids", async () => {
+    const claims = [
+      readyClaim({ claimId: "a", payerProfileId: "P1" }),
+      readyClaim({ claimId: "b", payerProfileId: "P1" }),
+    ];
+    let selectOpts: { claimIds?: string[]; maxClaims?: number } | null = null;
+    const submitCalls: string[][] = [];
+    const result = await runAutoSubmitBatch(
+      {
+        submittedByEmail: "ops@example.com",
+        triggeredBy: "operator",
+        approvedClaimIds: ["a", "a", "b"], // duplicate "a"
+      },
+      {
+        select: async (opts) => {
+          selectOpts = opts;
+          return readiness(claims);
+        },
+        submit: async (input) => {
+          submitCalls.push(input.claimIds);
+          return okResult("sub", input.claimIds.length);
+        },
+      },
+    );
+    // selection is scoped to the deduped approved ids (not a full scan)
+    expect(selectOpts).toEqual({ claimIds: ["a", "b"], maxClaims: 2 });
+    // "a" is sent once, not twice, despite the duplicate in the input
+    expect(submitCalls).toEqual([["a", "b"]]);
+    expect(result.claimsSubmitted).toBe(2);
+    expect(result.skippedNotReady).toHaveLength(0);
+  });
+
   it("does not count claims when the upload failed, and records hard failures", async () => {
     const claims = [
       readyClaim({ claimId: "a", payerProfileId: "P1" }),

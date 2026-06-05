@@ -47,6 +47,8 @@ export const DEFAULT_SCAN_CAP = 300;
 export const DEFAULT_MAX_CLAIMS_PER_RUN = 50;
 /** Hard cap on claims per 837P file — matches the manual batch route. */
 export const MAX_CLAIMS_PER_BATCH = 100;
+/** Upper bound on parsed-eligibility rows read in one selection pass. */
+export const ELIGIBILITY_ROW_SCAN_LIMIT = 2000;
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
@@ -186,6 +188,11 @@ export interface SelectReadyOpts {
   freshDays?: number;
   /** Only consider claims for this payer profile. */
   payerProfileId?: string;
+  /** Restrict the scan to these specific draft claim ids (the operator
+   *  "approve & submit" path). When set, every one of these claims is
+   *  evaluated against the gate regardless of age-ranking, so an approved
+   *  claim is never silently dropped by the per-run cap. */
+  claimIds?: string[];
   /** Injectable for tests. */
   supabase?: SupabaseClient;
   /** Injectable for tests (defaults to the real preflight). */
@@ -217,7 +224,13 @@ export async function selectSubmissionReadyClaims(
   const preflight = opts.preflight ?? preflightClaim;
   const nowMs = opts.nowMs ?? Date.now();
   const maxClaims = opts.maxClaims ?? DEFAULT_MAX_CLAIMS_PER_RUN;
-  const scanCap = opts.scanCap ?? DEFAULT_SCAN_CAP;
+  // When a specific claim-id set is supplied (operator approval), the
+  // scan must cover all of them so none is dropped by the default cap.
+  const scanCap =
+    opts.scanCap ??
+    (opts.claimIds
+      ? Math.max(DEFAULT_SCAN_CAP, opts.claimIds.length)
+      : DEFAULT_SCAN_CAP);
 
   const excluded: ExcludedClaim[] = [];
 
@@ -232,6 +245,9 @@ export async function selectSubmissionReadyClaims(
     .eq("status", "draft");
   if (opts.payerProfileId) {
     filter = filter.eq("payer_profile_id", opts.payerProfileId);
+  }
+  if (opts.claimIds && opts.claimIds.length > 0) {
+    filter = filter.in("id", opts.claimIds);
   }
   const { data: draftRows, error } = await filter
     .order("created_at", { ascending: true })
@@ -371,13 +387,24 @@ async function loadLatestParsedEligibility(
     { isActive: boolean | null; respondedAt: string | null }
   >();
   if (coverageIds.length === 0) return map;
-  const { data } = await supabase
+  const { data, error } = await supabase
     .schema("resupply")
     .from("eligibility_checks")
     .select("insurance_coverage_id, is_active, responded_at")
     .in("insurance_coverage_id", coverageIds)
     .eq("status", "parsed")
-    .order("responded_at", { ascending: false });
+    // Newest first, NULLS LAST — Postgres defaults to NULLS FIRST on a
+    // DESC sort, which would let a parsed row with a null responded_at
+    // shadow the real latest 271 and flip a fresh-active coverage to
+    // "stale". nullsFirst:false keeps timestamped rows ahead of nulls.
+    .order("responded_at", { ascending: false, nullsFirst: false })
+    // Bound the read so the "first seen per coverage = latest" reduction
+    // is deterministic regardless of the server's max-rows setting. The
+    // scan is already capped to <= scanCap coverages upstream.
+    .limit(ELIGIBILITY_ROW_SCAN_LIMIT);
+  // Surface infra errors instead of silently returning an empty map (which
+  // would mis-classify every claim as eligibility_missing → false "0 ready").
+  if (error) throw error;
   for (const row of data ?? []) {
     const cid = row.insurance_coverage_id as string;
     // Rows arrive newest-first; keep the first (latest) seen per coverage.
@@ -397,11 +424,12 @@ async function loadPayerNames(
 ): Promise<Map<string, string>> {
   const map = new Map<string, string>();
   if (payerProfileIds.length === 0) return map;
-  const { data } = await supabase
+  const { data, error } = await supabase
     .schema("resupply")
     .from("payer_profiles")
     .select("id, display_name")
     .in("id", payerProfileIds);
+  if (error) throw error;
   for (const row of data ?? []) {
     map.set(row.id as string, (row.display_name as string) ?? "");
   }
@@ -414,11 +442,12 @@ async function loadPatientNames(
 ): Promise<Map<string, string>> {
   const map = new Map<string, string>();
   if (patientIds.length === 0) return map;
-  const { data } = await supabase
+  const { data, error } = await supabase
     .schema("resupply")
     .from("patients")
     .select("id, legal_first_name, legal_last_name")
     .in("id", patientIds);
+  if (error) throw error;
   for (const row of data ?? []) {
     const first = (row.legal_first_name as string | null) ?? "";
     const last = (row.legal_last_name as string | null) ?? "";
@@ -484,7 +513,22 @@ export async function runAutoSubmitBatch(
   const maxClaims = opts.maxClaims ?? DEFAULT_MAX_CLAIMS_PER_RUN;
   const maxClaimsPerBatch = opts.maxClaimsPerBatch ?? MAX_CLAIMS_PER_BATCH;
 
-  const readiness = await select({ maxClaims });
+  // Dedupe approved ids so a repeated id can't be sent twice in one 837P
+  // (the batch core rejects the whole batch as "some_claims_not_found"
+  // when the id count and matched-row count diverge).
+  const approvedClaimIds =
+    opts.approvedClaimIds && opts.approvedClaimIds.length > 0
+      ? [...new Set(opts.approvedClaimIds)]
+      : null;
+
+  // Operator-approval path: evaluate EXACTLY the approved claims (scoped
+  // by id) so a claim the operator picked is never silently dropped by
+  // the per-run cap that bounds the unattended "submit all" scan.
+  const readiness = await select(
+    approvedClaimIds
+      ? { claimIds: approvedClaimIds, maxClaims: approvedClaimIds.length }
+      : { maxClaims },
+  );
   const readyById = new Map<string, ReadyClaim>();
   for (const g of readiness.groups) {
     for (const c of g.claims) readyById.set(c.claimId, c);
@@ -492,9 +536,9 @@ export async function runAutoSubmitBatch(
 
   let targetClaims: ReadyClaim[];
   const skippedNotReady: string[] = [];
-  if (opts.approvedClaimIds && opts.approvedClaimIds.length > 0) {
+  if (approvedClaimIds) {
     targetClaims = [];
-    for (const id of opts.approvedClaimIds) {
+    for (const id of approvedClaimIds) {
       const claim = readyById.get(id);
       if (claim) targetClaims.push(claim);
       else skippedNotReady.push(id);
