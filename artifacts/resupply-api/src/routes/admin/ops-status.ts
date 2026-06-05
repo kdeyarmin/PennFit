@@ -15,7 +15,7 @@ import { Router, type IRouter } from "express";
 
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
-import { getEffectiveEnv } from "../../lib/app-config/store";
+import { getConfigOverrides } from "../../lib/app-config/store";
 import { adminReadRateLimiter } from "../../middlewares/admin-rate-limit";
 import { requireAdmin } from "../../middlewares/requireAdmin";
 import { RENEWAL_WINDOW_DAYS } from "@workspace/resupply-domain";
@@ -52,6 +52,33 @@ function computeVendorFlags(env: NodeJS.ProcessEnv) {
 }
 
 type VendorFlags = ReturnType<typeof computeVendorFlags>;
+
+// The catalog (overridable) env keys that feed each vendor flag. Used to
+// decide whether a vendor is "pending restart": a saved override whose
+// value DIFFERS from the live process.env value isn't active yet — the
+// running vendor clients keep using the old value until the next deploy
+// folds the override in. This covers both a brand-new credential (absent
+// from the live env) AND a rotation (a replacement saved while the old
+// value is still live). Boot-only keys that can't be overridden (e.g.
+// SUPABASE_STORAGE_BUCKET_PRIVATE, SENDGRID_FROM_EMAIL, RAILWAY_PUBLIC_DOMAIN)
+// are intentionally absent — they never appear in the overrides map.
+const VENDOR_CONFIG_KEYS: Record<keyof VendorFlags, readonly string[]> = {
+  sendgrid: ["SENDGRID_API_KEY", "SENDGRID_FROM_NAME"],
+  twilioVoice: ["TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN"],
+  twilioSms: [
+    "TWILIO_ACCOUNT_SID",
+    "TWILIO_AUTH_TOKEN",
+    "TWILIO_MESSAGING_SERVICE_SID",
+  ],
+  twilioFax: [
+    "TWILIO_ACCOUNT_SID",
+    "TWILIO_AUTH_TOKEN",
+    "TWILIO_FAX_FROM_NUMBER",
+    "RESUPPLY_VOICE_PUBLIC_BASE_URL",
+  ],
+  stripe: ["STRIPE_SECRET_KEY"],
+  objectStorage: [],
+};
 
 router.get(
   "/admin/ops-status",
@@ -95,7 +122,7 @@ router.get(
     // doesn't expose jsonb_array_length, but a stored empty cart is always
     // `[]::jsonb` (the column default), so a literal `[]` neq is equivalent.
     const [
-      effectiveEnv,
+      overrides,
       abandonedCartRes,
       reviewRequestRes,
       rxRenewalRes,
@@ -105,11 +132,12 @@ router.get(
       agentRes,
       pendingRes,
     ] = await Promise.all([
-      // System Configuration overrides folded over process.env
-      // (cached + fail-soft; degrades to process.env on any DB hiccup).
-      // Lets a credential saved in /admin/system/configuration show as
-      // configured here without waiting for the next deploy.
-      getEffectiveEnv(),
+      // Saved System Configuration overrides (catalog keys → value),
+      // cached + fail-soft (degrades to "{}" on any DB hiccup). Folded
+      // over process.env below so a credential saved in
+      // /admin/system/configuration shows as configured here without
+      // waiting for the next deploy.
+      getConfigOverrides(),
 
       supabase
         .schema("resupply")
@@ -193,19 +221,30 @@ router.get(
       if (r.error) throw r.error;
     }
 
-    // Live = what the running process can use right now (process.env).
-    // Effective = live + values saved in System Configuration. A vendor
-    // configured in `effective` but not `live` was entered in the app
-    // but hasn't been folded into process.env yet (catalog keys are
-    // applyMode: "restart" — they apply on the next deploy). Surfacing
-    // that distinct "saved, pending restart" state is what stops a
-    // just-saved secret from showing as a flat "not configured" here.
-    const liveFlags = computeVendorFlags(process.env);
+    // Effective = process.env with saved System Configuration overrides
+    // layered on top, so a credential entered in the app reads as
+    // configured here. `vendors` reports that effective state.
+    const effectiveEnv =
+      Object.keys(overrides).length > 0
+        ? { ...process.env, ...overrides }
+        : process.env;
     const effectiveFlags = computeVendorFlags(effectiveEnv);
+
+    // "Pending restart": a saved override exists whose value DIFFERS from
+    // the live process.env value, so the running vendor clients are still
+    // using the old (or no) value until the next deploy folds it in
+    // (catalog keys are applyMode: "restart"). Comparing values — not just
+    // presence — flags a rotation too (a replacement key saved while the
+    // old one is still live), which a presence-only check would miss and
+    // show as a misleading green "configured".
+    const pendingKeys = new Set(
+      Object.keys(overrides).filter((k) => overrides[k] !== process.env[k]),
+    );
     const vendorsPendingRestart = Object.fromEntries(
       (Object.keys(effectiveFlags) as Array<keyof VendorFlags>).map((k) => [
         k,
-        effectiveFlags[k] && !liveFlags[k],
+        effectiveFlags[k] &&
+          VENDOR_CONFIG_KEYS[k].some((key) => pendingKeys.has(key)),
       ]),
     ) as Record<keyof VendorFlags, boolean>;
 

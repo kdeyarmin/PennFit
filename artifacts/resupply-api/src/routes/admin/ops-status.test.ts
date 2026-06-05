@@ -235,13 +235,30 @@ describe("GET /admin/ops-status", () => {
     expect(res.body.vendorsPendingRestart.sendgrid).toBe(false);
   });
 
-  it("does not flag a vendor as pending when its creds are already live in the env", async () => {
+  it("flags a saved rotation as pending even when an old credential is still live", async () => {
     mockAdmin.current = { userId: "u", email: "ops@x", role: "admin" };
-    // Stripe is live in the process env AND (redundantly) saved in the
-    // app. Effective === live, so it's configured but NOT pending.
-    process.env.STRIPE_SECRET_KEY = "sk_live_fromenv";
+    // An OLD Stripe key is live in process.env; a NEW one was saved in the
+    // app. The running clients keep using the old value until the next
+    // deploy, so this must read as pending — not a misleading green
+    // "configured". (Regression test for PR #521 review: a presence-only
+    // check missed this because both live and effective are configured.)
+    process.env.STRIPE_SECRET_KEY = "sk_live_oldlive";
     stageSupabaseResponse("app_config", "select", {
-      data: [{ key: "STRIPE_SECRET_KEY", value: "sk_live_savedinapp" }],
+      data: [{ key: "STRIPE_SECRET_KEY", value: "sk_live_newsaved" }],
+    });
+    queueCounts([0, 0, 0, 0, 0, 0, 0, 0]);
+    const res = await request(makeApp()).get("/admin/ops-status");
+    expect(res.body.vendors.stripe).toBe(true);
+    expect(res.body.vendorsPendingRestart.stripe).toBe(true);
+  });
+
+  it("does not flag pending when the saved value matches the live env value", async () => {
+    mockAdmin.current = { userId: "u", email: "ops@x", role: "admin" };
+    // Saved value === live value (e.g. already folded in on a prior
+    // deploy): nothing is waiting on a restart.
+    process.env.STRIPE_SECRET_KEY = "sk_live_same";
+    stageSupabaseResponse("app_config", "select", {
+      data: [{ key: "STRIPE_SECRET_KEY", value: "sk_live_same" }],
     });
     queueCounts([0, 0, 0, 0, 0, 0, 0, 0]);
     const res = await request(makeApp()).get("/admin/ops-status");
