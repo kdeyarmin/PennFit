@@ -128,8 +128,8 @@ written, tested, and wired — just switched off. There are two gating layers.
 
 ### Table A — Runtime flags seeded OFF
 
-Toggle from the **admin Control Center** (`/admin/feature-flags`, backed by
-`resupply.feature_flags`). Takes effect within ~5 seconds — **no deploy**.
+Toggle from the **admin Control Center** (`/admin/control-center`, backed by
+`/admin/feature-flags` + `resupply.feature_flags`). Takes effect within ~5 seconds — **no deploy**.
 
 | Flag                                  | Mig  | Turning it ON…                                                                                                                                 | Goal                 |
 | ------------------------------------- | ---- | ---------------------------------------------------------------------------------------------------------------------------------------------- | -------------------- |
