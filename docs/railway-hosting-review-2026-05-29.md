@@ -193,51 +193,58 @@ A `.dockerignore` exists but the builder is `RAILPACK` (not `DOCKERFILE`), so it
 isn't consulted. Harmless. If build-context trimming is ever wanted, Railpack
 honors `.railwayignore`.
 
-### R6 — `NODE_ENV=production` skips devDependencies at build → build fails — ✅ FIXED (2026-06-05)
+### R6 — Railway build OOMs on the redundant typecheck — ✅ FIXED (2026-06-05)
 
 _Addendum, found later._ Every Railway build of `resupply-api` was failing
-("Build Failed") even though **all GitHub CI was green**. Root cause:
+("Build Failed") even though **all GitHub CI was green**.
 
-- The build toolchain — `typescript`/`tsc`, `vite`, `esbuild`,
-  `esbuild-plugin-pino`, `pino-pretty`, `@types/node`, `vitest` — all live in
-  `devDependencies` (correct: they're build-time, not runtime).
-- The service sets `NODE_ENV=production` (required at runtime — fail-closed
-  CORS, prod env-checks). Railway applies service variables to the **build**
-  environment too, and `pnpm install` honors `NODE_ENV=production` by
-  **omitting `devDependencies`**. So Railpack's install left the build
-  toolchain absent and `pnpm run build` failed at the very first step
-  (`pnpm run typecheck` → `tsc` can't find `@types/node`, `Response`, `fetch`,
-  `vitest`, …; then `vite`/`esbuild` are "not found").
-- **CI never reproduced it:** no CI job sets `NODE_ENV=production`, and — the
-  reason it stayed invisible — **no CI job runs the resupply-api production
-  build at all** (`ci.yml` builds only the SPA, in the a11y/smoke jobs, and
-  otherwise only typechecks/tests). The one build Railway runs that CI doesn't
-  is exactly the one that broke.
+**Why it was invisible to CI:** no CI job ran the production build —
+`ci.yml` only typechecked/tested or built the SPA, never the resupply-api
+esbuild bundle, and the deploy build (`pnpm run build`) ran only on Railway.
+A new `railway-build` CI job now runs the exact deploy build on Node 24.
 
-Reproduced locally: a prod-only install (`pnpm install --prod`) then
-`pnpm run build` fails identically; re-adding dev deps
-(`pnpm install --prod=false`) makes it pass.
+**A wrong turn worth recording.** The first hypothesis was that
+`NODE_ENV=production` (set on the service, and applied to the build) made
+`pnpm install` drop `devDependencies` (the whole build toolchain), the way
+`npm` does. That is **false for pnpm** — pnpm only drops dev deps with an
+explicit `--prod` flag, not from `NODE_ENV`. The `railway-build` CI job
+proved it: under Node 24 + `NODE_ENV=production` + a normal `pnpm install`,
+the full `pnpm run build` (typecheck **and** the esbuild bundle) succeeds.
+So the `--prod=false` buildCommand first tried here was a no-op and was
+reverted.
 
-**Fix:** `railway.json` `build.buildCommand` now force-installs the full
-dependency set before building, overriding the `NODE_ENV`-driven default:
+**Actual root cause — build-time memory.** Railway/Railpack build containers
+are memory-constrained, and "JavaScript heap out of memory" during the build
+is a widely-reported, Railway-only failure (it doesn't reproduce on a 7 GB CI
+runner or locally). The deploy build's heaviest consumer is the **typecheck**:
+`pnpm run build` = `pnpm run typecheck && pnpm -r run build`, and
+`typecheck` runs `tsc --build` across all 23 projects plus per-app `tsc`
+passes — and `tsc` type-checking a monorepo this size is the classic OOM
+trigger. Critically, that typecheck is **dead weight for producing the deploy
+artifact**: the lib packages export `./src/index.ts`, so esbuild/vite bundle
+them **from source** and never consume the `tsc` output, and CI already gates
+types in the `lint-typecheck` job.
+
+**Fix:** drop the typecheck from the Railway build and build the two
+artifacts only, serialized to keep peak memory low. `railway.json`
+`build.buildCommand`:
 
 ```
-CI=true pnpm install --frozen-lockfile --prod=false && pnpm run build
+pnpm -r --workspace-concurrency=1 --if-present run build
 ```
 
-`--prod=false` includes `devDependencies` regardless of `NODE_ENV`;
-`--frozen-lockfile` keeps it deterministic; `CI=true` lets pnpm reconcile the
-modules directory non-interactively (avoids `ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY`
-when adding dev deps onto Railpack's prod-only install). Railpack still prunes
-to prod deps for the final runtime image, so this does not bloat the deploy.
+This produces byte-for-byte the same `artifacts/resupply-api/dist/index.mjs`
+and `artifacts/cpap-fitter/dist/public/` (verified locally and in the
+`railway-build` CI job), but without the multi-`tsc` typecheck and without
+the two artifact builds running in parallel — a large reduction in peak
+build memory. Railpack runs its own `pnpm install` before this command, so
+no install step is needed in the buildCommand.
 
-> **Follow-ups (recommended, not done here):**
-> 1. Add a CI job that runs the real `pnpm run build` (ideally also with
->    `NODE_ENV=production` + a prod install) so a broken production build can
->    never be green in CI again.
-> 2. Operator-side alternative/defense-in-depth: scope `NODE_ENV` to the
->    runtime only in Railway, or set `NIXPACKS_*`/Railpack install overrides —
->    but the in-repo `buildCommand` fix above needs no dashboard change.
+> **If a build still OOMs after this** (the artifact builds themselves, not
+> the typecheck): next levers are disabling the resupply-api sourcemap in
+> `build.mjs` (the `dist/index.mjs.map` is ~21 MB), bumping the Railway build
+> plan's memory, or `NODE_OPTIONS=--max-old-space-size=<MB>` in the
+> buildCommand (only helps if the container actually has the memory).
 
 ## Bottom line
 

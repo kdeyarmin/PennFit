@@ -534,24 +534,21 @@ jobs:
     name: Railway prod build (Node 24)
     runs-on: ubuntu-latest
 
-    # Reproduces the Railway/Railpack production build, which NOTHING else
-    # in CI exercises: the other jobs only typecheck/test or build the SPA,
-    # never the resupply-api esbuild bundle, and none set NODE_ENV. Railway
-    # builds with NODE_ENV=production (the service needs it at runtime and
-    # Railway applies service vars to the build too), so its `pnpm install`
-    # is prod-only — and the whole build toolchain (tsc/vite/esbuild/
-    # @types/node/vitest) lives in devDependencies. That made every Railway
-    # build fail while staying green in CI, until this job + the railway.json
-    # buildCommand fix (`--prod=false`). See
+    # Builds the production deploy artifacts the way Railway does — which
+    # NOTHING else in CI exercises: the other jobs only typecheck/test or
+    # build the SPA, never the resupply-api esbuild bundle. Runs the exact
+    # railway.json buildCommand on Node 24 with NODE_ENV=production, so a
+    # broken production build can't stay green in CI again. See
     # docs/railway-hosting-review-2026-05-29.md R6.
+    #
+    # NODE_ENV=production is set to mirror Railway. (Note: pnpm — unlike npm
+    # — does NOT drop devDependencies for NODE_ENV, so the build toolchain is
+    # present; that is verified by the install + build below.)
     env:
       NODE_ENV: production
     steps:
       - uses: actions/checkout@v5
 
-      # install: false — we drive the install ourselves to mirror Railpack
-      # (a prod-only install under NODE_ENV=production), not the shared
-      # frozen-lockfile install the composite action would otherwise run.
       - uses: ./.github/actions/setup
         with:
           node-version: "24"
@@ -561,33 +558,19 @@ jobs:
       - name: Toolchain + env
         run: node -v && pnpm -v && echo "NODE_ENV=$NODE_ENV"
 
-      # What Railpack does: a frozen install with NODE_ENV=production, which
-      # pnpm honors by omitting devDependencies.
-      - name: Railpack-style prod-only install
+      # Mirror Railpack's install (plain frozen install — includes dev deps).
+      - name: Install (frozen)
         run: pnpm install --frozen-lockfile
 
-      - name: Build-tool availability after prod install (diagnostic)
+      # The exact railway.json buildCommand: build the artifacts only,
+      # serialized to keep peak memory low, and (deliberately) WITHOUT the
+      # redundant typecheck — esbuild/vite bundle the libs from src, and CI's
+      # lint-typecheck job already gates types. Keep this in sync with
+      # railway.json's build.buildCommand.
+      - name: Railway buildCommand
+        run: pnpm -r --workspace-concurrency=1 --if-present run build
+
+      - name: Confirm the deploy artifacts were produced
         run: |
-          echo "tsc:";     pnpm exec tsc --version || echo "  (tsc MISSING)"
-          echo "vite:";    pnpm --filter @workspace/cpap-fitter exec vite --version || echo "  (vite MISSING)"
-          echo "esbuild:"; pnpm --filter @workspace/resupply-api exec esbuild --version || echo "  (esbuild MISSING)"
-
-      # Diagnostic, non-gating: the OLD buildCommand (`pnpm run build`) on a
-      # prod-only install. Expected to FAIL while dev deps are skipped — its
-      # log shows exactly where (and proves the failure mode is the missing
-      # toolchain, not something else).
-      - name: Diagnostic — bare `pnpm run build` (no fix)
-        id: bare_build
-        continue-on-error: true
-        run: pnpm run build
-
-      - name: Diagnostic — bare build outcome
-        run: 'echo "bare pnpm run build outcome: ${{ steps.bare_build.outcome }}"'
-
-      # The real gate: the railway.json buildCommand. `--prod=false` pulls in
-      # devDependencies regardless of NODE_ENV; this must pass.
-      - name: Railway buildCommand (the fix) — must pass
-        run: CI=true pnpm install --frozen-lockfile --prod=false && pnpm run build
-
-      - name: Confirm the resupply-api bundle was produced
-        run: test -f artifacts/resupply-api/dist/index.mjs && echo "dist/index.mjs OK"
+          test -f artifacts/resupply-api/dist/index.mjs && echo "resupply-api dist/index.mjs OK"
+          test -f artifacts/cpap-fitter/dist/public/index.html && echo "cpap-fitter SPA OK"
