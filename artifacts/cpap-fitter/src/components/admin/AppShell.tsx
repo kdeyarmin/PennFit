@@ -620,6 +620,14 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             hint: "Active coverages due for re-verification — never-checked, terminating soon, or stale",
           },
           {
+            href: "/admin/billing/auto-submit",
+            label: "Auto-submit",
+            icon: Send,
+            matchPrefix: "/admin/billing/auto-submit",
+            requiredPermission: "admin.tools.manage",
+            hint: "Claims ready to transmit — preflight-clean + active eligibility. Approve a batch or let the cron send them.",
+          },
+          {
             href: "/admin/billing/prior-auths",
             label: "Prior auths",
             icon: ShieldAlert,

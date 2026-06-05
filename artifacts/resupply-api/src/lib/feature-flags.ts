@@ -50,6 +50,7 @@ export const FEATURE_FLAG_KEYS = [
   "bulk_campaigns.send",
   "cart_abandonment.dispatcher",
   "ai_billing.suggestions",
+  "billing.auto_submit_claims",
   "smart_triggers.dispatcher",
   "patient_onboarding.dispatcher",
   "fitter_supply_campaign.dispatcher",
