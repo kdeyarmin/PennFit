@@ -132,13 +132,19 @@ GRANT EXECUTE ON FUNCTION resupply.resolve_compliance_thresholds(text) TO servic
 
 -- ── fleet overview (per-payer thresholds) ──────────────────────────
 -- Identical signature + return columns to 0179; the 240/21 literals are
--- replaced by each patient's resolved thresholds. "at_risk" / "non_
--- compliant" bands are expressed relative to required_nights:
+-- replaced by each patient's resolved thresholds. Let
+-- lo = GREATEST(1, floor(required_nights / 2)). Over patients with >= 1
+-- night of data the cohorts are:
 --   compliant      nights_over_thr >= required_nights
---   at_risk        floor(required_nights/2) <= nights_over_thr < required_nights
---   non_compliant  nights_over_thr < floor(required_nights/2), device reporting
--- For the default (required_nights=21) this reproduces the prior fixed
--- bands exactly (>=21 / 10..20 / <10).
+--   at_risk        lo <= nights_over_thr < required_nights
+--   non_compliant  nights_over_thr < lo
+--   no_recent_data nights_with_data = 0  (disjoint — these have no data)
+-- The lower bound is clamped to >= 1 and both data-bearing buckets carry
+-- a nights_with_data >= 1 guard, so the four cohorts stay mutually
+-- exclusive and complete even at a small required_nights (e.g. 1, where
+-- floor()=0 would otherwise pull no-data patients into at_risk and leave
+-- non_compliant unreachable). For the default (required_nights=21) this
+-- reproduces the prior fixed bands exactly (>=21 / 10..20 / <10).
 CREATE OR REPLACE FUNCTION resupply.therapy_fleet_overview(
   p_window_days int DEFAULT 30
 )
