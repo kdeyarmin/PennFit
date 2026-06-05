@@ -14,6 +14,7 @@ import { Router, type IRouter } from "express";
 
 import { hasLinkHmacKey } from "@workspace/resupply-secrets";
 
+import { getEffectiveEnv } from "../../lib/app-config/store";
 import { adminReadRateLimiter } from "../../middlewares/admin-rate-limit";
 import { requireAdmin } from "../../middlewares/requireAdmin";
 
@@ -35,6 +36,14 @@ router.get(
     const lastMigrationAt: string | null = null;
 
     const env = process.env;
+    // Vendor presence is computed against the EFFECTIVE env (process.env
+    // plus values saved in System Configuration / resupply.app_config) so
+    // a credential entered in the app reads as "configured" here, matching
+    // the System Configuration page. Cached + fail-soft: any DB hiccup
+    // degrades to process.env. Non-vendor fields below stay on the live
+    // process.env (e.g. the public webhook URLs, which the running process
+    // signs against until the next deploy).
+    const vendorEnv = await getEffectiveEnv();
     const allowlistCount = (raw: string | undefined) =>
       raw
         ? raw
@@ -75,25 +84,33 @@ router.get(
       },
       vendors: {
         sendgrid: {
-          configured: Boolean(env.SENDGRID_API_KEY && env.SENDGRID_FROM_EMAIL),
-          fromEmailConfigured: Boolean(env.SENDGRID_FROM_EMAIL),
+          configured: Boolean(
+            vendorEnv.SENDGRID_API_KEY && vendorEnv.SENDGRID_FROM_EMAIL,
+          ),
+          fromEmailConfigured: Boolean(vendorEnv.SENDGRID_FROM_EMAIL),
         },
         twilio: {
-          accountSidConfigured: Boolean(env.TWILIO_ACCOUNT_SID),
-          authTokenConfigured: Boolean(env.TWILIO_AUTH_TOKEN),
-          messagingServiceConfigured: Boolean(env.TWILIO_MESSAGING_SERVICE_SID),
-          voicePhoneConfigured: Boolean(env.TWILIO_VOICE_PHONE_NUMBER),
-          faxPhoneConfigured: Boolean(env.TWILIO_FAX_FROM_NUMBER),
+          accountSidConfigured: Boolean(vendorEnv.TWILIO_ACCOUNT_SID),
+          authTokenConfigured: Boolean(vendorEnv.TWILIO_AUTH_TOKEN),
+          messagingServiceConfigured: Boolean(
+            vendorEnv.TWILIO_MESSAGING_SERVICE_SID,
+          ),
+          voicePhoneConfigured: Boolean(vendorEnv.TWILIO_VOICE_PHONE_NUMBER),
+          faxPhoneConfigured: Boolean(vendorEnv.TWILIO_FAX_FROM_NUMBER),
         },
         stripe: {
-          secretKeyConfigured: Boolean(env.STRIPE_SECRET_KEY),
-          webhookSecretConfigured: Boolean(env.STRIPE_WEBHOOK_SIGNING_SECRET),
+          secretKeyConfigured: Boolean(vendorEnv.STRIPE_SECRET_KEY),
+          webhookSecretConfigured: Boolean(
+            vendorEnv.STRIPE_WEBHOOK_SIGNING_SECRET,
+          ),
         },
         objectStorage: {
-          privateBucketConfigured: Boolean(env.SUPABASE_STORAGE_BUCKET_PRIVATE),
+          privateBucketConfigured: Boolean(
+            vendorEnv.SUPABASE_STORAGE_BUCKET_PRIVATE,
+          ),
         },
         openai: {
-          apiKeyConfigured: Boolean(env.OPENAI_API_KEY),
+          apiKeyConfigured: Boolean(vendorEnv.OPENAI_API_KEY),
         },
       },
       secrets: {

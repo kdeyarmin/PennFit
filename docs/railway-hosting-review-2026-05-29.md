@@ -193,6 +193,59 @@ A `.dockerignore` exists but the builder is `RAILPACK` (not `DOCKERFILE`), so it
 isn't consulted. Harmless. If build-context trimming is ever wanted, Railpack
 honors `.railwayignore`.
 
+### R6 — Railway build OOMs on the redundant typecheck — ✅ FIXED (2026-06-05)
+
+_Addendum, found later._ Every Railway build of `resupply-api` was failing
+("Build Failed") even though **all GitHub CI was green**.
+
+**Why it was invisible to CI:** no CI job ran the production build —
+`ci.yml` only typechecked/tested or built the SPA, never the resupply-api
+esbuild bundle, and the deploy build (`pnpm run build`) ran only on Railway.
+A new `railway-build` CI job now runs the exact deploy build on Node 24.
+
+**A wrong turn worth recording.** The first hypothesis was that
+`NODE_ENV=production` (set on the service, and applied to the build) made
+`pnpm install` drop `devDependencies` (the whole build toolchain), the way
+`npm` does. That is **false for pnpm** — pnpm only drops dev deps with an
+explicit `--prod` flag, not from `NODE_ENV`. The `railway-build` CI job
+proved it: under Node 24 + `NODE_ENV=production` + a normal `pnpm install`,
+the full `pnpm run build` (typecheck **and** the esbuild bundle) succeeds.
+So the `--prod=false` buildCommand first tried here was a no-op and was
+reverted.
+
+**Actual root cause — build-time memory.** Railway/Railpack build containers
+are memory-constrained, and "JavaScript heap out of memory" during the build
+is a widely-reported, Railway-only failure (it doesn't reproduce on a 7 GB CI
+runner or locally). The deploy build's heaviest consumer is the **typecheck**:
+`pnpm run build` = `pnpm run typecheck && pnpm -r run build`, and
+`typecheck` runs `tsc --build` across all 23 projects plus per-app `tsc`
+passes — and `tsc` type-checking a monorepo this size is the classic OOM
+trigger. Critically, that typecheck is **dead weight for producing the deploy
+artifact**: the lib packages export `./src/index.ts`, so esbuild/vite bundle
+them **from source** and never consume the `tsc` output, and CI already gates
+types in the `lint-typecheck` job.
+
+**Fix:** drop the typecheck from the Railway build and build the two
+artifacts only, serialized to keep peak memory low. `railway.json`
+`build.buildCommand`:
+
+```
+pnpm -r --workspace-concurrency=1 --if-present run build
+```
+
+This produces byte-for-byte the same `artifacts/resupply-api/dist/index.mjs`
+and `artifacts/cpap-fitter/dist/public/` (verified locally and in the
+`railway-build` CI job), but without the multi-`tsc` typecheck and without
+the two artifact builds running in parallel — a large reduction in peak
+build memory. Railpack runs its own `pnpm install` before this command, so
+no install step is needed in the buildCommand.
+
+> **If a build still OOMs after this** (the artifact builds themselves, not
+> the typecheck): next levers are disabling the resupply-api sourcemap in
+> `build.mjs` (the `dist/index.mjs.map` is ~21 MB), bumping the Railway build
+> plan's memory, or `NODE_OPTIONS=--max-old-space-size=<MB>` in the
+> buildCommand (only helps if the container actually has the memory).
+
 ## Bottom line
 
 Config and app are Railway-appropriate and reflect real production hardening
