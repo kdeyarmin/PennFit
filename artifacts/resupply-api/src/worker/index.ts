@@ -54,6 +54,7 @@ import { registerMetricAlertsEvaluatorJob } from "./jobs/metric-alerts-evaluator
 import { registerMetricAlertsNotifyJob } from "./jobs/metric-alerts-notify.js";
 import { registerOwnerDigestJob } from "./jobs/owner-digest.js";
 import { registerTherapyFleetAlertsJob } from "./jobs/therapy-fleet-alerts-scan.js";
+import { registerSetupDeadlineOutreachJob } from "./jobs/therapy-setup-deadline-outreach.js";
 import { registerCoachingProgressJob } from "./jobs/coaching-plan-progress.js";
 import { registerPriorAuthExpirySweepJob } from "./jobs/prior-auth-expiry-sweep.js";
 import { registerShopOrderDeliveryFollowupJob } from "./jobs/shop-order-delivery-followup.js";
@@ -505,6 +506,14 @@ async function doStartWorker(): Promise<void> {
   // internal alert feed and, when the (default-off) auto-outreach flag
   // is on, sends consented at-risk patients a gentle adherence SMS.
   await registerTherapyFleetAlertsJob(boss);
+
+  // Daily CPAP setup-deadline outreach (05:05 UTC, BEFORE the 05:15
+  // alerts-scan). Turns the 90-day setup-adherence countdown into
+  // proactive, escalating SMS ("about N more 4h+ nights in D days to
+  // keep coverage") for on_track/at_risk patients. Shares the alerts-scan
+  // 14-day frequency-cap key so the two never double-text a patient.
+  // Gated by the same therapy_fleet.auto_outreach + sms.reminders flags.
+  await registerSetupDeadlineOutreachJob(boss);
 
   // Daily prior-authorization expiry sweep — flips approved → expired
   // on the day after approved_through, and emits CSR heads-up alerts
