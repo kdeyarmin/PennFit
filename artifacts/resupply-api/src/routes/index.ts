@@ -160,6 +160,7 @@ import priorAuthQueueRouter from "./admin/prior-auth-queue.js";
 import webhookTestSendRouter from "./admin/webhook-test-send.js";
 import payerFeeSchedulesImportRouter from "./admin/payer-fee-schedules-import.js";
 import systemIntegrationsStatusRouter from "./admin/system-integrations-status.js";
+import connectionTestsRouter from "./admin/connection-tests.js";
 import documentationPacketsRouter from "./admin/documentation-packets.js";
 import webhookDeliveryRetryRouter from "./admin/webhook-delivery-retry.js";
 import dispenseReadinessRouter from "./admin/dispense-readiness.js";
@@ -526,7 +527,12 @@ router.use(webhookTestSendRouter);
 router.use(payerFeeSchedulesImportRouter);
 // /admin/system/integrations-status — admin-facing rollup of every
 // integration's configured/configured-partial/unconfigured posture.
-router.use(systemIntegrationsStatusRouter); // /admin/hipaa-breach-incidents — HIPAA §164.404-414 lifecycle.
+router.use(systemIntegrationsStatusRouter);
+// /admin/connection-tests/* — super-admin "send a test" diagnostics for
+// email / SMS / voice / chat. Verifies a credential (including one just
+// saved in System Configuration) actually works. system.config.manage.
+router.use(connectionTestsRouter);
+// /admin/hipaa-breach-incidents — HIPAA §164.404-414 lifecycle.
 // /admin/patients/:id/documentation-packets — combined PDF
 // support packets (cover letter + sleep study + Rx + DWO summaries).
 router.use(documentationPacketsRouter);
