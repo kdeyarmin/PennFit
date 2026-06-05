@@ -780,6 +780,14 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             hint: "Gross margin and % by product and overall, from captured cost",
           },
           {
+            href: "/admin/analytics/outreach-attribution",
+            label: "Outreach Attribution",
+            icon: Target,
+            matchPrefix: "/admin/analytics/outreach-attribution",
+            requiredPermission: "reports.read",
+            hint: "Share of contacted patients who ordered, by outreach channel",
+          },
+          {
             href: "/admin/analytics/ltv-cac",
             label: "LTV & CAC",
             icon: TrendingUp,
