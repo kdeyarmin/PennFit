@@ -30,9 +30,7 @@ describe("RATE_LIMITS — registry shape", () => {
       "reminder_signup",
       "reminder_manage",
       "integrations_inbound_webhooks",
-      "integrations_inbound_dispatch",
       "provider_portal",
-      "portal_clinician",
     ];
     for (const name of expected) {
       expect(RATE_LIMITS[name]).toBeDefined();

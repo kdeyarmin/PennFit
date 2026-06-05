@@ -110,11 +110,6 @@ const AdminInboundFaxesPage = lazy(() =>
     default: m.AdminInboundFaxesPage,
   })),
 );
-const AdminInboundReferralsPage = lazy(() =>
-  import("@/pages/admin/admin-inbound-referrals").then((m) => ({
-    default: m.AdminInboundReferralsPage,
-  })),
-);
 const AdminPrescriptionRequestsPage = lazy(() =>
   import("@/pages/admin/admin-prescription-requests").then((m) => ({
     default: m.AdminPrescriptionRequestsPage,
@@ -500,6 +495,11 @@ const AdminBillingOfficeAllyPage = lazy(() =>
     default: m.AdminBillingOfficeAllyPage,
   })),
 );
+const AdminBillingAutoSubmitPage = lazy(() =>
+  import("@/pages/admin/admin-billing-auto-submit").then((m) => ({
+    default: m.AdminBillingAutoSubmitPage,
+  })),
+);
 const AdminOfficeAllySubmissionDetailPage = lazy(() =>
   import("@/pages/admin/admin-billing-office-ally-detail").then((m) => ({
     default: m.AdminOfficeAllySubmissionDetailPage,
@@ -714,6 +714,10 @@ function AdminConsole() {
               component={AdminBillingCappedRentalsPage}
             />
             <Route
+              path="/admin/billing/auto-submit"
+              component={AdminBillingAutoSubmitPage}
+            />
+            <Route
               path="/admin/billing/office-ally"
               component={AdminBillingOfficeAllyPage}
             />
@@ -808,10 +812,6 @@ function AdminConsole() {
             <Route
               path="/admin/inbound-faxes"
               component={AdminInboundFaxesPage}
-            />
-            <Route
-              path="/admin/inbound-referrals"
-              component={AdminInboundReferralsPage}
             />
             <Route
               path="/admin/patients/:patientId/prescription-requests"

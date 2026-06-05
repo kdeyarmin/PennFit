@@ -1712,7 +1712,7 @@ function FaxOutreachRow({ row }: { row: PhysicianFaxOutreachRow }) {
 }
 
 // IntegrationsTab — unified "Device data" view across ResMed AirView,
-// Philips Care Orchestrator, and Health Connect. Reads the cached
+// Philips Care Orchestrator, and React Health. Reads the cached
 // snapshot per source; the Refresh button re-pulls from the partner.
 function IntegrationsTab({ patientId }: { patientId: string }) {
   const queryClient = useQueryClient();
@@ -1854,7 +1854,7 @@ function IntegrationSourceCard({
   onRefresh: () => void;
 }) {
   const { source, availability, link, snapshot } = view;
-  const linked = source === "health_connect" || link !== null;
+  const linked = link !== null;
   const canRefresh = linked && !refreshing;
 
   return (
@@ -1893,9 +1893,7 @@ function IntegrationSourceCard({
                 Link {link.status}
               </Badge>
             )}
-            {!link && source !== "health_connect" && (
-              <Badge variant="muted">No link</Badge>
-            )}
+            {!link && <Badge variant="muted">No link</Badge>}
             {snapshot && (
               <span style={{ color: "hsl(var(--ink-3))" }}>
                 Cached {formatDateTime(snapshot.fetchedAt)}

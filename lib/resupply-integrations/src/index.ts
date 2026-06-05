@@ -1,6 +1,6 @@
 // @workspace/resupply-integrations — pure semantic layer for the
 // therapy-cloud integrations surface (ResMed AirView, Philips
-// Care Orchestrator, Health Connect).
+// Care Orchestrator, React Health).
 //
 // This package contains:
 //   - Cross-vendor unified types (DeviceSettings, ComplianceSummary,
@@ -12,7 +12,7 @@
 //
 // MUST NOT IMPORT: pg, @workspace/resupply-db, vendor SDKs, fetch.
 // Vendor HTTP clients live in resupply-integrations-{airview,
-// care-orchestrator,health-connect}.
+// care-orchestrator,react-health}.
 
 export {
   INTEGRATION_SOURCES,

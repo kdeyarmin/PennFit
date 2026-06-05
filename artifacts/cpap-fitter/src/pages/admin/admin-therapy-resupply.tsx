@@ -50,7 +50,6 @@ const CATEGORY_FILTERS: Array<{
 const SOURCE_LABELS: Record<string, string> = {
   resmed_airview: "ResMed AirView",
   philips_care: "Philips Care",
-  health_connect: "Health Connect",
   react_health: "React Health",
 };
 
@@ -95,9 +94,9 @@ export function AdminTherapyResupplyPage() {
           </h1>
           <p className="text-sm mt-1" style={{ color: "hsl(var(--ink-3))" }}>
             Supplies the manufacturer device data reports as eligible for
-            replacement — across ResMed AirView, Philips Care Orchestrator,
-            React Health, and Health Connect. High-leak patients whose mask is
-            due are flagged for a combined re-fit + resupply.
+            replacement — across ResMed AirView, Philips Care Orchestrator, and
+            React Health. High-leak patients whose mask is due are flagged for a
+            combined re-fit + resupply.
           </p>
         </div>
         <div className="flex items-center gap-2">

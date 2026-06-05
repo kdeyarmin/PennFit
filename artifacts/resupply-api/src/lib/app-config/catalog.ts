@@ -71,7 +71,6 @@ export const CATEGORY_CARE = "Therapy cloud — Philips Care Orchestrator";
 export const CATEGORY_REACT_HEALTH =
   "Therapy cloud — 3B Medical (React Health)";
 export const CATEGORY_OFFICE_ALLY = "Clearinghouse (Office Ally)";
-export const CATEGORY_PARACHUTE = "Inbound orders (Parachute)";
 
 export const APP_CONFIG_CATALOG: readonly AppConfigSetting[] = [
   // ── AI vendors ────────────────────────────────────────────────────
@@ -410,41 +409,6 @@ export const APP_CONFIG_CATALOG: readonly AppConfigSetting[] = [
     applyMode: "restart",
     description: "P = production, T = test (default T).",
     placeholder: "T",
-  },
-
-  // ── Parachute inbound orders ──────────────────────────────────────
-  {
-    key: "PARACHUTE_SIGNING_SECRET",
-    label: "Webhook signing secret",
-    category: CATEGORY_PARACHUTE,
-    secret: true,
-    applyMode: "restart",
-    description: "HMAC secret that verifies inbound Parachute order webhooks.",
-  },
-  {
-    key: "PARACHUTE_API_BASE_URL",
-    label: "API base URL",
-    category: CATEGORY_PARACHUTE,
-    secret: false,
-    applyMode: "restart",
-    description: "Parachute Health API base URL (for outbound calls).",
-    placeholder: "https://…",
-  },
-  {
-    key: "PARACHUTE_CLIENT_ID",
-    label: "OAuth client ID",
-    category: CATEGORY_PARACHUTE,
-    secret: false,
-    applyMode: "restart",
-    description: "Parachute OAuth client ID (outbound).",
-  },
-  {
-    key: "PARACHUTE_CLIENT_SECRET",
-    label: "OAuth client secret",
-    category: CATEGORY_PARACHUTE,
-    secret: true,
-    applyMode: "restart",
-    description: "Parachute OAuth client secret (outbound).",
   },
 ];
 

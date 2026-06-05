@@ -28,8 +28,8 @@
 // ----------------------------------------------------
 //   * Pulling therapy_nights from the DB.
 //   * Dedupe by night when the same date arrived from multiple
-//     sources (resmed_airview > philips_care > health_connect >
-//     manual, same as the patient-facing dashboard).
+//     sources (resmed_airview > philips_care > manual, same as
+//     the patient-facing dashboard).
 //   * Audit + streaming the PDF.
 
 import type PDFKit from "pdfkit";

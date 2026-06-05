@@ -1,0 +1,24 @@
+-- 0221_harden_migration_ledger_rls — enable deny-all RLS on the migrator's
+-- own ledger table (drizzle.resupply_migrations).
+--
+-- The Supabase advisor flags drizzle.resupply_migrations as RLS-disabled.
+-- Practical exposure is low — the `drizzle` schema is not in the PostgREST
+-- "exposed schemas" list (only `resupply` and `resupply_auth` are), so the
+-- anon / authenticated PostgREST roles can't reach it regardless. But
+-- enabling deny-all RLS matches the hardening posture already adopted for
+-- the other infra tables (resupply.app_config / feature_flags, migrations
+-- 0196/0197/0211): RLS ENABLED with no policies → deny-all to anon /
+-- authenticated, while the service-role and the table-owner connections
+-- bypass it.
+--
+-- Safe for the migrator: migrate.mjs connects as the schema owner, and a
+-- table owner bypasses RLS (no FORCE), so this does NOT block the migrator
+-- from reading or stamping the ledger. ENABLE ROW LEVEL SECURITY is a
+-- no-op when already enabled; ALTER TABLE IF EXISTS guards the (CI /
+-- fresh-replay) ordering where this runs before the ledger row exists —
+-- the table itself is created by migrate.mjs up-front, so IF EXISTS is
+-- belt-and-suspenders.
+--
+-- Per ADR 003 — versioned hand-authored migration.
+
+ALTER TABLE IF EXISTS "drizzle"."resupply_migrations" ENABLE ROW LEVEL SECURITY;

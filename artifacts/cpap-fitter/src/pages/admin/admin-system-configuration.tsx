@@ -2,7 +2,7 @@
 //
 // Enter and rotate integration credentials + platform secrets that
 // historically lived only as Railway env vars (AI vendors, Twilio,
-// SendGrid, Stripe, therapy-cloud OAuth, Office Ally, Parachute).
+// SendGrid, Stripe, therapy-cloud OAuth, Office Ally).
 //
 // super_admin only — the nav entry is gated on `system.config.manage`
 // and the backend returns 403 to every other role.
@@ -29,6 +29,7 @@ import {
 import { Button } from "@/components/admin/Button";
 import { Badge } from "@/components/admin/Badge";
 import { Card } from "@/components/admin/Card";
+import { ConnectionTests } from "@/components/admin/ConnectionTests";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { Input } from "@/components/admin/Input";
 import { Spinner } from "@/components/admin/Spinner";
@@ -148,6 +149,7 @@ export function AdminSystemConfigurationPage() {
               </Card>
             ))
           )}
+          <ConnectionTests />
           <TwilioWebhookUrls webhooks={data?.twilioWebhooks} />
           <RecentActivity />
         </>

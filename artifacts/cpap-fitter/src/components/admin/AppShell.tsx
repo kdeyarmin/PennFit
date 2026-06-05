@@ -439,13 +439,6 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             badgeKey: "newInboundFaxes",
           },
           {
-            href: "/admin/inbound-referrals",
-            label: "Inbound referrals",
-            icon: HeartHandshake,
-            matchPrefix: "/admin/inbound-referrals",
-            hint: "New patient referrals from providers awaiting intake",
-          },
-          {
             href: "/admin/equipment-recalls",
             label: "Recalls",
             icon: ShieldCheck,
@@ -618,6 +611,14 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             matchPrefix: "/admin/billing/eligibility-recheck",
             requiredPermission: "reports.read",
             hint: "Active coverages due for re-verification — never-checked, terminating soon, or stale",
+          },
+          {
+            href: "/admin/billing/auto-submit",
+            label: "Auto-submit",
+            icon: Send,
+            matchPrefix: "/admin/billing/auto-submit",
+            requiredPermission: "admin.tools.manage",
+            hint: "Claims ready to transmit — preflight-clean + active eligibility. Approve a batch or let the cron send them.",
           },
           {
             href: "/admin/billing/prior-auths",

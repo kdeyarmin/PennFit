@@ -13,6 +13,7 @@ import { Router, type IRouter } from "express";
 
 import alertTwimlRouter from "./alert-twiml";
 import checkinTwimlRouter from "./checkin-twiml";
+import connectionTestTwimlRouter from "./connection-test-twiml";
 import inboundReorderRouter from "./inbound-reorder";
 import placeCallRouter from "./place-call";
 import statusCallbackRouter from "./status-callback";
@@ -39,5 +40,8 @@ router.use(checkinTwimlRouter);
 // the OpenAI Realtime bridge for a conversation; unidentified
 // callers transfer to a human.
 router.use(inboundReorderRouter);
+// /voice/connection-test-twiml — static Say + Hangup served to Twilio
+// for the super-admin "test voice connection" diagnostic call.
+router.use(connectionTestTwimlRouter);
 
 export default router;
