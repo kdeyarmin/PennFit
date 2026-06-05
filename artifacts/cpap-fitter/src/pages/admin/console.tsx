@@ -70,6 +70,11 @@ const EpisodesPage = lazy(() =>
 const RulesPage = lazy(() =>
   import("@/pages/admin/rules").then((m) => ({ default: m.RulesPage })),
 );
+const AdminComplianceRulesPage = lazy(() =>
+  import("@/pages/admin/admin-compliance-rules").then((m) => ({
+    default: m.AdminComplianceRulesPage,
+  })),
+);
 const AdminShopReviewsPage = lazy(() =>
   import("@/pages/admin/admin-shop-reviews").then((m) => ({
     default: m.AdminShopReviewsPage,
@@ -133,6 +138,11 @@ const AdminAnalyticsMarginPage = lazy(() =>
 const AdminAnalyticsOutreachAttributionPage = lazy(() =>
   import("@/pages/admin/admin-analytics-outreach-attribution").then((m) => ({
     default: m.AdminAnalyticsOutreachAttributionPage,
+  })),
+);
+const AdminAnalyticsRevenueBySourcePage = lazy(() =>
+  import("@/pages/admin/admin-analytics-revenue-by-source").then((m) => ({
+    default: m.AdminAnalyticsRevenueBySourcePage,
   })),
 );
 const AdminLtvCacPage = lazy(() =>
@@ -730,6 +740,10 @@ function AdminConsole() {
             <Route path="/admin/episodes" component={EpisodesPage} />
             <Route path="/admin/rules" component={RulesPage} />
             <Route
+              path="/admin/compliance-rules"
+              component={AdminComplianceRulesPage}
+            />
+            <Route
               path="/admin/shop/reviews"
               component={AdminShopReviewsPage}
             />
@@ -814,6 +828,10 @@ function AdminConsole() {
             <Route
               path="/admin/analytics/outreach-attribution"
               component={AdminAnalyticsOutreachAttributionPage}
+            />
+            <Route
+              path="/admin/analytics/revenue-by-source"
+              component={AdminAnalyticsRevenueBySourcePage}
             />
             <Route
               path="/admin/analytics/ltv-cac"

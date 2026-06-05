@@ -51,6 +51,7 @@ import equipmentRecallsRouter from "./admin/equipment-recalls.js";
 import analyticsRouter from "./admin/analytics.js";
 import analyticsOutreachAttributionRouter from "./admin/analytics-outreach-attribution.js";
 import analyticsMarginRouter from "./admin/analytics-margin.js";
+import analyticsRevenueBySourceRouter from "./admin/analytics-revenue-by-source.js";
 import inventoryTurnoverRouter from "./admin/inventory-turnover.js";
 import ltvCacRouter from "./admin/ltv-cac.js";
 import rtOverviewRouter from "./admin/rt-overview.js";
@@ -171,6 +172,7 @@ import healthRouter from "./health.js";
 import meRouter from "./me.js";
 import patientsRouter from "./patients/index.js";
 import rulesRouter from "./rules/index.js";
+import complianceRulesRouter from "./compliance-rules/index.js";
 import smsRouter from "./sms/index.js";
 import shopRouter from "./shop/index.js";
 import faxRouter from "./fax/index.js";
@@ -212,6 +214,7 @@ router.use(emailRouter);
 router.use(dashboardRouter);
 router.use(patientsRouter);
 router.use(rulesRouter);
+router.use(complianceRulesRouter);
 router.use(conversationsRouter);
 router.use(episodesRouter);
 // /admin/shop/abandoned-carts/* — operator tooling for the cart-
@@ -680,6 +683,9 @@ router.use(equipmentRecallsRouter);
 // analytics at /admin/storefront/analytics which covers orders +
 // email health + mask popularity.
 router.use(analyticsRouter);
+// /admin/analytics/revenue-by-source — order volume + cash revenue split
+// across the storefront / resupply-fulfillment / clinical-form channels.
+router.use(analyticsRevenueBySourceRouter);
 // /admin/analytics/outreach-attribution — of patients contacted by
 // reminders / clinical outreach, the share who placed a fulfillment
 // within N days (closed-loop conversion by channel).

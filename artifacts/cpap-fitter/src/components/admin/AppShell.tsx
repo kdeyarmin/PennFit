@@ -788,6 +788,14 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             hint: "Share of contacted patients who ordered, by outreach channel",
           },
           {
+            href: "/admin/analytics/revenue-by-source",
+            label: "Revenue by source",
+            icon: BarChart3,
+            matchPrefix: "/admin/analytics/revenue-by-source",
+            requiredPermission: "reports.read",
+            hint: "Order volume + cash revenue by channel (storefront / resupply / clinical form)",
+          },
+          {
             href: "/admin/analytics/ltv-cac",
             label: "LTV & CAC",
             icon: TrendingUp,
@@ -886,6 +894,13 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             icon: ScrollText,
             matchPrefix: "/admin/rules",
             hint: "Automation rules that trigger replies & actions",
+          },
+          {
+            href: "/admin/compliance-rules",
+            label: "Compliance Rules",
+            icon: ShieldCheck,
+            matchPrefix: "/admin/compliance-rules",
+            hint: "Per-payer CPAP adherence thresholds (min hours / nights)",
           },
           {
             href: "/admin/rule-tester",
