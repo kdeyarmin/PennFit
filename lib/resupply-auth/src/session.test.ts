@@ -44,6 +44,24 @@ describe("slideExpiry", () => {
     const next = slideExpiry(w, day89, { ttlDays: 14, absoluteMaxDays: 90 });
     expect(next.getTime()).toBe(issued.getTime() + 90 * DAY);
   });
+
+  it("clamps an already-overshot expiresAt down to the absolute ceiling", () => {
+    // Edge case: the row's expiresAt already sits past the ceiling (e.g.
+    // written under a longer prior absoluteMaxDays, or a clock-skew/manual
+    // edit). slideExpiry must NOT return it uncapped — the absolute cap is
+    // a security bound, not a soft preference.
+    const issued = new Date("2026-01-01T00:00:00Z");
+    const w = {
+      issuedAt: issued,
+      // 200 days out — well past the 90-day ceiling.
+      expiresAt: new Date(issued.getTime() + 200 * DAY),
+    };
+    const next = slideExpiry(w, new Date(issued.getTime() + 30 * DAY), {
+      ttlDays: 14,
+      absoluteMaxDays: 90,
+    });
+    expect(next.getTime()).toBe(issued.getTime() + 90 * DAY);
+  });
 });
 
 describe("isExpired", () => {

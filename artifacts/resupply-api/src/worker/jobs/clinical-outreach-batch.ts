@@ -16,6 +16,7 @@ import type PgBoss from "pg-boss";
 import { logAudit } from "@workspace/resupply-audit";
 
 import { runClinicalOutreachBatch } from "../../lib/clinical/clinical-outreach.js";
+import { isFeatureEnabled } from "../../lib/feature-flags.js";
 import { logger } from "../../lib/logger.js";
 import {
   createQueueWithDlq,
@@ -35,6 +36,17 @@ export async function registerClinicalOutreachBatchJob(
     VENDOR_SEND_QUEUE_OPTS,
   );
   await boss.work(CLINICAL_OUTREACH_BATCH_JOB, async () => {
+    // Runtime kill switch (admin Control Center). The env cron controls
+    // scheduling; this flag pauses the unattended sends without a deploy.
+    // The operator "Run now" route calls the run core directly and is
+    // intentionally not gated here.
+    if (!(await isFeatureEnabled("clinical_outreach.dispatcher"))) {
+      logger.info(
+        { queue: CLINICAL_OUTREACH_BATCH_JOB },
+        "clinical outreach batch: feature flag off — skipping",
+      );
+      return;
+    }
     const result = await runClinicalOutreachBatch();
     await logAudit({
       action: "clinical.outreach.batch.completed",

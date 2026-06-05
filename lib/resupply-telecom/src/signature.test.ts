@@ -265,10 +265,12 @@ describe("requireTwilioSignature middleware", () => {
     expect(captured.body).toContain("Forbidden");
   });
 
-  it("ignores non-string body values when building the canonical string", () => {
-    // Twilio only ever sends primitive form fields; an array would
-    // only show up from a malicious client trying to confuse the
-    // canonicalisation. The middleware MUST simply drop those.
+  it("fails closed when a body param is non-string (e.g. a repeated/array key) rather than dropping it", () => {
+    // Twilio only ever sends flat string form fields. express/qs turns a
+    // repeated key (a=1&a=2) into an array — a parser anomaly or a forged
+    // request. The middleware used to silently drop such values, which
+    // computed the HMAC over a DIFFERENT param set than Twilio signed; it
+    // now fails closed so the validated canonical string is always exact.
     const sig = computeSig(TOKEN, URL, PARAMS);
     const next = vi.fn();
     const onReject = vi.fn();
@@ -286,6 +288,8 @@ describe("requireTwilioSignature middleware", () => {
       res,
       next as SignatureNextFunction,
     );
-    expect(next).toHaveBeenCalledTimes(1);
+    expect(next).not.toHaveBeenCalled();
+    expect(onReject).toHaveBeenCalledTimes(1);
+    expect(onReject.mock.calls[0]![2]).toBe("non_string_param");
   });
 });

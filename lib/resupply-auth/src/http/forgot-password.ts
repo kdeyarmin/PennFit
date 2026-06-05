@@ -85,9 +85,17 @@ export function makeForgotPasswordHandler(
     // an attacker could spam Zod-parse failures (or unparseable email
     // values) to bypass the cap before sending real probes. Mirrors the
     // reset-password / verify-email handlers.
+    // Record with ip: null. The per-IP sign-in bucket
+    // (checkLoginRateLimit's second call) counts EVERY success:false row
+    // for an IP regardless of email_lower, so recording a real `ip` here
+    // would bleed forgot-password attempts into the sign-in lockout (and
+    // let this unauthenticated endpoint exhaust a NAT's sign-in budget).
+    // The IP is preserved for audit two ways: it's embedded in
+    // `ipSentinel` (__forgot:<ip>) and captured in the deps.audit row
+    // below.
     void deps.repo.recordLoginAttempt({
       emailLower: ipSentinel,
-      ip,
+      ip: null,
       success: false,
     });
 

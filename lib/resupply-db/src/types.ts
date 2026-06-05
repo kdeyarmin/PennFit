@@ -91,7 +91,6 @@ export const ONBOARDING_DAYS: ReadonlyArray<{
 export type TherapyCloudSource =
   | "resmed_airview"
   | "philips_care"
-  | "health_connect"
   | "react_health"
   | "manual";
 

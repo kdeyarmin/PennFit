@@ -3,7 +3,7 @@
 // Where /admin/integrations answers "are the vendor adapters healthy?",
 // this page answers "how is my whole CPAP base doing, and who do I call
 // today?" using the same nightly telemetry the adapters pull from ResMed
-// AirView / Philips Care Orchestrator / React Health / Health Connect.
+// AirView / Philips Care Orchestrator / React Health.
 //
 //   * KPI tiles — patients with data, CMS-compliance cohorts, clinical
 //     flags (high AHI / high leak / low usage), population averages.
@@ -192,8 +192,8 @@ export function AdminTherapyFleetPage() {
           </h1>
           <p className="text-sm mt-1" style={{ color: "hsl(var(--ink-3))" }}>
             Population compliance + clinical worklist across ResMed AirView,
-            Philips Care Orchestrator, React Health, and Health Connect — over
-            the last {windowDays} nights.
+            Philips Care Orchestrator, and React Health — over the last{" "}
+            {windowDays} nights.
           </p>
           <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2">
             <Link

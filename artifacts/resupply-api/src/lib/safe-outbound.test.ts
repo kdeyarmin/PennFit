@@ -1,5 +1,5 @@
 // Coverage for the SSRF guard used by the webhook dispatcher and
-// the inbound-referral status outbox. The synchronous validator
+// other admin-configurable outbound callbacks. The synchronous validator
 // rejects internal IP literals + obvious internal hostnames.
 // The async validator catches DNS rebinding by resolving and
 // checking the resulting addresses.

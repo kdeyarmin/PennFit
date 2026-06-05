@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Sparkles, Check, Droplets, Filter, Wind } from "lucide-react";
 
@@ -111,14 +111,23 @@ function MaintenanceRow({
   onLogged: () => void;
 }) {
   const [justLogged, setJustLogged] = useState(false);
+  const justLoggedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (justLoggedTimerRef.current) clearTimeout(justLoggedTimerRef.current);
+    },
+    [],
+  );
   const log = useMutation({
     mutationFn: () => logMaintenanceTask(task.key),
     onSuccess: () => {
       setJustLogged(true);
       // Brief animation; the query invalidation will swap the row
       // shortly. setTimeout out of the success path keeps the
-      // success spinner visible until the new data lands.
-      setTimeout(() => setJustLogged(false), 1200);
+      // success spinner visible until the new data lands. Tracked in a
+      // ref so unmounting mid-animation clears it.
+      if (justLoggedTimerRef.current) clearTimeout(justLoggedTimerRef.current);
+      justLoggedTimerRef.current = setTimeout(() => setJustLogged(false), 1200);
       onLogged();
     },
   });

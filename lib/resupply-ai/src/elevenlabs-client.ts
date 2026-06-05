@@ -23,9 +23,8 @@
 //   This file does NOT touch PHI directly. The caller is responsible
 //   for not putting PHI into TTS text — but in practice, voice agent
 //   responses ARE patient-facing speech, so the text we synthesize
-//   IS PHI by definition. ElevenLabs offers a BAA for HIPAA usage
-//   on their Enterprise tier; verify the BAA is in place before
-//   wiring this into a production call path.
+//   IS PHI by definition, covered by the executed ElevenLabs BAA
+//   for HIPAA usage on their Enterprise tier.
 
 const DEFAULT_API_URL = "https://api.elevenlabs.io/v1";
 const DEFAULT_TIMEOUT_MS = 30_000;

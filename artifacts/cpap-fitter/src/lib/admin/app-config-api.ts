@@ -42,9 +42,45 @@ export interface AppConfigCategory {
   settings: AppConfigSettingView[];
 }
 
+/** One Twilio webhook URL the operator pastes into the Twilio Console. */
+export interface TwilioWebhookEndpoint {
+  id: string;
+  label: string;
+  description: string;
+  /** Full absolute URL (public base + fixed route path). */
+  url: string;
+}
+
+/**
+ * Read-only Twilio webhook reference, derived server-side from the
+ * editable "Public webhook base URL" (RESUPPLY_VOICE_PUBLIC_BASE_URL).
+ */
+export interface TwilioWebhooksView {
+  /**
+   * The LIVE public origin the running process uses (env / Railway host),
+   * or null when none is configured. Mirrors the runtime readers, NOT a
+   * not-yet-applied saved value.
+   */
+  baseUrl: string | null;
+  /** Where the live base URL came from. */
+  baseUrlSource: "env" | "railway" | "unset";
+  /** The catalog key the operator edits to change the base URL. */
+  baseUrlKey: string;
+  /**
+   * True when a saved base URL differs from the live origin — it applies
+   * on the next deploy, so the URLs below still reflect the current
+   * process until then.
+   */
+  pendingRestart: boolean;
+  /** Full webhook URLs (empty when baseUrl is null). */
+  endpoints: TwilioWebhookEndpoint[];
+}
+
 export interface SystemConfigResponse {
   categories: AppConfigCategory[];
   overlayDisabled: boolean;
+  /** Optional for resilience against older API shapes. */
+  twilioWebhooks?: TwilioWebhooksView;
 }
 
 export interface AppConfigActivity {

@@ -757,6 +757,16 @@ describe("rate-limit counter records on every early-return branch", () => {
       expect(res.status).toBe(410);
       expect(h.repo.__failuresStartingWith("__reset:")).toBe(before + 1);
     });
+
+    it("records the sentinel failure with ip:null (no per-IP sign-in bleed)", async () => {
+      const h = buildHarness();
+      await supertest(h.app)
+        .post("/auth/reset-password")
+        .send({ token: "A".repeat(43), password: "brand new long password" });
+      const recorded = h.repo.__attemptsStartingWith("__reset:");
+      expect(recorded.length).toBeGreaterThan(0);
+      expect(recorded.every((a) => a.ip === null)).toBe(true);
+    });
   });
 
   describe("POST /auth/verify-email", () => {
@@ -791,6 +801,16 @@ describe("rate-limit counter records on every early-return branch", () => {
       expect(res.status).toBe(410);
       expect(h.repo.__failuresStartingWith("__verify:")).toBe(before + 1);
     });
+
+    it("records the sentinel failure with ip:null (no per-IP sign-in bleed)", async () => {
+      const h = buildHarness();
+      await supertest(h.app)
+        .post("/auth/verify-email")
+        .send({ token: "A".repeat(43) });
+      const recorded = h.repo.__attemptsStartingWith("__verify:");
+      expect(recorded.length).toBeGreaterThan(0);
+      expect(recorded.every((a) => a.ip === null)).toBe(true);
+    });
   });
 
   describe("POST /auth/forgot-password", () => {
@@ -812,6 +832,22 @@ describe("rate-limit counter records on every early-return branch", () => {
         .send({ email: "not-a-valid-email" });
       expect(res.status).toBe(200);
       expect(h.repo.__failuresStartingWith("__forgot:")).toBe(before + 1);
+    });
+
+    it("records the sentinel failure with ip:null so it can't bleed into the per-IP sign-in bucket", async () => {
+      // Regression: the per-IP sign-in bucket (checkLoginRateLimit's
+      // second call) counts EVERY success:false row for an IP regardless
+      // of email_lower. Recording these per-endpoint sentinel rows with a
+      // real `ip` let an unauthenticated forgot/reset/verify caller
+      // exhaust a NAT's sign-in lockout (and vice-versa). The handlers now
+      // record ip:null; the IP is preserved in the __forgot:<ip> sentinel.
+      const h = buildHarness();
+      await supertest(h.app)
+        .post("/auth/forgot-password")
+        .send({ email: "user@example.com" });
+      const recorded = h.repo.__attemptsStartingWith("__forgot:");
+      expect(recorded.length).toBeGreaterThan(0);
+      expect(recorded.every((a) => a.ip === null)).toBe(true);
     });
   });
 });

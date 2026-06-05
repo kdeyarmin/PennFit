@@ -16,8 +16,8 @@
 //   through `redactPiiForOutbound` (the same scrubber the storefront
 //   chatbot uses) — phones, emails, DOBs, and long id runs become
 //   `[redacted-*]` tokens. The patient's FIRST NAME is included for a
-//   warm reply (same posture as the inbound-referral classifier and the
-//   macro merge tokens); nothing else identifying is sent. We log
+//   warm reply (same posture as the macro merge tokens); nothing
+//   else identifying is sent. We log
 //   redaction COUNTS only — never the bodies or the draft.
 
 import { redactPiiForOutbound } from "../storefront/chatbotPii";

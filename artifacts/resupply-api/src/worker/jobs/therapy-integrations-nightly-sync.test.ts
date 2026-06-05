@@ -14,6 +14,10 @@ import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
 
+import { integrationSnapshotSchema } from "@workspace/resupply-integrations";
+
+import { normalizeSnapshotForPersistence } from "./therapy-integrations-nightly-sync";
+
 const SRC = readFileSync(
   path.join(
     path.dirname(fileURLToPath(import.meta.url)),
@@ -35,5 +39,63 @@ describe("therapy nightly-sync — bounded, rotating scan", () => {
 
   it("bounds the scan to one page per run", () => {
     expect(SRC).toContain(".limit(MAX_LINKS_PER_RUN)");
+  });
+});
+
+describe("normalizeSnapshotForPersistence — per-night resilience", () => {
+  const baseSnapshot = {
+    source: "resmed_airview",
+    partnerPatientId: "pp1",
+    settings: null,
+    compliance: null,
+    supplies: [],
+  };
+
+  it("salvages a snapshot with quirky nights instead of dropping everything", () => {
+    const raw = {
+      ...baseSnapshot,
+      recentNights: [
+        // ISO timestamp date + fractional minutes + negative leak.
+        {
+          nightDate: "2026-01-15T08:00:00Z",
+          usageMinutes: 245.7,
+          ahi: 3.2,
+          leakRateLMin: -5,
+          pressureP95Cmh2o: 9.4,
+        },
+        // unsalvageable date -> this night (only) is dropped
+        { nightDate: "not-a-date", usageMinutes: 100 },
+        // already clean
+        {
+          nightDate: "2026-01-16",
+          usageMinutes: 300,
+          ahi: null,
+          leakRateLMin: null,
+          pressureP95Cmh2o: null,
+        },
+      ],
+    };
+    const normalized = normalizeSnapshotForPersistence(raw);
+    // The whole snapshot now passes schema validation (was all-or-nothing).
+    const parsed = integrationSnapshotSchema.safeParse(normalized);
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+    expect(parsed.data.recentNights).toHaveLength(2);
+    expect(parsed.data.recentNights[0]).toMatchObject({
+      nightDate: "2026-01-15",
+      usageMinutes: 246, // rounded
+      leakRateLMin: null, // negative -> null, not a misleading 0
+    });
+    expect(parsed.data.recentNights[1]!.nightDate).toBe("2026-01-16");
+  });
+
+  it("leaves a snapshot without recentNights untouched", () => {
+    const snap = { ...baseSnapshot };
+    expect(normalizeSnapshotForPersistence(snap)).toEqual(snap);
+  });
+
+  it("returns non-object input unchanged", () => {
+    expect(normalizeSnapshotForPersistence(null)).toBeNull();
+    expect(normalizeSnapshotForPersistence("x")).toBe("x");
   });
 });

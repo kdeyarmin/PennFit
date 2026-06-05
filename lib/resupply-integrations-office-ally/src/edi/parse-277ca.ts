@@ -72,9 +72,17 @@ export function parse277CA(input: string): Parsed277CA {
   for (const seg of segments) {
     if (seg.id === "HL") {
       const levelCode = seg.elements[2];
-      if (levelCode === "22" || levelCode === "PT") {
-        // Open a new claim/patient block; flush any in-flight one.
-        if (current) claims.push(current);
+      // 22 = subscriber-is-patient, 23 = dependent-is-patient, PT =
+      // patient (some 277CA dialects). Level 23 MUST open a block too,
+      // otherwise claim acks for a dependent distinct from the subscriber
+      // are silently dropped from reconciliation.
+      if (levelCode === "22" || levelCode === "23" || levelCode === "PT") {
+        // Open a new claim/patient block; flush any in-flight one that
+        // actually carried a claim (guarded on traceNumber). A subscriber
+        // (22) HL that is only the parent of a dependent (23) has no TRN,
+        // so this guard keeps that empty parent from emitting a spurious
+        // claim row.
+        if (current && current.traceNumber !== null) claims.push(current);
         current = {
           traceNumber: null,
           payerClaimRef: null,
@@ -154,6 +162,8 @@ export function parse277CA(input: string): Parsed277CA {
       }
     }
   }
-  if (current) claims.push(current);
+  // Flush the final block, same traceNumber guard as above so a trailing
+  // empty subscriber parent (a dependent's 22 with no claim) isn't emitted.
+  if (current && current.traceNumber !== null) claims.push(current);
   return { claims };
 }

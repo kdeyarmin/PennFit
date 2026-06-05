@@ -257,8 +257,8 @@ read — lives in [`README.md`](./README.md#environment-variables) and
 ## AI / communications stack (May 2026)
 
 Three independent AI vendors are wired into the codebase, each used
-where it's strongest. All three are HIPAA-eligible (require a BAA on
-the vendor side) and gracefully degrade when their API key is unset.
+where it's strongest. All three are HIPAA-eligible and covered by
+executed vendor BAAs, and gracefully degrade when their API key is unset.
 
 | Surface                 | Primary                  | Fallback              | Key                                               |
 | ----------------------- | ------------------------ | --------------------- | ------------------------------------------------- |
@@ -305,8 +305,7 @@ Vendor clients live in `lib/resupply-ai/src/`:
   missing key degrades gracefully, never breaks the call. A mid-call
   ElevenLabs failure drops that one utterance's audio (logged as a
   `tts` session error) but does NOT end the call. **PHI:** synthesised
-  text is patient-facing speech — confirm the ElevenLabs BAA is in
-  place before enabling against real patients.
+  text is patient-facing speech, covered by the executed ElevenLabs BAA.
 
 **Post-call summarization** (`artifacts/resupply-api/src/lib/voice/post-call-summary.ts`)
 runs Claude Sonnet 4.6 on the accumulated transcript turns after every
@@ -334,12 +333,11 @@ Partner connectivity is split into one shared contract package plus a
 family of per-vendor adapters. `lib/resupply-integrations` owns the
 unified types, the `IntegrationAdapter` contract, and the Zod schemas;
 every vendor package depends on it and on nothing in the data layer.
-The adapters cover three distinct domains:
+The adapters cover two distinct domains:
 
 | Domain                      | Packages                                                                                                                     | Direction       |
 | --------------------------- | ---------------------------------------------------------------------------------------------------------------------------- | --------------- |
-| Therapy-cloud device data   | `-airview` (ResMed), `-care-orchestrator` (Philips), `-react-health` (3B Medical), `-health-connect` (Android, patient-push) | pull / ingest   |
-| Inbound DME order channels  | `-parachute` (HMAC webhook), `-ehr-fhir` (SMART-on-FHIR Backend Services)                                                    | inbound webhook |
+| Therapy-cloud device data   | `-airview` (ResMed), `-care-orchestrator` (Philips), `-react-health` (3B Medical)                                            | pull / ingest   |
 | Payer / claims / prior-auth | `-office-ally` (837P/835/277CA clearinghouse over SFTP), `-davinci-pas` (FHIR PAS prior auth)                                | outbound        |
 
 Wiring & conventions:
@@ -352,13 +350,10 @@ Wiring & conventions:
   rotation is honored without a restart. A nightly pg-boss job
   (`therapy-integrations.nightly-sync`) walks the map and skips any
   adapter whose `availability().status` is `"unavailable"`.
-- **Inbound/payer adapters** are imported directly by their route
-  handlers / job processors (no central registry). Parachute and EHR
-  FHIR verify the inbound signature/JWT first
-  (`verifyParachuteSignature`, `requireSmartFhirAccess`) before parsing.
-  Office Ally supports a **stub mode** (`OFFICE_ALLY_STUB=1` or missing
-  creds) that writes the 837P to `OFFICE_ALLY_FILE_OUTBOX_DIR` instead of
-  SFTP-uploading.
+- **Payer adapters** are imported directly by their route handlers /
+  job processors (no central registry). Office Ally supports a **stub
+  mode** (`OFFICE_ALLY_STUB=1` or missing creds) that writes the 837P to
+  `OFFICE_ALLY_FILE_OUTBOX_DIR` instead of SFTP-uploading.
 - **Feature-gated, fail-soft.** Each package exposes a
   `read…ConfigOrNull()` helper; missing env → `availability` reports
   `"unavailable"` (the admin UI shows a badge without leaking which var
@@ -407,9 +402,7 @@ Wiring & conventions:
   Beyond the coarse `requireAdmin`, finer-grained admin routes use
   `requirePermission("…")`; `scripts/check-admin-route-gates.sh` audits
   every admin mutation at CI time and fails only on routes with **neither**
-  gate (a route with no gate is public — a real bug). Inbound SMART-on-FHIR
-  routes gate on `requireSmartFhirAccess` (asymmetric JWT over JWKS), not
-  the cookie session.
+  gate (a route with no gate is public — a real bug).
 - **Inbound MMS:** webhook downloads each `MediaUrlN` with HTTP basic auth
   (5s/media timeout, 5MB cap, image/\* + application/pdf allowlist, max 10
   attachments/message), uploads to Supabase Storage

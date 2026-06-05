@@ -46,11 +46,11 @@ import providersRouter from "./admin/providers.js";
 import swoRouter from "./admin/swo.js";
 import complianceAttestationRouter from "./admin/compliance-attestation.js";
 import inboundFaxesRouter from "./admin/inbound-faxes.js";
-import inboundReferralsRouter from "./admin/inbound-referrals.js";
 import equipmentRecallsRouter from "./admin/equipment-recalls.js";
 import analyticsRouter from "./admin/analytics.js";
 import analyticsOutreachAttributionRouter from "./admin/analytics-outreach-attribution.js";
 import analyticsMarginRouter from "./admin/analytics-margin.js";
+import analyticsRevenueBySourceRouter from "./admin/analytics-revenue-by-source.js";
 import inventoryTurnoverRouter from "./admin/inventory-turnover.js";
 import ltvCacRouter from "./admin/ltv-cac.js";
 import rtOverviewRouter from "./admin/rt-overview.js";
@@ -149,6 +149,7 @@ import davinciPasSubmitRouter from "./admin/davinci-pas-submit.js";
 import priorAuthRequestFormRouter from "./admin/prior-auth-request-form.js";
 import billingBenchmarksRouter from "./admin/billing-benchmarks.js";
 import billingBatchSubmitRouter from "./admin/billing-batch-submit.js";
+import billingAutoSubmitRouter from "./admin/billing-auto-submit.js";
 import billingStatementsRouter from "./admin/billing-statements.js";
 import claimAppealsRouter from "./admin/claim-appeals.js";
 import webhookSubscriptionsRouter from "./admin/webhook-subscriptions.js";
@@ -159,7 +160,7 @@ import priorAuthQueueRouter from "./admin/prior-auth-queue.js";
 import webhookTestSendRouter from "./admin/webhook-test-send.js";
 import payerFeeSchedulesImportRouter from "./admin/payer-fee-schedules-import.js";
 import systemIntegrationsStatusRouter from "./admin/system-integrations-status.js";
-import integrationsInboundRouter from "./integrations-inbound.js";
+import connectionTestsRouter from "./admin/connection-tests.js";
 import documentationPacketsRouter from "./admin/documentation-packets.js";
 import webhookDeliveryRetryRouter from "./admin/webhook-delivery-retry.js";
 import dispenseReadinessRouter from "./admin/dispense-readiness.js";
@@ -171,10 +172,10 @@ import healthRouter from "./health.js";
 import meRouter from "./me.js";
 import patientsRouter from "./patients/index.js";
 import rulesRouter from "./rules/index.js";
+import complianceRulesRouter from "./compliance-rules/index.js";
 import smsRouter from "./sms/index.js";
 import shopRouter from "./shop/index.js";
 import faxRouter from "./fax/index.js";
-import portalClinicianRouter from "./portal-clinician.js";
 import rxRequestDocumentRouter from "./rx-request-document.js";
 import prescriptionRequestsRouter from "./admin/prescription-requests.js";
 import voiceRouter from "./voice/index.js";
@@ -195,12 +196,7 @@ router.use(voiceRouter);
 router.use(smsRouter);
 // /fax/document/:token  — signed cover-letter PDF fetched by Twilio
 // /fax/status-callback  — Twilio fax delivery lifecycle webhook
-router.use(faxRouter);
-// /portal/clinician/:token — public referral status page for EHR
-// partners who don't consume webhook callbacks. Token-gated; no
-// session cookie required.
-router.use(portalClinicianRouter);
-// /rx-request/document/:token — Twilio fetches a fully-rendered
+router.use(faxRouter); // /rx-request/document/:token — Twilio fetches a fully-rendered
 // pre-populated prescription PDF here when an admin dispatches a
 // prescription-request packet. Token-gated; signed HMAC w/ 24h TTL.
 router.use(rxRequestDocumentRouter);
@@ -212,6 +208,7 @@ router.use(emailRouter);
 router.use(dashboardRouter);
 router.use(patientsRouter);
 router.use(rulesRouter);
+router.use(complianceRulesRouter);
 router.use(conversationsRouter);
 router.use(episodesRouter);
 // /admin/shop/abandoned-carts/* — operator tooling for the cart-
@@ -275,7 +272,7 @@ router.use(patientResupplySummaryRouter);
 // above for the read/import companion.
 router.use(patientTherapyLinksRouter);
 // /admin/patients/:id/integrations — unified "Device data" view
-// across ResMed AirView, Philips Care, and Health Connect. Reads
+// across ResMed AirView, Philips Care, and React Health. Reads
 // from patient_integration_snapshots; refresh endpoint calls the
 // vendor adapter and UPSERTs.
 router.use(patientIntegrationsRouter);
@@ -496,6 +493,10 @@ router.use(priorAuthRequestFormRouter);
 router.use(billingBenchmarksRouter);
 // /admin/billing/batch-submit-office-ally — multi-claim 837P batch.
 router.use(billingBatchSubmitRouter);
+// /admin/billing/auto-submit/* — staged-approval auto-submission: the
+// "ready to transmit" worklist (preflight-clean + active eligibility),
+// automation status, and the operator approve-and-submit action.
+router.use(billingAutoSubmitRouter);
 // /admin/patients/:id/billing-statements — patient statement PDF.
 router.use(billingStatementsRouter);
 // /admin/patients/:id/insurance-claims/:claimId/appeal-letter — PDF.
@@ -527,9 +528,10 @@ router.use(payerFeeSchedulesImportRouter);
 // /admin/system/integrations-status — admin-facing rollup of every
 // integration's configured/configured-partial/unconfigured posture.
 router.use(systemIntegrationsStatusRouter);
-// /integrations/inbound/:source — public-mount inbound webhook
-// intake for third-party deliveries (Parachute, HSAT vendors, etc).
-router.use(integrationsInboundRouter);
+// /admin/connection-tests/* — super-admin "send a test" diagnostics for
+// email / SMS / voice / chat. Verifies a credential (including one just
+// saved in System Configuration) actually works. system.config.manage.
+router.use(connectionTestsRouter);
 // /admin/hipaa-breach-incidents — HIPAA §164.404-414 lifecycle.
 // /admin/patients/:id/documentation-packets — combined PDF
 // support packets (cover letter + sleep study + Rx + DWO summaries).
@@ -664,13 +666,7 @@ router.use(complianceAttestationRouter);
 // The webhook lives at /fax/inbound (mounted elsewhere); this is
 // the CSR-facing surface for listing, attaching to patient/Rx/
 // provider, and archiving.
-router.use(inboundFaxesRouter);
-// /admin/inbound-referrals/* — triage queue for electronic
-// referral orders that landed via /integrations/inbound/parachute
-// (and, in Phase 4, EHR FHIR sources). Mirror of the inbound-faxes
-// surface for the typed-referral schema in migration 0144.
-router.use(inboundReferralsRouter);
-// /admin/equipment-recalls/* — manufacturer recall registry + the
+router.use(inboundFaxesRouter); // /admin/equipment-recalls/* — manufacturer recall registry + the
 // scan endpoint that surfaces affected patients. Required for
 // Philips-DreamStation-style workflows where every DME needs to
 // know which dispensed serials are in the recall lot.
@@ -680,6 +676,9 @@ router.use(equipmentRecallsRouter);
 // analytics at /admin/storefront/analytics which covers orders +
 // email health + mask popularity.
 router.use(analyticsRouter);
+// /admin/analytics/revenue-by-source — order volume + cash revenue split
+// across the storefront / resupply-fulfillment / clinical-form channels.
+router.use(analyticsRevenueBySourceRouter);
 // /admin/analytics/outreach-attribution — of patients contacted by
 // reminders / clinical outreach, the share who placed a fulfillment
 // within N days (closed-loop conversion by channel).

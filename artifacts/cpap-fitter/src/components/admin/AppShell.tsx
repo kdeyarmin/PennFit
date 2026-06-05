@@ -439,13 +439,6 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             badgeKey: "newInboundFaxes",
           },
           {
-            href: "/admin/inbound-referrals",
-            label: "Inbound referrals",
-            icon: HeartHandshake,
-            matchPrefix: "/admin/inbound-referrals",
-            hint: "New patient referrals from providers awaiting intake",
-          },
-          {
             href: "/admin/equipment-recalls",
             label: "Recalls",
             icon: ShieldCheck,
@@ -620,6 +613,14 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             hint: "Active coverages due for re-verification — never-checked, terminating soon, or stale",
           },
           {
+            href: "/admin/billing/auto-submit",
+            label: "Auto-submit",
+            icon: Send,
+            matchPrefix: "/admin/billing/auto-submit",
+            requiredPermission: "admin.tools.manage",
+            hint: "Claims ready to transmit — preflight-clean + active eligibility. Approve a batch or let the cron send them.",
+          },
+          {
             href: "/admin/billing/prior-auths",
             label: "Prior auths",
             icon: ShieldAlert,
@@ -780,6 +781,22 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             hint: "Gross margin and % by product and overall, from captured cost",
           },
           {
+            href: "/admin/analytics/outreach-attribution",
+            label: "Outreach Attribution",
+            icon: Target,
+            matchPrefix: "/admin/analytics/outreach-attribution",
+            requiredPermission: "reports.read",
+            hint: "Share of contacted patients who ordered, by outreach channel",
+          },
+          {
+            href: "/admin/analytics/revenue-by-source",
+            label: "Revenue by source",
+            icon: BarChart3,
+            matchPrefix: "/admin/analytics/revenue-by-source",
+            requiredPermission: "reports.read",
+            hint: "Order volume + cash revenue by channel (storefront / resupply / clinical form)",
+          },
+          {
             href: "/admin/analytics/ltv-cac",
             label: "LTV & CAC",
             icon: TrendingUp,
@@ -878,6 +895,13 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             icon: ScrollText,
             matchPrefix: "/admin/rules",
             hint: "Automation rules that trigger replies & actions",
+          },
+          {
+            href: "/admin/compliance-rules",
+            label: "Compliance Rules",
+            icon: ShieldCheck,
+            matchPrefix: "/admin/compliance-rules",
+            hint: "Per-payer CPAP adherence thresholds (min hours / nights)",
           },
           {
             href: "/admin/rule-tester",

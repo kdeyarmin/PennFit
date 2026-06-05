@@ -70,6 +70,11 @@ const EpisodesPage = lazy(() =>
 const RulesPage = lazy(() =>
   import("@/pages/admin/rules").then((m) => ({ default: m.RulesPage })),
 );
+const AdminComplianceRulesPage = lazy(() =>
+  import("@/pages/admin/admin-compliance-rules").then((m) => ({
+    default: m.AdminComplianceRulesPage,
+  })),
+);
 const AdminShopReviewsPage = lazy(() =>
   import("@/pages/admin/admin-shop-reviews").then((m) => ({
     default: m.AdminShopReviewsPage,
@@ -105,11 +110,6 @@ const AdminInboundFaxesPage = lazy(() =>
     default: m.AdminInboundFaxesPage,
   })),
 );
-const AdminInboundReferralsPage = lazy(() =>
-  import("@/pages/admin/admin-inbound-referrals").then((m) => ({
-    default: m.AdminInboundReferralsPage,
-  })),
-);
 const AdminPrescriptionRequestsPage = lazy(() =>
   import("@/pages/admin/admin-prescription-requests").then((m) => ({
     default: m.AdminPrescriptionRequestsPage,
@@ -128,6 +128,16 @@ const AdminAnalyticsPage = lazy(() =>
 const AdminAnalyticsMarginPage = lazy(() =>
   import("@/pages/admin/admin-analytics-margin").then((m) => ({
     default: m.AdminAnalyticsMarginPage,
+  })),
+);
+const AdminAnalyticsOutreachAttributionPage = lazy(() =>
+  import("@/pages/admin/admin-analytics-outreach-attribution").then((m) => ({
+    default: m.AdminAnalyticsOutreachAttributionPage,
+  })),
+);
+const AdminAnalyticsRevenueBySourcePage = lazy(() =>
+  import("@/pages/admin/admin-analytics-revenue-by-source").then((m) => ({
+    default: m.AdminAnalyticsRevenueBySourcePage,
   })),
 );
 const AdminLtvCacPage = lazy(() =>
@@ -485,6 +495,11 @@ const AdminBillingOfficeAllyPage = lazy(() =>
     default: m.AdminBillingOfficeAllyPage,
   })),
 );
+const AdminBillingAutoSubmitPage = lazy(() =>
+  import("@/pages/admin/admin-billing-auto-submit").then((m) => ({
+    default: m.AdminBillingAutoSubmitPage,
+  })),
+);
 const AdminOfficeAllySubmissionDetailPage = lazy(() =>
   import("@/pages/admin/admin-billing-office-ally-detail").then((m) => ({
     default: m.AdminOfficeAllySubmissionDetailPage,
@@ -699,6 +714,10 @@ function AdminConsole() {
               component={AdminBillingCappedRentalsPage}
             />
             <Route
+              path="/admin/billing/auto-submit"
+              component={AdminBillingAutoSubmitPage}
+            />
+            <Route
               path="/admin/billing/office-ally"
               component={AdminBillingOfficeAllyPage}
             />
@@ -724,6 +743,10 @@ function AdminConsole() {
             </Route>
             <Route path="/admin/episodes" component={EpisodesPage} />
             <Route path="/admin/rules" component={RulesPage} />
+            <Route
+              path="/admin/compliance-rules"
+              component={AdminComplianceRulesPage}
+            />
             <Route
               path="/admin/shop/reviews"
               component={AdminShopReviewsPage}
@@ -791,10 +814,6 @@ function AdminConsole() {
               component={AdminInboundFaxesPage}
             />
             <Route
-              path="/admin/inbound-referrals"
-              component={AdminInboundReferralsPage}
-            />
-            <Route
               path="/admin/patients/:patientId/prescription-requests"
               component={AdminPrescriptionRequestsPage}
             />
@@ -805,6 +824,14 @@ function AdminConsole() {
             <Route
               path="/admin/analytics/margin"
               component={AdminAnalyticsMarginPage}
+            />
+            <Route
+              path="/admin/analytics/outreach-attribution"
+              component={AdminAnalyticsOutreachAttributionPage}
+            />
+            <Route
+              path="/admin/analytics/revenue-by-source"
+              component={AdminAnalyticsRevenueBySourcePage}
             />
             <Route
               path="/admin/analytics/ltv-cac"

@@ -22,7 +22,6 @@ import {
 } from "@workspace/resupply-integrations";
 import { createAirviewAdapter } from "@workspace/resupply-integrations-airview";
 import { createCareOrchestratorAdapter } from "@workspace/resupply-integrations-care-orchestrator";
-import { createHealthConnectAdapter } from "@workspace/resupply-integrations-health-connect";
 import { createReactHealthAdapter } from "@workspace/resupply-integrations-react-health";
 
 import { getEffectiveEnv } from "../app-config/store";
@@ -33,7 +32,6 @@ export function getIntegrationAdapters(
   const m = new Map<IntegrationSource, IntegrationAdapter>();
   m.set("resmed_airview", createAirviewAdapter(env));
   m.set("philips_care", createCareOrchestratorAdapter(env));
-  m.set("health_connect", createHealthConnectAdapter(env));
   m.set("react_health", createReactHealthAdapter(env));
   return m;
 }

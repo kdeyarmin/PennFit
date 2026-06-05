@@ -52,4 +52,4 @@ escalation reasoning if cost allows) via the Anthropic API.
 
 ## TODO
 
-- [BUSINESS REVIEW] Confirm Anthropic enterprise BAA before launch.
+- [DONE] Anthropic enterprise BAA is executed.

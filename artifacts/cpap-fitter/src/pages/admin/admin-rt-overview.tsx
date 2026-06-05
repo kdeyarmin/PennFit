@@ -161,8 +161,8 @@ export function AdminRtOverviewPage() {
           <h1 className="text-2xl font-semibold">RT overview</h1>
           <p className="text-sm mt-1" style={{ color: "hsl(var(--ink-3))" }}>
             Daily clinical board for tracked patients across ResMed AirView,
-            Philips Care Orchestrator, React Health, and Google Health Connect.
-            Alerting rows sort to the top.
+            Philips Care Orchestrator, and React Health. Alerting rows sort to
+            the top.
           </p>
         </div>
         <div className="flex items-center gap-2">

@@ -59,6 +59,7 @@ import {
   TwilioConfigError,
 } from "@workspace/resupply-telecom";
 
+import { isFeatureEnabled } from "../../lib/feature-flags";
 import { logger } from "../../lib/logger";
 import {
   createQueueWithDlq,
@@ -385,6 +386,15 @@ export async function registerFitterLeadFirstDayNudgeJob(
   await createQueueWithDlq(boss, NUDGE_JOB, VENDOR_SEND_QUEUE_OPTS);
   await boss.work(NUDGE_JOB, async () => {
     try {
+      // Runtime kill switch (admin Control Center). The env var gates
+      // registration; this flag pauses the sweep without changing env.
+      if (!(await isFeatureEnabled("fitter_first_day_nudge.dispatcher"))) {
+        logger.info(
+          { event: "fitter-lead.first-day-nudge.flag_off" },
+          "fitter-lead.first-day-nudge: feature flag off — skipping",
+        );
+        return;
+      }
       const stats = await runFirstDayNudgeSweep();
       logger.info(
         { event: "fitter-lead.first-day-nudge.completed", ...stats },

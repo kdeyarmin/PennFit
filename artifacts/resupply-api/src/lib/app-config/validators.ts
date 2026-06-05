@@ -58,6 +58,7 @@ const FORMAT_RULES: Readonly<Record<string, FormatRule>> = {
   },
   TWILIO_PHONE_NUMBER: E164_RULE,
   TWILIO_FAX_FROM_NUMBER: E164_RULE,
+  RESUPPLY_VOICE_PUBLIC_BASE_URL: URL_RULE,
 
   OFFICE_ALLY_USAGE_INDICATOR: { test: /^[PT]$/, hint: "P or T" },
   OFFICE_ALLY_PORT: { test: /^\d+$/, hint: "a numeric port" },
@@ -68,7 +69,6 @@ const FORMAT_RULES: Readonly<Record<string, FormatRule>> = {
   CARE_ORCHESTRATOR_OAUTH_TOKEN_URL: URL_RULE,
   REACT_HEALTH_API_BASE_URL: URL_RULE,
   REACT_HEALTH_OAUTH_TOKEN_URL: URL_RULE,
-  PARACHUTE_API_BASE_URL: URL_RULE,
 };
 
 /**

@@ -36,6 +36,15 @@ export interface MemoryRepo extends AuthRepository {
    * to know the actual `req.ip` that supertest will produce.
    */
   __failuresStartingWith(prefix: string): number;
+  /**
+   * Return failed attempts whose `emailLower` starts with `prefix`,
+   * exposing the recorded `ip`. Lets tests assert the per-endpoint
+   * sentinel handlers (forgot/reset/verify/mfa) record with `ip: null`
+   * so they don't pollute the shared per-IP sign-in lockout bucket.
+   */
+  __attemptsStartingWith(
+    prefix: string,
+  ): { emailLower: string; ip: string | null }[];
   __successes(emailLower: string): number;
   __forceFailures(emailLower: string, count: number): void;
 }
@@ -226,6 +235,11 @@ export function makeMemoryRepo(now: () => Date = () => new Date()): MemoryRepo {
       return attempts.filter(
         (a) => !a.success && a.emailLower.startsWith(prefix),
       ).length;
+    },
+    __attemptsStartingWith(prefix) {
+      return attempts
+        .filter((a) => !a.success && a.emailLower.startsWith(prefix))
+        .map((a) => ({ emailLower: a.emailLower, ip: a.ip }));
     },
     __successes(emailLower) {
       return attempts.filter((a) => a.success && a.emailLower === emailLower)

@@ -47,6 +47,7 @@ import { registerCartAbandonmentJob } from "./jobs/cart-abandonment-scan.js";
 import { registerFailedEmailDigestJob } from "./jobs/failed-order-emails-digest.js";
 import { registerTherapyNightlySyncJob } from "./jobs/therapy-integrations-nightly-sync.js";
 import { registerEligibilityReverifyBatchJob } from "./jobs/eligibility-reverify-batch.js";
+import { registerAutoSubmitBatchJob } from "./jobs/auto-submit-batch.js";
 import { registerClinicalOutreachBatchJob } from "./jobs/clinical-outreach-batch.js";
 import { registerTherapyFleetSnapshotJob } from "./jobs/therapy-fleet-daily-snapshot.js";
 import { registerMetricsSnapshotJob } from "./jobs/metrics-snapshot.js";
@@ -54,6 +55,7 @@ import { registerMetricAlertsEvaluatorJob } from "./jobs/metric-alerts-evaluator
 import { registerMetricAlertsNotifyJob } from "./jobs/metric-alerts-notify.js";
 import { registerOwnerDigestJob } from "./jobs/owner-digest.js";
 import { registerTherapyFleetAlertsJob } from "./jobs/therapy-fleet-alerts-scan.js";
+import { registerSetupDeadlineOutreachJob } from "./jobs/therapy-setup-deadline-outreach.js";
 import { registerCoachingProgressJob } from "./jobs/coaching-plan-progress.js";
 import { registerPriorAuthExpirySweepJob } from "./jobs/prior-auth-expiry-sweep.js";
 import { registerShopOrderDeliveryFollowupJob } from "./jobs/shop-order-delivery-followup.js";
@@ -71,9 +73,6 @@ import { registerWebhookDispatcherJob } from "./jobs/webhook-dispatcher.js";
 import { registerAutoWorkflowJob } from "./jobs/auto-workflow.js";
 import { registerInvitePasswordExpiryNotifyJob } from "./jobs/invite-password-expiry-notify.js";
 import { registerLowStockAlertsJob } from "./jobs/low-stock-alerts.js";
-import { registerInboundWebhookDispatchJob } from "./jobs/inbound-webhook-dispatch.js";
-import { registerInboundReferralPreflightJob } from "./jobs/inbound-referral-preflight.js";
-import { registerReferralStatusOutboundJob } from "./jobs/inbound-referral-status-outbound.js";
 import { registerPrescriptionRequestAutoDraftJob } from "./jobs/prescription-request-auto-draft.js";
 import { registerConversationOrphanAssigneeSweepJob } from "./jobs/conversation-orphan-assignee-sweep.js";
 import { registerIfProvisioned } from "./lib/table-guard.js";
@@ -477,6 +476,14 @@ async function doStartWorker(): Promise<void> {
   // ELIGIBILITY_REVERIFY_CRON is set (opt-in — it emits outbound 270s).
   await registerEligibilityReverifyBatchJob(boss);
 
+  // Automatic claim submission (auto-submit engine). Queue + worker
+  // always register (so the operator "approve & submit" route works);
+  // the recurring cron attaches only when CLAIMS_AUTOSUBMIT_CRON is set,
+  // and even then transmits nothing until the billing.auto_submit_claims
+  // feature flag is flipped ON in the admin Control Center (opt-in — it
+  // emits outbound 837P claim files).
+  await registerAutoSubmitBatchJob(boss);
+
   // Proactive clinical outreach (RT #23). Queue + worker always register;
   // the recurring cron only attaches when CLINICAL_OUTREACH_CRON is set
   // (opt-in — it emits outbound patient contact).
@@ -505,6 +512,14 @@ async function doStartWorker(): Promise<void> {
   // internal alert feed and, when the (default-off) auto-outreach flag
   // is on, sends consented at-risk patients a gentle adherence SMS.
   await registerTherapyFleetAlertsJob(boss);
+
+  // Daily CPAP setup-deadline outreach (05:05 UTC, BEFORE the 05:15
+  // alerts-scan). Turns the 90-day setup-adherence countdown into
+  // proactive, escalating SMS ("about N more 4h+ nights in D days to
+  // keep coverage") for on_track/at_risk patients. Shares the alerts-scan
+  // 14-day frequency-cap key so the two never double-text a patient.
+  // Gated by the same therapy_fleet.auto_outreach + sms.reminders flags.
+  await registerSetupDeadlineOutreachJob(boss);
 
   // Daily prior-authorization expiry sweep — flips approved → expired
   // on the day after approved_through, and emits CSR heads-up alerts
@@ -640,24 +655,6 @@ async function doStartWorker(): Promise<void> {
     ["low_stock_alert_state"],
     registerLowStockAlertsJob,
   );
-
-  // Every minute — drain pending inbound_webhooks rows and route
-  // each to its per-source dispatcher (Parachute today; Phase 4
-  // will add ehr_fhir_* sources). Migration 0144 lands the typed
-  // referral inbox the dispatcher writes into.
-  await registerInboundWebhookDispatchJob(boss);
-
-  // Every 5 minutes — run pre-flight checks (PA requirement,
-  // eligibility, docs gap, physician fax fallback) on new
-  // inbound referrals that have a matched patient. Migration 0146
-  // lands the inbound_referral_preflight_checks history table.
-  await registerInboundReferralPreflightJob(boss);
-
-  // Every minute — drain inbound_referral_status_outbox and POST
-  // lifecycle callbacks (accept, ship, PA decision) back to the
-  // originating Parachute / EHR partner. HMAC-SHA256 signed; expo
-  // backoff per migration 0148.
-  await registerReferralStatusOutboundJob(boss);
 
   // Daily 13:43 UTC — pre-build draft prescription_request_packets
   // for active Rxs expiring in the next 30 days so a CSR doesn't

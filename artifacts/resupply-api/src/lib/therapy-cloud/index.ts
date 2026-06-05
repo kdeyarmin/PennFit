@@ -113,12 +113,9 @@ export const reactHealthAdapterStub: TherapyCloudAdapter = {
 
 /** Adapter registry keyed by source. The sync endpoint looks up
  *  here. Tests stub the registry by replacing entries.
- *  `health_connect` is patient-push and lives under
- *  `resupply-integrations-health-connect` — not part of this
- *  provider-pull registry. `manual` is admin-uploaded and has no
- *  adapter at all. */
+ *  `manual` is admin-uploaded and has no adapter at all. */
 export const ADAPTERS: Record<
-  Exclude<TherapyCloudSource, "manual" | "health_connect">,
+  Exclude<TherapyCloudSource, "manual">,
   TherapyCloudAdapter
 > = {
   resmed_airview: resmedAirviewAdapterStub,
@@ -127,7 +124,7 @@ export const ADAPTERS: Record<
 };
 
 export function adapterFor(
-  source: Exclude<TherapyCloudSource, "manual" | "health_connect">,
+  source: Exclude<TherapyCloudSource, "manual">,
 ): TherapyCloudAdapter {
   return ADAPTERS[source];
 }
