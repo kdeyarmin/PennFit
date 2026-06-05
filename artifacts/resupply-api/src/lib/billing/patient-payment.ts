@@ -430,100 +430,31 @@ export async function createPaymentCheckoutSession(
 }
 
 /**
- * Apply a succeeded payment: decrement patient_responsibility_cents
- * on each claim in the allocation.
+ * Apply a succeeded payment: decrement patient_responsibility_cents on
+ * each claim in the allocation, atomically and idempotently.
  *
- * Caller contract: only invoke this AFTER an atomic transition of
- * patient_payments.status from non-'succeeded' to 'succeeded'. See
- * `markPaymentStatus` for the check-and-set that gates this. Calling
- * twice on the same paymentId WILL double-decrement claim balances.
+ * Delegates to the `resupply.apply_patient_payment()` SQL function
+ * (migration 0214). That function claims a per-(payment, claim) ledger
+ * slot and decrements the claim balance in ONE transaction, so:
+ *   * concurrent applies for DIFFERENT payments on the SAME claim never
+ *     lose a decrement (the per-claim UPDATE is serialized by the row
+ *     lock, and GREATEST(0, …) clamps); and
+ *   * re-running the SAME payment is a no-op for slots already applied —
+ *     which is what lets `markPaymentStatus` re-invoke this on Stripe
+ *     redelivery to COMPLETE an apply that a crash interrupted between the
+ *     status flip and the decrement, without double-decrementing.
+ *
+ * Unlike the previous JS read-modify-write loop, this can be called more
+ * than once for the same paymentId safely.
  */
 export async function applySucceededPayment(
   supabase: SupabaseClient,
   paymentId: string,
 ): Promise<void> {
-  const { data: row } = await supabase
+  const { error } = await supabase
     .schema("resupply")
-    .from("patient_payments")
-    .select("id, status, patient_id, applied_claims_json")
-    .eq("id", paymentId)
-    .limit(1)
-    .maybeSingle();
-  if (!row) return;
-  type Allocation = {
-    claimId: string;
-    amountAppliedCents: number;
-  };
-  const allocations =
-    (row.applied_claims_json as unknown as Allocation[]) ?? [];
-  for (const a of allocations) {
-    // Compare-and-swap decrement. The previous shape was read-then-
-    // write: read patient_responsibility_cents into JS, subtract,
-    // write back the literal. Two concurrent Stripe
-    // payment_intent.succeeded webhooks for DIFFERENT payments
-    // targeting the SAME claim would both read the same balance and
-    // both overwrite with the same lower value — losing one
-    // allocation's decrement.
-    //
-    // The CAS retry below re-reads the current balance, computes
-    // the next value, and updates ONLY when the row's current
-    // balance still matches what we read. PostgREST drops the
-    // update on mismatch (no rows affected); we detect that via
-    // .select() and loop. A bounded retry budget caps the worst-
-    // case so a thundering herd doesn't pin a worker indefinitely.
-    let appliedAmount = 0;
-    let success = false;
-    for (let attempt = 0; attempt < 5 && !success; attempt++) {
-      const { data: claim } = await supabase
-        .schema("resupply")
-        .from("insurance_claims")
-        .select("id, patient_responsibility_cents")
-        .eq("id", a.claimId)
-        .eq("patient_id", row.patient_id)
-        .limit(1)
-        .maybeSingle();
-      if (!claim) {
-        // Claim went away (deleted between webhook ingest + apply).
-        // Nothing to decrement; bail out of the retry loop.
-        break;
-      }
-      const currentBalance = claim.patient_responsibility_cents;
-      const newBalance = Math.max(0, currentBalance - a.amountAppliedCents);
-      const { data: updated } = await supabase
-        .schema("resupply")
-        .from("insurance_claims")
-        .update({
-          patient_responsibility_cents: newBalance,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", claim.id)
-        .eq("patient_responsibility_cents", currentBalance)
-        .select("id");
-      if (updated && updated.length > 0) {
-        success = true;
-        appliedAmount = a.amountAppliedCents;
-      }
-      // else: another writer beat us. Loop and re-read.
-    }
-    if (!success) {
-      logger.warn(
-        { claim_id: a.claimId, payment_id: paymentId },
-        "applySucceededPayment: gave up after CAS retries; claim balance contended",
-      );
-      continue;
-    }
-    await supabase
-      .schema("resupply")
-      .from("insurance_claim_events")
-      .insert({
-        claim_id: a.claimId,
-        event_type: "note",
-        amount_cents: appliedAmount,
-        payer_ref: paymentId,
-        note: `Patient payment applied: ${appliedAmount}¢ via payment ${paymentId}`,
-        actor_email: "system:patient_payment_apply",
-      });
-  }
+    .rpc("apply_patient_payment", { p_payment_id: paymentId });
+  if (error) throw error;
 }
 
 export interface MarkPaymentInput {
@@ -547,13 +478,10 @@ export async function markPaymentStatus(
     update.failure_reason = input.failureReason;
   }
   if (input.status === "succeeded") {
-    // Atomic check-and-set: only flip to 'succeeded' when the row
-    // isn't already there. Stripe redelivers webhooks on transient
-    // 5xx, and we don't want to re-apply the per-claim balance
-    // decrement on every redelivery. The .neq("status", "succeeded")
-    // guard turns a re-delivery into a no-op at the SQL level, so
-    // applySucceededPayment below runs exactly once per payment row.
-    const { data: flipped, error: flipErr } = await supabase
+    // Atomic check-and-set: only flip to 'succeeded' (and stamp
+    // succeeded_at) when the row isn't already there, so a Stripe
+    // redelivery doesn't rewrite succeeded_at.
+    const { error: flipErr } = await supabase
       .schema("resupply")
       .from("patient_payments")
       .update(update)
@@ -561,10 +489,13 @@ export async function markPaymentStatus(
       .neq("status", "succeeded")
       .select("id");
     if (flipErr) throw flipErr;
-    // .update().select() returns the rows actually updated. An empty
-    // array means the row was already 'succeeded' — webhook redelivery,
-    // skip the allocation walk so we don't double-decrement claims.
-    if (!flipped || flipped.length === 0) return;
+    // Run the apply UNCONDITIONALLY — even when the flip was a no-op
+    // (redelivery, or a retry after a crash that interrupted a prior
+    // apply between the status flip and the decrement).
+    // apply_patient_payment is idempotent (per-(payment, claim) ledger,
+    // migration 0214), so this completes any unfinished decrement without
+    // double-applying. The previous early-return-on-redelivery left a
+    // crash-interrupted apply permanently incomplete (balance overstated).
     await applySucceededPayment(supabase, input.paymentId);
     return;
   }
