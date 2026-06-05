@@ -202,16 +202,18 @@ function VendorStrip({
         })}
       </div>
       <p className="text-xs text-slate-500 mt-2">
-        &ldquo;Configured&rdquo; means the vendor&apos;s required credentials are
-        present (in the environment or saved in{" "}
+        &ldquo;Configured&rdquo; (green) means the vendor&apos;s required
+        credentials are live in the running environment now. A credential
+        entered in{" "}
         <Link
           href="/admin/system/configuration"
           className="underline decoration-dotted"
         >
           System Configuration
-        </Link>
-        ). It does NOT mean the most recent send succeeded — check the
-        dispatcher result panels below for that.
+        </Link>{" "}
+        but not yet applied shows as &ldquo;saved — applies after
+        restart&rdquo; instead. Neither state means the most recent send
+        succeeded — check the dispatcher result panels below for that.
       </p>
       {anyPending && (
         <p className="text-xs text-sky-700 mt-1">

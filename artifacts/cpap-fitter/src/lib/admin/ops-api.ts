@@ -7,10 +7,14 @@ import { ApiError } from "@workspace/api-client-react/admin";
 import { csrfHeader } from "../csrf";
 
 export interface OpsStatus {
+  // Mirrors the server contract (/admin/ops-status). `twilioFax` is
+  // returned by the API and typed here for fidelity even though the
+  // current VendorStrip renders a curated subset (no fax tile yet).
   vendors: {
     sendgrid: boolean;
     twilioVoice: boolean;
     twilioSms: boolean;
+    twilioFax: boolean;
     stripe: boolean;
     objectStorage: boolean;
   };
@@ -27,6 +31,7 @@ export interface OpsStatus {
     sendgrid: boolean;
     twilioVoice: boolean;
     twilioSms: boolean;
+    twilioFax: boolean;
     stripe: boolean;
     objectStorage: boolean;
   };
