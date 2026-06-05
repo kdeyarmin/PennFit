@@ -135,6 +135,11 @@ const AdminAnalyticsMarginPage = lazy(() =>
     default: m.AdminAnalyticsMarginPage,
   })),
 );
+const AdminAnalyticsOutreachAttributionPage = lazy(() =>
+  import("@/pages/admin/admin-analytics-outreach-attribution").then((m) => ({
+    default: m.AdminAnalyticsOutreachAttributionPage,
+  })),
+);
 const AdminAnalyticsRevenueBySourcePage = lazy(() =>
   import("@/pages/admin/admin-analytics-revenue-by-source").then((m) => ({
     default: m.AdminAnalyticsRevenueBySourcePage,
@@ -819,6 +824,10 @@ function AdminConsole() {
             <Route
               path="/admin/analytics/margin"
               component={AdminAnalyticsMarginPage}
+            />
+            <Route
+              path="/admin/analytics/outreach-attribution"
+              component={AdminAnalyticsOutreachAttributionPage}
             />
             <Route
               path="/admin/analytics/revenue-by-source"
