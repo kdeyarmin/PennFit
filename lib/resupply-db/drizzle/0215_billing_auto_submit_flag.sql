@@ -1,4 +1,4 @@
--- 0214_billing_auto_submit_flag — feature flag that gates UNATTENDED
+-- 0215_billing_auto_submit_flag — feature flag that gates UNATTENDED
 -- auto-submission of submission-ready claims to Office Ally.
 --
 -- Background
