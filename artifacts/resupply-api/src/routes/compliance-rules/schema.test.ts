@@ -16,6 +16,7 @@ describe("complianceRuleBody (POST)", () => {
       priority: 100,
       minMinutes: 240,
       requiredNights: 21,
+      windowDays: 30,
       active: true,
       matchInsurancePayer: null,
       notes: null,
@@ -67,8 +68,45 @@ describe("complianceRuleBody (POST)", () => {
 
   it("rejects unknown keys (strict)", () => {
     expect(
-      complianceRuleBody.safeParse({ name: "x", windowDays: 30 }).success,
+      complianceRuleBody.safeParse({ name: "x", cadenceDays: 30 }).success,
     ).toBe(false);
+  });
+
+  it("defaults windowDays to 30 (the CMS rolling window)", () => {
+    expect(complianceRuleBody.parse({ name: "x" }).windowDays).toBe(30);
+  });
+
+  it("rejects windowDays outside 7..90", () => {
+    expect(
+      complianceRuleBody.safeParse({ name: "x", windowDays: 6 }).success,
+    ).toBe(false);
+    expect(
+      complianceRuleBody.safeParse({ name: "x", windowDays: 91 }).success,
+    ).toBe(false);
+    expect(
+      complianceRuleBody.safeParse({
+        name: "x",
+        requiredNights: 7,
+        windowDays: 7,
+      }).success,
+    ).toBe(true);
+  });
+
+  it("rejects requiredNights greater than windowDays (unachievable)", () => {
+    expect(
+      complianceRuleBody.safeParse({
+        name: "x",
+        requiredNights: 21,
+        windowDays: 14,
+      }).success,
+    ).toBe(false);
+    expect(
+      complianceRuleBody.safeParse({
+        name: "x",
+        requiredNights: 10,
+        windowDays: 14,
+      }).success,
+    ).toBe(true);
   });
 });
 
@@ -102,6 +140,12 @@ describe("compliancePatchBody (PATCH)", () => {
     );
     expect(compliancePatchBody.safeParse({ minMinutes: 5000 }).success).toBe(
       false,
+    );
+    expect(compliancePatchBody.safeParse({ windowDays: 100 }).success).toBe(
+      false,
+    );
+    expect(compliancePatchBody.safeParse({ windowDays: 60 }).success).toBe(
+      true,
     );
   });
 });

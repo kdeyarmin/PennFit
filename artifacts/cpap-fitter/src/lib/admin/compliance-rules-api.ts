@@ -12,6 +12,7 @@ export interface ComplianceRule {
   matchInsurancePayer: string | null;
   minMinutes: number;
   requiredNights: number;
+  windowDays: number;
   active: boolean;
   notes: string | null;
   createdAt: string;
@@ -24,6 +25,7 @@ export interface ComplianceRuleCreate {
   matchInsurancePayer: string | null;
   minMinutes: number;
   requiredNights: number;
+  windowDays: number;
   active: boolean;
   notes: string | null;
 }

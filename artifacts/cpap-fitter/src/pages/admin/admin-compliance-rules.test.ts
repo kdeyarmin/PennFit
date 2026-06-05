@@ -43,6 +43,11 @@ describe("admin-compliance-rules page", () => {
 
   it("caps required nights at 30 to match the server constraint", () => {
     expect(SRC).toContain("max={30}");
-    expect(SRC).toContain("Required nights (of 30)");
+    expect(SRC).toContain("Required nights");
+  });
+
+  it("exposes the per-payer window (days) field", () => {
+    expect(SRC).toContain("Window (days)");
+    expect(SRC).toContain('patch("windowDays"');
   });
 });

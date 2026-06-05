@@ -36,8 +36,10 @@ export const complianceRuleBody = z
       .transform((v) => (v === "" || v === undefined ? null : v)),
     // 0..1440 minutes (a night can't exceed 24h). 240 = 4 hours.
     minMinutes: z.number().int().min(0).max(1440).default(240),
-    // 1..30 qualifying nights in a (≤30-day) window. 21 = CMS.
+    // 1..30 qualifying nights. 21 = CMS. Must be <= windowDays.
     requiredNights: z.number().int().min(1).max(30).default(21),
+    // Rolling-window length in days. 30 = CMS. 7..90.
+    windowDays: z.number().int().min(7).max(90).default(30),
     active: z.boolean().default(true),
     notes: z
       .string()
@@ -46,7 +48,11 @@ export const complianceRuleBody = z
       .optional()
       .transform((v) => (v === "" || v === undefined ? null : v)),
   })
-  .strict();
+  .strict()
+  .refine((v) => v.requiredNights <= v.windowDays, {
+    message: "requiredNights cannot exceed windowDays",
+    path: ["requiredNights"],
+  });
 
 const router: IRouter = Router();
 
@@ -77,6 +83,7 @@ router.post(
         match_insurance_payer: parsed.data.matchInsurancePayer ?? null,
         min_minutes: parsed.data.minMinutes,
         required_nights: parsed.data.requiredNights,
+        window_days: parsed.data.windowDays,
         active: parsed.data.active,
         notes: parsed.data.notes ?? null,
       })
@@ -119,6 +126,7 @@ router.post(
       matchInsurancePayer: row.match_insurance_payer,
       minMinutes: row.min_minutes,
       requiredNights: row.required_nights,
+      windowDays: row.window_days,
       active: row.active,
       notes: row.notes,
       createdAt: row.created_at,
