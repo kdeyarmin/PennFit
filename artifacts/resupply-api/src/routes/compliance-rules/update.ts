@@ -30,6 +30,7 @@ const FIELD_MAP = {
   matchInsurancePayer: "match_insurance_payer",
   minMinutes: "min_minutes",
   requiredNights: "required_nights",
+  windowDays: "window_days",
   active: "active",
   notes: "notes",
 } as const;
@@ -49,6 +50,7 @@ export const compliancePatchBody = z
       .transform((v) => (v === "" ? null : v)),
     minMinutes: z.number().int().min(0).max(1440).optional(),
     requiredNights: z.number().int().min(1).max(30).optional(),
+    windowDays: z.number().int().min(7).max(90).optional(),
     active: z.boolean().optional(),
     notes: z
       .string()
@@ -120,7 +122,23 @@ router.patch(
       updateBuilder = updateBuilder.eq("updated_at", expectedUpdatedAt);
     }
     const { data: result, error } = await updateBuilder.select("id");
-    if (error) throw error;
+    if (error) {
+      // A CHECK violation here is the requiredNights <= windowDays guard
+      // (the one cross-field rule Zod can't enforce on a partial PATCH).
+      if ((error as { code?: string }).code === "23514") {
+        res.status(400).json({
+          error: "invalid_body",
+          issues: [
+            {
+              path: "requiredNights",
+              message: "requiredNights cannot exceed windowDays",
+            },
+          ],
+        });
+        return;
+      }
+      throw error;
+    }
 
     if (!result || result.length === 0) {
       if (expectedUpdatedAt) {

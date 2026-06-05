@@ -699,6 +699,7 @@ export interface Database {
           match_insurance_payer: string | null;
           min_minutes: number;
           required_nights: number;
+          window_days: number;
           active: boolean;
           notes: string | null;
           created_at: string;

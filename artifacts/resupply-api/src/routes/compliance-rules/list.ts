@@ -65,6 +65,7 @@ router.get(
         matchInsurancePayer: r.match_insurance_payer,
         minMinutes: r.min_minutes,
         requiredNights: r.required_nights,
+        windowDays: r.window_days,
         active: r.active,
         notes: r.notes,
         createdAt: r.created_at,

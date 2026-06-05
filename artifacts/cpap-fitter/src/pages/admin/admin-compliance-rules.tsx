@@ -40,6 +40,7 @@ interface FormState {
   matchInsurancePayer: string;
   minMinutes: string;
   requiredNights: string;
+  windowDays: string;
   active: boolean;
   notes: string;
 }
@@ -50,6 +51,7 @@ const EMPTY_FORM: FormState = {
   matchInsurancePayer: "",
   minMinutes: "240",
   requiredNights: "21",
+  windowDays: "30",
   active: true,
   notes: "",
 };
@@ -182,7 +184,8 @@ function RulesTable({
       header: "Threshold",
       render: (r) => (
         <span className="text-xs" style={{ color: "hsl(var(--ink-2))" }}>
-          ≥ {hoursLabel(r.minMinutes)} on ≥ {r.requiredNights} of 30 nights
+          ≥ {hoursLabel(r.minMinutes)} on ≥ {r.requiredNights} of {r.windowDays}{" "}
+          nights
         </span>
       ),
     },
@@ -236,6 +239,7 @@ function ruleToForm(rule: ComplianceRule): FormState {
     matchInsurancePayer: rule.matchInsurancePayer ?? "",
     minMinutes: String(rule.minMinutes),
     requiredNights: String(rule.requiredNights),
+    windowDays: String(rule.windowDays),
     active: rule.active,
     notes: rule.notes ?? "",
   };
@@ -324,6 +328,14 @@ function ComplianceRuleFormModal({
     );
     if (requiredNights.error)
       return { body: null, error: requiredNights.error };
+    const windowDays = parseRequiredInt(form.windowDays, "Window days", 7, 90);
+    if (windowDays.error) return { body: null, error: windowDays.error };
+    if (requiredNights.value > windowDays.value) {
+      return {
+        body: null,
+        error: "Required nights cannot exceed the window length.",
+      };
+    }
     const payer = form.matchInsurancePayer.trim();
     const notes = form.notes.trim();
     if (payer.length > 120) {
@@ -339,6 +351,7 @@ function ComplianceRuleFormModal({
         matchInsurancePayer: payer === "" ? null : payer,
         minMinutes: minMinutes.value,
         requiredNights: requiredNights.value,
+        windowDays: windowDays.value,
         active: form.active,
         notes: notes === "" ? null : notes,
       },
@@ -495,7 +508,7 @@ function ComplianceRuleFormModal({
               </p>
             </div>
             <div>
-              <Label htmlFor="cr-nights">Required nights (of 30)</Label>
+              <Label htmlFor="cr-nights">Required nights</Label>
               <Input
                 id="cr-nights"
                 type="number"
@@ -510,7 +523,26 @@ function ComplianceRuleFormModal({
                 className="mt-1 text-xs"
                 style={{ color: "hsl(var(--ink-3))" }}
               >
-                21 = the CMS 21-of-30 rule. Max 30.
+                21 = the CMS rule. Max 30, and ≤ the window.
+              </p>
+            </div>
+            <div>
+              <Label htmlFor="cr-window">Window (days)</Label>
+              <Input
+                id="cr-window"
+                type="number"
+                min={7}
+                max={90}
+                value={form.windowDays}
+                onChange={(e) => patch("windowDays", e.target.value)}
+                required
+                disabled={isPending}
+              />
+              <p
+                className="mt-1 text-xs"
+                style={{ color: "hsl(var(--ink-3))" }}
+              >
+                Rolling window the nights are counted over. 30 = CMS.
               </p>
             </div>
             <div className="md:col-span-2">
