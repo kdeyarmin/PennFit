@@ -880,6 +880,13 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             hint: "Automation rules that trigger replies & actions",
           },
           {
+            href: "/admin/compliance-rules",
+            label: "Compliance Rules",
+            icon: ShieldCheck,
+            matchPrefix: "/admin/compliance-rules",
+            hint: "Per-payer CPAP adherence thresholds (min hours / nights)",
+          },
+          {
             href: "/admin/rule-tester",
             label: "Rule Tester",
             icon: FlaskConical,

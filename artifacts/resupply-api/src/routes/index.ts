@@ -171,6 +171,7 @@ import healthRouter from "./health.js";
 import meRouter from "./me.js";
 import patientsRouter from "./patients/index.js";
 import rulesRouter from "./rules/index.js";
+import complianceRulesRouter from "./compliance-rules/index.js";
 import smsRouter from "./sms/index.js";
 import shopRouter from "./shop/index.js";
 import faxRouter from "./fax/index.js";
@@ -212,6 +213,7 @@ router.use(emailRouter);
 router.use(dashboardRouter);
 router.use(patientsRouter);
 router.use(rulesRouter);
+router.use(complianceRulesRouter);
 router.use(conversationsRouter);
 router.use(episodesRouter);
 // /admin/shop/abandoned-carts/* — operator tooling for the cart-

@@ -688,6 +688,30 @@ export interface Database {
         >;
         Relationships: [];
       };
+      // Per-payer CPAP adherence thresholds (migration 0212). Resolved
+      // by resupply.resolve_compliance_thresholds() inside the therapy
+      // fleet / setup-adherence RPCs; CRUD via /compliance-rules.
+      compliance_rules: {
+        Row: {
+          id: string;
+          name: string;
+          priority: number;
+          match_insurance_payer: string | null;
+          min_minutes: number;
+          required_nights: number;
+          active: boolean;
+          notes: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["compliance_rules"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["compliance_rules"]["Row"]
+        >;
+        Relationships: [];
+      };
       // Minimal coverage for count-style queries; expand to full Row
       // as more callers migrate.
       shop_returns: {
