@@ -1,0 +1,24 @@
+# Migration in-place-edit allowlist
+# =================================================================
+# Read by scripts/check-resupply-migration-immutability.sh.
+#
+# Editing (or deleting / renaming) a migration that already exists on the
+# base branch is FORBIDDEN by default: migrate.mjs dedups by the sha256 of
+# each file's CONTENT, so an in-place edit changes the hash and the
+# deploy-time migrator re-applies the file against production — which
+# fails the deploy if the rewritten SQL is not perfectly idempotent (this
+# is what broke the 2026-06-05 Railway releases).
+#
+# The correct way to change a shipped migration's effect is a NEW,
+# higher-numbered corrective migration written idempotently. Use this
+# allowlist ONLY for the rare emergency where an already-applied migration
+# must be made idempotent in place.
+#
+# Format: one migration basename per line; `#` starts a comment. Example:
+#
+#     0212_compliance_rules.sql  # 2026-06-05 emergency: add DROP TRIGGER IF EXISTS
+#
+# Remove the entry once the edit has shipped — an allowlisted file stays
+# editable without a tripwire until the line is deleted.
+#
+# (No active entries.)

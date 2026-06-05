@@ -15,6 +15,11 @@
 #           migrations with prefix <= 0066 while the journal/files
 #           drift is being reconciled (see the README in that
 #           directory for the full rationale).
+#       * scripts/check-resupply-migration-immutability.sh
+#           when any SQL file under lib/resupply-db/drizzle/ is
+#           modified or deleted. A shipped migration is immutable —
+#           editing it changes migrate.mjs's content hash and re-applies
+#           it against prod (the 2026-06-05 Railway-deploy incident).
 #
 # (The previous OpenAPI codegen drift check was retired when Task #37
 #  deleted the spec packages; the per-file dispatch below no longer
@@ -108,6 +113,7 @@ fi
 
 need_arch=0
 need_resupply_prefix=0
+need_resupply_immutable=0
 ts_files=()
 
 while IFS= read -r file; do
@@ -128,6 +134,10 @@ while IFS= read -r file; do
   case "$file" in
     lib/resupply-db/drizzle/*|lib/resupply-db/drizzle/*/*)
       need_resupply_prefix=1
+      # Same trigger feeds the immutability check; it filters to
+      # MODIFIED/DELETED *.sql itself (additions are the prefix check's
+      # job), so a new-migration add won't trip it.
+      need_resupply_immutable=1
       ;;
   esac
   # TS/TSX syntax check (Task #81): collect any staged TS/TSX file
@@ -151,7 +161,8 @@ while IFS= read -r file; do
   esac
 done <<< "$staged"
 
-if [[ $need_arch -eq 0 && $need_resupply_prefix -eq 0 && ${#ts_files[@]} -eq 0 ]]; then
+if [[ $need_arch -eq 0 && $need_resupply_prefix -eq 0 \
+      && $need_resupply_immutable -eq 0 && ${#ts_files[@]} -eq 0 ]]; then
   exit 0
 fi
 
@@ -174,6 +185,12 @@ run_checks() {
   if [[ $need_resupply_prefix -eq 1 ]]; then
     printf '[pre-commit] Running resupply migration-prefix moratorium check…\n' >&2
     if ! bash "$REPO_ROOT/scripts/check-resupply-migration-prefix.sh"; then
+      f=1
+    fi
+  fi
+  if [[ $need_resupply_immutable -eq 1 ]]; then
+    printf '[pre-commit] Running resupply migration-immutability check…\n' >&2
+    if ! bash "$REPO_ROOT/scripts/check-resupply-migration-immutability.sh"; then
       f=1
     fi
   fi
