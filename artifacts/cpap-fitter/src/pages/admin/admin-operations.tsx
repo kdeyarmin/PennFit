@@ -1,8 +1,11 @@
 // /admin/operations — operations center.
 //
 // Three sections:
-//   1. Vendor connectivity strip — green/red dot per integration
-//      (SendGrid, Twilio Voice/SMS, Stripe, GCS object store).
+//   1. Vendor connectivity strip — green/amber/sky dot per integration
+//      (SendGrid, Twilio Voice/SMS, Stripe, Supabase object store).
+//      A credential saved in System Configuration but not yet folded
+//      into the live process (applyMode: "restart") shows a distinct
+//      "saved — applies after restart" state.
 //   2. Dispatchers — manual "Run now" buttons for the cart-abandonment
 //      and review-request dispatchers, with the eligible-row counter
 //      so admins know whether running will actually do anything.
@@ -64,7 +67,10 @@ export function AdminOperationsPage() {
 function Body({ data, onRefresh }: { data: OpsStatus; onRefresh: () => void }) {
   return (
     <div className="space-y-6">
-      <VendorStrip vendors={data.vendors} />
+      <VendorStrip
+        vendors={data.vendors}
+        pendingRestart={data.vendorsPendingRestart}
+      />
       <DispatchersPanel dispatchers={data.dispatchers} onRefresh={onRefresh} />
       <QueuesPanel queues={data.queues} />
       <TeamSummary team={data.team} />
@@ -102,7 +108,39 @@ function QueuesPanel({ queues }: { queues: OpsStatus["queues"] }) {
   );
 }
 
-function VendorStrip({ vendors }: { vendors: OpsStatus["vendors"] }) {
+// Visual treatment per connectivity state. "pending" is the saved-in-app
+// -but-not-yet-live window (catalog keys are applyMode: "restart").
+const VENDOR_STATE_STYLES = {
+  ok: {
+    card: "border-emerald-200 bg-emerald-50",
+    dot: "bg-emerald-500",
+    label: "text-emerald-900",
+    badge: "configured",
+    aria: "Configured",
+  },
+  pending: {
+    card: "border-sky-200 bg-sky-50",
+    dot: "bg-sky-500",
+    label: "text-sky-900",
+    badge: "saved — applies after restart",
+    aria: "Saved, applies after restart",
+  },
+  off: {
+    card: "border-amber-200 bg-amber-50",
+    dot: "bg-amber-500",
+    label: "text-amber-900",
+    badge: "not configured",
+    aria: "Not configured",
+  },
+} as const;
+
+function VendorStrip({
+  vendors,
+  pendingRestart,
+}: {
+  vendors: OpsStatus["vendors"];
+  pendingRestart: OpsStatus["vendorsPendingRestart"];
+}) {
   const items: Array<{
     key: keyof OpsStatus["vendors"];
     label: string;
@@ -122,10 +160,11 @@ function VendorStrip({ vendors }: { vendors: OpsStatus["vendors"] }) {
     },
     {
       key: "objectStorage",
-      label: "Object storage (GCS)",
+      label: "Object storage",
       hint: "Prescription document attachments",
     },
   ];
+  const anyPending = items.some((it) => pendingRestart?.[it.key]);
   return (
     <section>
       <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-600 mb-2">
@@ -133,32 +172,24 @@ function VendorStrip({ vendors }: { vendors: OpsStatus["vendors"] }) {
       </h2>
       <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
         {items.map((it) => {
-          const ok = vendors[it.key];
+          // Three states. Check "pending" first: a saved-but-not-live
+          // value reports configured===true AND pendingRestart===true,
+          // and the restart caveat is the more important signal.
+          const pending = pendingRestart?.[it.key] ?? false;
+          const state = pending ? "pending" : vendors[it.key] ? "ok" : "off";
+          const s = VENDOR_STATE_STYLES[state];
           return (
-            <div
-              key={it.key}
-              className={`rounded-lg border p-3 ${
-                ok
-                  ? "border-emerald-200 bg-emerald-50"
-                  : "border-amber-200 bg-amber-50"
-              }`}
-            >
+            <div key={it.key} className={`rounded-lg border p-3 ${s.card}`}>
               <div className="flex items-start gap-2">
                 <span
-                  className={`mt-1 inline-block h-2 w-2 rounded-full ${
-                    ok ? "bg-emerald-500" : "bg-amber-500"
-                  }`}
-                  aria-label={ok ? "Configured" : "Not configured"}
+                  className={`mt-1 inline-block h-2 w-2 rounded-full ${s.dot}`}
+                  aria-label={s.aria}
                 />
                 <div>
-                  <div
-                    className={`text-sm font-semibold ${
-                      ok ? "text-emerald-900" : "text-amber-900"
-                    }`}
-                  >
+                  <div className={`text-sm font-semibold ${s.label}`}>
                     {it.label}{" "}
                     <span className="text-[11px] font-normal opacity-70">
-                      {ok ? "configured" : "not configured"}
+                      {s.badge}
                     </span>
                   </div>
                   <div className="text-xs text-slate-700 opacity-80">
@@ -171,10 +202,26 @@ function VendorStrip({ vendors }: { vendors: OpsStatus["vendors"] }) {
         })}
       </div>
       <p className="text-xs text-slate-500 mt-2">
-        &ldquo;Configured&rdquo; means the vendor&apos;s required env vars are
-        present. It does NOT mean the most recent send succeeded — check the
-        dispatcher result panels below for that.
+        &ldquo;Configured&rdquo; (green) means the vendor&apos;s required
+        credentials are live in the running environment now. A credential
+        entered in{" "}
+        <Link
+          href="/admin/system/configuration"
+          className="underline decoration-dotted"
+        >
+          System Configuration
+        </Link>{" "}
+        but not yet applied shows as &ldquo;saved — applies after
+        restart&rdquo; instead. Neither state means the most recent send
+        succeeded — check the dispatcher result panels below for that.
       </p>
+      {anyPending && (
+        <p className="text-xs text-sky-700 mt-1">
+          &ldquo;Saved — applies after restart&rdquo; means the credential was
+          entered in System Configuration but won&apos;t take effect until the
+          next deploy/restart. Redeploy the service to activate it.
+        </p>
+      )}
     </section>
   );
 }
