@@ -49,6 +49,7 @@ import inboundFaxesRouter from "./admin/inbound-faxes.js";
 import inboundReferralsRouter from "./admin/inbound-referrals.js";
 import equipmentRecallsRouter from "./admin/equipment-recalls.js";
 import analyticsRouter from "./admin/analytics.js";
+import analyticsOutreachAttributionRouter from "./admin/analytics-outreach-attribution.js";
 import analyticsMarginRouter from "./admin/analytics-margin.js";
 import analyticsRevenueBySourceRouter from "./admin/analytics-revenue-by-source.js";
 import inventoryTurnoverRouter from "./admin/inventory-turnover.js";
@@ -683,6 +684,10 @@ router.use(analyticsRouter);
 // /admin/analytics/revenue-by-source — order volume + cash revenue split
 // across the storefront / resupply-fulfillment / clinical-form channels.
 router.use(analyticsRevenueBySourceRouter);
+// /admin/analytics/outreach-attribution — of patients contacted by
+// reminders / clinical outreach, the share who placed a fulfillment
+// within N days (closed-loop conversion by channel).
+router.use(analyticsOutreachAttributionRouter);
 // /admin/analytics/margin — gross-margin / COGS dashboard (Owner #1).
 // Folds the F1 cost snapshots on shop_order_items through the shared
 // margin core; keeps the costed/uncosted revenue split explicit.
