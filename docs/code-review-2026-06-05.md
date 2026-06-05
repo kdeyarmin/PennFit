@@ -232,11 +232,13 @@ change, so it belongs in its own reviewed PR.
 **D6 (Low, SPA) — assorted lifecycle nits.** `useDraftAutosave` key-
 switch write race (`use-draft-autosave.ts`), `useUrlState` popstate stale
 closure (`use-url-state.ts`), a handful of un-cleared "just copied/added"
-`setTimeout`s (harmless on React 18+), `chat_opened` telemetry
-re-firing on navigation while the panel is open (inflates the funnel
-count), and `formatMoneyCents` hard-coding `en-US` while accepting a
-currency arg (latent if a non-USD price ever lands). Low impact; batch
-into a SPA-hygiene PR with a lint rule for the timer pattern.
+`setTimeout`s (harmless on React 18+), and `formatMoneyCents` hard-coding
+`en-US` while accepting a currency arg (latent if a non-USD price ever
+lands; left as-is since changing live money formatting in a USD-only shop
+is riskier than the latent bug). Low impact; batch into a SPA-hygiene PR
+with a lint rule for the timer pattern. _(The `chat_opened` telemetry
+double-count — it re-fired on every navigation while the panel stayed
+open — **was fixed** in this PR: gate on the open false→true transition.)_
 
 ---
 
