@@ -13,7 +13,7 @@
 // PHI: only patient_id (internal uuid) + created_at are read from each
 // table — never message bodies, names, or contact details.
 
-import { Router, type IRouter } from "express";
+import { Router, type IRouter, type Response } from "express";
 import { z } from "zod";
 
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
@@ -41,10 +41,34 @@ const querySchema = z.object({
 
 const READ_CAP = 50_000;
 
+// Thrown when the window holds more rows than we read in one page, so the
+// aggregate would silently miscount contacts/conversions. The route
+// converts it to a clear 422 rather than returning wrong rates. (A SQL
+// aggregation RPC would remove the cap entirely — scale-out follow-up.)
+class AttributionWindowTooLargeError extends Error {
+  constructor(readonly cap: number) {
+    super("attribution_window_too_large");
+    this.name = "AttributionWindowTooLargeError";
+  }
+}
+
 function isoDaysAgo(days: number): string {
   const d = new Date();
   d.setUTCDate(d.getUTCDate() - days);
   return d.toISOString();
+}
+
+// Translate the window-too-large sentinel into a 422 the caller can act
+// on (reduce `days`). Returns true when it handled the error.
+function handleWindowTooLarge(err: unknown, res: Response): boolean {
+  if (err instanceof AttributionWindowTooLargeError) {
+    res.status(422).json({
+      error: "window_too_large",
+      message: `Too many records in this window to aggregate accurately (> ${err.cap}). Choose a shorter window.`,
+    });
+    return true;
+  }
+  return false;
 }
 
 async function loadOutreachAttribution(cutoff: string, windowDays: number) {
@@ -55,30 +79,43 @@ async function loadOutreachAttribution(cutoff: string, windowDays: number) {
     supabase
       .schema("resupply")
       .from("conversations")
-      .select("patient_id, created_at")
+      .select("patient_id, created_at", { count: "exact" })
       .not("episode_id", "is", null)
       .gte("created_at", cutoff)
+      .order("created_at", { ascending: false })
       .limit(READ_CAP),
     // Clinical outreach actually sent in window.
     supabase
       .schema("resupply")
       .from("clinical_outreach_log")
-      .select("patient_id, created_at")
+      .select("patient_id, created_at", { count: "exact" })
       .eq("status", "sent")
       .gte("created_at", cutoff)
+      .order("created_at", { ascending: false })
       .limit(READ_CAP),
     // Fulfillments from window start onward (a contact can only be
     // credited a fulfillment at/after it).
     supabase
       .schema("resupply")
       .from("fulfillments")
-      .select("patient_id, created_at")
+      .select("patient_id, created_at", { count: "exact" })
       .gte("created_at", cutoff)
+      .order("created_at", { ascending: false })
       .limit(READ_CAP),
   ]);
   if (convRes.error) throw convRes.error;
   if (clinRes.error) throw clinRes.error;
   if (fulRes.error) throw fulRes.error;
+
+  // Fail fast rather than silently miscount: if any capped read matched
+  // more rows than we pulled, the attribution would be wrong.
+  if (
+    (convRes.count ?? 0) > READ_CAP ||
+    (clinRes.count ?? 0) > READ_CAP ||
+    (fulRes.count ?? 0) > READ_CAP
+  ) {
+    throw new AttributionWindowTooLargeError(READ_CAP);
+  }
 
   const toContact = (
     rows: Array<{ patient_id: string | null; created_at: string | null }>,
@@ -115,11 +152,16 @@ router.get(
       return;
     }
     const { days, attributionWindowDays } = parsed.data;
-    const result = await loadOutreachAttribution(
-      isoDaysAgo(days),
-      attributionWindowDays,
-    );
-    res.json({ windowDays: days, ...result });
+    try {
+      const result = await loadOutreachAttribution(
+        isoDaysAgo(days),
+        attributionWindowDays,
+      );
+      res.json({ windowDays: days, ...result });
+    } catch (err) {
+      if (handleWindowTooLarge(err, res)) return;
+      throw err;
+    }
   },
 );
 
@@ -133,10 +175,16 @@ router.get(
       return;
     }
     const { days, attributionWindowDays } = parsed.data;
-    const result = await loadOutreachAttribution(
-      isoDaysAgo(days),
-      attributionWindowDays,
-    );
+    let result: Awaited<ReturnType<typeof loadOutreachAttribution>>;
+    try {
+      result = await loadOutreachAttribution(
+        isoDaysAgo(days),
+        attributionWindowDays,
+      );
+    } catch (err) {
+      if (handleWindowTooLarge(err, res)) return;
+      throw err;
+    }
 
     const filename = `outreach-attribution-${days}d-${new Date()
       .toISOString()
