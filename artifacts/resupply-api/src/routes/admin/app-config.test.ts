@@ -191,26 +191,19 @@ describe("GET /admin/system/config — Twilio webhook URLs", () => {
     else process.env.RAILWAY_PUBLIC_DOMAIN = savedRailway;
   });
 
-  it("derives the full webhook URLs from a saved base URL (slash stripped)", async () => {
+  it("derives the full webhook URLs from the LIVE env base URL (slash stripped)", async () => {
     stubSuperAdmin();
-    stageSupabaseResponse("app_config", "select", {
-      data: [
-        {
-          key: BASE_KEY,
-          value: "https://pennfit.example.com/",
-          updated_by_email: "owner@example.com",
-          updated_at: "2026-06-01T00:00:00.000Z",
-        },
-      ],
-    });
+    process.env[BASE_KEY] = "https://pennfit.example.com/";
+    stageSupabaseResponse("app_config", "select", { data: [] });
 
     const res = await request(makeApp()).get("/admin/system/config");
     expect(res.status).toBe(200);
 
     const w = res.body.twilioWebhooks;
     expect(w.baseUrl).toBe("https://pennfit.example.com");
-    expect(w.baseUrlSource).toBe("db");
+    expect(w.baseUrlSource).toBe("env");
     expect(w.baseUrlKey).toBe(BASE_KEY);
+    expect(w.pendingRestart).toBe(false);
 
     const urls: Record<string, string> = Object.fromEntries(
       (w.endpoints as Array<{ id: string; url: string }>).map((e) => [
@@ -232,6 +225,36 @@ describe("GET /admin/system/config — Twilio webhook URLs", () => {
     );
   });
 
+  it("keeps showing the LIVE URLs (not a saved-but-unapplied value) and flags pendingRestart", async () => {
+    stubSuperAdmin();
+    // The running process still uses the env value; a different value was
+    // saved in the UI but only applies on the next deploy.
+    process.env[BASE_KEY] = "https://live.example.com";
+    stageSupabaseResponse("app_config", "select", {
+      data: [
+        {
+          key: BASE_KEY,
+          value: "https://new.example.com",
+          updated_by_email: "owner@example.com",
+          updated_at: "2026-06-01T00:00:00.000Z",
+        },
+      ],
+    });
+
+    const res = await request(makeApp()).get("/admin/system/config");
+    expect(res.status).toBe(200);
+
+    const w = res.body.twilioWebhooks;
+    // URLs reflect what the live process signs/emits, NOT the saved value.
+    expect(w.baseUrl).toBe("https://live.example.com");
+    expect(w.baseUrlSource).toBe("env");
+    expect(w.pendingRestart).toBe(true);
+    const sms = (w.endpoints as Array<{ id: string; url: string }>).find(
+      (e) => e.id === "sms_inbound",
+    );
+    expect(sms?.url).toBe("https://live.example.com/resupply-api/sms/inbound");
+  });
+
   it("falls back to the Railway domain when only RAILWAY_PUBLIC_DOMAIN is set", async () => {
     stubSuperAdmin();
     process.env.RAILWAY_PUBLIC_DOMAIN = "pennfit.up.railway.app";
@@ -243,6 +266,7 @@ describe("GET /admin/system/config — Twilio webhook URLs", () => {
       "https://pennfit.up.railway.app",
     );
     expect(res.body.twilioWebhooks.baseUrlSource).toBe("railway");
+    expect(res.body.twilioWebhooks.pendingRestart).toBe(false);
   });
 
   it("returns no URLs when no base URL is configured", async () => {
@@ -254,6 +278,7 @@ describe("GET /admin/system/config — Twilio webhook URLs", () => {
     expect(res.body.twilioWebhooks.baseUrl).toBeNull();
     expect(res.body.twilioWebhooks.baseUrlSource).toBe("unset");
     expect(res.body.twilioWebhooks.endpoints).toEqual([]);
+    expect(res.body.twilioWebhooks.pendingRestart).toBe(false);
   });
 });
 

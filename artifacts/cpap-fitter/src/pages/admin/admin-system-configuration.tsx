@@ -160,8 +160,6 @@ function baseUrlSourceLabel(
   source: TwilioWebhooksView["baseUrlSource"],
 ): string {
   switch (source) {
-    case "db":
-      return "saved here";
     case "env":
       return "from environment";
     case "railway":
@@ -171,10 +169,38 @@ function baseUrlSourceLabel(
   }
 }
 
+// Warns that a saved base URL hasn't taken effect yet: the running process
+// keeps signing/emitting webhooks from its current origin until the next
+// deploy applies the saved value, so the URLs shown stay the live ones.
+function PendingRestartNote() {
+  return (
+    <div
+      className="rounded-md border px-3 py-2 text-xs flex items-start gap-1.5"
+      style={{
+        backgroundColor: "hsl(38 95% 48% / 0.08)",
+        borderColor: "hsl(38 95% 48% / 0.35)",
+        color: "hsl(var(--ink-2))",
+      }}
+      role="note"
+    >
+      <AlertTriangle
+        className="h-3.5 w-3.5 shrink-0 mt-0.5"
+        style={{ color: "hsl(38 80% 28%)" }}
+      />
+      <span>
+        A new base URL has been saved but takes effect on the next deploy. Until
+        the service restarts it still signs and emits webhooks from its current
+        origin, so the URLs below reflect that live configuration — keep Twilio
+        pointed at them until you redeploy, then update Twilio to match.
+      </span>
+    </div>
+  );
+}
+
 // Read-only reference: the exact Twilio webhook URLs to paste into the
-// Twilio Console, derived server-side from the "Public webhook base URL"
-// field above. Shown for every deployment so an operator can wire Twilio
-// without hand-assembling the route paths.
+// Twilio Console, derived server-side from the LIVE "Public webhook base
+// URL" the running process uses. Shown for every deployment so an operator
+// can wire Twilio without hand-assembling the route paths.
 function TwilioWebhookUrls({ webhooks }: { webhooks?: TwilioWebhooksView }) {
   if (!webhooks) return null;
   return (
@@ -186,54 +212,71 @@ function TwilioWebhookUrls({ webhooks }: { webhooks?: TwilioWebhooksView }) {
       }
       subtitle="Paste these into the Twilio Console for your phone number, Messaging Service, and fax."
     >
-      {webhooks.baseUrl === null ? (
-        <p className="text-sm" style={{ color: "hsl(var(--ink-3))" }}>
-          Set the <strong>Public webhook base URL</strong> (
-          <code className="font-mono">{webhooks.baseUrlKey}</code>) under{" "}
-          <em>Voice &amp; telephony (Twilio)</em> above to generate the full
-          webhook URLs.
-        </p>
-      ) : (
-        <div className="space-y-3">
-          <p className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
-            Built from{" "}
-            <span className="font-mono" style={{ color: "hsl(var(--ink-1))" }}>
-              {webhooks.baseUrl}
-            </span>{" "}
-            ({baseUrlSourceLabel(webhooks.baseUrlSource)}). Twilio signs these
-            exact URLs — re-enter them in Twilio whenever the base URL changes.
+      <div className="space-y-3">
+        {webhooks.pendingRestart && <PendingRestartNote />}
+        {webhooks.baseUrl === null ? (
+          <p className="text-sm" style={{ color: "hsl(var(--ink-3))" }}>
+            {webhooks.pendingRestart ? (
+              <>
+                No live base URL is set yet, so there are no webhook URLs to
+                show. They’ll appear here once the service restarts and applies
+                the saved value.
+              </>
+            ) : (
+              <>
+                Set the <strong>Public webhook base URL</strong> (
+                <code className="font-mono">{webhooks.baseUrlKey}</code>) under{" "}
+                <em>Voice &amp; telephony (Twilio)</em> above to generate the
+                full webhook URLs.
+              </>
+            )}
           </p>
-          <ul className="space-y-3">
-            {webhooks.endpoints.map((e) => (
-              <li key={e.id} className="space-y-1">
-                <span
-                  className="text-sm font-medium"
-                  style={{ color: "hsl(var(--ink-1))" }}
-                >
-                  {e.label}
-                </span>
-                <div className="flex items-center gap-2">
-                  <code
-                    className="flex-1 min-w-0 truncate rounded border px-2 py-1 text-xs"
-                    style={{
-                      borderColor: "hsl(var(--line-2))",
-                      backgroundColor: "hsl(var(--surface-2))",
-                      color: "hsl(var(--ink-1))",
-                    }}
-                    title={e.url}
+        ) : (
+          <>
+            <p className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
+              Built from{" "}
+              <span
+                className="font-mono"
+                style={{ color: "hsl(var(--ink-1))" }}
+              >
+                {webhooks.baseUrl}
+              </span>{" "}
+              ({baseUrlSourceLabel(webhooks.baseUrlSource)}). Twilio signs these
+              exact URLs — re-enter them in Twilio whenever the base URL
+              changes.
+            </p>
+            <ul className="space-y-3">
+              {webhooks.endpoints.map((e) => (
+                <li key={e.id} className="space-y-1">
+                  <span
+                    className="text-sm font-medium"
+                    style={{ color: "hsl(var(--ink-1))" }}
                   >
-                    {e.url}
-                  </code>
-                  <CopyButton value={e.url} label={`Copy ${e.label} URL`} />
-                </div>
-                <p className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
-                  {e.description}
-                </p>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
+                    {e.label}
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <code
+                      className="flex-1 min-w-0 truncate rounded border px-2 py-1 text-xs"
+                      style={{
+                        borderColor: "hsl(var(--line-2))",
+                        backgroundColor: "hsl(var(--surface-2))",
+                        color: "hsl(var(--ink-1))",
+                      }}
+                      title={e.url}
+                    >
+                      {e.url}
+                    </code>
+                    <CopyButton value={e.url} label={`Copy ${e.label} URL`} />
+                  </div>
+                  <p className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
+                    {e.description}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+      </div>
     </Card>
   );
 }

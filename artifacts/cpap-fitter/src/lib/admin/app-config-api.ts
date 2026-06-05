@@ -56,12 +56,22 @@ export interface TwilioWebhookEndpoint {
  * editable "Public webhook base URL" (RESUPPLY_VOICE_PUBLIC_BASE_URL).
  */
 export interface TwilioWebhooksView {
-  /** Resolved public origin, or null when no base URL is configured yet. */
+  /**
+   * The LIVE public origin the running process uses (env / Railway host),
+   * or null when none is configured. Mirrors the runtime readers, NOT a
+   * not-yet-applied saved value.
+   */
   baseUrl: string | null;
-  /** Where the resolved base URL came from. */
-  baseUrlSource: "db" | "env" | "railway" | "unset";
+  /** Where the live base URL came from. */
+  baseUrlSource: "env" | "railway" | "unset";
   /** The catalog key the operator edits to change the base URL. */
   baseUrlKey: string;
+  /**
+   * True when a saved base URL differs from the live origin — it applies
+   * on the next deploy, so the URLs below still reflect the current
+   * process until then.
+   */
+  pendingRestart: boolean;
   /** Full webhook URLs (empty when baseUrl is null). */
   endpoints: TwilioWebhookEndpoint[];
 }

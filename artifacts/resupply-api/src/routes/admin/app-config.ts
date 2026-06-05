@@ -214,42 +214,63 @@ function stripTrailingSlash(s: string): string {
 }
 
 /**
- * Resolve the public origin Twilio webhooks are built from, mirroring
- * the runtime readers (readVoicePublicBaseUrlOrNull / readSmsConfigOrNull):
- * an explicit RESUPPLY_VOICE_PUBLIC_BASE_URL wins, else the Railway host.
- * A value the super-admin just SAVED (db row) is preferred over the
- * currently-live env so the displayed URLs reflect what they're about to
- * point Twilio at — even before the next deploy folds it into the env.
+ * Resolve the public origin Twilio webhooks are built from, mirroring the
+ * runtime readers EXACTLY (readVoicePublicBaseUrlOrNull / readSmsConfigOrNull):
+ * the LIVE process.env value — an explicit RESUPPLY_VOICE_PUBLIC_BASE_URL,
+ * else the Railway host.
+ *
+ * We deliberately do NOT prefer a just-saved DB value here. This is a
+ * "restart" setting: the running process keeps signing inbound Twilio
+ * signatures and building outbound callbacks from process.env until the
+ * boot overlay folds a saved value in on the next deploy. Showing the
+ * not-yet-live value would have an operator point Twilio at URLs the
+ * current process can't verify (signature failures / mismatched
+ * callbacks). The saved-but-pending value is surfaced separately as
+ * `pendingRestart` so the UI can flag that window instead.
  */
 function resolveVoicePublicBaseUrl(dbState: Map<string, DbState>): {
   baseUrl: string | null;
-  source: "db" | "env" | "railway" | "unset";
+  source: "env" | "railway" | "unset";
+  /** A saved DB value differs from the live origin — applies on next deploy. */
+  pendingRestart: boolean;
 } {
-  const db = dbState.get("RESUPPLY_VOICE_PUBLIC_BASE_URL")?.value?.trim();
-  if (db) return { baseUrl: stripTrailingSlash(db), source: "db" };
-  const env = nonEmptyEnv("RESUPPLY_VOICE_PUBLIC_BASE_URL")?.trim();
-  if (env) return { baseUrl: stripTrailingSlash(env), source: "env" };
-  const railwayHost = nonEmptyEnv("RAILWAY_PUBLIC_DOMAIN")?.trim();
-  if (railwayHost) {
-    return {
-      baseUrl: stripTrailingSlash(`https://${railwayHost}`),
-      source: "railway",
-    };
-  }
-  return { baseUrl: null, source: "unset" };
+  const liveExplicit = nonEmptyEnv("RESUPPLY_VOICE_PUBLIC_BASE_URL")?.trim();
+  const liveRailway = nonEmptyEnv("RAILWAY_PUBLIC_DOMAIN")?.trim();
+  const baseUrl = liveExplicit
+    ? stripTrailingSlash(liveExplicit)
+    : liveRailway
+      ? stripTrailingSlash(`https://${liveRailway}`)
+      : null;
+  const source: "env" | "railway" | "unset" = liveExplicit
+    ? "env"
+    : liveRailway
+      ? "railway"
+      : "unset";
+
+  // The boot overlay sets process.env[key] = <db value> on restart, so a
+  // saved value that still differs from the live origin means the deploy
+  // that applies it hasn't happened yet.
+  const saved = dbState.get("RESUPPLY_VOICE_PUBLIC_BASE_URL")?.value?.trim();
+  const pendingRestart =
+    !!saved && stripTrailingSlash(saved) !== (baseUrl ?? "");
+
+  return { baseUrl, source, pendingRestart };
 }
 
 /**
  * The read-only Twilio-webhook reference surfaced on the config page so a
  * super-admin can copy the exact callback URLs into the Twilio Console.
- * Derived from the resolved base URL + the fixed route paths; no secret.
+ * Built from the LIVE base URL the running process actually uses (see
+ * resolveVoicePublicBaseUrl) + the fixed route paths; no secret.
  */
 function buildTwilioWebhooks(dbState: Map<string, DbState>) {
-  const { baseUrl, source } = resolveVoicePublicBaseUrl(dbState);
+  const { baseUrl, source, pendingRestart } =
+    resolveVoicePublicBaseUrl(dbState);
   return {
     baseUrl,
     baseUrlSource: source,
     baseUrlKey: "RESUPPLY_VOICE_PUBLIC_BASE_URL",
+    pendingRestart,
     endpoints: baseUrl
       ? TWILIO_WEBHOOK_ENDPOINTS.map((e) => ({
           id: e.id,
