@@ -159,6 +159,23 @@ export const APP_CONFIG_CATALOG: readonly AppConfigSetting[] = [
     description: "Optional. Outbound fax sender number, E.164 format.",
     placeholder: "+1…",
   },
+  {
+    // KEY === ENV VAR NAME. This is the single public origin every Twilio
+    // webhook callback is built from (voice/SMS/fax inbound + delivery
+    // status), read by readVoicePublicBaseUrlOrNull / readSmsConfigOrNull.
+    // It is also reused for email click-through links. When unset the
+    // runtime falls back to https://${RAILWAY_PUBLIC_DOMAIN}. The exact
+    // full URLs to paste into the Twilio Console are surfaced read-only
+    // on /admin/system/configuration (see the route's twilioWebhooks).
+    key: "RESUPPLY_VOICE_PUBLIC_BASE_URL",
+    label: "Public webhook base URL",
+    category: CATEGORY_TWILIO,
+    secret: false,
+    applyMode: "restart",
+    description:
+      "Public HTTPS origin Twilio calls back into for inbound voice, SMS, and fax webhooks and delivery callbacks (also reused for email links). Leave unset to use the Railway domain. The full webhook URLs to enter in the Twilio Console are listed below.",
+    placeholder: "https://pennfit.up.railway.app",
+  },
 
   // ── SendGrid ──────────────────────────────────────────────────────
   {

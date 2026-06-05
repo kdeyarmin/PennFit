@@ -58,6 +58,7 @@ const FORMAT_RULES: Readonly<Record<string, FormatRule>> = {
   },
   TWILIO_PHONE_NUMBER: E164_RULE,
   TWILIO_FAX_FROM_NUMBER: E164_RULE,
+  RESUPPLY_VOICE_PUBLIC_BASE_URL: URL_RULE,
 
   OFFICE_ALLY_USAGE_INDICATOR: { test: /^[PT]$/, hint: "P or T" },
   OFFICE_ALLY_PORT: { test: /^\d+$/, hint: "a numeric port" },

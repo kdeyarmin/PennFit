@@ -150,6 +150,138 @@ function buildSettingView(
   };
 }
 
+// ── Twilio webhook URL reference ────────────────────────────────────
+// The fixed webhook route paths Twilio is pointed at. Every telephony
+// router is mounted under /resupply-api with no extra sub-prefix (see
+// app.ts → app.use("/resupply-api", router); voice/index.ts etc.), so
+// the full URL an operator pastes into the Twilio Console is just
+// `${publicBaseUrl}${path}`. Status-callback paths are set on outbound
+// calls/messages automatically (the app appends ?conversationId=…); the
+// bare path is shown for completeness + the Console fields that accept
+// one. Keep this list in sync with the actual route definitions.
+const TWILIO_WEBHOOK_ENDPOINTS: ReadonlyArray<{
+  id: string;
+  label: string;
+  description: string;
+  path: string;
+}> = [
+  {
+    id: "voice_inbound",
+    label: "Voice — A call comes in",
+    description:
+      "Twilio Console → Phone Numbers → your number → Voice Configuration → “A call comes in” (Webhook, HTTP POST).",
+    path: "/resupply-api/voice/inbound-reorder",
+  },
+  {
+    id: "voice_status",
+    label: "Voice — Call status changes",
+    description:
+      "Set automatically on outbound calls. Optionally also the number’s “Call status changes” callback.",
+    path: "/resupply-api/voice/status-callback",
+  },
+  {
+    id: "sms_inbound",
+    label: "Messaging — A message comes in",
+    description:
+      "Twilio Console → your number (or Messaging Service) → Messaging → “A message comes in” (Webhook, HTTP POST).",
+    path: "/resupply-api/sms/inbound",
+  },
+  {
+    id: "sms_status",
+    label: "Messaging — Delivery status callback",
+    description:
+      "Set automatically on outbound SMS. Optionally also the Messaging Service “Delivery Status Callback”.",
+    path: "/resupply-api/sms/status-callback",
+  },
+  {
+    id: "fax_inbound",
+    label: "Fax — A fax comes in",
+    description:
+      "Twilio Console → Programmable Fax number → “A fax comes in” (Webhook, HTTP POST).",
+    path: "/resupply-api/fax/inbound",
+  },
+  {
+    id: "fax_status",
+    label: "Fax — Delivery status callback",
+    description:
+      "Set automatically on outbound faxes (delivery lifecycle). No manual Console entry required.",
+    path: "/resupply-api/fax/status-callback",
+  },
+];
+
+function stripTrailingSlash(s: string): string {
+  return s.endsWith("/") ? s.slice(0, -1) : s;
+}
+
+/**
+ * Resolve the public origin Twilio webhooks are built from, mirroring the
+ * runtime readers EXACTLY (readVoicePublicBaseUrlOrNull / readSmsConfigOrNull):
+ * the LIVE process.env value — an explicit RESUPPLY_VOICE_PUBLIC_BASE_URL,
+ * else the Railway host.
+ *
+ * We deliberately do NOT prefer a just-saved DB value here. This is a
+ * "restart" setting: the running process keeps signing inbound Twilio
+ * signatures and building outbound callbacks from process.env until the
+ * boot overlay folds a saved value in on the next deploy. Showing the
+ * not-yet-live value would have an operator point Twilio at URLs the
+ * current process can't verify (signature failures / mismatched
+ * callbacks). The saved-but-pending value is surfaced separately as
+ * `pendingRestart` so the UI can flag that window instead.
+ */
+function resolveVoicePublicBaseUrl(dbState: Map<string, DbState>): {
+  baseUrl: string | null;
+  source: "env" | "railway" | "unset";
+  /** A saved DB value differs from the live origin — applies on next deploy. */
+  pendingRestart: boolean;
+} {
+  const liveExplicit = nonEmptyEnv("RESUPPLY_VOICE_PUBLIC_BASE_URL")?.trim();
+  const liveRailway = nonEmptyEnv("RAILWAY_PUBLIC_DOMAIN")?.trim();
+  const baseUrl = liveExplicit
+    ? stripTrailingSlash(liveExplicit)
+    : liveRailway
+      ? stripTrailingSlash(`https://${liveRailway}`)
+      : null;
+  const source: "env" | "railway" | "unset" = liveExplicit
+    ? "env"
+    : liveRailway
+      ? "railway"
+      : "unset";
+
+  // The boot overlay sets process.env[key] = <db value> on restart, so a
+  // saved value that still differs from the live origin means the deploy
+  // that applies it hasn't happened yet.
+  const saved = dbState.get("RESUPPLY_VOICE_PUBLIC_BASE_URL")?.value?.trim();
+  const pendingRestart =
+    !!saved && stripTrailingSlash(saved) !== (baseUrl ?? "");
+
+  return { baseUrl, source, pendingRestart };
+}
+
+/**
+ * The read-only Twilio-webhook reference surfaced on the config page so a
+ * super-admin can copy the exact callback URLs into the Twilio Console.
+ * Built from the LIVE base URL the running process actually uses (see
+ * resolveVoicePublicBaseUrl) + the fixed route paths; no secret.
+ */
+function buildTwilioWebhooks(dbState: Map<string, DbState>) {
+  const { baseUrl, source, pendingRestart } =
+    resolveVoicePublicBaseUrl(dbState);
+  return {
+    baseUrl,
+    baseUrlSource: source,
+    baseUrlKey: "RESUPPLY_VOICE_PUBLIC_BASE_URL",
+    pendingRestart,
+    endpoints: baseUrl
+      ? TWILIO_WEBHOOK_ENDPOINTS.map((e) => ({
+          id: e.id,
+          label: e.label,
+          description: e.description,
+          url: `${baseUrl}${e.path}`,
+        }))
+      : [],
+  };
+}
+
 async function loadDbState(): Promise<Map<string, DbState>> {
   const supabase = getSupabaseServiceRoleClient();
   const { data, error } = await supabase
@@ -199,6 +331,9 @@ router.get(
       overlayDisabled:
         process.env.APP_CONFIG_OVERLAY_DISABLED === "1" ||
         process.env.APP_CONFIG_OVERLAY_DISABLED === "true",
+      // Read-only: the full Twilio webhook URLs to paste into the Twilio
+      // Console, derived from the (editable) public base URL above.
+      twilioWebhooks: buildTwilioWebhooks(dbState),
     });
   },
 );
