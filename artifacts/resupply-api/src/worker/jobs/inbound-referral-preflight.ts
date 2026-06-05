@@ -39,6 +39,7 @@ import type PgBoss from "pg-boss";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { runReferralPreflight } from "../../lib/inbound-dispatchers/preflight";
+import { isFeatureEnabled } from "../../lib/feature-flags";
 import { logger } from "../../lib/logger";
 import {
   createQueueWithDlq,
@@ -138,6 +139,11 @@ export async function registerInboundReferralPreflightJob(
   await createQueueWithDlq(boss, JOB, VENDOR_SEND_QUEUE_OPTS);
   await boss.work(JOB, async () => {
     try {
+      // Runtime kill switch (admin Control Center). The env var gates
+      // registration; this flag pauses the sweep without changing env.
+      if (!(await isFeatureEnabled("inbound_referrals.dispatcher"))) {
+        return;
+      }
       const stats = await runInboundReferralPreflightTick();
       if (stats.scanned > 0) {
         logger.info(

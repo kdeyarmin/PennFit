@@ -58,6 +58,7 @@ import {
   EmailConfigError,
 } from "@workspace/resupply-email";
 
+import { isFeatureEnabled } from "../../lib/feature-flags";
 import { logger } from "../../lib/logger";
 import {
   createQueueWithDlq,
@@ -269,6 +270,15 @@ export async function registerFailedEmailDigestJob(
   );
   await boss.work(FAILED_EMAIL_DIGEST_JOB, async () => {
     try {
+      // Runtime kill switch (admin Control Center). The env var gates
+      // registration; this flag pauses the digest without changing env.
+      if (!(await isFeatureEnabled("failed_email_digest.dispatcher"))) {
+        logger.info(
+          { event: "failed-order-emails.digest.flag_off" },
+          "failed-order-emails.digest: feature flag off — skipping",
+        );
+        return;
+      }
       const result = await runFailedEmailDigest();
       logger.info(
         {

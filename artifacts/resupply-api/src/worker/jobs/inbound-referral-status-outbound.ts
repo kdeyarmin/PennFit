@@ -46,6 +46,7 @@ import {
 } from "@workspace/resupply-db";
 import { signParachutePayload } from "@workspace/resupply-integrations-parachute";
 
+import { isFeatureEnabled } from "../../lib/feature-flags";
 import { logger } from "../../lib/logger";
 import {
   createQueueWithDlq,
@@ -466,6 +467,11 @@ export async function registerReferralStatusOutboundJob(
   await createQueueWithDlq(boss, JOB, VENDOR_SEND_QUEUE_OPTS);
   await boss.work(JOB, async () => {
     try {
+      // Runtime kill switch (admin Control Center). The env var gates
+      // registration; this flag pauses the callbacks without changing env.
+      if (!(await isFeatureEnabled("inbound_referrals.dispatcher"))) {
+        return;
+      }
       const stats = await runReferralStatusOutbound();
       if (stats.scanned > 0) {
         logger.info(
