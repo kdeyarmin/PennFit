@@ -64,6 +64,8 @@ export const FEATURE_FLAG_KEYS = [
   "eligibility.auto_reverify",
   "fitter_first_day_nudge.dispatcher",
   "fitter_reengage.dispatcher",
+  "failed_email_digest.dispatcher",
+  "inbound_referrals.dispatcher",
 ] as const;
 
 export type FeatureFlagKey = (typeof FEATURE_FLAG_KEYS)[number];

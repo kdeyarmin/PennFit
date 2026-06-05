@@ -38,6 +38,7 @@ import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { dispatchEhrFhir } from "../../lib/inbound-dispatchers/ehr-fhir";
 import { dispatchParachute } from "../../lib/inbound-dispatchers/parachute";
+import { isFeatureEnabled } from "../../lib/feature-flags";
 import { logger } from "../../lib/logger";
 import {
   createQueueWithDlq,
@@ -341,6 +342,11 @@ export async function registerInboundWebhookDispatchJob(
   await createQueueWithDlq(boss, JOB, WEBHOOK_DISPATCH_QUEUE_OPTS);
   await boss.work(JOB, async () => {
     try {
+      // Runtime kill switch (admin Control Center). The env var gates
+      // registration; this flag pauses dispatch without changing env.
+      if (!(await isFeatureEnabled("inbound_referrals.dispatcher"))) {
+        return;
+      }
       const stats = await runInboundWebhookDispatcher();
       if (stats.scanned > 0) {
         logger.info(
