@@ -24,7 +24,6 @@
     "@workspace/resupply-integrations-care-orchestrator": "workspace:*",
     "@workspace/resupply-integrations-davinci-pas": "workspace:*",
     "@workspace/resupply-integrations-ehr-fhir": "workspace:*",
-    "@workspace/resupply-integrations-health-connect": "workspace:*",
     "@workspace/resupply-integrations-office-ally": "workspace:*",
     "@workspace/resupply-integrations-parachute": "workspace:*",
     "@workspace/resupply-integrations-react-health": "workspace:*",

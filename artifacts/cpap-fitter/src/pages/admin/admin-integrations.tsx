@@ -1,7 +1,7 @@
 // /admin/integrations — therapy-cloud vendor health dashboard.
 //
 // Shows each adapter (ResMed AirView, Philips Care Orchestrator,
-// Health Connect) with:
+// React Health) with:
 //   * Availability badge (configured / stub / unavailable).
 //   * Last-7d success vs error counts.
 //   * Top 3 error codes when present.
@@ -37,7 +37,6 @@ const queryKey = ["admin", "integrations", "status"] as const;
 const SOURCE_LABELS: Record<IntegrationAdapterStatus["source"], string> = {
   resmed_airview: "ResMed AirView",
   philips_care: "Philips Care Orchestrator",
-  health_connect: "Health Connect",
   react_health: "React Health (3B iCode)",
 };
 
@@ -62,8 +61,8 @@ export function AdminIntegrationsPage() {
             <ServerCog className="h-6 w-6" /> Therapy-cloud integrations
           </h1>
           <p className="text-sm mt-1" style={{ color: "hsl(var(--ink-3))" }}>
-            ResMed AirView, Philips Care Orchestrator, and Health Connect
-            adapter health over the last 7 days.
+            ResMed AirView, Philips Care Orchestrator, and React Health adapter
+            health over the last 7 days.
           </p>
           <Link
             href="/admin/therapy-fleet"

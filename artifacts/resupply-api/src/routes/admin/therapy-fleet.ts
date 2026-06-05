@@ -4,7 +4,7 @@
 // this surface answers "how is my whole CPAP base doing, and who do I
 // call today?". Both read the same `patient_therapy_nights` rollup that
 // the nightly sync mirrors out of ResMed AirView / Philips Care
-// Orchestrator / React Health / Health Connect.
+// Orchestrator / React Health.
 //
 //   GET  /admin/therapy-fleet/overview                     — KPI tiles
 //   GET  /admin/therapy-fleet/worklist                     — outreach queue

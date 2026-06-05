@@ -337,7 +337,7 @@ The adapters cover three distinct domains:
 
 | Domain                      | Packages                                                                                                                     | Direction       |
 | --------------------------- | ---------------------------------------------------------------------------------------------------------------------------- | --------------- |
-| Therapy-cloud device data   | `-airview` (ResMed), `-care-orchestrator` (Philips), `-react-health` (3B Medical), `-health-connect` (Android, patient-push) | pull / ingest   |
+| Therapy-cloud device data   | `-airview` (ResMed), `-care-orchestrator` (Philips), `-react-health` (3B Medical)                                            | pull / ingest   |
 | Inbound DME order channels  | `-parachute` (HMAC webhook), `-ehr-fhir` (SMART-on-FHIR Backend Services)                                                    | inbound webhook |
 | Payer / claims / prior-auth | `-office-ally` (837P/835/277CA clearinghouse over SFTP), `-davinci-pas` (FHIR PAS prior auth)                                | outbound        |
 

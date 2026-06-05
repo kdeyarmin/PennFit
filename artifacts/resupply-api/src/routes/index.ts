@@ -278,7 +278,7 @@ router.use(patientResupplySummaryRouter);
 // above for the read/import companion.
 router.use(patientTherapyLinksRouter);
 // /admin/patients/:id/integrations — unified "Device data" view
-// across ResMed AirView, Philips Care, and Health Connect. Reads
+// across ResMed AirView, Philips Care, and React Health. Reads
 // from patient_integration_snapshots; refresh endpoint calls the
 // vendor adapter and UPSERTs.
 router.use(patientIntegrationsRouter);

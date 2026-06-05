@@ -2,8 +2,8 @@
 //
 // `patient_therapy_nights` has UNIQUE(patient_id, night_date, source),
 // so the same night can arrive from several feeds. When that happens
-// the lowest-rank feed wins: device clouds first, then the patient-app
-// push (Health Connect), then the React Health pull, then manual entry.
+// the lowest-rank feed wins: device clouds first, then the React Health
+// pull, then manual entry.
 //
 // Every surface that dedupes nights (the patient-facing therapy
 // summary, the provider-facing therapy-usage report, …) MUST share this
@@ -14,9 +14,8 @@
 export const THERAPY_NIGHT_SOURCE_PRIORITY: Record<string, number> = {
   resmed_airview: 0,
   philips_care: 1,
-  health_connect: 2,
-  react_health: 3,
-  manual: 4,
+  react_health: 2,
+  manual: 3,
 };
 
 /** Rank for a source string; unknown / unexpected feeds sort last so a

@@ -2,7 +2,7 @@
 //
 // Pure transforms over data already collected by the existing
 // integration adapters (resupply-integrations-airview, resupply-
-// integrations-care-orchestrator, react-health, health-connect) and
+// integrations-care-orchestrator, react-health) and
 // the smart-trigger evaluator. The /admin/rt-overview route reads
 // the underlying tables and hands the rows here to roll up; no
 // schema additions, no new write paths.

@@ -213,10 +213,6 @@ describe("therapy-cloud integration adapter packages", () => {
       pkg: "resupply-integrations-react-health",
       vendor: "3B Medical React Health",
     },
-    {
-      pkg: "resupply-integrations-health-connect",
-      vendor: "Android Health Connect",
-    },
   ];
 
   for (const { pkg, vendor } of therapyAdapters) {
