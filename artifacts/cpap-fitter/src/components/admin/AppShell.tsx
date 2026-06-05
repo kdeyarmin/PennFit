@@ -961,6 +961,13 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             hint: "Practice settings & integrations",
           },
           {
+            href: "/admin/account-setup",
+            label: "Account Setup",
+            icon: ClipboardCheck,
+            matchPrefix: "/admin/account-setup",
+            hint: "New-account / production launch checklist",
+          },
+          {
             href: "/admin/control-center",
             label: "Control Center",
             icon: ToggleLeft,
