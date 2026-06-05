@@ -46,7 +46,6 @@ import providersRouter from "./admin/providers.js";
 import swoRouter from "./admin/swo.js";
 import complianceAttestationRouter from "./admin/compliance-attestation.js";
 import inboundFaxesRouter from "./admin/inbound-faxes.js";
-import inboundReferralsRouter from "./admin/inbound-referrals.js";
 import equipmentRecallsRouter from "./admin/equipment-recalls.js";
 import analyticsRouter from "./admin/analytics.js";
 import analyticsOutreachAttributionRouter from "./admin/analytics-outreach-attribution.js";
@@ -161,7 +160,6 @@ import priorAuthQueueRouter from "./admin/prior-auth-queue.js";
 import webhookTestSendRouter from "./admin/webhook-test-send.js";
 import payerFeeSchedulesImportRouter from "./admin/payer-fee-schedules-import.js";
 import systemIntegrationsStatusRouter from "./admin/system-integrations-status.js";
-import integrationsInboundRouter from "./integrations-inbound.js";
 import documentationPacketsRouter from "./admin/documentation-packets.js";
 import webhookDeliveryRetryRouter from "./admin/webhook-delivery-retry.js";
 import dispenseReadinessRouter from "./admin/dispense-readiness.js";
@@ -177,7 +175,6 @@ import complianceRulesRouter from "./compliance-rules/index.js";
 import smsRouter from "./sms/index.js";
 import shopRouter from "./shop/index.js";
 import faxRouter from "./fax/index.js";
-import portalClinicianRouter from "./portal-clinician.js";
 import rxRequestDocumentRouter from "./rx-request-document.js";
 import prescriptionRequestsRouter from "./admin/prescription-requests.js";
 import voiceRouter from "./voice/index.js";
@@ -198,12 +195,7 @@ router.use(voiceRouter);
 router.use(smsRouter);
 // /fax/document/:token  — signed cover-letter PDF fetched by Twilio
 // /fax/status-callback  — Twilio fax delivery lifecycle webhook
-router.use(faxRouter);
-// /portal/clinician/:token — public referral status page for EHR
-// partners who don't consume webhook callbacks. Token-gated; no
-// session cookie required.
-router.use(portalClinicianRouter);
-// /rx-request/document/:token — Twilio fetches a fully-rendered
+router.use(faxRouter); // /rx-request/document/:token — Twilio fetches a fully-rendered
 // pre-populated prescription PDF here when an admin dispatches a
 // prescription-request packet. Token-gated; signed HMAC w/ 24h TTL.
 router.use(rxRequestDocumentRouter);
@@ -279,7 +271,7 @@ router.use(patientResupplySummaryRouter);
 // above for the read/import companion.
 router.use(patientTherapyLinksRouter);
 // /admin/patients/:id/integrations — unified "Device data" view
-// across ResMed AirView, Philips Care, and Health Connect. Reads
+// across ResMed AirView, Philips Care, and React Health. Reads
 // from patient_integration_snapshots; refresh endpoint calls the
 // vendor adapter and UPSERTs.
 router.use(patientIntegrationsRouter);
@@ -534,11 +526,7 @@ router.use(webhookTestSendRouter);
 router.use(payerFeeSchedulesImportRouter);
 // /admin/system/integrations-status — admin-facing rollup of every
 // integration's configured/configured-partial/unconfigured posture.
-router.use(systemIntegrationsStatusRouter);
-// /integrations/inbound/:source — public-mount inbound webhook
-// intake for third-party deliveries (Parachute, HSAT vendors, etc).
-router.use(integrationsInboundRouter);
-// /admin/hipaa-breach-incidents — HIPAA §164.404-414 lifecycle.
+router.use(systemIntegrationsStatusRouter); // /admin/hipaa-breach-incidents — HIPAA §164.404-414 lifecycle.
 // /admin/patients/:id/documentation-packets — combined PDF
 // support packets (cover letter + sleep study + Rx + DWO summaries).
 router.use(documentationPacketsRouter);
@@ -672,13 +660,7 @@ router.use(complianceAttestationRouter);
 // The webhook lives at /fax/inbound (mounted elsewhere); this is
 // the CSR-facing surface for listing, attaching to patient/Rx/
 // provider, and archiving.
-router.use(inboundFaxesRouter);
-// /admin/inbound-referrals/* — triage queue for electronic
-// referral orders that landed via /integrations/inbound/parachute
-// (and, in Phase 4, EHR FHIR sources). Mirror of the inbound-faxes
-// surface for the typed-referral schema in migration 0144.
-router.use(inboundReferralsRouter);
-// /admin/equipment-recalls/* — manufacturer recall registry + the
+router.use(inboundFaxesRouter); // /admin/equipment-recalls/* — manufacturer recall registry + the
 // scan endpoint that surfaces affected patients. Required for
 // Philips-DreamStation-style workflows where every DME needs to
 // know which dispensed serials are in the recall lot.

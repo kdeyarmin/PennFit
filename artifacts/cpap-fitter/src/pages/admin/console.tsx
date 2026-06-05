@@ -110,11 +110,6 @@ const AdminInboundFaxesPage = lazy(() =>
     default: m.AdminInboundFaxesPage,
   })),
 );
-const AdminInboundReferralsPage = lazy(() =>
-  import("@/pages/admin/admin-inbound-referrals").then((m) => ({
-    default: m.AdminInboundReferralsPage,
-  })),
-);
 const AdminPrescriptionRequestsPage = lazy(() =>
   import("@/pages/admin/admin-prescription-requests").then((m) => ({
     default: m.AdminPrescriptionRequestsPage,
@@ -817,10 +812,6 @@ function AdminConsole() {
             <Route
               path="/admin/inbound-faxes"
               component={AdminInboundFaxesPage}
-            />
-            <Route
-              path="/admin/inbound-referrals"
-              component={AdminInboundReferralsPage}
             />
             <Route
               path="/admin/patients/:patientId/prescription-requests"

@@ -439,13 +439,6 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             badgeKey: "newInboundFaxes",
           },
           {
-            href: "/admin/inbound-referrals",
-            label: "Inbound referrals",
-            icon: HeartHandshake,
-            matchPrefix: "/admin/inbound-referrals",
-            hint: "New patient referrals from providers awaiting intake",
-          },
-          {
             href: "/admin/equipment-recalls",
             label: "Recalls",
             icon: ShieldCheck,
