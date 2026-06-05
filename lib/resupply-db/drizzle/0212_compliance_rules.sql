@@ -182,7 +182,8 @@ AS $$
     COUNT(*)::bigint AS patients_with_data,
     COUNT(*) FILTER (WHERE nights_over_thr >= required_nights)::bigint AS compliant,
     COUNT(*) FILTER (
-      WHERE nights_over_thr >= floor(required_nights / 2.0)
+      WHERE nights_with_data >= 1
+        AND nights_over_thr >= GREATEST(1, floor(required_nights / 2.0))
         AND nights_over_thr < required_nights
     )::bigint AS at_risk,
     COUNT(*) FILTER (
