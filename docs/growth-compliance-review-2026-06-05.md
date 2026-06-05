@@ -205,8 +205,8 @@ patients who are actually failing their plan's standard. That undermines goal #2
   `lib/resupply-domain/src/outreach-plan.ts` (per-patient override → payer rule
   → default).
 - Thread the resolved thresholds into the RPCs by **parameterizing** the 240 /
-  21 / 30 constants (the RPCs already accept a `windowDays` argument, so this is
-  an extension of an existing shape, not a rewrite).
+  21 / 30 constants. The fleet RPCs already accept `p_window_days`; the
+  setup-adherence RPCs would need an analogous parameter.
 - Respect `scripts/check-resupply-migration-prefix.sh` for the new migration.
 
 **Effort:** ~1–2 weeks (migration + RPC parameterization + a small admin CRUD
