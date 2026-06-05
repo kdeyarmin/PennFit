@@ -130,6 +130,11 @@ const AdminAnalyticsMarginPage = lazy(() =>
     default: m.AdminAnalyticsMarginPage,
   })),
 );
+const AdminAnalyticsRevenueBySourcePage = lazy(() =>
+  import("@/pages/admin/admin-analytics-revenue-by-source").then((m) => ({
+    default: m.AdminAnalyticsRevenueBySourcePage,
+  })),
+);
 const AdminLtvCacPage = lazy(() =>
   import("@/pages/admin/admin-ltv-cac").then((m) => ({
     default: m.AdminLtvCacPage,
@@ -805,6 +810,10 @@ function AdminConsole() {
             <Route
               path="/admin/analytics/margin"
               component={AdminAnalyticsMarginPage}
+            />
+            <Route
+              path="/admin/analytics/revenue-by-source"
+              component={AdminAnalyticsRevenueBySourcePage}
             />
             <Route
               path="/admin/analytics/ltv-cac"
