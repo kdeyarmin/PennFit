@@ -128,8 +128,8 @@ own configured/total count.
 
 ## Caveats
 
-- **ElevenLabs** synthesises patient-facing speech — confirm the
-  ElevenLabs BAA is in place before enabling it against real patients.
+- **ElevenLabs** synthesises patient-facing speech (PHI); it is covered by
+  the executed ElevenLabs BAA.
 - **SendGrid From address** stays fixed at `info@pennpaps.com` (the "One
   From address" hard rule); only the display name is editable here.
 - Migration 0211 has not been baselined into production's migration

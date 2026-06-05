@@ -5,11 +5,10 @@ ship **built but OFF**. Companion to the analysis in
 [`docs/growth-compliance-review-2026-06-05.md`](../growth-compliance-review-2026-06-05.md)
 — that doc explains _what_ each lever is; this one is the _how_.
 
-> **Before flipping anything that contacts patients:** confirm (a) the
+> **Before flipping anything that contacts patients:** confirm the
 > patient population's **consent** for the channel (marketing opt-in /
-> transactional via `communication_preferences`), and (b) the relevant
-> **vendor BAA** (Twilio for SMS, SendGrid for email). The jobs are off
-> by design — each is a deliberate go-live. Turn on **one at a time** and
+> transactional via `communication_preferences`). The jobs are off by
+> design — each is a deliberate go-live. Turn on **one at a time** and
 > watch the result before the next.
 
 There are two switch types:
@@ -24,7 +23,7 @@ There are two switch types:
 
 ## A. Already done (no action)
 
-These DB feature flags were set explicitly on 2026-06-05 (consent/BAA
+These DB feature flags were set explicitly on 2026-06-05 (consent
 confirmed by the owner): `reminder_escalation.dispatcher`,
 `storefront.auto_reminder_enrollment`, `therapy_fleet.auto_outreach` —
 all **ON**. The order-time guards `resupply.entitlement_enforcement`,
@@ -43,7 +42,7 @@ Variable**, set the value, save (Railway redeploys). Verify with the
 ### B1. Failed-order-email recovery digest (pure upside — start here)
 
 Recovers orders whose confirmation email silently failed. Internal email
-only (no patient contact) — **no consent/BAA gate**.
+only (no patient contact) — **no consent gate**.
 
 - [ ] Set `RESUPPLY_FAILED_EMAIL_DIGEST_ENABLED=1`
 - [ ] Set `RESUPPLY_ADMIN_ALERTS_EMAIL=<ops inbox>` (required recipient)
@@ -57,7 +56,7 @@ Hourly nudge to patients who left a cart. Patient email — **consent-gated
 by `communication_preferences.emailMarketing`** (the shared dispatcher
 suppresses non-consented + DND + 24 h cooldown).
 
-- [ ] Consent + SendGrid BAA confirmed
+- [ ] Consent confirmed
 - [ ] Set `RESUPPLY_CART_ABANDONMENT_CRON_ENABLED=1`
 - **Job:** `cart-abandonment-scan` (hourly :13). (Without it, abandoned
   carts are nudged only when a CSR clicks "send due" in admin.)
@@ -70,7 +69,7 @@ suppresses non-consented + DND + 24 h cooldown).
 Note: its runtime flag `fitter_supply_campaign.dispatcher` is already ON;
 this env gate is the second lock.
 
-- [ ] Consent + SendGrid BAA confirmed
+- [ ] Consent confirmed
 - [ ] Set `RESUPPLY_FITTER_SUPPLY_CAMPAIGN_ENABLED=1`
 - **Jobs:** `fitter-supply-campaign` + `fitter-conversion-attribution`.
 - **Check:** `/admin/analytics/outreach-attribution` (once #506 ships) or
@@ -82,7 +81,7 @@ Non-adherence clinical nudges on a schedule you choose. Patient SMS/email
 — **consent-gated**; respects the 14-day `clinical_outreach_log`
 cooldown.
 
-- [ ] Consent + Twilio/SendGrid BAA confirmed
+- [ ] Consent confirmed
 - [ ] Set `CLINICAL_OUTREACH_CRON="0 15 * * *"` (example: daily 15:00 UTC;
       any 5-field cron)
 - **Job:** `clinical-outreach-batch`.
@@ -114,7 +113,7 @@ auto-fax** — a CSR still reviews and sends. No patient contact.
 
 1. **B1** (internal only — zero patient-contact risk).
 2. **B6**, **B5** (compliance/billing; no patient messages).
-3. **B2**, **B3** (sales email — after consent/BAA sign-off).
+3. **B2**, **B3** (sales email — after consent sign-off).
 4. **B4** (clinical SMS/email — the most sensitive; last).
 
 Flip one, let it run a cycle, confirm the "check" line and that CSR alert

@@ -46,7 +46,6 @@ vendor switch (Bandwidth, Vonage, Postmark) does not touch business code.
 
 ## TODO
 
-- [BUSINESS REVIEW] Confirm Twilio Enterprise plan + executed BAA before
-  going live.
+- [DONE] Twilio BAA is executed (covers SMS, Voice, and SendGrid email).
 - [BUSINESS REVIEW] 10DLC brand and campaign registration is a 2–4 week
   process; start in parallel with code work.

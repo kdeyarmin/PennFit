@@ -111,7 +111,7 @@ export const APP_CONFIG_CATALOG: readonly AppConfigSetting[] = [
     secret: true,
     applyMode: "restart",
     description:
-      "Optional. When set, ElevenLabs becomes the voice agent's TTS voice. Confirm the ElevenLabs BAA is in place before using with real patients.",
+      "Optional. When set, ElevenLabs becomes the voice agent's TTS voice. Patient-facing speech is covered by the executed ElevenLabs BAA.",
   },
 
   // ── Twilio ────────────────────────────────────────────────────────
