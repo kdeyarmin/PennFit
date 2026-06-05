@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { useFitterStore } from "@/hooks/use-fitter-store";
 import { useDocumentTitle } from "@/hooks/use-document-title";
@@ -47,6 +47,14 @@ export function OrderSuccess() {
     null,
   );
   const [copied, setCopied] = useState(false);
+  const copyTimerRef = useRef<number | null>(null);
+  useEffect(
+    () => () => {
+      if (copyTimerRef.current !== null)
+        window.clearTimeout(copyTimerRef.current);
+    },
+    [],
+  );
 
   const handleCopyReference = () => {
     const ref = confirmation?.orderReference;
@@ -55,7 +63,9 @@ export function OrderSuccess() {
       .writeText(ref)
       .then(() => {
         setCopied(true);
-        window.setTimeout(() => setCopied(false), 2000);
+        if (copyTimerRef.current !== null)
+          window.clearTimeout(copyTimerRef.current);
+        copyTimerRef.current = window.setTimeout(() => setCopied(false), 2000);
       })
       .catch(() => {
         /* clipboard blocked (e.g. insecure context) — the reference is

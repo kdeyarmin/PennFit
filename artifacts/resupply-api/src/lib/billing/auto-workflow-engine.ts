@@ -299,7 +299,17 @@ async function runStatementPass(
       });
     if (insertErr) {
       // Don't publish the event if we couldn't arm the cooldown —
-      // otherwise the next cron iteration would re-publish.
+      // otherwise the next cron iteration would re-publish. Count + log it
+      // (was a silent `continue`) so a systemic insert failure shows up in
+      // the tick summary instead of looking like "no statements were due."
+      stats.errors += 1;
+      logger.warn(
+        {
+          err: insertErr.message,
+          patientId,
+        },
+        "auto-workflow.statements: placeholder insert failed",
+      );
       continue;
     }
     void publishEvent({

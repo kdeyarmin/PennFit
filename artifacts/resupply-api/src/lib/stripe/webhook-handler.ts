@@ -432,11 +432,29 @@ export const stripeWebhookHandler: RequestHandler = async (
           const buyerEmail =
             session.customer_details?.email ?? session.customer_email ?? null;
           if (buyerEmail) {
-            await tryAutoEnrollReminderFromOrder({
-              email: buyerEmail,
-              lineItems: emailItems,
-              log,
-            });
+            // Wrapped for parity with the other best-effort side effects in
+            // this branch (markPaid / sync / cart / email). A throw here
+            // would 500 the webhook, roll back the event dedup row, and
+            // make Stripe re-fire ALL side effects on retry. The callee is
+            // internally guarded today, but the call site must not depend
+            // on that (its own header says "the caller wraps this").
+            try {
+              await tryAutoEnrollReminderFromOrder({
+                email: buyerEmail,
+                lineItems: emailItems,
+                log,
+              });
+            } catch (enrollErr) {
+              log.warn(
+                {
+                  err:
+                    enrollErr instanceof Error
+                      ? enrollErr.message
+                      : String(enrollErr),
+                },
+                "stripe webhook: reminder auto-enroll failed (non-fatal)",
+              );
+            }
           }
         }
         break;

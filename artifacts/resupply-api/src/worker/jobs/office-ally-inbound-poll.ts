@@ -72,6 +72,7 @@ import { analyzeDenial } from "../../lib/billing/ai-denial-analyzer";
 import { reconcileEra } from "../../lib/billing/era-reconciler";
 import { resolveClearinghouse } from "../../lib/billing/identity-resolver";
 import { logger } from "../../lib/logger";
+import { publishEvent } from "../../lib/webhooks/publisher";
 import {
   createQueueWithDlq,
   VENDOR_SEND_QUEUE_OPTS,
@@ -663,7 +664,7 @@ export async function dispatch271(
   const { data: check } = await supabase
     .schema("resupply")
     .from("eligibility_checks")
-    .select("id")
+    .select("id, patient_id, insurance_coverage_id")
     .eq("isa_control_number", isaCtl)
     .order("requested_at", { ascending: false })
     .limit(1)
@@ -700,6 +701,20 @@ export async function dispatch271(
       } as unknown as Json,
     })
     .eq("id", inboundFileId);
+  // 271-arrival signal — fire a webhook event so the CSR queue /
+  // subscribers can react the moment coverage detail lands, instead of
+  // polling the eligibility worklist. IDs + flags only, no PHI in the
+  // payload (member id, deductible amounts, etc. stay on the row).
+  void publishEvent({
+    eventType: "eligibility.completed",
+    payload: {
+      eligibility_check_id: check.id,
+      patient_id: check.patient_id,
+      insurance_coverage_id: check.insurance_coverage_id,
+      is_active: parsed.isActive,
+      requires_prior_auth: parsed.requiresPriorAuth,
+    },
+  });
 }
 
 function summarise999(p: Parsed999): Record<string, unknown> {

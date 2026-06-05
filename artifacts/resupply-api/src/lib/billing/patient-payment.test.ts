@@ -12,9 +12,12 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 
 import {
+  getSupabaseRpcArgs,
+  getSupabaseRpcCallCount,
   getSupabaseWritePayloads,
   installSupabaseMock,
   stageSupabaseResponse,
+  stageSupabaseRpcResponse,
 } from "../../test-helpers/supabase-mock";
 
 const supabaseMock = installSupabaseMock();
@@ -71,88 +74,52 @@ describe("createPaymentIntent — validation paths", () => {
   });
 });
 
-describe("applySucceededPayment — allocation walk", () => {
+describe("applySucceededPayment — delegates to the atomic RPC", () => {
   beforeEach(() => supabaseMock.reset());
 
-  it("decrements patient_responsibility_cents on each allocated claim", async () => {
-    const supabase = installSupabaseMock(); // get a real reference
-    // 1. patient_payments lookup
-    stageSupabaseResponse("patient_payments", "select", {
-      data: {
-        id: "p-1",
-        status: "succeeded",
-        patient_id: PATIENT,
-        applied_claims_json: [{ claimId: CLAIM1, amountAppliedCents: 4000 }],
-      },
-    });
-    // 2. insurance_claims lookup
-    stageSupabaseResponse("insurance_claims", "select", {
-      data: { id: CLAIM1, patient_responsibility_cents: 12500 },
-    });
-    // applySucceededPayment now uses a CAS-with-retry loop: the UPDATE
-    // requires patient_responsibility_cents to still match the
-    // pre-read value, and the .select("id") return shape tells us
-    // whether THIS writer won the race vs needing to retry. Stage
-    // a one-row array so the first attempt wins.
-    stageSupabaseResponse("insurance_claims", "update", {
-      data: [{ id: CLAIM1 }],
-    });
-    stageSupabaseResponse("insurance_claim_events", "insert", { data: {} });
-    void supabase;
-    // Run.
+  // The decrement / clamp-to-zero / idempotency behavior now lives in the
+  // resupply.apply_patient_payment() SQL function (migration 0214) so the
+  // ledger-claim + decrement commit in ONE transaction. That behavior is
+  // exercised against a real Postgres by the "0214 apply_patient_payment —
+  // behavior (live db)" suite in
+  // lib/resupply-db/scripts/migration-pr-changes.test.ts (CI migrations
+  // job); here we only assert the TS wrapper invokes the RPC correctly and
+  // surfaces its errors.
+
+  it("calls apply_patient_payment with the payment id", async () => {
+    stageSupabaseRpcResponse("apply_patient_payment", { data: null });
     const realSupabase = (
       await import("@workspace/resupply-db")
     ).getSupabaseServiceRoleClient();
     await applySucceededPayment(realSupabase, "p-1");
-    const claimUpdates = getSupabaseWritePayloads("insurance_claims", "update");
-    expect(claimUpdates).toHaveLength(1);
-    expect(
-      (claimUpdates[0] as Record<string, unknown>).patient_responsibility_cents,
-    ).toBe(8500); // 12500 - 4000
-    const events = getSupabaseWritePayloads("insurance_claim_events", "insert");
-    expect(events).toHaveLength(1);
-    expect((events[0] as Record<string, unknown>).event_type).toBe("note");
-    expect((events[0] as Record<string, unknown>).amount_cents).toBe(4000);
+    expect(getSupabaseRpcCallCount("apply_patient_payment")).toBe(1);
+    expect(getSupabaseRpcArgs("apply_patient_payment")[0]).toEqual({
+      p_payment_id: "p-1",
+    });
   });
 
-  it("clamps to zero rather than going negative", async () => {
-    stageSupabaseResponse("patient_payments", "select", {
-      data: {
-        id: "p-2",
-        status: "succeeded",
-        patient_id: PATIENT,
-        applied_claims_json: [{ claimId: CLAIM1, amountAppliedCents: 99999 }],
-      },
-    });
-    stageSupabaseResponse("insurance_claims", "select", {
-      data: { id: CLAIM1, patient_responsibility_cents: 100 },
-    });
-    // applySucceededPayment now uses a CAS-with-retry loop: the UPDATE
-    // requires patient_responsibility_cents to still match the
-    // pre-read value, and the .select("id") return shape tells us
-    // whether THIS writer won the race vs needing to retry. Stage
-    // a one-row array so the first attempt wins.
-    stageSupabaseResponse("insurance_claims", "update", {
-      data: [{ id: CLAIM1 }],
-    });
-    stageSupabaseResponse("insurance_claim_events", "insert", { data: {} });
+  it("can be called more than once for the same payment (idempotent re-run)", async () => {
+    stageSupabaseRpcResponse("apply_patient_payment", { data: null });
+    stageSupabaseRpcResponse("apply_patient_payment", { data: null });
     const realSupabase = (
       await import("@workspace/resupply-db")
     ).getSupabaseServiceRoleClient();
-    await applySucceededPayment(realSupabase, "p-2");
-    const claimUpdates = getSupabaseWritePayloads("insurance_claims", "update");
-    expect(
-      (claimUpdates[0] as Record<string, unknown>).patient_responsibility_cents,
-    ).toBe(0);
+    await applySucceededPayment(realSupabase, "p-1");
+    await applySucceededPayment(realSupabase, "p-1");
+    expect(getSupabaseRpcCallCount("apply_patient_payment")).toBe(2);
+    // No double-decrement worry at this layer — the SQL ledger dedups.
   });
 
-  it("is a no-op when the payment row is missing", async () => {
-    stageSupabaseResponse("patient_payments", "select", { data: null });
+  it("throws when the RPC returns an error", async () => {
+    stageSupabaseRpcResponse("apply_patient_payment", {
+      error: { message: "boom" },
+    });
     const realSupabase = (
       await import("@workspace/resupply-db")
     ).getSupabaseServiceRoleClient();
-    await applySucceededPayment(realSupabase, "missing");
-    expect(getSupabaseWritePayloads("insurance_claims", "update")).toEqual([]);
+    await expect(
+      applySucceededPayment(realSupabase, "p-err"),
+    ).rejects.toThrow();
   });
 });
 

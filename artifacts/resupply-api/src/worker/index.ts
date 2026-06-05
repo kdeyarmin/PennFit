@@ -47,6 +47,7 @@ import { registerCartAbandonmentJob } from "./jobs/cart-abandonment-scan.js";
 import { registerFailedEmailDigestJob } from "./jobs/failed-order-emails-digest.js";
 import { registerTherapyNightlySyncJob } from "./jobs/therapy-integrations-nightly-sync.js";
 import { registerEligibilityReverifyBatchJob } from "./jobs/eligibility-reverify-batch.js";
+import { registerAutoSubmitBatchJob } from "./jobs/auto-submit-batch.js";
 import { registerClinicalOutreachBatchJob } from "./jobs/clinical-outreach-batch.js";
 import { registerTherapyFleetSnapshotJob } from "./jobs/therapy-fleet-daily-snapshot.js";
 import { registerMetricsSnapshotJob } from "./jobs/metrics-snapshot.js";
@@ -474,6 +475,14 @@ async function doStartWorker(): Promise<void> {
   // always register; the recurring cron only attaches when
   // ELIGIBILITY_REVERIFY_CRON is set (opt-in — it emits outbound 270s).
   await registerEligibilityReverifyBatchJob(boss);
+
+  // Automatic claim submission (auto-submit engine). Queue + worker
+  // always register (so the operator "approve & submit" route works);
+  // the recurring cron attaches only when CLAIMS_AUTOSUBMIT_CRON is set,
+  // and even then transmits nothing until the billing.auto_submit_claims
+  // feature flag is flipped ON in the admin Control Center (opt-in — it
+  // emits outbound 837P claim files).
+  await registerAutoSubmitBatchJob(boss);
 
   // Proactive clinical outreach (RT #23). Queue + worker always register;
   // the recurring cron only attaches when CLINICAL_OUTREACH_CRON is set

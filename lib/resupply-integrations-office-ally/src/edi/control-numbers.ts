@@ -44,9 +44,20 @@ export function allocateControlNumbers(
   input: AllocateControlNumbersInput,
 ): ControlNumbers {
   const sequence = input.sequence ?? 1;
-  // The numeric base is (seconds-since-2025) * 10 + sequence.
-  // 2025-01-01T00:00:00Z = 1735689600 — we subtract that so the
-  // resulting digits comfortably fit in 9 digits past 2050.
+  // The numeric base is (seconds-since-2025) * 10 + (sequence % 10).
+  // 2025-01-01T00:00:00Z = 1735689600 — we subtract that to keep the
+  // value small.
+  //
+  // CAUTION: this base crosses 1_000_000_000 at ~(1e8 seconds) ≈ 3.17
+  // years past the epoch, i.e. around 2028-03, NOT "past 2050". After
+  // that point `base % MOD` wraps, and the `* 10 + sequence%10` term caps
+  // the time-derived value at 10 distinct slots/second. Correctness does
+  // NOT depend on the time-derived value being unique or strictly
+  // increasing: the `previousHighest` guard below (MAX ISA13 read from the
+  // DB by the persistence layer) is what guarantees strict monotonicity —
+  // after the 2028 wrap, allocation simply continues as previousHigh + 1.
+  // The only property lost at the wrap is the cosmetic "later submission
+  // sorts higher by its time-derived digits."
   const epochSecs2025 = 1735689600;
   const nowSecs = Math.floor(input.submittedAt / 1000);
   const base = Math.max(0, (nowSecs - epochSecs2025) * 10 + (sequence % 10));

@@ -73,9 +73,13 @@ export function makeVerifyEmailHandler(deps: AuthDeps) {
     // forgot-password handlers — without recording up-front, an attacker
     // could spam Zod-parse failures (or pre-hash invalidation) to bypass
     // the cap before sending real probes.
+    // ip: null — the per-IP sign-in bucket counts every success:false row
+    // for an IP regardless of email_lower, so a real `ip` here would bleed
+    // verify-email attempts into the sign-in lockout. The IP is preserved
+    // in `ipSentinel` (__verify:<ip>) for the per-endpoint bucket.
     void deps.repo.recordLoginAttempt({
       emailLower: ipSentinel,
-      ip,
+      ip: null,
       success: false,
     });
 

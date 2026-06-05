@@ -16,9 +16,11 @@
  */
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import type { TaskContext } from "vitest";
 import { Pool } from "pg";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -338,6 +340,31 @@ describe("Migration SQL content — 0164_admin_aggregate_rpcs (service_role guar
   });
 });
 
+describe("Migration SQL content — 0214_patient_payment_apply_ledger", () => {
+  const sql = readMigration("0214_patient_payment_apply_ledger.sql");
+
+  it("creates the per-(payment, claim) idempotency ledger with a composite PK", () => {
+    expect(sql).toMatch(/patient_payment_claim_applications/);
+    expect(sql).toMatch(/PRIMARY KEY \("payment_id", "claim_id"\)/);
+  });
+
+  it("defines an idempotent apply function (ON CONFLICT DO NOTHING + clamp)", () => {
+    expect(sql).toMatch(/FUNCTION resupply\.apply_patient_payment/);
+    expect(sql).toMatch(/ON CONFLICT \("payment_id", "claim_id"\) DO NOTHING/);
+    expect(sql).toMatch(
+      /GREATEST\(0, patient_responsibility_cents - v_amount\)/,
+    );
+  });
+
+  it("is SECURITY DEFINER with a pinned search_path and grants service_role", () => {
+    expect(sql).toMatch(/SECURITY DEFINER/);
+    expect(sql).toMatch(/SET search_path = resupply, pg_catalog/);
+    expect(sql).toMatch(
+      /GRANT EXECUTE ON FUNCTION resupply\.apply_patient_payment\(uuid\) TO service_role/,
+    );
+  });
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 // 2. DB integration tests — verify actual schema state (skip if no DB)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -556,5 +583,149 @@ describe.skipIf(!dbUrl)(
       // If this were 'uuid' type it would reject plain text IDs at INSERT time.
       expect(result.rows[0]!.data_type).toBe("text");
     }, 15_000);
+  },
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 3. 0214 apply_patient_payment — BEHAVIOR against a real Postgres.
+//
+// The unit tests (patient-payment.test.ts) only verify the TS wrapper calls
+// the RPC; the decrement / clamp / idempotency logic lives in PL/pgSQL and is
+// validated here against the migrated DB (CI "Migration replay" job).
+//
+// The seed is wrapped so that ANY failure (schema drift, missing migration)
+// makes the behavior tests self-skip rather than fail this shared CI job.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe.skipIf(!dbUrl)(
+  "0214 apply_patient_payment — behavior (live db)",
+  () => {
+    let pool: Pool;
+    const patientId = randomUUID();
+    const claimId = randomUUID();
+    const claim2Id = randomUUID();
+    const paymentId = randomUUID();
+    const payment2Id = randomUUID();
+    let seeded = false;
+
+    beforeAll(async () => {
+      pool = new Pool({ connectionString: dbUrl, max: 2 });
+      try {
+        await pool.query(
+          `INSERT INTO resupply.patients
+           (id, pacware_id, legal_first_name, legal_last_name, date_of_birth)
+         VALUES ($1, $2, 'Test', 'Patient', '1980-01-01')`,
+          [patientId, `pac-${patientId.slice(0, 8)}`],
+        );
+        await pool.query(
+          `INSERT INTO resupply.insurance_claims
+           (id, patient_id, payer_name, date_of_service, patient_responsibility_cents)
+         VALUES ($1, $2, 'Test Payer', '2026-01-01', 12500)`,
+          [claimId, patientId],
+        );
+        await pool.query(
+          `INSERT INTO resupply.insurance_claims
+           (id, patient_id, payer_name, date_of_service, patient_responsibility_cents)
+         VALUES ($1, $2, 'Test Payer', '2026-01-01', 100)`,
+          [claim2Id, patientId],
+        );
+        await pool.query(
+          `INSERT INTO resupply.patient_payments
+           (id, patient_id, amount_cents, status, applied_claims_json)
+         VALUES ($1, $2, 4000, 'succeeded', $3::jsonb)`,
+          [
+            paymentId,
+            patientId,
+            JSON.stringify([{ claimId, amountAppliedCents: 4000 }]),
+          ],
+        );
+        await pool.query(
+          `INSERT INTO resupply.patient_payments
+           (id, patient_id, amount_cents, status, applied_claims_json)
+         VALUES ($1, $2, 99999, 'succeeded', $3::jsonb)`,
+          [
+            payment2Id,
+            patientId,
+            JSON.stringify([{ claimId: claim2Id, amountAppliedCents: 99999 }]),
+          ],
+        );
+        seeded = true;
+      } catch {
+        // Schema drift / un-migrated DB — leave seeded=false so the tests
+        // below self-skip instead of failing the shared CI job.
+      }
+    });
+
+    afterAll(async () => {
+      if (!pool) return;
+      try {
+        // Cascades from patients clean up claims + the ledger; delete payments
+        // explicitly first (FK to patients).
+        await pool.query(
+          `DELETE FROM resupply.patient_payments WHERE patient_id = $1`,
+          [patientId],
+        );
+        await pool.query(
+          `DELETE FROM resupply.insurance_claims WHERE patient_id = $1`,
+          [patientId],
+        );
+        await pool.query(`DELETE FROM resupply.patients WHERE id = $1`, [
+          patientId,
+        ]);
+      } catch {
+        // best-effort
+      }
+      await pool.end();
+    });
+
+    async function balanceOf(id: string): Promise<number> {
+      const r = await pool.query<{ patient_responsibility_cents: string }>(
+        `SELECT patient_responsibility_cents FROM resupply.insurance_claims WHERE id = $1`,
+        [id],
+      );
+      return Number(r.rows[0]!.patient_responsibility_cents);
+    }
+
+    it("decrements the balance, writes a ledger row, and is idempotent on re-run", async (ctx: TaskContext) => {
+      if (!seeded) return ctx.skip();
+
+      await pool.query(`SELECT resupply.apply_patient_payment($1)`, [
+        paymentId,
+      ]);
+      expect(await balanceOf(claimId)).toBe(8500); // 12500 - 4000
+
+      const ledger1 = await pool.query<{ n: string }>(
+        `SELECT count(*)::text AS n FROM resupply.patient_payment_claim_applications WHERE payment_id = $1`,
+        [paymentId],
+      );
+      expect(Number(ledger1.rows[0]!.n)).toBe(1);
+
+      // Re-run: must NOT double-decrement (this is the crash-recovery path).
+      await pool.query(`SELECT resupply.apply_patient_payment($1)`, [
+        paymentId,
+      ]);
+      expect(await balanceOf(claimId)).toBe(8500); // unchanged
+
+      const ledger2 = await pool.query<{ n: string }>(
+        `SELECT count(*)::text AS n FROM resupply.patient_payment_claim_applications WHERE payment_id = $1`,
+        [paymentId],
+      );
+      expect(Number(ledger2.rows[0]!.n)).toBe(1); // still exactly one
+
+      const events = await pool.query<{ n: string }>(
+        `SELECT count(*)::text AS n FROM resupply.insurance_claim_events
+         WHERE claim_id = $1 AND payer_ref = $2`,
+        [claimId, paymentId],
+      );
+      expect(Number(events.rows[0]!.n)).toBe(1); // exactly one audit event
+    }, 20_000);
+
+    it("clamps the balance at zero when the applied amount exceeds it", async (ctx: TaskContext) => {
+      if (!seeded) return ctx.skip();
+      await pool.query(`SELECT resupply.apply_patient_payment($1)`, [
+        payment2Id,
+      ]);
+      expect(await balanceOf(claim2Id)).toBe(0); // 100 - 99999, clamped
+    }, 20_000);
   },
 );

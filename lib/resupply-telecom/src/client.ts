@@ -35,12 +35,12 @@ export interface PlaceCallInput {
    * manually); the AI place-call path always sets it.
    */
   statusCallbackUrl?: string;
-  /**
-   * If true, Twilio will record the call. We pass false explicitly so
-   * a future SDK default flip doesn't start sending PHI audio to
-   * Twilio storage without us noticing.
-   */
-  record?: boolean;
+  // NOTE: there is intentionally NO `record` option. Call recording is
+  // ALWAYS off (PHI hard rule — we persist the transcript, never the
+  // audio). `placeCall` passes `record: false` to Twilio explicitly so a
+  // future SDK default flip can't start shipping PHI audio to Twilio
+  // storage. Exposing a `record` flag would be a foot-gun, so the
+  // always-off invariant is enforced at the type level by its absence.
   /**
    * Hard cap (seconds) on the call. Defaults to 600s (10 min) — long
    * enough for normal resupply flows, short enough that a stuck

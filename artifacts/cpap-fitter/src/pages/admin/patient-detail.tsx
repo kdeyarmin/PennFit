@@ -1466,8 +1466,30 @@ function FaxOutreachTab({
   }
 
   useEffect(() => {
-    void refresh();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // Cancellation guard: if patientId changes (or the tab unmounts) while
+    // a load is in flight, a slow earlier response must not overwrite the
+    // newer patient's data. Mirrors the house pattern in shop.tsx /
+    // account.tsx. (The manual refresh() above is used by submit(), where
+    // the patientId can't change mid-flight, so it needs no guard.)
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    listPatientPhysicianFaxOutreach(patientId)
+      .then((r) => {
+        if (cancelled) return;
+        setRows(r.outreach);
+        setProviderConfigured(r.providerConfigured);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setError(err instanceof Error ? err.message : String(err));
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [patientId]);
 
   // Compose form local state.

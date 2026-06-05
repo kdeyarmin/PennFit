@@ -29,7 +29,7 @@
 // not in the allow-list is silently coerced to `defaultValue`, so the
 // page can't be put into an unrecognised state via a hand-edited URL.
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 export interface UseUrlStateOptions<T extends string> {
   key: string;
@@ -47,6 +47,11 @@ export function useUrlState<T extends string>(
     return raw && isAllowed(raw) ? raw : defaultValue;
   };
   const [value, setValueState] = useState<T>(read);
+  // Keep the latest `read` in a ref so the mount-only popstate listener
+  // below always rehydrates against the current key/defaultValue/isAllowed
+  // instead of the values captured on first render.
+  const readRef = useRef(read);
+  readRef.current = read;
   const setValue = (next: T): void => {
     setValueState(next);
     if (typeof window === "undefined") return;
@@ -59,13 +64,11 @@ export function useUrlState<T extends string>(
     window.history.replaceState(window.history.state, "", newUrl);
   };
   useEffect(() => {
-    const handler = (): void => setValueState(read());
+    // Mount-only listener; it reads through readRef so back/forward
+    // rehydrates against the latest props, not first-render captures.
+    const handler = (): void => setValueState(readRef.current());
     window.addEventListener("popstate", handler);
     return () => window.removeEventListener("popstate", handler);
-    // `read` closes over `key`/`defaultValue`/`isAllowed`; callers that
-    // need to change those after mount are not a supported case (the
-    // param key isn't expected to vary across the lifetime of a page).
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   return [value, setValue];
 }

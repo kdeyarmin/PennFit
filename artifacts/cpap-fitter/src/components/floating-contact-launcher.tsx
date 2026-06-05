@@ -307,8 +307,16 @@ export function FloatingContactLauncher() {
   // No PHI, no message content; we only record that PennBot was opened
   // and the route the user was on. This lets the team see whether the
   // chatbot is being used and which pages drive engagement.
+  //
+  // Gate on the false->true transition of `open`: depending on `location`
+  // without this guard re-fired chat_opened on every navigation while the
+  // panel stayed open, inflating the funnel count.
+  const wasChatOpenRef = useRef(false);
   useEffect(() => {
-    if (open) track("chat_opened", { path: location });
+    if (open && !wasChatOpenRef.current) {
+      track("chat_opened", { path: location });
+    }
+    wasChatOpenRef.current = open;
   }, [open, location]);
 
   // Site-wide keyboard shortcuts:

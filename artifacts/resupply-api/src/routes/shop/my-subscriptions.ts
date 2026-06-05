@@ -465,9 +465,13 @@ router.post(
     name: "shop:pause-sub",
     keyFn: (req) => req.userCustomerId ?? "unknown",
   }),
-  (req, res) => {
-    void handlePauseOrResume("pause", req, res);
-  },
+  // Return the promise so Express 5 awaits it and routes any rejection to
+  // the error handler. `void`-ing it instead would turn a pre-response
+  // throw (e.g. findOwnedSubscription's `throw error` on a Supabase blip)
+  // into an unhandledRejection, which the boot-level trap escalates to
+  // process.exit(1) — taking the whole site down for one customer's DB
+  // hiccup, violating the decoupled-boot contract.
+  (req, res) => handlePauseOrResume("pause", req, res),
 );
 
 router.post(
@@ -479,9 +483,9 @@ router.post(
     name: "shop:resume-sub",
     keyFn: (req) => req.userCustomerId ?? "unknown",
   }),
-  (req, res) => {
-    void handlePauseOrResume("resume", req, res);
-  },
+  // See the pause route above: return (not `void`) the promise so a
+  // pre-response throw can't become a process-killing unhandledRejection.
+  (req, res) => handlePauseOrResume("resume", req, res),
 );
 
 // Cadence change. Body: { priceId }. Swaps the (single) subscription
