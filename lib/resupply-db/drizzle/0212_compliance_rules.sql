@@ -187,8 +187,8 @@ AS $$
         AND nights_over_thr < required_nights
     )::bigint AS at_risk,
     COUNT(*) FILTER (
-      WHERE nights_over_thr < floor(required_nights / 2.0)
-        AND nights_with_data >= 1
+      WHERE nights_with_data >= 1
+        AND nights_over_thr < GREATEST(1, floor(required_nights / 2.0))
     )::bigint AS non_compliant,
     COUNT(*) FILTER (WHERE nights_with_data = 0)::bigint AS no_recent_data,
     COUNT(*) FILTER (WHERE avg_ahi >= 5)::bigint AS high_ahi,
