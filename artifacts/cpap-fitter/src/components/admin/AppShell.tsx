@@ -780,6 +780,14 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             hint: "Gross margin and % by product and overall, from captured cost",
           },
           {
+            href: "/admin/analytics/revenue-by-source",
+            label: "Revenue by source",
+            icon: BarChart3,
+            matchPrefix: "/admin/analytics/revenue-by-source",
+            requiredPermission: "reports.read",
+            hint: "Order volume + cash revenue by channel (storefront / resupply / clinical form)",
+          },
+          {
             href: "/admin/analytics/ltv-cac",
             label: "LTV & CAC",
             icon: TrendingUp,
