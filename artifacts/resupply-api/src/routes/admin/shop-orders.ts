@@ -59,7 +59,6 @@ import {
   readStripeConfigOrNull,
 } from "../../lib/stripe/config";
 import { sendShippingNotificationEmail } from "../../lib/order-emails/send-shipping-notification-email";
-import { enqueueShopOrderLifecycleCallback } from "../../lib/referral-callbacks";
 import { sendPushToCustomer } from "../../lib/web-push";
 import { resolveSmsRecipientForShopOrder } from "../../lib/shop-orders-sms-resolver";
 import {
@@ -653,22 +652,6 @@ router.post(
       );
     }
 
-    // Fire a `shop_order.shipped` referral callback when this order
-    // was materialised from an inbound referral. No-op for orders
-    // that didn't originate from Parachute / EHR FHIR.
-    await enqueueShopOrderLifecycleCallback(orderId, "shop_order.shipped", {
-      tracking_carrier: carrier,
-      tracking_number: number,
-    }).catch((err) => {
-      req.log?.warn?.(
-        {
-          orderId,
-          err: err instanceof Error ? err.message : String(err),
-        },
-        "admin/shop/orders: referral callback enqueue failed (non-fatal)",
-      );
-    });
-
     res.json({ order: projectOrder(rowToOrderRow(row)) });
   },
 );
@@ -739,21 +722,6 @@ router.post(
       { orderId, adminEmail: req.adminEmail },
       "admin/shop/orders: marked delivered",
     );
-
-    // Fire a `shop_order.delivered` referral callback. Same no-op
-    // semantics as the shipped path above.
-    await enqueueShopOrderLifecycleCallback(
-      orderId,
-      "shop_order.delivered",
-    ).catch((err) => {
-      req.log?.warn?.(
-        {
-          orderId,
-          err: err instanceof Error ? err.message : String(err),
-        },
-        "admin/shop/orders: referral callback enqueue failed (non-fatal)",
-      );
-    });
 
     res.json({ order: projectOrder(rowToOrderRow(row)) });
   },

@@ -227,16 +227,11 @@ describe("therapy-cloud integration adapter packages", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Integrations layer — inbound/payer adapter packages (new in this PR)
+// Integrations layer — payer/claims adapter packages
 // ---------------------------------------------------------------------------
 
-describe("inbound-DME and payer/claims adapter packages", () => {
+describe("payer/claims adapter packages", () => {
   const inboundAdapters = [
-    { pkg: "resupply-integrations-parachute", domain: "HMAC webhook" },
-    {
-      pkg: "resupply-integrations-ehr-fhir",
-      domain: "SMART-on-FHIR Backend Services",
-    },
     {
       pkg: "resupply-integrations-office-ally",
       domain: "837P/835/277CA clearinghouse",
@@ -389,29 +384,6 @@ describe("finer-grained auth gates (new in this PR's Conventions section)", () =
     // The function is defined and exported
     expect(content).toContain("requirePermission");
     expect(content).toMatch(/export\s+(function|const)\s+requirePermission/);
-  });
-
-  it("requireSmartFhirAccess middleware exists (gates inbound SMART-on-FHIR routes)", () => {
-    const middlewarePath = root(
-      "artifacts",
-      "resupply-api",
-      "src",
-      "middlewares",
-      "requireSmartFhirAccess.ts",
-    );
-    expect(existsSync(middlewarePath)).toBe(true);
-  });
-
-  it("requireSmartFhirAccess.ts exports a requireSmartFhirAccess symbol", () => {
-    const middlewarePath = root(
-      "artifacts",
-      "resupply-api",
-      "src",
-      "middlewares",
-      "requireSmartFhirAccess.ts",
-    );
-    const content = readFileSync(middlewarePath, "utf8");
-    expect(content).toContain("requireSmartFhirAccess");
   });
 });
 

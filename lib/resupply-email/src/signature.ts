@@ -57,7 +57,7 @@ export interface ValidateSendgridSignatureInput {
   /**
    * Allowed clock skew + replay window in seconds. Defaults to 600s
    * (matches SendGrid's published "valid for 10 minutes" guidance and
-   * is in the same ballpark as Parachute's 300s and Stripe's 300s
+   * is in the same ballpark as Stripe's 300s
    * defaults). A captured-but-old signed payload outside this window
    * is rejected as `stale_timestamp` so an attacker can't replay
    * indefinitely.
@@ -96,8 +96,7 @@ export function validateSendgridSignature(
   const nowSeconds = input.nowSeconds ?? Math.floor(Date.now() / 1000);
   const tolerance = input.toleranceSeconds ?? DEFAULT_TOLERANCE_SECONDS;
   // Asymmetric: tolerate `tolerance` seconds of past staleness AND a
-  // small future skew (clocks slightly ahead). Mirrors the Parachute
-  // verifier's posture.
+  // small future skew (clocks slightly ahead).
   if (
     timestampSeconds < nowSeconds - tolerance ||
     timestampSeconds > nowSeconds + tolerance

@@ -2,9 +2,8 @@
 
 `/admin/system/configuration` lets a **super-admin** enter and rotate
 integration credentials and platform secrets — AI vendor keys, Twilio,
-SendGrid, Stripe, the therapy-cloud OAuth credentials, Office Ally, and
-Parachute — that historically lived only as Railway environment
-variables.
+SendGrid, Stripe, the therapy-cloud OAuth credentials, and Office Ally —
+that historically lived only as Railway environment variables.
 
 - **Frontend:** `artifacts/cpap-fitter/src/pages/admin/admin-system-configuration.tsx`
   (nav: System → Settings → Configuration).
@@ -78,7 +77,7 @@ both exist, the UI shows the DB value with an "also set in environment
 | Apply mode | Settings | Mechanism |
 | --- | --- | --- |
 | **Live** | Therapy cloud (ResMed AirView, Philips Care Orchestrator, 3B Medical / React Health) | The integration registry rebuilds per call from `getEffectiveEnv()` (DB overlay on `process.env`), so a rotated credential takes effect on the next nightly sync / manual refresh — no restart. |
-| **On next deploy** | Everything else (AI vendors, Twilio, SendGrid, Stripe, Office Ally, Parachute) | These are read at boot or by a vendor client built at boot. `applyAppConfigOverlayToEnv()` folds saved values into `process.env` **once at startup**, in the decoupled post-listen boot path (fail-soft, never blocks the listener). They're picked up at the next service restart / deploy. |
+| **On next deploy** | Everything else (AI vendors, Twilio, SendGrid, Stripe, Office Ally) | These are read at boot or by a vendor client built at boot. `applyAppConfigOverlayToEnv()` folds saved values into `process.env` **once at startup**, in the decoupled post-listen boot path (fail-soft, never blocks the listener). They're picked up at the next service restart / deploy. |
 
 ## Scope: optional/feature-gated keys only
 

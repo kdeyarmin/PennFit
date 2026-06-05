@@ -2,7 +2,7 @@
 //
 // Enter and rotate integration credentials + platform secrets that
 // historically lived only as Railway env vars (AI vendors, Twilio,
-// SendGrid, Stripe, therapy-cloud OAuth, Office Ally, Parachute).
+// SendGrid, Stripe, therapy-cloud OAuth, Office Ally).
 //
 // super_admin only — the nav entry is gated on `system.config.manage`
 // and the backend returns 403 to every other role.
