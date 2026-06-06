@@ -66,18 +66,17 @@ AS $$
       AND pp.legal_last_name IS NOT NULL
       AND pp.date_of_birth IS NOT NULL
     UNION ALL
-    SELECT pp.id, 'phone'::text, 'phone|' || pp.phone_e164
+    SELECT pp.id, 'phone'::text, 'phone|' || btrim(pp.phone_e164)
     FROM resupply.patients pp
     WHERE pp.status <> 'closed'
       AND pp.phone_e164 IS NOT NULL
-      AND pp.phone_e164 <> ''
+      AND btrim(pp.phone_e164) <> ''
     UNION ALL
     SELECT pp.id, 'email'::text, 'email|' || lower(btrim(pp.email))
     FROM resupply.patients pp
     WHERE pp.status <> 'closed'
       AND pp.email IS NOT NULL
-      AND pp.email <> ''
-  ),
+      AND btrim(pp.email) <> ''
   dup_groups AS (
     SELECT k.gkey, k.reason
     FROM keyed k
