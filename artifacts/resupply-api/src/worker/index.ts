@@ -61,6 +61,7 @@ import { registerCoachingAutoEnrollJob } from "./jobs/coaching-auto-enroll.js";
 import { registerPayerEstimateStatsJob } from "./jobs/payer-estimate-stats-refresh.js";
 import { registerPriorAuthExpirySweepJob } from "./jobs/prior-auth-expiry-sweep.js";
 import { registerShopOrderDeliveryFollowupJob } from "./jobs/shop-order-delivery-followup.js";
+import { registerPatientPacketReminderJob } from "./jobs/patient-packet-reminders.js";
 import { registerTherapyMilestonesJob } from "./jobs/therapy-milestones.js";
 import { registerLapsedCustomerWinbackJob } from "./jobs/lapsed-customer-winback.js";
 import { registerDeductibleResetPushJob } from "./jobs/deductible-reset-push.js";
@@ -557,6 +558,12 @@ async function doStartWorker(): Promise<void> {
   // a DME supplier has; also creates a clean intake for early returns
   // before the patient gives up. Runs at 14:23 UTC daily.
   await registerShopOrderDeliveryFollowupJob(boss);
+
+  // Daily sweep that re-sends signing links for unsigned patient
+  // packets (email + SMS), capped per packet. Runtime-gated by the
+  // patient_packets.autoremind feature flag (OFF by default). Runs at
+  // 15:33 UTC daily.
+  await registerPatientPacketReminderJob(boss);
 
   // Daily therapy-milestone evaluator + sender. Scans
   // patient_therapy_nights for engagement signals (100th night, first

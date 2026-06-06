@@ -205,6 +205,12 @@ app.post(
   stripeWebhookHandler,
 );
 
+// The patient-packet signing endpoint can carry a drawn-signature PNG
+// data URL, which exceeds the default 100 KB body cap. Parse it with a
+// larger limit BEFORE the global parser; once parsed, express.json
+// below is a no-op for this request.
+app.use("/api/patient-packets/sign", express.json({ limit: "1mb" }));
+
 app.use(express.json({ limit: "100kb" }));
 app.use(express.urlencoded({ extended: true, limit: "100kb" }));
 
