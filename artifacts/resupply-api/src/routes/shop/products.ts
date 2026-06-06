@@ -17,6 +17,7 @@ import {
   getStripeClient,
   readStripeConfigOrNull,
 } from "../../lib/stripe/config";
+import { isFeatureEnabled } from "../../lib/feature-flags";
 import { getPreviewCatalog } from "../../lib/stripe/preview-catalog";
 import {
   type ShopCategory,
@@ -254,8 +255,24 @@ router.get("/shop/products", async (req, res) => {
     });
   }
 
+  // Storefront purchasing master switch. A shopper can only complete a
+  // purchase when BOTH hold: Stripe is configured (we have a payment
+  // processor) AND the `storefront.checkout` feature flag is enabled in
+  // the admin Control Center. When either is false we still return the
+  // full catalog so the storefront renders for browsing — the SPA just
+  // disables the buy/checkout affordances and steers shoppers to the
+  // insurance flow. Surfacing it here lets the UI reflect the state
+  // up-front instead of discovering it via a 503 after the shopper
+  // clicks "Checkout"; /shop/checkout and /shop/me/quick-checkout
+  // enforce the same gate server-side. The `config !== null &&`
+  // short-circuit skips the flag lookup in preview mode, where
+  // purchasing is off regardless of the flag.
+  const purchasingEnabled =
+    config !== null && (await isFeatureEnabled("storefront.checkout"));
+
   res.json({
     previewMode,
+    purchasingEnabled,
     categories: SHOP_CATEGORIES,
     products,
     byCategory,

@@ -95,6 +95,11 @@ export function ShopProductDetail({ productId }: { productId: string }) {
   // products by id without firing a second list request.
   const [catalog, setCatalog] = useState<ShopProductView[]>([]);
   const [previewMode, setPreviewMode] = useState(false);
+  // Authoritative "can the shopper buy" signal (Stripe configured AND
+  // the storefront.checkout flag on). Defaults true so a transient
+  // fetch quirk never falsely blocks add-to-cart for a real shopper —
+  // the cart + checkout endpoints re-check server-side anyway.
+  const [purchasingEnabled, setPurchasingEnabled] = useState(true);
   const [state, setState] = useState<LoadState>("loading");
   const [errMsg, setErrMsg] = useState<string | null>(null);
   const { recordView } = useRecentlyViewed();
@@ -211,6 +216,7 @@ export function ShopProductDetail({ productId }: { productId: string }) {
         setProduct(found);
         setCatalog(catalog.products);
         setPreviewMode(catalog.previewMode);
+        setPurchasingEnabled(catalog.purchasingEnabled);
         setReviewPages(reviews);
         setState("ready");
         // Track this view AFTER we know the product id resolved to a
@@ -329,7 +335,11 @@ export function ShopProductDetail({ productId }: { productId: string }) {
 
   return (
     <PageShell>
-      <Hero product={product} previewMode={previewMode} />
+      <Hero
+        product={product}
+        previewMode={previewMode}
+        purchasingEnabled={purchasingEnabled}
+      />
       <ProductFaq product={product} />
       <YouMayAlsoLikeStrip products={catalog} currentProduct={product} />
       <RecentlyViewedStrip
@@ -512,9 +522,11 @@ function PageShell({ children }: { children: React.ReactNode }) {
 function Hero({
   product,
   previewMode,
+  purchasingEnabled,
 }: {
   product: ShopProductView;
   previewMode: boolean;
+  purchasingEnabled: boolean;
 }) {
   const { addItem } = useCart();
   const { toast } = useToast();
@@ -620,7 +632,11 @@ function Hero({
       : null;
   const isSubscriptionMode =
     !!product.recurringPrice && mode === "subscription";
-  const addDisabled = previewMode || (!isSubscriptionMode && oneTimeOutOfStock);
+  // Block add-to-cart whenever purchasing is off (Stripe not connected
+  // OR the storefront.checkout flag is paused) — same gate the cart and
+  // checkout endpoints enforce — or when the one-time pool is empty.
+  const addDisabled =
+    !purchasingEnabled || (!isSubscriptionMode && oneTimeOutOfStock);
 
   const handleAdd = () => {
     const result = addItem({
@@ -836,6 +852,17 @@ function Hero({
             </>
           )}
         </Button>
+        {!purchasingEnabled && (
+          <p
+            className="text-xs text-muted-foreground mt-2 max-w-sm leading-relaxed"
+            data-testid="pdp-purchasing-disabled-note"
+          >
+            {previewMode
+              ? "Online checkout opens once Stripe is connected. "
+              : "Online ordering is paused right now. "}
+            You can still use insurance — $0 with a prescription.
+          </p>
+        )}
         {oneTimeOutOfStock && !isSubscriptionMode && (
           <BackInStockNotify productId={product.id} />
         )}

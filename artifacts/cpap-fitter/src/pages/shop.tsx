@@ -399,7 +399,13 @@ export function Shop() {
         />
       ) : (
         <>
-          {data?.previewMode && <PreviewModeBanner />}
+          {data && !data.purchasingEnabled ? (
+            data.previewMode ? (
+              <PreviewModeBanner />
+            ) : (
+              <OrderingPausedBanner />
+            )
+          ) : null}
           {/*
             Anchor for the "All" pill in the filter bar so it
             always has somewhere to scroll back to. Sits just
@@ -1056,6 +1062,43 @@ function PreviewModeBanner() {
         <p className="text-foreground/80 mt-0.5">
           You&apos;re browsing a demo of the PennPaps storefront. Card checkout
           will be enabled as soon as Stripe is connected.{" "}
+          <Link
+            href="/insurance"
+            className="text-primary font-medium underline-offset-4 hover:underline"
+          >
+            Insurance billing
+          </Link>{" "}
+          is fully live and{" "}
+          <span className="font-medium">$0 with prescription.</span>
+        </p>
+      </div>
+    </div>
+  );
+}
+
+// Shown when online ordering has been intentionally paused from the
+// admin Control Center (the `storefront.checkout` flag is off) even
+// though Stripe is connected. Distinct from PreviewModeBanner so we
+// don't tell shoppers "payments aren't set up yet" when they are.
+// The catalog still renders fully for browsing; only the buy/checkout
+// path is disabled, so we steer shoppers to the insurance flow.
+function OrderingPausedBanner() {
+  return (
+    <div
+      className="rounded-2xl border border-[hsl(var(--penn-gold))]/40 bg-[hsl(var(--penn-gold))]/10 px-5 py-4 mt-8 flex items-start gap-3"
+      data-testid="shop-ordering-paused-banner"
+      role="status"
+    >
+      <div className="shrink-0 mt-0.5 text-[hsl(var(--penn-navy))]">
+        <Info className="w-5 h-5" />
+      </div>
+      <div className="text-sm leading-relaxed">
+        <p className="font-semibold text-[hsl(var(--penn-navy))]">
+          Online ordering is paused
+        </p>
+        <p className="text-foreground/80 mt-0.5">
+          Browse the full catalog any time — online checkout is temporarily
+          unavailable.{" "}
           <Link
             href="/insurance"
             className="text-primary font-medium underline-offset-4 hover:underline"
