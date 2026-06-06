@@ -10,6 +10,7 @@ import bulkStatusRouter from "./bulk-status";
 import createRouter from "./create";
 import detailRouter from "./detail";
 import duplicatesRouter from "./duplicates";
+import mergeRouter from "./merge";
 import exportCsvRouter from "./export-csv";
 import importCsvRouter from "./import-csv";
 import listRouter from "./list";
@@ -47,6 +48,9 @@ router.use(bulkStatusRouter);
 // (C1, detection only). A literal segment, so it MUST sit in this band
 // before detailRouter or the `:id` param route would swallow it.
 router.use(duplicatesRouter);
+// /patients/merge — fold a duplicate into a primary (C1, merge half).
+// Literal segment; sits in this band before the :id param route.
+router.use(mergeRouter);
 router.use(listRouter);
 router.use(createRouter);
 router.use(notesListRouter);

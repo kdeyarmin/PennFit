@@ -59,3 +59,23 @@ async function jsonFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
 
 export const listPatientDuplicates = () =>
   jsonFetch<ListPatientDuplicatesResponse>("/patients/duplicates");
+
+export interface MergePatientsResult {
+  ok: true;
+  tablesRepointed: number;
+  rowsRepointed: number;
+}
+
+/**
+ * Fold a duplicate patient record into a primary (survivor). Repoints
+ * every FK atomically server-side; the duplicate is closed, not deleted.
+ */
+export const mergePatients = (
+  primaryPatientId: string,
+  duplicatePatientId: string,
+) =>
+  jsonFetch<MergePatientsResult>("/patients/merge", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ primaryPatientId, duplicatePatientId }),
+  });

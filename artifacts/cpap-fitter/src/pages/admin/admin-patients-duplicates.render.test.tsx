@@ -18,11 +18,19 @@ vi.mock("@tanstack/react-query", async () => {
   return {
     ...actual,
     useQuery: () => queryState.current,
+    useMutation: () => ({ mutate: vi.fn(), isPending: false }),
+    useQueryClient: () => ({ invalidateQueries: vi.fn() }),
   };
 });
 
 vi.mock("@/lib/admin/patients-duplicates-api", () => ({
   listPatientDuplicates: vi.fn(),
+  mergePatients: vi.fn(),
+}));
+
+vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
+vi.mock("@/hooks/use-confirm-dialog", () => ({
+  useConfirmDialog: () => [vi.fn().mockResolvedValue(true), null],
 }));
 
 import { AdminPatientsDuplicatesPage } from "./admin-patients-duplicates";
