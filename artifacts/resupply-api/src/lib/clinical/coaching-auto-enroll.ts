@@ -110,8 +110,7 @@ export async function runCoachingAutoEnrollSweep(): Promise<AutoEnrollSweepStats
     .from("patient_therapy_nights")
     .select("patient_id")
     .gte("night_date", sinceIso)
-    .limit(MAX_CANDIDATES);
-  if (nightsErr) throw nightsErr;
+    .limit(MAX_CANDIDATES * RECENT_NIGHT_DAYS);
   const candidateIds = [...new Set((nightRows ?? []).map((r) => r.patient_id))];
   stats.candidates = candidateIds.length;
   if (candidateIds.length === 0) return stats;
