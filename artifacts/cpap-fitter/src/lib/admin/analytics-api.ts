@@ -31,6 +31,11 @@ export interface ResupplyKpisResponse {
   fulfillmentRate: number | null;
   connectionRate: number | null;
   ordersPerActivePatientAnnualized: number | null;
+  fulfillmentLineItems: number;
+  ordersWithFulfillments: number;
+  itemsPerOrder: number | null;
+  paidOrderCount: number;
+  averageOrderValueCents: number | null;
 }
 
 export interface ComplianceCohortBucket {

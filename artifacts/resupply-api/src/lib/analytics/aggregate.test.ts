@@ -75,6 +75,54 @@ describe("aggregateResupplyKpis", () => {
     expect(r.fulfillmentRate).toBeNull(); // 0 confirmed → null
     expect(r.connectionRate).toBe(0);
   });
+
+  it("computes items-per-order from fulfillment line items", () => {
+    const r = aggregateResupplyKpis({
+      episodes: [],
+      outreachCount: 0,
+      respondedCount: 0,
+      activePatientCount: 0,
+      windowDays: 30,
+      // 5 line items across 2 distinct orders → 2.5 items/order.
+      fulfillments: [
+        { episodeId: "e1" },
+        { episodeId: "e1" },
+        { episodeId: "e1" },
+        { episodeId: "e2" },
+        { episodeId: "e2" },
+      ],
+    });
+    expect(r.fulfillmentLineItems).toBe(5);
+    expect(r.ordersWithFulfillments).toBe(2);
+    expect(r.itemsPerOrder).toBe(2.5);
+  });
+
+  it("computes average order value (cents) from paid orders", () => {
+    const r = aggregateResupplyKpis({
+      episodes: [],
+      outreachCount: 0,
+      respondedCount: 0,
+      activePatientCount: 0,
+      windowDays: 30,
+      paidOrderAmountsCents: [1000, 2000, 3050], // mean 2016.67 → 2017
+    });
+    expect(r.paidOrderCount).toBe(3);
+    expect(r.averageOrderValueCents).toBe(2017);
+  });
+
+  it("returns null items-per-order and AOV when those inputs are empty", () => {
+    const r = aggregateResupplyKpis({
+      episodes: [],
+      outreachCount: 0,
+      respondedCount: 0,
+      activePatientCount: 0,
+      windowDays: 30,
+    });
+    expect(r.itemsPerOrder).toBeNull();
+    expect(r.fulfillmentLineItems).toBe(0);
+    expect(r.averageOrderValueCents).toBeNull();
+    expect(r.paidOrderCount).toBe(0);
+  });
 });
 
 describe("aggregateResupplyFunnel", () => {

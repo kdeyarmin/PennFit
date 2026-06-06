@@ -111,6 +111,14 @@ export interface ResupplyKpiInput {
   activePatientCount: number;
   /** Analysis window in days (drives annualization). */
   windowDays: number;
+  /** Fulfillment line items created in the window, each tagged with the
+   *  episode (order) it belongs to. Drives items-per-order. Optional so
+   *  existing callers/tests stay valid. */
+  fulfillments?: Array<{ episodeId: string }>;
+  /** amount_total_cents for storefront orders PAID in the window. Drives
+   *  average order value (resupply fulfillments bill insurance and carry
+   *  no cash amount, so AOV is a storefront-cash metric). Optional. */
+  paidOrderAmountsCents?: number[];
 }
 
 export interface ResupplyKpiResult {
@@ -130,6 +138,17 @@ export interface ResupplyKpiResult {
   /** confirmedOrders per active patient, annualized. Null when there
    *  are no active patients or a zero window. */
   ordersPerActivePatientAnnualized: number | null;
+  /** Fulfillment line items in the window. */
+  fulfillmentLineItems: number;
+  /** Distinct episodes (orders) that have at least one fulfillment. */
+  ordersWithFulfillments: number;
+  /** fulfillmentLineItems / ordersWithFulfillments. Null when none. */
+  itemsPerOrder: number | null;
+  /** Storefront orders paid in the window. */
+  paidOrderCount: number;
+  /** Mean amount_total_cents across paid storefront orders. Null when
+   *  none. Integer cents. */
+  averageOrderValueCents: number | null;
 }
 
 /**
@@ -168,6 +187,29 @@ export function aggregateResupplyKpis(
             (365 / input.windowDays),
         );
 
+  // Items per order: fulfillment line items / distinct orders that have
+  // fulfillments. A row with a falsy episodeId can't be attributed to an
+  // order and is dropped.
+  const fulfillments = input.fulfillments ?? [];
+  const fulfillmentOrderIds = new Set<string>();
+  for (const f of fulfillments) {
+    if (f.episodeId) fulfillmentOrderIds.add(f.episodeId);
+  }
+  const fulfillmentLineItems = fulfillments.length;
+  const ordersWithFulfillments = fulfillmentOrderIds.size;
+  const itemsPerOrder =
+    ordersWithFulfillments === 0
+      ? null
+      : round4(fulfillmentLineItems / ordersWithFulfillments);
+
+  // Average order value: mean of paid storefront order totals (cents).
+  const amounts = input.paidOrderAmountsCents ?? [];
+  const paidOrderCount = amounts.length;
+  const averageOrderValueCents =
+    paidOrderCount === 0
+      ? null
+      : Math.round(amounts.reduce((s, c) => s + c, 0) / paidOrderCount);
+
   return {
     totalEpisodes,
     confirmedOrders,
@@ -180,6 +222,11 @@ export function aggregateResupplyKpis(
     fulfillmentRate,
     connectionRate,
     ordersPerActivePatientAnnualized,
+    fulfillmentLineItems,
+    ordersWithFulfillments,
+    itemsPerOrder,
+    paidOrderCount,
+    averageOrderValueCents,
   };
 }
 

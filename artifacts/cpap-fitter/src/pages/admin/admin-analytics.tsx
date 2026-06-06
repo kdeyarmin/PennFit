@@ -183,6 +183,22 @@ function KpisBody({ data }: { data: ResupplyKpisResponse }) {
         value={opp === null ? "—" : opp.toFixed(2)}
         hint={`${data.activePatientCount} active patients`}
       />
+      <KpiTile
+        label="Items / order"
+        value={
+          data.itemsPerOrder === null ? "—" : data.itemsPerOrder.toFixed(2)
+        }
+        hint={`${data.fulfillmentLineItems} items / ${data.ordersWithFulfillments} orders`}
+      />
+      <KpiTile
+        label="Avg order value"
+        value={
+          data.averageOrderValueCents === null
+            ? "—"
+            : `$${(data.averageOrderValueCents / 100).toFixed(2)}`
+        }
+        hint={`${data.paidOrderCount} paid storefront orders`}
+      />
       <KpiTile label="Total episodes" value={String(data.totalEpisodes)} />
       <KpiTile label="Confirmed orders" value={String(data.confirmedOrders)} />
       <KpiTile

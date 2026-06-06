@@ -143,12 +143,42 @@ router.get(
       .eq("status", "active");
     if (patErr) throw patErr;
 
+    // Fulfillment line items in the window → items per order. Capped for
+    // safety on very large windows.
+    const { data: fulfillmentRows, error: fulErr } = await supabase
+      .schema("resupply")
+      .from("fulfillments")
+      .select("episode_id")
+      .gte("created_at", cutoff)
+      .limit(50000);
+    if (fulErr) throw fulErr;
+    const fulfillments = (fulfillmentRows ?? [])
+      .filter((r) => r.episode_id)
+      .map((r) => ({ episodeId: r.episode_id as string }));
+
+    // Paid storefront orders in the window → average order value. Resupply
+    // fulfillments bill insurance and carry no cash amount, so AOV is a
+    // storefront-cash metric.
+    const { data: orderRows, error: ordErr } = await supabase
+      .schema("resupply")
+      .from("shop_orders")
+      .select("amount_total_cents")
+      .eq("status", "paid")
+      .gte("created_at", cutoff)
+      .limit(50000);
+    if (ordErr) throw ordErr;
+    const paidOrderAmountsCents = (orderRows ?? [])
+      .map((r) => r.amount_total_cents)
+      .filter((c): c is number => typeof c === "number");
+
     const result = aggregateResupplyKpis({
       episodes,
       outreachCount: outreachIds.size,
       respondedCount,
       activePatientCount: activePatientCount ?? 0,
       windowDays: days,
+      fulfillments,
+      paidOrderAmountsCents,
     });
     res.json({ windowDays: days, ...result });
   },
