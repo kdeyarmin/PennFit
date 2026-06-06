@@ -90,3 +90,43 @@ export async function patchInboundFax(
 export function inboundFaxMediaUrl(id: string): string {
   return `/resupply-api/admin/inbound-faxes/${encodeURIComponent(id)}/media`;
 }
+
+export type FaxOcrStatus = "extracted" | "failed" | "unsupported" | "offline";
+
+export interface FaxOcrLineItem {
+  description: string;
+  hcpcs: string | null;
+}
+
+export interface FaxOcrFields {
+  documentType:
+    | "prescription"
+    | "sleep_study"
+    | "chart_note"
+    | "face_to_face"
+    | "other"
+    | null;
+  patientName: string | null;
+  patientDob: string | null;
+  patientPhone: string | null;
+  physicianName: string | null;
+  physicianNpi: string | null;
+  items: FaxOcrLineItem[];
+  summary: string | null;
+  confidence: "high" | "medium" | "low";
+}
+
+export interface RunFaxOcrResponse {
+  id: string;
+  status: FaxOcrStatus;
+  fields: FaxOcrFields | null;
+}
+
+/** Run AI field-extraction on a fax. 200 even when the model is offline
+ *  ({ status: "offline", fields: null }) — the CSR then keys by hand. */
+export async function runFaxOcr(id: string): Promise<RunFaxOcrResponse> {
+  return jsonFetch(`/admin/inbound-faxes/${encodeURIComponent(id)}/ocr`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+  });
+}

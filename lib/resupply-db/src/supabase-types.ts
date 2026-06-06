@@ -2773,6 +2773,9 @@ export interface Database {
           triaged_at: string | null;
           triaged_by_user_id: string | null;
           notes: string | null;
+          ocr_status: "extracted" | "failed" | "unsupported" | "offline" | null;
+          ocr_extraction: Json | null;
+          ocr_extracted_at: string | null;
           created_at: string;
           updated_at: string;
         };
