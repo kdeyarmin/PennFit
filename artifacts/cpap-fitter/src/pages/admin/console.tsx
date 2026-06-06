@@ -54,6 +54,11 @@ const AdminPatientsDuplicatesPage = lazy(() =>
     default: m.AdminPatientsDuplicatesPage,
   })),
 );
+const AdminLiveStaffingPage = lazy(() =>
+  import("@/pages/admin/admin-live-staffing").then((m) => ({
+    default: m.AdminLiveStaffingPage,
+  })),
+);
 const PatientDetailPage = lazy(() =>
   import("@/pages/admin/patient-detail").then((m) => ({
     default: m.PatientDetailPage,
@@ -919,6 +924,10 @@ function AdminConsole() {
             <Route
               path="/admin/productivity"
               component={AdminProductivityPage}
+            />
+            <Route
+              path="/admin/live-staffing"
+              component={AdminLiveStaffingPage}
             />
             <Route
               path="/admin/shop/backorders"

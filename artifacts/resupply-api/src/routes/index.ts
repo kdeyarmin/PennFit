@@ -56,6 +56,7 @@ import inventoryTurnoverRouter from "./admin/inventory-turnover.js";
 import ltvCacRouter from "./admin/ltv-cac.js";
 import rtOverviewRouter from "./admin/rt-overview.js";
 import productivityRouter from "./admin/productivity.js";
+import staffingLiveRouter from "./admin/staffing-live.js";
 import patientDocumentsRetentionRouter from "./admin/patient-documents-retention.js";
 import shopBackordersRouter from "./admin/shop-backorders.js";
 import officeClosuresRouter from "./admin/office-closures.js";
@@ -813,6 +814,9 @@ router.use(integrationsSyncEquipmentRouter);
 // /admin/productivity — per-agent throughput dashboard for
 // supervisors. reports.read-gated; CSRs see their own row too.
 router.use(productivityRouter);
+// /admin/staffing/live — real-time per-agent open-conversation load +
+// availability + on-shift + unassigned backlog. reports.read-gated.
+router.use(staffingLiveRouter);
 // /admin/bulk-campaigns/* — staging-side surface for bulk-email
 // campaigns. Phase A persists draft + cancelled; Phase B will add
 // the send-side worker that drains bulk_campaign_recipients.

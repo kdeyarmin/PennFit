@@ -835,6 +835,13 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             hint: "Per-agent close / approve / resolve counts",
           },
           {
+            href: "/admin/live-staffing",
+            label: "Live staffing",
+            icon: Users,
+            matchPrefix: "/admin/live-staffing",
+            hint: "Real-time open-conversation load per agent + backlog",
+          },
+          {
             href: "/admin/goals",
             label: "Goals & targets",
             icon: Target,
